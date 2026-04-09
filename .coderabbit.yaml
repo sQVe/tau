@@ -27,4 +27,4 @@ reviews:
     enabled: true
     auto_incremental_review: false
     drafts: false
-    ignore_title_keywords: ['WIP', 'wip']
+    ignore_title_keywords: ['WIP']

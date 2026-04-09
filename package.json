@@ -27,13 +27,13 @@
     ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
-    "@sinclair/typebox": "*"
+    "@mariozechner/pi-coding-agent": "^0.66.1",
+    "@sinclair/typebox": "^0.34.49"
   },
   "devDependencies": {
     "@changesets/cli": "2.30.0",
-    "@mariozechner/pi-coding-agent": "*",
-    "@sinclair/typebox": "*",
+    "@mariozechner/pi-coding-agent": "^0.66.1",
+    "@sinclair/typebox": "^0.34.49",
     "@types/node": "^25.5.0",
     "prettier": "3.8.1",
     "typescript": "^6.0.2",

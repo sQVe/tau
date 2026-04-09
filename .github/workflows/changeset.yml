@@ -21,24 +21,34 @@ jobs:
         with:
           filters: |
             requires_changeset:
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'extensions/**'
-              - 'prompts/**'
-              - 'skills/**'
-              - 'src/**'
-              - 'themes/**'
-              - 'tsconfig.json'
+              - '**'
+              - '!**/*.md'
+              - '!.changeset/**'
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
-        if: steps.changes.outputs.requires_changeset == 'true'
+        if: |
+          steps.changes.outputs.requires_changeset == 'true' &&
+          github.event.pull_request.title != 'chore: release version packages' &&
+          github.event.pull_request.head.ref != 'changeset-release/main'
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        if: steps.changes.outputs.requires_changeset == 'true'
+        if: |
+          steps.changes.outputs.requires_changeset == 'true' &&
+          github.event.pull_request.title != 'chore: release version packages' &&
+          github.event.pull_request.head.ref != 'changeset-release/main'
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-        if: steps.changes.outputs.requires_changeset == 'true'
+        if: |
+          steps.changes.outputs.requires_changeset == 'true' &&
+          github.event.pull_request.title != 'chore: release version packages' &&
+          github.event.pull_request.head.ref != 'changeset-release/main'
       - run: pnpm changeset:check
-        if: steps.changes.outputs.requires_changeset == 'true'
-      - run: echo 'No changeset required for docs/config-only PR.'
-        if: steps.changes.outputs.requires_changeset != 'true'
+        if: |
+          steps.changes.outputs.requires_changeset == 'true' &&
+          github.event.pull_request.title != 'chore: release version packages' &&
+          github.event.pull_request.head.ref != 'changeset-release/main'
+      - run: echo 'No changeset required for docs-only or release PR.'
+        if: |
+          steps.changes.outputs.requires_changeset != 'true' ||
+          github.event.pull_request.title == 'chore: release version packages' ||
+          github.event.pull_request.head.ref == 'changeset-release/main'

@@ -13,15 +13,19 @@ const hasTypeScriptFiles = (path) => {
 
       return entry.isFile() && entry.name.endsWith('.ts');
     });
-  } catch {
-    return false;
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+      return false;
+    }
+
+    throw error;
   }
 };
 
 const hasInputs = ['extensions', 'src', 'test', 'tests'].some((path) => hasTypeScriptFiles(path));
 
 if (!hasInputs) {
-  console.log('tau: no TypeScript inputs yet; skipping typecheck');
+  process.stdout.write('tau: no TypeScript inputs yet; skipping typecheck\n');
   process.exit(0);
 }
 

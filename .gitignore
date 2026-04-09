@@ -6,8 +6,7 @@ dist/
 coverage/
 
 # Environment
-.env.local
-.env
+.env*
 
 # TypeScript
 *.tsbuildinfo
