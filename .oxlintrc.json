@@ -1,0 +1,39 @@
+{
+  "plugins": ["typescript", "unicorn", "oxc", "import", "vitest", "node"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "warn",
+    "pedantic": "off",
+    "style": "off",
+    "restriction": "off",
+    "nursery": "off"
+  },
+  "options": {
+    "typeAware": true
+  },
+  "rules": {
+    "typescript/consistent-type-imports": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/return-await": "error",
+    "typescript/no-import-type-side-effects": "error",
+    "typescript/use-unknown-in-catch-callback-variable": "error",
+    "import/first": "error",
+    "import/no-duplicates": "error",
+    "import/no-mutable-exports": "error",
+    "unicorn/prefer-node-protocol": "error",
+    "unicorn/prefer-module": "error",
+    "unicorn/error-message": "error",
+    "unicorn/throw-new-error": "error",
+    "unicorn/no-anonymous-default-export": "off",
+    "oxc/no-const-enum": "error",
+    "eslint/no-console": "warn",
+    "typescript/no-confusing-void-expression": "warn",
+    "typescript/prefer-optional-chain": "warn",
+    "typescript/prefer-nullish-coalescing": "warn",
+    "unicorn/consistent-function-scoping": "warn"
+  }
+}

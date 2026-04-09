@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+coverage/
+
+# Environment
+.env.local
+.env
+
+# TypeScript
+*.tsbuildinfo

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "timezone": "Europe/Stockholm",
+  "schedule": ["before 6am on monday"],
+  "minimumReleaseAge": "3 days",
+  "prConcurrentLimit": 10,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"],
+    "automerge": true
+  },
+  "packageRules": [
+    {
+      "description": "Group and automerge non-major GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "groupName": "GitHub Actions",
+      "automerge": true
+    },
+    {
+      "description": "Require dashboard approval for major GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Group and automerge non-major devDependency updates",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "groupName": "devDependencies (non-major)",
+      "automerge": true
+    },
+    {
+      "description": "Require dashboard approval for major devDependency updates",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Require dashboard approval for major production updates",
+      "matchDepTypes": ["dependencies", "peerDependencies"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}
