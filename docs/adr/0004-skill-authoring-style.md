@@ -62,10 +62,10 @@ Skills are guidance and workflow packages, not the source of repository truth.
 
 ### Writing style
 
-- concise enough to scan.
-- explicit about trigger conditions.
-- specific about required behavior when the workflow is strict.
-- readable and editable as ordinary Markdown.
+- Keep skills concise enough to scan.
+- State trigger conditions explicitly.
+- Specify required behavior when the workflow is strict.
+- Stay readable and editable as ordinary Markdown.
 
 Advisory skills use principles, heuristics, and checklists. Procedural skills use a step-by-step
 procedure, not custom tagged sections.
@@ -77,12 +77,12 @@ references, scripts, or assets loaded on demand through relative links.
 
 ## Tradeoffs
 
-- - Tau skills match Pi's native model instead of importing conventions Pi does not require.
-- - Skills stay easy to read, review, and edit.
-- - Descriptions become more useful for Pi's on-demand loading.
-- - Policy stays authoritative in one place instead of drifting across skills.
-- − Contributors familiar with Claude Code style may expect richer custom markup.
-- − Rigid workflows feel slightly less templated without XML-like tags.
+- Tau skills match Pi's native model instead of importing conventions Pi does not require.
+- Skills stay easy to read, review, and edit.
+- Descriptions become more useful for Pi's on-demand loading.
+- Policy stays authoritative in one place instead of drifting across skills.
+- Cost: contributors familiar with Claude Code style may expect richer custom markup.
+- Cost: rigid workflows feel slightly less templated without XML-like tags.
 
 ## See also
 

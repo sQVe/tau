@@ -1,5 +1,7 @@
 # Guides
 
+- Last updated: 2026-04-11
+
 Guides explain how to use workflows, tools, and project conventions in practice.
 
 ## When to write one

@@ -1,5 +1,7 @@
 # Architecture decision records
 
+- Last updated: 2026-04-11
+
 ADRs capture durable technical decisions and the tradeoffs behind them.
 
 ## When to write one

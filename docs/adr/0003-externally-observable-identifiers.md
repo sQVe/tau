@@ -5,26 +5,23 @@
 
 ## Context
 
-Some strings in Tau's code are also contracts with the outside world. Consider:
+- Some strings in Tau's code are contracts with the outside world. Example:
 
-```ts
-pi.registerCommand('commit', commitHandler);
-```
+  ```ts
+  pi.registerCommand('commit', commitHandler);
+  ```
 
-Users type `/commit` in Pi. That string is now in muscle memory, scripts, and saved sessions. Later,
-a refactor renames `commitHandler` to `createCommitHandler`. It is tempting to also rename
-`'commit'` to `'createCommit'` for symmetry — and doing so silently breaks every user and every
-persisted session.
+  Users type `/commit` in Pi; that string lives in muscle memory, scripts, and saved sessions.
 
-The same pressure applies to other surfaces that cross the process boundary:
-
-- persisted session keys (Pi custom entry types written to disk).
-- Pi tool names registered via `pi.registerTool` and seen by the LLM.
-- slash command names registered via `pi.registerCommand` and typed by users.
-- event type strings passed to `pi.on`.
-- skill directory names under `skills/`, discovered by Pi.
-
-The rule that prevents this kind of accidental breakage was implicit. This ADR makes it explicit.
+- Renaming `commitHandler` to `createCommitHandler` tempts a symmetry rename of `'commit'` to
+  `'createCommit'`, which silently breaks every user and every persisted session.
+- Other surfaces share this pressure:
+  - persisted session keys (Pi custom entry types written to disk).
+  - Pi tool names registered via `pi.registerTool` and seen by the LLM.
+  - slash command names registered via `pi.registerCommand` and typed by users.
+  - event type strings passed to `pi.on`.
+  - skill directory names under `skills/`, discovered by Pi.
+- The rule preventing this breakage was implicit; this ADR makes it explicit.
 
 ## Options considered
 
@@ -50,12 +47,12 @@ explicit migration plan. Symmetry between source and wire format is not a reason
 
 ## Tradeoffs
 
-- - Refactors cannot accidentally break persisted state or user workflows.
-- - Rename decisions stay scoped to source; wire-format changes are deliberate.
-- - Externally visible names are treated as contracts, not incidental strings.
-- − Source and wire names may drift apart, which can feel inconsistent.
-- − New externally observable identifiers must decide their wire format upfront, because they are
-  expensive to change later.
+- Refactors cannot accidentally break persisted state or user workflows.
+- Rename decisions stay scoped to source; wire-format changes are deliberate.
+- Externally visible names are treated as contracts, not incidental strings.
+- Cost: source and wire names may drift apart, which can feel inconsistent.
+- Cost: new externally observable identifiers must decide their wire format upfront, because they
+  are expensive to change later.
 
 ## See also
 

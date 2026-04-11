@@ -5,8 +5,8 @@
 
 ## Context
 
-ADR 0001 settled directory layout. It did not cover file-level naming or organization. Several
-conventions exist in practice; this ADR captures them in one place.
+- ADR 0001 settled directory layout but not file-level naming or organization.
+- Several naming conventions exist in practice without a central reference.
 
 ## Options considered
 
@@ -15,6 +15,8 @@ conventions exist in practice; this ADR captures them in one place.
   files.
 
 ## Decision
+
+One rule set spans TypeScript source, tests, documentation, special files, and config.
 
 ### TypeScript source
 
@@ -49,12 +51,12 @@ Out of scope.
 
 ## Tradeoffs
 
-- - One rule per question a contributor might ask about file naming.
-- - The `index.ts` rule prevents barrel files from proliferating.
-- - `tests/` has a stated purpose before end-to-end tests actually arrive.
-- − The no-barrel rule may feel restrictive as a module grows; the mitigation is restructure, not
-  relax.
-- − Case-by-case uppercase filenames require judgment rather than a hard rule.
+- One rule per question a contributor might ask about file naming.
+- The `index.ts` rule prevents barrel files from proliferating.
+- `tests/` has a stated purpose before end-to-end tests actually arrive.
+- Cost: the no-barrel rule may feel restrictive as a module grows; the mitigation is restructure,
+  not relax.
+- Cost: case-by-case uppercase filenames require judgment rather than a hard rule.
 
 ## See also
 

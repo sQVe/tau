@@ -1,5 +1,7 @@
 # Foundations
 
+- Last updated: 2026-04-11
+
 Foundations capture durable project direction, philosophy, and conceptual scope.
 
 ## When to write one

@@ -21,8 +21,8 @@ State the choice in one sentence. Add subsections only when the decision has dis
 
 ## Tradeoffs
 
-- - benefit
-- − cost
+- benefit
+- Cost: downside accepted with this decision.
 
 ## See also
 

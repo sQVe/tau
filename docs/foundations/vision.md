@@ -35,8 +35,6 @@ instead of recommending it.
 - agent runtime primitives.
 - TUI and SDK capabilities.
 
-Pi is the engine. Tau is the governor.
-
 ## See also
 
 - [Documentation index](../README.md)

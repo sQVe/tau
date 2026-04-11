@@ -1,4 +1,4 @@
 ruleDirs:
   - lint
 languageGlobs:
-  Tsx: ['*.ts', '*.tsx']
+  Tsx: ['**/*.ts', '**/*.tsx']

@@ -1,5 +1,7 @@
 # Writing docs in this directory
 
+- Last updated: 2026-04-11
+
 Rules for any agent (or human) writing or editing files under `docs/`.
 
 ## Pick the doc type first
@@ -47,8 +49,8 @@ Each template has one "why this exists" section. Do not drift between them.
 
 - `Options considered` is required. List at least two. If only one option was seriously weighed,
   state the null alternative ("keep current state") and why it fails.
-- `Tradeoffs` is one list. Benefits are plain bullets; prefix cost bullets with `−`. Do not split
-  Positive/Negative.
+- `Tradeoffs` is one list. Benefits are plain bullets; prefix cost bullets with `Cost:`. Do not
+  split Positive/Negative.
 - Mark `Status: Accepted` only after the project owner approves.
 
 ## Before you commit

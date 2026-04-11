@@ -1,5 +1,7 @@
 # Policies
 
+- Last updated: 2026-04-11
+
 Policies define normative rules that contributors and tooling must follow.
 
 ## When to write one

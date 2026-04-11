@@ -23,8 +23,8 @@ Tau needs a layout rule before contributors and extensions multiply. Four pressu
 
 ## Decision
 
-All application code lives under `src/`. Skills sit at the package root because Pi discovers them
-from a directory declared in `package.json`. `rules/` is renamed to `lint/` to name its intent.
+Application code lives under `src/`, skills stay at the package root for Pi discovery, and `rules/`
+is renamed to `lint/`.
 
 ```text
 tau/
@@ -88,8 +88,8 @@ Primitives under `src/<primitive>/` follow the same minimal shape:
 
 ## Tradeoffs
 
-- - One rule for where application code lives and what an extension looks like.
-- - Vocabulary matches Pi (`events/`, not `hooks/`).
-- - The `rules/` collision goes away; `lint/` names its intent.
-- − Moving `extensions/` under `src/` touches imports and tooling paths.
-- − Primitive vs. extension is a judgment call on the margins.
+- One rule for where application code lives and what an extension looks like.
+- Vocabulary matches Pi (`events/`, not `hooks/`).
+- The `rules/` collision goes away; `lint/` names its intent.
+- Cost: moving `extensions/` under `src/` touches imports and tooling paths.
+- Cost: primitive vs. extension is a judgment call on the margins.

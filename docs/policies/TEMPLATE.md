@@ -5,7 +5,7 @@
 
 ## Applies to
 
-One sentence: what this policy governs and where it reaches.
+State what this policy governs and where it reaches in one sentence.
 
 ## Rules
 
@@ -15,7 +15,7 @@ One sentence: what this policy governs and where it reaches.
 
 ## Examples
 
-Good and bad pairs when they clarify a rule. Omit when the rules are self-explanatory.
+Show good and bad pairs when they clarify a rule. Omit when the rules are self-explanatory.
 
 ```diff
 - bad
@@ -24,11 +24,11 @@ Good and bad pairs when they clarify a rule. Omit when the rules are self-explan
 
 ## Exceptions
 
-Who may grant exceptions and under what condition.
+Name who may grant exceptions and under what condition.
 
 ## Enforcement
 
-Where the policy is enforced: CI, pre-commit, review, tooling.
+State where the policy is enforced: CI, pre-commit, review, tooling.
 
 ## See also
 

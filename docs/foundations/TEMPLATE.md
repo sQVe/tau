@@ -5,7 +5,7 @@
 
 ## The idea
 
-One short paragraph stating the core claim and why it matters.
+State the core claim and why it matters in one short paragraph.
 
 ## Principles
 
