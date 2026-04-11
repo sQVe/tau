@@ -1,0 +1,4 @@
+ruleDirs:
+  - lint
+languageGlobs:
+  Tsx: ['**/*.ts', '**/*.tsx']

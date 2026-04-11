@@ -15,7 +15,8 @@ Tau starts with one hard problem: enforcing strict TDD cleanly and reliably.
 
 Tau is not a general agent framework. Pi provides the runtime; Tau provides the workflow.
 
-> [!WARNING] Tau is under active development. Expect churn, rough edges, and changing interfaces
-> while the core ideas take shape.
+<!-- prettier-ignore -->
+> [!IMPORTANT]
+> Tau is under active development. Expect churn, rough edges, and changing interfaces while the core ideas take shape.
 
-See [VISION](./docs/VISION.md).
+See [vision](./docs/foundations/vision.md) and [docs](./docs/README.md).
