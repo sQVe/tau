@@ -12,30 +12,36 @@
     "changeset": "changeset",
     "changeset:check": "changeset status --since=origin/main",
     "changeset:version": "changeset version",
-    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test",
+    "check": "pnpm typecheck && pnpm lint && pnpm lint:rules && pnpm format:check && pnpm test",
     "dev": "echo 'tau: dev entrypoint not implemented yet'",
     "format": "vp fmt && prettier --write .",
     "format:check": "vp fmt --check && prettier --check .",
     "lint": "vp lint",
+    "lint:rules": "ast-grep scan",
     "prepare": "vp config",
     "test": "vitest run --passWithNoTests",
-    "typecheck": "node scripts/typecheck.mjs"
+    "typecheck": "pnpm exec tsc --noEmit"
   },
   "pi": {
     "extensions": [
-      "./extensions"
+      "./src/extensions"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "^0.66.1",
-    "@sinclair/typebox": "^0.34.49"
+    "@mariozechner/pi-coding-agent": "^0.66.1"
   },
   "devDependencies": {
+    "@ast-grep/cli": "0.42.0",
     "@changesets/cli": "2.30.0",
     "@mariozechner/pi-coding-agent": "^0.66.1",
-    "@sinclair/typebox": "^0.34.49",
     "@types/node": "^25.5.0",
+    "oxfmt": "0.43.0",
+    "oxlint": "1.59.0",
     "prettier": "3.8.1",
+    "tsx": "4.20.6",
     "typescript": "^6.0.2",
     "vite-plus": "0.1.16",
     "vitest": "4.1.4"
@@ -43,5 +49,11 @@
   "engines": {
     "node": ">=24"
   },
-  "packageManager": "pnpm@10.33.0"
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@ast-grep/cli"
+    ]
+  },
+  "packageManager": "pnpm@10.33.0",
+  "dependencies": {}
 }

@@ -1,0 +1,41 @@
+id: types-before-runtime-code
+language: Tsx
+severity: error
+message: Type and interface declarations must appear before runtime code.
+note: Move this declaration above all const/let/function statements.
+files:
+  - 'src/**/*.ts'
+ignores:
+  - '**/*.test.ts'
+rule:
+  any:
+    - all:
+        - kind: type_alias_declaration
+        - not:
+            has:
+              regex: typeof
+    - kind: interface_declaration
+    - all:
+        - kind: export_statement
+        - has:
+            stopBy: neighbor
+            any:
+              - all:
+                  - kind: type_alias_declaration
+                  - not:
+                      has:
+                        regex: typeof
+              - kind: interface_declaration
+  follows:
+    stopBy: end
+    any:
+      - kind: lexical_declaration
+      - kind: function_declaration
+      - kind: expression_statement
+      - all:
+          - kind: export_statement
+          - has:
+              stopBy: neighbor
+              any:
+                - kind: lexical_declaration
+                - kind: function_declaration
