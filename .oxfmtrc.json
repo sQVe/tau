@@ -8,5 +8,15 @@
   "endOfLine": "lf",
   "bracketSpacing": true,
   "arrowParens": "always",
-  "ignorePatterns": ["dist/**", "coverage/**", "**/*.json"]
+  "ignorePatterns": ["dist/**", "coverage/**", "**/*.json", "**/*.css"],
+  "sortImports": {
+    "newlinesBetween": true,
+    "groups": ["builtin", ["@tau", "external"], ["parent", "sibling", "index"], "style", "unknown"],
+    "customGroups": [
+      {
+        "groupName": "@tau",
+        "elementNamePattern": ["@tau/**"]
+      }
+    ]
+  }
 }
