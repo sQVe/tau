@@ -1,6 +1,6 @@
 # ADR 0001: Application structure
 
-- Status: Approved
+- Status: Accepted
 - Date: 2026-04-10
 
 ## Context

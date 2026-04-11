@@ -1,6 +1,6 @@
 # ADR 0002: File and directory naming conventions
 
-- Status: Approved
+- Status: Accepted
 - Date: 2026-04-10
 
 ## Context

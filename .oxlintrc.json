@@ -211,7 +211,7 @@
     "unicorn/prefer-set-has": "warn",
     "unicorn/no-instanceof-builtins": "warn",
 
-    "oxc/no-barrel-file": "warn",
+    "oxc/no-barrel-file": "error",
     "oxc/no-map-spread": "warn",
     "oxc/branches-sharing-code": "warn",
 

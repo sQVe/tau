@@ -37,8 +37,12 @@ The rule that prevents this kind of accidental breakage was implicit. This ADR m
 
 A source rename never changes an externally observable identifier as a side effect.
 
-An **externally observable identifier** is any string that crosses the process boundary: persisted
-to disk, registered with Pi by name, typed by a user, or discovered by Pi from the filesystem.
+### Definition
+
+An externally observable identifier is any string that crosses the process boundary: persisted to
+disk, registered with Pi by name, typed by a user, or discovered by Pi from the filesystem.
+
+### Rule
 
 A source rename that would cascade into one of these strings stops at the source layer. The external
 string changes only when there is a standalone reason to change it, and the change ships with an

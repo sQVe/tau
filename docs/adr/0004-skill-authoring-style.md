@@ -1,6 +1,6 @@
 # ADR 0004: Skill authoring style
 
-- Status: Approved
+- Status: Accepted
 - Date: 2026-04-10
 
 ## Context
