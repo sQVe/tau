@@ -5,14 +5,13 @@
 
 ## Context
 
-Tau ships Pi skills from `skills/` at the package root, but does not yet state how to write them. Pi
-implements the Agent Skills standard and keeps the SKILL.md body freeform. Without a house style,
-skills drift:
-
-- one reads like prose, another like a command protocol.
-- contributors import Claude Code or Codex conventions Pi does not require.
-- skills duplicate repository policy instead of linking to it.
-- descriptions become too vague for reliable auto-loading.
+- Tau ships Pi skills from `skills/` at the package root but does not yet state how to write them.
+- Pi implements the Agent Skills standard and keeps the SKILL.md body freeform.
+- Without a house style, skills drift:
+  - one reads like prose, another like a command protocol.
+  - contributors import Claude Code or Codex conventions Pi does not require.
+  - skills duplicate repository policy instead of linking to it.
+  - descriptions become too vague for reliable auto-loading.
 
 ## Options considered
 

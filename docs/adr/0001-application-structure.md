@@ -5,8 +5,6 @@
 
 ## Context
 
-Tau needs a layout rule before contributors and extensions multiply. Four pressures:
-
 - `extensions/` sits outside `src/`, leaving "where does application code live" ambiguous.
 - Directory names drift between kebab-case and camelCase with no stated rule.
 - Generic names like `rules/` overload as the codebase grows.
