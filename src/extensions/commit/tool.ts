@@ -40,7 +40,7 @@ export class CommitFailedError extends Error {
   readonly detail: CommitFailure;
 
   constructor(stdout: string, stderr: string) {
-    super('git commit failed');
+    super(`git commit failed: ${(stderr || stdout).trim()}`.trim());
     this.name = 'CommitFailedError';
     this.detail = {
       hookFailed: detectHookFailure(stdout, stderr),

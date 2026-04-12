@@ -348,6 +348,9 @@ describe('commitTool.execute', () => {
     }
 
     expect(thrown).toBeDefined();
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toContain('git commit failed:');
+    expect((thrown as Error).message).toContain('hook said no');
     expect(thrown).toMatchObject({
       detail: {
         hookFailed: true,
