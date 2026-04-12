@@ -270,6 +270,63 @@ describe('commitTool.execute', () => {
     expect(body).toBe('feat: add\n\nLonger explanation here.\n');
   });
 
+  it('refuses to commit when unrelated paths are already staged', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'README.md', 'hello\n');
+    await writeRepoFile(repoDir, 'notes.md', 'keep staged\n');
+    await git(repoDir, ['add', '--', 'notes.md']);
+
+    await expect(
+      executeCommit(repoDir, {
+        files: ['README.md'],
+        subject: 'feat: add readme',
+      }),
+    ).rejects.toThrow(/already staged: notes\.md/i);
+
+    const revListResult = await runCommand('git', ['rev-list', '--all', '--count'], repoDir);
+    expect(revListResult.stdout.trim()).toBe('0');
+  });
+
+  it('refuses to commit when an unrelated staged deletion exists', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'README.md', 'hello\n');
+    await writeRepoFile(repoDir, 'old.md', 'gone\n');
+    await git(repoDir, ['add', '--', 'README.md', 'old.md']);
+    await git(repoDir, ['commit', '-m', 'initial']);
+    await git(repoDir, ['rm', '--', 'old.md']);
+
+    await writeRepoFile(repoDir, 'README.md', 'updated\n');
+
+    await expect(
+      executeCommit(repoDir, {
+        files: ['README.md'],
+        subject: 'feat: update readme',
+      }),
+    ).rejects.toThrow(/already staged: old\.md/i);
+  });
+
+  it('leaves the repo clean when hooks rewrite committed files', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'README.md', 'hello\n');
+    await writeRepoFile(
+      repoDir,
+      '.git/hooks/pre-commit',
+      '#!/bin/sh\nprintf "formatted\\n" > README.md\ngit add -- README.md\n',
+    );
+    await chmod(join(repoDir, '.git/hooks/pre-commit'), 0o755);
+
+    await executeCommit(repoDir, {
+      files: ['README.md'],
+      subject: 'feat: add readme',
+    });
+
+    const statusOutput = await git(repoDir, ['status', '--short']);
+    const committedContent = await git(repoDir, ['show', 'HEAD:README.md']);
+
+    expect(statusOutput).toBe('');
+    expect(committedContent).toBe('formatted\n');
+  });
+
   it('throws structured hook failure details and leaves the temp repo with zero commits when git commit fails', async () => {
     const repoDir = await createTempRepo();
     await writeRepoFile(repoDir, 'README.md', 'hello\n');

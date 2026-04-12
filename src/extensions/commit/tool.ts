@@ -86,6 +86,27 @@ const buildCommitMessage = (subject: string, body?: string) => {
   return subject;
 };
 
+const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
+  const result = await pi.exec(
+    'git',
+    ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
+    {
+      cwd,
+    },
+  );
+
+  if (result.code !== 0) {
+    throw new Error(
+      `git diff --cached --name-only failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
+    );
+  }
+
+  return result.stdout
+    .split('\0')
+    .filter(Boolean)
+    .map((file) => normalizeRepoPath(file));
+};
+
 export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
   defineTool({
     name: 'commit',
@@ -113,6 +134,16 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
         throw new Error('Commit declined by user');
       }
 
+      const requestedFiles = new Set(params.files.map((file) => normalizeRepoPath(file)));
+      const stagedPaths = await listStagedPaths(pi, ctx.cwd);
+      const unrelatedStagedPaths = stagedPaths.filter((file) => !requestedFiles.has(file));
+
+      if (unrelatedStagedPaths.length > 0) {
+        throw new Error(
+          `Cannot commit only the requested files while other paths are already staged: ${unrelatedStagedPaths.join(', ')}`,
+        );
+      }
+
       const addResult = await pi.exec('git', ['add', '--', ...params.files], {
         cwd: ctx.cwd,
       });
@@ -124,8 +155,10 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
 
       const commitResult = await pi.exec(
         'git',
-        ['commit', '-m', buildCommitMessage(params.subject, params.body), '--', ...params.files],
-        { cwd: ctx.cwd },
+        ['commit', '-m', buildCommitMessage(params.subject, params.body)],
+        {
+          cwd: ctx.cwd,
+        },
       );
       if (commitResult.code !== 0) {
         throw new CommitFailedError(commitResult.stdout, commitResult.stderr);
