@@ -22,6 +22,7 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 - Never stage with `git add -A` or `git add .`.
 - Never pass `--no-verify`.
 - Never rewrite history with `--amend`.
+- Do not ask for chat-level confirmation. The `commit` tool's dialog is the only approval step.
 - Every commit subject must use conventional-commit format.
 - Every commit should include a body explaining why the change was made.
 - Stage and commit only the files that belong to the current logical group.
@@ -48,9 +49,7 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
    - Keep each group coherent and reviewable.
    - For each group, prepare a conventional-commit subject and the exact file list.
 
-3. Present the proposed groups, then call the `commit` tool immediately.
-   - List all proposed groups as an informational summary, then proceed to tool calls without
-     pausing. Do not wait for user approval — the `commit` tool has its own confirmation dialog.
+3. Present the proposed groups briefly, then call the `commit` tool immediately.
    - For each group, call the `commit` tool with the file list, subject, and body.
 
 4. If the `commit` tool succeeds, report the result and continue.
@@ -81,7 +80,6 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 - Assigned every pre-staged file to a group or unstaged it.
 - Split changes into logical groups.
 - Proposed each group with exact files, a conventional-commit subject, and a body.
-- Proceeded to tool calls without waiting for user approval of the group list.
 - Used the `commit` tool, not bash, for every commit. The tool handles user confirmation.
 - On failure, checked `git status` before investigating.
 - On `hookFailed`, read `stderr`, fixed the cause, and retried no more than 3 times.
