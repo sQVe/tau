@@ -1,5 +1,7 @@
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 
-const tauExtension = (_pi: ExtensionAPI) => undefined;
+import commitExtension from './commit/index.js';
 
-export default tauExtension;
+export default function tauExtension(pi: ExtensionAPI) {
+  commitExtension(pi);
+}

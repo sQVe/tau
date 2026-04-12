@@ -1,1 +1,1 @@
-vp staged
+vp staged && bash scripts/beads-sync.sh
