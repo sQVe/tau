@@ -88,6 +88,17 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
       validateSubject(params.subject);
       validatePaths(params.files);
 
+      if (!ctx.hasUI) {
+        throw new Error('Cannot commit without user confirmation (non-interactive mode)');
+      }
+
+      const fileList = params.files.map((file) => `  ${file}`).join('\n');
+      const message = params.body != null ? `${fileList}\n\n${params.body}` : fileList;
+      const confirmed = await ctx.ui.confirm(params.subject, message);
+      if (!confirmed) {
+        throw new Error('Commit declined by user');
+      }
+
       const addResult = await pi.exec('git', ['add', '--', ...params.files], {
         cwd: ctx.cwd,
       });

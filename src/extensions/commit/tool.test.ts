@@ -85,6 +85,27 @@ const getStoredCommitMessage = async (repoDir: string): Promise<string> => {
   return commitObject.slice(separatorIndex + 2);
 };
 
+const confirmedContext = (repoDir: string) =>
+  ({
+    cwd: repoDir,
+    hasUI: true,
+    ui: { confirm: () => Promise.resolve(true) },
+  }) as never;
+
+const declinedContext = (repoDir: string) =>
+  ({
+    cwd: repoDir,
+    hasUI: true,
+    ui: { confirm: () => Promise.resolve(false) },
+  }) as never;
+
+const noUiContext = (repoDir: string) =>
+  ({
+    cwd: repoDir,
+    hasUI: false,
+    ui: {},
+  }) as never;
+
 const executeCommit = async (repoDir: string, input: CommitInput) => {
   const commitTool = createCommitTool({
     exec(command: string, args: string[], options?: { cwd?: string }) {
@@ -92,9 +113,7 @@ const executeCommit = async (repoDir: string, input: CommitInput) => {
     },
   });
 
-  return commitTool.execute('tool-call-1', input, undefined, undefined, {
-    cwd: repoDir,
-  } as never);
+  return commitTool.execute('tool-call-1', input, undefined, undefined, confirmedContext(repoDir));
 };
 
 describe('validateSubject', () => {
@@ -143,6 +162,54 @@ describe('validatePaths', () => {
 });
 
 describe('commitTool.execute', () => {
+  it('throws when the user declines the confirmation dialog', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'README.md', 'hello\n');
+
+    const commitTool = createCommitTool({
+      exec(command: string, args: string[], options?: { cwd?: string }) {
+        return runCommand(command, args, options?.cwd ?? repoDir);
+      },
+    });
+
+    await expect(
+      commitTool.execute(
+        'tool-call-1',
+        { files: ['README.md'], subject: 'feat: add thing' },
+        undefined,
+        undefined,
+        declinedContext(repoDir),
+      ),
+    ).rejects.toThrow(/declined/i);
+
+    const revListResult = await runCommand('git', ['rev-list', '--all', '--count'], repoDir);
+    expect(revListResult.stdout.trim()).toBe('0');
+  });
+
+  it('throws in non-interactive mode without attempting to commit', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'README.md', 'hello\n');
+
+    const commitTool = createCommitTool({
+      exec(command: string, args: string[], options?: { cwd?: string }) {
+        return runCommand(command, args, options?.cwd ?? repoDir);
+      },
+    });
+
+    await expect(
+      commitTool.execute(
+        'tool-call-1',
+        { files: ['README.md'], subject: 'feat: add thing' },
+        undefined,
+        undefined,
+        noUiContext(repoDir),
+      ),
+    ).rejects.toThrow(/non-interactive/i);
+
+    const revListResult = await runCommand('git', ['rev-list', '--all', '--count'], repoDir);
+    expect(revListResult.stdout.trim()).toBe('0');
+  });
+
   it('creates exactly one commit in a temp git repo and returns the HEAD sha in details', async () => {
     const repoDir = await createTempRepo();
     await writeRepoFile(repoDir, 'README.md', 'hello\n');

@@ -246,7 +246,7 @@ describe('commitExtension', () => {
       { files: ['README.md'], subject: 'feat: add thing' },
       undefined,
       undefined,
-      { cwd: repoDir } as never,
+      { cwd: repoDir, hasUI: true, ui: { confirm: () => Promise.resolve(true) } } as never,
     );
 
     const commitCountOutput = await git(repoDir, ['rev-list', '--all', '--count']);

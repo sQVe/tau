@@ -22,8 +22,8 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 - Never stage with `git add -A` or `git add .`.
 - Never pass `--no-verify`.
 - Never rewrite history with `--amend`.
-- Always get explicit user confirmation before creating each commit.
 - Every commit subject must use conventional-commit format.
+- Every commit must include a body explaining why the change was made.
 - Stage and commit only the files that belong to the current logical group.
 - The `commit` tool rejects sensitive paths (`.env*`, credentials, keys). Remove rejected files from
   the group instead of retrying.
@@ -40,20 +40,17 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
    - Keep each group coherent and reviewable.
    - For each group, prepare a conventional-commit subject and the exact file list.
 
-3. Present the plan to the user before committing.
-   - Show each proposed group separately.
-   - For each group, include the subject, body, and exact files.
-   - Ask for explicit confirmation for the next commit group before calling the tool.
+3. Present the proposed groups, then call the `commit` tool for each group in order.
+   - Show all proposed groups before starting.
+   - For each group, call the `commit` tool with the file list, subject, and body.
+   - The tool prompts the user for confirmation before committing. Do not ask separately.
 
-4. After the user confirms a group, call the `commit` tool with the confirmed file list, subject,
-   and body.
-
-5. If the `commit` tool succeeds, report the result and continue.
+4. If the `commit` tool succeeds, report the result and continue.
    - Note the created commit.
    - Re-check the working tree as needed.
-   - If more uncommitted groups remain, repeat the proposal and confirmation cycle.
+   - If more uncommitted groups remain, continue calling the tool for the next group.
 
-6. If the `commit` tool fails with `hookFailed`, handle it as an evidence-driven retry loop.
+5. If the `commit` tool fails with `hookFailed`, handle it as an evidence-driven retry loop.
    - Read the `stderr` field carefully.
    - Diagnose the actual failure from the hook output.
    - Fix the underlying issue, such as lint, format, or test failures.
@@ -62,17 +59,17 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
    - Cap retries at 3 for the same group.
    - After 3 failed retries, stop and report the failure to the user instead of pushing through.
 
-7. Continue until done.
+6. Continue until done.
    - Loop until the working tree is clean or the user tells you to stop.
-   - If the user declines a proposed commit, stop or re-plan based on their instructions.
+   - If the user declines a commit in the confirmation dialog, stop or re-plan based on their
+     instructions.
 
 ## Checklist
 
 - Confirmed the current state with `git status --porcelain` and `git diff`.
 - Split changes into logical groups.
-- Proposed each group with exact files and a conventional-commit subject.
-- Got explicit user confirmation before each commit.
-- Used the `commit` tool, not bash, for every commit.
+- Proposed each group with exact files, a conventional-commit subject, and a body.
+- Used the `commit` tool, not bash, for every commit. The tool handles user confirmation.
 - On `hookFailed`, read `stderr`, fixed the cause, and retried no more than 3 times.
 - Stopped when the working tree was clean or the user chose to stop.
 
