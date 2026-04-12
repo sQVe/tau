@@ -121,7 +121,14 @@ describe('guardToolCall', () => {
     });
   });
 
-  it.each(["sh -c 'git commit -m x'", "bash -c 'git commit -m x'"])(
+  it.each([
+    "sh -c 'git commit -m x'",
+    "bash -c 'git commit -m x'",
+    "sh -lc 'git commit -m x'",
+    "bash -lc 'git commit -m x'",
+    "bash -c   'git commit -m x'",
+    "bash -c $'git commit -m x'",
+  ])(
     'blocks shell eval commands containing commit invocations via literal-substring check: %s',
     async (command) => {
       await expect(guardToolCall(makeBashEvent(command))).resolves.toEqual({

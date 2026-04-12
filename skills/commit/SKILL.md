@@ -32,9 +32,11 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 
 1. Gather the current git state before proposing anything.
    - Run `git status --porcelain`.
-   - Run `git diff` and `git diff --cached`. Inspect per-file diffs when the combined diff is
-     unclear.
-   - If there are no relevant changes, tell the user the working tree is clean and stop.
+   - Run `git diff` for unstaged changes and `git diff --cached` for staged changes.
+   - Use the diff output directly to understand what changed. Do not read individual files unless a
+     diff is genuinely ambiguous.
+   - If there are no relevant changes (nothing staged, nothing modified), tell the user the working
+     tree is clean and stop.
 
 2. Identify logical commit groups.
    - Split unrelated changes into separate groups.
