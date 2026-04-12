@@ -145,17 +145,19 @@ describe('guardToolCall', () => {
 });
 
 describe('commitExtension', () => {
-  it("registers the guard in index.ts and does not affect the tool's own git invocations", async () => {
-    const repoDir = await createTempRepo();
-    await writeRepoFile(repoDir, 'README.md', 'hello\n');
+  interface CommandEntry {
+    description?: string;
+    handler: (args: string, ctx: { isIdle(): boolean }) => Promise<void>;
+  }
 
+  const createFakePi = (execFn?: ExtensionAPI['exec']) => {
     let registeredTool: ToolDefinition | undefined;
     const registeredHandlers: Record<string, ((...args: never[]) => unknown)[]> = {};
+    const registeredCommands = new Map<string, CommandEntry>();
+    const sentUserMessages: { content: string; options?: { deliverAs?: string } }[] = [];
 
     const fakePi = {
-      exec(command: string, args: string[], options?: { cwd?: string }) {
-        return runCommand(command, args, options?.cwd ?? repoDir);
-      },
+      exec: execFn ?? (() => Promise.reject(new Error('not wired'))),
       on(eventName: string, handler: (...args: never[]) => unknown) {
         registeredHandlers[eventName] ??= [];
         registeredHandlers[eventName].push(handler);
@@ -163,19 +165,83 @@ describe('commitExtension', () => {
       registerTool(tool: ToolDefinition) {
         registeredTool = tool;
       },
+      registerCommand(name: string, command: CommandEntry) {
+        registeredCommands.set(name, command);
+      },
+      sendUserMessage(content: string, options?: { deliverAs?: string }) {
+        sentUserMessages.push(options == null ? { content } : { content, options });
+      },
     } as unknown as ExtensionAPI;
+
+    return {
+      fakePi,
+      registeredTool: () => registeredTool,
+      registeredHandlers,
+      registeredCommands,
+      sentUserMessages,
+    };
+  };
+
+  it('registers the guard, tool, and command', () => {
+    const { fakePi, registeredTool, registeredHandlers, registeredCommands } = createFakePi();
 
     commitExtension(fakePi);
 
-    expect(registeredTool).toBeDefined();
+    expect(registeredTool()).toBeDefined();
     expect(registeredHandlers.tool_call).toHaveLength(1);
     expect(registeredHandlers.tool_call?.[0]).toBe(guardToolCall);
+    expect(registeredCommands.has('commit')).toBe(true);
+  });
 
-    if (registeredTool == null) {
+  it('sends skill messages with correct deliverAs based on idle state', async () => {
+    const { fakePi, registeredCommands, sentUserMessages } = createFakePi();
+
+    commitExtension(fakePi);
+
+    const commitCommand = registeredCommands.get('commit');
+    if (commitCommand == null) {
+      throw new Error('Expected commit command to be registered');
+    }
+
+    await commitCommand.handler('--scope auth', { isIdle: () => true });
+    await commitCommand.handler('', { isIdle: () => true });
+    await commitCommand.handler('--scope auth', { isIdle: () => false });
+
+    expect(sentUserMessages).toEqual([
+      {
+        content: '/skill:commit --scope auth',
+        options: { deliverAs: 'followUp' },
+      },
+      {
+        content: '/skill:commit',
+        options: { deliverAs: 'followUp' },
+      },
+      {
+        content: '/skill:commit --scope auth',
+        options: { deliverAs: 'steer' },
+      },
+    ]);
+  });
+
+  it("does not affect the tool's own git invocations", async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'README.md', 'hello\n');
+
+    const execFn: ExtensionAPI['exec'] = ((
+      command: string,
+      args: string[],
+      options?: { cwd?: string },
+    ) => runCommand(command, args, options?.cwd ?? repoDir)) as ExtensionAPI['exec'];
+    const { fakePi, registeredTool } = createFakePi(execFn);
+
+    commitExtension(fakePi);
+
+    const tool = registeredTool();
+    if (tool == null) {
       throw new Error('Expected commit tool to be registered');
     }
 
-    const result = await registeredTool.execute(
+    const result = await tool.execute(
       'tool-call-1',
       { files: ['README.md'], subject: 'feat: add thing' },
       undefined,
