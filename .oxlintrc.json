@@ -229,7 +229,7 @@
       }
     },
     {
-      "files": ["src/extensions/**/tool.ts"],
+      "files": ["src/extensions/commit/tool.ts"],
       "rules": {
         "eslint/max-params": "off"
       }

@@ -45,6 +45,32 @@ export const parseBash = async (command: string): Promise<ShellAst> => {
   return tree;
 };
 
+const gitOptionsWithValue = new Set(['-C', '-c']);
+
+const findGitSubcommand = (args: Node[]): string | undefined => {
+  let skipNext = false;
+
+  for (const arg of args) {
+    if (skipNext) {
+      skipNext = false;
+      continue;
+    }
+
+    if (gitOptionsWithValue.has(arg.text)) {
+      skipNext = true;
+      continue;
+    }
+
+    if (arg.text.startsWith('-')) {
+      continue;
+    }
+
+    return arg.text;
+  }
+
+  return undefined;
+};
+
 const isGitCommitCommand = (node: Node) => {
   const [commandName, ...args] = node.namedChildren;
 
@@ -56,7 +82,11 @@ const isGitCommitCommand = (node: Node) => {
     return true;
   }
 
-  return commandName.text === 'git' && args.some((arg) => arg.text === 'commit');
+  if (commandName.text !== 'git') {
+    return false;
+  }
+
+  return findGitSubcommand(args) === 'commit';
 };
 
 const hasAmendFlag = (node: Node) => node.namedChildren.some((child) => child.text === '--amend');

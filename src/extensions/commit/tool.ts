@@ -6,7 +6,7 @@ import { Type } from '@sinclair/typebox';
 import type { CommitFailure, CommitSuccess } from './types.js';
 
 export const conventionalCommitSubjectPattern =
-  /^(feat|fix|chore|refactor|docs|test|style|perf|build|ci|revert)(\([a-z0-9-]+\))?!?: .+/;
+  /^(feat|fix|chore|refactor|docs|test|style|perf|build|ci|revert)(\([a-z0-9-]+\))?!?: [^\r\n]+$/;
 
 export const sensitivePathDenylist = [
   /^\.env$/,
@@ -56,10 +56,24 @@ export const validateSubject = (subject: string) => {
   }
 };
 
+const normalizeRepoPath = (file: string) => file.replaceAll('\\', '/').replace(/^\.\//, '');
+
 export const validatePaths = (files: string[]) => {
-  for (const file of files) {
+  for (const rawFile of files) {
+    const file = normalizeRepoPath(rawFile);
+
+    if (
+      file.length === 0 ||
+      rawFile.startsWith(':') ||
+      rawFile.startsWith('/') ||
+      file.startsWith('../') ||
+      file.includes('/../')
+    ) {
+      throw new Error(`Invalid path: ${rawFile}`);
+    }
+
     if (sensitivePathDenylist.some((pattern) => pattern.test(file))) {
-      throw new Error(`Invalid path: ${file}`);
+      throw new Error(`Invalid path: ${rawFile}`);
     }
   }
 };

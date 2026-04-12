@@ -33,6 +33,8 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 1. Gather the current git state before proposing anything.
    - Run `git status --porcelain`.
    - Run `git diff` for unstaged changes and `git diff --cached` for staged changes.
+   - For untracked files shown by `git status`, read them or run
+     `git diff --no-index /dev/null <file>` to understand their content before grouping.
    - Use the diff output directly to understand what changed. Do not read individual files unless a
      diff is genuinely ambiguous.
    - If there are no relevant changes (nothing staged, nothing modified), tell the user the working

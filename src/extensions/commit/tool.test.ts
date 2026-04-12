@@ -154,6 +154,24 @@ describe('validatePaths', () => {
     }).toThrow(/\.ssh\/config/);
   });
 
+  it('rejects paths with leading dot-slash that would bypass anchored patterns', () => {
+    expect(() => {
+      validatePaths(['./.env']);
+    }).toThrow(/\.env/);
+  });
+
+  it('rejects pathspec syntax and traversal attempts', () => {
+    expect(() => {
+      validatePaths([':(glob)*.ts']);
+    }).toThrow(/Invalid path/);
+    expect(() => {
+      validatePaths(['../etc/passwd']);
+    }).toThrow(/Invalid path/);
+    expect(() => {
+      validatePaths(['/etc/passwd']);
+    }).toThrow(/Invalid path/);
+  });
+
   it('returns without throwing when all files are outside the sensitive denylist', () => {
     expect(() => {
       validatePaths(['src/foo.ts', 'README.md', 'docs/env.md']);
@@ -217,6 +235,7 @@ describe('commitTool.execute', () => {
     const result = await executeCommit(repoDir, {
       files: ['README.md'],
       subject: 'feat: add thing',
+      body: 'Initial project file.',
     });
 
     const shaOutput = await git(repoDir, ['rev-parse', 'HEAD']);

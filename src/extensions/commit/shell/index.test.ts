@@ -88,10 +88,12 @@ describe('findGitCommits', () => {
     });
   });
 
-  it.each(['git log | grep commit', "git log --format='%s' | grep 'commit'"])(
-    'returns an empty array for pipe-to-grep string mentions: %s',
-    async (command) => {
-      await expect(parseAndFindGitCommits(command)).resolves.toEqual([]);
-    },
-  );
+  it.each([
+    'git log | grep commit',
+    "git log --format='%s' | grep 'commit'",
+    'git show commit',
+    'git stash show commit',
+  ])('returns an empty array when commit is not the subcommand: %s', async (command) => {
+    await expect(parseAndFindGitCommits(command)).resolves.toEqual([]);
+  });
 });
