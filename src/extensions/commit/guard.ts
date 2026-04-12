@@ -5,7 +5,7 @@ import { findGitCommits, parseBash } from './shell/index.js';
 
 export const commitGuardReason = 'Blocked git commit via bash. Use the `commit` tool instead.';
 
-const shellEvalPrefixes = ['sh -c', 'bash -c'] as const;
+const shellEvalPrefixes = ['sh -c', 'bash -c', 'sh -lc', 'bash -lc'] as const;
 const shellEvalCommitNeedles = ['git commit', 'git-commit'] as const;
 
 const extractQuotedEvalPayloads = (command: string) => {
@@ -22,9 +22,14 @@ const extractQuotedEvalPayloads = (command: string) => {
       }
 
       const payloadStart = prefixIndex + prefix.length;
-      const quoteIndex = [payloadStart, payloadStart + 1].find(
-        (index) => command[index] === "'" || command[index] === '"',
-      );
+      let cursor = payloadStart;
+      while (/\s/.test(command[cursor] ?? '')) {
+        cursor += 1;
+      }
+      if (command[cursor] === '$') {
+        cursor += 1;
+      }
+      const quoteIndex = command[cursor] === "'" || command[cursor] === '"' ? cursor : undefined;
 
       if (quoteIndex !== undefined) {
         const quote = command[quoteIndex];
@@ -74,6 +79,10 @@ export const guardToolCall = async (
 
     return { block: true, reason: commitGuardReason };
   } catch {
+    if (/\bgit(?:-|\s+)commit\b/i.test(event.input.command)) {
+      return { block: true, reason: commitGuardReason };
+    }
+
     return undefined;
   }
 };

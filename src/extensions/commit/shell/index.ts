@@ -56,7 +56,7 @@ const isGitCommitCommand = (node: Node) => {
     return true;
   }
 
-  return commandName.text === 'git' && args[0]?.text === 'commit';
+  return commandName.text === 'git' && args.some((arg) => arg.text === 'commit');
 };
 
 const hasAmendFlag = (node: Node) => node.namedChildren.some((child) => child.text === '--amend');
@@ -70,20 +70,7 @@ const toGitCommitHit = (node: Node): GitCommitHit => ({
   amend: hasAmendFlag(node),
 });
 
-const nodesThatCanContainCommands = new Set([
-  'program',
-  'list',
-  'pipeline',
-  'command',
-  'command_substitution',
-  'subshell',
-]);
-
 const collectGitCommits = (node: Node, hits: GitCommitHit[]) => {
-  if (!nodesThatCanContainCommands.has(node.type)) {
-    return;
-  }
-
   if (node.type === 'command' && isGitCommitCommand(node)) {
     hits.push(toGitCommitHit(node));
   }

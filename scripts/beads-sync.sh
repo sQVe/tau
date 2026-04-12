@@ -17,4 +17,4 @@ BEADS_JSONL=./beads.jsonl br sync \
   --force \
   --quiet
 
-git add beads.jsonl 2> /dev/null
+git add beads.jsonl 2> /dev/null || true

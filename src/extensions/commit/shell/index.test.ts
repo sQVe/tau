@@ -66,6 +66,12 @@ describe('findGitCommits', () => {
     'echo foo | git commit --allow-empty-message',
     "echo $(git commit -m 'x')",
     "(git commit -m 'x')",
+    "if true; then git commit -m 'x'; fi",
+    "for f in *; do git commit -m 'x'; done",
+    "while true; do git commit -m 'x'; done",
+    "{ git commit -m 'x'; }",
+    "git --no-pager commit -m 'feat: x'",
+    "git -C /tmp commit -m 'feat: x'",
   ])('detects git commit in nested shell forms: %s', async (command) => {
     const hits = await parseAndFindGitCommits(command);
 

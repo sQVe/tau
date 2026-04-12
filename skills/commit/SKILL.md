@@ -23,7 +23,7 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 - Never pass `--no-verify`.
 - Never rewrite history with `--amend`.
 - Every commit subject must use conventional-commit format.
-- Every commit must include a body explaining why the change was made.
+- Every commit should include a body explaining why the change was made.
 - Stage and commit only the files that belong to the current logical group.
 - The `commit` tool rejects sensitive paths (`.env*`, credentials, keys). Remove rejected files from
   the group instead of retrying.
@@ -32,7 +32,8 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 
 1. Gather the current git state before proposing anything.
    - Run `git status --porcelain`.
-   - Run `git diff`. Inspect per-file diffs when the combined diff is unclear.
+   - Run `git diff` and `git diff --cached`. Inspect per-file diffs when the combined diff is
+     unclear.
    - If there are no relevant changes, tell the user the working tree is clean and stop.
 
 2. Identify logical commit groups.
@@ -66,7 +67,7 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 
 ## Checklist
 
-- Confirmed the current state with `git status --porcelain` and `git diff`.
+- Confirmed the current state with `git status --porcelain`, `git diff`, and `git diff --cached`.
 - Split changes into logical groups.
 - Proposed each group with exact files, a conventional-commit subject, and a body.
 - Used the `commit` tool, not bash, for every commit. The tool handles user confirmation.

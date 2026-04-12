@@ -110,7 +110,7 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
 
       const commitResult = await pi.exec(
         'git',
-        ['commit', '-m', buildCommitMessage(params.subject, params.body)],
+        ['commit', '-m', buildCommitMessage(params.subject, params.body), '--', ...params.files],
         { cwd: ctx.cwd },
       );
       if (commitResult.code !== 0) {
