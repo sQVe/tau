@@ -31,7 +31,8 @@
     ]
   },
   "dependencies": {
-    "@sinclair/typebox": "0.34.49"
+    "@sinclair/typebox": "0.34.49",
+    "web-tree-sitter": "0.26.8"
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "^0.66.1"
