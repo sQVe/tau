@@ -4,6 +4,9 @@
 [preserve]
 patterns = [".grove.toml", ".env.local"]
 
+[link]
+patterns = [".beads", ".code-review-graph"]
+
 [hooks]
 add = ["pnpm install"]
 
