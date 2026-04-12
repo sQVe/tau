@@ -227,6 +227,12 @@
         "eslint/no-empty-function": "off",
         "eslint/max-nested-callbacks": "off"
       }
+    },
+    {
+      "files": ["src/extensions/**/tool.ts"],
+      "rules": {
+        "eslint/max-params": "off"
+      }
     }
   ]
 }
