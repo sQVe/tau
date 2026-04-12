@@ -32,6 +32,7 @@
   },
   "dependencies": {
     "@sinclair/typebox": "0.34.49",
+    "proper-lockfile": "4.1.2",
     "web-tree-sitter": "0.26.8"
   },
   "peerDependencies": {
@@ -42,6 +43,7 @@
     "@changesets/cli": "2.30.0",
     "@mariozechner/pi-coding-agent": "^0.66.1",
     "@types/node": "^25.5.0",
+    "@types/proper-lockfile": "4.1.4",
     "oxfmt": "0.43.0",
     "oxlint": "1.59.0",
     "prettier": "3.8.1",
