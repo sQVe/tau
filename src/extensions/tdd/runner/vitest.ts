@@ -1,6 +1,7 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 
 import type {
   ResolveVitestFn,
@@ -38,7 +39,7 @@ interface VitestReport {
   testResults?: VitestTestFile[];
 }
 
-const require_ = createRequire(import.meta.url);
+const nodeRequire = createRequire(import.meta.url);
 
 export const extractBinPath = (pkg: unknown): string | null => {
   if (pkg == null || typeof pkg !== 'object') {
@@ -57,8 +58,8 @@ export const extractBinPath = (pkg: unknown): string | null => {
 
 export const defaultResolveVitest: ResolveVitestFn = (cwd) => {
   try {
-    const pkgPath = require_.resolve('vitest/package.json', { paths: [cwd] });
-    const pkg: unknown = require_(pkgPath);
+    const pkgPath = nodeRequire.resolve('vitest/package.json', { paths: [cwd] });
+    const pkg: unknown = nodeRequire(pkgPath);
     const binRel = extractBinPath(pkg);
     if (binRel == null) {
       return null;
@@ -71,11 +72,12 @@ export const defaultResolveVitest: ResolveVitestFn = (cwd) => {
 
 export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
   new Promise<SpawnResult>((resolve) => {
-    // Run the resolved vitest entry under the current Node runtime so the
-    // timeout path can signal the whole process group (detached + -pid kill).
+    // detached lets the timeout path signal the whole process group on POSIX.
+    // Windows has no equivalent; we fall back to child.kill there.
+    const useProcessGroup = process.platform !== 'win32';
     const child = nodeSpawn(process.execPath, [cmd, ...args], {
       cwd: opts.cwd,
-      detached: true,
+      detached: useProcessGroup,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -84,69 +86,82 @@ export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
     let timedOut = false;
     let bytes = 0;
 
-    const cap = (chunk: Buffer, current: string): string => {
+    const stdoutDecoder = new StringDecoder('utf8');
+    const stderrDecoder = new StringDecoder('utf8');
+
+    const cap = (chunk: Buffer, decoder: StringDecoder, current: string): string => {
       const remaining = MAX_TOTAL_BYTES - bytes;
       if (remaining <= 0) {
         return current;
       }
       const slice = chunk.length > remaining ? chunk.subarray(0, remaining) : chunk;
       bytes += slice.length;
-      return current + slice.toString('utf8');
+      return current + decoder.write(slice);
     };
 
     child.stdout.on('data', (chunk: Buffer) => {
-      stdout = cap(chunk, stdout);
+      stdout = cap(chunk, stdoutDecoder, stdout);
     });
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr = cap(chunk, stderr);
+      stderr = cap(chunk, stderrDecoder, stderr);
     });
 
     const timer = setTimeout(() => {
       timedOut = true;
       try {
-        if (child.pid != null) {
+        if (useProcessGroup && child.pid != null) {
           process.kill(-child.pid, 'SIGKILL');
+        } else {
+          child.kill('SIGKILL');
         }
       } catch {
         child.kill('SIGKILL');
       }
     }, opts.timeoutMs);
+    timer.unref();
 
     child.on('close', (code) => {
       clearTimeout(timer);
+      stdout += stdoutDecoder.end();
+      stderr += stderrDecoder.end();
       resolve({ stdout, stderr, code, timedOut });
     });
     child.on('error', () => {
       clearTimeout(timer);
+      stdout += stdoutDecoder.end();
+      stderr += stderrDecoder.end();
       resolve({ stdout, stderr, code: null, timedOut });
     });
   });
 
-const extractJsonPayload = (stdout: string): string | null => {
-  const lines = stdout.split('\n');
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    if (line?.startsWith('{') ?? false) {
-      return lines.slice(i).join('\n');
-    }
+// Vitest reports always include at least one of these top-level keys.
+// Probe each `{`-at-column-0 candidate to skip preamble lines that incidentally
+// start with `{` (e.g., user console.log output).
+const isVitestReport = (value: unknown): value is VitestReport => {
+  if (value == null || typeof value !== 'object') {
+    return false;
   }
-  return null;
+  const keys = ['numTotalTests', 'numFailedTests', 'testResults', 'numTotalTestSuites'];
+  return keys.some((k) => k in value);
 };
 
 const parseReport = (stdout: string): VitestReport | null => {
-  const payload = extractJsonPayload(stdout);
-  if (payload == null) {
-    return null;
-  }
-  try {
-    const parsed: unknown = JSON.parse(payload);
-    if (parsed != null && typeof parsed === 'object') {
-      return parsed as VitestReport;
+  const lines = stdout.split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lines[i]?.startsWith('{') !== true) {
+      continue;
     }
-    return null;
-  } catch {
-    return null;
+    const candidate = lines.slice(i).join('\n');
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      if (isVitestReport(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // Try the next `{`-at-column-0 line.
+    }
   }
+  return null;
 };
 
 const truncate = (text: string, max: number): string => {
