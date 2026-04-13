@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { CommitInput } from './tool.js';
-import { createCommitTool, validatePaths, validateSubject } from './tool.js';
+import { CommitFailedError, createCommitTool, validatePaths, validateSubject } from './tool.js';
 
 const execFileAsync = promisify(execFile);
 const tempDirs: string[] = [];
@@ -348,6 +348,9 @@ describe('commitTool.execute', () => {
     }
 
     expect(thrown).toBeDefined();
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toContain('git commit failed:');
+    expect((thrown as Error).message).toContain('hook said no');
     expect(thrown).toMatchObject({
       detail: {
         hookFailed: true,
@@ -358,5 +361,16 @@ describe('commitTool.execute', () => {
 
     const revListResult = await runCommand('git', ['rev-list', '--all', '--count'], repoDir);
     expect(revListResult.stdout.trim()).toBe('0');
+  }, 10_000);
+
+  it('falls back to stdout in the error message when stderr is only whitespace', () => {
+    const error = new CommitFailedError('hook output\n', '   \n');
+
+    expect(error.message).toBe('git commit failed: hook output');
+    expect(error.detail).toEqual({
+      hookFailed: true,
+      stdout: 'hook output\n',
+      stderr: '   \n',
+    });
   });
 });
