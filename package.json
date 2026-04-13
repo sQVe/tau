@@ -13,6 +13,7 @@
     "changeset:check": "changeset status --since=origin/main",
     "changeset:version": "changeset version",
     "check": "pnpm typecheck && pnpm lint && pnpm lint:rules && pnpm format:check && pnpm test",
+    "release:github": "pnpm changeset tag",
     "dev": "echo 'tau: dev entrypoint not implemented yet'",
     "format": "vp fmt && prettier --write .",
     "format:check": "vp fmt --check && prettier --check .",
@@ -39,6 +40,7 @@
   },
   "devDependencies": {
     "@ast-grep/cli": "0.42.0",
+    "@changesets/changelog-github": "0.6.0",
     "@changesets/cli": "2.30.0",
     "@mariozechner/pi-coding-agent": "^0.66.1",
     "@types/node": "^25.5.0",
