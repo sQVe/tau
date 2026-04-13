@@ -316,7 +316,7 @@ export const createWorkspaceState = (
       };
 
       // The runtime contract is concrete; the generic parameter is caller-facing type information.
-      // eslint-disable-next-line typescript-eslint/no-unsafe-type-assertion
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
       return namespaceApi as WorkspaceNamespace<T>;
     },
   };
