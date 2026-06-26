@@ -5,7 +5,7 @@
 patterns = [".grove.toml", ".env.local"]
 
 [link]
-patterns = [".beads", ".code-review-graph"]
+patterns = [".beads"]
 
 [hooks]
 add = ["pnpm install"]
