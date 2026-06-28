@@ -1,8 +1,10 @@
 # AI
 .beads
 .beads/
-.code-review-graph
-.code-review-graph/
+graphify-out/manifest.json
+graphify-out/cache/
+graphify-out/cost.json
+graphify-out/graph.html
 
 # Dependencies
 node_modules/
