@@ -47,9 +47,9 @@ discovery is disabled (`noExtensions`, `noSkills`, `noPromptTemplates`, `noTheme
 
 ### Pinning
 
-`@mariozechner/pi-ai` is a devDependency pinned to the version pi-coding-agent resolves. The
-provider registry is a module-level singleton, so two copies of pi-ai mean the session cannot find
-the faux provider.
+`@mariozechner/pi-ai` is a devDependency whose range matches the one pi-coding-agent declares, so
+both resolve to a single copy. The provider registry is a module-level singleton, and two copies of
+pi-ai mean the session cannot find the faux provider.
 
 ## Tradeoffs
 

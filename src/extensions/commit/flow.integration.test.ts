@@ -73,7 +73,7 @@ const createScriptedUI = (
   confirmCalls: { title: string; message: string }[],
   answer: boolean,
 ): ExtensionUIContext => {
-  const target = {
+  const target: Record<string | symbol, unknown> = {
     confirm: (title: string, message: string) => {
       confirmCalls.push({ title, message });
       return Promise.resolve(answer);
@@ -81,8 +81,7 @@ const createScriptedUI = (
   };
 
   const scriptedUI = new Proxy(target, {
-    get: (object, property) =>
-      property in object ? Reflect.get(object, property) : () => undefined,
+    get: (object, property) => object[property] ?? (() => undefined),
   });
 
   // The proxy satisfies the ExtensionUIContext surface at runtime by returning no-ops.
