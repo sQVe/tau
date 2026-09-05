@@ -135,6 +135,7 @@ const readEnvelopeFromDisk = async (
   deps: WorkspaceStateDependencies,
   statePath: string,
   backupPath: string,
+  locked = false,
 ): Promise<WorkspaceStateEnvelope> => {
   try {
     const raw = await deps.readFile(statePath, 'utf8');
@@ -142,6 +143,9 @@ const readEnvelopeFromDisk = async (
     try {
       return normalizeEnvelope(JSON.parse(raw));
     } catch (error) {
+      if (!locked) {
+        throw error;
+      }
       await quarantineCorruptState(deps, statePath, backupPath);
 
       if (error instanceof WorkspaceStateVersionError) {
@@ -247,7 +251,6 @@ export const createWorkspaceState = (
 
   const withWriteLock = async <T>(operation: () => Promise<T>): Promise<T> => {
     await deps.mkdir(stateDir, { recursive: true });
-    await sweepStaleOnce();
 
     const release = await deps.lock(statePath, {
       lockfilePath: lockPath,
@@ -258,6 +261,7 @@ export const createWorkspaceState = (
     });
 
     try {
+      await sweepStaleOnce();
       return await operation();
     } finally {
       await release();
@@ -265,7 +269,16 @@ export const createWorkspaceState = (
   };
 
   const getNamespaceValue = async (name: string): Promise<JsonObject> => {
-    const envelope = await readEnvelopeFromDisk(deps, statePath, backupPath);
+    let envelope: WorkspaceStateEnvelope;
+    try {
+      envelope = await readEnvelopeFromDisk(deps, statePath, backupPath);
+    } catch (error) {
+      if (!(error instanceof SyntaxError || error instanceof WorkspaceStateVersionError)) {
+        throw error;
+      }
+      // A writer may have repaired the file since our unlocked read.
+      envelope = await withWriteLock(() => readEnvelopeFromDisk(deps, statePath, backupPath, true));
+    }
     const value = envelope.namespaces[name];
 
     return value === undefined ? {} : cloneJsonValue(value);
@@ -277,7 +290,7 @@ export const createWorkspaceState = (
     }
 
     await withWriteLock(async () => {
-      const envelope = await readEnvelopeFromDisk(deps, statePath, backupPath);
+      const envelope = await readEnvelopeFromDisk(deps, statePath, backupPath, true);
       envelope.namespaces[name] = cloneJsonValue(value);
       await writeEnvelope(deps, stateDir, statePath, envelope);
     });
@@ -288,7 +301,7 @@ export const createWorkspaceState = (
     partialOrUpdater: JsonObject | ((current: JsonObject) => JsonObject),
   ): Promise<void> => {
     await withWriteLock(async () => {
-      const envelope = await readEnvelopeFromDisk(deps, statePath, backupPath);
+      const envelope = await readEnvelopeFromDisk(deps, statePath, backupPath, true);
       const storedValue = envelope.namespaces[name];
       const current = storedValue === undefined ? {} : cloneJsonValue(storedValue);
       const partial =

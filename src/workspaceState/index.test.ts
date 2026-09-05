@@ -1,8 +1,9 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import * as lockfile from 'proper-lockfile';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createWorkspaceState, WorkspaceStateVersionError } from './index.js';
 
@@ -29,6 +30,50 @@ const writeStateFile = async (root: string, content: string): Promise<void> => {
 };
 
 describe('createWorkspaceState', () => {
+  it('re-reads under lock before quarantining state that another writer repaired', async () => {
+    const root = await createTempRoot();
+    await writeStateFile(root, '{bad');
+    const writer = createWorkspaceState(root);
+    const readerDeps = { readFile };
+    vi.spyOn(readerDeps, 'readFile').mockImplementationOnce(async () => {
+      const stale = await readFile(statePath(root), 'utf8');
+      await writer.namespace('commit').set({ value: 'repaired' });
+      return stale;
+    });
+    const reader = createWorkspaceState(root, readerDeps);
+    await expect(reader.namespace('commit').get()).resolves.toEqual({ value: 'repaired' });
+    await expect(readFile(statePath(root), 'utf8')).resolves.toContain('repaired');
+    await expect(readFile(backupPath(root), 'utf8')).resolves.toBe('{bad');
+  });
+
+  it("does not sweep another writer's active temporary file while waiting for its lock", async () => {
+    const root = await createTempRoot();
+    const ready = Promise.withResolvers<undefined>();
+    const proceed = Promise.withResolvers<undefined>();
+    const writer = createWorkspaceState(root, {
+      rename: async (from, to) => {
+        ready.resolve(undefined);
+        await proceed.promise;
+        await rename(from, to);
+      },
+    });
+    const firstWrite = writer.namespace('first').set({ value: 1 });
+    await ready.promise;
+    const contender = createWorkspaceState(root, {
+      lock: (file, options) => {
+        proceed.resolve(undefined);
+        return lockfile.lock(file, options);
+      },
+    });
+    const results = await Promise.allSettled([
+      firstWrite,
+      contender.namespace('second').set({ value: 2 }),
+    ]);
+    expect(results.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled']);
+    await expect(contender.namespace('first').get()).resolves.toEqual({ value: 1 });
+    await expect(contender.namespace('second').get()).resolves.toEqual({ value: 2 });
+  });
+
   it('returns an empty object for a fresh namespace when no state file exists', async () => {
     const root = await createTempRoot();
     const workspaceState = createWorkspaceState(root);
