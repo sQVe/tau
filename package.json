@@ -18,7 +18,8 @@
     "lint:rules": "ast-grep scan",
     "prepare": "vp config",
     "test": "vp test",
-    "typecheck": "pnpm exec tsc --noEmit"
+    "typecheck": "pnpm exec tsc --noEmit",
+    "release:github": "pnpm changeset tag"
   },
   "dependencies": {
     "@sinclair/typebox": "0.34.52",
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@ast-grep/cli": "0.45.3",
+    "@changesets/changelog-github": "0.6.0",
     "@changesets/cli": "3.0.2",
     "@mariozechner/pi-coding-agent": "^0.66.1",
     "@types/node": "24.13.3",
