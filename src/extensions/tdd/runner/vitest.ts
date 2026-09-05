@@ -100,7 +100,8 @@ export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
     };
 
     child.stdout.on('data', (chunk: Buffer) => {
-      stdout = cap(chunk, stdoutDecoder, stdout);
+      // The JSON report must remain complete; bound failure messages after parsing.
+      stdout += stdoutDecoder.write(chunk);
     });
     child.stderr.on('data', (chunk: Buffer) => {
       stderr = cap(chunk, stderrDecoder, stderr);
@@ -207,11 +208,17 @@ const collectFailures = (report: VitestReport): { failures: TestFailure[]; trunc
   return { failures, truncated };
 };
 
-const buildArgs = (input: RunTestsInput): string[] => {
+const buildArgs = (input: RunTestsInput): string[] | null => {
   const args = ['run', '--reporter=json', '--no-color'];
-  if (input.scope === 'file' && input.path != null) {
+  if (input.scope === 'file') {
+    if (input.path == null || input.path.length === 0) {
+      return null;
+    }
     args.push(input.path);
-  } else if (input.scope === 'changed' && input.files != null) {
+  } else if (input.scope === 'changed') {
+    if (input.files == null || input.files.length === 0) {
+      return null;
+    }
     args.push(...input.files);
   }
   if (input.filter != null) {
@@ -227,6 +234,11 @@ export const defaultDeps = (): RunnerDeps => ({
 });
 
 export const runVitest = async (input: RunTestsInput, deps: RunnerDeps): Promise<RunnerResult> => {
+  const args = buildArgs(input);
+  if (args == null) {
+    return { kind: 'no-tests-collected' };
+  }
+
   const bin = deps.resolveVitest(input.cwd);
   if (bin == null) {
     return {
@@ -235,7 +247,7 @@ export const runVitest = async (input: RunTestsInput, deps: RunnerDeps): Promise
     };
   }
 
-  const result = await deps.spawn(bin, buildArgs(input), {
+  const result = await deps.spawn(bin, args, {
     cwd: input.cwd,
     timeoutMs: deps.timeoutMs,
   });

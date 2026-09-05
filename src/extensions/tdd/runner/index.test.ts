@@ -1,9 +1,13 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { runTests } from './index.js';
-import type { RunnerDeps, SpawnFn, SpawnResult } from './types.js';
-import { MAX_ASSERTION_BYTES, MAX_FAILURES } from './types.js';
-import { extractBinPath } from './vitest.js';
+import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js';
+import { MAX_ASSERTION_BYTES, MAX_FAILURES, MAX_TOTAL_BYTES } from './types.js';
+import { defaultSpawn, extractBinPath } from './vitest.js';
 
 const fakeSpawn =
   (result: Partial<SpawnResult>): SpawnFn =>
@@ -24,6 +28,43 @@ const makeDeps = (overrides: Partial<RunnerDeps>): RunnerDeps => ({
 });
 
 describe('runTests', () => {
+  it.each<RunTestsInput>([
+    { scope: 'changed', cwd: '/repo' },
+    { scope: 'changed', cwd: '/repo', files: [] },
+    { scope: 'file', cwd: '/repo' },
+    { scope: 'file', cwd: '/repo', path: '' },
+  ])('returns no-tests-collected without spawning for an empty scope: %j', async (input) => {
+    const deps = makeDeps({
+      spawn: () => {
+        throw new Error('must not spawn a full suite for an empty scope');
+      },
+    });
+
+    expect(await runTests(input, deps)).toEqual({ kind: 'no-tests-collected' });
+  });
+
+  it('preserves a passing JSON report larger than the diagnostic output cap', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
+    try {
+      const script = join(cwd, 'report.cjs');
+      const report = {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        testResults: [{ name: 'x'.repeat(MAX_TOTAL_BYTES * 2), status: 'passed' }],
+      };
+      await writeFile(
+        script,
+        `process.stderr.write('x'.repeat(${MAX_TOTAL_BYTES * 2}));\n` +
+          `process.stdout.write(${JSON.stringify(JSON.stringify(report))});\n`,
+      );
+      const deps = makeDeps({ resolveVitest: () => script, spawn: defaultSpawn });
+
+      expect(await runTests({ scope: 'all', cwd }, deps)).toEqual({ kind: 'pass', total: 1 });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('returns runner-missing when vitest cannot be resolved', async () => {
     const deps = makeDeps({ resolveVitest: () => null });
 
