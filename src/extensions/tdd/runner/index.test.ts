@@ -28,6 +28,57 @@ const makeDeps = (overrides: Partial<RunnerDeps>): RunnerDeps => ({
 });
 
 describe('runTests', () => {
+  it('caps file-loading failures and marks omitted diagnostics as truncated', async () => {
+    const deps = makeDeps({
+      spawn: fakeSpawn({
+        code: 1,
+        stdout: JSON.stringify({
+          numTotalTests: 0,
+          numFailedTests: 0,
+          testResults: Array.from({ length: MAX_FAILURES + 1 }, (_, i) => ({
+            name: `file${i}.test.ts`,
+            status: 'failed',
+            message: 'load error',
+            assertionResults: [],
+          })),
+        }),
+      }),
+    });
+    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    if (result.kind !== 'fail') throw new Error(`expected fail, got ${result.kind}`);
+    expect(result.failures).toHaveLength(MAX_FAILURES);
+    expect(result.truncated).toBe(true);
+  });
+
+  it('returns no-tests-collected when every collected test was skipped', async () => {
+    const deps = makeDeps({
+      spawn: fakeSpawn({
+        stdout: JSON.stringify({
+          numTotalTests: 1,
+          numPassedTests: 0,
+          numFailedTests: 0,
+          testResults: [{ status: 'passed', assertionResults: [{ status: 'pending' }] }],
+        }),
+      }),
+    });
+    expect(await runTests({ scope: 'all', cwd: '/repo', filter: 'unmatched' }, deps)).toEqual({
+      kind: 'no-tests-collected',
+    });
+  });
+
+  it('rejects a nonzero exit even when every reported test passed', async () => {
+    const deps = makeDeps({
+      spawn: fakeSpawn({
+        code: 1,
+        stderr: 'Unhandled rejection',
+        stdout: JSON.stringify({ numTotalTests: 1, numPassedTests: 1, numFailedTests: 0 }),
+      }),
+    });
+    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    expect(result.kind).toBe('compile-error');
+    expect(result).toHaveProperty('stderr', 'Unhandled rejection');
+  });
+
   it.each<RunTestsInput>([
     { scope: 'changed', cwd: '/repo' },
     { scope: 'changed', cwd: '/repo', files: [] },

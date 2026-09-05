@@ -181,6 +181,9 @@ const collectFailures = (report: VitestReport): { failures: TestFailure[]; trunc
       file.status === 'failed' &&
       (file.assertionResults == null || file.assertionResults.length === 0)
     ) {
+      if (failures.length >= MAX_FAILURES) {
+        return { failures, truncated: true };
+      }
       failures.push({
         file: file.name ?? '<unknown>',
         fullname: '<file>',
@@ -300,7 +303,16 @@ export const runVitest = async (input: RunTestsInput, deps: RunnerDeps): Promise
     };
   }
 
-  if (total === 0) {
+  if (result.code !== 0) {
+    return {
+      kind: 'compile-error',
+      message: 'vitest did not complete successfully',
+      stdout: result.stdout,
+      stderr: result.stderr,
+    };
+  }
+
+  if (total === 0 || report.numPassedTests === 0) {
     return { kind: 'no-tests-collected' };
   }
 
