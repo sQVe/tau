@@ -354,10 +354,11 @@ describe('commitTool.execute', () => {
     expect(thrown).toMatchObject({
       detail: {
         hookFailed: true,
-        stderr: expect.stringContaining('hook said no'),
-        stdout: expect.any(String),
       },
     });
+
+    expect(thrown).toHaveProperty('detail.stderr', expect.stringContaining('hook said no'));
+    expect(thrown).toHaveProperty('detail.stdout', expect.any(String));
 
     const revListResult = await runCommand('git', ['rev-list', '--all', '--count'], repoDir);
     expect(revListResult.stdout.trim()).toBe('0');

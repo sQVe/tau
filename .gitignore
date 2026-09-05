@@ -1,17 +1,10 @@
-# AI
-.beads
-.beads/
-graphify-out/manifest.json
-graphify-out/cache/
-graphify-out/cost.json
-graphify-out/graph.html
-
 # Dependencies
 node_modules/
 
 # Build
 dist/
 coverage/
+.tau/
 
 # Environment
 .env*

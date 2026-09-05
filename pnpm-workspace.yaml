@@ -1,0 +1,5 @@
+onlyBuiltDependencies:
+  - '@ast-grep/cli'
+
+overrides:
+  vite: npm:@voidzero-dev/vite-plus-core@0.3.0

@@ -1,33 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
-import { Language, Parser } from 'web-tree-sitter';
+import { describe, expect, it } from 'vitest';
 
-import { findGitCommits, parseBash } from './index.js';
+import { parseBash } from '../../shell/index.js';
+import { findGitCommits } from './shell.js';
 
 const parseAndFindGitCommits = async (command: string) => findGitCommits(await parseBash(command));
-
-describe('parseBash', () => {
-  it('lazily initializes and reuses a shared parser singleton', async () => {
-    const initSpy = vi.spyOn(Parser, 'init');
-    const loadSpy = vi.spyOn(Language, 'load');
-
-    try {
-      await Promise.all([parseBash('echo hello'), parseBash('printf ok')]);
-
-      expect(initSpy).toHaveBeenCalledTimes(1);
-      expect(loadSpy).toHaveBeenCalledTimes(1);
-    } finally {
-      initSpy.mockRestore();
-      loadSpy.mockRestore();
-    }
-  });
-
-  it('returns a tree-sitter AST for a simple command string', async () => {
-    const ast = await parseBash('echo hello');
-
-    expect(ast.rootNode.type).toBe('program');
-    expect(ast.rootNode.childCount).toBeGreaterThan(0);
-  });
-});
 
 describe('findGitCommits', () => {
   it.each([

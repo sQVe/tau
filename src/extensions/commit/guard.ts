@@ -1,7 +1,8 @@
 import { isToolCallEventType } from '@mariozechner/pi-coding-agent';
 import type { ToolCallEvent, ToolCallEventResult } from '@mariozechner/pi-coding-agent';
 
-import { findGitCommits, parseBash } from './shell/index.js';
+import { parseBash } from '../../shell/index.js';
+import { findGitCommits } from './shell.js';
 
 export const commitGuardReason = 'Blocked git commit via bash. Use the `commit` tool instead.';
 
@@ -73,7 +74,13 @@ export const guardToolCall = async (
 
   try {
     const ast = await parseBash(event.input.command);
-    if (findGitCommits(ast).length === 0) {
+    let hits: number;
+    try {
+      hits = findGitCommits(ast).length;
+    } finally {
+      ast.delete();
+    }
+    if (hits === 0) {
       return undefined;
     }
 

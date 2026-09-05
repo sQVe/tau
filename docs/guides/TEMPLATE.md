@@ -1,29 +1,29 @@
-# Guide: Short title
+# Task or topic
 
-- Status: Draft | Active | Superseded
-- Last updated: YYYY-MM-DD
+Explain what this guide helps the reader do. Keep relevant context beside the instructions.
 
-## Use this when
-
-One sentence describing the trigger. Who and why, not what.
+<!-- Keep the purpose, instructions, and how to recognize success.
+Use numbered steps only when order matters. No status field is needed for a guide. -->
 
 ## Before you start
 
-Non-obvious prerequisites only. Omit when none exist.
+List prerequisites the reader needs, such as tools, credentials, or a working checkout. Omit this
+section when there are none.
 
-- token or credential required
-- ADR-NNNN worth reading first
+## Instructions
 
-## Steps
+Describe the actions and include runnable commands where useful. State which directory to run them
+from. Replace this heading with task-specific headings such as "Local setup" or "Versioning".
 
-1. First step.
-2. Second step.
-3. Third step.
+## Verify the result
 
-## Common mistakes
+Explain how the reader can tell the task succeeded. This can live beside the relevant instruction
+instead of in a separate section.
 
-Real failure modes observed in practice. Omit when the steps are unambiguous.
+## Troubleshooting
+
+Include known failure modes and fixes. Omit this section when there are none.
 
 ## See also
 
-- [ADR-NNNN](../adr/NNNN-slug.md)
+<!-- Optional. Link to related guides, decisions, or rules without repeating them. -->
