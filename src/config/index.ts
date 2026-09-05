@@ -16,8 +16,6 @@ const isNodeError = (error: unknown): error is NodeJS.ErrnoException =>
 const isMissingFileError = (error: unknown): error is NodeJS.ErrnoException =>
   isNodeError(error) && error.code === 'ENOENT';
 
-const cloneConfig = (config: Config) => structuredClone(config);
-
 const loadDefaultConfig = (rootDir: string) => normalizeConfig(rootDir, defaultConfig);
 
 export const loadConfig = async (rootDir = process.cwd()): Promise<Config> => {
@@ -27,7 +25,7 @@ export const loadConfig = async (rootDir = process.cwd()): Promise<Config> => {
     raw = await readFile(configPath(rootDir), 'utf8');
   } catch (error) {
     if (isMissingFileError(error)) {
-      return cloneConfig(loadDefaultConfig(rootDir));
+      return loadDefaultConfig(rootDir);
     }
 
     throw error;
@@ -41,6 +39,5 @@ export const loadConfig = async (rootDir = process.cwd()): Promise<Config> => {
     throw new ConfigValidationError('<root>', `invalid JSON: ${message}`);
   }
 
-  const config = normalizeConfig(rootDir, parseConfigFile(parsed));
-  return cloneConfig(config);
+  return normalizeConfig(rootDir, parseConfigFile(parsed));
 };

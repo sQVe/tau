@@ -39,7 +39,7 @@ const normalizeGlobPattern = (pattern: string) =>
   pattern
     .trim()
     .replaceAll('\\', '/')
-    .replace(/\/{2,}/g, '/')
+    .replace(/(?!^)\/{2,}/g, '/')
     .replace(/^(?:\.\/)+/, '');
 
 const normalizeAbsoluteGlob = (rootDir: string, pattern: string) => {
@@ -50,6 +50,12 @@ const normalizeAbsoluteGlob = (rootDir: string, pattern: string) => {
 };
 
 const dedupe = (patterns: string[]) => [...new Set(patterns)];
+
+const rejectBlankGlobs = (field: string, patterns: string[]) => {
+  if (patterns.some((pattern) => pattern.length === 0)) {
+    throw new ConfigValidationError(field, 'blank glob');
+  }
+};
 
 const fieldFromPath = (path: string) => {
   if (path.length === 0 || path === '/') {
@@ -117,6 +123,8 @@ export const normalizeConfig = (rootDir: string, input: ConfigFileInput): Config
   if (rawTests.length === 0) {
     throw new ConfigValidationError('tests', 'must contain at least one glob');
   }
+  rejectBlankGlobs('production', rawProduction);
+  rejectBlankGlobs('tests', rawTests);
   validateOverlap(rawProduction, rawTests);
 
   return {

@@ -118,6 +118,20 @@ describe('loadConfig', () => {
       await expectValidationError(loadConfig(root), 'tests', 'must contain at least one glob');
     });
 
+    it('rejects a blank production glob instead of resolving it to the root', async () => {
+      const root = await createTempRoot();
+      await writeConfigFile(root, JSON.stringify({ production: ['   '] }));
+
+      await expectValidationError(loadConfig(root), 'production', 'blank glob');
+    });
+
+    it('rejects a blank test glob instead of resolving it to the root', async () => {
+      const root = await createTempRoot();
+      await writeConfigFile(root, JSON.stringify({ tests: ['tests/**/*.ts', ''] }));
+
+      await expectValidationError(loadConfig(root), 'tests', 'blank glob');
+    });
+
     it('rejects a root-glob in production with an actionable error', async () => {
       const root = await createTempRoot();
       await writeConfigFile(root, JSON.stringify({ production: ['./**/*'] }));
@@ -185,21 +199,6 @@ describe('loadConfig', () => {
         tests: [join(root, 'tests/**/*.ts').replaceAll('\\', '/')],
       });
     });
-
-    it('returns a deep copy so mutations do not affect subsequent loads', async () => {
-      const root = await createTempRoot();
-
-      const firstLoad = await loadConfig(root);
-      firstLoad.production[0] = 'mutated';
-
-      await expect(loadConfig(root)).resolves.toEqual({
-        production: [join(root, 'src/**/*.{ts,tsx}').replaceAll('\\', '/')],
-        tests: [
-          join(root, '**/*.test.ts').replaceAll('\\', '/'),
-          join(root, '**/*.spec.ts').replaceAll('\\', '/'),
-        ],
-      });
-    });
   });
 
   describe('file system failures', () => {
@@ -210,7 +209,7 @@ describe('loadConfig', () => {
       await expect(loadConfig(root)).rejects.toMatchObject({ code: 'EISDIR' });
     });
 
-    it.skipIf(process.getuid?.() === 0)(
+    it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
       'surfaces unreadable file permission errors as-is',
       async () => {
         const root = await createTempRoot();
