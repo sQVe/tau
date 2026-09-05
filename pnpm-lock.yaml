@@ -30,6 +30,9 @@ importers:
       '@changesets/cli':
         specifier: 3.0.2
         version: 3.0.2
+      '@mariozechner/pi-ai':
+        specifier: 0.66.1
+        version: 0.66.1(ws@8.20.0)(zod@4.3.6)
       '@mariozechner/pi-coding-agent':
         specifier: ^0.66.1
         version: 0.66.1(ws@8.20.0)(zod@4.3.6)
@@ -610,6 +613,7 @@ packages:
   '@mariozechner/pi-ai@0.66.1':
     resolution: {integrity: sha512-7IZHvpsFdKEBkTmjNrdVL7JLUJVIpha6bwTr12cZ5XyDrxij06wP6Ncpnf4HT5BXAzD5w2JnoqTOSbMEIZj3dg==}
     engines: {node: '>=20.0.0'}
+    deprecated: please use @earendil-works/pi-ai instead going forward
     hasBin: true
 
   '@mariozechner/pi-coding-agent@0.66.1':
