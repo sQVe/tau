@@ -18,8 +18,7 @@
     "lint:rules": "ast-grep scan",
     "prepare": "vp config",
     "test": "vp test",
-    "typecheck": "pnpm exec tsc --noEmit",
-    "test:smoke": "vp test tests/package.test.ts"
+    "typecheck": "pnpm exec tsc --noEmit"
   },
   "dependencies": {
     "@sinclair/typebox": "0.34.52",
@@ -32,8 +31,6 @@
     "@mariozechner/pi-coding-agent": "^0.66.1",
     "@types/node": "24.13.3",
     "@types/proper-lockfile": "4.1.4",
-    "oxfmt": "0.66.0",
-    "oxlint": "1.81.0",
     "typescript": "7.0.2",
     "vite-plus": "0.3.0",
     "vitest": "4.1.11"

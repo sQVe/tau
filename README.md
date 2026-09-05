@@ -30,9 +30,9 @@ pnpm install --frozen-lockfile
 pnpm check
 ```
 
-`pnpm check` runs TypeScript, lint, declaration-order rules, formatting, and all tests. Use
-`pnpm format` to format files and `pnpm test:smoke` to check package loading through Pi. Pi loads
-the TypeScript source directly; there is no build step.
+`pnpm check` runs TypeScript, lint, declaration-order rules, formatting, and all tests, including
+package loading through Pi. Use `pnpm format` to format files. Pi loads the TypeScript source
+directly; there is no build step.
 
 To try Tau in an interactive Pi session from this checkout:
 
@@ -52,10 +52,8 @@ Vitest adapter; phase enforcement and the `run_tests` tool are not wired into Pi
 
 ## Maintenance
 
-Linting and formatting are configured in `vite.config.ts`. The Oxlint and Oxfmt overrides select the
-updated versions throughout Vite+. Keep the direct Vitest version aligned with Vite+'s bundled
-version and the override in `pnpm-workspace.yaml`; the TDD adapter resolves Vitest from the target
-project.
+Linting and formatting are configured in `vite.config.ts`. Keep the direct Vitest version aligned
+with Vite+'s bundled version; the TDD adapter resolves Vitest from the target project.
 
 Tau is private. Changesets opens version PRs; the workflow does not publish to npm. Add a changeset
 with `pnpm changeset` for user-facing changes. CI requires one for changes under `src/`, `skills/`,
