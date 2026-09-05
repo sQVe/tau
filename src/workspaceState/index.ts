@@ -60,6 +60,47 @@ const isPlainObject = (value: unknown): value is JsonObject =>
 
 const cloneJsonValue = <T>(value: T): T => structuredClone(value);
 
+const describeJsonViolation = (value: unknown): string | null => {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
+    return null;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? null : String(value);
+  }
+  if (Array.isArray(value) || isPlainObject(value)) {
+    return null;
+  }
+  return typeof value === 'object' ? Object.prototype.toString.call(value) : typeof value;
+};
+
+const assertJsonCompatible = (value: unknown, path: string[] = [], seen = new Set<unknown>()) => {
+  const violation = describeJsonViolation(value);
+  if (violation !== null) {
+    const location = path.length === 0 ? 'root' : JSON.stringify(path.join('.'));
+    throw new TypeError(
+      `Workspace state value at ${location} is not JSON-compatible: ${violation}`,
+    );
+  }
+  if (typeof value !== 'object' || value === null) {
+    return;
+  }
+  if (seen.has(value)) {
+    throw new TypeError('Workspace state values must not contain cycles');
+  }
+  seen.add(value);
+  for (const [key, child] of Object.entries(value)) {
+    assertJsonCompatible(child, [...path, key], seen);
+  }
+  seen.delete(value);
+};
+
+// Namespace names such as "__proto__" or "toString" must never resolve through Object.prototype.
+const createNamespaceMap = (entries: [string, JsonObject][]): Record<string, JsonObject> => {
+  const namespaces: Record<string, JsonObject> = Object.fromEntries(entries);
+  Object.setPrototypeOf(namespaces, null);
+  return namespaces;
+};
+
 const buildVersionError = (received: string) =>
   new WorkspaceStateVersionError(
     `Unsupported workspace state version: expected ${workspaceStateVersion}, received ${received}`,
@@ -93,13 +134,13 @@ const normalizeEnvelope = (raw: unknown): WorkspaceStateEnvelope => {
 
   return {
     version: workspaceStateVersion,
-    namespaces: Object.fromEntries(namespaceEntries),
+    namespaces: createNamespaceMap(namespaceEntries),
   };
 };
 
 const createEmptyEnvelope = (): WorkspaceStateEnvelope => ({
   version: workspaceStateVersion,
-  namespaces: {},
+  namespaces: createNamespaceMap([]),
 });
 
 const statePaths = (rootDir: string) => {
@@ -288,6 +329,7 @@ export const createWorkspaceState = (
     if (!isPlainObject(value)) {
       throw new TypeError('Workspace state values must be plain objects');
     }
+    assertJsonCompatible(value);
 
     await withWriteLock(async () => {
       const envelope = await readEnvelopeFromDisk(deps, statePath, backupPath, true);
@@ -310,6 +352,7 @@ export const createWorkspaceState = (
       if (!isPlainObject(partial)) {
         throw new TypeError('Workspace state patches must be plain objects');
       }
+      assertJsonCompatible(partial);
 
       envelope.namespaces[name] = {
         ...current,

@@ -2,9 +2,9 @@ import { Type } from '@sinclair/typebox';
 import type { Static } from '@sinclair/typebox';
 
 export interface WorkspaceNamespace<T extends Record<string, unknown> = Record<string, unknown>> {
-  get(): Promise<T>;
+  get(): Promise<Partial<T>>;
   set(value: T): Promise<void>;
-  patch(partial: Partial<T> | ((current: T) => Partial<T>)): Promise<void>;
+  patch(partial: Partial<T> | ((current: Partial<T>) => Partial<T>)): Promise<void>;
 }
 
 export interface WorkspaceState {

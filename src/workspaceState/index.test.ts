@@ -167,7 +167,7 @@ describe('createWorkspaceState', () => {
       [0, 1].map(() =>
         Array.from({ length: 100 }).reduce(
           (promise: Promise<void>) =>
-            promise.then(() => counter.patch((current) => ({ count: current.count + 1 }))),
+            promise.then(() => counter.patch((current) => ({ count: (current.count ?? 0) + 1 }))),
           Promise.resolve(),
         ),
       ),
@@ -236,8 +236,44 @@ describe('createWorkspaceState', () => {
     await namespace.set({ nested: { count: 1 } });
 
     const firstRead = await namespace.get();
+    if (firstRead.nested === undefined) throw new Error('expected stored value');
     firstRead.nested.count = 99;
 
     await expect(namespace.get()).resolves.toEqual({ nested: { count: 1 } });
+  });
+
+  it('rejects nested values that cannot survive a JSON round-trip', async () => {
+    const root = await createTempRoot();
+    const workspaceState = createWorkspaceState(root);
+    const namespace = workspaceState.namespace('commit');
+
+    await expect(namespace.set({ value: undefined })).rejects.toThrow(
+      new TypeError('Workspace state value at "value" is not JSON-compatible: undefined'),
+    );
+    await expect(namespace.set({ nested: { count: Number.NaN } })).rejects.toBeInstanceOf(
+      TypeError,
+    );
+    await expect(namespace.set({ when: new Date(0) })).rejects.toBeInstanceOf(TypeError);
+    await expect(namespace.set({ callback: () => undefined })).rejects.toBeInstanceOf(TypeError);
+    await expect(namespace.patch({ big: 1n })).rejects.toBeInstanceOf(TypeError);
+    await expect(namespace.patch(() => ({ items: [1, undefined] }))).rejects.toBeInstanceOf(
+      TypeError,
+    );
+    await expect(namespace.get()).resolves.toEqual({});
+  });
+
+  it('stores namespaces whose names collide with Object.prototype properties', async () => {
+    const root = await createTempRoot();
+    const workspaceState = createWorkspaceState(root);
+
+    await workspaceState.namespace('__proto__').set({ count: 1 });
+    await workspaceState.namespace('constructor').patch({ count: 2 });
+
+    await expect(workspaceState.namespace('__proto__').get()).resolves.toEqual({ count: 1 });
+    await expect(workspaceState.namespace('constructor').get()).resolves.toEqual({ count: 2 });
+    await expect(workspaceState.namespace('toString').get()).resolves.toEqual({});
+    await expect(createWorkspaceState(root).namespace('__proto__').get()).resolves.toEqual({
+      count: 1,
+    });
   });
 });
