@@ -1,9 +1,3 @@
-# AI
-.beads
-.beads/
-.code-review-graph
-.code-review-graph/
-
 # Dependencies
 node_modules/
 
