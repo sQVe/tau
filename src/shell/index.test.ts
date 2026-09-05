@@ -18,9 +18,7 @@ describe('parseBash', () => {
   });
 
   it('throws a clear error when the parser returns null', async () => {
-    const parseSpy = vi
-      .spyOn(Parser.prototype, 'parse')
-      .mockReturnValueOnce(null as unknown as ReturnType<Parser['parse']>);
+    const parseSpy = vi.spyOn(Parser.prototype, 'parse').mockReturnValueOnce(null);
 
     try {
       await expect(parseBash('echo hi')).rejects.toThrow(/failed to parse/i);

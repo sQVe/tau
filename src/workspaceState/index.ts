@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import * as lockfile from 'proper-lockfile';
 
-import { workspaceStateEnvelopeSchema, workspaceStateVersion } from './types.js';
+import { workspaceStateVersion } from './types.js';
 import type { WorkspaceNamespace, WorkspaceState, WorkspaceStateEnvelope } from './types.js';
 
 export { workspaceStateEnvelopeSchema, workspaceStateVersion } from './types.js';

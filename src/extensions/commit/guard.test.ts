@@ -234,11 +234,11 @@ describe('commitExtension', () => {
     const repoDir = await createTempRepo();
     await writeRepoFile(repoDir, 'README.md', 'hello\n');
 
-    const execFn: ExtensionAPI['exec'] = ((
+    const execFn: ExtensionAPI['exec'] = (
       command: string,
       args: string[],
       options?: { cwd?: string },
-    ) => runCommand(command, args, options?.cwd ?? repoDir)) as ExtensionAPI['exec'];
+    ) => runCommand(command, args, options?.cwd ?? repoDir);
     const { fakePi, registeredTool } = createFakePi(execFn);
 
     commitExtension(fakePi);
