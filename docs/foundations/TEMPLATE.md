@@ -1,7 +1,6 @@
 # Foundation: Short title
 
 - Status: Draft | Active | Superseded
-- Last updated: YYYY-MM-DD
 
 ## The idea
 

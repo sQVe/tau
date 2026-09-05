@@ -1,7 +1,5 @@
 # Policies
 
-- Last updated: 2026-04-11
-
 Policies define normative rules that contributors and tooling must follow.
 
 ## When to write one
@@ -20,7 +18,7 @@ Do not write a policy for architecture decisions, step-by-step tutorials, or tem
 
 Every policy follows the [template](./TEMPLATE.md).
 
-Required sections: Status, Last updated, Applies to, Rules, Exceptions, Enforcement.
+Required sections: Status, Applies to, Rules, Exceptions, Enforcement.
 
 Optional sections: Examples, See also.
 

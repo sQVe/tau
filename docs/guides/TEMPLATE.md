@@ -1,7 +1,6 @@
 # Guide: Short title
 
 - Status: Draft | Active | Superseded
-- Last updated: YYYY-MM-DD
 
 ## Use this when
 

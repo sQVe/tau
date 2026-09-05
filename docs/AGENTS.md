@@ -1,7 +1,5 @@
 # Writing docs in this directory
 
-- Last updated: 2026-04-11
-
 Rules for any agent (or human) writing or editing files under `docs/`.
 
 ## Pick the doc type first
@@ -22,8 +20,7 @@ If the doc answers two of these questions, split it.
 - One `## See also` section for cross-links. Never "Related ADRs", "Related policies", "References".
 - Inline Markdown links only. No reference-style.
 - Language tag on every code block.
-- Frontmatter list uses `Status` and `Date` (ADR) or `Last updated` (others). No `Owner`, no
-  `Deciders`.
+- Frontmatter list uses `Status`, plus `Date` for ADRs. No `Owner` or `Deciders`.
 
 ## Writing rules
 

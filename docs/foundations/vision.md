@@ -1,7 +1,6 @@
 # Foundation: Vision
 
 - Status: Active
-- Last updated: 2026-04-09
 
 ## The idea
 

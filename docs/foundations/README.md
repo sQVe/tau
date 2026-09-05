@@ -1,7 +1,5 @@
 # Foundations
 
-- Last updated: 2026-04-11
-
 Foundations capture durable project direction, philosophy, and conceptual scope.
 
 ## When to write one
@@ -20,7 +18,7 @@ Do not write a foundation for concrete technical decisions, normative rules, or 
 
 Every foundation follows the [template](./TEMPLATE.md).
 
-Required sections: Status, Last updated, The idea, Principles, In scope, Out of scope.
+Required sections: Status, The idea, Principles, In scope, Out of scope.
 
 Optional sections: See also.
 

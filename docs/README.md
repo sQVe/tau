@@ -1,7 +1,5 @@
 # Documentation
 
-- Last updated: 2026-04-11
-
 Tau documentation is organized by document type. Each type has one job.
 
 ## Structure

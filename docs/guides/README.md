@@ -1,7 +1,5 @@
 # Guides
 
-- Last updated: 2026-04-11
-
 Guides explain how to use workflows, tools, and project conventions in practice.
 
 ## When to write one
@@ -20,7 +18,7 @@ task.
 
 Every guide follows the [template](./TEMPLATE.md).
 
-Required sections: Status, Last updated, Use this when, Steps.
+Required sections: Status, Use this when, Steps.
 
 Optional sections: Before you start, Common mistakes, See also.
 

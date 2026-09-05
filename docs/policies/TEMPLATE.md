@@ -1,7 +1,6 @@
 # Policy: Short title
 
 - Status: Draft | Active | Superseded
-- Last updated: YYYY-MM-DD
 
 ## Applies to
 
