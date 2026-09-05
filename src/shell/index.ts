@@ -29,7 +29,10 @@ const loadParser = async () => {
 };
 
 const getParser = () => {
-  parserPromise ??= loadParser();
+  parserPromise ??= loadParser().catch((error: unknown) => {
+    parserPromise = undefined;
+    throw error;
+  });
   return parserPromise;
 };
 

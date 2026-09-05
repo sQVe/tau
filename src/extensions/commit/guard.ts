@@ -74,7 +74,13 @@ export const guardToolCall = async (
 
   try {
     const ast = await parseBash(event.input.command);
-    if (findGitCommits(ast).length === 0) {
+    let hits: number;
+    try {
+      hits = findGitCommits(ast).length;
+    } finally {
+      ast.delete();
+    }
+    if (hits === 0) {
       return undefined;
     }
 
