@@ -10,5 +10,5 @@ Start with the [template](./TEMPLATE.md). See [writing docs](../AGENTS.md) for s
 - [0002: File and directory naming conventions](./0002-file-naming-conventions.md)
 - [0003: Stability of externally observable identifiers](./0003-externally-observable-identifiers.md)
 - [0004: Skill authoring style](./0004-skill-authoring-style.md)
-- [0006: Workspace state namespacing](./0006-workspace-state-namespacing.md)
-- [0007: Integration testing against a real pi session](./0007-integration-testing-with-pi.md)
+- [0005: Workspace state namespacing](./0005-workspace-state-namespacing.md)
+- [0006: Integration testing against a real pi session](./0006-integration-testing-with-pi.md)

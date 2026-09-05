@@ -1,4 +1,4 @@
-# ADR 0007: Integration testing against a real pi session
+# ADR 0006: Integration testing against a real pi session
 
 - Status: Proposed
 - Date: 2026-09-05
