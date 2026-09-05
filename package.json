@@ -8,6 +8,7 @@
   ],
   "type": "module",
   "scripts": {
+    "build": "echo 'tau: no build step required yet'",
     "changeset": "changeset",
     "changeset:check": "changeset status --since=origin/main",
     "changeset:version": "changeset version",
