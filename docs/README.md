@@ -1,26 +1,8 @@
 # Documentation
 
-Tau documentation is organized by document type. Each type has one job.
+- [Vision](./foundations/vision.md): project direction and scope.
+- [Development](./guides/development.md): local setup, trying Tau, verification, and current status.
+- [Maintenance](./guides/maintenance.md): tooling and versioning.
+- [Architecture decisions](./adr/README.md): technical choices and their tradeoffs.
 
-## Structure
-
-- [adr/](./adr/README.md) — architecture decision records.
-- [policies/](./policies/README.md) — normative rules and standards.
-- [guides/](./guides/README.md) — how-to documentation.
-- [foundations/](./foundations/README.md) — vision, philosophy, and scope.
-
-## Choosing a doc type
-
-| Type       | Answers                                  |
-| ---------- | ---------------------------------------- |
-| ADR        | What did we decide, and why?             |
-| Policy     | What is required, allowed, and enforced? |
-| Guide      | How do I do this?                        |
-| Foundation | What is Tau trying to be?                |
-
-## Templates
-
-- [ADR template](./adr/TEMPLATE.md)
-- [Policy template](./policies/TEMPLATE.md)
-- [Guide template](./guides/TEMPLATE.md)
-- [Foundation template](./foundations/TEMPLATE.md)
+See [writing docs](./AGENTS.md) when adding or updating documentation.

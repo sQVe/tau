@@ -1,27 +1,8 @@
 # Guides
 
-Guides explain how to use workflows, tools, and project conventions in practice.
+Guides explain how to complete tasks and check the results.
 
-## When to write one
+- [Development](./development.md): setup, trying Tau, verification, and current status.
+- [Maintenance](./maintenance.md): tooling and versioning.
 
-Write a guide for how-to documentation, onboarding material, and worked workflow walkthroughs.
-
-Do not write a guide for architecture decisions, normative policies, or temporary notes tied to one
-task.
-
-## Naming
-
-- Short lowercase kebab-case: `developer-workflows.md`.
-- One focused guide per file.
-
-## Required format
-
-Every guide follows the [template](./TEMPLATE.md).
-
-Required sections: Status, Use this when, Steps.
-
-Optional sections: Before you start, Common mistakes, See also.
-
-## Current guides
-
-_No guides yet._
+Use the [template](./TEMPLATE.md) as a starting point. Adapt headings to the task.

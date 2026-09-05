@@ -1,27 +1,7 @@
 # Foundations
 
-Foundations capture durable project direction, philosophy, and conceptual scope.
+Foundations describe project direction, principles, and scope.
 
-## When to write one
+- [Vision](./vision.md): project direction and scope.
 
-Write a foundation for vision, core philosophy, and the principles that shape ADRs and policies
-downstream.
-
-Do not write a foundation for concrete technical decisions, normative rules, or step-by-step guides.
-
-## Naming
-
-- Short lowercase kebab-case: `vision.md`.
-- One topic per file.
-
-## Required format
-
-Every foundation follows the [template](./TEMPLATE.md).
-
-Required sections: Status, The idea, Principles, In scope, Out of scope.
-
-Optional sections: See also.
-
-## Current foundations
-
-- [vision](./vision.md)
+Use the [template](./TEMPLATE.md) as a starting point for a new foundation.

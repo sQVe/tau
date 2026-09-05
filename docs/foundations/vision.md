@@ -4,10 +4,12 @@
 
 ## The idea
 
-Tau is a strict workflow layer on top of Pi. Pi provides the agent runtime, tools, and execution
-substrate; Tau provides the process. Work happens in explicit phases, each phase has required
-outputs, advancement requires evidence, and completion requires verification. Tau enforces method
-instead of recommending it.
+Tau aims to enforce a repeatable development workflow on top of Pi. Pi runs the agent and its tools;
+Tau controls when work can advance. Each phase requires evidence before the next begins. For TDD,
+that means observing a failing test before implementation and a passing test afterward.
+
+This is the intended direction. See [development](../guides/development.md#current-status) for what
+works today.
 
 ## Principles
 
@@ -36,4 +38,5 @@ instead of recommending it.
 
 ## See also
 
+- [Development and current status](../guides/development.md#current-status)
 - [Documentation index](../README.md)

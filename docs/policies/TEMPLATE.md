@@ -1,34 +1,32 @@
 # Policy: Short title
 
-- Status: Draft | Active | Superseded
+- Status: Draft
+
+<!-- Keep status, applicability, rules, enforcement, and whether exceptions are allowed.
+Use Active for rules in effect or Superseded when replaced. -->
 
 ## Applies to
 
-State what this policy governs and where it reaches in one sentence.
+State who or what must follow this policy and when it applies.
 
 ## Rules
 
-- **Must** do X.
-- **Must not** do Y.
-- **May** do Z.
-
-## Examples
-
-Show good and bad pairs when they clarify a rule. Omit when the rules are self-explanatory.
-
-```diff
-- bad
-+ good
-```
-
-## Exceptions
-
-Name who may grant exceptions and under what condition.
+State requirements directly with "must" and "must not". Use "may" for permissions only where the
+permission needs stating. Link to an ADR for rationale instead of repeating it.
 
 ## Enforcement
 
-State where the policy is enforced: CI, pre-commit, review, tooling.
+Describe how the rules are checked today, such as CI, tooling, or review. Identify requirements that
+rely on contributor judgment; do not imply automation exists when it does not.
+
+## Exceptions
+
+State whether exceptions are allowed and, if so, who can approve them and under what conditions.
+
+## Examples
+
+Add examples only where they clarify a rule. Omit this section when the rules are sufficient.
 
 ## See also
 
-- [ADR-NNNN](../adr/NNNN-slug.md)
+<!-- Optional. Link to related decisions or guides. If superseded, link to the replacement. -->

@@ -1,32 +1,8 @@
 # Architecture decision records
 
-ADRs capture durable technical decisions and the tradeoffs behind them.
+ADRs record technical decisions whose consequences outlive the change that introduced them.
 
-## When to write one
-
-Write an ADR for architecture choices, technical tradeoffs, and decisions whose consequences outlive
-the PR that introduced them.
-
-Do not write an ADR for general guidance, contributor instructions, normative policies, or temporary
-notes.
-
-## Approval
-
-ADRs may be drafted before approval, but they must not be marked `Accepted` until the project owner
-approves them explicitly.
-
-## Naming
-
-- `NNNN-short-kebab-case.md`.
-- Numbers are zero-padded and chronological.
-
-## Required format
-
-Every ADR follows the [template](./TEMPLATE.md).
-
-Required sections: Status, Date, Context, Options considered, Decision, Tradeoffs.
-
-Optional sections: See also.
+Start with the [template](./TEMPLATE.md). See [writing docs](../AGENTS.md) for shared conventions.
 
 ## Index
 

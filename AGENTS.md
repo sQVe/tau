@@ -1,7 +1,7 @@
 # Tau
 
-Pi extensions and skills. Read [README.md](README.md) for local setup and the current feature
-status.
+Pi extensions and skills. Read [the development guide](docs/guides/development.md) for local setup
+and current feature status.
 
 - Run `pnpm check` before finishing changes. It includes typechecking, lint, formatting, and tests.
   Tests use temporary directories and need no model API.
