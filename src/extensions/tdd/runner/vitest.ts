@@ -107,6 +107,20 @@ export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
       stderr = cap(chunk, stderrDecoder, stderr);
     });
 
+    let settled = false;
+    const settle = (code: number | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      stdout += stdoutDecoder.end();
+      stderr += stderrDecoder.end();
+      resolve({ stdout, stderr, code, timedOut });
+    };
+
+    // Settle here rather than waiting for `close`: on Windows only the direct child dies,
+    // and a descendant holding the piped stdio would keep `close` pending forever.
     const timer = setTimeout(() => {
       timedOut = true;
       try {
@@ -118,20 +132,13 @@ export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
       } catch {
         child.kill('SIGKILL');
       }
+      settle(null);
     }, opts.timeoutMs);
     timer.unref();
 
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      stdout += stdoutDecoder.end();
-      stderr += stderrDecoder.end();
-      resolve({ stdout, stderr, code, timedOut });
-    });
+    child.on('close', settle);
     child.on('error', () => {
-      clearTimeout(timer);
-      stdout += stdoutDecoder.end();
-      stderr += stderrDecoder.end();
-      resolve({ stdout, stderr, code: null, timedOut });
+      settle(null);
     });
   });
 

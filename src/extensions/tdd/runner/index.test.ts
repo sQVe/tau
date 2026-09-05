@@ -116,6 +116,26 @@ describe('runTests', () => {
     }
   });
 
+  it('settles the timeout even when a descendant keeps the piped stdio open', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
+    try {
+      const script = join(cwd, 'hang.cjs');
+      await writeFile(
+        script,
+        "const { spawn } = require('node:child_process');\n" +
+          "spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'inherit' }).unref();\n" +
+          'setTimeout(() => {}, 60000);\n',
+      );
+      const deps = makeDeps({ resolveVitest: () => script, spawn: defaultSpawn, timeoutMs: 200 });
+
+      const started = Date.now();
+      expect(await runTests({ scope: 'all', cwd }, deps)).toEqual({ kind: 'timeout' });
+      expect(Date.now() - started).toBeLessThan(5_000);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('returns runner-missing when vitest cannot be resolved', async () => {
     const deps = makeDeps({ resolveVitest: () => null });
 
