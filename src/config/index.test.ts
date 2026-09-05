@@ -111,6 +111,13 @@ describe('loadConfig', () => {
       await expectValidationError(loadConfig(root), 'production', 'must contain at least one glob');
     });
 
+    it('rejects an empty test glob list with an actionable error', async () => {
+      const root = await createTempRoot();
+      await writeConfigFile(root, JSON.stringify({ tests: [] }));
+
+      await expectValidationError(loadConfig(root), 'tests', 'must contain at least one glob');
+    });
+
     it('rejects a root-glob in production with an actionable error', async () => {
       const root = await createTempRoot();
       await writeConfigFile(root, JSON.stringify({ production: ['./**/*'] }));

@@ -114,6 +114,9 @@ export const normalizeConfig = (rootDir: string, input: ConfigFileInput): Config
   const rawTests = dedupe((input.tests ?? defaultConfig.tests).map(normalizeGlobPattern));
 
   validateProduction(rawProduction);
+  if (rawTests.length === 0) {
+    throw new ConfigValidationError('tests', 'must contain at least one glob');
+  }
   validateOverlap(rawProduction, rawTests);
 
   return {
