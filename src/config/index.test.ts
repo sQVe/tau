@@ -152,6 +152,20 @@ describe('loadConfig', () => {
       await expectValidationError(loadConfig(root), ['tests', 'production'], /shared literal glob/);
     });
 
+    it('rejects an absolute glob so scans stay inside the workspace', async () => {
+      const root = await createTempRoot();
+      await writeConfigFile(root, JSON.stringify({ production: ['/tmp/**/*.ts'] }));
+
+      await expectValidationError(loadConfig(root), 'production', /outside the workspace/);
+    });
+
+    it('rejects a glob that escapes the workspace through parent segments', async () => {
+      const root = await createTempRoot();
+      await writeConfigFile(root, JSON.stringify({ tests: ['../other/**/*.test.ts'] }));
+
+      await expectValidationError(loadConfig(root), 'tests', /outside the workspace/);
+    });
+
     it('rejects unknown top-level keys via the strict schema', async () => {
       const root = await createTempRoot();
       await writeConfigFile(root, JSON.stringify({ extra: true }));

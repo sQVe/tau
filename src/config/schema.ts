@@ -42,9 +42,14 @@ const normalizeGlobPattern = (pattern: string) =>
     .replace(/(?!^)\/{2,}/g, '/')
     .replace(/^(?:\.\/)+/, '');
 
-const normalizeAbsoluteGlob = (rootDir: string, pattern: string) => {
+const normalizeAbsoluteGlob = (field: string, rootDir: string, pattern: string) => {
   const normalized = normalizeGlobPattern(pattern);
-  const absolute = isAbsolute(normalized) ? normalize(normalized) : resolve(rootDir, normalized);
+  const root = resolve(rootDir);
+  const absolute = isAbsolute(normalized) ? normalize(normalized) : resolve(root, normalized);
+
+  if (absolute !== root && !absolute.startsWith(root + sep)) {
+    throw new ConfigValidationError(field, `glob resolves outside the workspace: ${pattern}`);
+  }
 
   return absolute.split(sep).join('/');
 };
@@ -128,8 +133,10 @@ export const normalizeConfig = (rootDir: string, input: ConfigFileInput): Config
   validateOverlap(rawProduction, rawTests);
 
   return {
-    production: rawProduction.map((pattern) => normalizeAbsoluteGlob(rootDir, pattern)),
-    tests: rawTests.map((pattern) => normalizeAbsoluteGlob(rootDir, pattern)),
+    production: rawProduction.map((pattern) =>
+      normalizeAbsoluteGlob('production', rootDir, pattern),
+    ),
+    tests: rawTests.map((pattern) => normalizeAbsoluteGlob('tests', rootDir, pattern)),
   };
 };
 
