@@ -16,7 +16,11 @@ export interface CommitView {
 export const confirmCommitOverlay = async (
   ctx: ExtensionContext,
   view: CommitView,
+  signal?: AbortSignal,
 ): Promise<CommitChoice> => {
+  if (signal?.aborted) {
+    return 'abort';
+  }
   const options = {
     overlay: true,
     overlayOptions: {
@@ -28,6 +32,10 @@ export const confirmCommitOverlay = async (
     },
   } as const;
   const choice = await ctx.ui.custom<CommitChoice | undefined>((tui, theme, _keybindings, done) => {
+    const onAbort = () => {
+      done('abort');
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
     const container = new Container();
     container.addChild(new DynamicBorder((text) => theme.fg('accent', text)));
     container.addChild(
@@ -82,6 +90,9 @@ export const confirmCommitOverlay = async (
       render: (width) => container.render(width),
       invalidate: () => {
         container.invalidate();
+      },
+      dispose: () => {
+        signal?.removeEventListener('abort', onAbort);
       },
       handleInput(data) {
         if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl('c'))) {

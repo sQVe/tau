@@ -504,6 +504,35 @@ describe('commit overlay flow', () => {
     expect(custom).not.toHaveBeenCalled();
   });
 
+  it('returns cancelled and unstages when aborted while the overlay is open', async () => {
+    const controller = new AbortController();
+    const { execute, exec, custom } = fakeCommit([]);
+    custom.mockImplementation(
+      (factory) =>
+        new Promise<string | undefined>((resolve) => {
+          void factory(
+            { requestRender: () => {} } as never,
+            { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
+            {} as never,
+            (result: unknown) => {
+              resolve(typeof result === 'string' ? result : undefined);
+            },
+          );
+          controller.abort();
+        }),
+    );
+
+    const result = await execute(controller.signal);
+
+    expect(result.content[0]).toEqual({ type: 'text', text: 'Commit cancelled' });
+    expect(exec).toHaveBeenCalledWith('git', ['reset', '--', 'README.md'], { cwd: '/repo' });
+    expect(exec).not.toHaveBeenCalledWith(
+      'git',
+      expect.arrayContaining(['commit']),
+      expect.anything(),
+    );
+  });
+
   it('unstages without opening UI if cancelled while staging', async () => {
     const controller = new AbortController();
     const { execute, exec, custom } = fakeCommit(['approve']);

@@ -119,4 +119,34 @@ describe('confirmCommitOverlay', () => {
     const { ctx } = setup([]);
     expect(await confirmCommitOverlay(ctx, view)).toBe('abort');
   });
+
+  it('resolves abort when the signal aborts while the overlay is open', async () => {
+    const controller = new AbortController();
+    const done = vi.fn<(result: unknown) => void>();
+    const custom = vi.fn<
+      (factory: Parameters<ExtensionContext['ui']['custom']>[0]) => Promise<unknown>
+    >(async (factory) => {
+      const component = await factory(
+        { requestRender: vi.fn<() => void>() } as never,
+        { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
+        {} as never,
+        done,
+      );
+      controller.abort();
+      component.dispose?.();
+      controller.abort();
+      return done.mock.lastCall?.[0];
+    });
+    const ctx = { ui: { custom } } as unknown as ExtensionContext;
+
+    expect(await confirmCommitOverlay(ctx, view, controller.signal)).toBe('abort');
+    expect(done).toHaveBeenCalledExactlyOnceWith('abort');
+  });
+
+  it('returns abort without opening the overlay when the signal is already aborted', async () => {
+    const { ctx, custom } = setup(['a']);
+
+    expect(await confirmCommitOverlay(ctx, view, AbortSignal.abort())).toBe('abort');
+    expect(custom).not.toHaveBeenCalled();
+  });
 });

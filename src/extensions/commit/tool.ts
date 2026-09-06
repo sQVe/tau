@@ -206,13 +206,17 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
           if (signal?.aborted) {
             return cancelled();
           }
-          const choice = await confirmCommitOverlay(ctx, {
-            subject,
-            body,
-            files,
-            ...(params.group !== undefined ? { group: params.group } : {}),
-            notice,
-          });
+          const choice = await confirmCommitOverlay(
+            ctx,
+            {
+              subject,
+              body,
+              files,
+              ...(params.group !== undefined ? { group: params.group } : {}),
+              notice,
+            },
+            signal,
+          );
           notice = '';
           if (signal?.aborted) {
             return cancelled();
