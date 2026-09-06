@@ -360,6 +360,45 @@ describe('commitTool.execute', () => {
     expect(revListResult.stdout.trim()).toBe('0');
   });
 
+  it('commits when the working directory is a subdirectory of the repository', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'sub/a.txt', 'hello\n');
+
+    const commitTool = createCommitTool({
+      exec(command: string, args: string[], options?: { cwd?: string }) {
+        return runCommand(command, args, options?.cwd ?? repoDir);
+      },
+    });
+
+    await commitTool.execute(
+      'tool-call-1',
+      { files: ['a.txt'], subject: 'feat: add a' },
+      undefined,
+      undefined,
+      confirmedContext(join(repoDir, 'sub')),
+    );
+
+    expect((await git(repoDir, ['rev-list', '--all', '--count'])).trim()).toBe('1');
+    expect((await git(repoDir, ['show', '--name-only', '--format=', 'HEAD'])).trim()).toBe(
+      'sub/a.txt',
+    );
+  });
+
+  it('restores the index when staging pulls in files alongside a requested one', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'src/a.ts', 'export const a = 1;\n');
+    await writeRepoFile(repoDir, 'src/b.ts', 'export const b = 2;\n');
+
+    await expect(
+      executeCommit(repoDir, {
+        files: ['src/a.ts', 'src'],
+        subject: 'feat: add sources',
+      }),
+    ).rejects.toThrow(/staged paths that were not requested/i);
+
+    expect(await git(repoDir, ['diff', '--cached', '--name-only'])).toBe('');
+  });
+
   it('refuses to commit when staging a named path pulls in files it did not name', async () => {
     const repoDir = await createTempRepo();
     await writeRepoFile(repoDir, 'src/a.ts', 'export const a = 1;\n');
@@ -371,6 +410,8 @@ describe('commitTool.execute', () => {
         subject: 'feat: add sources',
       }),
     ).rejects.toThrow(/staged paths that were not requested/i);
+
+    expect(await git(repoDir, ['diff', '--cached', '--name-only'])).toBe('');
 
     const revListResult = await runCommand('git', ['rev-list', '--all', '--count'], repoDir);
     expect(revListResult.stdout.trim()).toBe('0');
@@ -493,13 +534,14 @@ describe('commit overlay flow', () => {
     expect(previews[0]).toContain('commit 1/2');
     expect(previews[0]).toContain('README.md +2 -1');
     expect(previews[0]).toContain('image.png binary');
-    expect(exec.mock.calls.slice(0, 4).map((call) => call[1])).toEqual([
+    expect(exec.mock.calls.slice(0, 5).map((call) => call[1])).toEqual([
+      ['rev-parse', '--show-prefix'],
       ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
       ['--literal-pathspecs', 'add', '--', 'README.md'],
       ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
       ['diff', '--cached', '--numstat', '--no-renames', '-z', '--', 'README.md'],
     ]);
-    expect(exec.mock.invocationCallOrder[3]).toBeLessThan(custom.mock.invocationCallOrder[0] ?? 0);
+    expect(exec.mock.invocationCallOrder[4]).toBeLessThan(custom.mock.invocationCallOrder[0] ?? 0);
   });
 
   it('commits subject and body edits and returns the edited details', async () => {

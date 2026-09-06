@@ -123,6 +123,19 @@ const unstageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: 
   }
 };
 
+// git reports staged paths from the repository root, so requested paths need the same base before
+// the two can be compared. Empty when cwd is already the root.
+const repoPathPrefix = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
+  const result = await pi.exec('git', ['rev-parse', '--show-prefix'], { cwd });
+  if (result.code !== 0) {
+    throw new Error(
+      `git rev-parse --show-prefix failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
+    );
+  }
+
+  return result.stdout.trim();
+};
+
 const stagedNumstat = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   cwd: string,
@@ -178,7 +191,10 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
         return cancelled();
       }
 
-      const requestedFiles = new Set(params.files.map((file) => normalizeRepoPath(file)));
+      const prefix = await repoPathPrefix(pi, ctx.cwd);
+      const requestedFiles = new Set(
+        params.files.map((file) => normalizeRepoPath(`${prefix}${file}`)),
+      );
       const stagedPaths = await listStagedPaths(pi, ctx.cwd);
       const unrelatedStagedPaths = stagedPaths.filter((file) => !requestedFiles.has(file));
 
@@ -189,22 +205,22 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
       }
 
       await stageFiles(pi, ctx.cwd, params.files);
-
-      // A directory argument stages everything beneath it, so verify what landed rather than
-      // trusting that each argument named one file. Unstage only what this call added, so staging
-      // the caller did beforehand survives.
-      const pathsAfterAdd = await listStagedPaths(pi, ctx.cwd);
-      const unrequestedPaths = pathsAfterAdd.filter((file) => !requestedFiles.has(file));
-
-      if (unrequestedPaths.length > 0) {
-        await unstageFiles(pi, ctx.cwd, unrequestedPaths);
-        throw new Error(
-          `Staging ${params.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}. They have been unstaged.`,
-        );
-      }
-
       let approved = false;
       try {
+        // A directory argument stages everything beneath it, so verify what landed rather than
+        // trusting that each argument named one file. Anything extra came from this call's add, so
+        // it sits under cwd and the prefix strips back off.
+        const unrequestedPaths = (await listStagedPaths(pi, ctx.cwd))
+          .filter((file) => !requestedFiles.has(file))
+          .map((file) => file.slice(prefix.length));
+
+        if (unrequestedPaths.length > 0) {
+          await unstageFiles(pi, ctx.cwd, unrequestedPaths);
+          throw new Error(
+            `Staging ${params.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}`,
+          );
+        }
+
         const files = await stagedNumstat(pi, ctx.cwd, params.files);
         let notice = '';
         while (true) {
