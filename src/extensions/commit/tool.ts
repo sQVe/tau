@@ -156,7 +156,14 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
       const unrequestedPaths = pathsAfterAdd.filter((file) => !requestedFiles.has(file));
 
       if (unrequestedPaths.length > 0) {
-        await pi.exec('git', ['reset', '--quiet', 'HEAD', '--'], { cwd: ctx.cwd });
+        // Unstage only what this call added, so staging the caller did beforehand survives.
+        await pi.exec(
+          'git',
+          ['--literal-pathspecs', 'reset', '--quiet', 'HEAD', '--', ...unrequestedPaths],
+          {
+            cwd: ctx.cwd,
+          },
+        );
         throw new Error(
           `Staging ${params.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}`,
         );
