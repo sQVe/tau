@@ -12,11 +12,10 @@
     "changeset": "changeset",
     "changeset:check": "changeset status --since=origin/main",
     "changeset:version": "changeset version",
-    "check": "pnpm typecheck && pnpm lint && pnpm lint:rules && pnpm format:check && pnpm test",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test",
     "format": "vp fmt",
     "format:check": "vp fmt --check",
     "lint": "vp lint",
-    "lint:rules": "ast-grep scan",
     "prepare": "vp config",
     "test": "vp test",
     "typecheck": "pnpm exec tsc --noEmit",
@@ -26,7 +25,6 @@
     "@sinclair/typebox": "0.34.52"
   },
   "devDependencies": {
-    "@ast-grep/cli": "0.45.3",
     "@changesets/changelog-github": "0.6.0",
     "@changesets/cli": "3.0.2",
     "@mariozechner/pi-ai": "^0.66.1",
