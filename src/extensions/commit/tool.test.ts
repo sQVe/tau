@@ -447,16 +447,25 @@ describe('commit overlay flow', () => {
     expect(result.details).toMatchObject({ subject: 'fix: edited', body: 'Edited body' });
   });
 
-  it.each([undefined, 'not conventional'])(
-    'retains the subject on cancelled or invalid edits: %s',
-    async (edit) => {
-      const { execute, custom, previews } = fakeCommit(['subject', 'approve'], [edit]);
-      const result = await execute();
-      expect(result.details.subject).toBe('feat: add thing');
-      if (edit !== undefined) expect(previews[1]).toContain('Invalid subject: not conventional');
-      expect(custom).toHaveBeenCalledTimes(2);
-    },
-  );
+  it('retains the subject when the edit is cancelled', async () => {
+    const { execute, custom, previews } = fakeCommit(['subject', 'approve'], [undefined]);
+
+    const result = await execute();
+
+    expect(result.details.subject).toBe('feat: add thing');
+    expect(previews[1]).not.toContain('Invalid subject');
+    expect(custom).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains the subject and shows a notice when the edit is invalid', async () => {
+    const { execute, custom, previews } = fakeCommit(['subject', 'approve'], ['not conventional']);
+
+    const result = await execute();
+
+    expect(result.details.subject).toBe('feat: add thing');
+    expect(previews[1]).toContain('Invalid subject: not conventional');
+    expect(custom).toHaveBeenCalledTimes(2);
+  });
 
   it.each([undefined, ''])('handles a cancelled or empty body edit: %s', async (edit) => {
     const { execute } = fakeCommit(['body', 'approve'], [edit]);
