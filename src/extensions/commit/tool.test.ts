@@ -387,7 +387,7 @@ const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)
     (factory: Parameters<ExtensionContext['ui']['custom']>[0]) => Promise<string | undefined>
   >(async (factory) => {
     const component = await factory(
-      { requestRender: () => {} } as never,
+      { requestRender: () => {}, terminal: { rows: 60 } } as never,
       { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
       {} as never,
       () => {},
@@ -511,7 +511,7 @@ describe('commit overlay flow', () => {
       (factory) =>
         new Promise<string | undefined>((resolve) => {
           void factory(
-            { requestRender: () => {} } as never,
+            { requestRender: () => {}, terminal: { rows: 60 } } as never,
             { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
             {} as never,
             (result: unknown) => {

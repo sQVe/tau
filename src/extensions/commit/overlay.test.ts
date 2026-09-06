@@ -13,7 +13,7 @@ const view = {
   group: '1/2',
 };
 
-const setup = (keys: string[]) => {
+const setup = (keys: string[], terminalRows = 60) => {
   const done = vi.fn<(result: unknown) => void>();
   const render = vi.fn<(text: string) => void>();
   const custom = vi.fn<
@@ -23,7 +23,7 @@ const setup = (keys: string[]) => {
     ) => Promise<unknown>
   >(async (factory: Parameters<ExtensionContext['ui']['custom']>[0], _options?: unknown) => {
     const component = await factory(
-      { requestRender: vi.fn<() => void>() } as never,
+      { requestRender: vi.fn<() => void>(), terminal: { rows: terminalRows } } as never,
       { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
       {} as never,
       done,
@@ -138,6 +138,34 @@ describe('confirmCommitOverlay', () => {
     expect(output).toContain('Total: +20 -20');
   });
 
+  it('shrinks both caps on a short terminal', async () => {
+    const { ctx, render } = setup(['a'], 30);
+    const body = Array.from({ length: 10 }, (_, index) => `line ${index + 1}`).join('\n');
+    const files = Array.from({ length: 10 }, (_, index) => ({
+      path: `src/file${index + 1}.ts`,
+      added: '1',
+      removed: '1',
+    }));
+
+    await confirmCommitOverlay(ctx, { ...view, body, files });
+
+    const output = render.mock.lastCall?.[0] ?? '';
+    expect(output).toContain('… 4 more lines');
+    expect(output).toContain('… 4 more files');
+  });
+
+  it('truncates long rows to the width instead of wrapping', async () => {
+    const { ctx, render } = setup(['a']);
+    const body = 'x'.repeat(300);
+    const files = [{ path: `src/${'y'.repeat(300)}.ts`, added: '1', removed: '1' }];
+
+    await confirmCommitOverlay(ctx, { ...view, body, files });
+
+    const lines = (render.mock.lastCall?.[0] ?? '').split('\n');
+    expect(lines.filter((line) => line.includes('xxxxxxxx'))).toHaveLength(1);
+    expect(lines.filter((line) => line.includes('yyyyyyyy'))).toHaveLength(1);
+  });
+
   it('does not resolve inherited object keys as shortcuts', async () => {
     const { ctx, done } = setup(['constructor']);
     await confirmCommitOverlay(ctx, view);
@@ -156,7 +184,7 @@ describe('confirmCommitOverlay', () => {
       (factory: Parameters<ExtensionContext['ui']['custom']>[0]) => Promise<unknown>
     >(async (factory) => {
       const component = await factory(
-        { requestRender: vi.fn<() => void>() } as never,
+        { requestRender: vi.fn<() => void>(), terminal: { rows: 60 } } as never,
         { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
         {} as never,
         done,
