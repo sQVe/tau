@@ -54,9 +54,6 @@ export const validateSubject = (subject: string) => {
 const normalizeRepoPath = (file: string) =>
   posix.normalize(file.replaceAll('\\', '/')).replace(/\/+$/, '');
 
-// git reads these as pathspec globs, which would stage files the caller never named.
-const globMetacharacterPattern = /[*?[\]]/;
-
 export const validatePaths = (files: string[]) => {
   for (const rawFile of files) {
     const file = normalizeRepoPath(rawFile);
@@ -67,8 +64,7 @@ export const validatePaths = (files: string[]) => {
       rawFile.startsWith(':') ||
       posix.isAbsolute(file) ||
       file === '..' ||
-      file.startsWith('../') ||
-      globMetacharacterPattern.test(rawFile)
+      file.startsWith('../')
     ) {
       throw new Error(`Invalid path: ${rawFile}`);
     }
@@ -90,7 +86,7 @@ const buildCommitMessage = (subject: string, body?: string) => {
 const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
   const result = await pi.exec(
     'git',
-    ['--literal-pathspecs', 'diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
+    ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
     {
       cwd,
     },
@@ -203,7 +199,7 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
       if (unrequestedPaths.length > 0) {
         await unstageFiles(pi, ctx.cwd, unrequestedPaths);
         throw new Error(
-          `Staging ${params.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}`,
+          `Staging ${params.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}. They have been unstaged.`,
         );
       }
 
