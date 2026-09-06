@@ -1,4 +1,4 @@
-# ADR 0006: Workspace state namespacing
+# ADR 0005: Workspace state namespacing
 
 - Status: Accepted
 - Date: 2026-04-12
