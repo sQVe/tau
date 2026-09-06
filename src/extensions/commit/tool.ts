@@ -51,18 +51,24 @@ export const validateSubject = (subject: string) => {
   }
 };
 
-const normalizeRepoPath = (file: string) => posix.normalize(file.replaceAll('\\', '/'));
+const normalizeRepoPath = (file: string) =>
+  posix.normalize(file.replaceAll('\\', '/')).replace(/\/+$/, '');
+
+// git reads these as pathspec globs, which would stage files the caller never named.
+const globMetacharacterPattern = /[*?[\]]/;
 
 export const validatePaths = (files: string[]) => {
   for (const rawFile of files) {
     const file = normalizeRepoPath(rawFile);
 
     if (
+      file === '' ||
       file === '.' ||
       rawFile.startsWith(':') ||
       posix.isAbsolute(file) ||
       file === '..' ||
-      file.startsWith('../')
+      file.startsWith('../') ||
+      globMetacharacterPattern.test(rawFile)
     ) {
       throw new Error(`Invalid path: ${rawFile}`);
     }
@@ -84,7 +90,7 @@ const buildCommitMessage = (subject: string, body?: string) => {
 const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
   const result = await pi.exec(
     'git',
-    ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
+    ['--literal-pathspecs', 'diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
     {
       cwd,
     },
@@ -102,8 +108,9 @@ const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
     .map((file) => normalizeRepoPath(file));
 };
 
+// --literal-pathspecs stops git from reading an argument as a glob and staging files nobody named.
 const stageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: string[]) => {
-  const result = await pi.exec('git', ['add', '--', ...files], { cwd });
+  const result = await pi.exec('git', ['--literal-pathspecs', 'add', '--', ...files], { cwd });
   if (result.code !== 0) {
     throw new Error(
       `git add failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
@@ -112,7 +119,7 @@ const stageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: st
 };
 
 const unstageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: string[]) => {
-  const result = await pi.exec('git', ['reset', '--', ...files], { cwd });
+  const result = await pi.exec('git', ['--literal-pathspecs', 'reset', '--', ...files], { cwd });
   if (result.code !== 0) {
     throw new Error(
       `git reset failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
@@ -186,6 +193,20 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
       }
 
       await stageFiles(pi, ctx.cwd, params.files);
+
+      // A directory argument stages everything beneath it, so verify what landed rather than
+      // trusting that each argument named one file. Unstage only what this call added, so staging
+      // the caller did beforehand survives.
+      const pathsAfterAdd = await listStagedPaths(pi, ctx.cwd);
+      const unrequestedPaths = pathsAfterAdd.filter((file) => !requestedFiles.has(file));
+
+      if (unrequestedPaths.length > 0) {
+        await unstageFiles(pi, ctx.cwd, unrequestedPaths);
+        throw new Error(
+          `Staging ${params.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}`,
+        );
+      }
+
       let approved = false;
       try {
         const files = await stagedNumstat(pi, ctx.cwd, params.files);
