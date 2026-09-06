@@ -55,9 +55,9 @@ Not every skill needs every section, but the structure should stay recognizable.
 
 Skills are guidance and workflow packages, not the source of repository truth.
 
-- normative rules belong in policies, ADRs, or code enforcement.
-- skills link to authoritative documents instead of restating large policy texts.
-- a skill may summarize rules needed to operate correctly; on conflict, the linked policy wins.
+- normative rules belong in ADRs or code enforcement.
+- skills link to authoritative documents instead of restating them.
+- a skill may summarize rules needed to operate correctly; on conflict, the linked document wins.
 
 ### Writing style
 
@@ -79,7 +79,7 @@ references, scripts, or assets loaded on demand through relative links.
 - Tau skills match Pi's native model instead of importing conventions Pi does not require.
 - Skills stay easy to read, review, and edit.
 - Descriptions become more useful for Pi's on-demand loading.
-- Policy stays authoritative in one place instead of drifting across skills.
+- Rules stay authoritative in one place instead of drifting across skills.
 - Cost: contributors familiar with Claude Code style may expect richer custom markup.
 - Cost: rigid workflows feel slightly less templated without XML-like tags.
 
