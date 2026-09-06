@@ -493,12 +493,13 @@ describe('commit overlay flow', () => {
     expect(previews[0]).toContain('commit 1/2');
     expect(previews[0]).toContain('README.md +2 -1');
     expect(previews[0]).toContain('image.png binary');
-    expect(exec.mock.calls.slice(0, 3).map((call) => call[1])).toEqual([
+    expect(exec.mock.calls.slice(0, 4).map((call) => call[1])).toEqual([
       ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
-      ['add', '--', 'README.md'],
+      ['--literal-pathspecs', 'add', '--', 'README.md'],
+      ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
       ['diff', '--cached', '--numstat', '--no-renames', '-z', '--', 'README.md'],
     ]);
-    expect(exec.mock.invocationCallOrder[2]).toBeLessThan(custom.mock.invocationCallOrder[0] ?? 0);
+    expect(exec.mock.invocationCallOrder[3]).toBeLessThan(custom.mock.invocationCallOrder[0] ?? 0);
   });
 
   it('commits subject and body edits and returns the edited details', async () => {
@@ -557,14 +558,22 @@ describe('commit overlay flow', () => {
     const result = await execute();
     expect(result.content).toEqual([{ type: 'text', text: 'Commit skipped by user' }]);
     expect(result.details.skipped).toBe(true);
-    expect(exec).toHaveBeenLastCalledWith('git', ['reset', '--', 'README.md'], { cwd: '/repo' });
+    expect(exec).toHaveBeenLastCalledWith(
+      'git',
+      ['--literal-pathspecs', 'reset', '--', 'README.md'],
+      { cwd: '/repo' },
+    );
     expect(exec.mock.calls.some((call) => call[1][0] === 'commit')).toBe(false);
   });
 
   it.each(['abort', undefined])('unstages and throws on abort or dismissal: %s', async (choice) => {
     const { execute, exec } = fakeCommit([choice]);
     await expect(execute()).rejects.toThrow('Commit declined by user');
-    expect(exec).toHaveBeenLastCalledWith('git', ['reset', '--', 'README.md'], { cwd: '/repo' });
+    expect(exec).toHaveBeenLastCalledWith(
+      'git',
+      ['--literal-pathspecs', 'reset', '--', 'README.md'],
+      { cwd: '/repo' },
+    );
   });
 
   it('rejects headless calls before staging', async () => {
@@ -605,7 +614,9 @@ describe('commit overlay flow', () => {
     const result = await execute(controller.signal);
 
     expect(result.content[0]).toEqual({ type: 'text', text: 'Commit cancelled' });
-    expect(exec).toHaveBeenCalledWith('git', ['reset', '--', 'README.md'], { cwd: '/repo' });
+    expect(exec).toHaveBeenCalledWith('git', ['--literal-pathspecs', 'reset', '--', 'README.md'], {
+      cwd: '/repo',
+    });
     expect(exec).not.toHaveBeenCalledWith(
       'git',
       expect.arrayContaining(['commit']),
@@ -617,11 +628,15 @@ describe('commit overlay flow', () => {
     const controller = new AbortController();
     const { execute, exec, custom } = fakeCommit(['approve']);
     exec.mockImplementation((_command, args) => {
-      if (args[0] === 'add') controller.abort();
+      if (args.includes('add')) controller.abort();
       return Promise.resolve({ code: 0, killed: false, stdout: '', stderr: '' });
     });
     await execute(controller.signal);
     expect(custom).not.toHaveBeenCalled();
-    expect(exec).toHaveBeenLastCalledWith('git', ['reset', '--', 'README.md'], { cwd: '/repo' });
+    expect(exec).toHaveBeenLastCalledWith(
+      'git',
+      ['--literal-pathspecs', 'reset', '--', 'README.md'],
+      { cwd: '/repo' },
+    );
   });
 });
