@@ -1,4 +1,4 @@
-import { isAbsolute, normalize, resolve, sep } from 'node:path';
+import { isAbsolute, normalize, relative, resolve, sep } from 'node:path';
 
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
@@ -46,10 +46,14 @@ const normalizeAbsoluteGlob = (field: string, rootDir: string, pattern: string) 
   const normalized = normalizeGlobPattern(pattern);
   const root = resolve(rootDir);
   const absolute = isAbsolute(normalized) ? normalize(normalized) : resolve(root, normalized);
-  // `..` is checked on the raw segments too: brace groups hide it from `resolve`.
-  const escapes = /(^|[/{,])\.\.(?=[/},]|$)/.test(normalized);
+  // Brace groups hide `..` from `resolve`, and alternatives that are empty or start or end
+  // with a dot can expand into one, so those are rejected on the raw text.
+  const escapes = /\.\.|[{,][.,}]|\.[,}]/.test(normalized);
+  const relativeToRoot = relative(root, absolute);
+  const outside =
+    isAbsolute(relativeToRoot) || relativeToRoot === '..' || relativeToRoot.startsWith(`..${sep}`);
 
-  if (escapes || (absolute !== root && !absolute.startsWith(root + sep))) {
+  if (escapes || outside) {
     throw new ConfigValidationError(field, `glob resolves outside the workspace: ${pattern}`);
   }
 
