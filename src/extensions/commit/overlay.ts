@@ -13,6 +13,10 @@ export interface CommitView {
   notice?: string;
 }
 
+// Overlays neither scroll nor clip; cap both free-form sections so the choices always fit.
+const MAX_BODY_LINES = 10;
+const MAX_FILE_ROWS = 15;
+
 export const confirmCommitOverlay = async (
   ctx: ExtensionContext,
   view: CommitView,
@@ -42,31 +46,48 @@ export const confirmCommitOverlay = async (
       new Text(theme.fg('accent', `commit${view.group ? ` ${view.group}` : ''}`), 1, 0),
     );
     container.addChild(new Text(theme.fg('accent', theme.bold(view.subject)), 1, 0));
+    const bodyLines = view.body?.length ? view.body.split('\n') : [];
     container.addChild(
-      new Text(view.body?.length ? view.body : theme.fg('dim', '(no body)'), 1, 0),
+      new Text(
+        bodyLines.length
+          ? bodyLines.slice(0, MAX_BODY_LINES).join('\n')
+          : theme.fg('dim', '(no body)'),
+        1,
+        0,
+      ),
     );
+    if (bodyLines.length > MAX_BODY_LINES) {
+      container.addChild(
+        new Text(theme.fg('dim', `… ${bodyLines.length - MAX_BODY_LINES} more lines`), 1, 0),
+      );
+    }
     if (view.notice) {
       container.addChild(new Text(theme.fg('warning', view.notice), 1, 0));
     }
     container.addChild(new Spacer());
     container.addChild(new Text(theme.fg('dim', 'Files'), 1, 0));
-    for (const file of view.files) {
+    for (const file of view.files.slice(0, MAX_FILE_ROWS)) {
       const stat =
         file.added === '-' && file.removed === '-'
           ? theme.fg('dim', 'binary')
           : `${theme.fg('success', `+${file.added}`)} ${theme.fg('error', `-${file.removed}`)}`;
       container.addChild(new Text(`${file.path} ${stat}`, 1, 0));
     }
+    if (view.files.length > MAX_FILE_ROWS) {
+      container.addChild(
+        new Text(theme.fg('dim', `… ${view.files.length - MAX_FILE_ROWS} more files`), 1, 0),
+      );
+    }
     const added = view.files.reduce((sum, file) => sum + (Number(file.added) || 0), 0);
     const removed = view.files.reduce((sum, file) => sum + (Number(file.removed) || 0), 0);
     container.addChild(new Text(theme.fg('dim', `Total: +${added} -${removed}`), 1, 0));
     container.addChild(new Spacer());
     const items: { value: CommitChoice; label: string }[] = [
-      { value: 'approve', label: 'Approve and commit' },
-      { value: 'subject', label: 'Edit subject' },
-      { value: 'body', label: 'Edit body' },
-      { value: 'skip', label: 'Skip this group' },
-      { value: 'abort', label: 'Abort' },
+      { value: 'approve', label: 'a    Approve and commit' },
+      { value: 'subject', label: 's    Edit subject' },
+      { value: 'body', label: 'b    Edit body' },
+      { value: 'skip', label: 'k    Skip this group' },
+      { value: 'abort', label: 'esc  Abort' },
     ];
     const list = new SelectList(items, 5, {
       selectedPrefix: (text) => theme.fg('accent', text),
@@ -82,10 +103,6 @@ export const confirmCommitOverlay = async (
       done('abort');
     };
     container.addChild(list);
-    container.addChild(new Spacer());
-    container.addChild(
-      new Text(theme.fg('dim', 'a approve • s subject • b body • k skip • esc abort'), 1, 0),
-    );
     container.addChild(new DynamicBorder((text) => theme.fg('accent', text)));
     return {
       render: (width) => container.render(width),

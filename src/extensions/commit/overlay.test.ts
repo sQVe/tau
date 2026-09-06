@@ -75,18 +75,16 @@ describe('confirmCommitOverlay', () => {
       '+12 -3',
       'image.png binary',
       'Total: +12 -3',
-      'Approve and commit',
-      'Edit subject',
-      'Edit body',
-      'Skip this group',
-      'Abort',
-      'a approve • s subject • b body • k skip • esc abort',
+      'a    Approve and commit',
+      's    Edit subject',
+      'b    Edit body',
+      'k    Skip this group',
+      'esc  Abort',
     ]) {
       expect(output).toContain(text);
     }
     expect(output).toMatch(/\(no body\) *\n *\n *Files/);
     expect(output).toMatch(/Total: \+12 -3 *\n *\n.*Approve and commit/);
-    expect(output).toMatch(/Abort *\n *\n *a approve/);
     expect(custom.mock.lastCall?.[1]).toEqual({
       overlay: true,
       overlayOptions: {
@@ -109,6 +107,35 @@ describe('confirmCommitOverlay', () => {
     expect(render.mock.lastCall?.[0]).toContain('Why');
     expect(render.mock.lastCall?.[0]).toContain('More context');
     expect(render.mock.lastCall?.[0]).toContain('Invalid subject: nope');
+  });
+
+  it('caps a long body at ten lines with a remainder note', async () => {
+    const { ctx, render } = setup(['a']);
+    const body = Array.from({ length: 14 }, (_, index) => `line ${index + 1}`).join('\n');
+
+    await confirmCommitOverlay(ctx, { ...view, body });
+
+    const output = render.mock.lastCall?.[0] ?? '';
+    expect(output).toContain('line 10');
+    expect(output).not.toContain('line 11');
+    expect(output).toContain('… 4 more lines');
+  });
+
+  it('caps the file list at fifteen rows and still totals every file', async () => {
+    const { ctx, render } = setup(['a']);
+    const files = Array.from({ length: 20 }, (_, index) => ({
+      path: `src/file${index + 1}.ts`,
+      added: '1',
+      removed: '1',
+    }));
+
+    await confirmCommitOverlay(ctx, { ...view, files });
+
+    const output = render.mock.lastCall?.[0] ?? '';
+    expect(output).toContain('src/file15.ts');
+    expect(output).not.toContain('src/file16.ts');
+    expect(output).toContain('… 5 more files');
+    expect(output).toContain('Total: +20 -20');
   });
 
   it('does not resolve inherited object keys as shortcuts', async () => {
