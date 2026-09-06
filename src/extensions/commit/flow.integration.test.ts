@@ -21,7 +21,10 @@ import type {
   ExtensionUIContext,
 } from '@mariozechner/pi-coding-agent';
 import type { TestContext } from 'vitest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Each test boots a pi session and runs real git, so the 5s default is too tight for slow CI.
+vi.setConfig({ testTimeout: 60_000 });
 
 // Taken from the per-test context so cleanup stays scoped to its own test,
 // including when the suite runs concurrently.
