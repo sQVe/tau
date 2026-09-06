@@ -224,7 +224,7 @@ const toFilterArg = (path: string) => (path.startsWith('-') ? `./${path}` : path
 
 const scopedPaths = (input: RunTestsInput): string[] => {
   const raw = input.scope === 'file' ? [input.path ?? ''] : (input.files ?? []);
-  return raw.map((path) => path.trim()).filter((path) => path.length > 0);
+  return raw.filter((path) => path.trim().length > 0);
 };
 
 const buildArgs = (input: RunTestsInput): string[] | null => {
