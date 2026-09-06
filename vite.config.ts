@@ -7,10 +7,6 @@ export default defineConfig({
       correctness: 'error',
       suspicious: 'error',
       perf: 'warn',
-      pedantic: 'off',
-      style: 'off',
-      restriction: 'off',
-      nursery: 'off',
     },
     options: {
       typeAware: true,
@@ -127,12 +123,6 @@ export default defineConfig({
           max: 15,
         },
       ],
-      'eslint/max-params': [
-        'warn',
-        {
-          max: 4,
-        },
-      ],
       'eslint/max-depth': [
         'warn',
         {
@@ -230,15 +220,6 @@ export default defineConfig({
     },
     overrides: [
       {
-        files: ['src/config/index.test.ts'],
-        rules: {
-          'vitest/expect-expect': [
-            'error',
-            { assertFunctionNames: ['expect', 'expectValidationError'] },
-          ],
-        },
-      },
-      {
         files: ['**/*.test.{ts,tsx}'],
         rules: {
           'typescript/no-explicit-any': 'off',
@@ -246,12 +227,6 @@ export default defineConfig({
           'typescript/no-unsafe-type-assertion': 'off',
           'eslint/no-empty-function': 'off',
           'eslint/max-nested-callbacks': 'off',
-        },
-      },
-      {
-        files: ['src/extensions/commit/tool.ts'],
-        rules: {
-          'eslint/max-params': 'off',
         },
       },
     ],
