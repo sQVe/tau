@@ -129,7 +129,7 @@ describe('guardToolCall', () => {
     "bash -c   'git commit -m x'",
     "bash -c $'git commit -m x'",
   ])(
-    'blocks shell eval commands containing commit invocations via literal-substring check: %s',
+    'blocks shell eval commands containing commit invocations via the git-commit pattern: %s',
     (command) => {
       expect(guardToolCall(makeBashEvent(command))).toEqual({
         block: true,
@@ -163,6 +163,23 @@ describe('guardToolCall', () => {
 
   it('does not block pipe-to-grep patterns mentioning commit', () => {
     expect(guardToolCall(makeBashEvent('git log | grep commit'))).toBeUndefined();
+  });
+
+  it.each([
+    'git diff src/extensions/commit/guard.ts',
+    'git add skills/commit/SKILL.md',
+    'git log -- src/extensions/commit',
+    'git checkout src/extensions/commit/tool.ts',
+    'git status src/extensions/commit/',
+  ])('does not block git commands whose paths contain commit: %s', (command) => {
+    expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
+  });
+
+  it('blocks a commit split across a line continuation', () => {
+    expect(guardToolCall(makeBashEvent("git \\\n  commit -m 'feat: x'"))).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
   });
 });
 
