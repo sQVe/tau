@@ -190,7 +190,15 @@ describe('validatePaths', () => {
     }).toThrow(/\.Env\.production/);
   });
 
-  it('rejects pathspec syntax and traversal attempts', () => {
+  it('rejects pathspecs that stage more than the named file', () => {
+    for (const pathspec of ['./', '.', '*', 'src/*', 'src/**', '?.ts', '[abc].ts']) {
+      expect(() => {
+        validatePaths([pathspec]);
+      }).toThrow(/Invalid path/);
+    }
+  });
+
+  it('rejects pathspec magic and traversal attempts', () => {
     expect(() => {
       validatePaths([':(glob)*.ts']);
     }).toThrow(/Invalid path/);
@@ -321,6 +329,22 @@ describe('commitTool.execute', () => {
         subject: 'feat: add readme',
       }),
     ).rejects.toThrow(/already staged: notes\.md/i);
+
+    const revListResult = await runCommand('git', ['rev-list', '--all', '--count'], repoDir);
+    expect(revListResult.stdout.trim()).toBe('0');
+  });
+
+  it('refuses to commit when staging a named path pulls in files it did not name', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'src/a.ts', 'export const a = 1;\n');
+    await writeRepoFile(repoDir, 'src/b.ts', 'export const b = 2;\n');
+
+    await expect(
+      executeCommit(repoDir, {
+        files: ['src'],
+        subject: 'feat: add sources',
+      }),
+    ).rejects.toThrow(/staged paths that were not requested/i);
 
     const revListResult = await runCommand('git', ['rev-list', '--all', '--count'], repoDir);
     expect(revListResult.stdout.trim()).toBe('0');

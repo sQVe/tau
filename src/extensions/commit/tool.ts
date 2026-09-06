@@ -43,18 +43,24 @@ export const validateSubject = (subject: string) => {
   }
 };
 
-const normalizeRepoPath = (file: string) => posix.normalize(file.replaceAll('\\', '/'));
+const normalizeRepoPath = (file: string) =>
+  posix.normalize(file.replaceAll('\\', '/')).replace(/\/+$/, '');
+
+// git reads these as pathspec globs, which would stage files the caller never named.
+const globMetacharacterPattern = /[*?[\]]/;
 
 export const validatePaths = (files: string[]) => {
   for (const rawFile of files) {
     const file = normalizeRepoPath(rawFile);
 
     if (
+      file === '' ||
       file === '.' ||
       rawFile.startsWith(':') ||
       posix.isAbsolute(file) ||
       file === '..' ||
-      file.startsWith('../')
+      file.startsWith('../') ||
+      globMetacharacterPattern.test(rawFile)
     ) {
       throw new Error(`Invalid path: ${rawFile}`);
     }
@@ -76,7 +82,7 @@ const buildCommitMessage = (subject: string, body?: string) => {
 const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
   const result = await pi.exec(
     'git',
-    ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
+    ['--literal-pathspecs', 'diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
     {
       cwd,
     },
@@ -131,12 +137,28 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
         );
       }
 
-      const addResult = await pi.exec('git', ['add', '--', ...params.files], {
-        cwd: ctx.cwd,
-      });
+      const addResult = await pi.exec(
+        'git',
+        ['--literal-pathspecs', 'add', '--', ...params.files],
+        {
+          cwd: ctx.cwd,
+        },
+      );
       if (addResult.code !== 0) {
         throw new Error(
           `git add failed with exit code ${addResult.code}: ${addResult.stderr || addResult.stdout}`.trim(),
+        );
+      }
+
+      // A directory argument stages everything beneath it, so verify what landed rather than
+      // trusting that each argument named one file.
+      const pathsAfterAdd = await listStagedPaths(pi, ctx.cwd);
+      const unrequestedPaths = pathsAfterAdd.filter((file) => !requestedFiles.has(file));
+
+      if (unrequestedPaths.length > 0) {
+        await pi.exec('git', ['reset', '--quiet', 'HEAD', '--'], { cwd: ctx.cwd });
+        throw new Error(
+          `Staging ${params.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}`,
         );
       }
 
