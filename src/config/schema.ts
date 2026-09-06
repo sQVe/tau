@@ -46,8 +46,10 @@ const normalizeAbsoluteGlob = (field: string, rootDir: string, pattern: string) 
   const normalized = normalizeGlobPattern(pattern);
   const root = resolve(rootDir);
   const absolute = isAbsolute(normalized) ? normalize(normalized) : resolve(root, normalized);
+  // `..` is checked on the raw segments too: brace groups hide it from `resolve`.
+  const escapes = /(^|[/{,])\.\.(?=[/},]|$)/.test(normalized);
 
-  if (absolute !== root && !absolute.startsWith(root + sep)) {
+  if (escapes || (absolute !== root && !absolute.startsWith(root + sep))) {
     throw new ConfigValidationError(field, `glob resolves outside the workspace: ${pattern}`);
   }
 

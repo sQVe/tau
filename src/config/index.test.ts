@@ -166,6 +166,13 @@ describe('loadConfig', () => {
       await expectValidationError(loadConfig(root), 'tests', /outside the workspace/);
     });
 
+    it('rejects a parent segment hidden inside a brace group', async () => {
+      const root = await createTempRoot();
+      await writeConfigFile(root, JSON.stringify({ production: ['src/{../../etc,x}/**/*.ts'] }));
+
+      await expectValidationError(loadConfig(root), 'production', /outside the workspace/);
+    });
+
     it('rejects unknown top-level keys via the strict schema', async () => {
       const root = await createTempRoot();
       await writeConfigFile(root, JSON.stringify({ extra: true }));
