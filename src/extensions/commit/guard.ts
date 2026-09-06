@@ -9,9 +9,7 @@ export const commitGuardReason = 'Blocked git commit via bash. Use the `commit` 
 // one defeats the guard.
 const gitCommitPattern = /\bgit\b[^;|&\n]*\bcommit\b|\bgit-commit\b/i;
 
-export const guardToolCall = async (
-  event: ToolCallEvent,
-): Promise<ToolCallEventResult | undefined> => {
+export const guardToolCall = (event: ToolCallEvent): ToolCallEventResult | undefined => {
   if (!isToolCallEventType('bash', event)) {
     return undefined;
   }
