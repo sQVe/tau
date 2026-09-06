@@ -12,9 +12,9 @@ pnpm install --frozen-lockfile
 pnpm check
 ```
 
-`pnpm check` runs TypeScript, lint, declaration-order rules, formatting, and all tests, including
-package loading through Pi. Use `pnpm format` to format files. Pi loads the TypeScript source
-directly; there is no build step. Tests use temporary directories and need no model API.
+`pnpm check` runs TypeScript, lint, formatting, and all tests, including package loading through Pi.
+Use `pnpm format` to format files. Pi loads the TypeScript source directly; there is no build step.
+Tests use temporary directories and need no model API.
 
 For a focused test run, pass a test file to `pnpm test`:
 
