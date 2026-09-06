@@ -5,7 +5,7 @@ import { defineTool } from '@mariozechner/pi-coding-agent';
 import type { Static } from '@sinclair/typebox';
 import { Type } from '@sinclair/typebox';
 
-import type { CommitFailure, CommitSuccess } from './types.js';
+import type { CommitSuccess } from './types.js';
 
 export const conventionalCommitSubjectPattern =
   /^(feat|fix|chore|refactor|docs|test|style|perf|build|ci|revert)(\([a-z0-9-]+\))?!?: [^\r\n]+$/;
@@ -33,24 +33,9 @@ export const commitToolParameters = Type.Object({
 
 export type CommitInput = Static<typeof commitToolParameters>;
 
-const hookFailurePattern = /hook/i;
-
-const detectHookFailure = (stdout: string, stderr: string) =>
-  hookFailurePattern.test(stderr) || hookFailurePattern.test(stdout);
-
-export class CommitFailedError extends Error {
-  readonly detail: CommitFailure;
-
-  constructor(stdout: string, stderr: string) {
-    super(`git commit failed: ${stderr.trim() || stdout.trim()}`.trim());
-    this.name = 'CommitFailedError';
-    this.detail = {
-      hookFailed: detectHookFailure(stdout, stderr),
-      stdout,
-      stderr,
-    };
-  }
-}
+// Pi forwards only error.message to the model, so hook output has to travel inside it.
+export const commitFailedError = (stdout: string, stderr: string) =>
+  new Error(`git commit failed: ${stderr.trim() || stdout.trim()}`.trim());
 
 export const validateSubject = (subject: string) => {
   if (!conventionalCommitSubjectPattern.test(subject)) {
@@ -163,7 +148,7 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
         },
       );
       if (commitResult.code !== 0) {
-        throw new CommitFailedError(commitResult.stdout, commitResult.stderr);
+        throw commitFailedError(commitResult.stdout, commitResult.stderr);
       }
 
       const revParseResult = await pi.exec('git', ['rev-parse', 'HEAD'], {
