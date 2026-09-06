@@ -84,6 +84,9 @@ describe('confirmCommitOverlay', () => {
     ]) {
       expect(output).toContain(text);
     }
+    expect(output).toMatch(/\(no body\) *\n *\n *Files/);
+    expect(output).toMatch(/Total: \+12 -3 *\n *\n.*Approve and commit/);
+    expect(output).toMatch(/Abort *\n *\n *a approve/);
     expect(custom.mock.lastCall?.[1]).toEqual({
       overlay: true,
       overlayOptions: {

@@ -1,7 +1,7 @@
 // Decision: ignore keybindings, as ecosystem overlays do. User escape rebinds do not apply.
 import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { DynamicBorder } from '@mariozechner/pi-coding-agent';
-import { Container, Key, matchesKey, SelectList, Text } from '@mariozechner/pi-tui';
+import { Container, Key, matchesKey, SelectList, Spacer, Text } from '@mariozechner/pi-tui';
 
 export type CommitChoice = 'approve' | 'subject' | 'body' | 'skip' | 'abort';
 
@@ -48,6 +48,7 @@ export const confirmCommitOverlay = async (
     if (view.notice) {
       container.addChild(new Text(theme.fg('warning', view.notice), 1, 0));
     }
+    container.addChild(new Spacer());
     container.addChild(new Text(theme.fg('dim', 'Files'), 1, 0));
     for (const file of view.files) {
       const stat =
@@ -59,6 +60,7 @@ export const confirmCommitOverlay = async (
     const added = view.files.reduce((sum, file) => sum + (Number(file.added) || 0), 0);
     const removed = view.files.reduce((sum, file) => sum + (Number(file.removed) || 0), 0);
     container.addChild(new Text(theme.fg('dim', `Total: +${added} -${removed}`), 1, 0));
+    container.addChild(new Spacer());
     const items: { value: CommitChoice; label: string }[] = [
       { value: 'approve', label: 'Approve and commit' },
       { value: 'subject', label: 'Edit subject' },
@@ -80,6 +82,7 @@ export const confirmCommitOverlay = async (
       done('abort');
     };
     container.addChild(list);
+    container.addChild(new Spacer());
     container.addChild(
       new Text(theme.fg('dim', 'a approve • s subject • b body • k skip • esc abort'), 1, 0),
     );

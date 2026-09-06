@@ -51,8 +51,9 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
    - For each group, prepare a conventional-commit subject and the exact file list (or hunk
      selection, staged with `git add -p` before calling the tool).
 
-3. Present the proposed groups briefly, then call the `commit` tool immediately.
-   - For each group, call the `commit` tool with the file list, subject, and body.
+3. Call the `commit` tool for each group with the file list, subject, and body. Do not end the turn
+   before the first tool call. If the change looks temporary, wrong, or like a placeholder, still
+   call the tool: the overlay is where the user skips or aborts it.
 
 4. If the `commit` tool succeeds, report the result and continue.
    - A skipped group is not a failure; continue with the next group.

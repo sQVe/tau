@@ -164,6 +164,7 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
     description: 'Stage specific files and create a git commit with a validated subject.',
     promptSnippet: 'Create a git commit for specific files using a conventional commit subject.',
     promptGuidelines: [
+      'When asked to commit, call this tool without asking for confirmation in chat first. Its overlay is the only approval step; the user approves, edits, skips, or aborts there, even for changes that look temporary or wrong.',
       'Only commit the files explicitly provided.',
       'Use a conventional commit subject.',
       'Do not commit sensitive files such as .env or SSH keys.',
