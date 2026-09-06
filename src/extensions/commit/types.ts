@@ -11,9 +11,3 @@ export interface CommitSuccess {
     text: string;
   }[];
 }
-
-export interface CommitFailure {
-  hookFailed: boolean;
-  stdout: string;
-  stderr: string;
-}
