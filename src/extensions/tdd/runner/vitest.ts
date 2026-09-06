@@ -176,7 +176,8 @@ const truncate = (text: string, max: number): string => {
   if (Buffer.byteLength(text, 'utf8') <= max) {
     return text;
   }
-  return Buffer.from(text, 'utf8').subarray(0, max).toString('utf8') + '…';
+  const decoder = new StringDecoder('utf8');
+  return decoder.write(Buffer.from(text, 'utf8').subarray(0, max)) + '…';
 };
 
 const collectFailures = (report: VitestReport): { failures: TestFailure[]; truncated: boolean } => {
@@ -184,10 +185,9 @@ const collectFailures = (report: VitestReport): { failures: TestFailure[]; trunc
   let truncated = false;
 
   for (const file of report.testResults ?? []) {
-    if (
-      file.status === 'failed' &&
-      (file.assertionResults == null || file.assertionResults.length === 0)
-    ) {
+    // Hook and load errors live only on the file entry, never on an assertion.
+    const hasFailedAssertion = file.assertionResults?.some((a) => a.status === 'failed') === true;
+    if (file.status === 'failed' && ((file.message ?? '').length > 0 || !hasFailedAssertion)) {
       if (failures.length >= MAX_FAILURES) {
         return { failures, truncated: true };
       }
@@ -218,18 +218,23 @@ const collectFailures = (report: VitestReport): { failures: TestFailure[]; trunc
   return { failures, truncated };
 };
 
+// Vitest's CLI parses dash-leading positionals as options and treats an empty
+// filter as "match every file", so neither may reach it as a scoped path.
+const toFilterArg = (path: string) => (path.startsWith('-') ? `./${path}` : path);
+
+const scopedPaths = (input: RunTestsInput): string[] => {
+  const raw = input.scope === 'file' ? [input.path ?? ''] : (input.files ?? []);
+  return raw.filter((path) => path.trim().length > 0);
+};
+
 const buildArgs = (input: RunTestsInput): string[] | null => {
   const args = ['run', '--reporter=json', '--no-color'];
-  if (input.scope === 'file') {
-    if (input.path == null || input.path.length === 0) {
+  if (input.scope !== 'all') {
+    const paths = scopedPaths(input);
+    if (paths.length === 0) {
       return null;
     }
-    args.push(input.path);
-  } else if (input.scope === 'changed') {
-    if (input.files == null || input.files.length === 0) {
-      return null;
-    }
-    args.push(...input.files);
+    args.push(...paths.map(toFilterArg));
   }
   if (input.filter != null) {
     args.push('-t', input.filter);

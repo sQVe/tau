@@ -292,6 +292,134 @@ describe('runTests', () => {
     expect(result.kind).toBe('fail');
   });
 
+  it('reports a file-level hook error even when every assertion passed', async () => {
+    const report = {
+      numTotalTests: 1,
+      numFailedTests: 0,
+      numPassedTests: 1,
+      testResults: [
+        {
+          name: '/repo/hook.test.ts',
+          status: 'failed',
+          message: 'teardown boom',
+          assertionResults: [{ fullName: 'passes', status: 'passed' }],
+        },
+      ],
+    };
+    const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(report), code: 1 }) });
+
+    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+
+    expect(result).toEqual({
+      kind: 'fail',
+      failures: [{ file: '/repo/hook.test.ts', fullname: '<file>', message: 'teardown boom' }],
+      total: 1,
+      failed: 1,
+      truncated: false,
+    });
+  });
+
+  it('reports a file-level hook error alongside a failing assertion in the same file', async () => {
+    const report = {
+      numTotalTests: 1,
+      numFailedTests: 1,
+      testResults: [
+        {
+          name: '/repo/mixed.test.ts',
+          status: 'failed',
+          message: 'teardown boom',
+          assertionResults: [
+            { fullName: 'fails', status: 'failed', failureMessages: ['expected 1 to be 2'] },
+          ],
+        },
+      ],
+    };
+    const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(report), code: 1 }) });
+
+    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+
+    if (result.kind !== 'fail') {
+      throw new Error('expected fail');
+    }
+    expect(result.failures.map((failure) => failure.message)).toEqual([
+      'teardown boom',
+      'expected 1 to be 2',
+    ]);
+  });
+
+  it('keeps a multi-byte character whole when truncating a failure message', async () => {
+    const report = {
+      numTotalTests: 1,
+      numFailedTests: 1,
+      testResults: [
+        {
+          name: '/repo/a.test.ts',
+          status: 'failed',
+          assertionResults: [
+            {
+              fullName: 'case',
+              status: 'failed',
+              failureMessages: [`a${'é'.repeat(MAX_ASSERTION_BYTES)}`],
+            },
+          ],
+        },
+      ],
+    };
+    const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(report), code: 1 }) });
+
+    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+
+    if (result.kind !== 'fail') {
+      throw new Error('expected fail');
+    }
+    expect(result.failures[0]?.message).not.toContain('\uFFFD');
+    expect(result.failures[0]?.message.endsWith('é…')).toBe(true);
+  });
+
+  it('drops empty changed-file entries instead of letting them match every file', async () => {
+    const deps = makeDeps({
+      spawn: () => {
+        throw new Error('must not spawn a full suite for an empty scope');
+      },
+    });
+
+    expect(await runTests({ scope: 'changed', cwd: '/repo', files: ['', ' '] }, deps)).toEqual({
+      kind: 'no-tests-collected',
+    });
+  });
+
+  it('prefixes dash-leading scoped paths so vitest reads them as filters, not options', async () => {
+    let captured: string[] = [];
+    const report = {
+      numTotalTests: 1,
+      numFailedTests: 0,
+      numPassedTests: 1,
+      testResults: [{ name: '/repo/-a.test.ts', status: 'passed', assertionResults: [] }],
+    };
+    const deps = makeDeps({
+      spawn: (_cmd, args) => {
+        captured = args;
+        return Promise.resolve({
+          stdout: JSON.stringify(report),
+          stderr: '',
+          code: 0,
+          timedOut: false,
+        });
+      },
+    });
+
+    await runTests(
+      { scope: 'changed', cwd: '/repo', files: ['-a.test.ts', 'src/b.test.ts'] },
+      deps,
+    );
+    expect(captured).toContain('./-a.test.ts');
+    expect(captured).toContain('src/b.test.ts');
+
+    await runTests({ scope: 'file', cwd: '/repo', path: '-a.test.ts' }, deps);
+    expect(captured).toContain('./-a.test.ts');
+    expect(captured).not.toContain('-a.test.ts');
+  });
+
   it('caps failures to 10 entries and truncates each assertion message to 2KB', async () => {
     const longMessage = 'x'.repeat(MAX_ASSERTION_BYTES * 2);
     const assertionResults = Array.from({ length: 15 }, (_, i) => ({
