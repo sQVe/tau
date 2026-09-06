@@ -55,6 +55,7 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
    - For each group, call the `commit` tool with the file list, subject, and body.
 
 4. If the `commit` tool succeeds, report the result and continue.
+   - A skipped group is not a failure; continue with the next group.
    - Note the created commit.
    - If more uncommitted groups remain, continue calling the tool for the next group.
 

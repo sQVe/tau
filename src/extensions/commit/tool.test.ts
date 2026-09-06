@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CommitInput } from './tool.js';
 import { CommitFailedError, createCommitTool, validatePaths, validateSubject } from './tool.js';
@@ -60,6 +61,7 @@ const createTempRepo = async (): Promise<string> => {
   await git(repoDir, ['init']);
   await git(repoDir, ['config', 'user.name', 'Tau Test']);
   await git(repoDir, ['config', 'user.email', 'tau@example.com']);
+  await git(repoDir, ['config', 'commit.gpgsign', 'false']);
 
   return repoDir;
 };
@@ -89,14 +91,14 @@ const confirmedContext = (repoDir: string) =>
   ({
     cwd: repoDir,
     hasUI: true,
-    ui: { confirm: () => Promise.resolve(true) },
+    ui: { custom: () => Promise.resolve('approve') },
   }) as never;
 
 const declinedContext = (repoDir: string) =>
   ({
     cwd: repoDir,
     hasUI: true,
-    ui: { confirm: () => Promise.resolve(false) },
+    ui: { custom: () => Promise.resolve('abort') },
   }) as never;
 
 const noUiContext = (repoDir: string) =>
@@ -180,7 +182,7 @@ describe('validatePaths', () => {
 });
 
 describe('commitTool.execute', () => {
-  it('throws when the user declines the confirmation dialog', async () => {
+  it('throws and unstages when the user aborts the overlay', async () => {
     const repoDir = await createTempRepo();
     await writeRepoFile(repoDir, 'README.md', 'hello\n');
 
@@ -199,6 +201,8 @@ describe('commitTool.execute', () => {
         declinedContext(repoDir),
       ),
     ).rejects.toThrow(/declined/i);
+
+    expect(await git(repoDir, ['diff', '--cached', '--name-only'])).toBe('');
 
     const revListResult = await runCommand('git', ['rev-list', '--all', '--count'], repoDir);
     expect(revListResult.stdout.trim()).toBe('0');
@@ -252,6 +256,7 @@ describe('commitTool.execute', () => {
       sha,
       files: ['README.md'],
       subject: 'feat: add thing',
+      body: 'Initial project file.',
     });
     expect(result.content).toEqual([{ type: 'text', text: `${sha} feat: add thing` }]);
   });
@@ -373,5 +378,141 @@ describe('commitTool.execute', () => {
       stdout: 'hook output\n',
       stderr: '   \n',
     });
+  });
+});
+
+const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)[] = []) => {
+  const previews: string[] = [];
+  const custom = vi.fn<
+    (factory: Parameters<ExtensionContext['ui']['custom']>[0]) => Promise<string | undefined>
+  >(async (factory) => {
+    const component = await factory(
+      { requestRender: () => {} } as never,
+      { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
+      {} as never,
+      () => {},
+    );
+    previews.push(component.render(80).join('\n'));
+    return choices.shift();
+  });
+  const editor = vi.fn<ExtensionContext['ui']['editor']>(() => Promise.resolve(edits.shift()));
+  const exec = vi.fn<ExtensionAPI['exec']>((_command, args) => {
+    let stdout = '';
+    if (args.includes('--numstat')) stdout = '2\t1\tREADME.md\0-\t-\timage.png\0';
+    if (args[0] === 'rev-parse') stdout = 'abc123\n';
+    return Promise.resolve({ code: 0, killed: false, stderr: '', stdout });
+  });
+  const tool = createCommitTool({ exec });
+  const ctx = { cwd: '/repo', hasUI: true, ui: { custom, editor } };
+  const input = {
+    files: ['README.md'],
+    subject: 'feat: add thing',
+    body: 'Original body',
+    group: '1/2',
+  };
+  const execute = (signal?: AbortSignal) =>
+    tool.execute('call', input, signal, undefined, ctx as never);
+  return { custom, editor, exec, ctx, input, execute, previews };
+};
+
+describe('commit overlay flow', () => {
+  it('stages and reads numstat before showing the overlay', async () => {
+    const { execute, exec, custom, previews } = fakeCommit(['approve']);
+    await execute();
+    expect(previews[0]).toContain('commit 1/2');
+    expect(previews[0]).toContain('README.md +2 -1');
+    expect(previews[0]).toContain('image.png +- --');
+    expect(exec.mock.calls.slice(0, 3).map((call) => call[1])).toEqual([
+      ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
+      ['add', '--', 'README.md'],
+      ['diff', '--cached', '--numstat', '--no-renames', '-z', '--', 'README.md'],
+    ]);
+    expect(exec.mock.invocationCallOrder[2]).toBeLessThan(custom.mock.invocationCallOrder[0] ?? 0);
+  });
+
+  it('commits subject and body edits and returns the edited details', async () => {
+    const { execute, editor, exec, custom } = fakeCommit(
+      ['subject', 'body', 'approve'],
+      ['fix: edited', 'Edited body'],
+    );
+    const result = await execute();
+    expect(editor.mock.calls).toEqual([
+      ['Edit subject', 'feat: add thing'],
+      ['Edit body', 'Original body'],
+    ]);
+    expect(custom).toHaveBeenCalledTimes(3);
+    expect(exec).toHaveBeenCalledWith('git', ['commit', '-m', 'fix: edited\n\nEdited body'], {
+      cwd: '/repo',
+    });
+    expect(result.details).toMatchObject({ subject: 'fix: edited', body: 'Edited body' });
+  });
+
+  it.each([undefined, 'not conventional'])(
+    'retains the subject on cancelled or invalid edits: %s',
+    async (edit) => {
+      const { execute, custom, previews } = fakeCommit(['subject', 'approve'], [edit]);
+      const result = await execute();
+      expect(result.details.subject).toBe('feat: add thing');
+      if (edit !== undefined) expect(previews[1]).toContain('Invalid subject: not conventional');
+      expect(custom).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each([undefined, ''])('handles a cancelled or empty body edit: %s', async (edit) => {
+    const { execute } = fakeCommit(['body', 'approve'], [edit]);
+    const result = await execute();
+    expect(result.details.body).toBe(edit ?? 'Original body');
+  });
+
+  it('opens the body editor with an empty prefill when no body was supplied', async () => {
+    const { execute, input, editor } = fakeCommit(['body', 'approve'], [undefined]);
+    Reflect.deleteProperty(input, 'body');
+    const result = await execute();
+    expect(editor).toHaveBeenCalledWith('Edit body', '');
+    expect(result.details.body).toBeNull();
+  });
+
+  it('unstages skipped groups and returns without committing', async () => {
+    const { execute, exec } = fakeCommit(['skip']);
+    const result = await execute();
+    expect(result.content).toEqual([{ type: 'text', text: 'Commit skipped by user' }]);
+    expect(result.details.skipped).toBe(true);
+    expect(exec).toHaveBeenLastCalledWith('git', ['reset', '--', 'README.md'], { cwd: '/repo' });
+    expect(exec.mock.calls.some((call) => call[1][0] === 'commit')).toBe(false);
+  });
+
+  it.each(['abort', undefined])('unstages and throws on abort or dismissal: %s', async (choice) => {
+    const { execute, exec } = fakeCommit([choice]);
+    await expect(execute()).rejects.toThrow('Commit declined by user');
+    expect(exec).toHaveBeenLastCalledWith('git', ['reset', '--', 'README.md'], { cwd: '/repo' });
+  });
+
+  it('rejects headless calls before staging', async () => {
+    const { execute, exec, ctx, custom } = fakeCommit(['approve']);
+    ctx.hasUI = false;
+    await expect(execute()).rejects.toThrow(
+      'Cannot commit without user confirmation (non-interactive mode)',
+    );
+    expect(exec).not.toHaveBeenCalled();
+    expect(custom).not.toHaveBeenCalled();
+  });
+
+  it('returns without UI or git operations when already cancelled', async () => {
+    const { execute, exec, custom } = fakeCommit(['approve']);
+    await execute(AbortSignal.abort());
+    expect(exec).not.toHaveBeenCalled();
+    expect(custom).not.toHaveBeenCalled();
+  });
+
+  it('unstages without opening UI if cancelled while staging', async () => {
+    const controller = new AbortController();
+    const { execute, exec, custom } = fakeCommit(['approve']);
+    exec.mockImplementation((_command, args) => {
+      if (args[0] === 'add') controller.abort();
+      return Promise.resolve({ code: 0, killed: false, stdout: '', stderr: '' });
+    });
+    await execute(controller.signal);
+    expect(custom).not.toHaveBeenCalled();
+    expect(exec).toHaveBeenLastCalledWith('git', ['reset', '--', 'README.md'], { cwd: '/repo' });
   });
 });
