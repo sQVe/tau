@@ -319,6 +319,34 @@ describe('runTests', () => {
     });
   });
 
+  it('reports a file-level hook error alongside a failing assertion in the same file', async () => {
+    const report = {
+      numTotalTests: 1,
+      numFailedTests: 1,
+      testResults: [
+        {
+          name: '/repo/mixed.test.ts',
+          status: 'failed',
+          message: 'teardown boom',
+          assertionResults: [
+            { fullName: 'fails', status: 'failed', failureMessages: ['expected 1 to be 2'] },
+          ],
+        },
+      ],
+    };
+    const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(report), code: 1 }) });
+
+    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+
+    if (result.kind !== 'fail') {
+      throw new Error('expected fail');
+    }
+    expect(result.failures.map((failure) => failure.message)).toEqual([
+      'teardown boom',
+      'expected 1 to be 2',
+    ]);
+  });
+
   it('keeps a multi-byte character whole when truncating a failure message', async () => {
     const report = {
       numTotalTests: 1,

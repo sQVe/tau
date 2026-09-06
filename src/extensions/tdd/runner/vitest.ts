@@ -185,7 +185,9 @@ const collectFailures = (report: VitestReport): { failures: TestFailure[]; trunc
   let truncated = false;
 
   for (const file of report.testResults ?? []) {
-    if (file.status === 'failed' && !file.assertionResults?.some((a) => a.status === 'failed')) {
+    // Hook and load errors live only on the file entry, never on an assertion.
+    const hasFailedAssertion = file.assertionResults?.some((a) => a.status === 'failed') === true;
+    if (file.status === 'failed' && ((file.message ?? '').length > 0 || !hasFailedAssertion)) {
       if (failures.length >= MAX_FAILURES) {
         return { failures, truncated: true };
       }
