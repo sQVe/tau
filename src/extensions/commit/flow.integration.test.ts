@@ -41,7 +41,7 @@ interface Harness {
   faux: FauxProviderRegistration;
   repoDir: string;
   events: AgentSessionEvent[];
-  confirmCalls: { title: string; message: string }[];
+  overlays: string[];
   commandNames: string[];
 }
 
@@ -81,15 +81,19 @@ const createTempRepo = async (registerCleanup: RegisterCleanup): Promise<string>
 };
 
 // Any object other than pi's module-private noOpUIContext flips ctx.hasUI to true.
-// Only the methods tau actually calls need real behavior.
-const createScriptedUI = (
-  confirmCalls: { title: string; message: string }[],
-  answer: boolean,
-): ExtensionUIContext => {
+// Only the methods tau actually calls need real behavior. The overlay factory is
+// rendered once so the test can assert on what the user would have seen.
+const createScriptedUI = (overlays: string[], answer: boolean): ExtensionUIContext => {
   const target: Record<string | symbol, unknown> = {
-    confirm: (title: string, message: string) => {
-      confirmCalls.push({ title, message });
-      return Promise.resolve(answer);
+    custom: async (factory: Parameters<ExtensionUIContext['custom']>[0]) => {
+      const component = await factory(
+        { requestRender: () => {}, terminal: { rows: 60 } } as never,
+        { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
+        {} as never,
+        () => {},
+      );
+      overlays.push(component.render(80).join('\n'));
+      return answer ? 'approve' : 'abort';
     },
   };
 
@@ -157,10 +161,10 @@ const createHarness = async (
 
   expect(extensionsResult.errors).toEqual([]);
 
-  const confirmCalls: { title: string; message: string }[] = [];
+  const overlays: string[] = [];
   const { confirmAnswer = true } = options;
   await session.bindExtensions(
-    confirmAnswer === null ? {} : { uiContext: createScriptedUI(confirmCalls, confirmAnswer) },
+    confirmAnswer === null ? {} : { uiContext: createScriptedUI(overlays, confirmAnswer) },
   );
 
   const events: AgentSessionEvent[] = [];
@@ -172,7 +176,7 @@ const createHarness = async (
     Array.from(extension.commands.keys()),
   );
 
-  return { session, faux, repoDir, events, confirmCalls, commandNames };
+  return { session, faux, repoDir, events, overlays, commandNames };
 };
 
 const toolResultOf = (events: AgentSessionEvent[], toolName: string) => {
@@ -196,7 +200,7 @@ describe('commit flow', () => {
   });
 
   it('commits through the commit tool when the user confirms', async ({ onTestFinished }) => {
-    const { session, faux, repoDir, events, confirmCalls } = await createHarness(onTestFinished);
+    const { session, faux, repoDir, events, overlays } = await createHarness(onTestFinished);
 
     await writeFile(join(repoDir, 'feature.txt'), 'hello\n', 'utf8');
     faux.setResponses([
@@ -212,8 +216,9 @@ describe('commit flow', () => {
 
     await session.prompt('Commit the new file.');
 
-    expect(confirmCalls).toHaveLength(1);
-    expect(confirmCalls[0]?.title).toBe('feat: add feature file');
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0]).toContain('feat: add feature file');
+    expect(overlays[0]).toContain('feature.txt +1 -0');
 
     const result = toolResultOf(events, 'commit');
     expect(result.isError).toBe(false);
@@ -223,7 +228,7 @@ describe('commit flow', () => {
   });
 
   it('does not commit when the user declines', async ({ onTestFinished }) => {
-    const { session, faux, repoDir, events, confirmCalls } = await createHarness(onTestFinished, {
+    const { session, faux, repoDir, events, overlays } = await createHarness(onTestFinished, {
       confirmAnswer: false,
     });
 
@@ -237,8 +242,8 @@ describe('commit flow', () => {
 
     await session.prompt('Commit the new file.');
 
-    // The dialog must have been reached and answered, not skipped by an earlier failure.
-    expect(confirmCalls).toHaveLength(1);
+    // The overlay must have been reached and answered, not skipped by an earlier failure.
+    expect(overlays).toHaveLength(1);
     const result = toolResultOf(events, 'commit');
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.result)).toContain('Commit declined by user');
@@ -248,7 +253,7 @@ describe('commit flow', () => {
   });
 
   it('refuses to commit when no UI is bound', async ({ onTestFinished }) => {
-    const { session, faux, repoDir, events, confirmCalls } = await createHarness(onTestFinished, {
+    const { session, faux, repoDir, events, overlays } = await createHarness(onTestFinished, {
       confirmAnswer: null,
     });
 
@@ -262,8 +267,8 @@ describe('commit flow', () => {
 
     await session.prompt('Commit the new file.');
 
-    // No UI means the tool must refuse before ever reaching the dialog.
-    expect(confirmCalls).toHaveLength(0);
+    // No UI means the tool must refuse before ever reaching the overlay.
+    expect(overlays).toHaveLength(0);
     const result = toolResultOf(events, 'commit');
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.result)).toContain('non-interactive mode');

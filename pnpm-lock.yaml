@@ -11,6 +11,9 @@ importers:
 
   .:
     dependencies:
+      '@mariozechner/pi-tui':
+        specifier: 0.66.1
+        version: 0.66.1
       '@sinclair/typebox':
         specifier: 0.34.52
         version: 0.34.52
@@ -624,6 +627,7 @@ packages:
   '@mariozechner/pi-tui@0.66.1':
     resolution: {integrity: sha512-hNFN42ebjwtfGooqoUwM+QaPR1XCyqPuueuP3aLOWS1bZ2nZP/jq8MBuGNrmMw1cgiDcotvOlSNj3BatzEOGsw==}
     engines: {node: '>=20.0.0'}
+    deprecated: please use @earendil-works/pi-tui instead going forward
 
   '@mistralai/mistralai@1.14.1':
     resolution: {integrity: sha512-IiLmmZFCCTReQgPAT33r7KQ1nYo5JPdvGkrkZqA8qQ2qB1GHgs5LoP5K2ICyrjnpw2n8oSxMM/VP+liiKcGNlQ==}

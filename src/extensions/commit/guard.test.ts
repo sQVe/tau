@@ -75,6 +75,7 @@ const createTempRepo = async (): Promise<string> => {
   await git(repoDir, ['init']);
   await git(repoDir, ['config', 'user.name', 'Tau Test']);
   await git(repoDir, ['config', 'user.email', 'tau@example.com']);
+  await git(repoDir, ['config', 'commit.gpgsign', 'false']);
 
   return repoDir;
 };
@@ -253,7 +254,7 @@ describe('commitExtension', () => {
       { files: ['README.md'], subject: 'feat: add thing' },
       undefined,
       undefined,
-      { cwd: repoDir, hasUI: true, ui: { confirm: () => Promise.resolve(true) } } as never,
+      { cwd: repoDir, hasUI: true, ui: { custom: () => Promise.resolve('approve') } } as never,
     );
 
     const commitCountOutput = await git(repoDir, ['rev-list', '--all', '--count']);

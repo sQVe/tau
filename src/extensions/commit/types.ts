@@ -3,6 +3,8 @@ export interface CommitSuccess {
     sha: string;
     files: string[];
     subject: string;
+    body: string | null;
+    skipped?: true;
   };
   content: {
     type: 'text';
