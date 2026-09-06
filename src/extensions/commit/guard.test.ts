@@ -175,6 +175,16 @@ describe('guardToolCall', () => {
     expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
   });
 
+  it.each([
+    'git commit-tree $tree -p HEAD -m x',
+    "git update-ref HEAD $(git commit-tree $tree -p HEAD -m 'feat: x')",
+  ])('blocks plumbing commands that create commits: %s', (command) => {
+    expect(guardToolCall(makeBashEvent(command))).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
   it('blocks a commit split across a line continuation', () => {
     expect(guardToolCall(makeBashEvent("git \\\n  commit -m 'feat: x'"))).toEqual({
       block: true,

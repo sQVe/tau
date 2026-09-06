@@ -190,12 +190,18 @@ describe('validatePaths', () => {
     }).toThrow(/\.Env\.production/);
   });
 
-  it('rejects pathspecs that stage more than the named file', () => {
-    for (const pathspec of ['./', '.', '*', 'src/*', 'src/**', '?.ts', '[abc].ts']) {
+  it('rejects paths that resolve to the repository root', () => {
+    for (const pathspec of ['./', '.', './.', 'src/..']) {
       expect(() => {
         validatePaths([pathspec]);
       }).toThrow(/Invalid path/);
     }
+  });
+
+  it('accepts filenames containing glob characters, which git takes literally', () => {
+    expect(() => {
+      validatePaths(['app/[slug]/page.tsx', 'docs/faq?.md']);
+    }).not.toThrow();
   });
 
   it('rejects pathspec magic and traversal attempts', () => {
@@ -329,6 +335,21 @@ describe('commitTool.execute', () => {
         subject: 'feat: add readme',
       }),
     ).rejects.toThrow(/already staged: notes\.md/i);
+
+    const revListResult = await runCommand('git', ['rev-list', '--all', '--count'], repoDir);
+    expect(revListResult.stdout.trim()).toBe('0');
+  });
+
+  it('refuses to commit a glob, because git matches the pattern literally', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'src/a.ts', 'export const a = 1;\n');
+
+    await expect(
+      executeCommit(repoDir, {
+        files: ['*'],
+        subject: 'feat: add everything',
+      }),
+    ).rejects.toThrow(/git add failed/i);
 
     const revListResult = await runCommand('git', ['rev-list', '--all', '--count'], repoDir);
     expect(revListResult.stdout.trim()).toBe('0');
