@@ -5,8 +5,7 @@ Update tooling and prepare version changes. Run commands from the Tau checkout.
 ## Tooling
 
 Linting and formatting are configured in [vite.config.ts](../../vite.config.ts). Keep the direct
-Vitest version aligned with Vite+'s bundled version; the TDD adapter resolves Vitest from the target
-project.
+Vitest version aligned with Vite+'s bundled version.
 
 ## Versioning
 

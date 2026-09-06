@@ -19,7 +19,7 @@ directly; there is no build step. Tests use temporary directories and need no mo
 For a focused test run, pass a test file to `pnpm test`:
 
 ```sh
-pnpm test src/workspaceState/index.test.ts
+pnpm test src/extensions/commit/tool.test.ts
 ```
 
 Run the full `pnpm check` before finishing a change.
@@ -46,8 +46,7 @@ Use a disposable Git repository with Tau installed and a changed file ready to c
 
 ## Current status
 
-The commit extension is active. TDD currently has config, workspace state, shell parsing, and a
-Vitest adapter; phase enforcement and the `run_tests` tool are not wired into Pi yet.
+The commit extension is the only extension. TDD enforcement is not built yet.
 
 ## See also
 
