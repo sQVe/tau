@@ -138,12 +138,27 @@ describe('guardToolCall', () => {
     },
   );
 
+  it.each(["sh -c 'git status'", "bash -c 'echo hello'"])(
+    'does not block shell eval commands without commit invocations: %s',
+    async (command) => {
+      await expect(guardToolCall(makeBashEvent(command))).resolves.toBeUndefined();
+    },
+  );
+
   it.each([
-    "sh -c 'git status'",
-    "bash -c 'echo hello'",
-    "echo 'git commit -m x' && bash -c 'echo hello'",
-  ])('does not block shell eval commands without commit invocations: %s', async (command) => {
-    await expect(guardToolCall(makeBashEvent(command))).resolves.toBeUndefined();
+    'GIT_DIR=.git git commit -m x',
+    "eval 'git commit -m x'",
+    'command git commit -m x',
+    'env git commit -m x',
+    'xargs git commit -m x',
+    'bash --norc -c "git commit -m x"',
+    'git -C /tmp/repo commit -m x',
+    'git -c user.name=x commit -m x',
+  ])('blocks invocations that a command-name check misses: %s', async (command) => {
+    await expect(guardToolCall(makeBashEvent(command))).resolves.toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
   });
 
   it('does not block pipe-to-grep patterns mentioning commit', async () => {

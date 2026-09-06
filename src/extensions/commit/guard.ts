@@ -1,65 +1,13 @@
 import { isToolCallEventType } from '@mariozechner/pi-coding-agent';
 import type { ToolCallEvent, ToolCallEventResult } from '@mariozechner/pi-coding-agent';
 
-import { parseBash } from '../../shell/index.js';
-import { findGitCommits } from './shell.js';
-
 export const commitGuardReason = 'Blocked git commit via bash. Use the `commit` tool instead.';
 
-const shellEvalPrefixes = ['sh -c', 'bash -c', 'sh -lc', 'bash -lc'] as const;
-const shellEvalCommitNeedles = ['git commit', 'git-commit'] as const;
-
-const extractQuotedEvalPayloads = (command: string) => {
-  const normalized = command.toLowerCase();
-  const payloads: string[] = [];
-
-  for (const prefix of shellEvalPrefixes) {
-    let searchStart = 0;
-
-    for (;;) {
-      const prefixIndex = normalized.indexOf(prefix, searchStart);
-      if (prefixIndex === -1) {
-        break;
-      }
-
-      const payloadStart = prefixIndex + prefix.length;
-      let cursor = payloadStart;
-      while (/\s/.test(command[cursor] ?? '')) {
-        cursor += 1;
-      }
-      if (command[cursor] === '$') {
-        cursor += 1;
-      }
-      const quoteIndex = command[cursor] === "'" || command[cursor] === '"' ? cursor : undefined;
-
-      if (quoteIndex !== undefined) {
-        const quote = command[quoteIndex];
-        if (quote === undefined) {
-          searchStart = payloadStart;
-          continue;
-        }
-
-        const payloadEnd = command.indexOf(quote, quoteIndex + 1);
-        if (payloadEnd !== -1) {
-          payloads.push(command.slice(quoteIndex + 1, payloadEnd).toLowerCase());
-          searchStart = payloadEnd + 1;
-          continue;
-        }
-      }
-
-      searchStart = payloadStart;
-    }
-  }
-
-  return payloads;
-};
-
-const containsEvalBypassCommit = (command: string) => {
-  const payloads = extractQuotedEvalPayloads(command);
-  return payloads.some((payload) =>
-    shellEvalCommitNeedles.some((needle) => payload.includes(needle)),
-  );
-};
+// Matches `commit` reached from `git` without crossing a command separator, so option forms like
+// `git -C path commit` are caught along with env prefixes and wrappers. Deliberately over-blocks
+// mentions such as `git log --grep commit`: a wrongly blocked call costs one retry, while a missed
+// one defeats the guard.
+const gitCommitPattern = /\bgit\b[^;|&\n]*\bcommit\b|\bgit-commit\b/i;
 
 export const guardToolCall = async (
   event: ToolCallEvent,
@@ -68,28 +16,9 @@ export const guardToolCall = async (
     return undefined;
   }
 
-  if (containsEvalBypassCommit(event.input.command)) {
+  if (gitCommitPattern.test(event.input.command)) {
     return { block: true, reason: commitGuardReason };
   }
 
-  try {
-    const ast = await parseBash(event.input.command);
-    let hits: number;
-    try {
-      hits = findGitCommits(ast).length;
-    } finally {
-      ast.delete();
-    }
-    if (hits === 0) {
-      return undefined;
-    }
-
-    return { block: true, reason: commitGuardReason };
-  } catch {
-    if (/\bgit(?:-|\s+)commit\b/i.test(event.input.command)) {
-      return { block: true, reason: commitGuardReason };
-    }
-
-    return undefined;
-  }
+  return undefined;
 };

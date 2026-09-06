@@ -23,8 +23,7 @@
     "release:github": "pnpm changeset tag"
   },
   "dependencies": {
-    "@sinclair/typebox": "0.34.52",
-    "web-tree-sitter": "0.27.0"
+    "@sinclair/typebox": "0.34.52"
   },
   "devDependencies": {
     "@ast-grep/cli": "0.45.3",

@@ -14,9 +14,6 @@ importers:
       '@sinclair/typebox':
         specifier: 0.34.52
         version: 0.34.52
-      web-tree-sitter:
-        specifier: 0.27.0
-        version: 0.27.0
     devDependencies:
       '@ast-grep/cli':
         specifier: 0.45.3
@@ -2607,9 +2604,6 @@ packages:
   web-streams-polyfill@3.3.3:
     resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
     engines: {node: '>= 8'}
-
-  web-tree-sitter@0.27.0:
-    resolution: {integrity: sha512-XK08gj6RwTMQatAG7uVRP8MunqotL/XC19vHgkSPKmELgbGPBj4ECvB8haHOUnyj6ls2B8t42UTro14zxGgAHg==}
 
   webidl-conversions@3.0.1:
     resolution: {integrity: sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ==}
@@ -5273,8 +5267,6 @@ snapshots:
       - msw
 
   web-streams-polyfill@3.3.3: {}
-
-  web-tree-sitter@0.27.0: {}
 
   webidl-conversions@3.0.1: {}
 
