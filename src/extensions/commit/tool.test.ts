@@ -421,7 +421,7 @@ describe('commit overlay flow', () => {
     await execute();
     expect(previews[0]).toContain('commit 1/2');
     expect(previews[0]).toContain('README.md +2 -1');
-    expect(previews[0]).toContain('image.png +- --');
+    expect(previews[0]).toContain('image.png binary');
     expect(exec.mock.calls.slice(0, 3).map((call) => call[1])).toEqual([
       ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
       ['add', '--', 'README.md'],

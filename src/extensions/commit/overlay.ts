@@ -50,13 +50,11 @@ export const confirmCommitOverlay = async (
     }
     container.addChild(new Text(theme.fg('dim', 'Files'), 1, 0));
     for (const file of view.files) {
-      container.addChild(
-        new Text(
-          `${file.path} ${theme.fg('success', `+${file.added}`)} ${theme.fg('error', `-${file.removed}`)}`,
-          1,
-          0,
-        ),
-      );
+      const stat =
+        file.added === '-' && file.removed === '-'
+          ? theme.fg('dim', 'binary')
+          : `${theme.fg('success', `+${file.added}`)} ${theme.fg('error', `-${file.removed}`)}`;
+      container.addChild(new Text(`${file.path} ${stat}`, 1, 0));
     }
     const added = view.files.reduce((sum, file) => sum + (Number(file.added) || 0), 0);
     const removed = view.files.reduce((sum, file) => sum + (Number(file.removed) || 0), 0);
