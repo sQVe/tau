@@ -30,7 +30,9 @@ const setup = (keys: string[]) => {
     );
     render(component.render(80).join('\n'));
     component.invalidate();
-    for (const key of keys) component.handleInput?.(key);
+    for (const key of keys) {
+      component.handleInput?.(key);
+    }
     return done.mock.lastCall?.[0];
   });
   return { ctx: { ui: { custom } } as unknown as ExtensionContext, custom, done, render };
@@ -105,6 +107,12 @@ describe('confirmCommitOverlay', () => {
     expect(render.mock.lastCall?.[0]).toContain('Why');
     expect(render.mock.lastCall?.[0]).toContain('More context');
     expect(render.mock.lastCall?.[0]).toContain('Invalid subject: nope');
+  });
+
+  it('does not resolve inherited object keys as shortcuts', async () => {
+    const { ctx, done } = setup(['constructor']);
+    await confirmCommitOverlay(ctx, view);
+    expect(done).not.toHaveBeenCalled();
   });
 
   it('treats dismissal as abort', async () => {

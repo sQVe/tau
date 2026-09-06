@@ -29,7 +29,12 @@ export const commitToolParameters = Type.Object({
   files: Type.Array(Type.String(), { minItems: 1 }),
   subject: Type.String(),
   body: Type.Optional(Type.String()),
-  group: Type.Optional(Type.String()),
+  group: Type.Optional(
+    Type.String({
+      description:
+        'Optional marker rendered after "commit" in the overlay title (e.g. "2/5") so the caller can wait on it.',
+    }),
+  ),
 });
 
 export type CommitInput = Static<typeof commitToolParameters>;
@@ -178,7 +183,9 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
         content: [{ type: 'text', text: 'Commit cancelled' }],
         details: { sha: '', files: params.files, subject, body },
       });
-      if (signal?.aborted) return cancelled();
+      if (signal?.aborted) {
+        return cancelled();
+      }
 
       const requestedFiles = new Set(params.files.map((file) => normalizeRepoPath(file)));
       const stagedPaths = await listStagedPaths(pi, ctx.cwd);
@@ -196,7 +203,9 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
         const files = await stagedNumstat(pi, ctx.cwd, params.files);
         let notice = '';
         while (true) {
-          if (signal?.aborted) return cancelled();
+          if (signal?.aborted) {
+            return cancelled();
+          }
           const choice = await confirmCommitOverlay(ctx, {
             subject,
             body,
@@ -205,7 +214,9 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
             notice,
           });
           notice = '';
-          if (signal?.aborted) return cancelled();
+          if (signal?.aborted) {
+            return cancelled();
+          }
           if (choice === 'approve') {
             approved = true;
             break;
@@ -216,7 +227,9 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
               details: { sha: '', files: params.files, subject, body, skipped: true },
             };
           }
-          if (choice === 'abort') throw new Error('Commit declined by user');
+          if (choice === 'abort') {
+            throw new Error('Commit declined by user');
+          }
           if (choice === 'subject') {
             const edited = await ctx.ui.editor('Edit subject', subject);
             if (edited !== undefined) {
@@ -232,7 +245,9 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
           }
         }
       } finally {
-        if (!approved) await unstageFiles(pi, ctx.cwd, params.files);
+        if (!approved) {
+          await unstageFiles(pi, ctx.cwd, params.files);
+        }
       }
 
       const commitResult = await pi.exec(

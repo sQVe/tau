@@ -37,7 +37,9 @@ export const confirmCommitOverlay = async (
     container.addChild(
       new Text(view.body?.length ? view.body : theme.fg('dim', '(no body)'), 1, 0),
     );
-    if (view.notice) container.addChild(new Text(theme.fg('warning', view.notice), 1, 0));
+    if (view.notice) {
+      container.addChild(new Text(theme.fg('warning', view.notice), 1, 0));
+    }
     container.addChild(new Text(theme.fg('dim', 'Files'), 1, 0));
     for (const file of view.files) {
       container.addChild(
@@ -66,7 +68,7 @@ export const confirmCommitOverlay = async (
       noMatch: (text) => theme.fg('warning', text),
     });
     list.onSelect = (item) => {
-      done(items.find((option) => option.value === item.value)?.value ?? 'abort');
+      done(items.find((option) => option.value === item.value)?.value);
     };
     list.onCancel = () => {
       done('abort');
@@ -92,7 +94,7 @@ export const confirmCommitOverlay = async (
           b: 'body',
           k: 'skip',
         };
-        const shortcut = shortcuts[data];
+        const shortcut = Object.hasOwn(shortcuts, data) ? shortcuts[data] : undefined;
         if (shortcut) {
           done(shortcut);
           return;
