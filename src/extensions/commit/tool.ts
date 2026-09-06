@@ -1,3 +1,5 @@
+import { posix } from 'node:path';
+
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { defineTool } from '@mariozechner/pi-coding-agent';
 import type { Static } from '@sinclair/typebox';
@@ -9,18 +11,18 @@ export const conventionalCommitSubjectPattern =
   /^(feat|fix|chore|refactor|docs|test|style|perf|build|ci|revert)(\([a-z0-9-]+\))?!?: [^\r\n]+$/;
 
 export const sensitivePathDenylist = [
-  /^\.env$/,
-  /^\.env\..+$/,
-  /^\.npmrc$/,
+  /(^|\/)\.env$/i,
+  /(^|\/)\.env\..+$/i,
+  /(^|\/)\.npmrc$/i,
   /credentials/i,
   /secret/i,
   /\.pem$/i,
   /\.key$/i,
   /\.p12$/i,
   /\.pfx$/i,
-  /(^|\/)id_rsa($|\.)/,
-  /(^|\/)id_ed25519($|\.)/,
-  /^\.ssh\//,
+  /(^|\/)id_rsa($|\.)/i,
+  /(^|\/)id_ed25519($|\.)/i,
+  /(^|\/)\.ssh\//i,
 ] as const;
 
 export const commitToolParameters = Type.Object({
@@ -56,18 +58,18 @@ export const validateSubject = (subject: string) => {
   }
 };
 
-const normalizeRepoPath = (file: string) => file.replaceAll('\\', '/').replace(/^\.\//, '');
+const normalizeRepoPath = (file: string) => posix.normalize(file.replaceAll('\\', '/'));
 
 export const validatePaths = (files: string[]) => {
   for (const rawFile of files) {
     const file = normalizeRepoPath(rawFile);
 
     if (
-      file.length === 0 ||
+      file === '.' ||
       rawFile.startsWith(':') ||
-      rawFile.startsWith('/') ||
-      file.startsWith('../') ||
-      file.includes('/../')
+      posix.isAbsolute(file) ||
+      file === '..' ||
+      file.startsWith('../')
     ) {
       throw new Error(`Invalid path: ${rawFile}`);
     }

@@ -160,6 +160,36 @@ describe('validatePaths', () => {
     }).toThrow(/\.env/);
   });
 
+  it('rejects sensitive paths that redundant separators would otherwise hide', () => {
+    expect(() => {
+      validatePaths(['.//id_rsa']);
+    }).toThrow(/id_rsa/);
+    expect(() => {
+      validatePaths(['./././id_rsa']);
+    }).toThrow(/id_rsa/);
+  });
+
+  it('rejects sensitive files in subdirectories, not just at the repository root', () => {
+    expect(() => {
+      validatePaths(['config/.env']);
+    }).toThrow(/config\/\.env/);
+    expect(() => {
+      validatePaths(['packages/app/.npmrc']);
+    }).toThrow(/\.npmrc/);
+    expect(() => {
+      validatePaths(['home/.ssh/config']);
+    }).toThrow(/\.ssh/);
+  });
+
+  it('rejects sensitive paths whose casing differs from the pattern', () => {
+    expect(() => {
+      validatePaths(['.ENV']);
+    }).toThrow(/\.ENV/);
+    expect(() => {
+      validatePaths(['.Env.production']);
+    }).toThrow(/\.Env\.production/);
+  });
+
   it('rejects pathspec syntax and traversal attempts', () => {
     expect(() => {
       validatePaths([':(glob)*.ts']);
@@ -169,6 +199,15 @@ describe('validatePaths', () => {
     }).toThrow(/Invalid path/);
     expect(() => {
       validatePaths(['/etc/passwd']);
+    }).toThrow(/Invalid path/);
+  });
+
+  it('rejects traversal that only escapes the repository once collapsed', () => {
+    expect(() => {
+      validatePaths(['src/../../etc/passwd']);
+    }).toThrow(/Invalid path/);
+    expect(() => {
+      validatePaths(['src/..']);
     }).toThrow(/Invalid path/);
   });
 
