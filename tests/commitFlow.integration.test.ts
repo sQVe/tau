@@ -35,6 +35,10 @@ type RegisterCleanup = TestContext['onTestFinished'];
 const execFileAsync = promisify(execFile);
 
 const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
+const bundledQuestionExtensionPath = resolve(
+  import.meta.dirname,
+  '../node_modules/@juicesharp/rpiv-ask-user-question/index.ts',
+);
 
 interface Harness {
   session: AgentSession;
@@ -122,7 +126,7 @@ const createHarness = async (
     cwd: repoDir,
     agentDir,
     settingsManager,
-    additionalExtensionPaths: [tauExtensionsPath],
+    additionalExtensionPaths: [tauExtensionsPath, bundledQuestionExtensionPath],
     noExtensions: true,
     noSkills: true,
     noPromptTemplates: true,
