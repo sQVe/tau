@@ -154,7 +154,7 @@ it('prepends a toggled snippet to the next message and then resets', async ({ on
   await session.prompt('/snippets');
 
   expect(overlays).toHaveLength(1);
-  expect(overlays[0]).toContain('Session kickoff');
+  expect(overlays[0]).toContain('Delegate exploration');
   expect(overlays[0]).toContain('Prompt snippets');
 
   const sent: string[] = [];
@@ -173,8 +173,8 @@ it('prepends a toggled snippet to the next message and then resets', async ({ on
   await session.prompt('Now ship it.');
 
   // Matched without the line breaks, which the markdown formatter owns.
-  expect(sent[0]).toMatch(/^Read this project before we start\./);
-  expect(sent[0]).toMatch(/we agree on the next step\.\n\nAdd the retry policy\.$/);
+  expect(sent[0]).toMatch(/^Send the reading to subagents\./);
+  expect(sent[0]).toMatch(/on the decisions\.\n\nAdd the retry policy\.$/);
   // Toggles reset after each send.
   expect(sent[1]).toBe('Now ship it.');
 });
@@ -199,7 +199,7 @@ it('keeps a slash command at the start of the text and keeps the toggle on', asy
 
   expect(sent[0]).toBe('/skill:commit');
   // The toggle survived the slash message and applies to the next one.
-  expect(sent[1]).toMatch(/^Read this project before we start\./);
+  expect(sent[1]).toMatch(/^Send the reading to subagents\./);
 });
 
 it('leaves the message unchanged when the user cancels the menu', async ({ onTestFinished }) => {

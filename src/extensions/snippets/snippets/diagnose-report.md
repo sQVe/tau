@@ -1,9 +1,9 @@
 ---
 name: Diagnose, don't fix
-description: Report the cause and a proposed fix, change nothing
+description: Find the cause and report it, change nothing
 placement: append
-order: 40
+order: 60
 ---
 
-Find the cause of the issue. Do not change any code. Report what you found and propose a fix. Do not
-apply the fix yet.
+Find the cause and report it. Change no files. Tell me what is wrong, the evidence that says so, and
+the fix you would make. Wait for me before making it.

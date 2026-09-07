@@ -1,9 +1,9 @@
 ---
 name: Ask questions
-description: Ask questions until we agree on the task
+description: Ask until we agree on the task, then stop
 placement: append
-order: 10
+order: 50
 ---
 
-Ask questions until you know exactly what to do. Do not start the work until I confirm that we agree
-on what it is.
+Ask questions until you know exactly what to do. Ask them all at once rather than one at a time. Do
+not start the work until I say we agree.

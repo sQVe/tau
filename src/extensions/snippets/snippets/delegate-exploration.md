@@ -1,10 +1,10 @@
 ---
 name: Delegate exploration
-description: Subagents explore the code, you verify what matters
-placement: append
-order: 30
+description: Subagents read the code, you keep the decisions
+placement: prepend
+order: 10
 ---
 
-Keep your context window small. Give codebase exploration to subagents. Ask each subagent one
-specific question instead of reading many files yourself. Read files directly only to verify the
-parts that matter most.
+Send the reading to subagents. Ask each one a specific question instead of opening many files
+yourself. Open a file directly only to check something a subagent reported, or to make an edit.
+Spend your own context on the decisions.

@@ -1,10 +1,10 @@
 ---
 name: Verify, don't assume
-description: Verify facts instead of guessing
+description: Check claims against the source before acting on them
 placement: append
 order: 20
 ---
 
-Do not assume. Verify the facts you depend on instead of guessing. Ask me when you cannot verify
-something yourself. Start only once you know what to do. Treat any doubt as a reason to verify
-first.
+Check every claim you are about to act on, including your own and any that came from another agent,
+a review, or a tool. Read the source that settles it. When you cannot verify something, say so and
+ask me instead of guessing.
