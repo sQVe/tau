@@ -50,7 +50,7 @@ Use a temporary Git repository with Tau installed and a changed file ready to co
 4. Ask Pi something underspecified so it calls `ask_user_question`. Check that the questionnaire
    renders, that arrow keys and Enter select an option, and that Esc abandons it. Automated tests
    cover only that the tool is registered, so the dialog needs a real terminal to verify.
-5. Press `alt+s`, turn on one snippet, and send a message. Check that Pi receives the snippet text
+5. Press `ctrl+s`, turn on one snippet, and send a message. Check that Pi receives the snippet text
    around your message, and that the toggle turns off again.
 
 ## Current status
@@ -62,7 +62,7 @@ commits need credentials for the session model; automated tests use a scripted p
 model API calls.
 
 The snippets extension adds [prompt snippets](./prompt-snippets.md) to your message when you send
-it. Press `alt+s` or run `/snippets` to open the toggle menu. The menu is a terminal component, so
+it. Press `ctrl+s` or run `/snippets` to open the toggle menu. The menu is a terminal component, so
 it runs only in the terminal UI. In RPC mode the command reports that and changes nothing. Print
 mode has no way to show the message, so the command changes nothing there and stays silent.
 

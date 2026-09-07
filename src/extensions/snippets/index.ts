@@ -105,7 +105,10 @@ export default function snippetsExtension(pi: ExtensionAPI) {
     return { action: 'transform' as const, text: buildSnippetMessage(event.text, active) };
   });
 
-  pi.registerShortcut('alt+s', {
+  // Pi's raw mode turns off terminal flow control, so ctrl+s reaches the app
+  // instead of freezing output. Pi's own ctrl+s bindings are inside its
+  // pickers, which this shortcut does not reach.
+  pi.registerShortcut('ctrl+s', {
     description: 'Toggle prompt snippets',
     handler: openMenu,
   });

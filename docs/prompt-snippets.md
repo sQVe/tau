@@ -6,7 +6,7 @@ and applies to nothing else.
 
 ## Use the menu
 
-Press `alt+s` or run `/snippets` to open the toggle menu.
+Press `ctrl+s` or run `/snippets` to open the toggle menu.
 
 | Key            | Action                                       |
 | -------------- | -------------------------------------------- |
