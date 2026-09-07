@@ -89,6 +89,10 @@ export const reviewComments = async (
   const paths = (await reviewGit(pi, ctx.cwd, ['diff', '--name-only', '-z', ...diffArgs], signal))
     .split('\0')
     .filter(Boolean);
+  if (paths.length > 300)
+    throw new Error(
+      `Comment review input is too large: ${paths.length} files. Split the commit or explicitly waive review.`,
+    );
   const numstat = await reviewGit(pi, ctx.cwd, ['diff', '--numstat', '-z', ...diffArgs], signal);
   const binaryPaths = numstat
     .split('\0')

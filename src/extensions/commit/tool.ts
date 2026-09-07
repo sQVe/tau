@@ -457,7 +457,7 @@ export const createCommitTool = (
       if (committedTree !== reviewedTree) {
         await undoCommit(pi, ctx.cwd, previousHead);
         throw new Error(
-          'A hook changed reviewed content. The commit was undone; changes remain staged. Call commit again to review them.',
+          'A hook changed reviewed content. The commit was undone. Call commit again to stage and review the current changes.',
         );
       }
 
