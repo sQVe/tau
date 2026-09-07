@@ -41,7 +41,12 @@ it('loads Tau through Pi with commit features and writing rules on each run', as
     expect(extensions[0]?.tools.has('commit')).toBe(true);
     expect(extensions[0]?.commands.has('commit')).toBe(true);
     expect(extensions[0]?.handlers.get('tool_call')).toHaveLength(1);
-    expect(loader.getSkills().skills.map((skill) => skill.name)).toEqual(['commit']);
+    expect(
+      loader
+        .getSkills()
+        .skills.map((skill) => skill.name)
+        .toSorted(),
+    ).toEqual(['bro', 'commit']);
     expect(loader.getSkills().diagnostics).toEqual([]);
 
     const faux = registerFauxProvider({ provider: 'tau-package-writing' });
