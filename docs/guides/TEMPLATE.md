@@ -7,8 +7,8 @@ Use numbered steps only when order matters. No status field is needed for a guid
 
 ## Before you start
 
-List prerequisites the reader needs, such as tools, credentials, or a working checkout. Omit this
-section when there are none.
+List what the reader needs before starting, such as tools, credentials, or a working checkout. Omit
+this section when there are none.
 
 ## Instructions
 
@@ -22,7 +22,7 @@ instead of in a separate section.
 
 ## Troubleshooting
 
-Include known failure modes and fixes. Omit this section when there are none.
+Include known problems and fixes. Omit this section when there are none.
 
 ## See also
 

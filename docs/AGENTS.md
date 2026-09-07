@@ -5,7 +5,7 @@ Keep the root README focused on the project introduction and links. Put topic-sp
 
 ## Where things go
 
-- `adr/`: durable technical decisions and their reasons. Accepted ADRs may define current
+- `adr/`: lasting technical decisions and their reasons. Accepted ADRs may define current
   conventions; proposed ADRs are not requirements.
 - `guides/`: setup, workflows, and maintenance instructions.
 - `foundations/`: project direction and scope.
@@ -14,6 +14,9 @@ Keep related explanations and steps together. Split a document when its topics a
 independently, not just because it answers more than one kind of question.
 
 ## Writing
+
+- Write for readers who use English as a second language. Prefer common words and short sentences.
+- Explain technical terms when needed. Keep the meaning and required format when simplifying text.
 
 - Use the [ADR](./adr/TEMPLATE.md), [guide](./guides/TEMPLATE.md), and
   [foundation](./foundations/TEMPLATE.md) templates as starting points. Adapt headings and omit
@@ -24,8 +27,8 @@ independently, not just because it answers more than one kind of question.
 
 ## Keep one source for each rule
 
-An accepted ADR can define a current convention. Record material changes to a decision in a
-successor ADR; do not silently change the rules.
+An accepted ADR can define a current convention. Record changes to what a decision requires in a new
+ADR that replaces it; do not silently change the rules.
 
 Keep command definitions and tool versions in repository configuration. Guides should explain how to
 use them and link to the relevant files.

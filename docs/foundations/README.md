@@ -1,7 +1,7 @@
 # Foundations
 
-Foundations describe project direction, principles, and scope.
+Foundations describe project goals, principles, and limits.
 
-- [Vision](./vision.md): project direction and scope.
+- [Vision](./vision.md): project goals and limits.
 
 Use the [template](./TEMPLATE.md) as a starting point for a new foundation.

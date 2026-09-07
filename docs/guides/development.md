@@ -16,7 +16,7 @@ pnpm check
 Use `pnpm format` to format files. Pi loads the TypeScript source directly; there is no build step.
 Tests use temporary directories and need no model API.
 
-For a focused test run, pass a test file to `pnpm test`:
+To run one test file, pass its path to `pnpm test`:
 
 ```sh
 pnpm test src/extensions/commit/tool.test.ts
@@ -35,9 +35,9 @@ pnpm exec pi --no-extensions --no-skills -e ./src/extensions/index.ts --skill ./
 For use in another project, run `pi install -l /absolute/path/to/tau` there, then start Pi. This
 records the local package in that project's `.pi/settings.json`.
 
-## Manual smoke test
+## Manual check
 
-Use a disposable Git repository with Tau installed and a changed file ready to commit.
+Use a temporary Git repository with Tau installed and a changed file ready to commit.
 
 1. Ask Pi to commit that file through `/commit`. Check that the tool requests confirmation and
    creates one commit after approval.

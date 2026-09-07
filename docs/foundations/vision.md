@@ -4,37 +4,34 @@
 
 ## The idea
 
-Tau aims to enforce a repeatable development workflow on top of Pi. Pi runs the agent and its tools;
-Tau controls when work can advance. Each phase requires evidence before the next begins. For TDD,
-that means observing a failing test before implementation and a passing test afterward.
+Tau aims to enforce a consistent development process. Pi runs the agent and its tools. Tau checks
+that each phase has the required evidence before the next begins. For test-driven development, that
+means seeing a test fail before writing the code and pass afterward.
 
-This is the intended direction. See [development](../guides/development.md#current-status) for what
-works today.
+This is the goal. See [development](../guides/development.md#current-status) for what works today.
 
 ## Principles
 
-- **Workflow over suggestion.** Enforce method, do not merely recommend it.
-- **Evidence over intention.** Advancement requires proof, not a claim that the right thing
-  happened.
-- **Few concepts, strong enforcement.** Prefer a small set of concepts with clear meaning and hard
-  boundaries.
-- **Consistency over flexibility.** Optimize for repeatable, reliable behavior.
+- Require the agent to follow the work process.
+- Require proof that a phase is complete before moving on.
+- Use few concepts, with clear meanings and firm rules.
+- Prefer a process that works the same way each time over one with more options.
 
 ## In scope
 
 - workflow phases.
-- phase gates.
-- required artifacts.
+- checks before moving to the next phase.
+- required outputs.
 - verification rules.
-- methodology enforcement.
+- enforcing the work process.
 
 ## Out of scope
 
 - models.
 - tools.
 - tool calling.
-- agent runtime primitives.
-- TUI and SDK capabilities.
+- the code that runs the agent.
+- terminal interface and SDK features.
 
 ## See also
 

@@ -5,19 +5,19 @@
 
 ## Context
 
-- `extensions/` sits outside `src/`, leaving "where does application code live" ambiguous.
-- Directory names drift between kebab-case and camelCase with no stated rule.
-- Generic names like `rules/` overload as the codebase grows.
-- Pi exposes four surface concepts (commands, events, tools, skills) with no fixed home.
+- `extensions/` sits outside `src/`, so application code has two locations.
+- Directory names mix kebab-case and camelCase with no stated rule.
+- Names like `rules/` do not say what their files control.
+- Commands, events, tools, and skills need clear places in the project.
 
 ## Options considered
 
-- **Flat root with separate top-level dirs** (`extensions/`, `src/`, `skills/`, `rules/`). Current
-  state. Mixes application code with tool config; no single source of truth.
-- **Single `src/` umbrella with skills nested inside.** Clean, but fights Pi: Pi discovers skills
-  from a top-level directory declared in `package.json`.
-- **Single `src/` umbrella, skills at package root.** Aligns with Pi's discovery model and gives one
-  answer for application code.
+- Keep `extensions/`, `src/`, `skills/`, and `rules/` at the root. Mixes application code with tool
+  settings and leaves code in several places.
+- Put everything under `src/`, including skills. Keeps code together, but does not match Pi's
+  discovery of skills from a root directory declared in `package.json`.
+- Put application code under `src/` and skills at the package root. Matches how Pi finds skills and
+  gives code one home.
 
 ## Decision
 
@@ -37,29 +37,29 @@ tau/
 
 ### Where code goes
 
-- `src/extensions/<name>/` owns feature-specific code: Pi wiring, state, types, rules, and surface
-  handlers.
-- `src/<primitive>/` owns code reused across extensions.
-- `skills/` at the root owns SKILL.md files.
+- `src/extensions/<name>/` holds the code for one feature, including Pi setup, state, types, rules,
+  and handlers.
+- `src/<primitive>/` holds code shared by extensions.
+- `skills/` at the root holds SKILL.md files.
 
-If two extensions would reasonably share it, it is a primitive. If it belongs to one feature, it
-lives in that extension.
+A primitive is code that two or more extensions could share. Code for one feature stays in that
+extension.
 
 ### Extension shape
 
-Every extension starts at two files:
+Start each extension with two files:
 
-- `index.ts` — Pi wiring.
-- `types.ts` — domain types.
+- `index.ts` for Pi setup.
+- `types.ts` for its types.
 
-It grows only when a concept has more than one file. Typical additions: `state.ts`, `decision.ts`,
-`rules/`, `commands/`, `events/`, `tools/`.
+Add files as needed. Common additions include `state.ts`, `decision.ts`, `rules/`, `commands/`,
+`events/`, `tools/`.
 
-### Pi surface code
+### Pi commands, events, and tools
 
-Commands, events, and tools are always owned by an extension. They register inside the extension's
-default function via `pi.registerCommand`, `pi.on`, and `pi.registerTool`. No global handlers live
-at the top level.
+Each command, event, and tool belongs to an extension. Register them inside the extension's default
+function via `pi.registerCommand`, `pi.on`, and `pi.registerTool`. No global handlers live at the
+top level.
 
 Skills are the exception: Pi discovers them from `skills/` at the root, declared in `package.json`.
 Skills are SKILL.md files, not TypeScript modules.
@@ -68,21 +68,21 @@ Skills are SKILL.md files, not TypeScript modules.
 
 ### Primitive shape
 
-Primitives under `src/<primitive>/` follow the same minimal shape:
+Shared code under `src/<primitive>/` follows the same layout:
 
-- `index.ts` — public API.
-- `types.ts` — exported types.
+- `index.ts` for the public API.
+- `types.ts` for exported types.
 - implementation files alongside.
-- unit tests colocated as `foo.test.ts` next to `foo.ts`.
+- unit tests named `foo.test.ts` next to `foo.ts`.
 
 ### Naming
 
 - Directories under `src/` use camelCase.
-- Unit tests colocate next to source.
+- Keep unit tests next to the code they test.
 
 ## Tradeoffs
 
 - One rule for where application code lives and what an extension looks like.
 - Vocabulary matches Pi (`events/`, not `hooks/`).
 - Cost: moving `extensions/` under `src/` touches imports and tooling paths.
-- Cost: primitive vs. extension is a judgment call on the margins.
+- Cost: deciding whether code belongs in a shared module or one extension still needs judgment.

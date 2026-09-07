@@ -7,18 +7,16 @@ Use Active for current direction or Superseded when replaced. -->
 
 ## The idea
 
-Explain the project direction this document establishes and why it matters. Distinguish intended
-behavior from what is implemented today when that difference matters.
+Explain the project goal and why it matters. Separate plans from what works today when readers need
+to know the difference.
 
 ## Principles
 
-State the principles that guide concrete choices. Explain what each principle means for this
-project.
+State the principles that guide decisions. Explain what each principle means for this project.
 
 ## Scope
 
-Describe what this direction covers. Include exclusions only where readers might reasonably expect
-something that is deliberately outside the project's scope.
+Describe what this goal covers. Say what is excluded when readers might expect it to be included.
 
 ## See also
 

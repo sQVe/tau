@@ -9,20 +9,20 @@ Preserve historical reasoning when superseding a decision and link to its replac
 
 ## Context
 
-Describe the problem and constraints that require a decision.
+Describe the problem and limits that require a decision.
 
 ## Options considered
 
-List the alternatives actually considered and the reason for choosing or rejecting each. Include
-keeping the current behavior when relevant.
+List the options you considered and why you chose or rejected each. Include keeping the current
+behavior when relevant.
 
 ## Decision
 
-State the choice directly. Add details or examples needed to implement it consistently.
+State the choice. Add details or examples needed to follow it.
 
 ## Tradeoffs
 
-Describe the benefits, costs, and limitations accepted with this choice.
+Describe the benefits, costs, and limits of this choice.
 
 ## See also
 
