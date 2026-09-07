@@ -1,4 +1,4 @@
-import { isAbsolute, relative, resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 
 import type { ToolCallEvent, ToolCallEventResult } from '@mariozechner/pi-coding-agent';
 
@@ -19,8 +19,7 @@ const pathNextStep = (file: string, cwd: string, implementationAllowed: boolean)
   const path = relative(cwd, resolve(cwd, file));
   if (file.startsWith('@') || file.startsWith('~'))
     return 'use a literal worktree path without @ or ~';
-  if (path === '..' || path.startsWith('../') || isAbsolute(path))
-    return 'choose a file inside the worktree';
+  if (path === '..' || path.startsWith('../')) return 'choose a file inside the worktree';
   if (
     path === '.tau' ||
     path.startsWith('.tau/') ||
@@ -41,7 +40,7 @@ export const guardToolCall = async (
   if (['read', 'bash', 'grep', 'find', 'ls', 'run_tests', 'commit'].includes(event.toolName))
     return undefined;
   const recognized = event.toolName === 'write' || event.toolName === 'edit';
-  const file = recognized ? event.input.path : inputPaths(event.input)[0];
+  const file = recognized ? event.input.path : (inputPaths(event.input)[0] ?? 'unknown target');
   if (typeof file !== 'string') return undefined;
   const state = await store.read(cwd);
   const next = recognized

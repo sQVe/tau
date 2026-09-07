@@ -113,14 +113,23 @@ it.each(phases)(
   },
 );
 
-it('passes an unknown tool without a path argument through', async () => {
-  expect(
-    await guardToolCall(
-      makeEvent('clock', { timezone: 'Europe/Stockholm' }),
+it.each(phases)('blocks unrecognized tools without path arguments in %s', async (phase) => {
+  for (const input of [
+    { patch: '*** Update File: src/value.ts\n@@\n-old\n+new' },
+    { uri: 'file:///repo/src/value.ts', content: 'changed' },
+    { page_id: 'value', content: 'changed' },
+  ]) {
+    const result = await guardToolCall(
+      makeEvent('apply_patch', input),
       '/repo',
-      createStore('locked'),
-    ),
-  ).toBeUndefined();
+      createStore(phase),
+    );
+    expect(result?.block).toBe(true);
+    expect(result?.reason).toContain(phase);
+    expect(result?.reason).toContain('required behavior');
+    expect(result?.reason).toContain('unrecognized tool apply_patch');
+    expect(result?.reason).toContain('Next: use write or edit');
+  }
 });
 
 it.each(phases)('refuses paths outside the worktree in %s', async (phase) => {
