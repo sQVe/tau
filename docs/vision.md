@@ -4,34 +4,39 @@
 
 ## The idea
 
-Tau aims to enforce a consistent development process. Pi runs the agent and its tools. Tau checks
-that each phase has the required evidence before the next begins. For test-driven development, that
-means seeing a test fail before writing the code and pass afterward.
+Tau is our daily configuration for [Pi](https://github.com/badlogic/pi-mono). It sets the tools we
+rely on, the way we want the agent to write, and the steps we require before work counts as done.
+
+Pi runs the agent and its tools. Tau decides which tools are present, how the agent behaves, and
+which steps it must prove. Tau is one package. Install it and Pi is ready.
 
 This is the goal. See [development](./development.md#current-status) for what works today.
 
 ## Principles
 
-- Require the agent to follow the work process.
-- Require proof that a phase is complete before moving on.
-- Use few concepts, with clear meanings and firm rules.
-- Prefer a process that works the same way each time over one with more options.
+- One install. Everything a Tau skill depends on ships inside Tau.
+- Prefer a maintained package over our own code. Write our own only when the behavior is part of
+  Tau's flow and no package fits.
+- Enforce with code where it matters. Instructions guide; guards and evidence checks decide.
+- Few concepts, with clear meanings and firm rules. The same process every time.
+- Hand off to the tool that already does the job. A browser task goes to Claude Code in a
+  [herdr](https://herdr.dev) pane, not to a second browser stack in Pi.
 
 ## In scope
 
-- workflow phases.
-- checks before moving to the next phase.
-- required outputs.
-- verification rules.
-- enforcing the work process.
+- bundled tools: web search and fetch, user questions, subagents.
+- agent behavior: writing rules, prompt snippets, skills for commit, brainstorm, bug fixing, and
+  pull requests.
+- gates with evidence: confirmed commits, comment review, and test-driven development when a task
+  opts in.
+- Pi user interface pieces those flows need, such as overlays and footers.
 
 ## Out of scope
 
-- models.
-- tools.
-- tool calling.
-- the code that runs the agent.
-- terminal interface and SDK features.
+- models and model routing.
+- Pi's own runtime, SDK, and terminal interface.
+- safety guards that other packages already provide, such as destructive command blocking.
+- tools that another agent runs better than Pi. Tau hands those off.
 
 ## See also
 
