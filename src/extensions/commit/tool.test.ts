@@ -7,8 +7,18 @@ import { promisify } from 'node:util';
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { commentPolicyHash } from './commentReview.js';
 import type { CommitInput } from './tool.js';
-import { commitFailedError, createCommitTool, validatePaths, validateSubject } from './tool.js';
+import {
+  commitFailedError,
+  createCommitTool as createReviewedCommitTool,
+  validatePaths,
+  validateSubject,
+} from './tool.js';
+
+// Git and approval tests use a clean reviewer; model review is exercised through real Pi below.
+const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
+  createReviewedCommitTool(pi, async () => ({ findings: [] }));
 
 const execFileAsync = promisify(execFile);
 const tempDirs: string[] = [];
@@ -119,6 +129,52 @@ const executeCommit = async (repoDir: string, input: CommitInput) => {
 };
 
 describe('validateSubject', () => {
+  it('undoes a commit when a hook changes reviewed content in an approved file', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'retry.ts', 'export const retries = 0;\n');
+    const hookPath = join(repoDir, '.git/hooks/pre-commit');
+    await writeFile(
+      hookPath,
+      '#!/bin/sh\nprintf "// Unreviewed comment\\n" >> retry.ts\ngit add retry.ts\n',
+    );
+    await chmod(hookPath, 0o755);
+    await expect(
+      executeCommit(repoDir, { files: ['retry.ts'], subject: 'feat: add retry' }),
+    ).rejects.toThrow(/changed reviewed content/);
+    expect((await git(repoDir, ['rev-list', '--all', '--count'])).trim()).toBe('0');
+  });
+  it('rejects staged content changed while commit approval is open', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'retry.ts', 'export const retries = 0;\n');
+    const tool = createCommitTool({
+      exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir),
+    });
+    const ctx = {
+      cwd: repoDir,
+      hasUI: true,
+      ui: {
+        custom: async () => {
+          await writeRepoFile(
+            repoDir,
+            'retry.ts',
+            '// Unreviewed comment\nexport const retries = 1;\n',
+          );
+          await git(repoDir, ['add', 'retry.ts']);
+          return 'approve';
+        },
+      },
+    } as never;
+    await expect(
+      tool.execute(
+        'changed',
+        { files: ['retry.ts'], subject: 'feat: add retry' },
+        undefined,
+        undefined,
+        ctx,
+      ),
+    ).rejects.toThrow(/changed since comment review/);
+    expect((await git(repoDir, ['rev-list', '--all', '--count'])).trim()).toBe('0');
+  });
   it('throws a validation error naming the subject when it is not a conventional commit', () => {
     const subject = 'Add stuff.';
 
@@ -319,6 +375,12 @@ describe('commitTool.execute', () => {
       files: ['README.md'],
       subject: 'feat: add thing',
       body: 'Initial project file.',
+      commentReview: {
+        status: 'passed',
+        tree: (await git(repoDir, ['rev-parse', 'HEAD^{tree}'])).trim(),
+        policy: commentPolicyHash,
+        report: '',
+      },
     });
     expect(result.content).toEqual([{ type: 'text', text: `${sha} feat: add thing` }]);
   });
@@ -465,7 +527,7 @@ describe('commitTool.execute', () => {
     ).rejects.toThrow(/already staged: old\.md/i);
   });
 
-  it('leaves the repo clean when hooks rewrite committed files', async () => {
+  it('requires another review after a formatting hook rewrites files, then commits cleanly', async () => {
     const repoDir = await createTempRepo();
     await writeRepoFile(repoDir, 'README.md', 'hello\n');
     await writeRepoFile(
@@ -475,10 +537,14 @@ describe('commitTool.execute', () => {
     );
     await chmod(join(repoDir, '.git/hooks/pre-commit'), 0o755);
 
-    await executeCommit(repoDir, {
-      files: ['README.md'],
-      subject: 'feat: add readme',
-    });
+    await expect(
+      executeCommit(repoDir, {
+        files: ['README.md'],
+        subject: 'feat: add readme',
+      }),
+    ).rejects.toThrow(/changed reviewed content/);
+    expect(await git(repoDir, ['show', ':README.md'])).toBe('formatted\n');
+    await executeCommit(repoDir, { files: ['README.md'], subject: 'feat: add readme' });
 
     const statusOutput = await git(repoDir, ['status', '--short']);
     const committedContent = await git(repoDir, ['show', 'HEAD:README.md']);
@@ -589,7 +655,7 @@ const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)
   const exec = vi.fn<ExtensionAPI['exec']>((_command, args) => {
     let stdout = '';
     if (args.includes('--numstat')) stdout = '2\t1\tREADME.md\0-\t-\timage.png\0';
-    if (args[0] === 'rev-parse') stdout = 'abc123\n';
+    if (args[0] === 'rev-parse' || args[0] === 'write-tree') stdout = 'abc123\n';
     return Promise.resolve({ code: 0, killed: false, stderr: '', stdout });
   });
   const tool = createCommitTool({ exec });
@@ -612,14 +678,17 @@ describe('commit overlay flow', () => {
     expect(previews[0]).toContain('commit 1/2');
     expect(previews[0]).toContain('README.md +2 -1');
     expect(previews[0]).toContain('image.png binary');
-    expect(exec.mock.calls.slice(0, 5).map((call) => call[1])).toEqual([
+    expect(exec.mock.calls.slice(0, 4).map((call) => call[1])).toEqual([
       ['rev-parse', '--show-prefix'],
       ['diff', '--cached', '--name-only', '--diff-filter=ACMRDT', '-z'],
       ['--literal-pathspecs', 'add', '--', 'README.md'],
       ['diff', '--cached', '--name-only', '--diff-filter=ACMRDT', '-z'],
-      ['diff', '--cached', '--numstat', '--no-renames', '-z', '--', 'README.md'],
     ]);
-    expect(exec.mock.invocationCallOrder[4]).toBeLessThan(custom.mock.invocationCallOrder[0] ?? 0);
+    const numstatCall = exec.mock.calls.findIndex((call) => call[1].includes('--numstat'));
+    expect(numstatCall).toBeGreaterThan(2);
+    expect(exec.mock.invocationCallOrder[numstatCall]).toBeLessThan(
+      custom.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it('commits subject and body edits and returns the edited details', async () => {

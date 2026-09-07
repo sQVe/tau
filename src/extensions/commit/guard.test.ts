@@ -5,8 +5,9 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { ExtensionAPI, ToolCallEvent, ToolDefinition } from '@mariozechner/pi-coding-agent';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import * as commentReview from './commentReview.js';
 import { commitGuardReason, guardToolCall } from './guard.js';
 import commitExtension from './index.js';
 
@@ -284,6 +285,7 @@ describe('commitExtension', () => {
   });
 
   it("does not affect the tool's own git invocations", async () => {
+    const reviewer = vi.spyOn(commentReview, 'reviewComments').mockResolvedValue({ findings: [] });
     const repoDir = await createTempRepo();
     await writeRepoFile(repoDir, 'README.md', 'hello\n');
 
@@ -316,5 +318,6 @@ describe('commitExtension', () => {
       files: ['README.md'],
       subject: 'feat: add thing',
     });
+    reviewer.mockRestore();
   });
 });

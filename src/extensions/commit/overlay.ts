@@ -11,7 +11,15 @@ import {
   TruncatedText,
 } from '@mariozechner/pi-tui';
 
-export type CommitChoice = 'approve' | 'subject' | 'body' | 'skip' | 'abort';
+export type CommitChoice =
+  | 'approve'
+  | 'subject'
+  | 'body'
+  | 'skip'
+  | 'abort'
+  | 'waive'
+  | 'review'
+  | 'retry';
 
 export interface CommitView {
   subject: string;
@@ -19,6 +27,8 @@ export interface CommitView {
   files: { path: string; added: string; removed: string }[];
   group?: string;
   notice?: string;
+  review?: string;
+  reviewBlocked?: boolean;
 }
 
 // Overlays neither scroll nor clip; every row is truncated to the width and the free-form
@@ -31,6 +41,52 @@ const sectionCaps = (terminalRows: number) => {
   const budget = Math.max(6, Math.floor(terminalRows * 0.9) - FIXED_ROWS);
   const bodyLines = Math.min(MAX_BODY_LINES, Math.floor(budget / 2));
   return { bodyLines, fileRows: Math.min(MAX_FILE_ROWS, budget - bodyLines) };
+};
+
+const showCommentReview = async (ctx: ExtensionContext, report: string, signal?: AbortSignal) => {
+  if (signal?.aborted) return;
+  await ctx.ui.custom<void>(
+    (tui, theme, _keybindings, done) => {
+      let offset = 0;
+      let lastOffset = 0;
+      const onAbort = () => {
+        done();
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+      const text = new Text(report, 1, 0);
+      return {
+        render(width) {
+          const lines = text.render(width);
+          const height = Math.max(1, Math.floor(tui.terminal.rows * 0.9) - 3);
+          lastOffset = Math.max(0, lines.length - height);
+          offset = Math.min(offset, lastOffset);
+          return [
+            theme.fg('accent', 'Comment review'),
+            ...lines.slice(offset, offset + height),
+            theme.fg('dim', '↑/↓ scroll · Home/End · Esc return'),
+          ];
+        },
+        invalidate() {
+          text.invalidate();
+        },
+        dispose() {
+          signal?.removeEventListener('abort', onAbort);
+        },
+        handleInput(data) {
+          if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl('c'))) {
+            done();
+            return;
+          }
+          if (matchesKey(data, Key.up)) offset = Math.max(0, offset - 1);
+          if (matchesKey(data, Key.down)) offset = Math.min(lastOffset, offset + 1);
+          if (matchesKey(data, Key.home)) offset = 0;
+          if (matchesKey(data, Key.end)) offset = lastOffset;
+          tui.requestRender();
+        },
+      };
+    },
+    { overlay: true, overlayOptions: { width: '90%', maxHeight: '90%' } },
+  );
 };
 
 export const confirmCommitOverlay = async (
@@ -62,7 +118,7 @@ export const confirmCommitOverlay = async (
       new Text(theme.fg('accent', `commit${view.group ? ` ${view.group}` : ''}`), 1, 0),
     );
     container.addChild(new Text(theme.fg('accent', theme.bold(view.subject)), 1, 0));
-    const caps = sectionCaps(tui.terminal.rows);
+    const caps = sectionCaps(tui.terminal.rows - (view.review ? 3 : 0));
     const bodyLines = view.body?.length ? view.body.split('\n') : [];
     if (bodyLines.length === 0) {
       container.addChild(new Text(theme.fg('dim', '(no body)'), 1, 0));
@@ -96,14 +152,25 @@ export const confirmCommitOverlay = async (
     const removed = view.files.reduce((sum, file) => sum + (Number(file.removed) || 0), 0);
     container.addChild(new Text(theme.fg('dim', `Total: +${added} -${removed}`), 1, 0));
     container.addChild(new Spacer());
+    if (view.review) {
+      container.addChild(
+        new TruncatedText(theme.fg('warning', view.review.split('\n')[0] ?? ''), 1, 0),
+      );
+    }
     const items: { value: CommitChoice; label: string }[] = [
-      { value: 'approve', label: 'a    Approve and commit' },
+      view.reviewBlocked
+        ? { value: 'waive', label: 'w    Waive comment review and commit' }
+        : { value: 'approve', label: 'a    Approve and commit' },
+      ...(view.review ? [{ value: 'review' as const, label: 'r    Read comment review' }] : []),
+      ...(view.reviewBlocked
+        ? [{ value: 'retry' as const, label: 't    Return for fixes or retry' }]
+        : []),
       { value: 'subject', label: 's    Edit subject' },
       { value: 'body', label: 'b    Edit body' },
       { value: 'skip', label: 'k    Skip this group' },
       { value: 'abort', label: 'esc  Abort' },
     ];
-    const list = new SelectList(items, 5, {
+    const list = new SelectList(items, items.length, {
       selectedPrefix: (text) => theme.fg('accent', text),
       selectedText: (text) => theme.fg('accent', text),
       description: (text) => theme.fg('muted', text),
@@ -132,7 +199,10 @@ export const confirmCommitOverlay = async (
           return;
         }
         const shortcuts: Record<string, CommitChoice> = {
-          a: 'approve',
+          ...(view.reviewBlocked
+            ? { w: 'waive' as const, t: 'retry' as const }
+            : { a: 'approve' as const }),
+          ...(view.review ? { r: 'review' as const } : {}),
           s: 'subject',
           b: 'body',
           k: 'skip',
@@ -147,5 +217,9 @@ export const confirmCommitOverlay = async (
       },
     };
   }, options);
+  if (choice === 'review' && view.review) {
+    await showCommentReview(ctx, view.review, signal);
+    return confirmCommitOverlay(ctx, view, signal);
+  }
   return choice ?? 'abort';
 };

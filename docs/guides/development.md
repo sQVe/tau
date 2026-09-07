@@ -46,7 +46,9 @@ Use a disposable Git repository with Tau installed and a changed file ready to c
 
 ## Current status
 
-The commit extension is the only extension. TDD enforcement is not built yet.
+The commit extension includes [comment review](./comment-review.md) before approval. TDD enforcement
+is not built yet. Interactive commits need credentials for the session model; automated tests use a
+scripted provider and make no model API calls.
 
 ## See also
 
