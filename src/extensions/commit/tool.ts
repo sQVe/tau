@@ -24,7 +24,7 @@ export const sensitivePathDenylist = [
   /\.pfx$/i,
   /(^|\/)id_rsa($|\.)/i,
   /(^|\/)id_ed25519($|\.)/i,
-  /(^|\/)\.ssh\//i,
+  /(^|\/)\.ssh($|\/)/i,
 ] as const;
 
 export const commitToolParameters = Type.Object({
@@ -41,9 +41,12 @@ export const commitToolParameters = Type.Object({
 
 export type CommitInput = Static<typeof commitToolParameters>;
 
-// Pi forwards only error.message to the model, so hook output has to travel inside it.
+// Pi forwards only error.message to the model, so hook output has to travel inside it. A hook can
+// split its diagnostics across both streams, so neither one is dropped when the other has content.
 export const commitFailedError = (stdout: string, stderr: string) =>
-  new Error(`git commit failed: ${stderr.trim() || stdout.trim()}`.trim());
+  new Error(
+    `git commit failed: ${[stderr.trim(), stdout.trim()].filter(Boolean).join('\n')}`.trim(),
+  );
 
 export const validateSubject = (subject: string) => {
   if (!conventionalCommitSubjectPattern.test(subject)) {
@@ -86,7 +89,7 @@ const buildCommitMessage = (subject: string, body?: string) => {
 const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
   const result = await pi.exec(
     'git',
-    ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
+    ['diff', '--cached', '--name-only', '--diff-filter=ACMRDT', '-z'],
     {
       cwd,
     },
@@ -134,6 +137,49 @@ const repoPathPrefix = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
   }
 
   return result.stdout.trim();
+};
+
+// Null before the first commit, when HEAD names a branch that does not exist yet.
+const currentHead = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
+  const result = await pi.exec('git', ['rev-parse', 'HEAD'], { cwd });
+  return result.code === 0 ? result.stdout.trim() : null;
+};
+
+const listCommitPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
+  const result = await pi.exec(
+    'git',
+    ['diff-tree', '--root', '-r', '--no-commit-id', '--name-only', '-z', 'HEAD'],
+    { cwd },
+  );
+
+  if (result.code !== 0) {
+    throw new Error(
+      `git diff-tree failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
+    );
+  }
+
+  return result.stdout
+    .split('\0')
+    .filter(Boolean)
+    .map((file) => normalizeRepoPath(file));
+};
+
+const undoCommit = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  cwd: string,
+  previousHead: string | null,
+) => {
+  const result = await pi.exec(
+    'git',
+    previousHead === null ? ['update-ref', '-d', 'HEAD'] : ['reset', '--soft', previousHead],
+    { cwd },
+  );
+
+  if (result.code !== 0) {
+    throw new Error(
+      `git failed to undo the commit, which stands with unrequested paths in it: ${result.stderr || result.stdout}`.trim(),
+    );
+  }
 };
 
 const stagedNumstat = async (
@@ -275,6 +321,7 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
         }
       }
 
+      const previousHead = await currentHead(pi, ctx.cwd);
       const commitResult = await pi.exec(
         'git',
         ['commit', '-m', buildCommitMessage(subject, body ?? undefined)],
@@ -284,6 +331,24 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
       );
       if (commitResult.code !== 0) {
         throw commitFailedError(commitResult.stdout, commitResult.stderr);
+      }
+
+      // A pre-commit hook runs after the staged set is approved and can stage more, so the commit
+      // is the last place the promise can be checked. Undo it rather than leave it standing.
+      const smuggledPaths = (await listCommitPaths(pi, ctx.cwd)).filter(
+        (file) => !requestedFiles.has(file),
+      );
+
+      if (smuggledPaths.length > 0) {
+        await undoCommit(pi, ctx.cwd, previousHead);
+        await unstageFiles(
+          pi,
+          ctx.cwd,
+          smuggledPaths.map((file) => file.slice(prefix.length)),
+        );
+        throw new Error(
+          `A hook staged paths that were not requested: ${smuggledPaths.join(', ')}. The commit was undone.`,
+        );
       }
 
       const revParseResult = await pi.exec('git', ['rev-parse', 'HEAD'], {

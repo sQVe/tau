@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -198,6 +198,15 @@ describe('validatePaths', () => {
         validatePaths([pathspec]);
       }).toThrow(/Invalid path/);
     }
+  });
+
+  it('rejects an .ssh directory named without a trailing slash', () => {
+    expect(() => {
+      validatePaths(['.ssh']);
+    }).toThrow(/\.ssh/);
+    expect(() => {
+      validatePaths(['home/.ssh']);
+    }).toThrow(/\.ssh/);
   });
 
   it('accepts filenames containing glob characters, which git takes literally', () => {
@@ -417,6 +426,27 @@ describe('commitTool.execute', () => {
     expect(revListResult.stdout.trim()).toBe('0');
   });
 
+  it('refuses to commit when an unrelated staged type change exists', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'README.md', 'hello\n');
+    await writeRepoFile(repoDir, 'link.txt', 'plain\n');
+    await git(repoDir, ['add', '--', 'README.md', 'link.txt']);
+    await git(repoDir, ['commit', '-m', 'initial']);
+
+    await rm(join(repoDir, 'link.txt'));
+    await symlink('/etc/hostname', join(repoDir, 'link.txt'));
+    await git(repoDir, ['add', '--', 'link.txt']);
+
+    await writeRepoFile(repoDir, 'README.md', 'updated\n');
+
+    await expect(
+      executeCommit(repoDir, {
+        files: ['README.md'],
+        subject: 'feat: update readme',
+      }),
+    ).rejects.toThrow(/already staged: link\.txt/i);
+  });
+
   it('refuses to commit when an unrelated staged deletion exists', async () => {
     const repoDir = await createTempRepo();
     await writeRepoFile(repoDir, 'README.md', 'hello\n');
@@ -457,6 +487,47 @@ describe('commitTool.execute', () => {
     expect(committedContent).toBe('formatted\n');
   });
 
+  it('undoes the commit when a hook stages paths behind the tool', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'README.md', 'hello\n');
+    await writeRepoFile(repoDir, 'sneaky.txt', 'not requested\n');
+    await writeRepoFile(repoDir, '.git/hooks/pre-commit', '#!/bin/sh\ngit add -- sneaky.txt\n');
+    await chmod(join(repoDir, '.git/hooks/pre-commit'), 0o755);
+
+    await expect(
+      executeCommit(repoDir, {
+        files: ['README.md'],
+        subject: 'feat: add readme',
+      }),
+    ).rejects.toThrow(/hook staged paths that were not requested: sneaky\.txt/i);
+
+    const revListResult = await runCommand('git', ['rev-list', '--all', '--count'], repoDir);
+    expect(revListResult.stdout.trim()).toBe('0');
+    expect(await git(repoDir, ['diff', '--cached', '--name-only'])).toBe('README.md\n');
+  });
+
+  it('undoes only the new commit when a hook smuggles a path into a later one', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'base.txt', 'base\n');
+    await git(repoDir, ['add', '--', 'base.txt']);
+    await git(repoDir, ['commit', '-m', 'chore: base']);
+    const baseSha = (await git(repoDir, ['rev-parse', 'HEAD'])).trim();
+
+    await writeRepoFile(repoDir, 'README.md', 'hello\n');
+    await writeRepoFile(repoDir, 'sneaky.txt', 'not requested\n');
+    await writeRepoFile(repoDir, '.git/hooks/pre-commit', '#!/bin/sh\ngit add -- sneaky.txt\n');
+    await chmod(join(repoDir, '.git/hooks/pre-commit'), 0o755);
+
+    await expect(
+      executeCommit(repoDir, {
+        files: ['README.md'],
+        subject: 'feat: add readme',
+      }),
+    ).rejects.toThrow(/hook staged paths that were not requested/i);
+
+    expect((await git(repoDir, ['rev-parse', 'HEAD'])).trim()).toBe(baseSha);
+  });
+
   it('throws structured hook failure details and leaves the temp repo with zero commits when git commit fails', async () => {
     const repoDir = await createTempRepo();
     await writeRepoFile(repoDir, 'README.md', 'hello\n');
@@ -490,6 +561,13 @@ describe('commitTool.execute', () => {
     expect(commitFailedError('hook output\n', '   \n').message).toBe(
       'git commit failed: hook output',
     );
+  });
+
+  it('keeps both streams in the error message when a hook writes to each', () => {
+    const message = commitFailedError('lint failed on src/a.ts\n', 'warning: slow hook\n').message;
+
+    expect(message).toContain('lint failed on src/a.ts');
+    expect(message).toContain('warning: slow hook');
   });
 });
 
@@ -536,9 +614,9 @@ describe('commit overlay flow', () => {
     expect(previews[0]).toContain('image.png binary');
     expect(exec.mock.calls.slice(0, 5).map((call) => call[1])).toEqual([
       ['rev-parse', '--show-prefix'],
-      ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
+      ['diff', '--cached', '--name-only', '--diff-filter=ACMRDT', '-z'],
       ['--literal-pathspecs', 'add', '--', 'README.md'],
-      ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
+      ['diff', '--cached', '--name-only', '--diff-filter=ACMRDT', '-z'],
       ['diff', '--cached', '--numstat', '--no-renames', '-z', '--', 'README.md'],
     ]);
     expect(exec.mock.invocationCallOrder[4]).toBeLessThan(custom.mock.invocationCallOrder[0] ?? 0);
