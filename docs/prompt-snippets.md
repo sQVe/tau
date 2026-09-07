@@ -6,8 +6,8 @@ and applies to nothing else.
 
 ## Use the menu
 
-Press `ctrl+shift+s` or run `/snippets` to open the toggle menu. The shortcut needs a terminal that
-reports shifted ctrl keys. Use the command if yours does not.
+Press `ctrl+q` or run `/snippets` to open the toggle menu. Use the command if your terminal or
+multiplexer takes `ctrl+q` for itself.
 
 | Key            | Action                                       |
 | -------------- | -------------------------------------------- |
