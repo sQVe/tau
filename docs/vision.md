@@ -1,4 +1,4 @@
-# Foundation: Vision
+# Vision
 
 - Status: Active
 
@@ -8,7 +8,7 @@ Tau aims to enforce a consistent development process. Pi runs the agent and its 
 that each phase has the required evidence before the next begins. For test-driven development, that
 means seeing a test fail before writing the code and pass afterward.
 
-This is the goal. See [development](../guides/development.md#current-status) for what works today.
+This is the goal. See [development](./development.md#current-status) for what works today.
 
 ## Principles
 
@@ -35,5 +35,5 @@ This is the goal. See [development](../guides/development.md#current-status) for
 
 ## See also
 
-- [Development and current status](../guides/development.md#current-status)
-- [Documentation index](../README.md)
+- [Development and current status](./development.md#current-status)
+- [Documentation index](./README.md)

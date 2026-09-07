@@ -18,6 +18,6 @@ agent framework.
 > [!IMPORTANT]
 > Tau is under active development. Expect bugs and changes to how it works.
 
-- [Vision](./docs/foundations/vision.md)
-- [Development and current status](./docs/guides/development.md)
+- [Vision](./docs/vision.md)
+- [Development and current status](./docs/development.md)
 - [Documentation](./docs/README.md)

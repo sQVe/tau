@@ -5,7 +5,7 @@ Set up a checkout, try Tau in Pi, and verify changes.
 ## Local setup
 
 Use the Node.js version required by `engines.node` and the pnpm version specified by
-`packageManager` in [package.json](../../package.json). Run these commands from the Tau checkout:
+`packageManager` in [package.json](../package.json). Run these commands from the Tau checkout:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -46,7 +46,14 @@ Use a temporary Git repository with Tau installed and a changed file ready to co
 
 ## Current status
 
-The commit extension is the only extension. TDD enforcement is not built yet.
+Tau includes the commit and writing extensions. TDD enforcement is not built yet.
+
+The writing extension adds its [instructions](../src/extensions/writing/instructions.md) to the
+system prompt before each ordinary agent run. No skill command is needed. Run `/reload` in Pi after
+editing the instructions. Compaction and branch summaries use separate prompts.
+
+If the instructions are missing, unreadable, or blank, Tau fails to load and Pi reports the error. A
+missing file in an installed package means the package needs repair or reinstallation.
 
 ## See also
 

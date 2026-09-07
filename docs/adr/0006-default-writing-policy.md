@@ -23,9 +23,10 @@ Use a Pi extension to load one writing policy from the Tau package into every or
 
 ### Policy ownership and scope
 
-Keep the writing rules in [`docs/guides/writing.md`](../guides/writing.md), using the guide
-template. That guide is the single source of the rules and the file loaded into the agent prompt.
-This ADR records the decision and does not restate the rules.
+Keep the agent instructions beside the writing extension in
+[`src/extensions/writing/instructions.md`](../../src/extensions/writing/instructions.md). Load this
+same file into the agent prompt. It addresses the agent directly; contributor docs may link to it
+when the same rules apply. This ADR records the decision and does not restate the rules.
 
 The rules cover replies, progress updates, commit and PR text, tickets, docs, and code comments.
 They ask for plain language aimed at readers who use English as a second language, and they keep the
@@ -55,7 +56,7 @@ writing guidance without copying the rules. Loading the default policy does not 
 
 ## Tradeoffs
 
-- One guide supplies the rules for readers and the agent.
+- One file supplies the instructions for the agent and a reference for contributors.
 - Ordinary replies receive the rules without loading a skill.
 - Cost: the policy uses space in the prompt on each run.
 - Cost: prompt instructions cannot guarantee good writing, and other extensions can replace them.
@@ -66,6 +67,5 @@ writing guidance without copying the rules. Loading the default policy does not 
 
 - [ADR-0001: Application structure](./0001-application-structure.md)
 - [ADR-0004: Skill authoring style](./0004-skill-authoring-style.md)
-- [Writing guide](../guides/writing.md)
+- [Agent writing instructions](../../src/extensions/writing/instructions.md)
 - [Documentation rules](../AGENTS.md)
-- [Guide template](../guides/TEMPLATE.md)
