@@ -105,10 +105,11 @@ export default function snippetsExtension(pi: ExtensionAPI) {
     return { action: 'transform' as const, text: buildSnippetMessage(event.text, active) };
   });
 
-  // Pi's raw mode turns off terminal flow control, so ctrl+s reaches the app
-  // instead of freezing output. Pi's own ctrl+s bindings are inside its
-  // pickers, which this shortcut does not reach.
-  pi.registerShortcut('ctrl+s', {
+  // Pi already binds every other ctrl+letter that a terminal can deliver, and
+  // reusing one makes Pi print a shortcut conflict at startup. Adding shift
+  // needs a terminal that reports shifted ctrl keys; `/snippets` covers the
+  // rest.
+  pi.registerShortcut('ctrl+shift+s', {
     description: 'Toggle prompt snippets',
     handler: openMenu,
   });

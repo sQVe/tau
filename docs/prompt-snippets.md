@@ -6,7 +6,8 @@ and applies to nothing else.
 
 ## Use the menu
 
-Press `ctrl+s` or run `/snippets` to open the toggle menu.
+Press `ctrl+shift+s` or run `/snippets` to open the toggle menu. The shortcut needs a terminal that
+reports shifted ctrl keys. Use the command if yours does not.
 
 | Key            | Action                                       |
 | -------------- | -------------------------------------------- |
