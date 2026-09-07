@@ -194,9 +194,11 @@ export const createEvidenceStore = () => {
       fullPassValid,
     };
   };
-  const run = async (cwd: string, behavior: Behavior, scope: 'focused' | 'full') => {
+  const run = async (cwd: string, requested: Behavior, scope: 'focused' | 'full') => {
+    // Canonical file order so the same behavior submitted differently stays the same behavior.
+    const behavior: Behavior = { ...requested, files: [...new Set(requested.files)].toSorted() };
     for (const file of behavior.files) {
-      const path = relative(cwd, resolve(cwd, file));
+      const path = relative(cwd, resolve(cwd, file)).replaceAll('\\', '/');
       if (isAbsolute(file) || path.startsWith('../') || classifyPath(path) !== 'test') {
         throw new Error(`Expected a test file inside the worktree: ${file}`);
       }

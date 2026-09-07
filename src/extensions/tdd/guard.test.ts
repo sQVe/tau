@@ -147,6 +147,17 @@ it.each(phases)('refuses paths outside the worktree in %s', async (phase) => {
   }
 });
 
+it('blocks backslash-separated escapes and protected paths', async () => {
+  for (const [path, next] of [
+    ['..\\outside.test.ts', 'List worktree files with ls {"path":"."}'],
+    ['.tau\\state.json', 'Choose an unprotected test file with ls {"path":"."}'],
+  ]) {
+    const result = await guardToolCall(makeEvent('write', { path }), '/repo', createStore('red'));
+    expect(result?.block).toBe(true);
+    expect(result?.reason).toContain(next);
+  }
+});
+
 it.each(phases)('uses the stored implementation decision in %s', async (phase) => {
   const store = createStore(phase);
   const result = await guardToolCall(

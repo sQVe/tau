@@ -23,7 +23,7 @@ const pathNextStep = (
   active: Behavior | null,
   phase: Phase,
 ) => {
-  const path = relative(cwd, resolve(cwd, file));
+  const path = relative(cwd, resolve(cwd, file)).replaceAll('\\', '/');
   if (file.startsWith('@') || file.startsWith('~'))
     return 'List literal worktree paths with ls {"path":"."}';
   if (path === '..' || path.startsWith('../')) return 'List worktree files with ls {"path":"."}';

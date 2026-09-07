@@ -22,4 +22,11 @@ describe('TDD config', () => {
     expect(classifyPath('scripts/check.js')).toBe('production');
     expect(classifyPath('README.md')).toBe('production');
   });
+
+  it('classifies backslash-separated paths like their forward-slash form', () => {
+    expect(classifyPath('src\\example.test.ts')).toBe('test');
+    expect(classifyPath('tests\\nested\\component.spec.tsx')).toBe('test');
+    expect(classifyPath('src\\example.ts')).toBe('production');
+    expect(classifyPath('src\\nested\\value.ts')).toBe('production');
+  });
 });

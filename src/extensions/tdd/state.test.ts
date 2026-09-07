@@ -339,6 +339,20 @@ it('renews a shared test file only for the RED that failed inside it', async ({
   });
 });
 
+it('treats the same behavior with reordered files as unchanged', async ({ onTestFinished }) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  await writeFile(
+    join(cwd, 'second.test.ts'),
+    "import { it } from 'vitest'; it('second', () => {});",
+  );
+  const files = ['behavior.test.ts', 'second.test.ts'];
+  expect(await store.run(cwd, { ...behavior, files }, 'focused')).toMatchObject({ phase: 'red' });
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  expect(await store.run(cwd, { ...behavior, files: files.toReversed() }, 'focused')).toMatchObject(
+    { phase: 'green' },
+  );
+});
+
 it('never accepts a missing required test file as evidence', async ({ onTestFinished }) => {
   const { cwd, store, behavior } = await createHarness(onTestFinished);
   const selection = { ...behavior, files: [...behavior.files, 'deleted.test.ts'] };

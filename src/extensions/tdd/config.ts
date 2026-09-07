@@ -7,4 +7,6 @@ export const tddConfig = {
 } as const;
 
 export const classifyPath = (path: string): 'test' | 'production' =>
-  tddConfig.testGlobs.some((glob) => matchesGlob(path, glob)) ? 'test' : 'production';
+  tddConfig.testGlobs.some((glob) => matchesGlob(path.replaceAll('\\', '/'), glob))
+    ? 'test'
+    : 'production';
