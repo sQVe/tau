@@ -235,7 +235,15 @@ export default defineConfig({
     printWidth: 100,
     singleQuote: true,
     ignorePatterns: ['pnpm-lock.yaml'],
-    overrides: [{ files: ['*.md'], options: { proseWrap: 'always' } }],
+    overrides: [
+      { files: ['*.md'], options: { proseWrap: 'always' } },
+      // Snippet bodies are sent to the model as written, so wrapping them would
+      // put hard line breaks in the middle of the instruction.
+      {
+        files: ['src/extensions/snippets/snippets/*.md'],
+        options: { proseWrap: 'preserve' },
+      },
+    ],
     sortImports: {
       newlinesBetween: true,
       groups: ['builtin', 'external', ['parent', 'sibling', 'index'], 'style', 'unknown'],

@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -142,6 +143,27 @@ describe('loadSnippets', () => {
 
   it('reports a missing directory instead of returning no snippets', async () => {
     await expect(loadSnippets(join(tmpdir(), 'tau-snippets-missing'))).rejects.toThrow('ENOENT');
+  });
+});
+
+describe('the shipped snippets', () => {
+  const shippedDirectory = fileURLToPath(new URL('./snippets/', import.meta.url));
+
+  it('sends each paragraph as one line, so no instruction breaks mid-sentence', async () => {
+    const snippets = await loadSnippets(shippedDirectory);
+
+    expect(snippets.length).toBeGreaterThan(0);
+    for (const snippet of snippets) {
+      // A newline with text on both sides is a hard wrap inside a paragraph.
+      expect(snippet.body, `${snippet.id} is wrapped`).not.toMatch(/[^\n]\n[^\n]/);
+    }
+  });
+
+  it('gives every snippet a unique order within its placement group', async () => {
+    const snippets = await loadSnippets(shippedDirectory);
+    const keys = snippets.map((snippet) => `${snippet.placement}:${snippet.order}`);
+
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });
 
