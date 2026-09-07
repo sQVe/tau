@@ -48,7 +48,8 @@ Use a disposable Git repository with Tau installed and a changed file ready to c
 
 The commit extension and TDD edit enforcement are on. The
 [run_tests tool](../../src/extensions/tdd/index.ts) describes the cycle from a failing test through
-production edits to full verification, with test evidence recorded in memory.
+production edits to full verification, with test evidence persisted to `.tau/state.json` in the
+worktree so it survives a restart.
 
 ## See also
 

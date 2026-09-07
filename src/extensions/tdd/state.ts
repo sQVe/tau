@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { glob, readFile } from 'node:fs/promises';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { glob, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
 
 import { classifyPath, tddConfig } from './config.js';
 import { runTests } from './runner/index.js';
@@ -94,16 +94,62 @@ const failedIn = (cwd: string, { behavior, record }: EvidenceState['reds'][numbe
       resolve(cwd, test.file) === file,
   );
 
+const statePath = (cwd: string) => resolve(cwd, '.tau/state.json');
+
+const emptyState = (): EvidenceState => ({
+  active: null,
+  reds: [],
+  red: null,
+  focusedPass: null,
+  fullPass: null,
+  latestRun: null,
+});
+
+const isStoredState = (value: unknown): value is { tdd: EvidenceState } =>
+  value !== null &&
+  typeof value === 'object' &&
+  'tdd' in value &&
+  value.tdd !== null &&
+  typeof value.tdd === 'object' &&
+  'reds' in value.tdd &&
+  Array.isArray(value.tdd.reds);
+
+const loadState = async (cwd: string): Promise<EvidenceState> => {
+  const path = statePath(cwd);
+  let content: string;
+  try {
+    content = await readFile(path, 'utf8');
+  } catch (error) {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
+    return emptyState();
+  }
+  try {
+    const parsed: unknown = JSON.parse(content);
+    if (!isStoredState(parsed)) throw new Error('missing tdd evidence');
+    return parsed.tdd;
+  } catch (error) {
+    throw new Error(`Unreadable test evidence in ${path}`, { cause: error });
+  }
+};
+
+const saveState = async (cwd: string, state: EvidenceState) => {
+  const path = statePath(cwd);
+  const temporary = `${path}.tmp`;
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(temporary, JSON.stringify({ tdd: state }));
+  await rename(temporary, path);
+};
+
 export const createEvidenceStore = () => {
-  let state: EvidenceState = {
-    active: null,
-    reds: [],
-    red: null,
-    focusedPass: null,
-    fullPass: null,
-    latestRun: null,
+  const states = new Map<string, Promise<EvidenceState>>();
+  const stateFor = (cwd: string) => {
+    const key = resolve(cwd);
+    const state = states.get(key) ?? loadState(key);
+    states.set(key, state);
+    return state;
   };
   const read = async (cwd: string) => {
+    const state = await stateFor(cwd);
     const evidence = structuredClone(state);
     const hashes = await hashInputs(cwd, evidence.active?.files ?? []);
     const productionHashes = await hashInputs(cwd, evidence.active?.files ?? [], 'focused');
@@ -168,15 +214,15 @@ export const createEvidenceStore = () => {
     const after = await hashInputs(cwd, behavior.files, scope);
     if (!sameHashes(before, after))
       return { kind: 'inputs-changed' as const, ...(await read(cwd)) };
+    const state = await stateFor(cwd);
     if (JSON.stringify(state.active) !== JSON.stringify(behavior)) {
-      state = {
+      Object.assign(state, {
         active: structuredClone(behavior),
-        reds: state.reds,
         red: null,
         focusedPass: null,
         fullPass: null,
         latestRun: null,
-      };
+      });
     }
     const record = { before, after, report };
     const filesExist = behavior.files.every((file) => after[resolve(cwd, file)] != null);
@@ -217,6 +263,7 @@ export const createEvidenceStore = () => {
       if (scope === 'full') state.fullPass = record;
       else state.focusedPass = record;
     }
+    await saveState(cwd, state);
     return { kind: report.kind, ...(await read(cwd)) };
   };
   return {

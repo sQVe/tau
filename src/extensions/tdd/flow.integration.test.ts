@@ -35,10 +35,7 @@ interface ToolResult {
 vi.setConfig({ testTimeout: 60_000 });
 let counter = 0;
 
-const createHarness = async (
-  cleanup: TestContext['onTestFinished'],
-  extensionFactories: ExtensionFactory[] = [],
-) => {
+const createWorktree = async (cleanup: TestContext['onTestFinished']) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-tdd-'));
   cleanup(() => rm(cwd, { recursive: true, force: true }));
   await promisify(execFile)('git', ['init', '--quiet', cwd]);
@@ -49,6 +46,15 @@ const createHarness = async (
     join(cwd, 'behavior.test.ts'),
     "import { it, expect } from 'vitest'; it('required behavior', () => expect(1).toBe(2));",
   );
+  return cwd;
+};
+
+const createHarness = async (
+  cleanup: TestContext['onTestFinished'],
+  extensionFactories: ExtensionFactory[] = [],
+  reused?: string,
+) => {
+  const cwd = reused ?? (await createWorktree(cleanup));
   const agentDir = join(cwd, 'agent');
   const faux = registerFauxProvider({ provider: `tau-tdd-${++counter}` });
   cleanup(() => {
@@ -210,6 +216,22 @@ it('enforces file classifications across the evidence phases through pi', async 
   ).toBe(false);
   expect((await run(behavior)).details.phase).toBe('green');
   expect((await run({ ...behavior, scope: 'full' })).details.phase).toBe('verified');
+});
+
+it('keeps RED evidence across a restarted pi session in the same worktree', async ({
+  onTestFinished,
+}) => {
+  const first = await createHarness(onTestFinished);
+  expect((await first.run()).details.phase).toBe('red');
+  first.session.dispose();
+
+  const second = await createHarness(onTestFinished, [], first.cwd);
+
+  const production = await second.call('write', {
+    path: 'src/value.ts',
+    content: 'export const value = 1;',
+  });
+  expect(production.isError).toBe(false);
 });
 
 it('blocks an extension write tool before it executes through pi', async ({ onTestFinished }) => {

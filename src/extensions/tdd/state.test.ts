@@ -77,6 +77,53 @@ const createHarness = async (cleanup: TestContext['onTestFinished']) => {
   return { cwd, store, behavior };
 };
 
+it('reloads recorded evidence into a new store for the same worktree', async ({
+  onTestFinished,
+}) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  await store.run(cwd, behavior, 'focused');
+  expect(await createEvidenceStore().read(cwd)).toMatchObject({
+    phase: 'red',
+    implementationAllowed: true,
+  });
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  await store.run(cwd, behavior, 'focused');
+  await store.run(cwd, behavior, 'full');
+  expect(await createEvidenceStore().read(cwd)).toMatchObject({
+    phase: 'verified',
+    fullPassValid: true,
+  });
+});
+
+it('keeps the stored evidence loadable after an interrupted write', async ({ onTestFinished }) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  await store.run(cwd, behavior, 'focused');
+  await writeFile(join(cwd, '.tau/state.json.tmp'), '{"tdd":{"active"');
+  expect(JSON.parse(await readFile(join(cwd, '.tau/state.json'), 'utf8'))).toHaveProperty('tdd');
+  expect(await createEvidenceStore().read(cwd)).toMatchObject({
+    phase: 'red',
+    implementationAllowed: true,
+  });
+});
+
+it('keeps evidence out of another worktree', async ({ onTestFinished }) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  const other = await createHarness(onTestFinished);
+  await store.run(cwd, behavior, 'focused');
+  expect(await store.read(other.cwd)).toMatchObject({
+    phase: 'locked',
+    implementationAllowed: false,
+  });
+  expect(await createEvidenceStore().read(other.cwd)).toMatchObject({ phase: 'locked' });
+});
+
+it('fails loudly when the stored evidence is unreadable', async ({ onTestFinished }) => {
+  const { cwd } = await createHarness(onTestFinished);
+  await mkdir(join(cwd, '.tau'));
+  await writeFile(join(cwd, '.tau/state.json'), '{ not json');
+  await expect(createEvidenceStore().read(cwd)).rejects.toThrow(join(cwd, '.tau/state.json'));
+});
+
 it('requires RED and a final full pass to verify', async ({ onTestFinished }) => {
   const { cwd, store, behavior } = await createHarness(onTestFinished);
   await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
