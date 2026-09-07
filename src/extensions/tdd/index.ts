@@ -96,9 +96,9 @@ export default function tddExtension(pi: ExtensionAPI) {
         else if (
           ambiguous.length > 0 &&
           ambiguous.length < behavior.files.length &&
-          details.phase === 'red'
+          details.phase !== 'locked'
         )
-          next = `More than one test in ${JSON.stringify(ambiguous)} has the full name ${JSON.stringify(behavior.testFullName)}, so that file proves nothing; the RED recorded from the other required files stands and the phase is ${details.phase}. Give each test a unique full name, then call ${call}.`;
+          next = `More than one test in ${JSON.stringify(ambiguous)} has the full name ${JSON.stringify(behavior.testFullName)}, so that file proves nothing; the evidence recorded from the other required files stands and the phase is ${details.phase}. Give each test a unique full name, then call ${call}.`;
         else if (ambiguous.length > 0)
           next = `More than one test in ${JSON.stringify(ambiguous)} has the full name ${JSON.stringify(behavior.testFullName)}, so the report cannot identify it and no evidence was recorded. Give each test a unique full name, then call ${call}.`;
         else if (scope === 'focused' && details.kind === 'pass' && details.phase === 'locked')
