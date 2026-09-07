@@ -103,6 +103,7 @@ const emptyState = (): EvidenceState => ({
   focusedPass: null,
   fullPass: null,
   latestRun: null,
+  verified: false,
 });
 
 const isStoredState = (value: unknown): value is { tdd: EvidenceState } =>
@@ -167,9 +168,9 @@ export const createEvidenceStore = () => {
         evidence.reds.map(async ({ behavior, record }) => {
           const requiredHashes = await hashInputs(cwd, behavior.files);
           return Object.entries(requiredHashes).every(([file, hash]) => {
-            // Only a RED that failed inside this file may renew its snapshot, so appending
-            // a behavior to a shared file keeps working while an unrelated RED cannot
-            // launder edits to an earlier required test.
+            // A RED that failed inside this file renews its snapshot, so appending a behavior
+            // to a shared file keeps working while a RED elsewhere cannot launder edits here.
+            // An earlier test weakened in the same edit is still laundered: ABU-338.
             const latest = evidence.reds.findLast((entry) => failedIn(cwd, entry, file));
             return (latest?.record ?? record).after[file] === hash;
           });
@@ -218,10 +219,14 @@ export const createEvidenceStore = () => {
     if (JSON.stringify(state.active) !== JSON.stringify(behavior)) {
       Object.assign(state, {
         active: structuredClone(behavior),
+        // A verified full pass is a task boundary: its REDs are spent, so the next behavior
+        // starts without them and renaming or dropping a shipped test cannot deadlock the gate.
+        reds: state.verified ? [] : state.reds,
         red: null,
         focusedPass: null,
         fullPass: null,
         latestRun: null,
+        verified: false,
       });
     }
     const record = { before, after, report };
@@ -263,8 +268,10 @@ export const createEvidenceStore = () => {
       if (scope === 'full') state.fullPass = record;
       else state.focusedPass = record;
     }
+    const result = await read(cwd);
+    state.verified = result.fullPassValid;
     await saveState(cwd, state);
-    return { kind: report.kind, ...(await read(cwd)) };
+    return { kind: report.kind, ...result };
   };
   return {
     read,

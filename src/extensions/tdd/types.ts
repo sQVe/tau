@@ -21,6 +21,7 @@ export interface EvidenceState {
   focusedPass: EvidenceRecord | null;
   fullPass: EvidenceRecord | null;
   latestRun: EvidenceRecord | null;
+  verified: boolean;
 }
 
 export type Phase = 'locked' | 'red' | 'green' | 'verified';

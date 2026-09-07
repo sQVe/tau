@@ -254,6 +254,37 @@ it.each(['skip', 'delete', 'amend'])(
   },
 );
 
+it(
+  'drops earlier REDs once a verified full pass closes the task',
+  { timeout: 120_000 },
+  async ({ onTestFinished }) => {
+    const { cwd, store } = await createHarness(onTestFinished);
+    await rm(join(cwd, 'behavior.test.ts'));
+    const cycle = async (index: number) => {
+      const behavior = {
+        behavior: `behavior ${index}`,
+        testFullName: `behavior ${index}`,
+        files: [`behavior${index}.test.ts`],
+      };
+      await writeFile(
+        join(cwd, behavior.files[0]!),
+        `import { it, expect } from 'vitest'; import { value } from './src/value'; it('behavior ${index}', () => expect(value).toBeGreaterThanOrEqual(${index}));`,
+      );
+      expect(await store.run(cwd, behavior, 'focused')).toMatchObject({ phase: 'red' });
+      await writeFile(join(cwd, 'src/value.ts'), `export const value = ${index};`);
+      await store.run(cwd, behavior, 'focused');
+      return store.run(cwd, behavior, 'full');
+    };
+    for (const index of [1, 2, 3]) {
+      expect(await cycle(index)).toMatchObject({ phase: 'verified' });
+    }
+    const path = join(cwd, 'behavior1.test.ts');
+    await writeFile(path, (await readFile(path, 'utf8')).replaceAll('behavior 1', 'renamed'));
+
+    expect(await cycle(4)).toMatchObject({ phase: 'verified', fullPassValid: true });
+  },
+);
+
 it('rejects a skipped earlier RED even when its test hash is unchanged', async ({
   onTestFinished,
 }) => {

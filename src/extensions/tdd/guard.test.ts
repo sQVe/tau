@@ -24,6 +24,7 @@ const createStore = (phase: Phase) => ({
         focusedPass: null,
         fullPass: null,
         latestRun: null,
+        verified: false,
       },
     }),
   ),
@@ -188,14 +189,13 @@ it.each([
     'locked',
     'Prove RED with run_tests {"behavior":"required behavior","testFullName":"required","files":["value.test.ts"],"scope":"focused"}',
   ],
-  [
-    'green',
-    'Verify with run_tests {"behavior":"required behavior","testFullName":"required","files":["value.test.ts"],"scope":"full"}',
-  ],
-  [
-    'verified',
-    'Start the next behavior with write using a *.test.ts path and content that tests the missing behavior',
-  ],
+  ...(['green', 'verified'] as const).map(
+    (phase) =>
+      [
+        phase,
+        'Verify the current behavior with run_tests {"behavior":"required behavior","testFullName":"required","files":["value.test.ts"],"scope":"full"}, or start the next behavior by writing its test and proving RED with run_tests scope "focused"',
+      ] as const,
+  ),
 ] as const)('gives an actionable next step in %s', async (phase, next) => {
   const result = await guardToolCall(
     makeEvent('write', { path: 'src/value.ts' }),

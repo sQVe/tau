@@ -35,10 +35,10 @@ const pathNextStep = (
   )
     return 'Choose an unprotected test file with ls {"path":"."}';
   if (classifyPath(path) === 'test' || implementationAllowed) return undefined;
+  if ((phase === 'green' || phase === 'verified') && active !== null)
+    return `Verify the current behavior with run_tests ${JSON.stringify({ ...active, scope: 'full' })}, or start the next behavior by writing its test and proving RED with run_tests scope "focused"`;
   if (phase === 'verified')
     return 'Start the next behavior with write using a *.test.ts path and content that tests the missing behavior';
-  if (phase === 'green' && active !== null)
-    return `Verify with run_tests ${JSON.stringify({ ...active, scope: 'full' })}`;
   return active === null
     ? `Write a failing test with write using path ${JSON.stringify(`${file.replace(/\.tsx?$/, '')}.test.ts`)} and content that checks the missing behavior`
     : `Prove RED with run_tests ${JSON.stringify({ ...active, scope: 'focused' })}`;
