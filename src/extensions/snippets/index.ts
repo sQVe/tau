@@ -62,9 +62,9 @@ export default function snippetsExtension(pi: ExtensionAPI) {
     updateWidget(ctx);
   };
 
-  pi.on('session_start', async (_event, ctx) => {
+  // Every reader reloads from disk first, so there is nothing to load here.
+  pi.on('session_start', (_event, ctx) => {
     enabled = new Set();
-    snippets = await loadSnippets(snippetsDirectory);
     updateWidget(ctx);
   });
 
