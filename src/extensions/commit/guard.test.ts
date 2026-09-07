@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
-import type { ExtensionAPI, ToolCallEvent, ToolDefinition } from '@mariozechner/pi-coding-agent';
+import type { ExtensionAPI, ToolCallEvent, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import * as commentReview from './commentReview.js';

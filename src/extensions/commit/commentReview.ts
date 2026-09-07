@@ -1,12 +1,11 @@
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 
-import { completeSimple } from '@mariozechner/pi-ai';
-import type { Api, Model } from '@mariozechner/pi-ai';
-import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
-import { Type } from '@sinclair/typebox';
-import type { Static } from '@sinclair/typebox';
-import { Value } from '@sinclair/typebox/value';
+import type { Api, Model } from '@earendil-works/pi-ai';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { Type } from 'typebox';
+import type { Static } from 'typebox';
+import { Value } from 'typebox/value';
 
 export const commentPolicy = `Review code comments in the staged changes. Do not review unrelated code quality.
 Check changed comments and existing comments whose meaning is affected by changed behavior.
@@ -153,7 +152,7 @@ export const reviewComments = async (
   if (!auth.ok) throw new Error(`Comment review authentication failed: ${auth.error}`);
   const reviewSignal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(120_000)]);
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await completeSimple(
+    const response = await ctx.modelRegistry.complete(
       model,
       {
         systemPrompt:

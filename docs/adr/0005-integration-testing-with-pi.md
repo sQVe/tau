@@ -16,8 +16,8 @@
 ## Options considered
 
 - Keep `ExtensionAPI` stubs. Fast, but cannot catch broken Pi setup or rejected tool inputs.
-- Use a real `AgentSession` with Pi's faux provider. `registerFauxProvider` lets tests supply
-  assistant messages and tool calls without a network connection.
+- Use a real `AgentSession` with Pi's faux provider. `fauxProvider` lets tests supply assistant
+  messages and tool calls without a network connection.
 - Run `pi -p` or `--mode json` in a subprocess. Uses the real program, but `hasUI` is always false
   in print mode. Tests cannot approve a commit, and each run needs an API key.
 - Run `pi --mode rpc` in a subprocess. Tests could exchange approval messages, but this needs an API
@@ -27,7 +27,7 @@
 ## Decision
 
 Integration tests use a real Pi `AgentSession`, load Tau through Pi's extension loader, and supply
-model responses through the faux provider from `@mariozechner/pi-ai`.
+model responses through the faux provider from `@earendil-works/pi-ai`.
 
 ### Layers
 
@@ -39,15 +39,16 @@ model responses through the faux provider from `@mariozechner/pi-ai`.
 ### Isolation
 
 Every integration test gets a temp `cwd` and a temp `agentDir`, plus `SessionManager.inMemory()`,
-`SettingsManager.inMemory()`, `AuthStorage.inMemory()`, and `ModelRegistry.inMemory()`. Resource
-discovery is disabled (`noExtensions`, `noSkills`, `noPromptTemplates`, `noThemes`) so a developer's
-`~/.pi` can never change a result.
+`SettingsManager.inMemory()`, and a `ModelRuntime` with in-memory credential and model stores. Model
+configuration loading and initial catalog refresh are disabled. Resource discovery is disabled
+(`noExtensions`, `noSkills`, `noPromptTemplates`, `noThemes`) so a developer's `~/.pi` can never
+change a result.
 
 ### Dependency versions
 
-`@mariozechner/pi-ai` is a devDependency with the same version range as pi-coding-agent, so both
-resolve to a single copy. The provider registry belongs to one copy of pi-ai. If the session uses a
-different copy, it cannot find the faux provider.
+`@earendil-works/pi-ai` is a devDependency with the same version range as pi-coding-agent, so both
+resolve to a single copy. Register the faux provider on the session's `ModelRuntime` so both the
+agent and comment reviewer use the same scripted responses.
 
 ## Tradeoffs
 
@@ -56,7 +57,6 @@ different copy, it cannot find the faux provider.
 - Tests give repeatable results without network access or model fees, matching Pi's testing rules.
 - Cost: tests depend on Pi internals such as `bindExtensions` and `DefaultResourceLoader`. A Pi
   upgrade can break the test setup even if Tau still works.
-- Cost: a second installed copy of pi-ai breaks the test setup with a confusing error.
 - Cost: approval messages are tested within one process. Pi's RPC connection remains untested.
 
 ## See also

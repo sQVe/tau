@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 export default async function writingExtension(pi: ExtensionAPI) {
   const instructionsPath = new URL('./instructions.md', import.meta.url);

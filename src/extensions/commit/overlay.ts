@@ -1,5 +1,5 @@
-import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
-import { DynamicBorder } from '@mariozechner/pi-coding-agent';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { DynamicBorder } from '@earendil-works/pi-coding-agent';
 import {
   Container,
   Key,
@@ -8,7 +8,7 @@ import {
   Spacer,
   Text,
   TruncatedText,
-} from '@mariozechner/pi-tui';
+} from '@earendil-works/pi-tui';
 
 export type CommitChoice =
   | 'approve'
