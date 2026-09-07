@@ -15,9 +15,7 @@ independently, not just because it answers more than one kind of question.
 
 ## Writing
 
-- Write for readers who use English as a second language. Prefer common words and short sentences.
-- Explain technical terms when needed. Keep the meaning and required format when simplifying text.
-
+- Follow the [writing rules](./adr/0006-default-writing-policy.md#policy-ownership-and-scope).
 - Use the [ADR](./adr/TEMPLATE.md), [guide](./guides/TEMPLATE.md), and
   [foundation](./foundations/TEMPLATE.md) templates as starting points. Adapt headings and omit
   optional sections that add no useful information. Remove template instructions before publishing.

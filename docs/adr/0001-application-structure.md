@@ -52,8 +52,8 @@ Start each extension with two files:
 - `index.ts` for Pi setup.
 - `types.ts` for its types.
 
-Add files as needed. Common additions include `state.ts`, `decision.ts`, `rules/`, `commands/`,
-`events/`, `tools/`.
+It grows only when a concept has more than one file. Common additions include `state.ts`,
+`decision.ts`, `rules/`, `commands/`, `events/`, `tools/`.
 
 ### Pi commands, events, and tools
 
