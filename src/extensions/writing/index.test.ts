@@ -2,7 +2,7 @@ import { copyFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { DefaultResourceLoader, SettingsManager } from '@mariozechner/pi-coding-agent';
+import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
 it('rejects invalid instructions and reads them again on reload', async ({ onTestFinished }) => {

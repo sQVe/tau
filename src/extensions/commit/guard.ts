@@ -1,5 +1,5 @@
-import { isToolCallEventType } from '@mariozechner/pi-coding-agent';
-import type { ToolCallEvent, ToolCallEventResult } from '@mariozechner/pi-coding-agent';
+import { isToolCallEventType } from '@earendil-works/pi-coding-agent';
+import type { ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 
 export const commitGuardReason = 'Blocked git commit via bash. Use the `commit` tool instead.';
 

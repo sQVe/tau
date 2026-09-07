@@ -3,15 +3,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { fauxAssistantMessage, registerFauxProvider } from '@mariozechner/pi-ai';
 import {
-  AuthStorage,
+  InMemoryCredentialStore,
+  InMemoryModelsStore,
+  fauxAssistantMessage,
+  fauxProvider,
+} from '@earendil-works/pi-ai';
+import {
   DefaultResourceLoader,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
   SettingsManager,
   createAgentSession,
-} from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
 it('loads Tau through Pi with commit features and writing rules on each run', async ({
@@ -49,17 +53,18 @@ it('loads Tau through Pi with commit features and writing rules on each run', as
     ).toEqual(['bro', 'commit']);
     expect(loader.getSkills().diagnostics).toEqual([]);
 
-    const faux = registerFauxProvider({ provider: 'tau-package-writing' });
-    onTestFinished(() => {
-      faux.unregister();
+    const faux = fauxProvider({ provider: 'tau-package-writing' });
+    const modelRuntime = await ModelRuntime.create({
+      credentials: new InMemoryCredentialStore(),
+      modelsStore: new InMemoryModelsStore(),
+      modelsPath: null,
+      refreshOnCreate: false,
     });
-    const authStorage = AuthStorage.inMemory();
-    authStorage.setRuntimeApiKey(faux.getModel().provider, 'faux-key');
+    modelRuntime.registerNativeProvider(faux.provider);
     const { session } = await createAgentSession({
       cwd,
       agentDir,
-      authStorage,
-      modelRegistry: ModelRegistry.inMemory(authStorage),
+      modelRuntime,
       model: faux.getModel(),
       resourceLoader: loader,
       sessionManager: SessionManager.inMemory(cwd),

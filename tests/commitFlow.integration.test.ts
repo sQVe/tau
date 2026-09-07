@@ -4,22 +4,26 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
-import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from '@mariozechner/pi-ai';
-import type { FauxProviderRegistration } from '@mariozechner/pi-ai';
 import {
-  AuthStorage,
+  InMemoryCredentialStore,
+  InMemoryModelsStore,
+  fauxAssistantMessage,
+  fauxToolCall,
+  fauxProvider,
+} from '@earendil-works/pi-ai';
+import type { FauxProviderHandle } from '@earendil-works/pi-ai';
+import {
   DefaultResourceLoader,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
   SettingsManager,
   createAgentSession,
-  createCodingTools,
-} from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
 import type {
   AgentSession,
   AgentSessionEvent,
   ExtensionUIContext,
-} from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
 import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -32,11 +36,9 @@ const execFileAsync = promisify(execFile);
 
 const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
 
-let harnessCounter = 0;
-
 interface Harness {
   session: AgentSession;
-  faux: FauxProviderRegistration;
+  faux: FauxProviderHandle;
   repoDir: string;
   events: AgentSessionEvent[];
   overlays: string[];
@@ -113,13 +115,7 @@ const createHarness = async (
   const repoDir = await createTempRepo(registerCleanup);
   const agentDir = await createTempDir(registerCleanup, 'tau-flow-agent-');
 
-  // Provider names must be unique in Pi's shared registry.
-  harnessCounter += 1;
-  const fauxProviderName = `tau-test-${harnessCounter}`;
-  const faux = registerFauxProvider({ provider: fauxProviderName });
-  registerCleanup(() => {
-    faux.unregister();
-  });
+  const faux = fauxProvider({ provider: 'tau-test' });
 
   const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
   const loader = new DefaultResourceLoader({
@@ -134,20 +130,23 @@ const createHarness = async (
   });
   await loader.reload();
 
-  // Pi requires a key even for the faux provider.
-  const authStorage = AuthStorage.inMemory();
-  authStorage.setRuntimeApiKey(fauxProviderName, 'faux-key');
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsStore: new InMemoryModelsStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(faux.provider);
 
   const { session, extensionsResult } = await createAgentSession({
     cwd: repoDir,
     agentDir,
-    authStorage,
-    modelRegistry: ModelRegistry.inMemory(authStorage),
+    modelRuntime,
     model: faux.getModel(),
     resourceLoader: loader,
     sessionManager: SessionManager.inMemory(repoDir),
     settingsManager,
-    tools: createCodingTools(repoDir),
+    tools: ['read', 'bash', 'edit', 'write', 'commit'],
   });
   registerCleanup(() => {
     session.dispose();
@@ -186,6 +185,37 @@ const toolResultOf = (events: AgentSessionEvent[], toolName: string) => {
 };
 
 describe('commit flow', () => {
+  it('preserves the provider-resolved endpoint during comment review', async ({
+    onTestFinished,
+  }) => {
+    const { session, faux, repoDir, events } = await createHarness(onTestFinished);
+    const endpoint = 'https://enterprise.example.test';
+    const auth = vi.spyOn(faux.provider.auth.apiKey!, 'resolve').mockImplementation((input) =>
+      Promise.resolve({
+        auth: input.credential?.key
+          ? { apiKey: input.credential.key }
+          : { apiKey: 'test-token', baseUrl: endpoint },
+      }),
+    );
+    onTestFinished(() => {
+      auth.mockRestore();
+    });
+    await writeFile(join(repoDir, 'feature.txt'), 'hello\n');
+    faux.setResponses([
+      fauxAssistantMessage([
+        fauxToolCall('commit', { files: ['feature.txt'], subject: 'feat: add feature' }),
+      ]),
+      (_context, _options, _state, model) => {
+        expect(model.baseUrl).toBe(endpoint);
+        return fauxAssistantMessage('{"findings":[]}');
+      },
+      fauxAssistantMessage('Committed.'),
+    ]);
+    await session.prompt('Commit the file.');
+    expect(toolResultOf(events, 'commit').isError).toBe(false);
+    expect(faux.state.callCount).toBe(3);
+  });
+
   it('reviews a routine lockfile update with complete before-and-after context', async ({
     onTestFinished,
   }) => {
