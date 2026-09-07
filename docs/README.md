@@ -1,9 +1,10 @@
 # Documentation
 
-- [Vision](./foundations/vision.md): project direction and scope.
-- [Development](./guides/development.md): local setup, trying Tau, verification, and current status.
-- [Comment review](./guides/comment-review.md): findings, retries, waivers, and review validity.
-- [Maintenance](./guides/maintenance.md): tooling and versioning.
-- [Architecture decisions](./adr/README.md): technical choices and their tradeoffs.
+- [Vision](./vision.md): project goals and limits.
+- [Development](./development.md): local setup, trying Tau, verification, and current status.
+- [Comment review](./comment-review.md): findings, retries, waivers, and review validity.
+- [Maintenance](./maintenance.md): tooling and versioning.
+- [Agent writing instructions](../src/extensions/writing/instructions.md): rules loaded into Pi.
+- [Architecture decisions](./adr/README.md): technical choices and their benefits and costs.
 
 See [writing docs](./AGENTS.md) when adding or updating documentation.

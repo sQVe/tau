@@ -13,7 +13,7 @@ whose meaning changes with the code. It does not audit unrelated code.
 Useful explanations of constraints, invariants, workarounds, and decisions should stay. Concrete
 inaccuracies and clear comment-policy violations block approval. Suggestions to explain a missing
 constraint are advisory. The policy lives in
-[commentReview.ts](../../src/extensions/commit/commentReview.ts).
+[commentReview.ts](../src/extensions/commit/commentReview.ts).
 
 ## Respond to findings
 

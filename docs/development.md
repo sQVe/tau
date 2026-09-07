@@ -5,7 +5,7 @@ Set up a checkout, try Tau in Pi, and verify changes.
 ## Local setup
 
 Use the Node.js version required by `engines.node` and the pnpm version specified by
-`packageManager` in [package.json](../../package.json). Run these commands from the Tau checkout:
+`packageManager` in [package.json](../package.json). Run these commands from the Tau checkout:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -16,7 +16,7 @@ pnpm check
 Use `pnpm format` to format files. Pi loads the TypeScript source directly; there is no build step.
 Tests use temporary directories and need no model API.
 
-For a focused test run, pass a test file to `pnpm test`:
+To run one test file, pass its path to `pnpm test`:
 
 ```sh
 pnpm test src/extensions/commit/tool.test.ts
@@ -35,9 +35,9 @@ pnpm exec pi --no-extensions --no-skills -e ./src/extensions/index.ts --skill ./
 For use in another project, run `pi install -l /absolute/path/to/tau` there, then start Pi. This
 records the local package in that project's `.pi/settings.json`.
 
-## Manual smoke test
+## Manual check
 
-Use a disposable Git repository with Tau installed and a changed file ready to commit.
+Use a temporary Git repository with Tau installed and a changed file ready to commit.
 
 1. Ask Pi to commit that file through `/commit`. Check that the tool requests confirmation and
    creates one commit after approval.
@@ -46,9 +46,17 @@ Use a disposable Git repository with Tau installed and a changed file ready to c
 
 ## Current status
 
-The commit extension includes [comment review](./comment-review.md) before approval. TDD enforcement
-is not built yet. Interactive commits need credentials for the session model; automated tests use a
-scripted provider and make no model API calls.
+Tau includes the commit and writing extensions. The commit extension includes
+[comment review](./comment-review.md) before approval. TDD enforcement is not built yet. Interactive
+commits need credentials for the session model; automated tests use a scripted provider and make no
+model API calls.
+
+The writing extension adds its [instructions](../src/extensions/writing/instructions.md) to the
+system prompt before each ordinary agent run. No skill command is needed. Run `/reload` in Pi after
+editing the instructions. Compaction and branch summaries use separate prompts.
+
+If the instructions are missing, unreadable, or blank, Tau fails to load and Pi reports the error. A
+missing file in an installed package means the package needs repair or reinstallation.
 
 ## See also
 
