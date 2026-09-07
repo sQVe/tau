@@ -1,8 +1,8 @@
 import { resolve } from 'node:path';
 
-import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
-import { defineTool } from '@mariozechner/pi-coding-agent';
-import { Type } from '@sinclair/typebox';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { defineTool } from '@earendil-works/pi-coding-agent';
+import { Type } from 'typebox';
 
 import { guardToolCall } from './guard.js';
 import { ambiguousFiles, createEvidenceStore } from './state.js';

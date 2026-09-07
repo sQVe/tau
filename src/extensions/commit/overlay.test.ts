@@ -1,4 +1,4 @@
-import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, vi } from 'vitest';
 
 import { confirmCommitOverlay } from './overlay.js';
@@ -13,7 +13,8 @@ const view = {
   group: '1/2',
 };
 
-const setup = (keys: string[], terminalRows = 60) => {
+const setup = (keys: string[], terminalRows = 60, followUps: string[][] = []) => {
+  const steps = [keys, ...followUps];
   const done = vi.fn<(result: unknown) => void>();
   const render = vi.fn<(text: string) => void>();
   const custom = vi.fn<
@@ -30,15 +31,39 @@ const setup = (keys: string[], terminalRows = 60) => {
     );
     render(component.render(80).join('\n'));
     component.invalidate();
-    for (const key of keys) {
+    for (const key of steps.shift() ?? []) {
       component.handleInput?.(key);
     }
+    render(component.render(80).join('\n'));
     return done.mock.lastCall?.[0];
   });
   return { ctx: { ui: { custom } } as unknown as ExtensionContext, custom, done, render };
 };
 
 describe('confirmCommitOverlay', () => {
+  it('aborts the commit when Ctrl+C is pressed in the review viewer', async () => {
+    const { ctx, custom } = setup(['r'], 30, [['\u0003'], ['a']]);
+    expect(await confirmCommitOverlay(ctx, { ...view, review: 'Review findings' })).toBe('abort');
+    expect(custom).toHaveBeenCalledTimes(2);
+  });
+  it('opens a scrollable read-only review and returns to commit approval', async () => {
+    const { ctx, render } = setup(['r'], 30, [['\u001b[F', '\u001b'], ['a']]);
+    const review = Array.from({ length: 60 }, (_, index) => `Finding ${index + 1}`).join('\n');
+    expect(await confirmCommitOverlay(ctx, { ...view, review })).toBe('approve');
+    expect(render.mock.calls.some(([output]) => output.includes('Finding 60'))).toBe(true);
+  });
+  it('requires an explicit waiver instead of ordinary approval for a blocked review', async () => {
+    const { ctx, done, render } = setup(['a', 'w']);
+    const choice = await confirmCommitOverlay(ctx, {
+      ...view,
+      review: 'retry.ts:1 [blocking] The comment is stale.',
+      reviewBlocked: true,
+    });
+    expect(choice).toBe('waive');
+    expect(done).toHaveBeenCalledExactlyOnceWith('waive');
+    expect(render.mock.lastCall?.[0]).toContain('Waive comment review and commit');
+    expect(render.mock.lastCall?.[0]).not.toContain('Approve and commit');
+  });
   it.each([
     ['a', 'approve'],
     ['s', 'subject'],

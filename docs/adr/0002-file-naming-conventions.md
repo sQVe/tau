@@ -5,58 +5,57 @@
 
 ## Context
 
-- ADR 0001 settled directory layout but not file-level naming or organization.
-- Several naming conventions exist in practice without a central reference.
+- ADR 0001 set the directory layout but left file names and contents undecided.
+- Files use different naming rules with no shared reference.
 
 ## Options considered
 
-- **Per-module convention.** Each module picks its own style. Causes drift.
-- **One rule across TypeScript source.** Uniform and scannable; occasionally awkward for class-heavy
-  files.
+- Let each module choose its style. File names become less consistent.
+- Use one rule for TypeScript files. Makes names consistent, but can be awkward for files with many
+  classes.
 
 ## Decision
 
-One rule set spans TypeScript source, tests, documentation, special files, and config.
+Use the following naming rules for TypeScript, tests, docs, special files, and config.
 
 ### TypeScript source
 
-- camelCase for all `.ts` files (`configLoader.ts`, `workspaceState.ts`).
-- PascalCase only when a file's primary export is a single class matching the file name. Tau rarely
-  uses classes.
-- `index.ts` contains real implementation. Barrel files (re-export only) are disallowed. If a module
-  needs an aggregated surface, restructure it.
-- `types.ts` next to `index.ts` holds the module's domain types. Single-type files do not earn their
-  own file.
+- Use camelCase for `.ts` files, such as `configLoader.ts` and `workspaceState.ts`.
+- Use PascalCase only when a file mainly exports one class with the same name. Tau rarely uses
+  classes.
+- `index.ts` contains real implementation. Do not use files that only re-export other modules, also
+  called barrel files. Change the module structure if callers need one entry point.
+- `types.ts` next to `index.ts` holds the module's types. Do not create a separate file for each
+  type.
 
 ### Tests
 
-- Unit tests colocate as `foo.test.ts` next to `foo.ts`.
+- Name unit tests `foo.test.ts` next to `foo.ts`.
 - Cross-module integration and end-to-end tests live under `tests/` with the same suffix.
-- Subdivide by test type as the suite grows (`tests/integration/`).
+- Add directories by test type as needed, such as `tests/integration/`.
 
 ### Documentation
 
-- Files under `docs/` use kebab-case (`application-structure.md`).
+- Use kebab-case under `docs/`, such as `application-structure.md`.
 - ADRs also use the `NNNN-kebab.md` prefix.
 
 ### Special files
 
 Uppercase filenames exist only when an external convention requires them: `LICENSE`, `README.md`,
-`SKILL.md`, `TEMPLATE.md`. New uppercase files need a stated convention reason.
+`SKILL.md`, `TEMPLATE.md`. Explain which convention requires each new uppercase file.
 
 ### Config files
 
-Repository-root config (`.oxlintrc.json`, `tsconfig.json`, etc.) follows each tool's own convention.
-Out of scope.
+Root config files, such as `.oxlintrc.json` and `tsconfig.json`, follow the naming rules of their
+tools.
 
 ## Tradeoffs
 
 - One rule per question a contributor might ask about file naming.
-- The `index.ts` rule prevents barrel files from proliferating.
-- `tests/` has a stated purpose before end-to-end tests actually arrive.
-- Cost: the no-barrel rule may feel restrictive as a module grows; the mitigation is restructure,
-  not relax.
-- Cost: case-by-case uppercase filenames require judgment rather than a hard rule.
+- The `index.ts` rule prevents files that only re-export other modules.
+- `tests/` has a clear purpose before end-to-end tests arrive.
+- Cost: a growing module may need restructuring to avoid files that only re-export other modules.
+- Cost: new uppercase file names need individual review.
 
 ## See also
 

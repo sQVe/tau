@@ -5,24 +5,24 @@
 
 ## Context
 
-- Tau ships Pi skills from `skills/` at the package root but does not yet state how to write them.
-- Pi implements the Agent Skills standard and keeps the SKILL.md body freeform.
-- Without a house style, skills drift:
-  - one reads like prose, another like a command protocol.
+- Tau ships Pi skills from `skills/` at the package root but has no shared writing rules for them.
+- Pi implements the Agent Skills standard and allows any structure in the SKILL.md body.
+- Without shared rules:
+  - some skills read like prose and others like command instructions.
   - contributors import Claude Code or Codex conventions Pi does not require.
   - skills duplicate repository rules instead of linking to them.
-  - descriptions become too vague for reliable auto-loading.
+  - vague descriptions make it harder for Pi to choose a skill.
 
 ## Options considered
 
-- **No house style.** Each skill picks its own form. Maximizes author freedom; maximizes drift.
-- **XML-like section tags** (`<skill_overview>`, `<critical_rules>`). Familiar from Claude Code
+- Let each author choose the format. Allows more freedom but makes skills less consistent.
+- Use XML-like tags such as `<skill_overview>` and `<critical_rules>`. Familiar from Claude Code
   skills, but not part of Pi's format.
-- **Markdown-first house style.** Readable as plain Markdown, close to Pi's native model.
+- Use Markdown. Readable as plain text and matches Pi's format.
 
 ## Decision
 
-Tau skills use a Pi-native, Markdown-first authoring style.
+Write Tau skills in Markdown using Pi's skill format.
 
 ### Required shape
 
@@ -49,39 +49,38 @@ Prefer this shape when applicable:
 - `## Checklist` when a final review pass helps
 - `## See also` for linked rules or reference
 
-Not every skill needs every section, but the structure should stay recognizable.
+Not every skill needs every section. Keep the structure easy to recognize.
 
 ### Division of responsibility
 
-Skills are guidance and workflow packages, not the source of repository truth.
+Skills explain how to do tasks. ADRs and code define the rules.
 
-- normative rules belong in ADRs or code enforcement.
-- skills link to authoritative documents instead of restating them.
-- a skill may summarize rules needed to operate correctly; on conflict, the linked document wins.
+- put rules in ADRs or code that enforces them.
+- link to the documents that define the rules instead of copying them.
+- a skill may summarize the rules it needs. If they conflict, follow the linked document.
 
 ### Writing style
 
 - Keep skills concise enough to scan.
-- State trigger conditions explicitly.
-- Specify required behavior when the workflow is strict.
+- State when to use the skill.
+- State which steps are required.
 - Stay readable and editable as ordinary Markdown.
 
-Advisory skills use principles, heuristics, and checklists. Procedural skills use a step-by-step
-procedure, not custom tagged sections.
+Use principles and checklists for advice. Use numbered steps for a procedure.
 
 ### Growth path
 
-When a skill outgrows one file, keep `SKILL.md` as the entry point and move detail into sibling
-references, scripts, or assets loaded on demand through relative links.
+When a skill outgrows one file, keep `SKILL.md` as the entry point and move details into nearby
+reference files, scripts, or other files. Use relative links so the agent can load them when needed.
 
 ## Tradeoffs
 
-- Tau skills match Pi's native model instead of importing conventions Pi does not require.
+- Tau skills match Pi's format.
 - Skills stay easy to read, review, and edit.
-- Descriptions become more useful for Pi's on-demand loading.
-- Rules stay authoritative in one place instead of drifting across skills.
-- Cost: contributors familiar with Claude Code style may expect richer custom markup.
-- Cost: rigid workflows feel slightly less templated without XML-like tags.
+- Descriptions help Pi choose the right skill.
+- Rules stay in one place.
+- Cost: contributors used to Claude Code may expect custom tags.
+- Cost: authors used to XML-like tags must learn the Markdown section names.
 
 ## See also
 

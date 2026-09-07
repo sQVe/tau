@@ -4,24 +4,29 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
-import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from '@mariozechner/pi-ai';
 import {
-  AuthStorage,
+  InMemoryCredentialStore,
+  InMemoryModelsStore,
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxToolCall,
+} from '@earendil-works/pi-ai';
+import type { FauxResponseStep } from '@earendil-works/pi-ai';
+import {
   DefaultResourceLoader,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
   SettingsManager,
   createAgentSession,
-  createCodingTools,
   defineTool,
-} from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
 import type {
   AgentSessionEvent,
   ExtensionFactory,
   ExtensionUIContext,
   ToolDefinition,
-} from '@mariozechner/pi-coding-agent';
-import { Type } from '@sinclair/typebox';
+} from '@earendil-works/pi-coding-agent';
+import { Type } from 'typebox';
 import type { TestContext } from 'vitest';
 import { expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
 
@@ -56,10 +61,7 @@ const createHarness = async (
 ) => {
   const cwd = reused ?? (await createWorktree(cleanup));
   const agentDir = join(cwd, 'agent');
-  const faux = registerFauxProvider({ provider: `tau-tdd-${++counter}` });
-  cleanup(() => {
-    faux.unregister();
-  });
+  const faux = fauxProvider({ provider: `tau-tdd-${++counter}` });
   const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
   const loader = new DefaultResourceLoader({
     cwd,
@@ -73,18 +75,33 @@ const createHarness = async (
     noThemes: true,
   });
   await loader.reload();
-  const authStorage = AuthStorage.inMemory();
-  authStorage.setRuntimeApiKey(faux.getModel().provider, 'faux-key');
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsStore: new InMemoryModelsStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(faux.provider);
   const { session, extensionsResult } = await createAgentSession({
     cwd,
     agentDir,
-    authStorage,
-    modelRegistry: ModelRegistry.inMemory(authStorage),
+    modelRuntime,
     model: faux.getModel(),
     resourceLoader: loader,
     sessionManager: SessionManager.inMemory(cwd),
     settingsManager,
-    tools: createCodingTools(cwd),
+    tools: [
+      'read',
+      'bash',
+      'edit',
+      'write',
+      'grep',
+      'find',
+      'ls',
+      'run_tests',
+      'commit',
+      'mcp_patch',
+    ],
   });
   cleanup(() => {
     session.dispose();
@@ -115,10 +132,15 @@ const createHarness = async (
     expect(event.isError).toBe(false);
     return event.result as ToolResult;
   };
-  const call = async (toolName: string, input: Record<string, unknown>) => {
+  const call = async (
+    toolName: string,
+    input: Record<string, unknown>,
+    between: FauxResponseStep[] = [],
+  ) => {
     events.length = 0;
     faux.setResponses([
       fauxAssistantMessage([fauxToolCall(toolName, input)]),
+      ...between,
       fauxAssistantMessage('Done.'),
     ]);
     await session.prompt('Call the tool.');
@@ -291,12 +313,18 @@ it('allows commit and its pre-commit formatter writes outside the file-tool guar
   await session.bindExtensions({
     uiContext: { custom: () => Promise.resolve('approve') } as unknown as ExtensionUIContext,
   });
-  const committed = await call('commit', {
-    files: ['src/value.ts'],
-    subject: 'feat: format fixture',
-  });
-  expect(committed).toMatchObject({ isError: false });
+  // The commit tool reviews comments through the model before asking for approval, and undoes a
+  // commit whose hook rewrote the reviewed content; the formatter's write itself is never gated.
+  const commit = () =>
+    call('commit', { files: ['src/value.ts'], subject: 'feat: format fixture' }, [
+      fauxAssistantMessage('{"findings":[]}'),
+    ]);
+  const rewritten = await commit();
+  expect(rewritten.isError).toBe(true);
+  expect(JSON.stringify(rewritten.result)).toContain('A hook changed reviewed content');
   expect(await readFile(join(cwd, 'src/value.ts'), 'utf8')).toBe('export const value = 1;\n');
+  const committed = await commit();
+  expect(committed).toMatchObject({ isError: false });
   expect((await git(['show', 'HEAD:src/value.ts'])).stdout).toBe('export const value = 1;\n');
 });
 

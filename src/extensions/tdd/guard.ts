@@ -1,6 +1,6 @@
 import { relative, resolve } from 'node:path';
 
-import type { ToolCallEvent, ToolCallEventResult } from '@mariozechner/pi-coding-agent';
+import type { ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 
 import { classifyPath } from './config.js';
 import type { createEvidenceStore } from './state.js';
