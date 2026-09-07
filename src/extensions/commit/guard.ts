@@ -11,14 +11,20 @@ export const commitGuardReason = 'Blocked git commit via bash. Use the `commit` 
 // the span. Deliberately over-blocks mentions such as `git log --grep commit`: a wrongly blocked
 // call costs one retry, while a missed one defeats the guard. Indirection through a variable
 // (`g=git; $g commit`) is beyond a regex and stays unguarded.
-const gitCommitPattern = /\bgit\b(?:[^;|&\n]|\\\n)*(?<![\w/-])commit(?![\w/])|\bgit-commit\b/i;
+const gitCommitPattern = /\bgit\b[^;|&\n]*(?<![\w/-])commit(?![\w/])|\bgit-commit\b/i;
+
+// Bash joins line continuations, drops escapes, and collapses empty quote pairs before it resolves
+// a command name, so `g\it c''ommit` runs git commit. Undo those before matching. Indirection
+// through a variable (`g=git; $g commit`) still needs a shell and stays unguarded.
+const unescapeShellWord = (command: string) =>
+  command.replaceAll('\\\n', '').replaceAll(/\\(.)/gs, '$1').replaceAll(/''|""/g, '');
 
 export const guardToolCall = (event: ToolCallEvent): ToolCallEventResult | undefined => {
   if (!isToolCallEventType('bash', event)) {
     return undefined;
   }
 
-  if (gitCommitPattern.test(event.input.command)) {
+  if (gitCommitPattern.test(unescapeShellWord(event.input.command))) {
     return { block: true, reason: commitGuardReason };
   }
 

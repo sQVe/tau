@@ -186,6 +186,16 @@ describe('guardToolCall', () => {
     });
   });
 
+  it.each(['g\\it c\\ommit -m x', 'git co""mmit -m x', "g''it commit -m x", 'git \\commit -m x'])(
+    'blocks invocations that bash strips escapes and empty quotes from: %s',
+    (command) => {
+      expect(guardToolCall(makeBashEvent(command))).toEqual({
+        block: true,
+        reason: commitGuardReason,
+      });
+    },
+  );
+
   it('blocks a commit split across a line continuation', () => {
     expect(guardToolCall(makeBashEvent("git \\\n  commit -m 'feat: x'"))).toEqual({
       block: true,
