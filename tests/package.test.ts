@@ -18,7 +18,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
-it('loads Tau through Pi with commit features and writing rules on each run', async ({
+it('loads Tau through Pi with commit features, the bundled question tool, and writing rules on each run', async ({
   onTestFinished,
 }) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-package-'));
@@ -42,9 +42,10 @@ it('loads Tau through Pi with commit features and writing rules on each run', as
     const { extensions, errors } = loader.getExtensions();
     expect(errors).toEqual([]);
     expect(extensions).toHaveLength(2);
-    expect(extensions[0]?.tools.has('commit')).toBe(true);
-    expect(extensions[0]?.commands.has('commit')).toBe(true);
-    expect(extensions[0]?.handlers.get('tool_call')).toHaveLength(1);
+    const tauExtension = extensions.find((extension) => extension.tools.has('commit'));
+    expect(tauExtension?.commands.has('commit')).toBe(true);
+    expect(tauExtension?.handlers.get('tool_call')).toHaveLength(1);
+    expect(extensions.some((extension) => extension.tools.has('ask_user_question'))).toBe(true);
     expect(
       loader
         .getSkills()
@@ -97,31 +98,6 @@ it('loads Tau through Pi with commit features and writing rules on each run', as
     for (const prompt of prompts) {
       expect(prompt.split(instructions)).toHaveLength(2);
     }
-  } finally {
-    await rm(cwd, { recursive: true, force: true });
-  }
-});
-
-it('registers the bundled ask_user_question tool', async () => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-package-ask-'));
-  const packageRoot = fileURLToPath(new URL('../', import.meta.url));
-
-  try {
-    const loader = new DefaultResourceLoader({
-      cwd,
-      agentDir: join(cwd, 'agent'),
-      settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
-      additionalExtensionPaths: [packageRoot],
-      noExtensions: true,
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
-    });
-    await loader.reload();
-
-    const { extensions, errors } = loader.getExtensions();
-    expect(errors).toEqual([]);
-    expect(extensions.some((extension) => extension.tools.has('ask_user_question'))).toBe(true);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

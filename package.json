@@ -39,9 +39,6 @@
     "@earendil-works/pi-ai": "^0.85.1",
     "@earendil-works/pi-coding-agent": "^0.85.1"
   },
-  "bundledDependencies": [
-    "@juicesharp/rpiv-ask-user-question"
-  ],
   "engines": {
     "node": ">=24.11.0"
   },
