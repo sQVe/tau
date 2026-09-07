@@ -16,8 +16,11 @@ export interface EvidenceRecord {
 
 export interface EvidenceState {
   active: Behavior | null;
+  reds: { behavior: Behavior; record: EvidenceRecord }[];
   red: EvidenceRecord | null;
   focusedPass: EvidenceRecord | null;
   fullPass: EvidenceRecord | null;
   latestRun: EvidenceRecord | null;
 }
+
+export type Phase = 'locked' | 'red' | 'green' | 'verified';

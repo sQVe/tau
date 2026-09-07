@@ -1,22 +1,35 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { glob, readFile } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 
-import { classifyPath } from './config.js';
+import { classifyPath, tddConfig } from './config.js';
 import { runTests } from './runner/index.js';
-import type { Behavior, EvidenceRecord, EvidenceState, InputHashes } from './types.js';
+import type { Behavior, EvidenceRecord, EvidenceState, InputHashes, Phase } from './types.js';
 
 // ponytail: one process-wide chain; split by worktree if independent runs need concurrency.
 let pendingRun: Promise<unknown> = Promise.resolve();
 
 const configPath = resolve(import.meta.dirname, 'config.ts');
 
-const hashInputs = async (cwd: string, files: string[]): Promise<InputHashes> =>
-  Object.fromEntries(
+const hashInputs = async (
+  cwd: string,
+  files: string[],
+  scope: 'red' | 'focused' | 'full' = 'red',
+): Promise<InputHashes> => {
+  const sources: string[] = [];
+  if (scope !== 'red') {
+    for await (const file of glob(
+      [...tddConfig.productionGlobs, ...(scope === 'full' ? tddConfig.testGlobs : [])],
+      { cwd, exclude: ['**/node_modules/**', '**/.git/**'] },
+    )) {
+      if (scope === 'full' || classifyPath(file) === 'production') sources.push(file);
+    }
+  }
+  return Object.fromEntries(
     await Promise.all(
       [
         ...new Set([
-          ...files.map((file) => resolve(cwd, file)),
+          ...[...files, ...sources].map((file) => resolve(cwd, file)),
           resolve(cwd, 'vite.config.ts'),
           resolve(cwd, 'package.json'),
           configPath,
@@ -39,13 +52,43 @@ const hashInputs = async (cwd: string, files: string[]): Promise<InputHashes> =>
         }),
     ),
   );
+};
 
 const sameHashes = (left: InputHashes, right: InputHashes) =>
   JSON.stringify(left) === JSON.stringify(right);
 
+const redPassed = (
+  cwd: string,
+  behavior: Behavior | null,
+  red: EvidenceRecord | null,
+  pass: EvidenceRecord | null,
+) => {
+  if (behavior === null || red?.report.kind !== 'fail' || pass?.report.kind !== 'pass')
+    return false;
+  const required = red.report.tests.filter(
+    (test) =>
+      test.status === 'failed' &&
+      test.fullname === behavior.testFullName &&
+      behavior.files.some((file) => resolve(cwd, file) === resolve(cwd, test.file)),
+  );
+  const passed = pass.report.tests;
+  return (
+    required.length > 0 &&
+    required.every((test) =>
+      passed.some(
+        (result) =>
+          result.fullname === test.fullname &&
+          resolve(cwd, result.file) === resolve(cwd, test.file) &&
+          result.status === 'passed',
+      ),
+    )
+  );
+};
+
 export const createEvidenceStore = () => {
   let state: EvidenceState = {
     active: null,
+    reds: [],
     red: null,
     focusedPass: null,
     fullPass: null,
@@ -54,13 +97,41 @@ export const createEvidenceStore = () => {
   const read = async (cwd: string) => {
     const evidence = structuredClone(state);
     const hashes = await hashInputs(cwd, evidence.active?.files ?? []);
-    const valid = (record: EvidenceRecord | null) =>
-      record !== null && sameHashes(record.after, hashes);
+    const productionHashes = await hashInputs(cwd, evidence.active?.files ?? [], 'focused');
+    const redValid =
+      evidence.red !== null &&
+      Object.entries(hashes).every(([file, hash]) => evidence.red?.after[file] === hash);
+    const fullHashes = await hashInputs(cwd, evidence.active?.files ?? [], 'full');
+    const valid = (record: EvidenceRecord | null, current: InputHashes) =>
+      redValid && record !== null && sameHashes(record.after, current);
+    const focusedPassValid =
+      valid(evidence.focusedPass, productionHashes) &&
+      redPassed(cwd, evidence.active, evidence.red, evidence.focusedPass);
+    const earlierRedsValid = (
+      await Promise.all(
+        evidence.reds.map(async ({ behavior, record }) => {
+          const requiredHashes = await hashInputs(cwd, behavior.files);
+          return Object.entries(requiredHashes).every(
+            ([file, hash]) => record.after[file] === hash,
+          );
+        }),
+      )
+    ).every(Boolean);
+    const requiredTestsPassed = evidence.reds.every(({ behavior, record }) =>
+      redPassed(cwd, behavior, record, evidence.fullPass),
+    );
+    const fullPassValid =
+      valid(evidence.fullPass, fullHashes) && earlierRedsValid && requiredTestsPassed;
+    let phase: Phase = 'locked';
+    if (redValid) phase = 'red';
+    if (focusedPassValid) phase = 'green';
+    if (fullPassValid) phase = 'verified';
     return {
       evidence,
-      implementationAllowed: valid(evidence.red),
-      focusedPassValid: valid(evidence.focusedPass),
-      fullPassValid: valid(evidence.fullPass),
+      phase,
+      implementationAllowed: phase === 'red',
+      focusedPassValid,
+      fullPassValid,
     };
   };
   const run = async (cwd: string, behavior: Behavior, scope: 'focused' | 'full') => {
@@ -70,7 +141,7 @@ export const createEvidenceStore = () => {
         throw new Error(`Expected a test file inside the worktree: ${file}`);
       }
     }
-    const before = await hashInputs(cwd, behavior.files);
+    const before = await hashInputs(cwd, behavior.files, scope);
     const report = await runTests(
       scope === 'full'
         ? { cwd, scope: 'all' }
@@ -81,15 +152,26 @@ export const createEvidenceStore = () => {
             filter: `^${behavior.testFullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
           },
     );
-    const after = await hashInputs(cwd, behavior.files);
+    const after = await hashInputs(cwd, behavior.files, scope);
     if (!sameHashes(before, after))
       return { kind: 'inputs-changed' as const, ...(await read(cwd)) };
     if (JSON.stringify(state.active) !== JSON.stringify(behavior)) {
-      state = { active: behavior, red: null, focusedPass: null, fullPass: null, latestRun: null };
+      state = {
+        active: structuredClone(behavior),
+        reds: state.reds,
+        red: null,
+        focusedPass: null,
+        fullPass: null,
+        latestRun: null,
+      };
     }
     const record = { before, after, report };
+    const filesExist = behavior.files.every((file) => after[resolve(cwd, file)] != null);
     state.latestRun = record;
+    if (scope === 'full') state.fullPass = null;
+    else state.focusedPass = null;
     if (
+      filesExist &&
       scope === 'focused' &&
       report.kind === 'fail' &&
       report.tests.some(
@@ -98,9 +180,19 @@ export const createEvidenceStore = () => {
           behavior.files.some((file) => resolve(cwd, file) === resolve(cwd, test.file)) &&
           test.status === 'failed',
       )
-    )
+    ) {
       state.red = record;
+      state.reds = state.reds.filter(
+        (entry) =>
+          entry.behavior.testFullName !== behavior.testFullName ||
+          JSON.stringify(entry.behavior.files) !== JSON.stringify(behavior.files),
+      );
+      state.reds.push({ behavior: structuredClone(behavior), record });
+      state.focusedPass = null;
+      state.fullPass = null;
+    }
     if (
+      filesExist &&
       report.kind === 'pass' &&
       report.tests.some(
         (test) =>

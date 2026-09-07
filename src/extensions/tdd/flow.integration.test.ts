@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -118,11 +118,13 @@ it('records focused and full passes without unlocking a first-run pass', async (
     "import { it } from 'vitest'; it('required behavior', () => {});",
   );
   const focused = await run();
+  expect(focused.details).toMatchObject({ phase: 'locked', focusedPassValid: false });
   expect(focused.details.implementationAllowed).toBe(false);
   expect(focused.details.evidence.red).toBeNull();
   expect(focused.details.evidence.focusedPass?.report.kind).toBe('pass');
   const full = await run({ scope: 'full' });
   expect(full.details.evidence.fullPass?.report.kind).toBe('pass');
+  expect(full.details).toMatchObject({ phase: 'locked', fullPassValid: false });
   expect(full.details.implementationAllowed).toBe(false);
 });
 
@@ -234,4 +236,33 @@ it('rejects production and escaping paths through pi', async ({ onTestFinished }
   const results = events.filter((event) => event.type === 'tool_execution_end');
   expect(results).toHaveLength(2);
   expect(results.every((event) => event.isError)).toBe(true);
+});
+
+it('runs three behaviors as separate red-green cycles through pi', async ({ onTestFinished }) => {
+  const { cwd, run } = await createHarness(onTestFinished);
+  await mkdir(join(cwd, 'src'));
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 0;');
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    `import { it, expect } from 'vitest'; import { value } from './src/value';
+    ${[1, 2, 3].map((n) => `it('behavior ${n}', () => expect(value).toBeGreaterThanOrEqual(${n}));`).join('\n')}`,
+  );
+  for (const n of [1, 2, 3]) {
+    const behavior = { behavior: `behavior ${n}`, testFullName: `behavior ${n}` };
+    const red = await run(behavior);
+    expect(red.details).toMatchObject({ phase: 'red', implementationAllowed: true });
+    expect(red.details.evidence.active).toMatchObject(behavior);
+    await writeFile(join(cwd, 'src/value.ts'), `export const value = ${n};`);
+    const green = await run(behavior);
+    expect(green.details).toMatchObject({
+      phase: 'green',
+      implementationAllowed: false,
+      focusedPassValid: true,
+      fullPassValid: false,
+    });
+  }
+  const verified = await run({ behavior: 'behavior 3', testFullName: 'behavior 3', scope: 'full' });
+  expect(verified.details).toMatchObject({ phase: 'verified', fullPassValid: true });
+  const next = await run({ behavior: 'next behavior', testFullName: 'behavior 1' });
+  expect(next.details).toMatchObject({ phase: 'locked', implementationAllowed: false });
 });
