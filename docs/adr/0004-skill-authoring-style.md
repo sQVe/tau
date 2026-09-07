@@ -10,7 +10,7 @@
 - Without a house style, skills drift:
   - one reads like prose, another like a command protocol.
   - contributors import Claude Code or Codex conventions Pi does not require.
-  - skills duplicate repository policy instead of linking to it.
+  - skills duplicate repository rules instead of linking to them.
   - descriptions become too vague for reliable auto-loading.
 
 ## Options considered
@@ -47,7 +47,7 @@ Prefer this shape when applicable:
 - `## Principles` or `## Hard rules`
 - `## Procedure` for repeatable workflows
 - `## Checklist` when a final review pass helps
-- `## See also` for linked policy or reference
+- `## See also` for linked rules or reference
 
 Not every skill needs every section, but the structure should stay recognizable.
 

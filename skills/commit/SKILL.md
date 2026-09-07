@@ -45,11 +45,12 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
      commits only pathspec-listed files, but stale index state causes confusion.
 
 2. Identify logical commit groups.
-   - Split unrelated changes into separate groups, including within a single file when hunks have
-     different intents (e.g. a palette edit and an unrelated env var change in the same config).
+   - Split unrelated changes into separate groups. The tool stages whole files, so groups are
+     file-granular: every hunk in a file goes to the same group.
+   - When one file holds changes with genuinely different intents, put it in the group that fits
+     best and say so when reporting, rather than trying to split it.
    - Keep each group coherent and reviewable.
-   - For each group, prepare a conventional-commit subject and the exact file list. The tool stages
-     whole files, so a file whose hunks belong to different groups has to go in one of them.
+   - For each group, prepare a conventional-commit subject and the exact file list.
 
 3. Call the `commit` tool for each group with the file list, subject, and body. Do not end the turn
    before the first tool call. If the change looks temporary, wrong, or like a placeholder, still
