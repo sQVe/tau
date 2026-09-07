@@ -14,7 +14,13 @@ import type {
   TestFailure,
   TestResult,
 } from './types.js';
-import { DEFAULT_TIMEOUT_MS, MAX_ASSERTION_BYTES, MAX_FAILURES, MAX_TOTAL_BYTES } from './types.js';
+import {
+  DEFAULT_TIMEOUT_MS,
+  FULL_TIMEOUT_MS,
+  MAX_ASSERTION_BYTES,
+  MAX_FAILURES,
+  MAX_TOTAL_BYTES,
+} from './types.js';
 
 interface VitestAssertionResult {
   fullName?: string;
@@ -261,7 +267,7 @@ const buildArgs = (input: RunTestsInput): string[] | null => {
 export const defaultDeps = (scope: RunTestsInput['scope'] = 'changed'): RunnerDeps => ({
   resolveVitest: defaultResolveVitest,
   spawn: defaultSpawn,
-  timeoutMs: scope === 'all' ? 120_000 : DEFAULT_TIMEOUT_MS,
+  timeoutMs: scope === 'all' ? FULL_TIMEOUT_MS : DEFAULT_TIMEOUT_MS,
 });
 
 export const runVitest = async (input: RunTestsInput, deps: RunnerDeps): Promise<RunnerResult> => {

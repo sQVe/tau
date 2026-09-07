@@ -85,6 +85,15 @@ const redPassed = (
   );
 };
 
+const failedIn = (cwd: string, { behavior, record }: EvidenceState['reds'][number], file: string) =>
+  record.report.kind === 'fail' &&
+  record.report.tests.some(
+    (test) =>
+      test.status === 'failed' &&
+      test.fullname === behavior.testFullName &&
+      resolve(cwd, test.file) === file,
+  );
+
 export const createEvidenceStore = () => {
   let state: EvidenceState = {
     active: null,
@@ -112,10 +121,10 @@ export const createEvidenceStore = () => {
         evidence.reds.map(async ({ behavior, record }) => {
           const requiredHashes = await hashInputs(cwd, behavior.files);
           return Object.entries(requiredHashes).every(([file, hash]) => {
-            // A later RED can renew a shared file; every earlier test must still pass.
-            const latest = evidence.reds.findLast((entry) =>
-              entry.behavior.files.some((path) => resolve(cwd, path) === file),
-            );
+            // Only a RED that failed inside this file may renew its snapshot, so appending
+            // a behavior to a shared file keeps working while an unrelated RED cannot
+            // launder edits to an earlier required test.
+            const latest = evidence.reds.findLast((entry) => failedIn(cwd, entry, file));
             return (latest?.record ?? record).after[file] === hash;
           });
         }),

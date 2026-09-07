@@ -233,6 +233,34 @@ it('rejects a skipped earlier RED even when its test hash is unchanged', async (
   });
 });
 
+it('renews a shared test file only for the RED that failed inside it', async ({
+  onTestFinished,
+}) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  await store.run(cwd, behavior, 'focused');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  await store.run(cwd, behavior, 'focused');
+  const path = join(cwd, 'behavior.test.ts');
+  await writeFile(path, (await readFile(path, 'utf8')).replace('toBe(1)', 'toBeGreaterThan(0)'));
+  await writeFile(
+    join(cwd, 'second.test.ts'),
+    "import { it, expect } from 'vitest'; import { value } from './src/value'; it('second', () => expect(value).toBe(2));",
+  );
+  const second = {
+    behavior: 'second',
+    testFullName: 'second',
+    files: ['second.test.ts', 'behavior.test.ts'],
+  };
+  expect(await store.run(cwd, second, 'focused')).toMatchObject({ phase: 'red' });
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 2;');
+  await store.run(cwd, second, 'focused');
+
+  expect(await store.run(cwd, second, 'full')).toMatchObject({
+    kind: 'pass',
+    fullPassValid: false,
+  });
+});
+
 it('never accepts a missing required test file as evidence', async ({ onTestFinished }) => {
   const { cwd, store, behavior } = await createHarness(onTestFinished);
   const selection = { ...behavior, files: [...behavior.files, 'deleted.test.ts'] };

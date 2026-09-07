@@ -56,6 +56,7 @@ export interface RunnerDeps {
 }
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
+export const FULL_TIMEOUT_MS = 120_000;
 export const MAX_FAILURES = 10;
 export const MAX_ASSERTION_BYTES = 2 * 1024;
 export const MAX_TOTAL_BYTES = 32 * 1024;
