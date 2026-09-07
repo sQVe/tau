@@ -31,6 +31,7 @@ export type RunnerResult =
   | { kind: 'compile-error'; message: string; stdout: string; stderr: string; tests: TestResult[] }
   | { kind: 'no-tests-collected'; tests: TestResult[] }
   | { kind: 'timeout' }
+  | { kind: 'output-limit'; message: string }
   | { kind: 'runner-missing'; message: string };
 
 export interface SpawnResult {
@@ -38,6 +39,7 @@ export interface SpawnResult {
   stderr: string;
   code: number | null;
   timedOut: boolean;
+  stdoutOverflow?: boolean;
 }
 
 export interface SpawnOptions {
@@ -60,3 +62,6 @@ export const FULL_TIMEOUT_MS = 120_000;
 export const MAX_FAILURES = 10;
 export const MAX_ASSERTION_BYTES = 2 * 1024;
 export const MAX_TOTAL_BYTES = 32 * 1024;
+// The JSON report must stay complete, so stdout gets a far larger cap than the
+// diagnostic one: enough for a full-suite report, small enough to bound memory.
+export const MAX_STDOUT_BYTES = 8 * 1024 * 1024;

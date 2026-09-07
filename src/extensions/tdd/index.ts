@@ -5,7 +5,7 @@ import { defineTool } from '@mariozechner/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
 
 import { guardToolCall } from './guard.js';
-import { createEvidenceStore } from './state.js';
+import { createEvidenceStore, hasAmbiguousIdentity } from './state.js';
 
 export default function tddExtension(pi: ExtensionAPI) {
   const store = createEvidenceStore();
@@ -79,6 +79,8 @@ export default function tddExtension(pi: ExtensionAPI) {
         const call = `run_tests ${JSON.stringify({ ...behavior, scope })}`;
         if (details.kind === 'inputs-changed')
           next = `Inputs changed during the run; no evidence was recorded. Stop concurrent edits, then call ${call}.`;
+        else if (report && hasAmbiguousIdentity(ctx.cwd, behavior, report))
+          next = `More than one test in the same file has the full name ${JSON.stringify(behavior.testFullName)}, so the report cannot identify it and no evidence was recorded. Give each test a unique full name, then call ${call}.`;
         else if (scope === 'focused' && details.kind === 'pass' && details.phase === 'locked')
           next = `The test does not fail yet; the behavior may already be implemented. Write a test that fails before the fix, then call ${call}.`;
         else if (missing)

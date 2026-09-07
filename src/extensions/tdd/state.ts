@@ -4,6 +4,7 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path';
 
 import { classifyPath, tddConfig } from './config.js';
 import { runTests } from './runner/index.js';
+import type { RunnerResult, TestResult } from './runner/types.js';
 import type { Behavior, EvidenceRecord, EvidenceState, InputHashes, Phase } from './types.js';
 
 // ponytail: one process-wide chain; split by worktree if independent runs need concurrency.
@@ -57,6 +58,37 @@ const hashInputs = async (
 const sameHashes = (left: InputHashes, right: InputHashes) =>
   JSON.stringify(left) === JSON.stringify(right);
 
+const identityMatches = (cwd: string, fullname: string, file: string, test: TestResult) =>
+  test.fullname === fullname && resolve(cwd, test.file) === resolve(cwd, file);
+
+// Vitest permits duplicate full names in one file, so (file, fullname) only identifies a test
+// when exactly one result carries it. Anything else is ambiguous and proves nothing.
+const uniqueStatus = (
+  cwd: string,
+  tests: TestResult[],
+  fullname: string,
+  file: string,
+): TestResult['status'] | null => {
+  const matched = tests.filter((test) => identityMatches(cwd, fullname, file, test));
+  return matched.length === 1 ? (matched[0]?.status ?? null) : null;
+};
+
+export const hasAmbiguousIdentity = (cwd: string, behavior: Behavior, report: RunnerResult) =>
+  'tests' in report &&
+  behavior.files.some(
+    (file) =>
+      report.tests.filter((test) => identityMatches(cwd, behavior.testFullName, file, test))
+        .length > 1,
+  );
+
+const uniquelyIs = (
+  cwd: string,
+  tests: TestResult[],
+  behavior: Behavior,
+  status: TestResult['status'],
+) =>
+  behavior.files.some((file) => uniqueStatus(cwd, tests, behavior.testFullName, file) === status);
+
 const redPassed = (
   cwd: string,
   behavior: Behavior | null,
@@ -65,34 +97,22 @@ const redPassed = (
 ) => {
   if (behavior === null || red?.report.kind !== 'fail' || pass?.report.kind !== 'pass')
     return false;
-  const required = red.report.tests.filter(
-    (test) =>
-      test.status === 'failed' &&
-      test.fullname === behavior.testFullName &&
-      behavior.files.some((file) => resolve(cwd, file) === resolve(cwd, test.file)),
+  const redTests = red.report.tests;
+  const passedTests = pass.report.tests;
+  const required = behavior.files.filter(
+    (file) => uniqueStatus(cwd, redTests, behavior.testFullName, file) === 'failed',
   );
-  const passed = pass.report.tests;
   return (
     required.length > 0 &&
-    required.every((test) =>
-      passed.some(
-        (result) =>
-          result.fullname === test.fullname &&
-          resolve(cwd, result.file) === resolve(cwd, test.file) &&
-          result.status === 'passed',
-      ),
+    required.every(
+      (file) => uniqueStatus(cwd, passedTests, behavior.testFullName, file) === 'passed',
     )
   );
 };
 
 const failedIn = (cwd: string, { behavior, record }: EvidenceState['reds'][number], file: string) =>
   record.report.kind === 'fail' &&
-  record.report.tests.some(
-    (test) =>
-      test.status === 'failed' &&
-      test.fullname === behavior.testFullName &&
-      resolve(cwd, test.file) === file,
-  );
+  uniqueStatus(cwd, record.report.tests, behavior.testFullName, file) === 'failed';
 
 const statePath = (cwd: string) => resolve(cwd, '.tau/state.json');
 
@@ -240,12 +260,7 @@ export const createEvidenceStore = () => {
       filesExist &&
       scope === 'focused' &&
       report.kind === 'fail' &&
-      report.tests.some(
-        (test) =>
-          test.fullname === behavior.testFullName &&
-          behavior.files.some((file) => resolve(cwd, file) === resolve(cwd, test.file)) &&
-          test.status === 'failed',
-      )
+      uniquelyIs(cwd, report.tests, behavior, 'failed')
     ) {
       state.red = record;
       state.reds = state.reds.filter(
@@ -257,16 +272,7 @@ export const createEvidenceStore = () => {
       state.focusedPass = null;
       state.fullPass = null;
     }
-    if (
-      filesExist &&
-      report.kind === 'pass' &&
-      report.tests.some(
-        (test) =>
-          test.fullname === behavior.testFullName &&
-          behavior.files.some((file) => resolve(cwd, file) === resolve(cwd, test.file)) &&
-          test.status === 'passed',
-      )
-    ) {
+    if (filesExist && report.kind === 'pass' && uniquelyIs(cwd, report.tests, behavior, 'passed')) {
       if (scope === 'full') state.fullPass = record;
       else state.focusedPass = record;
     }

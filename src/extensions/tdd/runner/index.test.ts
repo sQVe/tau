@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { runTests } from './index.js';
 import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js';
-import { MAX_ASSERTION_BYTES, MAX_FAILURES, MAX_TOTAL_BYTES } from './types.js';
+import { MAX_ASSERTION_BYTES, MAX_FAILURES, MAX_STDOUT_BYTES, MAX_TOTAL_BYTES } from './types.js';
 import { defaultDeps, defaultSpawn, extractBinPath } from './vitest.js';
 
 const fakeSpawn =
@@ -159,6 +159,26 @@ describe('runTests', () => {
         kind: 'pass',
         tests: [{ file: 'x'.repeat(MAX_TOTAL_BYTES * 2), fullname: 'passes', status: 'passed' }],
       });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('kills the child and names the limit when stdout exceeds the cap', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
+    try {
+      const script = join(cwd, 'flood.cjs');
+      await writeFile(
+        script,
+        `process.stdout.write('x'.repeat(${MAX_STDOUT_BYTES + 1}));\n` +
+          'setTimeout(() => {}, 60000);\n',
+      );
+      const deps = makeDeps({ resolveVitest: () => script, spawn: defaultSpawn });
+
+      const result = await runTests({ scope: 'all', cwd }, deps);
+
+      expect(result.kind).toBe('output-limit');
+      expect(result).toHaveProperty('message', expect.stringContaining(String(MAX_STDOUT_BYTES)));
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

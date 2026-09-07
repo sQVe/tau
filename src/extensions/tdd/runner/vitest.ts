@@ -19,6 +19,7 @@ import {
   FULL_TIMEOUT_MS,
   MAX_ASSERTION_BYTES,
   MAX_FAILURES,
+  MAX_STDOUT_BYTES,
   MAX_TOTAL_BYTES,
 } from './types.js';
 
@@ -92,7 +93,9 @@ export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
     let stdout = '';
     let stderr = '';
     let timedOut = false;
+    let stdoutOverflow = false;
     let bytes = 0;
+    let stdoutBytes = 0;
 
     const stdoutDecoder = new StringDecoder('utf8');
     const stderrDecoder = new StringDecoder('utf8');
@@ -107,14 +110,6 @@ export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
       return current + decoder.write(slice);
     };
 
-    child.stdout.on('data', (chunk: Buffer) => {
-      // The JSON report must remain complete; bound failure messages after parsing.
-      stdout += stdoutDecoder.write(chunk);
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr = cap(chunk, stderrDecoder, stderr);
-    });
-
     let settled = false;
     const settle = (code: number | null) => {
       if (settled) {
@@ -124,13 +119,10 @@ export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
       clearTimeout(timer);
       stdout += stdoutDecoder.end();
       stderr += stderrDecoder.end();
-      resolve({ stdout, stderr, code, timedOut });
+      resolve({ stdout, stderr, code, timedOut, stdoutOverflow });
     };
 
-    // Settle here rather than waiting for `close`: on Windows only the direct child dies,
-    // and a descendant holding the piped stdio would keep `close` pending forever.
-    const timer = setTimeout(() => {
-      timedOut = true;
+    const kill = () => {
       try {
         if (useProcessGroup && child.pid != null) {
           process.kill(-child.pid, 'SIGKILL');
@@ -140,6 +132,29 @@ export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
       } catch {
         child.kill('SIGKILL');
       }
+    };
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      // The JSON report must remain complete; bound failure messages after parsing.
+      // Past the cap the report can no longer be trusted, so stop instead of parsing it.
+      stdoutBytes += chunk.length;
+      if (stdoutBytes > MAX_STDOUT_BYTES) {
+        stdoutOverflow = true;
+        kill();
+        settle(null);
+        return;
+      }
+      stdout += stdoutDecoder.write(chunk);
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr = cap(chunk, stderrDecoder, stderr);
+    });
+
+    // Settle here rather than waiting for `close`: on Windows only the direct child dies,
+    // and a descendant holding the piped stdio would keep `close` pending forever.
+    const timer = setTimeout(() => {
+      timedOut = true;
+      kill();
       settle(null);
     }, opts.timeoutMs);
     timer.unref();
@@ -291,6 +306,13 @@ export const runVitest = async (input: RunTestsInput, deps: RunnerDeps): Promise
 
   if (result.timedOut) {
     return { kind: 'timeout' };
+  }
+
+  if (result.stdoutOverflow === true) {
+    return {
+      kind: 'output-limit',
+      message: `vitest stdout exceeded ${MAX_STDOUT_BYTES} bytes; the run was killed without parsing a truncated report`,
+    };
   }
 
   const report = parseReport(result.stdout);

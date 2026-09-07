@@ -412,6 +412,29 @@ it.each(['skip', 'todo', 'delete'])(
   },
 );
 
+it('records nothing when one file holds two tests with the same full name', async ({
+  onTestFinished,
+}) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    "import { it, expect } from 'vitest'; import { value } from './src/value';" +
+      " it('required', () => expect(value).toBe(1)); it('required', () => expect(value).toBe(0));",
+  );
+
+  expect(await store.run(cwd, behavior, 'focused')).toMatchObject({
+    kind: 'fail',
+    phase: 'locked',
+    implementationAllowed: false,
+    evidence: { red: null },
+  });
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  expect(await store.run(cwd, behavior, 'focused')).toMatchObject({
+    phase: 'locked',
+    focusedPassValid: false,
+  });
+});
+
 it('requires the same failing test file when full names collide', async ({ onTestFinished }) => {
   const { cwd, store, behavior } = await createHarness(onTestFinished);
   await writeFile(
