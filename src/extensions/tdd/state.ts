@@ -165,7 +165,13 @@ export const createEvidenceStore = () => {
   const states = new Map<string, Promise<EvidenceState>>();
   const stateFor = (cwd: string) => {
     const key = resolve(cwd);
-    const state = states.get(key) ?? loadState(key);
+    // A rejected load must not be cached: repairing the file has to take effect on the next read.
+    const state =
+      states.get(key) ??
+      loadState(key).catch((error: unknown) => {
+        states.delete(key);
+        throw error;
+      });
     states.set(key, state);
     return state;
   };
@@ -214,7 +220,12 @@ export const createEvidenceStore = () => {
       fullPassValid,
     };
   };
-  const run = async (cwd: string, requested: Behavior, scope: 'focused' | 'full') => {
+  const run = async (
+    cwd: string,
+    requested: Behavior,
+    scope: 'focused' | 'full',
+    signal?: AbortSignal,
+  ) => {
     // Canonical file order so the same behavior submitted differently stays the same behavior.
     const behavior: Behavior = { ...requested, files: [...new Set(requested.files)].toSorted() };
     for (const file of behavior.files) {
@@ -226,14 +237,17 @@ export const createEvidenceStore = () => {
     const before = await hashInputs(cwd, behavior.files, scope);
     const report = await runTests(
       scope === 'full'
-        ? { cwd, scope: 'all' }
+        ? { cwd, scope: 'all', signal }
         : {
             cwd,
             scope: 'changed',
             files: behavior.files,
             filter: `^${behavior.testFullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+            signal,
           },
     );
+    // A cancelled run proves nothing, so the stored evidence stays as it was.
+    if (report.kind === 'cancelled') return { kind: 'cancelled' as const, ...(await read(cwd)) };
     const after = await hashInputs(cwd, behavior.files, scope);
     if (!sameHashes(before, after))
       return { kind: 'inputs-changed' as const, ...(await read(cwd)) };
@@ -283,8 +297,8 @@ export const createEvidenceStore = () => {
   };
   return {
     read,
-    run: (cwd: string, behavior: Behavior, scope: 'focused' | 'full') => {
-      const result = pendingRun.then(() => run(cwd, behavior, scope));
+    run: (cwd: string, behavior: Behavior, scope: 'focused' | 'full', signal?: AbortSignal) => {
+      const result = pendingRun.then(() => run(cwd, behavior, scope, signal));
       pendingRun = result.catch(() => undefined);
       return result;
     },

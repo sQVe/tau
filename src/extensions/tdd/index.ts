@@ -49,11 +49,13 @@ export default function tddExtension(pi: ExtensionAPI) {
             'Use focused for the exact test in files to prove RED and GREEN; use full for all tests at the end to verify every recorded RED.',
         }),
       }),
-      async execute(_id, params, _signal, _update, ctx) {
+      async execute(_id, params, signal, _update, ctx) {
         const { scope, ...behavior } = params;
-        const details = await store.run(ctx.cwd, behavior, scope);
+        const details = await store.run(ctx.cwd, behavior, scope, signal);
         const report =
-          details.kind === 'inputs-changed' ? null : details.evidence.latestRun?.report;
+          details.kind === 'inputs-changed' || details.kind === 'cancelled'
+            ? null
+            : details.evidence.latestRun?.report;
         const missing =
           scope === 'full' && report && 'tests' in report
             ? details.evidence.reds.find(

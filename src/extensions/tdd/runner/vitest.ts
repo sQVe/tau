@@ -1,5 +1,7 @@
 import { spawn as nodeSpawn } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
@@ -163,11 +165,19 @@ export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
     child.on('error', () => {
       settle(null);
     });
+
+    const abort = () => {
+      kill();
+      settle(null);
+    };
+    if (opts.signal?.aborted === true) {
+      abort();
+    } else {
+      opts.signal?.addEventListener('abort', abort, { once: true });
+    }
   });
 
 // Vitest reports always include at least one of these top-level keys.
-// Probe each `{`-at-column-0 candidate to skip preamble lines that incidentally
-// start with `{` (e.g., user console.log output).
 const isVitestReport = (value: unknown): value is VitestReport => {
   if (value == null || typeof value !== 'object') {
     return false;
@@ -176,23 +186,15 @@ const isVitestReport = (value: unknown): value is VitestReport => {
   return keys.some((k) => k in value);
 };
 
-const parseReport = (stdout: string): VitestReport | null => {
-  const lines = stdout.split('\n');
-  for (let i = 0; i < lines.length; i += 1) {
-    if (lines[i]?.startsWith('{') !== true) {
-      continue;
-    }
-    const candidate = lines.slice(i).join('\n');
-    try {
-      const parsed: unknown = JSON.parse(candidate);
-      if (isVitestReport(parsed)) {
-        return parsed;
-      }
-    } catch {
-      // Try the next `{`-at-column-0 line.
-    }
+// The report is read from the reporter's own output file: stdout carries test-controlled
+// text, so a report scraped from it could be forged by the code under test.
+const readReport = async (path: string): Promise<VitestReport | null> => {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(path, 'utf8'));
+    return isVitestReport(parsed) ? parsed : null;
+  } catch {
+    return null;
   }
-  return null;
 };
 
 const truncate = (text: string, max: number): string => {
@@ -264,8 +266,8 @@ const scopedPaths = (input: RunTestsInput): string[] => {
   return raw.filter((path) => path.trim().length > 0);
 };
 
-const buildArgs = (input: RunTestsInput): string[] | null => {
-  const args: string[] = tddConfig.verificationArgv.slice(1);
+const buildArgs = (input: RunTestsInput, outputFile: string): string[] | null => {
+  const args: string[] = [...tddConfig.verificationArgv.slice(1), `--outputFile=${outputFile}`];
   if (input.scope !== 'all') {
     const paths = scopedPaths(input);
     if (paths.length === 0) {
@@ -286,7 +288,20 @@ export const defaultDeps = (scope: RunTestsInput['scope'] = 'changed'): RunnerDe
 });
 
 export const runVitest = async (input: RunTestsInput, deps: RunnerDeps): Promise<RunnerResult> => {
-  const args = buildArgs(input);
+  const directory = await mkdtemp(join(tmpdir(), 'tau-vitest-'));
+  try {
+    return await runInDirectory(input, deps, join(directory, 'report.json'));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+};
+
+const runInDirectory = async (
+  input: RunTestsInput,
+  deps: RunnerDeps,
+  outputFile: string,
+): Promise<RunnerResult> => {
+  const args = buildArgs(input, outputFile);
   if (args == null) {
     return { kind: 'no-tests-collected', tests: [] };
   }
@@ -302,7 +317,12 @@ export const runVitest = async (input: RunTestsInput, deps: RunnerDeps): Promise
   const result = await deps.spawn(bin, args, {
     cwd: input.cwd,
     timeoutMs: deps.timeoutMs,
+    signal: input.signal,
   });
+
+  if (input.signal?.aborted === true) {
+    return { kind: 'cancelled' };
+  }
 
   if (result.timedOut) {
     return { kind: 'timeout' };
@@ -315,7 +335,7 @@ export const runVitest = async (input: RunTestsInput, deps: RunnerDeps): Promise
     };
   }
 
-  const report = parseReport(result.stdout);
+  const report = await readReport(outputFile);
 
   if (report == null) {
     if (result.code === 0) {

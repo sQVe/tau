@@ -9,16 +9,28 @@ import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js
 import { MAX_ASSERTION_BYTES, MAX_FAILURES, MAX_STDOUT_BYTES, MAX_TOTAL_BYTES } from './types.js';
 import { defaultDeps, defaultSpawn, extractBinPath } from './vitest.js';
 
+const outputFileFrom = (args: string[]) => {
+  const flag = args.find((arg) => arg.startsWith('--outputFile='));
+  if (flag == null) {
+    throw new Error('vitest was spawned without an --outputFile flag');
+  }
+  return flag.slice('--outputFile='.length);
+};
+
 const fakeSpawn =
-  (result: Partial<SpawnResult>): SpawnFn =>
-  () =>
-    Promise.resolve({
+  ({ report, ...result }: Partial<SpawnResult> & { report?: unknown }): SpawnFn =>
+  async (_cmd, args) => {
+    if (report !== undefined) {
+      await writeFile(outputFileFrom(args), JSON.stringify(report));
+    }
+    return {
       stdout: '',
       stderr: '',
       code: 0,
       timedOut: false,
       ...result,
-    });
+    };
+  };
 
 const makeDeps = (overrides: Partial<RunnerDeps>): RunnerDeps => ({
   resolveVitest: () => '/fake/vitest.js',
@@ -64,7 +76,7 @@ describe('runTests', () => {
     const deps = makeDeps({
       spawn: fakeSpawn({
         code: 1,
-        stdout: JSON.stringify({
+        report: {
           numTotalTests: 0,
           numFailedTests: 0,
           testResults: Array.from({ length: MAX_FAILURES + 1 }, (_, i) => ({
@@ -73,7 +85,7 @@ describe('runTests', () => {
             message: 'load error',
             assertionResults: [],
           })),
-        }),
+        },
       }),
     });
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -85,7 +97,7 @@ describe('runTests', () => {
   it('returns no-tests-collected when every collected test was skipped', async () => {
     const deps = makeDeps({
       spawn: fakeSpawn({
-        stdout: JSON.stringify({
+        report: {
           numTotalTests: 1,
           numPassedTests: 0,
           numFailedTests: 0,
@@ -96,7 +108,7 @@ describe('runTests', () => {
               assertionResults: [{ fullName: 'skips', status: 'pending' }],
             },
           ],
-        }),
+        },
       }),
     });
     expect(await runTests({ scope: 'all', cwd: '/repo', filter: 'unmatched' }, deps)).toEqual({
@@ -110,7 +122,7 @@ describe('runTests', () => {
       spawn: fakeSpawn({
         code: 1,
         stderr: 'Unhandled rejection',
-        stdout: JSON.stringify({ numTotalTests: 1, numPassedTests: 1, numFailedTests: 0 }),
+        report: { numTotalTests: 1, numPassedTests: 1, numFailedTests: 0 },
       }),
     });
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -151,7 +163,10 @@ describe('runTests', () => {
       await writeFile(
         script,
         `process.stderr.write('x'.repeat(${MAX_TOTAL_BYTES * 2}));\n` +
-          `process.stdout.write(${JSON.stringify(JSON.stringify(report))});\n`,
+          "const flag = process.argv.find((a) => a.startsWith('--outputFile='));\n" +
+          `require('node:fs').writeFileSync(flag.slice('--outputFile='.length), ${JSON.stringify(
+            JSON.stringify(report),
+          )});\n`,
       );
       const deps = makeDeps({ resolveVitest: () => script, spawn: defaultSpawn });
 
@@ -229,7 +244,7 @@ describe('runTests', () => {
         },
       ],
     };
-    const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(report), code: 0 }) });
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
@@ -262,7 +277,7 @@ describe('runTests', () => {
         },
       ],
     };
-    const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(report), code: 1 }) });
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
@@ -298,7 +313,7 @@ describe('runTests', () => {
 
   it('returns no-tests-collected when the report has zero tests and zero files', async () => {
     const report = { numTotalTests: 0, numFailedTests: 0, testResults: [] };
-    const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(report), code: 0 }) });
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
@@ -318,7 +333,7 @@ describe('runTests', () => {
         },
       ],
     };
-    const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(report), code: 1 }) });
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
@@ -340,7 +355,7 @@ describe('runTests', () => {
       numFailedTests: 0,
       testResults: [{ name: '/repo/empty.test.ts', status: 'passed', assertionResults: [] }],
     };
-    const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(report), code: 0 }) });
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
@@ -355,19 +370,48 @@ describe('runTests', () => {
     expect(result.kind).toBe('timeout');
   });
 
-  it('tolerates non-JSON preamble and parses the first {-at-column-0 payload', async () => {
-    const report = {
+  it('ignores a vitest-shaped report printed to stdout by the code under test', async () => {
+    const forged = {
       numTotalTests: 1,
       numFailedTests: 0,
       numPassedTests: 1,
-      testResults: [{ name: '/repo/a.test.ts', status: 'passed', assertionResults: [] }],
+      testResults: [
+        {
+          name: '/repo/a.test.ts',
+          status: 'passed',
+          assertionResults: [{ fullName: 'forged', status: 'passed' }],
+        },
+      ],
     };
-    const stdout = `stderr-like preamble\nRUN v1.0\n${JSON.stringify(report)}\n`;
-    const deps = makeDeps({ spawn: fakeSpawn({ stdout, code: 0 }) });
+    const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(forged), code: 0 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
-    expect(result.kind).toBe('pass');
+    expect(result.kind).toBe('fail');
+    expect(result).not.toHaveProperty('tests', [
+      { file: '/repo/a.test.ts', fullname: 'forged', status: 'passed' },
+    ]);
+  });
+
+  it('returns cancelled and kills the child when the signal aborts', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
+    try {
+      const script = join(cwd, 'sleep.cjs');
+      await writeFile(script, 'process.stdout.write("started");\nsetTimeout(() => {}, 60000);\n');
+      const controller = new AbortController();
+      const deps = makeDeps({ resolveVitest: () => script, spawn: defaultSpawn });
+
+      const started = Date.now();
+      const pending = runTests({ scope: 'all', cwd, signal: controller.signal }, deps);
+      setTimeout(() => {
+        controller.abort();
+      }, 50);
+
+      expect(await pending).toEqual({ kind: 'cancelled' });
+      expect(Date.now() - started).toBeLessThan(5_000);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   });
 
   it('returns fail (never pass) when JSON parse fails on exit 0', async () => {
@@ -392,7 +436,7 @@ describe('runTests', () => {
         },
       ],
     };
-    const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(report), code: 1 }) });
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
@@ -419,7 +463,7 @@ describe('runTests', () => {
         },
       ],
     };
-    const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(report), code: 1 }) });
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
@@ -450,7 +494,7 @@ describe('runTests', () => {
         },
       ],
     };
-    const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(report), code: 1 }) });
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
@@ -483,14 +527,10 @@ describe('runTests', () => {
       testResults: [{ name: '/repo/-a.test.ts', status: 'passed', assertionResults: [] }],
     };
     const deps = makeDeps({
-      spawn: (_cmd, args) => {
+      spawn: async (_cmd, args) => {
         captured = args;
-        return Promise.resolve({
-          stdout: JSON.stringify(report),
-          stderr: '',
-          code: 0,
-          timedOut: false,
-        });
+        await writeFile(outputFileFrom(args), JSON.stringify(report));
+        return { stdout: '', stderr: '', code: 0, timedOut: false };
       },
     });
 
@@ -518,7 +558,7 @@ describe('runTests', () => {
       numFailedTests: 15,
       testResults: [{ name: '/repo/big.test.ts', status: 'failed', assertionResults }],
     };
-    const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(report), code: 1 }) });
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
@@ -550,14 +590,10 @@ describe('runTests', () => {
       testResults: [{ name: '/repo/a.test.ts', status: 'passed', assertionResults: [] }],
     };
     const deps = makeDeps({
-      spawn: (_cmd, args) => {
+      spawn: async (_cmd, args) => {
         captured = args;
-        return Promise.resolve({
-          stdout: JSON.stringify(report),
-          stderr: '',
-          code: 0,
-          timedOut: false,
-        });
+        await writeFile(outputFileFrom(args), JSON.stringify(report));
+        return { stdout: '', stderr: '', code: 0, timedOut: false };
       },
     });
 
@@ -586,14 +622,10 @@ describe('runTests', () => {
       testResults: [{ name: '/repo/a.test.ts', status: 'passed', assertionResults: [] }],
     };
     const deps = makeDeps({
-      spawn: (_cmd, args) => {
+      spawn: async (_cmd, args) => {
         captured = args;
-        return Promise.resolve({
-          stdout: JSON.stringify(report),
-          stderr: '',
-          code: 0,
-          timedOut: false,
-        });
+        await writeFile(outputFileFrom(args), JSON.stringify(report));
+        return { stdout: '', stderr: '', code: 0, timedOut: false };
       },
     });
 
@@ -602,7 +634,10 @@ describe('runTests', () => {
     expect(captured.slice(0, 3)).toEqual(['run', '--reporter=json', '--no-color']);
     expect(captured).toContain('src/a.test.ts');
     const disallowed = captured.filter(
-      (a) => a.startsWith('--') && !['--reporter=json', '--no-color'].includes(a),
+      (a) =>
+        a.startsWith('--') &&
+        !['--reporter=json', '--no-color'].includes(a) &&
+        !a.startsWith('--outputFile='),
     );
     expect(disallowed).toEqual([]);
   });

@@ -6,6 +6,7 @@ export interface RunTestsInput {
   path?: string;
   filter?: string;
   files?: string[];
+  signal?: AbortSignal | undefined;
 }
 
 export interface TestFailure {
@@ -31,6 +32,7 @@ export type RunnerResult =
   | { kind: 'compile-error'; message: string; stdout: string; stderr: string; tests: TestResult[] }
   | { kind: 'no-tests-collected'; tests: TestResult[] }
   | { kind: 'timeout' }
+  | { kind: 'cancelled' }
   | { kind: 'output-limit'; message: string }
   | { kind: 'runner-missing'; message: string };
 
@@ -45,6 +47,7 @@ export interface SpawnResult {
 export interface SpawnOptions {
   cwd: string;
   timeoutMs: number;
+  signal?: AbortSignal | undefined;
 }
 
 export type SpawnFn = (cmd: string, args: string[], opts: SpawnOptions) => Promise<SpawnResult>;
