@@ -352,6 +352,59 @@ it('names the ambiguous file while keeping a RED proven by another required file
   expect(text.next).not.toContain('no evidence was recorded');
 });
 
+it('locks the phase when the only required file duplicates the full name', async ({
+  onTestFinished,
+}) => {
+  const { cwd, run } = await createHarness(onTestFinished);
+  const first = await readFile(join(cwd, 'behavior.test.ts'), 'utf8');
+  expect((await run()).details.phase).toBe('red');
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    `${first} it('required behavior', () => expect(1).toBe(2));`,
+  );
+
+  const result = await run();
+
+  expect(result.details.phase).toBe('locked');
+  const text = JSON.parse(result.content[0]!.text) as { next: string };
+  expect(text.next).toContain('["behavior.test.ts"]');
+  expect(text.next).toContain('no evidence was recorded');
+  expect(text.next).not.toContain('stands');
+});
+
+it('names an earlier RED duplicated in another file sharing the current full name', async ({
+  onTestFinished,
+}) => {
+  const { cwd, run } = await createHarness(onTestFinished);
+  await mkdir(join(cwd, 'src'));
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 0;');
+  const first =
+    "import { it, expect } from 'vitest'; import { value } from './src/value'; it('required behavior', () => expect(value).toBeGreaterThanOrEqual(1));";
+  await writeFile(join(cwd, 'behavior.test.ts'), first);
+  await writeFile(
+    join(cwd, 'second.test.ts'),
+    "import { it, expect } from 'vitest'; import { value } from './src/value'; it('required behavior', () => expect(value).toBe(2));",
+  );
+  expect((await run()).details.phase).toBe('red');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  await run();
+  const second = { files: ['second.test.ts'] };
+  expect((await run(second)).details.phase).toBe('red');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 2;');
+  await run(second);
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    `${first} it('required behavior', () => expect(value).toBe(2));`,
+  );
+
+  const full = await run({ ...second, scope: 'full' });
+
+  expect(full.details.fullPassValid).toBe(false);
+  const text = JSON.parse(full.content[0]!.text) as { next: string };
+  expect(text.next).toContain('["behavior.test.ts"]');
+  expect(text.next).toContain('Rename the duplicate');
+});
+
 it('names an earlier RED whose full name became duplicated in its file', async ({
   onTestFinished,
 }) => {

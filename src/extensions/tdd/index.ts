@@ -85,19 +85,22 @@ export default function tddExtension(pi: ExtensionAPI) {
                   required,
                   files: ambiguousFiles(ctx.cwd, required, report),
                 }))
-                .find(
-                  (entry) =>
-                    entry.files.length > 0 && entry.required.testFullName !== behavior.testFullName,
-                )
+                // The ambiguous branches already cover the current behavior's own files, so an
+                // earlier RED sharing its full name in another file still has to be named here.
+                .find((entry) => entry.files.length > 0)
             : undefined;
         let next: string | undefined;
         const call = `run_tests ${JSON.stringify({ ...behavior, scope })}`;
         if (details.kind === 'inputs-changed')
           next = `Inputs changed during the run; no evidence was recorded. Stop concurrent edits, then call ${call}.`;
-        else if (ambiguous.length > 0 && details.evidence.red === null)
-          next = `More than one test in ${JSON.stringify(ambiguous)} has the full name ${JSON.stringify(behavior.testFullName)}, so the report cannot identify it and no evidence was recorded. Give each test a unique full name, then call ${call}.`;
-        else if (ambiguous.length > 0)
+        else if (
+          ambiguous.length > 0 &&
+          ambiguous.length < behavior.files.length &&
+          details.phase === 'red'
+        )
           next = `More than one test in ${JSON.stringify(ambiguous)} has the full name ${JSON.stringify(behavior.testFullName)}, so that file proves nothing; the RED recorded from the other required files stands and the phase is ${details.phase}. Give each test a unique full name, then call ${call}.`;
+        else if (ambiguous.length > 0)
+          next = `More than one test in ${JSON.stringify(ambiguous)} has the full name ${JSON.stringify(behavior.testFullName)}, so the report cannot identify it and no evidence was recorded. Give each test a unique full name, then call ${call}.`;
         else if (scope === 'focused' && details.kind === 'pass' && details.phase === 'locked')
           next = `The test does not fail yet; the behavior may already be implemented. Write a test that fails before the fix, then call ${call}.`;
         else if (missing)
