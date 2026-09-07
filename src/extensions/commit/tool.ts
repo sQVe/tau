@@ -54,8 +54,7 @@ export const commitToolParameters = Type.Object({
 
 export type CommitInput = Static<typeof commitToolParameters>;
 
-// Pi forwards only error.message to the model, so hook output has to travel inside it. A hook can
-// split its diagnostics across both streams, so neither one is dropped when the other has content.
+// Pi forwards only error.message, so include hook diagnostics from both streams.
 export const commitFailedError = (stdout: string, stderr: string) =>
   new Error(
     `git commit failed: ${[stderr.trim(), stdout.trim()].filter(Boolean).join('\n')}`.trim(),
@@ -120,7 +119,7 @@ const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
     .map((file) => normalizeRepoPath(file));
 };
 
-// --literal-pathspecs stops git from reading an argument as a glob and staging files nobody named.
+// Literal pathspecs prevent glob expansion from staging unrequested files.
 const stageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: string[]) => {
   const result = await pi.exec('git', ['--literal-pathspecs', 'add', '--', ...files], { cwd });
   if (result.code !== 0) {
@@ -139,8 +138,7 @@ const unstageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: 
   }
 };
 
-// git reports staged paths from the repository root, so requested paths need the same base before
-// the two can be compared. Empty when cwd is already the root.
+// Convert cwd-relative requests to repo-relative paths for comparison with staged paths.
 const repoPathPrefix = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
   const result = await pi.exec('git', ['rev-parse', '--show-prefix'], { cwd });
   if (result.code !== 0) {
@@ -152,7 +150,7 @@ const repoPathPrefix = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
   return result.stdout.trim();
 };
 
-// Null before the first commit, when HEAD names a branch that does not exist yet.
+// HEAD is unresolved before the first commit.
 const currentHead = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
   const result = await pi.exec('git', ['rev-parse', 'HEAD'], { cwd });
   return result.code === 0 ? result.stdout.trim() : null;
@@ -276,9 +274,7 @@ export const createCommitTool = (
       let reviewReport = '';
       let reviewWaived = false;
       try {
-        // A directory argument stages everything beneath it, so verify what landed rather than
-        // trusting that each argument named one file. Anything extra came from this call's add, so
-        // it sits under cwd and the prefix strips back off.
+        // Directory arguments can stage unrequested files; convert those paths back to cwd-relative.
         const unrequestedPaths = (await listStagedPaths(pi, ctx.cwd))
           .filter((file) => !requestedFiles.has(file))
           .map((file) => file.slice(prefix.length));
@@ -410,8 +406,7 @@ export const createCommitTool = (
         throw commitFailedError(commitResult.stdout, commitResult.stderr);
       }
 
-      // A pre-commit hook runs after the staged set is approved and can stage more, so the commit
-      // is the last place the promise can be checked. Undo it rather than leave it standing.
+      // Hooks can stage files after approval, so check the committed paths too.
       const smuggledPaths = (await listCommitPaths(pi, ctx.cwd)).filter(
         (file) => !requestedFiles.has(file),
       );

@@ -1,13 +1,9 @@
-# Dependencies
 node_modules/
 
-# Build
 dist/
 coverage/
 .tau/
 
-# Environment
 .env*
 
-# TypeScript
 *.tsbuildinfo

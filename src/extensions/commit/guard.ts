@@ -3,19 +3,12 @@ import type { ToolCallEvent, ToolCallEventResult } from '@mariozechner/pi-coding
 
 export const commitGuardReason = 'Blocked git commit via bash. Use the `commit` tool instead.';
 
-// Matches `commit` reached from `git` without crossing a command separator, so option forms like
-// `git -C path commit` are caught along with env prefixes and wrappers. `commit` must stand alone
-// as a word, otherwise every git command naming a path under commit/ would be blocked. The lookahead
-// stops before `-` so plumbing that writes commits (`git commit-tree`) is still caught; `git
-// commit-graph` is over-blocked as a result. A trailing backslash keeps a line continuation inside
-// the span. Deliberately over-blocks mentions such as `git log --grep commit`: a wrongly blocked
-// call costs one retry, while a missed one defeats the guard. Indirection through a variable
-// (`g=git; $g commit`) is beyond a regex and stays unguarded.
+// Allow options between `git` and `commit`, but stop at command separators and exclude paths.
+// Accept `commit-` to catch commit-tree, also blocking commit-graph and `git log --grep commit`.
+// These false positives favor blocking; variable indirection (`g=git; $g commit`) bypasses this.
 const gitCommitPattern = /\bgit\b[^;|&\n]*(?<![\w/-])commit(?![\w/])|\bgit-commit\b/i;
 
-// Bash joins line continuations, drops escapes, and collapses empty quote pairs before it resolves
-// a command name, so `g\it c''ommit` runs git commit. Undo those before matching. Indirection
-// through a variable (`g=git; $g commit`) still needs a shell and stays unguarded.
+// Normalize common shell spellings such as `g\it c''ommit` before matching.
 const unescapeShellWord = (command: string) =>
   command.replaceAll('\\\n', '').replaceAll(/\\(.)/gs, '$1').replaceAll(/''|""/g, '');
 

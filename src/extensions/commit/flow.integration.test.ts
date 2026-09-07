@@ -23,11 +23,9 @@ import type {
 import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
-// Each test boots a pi session and runs real git, so the 5s default is too tight for slow CI.
+// Real Pi sessions and Git commands need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
 
-// Taken from the per-test context so cleanup stays scoped to its own test,
-// including when the suite runs concurrently.
 type RegisterCleanup = TestContext['onTestFinished'];
 
 const execFileAsync = promisify(execFile);
@@ -45,8 +43,7 @@ interface Harness {
   commandNames: string[];
 }
 
-// The developer's global git config must not reach the fixture; a global
-// core.hooksPath would otherwise run real hooks on every fixture commit.
+// Isolate fixture commits from user and system Git settings, including hooks.
 const gitEnvironment = {
   ...process.env,
   GIT_CONFIG_GLOBAL: '/dev/null',
@@ -71,7 +68,7 @@ const createTempRepo = async (registerCleanup: RegisterCleanup): Promise<string>
   await git(repoDir, ['config', 'user.email', 'tau@example.com']);
   await git(repoDir, ['config', 'user.name', 'Tau Test']);
   await git(repoDir, ['config', 'commit.gpgsign', 'false']);
-  // pi runs git itself, so the hook opt-out has to live in the repo config too.
+  // Pi's Git calls do not use gitEnvironment, so disable hooks in the repo too.
   await git(repoDir, ['config', 'core.hooksPath', join(repoDir, '.no-hooks')]);
   await writeFile(join(repoDir, 'README.md'), '# fixture\n', 'utf8');
   await git(repoDir, ['add', 'README.md']);
@@ -80,9 +77,7 @@ const createTempRepo = async (registerCleanup: RegisterCleanup): Promise<string>
   return repoDir;
 };
 
-// Any object other than pi's module-private noOpUIContext flips ctx.hasUI to true.
-// Only the methods tau actually calls need real behavior. The overlay factory is
-// rendered once so the test can assert on what the user would have seen.
+// A custom UI context makes Pi report hasUI=true.
 const createScriptedUI = (overlays: string[], answer: boolean | 'waive'): ExtensionUIContext => {
   const target: Record<string | symbol, unknown> = {
     custom: async (factory: Parameters<ExtensionUIContext['custom']>[0]) => {
@@ -98,8 +93,6 @@ const createScriptedUI = (overlays: string[], answer: boolean | 'waive'): Extens
     },
   };
 
-  // Fail loudly rather than answering undefined: a UI method this stub does not
-  // script means the test is asserting a path it never actually exercised.
   const scriptedUI = new Proxy(target, {
     get: (object, property) => {
       if (property in object) {
@@ -120,7 +113,7 @@ const createHarness = async (
   const repoDir = await createTempRepo(registerCleanup);
   const agentDir = await createTempDir(registerCleanup, 'tau-flow-agent-');
 
-  // The provider registry is a module-level singleton, so each harness needs its own name.
+  // Provider names must be unique in Pi's shared registry.
   harnessCounter += 1;
   const fauxProviderName = `tau-test-${harnessCounter}`;
   const faux = registerFauxProvider({ provider: fauxProviderName });
@@ -141,7 +134,7 @@ const createHarness = async (
   });
   await loader.reload();
 
-  // The faux provider ignores the key, but the session refuses to prompt without one.
+  // Pi requires a key even for the faux provider.
   const authStorage = AuthStorage.inMemory();
   authStorage.setRuntimeApiKey(fauxProviderName, 'faux-key');
 
@@ -489,7 +482,6 @@ describe('commit flow', () => {
 
     await session.prompt('Commit the new file.');
 
-    // The overlay must have been reached and answered, not skipped by an earlier failure.
     expect(overlays).toHaveLength(1);
     const result = toolResultOf(events, 'commit');
     expect(result.isError).toBe(true);
@@ -514,7 +506,6 @@ describe('commit flow', () => {
 
     await session.prompt('Commit the new file.');
 
-    // No UI means the tool must refuse before ever reaching the overlay.
     expect(overlays).toHaveLength(0);
     const result = toolResultOf(events, 'commit');
     expect(result.isError).toBe(true);
