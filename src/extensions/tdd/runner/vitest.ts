@@ -258,10 +258,10 @@ const buildArgs = (input: RunTestsInput): string[] | null => {
   return args;
 };
 
-export const defaultDeps = (): RunnerDeps => ({
+export const defaultDeps = (scope: RunTestsInput['scope'] = 'changed'): RunnerDeps => ({
   resolveVitest: defaultResolveVitest,
   spawn: defaultSpawn,
-  timeoutMs: DEFAULT_TIMEOUT_MS,
+  timeoutMs: scope === 'all' ? 120_000 : DEFAULT_TIMEOUT_MS,
 });
 
 export const runVitest = async (input: RunTestsInput, deps: RunnerDeps): Promise<RunnerResult> => {

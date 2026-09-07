@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { runTests } from './index.js';
 import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js';
 import { MAX_ASSERTION_BYTES, MAX_FAILURES, MAX_TOTAL_BYTES } from './types.js';
-import { defaultSpawn, extractBinPath } from './vitest.js';
+import { defaultDeps, defaultSpawn, extractBinPath } from './vitest.js';
 
 const fakeSpawn =
   (result: Partial<SpawnResult>): SpawnFn =>
@@ -598,4 +598,10 @@ describe('extractBinPath', () => {
     expect(extractBinPath({})).toBeNull();
     expect(extractBinPath(null)).toBeNull();
   });
+});
+
+it('allows two minutes for full verification and thirty seconds for focused runs', () => {
+  expect(defaultDeps('all').timeoutMs).toBe(120_000);
+  expect(defaultDeps('changed').timeoutMs).toBe(30_000);
+  expect(defaultDeps('file').timeoutMs).toBe(30_000);
 });

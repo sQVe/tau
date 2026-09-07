@@ -111,9 +111,13 @@ export const createEvidenceStore = () => {
       await Promise.all(
         evidence.reds.map(async ({ behavior, record }) => {
           const requiredHashes = await hashInputs(cwd, behavior.files);
-          return Object.entries(requiredHashes).every(
-            ([file, hash]) => record.after[file] === hash,
-          );
+          return Object.entries(requiredHashes).every(([file, hash]) => {
+            // A later RED can renew a shared file; every earlier test must still pass.
+            const latest = evidence.reds.findLast((entry) =>
+              entry.behavior.files.some((path) => resolve(cwd, path) === file),
+            );
+            return (latest?.record ?? record).after[file] === hash;
+          });
         }),
       )
     ).every(Boolean);
