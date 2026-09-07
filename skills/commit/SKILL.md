@@ -45,11 +45,12 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
      commits only pathspec-listed files, but stale index state causes confusion.
 
 2. Identify logical commit groups.
-   - Split unrelated changes into separate groups, including within a single file when hunks have
-     different intents (e.g. a palette edit and an unrelated env var change in the same config).
+   - Split unrelated changes into separate groups. The tool stages whole files, so groups are
+     file-granular: every hunk in a file goes to the same group.
+   - When one file holds changes with genuinely different intents, put it in the group that fits
+     best and say so when reporting, rather than trying to split it.
    - Keep each group coherent and reviewable.
-   - For each group, prepare a conventional-commit subject and the exact file list (or hunk
-     selection, staged with `git add -p` before calling the tool).
+   - For each group, prepare a conventional-commit subject and the exact file list.
 
 3. Call the `commit` tool for each group with the file list, subject, and body. Do not end the turn
    before the first tool call. If the change looks temporary, wrong, or like a placeholder, still
@@ -63,9 +64,9 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 5. If the `commit` tool fails, triage before investigating.
    - Run `git status --porcelain` first. If the working tree is clean, the changes were already
      committed (e.g., absorbed by a prior group). Report this and move on.
-   - If changes remain and the failure includes `hookFailed`, handle it as an evidence-driven retry
-     loop:
-     - Read the `stderr` field carefully.
+   - If changes remain and the error text names a failing hook, handle it as an evidence-driven
+     retry loop:
+     - Read the error text carefully. It carries the hook's own output.
      - Diagnose the actual failure from the hook output.
      - Fix the underlying issue, such as lint, format, or test failures.
      - Include any files modified during the fix in the retry's `files` list.
@@ -86,7 +87,7 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 - Proposed each group with exact files, a conventional-commit subject, and a body.
 - Used the `commit` tool, not bash, for every commit. The tool handles user confirmation.
 - On failure, checked `git status` before investigating.
-- On `hookFailed`, read `stderr`, fixed the cause, and retried no more than 3 times.
+- On a hook failure, read the error text, fixed the cause, and retried no more than 3 times.
 - Stopped when the working tree was clean or the user chose to stop.
 
 ## See also

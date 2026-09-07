@@ -21,8 +21,7 @@
 
 ## Decision
 
-Application code lives under `src/`, skills stay at the package root for Pi discovery, and `rules/`
-is renamed to `lint/`.
+Application code lives under `src/`, and skills stay at the package root for Pi discovery.
 
 ```text
 tau/
@@ -34,8 +33,6 @@ tau/
       index.ts             # imports and installs extensions
       <extensionName>/     # feature modules
     <primitiveName>/       # shared code composed by extensions
-  lint/                    # ast-grep YAML rules
-  vendor/                  # third-party binary assets
 ```
 
 ### Where code goes
@@ -44,7 +41,6 @@ tau/
   handlers.
 - `src/<primitive>/` owns code reused across extensions.
 - `skills/` at the root owns SKILL.md files.
-- `vendor/` at the root owns third-party binary assets (wasm, etc.).
 
 If two extensions would reasonably share it, it is a primitive. If it belongs to one feature, it
 lives in that extension.
@@ -88,6 +84,5 @@ Primitives under `src/<primitive>/` follow the same minimal shape:
 
 - One rule for where application code lives and what an extension looks like.
 - Vocabulary matches Pi (`events/`, not `hooks/`).
-- The `rules/` collision goes away; `lint/` names its intent.
 - Cost: moving `extensions/` under `src/` touches imports and tooling paths.
 - Cost: primitive vs. extension is a judgment call on the margins.

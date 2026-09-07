@@ -91,19 +91,19 @@ const writeRepoFile = async (
 };
 
 describe('guardToolCall', () => {
-  it('returns undefined for non-bash tool calls', async () => {
-    await expect(guardToolCall(makeReadEvent())).resolves.toBeUndefined();
+  it('returns undefined for non-bash tool calls', () => {
+    expect(guardToolCall(makeReadEvent())).toBeUndefined();
   });
 
   it.each(['git status', 'git diff HEAD', 'git log --oneline', 'git add src/foo.ts'])(
     'returns undefined for bash commands that are not git-commit invocations: %s',
-    async (command) => {
-      await expect(guardToolCall(makeBashEvent(command))).resolves.toBeUndefined();
+    (command) => {
+      expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
     },
   );
 
-  it('returns a block result for a plain git commit bash command', async () => {
-    await expect(guardToolCall(makeBashEvent("git commit -m 'feat: add'"))).resolves.toEqual({
+  it('returns a block result for a plain git commit bash command', () => {
+    expect(guardToolCall(makeBashEvent("git commit -m 'feat: add'"))).toEqual({
       block: true,
       reason: commitGuardReason,
     });
@@ -115,8 +115,8 @@ describe('guardToolCall', () => {
     "echo $(git commit -m 'x')",
     "(git commit -m 'x')",
     "git-commit -m 'feat: add'",
-  ])('blocks the positive corpus: %s', async (command) => {
-    await expect(guardToolCall(makeBashEvent(command))).resolves.toEqual({
+  ])('blocks the positive corpus: %s', (command) => {
+    expect(guardToolCall(makeBashEvent(command))).toEqual({
       block: true,
       reason: commitGuardReason,
     });
@@ -130,25 +130,77 @@ describe('guardToolCall', () => {
     "bash -c   'git commit -m x'",
     "bash -c $'git commit -m x'",
   ])(
-    'blocks shell eval commands containing commit invocations via literal-substring check: %s',
-    async (command) => {
-      await expect(guardToolCall(makeBashEvent(command))).resolves.toEqual({
+    'blocks shell eval commands containing commit invocations via the git-commit pattern: %s',
+    (command) => {
+      expect(guardToolCall(makeBashEvent(command))).toEqual({
         block: true,
         reason: commitGuardReason,
       });
     },
   );
 
+  it.each(["sh -c 'git status'", "bash -c 'echo hello'"])(
+    'does not block shell eval commands without commit invocations: %s',
+    (command) => {
+      expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
+    },
+  );
+
   it.each([
-    "sh -c 'git status'",
-    "bash -c 'echo hello'",
-    "echo 'git commit -m x' && bash -c 'echo hello'",
-  ])('does not block shell eval commands without commit invocations: %s', async (command) => {
-    await expect(guardToolCall(makeBashEvent(command))).resolves.toBeUndefined();
+    'GIT_DIR=.git git commit -m x',
+    "eval 'git commit -m x'",
+    'command git commit -m x',
+    'env git commit -m x',
+    'xargs git commit -m x',
+    'bash --norc -c "git commit -m x"',
+    'git -C /tmp/repo commit -m x',
+    'git -c user.name=x commit -m x',
+  ])('blocks invocations that a command-name check misses: %s', (command) => {
+    expect(guardToolCall(makeBashEvent(command))).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
   });
 
-  it('does not block pipe-to-grep patterns mentioning commit', async () => {
-    await expect(guardToolCall(makeBashEvent('git log | grep commit'))).resolves.toBeUndefined();
+  it('does not block pipe-to-grep patterns mentioning commit', () => {
+    expect(guardToolCall(makeBashEvent('git log | grep commit'))).toBeUndefined();
+  });
+
+  it.each([
+    'git diff src/extensions/commit/guard.ts',
+    'git add skills/commit/SKILL.md',
+    'git log -- src/extensions/commit',
+    'git checkout src/extensions/commit/tool.ts',
+    'git status src/extensions/commit/',
+  ])('does not block git commands whose paths contain commit: %s', (command) => {
+    expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
+  });
+
+  it.each([
+    'git commit-tree $tree -p HEAD -m x',
+    "git update-ref HEAD $(git commit-tree $tree -p HEAD -m 'feat: x')",
+  ])('blocks plumbing commands that create commits: %s', (command) => {
+    expect(guardToolCall(makeBashEvent(command))).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it.each(['g\\it c\\ommit -m x', 'git co""mmit -m x', "g''it commit -m x", 'git \\commit -m x'])(
+    'blocks invocations that bash strips escapes and empty quotes from: %s',
+    (command) => {
+      expect(guardToolCall(makeBashEvent(command))).toEqual({
+        block: true,
+        reason: commitGuardReason,
+      });
+    },
+  );
+
+  it('blocks a commit split across a line continuation', () => {
+    expect(guardToolCall(makeBashEvent("git \\\n  commit -m 'feat: x'"))).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
   });
 });
 

@@ -1,3 +1,5 @@
+import { posix } from 'node:path';
+
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { defineTool } from '@mariozechner/pi-coding-agent';
 import type { Static } from '@sinclair/typebox';
@@ -5,24 +7,24 @@ import { Type } from '@sinclair/typebox';
 
 import type { CommitView } from './overlay.js';
 import { confirmCommitOverlay } from './overlay.js';
-import type { CommitFailure, CommitSuccess } from './types.js';
+import type { CommitSuccess } from './types.js';
 
 export const conventionalCommitSubjectPattern =
   /^(feat|fix|chore|refactor|docs|test|style|perf|build|ci|revert)(\([a-z0-9-]+\))?!?: [^\r\n]+$/;
 
 export const sensitivePathDenylist = [
-  /^\.env$/,
-  /^\.env\..+$/,
-  /^\.npmrc$/,
+  /(^|\/)\.env$/i,
+  /(^|\/)\.env\..+$/i,
+  /(^|\/)\.npmrc$/i,
   /credentials/i,
   /secret/i,
   /\.pem$/i,
   /\.key$/i,
   /\.p12$/i,
   /\.pfx$/i,
-  /(^|\/)id_rsa($|\.)/,
-  /(^|\/)id_ed25519($|\.)/,
-  /^\.ssh\//,
+  /(^|\/)id_rsa($|\.)/i,
+  /(^|\/)id_ed25519($|\.)/i,
+  /(^|\/)\.ssh($|\/)/i,
 ] as const;
 
 export const commitToolParameters = Type.Object({
@@ -39,24 +41,12 @@ export const commitToolParameters = Type.Object({
 
 export type CommitInput = Static<typeof commitToolParameters>;
 
-const hookFailurePattern = /hook/i;
-
-const detectHookFailure = (stdout: string, stderr: string) =>
-  hookFailurePattern.test(stderr) || hookFailurePattern.test(stdout);
-
-export class CommitFailedError extends Error {
-  readonly detail: CommitFailure;
-
-  constructor(stdout: string, stderr: string) {
-    super(`git commit failed: ${stderr.trim() || stdout.trim()}`.trim());
-    this.name = 'CommitFailedError';
-    this.detail = {
-      hookFailed: detectHookFailure(stdout, stderr),
-      stdout,
-      stderr,
-    };
-  }
-}
+// Pi forwards only error.message to the model, so hook output has to travel inside it. A hook can
+// split its diagnostics across both streams, so neither one is dropped when the other has content.
+export const commitFailedError = (stdout: string, stderr: string) =>
+  new Error(
+    `git commit failed: ${[stderr.trim(), stdout.trim()].filter(Boolean).join('\n')}`.trim(),
+  );
 
 export const validateSubject = (subject: string) => {
   if (!conventionalCommitSubjectPattern.test(subject)) {
@@ -64,18 +54,20 @@ export const validateSubject = (subject: string) => {
   }
 };
 
-const normalizeRepoPath = (file: string) => file.replaceAll('\\', '/').replace(/^\.\//, '');
+const normalizeRepoPath = (file: string) =>
+  posix.normalize(file.replaceAll('\\', '/')).replace(/\/+$/, '');
 
 export const validatePaths = (files: string[]) => {
   for (const rawFile of files) {
     const file = normalizeRepoPath(rawFile);
 
     if (
-      file.length === 0 ||
+      file === '' ||
+      file === '.' ||
       rawFile.startsWith(':') ||
-      rawFile.startsWith('/') ||
-      file.startsWith('../') ||
-      file.includes('/../')
+      posix.isAbsolute(file) ||
+      file === '..' ||
+      file.startsWith('../')
     ) {
       throw new Error(`Invalid path: ${rawFile}`);
     }
@@ -97,7 +89,7 @@ const buildCommitMessage = (subject: string, body?: string) => {
 const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
   const result = await pi.exec(
     'git',
-    ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
+    ['diff', '--cached', '--name-only', '--diff-filter=ACMRDT', '-z'],
     {
       cwd,
     },
@@ -115,8 +107,9 @@ const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
     .map((file) => normalizeRepoPath(file));
 };
 
+// --literal-pathspecs stops git from reading an argument as a glob and staging files nobody named.
 const stageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: string[]) => {
-  const result = await pi.exec('git', ['add', '--', ...files], { cwd });
+  const result = await pi.exec('git', ['--literal-pathspecs', 'add', '--', ...files], { cwd });
   if (result.code !== 0) {
     throw new Error(
       `git add failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
@@ -125,10 +118,66 @@ const stageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: st
 };
 
 const unstageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: string[]) => {
-  const result = await pi.exec('git', ['reset', '--', ...files], { cwd });
+  const result = await pi.exec('git', ['--literal-pathspecs', 'reset', '--', ...files], { cwd });
   if (result.code !== 0) {
     throw new Error(
       `git reset failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
+    );
+  }
+};
+
+// git reports staged paths from the repository root, so requested paths need the same base before
+// the two can be compared. Empty when cwd is already the root.
+const repoPathPrefix = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
+  const result = await pi.exec('git', ['rev-parse', '--show-prefix'], { cwd });
+  if (result.code !== 0) {
+    throw new Error(
+      `git rev-parse --show-prefix failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
+    );
+  }
+
+  return result.stdout.trim();
+};
+
+// Null before the first commit, when HEAD names a branch that does not exist yet.
+const currentHead = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
+  const result = await pi.exec('git', ['rev-parse', 'HEAD'], { cwd });
+  return result.code === 0 ? result.stdout.trim() : null;
+};
+
+const listCommitPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
+  const result = await pi.exec(
+    'git',
+    ['diff-tree', '--root', '-r', '--no-commit-id', '--name-only', '-z', 'HEAD'],
+    { cwd },
+  );
+
+  if (result.code !== 0) {
+    throw new Error(
+      `git diff-tree failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
+    );
+  }
+
+  return result.stdout
+    .split('\0')
+    .filter(Boolean)
+    .map((file) => normalizeRepoPath(file));
+};
+
+const undoCommit = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  cwd: string,
+  previousHead: string | null,
+) => {
+  const result = await pi.exec(
+    'git',
+    previousHead === null ? ['update-ref', '-d', 'HEAD'] : ['reset', '--soft', previousHead],
+    { cwd },
+  );
+
+  if (result.code !== 0) {
+    throw new Error(
+      `git failed to undo the commit, which stands with unrequested paths in it: ${result.stderr || result.stdout}`.trim(),
     );
   }
 };
@@ -188,7 +237,10 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
         return cancelled();
       }
 
-      const requestedFiles = new Set(params.files.map((file) => normalizeRepoPath(file)));
+      const prefix = await repoPathPrefix(pi, ctx.cwd);
+      const requestedFiles = new Set(
+        params.files.map((file) => normalizeRepoPath(`${prefix}${file}`)),
+      );
       const stagedPaths = await listStagedPaths(pi, ctx.cwd);
       const unrelatedStagedPaths = stagedPaths.filter((file) => !requestedFiles.has(file));
 
@@ -201,6 +253,20 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
       await stageFiles(pi, ctx.cwd, params.files);
       let approved = false;
       try {
+        // A directory argument stages everything beneath it, so verify what landed rather than
+        // trusting that each argument named one file. Anything extra came from this call's add, so
+        // it sits under cwd and the prefix strips back off.
+        const unrequestedPaths = (await listStagedPaths(pi, ctx.cwd))
+          .filter((file) => !requestedFiles.has(file))
+          .map((file) => file.slice(prefix.length));
+
+        if (unrequestedPaths.length > 0) {
+          await unstageFiles(pi, ctx.cwd, unrequestedPaths);
+          throw new Error(
+            `Staging ${params.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}`,
+          );
+        }
+
         const files = await stagedNumstat(pi, ctx.cwd, params.files);
         let notice = '';
         while (true) {
@@ -255,6 +321,7 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
         }
       }
 
+      const previousHead = await currentHead(pi, ctx.cwd);
       const commitResult = await pi.exec(
         'git',
         ['commit', '-m', buildCommitMessage(subject, body ?? undefined)],
@@ -263,7 +330,25 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
         },
       );
       if (commitResult.code !== 0) {
-        throw new CommitFailedError(commitResult.stdout, commitResult.stderr);
+        throw commitFailedError(commitResult.stdout, commitResult.stderr);
+      }
+
+      // A pre-commit hook runs after the staged set is approved and can stage more, so the commit
+      // is the last place the promise can be checked. Undo it rather than leave it standing.
+      const smuggledPaths = (await listCommitPaths(pi, ctx.cwd)).filter(
+        (file) => !requestedFiles.has(file),
+      );
+
+      if (smuggledPaths.length > 0) {
+        await undoCommit(pi, ctx.cwd, previousHead);
+        await unstageFiles(
+          pi,
+          ctx.cwd,
+          smuggledPaths.map((file) => file.slice(prefix.length)),
+        );
+        throw new Error(
+          `A hook staged paths that were not requested: ${smuggledPaths.join(', ')}. The commit was undone.`,
+        );
       }
 
       const revParseResult = await pi.exec('git', ['rev-parse', 'HEAD'], {

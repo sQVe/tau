@@ -5,8 +5,7 @@ Update tooling and prepare version changes. Run commands from the Tau checkout.
 ## Tooling
 
 Linting and formatting are configured in [vite.config.ts](../../vite.config.ts). Keep the direct
-Vitest version aligned with Vite+'s bundled version; the TDD adapter resolves Vitest from the target
-project.
+Vitest version aligned with Vite+'s bundled version.
 
 ## Versioning
 
@@ -20,8 +19,7 @@ Describe the behavior change for users. Commit the generated file under `.change
 change it describes.
 
 The [changeset check](../../.github/workflows/changeset.yml) requires a changeset when a PR touches
-`src/`, `skills/`, or `vendor/`. Changes confined to docs, tooling, or dependencies do not trigger
-that check.
+`src/` or `skills/`. Changes confined to docs, tooling, or dependencies do not trigger that check.
 
 The [release workflow](../../.github/workflows/release.yml) opens version PRs and is configured to
 create Git tags and GitHub releases after versioning. Tau is private and is not published to npm.
