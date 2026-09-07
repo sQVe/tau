@@ -185,6 +185,37 @@ const toolResultOf = (events: AgentSessionEvent[], toolName: string) => {
 };
 
 describe('commit flow', () => {
+  it('preserves the provider-resolved endpoint during comment review', async ({
+    onTestFinished,
+  }) => {
+    const { session, faux, repoDir, events } = await createHarness(onTestFinished);
+    const endpoint = 'https://enterprise.example.test';
+    const auth = vi.spyOn(faux.provider.auth.apiKey!, 'resolve').mockImplementation((input) =>
+      Promise.resolve({
+        auth: input.credential?.key
+          ? { apiKey: input.credential.key }
+          : { apiKey: 'test-token', baseUrl: endpoint },
+      }),
+    );
+    onTestFinished(() => {
+      auth.mockRestore();
+    });
+    await writeFile(join(repoDir, 'feature.txt'), 'hello\n');
+    faux.setResponses([
+      fauxAssistantMessage([
+        fauxToolCall('commit', { files: ['feature.txt'], subject: 'feat: add feature' }),
+      ]),
+      (_context, _options, _state, model) => {
+        expect(model.baseUrl).toBe(endpoint);
+        return fauxAssistantMessage('{"findings":[]}');
+      },
+      fauxAssistantMessage('Committed.'),
+    ]);
+    await session.prompt('Commit the file.');
+    expect(toolResultOf(events, 'commit').isError).toBe(false);
+    expect(faux.state.callCount).toBe(3);
+  });
+
   it('reviews a routine lockfile update with complete before-and-after context', async ({
     onTestFinished,
   }) => {

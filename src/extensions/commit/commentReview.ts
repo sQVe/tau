@@ -162,7 +162,7 @@ export const reviewComments = async (
             : ''),
         messages: [{ role: 'user', content: input, timestamp: Date.now() }],
       },
-      { ...auth, signal: reviewSignal, maxTokens: 4096 },
+      { signal: reviewSignal, maxTokens: 4096 },
     );
     if (['error', 'aborted', 'length'].includes(response.stopReason)) {
       throw new Error(`Comment review failed: ${response.errorMessage ?? response.stopReason}`);
