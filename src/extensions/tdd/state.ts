@@ -73,13 +73,15 @@ const uniqueStatus = (
   return matched.length === 1 ? (matched[0]?.status ?? null) : null;
 };
 
-export const hasAmbiguousIdentity = (cwd: string, behavior: Behavior, report: RunnerResult) =>
-  'tests' in report &&
-  behavior.files.some(
-    (file) =>
-      report.tests.filter((test) => identityMatches(cwd, behavior.testFullName, file, test))
-        .length > 1,
-  );
+// Ambiguity is per file: another required file can still identify the behavior on its own.
+export const ambiguousFiles = (cwd: string, behavior: Behavior, report: RunnerResult) =>
+  'tests' in report
+    ? behavior.files.filter(
+        (file) =>
+          report.tests.filter((test) => identityMatches(cwd, behavior.testFullName, file, test))
+            .length > 1,
+      )
+    : [];
 
 const uniquelyIs = (
   cwd: string,

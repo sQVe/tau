@@ -5,7 +5,7 @@ import { defineTool } from '@mariozechner/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
 
 import { guardToolCall } from './guard.js';
-import { createEvidenceStore, hasAmbiguousIdentity } from './state.js';
+import { ambiguousFiles, createEvidenceStore } from './state.js';
 
 export default function tddExtension(pi: ExtensionAPI) {
   const store = createEvidenceStore();
@@ -77,16 +77,33 @@ export default function tddExtension(pi: ExtensionAPI) {
                   ),
               )?.behavior
             : undefined;
+        const ambiguous = report ? ambiguousFiles(ctx.cwd, behavior, report) : [];
+        const duplicatedRed =
+          scope === 'full' && report
+            ? details.evidence.reds
+                .map(({ behavior: required }) => ({
+                  required,
+                  files: ambiguousFiles(ctx.cwd, required, report),
+                }))
+                .find(
+                  (entry) =>
+                    entry.files.length > 0 && entry.required.testFullName !== behavior.testFullName,
+                )
+            : undefined;
         let next: string | undefined;
         const call = `run_tests ${JSON.stringify({ ...behavior, scope })}`;
         if (details.kind === 'inputs-changed')
           next = `Inputs changed during the run; no evidence was recorded. Stop concurrent edits, then call ${call}.`;
-        else if (report && hasAmbiguousIdentity(ctx.cwd, behavior, report))
-          next = `More than one test in the same file has the full name ${JSON.stringify(behavior.testFullName)}, so the report cannot identify it and no evidence was recorded. Give each test a unique full name, then call ${call}.`;
+        else if (ambiguous.length > 0 && details.evidence.red === null)
+          next = `More than one test in ${JSON.stringify(ambiguous)} has the full name ${JSON.stringify(behavior.testFullName)}, so the report cannot identify it and no evidence was recorded. Give each test a unique full name, then call ${call}.`;
+        else if (ambiguous.length > 0)
+          next = `More than one test in ${JSON.stringify(ambiguous)} has the full name ${JSON.stringify(behavior.testFullName)}, so that file proves nothing; the RED recorded from the other required files stands and the phase is ${details.phase}. Give each test a unique full name, then call ${call}.`;
         else if (scope === 'focused' && details.kind === 'pass' && details.phase === 'locked')
           next = `The test does not fail yet; the behavior may already be implemented. Write a test that fails before the fix, then call ${call}.`;
         else if (missing)
           next = `A required RED test is skipped or missing: ${JSON.stringify(missing.testFullName)} in ${JSON.stringify(missing.files)}. Restore that test so it runs and passes, then call ${call}.`;
+        else if (duplicatedRed)
+          next = `An earlier RED test can no longer be identified: more than one test in ${JSON.stringify(duplicatedRed.files)} has its full name ${JSON.stringify(duplicatedRed.required.testFullName)}, so the full run cannot verify it. Rename the duplicate so each full name is unique, then call ${call}.`;
         const output = JSON.stringify({
           kind: details.kind,
           phase: details.phase,
