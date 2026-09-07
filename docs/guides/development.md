@@ -46,7 +46,8 @@ Use a disposable Git repository with Tau installed and a changed file ready to c
 
 ## Current status
 
-The commit extension is the only extension. TDD enforcement is not built yet.
+The commit extension and the TDD `run_tests` tool are available. The tool records test evidence in
+memory. TDD edit enforcement is not built yet.
 
 ## See also
 
