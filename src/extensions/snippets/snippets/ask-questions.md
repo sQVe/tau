@@ -1,6 +1,6 @@
 ---
 name: Ask questions
-description: Ask until we agree on the task, then stop
+description: Ask everything up front and wait for me to agree
 placement: append
 order: 50
 ---
