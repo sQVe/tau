@@ -20,9 +20,11 @@ constraint are advisory. The policy lives in
 1. Call `commit` with the usual file list, subject, and body.
 2. If it returns blocking findings, fix them and call it again. For a disputed finding, supply
    `commentDispute` with concrete evidence. This requests another review; it cannot waive a finding.
+   Approval and the commit result retain the dispute evidence and preceding findings, even when the
+   new review passes.
 3. After two automatic returns for fixes, unresolved findings appear in the approval overlay. Choose
    **Read comment review** to inspect the full report. The report scrolls with arrow keys and
-   Home/End; Escape returns to approval.
+   Home/End; Escape returns to approval and Ctrl+C aborts the commit.
 4. Choose **Return for fixes or retry**, skip the group, abort, or explicitly choose **Waive comment
    review and commit**. Ordinary approval cannot waive a blocking or failed review.
 
@@ -32,9 +34,10 @@ tool result with the report, reviewed Git tree, and policy fingerprint.
 ## Review validity
 
 Tau reuses the last successful review for an unchanged group, staged tree, policy, model, and
-dispute within the extension instance. Reloading extensions resets this cache and the retry counter.
-Changing staged content requires a fresh review. If content or HEAD changes while approval is open,
-call `commit` again.
+dispute within the extension instance, retaining up to 32 recent groups. Skip, abort, cancellation,
+and explicit retry reset the group’s correction counter. Correction and hook retries retain it.
+Reloading extensions resets the cache and counters. Changing staged content requires a fresh review.
+If content or HEAD changes while approval is open, call `commit` again.
 
 A hook that rewrites approved content causes Tau to undo the new commit while retaining the hook's
 changes. The next commit attempt reviews those changes. Format files before committing to avoid this
@@ -44,8 +47,14 @@ extra round trip.
 
 Missing model credentials, invalid responses, oversized input, and provider failures remain visible
 as failed reviews. Retry or explicitly waive them; they never count as passing reviews. Model calls
-have a two-minute timeout. The first version limits input to 200,000 characters and individual blobs
-to 200,000 bytes; split large commits when necessary.
+share a two-minute timeout across the initial response and one retry for invalid JSON or findings. A
+surrounding JSON code fence is accepted; findings must still cite supplied source files and valid
+lines. Policy-only files are not review targets.
+
+Input is limited to 1,000,000 characters and individual blobs to 400,000 bytes. This accommodates
+ordinary lockfile updates with complete before-and-after content. Larger input still requires
+splitting the commit or an explicit waiver; Tau never silently omits oversized source files.
+Provider context limits can be lower than Tau’s input limit.
 
 The gate enforces the review workflow. Whether a comment is useful or accurate remains a model
 judgment, and the reviewer must avoid findings it cannot substantiate from the supplied context.

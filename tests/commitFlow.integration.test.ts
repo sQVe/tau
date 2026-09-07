@@ -30,7 +30,7 @@ type RegisterCleanup = TestContext['onTestFinished'];
 
 const execFileAsync = promisify(execFile);
 
-const tauExtensionsPath = resolve(import.meta.dirname, '..');
+const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
 
 let harnessCounter = 0;
 
@@ -186,6 +186,39 @@ const toolResultOf = (events: AgentSessionEvent[], toolName: string) => {
 };
 
 describe('commit flow', () => {
+  it('reviews a routine lockfile update with complete before-and-after context', async ({
+    onTestFinished,
+  }) => {
+    const { session, faux, repoDir, events } = await createHarness(onTestFinished);
+    const before = 'dependency: version-1\n'.repeat(10_000);
+    const after = before.replace('version-1', 'version-2');
+    await writeFile(join(repoDir, 'pnpm-lock.yaml'), before);
+    await git(repoDir, ['add', 'pnpm-lock.yaml']);
+    await git(repoDir, ['commit', '-m', 'chore: add dependencies']);
+    await writeFile(join(repoDir, 'pnpm-lock.yaml'), after);
+    faux.setResponses([
+      fauxAssistantMessage([
+        fauxToolCall('commit', { files: ['pnpm-lock.yaml'], subject: 'chore: update dependency' }),
+      ]),
+      (context) => {
+        const user = context.messages[0];
+        const payload: unknown = JSON.parse(
+          user?.role === 'user' && typeof user.content === 'string' ? user.content : '{}',
+        );
+        expect((payload as { files: unknown }).files).toContainEqual({
+          path: 'pnpm-lock.yaml',
+          before,
+          after,
+        });
+        return fauxAssistantMessage('{"findings":[]}');
+      },
+      fauxAssistantMessage('Committed.'),
+    ]);
+    await session.prompt('Commit the dependency update.');
+    expect(toolResultOf(events, 'commit').isError).toBe(false);
+    expect(faux.state.callCount).toBe(3);
+  });
+
   it.for([
     { path: 'unrelated.ts', line: 1 },
     { path: 'retry.ts', line: 9999 },
@@ -205,6 +238,9 @@ describe('commit flow', () => {
             findings: [{ ...location, kind: 'inaccurate', message: 'Invalid location.' }],
           }),
         ),
+        fauxAssistantMessage(
+          '{"findings":[{"path":"outside.ts","line":1,"kind":"policy","message":"Invalid location."}]}',
+        ),
         fauxAssistantMessage('Review failed.'),
       ]);
       await session.prompt('Commit the retry policy.');
@@ -215,6 +251,25 @@ describe('commit flow', () => {
       );
     },
   );
+  it('retries an invalid review once without accepting its unlocatable findings', async ({
+    onTestFinished,
+  }) => {
+    const { session, faux, repoDir, events } = await createHarness(onTestFinished);
+    await writeFile(join(repoDir, 'retry.ts'), 'export const retries = 0;\n');
+    faux.setResponses([
+      fauxAssistantMessage([
+        fauxToolCall('commit', { files: ['retry.ts'], subject: 'feat: add retries' }),
+      ]),
+      fauxAssistantMessage(
+        '{"findings":[{"path":"AGENTS.md","line":1,"kind":"policy","message":"Invalid target"}]}',
+      ),
+      fauxAssistantMessage('{"findings":[]}'),
+      fauxAssistantMessage('Committed.'),
+    ]);
+    await session.prompt('Commit the file.');
+    expect(toolResultOf(events, 'commit').isError).toBe(false);
+    expect(faux.state.callCount).toBe(4);
+  });
   it('excludes binary assets from comment context', async ({ onTestFinished }) => {
     const { session, faux, repoDir, events } = await createHarness(onTestFinished);
     await writeFile(join(repoDir, 'asset.bin'), Buffer.alloc(300_000));
@@ -239,7 +294,7 @@ describe('commit flow', () => {
   it('rechecks a disputed finding without changing the staged content', async ({
     onTestFinished,
   }) => {
-    const { session, faux, repoDir, events } = await createHarness(onTestFinished);
+    const { session, faux, repoDir, events, overlays } = await createHarness(onTestFinished);
     await writeFile(
       join(repoDir, 'retry.ts'),
       '// Disabled during migration\nexport const retries = 0;\n',
@@ -275,6 +330,9 @@ describe('commit flow', () => {
       false,
     ]);
     expect(faux.state.callCount).toBe(5);
+    expect(overlays[0]).toContain('rechecked after dispute');
+    expect(JSON.stringify(results.at(-1))).toContain('temporary migration constraint');
+    expect(JSON.stringify(results.at(-1))).toContain('Remove the migration note.');
   });
   it('reviews staged versions with nearby comments and keeps missing-comment suggestions advisory', async ({
     onTestFinished,
@@ -336,6 +394,7 @@ describe('commit flow', () => {
         fauxToolCall('commit', { files: ['retry.ts'], subject: 'feat: add retry policy' }),
       ]),
       fauxAssistantMessage('I could not complete the review.'),
+      fauxAssistantMessage('Still invalid.'),
       fauxAssistantMessage('The user waived the failed review.'),
     ]);
     await session.prompt('Commit the retry policy.');
@@ -449,7 +508,7 @@ describe('commit flow', () => {
           body: 'Prove the commit tool runs end to end.',
         }),
       ]),
-      fauxAssistantMessage('{"findings":[]}'),
+      fauxAssistantMessage('```json\n{"findings":[]}\n```'),
       fauxAssistantMessage('Committed.'),
     ]);
 

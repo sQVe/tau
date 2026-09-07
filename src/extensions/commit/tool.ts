@@ -221,7 +221,15 @@ export const createCommitTool = (
   pi: Pick<ExtensionAPI, 'exec'>,
   review = reviewComments,
 ): ToolDefinition<typeof commitToolParameters, CommitSuccess['details']> => {
-  const reviews = new Map<string, { attempts: number; key?: string; result?: CommentReview }>();
+  const reviews = new Map<
+    string,
+    {
+      attempts: number;
+      key?: string;
+      result?: CommentReview;
+      disputes: { evidence: string; findings: string }[];
+    }
+  >();
   return defineTool({
     name: 'commit',
     label: 'Commit',
@@ -273,6 +281,7 @@ export const createCommitTool = (
       let reviewGroup = '';
       let reviewReport = '';
       let reviewWaived = false;
+      let returningForCorrections = false;
       try {
         // Directory arguments can stage unrequested files; convert those paths back to cwd-relative.
         const unrequestedPaths = (await listStagedPaths(pi, ctx.cwd))
@@ -289,8 +298,24 @@ export const createCommitTool = (
         reviewedTree = (await reviewGit(pi, ctx.cwd, ['write-tree'], signal)).trim();
         reviewedHead = await currentHead(pi, ctx.cwd);
         reviewGroup = JSON.stringify([ctx.cwd, reviewedHead, [...requestedFiles].toSorted()]);
-        const state = reviews.get(reviewGroup) ?? { attempts: 0 };
+        const state = reviews.get(reviewGroup) ?? { attempts: 0, disputes: [] };
+        reviews.delete(reviewGroup);
         reviews.set(reviewGroup, state);
+        if (reviews.size > 32) {
+          const oldest = reviews.keys().next().value;
+          if (oldest !== undefined) reviews.delete(oldest);
+        }
+        if (
+          params.commentDispute &&
+          !state.disputes.some(({ evidence }) => evidence === params.commentDispute)
+        ) {
+          state.disputes.push({
+            evidence: params.commentDispute,
+            findings: state.result
+              ? formatCommentReview(state.result)
+              : 'No prior findings available.',
+          });
+        }
         const key = JSON.stringify([
           reviewedTree,
           commentPolicyHash,
@@ -316,10 +341,14 @@ export const createCommitTool = (
         } catch (error) {
           reviewReport = `Comment review failed: ${error instanceof Error ? error.message : String(error)}\nRetry or explicitly waive this failed review.`;
         }
+        if (state.disputes.length) {
+          reviewReport = `Comment review rechecked after dispute.\n${state.disputes.map(({ evidence, findings }) => `Prior findings:\n${findings}\nDispute evidence:\n${evidence}`).join('\n')}\nCurrent review:\n${reviewReport || 'No findings.'}`;
+        }
         if (signal?.aborted) return cancelled();
         const reviewBlocked =
           !commentReview || commentReview.findings.some((finding) => finding.kind !== 'missing');
         if (commentReview && reviewBlocked && state.attempts <= 2) {
+          returningForCorrections = true;
           throw new Error(
             `Comment review needs corrections (${state.attempts}/2 automatic returns):\n${reviewReport}\nFix the findings and call commit again. Unresolved findings will require user review after two returns.`,
           );
@@ -390,6 +419,7 @@ export const createCommitTool = (
         }
       } finally {
         if (!approved) {
+          if (!returningForCorrections) reviews.delete(reviewGroup);
           await unstageFiles(pi, ctx.cwd, params.files);
         }
       }

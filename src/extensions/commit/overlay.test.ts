@@ -41,6 +41,11 @@ const setup = (keys: string[], terminalRows = 60, followUps: string[][] = []) =>
 };
 
 describe('confirmCommitOverlay', () => {
+  it('aborts the commit when Ctrl+C is pressed in the review viewer', async () => {
+    const { ctx, custom } = setup(['r'], 30, [['\u0003'], ['a']]);
+    expect(await confirmCommitOverlay(ctx, { ...view, review: 'Review findings' })).toBe('abort');
+    expect(custom).toHaveBeenCalledTimes(2);
+  });
   it('opens a scrollable read-only review and returns to commit approval', async () => {
     const { ctx, render } = setup(['r'], 30, [['\u001b[F', '\u001b'], ['a']]);
     const review = Array.from({ length: 60 }, (_, index) => `Finding ${index + 1}`).join('\n');

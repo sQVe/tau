@@ -42,13 +42,13 @@ const sectionCaps = (terminalRows: number) => {
 };
 
 const showCommentReview = async (ctx: ExtensionContext, report: string, signal?: AbortSignal) => {
-  if (signal?.aborted) return;
-  await ctx.ui.custom<void>(
+  if (signal?.aborted) return 'abort';
+  return ctx.ui.custom<'return' | 'abort'>(
     (tui, theme, _keybindings, done) => {
       let offset = 0;
       let lastOffset = 0;
       const onAbort = () => {
-        done();
+        done('abort');
       };
       signal?.addEventListener('abort', onAbort, { once: true });
       const text = new Text(report, 1, 0);
@@ -61,7 +61,7 @@ const showCommentReview = async (ctx: ExtensionContext, report: string, signal?:
           return [
             theme.fg('accent', 'Comment review'),
             ...lines.slice(offset, offset + height),
-            theme.fg('dim', '↑/↓ scroll · Home/End · Esc return'),
+            theme.fg('dim', '↑/↓ scroll · Home/End · Esc return · Ctrl+C abort'),
           ];
         },
         invalidate() {
@@ -72,7 +72,7 @@ const showCommentReview = async (ctx: ExtensionContext, report: string, signal?:
         },
         handleInput(data) {
           if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl('c'))) {
-            done();
+            done(matchesKey(data, Key.ctrl('c')) ? 'abort' : 'return');
             return;
           }
           if (matchesKey(data, Key.up)) offset = Math.max(0, offset - 1);
@@ -217,7 +217,7 @@ export const confirmCommitOverlay = async (
     };
   }, options);
   if (choice === 'review' && view.review) {
-    await showCommentReview(ctx, view.review, signal);
+    if ((await showCommentReview(ctx, view.review, signal)) !== 'return') return 'abort';
     return confirmCommitOverlay(ctx, view, signal);
   }
   return choice ?? 'abort';

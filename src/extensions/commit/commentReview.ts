@@ -61,7 +61,9 @@ export const reviewGit = async (
     timeout: 30_000,
   });
   if (result.code !== 0 || result.killed) {
-    throw new Error(`Comment review: git ${args[0]} failed: ${result.stderr || result.stdout}`);
+    throw new Error(
+      `Comment review: git ${args.join(' ')} failed: ${result.stderr || result.stdout}`,
+    );
   }
   return result.stdout;
 };
@@ -102,8 +104,10 @@ export const reviewComments = async (
     if (!entry) return null;
     const [, type, hash, size] = entry.split('\t')[0]?.trim().split(/\s+/) ?? [];
     if (type !== 'blob' || !hash) return null;
-    if (Number(size) > 200_000)
-      throw new Error(`Comment review input is too large: ${path}. Split the commit.`);
+    if (Number(size) > 400_000)
+      throw new Error(
+        `Comment review input is too large: ${path}. Reduce the file or explicitly waive review.`,
+      );
     const content = await reviewGit(pi, ctx.cwd, ['cat-file', 'blob', hash], signal);
     return content.includes('\0') ? null : content;
   };
@@ -134,37 +138,52 @@ export const reviewComments = async (
     )
   ).filter((policy) => policy.content !== null);
   const input = JSON.stringify({ diff, files, policies, binaryPaths, dispute: snapshot.dispute });
-  if (input.length > 200_000)
-    throw new Error('Comment review input is too large. Split the commit.');
+  if (input.length > 1_000_000)
+    throw new Error(
+      'Comment review input is too large. Split the commit or explicitly waive review.',
+    );
   const api: unknown = ctx.model.api;
   if (typeof api !== 'string') throw new Error('Comment review needs a valid model API.');
   const model: Model<Api> = { ...ctx.model, api };
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok) throw new Error(`Comment review authentication failed: ${auth.error}`);
-  const response = await completeSimple(
-    model,
-    {
-      systemPrompt: commentPolicy,
-      messages: [{ role: 'user', content: input, timestamp: Date.now() }],
-    },
-    {
-      ...auth,
-      signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(120_000)]),
-      maxTokens: 4096,
-    },
-  );
-  if (
-    response.stopReason === 'error' ||
-    response.stopReason === 'aborted' ||
-    response.stopReason === 'length'
-  ) {
-    throw new Error(`Comment review failed: ${response.errorMessage ?? response.stopReason}`);
+  const reviewSignal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(120_000)]);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await completeSimple(
+      model,
+      {
+        systemPrompt:
+          commentPolicy +
+          (attempt
+            ? '\nYour previous response was invalid. Return valid JSON and cite only supplied source files and lines, not policy-only files.'
+            : ''),
+        messages: [{ role: 'user', content: input, timestamp: Date.now() }],
+      },
+      { ...auth, signal: reviewSignal, maxTokens: 4096 },
+    );
+    if (['error', 'aborted', 'length'].includes(response.stopReason)) {
+      throw new Error(`Comment review failed: ${response.errorMessage ?? response.stopReason}`);
+    }
+    const text = response.content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('');
+    try {
+      return parseReview(text, files);
+    } catch (error) {
+      if (attempt === 1 || reviewSignal.aborted) throw error;
+    }
   }
-  const text = response.content
-    .filter((part) => part.type === 'text')
-    .map((part) => part.text)
-    .join('');
-  const result: unknown = JSON.parse(text);
+  throw new Error('Comment review returned invalid findings.');
+};
+
+const parseReview = (
+  text: string,
+  files: { path: string; before: string | null; after: string | null }[],
+): CommentReview => {
+  const result: unknown = JSON.parse(
+    text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i, '$1'),
+  );
   if (
     !Value.Check(reviewSchema, result) ||
     result.findings.some((finding) => {

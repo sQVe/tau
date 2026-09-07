@@ -7,7 +7,8 @@ import { promisify } from 'node:util';
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { commentPolicyHash } from './commentReview.js';
+import { commentPolicyHash, reviewGit } from './commentReview.js';
+import type { CommentReview } from './commentReview.js';
 import type { CommitInput } from './tool.js';
 import {
   commitFailedError,
@@ -128,53 +129,20 @@ const executeCommit = async (repoDir: string, input: CommitInput) => {
   return commitTool.execute('tool-call-1', input, undefined, undefined, confirmedContext(repoDir));
 };
 
-describe('validateSubject', () => {
-  it('undoes a commit when a hook changes reviewed content in an approved file', async () => {
+describe('reviewGit', () => {
+  it('identifies the failing command after global Git options', async () => {
     const repoDir = await createTempRepo();
-    await writeRepoFile(repoDir, 'retry.ts', 'export const retries = 0;\n');
-    const hookPath = join(repoDir, '.git/hooks/pre-commit');
-    await writeFile(
-      hookPath,
-      '#!/bin/sh\nprintf "// Unreviewed comment\\n" >> retry.ts\ngit add retry.ts\n',
-    );
-    await chmod(hookPath, 0o755);
     await expect(
-      executeCommit(repoDir, { files: ['retry.ts'], subject: 'feat: add retry' }),
-    ).rejects.toThrow(/changed reviewed content/);
-    expect((await git(repoDir, ['rev-list', '--all', '--count'])).trim()).toBe('0');
-  });
-  it('rejects staged content changed while commit approval is open', async () => {
-    const repoDir = await createTempRepo();
-    await writeRepoFile(repoDir, 'retry.ts', 'export const retries = 0;\n');
-    const tool = createCommitTool({
-      exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir),
-    });
-    const ctx = {
-      cwd: repoDir,
-      hasUI: true,
-      ui: {
-        custom: async () => {
-          await writeRepoFile(
-            repoDir,
-            'retry.ts',
-            '// Unreviewed comment\nexport const retries = 1;\n',
-          );
-          await git(repoDir, ['add', 'retry.ts']);
-          return 'approve';
-        },
-      },
-    } as never;
-    await expect(
-      tool.execute(
-        'changed',
-        { files: ['retry.ts'], subject: 'feat: add retry' },
-        undefined,
-        undefined,
-        ctx,
+      reviewGit(
+        { exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir) },
+        repoDir,
+        ['--literal-pathspecs', 'ls-tree', 'missing-tree'],
       ),
-    ).rejects.toThrow(/changed since comment review/);
-    expect((await git(repoDir, ['rev-list', '--all', '--count'])).trim()).toBe('0');
+    ).rejects.toThrow('git --literal-pathspecs ls-tree missing-tree failed');
   });
+});
+
+describe('validateSubject', () => {
   it('throws a validation error naming the subject when it is not a conventional commit', () => {
     const subject = 'Add stuff.';
 
@@ -300,6 +268,126 @@ describe('validatePaths', () => {
 });
 
 describe('commitTool.execute', () => {
+  it('undoes a commit when a hook changes reviewed content in an approved file', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'retry.ts', 'export const retries = 0;\n');
+    const hookPath = join(repoDir, '.git/hooks/pre-commit');
+    await writeFile(
+      hookPath,
+      '#!/bin/sh\nprintf "// Unreviewed comment\\n" >> retry.ts\ngit add retry.ts\n',
+    );
+    await chmod(hookPath, 0o755);
+    await expect(
+      executeCommit(repoDir, { files: ['retry.ts'], subject: 'feat: add retry' }),
+    ).rejects.toThrow(/changed reviewed content/);
+    expect((await git(repoDir, ['rev-list', '--all', '--count'])).trim()).toBe('0');
+  });
+  it('rejects staged content changed while commit approval is open', async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'retry.ts', 'export const retries = 0;\n');
+    const tool = createCommitTool({
+      exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir),
+    });
+    const ctx = {
+      cwd: repoDir,
+      hasUI: true,
+      ui: {
+        custom: async () => {
+          await writeRepoFile(
+            repoDir,
+            'retry.ts',
+            '// Unreviewed comment\nexport const retries = 1;\n',
+          );
+          await git(repoDir, ['add', 'retry.ts']);
+          return 'approve';
+        },
+      },
+    } as never;
+    await expect(
+      tool.execute(
+        'changed',
+        { files: ['retry.ts'], subject: 'feat: add retry' },
+        undefined,
+        undefined,
+        ctx,
+      ),
+    ).rejects.toThrow(/changed since comment review/);
+    expect((await git(repoDir, ['rev-list', '--all', '--count'])).trim()).toBe('0');
+  });
+
+  it('expires old abandoned review groups', async () => {
+    const repoDir = await createTempRepo();
+    const review = vi.fn<() => Promise<CommentReview>>(async () => ({
+      findings: [{ path: 'retry.ts', line: 1, kind: 'policy' as const, message: 'Stale comment.' }],
+    }));
+    const tool = createReviewedCommitTool(
+      { exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir) },
+      review,
+    );
+    const call = (path: string) =>
+      tool.execute(
+        'test',
+        { files: [path], subject: 'feat: add retry' },
+        undefined,
+        undefined,
+        confirmedContext(repoDir),
+      );
+    for (let index = 0; index < 33; index += 1) {
+      const path = `retry${index}.ts`;
+      await writeRepoFile(repoDir, path, '// stale\n');
+      await expect(call(path)).rejects.toThrow('1/2 automatic returns');
+    }
+    await expect(call('retry0.ts')).rejects.toThrow('1/2 automatic returns');
+    expect(review).toHaveBeenCalledTimes(34);
+  });
+  it.each(['skip', 'abort', 'cancel'])('resets correction attempts after %s', async (choice) => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'retry.ts', '// stale\nexport const retries = 0;\n');
+    const review = vi.fn<() => Promise<CommentReview>>(async () => ({
+      findings: [
+        { path: 'retry.ts', line: 1, kind: 'inaccurate' as const, message: 'Stale comment.' },
+      ],
+    }));
+    const tool = createReviewedCommitTool(
+      { exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir) },
+      review,
+    );
+    const controller = new AbortController();
+    const ctx = {
+      cwd: repoDir,
+      hasUI: true,
+      ui: {
+        custom: async () => {
+          if (choice === 'cancel') controller.abort();
+          return choice;
+        },
+      },
+    } as unknown as ExtensionContext;
+    const call = () =>
+      tool.execute(
+        'test',
+        { files: ['retry.ts'], subject: 'feat: add retry' },
+        undefined,
+        undefined,
+        ctx,
+      );
+    await expect(call()).rejects.toThrow('1/2 automatic returns');
+    await expect(call()).rejects.toThrow('2/2 automatic returns');
+    const finish = tool.execute(
+      'test',
+      { files: ['retry.ts'], subject: 'feat: add retry' },
+      controller.signal,
+      undefined,
+      ctx,
+    );
+    const outcome = await finish.then(
+      () => 'returned',
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
+    expect(outcome).toBe(choice === 'abort' ? 'Commit declined by user' : 'returned');
+    await expect(call()).rejects.toThrow('1/2 automatic returns');
+    expect(review).toHaveBeenCalledTimes(2);
+  });
   it('throws and unstages when the user aborts the overlay', async () => {
     const repoDir = await createTempRepo();
     await writeRepoFile(repoDir, 'README.md', 'hello\n');
