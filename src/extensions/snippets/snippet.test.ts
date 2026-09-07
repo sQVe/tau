@@ -79,13 +79,20 @@ describe('parseSnippet', () => {
     });
   });
 
-  it('reads a file that uses carriage returns', () => {
-    const raw = '---\r\nname: Windows\r\nplacement: prepend\r\n---\r\nBody text.\r\n';
+  it('reads a file that uses carriage returns and drops them from the body', () => {
+    const raw =
+      '---\r\nname: Windows\r\nplacement: prepend\r\n---\r\nFirst line.\r\nSecond line.\r\n';
 
     expect(parseSnippet('windows.md', raw)).toMatchObject({
       name: 'Windows',
       placement: 'prepend',
-      body: 'Body text.',
+      body: 'First line.\nSecond line.',
+    });
+  });
+
+  it.for(['Prepend', 'PREPEND'])('reads %s as the prepend placement', (placement) => {
+    expect(parseSnippet('cased.md', `---\nplacement: ${placement}\n---\nBody.`)).toMatchObject({
+      placement: 'prepend',
     });
   });
 

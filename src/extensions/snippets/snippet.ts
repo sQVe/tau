@@ -10,6 +10,14 @@ const quotePattern = /^["']|["']$/g;
 // Sorts last, so snippets without an order keep their relative order by name.
 const defaultOrder = 9999;
 
+const readPlacement = (value: string | undefined): SnippetPlacement =>
+  value?.toLowerCase() === 'prepend' ? 'prepend' : 'append';
+
+const readOrder = (value: string | undefined) => {
+  const order = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(order) ? order : defaultOrder;
+};
+
 /** Returns null when the file has no frontmatter block or no body text. */
 export const parseSnippet = (filename: string, raw: string): Snippet | null => {
   const frontmatter = frontmatterPattern.exec(raw);
@@ -32,19 +40,19 @@ export const parseSnippet = (filename: string, raw: string): Snippet | null => {
     }
   }
 
-  const body = rest.trim();
+  // The menu splits the body on newlines, and a stray carriage return there
+  // returns the cursor to column 0 and corrupts the frame.
+  const body = rest.replaceAll('\r\n', '\n').trim();
   if (body === '') {
     return null;
   }
-
-  const order = Number.parseInt(metadata.get('order') ?? '', 10);
 
   return {
     id: filename,
     name: metadata.get('name') ?? filename.replace(/\.md$/i, ''),
     description: metadata.get('description') ?? '',
-    placement: metadata.get('placement') === 'prepend' ? 'prepend' : 'append',
-    order: Number.isFinite(order) ? order : defaultOrder,
+    placement: readPlacement(metadata.get('placement')),
+    order: readOrder(metadata.get('order')),
     body,
   };
 };

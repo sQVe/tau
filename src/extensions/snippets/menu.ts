@@ -1,5 +1,5 @@
-import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
-import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from '@mariozechner/pi-tui';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 
 import type { Snippet } from './types.js';
 
@@ -78,7 +78,8 @@ export const openSnippetMenu = async (
     return snippet;
   };
 
-  const confirmed = await ctx.ui.custom<boolean>((tui, theme, _keybindings, done) => {
+  // Pi resolves this to undefined when no component ran, which counts as a cancel.
+  const confirmed = await ctx.ui.custom<boolean | undefined>((tui, theme, _keybindings, done) => {
     let mode: 'list' | 'preview' = 'list';
     let cursor = 0;
     let listScroll = 0;
@@ -97,14 +98,18 @@ export const openSnippetMenu = async (
       );
     };
 
+    // Every row must be truncated, or a narrow terminal wraps it and the frame
+    // grows a line past the height render() reported.
+    const header = (text: string, width: number) => truncateToWidth(dim(text), width);
+
     const buildListRows = (width: number): ListRow[] => [
-      { text: dim('↑ PREPEND - added before your message'), itemIndex: null },
+      { text: header('↑ PREPEND - added before your message', width), itemIndex: null },
       ...prepends.map((snippet, index) => ({
         text: itemRow(snippet, index, width),
         itemIndex: index,
       })),
       { text: '', itemIndex: null },
-      { text: dim('↓ APPEND - added after your message'), itemIndex: null },
+      { text: header('↓ APPEND - added after your message', width), itemIndex: null },
       ...appends.map((snippet, index) => ({
         text: itemRow(snippet, prepends.length + index, width),
         itemIndex: prepends.length + index,
@@ -127,7 +132,7 @@ export const openSnippetMenu = async (
         rows.map((row) => row.text),
         listScroll,
         maxHeight,
-        dim,
+        (text) => header(text, width),
         rows.findIndex((row) => row.itemIndex === cursor),
       );
       listScroll = view.scroll;
@@ -141,7 +146,12 @@ export const openSnippetMenu = async (
 
     const renderPreview = (width: number, maxHeight: number) => {
       const snippet = itemAt(cursor);
-      const view = clipToViewport(buildPreviewRows(snippet, width), previewScroll, maxHeight, dim);
+      const view = clipToViewport(
+        buildPreviewRows(snippet, width),
+        previewScroll,
+        maxHeight,
+        (text) => header(text, width),
+      );
       previewScroll = view.scroll;
 
       return {
@@ -218,5 +228,5 @@ export const openSnippetMenu = async (
     };
   });
 
-  return confirmed ? working : null;
+  return confirmed === true ? working : null;
 };

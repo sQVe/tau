@@ -2,17 +2,20 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { fauxAssistantMessage, registerFauxProvider } from '@mariozechner/pi-ai';
 import {
-  AuthStorage,
+  InMemoryCredentialStore,
+  InMemoryModelsStore,
+  fauxAssistantMessage,
+  fauxProvider,
+} from '@earendil-works/pi-ai';
+import {
   DefaultResourceLoader,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
   SettingsManager,
   createAgentSession,
-  createCodingTools,
-} from '@mariozechner/pi-coding-agent';
-import type { ExtensionUIContext } from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
+import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import type { TestContext } from 'vitest';
 import { expect, it, vi } from 'vitest';
 
@@ -22,8 +25,6 @@ vi.setConfig({ testTimeout: 60_000 });
 type RegisterCleanup = TestContext['onTestFinished'];
 
 const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
-
-let harnessCounter = 0;
 
 /**
  * A custom UI context makes pi report hasUI=true. The menu is driven by the
@@ -76,13 +77,7 @@ const createHarness = async (registerCleanup: RegisterCleanup, keys: string[]) =
   registerCleanup(() => rm(cwd, { recursive: true, force: true }));
   registerCleanup(() => rm(agentDir, { recursive: true, force: true }));
 
-  // Provider names must be unique in pi's shared registry.
-  harnessCounter += 1;
-  const fauxProviderName = `tau-snippet-test-${harnessCounter}`;
-  const faux = registerFauxProvider({ provider: fauxProviderName });
-  registerCleanup(() => {
-    faux.unregister();
-  });
+  const faux = fauxProvider({ provider: 'tau-snippet-test' });
 
   const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
   const loader = new DefaultResourceLoader({
@@ -97,20 +92,24 @@ const createHarness = async (registerCleanup: RegisterCleanup, keys: string[]) =
   });
   await loader.reload();
 
-  // Pi requires a key even for the faux provider.
-  const authStorage = AuthStorage.inMemory();
-  authStorage.setRuntimeApiKey(fauxProviderName, 'faux-key');
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsStore: new InMemoryModelsStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(faux.provider);
 
   const { session, extensionsResult } = await createAgentSession({
     cwd,
     agentDir,
-    authStorage,
-    modelRegistry: ModelRegistry.inMemory(authStorage),
+    modelRuntime,
     model: faux.getModel(),
     resourceLoader: loader,
     sessionManager: SessionManager.inMemory(cwd),
     settingsManager,
-    tools: createCodingTools(cwd),
+    // These tests send no tool calls; the list only has to be valid.
+    tools: ['read'],
   });
   registerCleanup(() => {
     session.dispose();
@@ -119,7 +118,8 @@ const createHarness = async (registerCleanup: RegisterCleanup, keys: string[]) =
   expect(extensionsResult.errors).toEqual([]);
 
   const overlays: string[] = [];
-  await session.bindExtensions({ uiContext: createScriptedUI(overlays, keys) });
+  // The menu is a terminal component, so it only runs when the mode is "tui".
+  await session.bindExtensions({ uiContext: createScriptedUI(overlays, keys), mode: 'tui' });
 
   const commandNames = extensionsResult.extensions.flatMap((extension) =>
     Array.from(extension.commands.keys()),

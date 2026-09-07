@@ -62,8 +62,9 @@ commits need credentials for the session model; automated tests use a scripted p
 model API calls.
 
 The snippets extension adds [prompt snippets](./prompt-snippets.md) to your message when you send
-it. Press `alt+s` or run `/snippets` to open the toggle menu. The menu needs an interactive session;
-in print and RPC mode it reports that and changes nothing.
+it. Press `alt+s` or run `/snippets` to open the toggle menu. The menu is a terminal component, so
+it runs only in the terminal UI. In RPC mode the command reports that and changes nothing. Print
+mode has no way to show the message, so the command changes nothing there and stays silent.
 
 The writing extension adds its [instructions](../src/extensions/writing/instructions.md) to the
 system prompt before each ordinary agent run. No skill command is needed. Run `/reload` in Pi after

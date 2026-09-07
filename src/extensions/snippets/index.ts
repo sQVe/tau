@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 
-import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { openSnippetMenu } from './menu.js';
 import { acceptsSnippets, buildSnippetMessage, loadSnippets } from './snippet.js';
@@ -14,7 +14,7 @@ export default function snippetsExtension(pi: ExtensionAPI) {
   let enabled = new Set<string>();
 
   const updateWidget = (ctx: ExtensionContext) => {
-    if (!ctx.hasUI) {
+    if (ctx.mode !== 'tui') {
       return;
     }
 
@@ -39,12 +39,11 @@ export default function snippetsExtension(pi: ExtensionAPI) {
   };
 
   const openMenu = async (ctx: ExtensionContext) => {
-    // The menu is a terminal component, so it needs TUI mode, not any UI. Pi
-    // 0.66.1 has no `ctx.mode` to test, and its `hasUI` is false outside the
-    // TUI. In 0.85.1 `hasUI` is also true in RPC mode, where this component
-    // cannot run, so switch to `ctx.mode !== 'tui'` when Tau upgrades.
-    if (!ctx.hasUI) {
-      ctx.ui.notify('The snippet menu needs an interactive session.', 'warning');
+    // The menu is a terminal component, so it needs TUI mode rather than any
+    // UI. `hasUI` is also true in RPC mode, where `ui.custom` never runs a
+    // component and resolves undefined, which would look like a cancel.
+    if (ctx.mode !== 'tui') {
+      ctx.ui.notify('The snippet menu needs the terminal UI.', 'warning');
       return;
     }
 
@@ -71,7 +70,10 @@ export default function snippetsExtension(pi: ExtensionAPI) {
 
   // Snippets are re-read on every send, so edits apply without reloading pi.
   pi.on('input', async (event, ctx) => {
-    if (enabled.size === 0 || !acceptsSnippets(event.text)) {
+    // Pi validates the model after this handler returns and throws when none is
+    // selected. Spending the toggles here would lose them on a send that never
+    // happened, so leave them for the retry.
+    if (enabled.size === 0 || !acceptsSnippets(event.text) || ctx.model === undefined) {
       return undefined;
     }
 
@@ -83,7 +85,7 @@ export default function snippetsExtension(pi: ExtensionAPI) {
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       ctx.ui.notify(`Snippets could not be read, so nothing was sent: ${reason}`, 'error');
-      if (ctx.hasUI) {
+      if (ctx.mode === 'tui') {
         ctx.ui.setEditorText(event.text);
       }
 
