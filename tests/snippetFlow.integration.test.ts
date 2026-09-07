@@ -1,0 +1,221 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+
+import { fauxAssistantMessage, registerFauxProvider } from '@mariozechner/pi-ai';
+import {
+  AuthStorage,
+  DefaultResourceLoader,
+  ModelRegistry,
+  SessionManager,
+  SettingsManager,
+  createAgentSession,
+  createCodingTools,
+} from '@mariozechner/pi-coding-agent';
+import type { ExtensionUIContext } from '@mariozechner/pi-coding-agent';
+import type { TestContext } from 'vitest';
+import { expect, it, vi } from 'vitest';
+
+// Real pi sessions need extra time on slow CI.
+vi.setConfig({ testTimeout: 60_000 });
+
+type RegisterCleanup = TestContext['onTestFinished'];
+
+const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
+
+let harnessCounter = 0;
+
+/**
+ * A custom UI context makes pi report hasUI=true. The menu is driven by the
+ * keys in `keys`, which are fed to the component after it renders once.
+ */
+const createScriptedUI = (overlays: string[], keys: string[]): ExtensionUIContext => {
+  const widgets = new Map<string, string[] | undefined>();
+  const target: Record<string | symbol, unknown> = {
+    theme: { fg: (_color: string, text: string) => text, bold: (text: string) => text },
+    setWidget: (key: string, content: string[] | undefined) => {
+      widgets.set(key, content);
+    },
+    notify: () => {},
+    custom: async (factory: Parameters<ExtensionUIContext['custom']>[0]) => {
+      let result: boolean | undefined;
+      const component = await factory(
+        { requestRender: () => {}, terminal: { rows: 60 } } as never,
+        { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
+        {} as never,
+        (value) => {
+          result = value as boolean;
+        },
+      );
+
+      overlays.push(component.render(80).join('\n'));
+      for (const key of keys) {
+        component.handleInput?.(key);
+      }
+
+      return result;
+    },
+  };
+
+  const scriptedUI = new Proxy(target, {
+    get: (object, property) => {
+      if (property in object) {
+        return object[property];
+      }
+
+      throw new Error(`Scripted UI has no ${String(property)}`);
+    },
+  });
+
+  return scriptedUI as unknown as ExtensionUIContext;
+};
+
+const createHarness = async (registerCleanup: RegisterCleanup, keys: string[]) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-snippet-flow-'));
+  const agentDir = await mkdtemp(join(tmpdir(), 'tau-snippet-agent-'));
+  registerCleanup(() => rm(cwd, { recursive: true, force: true }));
+  registerCleanup(() => rm(agentDir, { recursive: true, force: true }));
+
+  // Provider names must be unique in pi's shared registry.
+  harnessCounter += 1;
+  const fauxProviderName = `tau-snippet-test-${harnessCounter}`;
+  const faux = registerFauxProvider({ provider: fauxProviderName });
+  registerCleanup(() => {
+    faux.unregister();
+  });
+
+  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
+  const loader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager,
+    additionalExtensionPaths: [tauExtensionsPath],
+    noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+  });
+  await loader.reload();
+
+  // Pi requires a key even for the faux provider.
+  const authStorage = AuthStorage.inMemory();
+  authStorage.setRuntimeApiKey(fauxProviderName, 'faux-key');
+
+  const { session, extensionsResult } = await createAgentSession({
+    cwd,
+    agentDir,
+    authStorage,
+    modelRegistry: ModelRegistry.inMemory(authStorage),
+    model: faux.getModel(),
+    resourceLoader: loader,
+    sessionManager: SessionManager.inMemory(cwd),
+    settingsManager,
+    tools: createCodingTools(cwd),
+  });
+  registerCleanup(() => {
+    session.dispose();
+  });
+
+  expect(extensionsResult.errors).toEqual([]);
+
+  const overlays: string[] = [];
+  await session.bindExtensions({ uiContext: createScriptedUI(overlays, keys) });
+
+  const commandNames = extensionsResult.extensions.flatMap((extension) =>
+    Array.from(extension.commands.keys()),
+  );
+
+  return { session, faux, overlays, commandNames };
+};
+
+/** Text of the newest user message, which is what the snippet extension transforms. */
+const promptTextOf = (context: { messages: { role: string; content: unknown }[] }) => {
+  const user = context.messages.findLast((message) => message.role === 'user');
+  if (!Array.isArray(user?.content)) {
+    throw new TypeError(`No user message with content blocks: ${JSON.stringify(context.messages)}`);
+  }
+
+  return (user.content as { type: string; text?: string }[])
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text ?? '')
+    .join('');
+};
+
+it('registers the snippets command in a real pi session', async ({ onTestFinished }) => {
+  const { commandNames } = await createHarness(onTestFinished, []);
+
+  expect(commandNames).toContain('snippets');
+});
+
+it('prepends a toggled snippet to the next message and then resets', async ({ onTestFinished }) => {
+  // The cursor starts on the first prepend snippet, so space toggles it.
+  const { session, faux, overlays } = await createHarness(onTestFinished, [' ', '\r']);
+
+  await session.prompt('/snippets');
+
+  expect(overlays).toHaveLength(1);
+  expect(overlays[0]).toContain('Session kickoff');
+  expect(overlays[0]).toContain('Prompt snippets');
+
+  const sent: string[] = [];
+  faux.setResponses([
+    (context) => {
+      sent.push(promptTextOf(context));
+      return fauxAssistantMessage('Understood.');
+    },
+    (context) => {
+      sent.push(promptTextOf(context));
+      return fauxAssistantMessage('Done.');
+    },
+  ]);
+
+  await session.prompt('Add the retry policy.');
+  await session.prompt('Now ship it.');
+
+  // Matched without the line breaks, which the markdown formatter owns.
+  expect(sent[0]).toMatch(/^Read this project before we start\./);
+  expect(sent[0]).toMatch(/we agree on the next step\.\n\nAdd the retry policy\.$/);
+  // Toggles reset after each send.
+  expect(sent[1]).toBe('Now ship it.');
+});
+
+it('keeps a slash command at the start of the text and keeps the toggle on', async ({
+  onTestFinished,
+}) => {
+  const { session, faux } = await createHarness(onTestFinished, [' ', '\r']);
+
+  await session.prompt('/snippets');
+
+  const sent: string[] = [];
+  const record = (context: Parameters<typeof promptTextOf>[0]) => {
+    sent.push(promptTextOf(context));
+    return fauxAssistantMessage('Done.');
+  };
+  faux.setResponses([record, record]);
+
+  // Pi expands /skill: and prompt templates only at the start of the text.
+  await session.prompt('/skill:commit');
+  await session.prompt('Add the retry policy.');
+
+  expect(sent[0]).toBe('/skill:commit');
+  // The toggle survived the slash message and applies to the next one.
+  expect(sent[1]).toMatch(/^Read this project before we start\./);
+});
+
+it('leaves the message unchanged when the user cancels the menu', async ({ onTestFinished }) => {
+  const { session, faux } = await createHarness(onTestFinished, [' ', '']);
+
+  await session.prompt('/snippets');
+
+  const sent: string[] = [];
+  faux.setResponses([
+    (context) => {
+      sent.push(promptTextOf(context));
+      return fauxAssistantMessage('Done.');
+    },
+  ]);
+
+  await session.prompt('Add the retry policy.');
+
+  expect(sent[0]).toBe('Add the retry policy.');
+});

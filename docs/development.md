@@ -50,13 +50,20 @@ Use a temporary Git repository with Tau installed and a changed file ready to co
 4. Ask Pi something underspecified so it calls `ask_user_question`. Check that the questionnaire
    renders, that arrow keys and Enter select an option, and that Esc abandons it. Automated tests
    cover only that the tool is registered, so the dialog needs a real terminal to verify.
+5. Press `alt+s`, turn on one snippet, and send a message. Check that Pi receives the snippet text
+   around your message, and that the toggle turns off again.
 
 ## Current status
 
-Tau includes the commit, writing, and ask-user-question extensions. The commit extension includes
+Tau includes the commit, writing, snippets, and ask-user-question extensions. The commit extension
+includes
 [comment review](./comment-review.md) before approval. TDD enforcement is not built yet. Interactive
 commits need credentials for the session model; automated tests use a scripted provider and make no
 model API calls.
+
+The snippets extension adds [prompt snippets](./prompt-snippets.md) to your message when you send
+it. Press `alt+s` or run `/snippets` to open the toggle menu. The menu needs an interactive session;
+in print and RPC mode it reports that and changes nothing.
 
 The writing extension adds its [instructions](../src/extensions/writing/instructions.md) to the
 system prompt before each ordinary agent run. No skill command is needed. Run `/reload` in Pi after
