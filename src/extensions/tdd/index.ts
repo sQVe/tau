@@ -2,10 +2,12 @@ import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { defineTool } from '@mariozechner/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
 
+import { guardToolCall } from './guard.js';
 import { createEvidenceStore } from './state.js';
 
 export default function tddExtension(pi: ExtensionAPI) {
   const store = createEvidenceStore();
+  pi.on('tool_call', (event, ctx) => guardToolCall(event, ctx.cwd, store));
   pi.registerTool(
     defineTool({
       name: 'run_tests',

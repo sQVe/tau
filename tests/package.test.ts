@@ -28,7 +28,7 @@ it('loads the Tau package through Pi with its commit tool, command, guard, and s
     expect(extensions).toHaveLength(1);
     expect(extensions[0]?.tools.has('commit')).toBe(true);
     expect(extensions[0]?.commands.has('commit')).toBe(true);
-    expect(extensions[0]?.handlers.get('tool_call')).toHaveLength(1);
+    expect(extensions[0]?.handlers.get('tool_call')).toHaveLength(2);
     expect(loader.getSkills().skills.map((skill) => skill.name)).toEqual(['commit']);
     expect(loader.getSkills().diagnostics).toEqual([]);
   } finally {

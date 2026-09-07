@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -13,8 +13,15 @@ import {
   SettingsManager,
   createAgentSession,
   createCodingTools,
+  defineTool,
 } from '@mariozechner/pi-coding-agent';
-import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent';
+import type {
+  AgentSessionEvent,
+  ExtensionFactory,
+  ExtensionUIContext,
+  ToolDefinition,
+} from '@mariozechner/pi-coding-agent';
+import { Type } from '@sinclair/typebox';
 import type { TestContext } from 'vitest';
 import { expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
 
@@ -28,7 +35,10 @@ interface ToolResult {
 vi.setConfig({ testTimeout: 60_000 });
 let counter = 0;
 
-const createHarness = async (cleanup: TestContext['onTestFinished']) => {
+const createHarness = async (
+  cleanup: TestContext['onTestFinished'],
+  extensionFactories: ExtensionFactory[] = [],
+) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-tdd-'));
   cleanup(() => rm(cwd, { recursive: true, force: true }));
   await promisify(execFile)('git', ['init', '--quiet', cwd]);
@@ -50,6 +60,7 @@ const createHarness = async (cleanup: TestContext['onTestFinished']) => {
     agentDir,
     settingsManager,
     additionalExtensionPaths: [resolve(import.meta.dirname, '..')],
+    extensionFactories,
     noExtensions: true,
     noSkills: true,
     noPromptTemplates: true,
@@ -98,8 +109,158 @@ const createHarness = async (cleanup: TestContext['onTestFinished']) => {
     expect(event.isError).toBe(false);
     return event.result as ToolResult;
   };
-  return { cwd, session, faux, events, run };
+  const call = async (toolName: string, input: Record<string, unknown>) => {
+    events.length = 0;
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall(toolName, input)]),
+      fauxAssistantMessage('Done.'),
+    ]);
+    await session.prompt('Call the tool.');
+    const event = events.find(
+      (entry) => entry.type === 'tool_execution_end' && entry.toolName === toolName,
+    );
+    if (event?.type !== 'tool_execution_end') throw new Error(`Missing ${toolName} result`);
+    return event;
+  };
+  return { cwd, session, faux, events, run, call };
 };
+
+it('blocks production writes until run_tests records RED through pi', async ({
+  onTestFinished,
+}) => {
+  const { cwd, run, call } = await createHarness(onTestFinished);
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    "import { it, expect } from 'vitest'; import { appendFileSync } from 'node:fs'; it('required behavior', () => { appendFileSync('runs', 'run\\n'); expect(1).toBe(2); });",
+  );
+  const input = { path: 'src/value.ts', content: 'export const value = 1;' };
+  const blocked = await call('write', input);
+  expect(blocked.isError).toBe(true);
+  expect(JSON.stringify(blocked.result)).toContain('src/value.ts');
+  expect(JSON.stringify(blocked.result)).toContain('locked');
+  expect(JSON.stringify(blocked.result)).toContain('none');
+  expect(JSON.stringify(blocked.result)).toContain('run run_tests with scope focused');
+  await expect(readFile(join(cwd, input.path))).rejects.toThrow(/ENOENT/);
+  await run();
+  expect((await call('write', input)).isError).toBe(false);
+  expect(await readFile(join(cwd, input.path), 'utf8')).toBe(input.content);
+  expect((await call('edit', { path: input.path, oldText: '= 1', newText: '= 2' })).isError).toBe(
+    false,
+  );
+  expect(await readFile(join(cwd, input.path), 'utf8')).toBe('export const value = 2;');
+  expect(await readFile(join(cwd, 'runs'), 'utf8')).toBe('run\n');
+});
+
+it('enforces file classifications across the evidence phases through pi', async ({
+  onTestFinished,
+}) => {
+  const { cwd, run, call } = await createHarness(onTestFinished);
+  await rm(join(cwd, 'behavior.test.ts'));
+  await mkdir(join(cwd, 'src'));
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 0;');
+  const test =
+    "import { it, expect } from 'vitest'; import { value } from './value'; it('required behavior', () => expect(value).toBe(1));";
+  expect((await call('write', { path: 'src/value.test.ts', content: test })).isError).toBe(false);
+  let recordedPhase = 'locked';
+  for (const phase of ['locked', 'red', 'green', 'verified']) {
+    if (phase !== 'locked') {
+      const result = await run({
+        files: ['src/value.test.ts'],
+        scope: phase === 'verified' ? 'full' : 'focused',
+      });
+      recordedPhase = result.details.phase;
+    }
+    expect(recordedPhase).toBe(phase);
+    const production = await call('write', {
+      path: join(cwd, 'src/value.ts'),
+      content: 'export const value = 1;',
+    });
+    expect(production.isError).toBe(phase !== 'red');
+    for (const path of ['.tau/state.test.ts', 'vite.config.ts', 'package.json']) {
+      const before = await readFile(join(cwd, path), 'utf8').catch(() => null);
+      const blocked = await call('write', { path, content: 'changed' });
+      expect(blocked.isError).toBe(true);
+      expect(JSON.stringify(blocked.result)).toContain(phase);
+      expect(await readFile(join(cwd, path), 'utf8').catch(() => null)).toBe(before);
+    }
+    const allowed = await call('write', { path: 'src/value.test.ts', content: test });
+    expect(allowed.isError).toBe(false);
+  }
+  expect(
+    (await call('edit', { path: 'src/value.test.ts', oldText: 'toBe(1)', newText: 'toBe(2)' }))
+      .isError,
+  ).toBe(false);
+  const stale = await call('write', { path: 'src/value.ts', content: 'export const value = 2;' });
+  expect(stale.isError).toBe(true);
+  expect(JSON.stringify(stale.result)).toContain('locked');
+  expect(JSON.stringify(stale.result)).toContain('required behavior');
+});
+
+it('blocks an extension write tool before it executes through pi', async ({ onTestFinished }) => {
+  const execute = vi.fn<ToolDefinition['execute']>(() =>
+    Promise.resolve({
+      content: [{ type: 'text' as const, text: 'Written' }],
+      details: {},
+    }),
+  );
+  const { run, call } = await createHarness(onTestFinished, [
+    (pi) => {
+      pi.registerTool(
+        defineTool({
+          name: 'mcp_patch',
+          label: 'Patch',
+          description: 'Write a file.',
+          parameters: Type.Object({ targetPath: Type.String() }),
+          execute,
+        }),
+      );
+    },
+  ]);
+  await run();
+  const result = await call('mcp_patch', { targetPath: 'behavior.test.ts' });
+  expect(result.isError).toBe(true);
+  expect(JSON.stringify(result.result)).toContain('unrecognized tool mcp_patch');
+  expect(execute).not.toHaveBeenCalled();
+});
+
+it('allows commit and its pre-commit formatter writes outside the file-tool guard', async ({
+  onTestFinished,
+}) => {
+  const { cwd, session, call } = await createHarness(onTestFinished);
+  const git = (args: string[]) => promisify(execFile)('git', args, { cwd });
+  await git(['config', 'user.name', 'Tau Test']);
+  await git(['config', 'user.email', 'tau@example.com']);
+  await git(['config', 'commit.gpgsign', 'false']);
+  await git(['config', 'core.hooksPath', '.vite-hooks']);
+  await mkdir(join(cwd, '.vite-hooks'));
+  await writeFile(
+    join(cwd, '.vite-hooks/pre-commit'),
+    `#!/bin/sh\n${await readFile(resolve('.vite-hooks/pre-commit'), 'utf8')}`,
+  );
+  await chmod(join(cwd, '.vite-hooks/pre-commit'), 0o755);
+  await writeFile(
+    join(cwd, 'vite.config.ts'),
+    "export default { staged: { '*.ts': 'vp fmt --write' } };",
+  );
+  await mkdir(join(cwd, 'src'));
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value=1');
+  const blocked = await call('write', {
+    path: 'src/value.ts',
+    content: 'export const value = 1;\n',
+  });
+  expect(blocked.isError).toBe(true);
+  expect(JSON.stringify(blocked.result)).toContain('locked');
+  await session.bindExtensions({
+    uiContext: { custom: () => Promise.resolve('approve') } as unknown as ExtensionUIContext,
+  });
+  const committed = await call('commit', {
+    files: ['src/value.ts'],
+    subject: 'feat: format fixture',
+  });
+  expect(committed).toMatchObject({ isError: false });
+  expect(await readFile(join(cwd, 'src/value.ts'), 'utf8')).toBe('export const value = 1;\n');
+  expect((await git(['show', 'HEAD:src/value.ts'])).stdout).toBe('export const value = 1;\n');
+});
 
 it('records a focused assertion failure as RED through pi', async ({ onTestFinished }) => {
   const { run } = await createHarness(onTestFinished);
