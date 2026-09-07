@@ -23,22 +23,14 @@ Use a Pi extension to load one writing policy from the Tau package into every or
 
 ### Policy ownership and scope
 
-This ADR sets the default writing rules. Keep the full writing guidance in `docs/guides/writing.md`,
-using the guide template. The guide explains how to apply these rules; it does not add new rules.
-Load that same file into the agent prompt.
+Keep the writing rules in [`docs/guides/writing.md`](../guides/writing.md), using the guide
+template. That guide is the single source of the rules and the file loaded into the agent prompt.
+This ADR records the decision and does not restate the rules.
 
-Cover replies, progress updates, commit and PR text, tickets, docs, and code comments. Write for
-readers who use English as a second language. Prefer common words, short sentences, and one idea per
-sentence. Explain technical terms when needed. Docs and posts may have more personality, but should
-use the same simple language.
-
-Cut filler and repetition, name sources, and keep formatting useful. End replies without repeating
-the answer. Keep comments that explain what the code cannot. Review text silently before sending or
-saving it.
-
-Keep the meaning, sources, and any real uncertainty. Preserve exact text in quotations and code, and
-follow required formats. The task and repository rules come first. Editing comments does not give
-permission to refactor code. The policy guides the agent; it cannot guarantee good writing.
+The rules cover replies, progress updates, commit and PR text, tickets, docs, and code comments.
+They ask for plain language aimed at readers who use English as a second language, and they keep the
+meaning, sources, and required formats unchanged. The task and repository rules come first. The
+policy guides the agent; it cannot guarantee good writing.
 
 ### Runtime integration
 
@@ -63,7 +55,7 @@ writing guidance without copying the rules. Loading the default policy does not 
 
 ## Tradeoffs
 
-- One file supplies the rules for readers and the agent.
+- One guide supplies the rules for readers and the agent.
 - Ordinary replies receive the rules without loading a skill.
 - Cost: the policy uses space in the prompt on each run.
 - Cost: prompt instructions cannot guarantee good writing, and other extensions can replace them.
@@ -74,5 +66,6 @@ writing guidance without copying the rules. Loading the default policy does not 
 
 - [ADR-0001: Application structure](./0001-application-structure.md)
 - [ADR-0004: Skill authoring style](./0004-skill-authoring-style.md)
+- [Writing guide](../guides/writing.md)
 - [Documentation rules](../AGENTS.md)
 - [Guide template](../guides/TEMPLATE.md)

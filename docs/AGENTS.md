@@ -8,14 +8,14 @@ Keep the root README focused on the project introduction and links. Put topic-sp
 - `adr/`: lasting technical decisions and their reasons. Accepted ADRs may define current
   conventions; proposed ADRs are not requirements.
 - `guides/`: setup, workflows, and maintenance instructions.
-- `foundations/`: project direction and scope.
+- `foundations/`: project goals and limits.
 
 Keep related explanations and steps together. Split a document when its topics are useful to read
 independently, not just because it answers more than one kind of question.
 
 ## Writing
 
-- Follow the [writing rules](./adr/0006-default-writing-policy.md#policy-ownership-and-scope).
+- Follow the [writing rules](./guides/writing.md).
 - Use the [ADR](./adr/TEMPLATE.md), [guide](./guides/TEMPLATE.md), and
   [foundation](./foundations/TEMPLATE.md) templates as starting points. Adapt headings and omit
   optional sections that add no useful information. Remove template instructions before publishing.

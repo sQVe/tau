@@ -16,7 +16,7 @@
 
 ## Decision
 
-Use the following naming rules for TypeScript, tests, docs, special files, and settings.
+Use the following naming rules for TypeScript, tests, docs, special files, and config.
 
 ### TypeScript source
 
