@@ -29,8 +29,12 @@ Run the full `pnpm check` before finishing a change.
 To try Tau in an interactive Pi session from this checkout:
 
 ```sh
-pnpm exec pi --no-extensions --no-skills -e ./src/extensions/index.ts --skill ./skills/commit
+pnpm exec pi --no-extensions --no-skills -e ./src/extensions/index.ts \
+  -e ./node_modules/@juicesharp/rpiv-ask-user-question/index.ts --skill ./skills/commit
 ```
+
+Pass both extension entries. `package.json` declares the same pair, so a checkout that loads only
+`./src/extensions/index.ts` is missing the bundled question tool and reports it at session start.
 
 For use in another project, run `pi install -l /absolute/path/to/tau` there, then start Pi. This
 records the local package in that project's `.pi/settings.json`.

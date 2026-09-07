@@ -102,3 +102,56 @@ it('loads Tau through Pi with commit features, the bundled question tool, and wr
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+it('reports an extension error when the bundled question package is not loaded', async ({
+  onTestFinished,
+}) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-package-missing-'));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const agentDir = join(cwd, 'agent');
+  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
+  const loader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager,
+    additionalExtensionPaths: [fileURLToPath(new URL('../src/extensions', import.meta.url))],
+    noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+  });
+  await loader.reload();
+
+  const faux = fauxProvider({ provider: 'tau-package-missing' });
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsStore: new InMemoryModelsStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(faux.provider);
+  const { session } = await createAgentSession({
+    cwd,
+    agentDir,
+    modelRuntime,
+    model: faux.getModel(),
+    resourceLoader: loader,
+    sessionManager: SessionManager.inMemory(cwd),
+    settingsManager,
+    tools: [],
+  });
+  onTestFinished(() => {
+    session.dispose();
+  });
+
+  const errors: string[] = [];
+  await session.bindExtensions({
+    onError: (error) => {
+      errors.push(error.error);
+    },
+  });
+
+  expect(errors).toHaveLength(1);
+  expect(errors[0]).toContain('ask_user_question');
+  expect(errors[0]).toContain('@juicesharp/rpiv-ask-user-question');
+});
