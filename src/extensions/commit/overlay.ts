@@ -1,4 +1,3 @@
-// Decision: ignore keybindings, as ecosystem overlays do. User escape rebinds do not apply.
 import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { DynamicBorder } from '@mariozechner/pi-coding-agent';
 import {
@@ -21,8 +20,7 @@ export interface CommitView {
   notice?: string;
 }
 
-// Overlays neither scroll nor clip; every row is truncated to the width and the free-form
-// sections are capped against the terminal height so the choices always fit.
+// Overlays do not scroll; cap body and file rows to leave room for choices.
 const MAX_BODY_LINES = 10;
 const MAX_FILE_ROWS = 15;
 const FIXED_ROWS = 15;
@@ -127,6 +125,7 @@ export const confirmCommitOverlay = async (
         signal?.removeEventListener('abort', onAbort);
       },
       handleInput(data) {
+        // Escape and Ctrl+C stay fixed regardless of user keybindings.
         if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl('c'))) {
           done('abort');
           return;
