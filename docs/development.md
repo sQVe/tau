@@ -46,7 +46,10 @@ Use a temporary Git repository with Tau installed and a changed file ready to co
 
 ## Current status
 
-Tau includes the commit and writing extensions. TDD enforcement is not built yet.
+Tau includes the commit and writing extensions. The commit extension includes
+[comment review](./comment-review.md) before approval. TDD enforcement is not built yet. Interactive
+commits need credentials for the session model; automated tests use a scripted provider and make no
+model API calls.
 
 The writing extension adds its [instructions](../src/extensions/writing/instructions.md) to the
 system prompt before each ordinary agent run. No skill command is needed. Run `/reload` in Pi after

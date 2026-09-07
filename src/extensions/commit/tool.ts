@@ -1,10 +1,17 @@
 import { posix } from 'node:path';
 
-import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
+import type { ExtensionAPI, ToolDefinition } from '@mariozechner/pi-coding-agent';
 import { defineTool } from '@mariozechner/pi-coding-agent';
 import type { Static } from '@sinclair/typebox';
 import { Type } from '@sinclair/typebox';
 
+import {
+  reviewComments,
+  formatCommentReview,
+  reviewGit,
+  commentPolicyHash,
+} from './commentReview.js';
+import type { CommentReview } from './commentReview.js';
 import type { CommitView } from './overlay.js';
 import { confirmCommitOverlay } from './overlay.js';
 import type { CommitSuccess } from './types.js';
@@ -31,6 +38,12 @@ export const commitToolParameters = Type.Object({
   files: Type.Array(Type.String(), { minItems: 1 }),
   subject: Type.String(),
   body: Type.Optional(Type.String()),
+  commentDispute: Type.Optional(
+    Type.String({
+      maxLength: 4000,
+      description: 'Evidence for rechecking a comment finding. This never waives review.',
+    }),
+  ),
   group: Type.Optional(
     Type.String({
       description:
@@ -204,8 +217,20 @@ const stagedNumstat = async (
     });
 };
 
-export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
-  defineTool({
+export const createCommitTool = (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  review = reviewComments,
+): ToolDefinition<typeof commitToolParameters, CommitSuccess['details']> => {
+  const reviews = new Map<
+    string,
+    {
+      attempts: number;
+      key?: string;
+      result?: CommentReview;
+      disputes: { evidence: string; findings: string }[];
+    }
+  >();
+  return defineTool({
     name: 'commit',
     label: 'Commit',
     description: 'Stage specific files and create a git commit with a validated subject.',
@@ -215,6 +240,7 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
       'Only commit the files explicitly provided.',
       'Use a conventional commit subject.',
       'Do not commit sensitive files such as .env or SSH keys.',
+      'Comment review runs before approval. Fix blocking findings or supply commentDispute with evidence; missing-comment suggestions are advisory. After two automatic returns, unresolved findings go to the user. Never claim a waiver on the user’s behalf.',
     ],
     parameters: commitToolParameters,
     async execute(_toolCallId, params, signal, _onUpdate, ctx): Promise<CommitSuccess> {
@@ -250,6 +276,12 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
 
       await stageFiles(pi, ctx.cwd, params.files);
       let approved = false;
+      let reviewedTree = '';
+      let reviewedHead: string | null = null;
+      let reviewGroup = '';
+      let reviewReport = '';
+      let reviewWaived = false;
+      let returningForCorrections = false;
       try {
         // Directory arguments can stage unrequested files; convert those paths back to cwd-relative.
         const unrequestedPaths = (await listStagedPaths(pi, ctx.cwd))
@@ -263,6 +295,64 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
           );
         }
 
+        reviewedTree = (await reviewGit(pi, ctx.cwd, ['write-tree'], signal)).trim();
+        reviewedHead = await currentHead(pi, ctx.cwd);
+        reviewGroup = JSON.stringify([ctx.cwd, reviewedHead, [...requestedFiles].toSorted()]);
+        const state = reviews.get(reviewGroup) ?? { attempts: 0, disputes: [] };
+        reviews.delete(reviewGroup);
+        reviews.set(reviewGroup, state);
+        if (reviews.size > 32) {
+          const oldest = reviews.keys().next().value;
+          if (oldest !== undefined) reviews.delete(oldest);
+        }
+        if (
+          params.commentDispute &&
+          !state.disputes.some(({ evidence }) => evidence === params.commentDispute)
+        ) {
+          state.disputes.push({
+            evidence: params.commentDispute,
+            findings: state.result
+              ? formatCommentReview(state.result)
+              : 'No prior findings available.',
+          });
+        }
+        const key = JSON.stringify([
+          reviewedTree,
+          commentPolicyHash,
+          ctx.model?.provider,
+          ctx.model?.id,
+          params.commentDispute,
+        ]);
+        let commentReview: CommentReview | undefined;
+        try {
+          commentReview =
+            state.key === key && state.result
+              ? state.result
+              : await review(pi, ctx, signal, {
+                  tree: reviewedTree,
+                  head: reviewedHead,
+                  ...(params.commentDispute ? { dispute: params.commentDispute } : {}),
+                });
+          state.key = key;
+          state.result = commentReview;
+          if (commentReview.findings.some((finding) => finding.kind !== 'missing'))
+            state.attempts += 1;
+          reviewReport = formatCommentReview(commentReview);
+        } catch (error) {
+          reviewReport = `Comment review failed: ${error instanceof Error ? error.message : String(error)}\nRetry or explicitly waive this failed review.`;
+        }
+        if (state.disputes.length) {
+          reviewReport = `Comment review rechecked after dispute.\n${state.disputes.map(({ evidence, findings }) => `Prior findings:\n${findings}\nDispute evidence:\n${evidence}`).join('\n')}\nCurrent review:\n${reviewReport || 'No findings.'}`;
+        }
+        if (signal?.aborted) return cancelled();
+        const reviewBlocked =
+          !commentReview || commentReview.findings.some((finding) => finding.kind !== 'missing');
+        if (commentReview && reviewBlocked && state.attempts <= 2) {
+          returningForCorrections = true;
+          throw new Error(
+            `Comment review needs corrections (${state.attempts}/2 automatic returns):\n${reviewReport}\nFix the findings and call commit again. Unresolved findings will require user review after two returns.`,
+          );
+        }
         const files = await stagedNumstat(pi, ctx.cwd, params.files);
         let notice = '';
         while (true) {
@@ -277,6 +367,8 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
               files,
               ...(params.group !== undefined ? { group: params.group } : {}),
               notice,
+              review: reviewReport,
+              reviewBlocked,
             },
             signal,
           );
@@ -284,9 +376,23 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
           if (signal?.aborted) {
             return cancelled();
           }
-          if (choice === 'approve') {
+          if (choice === 'approve' && reviewBlocked) {
+            throw new Error('Comment review requires an explicit user waiver.');
+          }
+          if (choice === 'approve' || choice === 'waive') {
+            const currentTree = (await reviewGit(pi, ctx.cwd, ['write-tree'], signal)).trim();
+            if (currentTree !== reviewedTree || (await currentHead(pi, ctx.cwd)) !== reviewedHead) {
+              throw new Error(
+                'Staged content or HEAD changed since comment review. Call commit again to review the changes.',
+              );
+            }
             approved = true;
+            reviewWaived = choice === 'waive';
             break;
+          }
+          if (choice === 'retry') {
+            reviews.delete(reviewGroup);
+            throw new Error(`User requested fixes or another comment review:\n${reviewReport}`);
           }
           if (choice === 'skip') {
             return {
@@ -313,6 +419,7 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
         }
       } finally {
         if (!approved) {
+          if (!returningForCorrections) reviews.delete(reviewGroup);
           await unstageFiles(pi, ctx.cwd, params.files);
         }
       }
@@ -346,6 +453,14 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
         );
       }
 
+      const committedTree = (await reviewGit(pi, ctx.cwd, ['rev-parse', 'HEAD^{tree}'])).trim();
+      if (committedTree !== reviewedTree) {
+        await undoCommit(pi, ctx.cwd, previousHead);
+        throw new Error(
+          'A hook changed reviewed content. The commit was undone. Call commit again to stage and review the current changes.',
+        );
+      }
+
       const revParseResult = await pi.exec('git', ['rev-parse', 'HEAD'], {
         cwd: ctx.cwd,
       });
@@ -356,15 +471,28 @@ export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
       }
 
       const sha = revParseResult.stdout.trim();
+      reviews.delete(reviewGroup);
 
       return {
-        content: [{ type: 'text', text: `${sha} ${subject}` }],
+        content: [
+          {
+            type: 'text',
+            text: `${sha} ${subject}${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
+          },
+        ],
         details: {
           sha,
           files: params.files,
           subject,
           body,
+          commentReview: {
+            status: reviewWaived ? 'waived' : 'passed',
+            tree: reviewedTree,
+            policy: commentPolicyHash,
+            report: reviewReport,
+          },
         },
       };
     },
   });
+};
