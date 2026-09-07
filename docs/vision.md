@@ -19,8 +19,8 @@ This is the goal. See [development](./development.md#current-status) for what wo
   Tau's flow and no package fits.
 - Enforce with code where it matters. Instructions guide; guards and evidence checks decide.
 - Few concepts, with clear meanings and firm rules. The same process every time.
-- Hand off to the tool that already does the job. A browser task goes to Claude Code in a herdr
-  pane, not to a second browser stack in Pi.
+- Hand off to the tool that already does the job. A browser task goes to Claude Code in a
+  [herdr](https://herdr.dev) pane, not to a second browser stack in Pi.
 
 ## In scope
 
