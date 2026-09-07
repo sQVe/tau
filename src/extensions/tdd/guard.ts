@@ -4,6 +4,7 @@ import type { ToolCallEvent, ToolCallEventResult } from '@mariozechner/pi-coding
 
 import { classifyPath } from './config.js';
 import type { createEvidenceStore } from './state.js';
+import type { Behavior, Phase } from './types.js';
 
 const inputPaths = (input: unknown, key = ''): string[] => {
   if (typeof input === 'string')
@@ -15,20 +16,32 @@ const inputPaths = (input: unknown, key = ''): string[] => {
   return [];
 };
 
-const pathNextStep = (file: string, cwd: string, implementationAllowed: boolean) => {
+const pathNextStep = (
+  file: string,
+  cwd: string,
+  implementationAllowed: boolean,
+  active: Behavior | null,
+  phase: Phase,
+) => {
   const path = relative(cwd, resolve(cwd, file));
   if (file.startsWith('@') || file.startsWith('~'))
-    return 'use a literal worktree path without @ or ~';
-  if (path === '..' || path.startsWith('../')) return 'choose a file inside the worktree';
+    return 'List literal worktree paths with ls {"path":"."}';
+  if (path === '..' || path.startsWith('../')) return 'List worktree files with ls {"path":"."}';
   if (
     path === '.tau' ||
     path.startsWith('.tau/') ||
     path === 'vite.config.ts' ||
     path === 'package.json'
   )
-    return 'choose a test or production file outside the protected paths';
+    return 'Choose an unprotected test file with ls {"path":"."}';
   if (classifyPath(path) === 'test' || implementationAllowed) return undefined;
-  return 'run run_tests with scope focused for a failing test that covers this change';
+  if (phase === 'verified')
+    return 'Start the next behavior with write using a *.test.ts path and content that tests the missing behavior';
+  if (phase === 'green' && active !== null)
+    return `Verify with run_tests ${JSON.stringify({ ...active, scope: 'full' })}`;
+  return active === null
+    ? `Write a failing test with write using path ${JSON.stringify(`${file.replace(/\.tsx?$/, '')}.test.ts`)} and content that checks the missing behavior`
+    : `Prove RED with run_tests ${JSON.stringify({ ...active, scope: 'focused' })}`;
 };
 
 export const guardToolCall = async (
@@ -44,11 +57,11 @@ export const guardToolCall = async (
   if (typeof file !== 'string') return undefined;
   const state = await store.read(cwd);
   const next = recognized
-    ? pathNextStep(file, cwd, state.implementationAllowed)
-    : `use write or edit instead of unrecognized tool ${event.toolName}`;
+    ? pathNextStep(file, cwd, state.implementationAllowed, state.evidence.active, state.phase)
+    : `Replace unrecognized tool ${event.toolName} with write using a literal path and the intended content`;
   if (next === undefined) return undefined;
   return {
     block: true,
-    reason: `Blocked ${file} in phase ${state.phase}, active behavior: ${state.evidence.active?.behavior ?? 'none'}. Next: ${next}.`,
+    reason: `Blocked ${file} in phase ${state.phase}, active behavior: ${state.evidence.active?.behavior ?? 'none'}. ${next}.`,
   };
 };

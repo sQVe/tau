@@ -139,7 +139,7 @@ it('blocks production writes until run_tests records RED through pi', async ({
   expect(JSON.stringify(blocked.result)).toContain('src/value.ts');
   expect(JSON.stringify(blocked.result)).toContain('locked');
   expect(JSON.stringify(blocked.result)).toContain('none');
-  expect(JSON.stringify(blocked.result)).toContain('run run_tests with scope focused');
+  expect(JSON.stringify(blocked.result)).toContain('Write a failing test with write');
   await expect(readFile(join(cwd, input.path))).rejects.toThrow(/ENOENT/);
   await run();
   expect((await call('write', input)).isError).toBe(false);
@@ -281,6 +281,12 @@ it('records focused and full passes without unlocking a first-run pass', async (
   const focused = await run();
   expect(focused.details).toMatchObject({ phase: 'locked', focusedPassValid: false });
   expect(focused.details.implementationAllowed).toBe(false);
+  expect(JSON.parse(focused.content[0]!.text)).toMatchObject({
+    kind: 'pass',
+    phase: 'locked',
+    implementationAllowed: false,
+    next: 'The test does not fail yet; the behavior may already be implemented. Write a test that fails before the fix, then call run_tests {"behavior":"required behavior","testFullName":"required behavior","files":["behavior.test.ts"],"scope":"focused"}.',
+  });
   expect(focused.details.evidence.red).toBeNull();
   expect(focused.details.evidence.focusedPass?.report.kind).toBe('pass');
   const full = await run({ scope: 'full' });
@@ -331,6 +337,13 @@ it('discards a run when a sibling bash tool edits its inputs', async ({ onTestFi
   const result = events.find(
     (event) => event.type === 'tool_execution_end' && event.toolName === 'run_tests',
   );
+  if (result?.type !== 'tool_execution_end') throw new Error('Missing run_tests result');
+  expect(JSON.parse((result.result as ToolResult).content[0]!.text)).toMatchObject({
+    kind: 'inputs-changed',
+    phase: 'locked',
+    report: null,
+    next: 'Inputs changed during the run; no evidence was recorded. Stop concurrent edits, then call run_tests {"behavior":"required behavior","testFullName":"required behavior","files":["behavior.test.ts"],"scope":"focused"}.',
+  });
   expect(result).toMatchObject({
     isError: false,
     result: {
@@ -427,3 +440,84 @@ it('runs three behaviors as separate red-green cycles through pi', async ({ onTe
   const next = await run({ behavior: 'next behavior', testFullName: 'behavior 1' });
   expect(next.details).toMatchObject({ phase: 'locked', implementationAllowed: false });
 });
+
+it('describes the cycle and exact nested test names in the registered tool', async ({
+  onTestFinished,
+}) => {
+  const { session, cwd, run } = await createHarness(onTestFinished);
+  const tool = session.getAllTools().find((entry) => entry.name === 'run_tests')!;
+  for (const text of [
+    'Name a behavior',
+    'scope "focused"',
+    'RED',
+    'GREEN',
+    'scope "full"',
+    'verified',
+    're-locks',
+    'git restore/stash',
+    'Skipped and deleted tests never count',
+    'kind',
+    'phase',
+    'implementationAllowed',
+    'report',
+    'locked',
+    'red',
+    'green',
+  ]) {
+    expect(tool.description).toContain(text);
+  }
+  expect(tool.parameters).toMatchObject({
+    properties: {
+      behavior: {
+        description:
+          'Name the behavior to implement; keep it unchanged through RED, GREEN, and full verification.',
+      },
+      files: {
+        description:
+          'Required test files as worktree-relative paths; keep the same files through the cycle, including full runs.',
+      },
+      scope: {
+        description:
+          'Use focused for the exact test in files to prove RED and GREEN; use full for all tests at the end to verify every recorded RED.',
+      },
+      testFullName: {
+        description:
+          'Exact Vitest full name: describe names then the it name, joined with spaces, not " > "; for example "outer inner works". Use the same name for focused and full runs.',
+      },
+    },
+  });
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    "import { describe, it, expect } from 'vitest'; describe('outer', () => describe('inner', () => it('works', () => expect(1).toBe(2))));",
+  );
+  const result = await run({ testFullName: 'outer inner works' });
+  expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+    phase: 'red',
+    implementationAllowed: true,
+  });
+});
+
+it.each(['skipped', 'missing'])(
+  'explains why a full pass cannot verify a %s RED test',
+  async (status) => {
+    const { cwd, run } = await createHarness(registerCleanup);
+    await mkdir(join(cwd, 'src'));
+    await writeFile(join(cwd, 'src/value.ts'), 'export const value = 0;');
+    await writeFile(
+      join(cwd, 'behavior.test.ts'),
+      "import { it, expect } from 'vitest'; import { value } from './src/value'; if (value !== 2) it.skipIf(value === 1)('required behavior', () => expect(value).toBe(3)); it('other', () => {});",
+    );
+    await run();
+    await writeFile(
+      join(cwd, 'src/value.ts'),
+      `export const value = ${status === 'skipped' ? 1 : 2};`,
+    );
+    const result = await run({ scope: 'full' });
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      kind: 'pass',
+      phase: 'red',
+      implementationAllowed: true,
+      next: 'A required RED test is skipped or missing: "required behavior" in ["behavior.test.ts"]. Restore that test so it runs and passes, then call run_tests {"behavior":"required behavior","testFullName":"required behavior","files":["behavior.test.ts"],"scope":"full"}.',
+    });
+  },
+);

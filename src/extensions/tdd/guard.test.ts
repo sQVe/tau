@@ -60,9 +60,7 @@ it.each(phases)('blocks evidence and verification configuration writes in %s', a
       expect(result?.reason).toContain(path);
       expect(result?.reason).toContain(phase);
       expect(result?.reason).toContain('required behavior');
-      expect(result?.reason).toContain(
-        'Next: choose a test or production file outside the protected paths',
-      );
+      expect(result?.reason).toContain('Choose an unprotected test file with ls {"path":"."}');
     }
   }
 });
@@ -88,7 +86,7 @@ it.each(phases)('blocks unrecognized tools carrying path arguments in %s', async
     expect(result?.reason).toContain(phase);
     expect(result?.reason).toContain('required behavior');
     expect(result?.reason).toContain('unrecognized tool mcp_patch');
-    expect(result?.reason).toContain('Next: use write or edit');
+    expect(result?.reason).toContain('with write using a literal path and the intended content');
   }
 });
 
@@ -128,7 +126,7 @@ it.each(phases)('blocks unrecognized tools without path arguments in %s', async 
     expect(result?.reason).toContain(phase);
     expect(result?.reason).toContain('required behavior');
     expect(result?.reason).toContain('unrecognized tool apply_patch');
-    expect(result?.reason).toContain('Next: use write or edit');
+    expect(result?.reason).toContain('with write using a literal path and the intended content');
   }
 });
 
@@ -144,7 +142,7 @@ it.each(phases)('refuses paths outside the worktree in %s', async (phase) => {
     expect(result?.block).toBe(true);
     expect(result?.reason).toContain(path);
     expect(result?.reason).toContain(phase);
-    expect(result?.reason).toContain('Next: choose a file inside the worktree');
+    expect(result?.reason).toContain('List worktree files with ls {"path":"."}');
   }
 });
 
@@ -181,6 +179,40 @@ it('requires literal paths instead of Pi aliases that can bypass path checks', a
     const result = await guardToolCall(makeEvent('write', { path }), '/repo', createStore('red'));
     expect(result?.block).toBe(true);
     expect(result?.reason).toContain(path);
-    expect(result?.reason).toContain('Next: use a literal worktree path without @ or ~');
+    expect(result?.reason).toContain('List literal worktree paths with ls {"path":"."}');
   }
+});
+
+it.each([
+  [
+    'locked',
+    'Prove RED with run_tests {"behavior":"required behavior","testFullName":"required","files":["value.test.ts"],"scope":"focused"}',
+  ],
+  [
+    'green',
+    'Verify with run_tests {"behavior":"required behavior","testFullName":"required","files":["value.test.ts"],"scope":"full"}',
+  ],
+  [
+    'verified',
+    'Start the next behavior with write using a *.test.ts path and content that tests the missing behavior',
+  ],
+] as const)('gives an actionable next step in %s', async (phase, next) => {
+  const result = await guardToolCall(
+    makeEvent('write', { path: 'src/value.ts' }),
+    '/repo',
+    createStore(phase),
+  );
+  expect(result?.reason).toBe(
+    `Blocked src/value.ts in phase ${phase}, active behavior: required behavior. ${next}.`,
+  );
+});
+
+it('requests a failing test when no behavior is active', async () => {
+  const store = createStore('locked');
+  const state = await store.read('/repo');
+  store.read.mockResolvedValue({ ...state, evidence: { ...state.evidence, active: null } });
+  const result = await guardToolCall(makeEvent('write', { path: 'src/value.ts' }), '/repo', store);
+  expect(result?.reason).toBe(
+    'Blocked src/value.ts in phase locked, active behavior: none. Write a failing test with write using path "src/value.test.ts" and content that checks the missing behavior.',
+  );
 });

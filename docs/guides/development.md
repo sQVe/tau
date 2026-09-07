@@ -46,8 +46,9 @@ Use a disposable Git repository with Tau installed and a changed file ready to c
 
 ## Current status
 
-The commit extension and the TDD `run_tests` tool are available. The tool records test evidence in
-memory. TDD edit enforcement is not built yet.
+The commit extension and TDD edit enforcement are on. The
+[run_tests tool](../../src/extensions/tdd/index.ts) describes the cycle from a failing test through
+production edits to full verification, with test evidence recorded in memory.
 
 ## See also
 
