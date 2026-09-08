@@ -1,6 +1,10 @@
 import { posix } from 'node:path';
 
-import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ToolDefinition,
+} from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
@@ -35,19 +39,18 @@ export const sensitivePathDenylist = [
 ] as const;
 
 export const commitToolParameters = Type.Object({
-  files: Type.Array(Type.String(), { minItems: 1 }),
-  subject: Type.String(),
-  body: Type.Optional(Type.String()),
+  groups: Type.Array(
+    Type.Object({
+      files: Type.Array(Type.String(), { minItems: 1 }),
+      subject: Type.String(),
+      body: Type.Optional(Type.String()),
+    }),
+    { minItems: 1 },
+  ),
   commentDispute: Type.Optional(
     Type.String({
       maxLength: 4000,
       description: 'Evidence for rechecking a comment finding. This never waives review.',
-    }),
-  ),
-  group: Type.Optional(
-    Type.String({
-      description:
-        'Optional marker rendered after "commit" in the overlay title (e.g. "2/5") so the caller can wait on it.',
     }),
   ),
 });
@@ -217,24 +220,274 @@ const stagedNumstat = async (
     });
 };
 
+type Reviews = Map<
+  string,
+  {
+    attempts: number;
+    key?: string;
+    result?: CommentReview;
+    disputes: { evidence: string; findings: string }[];
+  }
+>;
+
+const executeGroup = async (
+  params: CommitInput['groups'][number] & { commentDispute: string | undefined },
+  group: string,
+  pi: Pick<ExtensionAPI, 'exec'>,
+  ctx: ExtensionContext,
+  signal: AbortSignal | undefined,
+  reviews: Reviews,
+  review: typeof reviewComments,
+): Promise<CommitSuccess> => {
+  let subject = params.subject;
+  let body = params.body ?? null;
+  const cancelled = (): CommitSuccess => ({
+    content: [{ type: 'text', text: 'Commit cancelled' }],
+    details: { sha: '', files: params.files, subject, body },
+  });
+  if (signal?.aborted) {
+    return cancelled();
+  }
+
+  const prefix = await repoPathPrefix(pi, ctx.cwd);
+  const requestedFiles = new Set(params.files.map((file) => normalizeRepoPath(`${prefix}${file}`)));
+  const stagedPaths = await listStagedPaths(pi, ctx.cwd);
+  const unrelatedStagedPaths = stagedPaths.filter((file) => !requestedFiles.has(file));
+
+  if (unrelatedStagedPaths.length > 0) {
+    throw new Error(
+      `Cannot commit only the requested files while other paths are already staged: ${unrelatedStagedPaths.join(', ')}`,
+    );
+  }
+
+  await stageFiles(pi, ctx.cwd, params.files);
+  let approved = false;
+  let reviewedTree = '';
+  let reviewedHead: string | null = null;
+  let reviewGroup = '';
+  let reviewReport = '';
+  let reviewWaived = false;
+  let returningForCorrections = false;
+  try {
+    // Directory arguments can stage unrequested files; convert those paths back to cwd-relative.
+    const unrequestedPaths = (await listStagedPaths(pi, ctx.cwd))
+      .filter((file) => !requestedFiles.has(file))
+      .map((file) => file.slice(prefix.length));
+
+    if (unrequestedPaths.length > 0) {
+      await unstageFiles(pi, ctx.cwd, unrequestedPaths);
+      throw new Error(
+        `Staging ${params.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}`,
+      );
+    }
+
+    reviewedTree = (await reviewGit(pi, ctx.cwd, ['write-tree'], signal)).trim();
+    reviewedHead = await currentHead(pi, ctx.cwd);
+    reviewGroup = JSON.stringify([ctx.cwd, reviewedHead, [...requestedFiles].toSorted()]);
+    const state = reviews.get(reviewGroup) ?? { attempts: 0, disputes: [] };
+    reviews.delete(reviewGroup);
+    reviews.set(reviewGroup, state);
+    if (reviews.size > 32) {
+      const oldest = reviews.keys().next().value;
+      if (oldest !== undefined) reviews.delete(oldest);
+    }
+    if (
+      params.commentDispute &&
+      !state.disputes.some(({ evidence }) => evidence === params.commentDispute)
+    ) {
+      state.disputes.push({
+        evidence: params.commentDispute,
+        findings: state.result ? formatCommentReview(state.result) : 'No prior findings available.',
+      });
+    }
+    const key = JSON.stringify([
+      reviewedTree,
+      commentPolicyHash,
+      ctx.model?.provider,
+      ctx.model?.id,
+      params.commentDispute,
+    ]);
+    let commentReview: CommentReview | undefined;
+    try {
+      commentReview =
+        state.key === key && state.result
+          ? state.result
+          : await review(pi, ctx, signal, {
+              tree: reviewedTree,
+              head: reviewedHead,
+              ...(params.commentDispute ? { dispute: params.commentDispute } : {}),
+            });
+      state.key = key;
+      state.result = commentReview;
+      if (commentReview.findings.some((finding) => finding.kind !== 'missing')) state.attempts += 1;
+      reviewReport = formatCommentReview(commentReview);
+    } catch (error) {
+      reviewReport = `Comment review failed: ${error instanceof Error ? error.message : String(error)}\nRetry or explicitly waive this failed review.`;
+    }
+    if (state.disputes.length) {
+      reviewReport = `Comment review rechecked after dispute.\n${state.disputes.map(({ evidence, findings }) => `Prior findings:\n${findings}\nDispute evidence:\n${evidence}`).join('\n')}\nCurrent review:\n${reviewReport || 'No findings.'}`;
+    }
+    if (signal?.aborted) return cancelled();
+    const reviewBlocked =
+      !commentReview || commentReview.findings.some((finding) => finding.kind !== 'missing');
+    if (commentReview && reviewBlocked && state.attempts <= 2) {
+      returningForCorrections = true;
+      throw new Error(
+        `Comment review needs corrections (${state.attempts}/2 automatic returns):\n${reviewReport}\nFix the findings and call commit again. Unresolved findings will require user review after two returns.`,
+      );
+    }
+    const files = await stagedNumstat(pi, ctx.cwd, params.files);
+    let notice = '';
+    while (true) {
+      if (signal?.aborted) {
+        return cancelled();
+      }
+      const choice = await confirmCommitOverlay(
+        ctx,
+        {
+          subject,
+          body,
+          files,
+          group,
+          notice,
+          review: reviewReport,
+          reviewBlocked,
+        },
+        signal,
+      );
+      notice = '';
+      if (signal?.aborted) {
+        return cancelled();
+      }
+      if (choice === 'approve' && reviewBlocked) {
+        throw new Error('Comment review requires an explicit user waiver.');
+      }
+      if (choice === 'approve' || choice === 'waive') {
+        const currentTree = (await reviewGit(pi, ctx.cwd, ['write-tree'], signal)).trim();
+        if (currentTree !== reviewedTree || (await currentHead(pi, ctx.cwd)) !== reviewedHead) {
+          throw new Error(
+            'Staged content or HEAD changed since comment review. Call commit again to review the changes.',
+          );
+        }
+        approved = true;
+        reviewWaived = choice === 'waive';
+        break;
+      }
+      if (choice === 'retry') {
+        reviews.delete(reviewGroup);
+        throw new Error(`User requested fixes or another comment review:\n${reviewReport}`);
+      }
+      if (choice === 'skip') {
+        return {
+          content: [{ type: 'text', text: 'Commit skipped by user' }],
+          details: { sha: '', files: params.files, subject, body, skipped: true },
+        };
+      }
+      if (choice === 'abort') {
+        throw new Error('Commit declined by user');
+      }
+      if (choice === 'subject') {
+        const edited = await ctx.ui.editor('Edit subject', subject);
+        if (edited !== undefined) {
+          try {
+            validateSubject(edited);
+            subject = edited;
+          } catch (error) {
+            notice = error instanceof Error ? error.message : String(error);
+          }
+        }
+      } else {
+        body = (await ctx.ui.editor('Edit body', body ?? '')) ?? body;
+      }
+    }
+  } finally {
+    if (!approved) {
+      if (!returningForCorrections) reviews.delete(reviewGroup);
+      await unstageFiles(pi, ctx.cwd, params.files);
+    }
+  }
+
+  const previousHead = await currentHead(pi, ctx.cwd);
+  const commitResult = await pi.exec(
+    'git',
+    ['commit', '-m', buildCommitMessage(subject, body ?? undefined)],
+    {
+      cwd: ctx.cwd,
+    },
+  );
+  if (commitResult.code !== 0) {
+    throw commitFailedError(commitResult.stdout, commitResult.stderr);
+  }
+
+  // Hooks can stage files after approval, so check the committed paths too.
+  const smuggledPaths = (await listCommitPaths(pi, ctx.cwd)).filter(
+    (file) => !requestedFiles.has(file),
+  );
+
+  if (smuggledPaths.length > 0) {
+    await undoCommit(pi, ctx.cwd, previousHead);
+    await unstageFiles(
+      pi,
+      ctx.cwd,
+      smuggledPaths.map((file) => file.slice(prefix.length)),
+    );
+    throw new Error(
+      `A hook staged paths that were not requested: ${smuggledPaths.join(', ')}. The commit was undone.`,
+    );
+  }
+
+  const committedTree = (await reviewGit(pi, ctx.cwd, ['rev-parse', 'HEAD^{tree}'])).trim();
+  if (committedTree !== reviewedTree) {
+    await undoCommit(pi, ctx.cwd, previousHead);
+    throw new Error(
+      'A hook changed reviewed content. The commit was undone. Call commit again to stage and review the current changes.',
+    );
+  }
+
+  const revParseResult = await pi.exec('git', ['rev-parse', 'HEAD'], {
+    cwd: ctx.cwd,
+  });
+  if (revParseResult.code !== 0) {
+    throw new Error(
+      `git rev-parse HEAD failed with exit code ${revParseResult.code}: ${revParseResult.stderr || revParseResult.stdout}`.trim(),
+    );
+  }
+
+  const sha = revParseResult.stdout.trim();
+  reviews.delete(reviewGroup);
+
+  return {
+    content: [
+      {
+        type: 'text',
+        text: `${sha} ${subject}${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
+      },
+    ],
+    details: {
+      sha,
+      files: params.files,
+      subject,
+      body,
+      commentReview: {
+        status: reviewWaived ? 'waived' : 'passed',
+        tree: reviewedTree,
+        policy: commentPolicyHash,
+        report: reviewReport,
+      },
+    },
+  };
+};
+
 export const createCommitTool = (
   pi: Pick<ExtensionAPI, 'exec'>,
   review = reviewComments,
-): ToolDefinition<typeof commitToolParameters, CommitSuccess['details']> => {
-  const reviews = new Map<
-    string,
-    {
-      attempts: number;
-      key?: string;
-      result?: CommentReview;
-      disputes: { evidence: string; findings: string }[];
-    }
-  >();
+): ToolDefinition<typeof commitToolParameters, { groups: CommitSuccess['details'][] }> => {
+  const reviews: Reviews = new Map();
   return defineTool({
     name: 'commit',
     label: 'Commit',
-    description: 'Stage specific files and create a git commit with a validated subject.',
-    promptSnippet: 'Create a git commit for specific files using a conventional commit subject.',
+    description: 'Stage and commit logical groups sequentially, confirming each group.',
+    promptSnippet: 'Create git commits for an ordered groups array in one call.',
     promptGuidelines: [
       'When asked to commit, call this tool without asking for confirmation in chat first. Its overlay is the only approval step; the user approves, edits, skips, or aborts there, even for changes that look temporary or wrong.',
       'Only commit the files explicitly provided.',
@@ -243,256 +496,54 @@ export const createCommitTool = (
       'Comment review runs before approval. Fix blocking findings or supply commentDispute with evidence; missing-comment suggestions are advisory. After two automatic returns, unresolved findings go to the user. Never claim a waiver on the user’s behalf.',
     ],
     parameters: commitToolParameters,
-    async execute(_toolCallId, params, signal, _onUpdate, ctx): Promise<CommitSuccess> {
-      validateSubject(params.subject);
-      validatePaths(params.files);
-
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      for (const group of params.groups) {
+        validateSubject(group.subject);
+        validatePaths(group.files);
+      }
       if (!ctx.hasUI) {
         throw new Error('Cannot commit without user confirmation (non-interactive mode)');
       }
-
-      let subject = params.subject;
-      let body = params.body ?? null;
-      const cancelled = (): CommitSuccess => ({
-        content: [{ type: 'text', text: 'Commit cancelled' }],
-        details: { sha: '', files: params.files, subject, body },
-      });
-      if (signal?.aborted) {
-        return cancelled();
-      }
-
-      const prefix = await repoPathPrefix(pi, ctx.cwd);
-      const requestedFiles = new Set(
-        params.files.map((file) => normalizeRepoPath(`${prefix}${file}`)),
-      );
-      const stagedPaths = await listStagedPaths(pi, ctx.cwd);
-      const unrelatedStagedPaths = stagedPaths.filter((file) => !requestedFiles.has(file));
-
-      if (unrelatedStagedPaths.length > 0) {
-        throw new Error(
-          `Cannot commit only the requested files while other paths are already staged: ${unrelatedStagedPaths.join(', ')}`,
-        );
-      }
-
-      await stageFiles(pi, ctx.cwd, params.files);
-      let approved = false;
-      let reviewedTree = '';
-      let reviewedHead: string | null = null;
-      let reviewGroup = '';
-      let reviewReport = '';
-      let reviewWaived = false;
-      let returningForCorrections = false;
-      try {
-        // Directory arguments can stage unrequested files; convert those paths back to cwd-relative.
-        const unrequestedPaths = (await listStagedPaths(pi, ctx.cwd))
-          .filter((file) => !requestedFiles.has(file))
-          .map((file) => file.slice(prefix.length));
-
-        if (unrequestedPaths.length > 0) {
-          await unstageFiles(pi, ctx.cwd, unrequestedPaths);
-          throw new Error(
-            `Staging ${params.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}`,
-          );
-        }
-
-        reviewedTree = (await reviewGit(pi, ctx.cwd, ['write-tree'], signal)).trim();
-        reviewedHead = await currentHead(pi, ctx.cwd);
-        reviewGroup = JSON.stringify([ctx.cwd, reviewedHead, [...requestedFiles].toSorted()]);
-        const state = reviews.get(reviewGroup) ?? { attempts: 0, disputes: [] };
-        reviews.delete(reviewGroup);
-        reviews.set(reviewGroup, state);
-        if (reviews.size > 32) {
-          const oldest = reviews.keys().next().value;
-          if (oldest !== undefined) reviews.delete(oldest);
-        }
-        if (
-          params.commentDispute &&
-          !state.disputes.some(({ evidence }) => evidence === params.commentDispute)
-        ) {
-          state.disputes.push({
-            evidence: params.commentDispute,
-            findings: state.result
-              ? formatCommentReview(state.result)
-              : 'No prior findings available.',
-          });
-        }
-        const key = JSON.stringify([
-          reviewedTree,
-          commentPolicyHash,
-          ctx.model?.provider,
-          ctx.model?.id,
-          params.commentDispute,
-        ]);
-        let commentReview: CommentReview | undefined;
+      const groups: CommitSuccess['details'][] = [];
+      const content: CommitSuccess['content'] = [];
+      for (const [index, group] of params.groups.entries()) {
+        const id = `${index + 1}/${params.groups.length}`;
         try {
-          commentReview =
-            state.key === key && state.result
-              ? state.result
-              : await review(pi, ctx, signal, {
-                  tree: reviewedTree,
-                  head: reviewedHead,
-                  ...(params.commentDispute ? { dispute: params.commentDispute } : {}),
-                });
-          state.key = key;
-          state.result = commentReview;
-          if (commentReview.findings.some((finding) => finding.kind !== 'missing'))
-            state.attempts += 1;
-          reviewReport = formatCommentReview(commentReview);
-        } catch (error) {
-          reviewReport = `Comment review failed: ${error instanceof Error ? error.message : String(error)}\nRetry or explicitly waive this failed review.`;
-        }
-        if (state.disputes.length) {
-          reviewReport = `Comment review rechecked after dispute.\n${state.disputes.map(({ evidence, findings }) => `Prior findings:\n${findings}\nDispute evidence:\n${evidence}`).join('\n')}\nCurrent review:\n${reviewReport || 'No findings.'}`;
-        }
-        if (signal?.aborted) return cancelled();
-        const reviewBlocked =
-          !commentReview || commentReview.findings.some((finding) => finding.kind !== 'missing');
-        if (commentReview && reviewBlocked && state.attempts <= 2) {
-          returningForCorrections = true;
-          throw new Error(
-            `Comment review needs corrections (${state.attempts}/2 automatic returns):\n${reviewReport}\nFix the findings and call commit again. Unresolved findings will require user review after two returns.`,
-          );
-        }
-        const files = await stagedNumstat(pi, ctx.cwd, params.files);
-        let notice = '';
-        while (true) {
-          if (signal?.aborted) {
-            return cancelled();
-          }
-          const choice = await confirmCommitOverlay(
+          const result = await executeGroup(
+            { ...group, commentDispute: params.commentDispute },
+            id,
+            pi,
             ctx,
-            {
-              subject,
-              body,
-              files,
-              ...(params.group !== undefined ? { group: params.group } : {}),
-              notice,
-              review: reviewReport,
-              reviewBlocked,
-            },
             signal,
+            reviews,
+            review,
           );
-          notice = '';
-          if (signal?.aborted) {
-            return cancelled();
+          if (!result.details.sha && !result.details.skipped && params.groups.length > 1) {
+            throw new Error('Commit cancelled');
           }
-          if (choice === 'approve' && reviewBlocked) {
-            throw new Error('Comment review requires an explicit user waiver.');
-          }
-          if (choice === 'approve' || choice === 'waive') {
-            const currentTree = (await reviewGit(pi, ctx.cwd, ['write-tree'], signal)).trim();
-            if (currentTree !== reviewedTree || (await currentHead(pi, ctx.cwd)) !== reviewedHead) {
-              throw new Error(
-                'Staged content or HEAD changed since comment review. Call commit again to review the changes.',
-              );
-            }
-            approved = true;
-            reviewWaived = choice === 'waive';
-            break;
-          }
-          if (choice === 'retry') {
-            reviews.delete(reviewGroup);
-            throw new Error(`User requested fixes or another comment review:\n${reviewReport}`);
-          }
-          if (choice === 'skip') {
-            return {
-              content: [{ type: 'text', text: 'Commit skipped by user' }],
-              details: { sha: '', files: params.files, subject, body, skipped: true },
-            };
-          }
-          if (choice === 'abort') {
-            throw new Error('Commit declined by user');
-          }
-          if (choice === 'subject') {
-            const edited = await ctx.ui.editor('Edit subject', subject);
-            if (edited !== undefined) {
-              try {
-                validateSubject(edited);
-                subject = edited;
-              } catch (error) {
-                notice = error instanceof Error ? error.message : String(error);
-              }
-            }
-          } else {
-            body = (await ctx.ui.editor('Edit body', body ?? '')) ?? body;
-          }
-        }
-      } finally {
-        if (!approved) {
-          if (!returningForCorrections) reviews.delete(reviewGroup);
-          await unstageFiles(pi, ctx.cwd, params.files);
+          groups.push(result.details);
+          content.push(
+            ...result.content.map((item) => ({
+              ...item,
+              text: params.groups.length === 1 ? item.text : `Group ${id}: ${item.text}`,
+            })),
+          );
+        } catch (error) {
+          if (params.groups.length === 1) throw error;
+          const committed = groups.flatMap((result, committedIndex) =>
+            result.sha
+              ? [
+                  `Group ${committedIndex + 1}/${params.groups.length}: ${result.sha} ${result.subject}`,
+                ]
+              : [],
+          );
+          throw new Error(
+            `Group ${id}: ${error instanceof Error ? error.message : String(error)}\nAlready committed:\n${committed.join('\n') || 'None.'}`,
+            { cause: error },
+          );
         }
       }
-
-      const previousHead = await currentHead(pi, ctx.cwd);
-      const commitResult = await pi.exec(
-        'git',
-        ['commit', '-m', buildCommitMessage(subject, body ?? undefined)],
-        {
-          cwd: ctx.cwd,
-        },
-      );
-      if (commitResult.code !== 0) {
-        throw commitFailedError(commitResult.stdout, commitResult.stderr);
-      }
-
-      // Hooks can stage files after approval, so check the committed paths too.
-      const smuggledPaths = (await listCommitPaths(pi, ctx.cwd)).filter(
-        (file) => !requestedFiles.has(file),
-      );
-
-      if (smuggledPaths.length > 0) {
-        await undoCommit(pi, ctx.cwd, previousHead);
-        await unstageFiles(
-          pi,
-          ctx.cwd,
-          smuggledPaths.map((file) => file.slice(prefix.length)),
-        );
-        throw new Error(
-          `A hook staged paths that were not requested: ${smuggledPaths.join(', ')}. The commit was undone.`,
-        );
-      }
-
-      const committedTree = (await reviewGit(pi, ctx.cwd, ['rev-parse', 'HEAD^{tree}'])).trim();
-      if (committedTree !== reviewedTree) {
-        await undoCommit(pi, ctx.cwd, previousHead);
-        throw new Error(
-          'A hook changed reviewed content. The commit was undone. Call commit again to stage and review the current changes.',
-        );
-      }
-
-      const revParseResult = await pi.exec('git', ['rev-parse', 'HEAD'], {
-        cwd: ctx.cwd,
-      });
-      if (revParseResult.code !== 0) {
-        throw new Error(
-          `git rev-parse HEAD failed with exit code ${revParseResult.code}: ${revParseResult.stderr || revParseResult.stdout}`.trim(),
-        );
-      }
-
-      const sha = revParseResult.stdout.trim();
-      reviews.delete(reviewGroup);
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `${sha} ${subject}${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
-          },
-        ],
-        details: {
-          sha,
-          files: params.files,
-          subject,
-          body,
-          commentReview: {
-            status: reviewWaived ? 'waived' : 'passed',
-            tree: reviewedTree,
-            policy: commentPolicyHash,
-            report: reviewReport,
-          },
-        },
-      };
+      return { content, details: { groups } };
     },
   });
 };
