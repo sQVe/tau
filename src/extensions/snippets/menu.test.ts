@@ -167,13 +167,17 @@ describe('openSnippetMenu', () => {
   });
 
   it('jumps to the last snippet with G and back with g', () => {
+    // The menu lists prepends before appends, so the last row is the last
+    // append rather than the last entry of the fixture.
+    const lastRow = manySnippets.findLast((snippet) => snippet.placement === 'append');
+    const firstRow = manySnippets.find((snippet) => snippet.placement === 'prepend');
     const menu = openMenu(manySnippets);
 
     menu.press('G');
-    expect(menu.render(80).join('\n')).toContain(`> [ ] ${manySnippets.at(-1)?.name}`);
+    expect(menu.render(80).join('\n')).toContain(`> [ ] ${lastRow?.name}`);
 
     menu.press('g');
-    expect(menu.render(80).join('\n')).toContain(`> [ ] ${manySnippets[0]?.name}`);
+    expect(menu.render(80).join('\n')).toContain(`> [ ] ${firstRow?.name}`);
   });
 
   it.for([20, 40, 80])('keeps every line within a width of %i', (width) => {

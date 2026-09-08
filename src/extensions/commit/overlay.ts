@@ -64,7 +64,7 @@ const showCommentReview = async (ctx: ExtensionContext, report: string, signal?:
           return [
             theme.fg('accent', 'Comment review'),
             ...lines.slice(offset, offset + height),
-            theme.fg('dim', '↑/↓ scroll · Home/End · Esc return · Ctrl+C abort'),
+            theme.fg('dim', 'j/k scroll · g/G ends · Esc return · Ctrl+C abort'),
           ];
         },
         invalidate() {
@@ -218,7 +218,13 @@ export const confirmCommitOverlay = async (
           done(shortcut);
           return;
         }
-        list.handleInput(toCursorKey(data));
+        if (isTop(data)) {
+          list.setSelectedIndex(0);
+        } else if (isBottom(data)) {
+          list.setSelectedIndex(items.length - 1);
+        } else {
+          list.handleInput(toCursorKey(data));
+        }
         tui.requestRender();
       },
     };

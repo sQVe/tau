@@ -96,6 +96,15 @@ describe('confirmCommitOverlay', () => {
     expect(await confirmCommitOverlay(ctx, view)).toBe('approveAll');
   });
 
+  it.for([
+    ['G', 'abort'],
+    ['g', 'approve'],
+  ])('jumps the choice list to an end with %j', async ([key, choice]) => {
+    const { ctx } = setup([key as string, '\r']);
+
+    expect(await confirmCommitOverlay(ctx, view)).toBe(choice);
+  });
+
   it.each(['approve', 'approveAll', 'subject', 'body', 'skip', 'abort'])(
     'selects %s with arrows and enter',
     async (choice) => {
