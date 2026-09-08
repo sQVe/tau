@@ -49,9 +49,9 @@ Prove each behavior with a failing test, make it pass, then verify the whole sui
    pass here means the behavior already exists or the test is too weak, so rewrite the test.
 3. Read the failure. The summary names the failing tests with worktree-relative paths; `details`
    carries the full report. Implement only what the failure asks for.
-4. Call `run_tests` with `scope: "focused"` again, same arguments. A pass moves the phase to
-   `green`. Clean up now if the fix left duplication or an awkward name: a production edit after
-   GREEN drops back to `red` with writes still open, so refactor and run focused again.
+4. Clean up while still in `red`, where production writes are open. A pass closes them again, so
+   duplication and awkward names have to go now. Then call `run_tests` with `scope: "focused"`
+   again, same arguments. A pass moves the phase to `green`.
 5. Finish with `run_tests` and `scope: "full"`. The phase becomes `verified` when every test passes
    and every recorded RED test still runs and passes.
 6. Start the next behavior from `green` or `verified` by writing its test and proving RED again.
@@ -64,9 +64,9 @@ ones:
 
 - No test yet: write the failing test, then run focused.
 - The required test file changed after RED: run focused again. It proves RED again while the test
-  still fails. If the production fix already exists, so the test passes, save the fix, revert only
-  the production change with `git stash push` or `git restore`, run focused to prove RED, then
-  restore the fix and run focused again.
+  still fails. If the production fix already exists, so the test passes, stash only the production
+  paths with `git stash push -u -- <production paths>`, which keeps the amended test in place and
+  includes a newly created file. Run focused to prove RED, then `git stash pop`.
 - A required RED test is skipped or missing: restore it so it runs and passes.
 - Duplicate full names: rename the tests so each full name is unique in its file.
 
