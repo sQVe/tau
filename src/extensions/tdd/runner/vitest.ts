@@ -366,7 +366,7 @@ const runInDirectory = async (
   if (bin == null) {
     return {
       kind: 'runner-missing',
-      message: `vitest not resolvable from ${input.cwd}`,
+      message: 'vitest not resolvable from this worktree',
     };
   }
 

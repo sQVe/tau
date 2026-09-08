@@ -67,8 +67,9 @@ are gated, and the gate is off with a notice when no test runner resolves from t
 
 `/tdd off` turns the gate off for the worktree and records the time in `.tau/state.json`, so it
 survives a restart; `/tdd on` turns it back on and `/tdd status` reports the gate, the phase, and
-whether production writes are allowed. While the gate is off, protected paths stay blocked and every
-`run_tests` and `commit` result repeats the notice. Recorded evidence is left untouched.
+whether production writes are allowed. While the gate is off, protected paths stay blocked. A
+successful write carries no notice because the guard can only allow or block a call, so the notice
+appears on `run_tests` and `commit` results. Recorded evidence is left untouched.
 
 The snippets extension adds [prompt snippets](./prompt-snippets.md) to your message when you send
 it. Press `ctrl+q` or run `/snippets` to open the toggle menu. The menu is a terminal component, so

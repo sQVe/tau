@@ -13,6 +13,12 @@ const MAX_SUMMARY_CHARS = 2000;
 
 const displayPath = (cwd: string, file: string) => (isAbsolute(file) ? relative(cwd, file) : file);
 
+// A notice means the gate is off, and the guard lets production writes through in every phase.
+const implementationState = (allowed: boolean, notice: string | undefined) => {
+  if (notice != null) return 'allowed (gate off)';
+  return allowed ? 'allowed' : 'blocked';
+};
+
 const summarize = (
   cwd: string,
   header: {
@@ -26,7 +32,7 @@ const summarize = (
 ): string => {
   const lines = [
     ...(header.notice == null ? [] : [`Notice: ${header.notice}`]),
-    `${header.kind} · phase ${header.phase} · implementation ${header.implementationAllowed ? 'allowed' : 'blocked'}`,
+    `${header.kind} · phase ${header.phase} · implementation ${implementationState(header.implementationAllowed, header.notice)}`,
   ];
   if (next != null) lines.push(`Next: ${next}`);
   if (report != null && 'message' in report) lines.push(report.message);

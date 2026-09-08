@@ -262,7 +262,32 @@ it('lets production writes through when no test runner resolves through pi', asy
 
   expect(await readFile(join(cwd, input.path), 'utf8')).toBe(input.content);
   expect((await call('write', { path: 'package.json', content: '{}' })).isError).toBe(true);
-  expect((await run()).content[0]!.text).toContain(`Notice: no test runner resolves from ${cwd}`);
+  const text = (await run()).content[0]!.text;
+  expect(text).toContain('Notice: no test runner resolves from this worktree');
+  expect(text).toContain('· implementation allowed (gate off)');
+  expect(text.split(cwd).length - 1).toBeLessThanOrEqual(1);
+});
+
+it('reports production writes as allowed while the gate is off through pi', async ({
+  onTestFinished,
+}) => {
+  const cwd = await createWorktree(onTestFinished);
+  await mkdir(join(cwd, '.tau'));
+  await writeFile(
+    join(cwd, '.tau/state.json'),
+    JSON.stringify({ tdd: { reds: [], gateOff: { since: '2026-01-01T00:00:00.000Z' } } }),
+  );
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    "import { it, expect } from 'vitest'; it('required behavior', () => expect(1).toBe(1));",
+  );
+  const { run } = await createHarness(onTestFinished, [], cwd);
+
+  const text = (await run()).content[0]!.text;
+
+  expect(text).toContain('Notice: TDD gate off since 2026-01-01T00:00:00.000Z');
+  expect(text).toContain('pass · phase locked · implementation allowed (gate off)');
+  expect(text.split(cwd).length - 1).toBeLessThanOrEqual(1);
 });
 
 it('keeps RED evidence across a restarted pi session in the same worktree', async ({

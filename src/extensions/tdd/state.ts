@@ -129,7 +129,7 @@ const runnerNotice = (cwd: string, hashes: InputHashes) => {
   const available =
     cached?.available === true && cached.packageHash === packageHash ? true : runnerAvailable(key);
   runnerChecks.set(key, { packageHash, available });
-  return available ? undefined : `no test runner resolves from ${cwd}`;
+  return available ? undefined : 'no test runner resolves from this worktree';
 };
 
 const statePath = (cwd: string) => resolve(cwd, '.tau/state.json');

@@ -73,7 +73,7 @@ it('turns the gate off until a test runner resolves from the worktree', async ({
   await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
   const store = createEvidenceStore();
 
-  expect((await store.read(cwd)).notice).toBe(`no test runner resolves from ${cwd}`);
+  expect((await store.read(cwd)).notice).toBe('no test runner resolves from this worktree');
 
   // An install leaves package.json untouched, so the absent answer must not be cached.
   await symlink(resolve('node_modules'), join(cwd, 'node_modules'), 'dir');
@@ -82,7 +82,7 @@ it('turns the gate off until a test runner resolves from the worktree', async ({
   await rm(join(cwd, 'node_modules'));
   expect((await store.read(cwd)).notice).toBeUndefined();
   await writeFile(join(cwd, 'package.json'), '{"type":"module","name":"gated"}');
-  expect((await store.read(cwd)).notice).toBe(`no test runner resolves from ${cwd}`);
+  expect((await store.read(cwd)).notice).toBe('no test runner resolves from this worktree');
 });
 
 const createHarness = async (cleanup: TestContext['onTestFinished']) => {
