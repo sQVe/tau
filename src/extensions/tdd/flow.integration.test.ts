@@ -808,3 +808,48 @@ it.each(['skip edit', 'deleted file'])(
     expect((await run({ scope: 'full' })).details.phase).toBe('verified');
   },
 );
+
+it('switches the gate off and on through the /tdd command in a real pi session', async ({
+  onTestFinished,
+}) => {
+  const { cwd, session, run, call } = await createHarness(onTestFinished);
+  const git = (args: string[]) => promisify(execFile)('git', args, { cwd });
+  await git(['config', 'user.name', 'Tau Test']);
+  await git(['config', 'user.email', 'tau@example.com']);
+  await git(['config', 'commit.gpgsign', 'false']);
+  await mkdir(join(cwd, 'src'));
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    "import { it } from 'vitest'; it('required behavior', () => {});",
+  );
+  const input = { path: 'src/value.ts', content: 'export const value = 1;' };
+  expect((await call('write', input)).isError).toBe(true);
+
+  await session.prompt('/tdd off');
+
+  expect((await call('write', input)).isError).toBe(false);
+  expect(await readFile(join(cwd, input.path), 'utf8')).toBe(input.content);
+  expect((await run()).content[0]!.text).toMatch(/^Notice: TDD gate off since \d{4}-/);
+  const notifications: string[] = [];
+  await session.bindExtensions({
+    uiContext: {
+      custom: () => Promise.resolve('approve'),
+      notify: (message: string) => notifications.push(message),
+    } as unknown as ExtensionUIContext,
+  });
+  await session.prompt('/tdd status');
+  expect(notifications.join('\n')).toMatch(/TDD gate off since \d{4}-/);
+  const committed = await call(
+    'commit',
+    { files: ['src/value.ts'], subject: 'feat: gated value' },
+    [fauxAssistantMessage('{"findings":[]}')],
+  );
+  expect(committed.isError).toBe(false);
+  expect(JSON.stringify(committed.result)).toContain('TDD gate off since');
+
+  await session.prompt('/tdd on');
+
+  const blocked = await call('write', { path: 'src/value.ts', content: 'export const value = 2;' });
+  expect(blocked.isError).toBe(true);
+  expect(JSON.stringify(blocked.result)).toContain('locked');
+});

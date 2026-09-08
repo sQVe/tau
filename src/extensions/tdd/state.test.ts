@@ -2,10 +2,12 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+import type { ToolCallEvent } from '@earendil-works/pi-coding-agent';
 import type { TestContext } from 'vitest';
 import { expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
 
-import { createEvidenceStore } from './state.js';
+import { guardToolCall } from './guard.js';
+import { createEvidenceStore, tddGateStatus } from './state.js';
 
 // Every test here spawns real vitest children; the default 5s budget flakes on slow machines.
 vi.setConfig({ testTimeout: 120_000 });
@@ -500,4 +502,33 @@ it('requires the same failing test file when full names collide', async ({ onTes
     phase: 'red',
     fullPassValid: false,
   });
+});
+
+it('turns the gate off through the switch and back on', async ({ onTestFinished }) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  const write: ToolCallEvent = {
+    type: 'tool_call',
+    toolCallId: 'call-1',
+    toolName: 'write',
+    input: { path: 'src/value.ts' },
+  };
+  expect((await guardToolCall(write, cwd, store))?.block).toBe(true);
+
+  await store.setGate(cwd, 'off');
+
+  const off = await store.read(cwd);
+  expect(off.phase).toBe('locked');
+  expect(off.notice).toMatch(/^TDD gate off since \d{4}-/);
+  expect(await guardToolCall(write, cwd, store)).toBeUndefined();
+  expect(await tddGateStatus(cwd)).toBe(off.notice);
+  expect((await createEvidenceStore().read(cwd)).notice).toBe(off.notice);
+
+  await store.run(cwd, behavior, 'focused');
+  await store.setGate(cwd, 'on');
+
+  const on = await store.read(cwd);
+  expect(on.notice).toBeUndefined();
+  expect(on.phase).toBe('red');
+  expect(on.evidence.red?.report.kind).toBe('fail');
+  expect(await tddGateStatus(cwd)).toBeUndefined();
 });

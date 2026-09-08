@@ -62,6 +62,11 @@ from a failing test through production edits to full verification, with test evi
 `.tau/state.json` in the worktree so it survives a restart. Only files matching the production globs
 are gated, and the gate is off with a notice when no test runner resolves from the worktree.
 
+`/tdd off` turns the gate off for the worktree and records the time in `.tau/state.json`, so it
+survives a restart; `/tdd on` turns it back on and `/tdd status` reports the gate, the phase, and
+whether production writes are allowed. While the gate is off, protected paths stay blocked and every
+`run_tests` and `commit` result repeats the notice. Recorded evidence is left untouched.
+
 The writing extension adds its [instructions](../src/extensions/writing/instructions.md) to the
 system prompt before each ordinary agent run. No skill command is needed. Run `/reload` in Pi after
 editing the instructions. Compaction and branch summaries use separate prompts.

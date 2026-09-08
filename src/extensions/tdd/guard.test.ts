@@ -26,6 +26,7 @@ const createStore = (phase: Phase, notice?: string) => ({
         fullPass: null,
         latestRun: null,
         verified: false,
+        gateOff: null,
       },
     }),
   ),

@@ -142,7 +142,15 @@ const emptyState = (): EvidenceState => ({
   fullPass: null,
   latestRun: null,
   verified: false,
+  gateOff: null,
 });
+
+const gateOffNotice = (state: EvidenceState) =>
+  state.gateOff == null ? undefined : `TDD gate off since ${state.gateOff.since}`;
+
+// The commit tool reports the switch without importing the store the tdd extension owns.
+export const tddGateStatus = async (cwd: string) =>
+  gateOffNotice(await loadState(resolve(cwd)).catch(() => emptyState()));
 
 const isStoredState = (value: unknown): value is { tdd: EvidenceState } =>
   value !== null &&
@@ -236,7 +244,7 @@ export const createEvidenceStore = () => {
       implementationAllowed: phase === 'red',
       focusedPassValid,
       fullPassValid,
-      notice: runnerNotice(cwd, hashes),
+      notice: gateOffNotice(evidence) ?? runnerNotice(cwd, hashes),
     };
   };
   const run = async (
@@ -314,8 +322,15 @@ export const createEvidenceStore = () => {
     await saveState(cwd, state);
     return { kind: report.kind, ...result };
   };
+  const setGate = async (cwd: string, gate: 'on' | 'off') => {
+    const state = await stateFor(cwd);
+    state.gateOff = gate === 'off' ? { since: new Date().toISOString() } : null;
+    await saveState(cwd, state);
+    return read(cwd);
+  };
   return {
     read,
+    setGate,
     run: (cwd: string, behavior: Behavior, scope: 'focused' | 'full', signal?: AbortSignal) => {
       const result = pendingRun.then(() => run(cwd, behavior, scope, signal));
       pendingRun = result.catch(() => undefined);

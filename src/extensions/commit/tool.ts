@@ -5,6 +5,7 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
+import { tddGateStatus } from '../tdd/state.js';
 import {
   reviewComments,
   formatCommentReview,
@@ -472,12 +473,13 @@ export const createCommitTool = (
 
       const sha = revParseResult.stdout.trim();
       reviews.delete(reviewGroup);
+      const gateOff = await tddGateStatus(ctx.cwd);
 
       return {
         content: [
           {
             type: 'text',
-            text: `${sha} ${subject}${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
+            text: `${gateOff == null ? '' : `${gateOff}\n`}${sha} ${subject}${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
           },
         ],
         details: {

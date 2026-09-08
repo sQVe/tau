@@ -25,9 +25,9 @@ const summarize = (
   report: RunnerResult | null | undefined,
 ): string => {
   const lines = [
+    ...(header.notice == null ? [] : [`Notice: ${header.notice}`]),
     `${header.kind} · phase ${header.phase} · implementation ${header.implementationAllowed ? 'allowed' : 'blocked'}`,
   ];
-  if (header.notice != null) lines.push(`Notice: ${header.notice}`);
   if (next != null) lines.push(`Next: ${next}`);
   if (report != null && 'message' in report) lines.push(report.message);
   if (report != null && 'tests' in report) {
@@ -55,6 +55,24 @@ const summarize = (
 export default function tddExtension(pi: ExtensionAPI) {
   const store = createEvidenceStore();
   pi.on('tool_call', (event, ctx) => guardToolCall(event, ctx.cwd, store));
+  pi.registerCommand('tdd', {
+    description: 'Turn the TDD gate on or off, or report its state: /tdd on|off|status.',
+    handler: async (args, ctx) => {
+      const argument = args.trim() || 'status';
+      if (argument !== 'on' && argument !== 'off' && argument !== 'status') {
+        ctx.ui.notify(`Unknown argument ${argument}; use /tdd on|off|status`, 'warning');
+        return;
+      }
+      const state =
+        argument === 'status' ? await store.read(ctx.cwd) : await store.setGate(ctx.cwd, argument);
+      let gate = 'on';
+      if (state.evidence.gateOff != null) gate = `off since ${state.evidence.gateOff.since}`;
+      else if (state.notice != null) gate = `off: ${state.notice}`;
+      ctx.ui.notify(
+        `TDD gate ${gate}\nPhase ${state.phase}; production writes ${state.implementationAllowed || state.notice != null ? 'allowed' : 'blocked'}.`,
+      );
+    },
+  });
   pi.registerTool(
     defineTool({
       name: 'run_tests',
@@ -65,7 +83,7 @@ export default function tddExtension(pi: ExtensionAPI) {
         'Editing a required test file after RED re-locks the gate; if edited after the fix, save and revert only the production change with git restore/stash, re-run focused to prove RED, then restore the fix. ' +
         'Skipped and deleted tests never count. ' +
         'Returns kind (run outcome), phase (locked: no valid RED; red: failing test proven; green: that test passed; verified: full run passed with every RED test present and passing), implementationAllowed (true only in red), and report (test results, null if inputs changed). ' +
-        'Only files matching the production globs are gated, and a notice string says the gate is off while no test runner resolves from the worktree. ' +
+        'Only files matching the production globs are gated, and a notice string says the gate is off while no test runner resolves from the worktree or the user turned it off with /tdd off. ' +
         'A next string explains recovery when needed; the text is a short summary with counts and failing tests, and details carries the full report.',
       parameters: Type.Object({
         behavior: Type.String({
