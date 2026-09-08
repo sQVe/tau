@@ -50,12 +50,15 @@ Use a temporary Git repository with Tau installed and a changed file ready to co
 4. Ask Pi something underspecified so it calls `ask_user_question`. Check that the questionnaire
    renders, that arrow keys and Enter select an option, and that Esc abandons it. Automated tests
    cover only that the tool is registered, so the dialog needs a real terminal to verify.
+5. Press `ctrl+q`, turn on one snippet, and send a message. Check that Pi receives the snippet text
+   around your message, and that the toggle turns off again.
 
 ## Current status
 
-Tau includes the commit, TDD, writing, and ask-user-question extensions. The commit extension
-includes [comment review](./comment-review.md) before approval. Interactive commits need credentials
-for the session model; automated tests use a scripted provider and make no model API calls.
+Tau includes the commit, TDD, writing, snippets, and ask-user-question extensions. The commit
+extension includes [comment review](./comment-review.md) before approval. Interactive commits need
+credentials for the session model; automated tests use a scripted provider and make no model API
+calls.
 
 TDD edit enforcement is on. The [run_tests tool](../src/extensions/tdd/index.ts) describes the cycle
 from a failing test through production edits to full verification, with test evidence persisted to
@@ -66,6 +69,11 @@ are gated, and the gate is off with a notice when no test runner resolves from t
 survives a restart; `/tdd on` turns it back on and `/tdd status` reports the gate, the phase, and
 whether production writes are allowed. While the gate is off, protected paths stay blocked and every
 `run_tests` and `commit` result repeats the notice. Recorded evidence is left untouched.
+
+The snippets extension adds [prompt snippets](./prompt-snippets.md) to your message when you send
+it. Press `ctrl+q` or run `/snippets` to open the toggle menu. The menu is a terminal component, so
+it runs only in the terminal UI. In RPC mode the command reports that and changes nothing. Print
+mode has no way to show the message, so the command changes nothing there and stays silent.
 
 The writing extension adds its [instructions](../src/extensions/writing/instructions.md) to the
 system prompt before each ordinary agent run. No skill command is needed. Run `/reload` in Pi after
