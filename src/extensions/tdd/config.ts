@@ -6,7 +6,10 @@ export const tddConfig = {
   verificationArgv: ['vitest', 'run', '--reporter=json', '--no-color'],
 } as const;
 
-export const classifyPath = (path: string): 'test' | 'production' =>
-  tddConfig.testGlobs.some((glob) => matchesGlob(path.replaceAll('\\', '/'), glob))
-    ? 'test'
-    : 'production';
+export const classifyPath = (path: string): 'test' | 'production' | 'other' => {
+  const normalized = path.replaceAll('\\', '/');
+  if (tddConfig.testGlobs.some((glob) => matchesGlob(normalized, glob))) return 'test';
+  return tddConfig.productionGlobs.some((glob) => matchesGlob(normalized, glob))
+    ? 'production'
+    : 'other';
+};

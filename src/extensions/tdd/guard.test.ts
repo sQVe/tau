@@ -46,6 +46,16 @@ it.each(phases)('allows test writes, including colocated tests, in %s', async (p
   }
 });
 
+it.each(phases)('allows writes outside the production globs in %s', async (phase) => {
+  for (const path of ['README.md', 'docs/guide.md', 'scripts/check.sh', 'src/value.css']) {
+    for (const tool of ['write', 'edit']) {
+      expect(
+        await guardToolCall(makeEvent(tool, { path }), '/repo', createStore(phase)),
+      ).toBeUndefined();
+    }
+  }
+});
+
 it.each(phases)('blocks evidence and verification configuration writes in %s', async (phase) => {
   for (const path of [
     '.tau/state.json',

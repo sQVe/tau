@@ -34,7 +34,7 @@ const pathNextStep = (
     path === 'package.json'
   )
     return 'Choose an unprotected test file with ls {"path":"."}';
-  if (classifyPath(path) === 'test' || implementationAllowed) return undefined;
+  if (classifyPath(path) !== 'production' || implementationAllowed) return undefined;
   if ((phase === 'green' || phase === 'verified') && active !== null)
     return `Verify the current behavior with run_tests ${JSON.stringify({ ...active, scope: 'full' })}, or start the next behavior by writing its test and proving RED with run_tests scope "focused"`;
   if (phase === 'verified')

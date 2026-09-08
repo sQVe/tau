@@ -218,6 +218,11 @@ it('enforces file classifications across the evidence phases through pi', async 
       expect(JSON.stringify(blocked.result)).toContain(phase);
       expect(await readFile(join(cwd, path), 'utf8').catch(() => null)).toBe(before);
     }
+    for (const path of ['README.md', 'docs/guide.md', 'scripts/check.sh', 'src/value.css']) {
+      const ungated = await call('write', { path, content: phase });
+      expect(ungated.isError).toBe(false);
+      expect(await readFile(join(cwd, path), 'utf8')).toBe(phase);
+    }
     const allowed = await call('write', { path: 'src/value.test.ts', content: test });
     expect(allowed.isError).toBe(false);
   }

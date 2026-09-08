@@ -11,7 +11,7 @@ describe('TDD config', () => {
     expect(tddConfig.verificationArgv).toEqual(['vitest', 'run', '--reporter=json', '--no-color']);
   });
 
-  it('gives test globs precedence and treats unmatched paths as production', () => {
+  it('gives test globs precedence, then production globs, then other', () => {
     expect(matchesGlob('src/example.test.ts', tddConfig.productionGlobs[0])).toBe(true);
     expect(classifyPath('src/example.test.ts')).toBe('test');
     expect(classifyPath('src/component.spec.tsx')).toBe('test');
@@ -19,8 +19,10 @@ describe('TDD config', () => {
     expect(classifyPath('example.spec.ts')).toBe('test');
     expect(classifyPath('src/example.ts')).toBe('production');
     expect(classifyPath('src/component.tsx')).toBe('production');
-    expect(classifyPath('scripts/check.js')).toBe('production');
-    expect(classifyPath('README.md')).toBe('production');
+    expect(classifyPath('scripts/check.js')).toBe('other');
+    expect(classifyPath('README.md')).toBe('other');
+    expect(classifyPath('docs/example.md')).toBe('other');
+    expect(classifyPath('src/example.css')).toBe('other');
   });
 
   it('classifies backslash-separated paths like their forward-slash form', () => {
