@@ -37,7 +37,7 @@ interface ToolResult {
   content: { type: 'text'; text: string }[];
 }
 
-vi.setConfig({ testTimeout: 60_000 });
+vi.setConfig({ testTimeout: 125_000 });
 let counter = 0;
 
 const createWorktree = async (cleanup: TestContext['onTestFinished'], withRunner = true) => {

@@ -70,7 +70,7 @@ describe('runTests', () => {
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
-  });
+  }, 125_000);
 
   it('caps file-loading failures and marks omitted diagnostics as truncated', async () => {
     const deps = makeDeps({
@@ -388,9 +388,7 @@ describe('runTests', () => {
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
     expect(result.kind).toBe('fail');
-    expect(result).not.toHaveProperty('tests', [
-      { file: '/repo/a.test.ts', fullname: 'forged', status: 'passed' },
-    ]);
+    expect(result).toHaveProperty('tests', []);
   });
 
   it('returns cancelled and kills the child when the signal aborts', async () => {

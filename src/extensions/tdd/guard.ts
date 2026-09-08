@@ -38,12 +38,13 @@ const pathNextStep = (
   // The gate only opens for production edits: protected paths and escapes stay blocked.
   if (gateOff) return undefined;
   if (classifyPath(path) !== 'production' || implementationAllowed) return undefined;
-  if ((phase === 'green' || phase === 'verified') && active !== null)
+  const colocatedTest = JSON.stringify(`${file.replace(/\.tsx?$/, '')}.test.ts`);
+  if (phase === 'green' && active !== null)
     return `Verify the current behavior with run_tests ${JSON.stringify({ ...active, scope: 'full' })}, or start the next behavior by writing its test and proving RED with run_tests scope "focused"`;
   if (phase === 'verified')
-    return 'Start the next behavior with write using a *.test.ts path and content that tests the missing behavior';
+    return `Start the next behavior with write using path ${colocatedTest} and content that tests the missing behavior`;
   return active === null
-    ? `Write a failing test with write using path ${JSON.stringify(`${file.replace(/\.tsx?$/, '')}.test.ts`)} and content that checks the missing behavior`
+    ? `Write a failing test with write using path ${colocatedTest} and content that checks the missing behavior`
     : `Prove RED with run_tests ${JSON.stringify({ ...active, scope: 'focused' })}`;
 };
 

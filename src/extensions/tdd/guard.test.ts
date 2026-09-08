@@ -236,13 +236,14 @@ it.each([
     'locked',
     'Prove RED with run_tests {"behavior":"required behavior","testFullName":"required","files":["value.test.ts"],"scope":"focused"}',
   ],
-  ...(['green', 'verified'] as const).map(
-    (phase) =>
-      [
-        phase,
-        'Verify the current behavior with run_tests {"behavior":"required behavior","testFullName":"required","files":["value.test.ts"],"scope":"full"}, or start the next behavior by writing its test and proving RED with run_tests scope "focused"',
-      ] as const,
-  ),
+  [
+    'green',
+    'Verify the current behavior with run_tests {"behavior":"required behavior","testFullName":"required","files":["value.test.ts"],"scope":"full"}, or start the next behavior by writing its test and proving RED with run_tests scope "focused"',
+  ],
+  [
+    'verified',
+    'Start the next behavior with write using path "src/value.test.ts" and content that tests the missing behavior',
+  ],
 ] as const)('gives an actionable next step in %s', async (phase, next) => {
   const result = await guardToolCall(
     makeEvent('write', { path: 'src/value.ts' }),
