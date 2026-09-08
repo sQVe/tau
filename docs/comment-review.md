@@ -23,10 +23,10 @@ constraint are advisory. The policy lives in
    another review; it cannot waive a finding. Approval and the commit result retain the dispute
    evidence and preceding findings, even when the new review passes.
 3. After two automatic returns for fixes, unresolved findings appear in the approval overlay. Choose
-   **Read comment review** to inspect the full report. The report scrolls with arrow keys and
-   Home/End; Escape returns to approval and Ctrl+C aborts the commit.
-4. Choose **Return for fixes or retry**, skip the group, abort, or explicitly choose **Waive comment
-   review and commit**. Ordinary approval cannot waive a blocking or failed review.
+   **Read comment review** to inspect the full report. The report scrolls with `j` and `k`, and `g`
+   and `G` jump to its ends; Escape returns to approval and Ctrl+C aborts the commit.
+4. Choose **Return for fixes or retry**, skip the group with `x`, abort, or explicitly choose
+   **Waive comment review and commit**. Ordinary approval cannot waive a blocking or failed review.
 
 Advisory findings allow ordinary approval and appear in the tool result. A waiver is recorded in the
 tool result with the report, reviewed Git tree, and policy fingerprint.

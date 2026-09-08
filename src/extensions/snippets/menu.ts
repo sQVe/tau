@@ -1,6 +1,7 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 
+import { isBottom, isDown, isTop, isUp } from '../../keys/index.js';
 import type { Snippet } from './types.js';
 
 // Lines render() always emits: two borders, the title, two blanks, the hints.
@@ -148,7 +149,7 @@ export const openSnippetMenu = async (
       return {
         content: view.lines,
         title: 'Prompt snippets',
-        hints: '↑↓ navigate • Space toggle • Tab preview • Enter apply • Esc cancel',
+        hints: 'j/k move • g/G ends • Space toggle • Tab preview • Enter apply • Esc cancel',
       };
     };
 
@@ -165,15 +166,19 @@ export const openSnippetMenu = async (
       return {
         content: view.lines,
         title: `Preview: ${snippet.name}`,
-        hints: '↑↓ scroll • Tab/Esc back',
+        hints: 'j/k scroll • g/G ends • Tab/Esc back',
       };
     };
 
     const handleListInput = (data: string) => {
-      if (matchesKey(data, Key.up)) {
+      if (isUp(data)) {
         cursor = (cursor - 1 + items.length) % items.length;
-      } else if (matchesKey(data, Key.down)) {
+      } else if (isDown(data)) {
         cursor = (cursor + 1) % items.length;
+      } else if (isTop(data)) {
+        cursor = 0;
+      } else if (isBottom(data)) {
+        cursor = items.length - 1;
       } else if (matchesKey(data, Key.space)) {
         const { id } = itemAt(cursor);
         if (working.has(id)) {
@@ -196,10 +201,14 @@ export const openSnippetMenu = async (
     };
 
     const handlePreviewInput = (data: string) => {
-      if (matchesKey(data, Key.up)) {
+      if (isUp(data)) {
         previewScroll -= 1;
-      } else if (matchesKey(data, Key.down)) {
+      } else if (isDown(data)) {
         previewScroll += 1;
+      } else if (isTop(data)) {
+        previewScroll = 0;
+      } else if (isBottom(data)) {
+        previewScroll = Number.MAX_SAFE_INTEGER;
       } else if (matchesKey(data, Key.tab) || matchesKey(data, Key.escape)) {
         mode = 'list';
       }

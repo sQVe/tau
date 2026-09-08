@@ -80,13 +80,20 @@ describe('confirmCommitOverlay', () => {
     ['A', 'approveAll'],
     ['s', 'subject'],
     ['b', 'body'],
-    ['k', 'skip'],
+    ['x', 'skip'],
     ['\u001b', 'abort'],
     ['\u0003', 'abort'],
   ])('handles %j as %s before list navigation', async (key, choice) => {
     const { ctx, done } = setup([key]);
     expect(await confirmCommitOverlay(ctx, view)).toBe(choice);
     expect(done).toHaveBeenCalledExactlyOnceWith(choice);
+  });
+
+  it('moves the choice list with j, which SelectList only reads as an arrow key', async () => {
+    const { ctx } = setup(['j', '\r']);
+
+    // Approve is first, so one step down lands on Approve all remaining.
+    expect(await confirmCommitOverlay(ctx, view)).toBe('approveAll');
   });
 
   it.each(['approve', 'approveAll', 'subject', 'body', 'skip', 'abort'])(
@@ -116,7 +123,7 @@ describe('confirmCommitOverlay', () => {
       'A    Approve all remaining',
       's    Edit subject',
       'b    Edit body',
-      'k    Skip this group',
+      'x    Skip this group',
       'esc  Abort',
     ]) {
       expect(output).toContain(text);

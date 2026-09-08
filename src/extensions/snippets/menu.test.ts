@@ -151,6 +151,31 @@ describe('openSnippetMenu', () => {
     expect(menu.render(80).join('\n')).toContain('[x] First');
   });
 
+  it('moves the cursor with j and k', () => {
+    const menu = openMenu([
+      createSnippet({ id: 'first.md', name: 'First' }),
+      createSnippet({ id: 'second.md', name: 'Second' }),
+    ]);
+
+    expect(menu.render(80).join('\n')).toContain('> [ ] First');
+
+    menu.press('j');
+    expect(menu.render(80).join('\n')).toContain('> [ ] Second');
+
+    menu.press('k');
+    expect(menu.render(80).join('\n')).toContain('> [ ] First');
+  });
+
+  it('jumps to the last snippet with G and back with g', () => {
+    const menu = openMenu(manySnippets);
+
+    menu.press('G');
+    expect(menu.render(80).join('\n')).toContain(`> [ ] ${manySnippets.at(-1)?.name}`);
+
+    menu.press('g');
+    expect(menu.render(80).join('\n')).toContain(`> [ ] ${manySnippets[0]?.name}`);
+  });
+
   it.for([20, 40, 80])('keeps every line within a width of %i', (width) => {
     const menu = openMenu(manySnippets);
 

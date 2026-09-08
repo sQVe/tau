@@ -10,6 +10,8 @@ import {
   TruncatedText,
 } from '@earendil-works/pi-tui';
 
+import { isBottom, isDown, isTop, isUp, toCursorKey } from '../../keys/index.js';
+
 export type CommitChoice =
   | 'approve'
   | 'approveAll'
@@ -76,10 +78,10 @@ const showCommentReview = async (ctx: ExtensionContext, report: string, signal?:
             done(matchesKey(data, Key.ctrl('c')) ? 'abort' : 'return');
             return;
           }
-          if (matchesKey(data, Key.up)) offset = Math.max(0, offset - 1);
-          if (matchesKey(data, Key.down)) offset = Math.min(lastOffset, offset + 1);
-          if (matchesKey(data, Key.home)) offset = 0;
-          if (matchesKey(data, Key.end)) offset = lastOffset;
+          if (isUp(data)) offset = Math.max(0, offset - 1);
+          if (isDown(data)) offset = Math.min(lastOffset, offset + 1);
+          if (isTop(data)) offset = 0;
+          if (isBottom(data)) offset = lastOffset;
           tui.requestRender();
         },
       };
@@ -170,7 +172,7 @@ export const confirmCommitOverlay = async (
         : []),
       { value: 'subject', label: 's    Edit subject' },
       { value: 'body', label: 'b    Edit body' },
-      { value: 'skip', label: 'k    Skip this group' },
+      { value: 'skip', label: 'x    Skip this group' },
       { value: 'abort', label: 'esc  Abort' },
     ];
     const list = new SelectList(items, items.length, {
@@ -209,14 +211,14 @@ export const confirmCommitOverlay = async (
           ...(view.review ? { r: 'review' as const } : {}),
           s: 'subject',
           b: 'body',
-          k: 'skip',
+          x: 'skip',
         };
         const shortcut = Object.hasOwn(shortcuts, data) ? shortcuts[data] : undefined;
         if (shortcut) {
           done(shortcut);
           return;
         }
-        list.handleInput(data);
+        list.handleInput(toCursorKey(data));
         tui.requestRender();
       },
     };
