@@ -93,8 +93,13 @@ and continues the session, so the tool is simply absent until the package is rei
 
 The web-access extension comes from the bundled
 [pi-web-access](https://www.npmjs.com/package/pi-web-access) package, loaded through its own
-`pi.extensions` entry. It provides `web_search` and `fetch_content`, and Tau checks at session start
-that both are registered.
+`pi.extensions` entry. It registers four tools by default: `web_search` and `fetch_content`, plus
+`source_check` and `get_search_content`, which `fetch_content` uses to page through oversized
+results. Tau checks at session start that `web_search` and `fetch_content` are registered.
+
+The TDD guard blocks every tool it does not recognize, so all four names live in `WEB_ACCESS_TOOLS`
+in [the extension](../src/extensions/webAccess/index.ts) and pass through it. A package upgrade that
+adds a tool has to add it there too, or the tool is registered but unusable.
 
 Search providers are configured per user in `~/.pi/web-search.json`, not in this repository, so Tau
 ships no configuration for it. Most providers need an API key. DuckDuckGo is keyless but
@@ -107,8 +112,9 @@ default:
 }
 ```
 
-The path follows `XDG_CONFIG_HOME` (`$XDG_CONFIG_HOME/pi/web-search.json`) or `PI_CODING_AGENT_DIR`
-when either is set.
+`PI_CODING_AGENT_DIR` overrides the directory and is used verbatim, with no `pi` segment. Otherwise
+`XDG_CONFIG_HOME` selects `$XDG_CONFIG_HOME/pi/web-search.json`, except that an existing
+`~/.pi/web-search.json` still wins when the XDG copy is absent.
 
 ## See also
 

@@ -18,6 +18,8 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
+import { WEB_ACCESS_TOOLS } from '../src/extensions/webAccess/index.js';
+
 it('loads Tau through Pi with commit features, the bundled question and web tools, and writing rules on each run', async ({
   onTestFinished,
 }) => {
@@ -46,8 +48,14 @@ it('loads Tau through Pi with commit features, the bundled question and web tool
     expect(tauExtension?.commands.has('commit')).toBe(true);
     expect(tauExtension?.handlers.get('tool_call')).toHaveLength(2);
     expect(extensions.some((extension) => extension.tools.has('ask_user_question'))).toBe(true);
-    expect(extensions.some((extension) => extension.tools.has('web_search'))).toBe(true);
-    expect(extensions.some((extension) => extension.tools.has('fetch_content'))).toBe(true);
+    // The TDD guard blocks any tool it does not know, so WEB_ACCESS_TOOLS has to list every
+    // tool the bundled package registers. Compare the whole set: an upgrade that adds a tool
+    // fails here rather than silently registering one the guard blocks.
+    const webAccessExtension = extensions.find((extension) => extension.tools.has('web_search'));
+    expect(webAccessExtension).toBeDefined();
+    expect([...(webAccessExtension?.tools.keys() ?? [])].toSorted()).toEqual(
+      [...WEB_ACCESS_TOOLS].toSorted(),
+    );
     expect(
       loader
         .getSkills()

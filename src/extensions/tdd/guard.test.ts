@@ -143,7 +143,9 @@ it.each(phases)(
       'commit',
       'ask_user_question',
       'web_search',
+      'source_check',
       'fetch_content',
+      'get_search_content',
     ]) {
       expect(
         await guardToolCall(
