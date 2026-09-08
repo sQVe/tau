@@ -581,6 +581,75 @@ describe('runTests', () => {
     }
   });
 
+  it('reduces a failure message to its assertion line and worktree frame', async () => {
+    const report = {
+      numTotalTests: 1,
+      numFailedTests: 1,
+      testResults: [
+        {
+          name: '/repo/src/a.test.ts',
+          status: 'failed',
+          assertionResults: [
+            {
+              fullName: 'a broken',
+              status: 'failed',
+              failureMessages: [
+                [
+                  'AssertionError: expected 1 to be 2',
+                  '',
+                  '- Expected',
+                  '+ Received',
+                  '    at /repo/node_modules/vitest/dist/chunks/runner.js:12:9',
+                  '    at Object.handler (/repo/src/a.test.ts:3:15)',
+                ].join('\n'),
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
+
+    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+
+    if (result.kind !== 'fail') throw new Error(`expected fail, got ${result.kind}`);
+    expect(result.failures).toEqual([
+      {
+        file: '/repo/src/a.test.ts',
+        fullname: 'a broken',
+        message: 'AssertionError: expected 1 to be 2 (src/a.test.ts:3)',
+      },
+    ]);
+  });
+
+  it('falls back to the worktree frame when the message carries no assertion', async () => {
+    const report = {
+      numTotalTests: 1,
+      numFailedTests: 1,
+      testResults: [
+        {
+          name: '/repo/src/a.test.ts',
+          status: 'failed',
+          assertionResults: [
+            {
+              fullName: 'times out',
+              status: 'failed',
+              failureMessages: [
+                'Error: STACK_TRACE_ERROR\n    at Object.handler (/repo/src/a.test.ts:9:1)',
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
+
+    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+
+    if (result.kind !== 'fail') throw new Error(`expected fail, got ${result.kind}`);
+    expect(result.failures[0]?.message).toBe('src/a.test.ts:9');
+  });
+
   it('passes the changed files list and filter through to vitest', async () => {
     let captured: string[] = [];
     const report = {

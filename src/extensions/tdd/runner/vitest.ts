@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve as resolvePath } from 'node:path';
+import { dirname, join, relative, resolve as resolvePath } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import { tddConfig } from '../config.js';
@@ -22,6 +22,7 @@ import {
   FULL_TIMEOUT_MS,
   MAX_ASSERTION_BYTES,
   MAX_FAILURES,
+  MAX_MESSAGE_CHARS,
   MAX_STDOUT_BYTES,
   MAX_TOTAL_BYTES,
 } from './types.js';
@@ -215,13 +216,15 @@ const truncate = (text: string, max: number): string => {
   return decoder.write(Buffer.from(text, 'utf8').subarray(0, max)) + '…';
 };
 
+const assertionFullName = (assertion: VitestAssertionResult) =>
+  assertion.fullName ??
+  [...(assertion.ancestorTitles ?? []), assertion.title ?? ''].filter(Boolean).join(' ');
+
 const collectTests = (report: VitestReport): TestResult[] =>
   (report.testResults ?? []).flatMap((file) =>
     (file.assertionResults ?? []).map((assertion) => ({
       file: file.name ?? '<unknown>',
-      fullname:
-        assertion.fullName ??
-        [...(assertion.ancestorTitles ?? []), assertion.title ?? ''].filter(Boolean).join(' '),
+      fullname: assertionFullName(assertion),
       status:
         assertion.status === 'pending' || assertion.status === 'disabled'
           ? 'skipped'
@@ -229,7 +232,36 @@ const collectTests = (report: VitestReport): TestResult[] =>
     })),
   );
 
-const collectFailures = (report: VitestReport): { failures: TestFailure[]; truncated: boolean } => {
+const frameLocation = (line: string, cwd: string): string | null => {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('at ')) return null;
+  const match = /\(?([^()\s]+):(\d+):\d+\)?$/.exec(trimmed);
+  const path = match?.[1]?.replace(/^file:\/\//, '');
+  if (path == null || path.includes('node_modules') || !path.startsWith(`${cwd}/`)) return null;
+  return `${relative(cwd, path)}:${match?.[2]}`;
+};
+
+const capMessage = (text: string) =>
+  text.length > MAX_MESSAGE_CHARS ? `${text.slice(0, MAX_MESSAGE_CHARS)}…` : text;
+
+// The stack is noise the model cannot act on; the assertion line and the frame in the worktree
+// are the whole story.
+const assertionMessage = (messages: string[], cwd: string): string => {
+  const raw = messages[0] ?? '';
+  const frame = raw
+    .split('\n')
+    .map((line) => frameLocation(line, cwd))
+    .find((location) => location != null);
+  const headline = raw.split('\n')[0]?.trim() ?? '';
+  if (headline.length === 0 || headline.includes('STACK_TRACE_ERROR'))
+    return capMessage(frame ?? '');
+  return capMessage(frame == null ? headline : `${headline} (${frame})`);
+};
+
+const collectFailures = (
+  report: VitestReport,
+  cwd: string,
+): { failures: TestFailure[]; truncated: boolean } => {
   const failures: TestFailure[] = [];
   let truncated = false;
 
@@ -254,12 +286,10 @@ const collectFailures = (report: VitestReport): { failures: TestFailure[]; trunc
         truncated = true;
         return { failures, truncated };
       }
-      const fullname =
-        a.fullName ?? [...(a.ancestorTitles ?? []), a.title ?? ''].filter(Boolean).join(' ');
       failures.push({
         file: file.name ?? '<unknown>',
-        fullname,
-        message: truncate((a.failureMessages ?? []).join('\n'), MAX_ASSERTION_BYTES),
+        fullname: assertionFullName(a),
+        message: assertionMessage(a.failureMessages ?? [], cwd),
       });
     }
   }
@@ -380,7 +410,7 @@ const runInDirectory = async (
   const files = report.testResults ?? [];
 
   if (failed > 0 || files.some((f) => f.status === 'failed')) {
-    const { failures, truncated } = collectFailures(report);
+    const { failures, truncated } = collectFailures(report, input.cwd);
     return {
       kind: 'fail',
       failures,

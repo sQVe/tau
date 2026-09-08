@@ -64,6 +64,7 @@ export const DEFAULT_TIMEOUT_MS = 30_000;
 export const FULL_TIMEOUT_MS = 120_000;
 export const MAX_FAILURES = 10;
 export const MAX_ASSERTION_BYTES = 2 * 1024;
+export const MAX_MESSAGE_CHARS = 300;
 export const MAX_TOTAL_BYTES = 32 * 1024;
 // The JSON report must stay complete, so stdout gets a far larger cap than the
 // diagnostic one: enough for a full-suite report, small enough to bound memory.
