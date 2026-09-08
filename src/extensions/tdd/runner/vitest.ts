@@ -3,7 +3,7 @@ import { statSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve as resolvePath } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve as resolvePath } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import { tddConfig } from '../config.js';
@@ -20,7 +20,6 @@ import type {
 import {
   DEFAULT_TIMEOUT_MS,
   FULL_TIMEOUT_MS,
-  MAX_ASSERTION_BYTES,
   MAX_FAILURES,
   MAX_MESSAGE_CHARS,
   MAX_STDOUT_BYTES,
@@ -214,14 +213,6 @@ const readReport = async (path: string): Promise<VitestReport | null> => {
   }
 };
 
-const truncate = (text: string, max: number): string => {
-  if (Buffer.byteLength(text, 'utf8') <= max) {
-    return text;
-  }
-  const decoder = new StringDecoder('utf8');
-  return decoder.write(Buffer.from(text, 'utf8').subarray(0, max)) + '…';
-};
-
 const assertionFullName = (assertion: VitestAssertionResult) =>
   assertion.fullName ??
   [...(assertion.ancestorTitles ?? []), assertion.title ?? ''].filter(Boolean).join(' ');
@@ -260,8 +251,10 @@ const frameLocation = (line: string, cwd: string): string | null => {
   if (!trimmed.startsWith('at ')) return null;
   const match = /\(?([^()\s]+):(\d+):\d+\)?$/.exec(trimmed);
   const path = match?.[1]?.replace(/^file:\/\//, '');
-  if (path == null || path.includes('node_modules') || !path.startsWith(`${cwd}/`)) return null;
-  return `${relative(cwd, path)}:${match?.[2]}`;
+  if (path == null || path.includes('node_modules') || !isAbsolute(path)) return null;
+  const location = relative(cwd, path);
+  if (location.length === 0 || location.startsWith('..') || isAbsolute(location)) return null;
+  return `${location}:${match?.[2]}`;
 };
 
 const capMessage = (text: string) =>
@@ -298,7 +291,7 @@ const collectFailures = (
       failures.push({
         file: file.name ?? '<unknown>',
         fullname: '<file>',
-        message: truncate(file.message ?? 'load error', MAX_ASSERTION_BYTES),
+        message: assertionMessage([file.message ?? 'load error'], cwd),
       });
     }
     for (const a of file.assertionResults ?? []) {
@@ -408,9 +401,11 @@ const runInDirectory = async (
           {
             file: '<runner>',
             fullname: '<parse>',
-            message: truncate(
-              `unparseable vitest output: ${result.stderr.length > 0 ? result.stderr : result.stdout}`,
-              MAX_ASSERTION_BYTES,
+            message: assertionMessage(
+              [
+                `unparseable vitest output: ${result.stderr.length > 0 ? result.stderr : result.stdout}`,
+              ],
+              input.cwd,
             ),
           },
         ],

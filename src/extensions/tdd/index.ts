@@ -6,10 +6,10 @@ import { Type } from 'typebox';
 
 import { guardToolCall } from './guard.js';
 import type { RunnerResult } from './runner/types.js';
+import { MAX_FAILURES } from './runner/types.js';
 import { ambiguousFiles, createEvidenceStore } from './state.js';
 
 const MAX_SUMMARY_CHARS = 2000;
-const MAX_SHOWN_FAILURES = 10;
 
 const displayPath = (cwd: string, file: string) => (isAbsolute(file) ? relative(cwd, file) : file);
 
@@ -39,7 +39,7 @@ const summarize = (
   }
   const failures = report != null && 'failures' in report ? report.failures : [];
   let shown = 0;
-  for (const failure of failures.slice(0, MAX_SHOWN_FAILURES)) {
+  for (const failure of failures.slice(0, MAX_FAILURES)) {
     const entry = `✗ ${displayPath(cwd, failure.file)} › ${failure.fullname}\n    ${failure.message}`;
     if ([...lines, entry].join('\n').length > MAX_SUMMARY_CHARS - 60) break;
     lines.push(entry);

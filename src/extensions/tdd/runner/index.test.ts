@@ -688,6 +688,104 @@ describe('runTests', () => {
     expect(result.failures[0]?.message).toBe('src/a.test.ts:9');
   });
 
+  it('reduces a file-level load error to its first line and worktree frame', async () => {
+    const report = {
+      numTotalTests: 0,
+      numFailedTests: 0,
+      testResults: [
+        {
+          name: '/repo/src/a.test.ts',
+          status: 'failed',
+          message: [
+            'Error: Cannot find module ./missing',
+            '    at /repo/node_modules/vite/dist/node/chunks/dep.js:4:1',
+            '    at loadFile (/repo/src/a.test.ts:1:1)',
+          ].join('\n'),
+        },
+      ],
+    };
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
+
+    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+
+    if (result.kind !== 'fail') throw new Error(`expected fail, got ${result.kind}`);
+    expect(result.failures[0]?.message).toBe(
+      'Error: Cannot find module ./missing (src/a.test.ts:1)',
+    );
+  });
+
+  it('reduces unparseable runner output to its first line', async () => {
+    const deps = makeDeps({
+      spawn: fakeSpawn({
+        code: 0,
+        stderr: 'Error: vitest exploded\n    at /repo/node_modules/vitest/dist/cli.js:1:1',
+      }),
+    });
+
+    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+
+    if (result.kind !== 'fail') throw new Error(`expected fail, got ${result.kind}`);
+    expect(result.failures[0]?.message).toBe('unparseable vitest output: Error: vitest exploded');
+  });
+
+  it('locates worktree frames regardless of a trailing separator on the worktree path', async () => {
+    const report = {
+      numTotalTests: 1,
+      numFailedTests: 1,
+      testResults: [
+        {
+          name: '/repo/src/a.test.ts',
+          status: 'failed',
+          assertionResults: [
+            {
+              fullName: 'a broken',
+              status: 'failed',
+              failureMessages: [
+                'AssertionError: expected 1 to be 2\n    at Object.handler (/repo/src/a.test.ts:3:15)',
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
+
+    const result = await runTests({ scope: 'all', cwd: '/repo/' }, deps);
+
+    if (result.kind !== 'fail') throw new Error(`expected fail, got ${result.kind}`);
+    expect(result.failures[0]?.message).toBe(
+      'AssertionError: expected 1 to be 2 (src/a.test.ts:3)',
+    );
+  });
+
+  it('keeps frames outside the worktree out of the message', async () => {
+    const report = {
+      numTotalTests: 1,
+      numFailedTests: 1,
+      testResults: [
+        {
+          name: '/repo/src/a.test.ts',
+          status: 'failed',
+          assertionResults: [
+            {
+              fullName: 'a broken',
+              status: 'failed',
+              failureMessages: [
+                'Error: STACK_TRACE_ERROR\n    at Object.handler (/repo-sibling/src/a.test.ts:3:15)',
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
+
+    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+
+    if (result.kind !== 'fail') throw new Error(`expected fail, got ${result.kind}`);
+    expect(result.failures[0]?.message).toBe('');
+  });
+
   it('passes the changed files list and filter through to vitest', async () => {
     let captured: string[] = [];
     const report = {
