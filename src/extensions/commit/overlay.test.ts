@@ -66,6 +66,7 @@ describe('confirmCommitOverlay', () => {
   });
   it.each([
     ['a', 'approve'],
+    ['A', 'approveAll'],
     ['s', 'subject'],
     ['b', 'body'],
     ['k', 'skip'],
@@ -77,10 +78,10 @@ describe('confirmCommitOverlay', () => {
     expect(done).toHaveBeenCalledExactlyOnceWith(choice);
   });
 
-  it.each(['approve', 'subject', 'body', 'skip', 'abort'])(
+  it.each(['approve', 'approveAll', 'subject', 'body', 'skip', 'abort'])(
     'selects %s with arrows and enter',
     async (choice) => {
-      const index = ['approve', 'subject', 'body', 'skip', 'abort'].indexOf(choice);
+      const index = ['approve', 'approveAll', 'subject', 'body', 'skip', 'abort'].indexOf(choice);
       const { ctx, done } = setup([...Array.from({ length: index }, () => '\u001b[B'), '\r']);
       expect(await confirmCommitOverlay(ctx, view)).toBe(choice);
       expect(done).toHaveBeenCalledExactlyOnceWith(choice);
@@ -101,6 +102,7 @@ describe('confirmCommitOverlay', () => {
       'image.png binary',
       'Total: +12 -3',
       'a    Approve and commit',
+      'A    Approve all remaining',
       's    Edit subject',
       'b    Edit body',
       'k    Skip this group',

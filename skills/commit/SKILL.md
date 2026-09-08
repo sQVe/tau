@@ -55,7 +55,8 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 3. Call the `commit` tool once with an ordered `groups` array. Each group contains `files`,
    `subject`, and `body`. The tool reviews and confirms each group sequentially. Do not end the turn
    before the tool call. If the change looks temporary, wrong, or like a placeholder, still call the
-   tool: the overlay is where the user skips or aborts it.
+   tool: the overlay is where the user skips or aborts it, or presses `A` to approve all remaining
+   groups. Every group still runs comment review; `A` never waives a blocked review.
 
 4. If the `commit` tool succeeds, report the result and continue.
    - A skipped group is not a failure; the tool continues with later groups.

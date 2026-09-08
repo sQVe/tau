@@ -351,8 +351,12 @@ describe('commit flow', () => {
       ),
       fauxAssistantMessage([
         fauxToolCall('commit', {
-          ...args,
-          commentDispute: 'The note explains the temporary migration constraint.',
+          groups: [
+            {
+              ...args.groups[0],
+              commentDispute: 'The note explains the temporary migration constraint.',
+            },
+          ],
         }),
       ]),
       (context) => {

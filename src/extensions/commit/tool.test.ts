@@ -268,8 +268,36 @@ describe('validatePaths', () => {
 });
 
 describe('commitTool.execute', () => {
-  it.each(['approve', 'skip'])(
-    'processes three groups sequentially with %s in the middle',
+  it('requires an explicit waiver when a later review blocks under approve-all', async () => {
+    const repoDir = await createTempRepo();
+    const groups = ['one', 'two', 'three'].map((name) => ({
+      files: [`${name}.txt`],
+      subject: `feat: add ${name}`,
+    }));
+    for (const group of groups) await writeRepoFile(repoDir, group.files[0]!, group.subject);
+    const review = vi
+      .fn<typeof reviewComments>()
+      .mockResolvedValueOnce({ findings: [] })
+      .mockResolvedValue({
+        findings: [{ path: 'two.txt', line: 1, kind: 'policy', message: 'Remove stale note.' }],
+      });
+    const tool = createReviewedCommitTool(
+      { exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir) },
+      review,
+    );
+    const { ctx, custom } = fakeCommit(['approveAll']);
+    ctx.cwd = repoDir;
+    await expect(
+      tool.execute('batch', { groups }, undefined, undefined, ctx as never),
+    ).rejects.toThrow('Comment review requires an explicit user waiver');
+    expect(custom).toHaveBeenCalledTimes(1);
+    expect(review).toHaveBeenCalledTimes(2);
+    expect((await git(repoDir, ['log', '--format=%s'])).trim()).toBe(groups[0]!.subject);
+    expect(await git(repoDir, ['diff', '--cached', '--name-only'])).toBe('');
+  });
+
+  it.each(['approve', 'skip', 'approveAll'])(
+    'processes three groups sequentially using %s',
     async (middle) => {
       const repoDir = await createTempRepo();
       const groups = ['one', 'two', 'three'].map((name) => ({
@@ -290,7 +318,9 @@ describe('commitTool.execute', () => {
         { exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir) },
         review,
       );
-      const { ctx, previews } = fakeCommit(['approve', middle, 'approve']);
+      const { ctx, custom, previews } = fakeCommit(
+        middle === 'approveAll' ? ['approveAll'] : ['approve', middle, 'approve'],
+      );
       ctx.cwd = repoDir;
       const result = await tool.execute('batch', { groups }, undefined, undefined, ctx as never);
       const shas = (await git(repoDir, ['log', '--reverse', '--format=%H'])).trim().split('\n');
@@ -310,11 +340,10 @@ describe('commitTool.execute', () => {
         ['one.txt', 'two.txt'],
         middle === 'skip' ? ['one.txt', 'three.txt'] : ['one.txt', 'three.txt', 'two.txt'],
       ]);
-      expect(previews.map((preview, index) => preview.includes(`commit ${index + 1}/3`))).toEqual([
-        true,
-        true,
-        true,
-      ]);
+      expect(custom).toHaveBeenCalledTimes(middle === 'approveAll' ? 1 : 3);
+      expect(previews.map((preview, index) => preview.includes(`commit ${index + 1}/3`))).toEqual(
+        middle === 'approveAll' ? [true] : [true, true, true],
+      );
       expect(await git(repoDir, ['diff', '--cached', '--name-only'])).toBe('');
     },
   );
@@ -951,10 +980,33 @@ const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)
 };
 
 describe('commit overlay flow', () => {
+  it('applies a dispute only to the group carrying it', async () => {
+    const { exec, ctx } = fakeCommit(['approve', 'approve']);
+    const review = vi.fn<typeof reviewComments>().mockResolvedValue({ findings: [] });
+    const tool = createReviewedCommitTool({ exec }, review);
+    const groups = [
+      { files: ['one.txt'], subject: 'feat: add one', commentDispute: 'Explains a constraint.' },
+      { files: ['two.txt'], subject: 'feat: add two' },
+    ];
+    const result = await tool.execute('batch', { groups }, undefined, undefined, ctx as never);
+    expect(review.mock.calls.map((call) => call[3].dispute)).toEqual([
+      'Explains a constraint.',
+      undefined,
+    ]);
+    expect(result.details.groups[0]!.commentReview!.report).toContain('rechecked after dispute');
+    expect(result.details.groups[1]!.commentReview!.report).not.toContain(
+      'rechecked after dispute',
+    );
+    expect(result.details.groups[1]!.commentReview!.report).not.toContain(
+      'No prior findings available.',
+    );
+  });
+
   it('stages and reads numstat before showing the overlay', async () => {
     const { execute, exec, custom, previews } = fakeCommit(['approve']);
     await execute();
-    expect(previews[0]).toContain('commit 1/1');
+    expect(previews[0]).toMatch(/\n commit *\n/);
+    expect(previews[0]).not.toContain('1/1');
     expect(previews[0]).toContain('README.md +2 -1');
     expect(previews[0]).toContain('image.png binary');
     expect(exec.mock.calls.slice(0, 4).map((call) => call[1])).toEqual([

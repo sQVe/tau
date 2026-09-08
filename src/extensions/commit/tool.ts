@@ -44,14 +44,14 @@ export const commitToolParameters = Type.Object({
       files: Type.Array(Type.String(), { minItems: 1 }),
       subject: Type.String(),
       body: Type.Optional(Type.String()),
+      commentDispute: Type.Optional(
+        Type.String({
+          maxLength: 4000,
+          description: 'Evidence for rechecking a comment finding. This never waives review.',
+        }),
+      ),
     }),
     { minItems: 1 },
-  ),
-  commentDispute: Type.Optional(
-    Type.String({
-      maxLength: 4000,
-      description: 'Evidence for rechecking a comment finding. This never waives review.',
-    }),
   ),
 });
 
@@ -231,13 +231,14 @@ type Reviews = Map<
 >;
 
 const executeGroup = async (
-  params: CommitInput['groups'][number] & { commentDispute: string | undefined },
-  group: string,
+  params: CommitInput['groups'][number],
+  group: string | undefined,
   pi: Pick<ExtensionAPI, 'exec'>,
   ctx: ExtensionContext,
   signal: AbortSignal | undefined,
   reviews: Reviews,
   review: typeof reviewComments,
+  approval: { all: boolean },
 ): Promise<CommitSuccess> => {
   let subject = params.subject;
   let body = params.body ?? null;
@@ -330,6 +331,9 @@ const executeGroup = async (
     if (signal?.aborted) return cancelled();
     const reviewBlocked =
       !commentReview || commentReview.findings.some((finding) => finding.kind !== 'missing');
+    if (approval.all && reviewBlocked) {
+      throw new Error('Comment review requires an explicit user waiver.');
+    }
     if (commentReview && reviewBlocked && state.attempts <= 2) {
       returningForCorrections = true;
       throw new Error(
@@ -342,33 +346,36 @@ const executeGroup = async (
       if (signal?.aborted) {
         return cancelled();
       }
-      const choice = await confirmCommitOverlay(
-        ctx,
-        {
-          subject,
-          body,
-          files,
-          group,
-          notice,
-          review: reviewReport,
-          reviewBlocked,
-        },
-        signal,
-      );
+      const choice = approval.all
+        ? 'approve'
+        : await confirmCommitOverlay(
+            ctx,
+            {
+              subject,
+              body,
+              files,
+              ...(group ? { group } : {}),
+              notice,
+              review: reviewReport,
+              reviewBlocked,
+            },
+            signal,
+          );
       notice = '';
       if (signal?.aborted) {
         return cancelled();
       }
-      if (choice === 'approve' && reviewBlocked) {
+      if ((choice === 'approve' || choice === 'approveAll') && reviewBlocked) {
         throw new Error('Comment review requires an explicit user waiver.');
       }
-      if (choice === 'approve' || choice === 'waive') {
+      if (choice === 'approve' || choice === 'approveAll' || choice === 'waive') {
         const currentTree = (await reviewGit(pi, ctx.cwd, ['write-tree'], signal)).trim();
         if (currentTree !== reviewedTree || (await currentHead(pi, ctx.cwd)) !== reviewedHead) {
           throw new Error(
             'Staged content or HEAD changed since comment review. Call commit again to review the changes.',
           );
         }
+        if (choice === 'approveAll') approval.all = true;
         approved = true;
         reviewWaived = choice === 'waive';
         break;
@@ -504,19 +511,21 @@ export const createCommitTool = (
       if (!ctx.hasUI) {
         throw new Error('Cannot commit without user confirmation (non-interactive mode)');
       }
+      const approval = { all: false };
       const groups: CommitSuccess['details'][] = [];
       const content: CommitSuccess['content'] = [];
       for (const [index, group] of params.groups.entries()) {
         const id = `${index + 1}/${params.groups.length}`;
         try {
           const result = await executeGroup(
-            { ...group, commentDispute: params.commentDispute },
-            id,
+            group,
+            params.groups.length > 1 ? id : undefined,
             pi,
             ctx,
             signal,
             reviews,
             review,
+            approval,
           );
           if (!result.details.sha && !result.details.skipped && params.groups.length > 1) {
             throw new Error('Commit cancelled');
