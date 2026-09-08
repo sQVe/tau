@@ -64,6 +64,17 @@ describe('confirmCommitOverlay', () => {
     expect(render.mock.lastCall?.[0]).toContain('Waive comment review and commit');
     expect(render.mock.lastCall?.[0]).not.toContain('Approve and commit');
   });
+  it('hides approve all for a blocked review, where it could only fail', async () => {
+    const { ctx, done, render } = setup(['A', 'w']);
+    const choice = await confirmCommitOverlay(ctx, {
+      ...view,
+      review: 'retry.ts:1 [blocking] The comment is stale.',
+      reviewBlocked: true,
+    });
+    expect(choice).toBe('waive');
+    expect(done).toHaveBeenCalledExactlyOnceWith('waive');
+    expect(render.mock.lastCall?.[0]).not.toContain('Approve all remaining');
+  });
   it.each([
     ['a', 'approve'],
     ['A', 'approveAll'],
