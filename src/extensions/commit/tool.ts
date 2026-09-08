@@ -9,6 +9,7 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
+import { tddGateStatus } from '../tdd/state.js';
 import {
   reviewComments,
   formatCommentReview,
@@ -674,7 +675,12 @@ export const createCommitTool = (
           );
         }
       }
-      return { content, details: { groups } };
+      // One notice for the whole call, not one per group.
+      const gateOff = await tddGateStatus(ctx.cwd);
+      return {
+        content: gateOff === undefined ? content : [{ type: 'text', text: gateOff }, ...content],
+        details: { groups },
+      };
     },
   });
 };

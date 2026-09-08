@@ -55,10 +55,21 @@ Use a temporary Git repository with Tau installed and a changed file ready to co
 
 ## Current status
 
-Tau includes the commit, writing, snippets, and ask-user-question extensions. The commit extension
-includes [comment review](./comment-review.md) before approval. TDD enforcement is not built yet.
-Interactive commits need credentials for the session model; automated tests use a scripted provider
-and make no model API calls.
+Tau includes the commit, TDD, writing, snippets, and ask-user-question extensions. The commit
+extension includes [comment review](./comment-review.md) before approval. Interactive commits need
+credentials for the session model; automated tests use a scripted provider and make no model API
+calls.
+
+TDD edit enforcement is on. The [run_tests tool](../src/extensions/tdd/index.ts) describes the cycle
+from a failing test through production edits to full verification, with test evidence persisted to
+`.tau/state.json` in the worktree so it survives a restart. Only files matching the production globs
+are gated, and the gate is off with a notice when no test runner resolves from the worktree.
+
+`/tdd off` turns the gate off for the worktree and records the time in `.tau/state.json`, so it
+survives a restart; `/tdd on` turns it back on and `/tdd status` reports the gate, the phase, and
+whether production writes are allowed. While the gate is off, protected paths stay blocked. A
+successful write carries no notice because the guard can only allow or block a call, so the notice
+appears on `run_tests` and `commit` results. Recorded evidence is left untouched.
 
 The snippets extension adds [prompt snippets](./prompt-snippets.md) to your message when you send
 it. Press `ctrl+q` or run `/snippets` to open the toggle menu. The menu is a terminal component, so

@@ -44,7 +44,7 @@ it('loads Tau through Pi with commit features, the bundled question tool, and wr
     expect(extensions).toHaveLength(2);
     const tauExtension = extensions.find((extension) => extension.tools.has('commit'));
     expect(tauExtension?.commands.has('commit')).toBe(true);
-    expect(tauExtension?.handlers.get('tool_call')).toHaveLength(1);
+    expect(tauExtension?.handlers.get('tool_call')).toHaveLength(2);
     expect(extensions.some((extension) => extension.tools.has('ask_user_question'))).toBe(true);
     expect(
       loader
