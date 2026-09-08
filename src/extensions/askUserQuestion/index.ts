@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-import { requireRegisteredTools } from '../bundledTools.js';
+import { requireRegisteredTools } from '../../bundledTools/index.js';
 
 export const ASK_USER_QUESTION_TOOL = 'ask_user_question';
 

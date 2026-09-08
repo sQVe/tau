@@ -28,6 +28,18 @@ it('loads Tau through Pi with commit features, the bundled question and web tool
 
   try {
     const agentDir = join(cwd, 'agent');
+    // pi-web-access reads its config from PI_CODING_AGENT_DIR, falling back to the real
+    // ~/.pi. Point it at the empty temp dir so a developer's own provider or toolNames
+    // settings cannot change which tools register here.
+    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    onTestFinished(() => {
+      if (previousAgentDir === undefined) {
+        delete process.env.PI_CODING_AGENT_DIR;
+      } else {
+        process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+      }
+    });
     const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
     const loader = new DefaultResourceLoader({
       cwd,

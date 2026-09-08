@@ -99,7 +99,9 @@ results. Tau checks at session start that `web_search` and `fetch_content` are r
 
 The TDD guard blocks every tool it does not recognize, so all four names live in `WEB_ACCESS_TOOLS`
 in [the extension](../src/extensions/webAccess/index.ts) and pass through it. A package upgrade that
-adds a tool has to add it there too, or the tool is registered but unusable.
+adds a tool has to add it there too, or the tool is registered but unusable. For the same reason the
+package's `toolNames` renaming option does not work under Tau: the guard matches the default names
+and blocks a renamed tool.
 
 Search providers are configured per user in `~/.pi/web-search.json`, not in this repository, so Tau
 ships no configuration for it. Most providers need an API key. DuckDuckGo is keyless but
