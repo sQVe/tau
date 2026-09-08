@@ -3,6 +3,7 @@ import { relative, resolve } from 'node:path';
 import type { ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 
 import { ASK_USER_QUESTION_TOOL } from '../askUserQuestion/index.js';
+import { WEB_ACCESS_TOOLS } from '../webAccess/index.js';
 import { classifyPath, protectedPaths } from './config.js';
 import type { createEvidenceStore } from './state.js';
 import type { Behavior, Phase } from './types.js';
@@ -51,9 +52,17 @@ export const guardToolCall = async (
 ): Promise<ToolCallEventResult | undefined> => {
   // Commit's pre-commit formatter runs in a subprocess, outside Pi's file-tool gate.
   if (
-    ['read', 'bash', 'grep', 'find', 'ls', 'run_tests', 'commit', ASK_USER_QUESTION_TOOL].includes(
-      event.toolName,
-    )
+    [
+      'read',
+      'bash',
+      'grep',
+      'find',
+      'ls',
+      'run_tests',
+      'commit',
+      ASK_USER_QUESTION_TOOL,
+      ...WEB_ACCESS_TOOLS,
+    ].includes(event.toolName)
   )
     return undefined;
   const recognized = event.toolName === 'write' || event.toolName === 'edit';
