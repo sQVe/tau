@@ -304,6 +304,9 @@ export const createEvidenceStore = () => {
     const entry = state.reds.find((candidate) => sameBehavior(candidate.behavior, behavior));
     let arrival = entry === undefined ? 'unseen' : 'known';
     if (state.active !== null && sameBehavior(state.active, behavior)) arrival = 'same';
+    // Cancellation cannot switch behaviors. A full run on the active behavior still clears verification.
+    if (report.kind === 'cancelled' && arrival !== 'same')
+      return { kind: 'cancelled' as const, report, ...(await read(cwd)) };
     const filesExist = behavior.files.every((file) => after[resolve(cwd, file)] != null);
     let outcome = 'other';
     if (filesExist && report.kind === 'fail' && uniquelyIs(cwd, report.tests, behavior, 'failed'))

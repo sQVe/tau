@@ -467,3 +467,26 @@ it.each(cells)('$from + $event', async ({ from, event, expected }) => {
     expect(blocked?.block ?? false).toBe(!expected.implementationAllowed);
   }
 });
+
+it.each(
+  (Object.keys(reach) as Phase[]).flatMap((phase) =>
+    (['focused', 'full'] as const).flatMap((scope) =>
+      [previous, fresh].map((behavior) => ({ phase, scope, behavior })),
+    ),
+  ),
+)(
+  'keeps $phase evidence when a $scope run switching to $behavior.behavior is cancelled',
+  async ({ phase, scope, behavior }) => {
+    const h = await createHarness(onTestFinished);
+    await reach[phase](h);
+    const before = await h.store.read(h.cwd);
+    const stored = await readFile(join(h.cwd, '.tau/state.json'), 'utf8');
+
+    const result = await h.run({ kind: 'cancelled' }, scope, behavior);
+
+    expect(result).toMatchObject({ kind: 'cancelled', ...before });
+    expect(await h.store.read(h.cwd)).toEqual(before);
+    expect(await readFile(join(h.cwd, '.tau/state.json'), 'utf8')).toBe(stored);
+    expect(await createEvidenceStore().read(h.cwd)).toEqual(before);
+  },
+);
