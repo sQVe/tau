@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from 'node:child_process';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
@@ -81,7 +81,7 @@ const committedTitles = async (cwd: string, file: string): Promise<string | null
   try {
     const { stdout } = await execFile(
       'git',
-      ['show', `HEAD:${relative(cwd, resolve(cwd, file))}`],
+      ['show', `HEAD:${relative(cwd, resolve(cwd, file)).split(sep).join('/')}`],
       {
         cwd,
         maxBuffer: 16 * 1024 * 1024,
