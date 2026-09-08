@@ -93,9 +93,10 @@ and continues the session, so the tool is simply absent until the package is rei
 
 The web-access extension comes from the bundled
 [pi-web-access](https://www.npmjs.com/package/pi-web-access) package, loaded through its own
-`pi.extensions` entry. It registers four tools by default: `web_search` and `fetch_content`, plus
-`source_check` and `get_search_content`, which `fetch_content` uses to page through oversized
-results. Tau checks at session start that `web_search` and `fetch_content` are registered.
+`pi.extensions` entry. It registers four tools by default: `web_search`, `source_check`,
+`fetch_content`, and `get_search_content`. `fetch_content` pages through oversized results with
+`get_search_content`. Tau checks at session start that `web_search` and `fetch_content` are
+registered.
 
 The TDD guard blocks every tool it does not recognize, so all four names live in `WEB_ACCESS_TOOLS`
 in [the extension](../src/extensions/webAccess/index.ts) and pass through it. A package upgrade that

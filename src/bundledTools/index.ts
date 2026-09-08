@@ -15,7 +15,7 @@ export const requireRegisteredTools = (
     const subject = missing.length === 1 ? `Tool ${names} is` : `Tools ${names} are`;
 
     throw new Error(
-      `${subject} not registered. Either the bundled package ${packageName} failed to load and Tau needs reinstalling, or it is turned off in that package's configuration.`,
+      `${subject} not registered. Either the bundled package ${packageName} failed to load and Tau needs reinstalling, or that package's configuration turned it off or renamed it.`,
     );
   });
 };

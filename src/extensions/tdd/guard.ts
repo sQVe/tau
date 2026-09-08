@@ -8,6 +8,19 @@ import { classifyPath, protectedPaths } from './config.js';
 import type { createEvidenceStore } from './state.js';
 import type { Behavior, Phase } from './types.js';
 
+// Commit's pre-commit formatter runs in a subprocess, outside Pi's file-tool gate.
+const passthroughTools = new Set([
+  'read',
+  'bash',
+  'grep',
+  'find',
+  'ls',
+  'run_tests',
+  'commit',
+  ASK_USER_QUESTION_TOOL,
+  ...WEB_ACCESS_TOOLS,
+]);
+
 const inputPaths = (input: unknown, key = ''): string[] => {
   if (typeof input === 'string')
     return /path|file|target|destination|directory|^dir$/i.test(key) ? [input] : [];
@@ -50,21 +63,7 @@ export const guardToolCall = async (
   cwd: string,
   store: Pick<ReturnType<typeof createEvidenceStore>, 'read'>,
 ): Promise<ToolCallEventResult | undefined> => {
-  // Commit's pre-commit formatter runs in a subprocess, outside Pi's file-tool gate.
-  if (
-    [
-      'read',
-      'bash',
-      'grep',
-      'find',
-      'ls',
-      'run_tests',
-      'commit',
-      ASK_USER_QUESTION_TOOL,
-      ...WEB_ACCESS_TOOLS,
-    ].includes(event.toolName)
-  )
-    return undefined;
+  if (passthroughTools.has(event.toolName)) return undefined;
   const recognized = event.toolName === 'write' || event.toolName === 'edit';
   const file = recognized ? event.input.path : (inputPaths(event.input)[0] ?? 'unknown target');
   if (typeof file !== 'string') return undefined;
