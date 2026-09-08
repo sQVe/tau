@@ -863,6 +863,7 @@ it('switches the gate off and on through the /tdd command in a real pi session',
     uiContext: {
       custom: () => Promise.resolve('approve'),
       notify: (message: string) => notifications.push(message),
+      setStatus: () => undefined,
     } as unknown as ExtensionUIContext,
   });
   await session.prompt('/tdd status');
@@ -880,4 +881,44 @@ it('switches the gate off and on through the /tdd command in a real pi session',
   const blocked = await call('write', { path: 'src/value.ts', content: 'export const value = 2;' });
   expect(blocked.isError).toBe(true);
   expect(JSON.stringify(blocked.result)).toContain('locked');
+});
+
+it('shows the phase and active behavior in the footer status', async ({ onTestFinished }) => {
+  const { session, run, call } = await createHarness(onTestFinished);
+  const statuses: (string | undefined)[] = [];
+  await session.bindExtensions({
+    uiContext: {
+      notify: () => undefined,
+      setStatus: (key: string, text: string | undefined) => {
+        expect(key).toBe('tdd');
+        statuses.push(text);
+      },
+    } as unknown as ExtensionUIContext,
+  });
+
+  await run();
+  // Rewriting the required test file invalidates RED, so the next guarded call reports locked.
+  expect(
+    (
+      await call('write', {
+        path: 'behavior.test.ts',
+        content:
+          "import { it, expect } from 'vitest'; it('required behavior', () => expect(2).toBe(3));",
+      })
+    ).isError,
+  ).toBe(false);
+  expect(
+    (await call('write', { path: 'src/value.ts', content: 'export const value = 1;' })).isError,
+  ).toBe(true);
+  await session.prompt('/tdd off');
+  await session.prompt('/tdd on');
+
+  expect(statuses).toEqual([
+    'TDD locked: no behavior',
+    'TDD red: required behavior',
+    'TDD red: required behavior',
+    'TDD locked: required behavior',
+    'TDD off: required behavior',
+    'TDD locked: required behavior',
+  ]);
 });
