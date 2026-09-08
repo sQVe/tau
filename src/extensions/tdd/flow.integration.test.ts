@@ -30,6 +30,7 @@ import { Type } from 'typebox';
 import type { TestContext } from 'vitest';
 import { expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
 
+import { isolateWebAccessConfig } from '../../../tests/isolateWebAccessConfig.js';
 import type { createEvidenceStore } from './state.js';
 
 interface ToolResult {
@@ -62,6 +63,7 @@ const createHarness = async (
 ) => {
   const cwd = reused ?? (await createWorktree(cleanup, withRunner));
   const agentDir = join(cwd, 'agent');
+  isolateWebAccessConfig(agentDir, cleanup);
   const faux = fauxProvider({ provider: `tau-tdd-${++counter}` });
   const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
   const loader = new DefaultResourceLoader({

@@ -19,6 +19,7 @@ import {
 import { expect, it } from 'vitest';
 
 import { WEB_ACCESS_TOOLS } from '../src/extensions/webAccess/index.js';
+import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 
 it('loads Tau through Pi with commit features, the bundled question and web tools, and writing rules on each run', async ({
   onTestFinished,
@@ -28,18 +29,7 @@ it('loads Tau through Pi with commit features, the bundled question and web tool
 
   try {
     const agentDir = join(cwd, 'agent');
-    // pi-web-access reads its config from PI_CODING_AGENT_DIR, falling back to the real
-    // ~/.pi. Point it at the empty temp dir so a developer's own provider or toolNames
-    // settings cannot change which tools register here.
-    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-    process.env.PI_CODING_AGENT_DIR = agentDir;
-    onTestFinished(() => {
-      if (previousAgentDir === undefined) {
-        delete process.env.PI_CODING_AGENT_DIR;
-      } else {
-        process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-      }
-    });
+    isolateWebAccessConfig(agentDir, onTestFinished);
     const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
     const loader = new DefaultResourceLoader({
       cwd,
@@ -174,9 +164,9 @@ it('reports an extension error for each bundled package that is not loaded', asy
   });
 
   expect(errors).toHaveLength(2);
-  expect(errors[0]).toContain('ask_user_question');
-  expect(errors[0]).toContain('@juicesharp/rpiv-ask-user-question');
-  expect(errors[1]).toContain('web_search');
-  expect(errors[1]).toContain('fetch_content');
-  expect(errors[1]).toContain('pi-web-access');
+  const questionError = errors.find((error) => error.includes('ask_user_question'));
+  expect(questionError).toContain('@juicesharp/rpiv-ask-user-question');
+  const webAccessError = errors.find((error) => error.includes('pi-web-access'));
+  expect(webAccessError).toContain('web_search');
+  expect(webAccessError).toContain('fetch_content');
 });

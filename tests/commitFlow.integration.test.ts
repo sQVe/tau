@@ -27,6 +27,8 @@ import type {
 import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
+import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
+
 // Real Pi sessions and Git commands need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -122,6 +124,7 @@ const createHarness = async (
 ): Promise<Harness> => {
   const repoDir = await createTempRepo(registerCleanup);
   const agentDir = await createTempDir(registerCleanup, 'tau-flow-agent-');
+  isolateWebAccessConfig(agentDir, registerCleanup);
 
   const faux = fauxProvider({ provider: 'tau-test' });
 
