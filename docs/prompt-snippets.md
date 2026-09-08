@@ -9,13 +9,16 @@ and applies to nothing else.
 Press `ctrl+q` or run `/snippets` to open the toggle menu. Use the command if your terminal or
 multiplexer takes `ctrl+q` for itself.
 
-| Key            | Action                                       |
-| -------------- | -------------------------------------------- |
-| `up` or `down` | Move the cursor, or scroll in the preview    |
-| `space`        | Turn the selected snippet on or off          |
-| `tab`          | Preview the selected snippet, and return     |
-| `enter`        | Apply the toggles and close the menu         |
-| `esc`          | Close the menu and keep the previous toggles |
+| Key       | Action                                       |
+| --------- | -------------------------------------------- |
+| `j` / `k` | Move the cursor, or scroll in the preview    |
+| `g` / `G` | Jump to the first or last snippet            |
+| `space`   | Turn the selected snippet on or off          |
+| `tab`     | Preview the selected snippet, and return     |
+| `enter`   | Apply the toggles and close the menu         |
+| `esc`     | Close the menu and keep the previous toggles |
+
+The arrow keys, `home`, and `end` do the same as their vim counterparts.
 
 The menu scrolls when the list is taller than the terminal and shows how many rows are hidden.
 
