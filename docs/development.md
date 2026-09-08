@@ -56,10 +56,9 @@ Use a temporary Git repository with Tau installed and a changed file ready to co
 ## Current status
 
 Tau includes the commit, writing, snippets, and ask-user-question extensions. The commit extension
-includes
-[comment review](./comment-review.md) before approval. TDD enforcement is not built yet. Interactive
-commits need credentials for the session model; automated tests use a scripted provider and make no
-model API calls.
+includes [comment review](./comment-review.md) before approval. TDD enforcement is not built yet.
+Interactive commits need credentials for the session model; automated tests use a scripted provider
+and make no model API calls.
 
 The snippets extension adds [prompt snippets](./prompt-snippets.md) to your message when you send
 it. Press `ctrl+q` or run `/snippets` to open the toggle menu. The menu is a terminal component, so
