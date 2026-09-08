@@ -72,7 +72,9 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
      - Diagnose the actual failure from the hook output.
      - Fix the underlying issue, such as lint, format, or test failures.
      - Include any files modified during the fix in the retried group's `files` list.
-     - Retry the `commit` tool with the corrected group and any remaining groups in `groups`.
+     - Retry the `commit` tool with the corrected group and any remaining groups in `groups`. Leave
+       out the groups already committed and the ones the user skipped; a skipped group carries no
+       SHA, so it is absent from the error's list without meaning it still needs a commit.
      - Cap retries at 3 for the same group.
      - After 3 failed retries, stop and report the failure to the user instead of pushing through.
 

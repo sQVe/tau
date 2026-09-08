@@ -17,11 +17,11 @@ constraint are advisory. The policy lives in
 
 ## Respond to findings
 
-1. Call `commit` with the usual file list, subject, and body.
+1. Call `commit` with the usual `groups` array, each carrying its file list, subject, and body.
 2. If it returns blocking findings, fix them and call it again. For a disputed finding, supply
-   `commentDispute` with concrete evidence. This requests another review; it cannot waive a finding.
-   Approval and the commit result retain the dispute evidence and preceding findings, even when the
-   new review passes.
+   `commentDispute` on the group the finding belongs to, with concrete evidence. This requests
+   another review; it cannot waive a finding. Approval and the commit result retain the dispute
+   evidence and preceding findings, even when the new review passes.
 3. After two automatic returns for fixes, unresolved findings appear in the approval overlay. Choose
    **Read comment review** to inspect the full report. The report scrolls with arrow keys and
    Home/End; Escape returns to approval and Ctrl+C aborts the commit.
