@@ -18,7 +18,10 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
-it('loads Tau through Pi with commit features, the bundled question tool, and writing rules on each run', async ({
+import { WEB_ACCESS_TOOLS } from '../src/extensions/webAccess/index.js';
+import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
+
+it('loads Tau through Pi with commit features, the bundled question and web tools, and writing rules on each run', async ({
   onTestFinished,
 }) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-package-'));
@@ -26,6 +29,7 @@ it('loads Tau through Pi with commit features, the bundled question tool, and wr
 
   try {
     const agentDir = join(cwd, 'agent');
+    isolateWebAccessConfig(agentDir, onTestFinished);
     const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
     const loader = new DefaultResourceLoader({
       cwd,
@@ -41,11 +45,19 @@ it('loads Tau through Pi with commit features, the bundled question tool, and wr
 
     const { extensions, errors } = loader.getExtensions();
     expect(errors).toEqual([]);
-    expect(extensions).toHaveLength(2);
+    expect(extensions).toHaveLength(3);
     const tauExtension = extensions.find((extension) => extension.tools.has('commit'));
     expect(tauExtension?.commands.has('commit')).toBe(true);
     expect(tauExtension?.handlers.get('tool_call')).toHaveLength(2);
     expect(extensions.some((extension) => extension.tools.has('ask_user_question'))).toBe(true);
+    // The TDD guard blocks any tool it does not know, so WEB_ACCESS_TOOLS has to list every
+    // tool the bundled package registers. Compare the whole set: an upgrade that adds a tool
+    // fails here rather than silently registering one the guard blocks.
+    const webAccessExtension = extensions.find((extension) => extension.tools.has('web_search'));
+    expect(webAccessExtension).toBeDefined();
+    expect([...(webAccessExtension?.tools.keys() ?? [])].toSorted()).toEqual(
+      [...WEB_ACCESS_TOOLS].toSorted(),
+    );
     expect(
       loader
         .getSkills()
@@ -103,7 +115,7 @@ it('loads Tau through Pi with commit features, the bundled question tool, and wr
   }
 });
 
-it('reports an extension error when the bundled question package is not loaded', async ({
+it('reports an extension error for each bundled package that is not loaded', async ({
   onTestFinished,
 }) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-package-missing-'));
@@ -151,7 +163,10 @@ it('reports an extension error when the bundled question package is not loaded',
     },
   });
 
-  expect(errors).toHaveLength(1);
-  expect(errors[0]).toContain('ask_user_question');
-  expect(errors[0]).toContain('@juicesharp/rpiv-ask-user-question');
+  expect(errors).toHaveLength(2);
+  const questionError = errors.find((error) => error.includes('ask_user_question'));
+  expect(questionError).toContain('@juicesharp/rpiv-ask-user-question');
+  const webAccessError = errors.find((error) => error.includes('pi-web-access'));
+  expect(webAccessError).toContain('web_search');
+  expect(webAccessError).toContain('fetch_content');
 });

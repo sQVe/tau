@@ -27,6 +27,8 @@ import type {
 import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
+import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
+
 // Real Pi sessions and Git commands need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -38,6 +40,10 @@ const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
 const bundledQuestionExtensionPath = resolve(
   import.meta.dirname,
   '../node_modules/@juicesharp/rpiv-ask-user-question/index.ts',
+);
+const bundledWebAccessExtensionPath = resolve(
+  import.meta.dirname,
+  '../node_modules/pi-web-access/index.ts',
 );
 
 interface Harness {
@@ -118,6 +124,7 @@ const createHarness = async (
 ): Promise<Harness> => {
   const repoDir = await createTempRepo(registerCleanup);
   const agentDir = await createTempDir(registerCleanup, 'tau-flow-agent-');
+  isolateWebAccessConfig(agentDir, registerCleanup);
 
   const faux = fauxProvider({ provider: 'tau-test' });
 
@@ -126,7 +133,11 @@ const createHarness = async (
     cwd: repoDir,
     agentDir,
     settingsManager,
-    additionalExtensionPaths: [tauExtensionsPath, bundledQuestionExtensionPath],
+    additionalExtensionPaths: [
+      tauExtensionsPath,
+      bundledQuestionExtensionPath,
+      bundledWebAccessExtensionPath,
+    ],
     noExtensions: true,
     noSkills: true,
     noPromptTemplates: true,
