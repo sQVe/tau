@@ -230,6 +230,20 @@ type Reviews = Map<
   }
 >;
 
+// Worktree fingerprint for a group's files. Approve-all covers the content the user saw, so a
+// later group whose files changed since must be shown rather than committed unseen.
+const hashFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: string[]) => {
+  const hashes: string[] = [];
+  for (const file of files) {
+    const result = await pi.exec('git', ['--literal-pathspecs', 'hash-object', '--', file], {
+      cwd,
+    });
+    hashes.push(result.code === 0 ? result.stdout.trim() : `absent:${file}`);
+  }
+
+  return hashes.join(' ');
+};
+
 interface ReviewSnapshot {
   tree: string;
   head: string | null;
@@ -280,8 +294,11 @@ const executeGroup = async (
   signal: AbortSignal | undefined,
   reviews: Reviews,
   requestReview: RequestReview,
-  approval: { all: boolean },
-  prefetch: { next: () => void; rest: () => void },
+  batch: {
+    autoApprove: () => Promise<boolean>;
+    onApproveAll: () => Promise<void>;
+    prefetchNext: () => void;
+  },
 ): Promise<CommitSuccess> => {
   let subject = params.subject;
   let body = params.body ?? null;
@@ -390,8 +407,8 @@ const executeGroup = async (
       if (signal?.aborted) {
         return cancelled();
       }
-      if (!approval.all) prefetch.next();
-      const choice = approval.all
+      batch.prefetchNext();
+      const choice = (await batch.autoApprove())
         ? 'approve'
         : await confirmCommitOverlay(
             ctx,
@@ -420,10 +437,7 @@ const executeGroup = async (
             'Staged content or HEAD changed since comment review. Call commit again to review the changes.',
           );
         }
-        if (choice === 'approveAll') {
-          approval.all = true;
-          prefetch.rest();
-        }
+        if (choice === 'approveAll') await batch.onApproveAll();
         approved = true;
         reviewWaived = choice === 'waive';
         break;
@@ -560,7 +574,7 @@ export const createCommitTool = (
       if (!ctx.hasUI) {
         throw new Error('Cannot commit without user confirmation (non-interactive mode)');
       }
-      const approval = { all: false };
+      const approval = { all: false, seen: new Map<number, string>() };
       const groups: CommitSuccess['details'][] = [];
       const content: CommitSuccess['content'] = [];
 
@@ -612,14 +626,26 @@ export const createCommitTool = (
             signal,
             reviews,
             requestReview(index),
-            approval,
             {
-              next: () => {
-                startReview(index + 1);
+              autoApprove: async () => {
+                const seen = approval.seen.get(index);
+                return (
+                  approval.all &&
+                  seen !== undefined &&
+                  seen === (await hashFiles(pi, ctx.cwd, group.files))
+                );
               },
-              rest: () => {
-                for (let rest = index + 1; rest < params.groups.length; rest += 1)
+              onApproveAll: async () => {
+                approval.all = true;
+                for (let rest = index + 1; rest < params.groups.length; rest += 1) {
+                  const remaining = params.groups[rest];
+                  if (!remaining) continue;
+                  approval.seen.set(rest, await hashFiles(pi, ctx.cwd, remaining.files));
                   startReview(rest);
+                }
+              },
+              prefetchNext: () => {
+                startReview(index + 1);
               },
             },
           );

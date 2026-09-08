@@ -388,6 +388,37 @@ describe('commitTool.execute', () => {
     ]);
   });
 
+  it('reopens the overlay for a group whose files changed after approve all', async () => {
+    const { repoDir, groups } = await prefetchRepo();
+    const choices = ['approveAll'];
+    const custom = vi.fn<() => Promise<string | undefined>>(() =>
+      Promise.resolve(choices.shift() ?? 'approve'),
+    );
+    const tool = createReviewedCommitTool(
+      {
+        exec: async (command, args, options) => {
+          const result = await runCommand(command, args, options?.cwd ?? repoDir);
+          // Stand in for a group-1 hook that edits a later group's file without staging it.
+          if (args[0] === 'commit')
+            await writeRepoFile(repoDir, 'three.txt', 'rewritten by a hook');
+          return result;
+        },
+      },
+      async () => ({ findings: [] }),
+    );
+
+    await tool.execute('batch', { groups }, undefined, undefined, {
+      cwd: repoDir,
+      hasUI: true,
+      ui: { custom },
+    } as never);
+
+    // Groups 1 and 2 ride on approve-all; group 3 changed after it, so it is shown again.
+    expect(custom).toHaveBeenCalledTimes(2);
+    expect(await git(repoDir, ['show', 'HEAD:three.txt'])).toBe('rewritten by a hook');
+    expect((await git(repoDir, ['rev-list', '--count', 'HEAD'])).trim()).toBe('4');
+  });
+
   it('reviews every remaining group as soon as approve all is chosen', async () => {
     const { repoDir, groups } = await prefetchRepo();
     const events: string[] = [];
