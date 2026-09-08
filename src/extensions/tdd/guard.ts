@@ -48,6 +48,7 @@ export const guardToolCall = async (
   event: ToolCallEvent,
   cwd: string,
   store: Pick<ReturnType<typeof createEvidenceStore>, 'read'>,
+  onState?: (state: Awaited<ReturnType<ReturnType<typeof createEvidenceStore>['read']>>) => void,
 ): Promise<ToolCallEventResult | undefined> => {
   // Commit's pre-commit formatter runs in a subprocess, outside Pi's file-tool gate.
   if (
@@ -60,6 +61,7 @@ export const guardToolCall = async (
   const file = recognized ? event.input.path : (inputPaths(event.input)[0] ?? 'unknown target');
   if (typeof file !== 'string') return undefined;
   const state = await store.read(cwd);
+  onState?.(state);
   const next = recognized
     ? pathNextStep(
         file,

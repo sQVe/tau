@@ -8,8 +8,18 @@ import { guardToolCall } from './guard.js';
 import type { RunnerResult } from './runner/types.js';
 import { MAX_FAILURES } from './runner/types.js';
 import { ambiguousFiles, createEvidenceStore } from './state.js';
+import type { Behavior, Phase } from './types.js';
 
 const MAX_SUMMARY_CHARS = 2000;
+
+const STATUS_KEY = 'tdd';
+
+const statusText = (state: {
+  phase: Phase;
+  evidence: { active: Behavior | null };
+  notice: string | undefined;
+}) =>
+  `TDD ${state.notice == null ? state.phase : 'off'}: ${state.evidence.active?.behavior ?? 'no behavior'}`;
 
 const displayPath = (cwd: string, file: string) => (isAbsolute(file) ? relative(cwd, file) : file);
 
@@ -60,7 +70,16 @@ const summarize = (
 
 export default function tddExtension(pi: ExtensionAPI) {
   const store = createEvidenceStore();
-  pi.on('tool_call', (event, ctx) => guardToolCall(event, ctx.cwd, store));
+  // The guard reads the state before the write lands, so the footer trails a write that
+  // invalidates evidence by one tool call. A read of its own here would double the hashing.
+  pi.on('tool_call', (event, ctx) =>
+    guardToolCall(event, ctx.cwd, store, (state) => {
+      ctx.ui.setStatus(STATUS_KEY, statusText(state));
+    }),
+  );
+  pi.on('session_start', async (_event, ctx) => {
+    ctx.ui.setStatus(STATUS_KEY, statusText(await store.read(ctx.cwd)));
+  });
   pi.registerCommand('tdd', {
     description: 'Turn the TDD gate on or off, or report its state: /tdd on|off|status.',
     handler: async (args, ctx) => {
@@ -71,6 +90,7 @@ export default function tddExtension(pi: ExtensionAPI) {
       }
       const state =
         argument === 'status' ? await store.read(ctx.cwd) : await store.setGate(ctx.cwd, argument);
+      ctx.ui.setStatus(STATUS_KEY, statusText(state));
       let gate = 'on';
       if (state.evidence.gateOff != null) gate = `off since ${state.evidence.gateOff.since}`;
       else if (state.notice != null) gate = `off: ${state.notice}`;
@@ -122,6 +142,7 @@ export default function tddExtension(pi: ExtensionAPI) {
       async execute(_id, params, signal, _update, ctx) {
         const { scope, ...behavior } = params;
         const details = await store.run(ctx.cwd, behavior, scope, signal);
+        ctx.ui.setStatus(STATUS_KEY, statusText(details));
         const report =
           details.kind === 'inputs-changed' || details.kind === 'cancelled'
             ? null
