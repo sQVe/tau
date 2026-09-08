@@ -660,3 +660,39 @@ it('proves one behavior with several named tests together', async ({ onTestFinis
   await store.run(cwd, single, 'focused');
   expect((await store.run(cwd, plain, 'focused')).evidence.active?.testFullName).toBe('is one');
 });
+
+it('keeps recorded REDs when returning to a behavior after a verified full pass', async ({
+  onTestFinished,
+}) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  await writeFile(
+    join(cwd, 'second.test.ts'),
+    "import { it, expect } from 'vitest'; import { value } from './src/value'; it('second', () => expect(value).toBe(1));",
+  );
+  const second = { behavior: 'second', testFullName: 'second', files: ['second.test.ts'] };
+  await store.run(cwd, behavior, 'focused');
+  await store.run(cwd, second, 'focused');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  await store.run(cwd, behavior, 'focused');
+  await store.run(cwd, second, 'focused');
+  expect(await store.run(cwd, second, 'full')).toMatchObject({ phase: 'verified' });
+  // A formatter touched the first test after verification.
+  const test = join(cwd, 'behavior.test.ts');
+  await writeFile(test, `${await readFile(test, 'utf8')}\n`);
+  const revisited = await store.run(cwd, behavior, 'focused');
+  expect(revisited).toMatchObject({ kind: 'pass', phase: 'green' });
+  expect(revisited.evidence.reds).toHaveLength(2);
+  expect(await store.run(cwd, behavior, 'full')).toMatchObject({ phase: 'verified' });
+  // A brand-new behavior after verification starts the next task without the spent REDs.
+  await writeFile(
+    join(cwd, 'third.test.ts'),
+    "import { it, expect } from 'vitest'; import { value } from './src/value'; it('third', () => expect(value).toBe(3));",
+  );
+  const third = await store.run(
+    cwd,
+    { behavior: 'third', testFullName: 'third', files: ['third.test.ts'] },
+    'focused',
+  );
+  expect(third).toMatchObject({ kind: 'fail', phase: 'red' });
+  expect(third.evidence.reds.map((entry) => entry.behavior.behavior)).toEqual(['third']);
+});

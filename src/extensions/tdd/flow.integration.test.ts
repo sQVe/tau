@@ -706,8 +706,17 @@ it('verifies two behaviors authored incrementally in one test file through pi', 
   expect(verified.details.evidence.reds).toHaveLength(2);
   expect(verified.details.evidence.red).not.toBeNull();
   expect(verified.details).toMatchObject({ phase: 'verified', fullPassValid: true });
-  const next = await run({ behavior: 'next behavior', testFullName: 'behavior 1' });
+  // Revisiting a recorded behavior after verification keeps the task's REDs.
+  const revisited = await run({ behavior: 'relabeled', testFullName: 'behavior 1' });
+  expect(revisited.details).toMatchObject({ phase: 'green', implementationAllowed: false });
+  expect(revisited.details.evidence.reds).toHaveLength(2);
+  expect(
+    (await run({ behavior: 'relabeled', testFullName: 'behavior 1', scope: 'full' })).details.phase,
+  ).toBe('verified');
+  // A behavior the gate has not seen starts the next task without them.
+  const next = await run({ behavior: 'next behavior', testFullName: 'behavior 3' });
   expect(next.details).toMatchObject({ phase: 'locked', implementationAllowed: false });
+  expect(next.details.evidence.reds).toHaveLength(0);
 });
 
 it('describes the cycle and exact nested test names in the registered tool', async ({

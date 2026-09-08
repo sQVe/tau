@@ -104,7 +104,10 @@ ones:
 - Duplicate full names: rename the tests so each full name is unique in its file.
 
 Returning to an earlier behavior keeps its RED, so a focused pass there lands in `green`, not
-`locked`.
+`locked`, also after a verified full run. When a commit hook or formatter touches files after
+verification, rerun `run_tests` with `scope: "full"` for the same behavior; the phase returns to
+`verified` without a new RED. Only a behavior the gate has not seen starts the next task and drops
+the spent REDs.
 
 Use the `run_tests` summary and the block message to read the current state. `/tdd status` reports
 the gate, the phase, and whether production writes are allowed, without naming the behavior.

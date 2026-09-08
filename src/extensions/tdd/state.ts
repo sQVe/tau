@@ -357,9 +357,11 @@ export const createEvidenceStore = () => {
     if (state.active !== null && sameBehavior(state.active, behavior)) {
       state.active.behavior = behavior.behavior;
     } else {
-      // A verified full pass is a task boundary: its REDs are spent, so the next behavior
-      // starts without them and renaming or dropping a shipped test cannot deadlock the gate.
-      const reds = state.verified ? [] : state.reds;
+      // A verified full pass is a task boundary: a new behavior starts without the spent REDs, so
+      // renaming or dropping a shipped test cannot deadlock the gate. Returning to a recorded
+      // behavior is a touch-up of the same task and keeps them.
+      const known = state.reds.some((entry) => sameBehavior(entry.behavior, behavior));
+      const reds = state.verified && !known ? [] : state.reds;
       Object.assign(state, {
         active: structuredClone(behavior),
         reds,
