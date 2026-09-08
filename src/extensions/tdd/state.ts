@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { glob, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 
-import { classifyPath, tddConfig } from './config.js';
+import { classifyPath, protectedPaths, tddConfig } from './config.js';
 import { runTests, runnerAvailable } from './runner/index.js';
 import type { RunnerResult, TestResult } from './runner/types.js';
 import type { Behavior, EvidenceRecord, EvidenceState, InputHashes, Phase } from './types.js';
@@ -30,9 +30,7 @@ const hashInputs = async (
     await Promise.all(
       [
         ...new Set([
-          ...[...files, ...sources].map((file) => resolve(cwd, file)),
-          resolve(cwd, 'vite.config.ts'),
-          resolve(cwd, 'package.json'),
+          ...[...files, ...sources, ...protectedPaths].map((file) => resolve(cwd, file)),
           configPath,
         ]),
       ]
@@ -259,8 +257,13 @@ export const createEvidenceStore = () => {
     scope: 'focused' | 'full',
     signal?: AbortSignal,
   ) => {
-    // Canonical file order so the same behavior submitted differently stays the same behavior.
-    const behavior: Behavior = { ...requested, files: [...new Set(requested.files)].toSorted() };
+    // Canonical field and file order so the same behavior submitted differently stays the same
+    // behavior: identity is compared as serialized JSON, which key order would otherwise change.
+    const behavior: Behavior = {
+      behavior: requested.behavior,
+      testFullName: requested.testFullName,
+      files: [...new Set(requested.files)].toSorted(),
+    };
     for (const file of behavior.files) {
       const path = relative(cwd, resolve(cwd, file)).replaceAll('\\', '/');
       if (isAbsolute(file) || path.startsWith('../') || classifyPath(path) !== 'test') {

@@ -88,6 +88,8 @@ it.each(phases)('blocks evidence and verification configuration writes in %s', a
     '.tau/guard.test.ts',
     '.tau',
     'vite.config.ts',
+    'vitest.config.ts',
+    'vitest.config.mts',
     'package.json',
     'src/../package.json',
   ]) {
@@ -128,10 +130,19 @@ it.each(phases)('blocks unrecognized tools carrying path arguments in %s', async
 });
 
 it.each(phases)(
-  'passes read-only tools, shell commands, and commit hooks through in %s',
+  'passes read-only tools, shell commands, questions, and commit hooks through in %s',
   async (phase) => {
     const store = createStore(phase);
-    for (const tool of ['read', 'bash', 'grep', 'find', 'ls', 'run_tests', 'commit']) {
+    for (const tool of [
+      'read',
+      'bash',
+      'grep',
+      'find',
+      'ls',
+      'run_tests',
+      'commit',
+      'ask_user_question',
+    ]) {
       expect(
         await guardToolCall(
           makeEvent(tool, {

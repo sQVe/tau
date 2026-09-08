@@ -546,3 +546,29 @@ it('reports an unreadable evidence file instead of a gate that is on', async ({
     `TDD gate status unknown: unreadable evidence at ${join(cwd, '.tau/state.json')}`,
   );
 });
+
+it('keeps evidence when the same behavior arrives with reordered fields', async ({
+  onTestFinished,
+}) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  await store.run(cwd, behavior, 'focused');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+
+  await store.run(
+    cwd,
+    { files: behavior.files, testFullName: behavior.testFullName, behavior: behavior.behavior },
+    'focused',
+  );
+
+  expect((await store.read(cwd)).phase).toBe('green');
+});
+
+it('invalidates evidence when a vitest configuration appears', async ({ onTestFinished }) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  await store.run(cwd, behavior, 'focused');
+  expect((await store.read(cwd)).implementationAllowed).toBe(true);
+
+  await writeFile(join(cwd, 'vitest.config.ts'), 'export default { test: { exclude: ["**"] } };');
+
+  expect((await store.read(cwd)).implementationAllowed).toBe(false);
+});

@@ -2,7 +2,8 @@ import { relative, resolve } from 'node:path';
 
 import type { ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 
-import { classifyPath } from './config.js';
+import { ASK_USER_QUESTION_TOOL } from '../askUserQuestion/index.js';
+import { classifyPath, protectedPaths } from './config.js';
 import type { createEvidenceStore } from './state.js';
 import type { Behavior, Phase } from './types.js';
 
@@ -28,12 +29,7 @@ const pathNextStep = (
   if (file.startsWith('@') || file.startsWith('~'))
     return 'List literal worktree paths with ls {"path":"."}';
   if (path === '..' || path.startsWith('../')) return 'List worktree files with ls {"path":"."}';
-  if (
-    path === '.tau' ||
-    path.startsWith('.tau/') ||
-    path === 'vite.config.ts' ||
-    path === 'package.json'
-  )
+  if (path === '.tau' || path.startsWith('.tau/') || protectedPaths.includes(path))
     return 'Choose an unprotected test file with ls {"path":"."}';
   // The gate only opens for production edits: protected paths and escapes stay blocked.
   if (gateOff) return undefined;
@@ -54,7 +50,11 @@ export const guardToolCall = async (
   store: Pick<ReturnType<typeof createEvidenceStore>, 'read'>,
 ): Promise<ToolCallEventResult | undefined> => {
   // Commit's pre-commit formatter runs in a subprocess, outside Pi's file-tool gate.
-  if (['read', 'bash', 'grep', 'find', 'ls', 'run_tests', 'commit'].includes(event.toolName))
+  if (
+    ['read', 'bash', 'grep', 'find', 'ls', 'run_tests', 'commit', ASK_USER_QUESTION_TOOL].includes(
+      event.toolName,
+    )
+  )
     return undefined;
   const recognized = event.toolName === 'write' || event.toolName === 'edit';
   const file = recognized ? event.input.path : (inputPaths(event.input)[0] ?? 'unknown target');

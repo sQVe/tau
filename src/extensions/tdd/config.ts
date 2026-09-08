@@ -6,6 +6,18 @@ export const tddConfig = {
   verificationArgv: ['vitest', 'run', '--reporter=json', '--no-color'],
 } as const;
 
+// Vitest discovers its own configuration ahead of vite's, so every file that can change how the
+// verification runs is hashed into evidence and blocked from edits.
+export const protectedPaths = [
+  'package.json',
+  'vite.config.ts',
+  'vite.config.mts',
+  'vite.config.js',
+  'vitest.config.ts',
+  'vitest.config.mts',
+  'vitest.config.js',
+];
+
 export const classifyPath = (path: string): 'test' | 'production' | 'other' => {
   const normalized = path.replaceAll('\\', '/');
   if (tddConfig.testGlobs.some((glob) => matchesGlob(normalized, glob))) return 'test';
