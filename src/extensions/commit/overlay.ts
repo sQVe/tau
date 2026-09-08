@@ -64,7 +64,7 @@ const showCommentReview = async (ctx: ExtensionContext, report: string, signal?:
           return [
             theme.fg('accent', 'Comment review'),
             ...lines.slice(offset, offset + height),
-            theme.fg('dim', 'j/k scroll · g/G ends · Esc return · Ctrl+C abort'),
+            theme.fg('dim', 'j/k or ↑/↓ scroll · g/G or Home/End · Esc return · Ctrl+C abort'),
           ];
         },
         invalidate() {

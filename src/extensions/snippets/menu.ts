@@ -166,7 +166,7 @@ export const openSnippetMenu = async (
       return {
         content: view.lines,
         title: `Preview: ${snippet.name}`,
-        hints: 'j/k scroll • g/G ends • Tab/Esc back',
+        hints: 'j/k or ↑↓ scroll • g/G or Home/End • Tab/Esc back',
       };
     };
 
