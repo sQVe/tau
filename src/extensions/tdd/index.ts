@@ -1,11 +1,56 @@
-import { resolve } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
 import { guardToolCall } from './guard.js';
+import type { RunnerResult } from './runner/types.js';
 import { ambiguousFiles, createEvidenceStore } from './state.js';
+
+const MAX_SUMMARY_CHARS = 2000;
+const MAX_SHOWN_FAILURES = 10;
+
+const displayPath = (cwd: string, file: string) => (isAbsolute(file) ? relative(cwd, file) : file);
+
+const summarize = (
+  cwd: string,
+  header: {
+    kind: string;
+    phase: string;
+    implementationAllowed: boolean;
+    notice: string | undefined;
+  },
+  next: string | undefined,
+  report: RunnerResult | null | undefined,
+): string => {
+  const lines = [
+    `${header.kind} · phase ${header.phase} · implementation ${header.implementationAllowed ? 'allowed' : 'blocked'}`,
+  ];
+  if (header.notice != null) lines.push(`Notice: ${header.notice}`);
+  if (next != null) lines.push(`Next: ${next}`);
+  if (report != null && 'message' in report) lines.push(report.message);
+  if (report != null && 'tests' in report) {
+    const count = (...statuses: string[]) =>
+      report.tests.filter((test) => statuses.includes(test.status)).length;
+    lines.push(
+      `${count('passed')} passed, ${count('failed')} failed, ${count('skipped', 'todo')} skipped`,
+    );
+  }
+  const failures = report != null && 'failures' in report ? report.failures : [];
+  let shown = 0;
+  for (const failure of failures.slice(0, MAX_SHOWN_FAILURES)) {
+    const entry = `✗ ${displayPath(cwd, failure.file)} › ${failure.fullname}\n    ${failure.message}`;
+    if ([...lines, entry].join('\n').length > MAX_SUMMARY_CHARS - 60) break;
+    lines.push(entry);
+    shown += 1;
+  }
+  if (failures.length > shown) lines.push(`+${failures.length - shown} more`);
+  if (report != null && 'truncated' in report && report.truncated)
+    lines.push('further failures were not collected');
+  const text = lines.join('\n');
+  return text.length > MAX_SUMMARY_CHARS ? `${text.slice(0, MAX_SUMMARY_CHARS - 12)}\n[cut]` : text;
+};
 
 export default function tddExtension(pi: ExtensionAPI) {
   const store = createEvidenceStore();
@@ -21,7 +66,7 @@ export default function tddExtension(pi: ExtensionAPI) {
         'Skipped and deleted tests never count. ' +
         'Returns kind (run outcome), phase (locked: no valid RED; red: failing test proven; green: that test passed; verified: full run passed with every RED test present and passing), implementationAllowed (true only in red), and report (test results, null if inputs changed). ' +
         'Only files matching the production globs are gated, and a notice string says the gate is off while no test runner resolves from the worktree. ' +
-        'A next string explains recovery when needed; long reports are truncated in text, with the full report in details.',
+        'A next string explains recovery when needed; the text is a short summary with counts and failing tests, and details carries the full report.',
       parameters: Type.Object({
         behavior: Type.String({
           minLength: 1,
@@ -108,16 +153,10 @@ export default function tddExtension(pi: ExtensionAPI) {
           next = `A required RED test is skipped or missing: ${JSON.stringify(missing.testFullName)} in ${JSON.stringify(missing.files)}. Restore that test so it runs and passes, then call ${call}.`;
         else if (duplicatedRed)
           next = `An earlier RED test can no longer be identified: more than one test in ${JSON.stringify(duplicatedRed.files)} has its full name ${JSON.stringify(duplicatedRed.required.testFullName)}, so the full run cannot verify it. Rename the duplicate so each full name is unique, then call ${call}.`;
-        const output = JSON.stringify({
-          kind: details.kind,
-          phase: details.phase,
-          implementationAllowed: details.implementationAllowed,
-          notice: details.notice,
-          next,
-          report,
-        });
-        const text = output.length > 4000 ? `${output.slice(0, 3980)}\n[truncated]` : output;
-        return { content: [{ type: 'text', text }], details };
+        return {
+          content: [{ type: 'text', text: summarize(ctx.cwd, details, next, report) }],
+          details,
+        };
       },
     }),
   );

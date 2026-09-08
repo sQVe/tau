@@ -113,7 +113,7 @@ describe('runTests', () => {
     });
     expect(await runTests({ scope: 'all', cwd: '/repo', filter: 'unmatched' }, deps)).toEqual({
       kind: 'no-tests-collected',
-      tests: [{ file: '/repo/a.test.ts', fullname: 'skips', status: 'skipped' }],
+      tests: [],
     });
   });
 
@@ -579,6 +579,44 @@ describe('runTests', () => {
         MAX_ASSERTION_BYTES + 4,
       );
     }
+  });
+
+  it('keeps only the tests the filter selected, including a selected skip', async () => {
+    const report = {
+      numTotalTests: 3,
+      numFailedTests: 0,
+      numPassedTests: 1,
+      testResults: [
+        {
+          name: '/repo/a.test.ts',
+          status: 'passed',
+          assertionResults: [
+            { fullName: 'selected', status: 'passed' },
+            { fullName: 'also selected', status: 'pending' },
+            { fullName: 'unselected', status: 'pending' },
+          ],
+        },
+      ],
+    };
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
+
+    const result = await runTests(
+      {
+        scope: 'changed',
+        cwd: '/repo',
+        files: ['a.test.ts'],
+        filter: '^(selected|also selected)$',
+      },
+      deps,
+    );
+
+    expect(result).toEqual({
+      kind: 'pass',
+      tests: [
+        { file: '/repo/a.test.ts', fullname: 'selected', status: 'passed' },
+        { file: '/repo/a.test.ts', fullname: 'also selected', status: 'skipped' },
+      ],
+    });
   });
 
   it('reduces a failure message to its assertion line and worktree frame', async () => {

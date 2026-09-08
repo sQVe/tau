@@ -220,16 +220,33 @@ const assertionFullName = (assertion: VitestAssertionResult) =>
   assertion.fullName ??
   [...(assertion.ancestorTitles ?? []), assertion.title ?? ''].filter(Boolean).join(' ');
 
-const collectTests = (report: VitestReport): TestResult[] =>
+// A focused run reports every unselected test as skipped, which says nothing about it.
+const selects = (filter: string | undefined) => {
+  if (filter == null) return () => true;
+  let pattern: RegExp;
+  try {
+    pattern = new RegExp(filter);
+  } catch {
+    return () => true;
+  }
+  return (fullname: string) => pattern.test(fullname);
+};
+
+const collectTests = (
+  report: VitestReport,
+  selected: (fullname: string) => boolean,
+): TestResult[] =>
   (report.testResults ?? []).flatMap((file) =>
-    (file.assertionResults ?? []).map((assertion) => ({
-      file: file.name ?? '<unknown>',
-      fullname: assertionFullName(assertion),
-      status:
-        assertion.status === 'pending' || assertion.status === 'disabled'
-          ? 'skipped'
-          : assertion.status,
-    })),
+    (file.assertionResults ?? [])
+      .filter((assertion) => selected(assertionFullName(assertion)))
+      .map((assertion) => ({
+        file: file.name ?? '<unknown>',
+        fullname: assertionFullName(assertion),
+        status:
+          assertion.status === 'pending' || assertion.status === 'disabled'
+            ? 'skipped'
+            : assertion.status,
+      })),
   );
 
 const frameLocation = (line: string, cwd: string): string | null => {
@@ -404,7 +421,7 @@ const runInDirectory = async (
     };
   }
 
-  const tests = collectTests(report);
+  const tests = collectTests(report, selects(input.filter));
   const total = report.numTotalTests ?? 0;
   const failed = report.numFailedTests ?? 0;
   const files = report.testResults ?? [];

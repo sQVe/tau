@@ -262,9 +262,7 @@ it('lets production writes through when no test runner resolves through pi', asy
 
   expect(await readFile(join(cwd, input.path), 'utf8')).toBe(input.content);
   expect((await call('write', { path: 'package.json', content: '{}' })).isError).toBe(false);
-  expect(JSON.parse((await run()).content[0]!.text)).toMatchObject({
-    notice: `no test runner resolves from ${cwd}`,
-  });
+  expect((await run()).content[0]!.text).toContain(`Notice: no test runner resolves from ${cwd}`);
 });
 
 it('keeps RED evidence across a restarted pi session in the same worktree', async ({
@@ -374,12 +372,10 @@ it('records focused and full passes without unlocking a first-run pass', async (
   const focused = await run();
   expect(focused.details).toMatchObject({ phase: 'locked', focusedPassValid: false });
   expect(focused.details.implementationAllowed).toBe(false);
-  expect(JSON.parse(focused.content[0]!.text)).toMatchObject({
-    kind: 'pass',
-    phase: 'locked',
-    implementationAllowed: false,
-    next: 'The test does not fail yet; the behavior may already be implemented. Write a test that fails before the fix, then call run_tests {"behavior":"required behavior","testFullName":"required behavior","files":["behavior.test.ts"],"scope":"focused"}.',
-  });
+  expect(focused.content[0]!.text).toContain('pass · phase locked · implementation blocked');
+  expect(focused.content[0]!.text).toContain(
+    'Next: The test does not fail yet; the behavior may already be implemented. Write a test that fails before the fix, then call run_tests {"behavior":"required behavior","testFullName":"required behavior","files":["behavior.test.ts"],"scope":"focused"}.',
+  );
   expect(focused.details.evidence.red).toBeNull();
   expect(focused.details.evidence.focusedPass?.report.kind).toBe('pass');
   const full = await run({ scope: 'full' });
@@ -401,10 +397,10 @@ it('names the ambiguous file while keeping a RED proven by another required file
 
   expect(result.details.phase).toBe('red');
   expect(result.details.evidence.red?.report.kind).toBe('fail');
-  const text = JSON.parse(result.content[0]!.text) as { next: string };
-  expect(text.next).toContain('["other.test.ts"]');
-  expect(text.next).toContain('the phase is red');
-  expect(text.next).not.toContain('no evidence was recorded');
+  const text = result.content[0]!.text;
+  expect(text).toContain('["other.test.ts"]');
+  expect(text).toContain('the phase is red');
+  expect(text).not.toContain('no evidence was recorded');
 });
 
 it('locks the phase when the only required file duplicates the full name', async ({
@@ -421,10 +417,10 @@ it('locks the phase when the only required file duplicates the full name', async
   const result = await run();
 
   expect(result.details.phase).toBe('locked');
-  const text = JSON.parse(result.content[0]!.text) as { next: string };
-  expect(text.next).toContain('["behavior.test.ts"]');
-  expect(text.next).toContain('no evidence was recorded');
-  expect(text.next).not.toContain('stands');
+  const text = result.content[0]!.text;
+  expect(text).toContain('["behavior.test.ts"]');
+  expect(text).toContain('no evidence was recorded');
+  expect(text).not.toContain('stands');
 });
 
 it('names an earlier RED duplicated in another file sharing the current full name', async ({
@@ -455,9 +451,9 @@ it('names an earlier RED duplicated in another file sharing the current full nam
   const full = await run({ ...second, scope: 'full' });
 
   expect(full.details.fullPassValid).toBe(false);
-  const text = JSON.parse(full.content[0]!.text) as { next: string };
-  expect(text.next).toContain('["behavior.test.ts"]');
-  expect(text.next).toContain('Rename the duplicate');
+  const text = full.content[0]!.text;
+  expect(text).toContain('["behavior.test.ts"]');
+  expect(text).toContain('Rename the duplicate');
 });
 
 it('names an earlier RED whose full name became duplicated in its file', async ({
@@ -492,10 +488,10 @@ it('names an earlier RED whose full name became duplicated in its file', async (
   const full = await run({ ...second, scope: 'full' });
 
   expect(full.details.fullPassValid).toBe(false);
-  const text = JSON.parse(full.content[0]!.text) as { next: string };
-  expect(text.next).toContain('"required behavior"');
-  expect(text.next).toContain('["behavior.test.ts"]');
-  expect(text.next).toContain('Rename the duplicate');
+  const text = full.content[0]!.text;
+  expect(text).toContain('"required behavior"');
+  expect(text).toContain('["behavior.test.ts"]');
+  expect(text).toContain('Rename the duplicate');
 });
 
 it.each([
@@ -541,12 +537,11 @@ it('discards a run when a sibling bash tool edits its inputs', async ({ onTestFi
     (event) => event.type === 'tool_execution_end' && event.toolName === 'run_tests',
   );
   if (result?.type !== 'tool_execution_end') throw new Error('Missing run_tests result');
-  expect(JSON.parse((result.result as ToolResult).content[0]!.text)).toMatchObject({
-    kind: 'inputs-changed',
-    phase: 'locked',
-    report: null,
-    next: 'Inputs changed during the run; no evidence was recorded. Stop concurrent edits, then call run_tests {"behavior":"required behavior","testFullName":"required behavior","files":["behavior.test.ts"],"scope":"focused"}.',
-  });
+  const text = (result.result as ToolResult).content[0]!.text;
+  expect(text).toContain('inputs-changed · phase locked · implementation blocked');
+  expect(text).toContain(
+    'Next: Inputs changed during the run; no evidence was recorded. Stop concurrent edits, then call run_tests {"behavior":"required behavior","testFullName":"required behavior","files":["behavior.test.ts"],"scope":"focused"}.',
+  );
   expect(result).toMatchObject({
     isError: false,
     result: {
@@ -586,8 +581,43 @@ it('keeps the full report while shortening displayed output', async ({ onTestFin
   );
   const result = await run({ scope: 'full' });
   expect(result.details.evidence.fullPass?.report).toHaveProperty('tests.length', 101);
-  expect(result.content[0]!.text.length).toBeLessThanOrEqual(4000);
-  expect(result.content[0]!.text).toContain('truncated');
+  expect(result.content[0]!.text.length).toBeLessThanOrEqual(2000);
+  expect(result.content[0]!.text).toContain('101 passed, 0 failed, 0 skipped');
+});
+
+it('summarizes red and verified runs as plain text without stacks or absolute paths', async ({
+  onTestFinished,
+}) => {
+  const { cwd, run } = await createHarness(onTestFinished);
+  await mkdir(join(cwd, 'src'));
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 0;');
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    "import { it, expect } from 'vitest'; import { value } from './src/value'; it('required behavior', () => expect(value).toBe(1));",
+  );
+
+  const red = await run();
+
+  const redText = red.content[0]!.text;
+  expect(redText).toContain('fail · phase red · implementation allowed');
+  expect(redText).toContain('0 passed, 1 failed, 0 skipped');
+  expect(redText).toContain('✗ behavior.test.ts › required behavior');
+  expect(redText).toContain('AssertionError: expected +0 to be 1');
+  expect(redText).toContain('(behavior.test.ts:1)');
+  expect(redText).not.toContain(cwd);
+  expect(redText).not.toMatch(/\n\s+at /);
+  expect(redText.length).toBeLessThanOrEqual(2000);
+  expect(red.details.evidence.red?.report).toHaveProperty('tests');
+
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  await run();
+  const verified = await run({ scope: 'full' });
+
+  const verifiedText = verified.content[0]!.text;
+  expect(verifiedText).toContain('pass · phase verified · implementation blocked');
+  expect(verifiedText).toContain('1 passed, 0 failed, 0 skipped');
+  expect(verifiedText).not.toContain(cwd);
+  expect(verified.details.evidence.fullPass?.report).toHaveProperty('tests');
 });
 
 it('rejects production and escaping paths through pi', async ({ onTestFinished }) => {
@@ -699,10 +729,7 @@ it('describes the cycle and exact nested test names in the registered tool', asy
     "import { describe, it, expect } from 'vitest'; describe('outer', () => describe('inner', () => it('works', () => expect(1).toBe(2))));",
   );
   const result = await run({ testFullName: 'outer inner works' });
-  expect(JSON.parse(result.content[0]!.text)).toMatchObject({
-    phase: 'red',
-    implementationAllowed: true,
-  });
+  expect(result.content[0]!.text).toContain('phase red · implementation allowed');
 });
 
 const REQUIRED_RED_TEST =
@@ -738,12 +765,8 @@ it.each([
   const result = await run({ scope: 'full' });
 
   expect(result.details.fullPassValid).toBe(false);
-  expect(JSON.parse(result.content[0]!.text)).toMatchObject({
-    kind: 'pass',
-    phase: 'red',
-    implementationAllowed: true,
-    next: RESTORE_RED_NEXT_STEP,
-  });
+  expect(result.content[0]!.text).toContain('pass · phase red · implementation allowed');
+  expect(result.content[0]!.text).toContain(`Next: ${RESTORE_RED_NEXT_STEP}`);
 });
 
 it.each(['skip edit', 'deleted file'])(
@@ -774,12 +797,8 @@ it.each(['skip edit', 'deleted file'])(
     const result = await run({ scope: 'full' });
 
     expect(result.details.fullPassValid).toBe(false);
-    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
-      kind: 'pass',
-      phase: 'locked',
-      implementationAllowed: false,
-      next: RESTORE_RED_NEXT_STEP,
-    });
+    expect(result.content[0]!.text).toContain('pass · phase locked · implementation blocked');
+    expect(result.content[0]!.text).toContain(`Next: ${RESTORE_RED_NEXT_STEP}`);
     expect(
       (await call('write', { path: 'src/value.ts', content: 'export const value = 4;' })).isError,
     ).toBe(true);
