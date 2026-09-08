@@ -302,13 +302,13 @@ export const createEvidenceStore = () => {
       return { kind: 'inputs-changed' as const, report: null, ...(await read(cwd)) };
     const state = await stateFor(cwd);
     const entry = state.reds.find((candidate) => sameBehavior(candidate.behavior, behavior));
-    let arrival = entry === undefined ? 'unseen' : 'known';
+    let arrival: 'unseen' | 'known' | 'same' = entry === undefined ? 'unseen' : 'known';
     if (state.active !== null && sameBehavior(state.active, behavior)) arrival = 'same';
     // Cancellation cannot switch behaviors. A full run on the active behavior still clears verification.
     if (report.kind === 'cancelled' && arrival !== 'same')
       return { kind: 'cancelled' as const, report, ...(await read(cwd)) };
     const filesExist = behavior.files.every((file) => after[resolve(cwd, file)] != null);
-    let outcome = 'other';
+    let outcome: 'other' | 'fail' | 'pass' = 'other';
     if (filesExist && report.kind === 'fail' && uniquelyIs(cwd, report.tests, behavior, 'failed'))
       outcome = 'fail';
     else if (filesExist && report.kind === 'pass' && redPassed(cwd, behavior, entry, report))
@@ -344,7 +344,8 @@ export const createEvidenceStore = () => {
         state.verifiedTree = fullTree;
       }
     } else {
-      switch (`${arrival}:${outcome}`) {
+      const transition = `${arrival}:${outcome}` as const;
+      switch (transition) {
         case 'same:fail':
         case 'known:fail':
         case 'unseen:fail': {
@@ -384,6 +385,13 @@ export const createEvidenceStore = () => {
             state.verifiedTree = null;
           }
           break;
+        case 'same:other':
+        case 'known:other':
+        case 'unseen:other':
+        case 'unseen:pass':
+          break;
+        default:
+          throw new Error('Unexpected TDD transition', { cause: transition satisfies never });
       }
     }
     await saveState(cwd, state);
