@@ -39,6 +39,10 @@ const bundledQuestionExtensionPath = resolve(
   import.meta.dirname,
   '../node_modules/@juicesharp/rpiv-ask-user-question/index.ts',
 );
+const bundledWebAccessExtensionPath = resolve(
+  import.meta.dirname,
+  '../node_modules/pi-web-access/index.ts',
+);
 
 interface Harness {
   session: AgentSession;
@@ -126,7 +130,11 @@ const createHarness = async (
     cwd: repoDir,
     agentDir,
     settingsManager,
-    additionalExtensionPaths: [tauExtensionsPath, bundledQuestionExtensionPath],
+    additionalExtensionPaths: [
+      tauExtensionsPath,
+      bundledQuestionExtensionPath,
+      bundledWebAccessExtensionPath,
+    ],
     noExtensions: true,
     noSkills: true,
     noPromptTemplates: true,

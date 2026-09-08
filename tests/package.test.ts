@@ -18,7 +18,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
-it('loads Tau through Pi with commit features, the bundled question tool, and writing rules on each run', async ({
+it('loads Tau through Pi with commit features, the bundled question and web tools, and writing rules on each run', async ({
   onTestFinished,
 }) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-package-'));
@@ -41,11 +41,13 @@ it('loads Tau through Pi with commit features, the bundled question tool, and wr
 
     const { extensions, errors } = loader.getExtensions();
     expect(errors).toEqual([]);
-    expect(extensions).toHaveLength(2);
+    expect(extensions).toHaveLength(3);
     const tauExtension = extensions.find((extension) => extension.tools.has('commit'));
     expect(tauExtension?.commands.has('commit')).toBe(true);
     expect(tauExtension?.handlers.get('tool_call')).toHaveLength(2);
     expect(extensions.some((extension) => extension.tools.has('ask_user_question'))).toBe(true);
+    expect(extensions.some((extension) => extension.tools.has('web_search'))).toBe(true);
+    expect(extensions.some((extension) => extension.tools.has('fetch_content'))).toBe(true);
     expect(
       loader
         .getSkills()
@@ -103,7 +105,7 @@ it('loads Tau through Pi with commit features, the bundled question tool, and wr
   }
 });
 
-it('reports an extension error when the bundled question package is not loaded', async ({
+it('reports an extension error for each bundled package that is not loaded', async ({
   onTestFinished,
 }) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-package-missing-'));
@@ -151,7 +153,10 @@ it('reports an extension error when the bundled question package is not loaded',
     },
   });
 
-  expect(errors).toHaveLength(1);
+  expect(errors).toHaveLength(2);
   expect(errors[0]).toContain('ask_user_question');
   expect(errors[0]).toContain('@juicesharp/rpiv-ask-user-question');
+  expect(errors[1]).toContain('web_search');
+  expect(errors[1]).toContain('fetch_content');
+  expect(errors[1]).toContain('pi-web-access');
 });

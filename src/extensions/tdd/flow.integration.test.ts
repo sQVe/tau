@@ -74,6 +74,7 @@ const createHarness = async (
         import.meta.dirname,
         '../../../node_modules/@juicesharp/rpiv-ask-user-question/index.ts',
       ),
+      resolve(import.meta.dirname, '../../../node_modules/pi-web-access/index.ts'),
     ],
     extensionFactories,
     noExtensions: true,
