@@ -1,6 +1,6 @@
 import { isAbsolute, relative, resolve } from 'node:path';
 
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
@@ -77,8 +77,19 @@ export default function tddExtension(pi: ExtensionAPI) {
       ctx.ui.setStatus(STATUS_KEY, statusText(state));
     }),
   );
-  pi.on('session_start', async (_event, ctx) => {
+  const refreshStatus = async (ctx: ExtensionContext) => {
     ctx.ui.setStatus(STATUS_KEY, statusText(await store.read(ctx.cwd)));
+  };
+  pi.on('session_start', (_event, ctx) => refreshStatus(ctx));
+  // `session_start` fires once per process, so /new, resume, and fork need their own refresh or
+  // the footer keeps reporting the phase of the session the user left.
+  pi.on('session_before_switch', async (_event, ctx) => {
+    await refreshStatus(ctx);
+    return undefined;
+  });
+  pi.on('session_before_fork', async (_event, ctx) => {
+    await refreshStatus(ctx);
+    return undefined;
   });
   pi.registerCommand('tdd', {
     description: 'Turn the TDD gate on or off, or report its state: /tdd on|off|status.',
