@@ -47,7 +47,14 @@ export default function snippetsExtension(pi: ExtensionAPI) {
       return;
     }
 
-    snippets = await loadSnippets(snippetsDirectory);
+    try {
+      snippets = await loadSnippets(snippetsDirectory);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      ctx.ui.notify(`Snippets could not be read: ${reason}`, 'error');
+      return;
+    }
+
     if (snippets.length === 0) {
       ctx.ui.notify(`No snippets found in ${snippetsDirectory}`, 'warning');
       updateWidget(ctx);
@@ -63,9 +70,25 @@ export default function snippetsExtension(pi: ExtensionAPI) {
   };
 
   // Every reader reloads from disk first, so there is nothing to load here.
-  pi.on('session_start', (_event, ctx) => {
+  const resetToggles = (ctx: ExtensionContext) => {
     enabled = new Set();
     updateWidget(ctx);
+  };
+
+  pi.on('session_start', (_event, ctx) => {
+    resetToggles(ctx);
+  });
+
+  // `session_start` fires once per process, so /new and resume need their own
+  // reset or the toggles carry into a session the user never picked them for.
+  pi.on('session_before_switch', (_event, ctx) => {
+    resetToggles(ctx);
+    return undefined;
+  });
+
+  pi.on('session_before_fork', (_event, ctx) => {
+    resetToggles(ctx);
+    return undefined;
   });
 
   // Snippets are re-read on every send, so edits apply without reloading pi.
@@ -94,13 +117,22 @@ export default function snippetsExtension(pi: ExtensionAPI) {
 
     snippets = loaded;
     const active = snippets.filter((snippet) => enabled.has(snippet.id));
+
+    // A file deleted or made unparsable since the menu closed drops out of
+    // `active` without throwing, so stop the send rather than deliver the
+    // message without an instruction the user picked.
+    if (active.length < enabled.size) {
+      const missing = [...enabled].filter((id) => !active.some((snippet) => snippet.id === id));
+      ctx.ui.notify(`Snippets missing, so nothing was sent: ${missing.join(', ')}`, 'error');
+      if (ctx.mode === 'tui') {
+        ctx.ui.setEditorText(event.text);
+      }
+
+      return { action: 'handled' as const };
+    }
+
     enabled = new Set();
     updateWidget(ctx);
-
-    // Every selected snippet was deleted while the message was being typed.
-    if (active.length === 0) {
-      return undefined;
-    }
 
     return { action: 'transform' as const, text: buildSnippetMessage(event.text, active) };
   });

@@ -3,7 +3,8 @@ import { join } from 'node:path';
 
 import type { Snippet, SnippetPlacement } from './types.js';
 
-const frontmatterPattern = /^---\r?\n([\S\s]*?)\r?\n---\r?\n?([\S\s]*)$/;
+// The header is optional, so a snippet that sets no field still parses.
+const frontmatterPattern = /^---\r?\n((?:[\S\s]*?\r?\n)?)---\r?\n?([\S\s]*)$/;
 const metadataPattern = /^([A-Za-z][\w-]*)\s*:\s*(.*)$/;
 const quotePattern = /^["']|["']$/g;
 
@@ -69,8 +70,11 @@ const compareSnippets = (a: Snippet, b: Snippet) =>
  * the user selected would be worse than a visible error.
  */
 export const loadSnippets = async (directory: string): Promise<Snippet[]> => {
-  const entries = await readdir(directory);
-  const filenames = entries.filter((name) => name.toLowerCase().endsWith('.md'));
+  // A directory named `draft.md` would otherwise reach readFile and throw.
+  const entries = await readdir(directory, { withFileTypes: true });
+  const filenames = entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.md'))
+    .map((entry) => entry.name);
   const parsed = await Promise.all(
     filenames.map(async (name) =>
       parseSnippet(name, await readFile(join(directory, name), 'utf8')),

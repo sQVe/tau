@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -97,6 +97,17 @@ describe('parseSnippet', () => {
     });
   });
 
+  it('accepts an empty frontmatter block, since every field is optional', () => {
+    expect(parseSnippet('bare.md', '---\n---\nJust a body.\n')).toEqual({
+      id: 'bare.md',
+      name: 'bare',
+      description: '',
+      placement: 'append',
+      order: 9999,
+      body: 'Just a body.',
+    });
+  });
+
   it('treats an unparsable order as a last-place order', () => {
     expect(parseSnippet('bad.md', '---\norder: soon\n---\nBody.')).toMatchObject({ order: 9999 });
   });
@@ -142,7 +153,21 @@ describe('loadSnippets', () => {
   });
 
   it('reports a missing directory instead of returning no snippets', async () => {
-    await expect(loadSnippets(join(tmpdir(), 'tau-snippets-missing'))).rejects.toThrow('ENOENT');
+    // Created then removed, so a leftover directory cannot make this pass.
+    const directory = await mkdtemp(join(tmpdir(), 'tau-snippets-gone-'));
+    await rm(directory, { recursive: true, force: true });
+
+    await expect(loadSnippets(directory)).rejects.toThrow('ENOENT');
+  });
+
+  it('skips a directory whose name ends in .md', async ({ onTestFinished }) => {
+    const directory = await mkdtemp(join(tmpdir(), 'tau-snippets-'));
+    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+    await mkdir(join(directory, 'draft.md'));
+    await writeFile(join(directory, 'real.md'), snippetFile('Real', 'append', 10, 'Real body.'));
+
+    expect((await loadSnippets(directory)).map((snippet) => snippet.name)).toEqual(['Real']);
   });
 });
 

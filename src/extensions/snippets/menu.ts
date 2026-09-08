@@ -3,7 +3,9 @@ import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from '@earendil-wo
 
 import type { Snippet } from './types.js';
 
-// Lines the frame spends on borders, title, padding, and hints.
+// Lines render() always emits: two borders, the title, two blanks, the hints.
+const chromeHeight = 6;
+// Chrome plus room for the editor below, when the terminal is tall enough.
 const frameHeight = 10;
 const minimumViewHeight = 5;
 
@@ -32,7 +34,9 @@ const clipToViewport = (
     return { lines, scroll: 0 };
   }
 
-  const height = Math.max(1, maxHeight - 2);
+  // The two indicators only earn their rows when a row is left for content.
+  const showIndicators = maxHeight >= 3;
+  const height = showIndicators ? maxHeight - 2 : maxHeight;
   let position = Math.min(Math.max(0, scroll), lines.length - height);
   if (focusRow !== undefined) {
     if (focusRow < position) {
@@ -45,12 +49,16 @@ const clipToViewport = (
   const above = position;
   const below = lines.length - (position + height);
 
+  const visible = lines.slice(position, position + height);
+
   return {
-    lines: [
-      above > 0 ? indicator(`  ↑ ${above} more`) : '',
-      ...lines.slice(position, position + height),
-      below > 0 ? indicator(`  ↓ ${below} more`) : '',
-    ],
+    lines: showIndicators
+      ? [
+          above > 0 ? indicator(`  ↑ ${above} more`) : '',
+          ...visible,
+          below > 0 ? indicator(`  ↓ ${below} more`) : '',
+        ]
+      : visible,
     scroll: position,
   };
 };
@@ -201,7 +209,15 @@ export const openSnippetMenu = async (
 
     return {
       render(width: number) {
-        const maxHeight = Math.max(minimumViewHeight, tui.terminal.rows - frameHeight);
+        // Never exceed the terminal, even when that means dropping below the
+        // comfortable minimum on a very short one.
+        const maxHeight = Math.max(
+          1,
+          Math.min(
+            tui.terminal.rows - chromeHeight,
+            Math.max(minimumViewHeight, tui.terminal.rows - frameHeight),
+          ),
+        );
         const { content, title, hints } =
           mode === 'list' ? renderList(width, maxHeight) : renderPreview(width, maxHeight);
 

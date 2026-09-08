@@ -159,6 +159,13 @@ describe('openSnippetMenu', () => {
     }
   });
 
+  // Six lines of frame plus one of content is the floor; below that nothing fits.
+  it.for([8, 10, 12, 20, 60])('never renders more lines than a %i row terminal', (rows) => {
+    const menu = openMenu(manySnippets, [], rows);
+
+    expect(menu.render(80).length).toBeLessThanOrEqual(rows);
+  });
+
   it('clips a long list to the viewport and counts the hidden rows', () => {
     const menu = openMenu(manySnippets, [], 20);
     const lines = menu.render(80);
