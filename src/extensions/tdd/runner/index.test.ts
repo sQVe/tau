@@ -7,7 +7,13 @@ import { describe, expect, it } from 'vitest';
 import { runTests } from './index.js';
 import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js';
 import { MAX_FAILURES, MAX_MESSAGE_CHARS, MAX_STDOUT_BYTES, MAX_TOTAL_BYTES } from './types.js';
-import { defaultDeps, defaultSpawn, extractBinPath, runnerAvailable } from './vitest.js';
+import {
+  defaultDeps,
+  defaultSpawn,
+  extractBinPath,
+  nodeExecutable,
+  runnerAvailable,
+} from './vitest.js';
 
 const outputFileFrom = (args: string[]) => {
   const flag = args.find((arg) => arg.startsWith('--outputFile='));
@@ -893,5 +899,16 @@ describe('runnerAvailable', () => {
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
+  });
+});
+
+describe('nodeExecutable', () => {
+  it('keeps a node executable and falls back to node on PATH for a compiled agent', () => {
+    expect(nodeExecutable('/usr/bin/node')).toBe('/usr/bin/node');
+    expect(nodeExecutable('C:\\Program Files\\nodejs\\node.exe')).toBe(
+      'C:\\Program Files\\nodejs\\node.exe',
+    );
+    expect(nodeExecutable('/usr/bin/pi')).toBe('node');
+    expect(nodeExecutable('/opt/pi-coding-agent/pi')).toBe('node');
   });
 });

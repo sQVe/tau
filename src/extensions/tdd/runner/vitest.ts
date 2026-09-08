@@ -3,7 +3,7 @@ import { statSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve as resolvePath } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import { tddConfig } from '../config.js';
@@ -101,12 +101,17 @@ export const runnerAvailable = (cwd: string): boolean => {
   }
 };
 
+// Pi ships as a compiled executable, so execPath is the agent itself there and would parse
+// vitest's flags as its own.
+export const nodeExecutable = (execPath = process.execPath) =>
+  /^node(\.exe)?$/i.test(basename(execPath.replaceAll('\\', '/'))) ? execPath : 'node';
+
 export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
   new Promise<SpawnResult>((resolve) => {
     // detached lets the timeout path signal the whole process group on POSIX.
     // Windows has no equivalent; we fall back to child.kill there.
     const useProcessGroup = process.platform !== 'win32';
-    const child = nodeSpawn(process.execPath, [cmd, ...args], {
+    const child = nodeSpawn(nodeExecutable(), [cmd, ...args], {
       cwd: opts.cwd,
       detached: useProcessGroup,
       stdio: ['ignore', 'pipe', 'pipe'],
