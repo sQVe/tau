@@ -207,7 +207,9 @@ describe('commit flow', () => {
     await writeFile(join(repoDir, 'feature.txt'), 'hello\n');
     faux.setResponses([
       fauxAssistantMessage([
-        fauxToolCall('commit', { files: ['feature.txt'], subject: 'feat: add feature' }),
+        fauxToolCall('commit', {
+          groups: [{ files: ['feature.txt'], subject: 'feat: add feature' }],
+        }),
       ]),
       (_context, _options, _state, model) => {
         expect(model.baseUrl).toBe(endpoint);
@@ -232,7 +234,9 @@ describe('commit flow', () => {
     await writeFile(join(repoDir, 'pnpm-lock.yaml'), after);
     faux.setResponses([
       fauxAssistantMessage([
-        fauxToolCall('commit', { files: ['pnpm-lock.yaml'], subject: 'chore: update dependency' }),
+        fauxToolCall('commit', {
+          groups: [{ files: ['pnpm-lock.yaml'], subject: 'chore: update dependency' }],
+        }),
       ]),
       (context) => {
         const user = context.messages[0];
@@ -265,7 +269,9 @@ describe('commit flow', () => {
       await writeFile(join(repoDir, 'retry.ts'), 'export const retries = 0;\n');
       faux.setResponses([
         fauxAssistantMessage([
-          fauxToolCall('commit', { files: ['retry.ts'], subject: 'feat: add retry policy' }),
+          fauxToolCall('commit', {
+            groups: [{ files: ['retry.ts'], subject: 'feat: add retry policy' }],
+          }),
         ]),
         fauxAssistantMessage(
           JSON.stringify({
@@ -292,7 +298,7 @@ describe('commit flow', () => {
     await writeFile(join(repoDir, 'retry.ts'), 'export const retries = 0;\n');
     faux.setResponses([
       fauxAssistantMessage([
-        fauxToolCall('commit', { files: ['retry.ts'], subject: 'feat: add retries' }),
+        fauxToolCall('commit', { groups: [{ files: ['retry.ts'], subject: 'feat: add retries' }] }),
       ]),
       fauxAssistantMessage(
         '{"findings":[{"path":"AGENTS.md","line":1,"kind":"policy","message":"Invalid target"}]}',
@@ -309,7 +315,7 @@ describe('commit flow', () => {
     await writeFile(join(repoDir, 'asset.bin'), Buffer.alloc(300_000));
     faux.setResponses([
       fauxAssistantMessage([
-        fauxToolCall('commit', { files: ['asset.bin'], subject: 'feat: add asset' }),
+        fauxToolCall('commit', { groups: [{ files: ['asset.bin'], subject: 'feat: add asset' }] }),
       ]),
       (context) => {
         const user = context.messages[0];
@@ -333,7 +339,7 @@ describe('commit flow', () => {
       join(repoDir, 'retry.ts'),
       '// Disabled during migration\nexport const retries = 0;\n',
     );
-    const args = { files: ['retry.ts'], subject: 'feat: add retry policy' };
+    const args = { groups: [{ files: ['retry.ts'], subject: 'feat: add retry policy' }] };
     faux.setResponses([
       fauxAssistantMessage([fauxToolCall('commit', args)]),
       fauxAssistantMessage(
@@ -345,8 +351,12 @@ describe('commit flow', () => {
       ),
       fauxAssistantMessage([
         fauxToolCall('commit', {
-          ...args,
-          commentDispute: 'The note explains the temporary migration constraint.',
+          groups: [
+            {
+              ...args.groups[0],
+              commentDispute: 'The note explains the temporary migration constraint.',
+            },
+          ],
         }),
       ]),
       (context) => {
@@ -381,7 +391,9 @@ describe('commit flow', () => {
     await writeFile(join(repoDir, 'retry.ts'), after);
     faux.setResponses([
       fauxAssistantMessage([
-        fauxToolCall('commit', { files: ['retry.ts'], subject: 'fix: disable retries' }),
+        fauxToolCall('commit', {
+          groups: [{ files: ['retry.ts'], subject: 'fix: disable retries' }],
+        }),
       ]),
       (context) => {
         const user = context.messages[0];
@@ -425,7 +437,9 @@ describe('commit flow', () => {
     await writeFile(join(repoDir, 'retry.ts'), 'export const retries = 0;\n');
     faux.setResponses([
       fauxAssistantMessage([
-        fauxToolCall('commit', { files: ['retry.ts'], subject: 'feat: add retry policy' }),
+        fauxToolCall('commit', {
+          groups: [{ files: ['retry.ts'], subject: 'feat: add retry policy' }],
+        }),
       ]),
       fauxAssistantMessage('I could not complete the review.'),
       fauxAssistantMessage('Still invalid.'),
@@ -450,7 +464,9 @@ describe('commit flow', () => {
     );
     const request = () =>
       fauxAssistantMessage([
-        fauxToolCall('commit', { files: ['retry.ts'], subject: 'feat: add retry policy' }),
+        fauxToolCall('commit', {
+          groups: [{ files: ['retry.ts'], subject: 'feat: add retry policy' }],
+        }),
       ]);
     faux.setResponses([
       request(),
@@ -497,7 +513,9 @@ describe('commit flow', () => {
     );
     faux.setResponses([
       fauxAssistantMessage([
-        fauxToolCall('commit', { files: ['retry.ts'], subject: 'feat: add retry policy' }),
+        fauxToolCall('commit', {
+          groups: [{ files: ['retry.ts'], subject: 'feat: add retry policy' }],
+        }),
       ]),
       fauxAssistantMessage(
         JSON.stringify({
@@ -537,9 +555,13 @@ describe('commit flow', () => {
     faux.setResponses([
       fauxAssistantMessage([
         fauxToolCall('commit', {
-          files: ['feature.txt'],
-          subject: 'feat: add feature file',
-          body: 'Prove the commit tool runs end to end.',
+          groups: [
+            {
+              files: ['feature.txt'],
+              subject: 'feat: add feature file',
+              body: 'Prove the commit tool runs end to end.',
+            },
+          ],
         }),
       ]),
       fauxAssistantMessage('```json\n{"findings":[]}\n```'),
@@ -567,7 +589,9 @@ describe('commit flow', () => {
     await writeFile(join(repoDir, 'feature.txt'), 'hello\n', 'utf8');
     faux.setResponses([
       fauxAssistantMessage([
-        fauxToolCall('commit', { files: ['feature.txt'], subject: 'feat: add feature file' }),
+        fauxToolCall('commit', {
+          groups: [{ files: ['feature.txt'], subject: 'feat: add feature file' }],
+        }),
       ]),
       fauxAssistantMessage('{"findings":[]}'),
       fauxAssistantMessage('Declined.'),
@@ -592,7 +616,9 @@ describe('commit flow', () => {
     await writeFile(join(repoDir, 'feature.txt'), 'hello\n', 'utf8');
     faux.setResponses([
       fauxAssistantMessage([
-        fauxToolCall('commit', { files: ['feature.txt'], subject: 'feat: add feature file' }),
+        fauxToolCall('commit', {
+          groups: [{ files: ['feature.txt'], subject: 'feat: add feature file' }],
+        }),
       ]),
       fauxAssistantMessage('Cannot commit.'),
     ]);

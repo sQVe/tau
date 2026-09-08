@@ -366,7 +366,7 @@ it('allows commit and its pre-commit formatter writes outside the file-tool guar
   // The commit tool reviews comments through the model before asking for approval, and undoes a
   // commit whose hook rewrote the reviewed content; the formatter's write itself is never gated.
   const commit = () =>
-    call('commit', { files: ['src/value.ts'], subject: 'feat: format fixture' }, [
+    call('commit', { groups: [{ files: ['src/value.ts'], subject: 'feat: format fixture' }] }, [
       fauxAssistantMessage('{"findings":[]}'),
     ]);
   const rewritten = await commit();
@@ -866,7 +866,7 @@ it('switches the gate off and on through the /tdd command in a real pi session',
   expect(notifications.join('\n')).toMatch(/TDD gate off since \d{4}-/);
   const committed = await call(
     'commit',
-    { files: ['src/value.ts'], subject: 'feat: gated value' },
+    { groups: [{ files: ['src/value.ts'], subject: 'feat: gated value' }] },
     [fauxAssistantMessage('{"findings":[]}')],
   );
   expect(committed.isError).toBe(false);
