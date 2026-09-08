@@ -55,7 +55,7 @@ const pathNextStep = (
     return 'List literal worktree paths with ls {"path":"."}';
   if (path === '.tau' || path.startsWith('.tau/') || protectedPaths.includes(path))
     return 'Choose an unprotected test file with ls {"path":"."}';
-  // The gate only opens for production edits: protected paths and escapes stay blocked.
+  // Turning the gate off permits production edits; protected paths above stay blocked.
   if (gateOff) return undefined;
   // A file outside the worktree is never its production code, and classifyPath says so.
   if (classifyPath(path) !== 'production' || implementationAllowed) return undefined;
