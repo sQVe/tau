@@ -268,7 +268,7 @@ describe('validatePaths', () => {
 });
 
 describe('commitTool.execute', () => {
-  it('requires an explicit waiver when a later review blocks under approve-all', async () => {
+  it('returns findings for corrections before requiring a waiver under approve-all', async () => {
     const repoDir = await createTempRepo();
     const groups = ['one', 'two', 'three'].map((name) => ({
       files: [`${name}.txt`],
@@ -285,13 +285,25 @@ describe('commitTool.execute', () => {
       { exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir) },
       review,
     );
-    const { ctx, custom } = fakeCommit(['approveAll']);
+    const { ctx, custom } = fakeCommit(['approveAll', 'approveAll']);
     ctx.cwd = repoDir;
     await expect(
       tool.execute('batch', { groups }, undefined, undefined, ctx as never),
-    ).rejects.toThrow('Comment review requires an explicit user waiver');
+    ).rejects.toThrow(
+      /Comment review needs corrections \(1\/2 automatic returns\):\n.*Remove stale note\./s,
+    );
     expect(custom).toHaveBeenCalledTimes(1);
     expect(review).toHaveBeenCalledTimes(2);
+    const retry = () =>
+      tool.execute('retry', { groups: groups.slice(1) }, undefined, undefined, ctx as never);
+    await expect(retry()).rejects.toThrow(
+      /Comment review needs corrections \(2\/2 automatic returns\):\n.*Remove stale note\./s,
+    );
+    expect(custom).toHaveBeenCalledTimes(1);
+    await expect(retry()).rejects.toThrow(
+      /Comment review requires an explicit user waiver\.\n.*Remove stale note\./s,
+    );
+    expect(custom).toHaveBeenCalledTimes(2);
     expect((await git(repoDir, ['log', '--format=%s'])).trim()).toBe(groups[0]!.subject);
     expect(await git(repoDir, ['diff', '--cached', '--name-only'])).toBe('');
   });
@@ -429,9 +441,20 @@ describe('commitTool.execute', () => {
       );
       expect((await git(repoDir, ['rev-list', '--all', '--count'])).trim()).toBe('2');
       expect(reviews).toBe(3);
-      expect(await git(repoDir, ['diff', '--cached', '--name-only'])).toBe(
-        failure === 'hook' ? 'three.txt\n' : '',
+      expect(await git(repoDir, ['diff', '--cached', '--name-only'])).toBe('');
+      if (failure === 'hook') await rm(join(repoDir, '.git/hooks/pre-commit'));
+      const result = await tool.execute(
+        'retry',
+        { groups: groups.slice(3) },
+        undefined,
+        undefined,
+        confirmedContext(repoDir),
       );
+      expect(result.details.groups[0]!.sha).not.toBe('');
+      expect((await git(repoDir, ['show', '--name-only', '--format=', 'HEAD'])).trim()).toBe(
+        'four.txt',
+      );
+      expect(await git(repoDir, ['status', '--short'])).toBe('?? three.txt\n');
     },
   );
 

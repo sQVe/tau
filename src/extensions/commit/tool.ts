@@ -331,9 +331,6 @@ const executeGroup = async (
     if (signal?.aborted) return cancelled();
     const reviewBlocked =
       !commentReview || commentReview.findings.some((finding) => finding.kind !== 'missing');
-    if (approval.all && reviewBlocked) {
-      throw new Error('Comment review requires an explicit user waiver.');
-    }
     if (commentReview && reviewBlocked && state.attempts <= 2) {
       returningForCorrections = true;
       throw new Error(
@@ -366,7 +363,7 @@ const executeGroup = async (
         return cancelled();
       }
       if ((choice === 'approve' || choice === 'approveAll') && reviewBlocked) {
-        throw new Error('Comment review requires an explicit user waiver.');
+        throw new Error(`Comment review requires an explicit user waiver.\n${reviewReport}`);
       }
       if (choice === 'approve' || choice === 'approveAll' || choice === 'waive') {
         const currentTree = (await reviewGit(pi, ctx.cwd, ['write-tree'], signal)).trim();
@@ -423,6 +420,7 @@ const executeGroup = async (
     },
   );
   if (commitResult.code !== 0) {
+    await unstageFiles(pi, ctx.cwd, params.files);
     throw commitFailedError(commitResult.stdout, commitResult.stderr);
   }
 
