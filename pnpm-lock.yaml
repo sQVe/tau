@@ -115,6 +115,9 @@ importers:
       '@earendil-works/pi-tui':
         specifier: 0.85.1
         version: 0.85.1
+      '@juicesharp/rpiv-ask-user-question':
+        specifier: 2.9.0
+        version: 2.9.0(@earendil-works/pi-coding-agent@0.85.1(ws@8.21.3))(@earendil-works/pi-tui@0.85.1)
       typebox:
         specifier: 1.3.28
         version: 1.3.28
@@ -537,6 +540,19 @@ packages:
 
   '@jridgewell/sourcemap-codec@1.6.0':
     resolution: {integrity: sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==}
+
+  '@juicesharp/rpiv-ask-user-question@2.9.0':
+    resolution: {integrity: sha512-/sqY7ysOgJ8snWyXLOS2zH+djfVuwFce6hU88BDP6tpoFPYq5gT+TaZpSIt9lYnJUVkgzTABIAtCNSUc/rovrA==}
+    peerDependencies:
+      '@earendil-works/pi-coding-agent': '*'
+      '@earendil-works/pi-tui': '*'
+      '@juicesharp/rpiv-i18n': '*'
+    peerDependenciesMeta:
+      '@juicesharp/rpiv-i18n':
+        optional: true
+
+  '@juicesharp/rpiv-config@2.9.0':
+    resolution: {integrity: sha512-/7iFmG40bTsQaOwK5z44ZTAc0V0RI/X+Lr5N3f1rWjkdx1ZsiHBAzMcWO+5kMgjUuQAcyVbDkt19pmriIG2E7A==}
 
   '@manypkg/find-root@3.1.0':
     resolution: {integrity: sha512-BcSqCyKhBVZ5YkSzOiheMCV41kqAFptW6xGqYSTjkVTl9XQpr+pqHhwgGCOHQtjDCv7Is6EFyA14Sm5GVbVABA==}
@@ -2569,6 +2585,17 @@ snapshots:
       - utf-8-validate
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
+
+  '@juicesharp/rpiv-ask-user-question@2.9.0(@earendil-works/pi-coding-agent@0.85.1(ws@8.21.3))(@earendil-works/pi-tui@0.85.1)':
+    dependencies:
+      '@earendil-works/pi-coding-agent': 0.85.1(ws@8.21.3)
+      '@earendil-works/pi-tui': 0.85.1
+      '@juicesharp/rpiv-config': 2.9.0
+      typebox: 1.3.28
+
+  '@juicesharp/rpiv-config@2.9.0':
+    dependencies:
+      typebox: 1.3.28
 
   '@manypkg/find-root@3.1.0':
     dependencies:

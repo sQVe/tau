@@ -18,7 +18,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
-it('loads Tau through Pi with commit features and writing rules on each run', async ({
+it('loads Tau through Pi with commit features, the bundled question tool, and writing rules on each run', async ({
   onTestFinished,
 }) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-package-'));
@@ -41,10 +41,11 @@ it('loads Tau through Pi with commit features and writing rules on each run', as
 
     const { extensions, errors } = loader.getExtensions();
     expect(errors).toEqual([]);
-    expect(extensions).toHaveLength(1);
-    expect(extensions[0]?.tools.has('commit')).toBe(true);
-    expect(extensions[0]?.commands.has('commit')).toBe(true);
-    expect(extensions[0]?.handlers.get('tool_call')).toHaveLength(2);
+    expect(extensions).toHaveLength(2);
+    const tauExtension = extensions.find((extension) => extension.tools.has('commit'));
+    expect(tauExtension?.commands.has('commit')).toBe(true);
+    expect(tauExtension?.handlers.get('tool_call')).toHaveLength(2);
+    expect(extensions.some((extension) => extension.tools.has('ask_user_question'))).toBe(true);
     expect(
       loader
         .getSkills()
@@ -93,10 +94,64 @@ it('loads Tau through Pi with commit features and writing rules on each run', as
       'utf8',
     );
     expect(instructions).toContain('Write for readers who use English as a second language.');
-    expect(prompts[0]?.split(instructions)).toHaveLength(2);
     expect(prompts[0]?.startsWith(basePrompt)).toBe(true);
-    expect(prompts[1]).toBe(prompts[0]);
+    for (const prompt of prompts) {
+      expect(prompt.split(instructions)).toHaveLength(2);
+    }
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
+});
+
+it('reports an extension error when the bundled question package is not loaded', async ({
+  onTestFinished,
+}) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-package-missing-'));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const agentDir = join(cwd, 'agent');
+  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
+  const loader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager,
+    additionalExtensionPaths: [fileURLToPath(new URL('../src/extensions', import.meta.url))],
+    noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+  });
+  await loader.reload();
+
+  const faux = fauxProvider({ provider: 'tau-package-missing' });
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsStore: new InMemoryModelsStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(faux.provider);
+  const { session } = await createAgentSession({
+    cwd,
+    agentDir,
+    modelRuntime,
+    model: faux.getModel(),
+    resourceLoader: loader,
+    sessionManager: SessionManager.inMemory(cwd),
+    settingsManager,
+    tools: [],
+  });
+  onTestFinished(() => {
+    session.dispose();
+  });
+
+  const errors: string[] = [];
+  await session.bindExtensions({
+    onError: (error) => {
+      errors.push(error.error);
+    },
+  });
+
+  expect(errors).toHaveLength(1);
+  expect(errors[0]).toContain('ask_user_question');
+  expect(errors[0]).toContain('@juicesharp/rpiv-ask-user-question');
 });

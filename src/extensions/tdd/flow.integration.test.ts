@@ -67,7 +67,13 @@ const createHarness = async (
     cwd,
     agentDir,
     settingsManager,
-    additionalExtensionPaths: [resolve(import.meta.dirname, '..')],
+    additionalExtensionPaths: [
+      resolve(import.meta.dirname, '..'),
+      resolve(
+        import.meta.dirname,
+        '../../../node_modules/@juicesharp/rpiv-ask-user-question/index.ts',
+      ),
+    ],
     extensionFactories,
     noExtensions: true,
     noSkills: true,
