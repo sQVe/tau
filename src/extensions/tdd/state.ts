@@ -118,8 +118,8 @@ const failedIn = (cwd: string, { behavior, record }: EvidenceState['reds'][numbe
 
 const runnerChecks = new Map<string, { packageHash: string | null; available: boolean }>();
 
-// Nothing can be proven without a runner, and package.json is protected, so the gate has to open
-// wide enough for the agent to install one.
+// Nothing can be proven without a runner, so production edits stop being gated until the agent
+// installs one through the exempt bash tool.
 const runnerNotice = (cwd: string, hashes: InputHashes) => {
   const key = resolve(cwd);
   const packageHash = hashes[resolve(cwd, 'package.json')] ?? null;

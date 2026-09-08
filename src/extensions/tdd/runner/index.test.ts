@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { runTests } from './index.js';
 import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js';
-import { MAX_ASSERTION_BYTES, MAX_FAILURES, MAX_STDOUT_BYTES, MAX_TOTAL_BYTES } from './types.js';
+import { MAX_FAILURES, MAX_MESSAGE_CHARS, MAX_STDOUT_BYTES, MAX_TOTAL_BYTES } from './types.js';
 import { defaultDeps, defaultSpawn, extractBinPath, runnerAvailable } from './vitest.js';
 
 const outputFileFrom = (args: string[]) => {
@@ -488,7 +488,7 @@ describe('runTests', () => {
             {
               fullName: 'case',
               status: 'failed',
-              failureMessages: [`a${'é'.repeat(MAX_ASSERTION_BYTES)}`],
+              failureMessages: [`a${'é'.repeat(MAX_MESSAGE_CHARS)}`],
             },
           ],
         },
@@ -546,8 +546,8 @@ describe('runTests', () => {
     expect(captured).not.toContain('-a.test.ts');
   });
 
-  it('caps failures to 10 entries and truncates each assertion message to 2KB', async () => {
-    const longMessage = 'x'.repeat(MAX_ASSERTION_BYTES * 2);
+  it('caps failures to 10 entries and truncates each assertion message to 300 characters', async () => {
+    const longMessage = 'x'.repeat(MAX_MESSAGE_CHARS * 2);
     const assertionResults = Array.from({ length: 15 }, (_, i) => ({
       fullName: `case ${i}`,
       status: 'failed',
@@ -575,9 +575,7 @@ describe('runTests', () => {
     expect(result.failures).toHaveLength(MAX_FAILURES);
     expect(result.truncated).toBe(true);
     for (const failure of result.failures) {
-      expect(Buffer.byteLength(failure.message, 'utf8')).toBeLessThanOrEqual(
-        MAX_ASSERTION_BYTES + 4,
-      );
+      expect(failure.message.length).toBeLessThanOrEqual(MAX_MESSAGE_CHARS + 1);
     }
   });
 
