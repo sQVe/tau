@@ -8,7 +8,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { commentPolicyHash, reviewGit } from './commentReview.js';
-import type { CommentReview } from './commentReview.js';
+import type { CommentReview, reviewComments } from './commentReview.js';
 import type { CommitInput } from './tool.js';
 import {
   commitFailedError,
@@ -268,6 +268,337 @@ describe('validatePaths', () => {
 });
 
 describe('commitTool.execute', () => {
+  it('returns findings for corrections before requiring a waiver under approve-all', async () => {
+    const repoDir = await createTempRepo();
+    const groups = ['one', 'two', 'three'].map((name) => ({
+      files: [`${name}.txt`],
+      subject: `feat: add ${name}`,
+    }));
+    for (const group of groups) await writeRepoFile(repoDir, group.files[0]!, group.subject);
+    const review = vi
+      .fn<typeof reviewComments>()
+      .mockResolvedValueOnce({ findings: [] })
+      .mockResolvedValue({
+        findings: [{ path: 'two.txt', line: 1, kind: 'policy', message: 'Remove stale note.' }],
+      });
+    const tool = createReviewedCommitTool(
+      { exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir) },
+      review,
+    );
+    const { ctx, custom } = fakeCommit(['approveAll', 'approveAll']);
+    ctx.cwd = repoDir;
+    await expect(
+      tool.execute('batch', { groups }, undefined, undefined, ctx as never),
+    ).rejects.toThrow(
+      /Comment review needs corrections \(1\/2 automatic returns\):\n.*Remove stale note\./s,
+    );
+    expect(custom).toHaveBeenCalledTimes(1);
+    expect(review).toHaveBeenCalledTimes(2);
+    const retry = () =>
+      tool.execute('retry', { groups: groups.slice(1) }, undefined, undefined, ctx as never);
+    await expect(retry()).rejects.toThrow(
+      /Comment review needs corrections \(2\/2 automatic returns\):\n.*Remove stale note\./s,
+    );
+    expect(custom).toHaveBeenCalledTimes(1);
+    await expect(retry()).rejects.toThrow(
+      /Comment review requires an explicit user waiver\.\n.*Remove stale note\./s,
+    );
+    expect(custom).toHaveBeenCalledTimes(2);
+    expect((await git(repoDir, ['log', '--format=%s'])).trim()).toBe(groups[0]!.subject);
+    expect(await git(repoDir, ['diff', '--cached', '--name-only'])).toBe('');
+  });
+
+  const prefetchRepo = async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'base.txt', 'base\n');
+    await git(repoDir, ['add', 'base.txt']);
+    await git(repoDir, ['commit', '-m', 'chore: base']);
+    const groups = ['one', 'two', 'three'].map((name) => ({
+      files: [`${name}.txt`],
+      subject: `feat: add ${name}`,
+    }));
+    for (const group of groups) await writeRepoFile(repoDir, group.files[0]!, group.subject);
+    return { repoDir, groups };
+  };
+
+  it('reviews the next group while the current overlay is open', async () => {
+    const { repoDir, groups } = await prefetchRepo();
+    const review = vi.fn<typeof reviewComments>().mockResolvedValue({ findings: [] });
+    const reviewsWhenOverlayOpened: number[] = [];
+    const ctx = {
+      cwd: repoDir,
+      hasUI: true,
+      ui: {
+        custom: () => {
+          reviewsWhenOverlayOpened.push(review.mock.calls.length);
+          return Promise.resolve('approve');
+        },
+      },
+    };
+    const tool = createReviewedCommitTool(
+      { exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir) },
+      review,
+    );
+
+    await tool.execute('batch', { groups }, undefined, undefined, ctx as never);
+
+    // Group N+1 is already under review while the user decides on group N.
+    expect(reviewsWhenOverlayOpened).toEqual([2, 3, 3]);
+    // One review per group: every prefetch was reused, none recomputed.
+    expect(review).toHaveBeenCalledTimes(3);
+    expect((await git(repoDir, ['log', '--format=%s', '-3'])).trim().split('\n')).toEqual([
+      'feat: add three',
+      'feat: add two',
+      'feat: add one',
+    ]);
+  });
+
+  it('re-reviews a group whose prefetch assumed an earlier group would commit', async () => {
+    const { repoDir, groups } = await prefetchRepo();
+    const reviewed: string[][] = [];
+    const review = vi.fn<typeof reviewComments>(async (_pi, _ctx, _signal, snapshot) => {
+      reviewed.push(
+        (await git(repoDir, ['ls-tree', '--name-only', snapshot.tree])).trim().split('\n'),
+      );
+      return { findings: [] };
+    });
+    const choices = ['approve', 'skip', 'approve'];
+    const tool = createReviewedCommitTool(
+      { exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir) },
+      review,
+    );
+
+    await tool.execute('batch', { groups }, undefined, undefined, {
+      cwd: repoDir,
+      hasUI: true,
+      ui: { custom: () => Promise.resolve(choices.shift()) },
+    } as never);
+
+    // The third prefetch assumed two.txt would land; skipping it invalidates that tree, so the
+    // group is reviewed again against what is really staged.
+    expect(reviewed).toEqual([
+      ['base.txt', 'one.txt'],
+      ['base.txt', 'one.txt', 'two.txt'],
+      ['base.txt', 'one.txt', 'three.txt', 'two.txt'],
+      ['base.txt', 'one.txt', 'three.txt'],
+    ]);
+    expect((await git(repoDir, ['log', '--format=%s', '-2'])).trim().split('\n')).toEqual([
+      'feat: add three',
+      'feat: add one',
+    ]);
+  });
+
+  it('reopens the overlay for a group whose files changed after approve all', async () => {
+    const { repoDir, groups } = await prefetchRepo();
+    const choices = ['approveAll'];
+    const custom = vi.fn<() => Promise<string | undefined>>(() =>
+      Promise.resolve(choices.shift() ?? 'approve'),
+    );
+    const tool = createReviewedCommitTool(
+      {
+        exec: async (command, args, options) => {
+          const result = await runCommand(command, args, options?.cwd ?? repoDir);
+          // Stand in for a group-1 hook that edits a later group's file without staging it.
+          if (args[0] === 'commit')
+            await writeRepoFile(repoDir, 'three.txt', 'rewritten by a hook');
+          return result;
+        },
+      },
+      async () => ({ findings: [] }),
+    );
+
+    await tool.execute('batch', { groups }, undefined, undefined, {
+      cwd: repoDir,
+      hasUI: true,
+      ui: { custom },
+    } as never);
+
+    // Groups 1 and 2 ride on approve-all; group 3 changed after it, so it is shown again.
+    expect(custom).toHaveBeenCalledTimes(2);
+    expect(await git(repoDir, ['show', 'HEAD:three.txt'])).toBe('rewritten by a hook');
+    expect((await git(repoDir, ['rev-list', '--count', 'HEAD'])).trim()).toBe('4');
+  });
+
+  it('reviews every remaining group as soon as approve all is chosen', async () => {
+    const { repoDir, groups } = await prefetchRepo();
+    const events: string[] = [];
+    const review = vi.fn<typeof reviewComments>(() => {
+      events.push('review');
+      return Promise.resolve({ findings: [] });
+    });
+    const custom = vi.fn<() => Promise<string>>(() => Promise.resolve('approveAll'));
+    const tool = createReviewedCommitTool(
+      {
+        exec: (command, args, options) => {
+          if (args[0] === 'commit') events.push('commit');
+          return runCommand(command, args, options?.cwd ?? repoDir);
+        },
+      },
+      review,
+    );
+
+    await tool.execute('batch', { groups }, undefined, undefined, {
+      cwd: repoDir,
+      hasUI: true,
+      ui: { custom },
+    } as never);
+
+    expect(custom).toHaveBeenCalledTimes(1);
+    // Every review starts before the first commit, so no group waits on a round-trip of its own.
+    expect(events).toEqual(['review', 'review', 'review', 'commit', 'commit', 'commit']);
+    expect((await git(repoDir, ['rev-list', '--count', 'HEAD'])).trim()).toBe('4');
+  });
+
+  it.each(['approve', 'skip', 'approveAll'])(
+    'processes three groups sequentially using %s',
+    async (middle) => {
+      const repoDir = await createTempRepo();
+      const groups = ['one', 'two', 'three'].map((name) => ({
+        files: [`${name}.txt`],
+        subject: `feat: add ${name}`,
+      }));
+      for (const group of groups) await writeRepoFile(repoDir, group.files[0]!, group.subject);
+      const heads: (string | null)[] = [];
+      const trees: string[][] = [];
+      const review: typeof reviewComments = async (_pi, _ctx, _signal, snapshot) => {
+        heads.push(snapshot.head);
+        trees.push(
+          (await git(repoDir, ['ls-tree', '--name-only', snapshot.tree])).trim().split('\n'),
+        );
+        return { findings: [] };
+      };
+      const tool = createReviewedCommitTool(
+        { exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir) },
+        review,
+      );
+      const { ctx, custom, previews } = fakeCommit(
+        middle === 'approveAll' ? ['approveAll'] : ['approve', middle, 'approve'],
+      );
+      ctx.cwd = repoDir;
+      const result = await tool.execute('batch', { groups }, undefined, undefined, ctx as never);
+      const shas = (await git(repoDir, ['log', '--reverse', '--format=%H'])).trim().split('\n');
+      expect(shas).toHaveLength(middle === 'skip' ? 2 : 3);
+      expect((await git(repoDir, ['log', '--reverse', '--format=%s'])).trim().split('\n')).toEqual(
+        groups.filter((_, index) => middle !== 'skip' || index !== 1).map((group) => group.subject),
+      );
+      expect(result.details.groups.map((group) => group.sha).filter(Boolean)).toEqual(shas);
+      for (const sha of shas) expect(JSON.stringify(result.content)).toContain(sha);
+      expect(result.details.groups[1]?.skipped).toBe(middle === 'skip' ? true : undefined);
+      expect(JSON.stringify(result.content).includes('Group 2/3: Commit skipped')).toBe(
+        middle === 'skip',
+      );
+      expect(heads).toEqual([null, shas[0], middle === 'skip' ? shas[0] : shas[1]]);
+      expect(trees).toEqual([
+        ['one.txt'],
+        ['one.txt', 'two.txt'],
+        middle === 'skip' ? ['one.txt', 'three.txt'] : ['one.txt', 'three.txt', 'two.txt'],
+      ]);
+      expect(custom).toHaveBeenCalledTimes(middle === 'approveAll' ? 1 : 3);
+      expect(previews.map((preview, index) => preview.includes(`commit ${index + 1}/3`))).toEqual(
+        middle === 'approveAll' ? [true] : [true, true, true],
+      );
+      expect(await git(repoDir, ['diff', '--cached', '--name-only'])).toBe('');
+    },
+  );
+
+  it.each([
+    { files: ['two.txt'], subject: 'invalid' },
+    { files: ['.env'], subject: 'feat: add two' },
+  ])('validates all groups before staging: %j', async (invalid) => {
+    const { input, execute, exec } = fakeCommit(['approve', 'approve']);
+    input.groups.push({ ...invalid, body: '' });
+    await expect(execute()).rejects.toThrow(/Invalid/);
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it.each(['abort', 'cancel', 'corrections', 'retry', 'hook'])(
+    'stops on %s and names earlier commits',
+    async (failure) => {
+      const repoDir = await createTempRepo();
+      const groups = ['one', 'two', 'three', 'four'].map((name) => ({
+        files: [`${name}.txt`],
+        subject: `feat: add ${name}`,
+      }));
+      for (const group of groups) await writeRepoFile(repoDir, group.files[0]!, group.subject);
+      const controller = new AbortController();
+      let reviews = 0;
+      const review = async () => {
+        reviews += 1;
+        if (reviews === 3 && failure === 'corrections')
+          return {
+            findings: [
+              { path: 'three.txt', line: 1, kind: 'policy' as const, message: 'Fix comment.' },
+            ],
+          };
+        if (reviews === 3 && failure === 'retry') throw new Error('Reviewer unavailable');
+        return { findings: [] };
+      };
+      let overlays = 0;
+      const ctx = {
+        cwd: repoDir,
+        hasUI: true,
+        ui: {
+          custom: async () => {
+            overlays += 1;
+            if (overlays <= 2) return 'approve';
+            if (failure === 'cancel') controller.abort();
+            if (failure === 'hook') {
+              await writeRepoFile(
+                repoDir,
+                '.git/hooks/pre-commit',
+                '#!/bin/sh\necho hook said no >&2\nexit 1\n',
+              );
+              await chmod(join(repoDir, '.git/hooks/pre-commit'), 0o755);
+              return 'approve';
+            }
+            return failure === 'retry' ? 'retry' : 'abort';
+          },
+        },
+      };
+      const tool = createReviewedCommitTool(
+        { exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir) },
+        review,
+      );
+      const failureError = await tool
+        .execute('batch', { groups }, controller.signal, undefined, ctx as never)
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+      const shas = (await git(repoDir, ['log', '--reverse', '--format=%H'])).trim().split('\n');
+      expect(failureError).toBeInstanceOf(Error);
+      expect(shas).toHaveLength(2);
+      for (const [index, sha] of shas.entries())
+        expect((failureError as Error).message).toContain(`Group ${index + 1}/4: ${sha}`);
+      expect((failureError as Error).message).toContain('Group 3/4');
+      expect((failureError as Error).message).toContain(
+        {
+          abort: 'declined',
+          cancel: 'cancelled',
+          corrections: '1/2 automatic returns',
+          retry: 'User requested fixes',
+          hook: 'hook said no',
+        }[failure]!,
+      );
+      expect((await git(repoDir, ['rev-list', '--all', '--count'])).trim()).toBe('2');
+      expect(reviews).toBe(3);
+      expect(await git(repoDir, ['diff', '--cached', '--name-only'])).toBe('');
+      if (failure === 'hook') await rm(join(repoDir, '.git/hooks/pre-commit'));
+      const result = await tool.execute(
+        'retry',
+        { groups: groups.slice(3) },
+        undefined,
+        undefined,
+        confirmedContext(repoDir),
+      );
+      expect(result.details.groups[0]!.sha).not.toBe('');
+      expect((await git(repoDir, ['show', '--name-only', '--format=', 'HEAD'])).trim()).toBe(
+        'four.txt',
+      );
+      expect(await git(repoDir, ['status', '--short'])).toBe('?? three.txt\n');
+    },
+  );
+
   it('undoes a commit when a hook changes reviewed content in an approved file', async () => {
     const repoDir = await createTempRepo();
     await writeRepoFile(repoDir, 'retry.ts', 'export const retries = 0;\n');
@@ -278,7 +609,7 @@ describe('commitTool.execute', () => {
     );
     await chmod(hookPath, 0o755);
     await expect(
-      executeCommit(repoDir, { files: ['retry.ts'], subject: 'feat: add retry' }),
+      executeCommit(repoDir, { groups: [{ files: ['retry.ts'], subject: 'feat: add retry' }] }),
     ).rejects.toThrow(/changed reviewed content/);
     expect((await git(repoDir, ['rev-list', '--all', '--count'])).trim()).toBe('0');
   });
@@ -306,7 +637,7 @@ describe('commitTool.execute', () => {
     await expect(
       tool.execute(
         'changed',
-        { files: ['retry.ts'], subject: 'feat: add retry' },
+        { groups: [{ files: ['retry.ts'], subject: 'feat: add retry' }] },
         undefined,
         undefined,
         ctx,
@@ -327,7 +658,7 @@ describe('commitTool.execute', () => {
     const call = (path: string) =>
       tool.execute(
         'test',
-        { files: [path], subject: 'feat: add retry' },
+        { groups: [{ files: [path], subject: 'feat: add retry' }] },
         undefined,
         undefined,
         confirmedContext(repoDir),
@@ -366,7 +697,7 @@ describe('commitTool.execute', () => {
     const call = () =>
       tool.execute(
         'test',
-        { files: ['retry.ts'], subject: 'feat: add retry' },
+        { groups: [{ files: ['retry.ts'], subject: 'feat: add retry' }] },
         undefined,
         undefined,
         ctx,
@@ -375,7 +706,7 @@ describe('commitTool.execute', () => {
     await expect(call()).rejects.toThrow('2/2 automatic returns');
     const finish = tool.execute(
       'test',
-      { files: ['retry.ts'], subject: 'feat: add retry' },
+      { groups: [{ files: ['retry.ts'], subject: 'feat: add retry' }] },
       controller.signal,
       undefined,
       ctx,
@@ -401,7 +732,7 @@ describe('commitTool.execute', () => {
     await expect(
       commitTool.execute(
         'tool-call-1',
-        { files: ['README.md'], subject: 'feat: add thing' },
+        { groups: [{ files: ['README.md'], subject: 'feat: add thing' }] },
         undefined,
         undefined,
         declinedContext(repoDir),
@@ -427,7 +758,7 @@ describe('commitTool.execute', () => {
     await expect(
       commitTool.execute(
         'tool-call-1',
-        { files: ['README.md'], subject: 'feat: add thing' },
+        { groups: [{ files: ['README.md'], subject: 'feat: add thing' }] },
         undefined,
         undefined,
         noUiContext(repoDir),
@@ -443,9 +774,13 @@ describe('commitTool.execute', () => {
     await writeRepoFile(repoDir, 'README.md', 'hello\n');
 
     const result = await executeCommit(repoDir, {
-      files: ['README.md'],
-      subject: 'feat: add thing',
-      body: 'Initial project file.',
+      groups: [
+        {
+          files: ['README.md'],
+          subject: 'feat: add thing',
+          body: 'Initial project file.',
+        },
+      ],
     });
 
     const shaOutput = await git(repoDir, ['rev-parse', 'HEAD']);
@@ -458,7 +793,7 @@ describe('commitTool.execute', () => {
 
     expect(logLines).toHaveLength(1);
     expect(latestSubject).toBe('feat: add thing');
-    expect(result.details).toEqual({
+    expect(result.details.groups[0]).toEqual({
       sha,
       files: ['README.md'],
       subject: 'feat: add thing',
@@ -478,9 +813,13 @@ describe('commitTool.execute', () => {
     await writeRepoFile(repoDir, 'README.md', 'hello\n');
 
     await executeCommit(repoDir, {
-      files: ['README.md'],
-      subject: 'feat: add',
-      body: 'Longer explanation here.',
+      groups: [
+        {
+          files: ['README.md'],
+          subject: 'feat: add',
+          body: 'Longer explanation here.',
+        },
+      ],
     });
 
     const body = await getStoredCommitMessage(repoDir);
@@ -495,8 +834,12 @@ describe('commitTool.execute', () => {
 
     await expect(
       executeCommit(repoDir, {
-        files: ['README.md'],
-        subject: 'feat: add readme',
+        groups: [
+          {
+            files: ['README.md'],
+            subject: 'feat: add readme',
+          },
+        ],
       }),
     ).rejects.toThrow(/already staged: notes\.md/i);
 
@@ -510,8 +853,12 @@ describe('commitTool.execute', () => {
 
     await expect(
       executeCommit(repoDir, {
-        files: ['*'],
-        subject: 'feat: add everything',
+        groups: [
+          {
+            files: ['*'],
+            subject: 'feat: add everything',
+          },
+        ],
       }),
     ).rejects.toThrow(/git add failed/i);
 
@@ -531,7 +878,7 @@ describe('commitTool.execute', () => {
 
     await commitTool.execute(
       'tool-call-1',
-      { files: ['a.txt'], subject: 'feat: add a' },
+      { groups: [{ files: ['a.txt'], subject: 'feat: add a' }] },
       undefined,
       undefined,
       confirmedContext(join(repoDir, 'sub')),
@@ -550,8 +897,12 @@ describe('commitTool.execute', () => {
 
     await expect(
       executeCommit(repoDir, {
-        files: ['src/a.ts', 'src'],
-        subject: 'feat: add sources',
+        groups: [
+          {
+            files: ['src/a.ts', 'src'],
+            subject: 'feat: add sources',
+          },
+        ],
       }),
     ).rejects.toThrow(/staged paths that were not requested/i);
 
@@ -565,8 +916,12 @@ describe('commitTool.execute', () => {
 
     await expect(
       executeCommit(repoDir, {
-        files: ['src'],
-        subject: 'feat: add sources',
+        groups: [
+          {
+            files: ['src'],
+            subject: 'feat: add sources',
+          },
+        ],
       }),
     ).rejects.toThrow(/staged paths that were not requested/i);
 
@@ -591,8 +946,12 @@ describe('commitTool.execute', () => {
 
     await expect(
       executeCommit(repoDir, {
-        files: ['README.md'],
-        subject: 'feat: update readme',
+        groups: [
+          {
+            files: ['README.md'],
+            subject: 'feat: update readme',
+          },
+        ],
       }),
     ).rejects.toThrow(/already staged: link\.txt/i);
   });
@@ -609,8 +968,12 @@ describe('commitTool.execute', () => {
 
     await expect(
       executeCommit(repoDir, {
-        files: ['README.md'],
-        subject: 'feat: update readme',
+        groups: [
+          {
+            files: ['README.md'],
+            subject: 'feat: update readme',
+          },
+        ],
       }),
     ).rejects.toThrow(/already staged: old\.md/i);
   });
@@ -627,12 +990,18 @@ describe('commitTool.execute', () => {
 
     await expect(
       executeCommit(repoDir, {
-        files: ['README.md'],
-        subject: 'feat: add readme',
+        groups: [
+          {
+            files: ['README.md'],
+            subject: 'feat: add readme',
+          },
+        ],
       }),
     ).rejects.toThrow(/changed reviewed content/);
     expect(await git(repoDir, ['show', ':README.md'])).toBe('formatted\n');
-    await executeCommit(repoDir, { files: ['README.md'], subject: 'feat: add readme' });
+    await executeCommit(repoDir, {
+      groups: [{ files: ['README.md'], subject: 'feat: add readme' }],
+    });
 
     const statusOutput = await git(repoDir, ['status', '--short']);
     const committedContent = await git(repoDir, ['show', 'HEAD:README.md']);
@@ -650,8 +1019,12 @@ describe('commitTool.execute', () => {
 
     await expect(
       executeCommit(repoDir, {
-        files: ['README.md'],
-        subject: 'feat: add readme',
+        groups: [
+          {
+            files: ['README.md'],
+            subject: 'feat: add readme',
+          },
+        ],
       }),
     ).rejects.toThrow(/hook staged paths that were not requested: sneaky\.txt/i);
 
@@ -674,8 +1047,12 @@ describe('commitTool.execute', () => {
 
     await expect(
       executeCommit(repoDir, {
-        files: ['README.md'],
-        subject: 'feat: add readme',
+        groups: [
+          {
+            files: ['README.md'],
+            subject: 'feat: add readme',
+          },
+        ],
       }),
     ).rejects.toThrow(/hook staged paths that were not requested/i);
 
@@ -695,8 +1072,12 @@ describe('commitTool.execute', () => {
     let thrown: unknown;
     try {
       await executeCommit(repoDir, {
-        files: ['README.md'],
-        subject: 'feat: add',
+        groups: [
+          {
+            files: ['README.md'],
+            subject: 'feat: add',
+          },
+        ],
       });
     } catch (error) {
       thrown = error;
@@ -749,10 +1130,13 @@ const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)
   const tool = createCommitTool({ exec });
   const ctx = { cwd: '/repo', hasUI: true, ui: { custom, editor } };
   const input = {
-    files: ['README.md'],
-    subject: 'feat: add thing',
-    body: 'Original body',
-    group: '1/2',
+    groups: [
+      {
+        files: ['README.md'],
+        subject: 'feat: add thing',
+        body: 'Original body',
+      },
+    ],
   };
   const execute = (signal?: AbortSignal) =>
     tool.execute('call', input, signal, undefined, ctx as never);
@@ -760,10 +1144,33 @@ const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)
 };
 
 describe('commit overlay flow', () => {
+  it('applies a dispute only to the group carrying it', async () => {
+    const { exec, ctx } = fakeCommit(['approve', 'approve']);
+    const review = vi.fn<typeof reviewComments>().mockResolvedValue({ findings: [] });
+    const tool = createReviewedCommitTool({ exec }, review);
+    const groups = [
+      { files: ['one.txt'], subject: 'feat: add one', commentDispute: 'Explains a constraint.' },
+      { files: ['two.txt'], subject: 'feat: add two' },
+    ];
+    const result = await tool.execute('batch', { groups }, undefined, undefined, ctx as never);
+    expect(review.mock.calls.map((call) => call[3].dispute)).toEqual([
+      'Explains a constraint.',
+      undefined,
+    ]);
+    expect(result.details.groups[0]!.commentReview!.report).toContain('rechecked after dispute');
+    expect(result.details.groups[1]!.commentReview!.report).not.toContain(
+      'rechecked after dispute',
+    );
+    expect(result.details.groups[1]!.commentReview!.report).not.toContain(
+      'No prior findings available.',
+    );
+  });
+
   it('stages and reads numstat before showing the overlay', async () => {
     const { execute, exec, custom, previews } = fakeCommit(['approve']);
     await execute();
-    expect(previews[0]).toContain('commit 1/2');
+    expect(previews[0]).toMatch(/\n commit *\n/);
+    expect(previews[0]).not.toContain('1/1');
     expect(previews[0]).toContain('README.md +2 -1');
     expect(previews[0]).toContain('image.png binary');
     expect(exec.mock.calls.slice(0, 4).map((call) => call[1])).toEqual([
@@ -793,7 +1200,7 @@ describe('commit overlay flow', () => {
     expect(exec).toHaveBeenCalledWith('git', ['commit', '-m', 'fix: edited\n\nEdited body'], {
       cwd: '/repo',
     });
-    expect(result.details).toMatchObject({ subject: 'fix: edited', body: 'Edited body' });
+    expect(result.details.groups[0]).toMatchObject({ subject: 'fix: edited', body: 'Edited body' });
   });
 
   it('retains the subject when the edit is cancelled', async () => {
@@ -801,7 +1208,7 @@ describe('commit overlay flow', () => {
 
     const result = await execute();
 
-    expect(result.details.subject).toBe('feat: add thing');
+    expect(result.details.groups[0]!.subject).toBe('feat: add thing');
     expect(previews[1]).not.toContain('Invalid subject');
     expect(custom).toHaveBeenCalledTimes(2);
   });
@@ -811,7 +1218,7 @@ describe('commit overlay flow', () => {
 
     const result = await execute();
 
-    expect(result.details.subject).toBe('feat: add thing');
+    expect(result.details.groups[0]!.subject).toBe('feat: add thing');
     expect(previews[1]).toContain('Invalid subject: not conventional');
     expect(custom).toHaveBeenCalledTimes(2);
   });
@@ -819,22 +1226,22 @@ describe('commit overlay flow', () => {
   it.each([undefined, ''])('handles a cancelled or empty body edit: %s', async (edit) => {
     const { execute } = fakeCommit(['body', 'approve'], [edit]);
     const result = await execute();
-    expect(result.details.body).toBe(edit ?? 'Original body');
+    expect(result.details.groups[0]!.body).toBe(edit ?? 'Original body');
   });
 
   it('opens the body editor with an empty prefill when no body was supplied', async () => {
     const { execute, input, editor } = fakeCommit(['body', 'approve'], [undefined]);
-    Reflect.deleteProperty(input, 'body');
+    Reflect.deleteProperty(input.groups[0]!, 'body');
     const result = await execute();
     expect(editor).toHaveBeenCalledWith('Edit body', '');
-    expect(result.details.body).toBeNull();
+    expect(result.details.groups[0]!.body).toBeNull();
   });
 
   it('unstages skipped groups and returns without committing', async () => {
     const { execute, exec } = fakeCommit(['skip']);
     const result = await execute();
     expect(result.content).toEqual([{ type: 'text', text: 'Commit skipped by user' }]);
-    expect(result.details.skipped).toBe(true);
+    expect(result.details.groups[0]!.skipped).toBe(true);
     expect(exec).toHaveBeenLastCalledWith(
       'git',
       ['--literal-pathspecs', 'reset', '--', 'README.md'],

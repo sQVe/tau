@@ -64,8 +64,20 @@ describe('confirmCommitOverlay', () => {
     expect(render.mock.lastCall?.[0]).toContain('Waive comment review and commit');
     expect(render.mock.lastCall?.[0]).not.toContain('Approve and commit');
   });
+  it('hides approve all for a blocked review, where it could only fail', async () => {
+    const { ctx, done, render } = setup(['A', 'w']);
+    const choice = await confirmCommitOverlay(ctx, {
+      ...view,
+      review: 'retry.ts:1 [blocking] The comment is stale.',
+      reviewBlocked: true,
+    });
+    expect(choice).toBe('waive');
+    expect(done).toHaveBeenCalledExactlyOnceWith('waive');
+    expect(render.mock.lastCall?.[0]).not.toContain('Approve all remaining');
+  });
   it.each([
     ['a', 'approve'],
+    ['A', 'approveAll'],
     ['s', 'subject'],
     ['b', 'body'],
     ['k', 'skip'],
@@ -77,10 +89,10 @@ describe('confirmCommitOverlay', () => {
     expect(done).toHaveBeenCalledExactlyOnceWith(choice);
   });
 
-  it.each(['approve', 'subject', 'body', 'skip', 'abort'])(
+  it.each(['approve', 'approveAll', 'subject', 'body', 'skip', 'abort'])(
     'selects %s with arrows and enter',
     async (choice) => {
-      const index = ['approve', 'subject', 'body', 'skip', 'abort'].indexOf(choice);
+      const index = ['approve', 'approveAll', 'subject', 'body', 'skip', 'abort'].indexOf(choice);
       const { ctx, done } = setup([...Array.from({ length: index }, () => '\u001b[B'), '\r']);
       expect(await confirmCommitOverlay(ctx, view)).toBe(choice);
       expect(done).toHaveBeenCalledExactlyOnceWith(choice);
@@ -101,6 +113,7 @@ describe('confirmCommitOverlay', () => {
       'image.png binary',
       'Total: +12 -3',
       'a    Approve and commit',
+      'A    Approve all remaining',
       's    Edit subject',
       'b    Edit body',
       'k    Skip this group',

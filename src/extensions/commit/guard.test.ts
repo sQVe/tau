@@ -305,7 +305,7 @@ describe('commitExtension', () => {
 
     const result = await tool.execute(
       'tool-call-1',
-      { files: ['README.md'], subject: 'feat: add thing' },
+      { groups: [{ files: ['README.md'], subject: 'feat: add thing' }] },
       undefined,
       undefined,
       { cwd: repoDir, hasUI: true, ui: { custom: () => Promise.resolve('approve') } } as never,
@@ -315,8 +315,7 @@ describe('commitExtension', () => {
     const commitCount = commitCountOutput.trim();
     expect(commitCount).toBe('1');
     expect(result.details).toMatchObject({
-      files: ['README.md'],
-      subject: 'feat: add thing',
+      groups: [{ files: ['README.md'], subject: 'feat: add thing' }],
     });
     reviewer.mockRestore();
   });

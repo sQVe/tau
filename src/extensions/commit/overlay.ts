@@ -12,6 +12,7 @@ import {
 
 export type CommitChoice =
   | 'approve'
+  | 'approveAll'
   | 'subject'
   | 'body'
   | 'skip'
@@ -159,6 +160,10 @@ export const confirmCommitOverlay = async (
       view.reviewBlocked
         ? { value: 'waive', label: 'w    Waive comment review and commit' }
         : { value: 'approve', label: 'a    Approve and commit' },
+      // Approve-all cannot waive, so offering it on a blocked review is a guaranteed dead end.
+      ...(view.reviewBlocked
+        ? []
+        : [{ value: 'approveAll' as const, label: 'A    Approve all remaining' }]),
       ...(view.review ? [{ value: 'review' as const, label: 'r    Read comment review' }] : []),
       ...(view.reviewBlocked
         ? [{ value: 'retry' as const, label: 't    Return for fixes or retry' }]
@@ -200,7 +205,7 @@ export const confirmCommitOverlay = async (
         const shortcuts: Record<string, CommitChoice> = {
           ...(view.reviewBlocked
             ? { w: 'waive' as const, t: 'retry' as const }
-            : { a: 'approve' as const }),
+            : { a: 'approve' as const, A: 'approveAll' as const }),
           ...(view.review ? { r: 'review' as const } : {}),
           s: 'subject',
           b: 'body',

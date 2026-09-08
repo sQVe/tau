@@ -52,16 +52,18 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
    - Keep each group coherent and reviewable.
    - For each group, prepare a conventional-commit subject and the exact file list.
 
-3. Call the `commit` tool for each group with the file list, subject, and body. Do not end the turn
-   before the first tool call. If the change looks temporary, wrong, or like a placeholder, still
-   call the tool: the overlay is where the user skips or aborts it.
+3. Call the `commit` tool once with an ordered `groups` array. Each group contains `files`,
+   `subject`, and `body`. The tool reviews and confirms each group sequentially. Do not end the turn
+   before the tool call. If the change looks temporary, wrong, or like a placeholder, still call the
+   tool: the overlay is where the user skips or aborts it, or presses `A` to approve all remaining
+   groups. Every group still runs comment review; `A` never waives a blocked review.
 
 4. If the `commit` tool succeeds, report the result and continue.
-   - A skipped group is not a failure; continue with the next group.
-   - Note the created commit.
-   - If more uncommitted groups remain, continue calling the tool for the next group.
+   - A skipped group is not a failure; the tool continues with later groups.
+   - Note each created commit and any skipped groups.
 
 5. If the `commit` tool fails, triage before investigating.
+   - The error lists groups already committed with their ids and SHAs. Exclude them from retries.
    - Run `git status --porcelain` first. If the working tree is clean, the changes were already
      committed (e.g., absorbed by a prior group). Report this and move on.
    - If changes remain and the error text names a failing hook, handle it as an evidence-driven
@@ -69,8 +71,10 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
      - Read the error text carefully. It carries the hook's own output.
      - Diagnose the actual failure from the hook output.
      - Fix the underlying issue, such as lint, format, or test failures.
-     - Include any files modified during the fix in the retry's `files` list.
-     - Retry the `commit` tool call for that group.
+     - Include any files modified during the fix in the retried group's `files` list.
+     - Retry the `commit` tool with the corrected group and any remaining groups in `groups`. Leave
+       out the groups already committed and the ones the user skipped; a skipped group carries no
+       SHA, so it is absent from the error's list without meaning it still needs a commit.
      - Cap retries at 3 for the same group.
      - After 3 failed retries, stop and report the failure to the user instead of pushing through.
 
