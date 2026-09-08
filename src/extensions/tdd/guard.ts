@@ -61,7 +61,13 @@ export const guardToolCall = async (
   const file = recognized ? event.input.path : (inputPaths(event.input)[0] ?? 'unknown target');
   if (typeof file !== 'string') return undefined;
   const state = await store.read(cwd);
-  onState?.(state);
+  // Pi does not catch a throwing tool_call handler, so a failing footer update would decide
+  // whether a write is gated.
+  try {
+    onState?.(state);
+  } catch {
+    /* empty */
+  }
   const next = recognized
     ? pathNextStep(
         file,
