@@ -40,11 +40,11 @@ interface ToolResult {
 vi.setConfig({ testTimeout: 60_000 });
 let counter = 0;
 
-const createWorktree = async (cleanup: TestContext['onTestFinished']) => {
+const createWorktree = async (cleanup: TestContext['onTestFinished'], withRunner = true) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-tdd-'));
   cleanup(() => rm(cwd, { recursive: true, force: true }));
   await promisify(execFile)('git', ['init', '--quiet', cwd]);
-  await symlink(resolve('node_modules'), join(cwd, 'node_modules'), 'dir');
+  if (withRunner) await symlink(resolve('node_modules'), join(cwd, 'node_modules'), 'dir');
   await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
   await writeFile(join(cwd, 'vite.config.ts'), 'export default {};');
   await writeFile(
@@ -58,8 +58,9 @@ const createHarness = async (
   cleanup: TestContext['onTestFinished'],
   extensionFactories: ExtensionFactory[] = [],
   reused?: string,
+  withRunner = true,
 ) => {
-  const cwd = reused ?? (await createWorktree(cleanup));
+  const cwd = reused ?? (await createWorktree(cleanup, withRunner));
   const agentDir = join(cwd, 'agent');
   const faux = fauxProvider({ provider: `tau-tdd-${++counter}` });
   const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
@@ -249,6 +250,21 @@ it('enforces file classifications across the evidence phases through pi', async 
   ).toBe(false);
   expect((await run(behavior)).details.phase).toBe('green');
   expect((await run({ ...behavior, scope: 'full' })).details.phase).toBe('verified');
+});
+
+it('lets production writes through when no test runner resolves through pi', async ({
+  onTestFinished,
+}) => {
+  const { cwd, run, call } = await createHarness(onTestFinished, [], undefined, false);
+  const input = { path: 'src/value.ts', content: 'export const value = 1;' };
+
+  expect((await call('write', input)).isError).toBe(false);
+
+  expect(await readFile(join(cwd, input.path), 'utf8')).toBe(input.content);
+  expect((await call('write', { path: 'package.json', content: '{}' })).isError).toBe(false);
+  expect(JSON.parse((await run()).content[0]!.text)).toMatchObject({
+    notice: `no test runner resolves from ${cwd}`,
+  });
 });
 
 it('keeps RED evidence across a restarted pi session in the same worktree', async ({

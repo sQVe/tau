@@ -59,7 +59,8 @@ for the session model; automated tests use a scripted provider and make no model
 
 TDD edit enforcement is on. The [run_tests tool](../src/extensions/tdd/index.ts) describes the cycle
 from a failing test through production edits to full verification, with test evidence persisted to
-`.tau/state.json` in the worktree so it survives a restart.
+`.tau/state.json` in the worktree so it survives a restart. Only files matching the production globs
+are gated, and the gate is off with a notice when no test runner resolves from the worktree.
 
 The writing extension adds its [instructions](../src/extensions/writing/instructions.md) to the
 system prompt before each ordinary agent run. No skill command is needed. Run `/reload` in Pi after

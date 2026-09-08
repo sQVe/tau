@@ -3,7 +3,7 @@ import { glob, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 
 import { classifyPath, tddConfig } from './config.js';
-import { runTests } from './runner/index.js';
+import { runTests, runnerAvailable } from './runner/index.js';
 import type { RunnerResult, TestResult } from './runner/types.js';
 import type { Behavior, EvidenceRecord, EvidenceState, InputHashes, Phase } from './types.js';
 
@@ -116,6 +116,19 @@ const failedIn = (cwd: string, { behavior, record }: EvidenceState['reds'][numbe
   record.report.kind === 'fail' &&
   uniqueStatus(cwd, record.report.tests, behavior.testFullName, file) === 'failed';
 
+const runnerChecks = new Map<string, { packageHash: string | null; available: boolean }>();
+
+// Nothing can be proven without a runner, and package.json is protected, so the gate has to open
+// wide enough for the agent to install one.
+const runnerNotice = (cwd: string, hashes: InputHashes) => {
+  const key = resolve(cwd);
+  const packageHash = hashes[resolve(cwd, 'package.json')] ?? null;
+  const cached = runnerChecks.get(key);
+  const available = cached?.packageHash === packageHash ? cached.available : runnerAvailable(key);
+  runnerChecks.set(key, { packageHash, available });
+  return available ? undefined : `no test runner resolves from ${cwd}`;
+};
+
 const statePath = (cwd: string) => resolve(cwd, '.tau/state.json');
 
 const emptyState = (): EvidenceState => ({
@@ -220,6 +233,7 @@ export const createEvidenceStore = () => {
       implementationAllowed: phase === 'red',
       focusedPassValid,
       fullPassValid,
+      notice: runnerNotice(cwd, hashes),
     };
   };
   const run = async (

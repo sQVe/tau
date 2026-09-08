@@ -1,8 +1,9 @@
 import { spawn as nodeSpawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve as resolvePath } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import { tddConfig } from '../config.js';
@@ -78,6 +79,15 @@ export const defaultResolveVitest: ResolveVitestFn = (cwd) => {
     return join(dirname(pkgPath), binRel);
   } catch {
     return null;
+  }
+};
+
+// Deliberately not defaultResolveVitest: require.resolve also honours NODE_PATH, which a parent
+// test runner sets to its own installation, so it answers about this process, not the worktree.
+export const runnerAvailable = (cwd: string): boolean => {
+  for (let directory = resolvePath(cwd); ; directory = dirname(directory)) {
+    if (existsSync(join(directory, 'node_modules', 'vitest', 'package.json'))) return true;
+    if (dirname(directory) === directory) return false;
   }
 };
 

@@ -63,6 +63,22 @@ it('derives validity from current bytes and accepts restored content', async ({
   expect(await store.read(cwd)).toMatchObject({ focusedPassValid: false, fullPassValid: false });
 });
 
+it('turns the gate off until a test runner resolves from the worktree', async ({
+  onTestFinished,
+}) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-no-runner-'));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
+  const store = createEvidenceStore();
+
+  expect((await store.read(cwd)).notice).toBe(`no test runner resolves from ${cwd}`);
+
+  await symlink(resolve('node_modules'), join(cwd, 'node_modules'), 'dir');
+  expect((await store.read(cwd)).notice).toBe(`no test runner resolves from ${cwd}`);
+  await writeFile(join(cwd, 'package.json'), '{"type":"module","name":"gated"}');
+  expect((await store.read(cwd)).notice).toBeUndefined();
+});
+
 const createHarness = async (cleanup: TestContext['onTestFinished']) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-cycle-'));
   cleanup(() => rm(cwd, { recursive: true, force: true }));

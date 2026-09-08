@@ -20,6 +20,7 @@ export default function tddExtension(pi: ExtensionAPI) {
         'Editing a required test file after RED re-locks the gate; if edited after the fix, save and revert only the production change with git restore/stash, re-run focused to prove RED, then restore the fix. ' +
         'Skipped and deleted tests never count. ' +
         'Returns kind (run outcome), phase (locked: no valid RED; red: failing test proven; green: that test passed; verified: full run passed with every RED test present and passing), implementationAllowed (true only in red), and report (test results, null if inputs changed). ' +
+        'Only files matching the production globs are gated, and a notice string says the gate is off while no test runner resolves from the worktree. ' +
         'A next string explains recovery when needed; long reports are truncated in text, with the full report in details.',
       parameters: Type.Object({
         behavior: Type.String({
@@ -111,6 +112,7 @@ export default function tddExtension(pi: ExtensionAPI) {
           kind: details.kind,
           phase: details.phase,
           implementationAllowed: details.implementationAllowed,
+          notice: details.notice,
           next,
           report,
         });

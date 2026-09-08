@@ -56,6 +56,7 @@ export const guardToolCall = async (
   const file = recognized ? event.input.path : (inputPaths(event.input)[0] ?? 'unknown target');
   if (typeof file !== 'string') return undefined;
   const state = await store.read(cwd);
+  if (state.notice !== undefined) return undefined;
   const next = recognized
     ? pathNextStep(file, cwd, state.implementationAllowed, state.evidence.active, state.phase)
     : `Replace unrecognized tool ${event.toolName} with write using a literal path and the intended content`;

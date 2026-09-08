@@ -6,10 +6,11 @@ import type { createEvidenceStore } from './state.js';
 import type { Phase } from './types.js';
 
 const phases: Phase[] = ['locked', 'red', 'green', 'verified'];
-const createStore = (phase: Phase) => ({
+const createStore = (phase: Phase, notice?: string) => ({
   read: vi.fn<ReturnType<typeof createEvidenceStore>['read']>(() =>
     Promise.resolve({
       phase,
+      notice,
       implementationAllowed: phase === 'red',
       focusedPassValid: phase === 'green' || phase === 'verified',
       fullPassValid: phase === 'verified',
@@ -42,6 +43,15 @@ it.each(phases)('allows test writes, including colocated tests, in %s', async (p
       expect(
         await guardToolCall(makeEvent(tool, { path }), '/repo', createStore(phase)),
       ).toBeUndefined();
+    }
+  }
+});
+
+it.each(phases)('allows every write while no test runner resolves in %s', async (phase) => {
+  const store = createStore(phase, 'no test runner resolves from /repo');
+  for (const path of ['src/value.ts', 'package.json', '.tau/state.json']) {
+    for (const tool of ['write', 'edit']) {
+      expect(await guardToolCall(makeEvent(tool, { path }), '/repo', store)).toBeUndefined();
     }
   }
 });

@@ -1,6 +1,8 @@
 import type { RunTestsInput, RunnerDeps, RunnerResult } from './types.js';
 import { defaultDeps, runVitest } from './vitest.js';
 
+export { runnerAvailable } from './vitest.js';
+
 export type {
   RunTestsInput,
   RunTestsScope,
