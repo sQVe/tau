@@ -261,7 +261,7 @@ it('lets production writes through when no test runner resolves through pi', asy
   expect((await call('write', input)).isError).toBe(false);
 
   expect(await readFile(join(cwd, input.path), 'utf8')).toBe(input.content);
-  expect((await call('write', { path: 'package.json', content: '{}' })).isError).toBe(false);
+  expect((await call('write', { path: 'package.json', content: '{}' })).isError).toBe(true);
   expect((await run()).content[0]!.text).toContain(`Notice: no test runner resolves from ${cwd}`);
 });
 

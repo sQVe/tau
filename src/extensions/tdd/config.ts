@@ -1,8 +1,8 @@
 import { matchesGlob } from 'node:path';
 
 export const tddConfig = {
-  productionGlobs: ['src/**/*.{ts,tsx}'],
-  testGlobs: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
+  productionGlobs: ['src/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+  testGlobs: ['**/*.test.{ts,tsx,js,jsx,mjs,cjs}', '**/*.spec.{ts,tsx,js,jsx,mjs,cjs}'],
   verificationArgv: ['vitest', 'run', '--reporter=json', '--no-color'],
 } as const;
 

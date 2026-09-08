@@ -73,10 +73,14 @@ it('turns the gate off until a test runner resolves from the worktree', async ({
 
   expect((await store.read(cwd)).notice).toBe(`no test runner resolves from ${cwd}`);
 
+  // An install leaves package.json untouched, so the absent answer must not be cached.
   await symlink(resolve('node_modules'), join(cwd, 'node_modules'), 'dir');
-  expect((await store.read(cwd)).notice).toBe(`no test runner resolves from ${cwd}`);
-  await writeFile(join(cwd, 'package.json'), '{"type":"module","name":"gated"}');
   expect((await store.read(cwd)).notice).toBeUndefined();
+
+  await rm(join(cwd, 'node_modules'));
+  expect((await store.read(cwd)).notice).toBeUndefined();
+  await writeFile(join(cwd, 'package.json'), '{"type":"module","name":"gated"}');
+  expect((await store.read(cwd)).notice).toBe(`no test runner resolves from ${cwd}`);
 });
 
 const createHarness = async (cleanup: TestContext['onTestFinished']) => {

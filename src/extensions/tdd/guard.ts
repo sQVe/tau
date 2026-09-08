@@ -22,6 +22,7 @@ const pathNextStep = (
   implementationAllowed: boolean,
   active: Behavior | null,
   phase: Phase,
+  gateOff: boolean,
 ) => {
   const path = relative(cwd, resolve(cwd, file)).replaceAll('\\', '/');
   if (file.startsWith('@') || file.startsWith('~'))
@@ -34,6 +35,8 @@ const pathNextStep = (
     path === 'package.json'
   )
     return 'Choose an unprotected test file with ls {"path":"."}';
+  // The gate only opens for production edits: protected paths and escapes stay blocked.
+  if (gateOff) return undefined;
   if (classifyPath(path) !== 'production' || implementationAllowed) return undefined;
   if ((phase === 'green' || phase === 'verified') && active !== null)
     return `Verify the current behavior with run_tests ${JSON.stringify({ ...active, scope: 'full' })}, or start the next behavior by writing its test and proving RED with run_tests scope "focused"`;
@@ -56,9 +59,15 @@ export const guardToolCall = async (
   const file = recognized ? event.input.path : (inputPaths(event.input)[0] ?? 'unknown target');
   if (typeof file !== 'string') return undefined;
   const state = await store.read(cwd);
-  if (state.notice !== undefined) return undefined;
   const next = recognized
-    ? pathNextStep(file, cwd, state.implementationAllowed, state.evidence.active, state.phase)
+    ? pathNextStep(
+        file,
+        cwd,
+        state.implementationAllowed,
+        state.evidence.active,
+        state.phase,
+        state.notice !== undefined,
+      )
     : `Replace unrecognized tool ${event.toolName} with write using a literal path and the intended content`;
   if (next === undefined) return undefined;
   return {

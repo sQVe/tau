@@ -6,8 +6,11 @@ import { classifyPath, tddConfig } from './config.js';
 
 describe('TDD config', () => {
   it('exports the production, test, and JSON verification contract', () => {
-    expect(tddConfig.productionGlobs).toEqual(['src/**/*.{ts,tsx}']);
-    expect(tddConfig.testGlobs).toEqual(['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}']);
+    expect(tddConfig.productionGlobs).toEqual(['src/**/*.{ts,tsx,js,jsx,mjs,cjs}']);
+    expect(tddConfig.testGlobs).toEqual([
+      '**/*.test.{ts,tsx,js,jsx,mjs,cjs}',
+      '**/*.spec.{ts,tsx,js,jsx,mjs,cjs}',
+    ]);
     expect(tddConfig.verificationArgv).toEqual(['vitest', 'run', '--reporter=json', '--no-color']);
   });
 
@@ -19,6 +22,11 @@ describe('TDD config', () => {
     expect(classifyPath('example.spec.ts')).toBe('test');
     expect(classifyPath('src/example.ts')).toBe('production');
     expect(classifyPath('src/component.tsx')).toBe('production');
+    for (const path of ['src/x.js', 'src/x.jsx', 'src/x.mjs', 'src/x.cjs']) {
+      expect(classifyPath(path)).toBe('production');
+    }
+    expect(classifyPath('src/x.test.js')).toBe('test');
+    expect(classifyPath('src/x.spec.mjs')).toBe('test');
     expect(classifyPath('scripts/check.js')).toBe('other');
     expect(classifyPath('README.md')).toBe('other');
     expect(classifyPath('docs/example.md')).toBe('other');

@@ -1,5 +1,5 @@
 import { spawn as nodeSpawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -87,7 +87,13 @@ export const defaultResolveVitest: ResolveVitestFn = (cwd) => {
 // test runner sets to its own installation, so it answers about this process, not the worktree.
 export const runnerAvailable = (cwd: string): boolean => {
   for (let directory = resolvePath(cwd); ; directory = dirname(directory)) {
-    if (existsSync(join(directory, 'node_modules', 'vitest', 'package.json'))) return true;
+    try {
+      statSync(join(directory, 'node_modules', 'vitest', 'package.json'));
+      return true;
+    } catch (error) {
+      // Only a missing file proves absence; a transient EACCES or EMFILE must not turn the gate off.
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') return true;
+    }
     if (dirname(directory) === directory) return false;
   }
 };

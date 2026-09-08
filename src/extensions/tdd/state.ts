@@ -124,7 +124,10 @@ const runnerNotice = (cwd: string, hashes: InputHashes) => {
   const key = resolve(cwd);
   const packageHash = hashes[resolve(cwd, 'package.json')] ?? null;
   const cached = runnerChecks.get(key);
-  const available = cached?.packageHash === packageHash ? cached.available : runnerAvailable(key);
+  // An installed runner is cached until package.json changes; an absent one is re-checked every
+  // read, because installing it leaves package.json untouched.
+  const available =
+    cached?.available === true && cached.packageHash === packageHash ? true : runnerAvailable(key);
   runnerChecks.set(key, { packageHash, available });
   return available ? undefined : `no test runner resolves from ${cwd}`;
 };

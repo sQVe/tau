@@ -47,12 +47,27 @@ it.each(phases)('allows test writes, including colocated tests, in %s', async (p
   }
 });
 
-it.each(phases)('allows every write while no test runner resolves in %s', async (phase) => {
+it.each(phases)('allows production writes while no test runner resolves in %s', async (phase) => {
   const store = createStore(phase, 'no test runner resolves from /repo');
-  for (const path of ['src/value.ts', 'package.json', '.tau/state.json']) {
-    for (const tool of ['write', 'edit']) {
-      expect(await guardToolCall(makeEvent(tool, { path }), '/repo', store)).toBeUndefined();
-    }
+  for (const tool of ['write', 'edit']) {
+    expect(
+      await guardToolCall(makeEvent(tool, { path: 'src/value.ts' }), '/repo', store),
+    ).toBeUndefined();
+  }
+});
+
+it.each(phases)('keeps protected paths and escapes blocked with no runner in %s', async (phase) => {
+  const store = createStore(phase, 'no test runner resolves from /repo');
+  for (const [path, next] of [
+    ['.tau/state.json', 'Choose an unprotected test file with ls {"path":"."}'],
+    ['package.json', 'Choose an unprotected test file with ls {"path":"."}'],
+    ['../value.ts', 'List worktree files with ls {"path":"."}'],
+    ['@package.json', 'List literal worktree paths with ls {"path":"."}'],
+    ['~/value.ts', 'List literal worktree paths with ls {"path":"."}'],
+  ]) {
+    const result = await guardToolCall(makeEvent('write', { path }), '/repo', store);
+    expect(result?.block).toBe(true);
+    expect(result?.reason).toContain(next);
   }
 });
 

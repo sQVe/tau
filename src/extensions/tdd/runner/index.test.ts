@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { runTests } from './index.js';
 import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js';
 import { MAX_ASSERTION_BYTES, MAX_FAILURES, MAX_STDOUT_BYTES, MAX_TOTAL_BYTES } from './types.js';
-import { defaultDeps, defaultSpawn, extractBinPath } from './vitest.js';
+import { defaultDeps, defaultSpawn, extractBinPath, runnerAvailable } from './vitest.js';
 
 const outputFileFrom = (args: string[]) => {
   const flag = args.find((arg) => arg.startsWith('--outputFile='));
@@ -766,4 +766,24 @@ it('allows two minutes for full verification and thirty seconds for focused runs
   expect(defaultDeps('all').timeoutMs).toBe(120_000);
   expect(defaultDeps('changed').timeoutMs).toBe(30_000);
   expect(defaultDeps('file').timeoutMs).toBe(30_000);
+});
+
+describe('runnerAvailable', () => {
+  it('reports absence only for a missing runner and stays available on other errors', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-available-'));
+    try {
+      expect(runnerAvailable(cwd)).toBe(false);
+
+      // A stat that fails with anything but ENOENT (here ENOTDIR) proves nothing about the
+      // runner, so the gate must stay on.
+      await writeFile(join(cwd, 'node_modules'), '');
+      expect(runnerAvailable(cwd)).toBe(true);
+
+      await rm(join(cwd, 'node_modules'));
+      await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
+      expect(runnerAvailable(cwd)).toBe(true);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
 });
