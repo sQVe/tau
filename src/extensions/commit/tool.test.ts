@@ -308,6 +308,116 @@ describe('commitTool.execute', () => {
     expect(await git(repoDir, ['diff', '--cached', '--name-only'])).toBe('');
   });
 
+  const prefetchRepo = async () => {
+    const repoDir = await createTempRepo();
+    await writeRepoFile(repoDir, 'base.txt', 'base\n');
+    await git(repoDir, ['add', 'base.txt']);
+    await git(repoDir, ['commit', '-m', 'chore: base']);
+    const groups = ['one', 'two', 'three'].map((name) => ({
+      files: [`${name}.txt`],
+      subject: `feat: add ${name}`,
+    }));
+    for (const group of groups) await writeRepoFile(repoDir, group.files[0]!, group.subject);
+    return { repoDir, groups };
+  };
+
+  it('reviews the next group while the current overlay is open', async () => {
+    const { repoDir, groups } = await prefetchRepo();
+    const review = vi.fn<typeof reviewComments>().mockResolvedValue({ findings: [] });
+    const reviewsWhenOverlayOpened: number[] = [];
+    const ctx = {
+      cwd: repoDir,
+      hasUI: true,
+      ui: {
+        custom: () => {
+          reviewsWhenOverlayOpened.push(review.mock.calls.length);
+          return Promise.resolve('approve');
+        },
+      },
+    };
+    const tool = createReviewedCommitTool(
+      { exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir) },
+      review,
+    );
+
+    await tool.execute('batch', { groups }, undefined, undefined, ctx as never);
+
+    // Group N+1 is already under review while the user decides on group N.
+    expect(reviewsWhenOverlayOpened).toEqual([2, 3, 3]);
+    // One review per group: every prefetch was reused, none recomputed.
+    expect(review).toHaveBeenCalledTimes(3);
+    expect((await git(repoDir, ['log', '--format=%s', '-3'])).trim().split('\n')).toEqual([
+      'feat: add three',
+      'feat: add two',
+      'feat: add one',
+    ]);
+  });
+
+  it('re-reviews a group whose prefetch assumed an earlier group would commit', async () => {
+    const { repoDir, groups } = await prefetchRepo();
+    const reviewed: string[][] = [];
+    const review = vi.fn<typeof reviewComments>(async (_pi, _ctx, _signal, snapshot) => {
+      reviewed.push(
+        (await git(repoDir, ['ls-tree', '--name-only', snapshot.tree])).trim().split('\n'),
+      );
+      return { findings: [] };
+    });
+    const choices = ['approve', 'skip', 'approve'];
+    const tool = createReviewedCommitTool(
+      { exec: (command, args, options) => runCommand(command, args, options?.cwd ?? repoDir) },
+      review,
+    );
+
+    await tool.execute('batch', { groups }, undefined, undefined, {
+      cwd: repoDir,
+      hasUI: true,
+      ui: { custom: () => Promise.resolve(choices.shift()) },
+    } as never);
+
+    // The third prefetch assumed two.txt would land; skipping it invalidates that tree, so the
+    // group is reviewed again against what is really staged.
+    expect(reviewed).toEqual([
+      ['base.txt', 'one.txt'],
+      ['base.txt', 'one.txt', 'two.txt'],
+      ['base.txt', 'one.txt', 'three.txt', 'two.txt'],
+      ['base.txt', 'one.txt', 'three.txt'],
+    ]);
+    expect((await git(repoDir, ['log', '--format=%s', '-2'])).trim().split('\n')).toEqual([
+      'feat: add three',
+      'feat: add one',
+    ]);
+  });
+
+  it('reviews every remaining group as soon as approve all is chosen', async () => {
+    const { repoDir, groups } = await prefetchRepo();
+    const events: string[] = [];
+    const review = vi.fn<typeof reviewComments>(() => {
+      events.push('review');
+      return Promise.resolve({ findings: [] });
+    });
+    const custom = vi.fn<() => Promise<string>>(() => Promise.resolve('approveAll'));
+    const tool = createReviewedCommitTool(
+      {
+        exec: (command, args, options) => {
+          if (args[0] === 'commit') events.push('commit');
+          return runCommand(command, args, options?.cwd ?? repoDir);
+        },
+      },
+      review,
+    );
+
+    await tool.execute('batch', { groups }, undefined, undefined, {
+      cwd: repoDir,
+      hasUI: true,
+      ui: { custom },
+    } as never);
+
+    expect(custom).toHaveBeenCalledTimes(1);
+    // Every review starts before the first commit, so no group waits on a round-trip of its own.
+    expect(events).toEqual(['review', 'review', 'review', 'commit', 'commit', 'commit']);
+    expect((await git(repoDir, ['rev-list', '--count', 'HEAD'])).trim()).toBe('4');
+  });
+
   it.each(['approve', 'skip', 'approveAll'])(
     'processes three groups sequentially using %s',
     async (middle) => {

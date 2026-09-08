@@ -230,6 +230,48 @@ type Reviews = Map<
   }
 >;
 
+interface ReviewSnapshot {
+  tree: string;
+  head: string | null;
+  dispute?: string;
+}
+type RequestReview = (snapshot: ReviewSnapshot, baseTree: string | null) => Promise<CommentReview>;
+
+const treeOf = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  cwd: string,
+  revision: string | null,
+  signal?: AbortSignal,
+) =>
+  revision === null
+    ? null
+    : (await reviewGit(pi, cwd, ['rev-parse', `${revision}^{tree}`], signal)).trim();
+
+// Stage the groups cumulatively so each planned pair matches what that group sees at its turn:
+// group N commits before group N+1 stages, so N+1's index tree already contains N's content.
+const planGroupReviews = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  cwd: string,
+  groups: CommitInput['groups'],
+  signal: AbortSignal | undefined,
+): Promise<{ baseTree: string; tree: string }[]> => {
+  const plan: { baseTree: string; tree: string }[] = [];
+  let baseTree = await treeOf(pi, cwd, await currentHead(pi, cwd), signal);
+  if (baseTree === null) return plan;
+  try {
+    for (const group of groups) {
+      await stageFiles(pi, cwd, group.files);
+      const tree = (await reviewGit(pi, cwd, ['write-tree'], signal)).trim();
+      plan.push({ baseTree, tree });
+      baseTree = tree;
+    }
+  } finally {
+    for (const group of groups) await unstageFiles(pi, cwd, group.files);
+  }
+
+  return plan;
+};
+
 const executeGroup = async (
   params: CommitInput['groups'][number],
   group: string | undefined,
@@ -237,8 +279,9 @@ const executeGroup = async (
   ctx: ExtensionContext,
   signal: AbortSignal | undefined,
   reviews: Reviews,
-  review: typeof reviewComments,
+  requestReview: RequestReview,
   approval: { all: boolean },
+  prefetch: { next: () => void; rest: () => void },
 ): Promise<CommitSuccess> => {
   let subject = params.subject;
   let body = params.body ?? null;
@@ -284,6 +327,7 @@ const executeGroup = async (
 
     reviewedTree = (await reviewGit(pi, ctx.cwd, ['write-tree'], signal)).trim();
     reviewedHead = await currentHead(pi, ctx.cwd);
+    const reviewedBaseTree = await treeOf(pi, ctx.cwd, reviewedHead, signal);
     reviewGroup = JSON.stringify([ctx.cwd, reviewedHead, [...requestedFiles].toSorted()]);
     const state = reviews.get(reviewGroup) ?? { attempts: 0, disputes: [] };
     reviews.delete(reviewGroup);
@@ -313,11 +357,14 @@ const executeGroup = async (
       commentReview =
         state.key === key && state.result
           ? state.result
-          : await review(pi, ctx, signal, {
-              tree: reviewedTree,
-              head: reviewedHead,
-              ...(params.commentDispute ? { dispute: params.commentDispute } : {}),
-            });
+          : await requestReview(
+              {
+                tree: reviewedTree,
+                head: reviewedHead,
+                ...(params.commentDispute ? { dispute: params.commentDispute } : {}),
+              },
+              reviewedBaseTree,
+            );
       state.key = key;
       state.result = commentReview;
       if (commentReview.findings.some((finding) => finding.kind !== 'missing')) state.attempts += 1;
@@ -343,6 +390,7 @@ const executeGroup = async (
       if (signal?.aborted) {
         return cancelled();
       }
+      if (!approval.all) prefetch.next();
       const choice = approval.all
         ? 'approve'
         : await confirmCommitOverlay(
@@ -372,7 +420,10 @@ const executeGroup = async (
             'Staged content or HEAD changed since comment review. Call commit again to review the changes.',
           );
         }
-        if (choice === 'approveAll') approval.all = true;
+        if (choice === 'approveAll') {
+          approval.all = true;
+          prefetch.rest();
+        }
         approved = true;
         reviewWaived = choice === 'waive';
         break;
@@ -512,6 +563,44 @@ export const createCommitTool = (
       const approval = { all: false };
       const groups: CommitSuccess['details'][] = [];
       const content: CommitSuccess['content'] = [];
+
+      // A review is a model round-trip, so run it ahead of the group that needs it: one group ahead
+      // while the user reads an overlay, and all remaining groups the moment they approve all.
+      const plan =
+        params.groups.length > 1 && (await listStagedPaths(pi, ctx.cwd)).length === 0
+          ? await planGroupReviews(pi, ctx.cwd, params.groups, signal)
+          : [];
+      const started = new Map<number, Promise<CommentReview>>();
+      const startReview = (index: number) => {
+        const step = plan[index];
+        const group = params.groups[index];
+        if (!step || !group || started.has(index)) return;
+        const pending = review(pi, ctx, signal, {
+          tree: step.tree,
+          head: step.baseTree,
+          ...(group.commentDispute ? { dispute: group.commentDispute } : {}),
+        });
+        // A prefetch nobody awaits yet must not surface as an unhandled rejection.
+        pending.catch(() => {});
+        started.set(index, pending);
+      };
+      const requestReview =
+        (index: number): RequestReview =>
+        (snapshot, baseTree) => {
+          const step = plan[index];
+          const planned =
+            step?.tree === snapshot.tree &&
+            step?.baseTree === baseTree &&
+            params.groups[index]?.commentDispute === snapshot.dispute;
+          if (planned) {
+            startReview(index);
+            const pending = started.get(index);
+            if (pending) return pending;
+          }
+          return review(pi, ctx, signal, snapshot);
+        };
+
+      startReview(0);
       for (const [index, group] of params.groups.entries()) {
         const id = `${index + 1}/${params.groups.length}`;
         try {
@@ -522,8 +611,17 @@ export const createCommitTool = (
             ctx,
             signal,
             reviews,
-            review,
+            requestReview(index),
             approval,
+            {
+              next: () => {
+                startReview(index + 1);
+              },
+              rest: () => {
+                for (let rest = index + 1; rest < params.groups.length; rest += 1)
+                  startReview(rest);
+              },
+            },
           );
           if (!result.details.sha && !result.details.skipped && params.groups.length > 1) {
             throw new Error('Commit cancelled');
