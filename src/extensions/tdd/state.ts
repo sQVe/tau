@@ -5,42 +5,17 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { classifyPath, protectedPaths, tddConfig } from './config.js';
 import { runTests, runnerAvailable } from './runner/index.js';
 import type { RunnerResult, TestResult } from './runner/types.js';
-import type {
-  Behavior,
-  EvidenceRecord,
-  EvidenceState,
-  InputHashes,
-  Phase,
-  RedRecord,
-} from './types.js';
+import type { Behavior, EvidenceState, InputHashes, Phase, RedRecord } from './types.js';
 
 // ponytail: one process-wide chain; split by worktree if independent runs need concurrency.
 let pendingRun: Promise<unknown> = Promise.resolve();
 
 const configPath = resolve(import.meta.dirname, 'config.ts');
 
-const hashInputs = async (
-  cwd: string,
-  files: string[],
-  scope: 'red' | 'focused' | 'full' = 'red',
-): Promise<InputHashes> => {
-  const sources: string[] = [];
-  if (scope !== 'red') {
-    for await (const file of glob(
-      [...tddConfig.productionGlobs, ...(scope === 'full' ? tddConfig.testGlobs : [])],
-      { cwd, exclude: ['**/node_modules/**', '**/.git/**'] },
-    )) {
-      if (scope === 'full' || classifyPath(file) === 'production') sources.push(file);
-    }
-  }
+const hashInputs = async (cwd: string, files: string[]): Promise<InputHashes> => {
   return Object.fromEntries(
     await Promise.all(
-      [
-        ...new Set([
-          ...[...files, ...sources, ...protectedPaths].map((file) => resolve(cwd, file)),
-          configPath,
-        ]),
-      ]
+      [...new Set([...[...files, ...protectedPaths].map((file) => resolve(cwd, file)), configPath])]
         .toSorted()
         .map(async (file): Promise<[string, string | null]> => {
           try {
@@ -60,8 +35,17 @@ const hashInputs = async (
   );
 };
 
-const sameHashes = (left: InputHashes, right: InputHashes) =>
-  JSON.stringify(left) === JSON.stringify(right);
+const treeDigest = async (cwd: string, files: string[]) => {
+  const sources = [...files];
+  for await (const file of glob([...tddConfig.productionGlobs, ...tddConfig.testGlobs], {
+    cwd,
+    exclude: ['**/node_modules/**', '**/.git/**'],
+  }))
+    sources.push(file);
+  return createHash('sha256')
+    .update(JSON.stringify(await hashInputs(cwd, sources)))
+    .digest('hex');
+};
 
 export const testNames = (behavior: Pick<Behavior, 'testFullName'>): string[] =>
   Array.isArray(behavior.testFullName) ? behavior.testFullName : [behavior.testFullName];
@@ -71,17 +55,8 @@ const sameBehavior = (left: Behavior, right: Behavior) =>
   JSON.stringify(testNames(left)) === JSON.stringify(testNames(right)) &&
   JSON.stringify(left.files) === JSON.stringify(right.files);
 
-const redHash = (record: RedRecord, file: string) => record.renewed?.[file] ?? record.after[file];
-
-// The active RED and its list entry are one object until a reload splits them.
-const activeRedRecords = (state: EvidenceState): RedRecord[] => {
-  const active = state.active;
-  const entry =
-    active === null
-      ? undefined
-      : state.reds.find((candidate) => sameBehavior(candidate.behavior, active));
-  return [...new Set([state.red, entry?.record].filter((record) => record != null))];
-};
+const activeRed = (state: EvidenceState) =>
+  state.reds.find((entry) => state.active !== null && sameBehavior(entry.behavior, state.active));
 
 const identityMatches = (cwd: string, fullname: string, file: string, test: TestResult) =>
   test.fullname === fullname && resolve(cwd, test.file) === resolve(cwd, file);
@@ -123,13 +98,12 @@ const uniquelyIs = (
 const redPassed = (
   cwd: string,
   behavior: Behavior | null,
-  red: EvidenceRecord | null,
-  pass: EvidenceRecord | null,
+  red: RedRecord | undefined,
+  pass: RunnerResult,
 ) => {
-  if (behavior === null || red?.report.kind !== 'fail' || pass?.report.kind !== 'pass')
-    return false;
+  if (behavior === null || red?.report.kind !== 'fail' || pass.kind !== 'pass') return false;
   const redTests = red.report.tests;
-  const passedTests = pass.report.tests;
+  const passedTests = pass.tests;
   return testNames(behavior).every((name) => {
     const required = behavior.files.filter(
       (file) => uniqueStatus(cwd, redTests, name, file) === 'failed',
@@ -141,12 +115,7 @@ const redPassed = (
   });
 };
 
-const failedIn = (
-  cwd: string,
-  { behavior, record }: EvidenceState['reds'][number],
-  file: string,
-) => {
-  const report = record.report;
+const failedIn = (cwd: string, { behavior, report }: RedRecord, file: string) => {
   return (
     report.kind === 'fail' &&
     testNames(behavior).some((name) => uniqueStatus(cwd, report.tests, name, file) === 'failed')
@@ -174,12 +143,9 @@ const statePath = (cwd: string) => resolve(cwd, '.tau/state.json');
 const emptyState = (): EvidenceState => ({
   active: null,
   reds: [],
-  red: null,
-  focusedPass: null,
-  fullPass: null,
-  latestRun: null,
+  phase: 'locked',
+  verifiedTree: null,
   proven: [],
-  verified: false,
   gateOff: null,
 });
 
@@ -217,8 +183,26 @@ const loadState = async (cwd: string): Promise<EvidenceState> => {
   try {
     const parsed: unknown = JSON.parse(content);
     if (!isStoredState(parsed)) throw new Error('missing tdd evidence');
-    // Evidence written by an earlier version may lack fields added since.
-    return { ...emptyState(), ...parsed.tdd };
+    const stored = parsed.tdd;
+    const legacy = !['locked', 'red', 'green', 'verified'].includes(stored.phase);
+    return {
+      active: stored.active ?? null,
+      phase: legacy ? 'locked' : stored.phase,
+      reds: stored.reds.map((entry) => {
+        // Old snapshots kept the report and hashes inside record. Discard their derived flags.
+        const old = entry as RedRecord & { record?: { report: RunnerResult; after: InputHashes } };
+        return {
+          behavior: entry.behavior,
+          report: old.record?.report ?? entry.report,
+          testHashes: old.record?.after ?? entry.testHashes,
+          edited: entry.edited ?? false,
+          phase: legacy ? 'locked' : entry.phase,
+        };
+      }),
+      verifiedTree: legacy ? null : stored.verifiedTree,
+      proven: stored.proven ?? [],
+      gateOff: stored.gateOff ?? null,
+    };
   } catch (error) {
     throw new Error(`Unreadable test evidence in ${path}`, { cause: error });
   }
@@ -230,23 +214,6 @@ const saveState = async (cwd: string, state: EvidenceState) => {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(temporary, JSON.stringify({ tdd: state }));
   await rename(temporary, path);
-};
-
-// A test edited after its behavior reached GREEN cannot fail again without removing the fix, and
-// that ceremony proves little, so the amended file is accepted and the full run reports it.
-// Protected inputs are never renewed: they decide how verification runs.
-const renewRed = (cwd: string, state: EvidenceState, behavior: Behavior, pass: EvidenceRecord) => {
-  const red = state.red;
-  if (red?.greened !== true) return;
-  const keys = behavior.files.map((file) => resolve(cwd, file));
-  const staleTests = keys.filter((key) => redHash(red, key) !== pass.after[key]);
-  const staleOthers = [...protectedPaths.map((file) => resolve(cwd, file)), configPath].filter(
-    (key) => redHash(red, key) !== pass.after[key],
-  );
-  if (staleTests.length === 0 || staleOthers.length > 0) return;
-  if (!redPassed(cwd, behavior, red, pass)) return;
-  const renewed = Object.fromEntries(keys.map((key) => [key, pass.after[key] ?? null]));
-  for (const record of activeRedRecords(state)) record.renewed = { ...record.renewed, ...renewed };
 };
 
 export const createEvidenceStore = () => {
@@ -267,49 +234,26 @@ export const createEvidenceStore = () => {
     const state = await stateFor(cwd);
     const evidence = structuredClone(state);
     const hashes = await hashInputs(cwd, evidence.active?.files ?? []);
-    const productionHashes = await hashInputs(cwd, evidence.active?.files ?? [], 'focused');
+    const red = activeRed(evidence);
     const staleSinceRed =
-      evidence.red === null
+      red === undefined
         ? []
-        : Object.entries(hashes)
-            .filter(([file, hash]) => evidence.red !== null && redHash(evidence.red, file) !== hash)
-            .map(([file]) => relative(cwd, file));
-    const redValid = evidence.red !== null && staleSinceRed.length === 0;
-    const fullHashes = await hashInputs(cwd, evidence.active?.files ?? [], 'full');
-    const valid = (record: EvidenceRecord | null, current: InputHashes) =>
-      redValid && record !== null && sameHashes(record.after, current);
-    const focusedPassValid =
-      valid(evidence.focusedPass, productionHashes) &&
-      redPassed(cwd, evidence.active, evidence.red, evidence.focusedPass);
-    const earlierRedsValid = (
-      await Promise.all(
-        evidence.reds.map(async ({ behavior, record }) => {
-          const requiredHashes = await hashInputs(cwd, behavior.files);
-          return Object.entries(requiredHashes).every(([file, hash]) => {
-            // A RED that failed inside this file renews its snapshot, so appending a behavior
-            // to a shared file keeps working while a RED elsewhere cannot launder edits here.
-            // An earlier test weakened in the same edit is still laundered: ABU-338.
-            const latest = evidence.reds.findLast((entry) => failedIn(cwd, entry, file));
-            return redHash(latest?.record ?? record, file) === hash;
-          });
-        }),
-      )
-    ).every(Boolean);
-    const requiredTestsPassed = evidence.reds.every(({ behavior, record }) =>
-      redPassed(cwd, behavior, record, evidence.fullPass),
-    );
-    const fullPassValid =
-      valid(evidence.fullPass, fullHashes) && earlierRedsValid && requiredTestsPassed;
-    let phase: Phase = 'locked';
-    if (redValid) phase = 'red';
-    if (focusedPassValid) phase = 'green';
-    if (fullPassValid) phase = 'verified';
+        : red.behavior.files.filter(
+            (file) => red.testHashes[resolve(cwd, file)] !== hashes[resolve(cwd, file)],
+          );
+    let phase: Phase = evidence.phase;
+    if ((phase === 'red' || phase === 'green') && staleSinceRed.length > 0) phase = 'locked';
+    if (
+      phase === 'verified' &&
+      evidence.verifiedTree !== (await treeDigest(cwd, evidence.active?.files ?? []))
+    )
+      phase = 'green';
     return {
       evidence,
       phase,
       implementationAllowed: phase === 'red',
-      focusedPassValid,
-      fullPassValid,
+      focusedPassValid: phase === 'green' || phase === 'verified',
+      fullPassValid: phase === 'verified',
       staleSinceRed,
       notice: gateOffNotice(evidence) ?? runnerNotice(cwd, hashes),
     };
@@ -334,7 +278,10 @@ export const createEvidenceStore = () => {
         throw new Error(`Expected a test file inside the worktree: ${file}`);
       }
     }
-    const before = await hashInputs(cwd, behavior.files, scope);
+    const before =
+      scope === 'full'
+        ? await treeDigest(cwd, behavior.files)
+        : await hashInputs(cwd, behavior.files);
     const report = await runTests(
       scope === 'full'
         ? { cwd, scope: 'all', signal }
@@ -348,66 +295,96 @@ export const createEvidenceStore = () => {
             signal,
           },
     );
-    // A cancelled run proves nothing, so the stored evidence stays as it was.
-    if (report.kind === 'cancelled') return { kind: 'cancelled' as const, ...(await read(cwd)) };
-    const after = await hashInputs(cwd, behavior.files, scope);
-    if (!sameHashes(before, after))
-      return { kind: 'inputs-changed' as const, ...(await read(cwd)) };
+    const after = await hashInputs(cwd, behavior.files);
+    const fullTree = scope === 'full' ? await treeDigest(cwd, behavior.files) : null;
+    const current = fullTree ?? after;
+    if (JSON.stringify(before) !== JSON.stringify(current))
+      return { kind: 'inputs-changed' as const, report: null, ...(await read(cwd)) };
     const state = await stateFor(cwd);
-    if (state.active !== null && sameBehavior(state.active, behavior)) {
-      state.active.behavior = behavior.behavior;
-    } else {
-      // A verified full pass is a task boundary: a new behavior starts without the spent REDs, so
-      // renaming or dropping a shipped test cannot deadlock the gate. Returning to a recorded
-      // behavior is a touch-up of the same task and keeps them.
-      const known = state.reds.some((entry) => sameBehavior(entry.behavior, behavior));
-      const reds = state.verified && !known ? [] : state.reds;
-      Object.assign(state, {
-        active: structuredClone(behavior),
-        reds,
-        // Returning to a behavior keeps its proven RED; read() still checks the hashes.
-        red: reds.find((entry) => sameBehavior(entry.behavior, behavior))?.record ?? null,
-        focusedPass: null,
-        fullPass: null,
-        latestRun: null,
-        verified: false,
-      });
-    }
-    const record: RedRecord = { before, after, report };
+    const entry = state.reds.find((candidate) => sameBehavior(candidate.behavior, behavior));
+    let arrival = entry === undefined ? 'unseen' : 'known';
+    if (state.active !== null && sameBehavior(state.active, behavior)) arrival = 'same';
     const filesExist = behavior.files.every((file) => after[resolve(cwd, file)] != null);
-    state.latestRun = record;
-    if (scope === 'full') state.fullPass = null;
-    else state.focusedPass = null;
-    if (
-      filesExist &&
-      scope === 'focused' &&
-      report.kind === 'fail' &&
-      uniquelyIs(cwd, report.tests, behavior, 'failed')
-    ) {
-      state.red = record;
-      state.reds = state.reds.filter((entry) => !sameBehavior(entry.behavior, behavior));
-      state.reds.push({ behavior: structuredClone(behavior), record });
-      for (const file of behavior.files)
-        for (const fullname of testNames(behavior)) {
-          if (
-            uniqueStatus(cwd, report.tests, fullname, file) === 'failed' &&
-            !state.proven.some((known) => known.file === file && known.fullname === fullname)
-          )
-            state.proven.push({ file, fullname });
+    let outcome = 'other';
+    if (filesExist && report.kind === 'fail' && uniquelyIs(cwd, report.tests, behavior, 'failed'))
+      outcome = 'fail';
+    else if (filesExist && report.kind === 'pass' && redPassed(cwd, behavior, entry, report))
+      outcome = 'pass';
+    if (arrival !== 'same') {
+      if (arrival === 'unseen' && state.phase === 'verified') state.reds = [];
+      state.phase = entry?.phase ?? 'locked';
+      state.verifiedTree = null;
+    }
+    state.active = structuredClone(behavior);
+    if (scope === 'full') {
+      state.verifiedTree = null;
+      if (state.phase === 'verified') state.phase = 'green';
+      // Earlier tests may share a file extended by a later RED, but a RED in a different file
+      // cannot authorize an amendment. Only the latest RED proven inside that file renews it.
+      const hashes = await hashInputs(
+        cwd,
+        state.reds.flatMap((red) => red.behavior.files),
+      );
+      const intact = state.reds.every((red) =>
+        red.behavior.files.every((file) => {
+          const key = resolve(cwd, file);
+          const latest = state.reds.findLast((candidate) => failedIn(cwd, candidate, file));
+          return (latest ?? red).testHashes[key] === hashes[key];
+        }),
+      );
+      if (
+        outcome === 'pass' &&
+        intact &&
+        state.reds.every((red) => redPassed(cwd, red.behavior, red, report))
+      ) {
+        state.phase = 'verified';
+        state.verifiedTree = fullTree;
+      }
+    } else {
+      switch (`${arrival}:${outcome}`) {
+        case 'same:fail':
+        case 'known:fail':
+        case 'unseen:fail': {
+          const red: RedRecord = {
+            behavior: structuredClone(behavior),
+            report,
+            testHashes: after,
+            edited: false,
+            phase: 'red',
+          };
+          state.reds = state.reds.filter(
+            (candidate) => !sameBehavior(candidate.behavior, behavior),
+          );
+          state.reds.push(red);
+          state.phase = 'red';
+          state.verifiedTree = null;
+          for (const file of behavior.files)
+            for (const fullname of testNames(behavior)) {
+              if (
+                'tests' in report &&
+                uniqueStatus(cwd, report.tests, fullname, file) === 'failed' &&
+                !state.proven.some((known) => known.file === file && known.fullname === fullname)
+              )
+                state.proven.push({ file, fullname });
+            }
+          break;
         }
-      state.focusedPass = null;
-      state.fullPass = null;
+        case 'same:pass':
+        case 'known:pass':
+          if (entry !== undefined) {
+            entry.edited ||= behavior.files.some(
+              (file) => entry.testHashes[resolve(cwd, file)] !== after[resolve(cwd, file)],
+            );
+            entry.testHashes = after;
+            entry.phase = 'green';
+            state.phase = 'green';
+            state.verifiedTree = null;
+          }
+          break;
+      }
     }
-    if (filesExist && report.kind === 'pass' && uniquelyIs(cwd, report.tests, behavior, 'passed')) {
-      if (scope === 'full') state.fullPass = record;
-      else state.focusedPass = record;
-      if (scope === 'focused') renewRed(cwd, state, behavior, record);
-    }
-    const result = await read(cwd);
-    if (result.focusedPassValid) for (const red of activeRedRecords(state)) red.greened = true;
-    state.verified = result.fullPassValid;
     await saveState(cwd, state);
-    return { kind: report.kind, ...result };
+    return { kind: report.kind, report, ...(await read(cwd)) };
   };
   const setGate = async (cwd: string, gate: 'on' | 'off') => {
     const state = await stateFor(cwd);

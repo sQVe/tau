@@ -247,7 +247,7 @@ it('enforces file classifications across the evidence phases through pi', async 
   ).toBe(false);
   const stale = await call('write', { path: 'src/value.ts', content: 'export const value = 2;' });
   expect(stale.isError).toBe(true);
-  expect(JSON.stringify(stale.result)).toContain('locked');
+  expect(JSON.stringify(stale.result)).toContain('green');
   expect(JSON.stringify(stale.result)).toContain('required behavior');
   expect(await readFile(join(cwd, 'src/value.ts'), 'utf8')).toBe('export const value = 1;');
   // The behavior reached GREEN, so a focused pass accepts the amended test.
@@ -385,12 +385,12 @@ it('allows commit and its pre-commit formatter writes outside the file-tool guar
 it('records a focused assertion failure as RED through pi', async ({ onTestFinished }) => {
   const { run } = await createHarness(onTestFinished);
   const result = await run();
-  expect(result.details.evidence.red?.report.kind).toBe('fail');
-  expect(result.details.evidence.red?.before).toEqual(result.details.evidence.red?.after);
+  expect(result.details).toMatchObject({ kind: 'fail', phase: 'red' });
+  expect(result.details.report).toMatchObject({ kind: 'fail' });
   expect(result.details.implementationAllowed).toBe(true);
 });
 
-it('records focused and full passes without unlocking a first-run pass', async ({
+it('reports focused and full passes without unlocking a first-run pass', async ({
   onTestFinished,
 }) => {
   const { cwd, run } = await createHarness(onTestFinished);
@@ -405,10 +405,10 @@ it('records focused and full passes without unlocking a first-run pass', async (
   expect(focused.content[0]!.text).toContain(
     'Next: The test does not fail yet; the behavior may already be implemented. Write a test that fails before the fix, then call run_tests {"behavior":"required behavior","testFullName":"required behavior","files":["behavior.test.ts"],"scope":"focused"}.',
   );
-  expect(focused.details.evidence.red).toBeNull();
-  expect(focused.details.evidence.focusedPass?.report.kind).toBe('pass');
+  expect(focused.details.evidence.reds).toHaveLength(0);
+  expect(focused.details.report?.kind).toBe('pass');
   const full = await run({ scope: 'full' });
-  expect(full.details.evidence.fullPass?.report.kind).toBe('pass');
+  expect(full.details.report?.kind).toBe('pass');
   expect(full.details).toMatchObject({ phase: 'locked', fullPassValid: false });
   expect(full.details.implementationAllowed).toBe(false);
 });
@@ -425,7 +425,7 @@ it('names the ambiguous file while keeping a RED proven by another required file
   const result = await run({ files: ['behavior.test.ts', 'other.test.ts'] });
 
   expect(result.details.phase).toBe('red');
-  expect(result.details.evidence.red?.report.kind).toBe('fail');
+  expect(result.details.report?.kind).toBe('fail');
   const text = result.content[0]!.text;
   expect(text).toContain('["other.test.ts"]');
   expect(text).toContain('the phase is red');
@@ -537,7 +537,7 @@ it.each([
   const result = await run();
   expect(result.details.kind).toBe(kind);
   expect(result.details.implementationAllowed).toBe(false);
-  expect(result.details.evidence.red).toBeNull();
+  expect(result.details.phase).toBe('locked');
 });
 
 it('discards a run when a sibling bash tool edits its inputs', async ({ onTestFinished }) => {
@@ -576,7 +576,12 @@ it('discards a run when a sibling bash tool edits its inputs', async ({ onTestFi
   expect(result).toMatchObject({
     isError: false,
     result: {
-      details: { kind: 'inputs-changed', evidence: { active: null, red: null, latestRun: null } },
+      details: {
+        kind: 'inputs-changed',
+        phase: 'locked',
+        implementationAllowed: false,
+        report: null,
+      },
     },
   });
 });
@@ -611,7 +616,7 @@ it('keeps the full report while shortening displayed output', async ({ onTestFin
     `import { it } from 'vitest'; it('required behavior', () => {}); ${Array.from({ length: 100 }, (_, index) => `it('${index} ${'long name '.repeat(20)}', () => {});`).join('\n')}`,
   );
   const result = await run({ scope: 'full' });
-  expect(result.details.evidence.fullPass?.report).toHaveProperty('tests.length', 101);
+  expect(result.details.report).toHaveProperty('tests.length', 101);
   expect(result.content[0]!.text.length).toBeLessThanOrEqual(2000);
   expect(result.content[0]!.text).toContain('101 passed, 0 failed, 0 skipped');
 });
@@ -638,7 +643,7 @@ it('summarizes red and verified runs as plain text without stacks or absolute pa
   expect(redText).not.toContain(cwd);
   expect(redText).not.toMatch(/\n\s+at /);
   expect(redText.length).toBeLessThanOrEqual(2000);
-  expect(red.details.evidence.red?.report).toHaveProperty('tests');
+  expect(red.details.report).toHaveProperty('tests');
 
   await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
   await run();
@@ -648,7 +653,7 @@ it('summarizes red and verified runs as plain text without stacks or absolute pa
   expect(verifiedText).toContain('pass · phase verified · implementation blocked');
   expect(verifiedText).toContain('1 passed, 0 failed, 0 skipped');
   expect(verifiedText).not.toContain(cwd);
-  expect(verified.details.evidence.fullPass?.report).toHaveProperty('tests');
+  expect(verified.details.report).toHaveProperty('tests');
 });
 
 it('rejects production and escaping paths through pi', async ({ onTestFinished }) => {
@@ -704,7 +709,7 @@ it('verifies two behaviors authored incrementally in one test file through pi', 
   }
   const verified = await run({ behavior: 'behavior 2', testFullName: 'behavior 2', scope: 'full' });
   expect(verified.details.evidence.reds).toHaveLength(2);
-  expect(verified.details.evidence.red).not.toBeNull();
+  expect(verified.content[0]!.text).toContain('2 of 2 tests in the required files were proven RED');
   expect(verified.details).toMatchObject({ phase: 'verified', fullPassValid: true });
   // Revisiting a recorded behavior after verification keeps the task's REDs.
   const revisited = await run({ behavior: 'relabeled', testFullName: 'behavior 1' });
@@ -732,7 +737,7 @@ it('describes the cycle and exact nested test names in the registered tool', asy
     'scope "full"',
     'verified',
     're-locks',
-    'after GREEN',
+    'focused pass accepts',
     'Skipped and deleted tests never count',
     'kind',
     'phase',
@@ -943,11 +948,11 @@ it('accepts a test edited after GREEN and reports it on the full run', async () 
   const full = await run({ scope: 'full' });
   expect(full.details.phase).toBe('verified');
   expect(full.content[0]!.text).toContain(
-    '1 of 1 tests in the required files were proven RED or committed before; edited after GREEN: behavior.test.ts › required behavior',
+    '1 of 1 tests in the required files were proven RED or committed before; edited after RED: behavior.test.ts › required behavior',
   );
 });
 
-it('explains a test edited after the fix but before GREEN', async () => {
+it('renews a test edited after the fix but before GREEN and reports it on the full run', async () => {
   const { cwd, run, call } = await createMissingRedHarness();
   const test =
     "import { it, expect } from 'vitest'; import { value } from './src/value'; it('required behavior', () => expect(value).toBe(1));";
@@ -958,9 +963,16 @@ it('explains a test edited after the fix but before GREEN', async () => {
   ).toBe(false);
   await writeFile(join(cwd, 'behavior.test.ts'), `${test}\n`);
   const result = await run();
-  expect(result.details).toMatchObject({ kind: 'pass', phase: 'locked' });
-  expect(result.content[0]!.text).toContain(
-    'Next: behavior.test.ts changed after RED and before GREEN, so that proof no longer matches. Remove the production change so the test fails again, call run_tests {"behavior":"required behavior","testFullName":"required behavior","files":["behavior.test.ts"],"scope":"focused"} to prove RED, then put the change back.',
+  expect(result.details).toMatchObject({
+    kind: 'pass',
+    phase: 'green',
+    implementationAllowed: false,
+  });
+  expect(result.content[0]!.text).not.toContain('Next:');
+  const full = await run({ scope: 'full' });
+  expect(full.details.phase).toBe('verified');
+  expect(full.content[0]!.text).toContain(
+    '1 of 1 tests in the required files were proven RED or committed before; edited after RED: behavior.test.ts › required behavior',
   );
 });
 
@@ -991,11 +1003,6 @@ it('counts the tests in required files that never failed on the full run', async
     join(cwd, 'behavior.test.ts'),
     second.replace('expect(value).toBe(3)', 'expect(value).toBe(4)'),
   );
-  expect((await run(secondBehavior)).details.phase).toBe('locked');
-  // Setting a new file aside leaves a load error, so an empty stub stands in for the RED run.
-  await call('bash', { command: 'mv src/value.ts value.aside && : > src/value.ts' });
-  expect((await run(secondBehavior)).details.phase).toBe('red');
-  await call('bash', { command: 'mv value.aside src/value.ts' });
   expect((await run(secondBehavior)).details.phase).toBe('green');
   const full = await run({ ...secondBehavior, scope: 'full' });
   expect(full.details.phase).toBe('verified');

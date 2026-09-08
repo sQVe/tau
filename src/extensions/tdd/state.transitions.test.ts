@@ -368,107 +368,102 @@ const cells = (Object.keys(transitions) as Phase[]).flatMap((from) =>
   })),
 );
 
-// TODO(AI-155): all 108 cells await evidence.phase, which state.ts does not store yet.
-// Observed before skipping: 108 failures, four reach checks passed. Additional gaps include
-// ignored focused runs overwriting evidence, cancelled full runs retaining verification,
-// GREEN production edits reopening RED, and switches forgetting an entry's GREEN phase.
-// Remove .skip to run the complete contract after the rewrite. The Next: text stays covered
-// by flow.integration.test.ts; the store itself does not return a summary.
 /* oxlint-disable vitest/no-conditional-expect -- Extra checks depend on the table event, not the observed result. */
-// oxlint-disable-next-line vitest/no-disabled-tests -- TODO(AI-155): the spec requires skips until stored phases exist.
-it.skip.each(cells)(
-  '$from + $event: TODO(AI-155): stored phase is absent',
-  async ({ from, event, expected }) => {
-    const h = await createHarness(onTestFinished);
-    await reach[from](h);
-    const before = await h.store.read(h.cwd);
-    await actions[event](h);
-    const reloading = event === 'legacyReload' || event === 'noPhaseReload';
-    const store = reloading ? createEvidenceStore() : h.store;
-    const actual = await store.read(h.cwd);
+it.each(cells)('$from + $event', async ({ from, event, expected }) => {
+  const h = await createHarness(onTestFinished);
+  await reach[from](h);
+  const before = await h.store.read(h.cwd);
+  await actions[event](h);
+  const reloading = event === 'legacyReload' || event === 'noPhaseReload';
+  const store = reloading ? createEvidenceStore() : h.store;
+  const actual = await store.read(h.cwd);
 
-    expect.soft(actual.phase).toBe(expected.phase);
-    expect.soft(actual.implementationAllowed).toBe(expected.implementationAllowed);
-    expect
-      .soft(actual.evidence.reds.map(({ behavior }) => behavior.behavior).toSorted())
-      .toEqual(expected.reds);
-    expect.soft(actual.evidence).toHaveProperty('phase', expected.storedPhase);
-    if (!reloading) expect(actual.notice).toBeUndefined();
-    else expect(actual.evidence).toMatchObject({ gateOff, proven });
+  expect.soft(actual.phase).toBe(expected.phase);
+  expect.soft(actual.implementationAllowed).toBe(expected.implementationAllowed);
+  expect
+    .soft(actual.evidence.reds.map(({ behavior }) => behavior.behavior).toSorted())
+    .toEqual(expected.reds);
+  expect.soft(actual.evidence).toHaveProperty('phase', expected.storedPhase);
+  if (!reloading) expect(actual.notice).toBeUndefined();
+  else expect(actual.evidence).toMatchObject({ gateOff, proven });
 
-    if (event === 'testEdit' && (from === 'red' || from === 'green')) {
-      expect(actual.staleSinceRed).toContain('behavior.test.ts');
-      expect(actual.evidence.reds).toEqual(before.evidence.reds);
-    }
-    if (event === 'fullPass' && from !== 'locked') {
-      // AI-155's new persisted digest field; its spelling is local to this target contract.
-      expect(actual.evidence).toHaveProperty(
-        'verifiedDigest',
-        expect.stringMatching(/^[a-f0-9]{64}$/),
-      );
-    }
-    if (
-      ['testEdit', 'productionEditThroughBash', 'otherTestEdit', 'protectedEdit'].includes(event) &&
-      from === 'verified'
-    ) {
-      expect(actual.evidence).toEqual(before.evidence);
-    }
-    if (event === 'focusedFail') {
-      expect(actual.evidence.red?.report).toEqual(fail());
-      expect(actual.evidence.red?.after[join(h.cwd, 'behavior.test.ts')]).toBe(
-        await digest(h.cwd, 'behavior.test.ts'),
-      );
-    }
-    if (event === 'focusedRenew' && from !== 'locked') {
-      expect(actual.evidence.red).toHaveProperty('edited', true);
-      expect(actual.evidence.red?.after[join(h.cwd, 'behavior.test.ts')]).toBe(
-        await digest(h.cwd, 'behavior.test.ts'),
-      );
-    }
-    if (
-      ['fullFail', 'fullLoadError', 'fullTimeout', 'fullNoTests', 'fullCancelled'].includes(event)
-    ) {
-      expect(actual.evidence.reds).toEqual(before.evidence.reds);
-      expect(actual.fullPassValid).toBe(false);
-      expect(actual.evidence).toHaveProperty('verifiedDigest', null);
-    }
-    if (
-      [
-        'focusedLoadError',
-        'focusedTimeout',
-        'focusedNoTests',
-        'focusedCancelled',
-        'focusedAmbiguousFail',
-        'focusedAmbiguousPass',
-      ].includes(event) ||
-      (event === 'focusedPass' && from === 'locked')
-    ) {
-      expect(actual.evidence).toEqual(before.evidence);
-    }
-    if (event === 'switchKnown') expect(actual.evidence.active).toMatchObject(previous);
-    if (event === 'switchNew') expect(actual.evidence.active).toMatchObject(fresh);
-    // Protected paths remain blocked even for RED and migrated gate-off evidence.
-    for (const path of protectedPaths) {
-      expect(
-        await guardToolCall(
-          { type: 'tool_call', toolCallId: path, toolName: 'write', input: { path, content: '' } },
-          h.cwd,
-          store,
-        ),
-      ).toMatchObject({ block: true });
-    }
-    if (!reloading) {
-      const blocked = await guardToolCall(
-        {
-          type: 'tool_call',
-          toolCallId: 'production',
-          toolName: 'write',
-          input: { path: 'src/value.ts', content: '' },
-        },
+  if (event === 'testEdit' && (from === 'red' || from === 'green')) {
+    expect(actual.staleSinceRed).toContain('behavior.test.ts');
+    expect(actual.evidence.reds).toEqual(before.evidence.reds);
+  }
+  if (event === 'fullPass' && from !== 'locked') {
+    // AI-155's new persisted digest field; its spelling is local to this target contract.
+    expect(actual.evidence).toHaveProperty('verifiedTree', expect.stringMatching(/^[a-f0-9]{64}$/));
+  }
+  if (
+    ['testEdit', 'productionEditThroughBash', 'otherTestEdit', 'protectedEdit'].includes(event) &&
+    from === 'verified'
+  ) {
+    expect(actual.evidence).toEqual(before.evidence);
+  }
+  if (event === 'focusedFail') {
+    expect(
+      actual.evidence.reds.find(({ behavior }) => behavior.behavior === 'current')?.report,
+    ).toEqual(fail());
+    expect(
+      actual.evidence.reds.find(({ behavior }) => behavior.behavior === 'current')?.testHashes[
+        join(h.cwd, 'behavior.test.ts')
+      ],
+    ).toBe(await digest(h.cwd, 'behavior.test.ts'));
+  }
+  if (event === 'focusedRenew' && from !== 'locked') {
+    expect(
+      actual.evidence.reds.find(({ behavior }) => behavior.behavior === 'current'),
+    ).toHaveProperty('edited', true);
+    expect(
+      actual.evidence.reds.find(({ behavior }) => behavior.behavior === 'current')?.testHashes[
+        join(h.cwd, 'behavior.test.ts')
+      ],
+    ).toBe(await digest(h.cwd, 'behavior.test.ts'));
+  }
+  if (
+    ['fullFail', 'fullLoadError', 'fullTimeout', 'fullNoTests', 'fullCancelled'].includes(event)
+  ) {
+    expect(actual.evidence.reds).toEqual(before.evidence.reds);
+    expect(actual.fullPassValid).toBe(false);
+    expect(actual.evidence).toHaveProperty('verifiedTree', null);
+  }
+  if (
+    [
+      'focusedLoadError',
+      'focusedTimeout',
+      'focusedNoTests',
+      'focusedCancelled',
+      'focusedAmbiguousFail',
+      'focusedAmbiguousPass',
+    ].includes(event) ||
+    (event === 'focusedPass' && from === 'locked')
+  ) {
+    expect(actual.evidence).toEqual(before.evidence);
+  }
+  if (event === 'switchKnown') expect(actual.evidence.active).toMatchObject(previous);
+  if (event === 'switchNew') expect(actual.evidence.active).toMatchObject(fresh);
+  // Protected paths remain blocked even for RED and migrated gate-off evidence.
+  for (const path of protectedPaths) {
+    expect(
+      await guardToolCall(
+        { type: 'tool_call', toolCallId: path, toolName: 'write', input: { path, content: '' } },
         h.cwd,
         store,
-      );
-      expect(blocked?.block ?? false).toBe(!expected.implementationAllowed);
-    }
-  },
-);
+      ),
+    ).toMatchObject({ block: true });
+  }
+  if (!reloading) {
+    const blocked = await guardToolCall(
+      {
+        type: 'tool_call',
+        toolCallId: 'production',
+        toolName: 'write',
+        input: { path: 'src/value.ts', content: '' },
+      },
+      h.cwd,
+      store,
+    );
+    expect(blocked?.block ?? false).toBe(!expected.implementationAllowed);
+  }
+});

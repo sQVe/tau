@@ -153,7 +153,9 @@ const describeRedCoverage = async (
     return content != null && titledIn(content, test.fullname);
   };
   const unproven = required.filter((test) => !proven(test) && !preexisting(test));
-  const renewedFiles = evidence.reds.flatMap(({ record }) => Object.keys(record.renewed ?? {}));
+  const renewedFiles = evidence.reds.flatMap(({ behavior, edited }) =>
+    edited ? behavior.files : [],
+  );
   const edited = required.filter(
     (test) => proven(test) && renewedFiles.some((file) => sameFile(file, test.file)),
   );
@@ -165,7 +167,7 @@ const describeRedCoverage = async (
   return [
     `${required.length - unproven.length} of ${required.length} tests in the required files were proven RED or committed before`,
     ...(unproven.length === 0 ? [] : [`never failed: ${names(unproven)}`]),
-    ...(edited.length === 0 ? [] : [`edited after GREEN: ${names(edited)}`]),
+    ...(edited.length === 0 ? [] : [`edited after RED: ${names(edited)}`]),
   ].join('; ');
 };
 
@@ -218,7 +220,7 @@ export default function tddExtension(pi: ExtensionAPI) {
       description:
         'Name a behavior, its test files, and the exact Vitest full name: describe names followed by the it name, joined with spaces, for example "outer inner works", or an array of such names when several small tests prove one behavior together. ' +
         'Run scope "focused" to prove RED before editing production files, run focused again for GREEN after the fix, then run scope "full" at the end for verified. ' +
-        'Editing a required test file after RED re-locks the gate until the behavior has reached GREEN; after GREEN a focused pass accepts the edit and the full run reports it. ' +
+        'Editing a required test file after RED re-locks the gate; a focused pass accepts the edit and the full run reports it. ' +
         'Skipped and deleted tests never count. ' +
         'Returns kind (run outcome), phase (locked: no valid RED; red: failing test proven; green: that test passed; verified: full run passed with every RED test present and passing), implementationAllowed (true only in red), and report (test results, null if inputs changed). ' +
         'Only files matching the production globs are gated, and a notice string says the gate is off while no test runner resolves from the worktree or the user turned it off with /tdd off. ' +
@@ -261,15 +263,13 @@ export default function tddExtension(pi: ExtensionAPI) {
         const details = await store.run(ctx.cwd, behavior, scope, signal);
         ctx.ui.setStatus(STATUS_KEY, statusText(details));
         const report =
-          details.kind === 'inputs-changed' || details.kind === 'cancelled'
-            ? null
-            : details.evidence.latestRun?.report;
+          details.kind === 'inputs-changed' || details.kind === 'cancelled' ? null : details.report;
         const missing =
           scope === 'full' && report && 'tests' in report
             ? details.evidence.reds.find(
-                ({ behavior: required, record }) =>
-                  record.report.kind === 'fail' &&
-                  record.report.tests.some(
+                ({ behavior: required, report: redReport }) =>
+                  redReport.kind === 'fail' &&
+                  redReport.tests.some(
                     (test) =>
                       test.status === 'failed' &&
                       testNames(required).includes(test.fullname) &&

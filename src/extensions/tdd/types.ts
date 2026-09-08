@@ -9,29 +9,22 @@ export interface Behavior {
 
 export type InputHashes = Record<string, string | null>;
 
-export interface EvidenceRecord {
-  before: InputHashes;
-  after: InputHashes;
+export interface RedRecord {
+  behavior: Behavior;
   report: RunnerResult;
-}
-
-export interface RedRecord extends EvidenceRecord {
-  // Set once the behavior reached GREEN against this RED.
-  greened?: boolean;
-  // Test-file hashes accepted after GREEN, so the full run can report those tests as edited.
-  renewed?: InputHashes;
+  testHashes: InputHashes;
+  edited: boolean;
+  // Each behavior remembers its last focused phase when another behavior becomes active.
+  phase: 'locked' | 'red' | 'green';
 }
 
 export interface EvidenceState {
   active: Behavior | null;
-  reds: { behavior: Behavior; record: RedRecord }[];
-  red: RedRecord | null;
-  focusedPass: EvidenceRecord | null;
-  fullPass: EvidenceRecord | null;
-  latestRun: EvidenceRecord | null;
+  phase: Phase;
+  reds: RedRecord[];
+  verifiedTree: string | null;
   // Every test that ever failed by name under the gate, kept across verified task boundaries.
   proven: { file: string; fullname: string }[];
-  verified: boolean;
   gateOff: { since: string } | null;
 }
 

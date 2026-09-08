@@ -12,9 +12,7 @@ import { createEvidenceStore, tddGateStatus } from './state.js';
 // Every test here spawns real vitest children; the default 5s budget flakes on slow machines.
 vi.setConfig({ testTimeout: 120_000 });
 
-it('derives validity from current bytes and accepts restored content', async ({
-  onTestFinished,
-}) => {
+it('checks active test bytes and accepts restored content', async ({ onTestFinished }) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-evidence-'));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
   await symlink(resolve('node_modules'), join(cwd, 'node_modules'), 'dir');
@@ -35,15 +33,15 @@ it('derives validity from current bytes and accepts restored content', async ({
     const path = join(cwd, file);
     const original = await readFile(path);
     await writeFile(path, 'changed');
-    expect((await store.read(cwd)).implementationAllowed).toBe(false);
+    expect((await store.read(cwd)).implementationAllowed).toBe(file !== 'behavior.test.ts');
     await writeFile(path, original);
     expect((await store.read(cwd)).implementationAllowed).toBe(true);
   }
   const snapshot = await store.read(cwd);
-  expect(snapshot.evidence.red?.before[resolve(import.meta.dirname, 'config.ts')]).toMatch(
+  expect(snapshot.evidence.reds[0]?.testHashes[join(cwd, 'behavior.test.ts')]).toMatch(
     /^[a-f0-9]{64}$/,
   );
-  snapshot.evidence.red = null;
+  snapshot.evidence.reds = [];
   expect((await store.read(cwd)).implementationAllowed).toBe(true);
   await store.run(
     cwd,
@@ -58,11 +56,11 @@ it('derives validity from current bytes and accepts restored content', async ({
   const behavior = { behavior: 'passing', testFullName: 'required', files: ['behavior.test.ts'] };
   await store.run(cwd, behavior, 'focused');
   await store.run(cwd, behavior, 'full');
-  expect(await store.read(cwd)).toMatchObject({ focusedPassValid: false, fullPassValid: false });
+  expect(await store.read(cwd)).toMatchObject({ phase: 'verified', fullPassValid: true });
   await writeFile(join(cwd, 'package.json'), '{}');
-  expect(await store.read(cwd)).toMatchObject({ focusedPassValid: false, fullPassValid: false });
+  expect(await store.read(cwd)).toMatchObject({ phase: 'green', fullPassValid: false });
   await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
-  expect(await store.read(cwd)).toMatchObject({ focusedPassValid: false, fullPassValid: false });
+  expect(await store.read(cwd)).toMatchObject({ phase: 'verified', fullPassValid: true });
 });
 
 it('turns the gate off until a test runner resolves from the worktree', async ({
@@ -161,6 +159,51 @@ it('reads the repaired evidence after a failed load', async ({ onTestFinished })
   expect(await store.read(cwd)).toMatchObject({ phase: 'locked' });
 });
 
+it('loads the previous evidence shape locked while preserving gate and proven tests', async ({
+  onTestFinished,
+}) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  const result = await store.run(cwd, behavior, 'focused');
+  const entry = result.evidence.reds[0]!;
+  const record = {
+    before: entry.testHashes,
+    after: entry.testHashes,
+    report: entry.report,
+    greened: true,
+    renewed: entry.testHashes,
+  };
+  const gateOff = { since: '2026-09-08T00:00:00.000Z' };
+  const proven = [{ file: 'behavior.test.ts', fullname: 'required' }];
+  await writeFile(
+    join(cwd, '.tau/state.json'),
+    JSON.stringify({
+      tdd: {
+        active: behavior,
+        reds: [{ behavior, record }],
+        red: record,
+        focusedPass: record,
+        fullPass: record,
+        latestRun: record,
+        verified: true,
+        gateOff,
+        proven,
+      },
+    }),
+  );
+
+  const reloaded = createEvidenceStore();
+  expect(await reloaded.read(cwd)).toMatchObject({
+    phase: 'locked',
+    evidence: { phase: 'locked', gateOff, proven },
+    notice: `TDD gate off since ${gateOff.since}`,
+  });
+  await reloaded.setGate(cwd, 'on');
+  expect(await reloaded.read(cwd)).toMatchObject({
+    phase: 'locked',
+    implementationAllowed: false,
+  });
+});
+
 it('leaves the recorded evidence untouched when a run is aborted', async ({ onTestFinished }) => {
   const { cwd, store, behavior } = await createHarness(onTestFinished);
   const red = await store.run(cwd, behavior, 'focused');
@@ -170,7 +213,7 @@ it('leaves the recorded evidence untouched when a run is aborted', async ({ onTe
   expect(aborted).toMatchObject({ kind: 'cancelled', phase: 'red' });
   expect(await store.read(cwd)).toMatchObject({
     phase: 'red',
-    evidence: { red: red.evidence.red, latestRun: red.evidence.latestRun },
+    evidence: { reds: red.evidence.reds },
   });
 });
 
@@ -209,9 +252,9 @@ it('requires RED and a final full pass to verify', async ({ onTestFinished }) =>
   });
 });
 
-it('preserves RED but invalidates passes after production changes', async ({ onTestFinished }) => {
+it('keeps GREEN after production changes invalidate verification', async ({ onTestFinished }) => {
   const { cwd, store, behavior } = await createHarness(onTestFinished);
-  const red = await store.run(cwd, behavior, 'focused');
+  await store.run(cwd, behavior, 'focused');
   await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
   expect(await store.read(cwd)).toMatchObject({ phase: 'red', implementationAllowed: true });
   await store.run(cwd, behavior, 'focused');
@@ -219,26 +262,26 @@ it('preserves RED but invalidates passes after production changes', async ({ onT
   expect(await store.read(cwd)).toMatchObject({ phase: 'verified' });
   await writeFile(join(cwd, 'src/value.ts'), 'export const value = 2;');
   expect(await store.read(cwd)).toMatchObject({
-    phase: 'red',
-    focusedPassValid: false,
+    phase: 'green',
+    focusedPassValid: true,
     fullPassValid: false,
-    evidence: { red: red.evidence.red },
+    implementationAllowed: false,
   });
   await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
   await store.run(cwd, behavior, 'focused');
   await store.run(cwd, behavior, 'full');
   await writeFile(join(cwd, 'src/added.ts'), 'export const added = 1;');
   expect(await store.read(cwd)).toMatchObject({
-    phase: 'red',
+    phase: 'green',
     fullPassValid: false,
-    focusedPassValid: false,
+    focusedPassValid: true,
   });
   await rm(join(cwd, 'src/added.ts'));
   await rm(join(cwd, 'src/value.ts'));
   expect(await store.read(cwd)).toMatchObject({
-    phase: 'red',
+    phase: 'green',
     fullPassValid: false,
-    focusedPassValid: false,
+    focusedPassValid: true,
   });
 });
 
@@ -254,18 +297,18 @@ it('renews RED for a test amended after GREEN and remembers the edit', async ({
   expect(await store.read(cwd)).toMatchObject({ phase: 'locked', implementationAllowed: false });
   const renewed = await store.run(cwd, behavior, 'focused');
   expect(renewed).toMatchObject({ kind: 'pass', phase: 'green' });
-  expect(Object.keys(renewed.evidence.red?.renewed ?? {})).toEqual([test]);
+  expect(renewed.evidence.reds[0]?.edited).toBe(true);
   expect(await createEvidenceStore().read(cwd)).toMatchObject({ phase: 'green' });
   expect(await store.run(cwd, behavior, 'full')).toMatchObject({ phase: 'verified' });
-  // A protected input changed after GREEN still needs a fresh RED.
+  // Protected inputs affect verification, but do not discard the behavior's RED.
   await writeFile(join(cwd, 'vite.config.ts'), 'export default { test: {} };');
   expect(await store.run(cwd, behavior, 'focused')).toMatchObject({
     kind: 'pass',
-    phase: 'locked',
+    phase: 'green',
   });
 });
 
-it('keeps a test amended after the fix but before GREEN locked until it fails again', async ({
+it('renews a test amended after the fix but before GREEN and records the edit', async ({
   onTestFinished,
 }) => {
   const { cwd, store, behavior } = await createHarness(onTestFinished);
@@ -275,8 +318,9 @@ it('keeps a test amended after the fix but before GREEN locked until it fails ag
   await writeFile(test, (await readFile(test, 'utf8')).replace('toBe(1)', 'toBeGreaterThan(0)'));
   expect(await store.run(cwd, behavior, 'focused')).toMatchObject({
     kind: 'pass',
-    phase: 'locked',
+    phase: 'green',
     implementationAllowed: false,
+    evidence: { reds: [{ edited: true }] },
   });
   await writeFile(join(cwd, 'src/value.ts'), 'export const value = 0;');
   expect(await store.run(cwd, behavior, 'focused')).toMatchObject({
@@ -424,7 +468,7 @@ it('never accepts a missing required test file as evidence', async ({ onTestFini
   expect(await store.run(cwd, selection, 'focused')).toMatchObject({
     phase: 'locked',
     implementationAllowed: false,
-    evidence: { red: null },
+    evidence: { reds: [] },
   });
   await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
   expect(await store.run(cwd, selection, 'focused')).toMatchObject({ focusedPassValid: false });
@@ -493,7 +537,7 @@ it('records nothing when one file holds two tests with the same full name', asyn
     kind: 'fail',
     phase: 'locked',
     implementationAllowed: false,
-    evidence: { red: null },
+    evidence: { reds: [] },
   });
   await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
   expect(await store.run(cwd, behavior, 'focused')).toMatchObject({
@@ -550,7 +594,7 @@ it('turns the gate off through the switch and back on', async ({ onTestFinished 
   const on = await store.read(cwd);
   expect(on.notice).toBeUndefined();
   expect(on.phase).toBe('red');
-  expect(on.evidence.red?.report.kind).toBe('fail');
+  expect(on.evidence.reds[0]?.report.kind).toBe('fail');
   expect(await tddGateStatus(cwd)).toBeUndefined();
 });
 
@@ -584,14 +628,14 @@ it('keeps evidence when the same behavior arrives with reordered fields', async 
   expect((await store.read(cwd)).phase).toBe('green');
 });
 
-it('invalidates evidence when a vitest configuration appears', async ({ onTestFinished }) => {
+it('keeps RED when a vitest configuration appears', async ({ onTestFinished }) => {
   const { cwd, store, behavior } = await createHarness(onTestFinished);
   await store.run(cwd, behavior, 'focused');
   expect((await store.read(cwd)).implementationAllowed).toBe(true);
 
   await writeFile(join(cwd, 'vitest.config.ts'), 'export default { test: { exclude: ["**"] } };');
 
-  expect((await store.read(cwd)).implementationAllowed).toBe(false);
+  expect((await store.read(cwd)).implementationAllowed).toBe(true);
 });
 
 it('keeps a proven RED when the agent returns to an earlier behavior', async ({
