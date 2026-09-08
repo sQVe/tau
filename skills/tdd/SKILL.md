@@ -15,8 +15,7 @@ missing, so this cycle is the only way to reach the implementation.
 
 ## Goal
 
-Prove each behavior with a failing test, make it pass, and verify the whole suite, so every
-production edit is backed by recorded test evidence.
+Prove each behavior with a failing test, make it pass, then verify the whole suite.
 
 ## Hard rules
 
@@ -35,8 +34,9 @@ production edit is backed by recorded test evidence.
   behavior is missing. A test that fails for any other reason, or that you weakened or rewrote to
   match the code, opens the gate and proves nothing.
 - Editing a required test file after RED invalidates that proof.
-- The gate never blocks reading, searching, bash, or `commit`. Files outside the production globs,
-  such as documentation, are not gated either.
+- Only `write` and `edit` may touch files. Every other file-touching tool is blocked in every phase,
+  whatever path it names. `read`, `grep`, `find`, `ls`, `bash`, `run_tests`, and `commit` always
+  pass, and `write` and `edit` are ungated outside the production globs, such as on documentation.
 - `package.json` and the vite and vitest configuration files are protected. Writes to them are
   blocked in every phase, including while the gate is off, because they decide how verification
   runs. Change them through bash.
@@ -45,8 +45,8 @@ production edit is backed by recorded test evidence.
 
 1. Write the failing test first. Put it in a test file next to the code, and match the naming,
    assertions, and helpers of the tests already there.
-2. Call `run_tests` with `scope: "focused"`. The phase becomes `red` and production writes open. If
-   the run passes instead, the behavior already exists or the test is too weak. Rewrite the test.
+2. Call `run_tests` with `scope: "focused"`. The phase becomes `red` and production writes open. A
+   pass here means the behavior already exists or the test is too weak, so rewrite the test.
 3. Read the failure. The summary names the failing tests with worktree-relative paths; `details`
    carries the full report. Implement only what the failure asks for.
 4. Call `run_tests` with `scope: "focused"` again, same arguments. A pass moves the phase to
@@ -58,8 +58,9 @@ production edit is backed by recorded test evidence.
 
 ## Recover a locked phase
 
-The phase is `locked` when no valid RED evidence stands. The tool's `next` field states the exact
-recovery for the case at hand. The common ones:
+The phase is `locked` when no valid RED evidence stands. The `run_tests` summary carries a `Next:`
+line for the cases it can name, and a blocked write states the recovery for that path. The common
+ones:
 
 - No test yet: write the failing test, then run focused.
 - The required test file changed after RED: run focused again. It proves RED again while the test
@@ -69,16 +70,17 @@ recovery for the case at hand. The common ones:
 - A required RED test is skipped or missing: restore it so it runs and passes.
 - Duplicate full names: rename the tests so each full name is unique in its file.
 
-The footer shows the current phase and active behavior. `/tdd status` reports the same, plus whether
-production writes are allowed.
+The footer shows the phase and active behavior, but it is read before the last write landed, so it
+trails by one tool call. Trust the `run_tests` summary and the block message. `/tdd status` reports
+the gate, the phase, and whether production writes are allowed, without naming the behavior.
 
 ## Turning the gate off
 
 The gate turns itself off when no test runner resolves from the worktree. `/tdd off` turns it off
 for this worktree, recorded in `.tau/state.json`, so it also holds in later sessions until
-`/tdd on`. Both cases print a notice in every `run_tests` summary and in commit results. Protected
-paths and writes outside the worktree stay blocked either way. Ask the user before turning the gate
-off.
+`/tdd on`. Both print a notice in every `run_tests` summary, but only the `/tdd off` case reaches
+commit results, so a missing notice there does not mean the gate is on. Protected paths and writes
+outside the worktree stay blocked either way. Ask the user before turning the gate off.
 
 ## Checklist
 
