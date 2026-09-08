@@ -532,3 +532,17 @@ it('turns the gate off through the switch and back on', async ({ onTestFinished 
   expect(on.evidence.red?.report.kind).toBe('fail');
   expect(await tddGateStatus(cwd)).toBeUndefined();
 });
+
+it('reports an unreadable evidence file instead of a gate that is on', async ({
+  onTestFinished,
+}) => {
+  const { cwd } = await createHarness(onTestFinished);
+  expect(await tddGateStatus(cwd)).toBeUndefined();
+
+  await mkdir(join(cwd, '.tau'), { recursive: true });
+  await writeFile(join(cwd, '.tau/state.json'), '{"tdd":{"active"');
+
+  expect(await tddGateStatus(cwd)).toBe(
+    `TDD gate status unknown: unreadable evidence at ${join(cwd, '.tau/state.json')}`,
+  );
+});

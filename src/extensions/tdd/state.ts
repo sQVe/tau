@@ -148,9 +148,15 @@ const emptyState = (): EvidenceState => ({
 const gateOffNotice = (state: EvidenceState) =>
   state.gateOff == null ? undefined : `TDD gate off since ${state.gateOff.since}`;
 
-// The commit tool reports the switch without importing the store the tdd extension owns.
-export const tddGateStatus = async (cwd: string) =>
-  gateOffNotice(await loadState(resolve(cwd)).catch(() => emptyState()));
+// The commit tool reports the switch without importing the store the tdd extension owns. Commit is
+// exempt from the guard, so an unreadable file has to be said out loud rather than read as on.
+export const tddGateStatus = async (cwd: string) => {
+  try {
+    return gateOffNotice(await loadState(resolve(cwd)));
+  } catch {
+    return `TDD gate status unknown: unreadable evidence at ${statePath(resolve(cwd))}`;
+  }
+};
 
 const isStoredState = (value: unknown): value is { tdd: EvidenceState } =>
   value !== null &&
