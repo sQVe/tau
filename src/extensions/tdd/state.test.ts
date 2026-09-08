@@ -242,7 +242,7 @@ it('preserves RED but invalidates passes after production changes', async ({ onT
   });
 });
 
-it('re-proves amended tests after reverting production without replacing the store', async ({
+it('renews RED for a test amended after GREEN and remembers the edit', async ({
   onTestFinished,
 }) => {
   const { cwd, store, behavior } = await createHarness(onTestFinished);
@@ -251,11 +251,28 @@ it('re-proves amended tests after reverting production without replacing the sto
   await store.run(cwd, behavior, 'focused');
   const test = join(cwd, 'behavior.test.ts');
   await writeFile(test, (await readFile(test, 'utf8')).replace('toBe(1)', 'toBeGreaterThan(0)'));
-  expect(await store.read(cwd)).toMatchObject({
+  expect(await store.read(cwd)).toMatchObject({ phase: 'locked', implementationAllowed: false });
+  const renewed = await store.run(cwd, behavior, 'focused');
+  expect(renewed).toMatchObject({ kind: 'pass', phase: 'green' });
+  expect(Object.keys(renewed.evidence.red?.renewed ?? {})).toEqual([test]);
+  expect(await createEvidenceStore().read(cwd)).toMatchObject({ phase: 'green' });
+  expect(await store.run(cwd, behavior, 'full')).toMatchObject({ phase: 'verified' });
+  // A protected input changed after GREEN still needs a fresh RED.
+  await writeFile(join(cwd, 'vite.config.ts'), 'export default { test: {} };');
+  expect(await store.run(cwd, behavior, 'focused')).toMatchObject({
+    kind: 'pass',
     phase: 'locked',
-    implementationAllowed: false,
-    focusedPassValid: false,
   });
+});
+
+it('keeps a test amended after the fix but before GREEN locked until it fails again', async ({
+  onTestFinished,
+}) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  await store.run(cwd, behavior, 'focused');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  const test = join(cwd, 'behavior.test.ts');
+  await writeFile(test, (await readFile(test, 'utf8')).replace('toBe(1)', 'toBeGreaterThan(0)'));
   expect(await store.run(cwd, behavior, 'focused')).toMatchObject({
     kind: 'pass',
     phase: 'locked',
@@ -575,4 +592,71 @@ it('invalidates evidence when a vitest configuration appears', async ({ onTestFi
   await writeFile(join(cwd, 'vitest.config.ts'), 'export default { test: { exclude: ["**"] } };');
 
   expect((await store.read(cwd)).implementationAllowed).toBe(false);
+});
+
+it('keeps a proven RED when the agent returns to an earlier behavior', async ({
+  onTestFinished,
+}) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  await writeFile(
+    join(cwd, 'second.test.ts'),
+    "import { it, expect } from 'vitest'; import { value } from './src/value'; it('second', () => expect(value).toBeGreaterThanOrEqual(2));",
+  );
+  await store.run(cwd, behavior, 'focused');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  await store.run(cwd, behavior, 'focused');
+  const second = { behavior: 'second', testFullName: 'second', files: ['second.test.ts'] };
+  await store.run(cwd, second, 'focused');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 2;');
+  expect(await store.run(cwd, second, 'focused')).toMatchObject({ phase: 'green' });
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    "import { it, expect } from 'vitest'; import { value } from './src/value'; it('required', () => expect(value).toBe(2));",
+  );
+  expect(await store.run(cwd, behavior, 'focused')).toMatchObject({ kind: 'pass', phase: 'green' });
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    "import { it, expect } from 'vitest'; import { value } from './src/value'; it('required', () => expect(value).toBe(1));",
+  );
+  expect(await store.run(cwd, second, 'focused')).toMatchObject({ phase: 'green' });
+  expect(await store.run(cwd, behavior, 'focused')).toMatchObject({ kind: 'fail', phase: 'red' });
+});
+
+it('treats a relabeled behavior as the same behavior', async ({ onTestFinished }) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  await store.run(cwd, behavior, 'focused');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  const relabeled = await store.run(cwd, { ...behavior, behavior: 'renamed' }, 'focused');
+  expect(relabeled).toMatchObject({
+    phase: 'green',
+    evidence: { active: { behavior: 'renamed' } },
+  });
+});
+
+it('proves one behavior with several named tests together', async ({ onTestFinished }) => {
+  const { cwd, store } = await createHarness(onTestFinished);
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    "import { it, expect } from 'vitest'; import { value } from './src/value'; it('is one', () => expect(value).toBe(1)); it('is positive', () => expect(value).toBeGreaterThan(0)); it('other', () => {});",
+  );
+  const behavior = {
+    behavior: 'pair',
+    testFullName: ['is positive', 'is one'],
+    files: ['behavior.test.ts'],
+  };
+  const red = await store.run(cwd, behavior, 'focused');
+  expect(red).toMatchObject({ kind: 'fail', phase: 'red' });
+  expect(red.evidence.active?.testFullName).toEqual(['is one', 'is positive']);
+  expect(red.evidence.proven.map((entry) => entry.fullname)).toEqual(['is one', 'is positive']);
+  // Only one of the two passing keeps the behavior in red.
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 2;');
+  expect(await store.run(cwd, behavior, 'focused')).toMatchObject({ kind: 'fail', phase: 'red' });
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  expect(await store.run(cwd, behavior, 'focused')).toMatchObject({ kind: 'pass', phase: 'green' });
+  expect(await store.run(cwd, behavior, 'full')).toMatchObject({ phase: 'verified' });
+  // A single name in an array is the same behavior as the plain string.
+  const single = { behavior: 'one', testFullName: ['is one'], files: ['behavior.test.ts'] };
+  const plain = { ...single, testFullName: 'is one' };
+  await store.run(cwd, single, 'focused');
+  expect((await store.run(cwd, plain, 'focused')).evidence.active?.testFullName).toBe('is one');
 });

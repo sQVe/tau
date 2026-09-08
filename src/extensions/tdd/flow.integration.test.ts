@@ -250,14 +250,9 @@ it('enforces file classifications across the evidence phases through pi', async 
   expect(JSON.stringify(stale.result)).toContain('locked');
   expect(JSON.stringify(stale.result)).toContain('required behavior');
   expect(await readFile(join(cwd, 'src/value.ts'), 'utf8')).toBe('export const value = 1;');
+  // The behavior reached GREEN, so a focused pass accepts the amended test.
   const behavior = { files: ['src/value.test.ts'] };
-  expect((await run(behavior)).details).toMatchObject({ kind: 'pass', phase: 'locked' });
-  expect((await call('bash', { command: 'git restore -- src/value.ts' })).isError).toBe(false);
-  expect((await run(behavior)).details).toMatchObject({ kind: 'fail', phase: 'red' });
-  expect(
-    (await call('write', { path: 'src/value.ts', content: 'export const value = 1;' })).isError,
-  ).toBe(false);
-  expect((await run(behavior)).details.phase).toBe('green');
+  expect((await run(behavior)).details).toMatchObject({ kind: 'pass', phase: 'green' });
   expect((await run({ ...behavior, scope: 'full' })).details.phase).toBe('verified');
 });
 
@@ -728,7 +723,7 @@ it('describes the cycle and exact nested test names in the registered tool', asy
     'scope "full"',
     'verified',
     're-locks',
-    'git restore/stash',
+    'after GREEN',
     'Skipped and deleted tests never count',
     'kind',
     'phase',
@@ -756,7 +751,7 @@ it('describes the cycle and exact nested test names in the registered tool', asy
       },
       testFullName: {
         description:
-          'Exact Vitest full name: describe names then the it name, joined with spaces, not " > "; for example "outer inner works". Use the same name for focused and full runs.',
+          'Exact Vitest full name: describe names then the it name, joined with spaces, not " > "; for example "outer inner works". Give an array when one behavior is proven by several small tests; every one must fail in RED and pass in GREEN. Use the same names for focused and full runs.',
       },
     },
   });
@@ -922,4 +917,153 @@ it('keeps TDD feedback out of the footer status', async ({ onTestFinished }) => 
   await session.prompt('/tdd on');
 
   expect(statuses).toEqual([]);
+});
+
+it('accepts a test edited after GREEN and reports it on the full run', async () => {
+  const { cwd, run, call } = await createMissingRedHarness();
+  const test =
+    "import { it, expect } from 'vitest'; import { value } from './src/value'; it('required behavior', () => expect(value).toBe(1));";
+  expect((await call('write', { path: 'behavior.test.ts', content: test })).isError).toBe(false);
+  expect((await run()).details.phase).toBe('red');
+  expect(
+    (await call('write', { path: 'src/value.ts', content: 'export const value = 1;' })).isError,
+  ).toBe(false);
+  expect((await run()).details.phase).toBe('green');
+  await writeFile(join(cwd, 'behavior.test.ts'), `${test}\n`);
+  expect((await run()).details).toMatchObject({ kind: 'pass', phase: 'green' });
+  const full = await run({ scope: 'full' });
+  expect(full.details.phase).toBe('verified');
+  expect(full.content[0]!.text).toContain(
+    '1 of 1 tests in the required files were proven RED or committed before; edited after GREEN: behavior.test.ts › required behavior',
+  );
+});
+
+it('explains a test edited after the fix but before GREEN', async () => {
+  const { cwd, run, call } = await createMissingRedHarness();
+  const test =
+    "import { it, expect } from 'vitest'; import { value } from './src/value'; it('required behavior', () => expect(value).toBe(1));";
+  expect((await call('write', { path: 'behavior.test.ts', content: test })).isError).toBe(false);
+  expect((await run()).details.phase).toBe('red');
+  expect(
+    (await call('write', { path: 'src/value.ts', content: 'export const value = 1;' })).isError,
+  ).toBe(false);
+  await writeFile(join(cwd, 'behavior.test.ts'), `${test}\n`);
+  const result = await run();
+  expect(result.details).toMatchObject({ kind: 'pass', phase: 'locked' });
+  expect(result.content[0]!.text).toContain(
+    'Next: behavior.test.ts changed after RED and before GREEN, so that proof no longer matches. Remove the production change so the test fails again, call run_tests {"behavior":"required behavior","testFullName":"required behavior","files":["behavior.test.ts"],"scope":"focused"} to prove RED, then put the change back.',
+  );
+});
+
+it('counts the tests in required files that never failed on the full run', async () => {
+  const { cwd, run, call } = await createMissingRedHarness();
+  expect(
+    (await call('write', { path: 'behavior.test.ts', content: REQUIRED_RED_TEST })).isError,
+  ).toBe(false);
+  expect((await run()).details.phase).toBe('red');
+  expect(
+    (await call('write', { path: 'src/value.ts', content: 'export const value = 3;' })).isError,
+  ).toBe(false);
+  expect((await run()).details.phase).toBe('green');
+  const result = await run({ scope: 'full' });
+  expect(result.details.phase).toBe('verified');
+  expect(result.content[0]!.text).toContain(
+    '1 of 2 tests in the required files were proven RED or committed before; never failed: behavior.test.ts › other in file',
+  );
+  // A test proven in an earlier task stays proven after the verified boundary clears its RED.
+  const second = `${REQUIRED_RED_TEST} it.todo('later'); it('second behavior', () => expect(value).toBe(4));`;
+  expect((await call('write', { path: 'behavior.test.ts', content: second })).isError).toBe(false);
+  const secondBehavior = { behavior: 'second', testFullName: 'second behavior' };
+  expect((await run(secondBehavior)).details.phase).toBe('red');
+  expect(
+    (await call('write', { path: 'src/value.ts', content: 'export const value = 4;' })).isError,
+  ).toBe(false);
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    second.replace('expect(value).toBe(3)', 'expect(value).toBe(4)'),
+  );
+  expect((await run(secondBehavior)).details.phase).toBe('locked');
+  // Setting a new file aside leaves a load error, so an empty stub stands in for the RED run.
+  await call('bash', { command: 'mv src/value.ts value.aside && : > src/value.ts' });
+  expect((await run(secondBehavior)).details.phase).toBe('red');
+  await call('bash', { command: 'mv value.aside src/value.ts' });
+  expect((await run(secondBehavior)).details.phase).toBe('green');
+  const full = await run({ ...secondBehavior, scope: 'full' });
+  expect(full.details.phase).toBe('verified');
+  expect(full.content[0]!.text).toContain(
+    '2 of 3 tests in the required files were proven RED or committed before; never failed: behavior.test.ts › other in file',
+  );
+});
+
+it('does not report committed tests as never failed', async () => {
+  const { cwd, run, call } = await createMissingRedHarness();
+  const git = (args: string[]) =>
+    promisify(execFile)('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd });
+  const committed = `${UNRELATED_PASSING_TEST} it.each(['skipped', 'missing'])('explains a %s case', () => {}); it.each([{ name: 'x' }])('handles $name', () => {});`;
+  await writeFile(join(cwd, 'behavior.test.ts'), committed);
+  await git(['add', 'behavior.test.ts']);
+  await git(['commit', '-qm', 'existing']);
+  const test = `${committed} import { value } from './src/value'; it('required behavior', () => expect(value).toBe(1)); it('ride along', () => {});`;
+  expect(
+    (
+      await call('write', {
+        path: 'behavior.test.ts',
+        content: test.replace('import { it }', 'import { it, expect }'),
+      })
+    ).isError,
+  ).toBe(false);
+  expect((await run()).details.phase).toBe('red');
+  expect(
+    (await call('write', { path: 'src/value.ts', content: 'export const value = 1;' })).isError,
+  ).toBe(false);
+  expect((await run()).details.phase).toBe('green');
+  const full = await run({ scope: 'full' });
+  expect(full.content[0]!.text).toContain(
+    '5 of 6 tests in the required files were proven RED or committed before; never failed: behavior.test.ts › ride along',
+  );
+});
+
+it('creates an empty stub for a new module through bash, then proves RED by name', async () => {
+  const { run, call } = await createHarness(registerCleanup);
+  expect(
+    (
+      await call('write', {
+        path: 'behavior.test.ts',
+        content:
+          "import { it, expect } from 'vitest'; import { value } from './src/value'; it('required behavior', () => expect(value()).toBe(1));",
+      })
+    ).isError,
+  ).toBe(false);
+  expect((await run()).details).toMatchObject({ kind: 'fail', phase: 'locked' });
+  expect((await call('write', { path: 'src/value.ts', content: '' })).isError).toBe(true);
+  expect((await call('bash', { command: 'mkdir -p src && : > src/value.ts' })).isError).toBe(false);
+  const red = await run();
+  expect(red.details).toMatchObject({ kind: 'fail', phase: 'red' });
+  expect(red.content[0]!.text).toContain('is not a function');
+});
+
+it('accepts several test names for one behavior through the tool schema', async () => {
+  const { run, call } = await createMissingRedHarness();
+  expect(
+    (
+      await call('write', {
+        path: 'behavior.test.ts',
+        content:
+          "import { it, expect } from 'vitest'; import { value } from './src/value'; it('required behavior', () => expect(value).toBe(1)); it('second check', () => expect(value).toBeGreaterThan(0));",
+      })
+    ).isError,
+  ).toBe(false);
+  const names = { testFullName: ['required behavior', 'second check'] };
+  const red = await run(names);
+  expect(red.details).toMatchObject({ kind: 'fail', phase: 'red' });
+  expect(red.content[0]!.text).toContain('0 passed, 2 failed');
+  expect(
+    (await call('write', { path: 'src/value.ts', content: 'export const value = 1;' })).isError,
+  ).toBe(false);
+  expect((await run(names)).details.phase).toBe('green');
+  const full = await run({ ...names, scope: 'full' });
+  expect(full.details.phase).toBe('verified');
+  expect(full.content[0]!.text).toContain(
+    '2 of 2 tests in the required files were proven RED or committed before',
+  );
 });

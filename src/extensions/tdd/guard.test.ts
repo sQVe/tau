@@ -1,5 +1,9 @@
+import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import type { ToolCallEvent } from '@earendil-works/pi-coding-agent';
-import { expect, it, vi } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { guardToolCall } from './guard.js';
 import type { createEvidenceStore } from './state.js';
@@ -14,6 +18,7 @@ const createStore = (phase: Phase, notice?: string) => ({
       implementationAllowed: phase === 'red',
       focusedPassValid: phase === 'green' || phase === 'verified',
       fullPassValid: phase === 'verified',
+      staleSinceRed: [],
       evidence: {
         active: {
           behavior: 'required behavior',
@@ -25,6 +30,7 @@ const createStore = (phase: Phase, notice?: string) => ({
         focusedPass: null,
         fullPass: null,
         latestRun: null,
+        proven: [],
         verified: false,
         gateOff: null,
       },
@@ -57,12 +63,11 @@ it.each(phases)('allows production writes while no test runner resolves in %s', 
   }
 });
 
-it.each(phases)('keeps protected paths and escapes blocked with no runner in %s', async (phase) => {
+it.each(phases)('keeps protected paths blocked with no runner in %s', async (phase) => {
   const store = createStore(phase, 'no test runner resolves from /repo');
   for (const [path, next] of [
     ['.tau/state.json', 'Choose an unprotected test file with ls {"path":"."}'],
     ['package.json', 'Choose an unprotected test file with ls {"path":"."}'],
-    ['../value.ts', 'List worktree files with ls {"path":"."}'],
     ['@package.json', 'List literal worktree paths with ls {"path":"."}'],
     ['~/value.ts', 'List literal worktree paths with ls {"path":"."}'],
   ]) {
@@ -182,31 +187,31 @@ it.each(phases)('blocks unrecognized tools without path arguments in %s', async 
   }
 });
 
-it.each(phases)('refuses paths outside the worktree in %s', async (phase) => {
+it.each(phases)('leaves paths outside the worktree ungated in %s', async (phase) => {
   for (const path of [
-    '../outside.test.ts',
-    '/outside.test.ts',
-    '/repo-sibling/value.test.ts',
+    '../outside.ts',
+    '/outside.ts',
+    '/repo-sibling/src/value.ts',
     'src/../../outside.ts',
-    '..',
+    '..\\outside.ts',
+    '/home/user/.pi/agent/settings.json',
   ]) {
-    const result = await guardToolCall(makeEvent('write', { path }), '/repo', createStore(phase));
-    expect(result?.block).toBe(true);
-    expect(result?.reason).toContain(path);
-    expect(result?.reason).toContain(phase);
-    expect(result?.reason).toContain('List worktree files with ls {"path":"."}');
+    for (const tool of ['write', 'edit']) {
+      expect(
+        await guardToolCall(makeEvent(tool, { path }), '/repo', createStore(phase)),
+      ).toBeUndefined();
+    }
   }
 });
 
-it('blocks backslash-separated escapes and protected paths', async () => {
-  for (const [path, next] of [
-    ['..\\outside.test.ts', 'List worktree files with ls {"path":"."}'],
-    ['.tau\\state.json', 'Choose an unprotected test file with ls {"path":"."}'],
-  ]) {
-    const result = await guardToolCall(makeEvent('write', { path }), '/repo', createStore('red'));
-    expect(result?.block).toBe(true);
-    expect(result?.reason).toContain(next);
-  }
+it('blocks backslash-separated protected paths', async () => {
+  const result = await guardToolCall(
+    makeEvent('write', { path: '.tau\\state.json' }),
+    '/repo',
+    createStore('red'),
+  );
+  expect(result?.block).toBe(true);
+  expect(result?.reason).toContain('Choose an unprotected test file with ls {"path":"."}');
 });
 
 it.each(phases)('uses the stored implementation decision in %s', async (phase) => {
@@ -278,4 +283,28 @@ it('requests a failing test when no behavior is active', async () => {
   expect(result?.reason).toBe(
     'Blocked src/value.ts in phase locked, active behavior: none. Write a failing test with write using path "src/value.test.ts" and content that checks the missing behavior.',
   );
+});
+
+it('gates a production file addressed through a symlinked spelling of the worktree', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tau-guard-'));
+  onTestFinished(() => rm(root, { recursive: true, force: true }));
+  const real = join(root, 'real');
+  const link = join(root, 'link');
+  await mkdir(join(real, 'src'), { recursive: true });
+  await symlink(real, link, 'dir');
+  for (const [cwd, path] of [
+    [link, join(real, 'src/value.ts')],
+    [real, join(link, 'src/value.ts')],
+    [real, join(link, 'src/new/value.ts')],
+  ] as const) {
+    const result = await guardToolCall(makeEvent('write', { path }), cwd, createStore('locked'));
+    expect(result?.block, `${cwd} ${path}`).toBe(true);
+  }
+  expect(
+    await guardToolCall(
+      makeEvent('write', { path: join(root, 'src/value.ts') }),
+      real,
+      createStore('locked'),
+    ),
+  ).toBeUndefined();
 });

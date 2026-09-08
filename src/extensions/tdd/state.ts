@@ -5,7 +5,14 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { classifyPath, protectedPaths, tddConfig } from './config.js';
 import { runTests, runnerAvailable } from './runner/index.js';
 import type { RunnerResult, TestResult } from './runner/types.js';
-import type { Behavior, EvidenceRecord, EvidenceState, InputHashes, Phase } from './types.js';
+import type {
+  Behavior,
+  EvidenceRecord,
+  EvidenceState,
+  InputHashes,
+  Phase,
+  RedRecord,
+} from './types.js';
 
 // ponytail: one process-wide chain; split by worktree if independent runs need concurrency.
 let pendingRun: Promise<unknown> = Promise.resolve();
@@ -23,9 +30,7 @@ const hashInputs = async (
       [...tddConfig.productionGlobs, ...(scope === 'full' ? tddConfig.testGlobs : [])],
       { cwd, exclude: ['**/node_modules/**', '**/.git/**'] },
     )) {
-      if (scope === 'full' || classifyPath(file) === 'production') {
-        sources.push(file);
-      }
+      if (scope === 'full' || classifyPath(file) === 'production') sources.push(file);
     }
   }
   return Object.fromEntries(
@@ -46,9 +51,8 @@ const hashInputs = async (
                 .digest('hex'),
             ];
           } catch (error) {
-            if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+            if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT')
               throw error;
-            }
             return [file, null];
           }
         }),
@@ -58,6 +62,26 @@ const hashInputs = async (
 
 const sameHashes = (left: InputHashes, right: InputHashes) =>
   JSON.stringify(left) === JSON.stringify(right);
+
+export const testNames = (behavior: Pick<Behavior, 'testFullName'>): string[] =>
+  Array.isArray(behavior.testFullName) ? behavior.testFullName : [behavior.testFullName];
+
+// The label is free text for the summary; the test names and files identify a behavior.
+const sameBehavior = (left: Behavior, right: Behavior) =>
+  JSON.stringify(testNames(left)) === JSON.stringify(testNames(right)) &&
+  JSON.stringify(left.files) === JSON.stringify(right.files);
+
+const redHash = (record: RedRecord, file: string) => record.renewed?.[file] ?? record.after[file];
+
+// The active RED and its list entry are one object until a reload splits them.
+const activeRedRecords = (state: EvidenceState): RedRecord[] => {
+  const active = state.active;
+  const entry =
+    active === null
+      ? undefined
+      : state.reds.find((candidate) => sameBehavior(candidate.behavior, active));
+  return [...new Set([state.red, entry?.record].filter((record) => record != null))];
+};
 
 const identityMatches = (cwd: string, fullname: string, file: string, test: TestResult) =>
   test.fullname === fullname && resolve(cwd, test.file) === resolve(cwd, file);
@@ -77,20 +101,24 @@ const uniqueStatus = (
 // Ambiguity is per file: another required file can still identify the behavior on its own.
 export const ambiguousFiles = (cwd: string, behavior: Behavior, report: RunnerResult) =>
   'tests' in report
-    ? behavior.files.filter(
-        (file) =>
-          report.tests.filter((test) => identityMatches(cwd, behavior.testFullName, file, test))
-            .length > 1,
+    ? behavior.files.filter((file) =>
+        testNames(behavior).some(
+          (name) =>
+            report.tests.filter((test) => identityMatches(cwd, name, file, test)).length > 1,
+        ),
       )
     : [];
 
+// Every named test has to reach the status in some required file.
 const uniquelyIs = (
   cwd: string,
   tests: TestResult[],
   behavior: Behavior,
   status: TestResult['status'],
 ) =>
-  behavior.files.some((file) => uniqueStatus(cwd, tests, behavior.testFullName, file) === status);
+  testNames(behavior).every((name) =>
+    behavior.files.some((file) => uniqueStatus(cwd, tests, name, file) === status),
+  );
 
 const redPassed = (
   cwd: string,
@@ -98,25 +126,32 @@ const redPassed = (
   red: EvidenceRecord | null,
   pass: EvidenceRecord | null,
 ) => {
-  if (behavior === null || red?.report.kind !== 'fail' || pass?.report.kind !== 'pass') {
+  if (behavior === null || red?.report.kind !== 'fail' || pass?.report.kind !== 'pass')
     return false;
-  }
   const redTests = red.report.tests;
   const passedTests = pass.report.tests;
-  const required = behavior.files.filter(
-    (file) => uniqueStatus(cwd, redTests, behavior.testFullName, file) === 'failed',
-  );
-  return (
-    required.length > 0 &&
-    required.every(
-      (file) => uniqueStatus(cwd, passedTests, behavior.testFullName, file) === 'passed',
-    )
-  );
+  return testNames(behavior).every((name) => {
+    const required = behavior.files.filter(
+      (file) => uniqueStatus(cwd, redTests, name, file) === 'failed',
+    );
+    return (
+      required.length > 0 &&
+      required.every((file) => uniqueStatus(cwd, passedTests, name, file) === 'passed')
+    );
+  });
 };
 
-const failedIn = (cwd: string, { behavior, record }: EvidenceState['reds'][number], file: string) =>
-  record.report.kind === 'fail' &&
-  uniqueStatus(cwd, record.report.tests, behavior.testFullName, file) === 'failed';
+const failedIn = (
+  cwd: string,
+  { behavior, record }: EvidenceState['reds'][number],
+  file: string,
+) => {
+  const report = record.report;
+  return (
+    report.kind === 'fail' &&
+    testNames(behavior).some((name) => uniqueStatus(cwd, report.tests, name, file) === 'failed')
+  );
+};
 
 const runnerChecks = new Map<string, { packageHash: string | null; available: boolean }>();
 
@@ -143,6 +178,7 @@ const emptyState = (): EvidenceState => ({
   focusedPass: null,
   fullPass: null,
   latestRun: null,
+  proven: [],
   verified: false,
   gateOff: null,
 });
@@ -175,17 +211,14 @@ const loadState = async (cwd: string): Promise<EvidenceState> => {
   try {
     content = await readFile(path, 'utf8');
   } catch (error) {
-    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
-      throw error;
-    }
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
     return emptyState();
   }
   try {
     const parsed: unknown = JSON.parse(content);
-    if (!isStoredState(parsed)) {
-      throw new Error('missing tdd evidence');
-    }
-    return parsed.tdd;
+    if (!isStoredState(parsed)) throw new Error('missing tdd evidence');
+    // Evidence written by an earlier version may lack fields added since.
+    return { ...emptyState(), ...parsed.tdd };
   } catch (error) {
     throw new Error(`Unreadable test evidence in ${path}`, { cause: error });
   }
@@ -197,6 +230,23 @@ const saveState = async (cwd: string, state: EvidenceState) => {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(temporary, JSON.stringify({ tdd: state }));
   await rename(temporary, path);
+};
+
+// A test edited after its behavior reached GREEN cannot fail again without removing the fix, and
+// that ceremony proves little, so the amended file is accepted and the full run reports it.
+// Protected inputs are never renewed: they decide how verification runs.
+const renewRed = (cwd: string, state: EvidenceState, behavior: Behavior, pass: EvidenceRecord) => {
+  const red = state.red;
+  if (red?.greened !== true) return;
+  const keys = behavior.files.map((file) => resolve(cwd, file));
+  const staleTests = keys.filter((key) => redHash(red, key) !== pass.after[key]);
+  const staleOthers = [...protectedPaths.map((file) => resolve(cwd, file)), configPath].filter(
+    (key) => redHash(red, key) !== pass.after[key],
+  );
+  if (staleTests.length === 0 || staleOthers.length > 0) return;
+  if (!redPassed(cwd, behavior, red, pass)) return;
+  const renewed = Object.fromEntries(keys.map((key) => [key, pass.after[key] ?? null]));
+  for (const record of activeRedRecords(state)) record.renewed = { ...record.renewed, ...renewed };
 };
 
 export const createEvidenceStore = () => {
@@ -218,9 +268,13 @@ export const createEvidenceStore = () => {
     const evidence = structuredClone(state);
     const hashes = await hashInputs(cwd, evidence.active?.files ?? []);
     const productionHashes = await hashInputs(cwd, evidence.active?.files ?? [], 'focused');
-    const redValid =
-      evidence.red !== null &&
-      Object.entries(hashes).every(([file, hash]) => evidence.red?.after[file] === hash);
+    const staleSinceRed =
+      evidence.red === null
+        ? []
+        : Object.entries(hashes)
+            .filter(([file, hash]) => evidence.red !== null && redHash(evidence.red, file) !== hash)
+            .map(([file]) => relative(cwd, file));
+    const redValid = evidence.red !== null && staleSinceRed.length === 0;
     const fullHashes = await hashInputs(cwd, evidence.active?.files ?? [], 'full');
     const valid = (record: EvidenceRecord | null, current: InputHashes) =>
       redValid && record !== null && sameHashes(record.after, current);
@@ -236,7 +290,7 @@ export const createEvidenceStore = () => {
             // to a shared file keeps working while a RED elsewhere cannot launder edits here.
             // An earlier test weakened in the same edit is still laundered: ABU-338.
             const latest = evidence.reds.findLast((entry) => failedIn(cwd, entry, file));
-            return (latest?.record ?? record).after[file] === hash;
+            return redHash(latest?.record ?? record, file) === hash;
           });
         }),
       )
@@ -247,21 +301,16 @@ export const createEvidenceStore = () => {
     const fullPassValid =
       valid(evidence.fullPass, fullHashes) && earlierRedsValid && requiredTestsPassed;
     let phase: Phase = 'locked';
-    if (redValid) {
-      phase = 'red';
-    }
-    if (focusedPassValid) {
-      phase = 'green';
-    }
-    if (fullPassValid) {
-      phase = 'verified';
-    }
+    if (redValid) phase = 'red';
+    if (focusedPassValid) phase = 'green';
+    if (fullPassValid) phase = 'verified';
     return {
       evidence,
       phase,
       implementationAllowed: phase === 'red',
       focusedPassValid,
       fullPassValid,
+      staleSinceRed,
       notice: gateOffNotice(evidence) ?? runnerNotice(cwd, hashes),
     };
   };
@@ -273,9 +322,10 @@ export const createEvidenceStore = () => {
   ) => {
     // Canonical field and file order so the same behavior submitted differently stays the same
     // behavior: identity is compared as serialized JSON, which key order would otherwise change.
+    const names = [...new Set(testNames(requested))].toSorted();
     const behavior: Behavior = {
       behavior: requested.behavior,
-      testFullName: requested.testFullName,
+      testFullName: names.length === 1 ? (names[0] ?? '') : names,
       files: [...new Set(requested.files)].toSorted(),
     };
     for (const file of behavior.files) {
@@ -292,40 +342,40 @@ export const createEvidenceStore = () => {
             cwd,
             scope: 'changed',
             files: behavior.files,
-            filter: `^${behavior.testFullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+            filter: `^(?:${testNames(behavior)
+              .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+              .join('|')})$`,
             signal,
           },
     );
     // A cancelled run proves nothing, so the stored evidence stays as it was.
-    if (report.kind === 'cancelled') {
-      return { kind: 'cancelled' as const, ...(await read(cwd)) };
-    }
+    if (report.kind === 'cancelled') return { kind: 'cancelled' as const, ...(await read(cwd)) };
     const after = await hashInputs(cwd, behavior.files, scope);
-    if (!sameHashes(before, after)) {
+    if (!sameHashes(before, after))
       return { kind: 'inputs-changed' as const, ...(await read(cwd)) };
-    }
     const state = await stateFor(cwd);
-    if (JSON.stringify(state.active) !== JSON.stringify(behavior)) {
+    if (state.active !== null && sameBehavior(state.active, behavior)) {
+      state.active.behavior = behavior.behavior;
+    } else {
+      // A verified full pass is a task boundary: its REDs are spent, so the next behavior
+      // starts without them and renaming or dropping a shipped test cannot deadlock the gate.
+      const reds = state.verified ? [] : state.reds;
       Object.assign(state, {
         active: structuredClone(behavior),
-        // A verified full pass is a task boundary: its REDs are spent, so the next behavior
-        // starts without them and renaming or dropping a shipped test cannot deadlock the gate.
-        reds: state.verified ? [] : state.reds,
-        red: null,
+        reds,
+        // Returning to a behavior keeps its proven RED; read() still checks the hashes.
+        red: reds.find((entry) => sameBehavior(entry.behavior, behavior))?.record ?? null,
         focusedPass: null,
         fullPass: null,
         latestRun: null,
         verified: false,
       });
     }
-    const record = { before, after, report };
+    const record: RedRecord = { before, after, report };
     const filesExist = behavior.files.every((file) => after[resolve(cwd, file)] != null);
     state.latestRun = record;
-    if (scope === 'full') {
-      state.fullPass = null;
-    } else {
-      state.focusedPass = null;
-    }
+    if (scope === 'full') state.fullPass = null;
+    else state.focusedPass = null;
     if (
       filesExist &&
       scope === 'focused' &&
@@ -333,23 +383,26 @@ export const createEvidenceStore = () => {
       uniquelyIs(cwd, report.tests, behavior, 'failed')
     ) {
       state.red = record;
-      state.reds = state.reds.filter(
-        (entry) =>
-          entry.behavior.testFullName !== behavior.testFullName ||
-          JSON.stringify(entry.behavior.files) !== JSON.stringify(behavior.files),
-      );
+      state.reds = state.reds.filter((entry) => !sameBehavior(entry.behavior, behavior));
       state.reds.push({ behavior: structuredClone(behavior), record });
+      for (const file of behavior.files)
+        for (const fullname of testNames(behavior)) {
+          if (
+            uniqueStatus(cwd, report.tests, fullname, file) === 'failed' &&
+            !state.proven.some((known) => known.file === file && known.fullname === fullname)
+          )
+            state.proven.push({ file, fullname });
+        }
       state.focusedPass = null;
       state.fullPass = null;
     }
     if (filesExist && report.kind === 'pass' && uniquelyIs(cwd, report.tests, behavior, 'passed')) {
-      if (scope === 'full') {
-        state.fullPass = record;
-      } else {
-        state.focusedPass = record;
-      }
+      if (scope === 'full') state.fullPass = record;
+      else state.focusedPass = record;
+      if (scope === 'focused') renewRed(cwd, state, behavior, record);
     }
     const result = await read(cwd);
+    if (result.focusedPassValid) for (const red of activeRedRecords(state)) red.greened = true;
     state.verified = result.fullPassValid;
     await saveState(cwd, state);
     return { kind: report.kind, ...result };
