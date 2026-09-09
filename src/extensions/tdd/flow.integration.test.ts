@@ -891,7 +891,7 @@ it('switches the gate off and on through the /tdd command in a real pi session',
   expect(JSON.stringify(blocked.result)).toContain('locked');
 });
 
-it('shows the phase and active behavior in the footer status', async ({ onTestFinished }) => {
+it('keeps TDD feedback out of the footer status', async ({ onTestFinished }) => {
   const { session, run, call } = await createHarness(onTestFinished);
   const statuses: (string | undefined)[] = [];
   await session.bindExtensions({
@@ -905,7 +905,7 @@ it('shows the phase and active behavior in the footer status', async ({ onTestFi
   });
 
   await run();
-  // Rewriting the required test file invalidates RED, so the next guarded call reports locked.
+  // Rewriting the required test file invalidates RED, so the next production write stays blocked.
   expect(
     (
       await call('write', {
@@ -921,12 +921,5 @@ it('shows the phase and active behavior in the footer status', async ({ onTestFi
   await session.prompt('/tdd off');
   await session.prompt('/tdd on');
 
-  expect(statuses).toEqual([
-    'TDD locked: no behavior',
-    'TDD red: required behavior',
-    'TDD red: required behavior',
-    'TDD locked: required behavior',
-    'TDD off: required behavior',
-    'TDD locked: required behavior',
-  ]);
+  expect(statuses).toEqual([]);
 });

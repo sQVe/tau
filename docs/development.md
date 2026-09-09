@@ -55,12 +55,40 @@ returns results and that `fetch_content` on a URL returns readable markdown.
 **Snippets.** Press `ctrl+q`, turn on one snippet, and send a message. Check that Pi receives the
 snippet text around your message, and that the toggle turns off again.
 
+**Statusbar.** Check that the footer stays on one line and shows the directory, branch, cost,
+context usage, model, and thinking level. Edit a file through a tool and check that `*` appears
+beside the branch. Narrow the terminal and check that the right group truncates before the left. Run
+`/tdd off`, then call a tool and check that the ochre open-lock glyph appears after the branch. Run
+`/tdd on`, then call a tool and check that the glyph disappears.
+
 ## Current status
 
-Tau includes the commit, TDD, writing, coding, snippets, ask-user-question, and web-access
-extensions. The commit extension includes [comment review](./comment-review.md) before approval.
-Interactive commits need credentials for the session model; automated tests use a scripted provider
-and make no model API calls.
+Tau includes the commit, TDD, writing, coding, snippets, statusbar, ask-user-question, and
+web-access extensions. The commit extension includes [comment review](./comment-review.md) before
+approval. Interactive commits need credentials for the session model; automated tests use a scripted
+provider and make no model API calls.
+
+The statusbar replaces Pi's terminal footer with one line. It shows the last two directory
+components and Git branch on the left. Cost, context usage, model, and thinking level sit on the
+right. Context usage changes color above 70% and 90%. The right group truncates first on narrow
+terminals. Extension statuses are not shown. Use `run_tests` or `/tdd status` for TDD feedback.
+
+An ochre open-lock glyph appears after the branch and dirty marker when `/tdd off` is set or the
+stored TDD state is unreadable. It uses Nerd Font `nf-md-lock-open-variant` (U+F0FC6) and the same
+warning color as the dirty marker. No glyph appears when the gate is on or the state file is absent.
+The indicator reads `tddGateStatus` during the existing background refresh, without hashing files.
+Commands do not trigger that refresh, so `/tdd on|off` updates the glyph only on the next refresh.
+The indicator does not cover a gate disabled by a missing test runner, because detecting that would
+require a runner probe on every refresh.
+
+The dirty marker refreshes in the background at startup, after tool results, and on branch changes.
+It includes untracked files. At startup, the marker stays hidden until Git answers. Git failures
+hide the marker. File changes outside Pi appear after the next refresh; the footer does not watch
+files.
+
+The footer uses a fixed Catppuccin Latte (Muted) palette, separate from Pi's theme. The directory is
+dim gray, the branch is teal, and warnings use ochre yellow. It keeps the terminal's background
+unchanged. The colors are defined in [colors.ts](../src/extensions/statusbar/colors.ts).
 
 TDD edit enforcement is on. The [run_tests tool](../src/extensions/tdd/index.ts) describes the cycle
 from a failing test through production edits to full verification, with test evidence persisted to
