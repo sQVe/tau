@@ -121,9 +121,11 @@ export const guardToolCall = async (
   }
 
   const state = await store.read(cwd);
+  // A relative target traverses from the canonical cwd, so `..` must not be folded away first.
+  const realCwd = await realPath(cwd);
   const paths = [
     relative(resolve(cwd), resolve(cwd, file)),
-    relative(await realPath(cwd), await realPath(resolve(cwd, file))),
+    relative(realCwd, await realPath(resolve(realCwd, file))),
   ].map((path) => path.replaceAll('\\', '/'));
 
   const emptyStub =

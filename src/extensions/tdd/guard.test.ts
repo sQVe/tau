@@ -382,3 +382,21 @@ it('gates a production file addressed through a symlinked spelling of the worktr
     ),
   ).toBeUndefined();
 });
+
+it('gates a relative traversal that re-enters the worktree from a symlinked cwd', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tau-guard-'));
+  onTestFinished(() => rm(root, { recursive: true, force: true }));
+  const real = join(root, 'nested/real');
+  const link = join(root, 'link');
+
+  await mkdir(join(real, 'src'), { recursive: true });
+  await symlink(real, link, 'dir');
+
+  const result = await guardToolCall(
+    makeEvent('write', { path: '../real/src/value.ts' }),
+    link,
+    createStore('locked'),
+  );
+
+  expect(result?.block).toBe(true);
+});
