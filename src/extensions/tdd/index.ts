@@ -286,7 +286,7 @@ export default function tddExtension(pi: ExtensionAPI) {
         behavior: Type.String({
           minLength: 1,
           description:
-            'Name the behavior to implement; keep it unchanged through RED, GREEN, and full verification.',
+            'Name the behavior to implement. This is a label and may change; testFullName and files identify the behavior and must stay the same through RED, GREEN, and full verification.',
         }),
         testFullName: Type.Union(
           [

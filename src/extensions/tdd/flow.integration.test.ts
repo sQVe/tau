@@ -899,7 +899,7 @@ it('describes the cycle and exact nested test names in the registered tool', asy
     properties: {
       behavior: {
         description:
-          'Name the behavior to implement; keep it unchanged through RED, GREEN, and full verification.',
+          'Name the behavior to implement. This is a label and may change; testFullName and files identify the behavior and must stay the same through RED, GREEN, and full verification.',
       },
       files: {
         description:
