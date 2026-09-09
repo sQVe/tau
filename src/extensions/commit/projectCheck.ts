@@ -88,7 +88,7 @@ export const checkProject = async (
     );
 
     if (dependenciesExist) {
-      await symlink(dependencies, join(candidate, 'node_modules'), 'dir');
+      await symlink(dependencies, join(candidate, 'node_modules'), 'junction');
     }
 
     await run(manager, ['run', 'check'], candidate);
