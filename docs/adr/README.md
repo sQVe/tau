@@ -18,3 +18,4 @@ Start with the [template](./TEMPLATE.md). Follow the
 - [0008: Coding instructions](./0008-coding-instructions.md)
 - [0009: Prompt snippets](./0009-prompt-snippets.md)
 - [0010: Documentation scope](./0010-documentation-scope.md)
+- [0009: Delegate model for bulk reads](./0009-delegate-model-for-bulk-reads.md)
