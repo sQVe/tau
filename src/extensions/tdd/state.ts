@@ -191,10 +191,14 @@ const loadState = async (cwd: string): Promise<EvidenceState> => {
       reds: stored.reds.map((entry) => {
         // Old snapshots kept the report and hashes inside record. Discard their derived flags.
         const old = entry as RedRecord & { record?: { report: RunnerResult; after: InputHashes } };
+        const report = old.record?.report ?? entry.report;
+        const testHashes = old.record?.after ?? entry.testHashes;
+        // An entry without a report or hashes cannot be read; say so here, not on a later deref.
+        if (report == null || testHashes == null) throw new Error('incomplete RED evidence');
         return {
           behavior: entry.behavior,
-          report: old.record?.report ?? entry.report,
-          testHashes: old.record?.after ?? entry.testHashes,
+          report,
+          testHashes,
           greenTree: entry.greenTree ?? null,
           edited: entry.edited ?? false,
           phase: legacy ? 'locked' : entry.phase,
@@ -326,12 +330,16 @@ export const createEvidenceStore = () => {
         cwd,
         state.reds.flatMap((red) => red.behavior.files),
       );
-      const intact = state.reds.every((red) =>
-        red.behavior.files.every((file) => {
-          const key = resolve(cwd, file);
-          const latest = state.reds.findLast((candidate) => failedIn(cwd, candidate, file));
-          return (latest ?? red).testHashes[key] === hashes[key];
-        }),
+      const protectedKeys = [...protectedPaths.map((path) => resolve(cwd, path)), configPath];
+      const intact = state.reds.every(
+        (red) =>
+          red.behavior.files.every((file) => {
+            const key = resolve(cwd, file);
+            const latest = state.reds.findLast((candidate) => failedIn(cwd, candidate, file));
+            return (latest ?? red).testHashes[key] === hashes[key];
+          }) &&
+          // A configuration change after RED can decide what the run does, so it voids the proof.
+          protectedKeys.every((key) => red.testHashes[key] === hashes[key]),
       );
       if (
         outcome === 'pass' &&

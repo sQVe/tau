@@ -41,8 +41,6 @@ it('checks active test bytes and accepts restored content', async ({ onTestFinis
   expect(snapshot.evidence.reds[0]?.testHashes[join(cwd, 'behavior.test.ts')]).toMatch(
     /^[a-f0-9]{64}$/,
   );
-  snapshot.evidence.reds = [];
-  expect((await store.read(cwd)).implementationAllowed).toBe(true);
   await store.run(
     cwd,
     { behavior: 'different', testFullName: 'absent', files: ['behavior.test.ts'] },
@@ -99,6 +97,18 @@ const createHarness = async (cleanup: TestContext['onTestFinished']) => {
   const behavior = { behavior: 'behavior', testFullName: 'required', files: ['behavior.test.ts'] };
   return { cwd, store, behavior };
 };
+
+it('refuses full verification when a protected input changed after RED', async ({
+  onTestFinished,
+}) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  await store.run(cwd, behavior, 'focused');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  await store.run(cwd, behavior, 'focused');
+  await writeFile(join(cwd, 'vite.config.ts'), 'export default { test: {} };');
+
+  expect(await store.run(cwd, behavior, 'full')).toMatchObject({ phase: 'green' });
+});
 
 it('allows behavior-preserving production edits after focused GREEN', async ({
   onTestFinished,
@@ -217,6 +227,14 @@ it('fails loudly when the stored evidence is unreadable', async ({ onTestFinishe
   const { cwd } = await createHarness(onTestFinished);
   await mkdir(join(cwd, '.tau'));
   await writeFile(join(cwd, '.tau/state.json'), '{ not json');
+  await expect(createEvidenceStore().read(cwd)).rejects.toThrow(join(cwd, '.tau/state.json'));
+});
+
+it('fails loudly when a stored RED lacks its report or hashes', async ({ onTestFinished }) => {
+  const { cwd, behavior } = await createHarness(onTestFinished);
+  await mkdir(join(cwd, '.tau'));
+  await writeFile(join(cwd, '.tau/state.json'), JSON.stringify({ tdd: { reds: [{ behavior }] } }));
+
   await expect(createEvidenceStore().read(cwd)).rejects.toThrow(join(cwd, '.tau/state.json'));
 });
 
