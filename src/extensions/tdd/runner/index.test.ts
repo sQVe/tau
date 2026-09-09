@@ -2,7 +2,7 @@ import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { runTests } from './index.js';
 import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js';
@@ -910,5 +910,14 @@ describe('nodeExecutable', () => {
     );
     expect(nodeExecutable('/usr/bin/pi')).toBe('node');
     expect(nodeExecutable('/opt/pi-coding-agent/pi')).toBe('node');
+  });
+
+  it('keeps a nonstandard node name when no node command resolves', () => {
+    vi.stubEnv('PATH', '');
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    expect(nodeExecutable('/usr/bin/nodejs')).toBe('/usr/bin/nodejs');
   });
 });

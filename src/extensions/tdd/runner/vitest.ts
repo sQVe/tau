@@ -3,7 +3,15 @@ import { statSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath } from 'node:path';
+import {
+  basename,
+  delimiter,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve as resolvePath,
+} from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import { tddConfig } from '../config.js';
@@ -101,10 +109,23 @@ export const runnerAvailable = (cwd: string): boolean => {
   }
 };
 
+const nodeOnPath = (path = process.env.PATH ?? '') =>
+  path.split(delimiter).some((directory) => {
+    try {
+      statSync(join(directory, process.platform === 'win32' ? 'node.exe' : 'node'));
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
 // Pi ships as a compiled executable, so execPath is the agent itself there and would parse
-// vitest's flags as its own.
+// vitest's flags as its own. A Node named anything else, such as `nodejs`, still runs vitest, so
+// only trade it for `node` when a `node` command actually exists.
 export const nodeExecutable = (execPath = process.execPath) =>
-  /^node(\.exe)?$/i.test(basename(execPath.replaceAll('\\', '/'))) ? execPath : 'node';
+  /^node(\.exe)?$/i.test(basename(execPath.replaceAll('\\', '/'))) || !nodeOnPath()
+    ? execPath
+    : 'node';
 
 export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
   new Promise<SpawnResult>((resolve) => {
