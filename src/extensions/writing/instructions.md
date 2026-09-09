@@ -42,9 +42,6 @@ differ from these defaults.
 
 - Preserve claims, conditions, sources, intent, and real uncertainty.
 - Preserve exact quotations, code, identifiers, commands, URLs, and required formats.
-- Keep comments that explain constraints, workarounds, deliberate omissions, or facts outside the
-  code. Remove comments that only repeat the code. Keep required documentation and tool directives.
-- Editing comments does not give permission to refactor code or expand the task.
 
 Apply these rules as you write. Before sending or saving text, review it silently. Split any
 sentence past 25 words that carries two ideas. Remove remaining filler and awkward phrasing. Check

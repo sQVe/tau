@@ -100,7 +100,9 @@ const createScriptedUI = (overlays: string[], answer: boolean | 'waive'): Extens
         () => {},
       );
       overlays.push(component.render(80).join('\n'));
-      if (answer === 'waive') return 'waive';
+      if (answer === 'waive') {
+        return 'waive';
+      }
       return answer ? 'approve' : 'abort';
     },
   };

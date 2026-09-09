@@ -57,10 +57,10 @@ snippet text around your message, and that the toggle turns off again.
 
 ## Current status
 
-Tau includes the commit, TDD, writing, snippets, ask-user-question, and web-access extensions. The
-commit extension includes [comment review](./comment-review.md) before approval. Interactive commits
-need credentials for the session model; automated tests use a scripted provider and make no model
-API calls.
+Tau includes the commit, TDD, writing, coding, snippets, ask-user-question, and web-access
+extensions. The commit extension includes [comment review](./comment-review.md) before approval.
+Interactive commits need credentials for the session model; automated tests use a scripted provider
+and make no model API calls.
 
 TDD edit enforcement is on. The [run_tests tool](../src/extensions/tdd/index.ts) describes the cycle
 from a failing test through production edits to full verification, with test evidence persisted to
@@ -81,6 +81,11 @@ mode has no way to show the message, so the command changes nothing there and st
 The writing extension adds its [instructions](../src/extensions/writing/instructions.md) to the
 system prompt before each ordinary agent run. No skill command is needed. Run `/reload` in Pi after
 editing the instructions. Compaction and branch summaries use separate prompts.
+
+The coding extension works the same way with its
+[instructions](../src/extensions/coding/instructions.md). The writing instructions govern text, and
+the coding instructions govern how code is shaped. [ADR 0008](./adr/0008-coding-instructions.md)
+records the boundary.
 
 If the instructions are missing, unreadable, or blank, Tau fails to load and Pi reports the error. A
 missing file in an installed package means the package needs repair or reinstallation.

@@ -23,7 +23,9 @@ const hashInputs = async (
       [...tddConfig.productionGlobs, ...(scope === 'full' ? tddConfig.testGlobs : [])],
       { cwd, exclude: ['**/node_modules/**', '**/.git/**'] },
     )) {
-      if (scope === 'full' || classifyPath(file) === 'production') sources.push(file);
+      if (scope === 'full' || classifyPath(file) === 'production') {
+        sources.push(file);
+      }
     }
   }
   return Object.fromEntries(
@@ -44,8 +46,9 @@ const hashInputs = async (
                 .digest('hex'),
             ];
           } catch (error) {
-            if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT')
+            if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
               throw error;
+            }
             return [file, null];
           }
         }),
@@ -95,8 +98,9 @@ const redPassed = (
   red: EvidenceRecord | null,
   pass: EvidenceRecord | null,
 ) => {
-  if (behavior === null || red?.report.kind !== 'fail' || pass?.report.kind !== 'pass')
+  if (behavior === null || red?.report.kind !== 'fail' || pass?.report.kind !== 'pass') {
     return false;
+  }
   const redTests = red.report.tests;
   const passedTests = pass.report.tests;
   const required = behavior.files.filter(
@@ -171,12 +175,16 @@ const loadState = async (cwd: string): Promise<EvidenceState> => {
   try {
     content = await readFile(path, 'utf8');
   } catch (error) {
-    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+      throw error;
+    }
     return emptyState();
   }
   try {
     const parsed: unknown = JSON.parse(content);
-    if (!isStoredState(parsed)) throw new Error('missing tdd evidence');
+    if (!isStoredState(parsed)) {
+      throw new Error('missing tdd evidence');
+    }
     return parsed.tdd;
   } catch (error) {
     throw new Error(`Unreadable test evidence in ${path}`, { cause: error });
@@ -239,9 +247,15 @@ export const createEvidenceStore = () => {
     const fullPassValid =
       valid(evidence.fullPass, fullHashes) && earlierRedsValid && requiredTestsPassed;
     let phase: Phase = 'locked';
-    if (redValid) phase = 'red';
-    if (focusedPassValid) phase = 'green';
-    if (fullPassValid) phase = 'verified';
+    if (redValid) {
+      phase = 'red';
+    }
+    if (focusedPassValid) {
+      phase = 'green';
+    }
+    if (fullPassValid) {
+      phase = 'verified';
+    }
     return {
       evidence,
       phase,
@@ -283,10 +297,13 @@ export const createEvidenceStore = () => {
           },
     );
     // A cancelled run proves nothing, so the stored evidence stays as it was.
-    if (report.kind === 'cancelled') return { kind: 'cancelled' as const, ...(await read(cwd)) };
+    if (report.kind === 'cancelled') {
+      return { kind: 'cancelled' as const, ...(await read(cwd)) };
+    }
     const after = await hashInputs(cwd, behavior.files, scope);
-    if (!sameHashes(before, after))
+    if (!sameHashes(before, after)) {
       return { kind: 'inputs-changed' as const, ...(await read(cwd)) };
+    }
     const state = await stateFor(cwd);
     if (JSON.stringify(state.active) !== JSON.stringify(behavior)) {
       Object.assign(state, {
@@ -304,8 +321,11 @@ export const createEvidenceStore = () => {
     const record = { before, after, report };
     const filesExist = behavior.files.every((file) => after[resolve(cwd, file)] != null);
     state.latestRun = record;
-    if (scope === 'full') state.fullPass = null;
-    else state.focusedPass = null;
+    if (scope === 'full') {
+      state.fullPass = null;
+    } else {
+      state.focusedPass = null;
+    }
     if (
       filesExist &&
       scope === 'focused' &&
@@ -323,8 +343,11 @@ export const createEvidenceStore = () => {
       state.fullPass = null;
     }
     if (filesExist && report.kind === 'pass' && uniquelyIs(cwd, report.tests, behavior, 'passed')) {
-      if (scope === 'full') state.fullPass = record;
-      else state.focusedPass = record;
+      if (scope === 'full') {
+        state.fullPass = record;
+      } else {
+        state.focusedPass = record;
+      }
     }
     const result = await read(cwd);
     state.verified = result.fullPassValid;

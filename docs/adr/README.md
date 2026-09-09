@@ -13,3 +13,4 @@ Start with the [template](./TEMPLATE.md). See [writing docs](../AGENTS.md) for s
 - [0005: Integration testing against a real pi session](./0005-integration-testing-with-pi.md)
 - [0006: Default writing policy](./0006-default-writing-policy.md)
 - [0007: Vim keys in interactive components](./0007-vim-keys-in-interactive-components.md)
+- [0008: Coding instructions](./0008-coding-instructions.md)

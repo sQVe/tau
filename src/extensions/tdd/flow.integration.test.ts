@@ -45,7 +45,9 @@ const createWorktree = async (cleanup: TestContext['onTestFinished'], withRunner
   const cwd = await mkdtemp(join(tmpdir(), 'tau-tdd-'));
   cleanup(() => rm(cwd, { recursive: true, force: true }));
   await promisify(execFile)('git', ['init', '--quiet', cwd]);
-  if (withRunner) await symlink(resolve('node_modules'), join(cwd, 'node_modules'), 'dir');
+  if (withRunner) {
+    await symlink(resolve('node_modules'), join(cwd, 'node_modules'), 'dir');
+  }
   await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
   await writeFile(join(cwd, 'vite.config.ts'), 'export default {};');
   await writeFile(
@@ -138,7 +140,9 @@ const createHarness = async (
     const event = events.find(
       (entry) => entry.type === 'tool_execution_end' && entry.toolName === 'run_tests',
     );
-    if (event?.type !== 'tool_execution_end') throw new Error('Missing run_tests result');
+    if (event?.type !== 'tool_execution_end') {
+      throw new Error('Missing run_tests result');
+    }
     expect(event.isError).toBe(false);
     return event.result as ToolResult;
   };
@@ -157,7 +161,9 @@ const createHarness = async (
     const event = events.find(
       (entry) => entry.type === 'tool_execution_end' && entry.toolName === toolName,
     );
-    if (event?.type !== 'tool_execution_end') throw new Error(`Missing ${toolName} result`);
+    if (event?.type !== 'tool_execution_end') {
+      throw new Error(`Missing ${toolName} result`);
+    }
     return event;
   };
   return { cwd, session, faux, events, run, call };
@@ -564,7 +570,9 @@ it('discards a run when a sibling bash tool edits its inputs', async ({ onTestFi
   const result = events.find(
     (event) => event.type === 'tool_execution_end' && event.toolName === 'run_tests',
   );
-  if (result?.type !== 'tool_execution_end') throw new Error('Missing run_tests result');
+  if (result?.type !== 'tool_execution_end') {
+    throw new Error('Missing run_tests result');
+  }
   const text = (result.result as ToolResult).content[0]!.text;
   expect(text).toContain('inputs-changed · phase locked · implementation blocked');
   expect(text).toContain(

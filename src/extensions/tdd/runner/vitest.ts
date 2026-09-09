@@ -91,9 +91,13 @@ export const runnerAvailable = (cwd: string): boolean => {
       return true;
     } catch (error) {
       // Only a missing file proves absence; a transient EACCES or EMFILE must not turn the gate off.
-      if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') return true;
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+        return true;
+      }
     }
-    if (dirname(directory) === directory) return false;
+    if (dirname(directory) === directory) {
+      return false;
+    }
   }
 };
 
@@ -219,7 +223,9 @@ const assertionFullName = (assertion: VitestAssertionResult) =>
 
 // A focused run reports every unselected test as skipped, which says nothing about it.
 const selects = (filter: string | undefined) => {
-  if (filter == null) return () => true;
+  if (filter == null) {
+    return () => true;
+  }
   let pattern: RegExp;
   try {
     pattern = new RegExp(filter);
@@ -248,12 +254,18 @@ const collectTests = (
 
 const frameLocation = (line: string, cwd: string): string | null => {
   const trimmed = line.trim();
-  if (!trimmed.startsWith('at ')) return null;
+  if (!trimmed.startsWith('at ')) {
+    return null;
+  }
   const match = /\(?([^()\s]+):(\d+):\d+\)?$/.exec(trimmed);
   const path = match?.[1]?.replace(/^file:\/\//, '');
-  if (path == null || path.includes('node_modules') || !isAbsolute(path)) return null;
+  if (path == null || path.includes('node_modules') || !isAbsolute(path)) {
+    return null;
+  }
   const location = relative(cwd, path);
-  if (location.length === 0 || location.startsWith('..') || isAbsolute(location)) return null;
+  if (location.length === 0 || location.startsWith('..') || isAbsolute(location)) {
+    return null;
+  }
   return `${location}:${match?.[2]}`;
 };
 
@@ -269,8 +281,9 @@ const assertionMessage = (messages: string[], cwd: string): string => {
     .map((line) => frameLocation(line, cwd))
     .find((location) => location != null);
   const headline = raw.split('\n')[0]?.trim() ?? '';
-  if (headline.length === 0 || headline.includes('STACK_TRACE_ERROR'))
+  if (headline.length === 0 || headline.includes('STACK_TRACE_ERROR')) {
     return capMessage(frame ?? '');
+  }
   return capMessage(frame == null ? headline : `${headline} (${frame})`);
 };
 

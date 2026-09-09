@@ -20,7 +20,9 @@ export const protectedPaths = [
 
 export const classifyPath = (path: string): 'test' | 'production' | 'other' => {
   const normalized = path.replaceAll('\\', '/');
-  if (tddConfig.testGlobs.some((glob) => matchesGlob(normalized, glob))) return 'test';
+  if (tddConfig.testGlobs.some((glob) => matchesGlob(normalized, glob))) {
+    return 'test';
+  }
   return tddConfig.productionGlobs.some((glob) => matchesGlob(normalized, glob))
     ? 'production'
     : 'other';

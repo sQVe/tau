@@ -21,7 +21,7 @@ import { expect, it } from 'vitest';
 import { WEB_ACCESS_TOOLS } from '../src/extensions/webAccess/index.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 
-it('loads Tau through Pi with commit features, the bundled question and web tools, and writing rules on each run', async ({
+it('loads Tau through Pi with commit features, the bundled question and web tools, and writing and coding rules on each run', async ({
   onTestFinished,
 }) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-package-'));
@@ -105,10 +105,18 @@ it('loads Tau through Pi with commit features, the bundled question and web tool
       join(packageRoot, 'src/extensions/writing/instructions.md'),
       'utf8',
     );
+    const codingInstructions = await readFile(
+      join(packageRoot, 'src/extensions/coding/instructions.md'),
+      'utf8',
+    );
     expect(instructions).toContain('Write for readers who use English as a second language.');
+    expect(codingInstructions).toContain(
+      'Separate the logical steps inside a function with a blank line.',
+    );
     expect(prompts[0]?.startsWith(basePrompt)).toBe(true);
     for (const prompt of prompts) {
       expect(prompt.split(instructions)).toHaveLength(2);
+      expect(prompt.split(codingInstructions)).toHaveLength(2);
     }
   } finally {
     await rm(cwd, { recursive: true, force: true });
