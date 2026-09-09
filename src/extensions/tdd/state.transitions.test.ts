@@ -72,9 +72,14 @@ const green: Expected = {
   ...red,
   storedPhase: 'green',
   phase: 'green',
+  implementationAllowed: true,
+};
+const verified: Expected = {
+  ...green,
+  storedPhase: 'verified',
+  phase: 'verified',
   implementationAllowed: false,
 };
-const verified: Expected = { ...green, storedPhase: 'verified', phase: 'verified' };
 
 // Every event is explicit in every phase. Do not fill missing cells with defaults or a spread.
 const transitions: Record<Phase, Record<Event, Expected>> = {
@@ -155,7 +160,7 @@ const transitions: Record<Phase, Record<Event, Expected>> = {
     fullSkipped: green,
     fullMissing: green,
     fullAmbiguous: green,
-    testEdit: { ...green, phase: 'locked', implementationAllowed: false },
+    testEdit: green,
     focusedRenew: green,
     productionEditThroughBash: green,
     otherTestEdit: green,
@@ -184,11 +189,11 @@ const transitions: Record<Phase, Record<Event, Expected>> = {
     fullSkipped: green,
     fullMissing: green,
     fullAmbiguous: green,
-    testEdit: { ...verified, phase: 'green' },
+    testEdit: { ...verified, phase: 'green', implementationAllowed: true },
     focusedRenew: green,
-    productionEditThroughBash: { ...verified, phase: 'green' },
-    otherTestEdit: { ...verified, phase: 'green' },
-    protectedEdit: { ...verified, phase: 'green' },
+    productionEditThroughBash: { ...verified, phase: 'green', implementationAllowed: true },
+    otherTestEdit: { ...verified, phase: 'green', implementationAllowed: true },
+    protectedEdit: { ...verified, phase: 'green', implementationAllowed: true },
     switchKnown: green,
     switchNew: { ...locked, reds: [] },
     legacyReload: { ...locked, reds: verified.reds },

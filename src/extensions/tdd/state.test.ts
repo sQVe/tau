@@ -100,6 +100,79 @@ const createHarness = async (cleanup: TestContext['onTestFinished']) => {
   return { cwd, store, behavior };
 };
 
+it('allows behavior-preserving production edits after focused GREEN', async ({
+  onTestFinished,
+}) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  await store.run(cwd, behavior, 'focused');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  await store.run(cwd, behavior, 'focused');
+
+  const edit = {
+    type: 'tool_call',
+    toolCallId: 'cleanup',
+    toolName: 'edit',
+    input: { path: 'src/value.ts', oldText: '1', newText: '(1)' },
+  } as ToolCallEvent;
+  expect(await guardToolCall(edit, cwd, store)).toBeUndefined();
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = (1);');
+  expect(await store.read(cwd)).toMatchObject({ phase: 'green', implementationAllowed: true });
+  expect(await store.run(cwd, behavior, 'full')).toMatchObject({
+    phase: 'verified',
+    fullPassValid: true,
+  });
+});
+
+it('invalidates a focused pass on changed inputs without closing GREEN', async ({
+  onTestFinished,
+}) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  await store.run(cwd, behavior, 'focused');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  await store.run(cwd, behavior, 'focused');
+  for (const file of ['src/value.ts', 'behavior.test.ts', 'vite.config.ts']) {
+    const path = join(cwd, file);
+    const original = await readFile(path, 'utf8');
+    await writeFile(path, `${original}\n// changed after the passing run\n`);
+    expect(await store.read(cwd)).toMatchObject({
+      phase: 'green',
+      implementationAllowed: true,
+      focusedPassValid: false,
+      fullPassValid: false,
+    });
+    await writeFile(path, original);
+    expect(await createEvidenceStore().read(cwd)).toMatchObject({ focusedPassValid: true });
+  }
+});
+
+it('verifies a shared file after renewing the earlier behavior', async ({ onTestFinished }) => {
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  const path = join(cwd, 'behavior.test.ts');
+  await writeFile(path, (await readFile(path, 'utf8')).replace('toBe(1)', 'toBeGreaterThan(0)'));
+  await store.run(cwd, behavior, 'focused');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+  await store.run(cwd, behavior, 'focused');
+  await writeFile(
+    path,
+    `${await readFile(path, 'utf8')}\nit('second', () => expect(value).toBe(2));`,
+  );
+  const second = { ...behavior, behavior: 'second', testFullName: 'second' };
+  await store.run(cwd, second, 'focused');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 2;');
+  await store.run(cwd, second, 'focused');
+  await writeFile(
+    path,
+    `${await readFile(path, 'utf8')}\n// formatting after both behaviors passed\n`,
+  );
+
+  const renewed = await store.run(cwd, behavior, 'focused');
+  expect(renewed).toMatchObject({ phase: 'green', focusedPassValid: true });
+  expect(await createEvidenceStore().run(cwd, behavior, 'full')).toMatchObject({
+    phase: 'verified',
+    fullPassValid: true,
+  });
+});
+
 it('reloads recorded evidence into a new store for the same worktree', async ({
   onTestFinished,
 }) => {
@@ -263,9 +336,9 @@ it('keeps GREEN after production changes invalidate verification', async ({ onTe
   await writeFile(join(cwd, 'src/value.ts'), 'export const value = 2;');
   expect(await store.read(cwd)).toMatchObject({
     phase: 'green',
-    focusedPassValid: true,
+    focusedPassValid: false,
     fullPassValid: false,
-    implementationAllowed: false,
+    implementationAllowed: true,
   });
   await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
   await store.run(cwd, behavior, 'focused');
@@ -274,14 +347,14 @@ it('keeps GREEN after production changes invalidate verification', async ({ onTe
   expect(await store.read(cwd)).toMatchObject({
     phase: 'green',
     fullPassValid: false,
-    focusedPassValid: true,
+    focusedPassValid: false,
   });
   await rm(join(cwd, 'src/added.ts'));
   await rm(join(cwd, 'src/value.ts'));
   expect(await store.read(cwd)).toMatchObject({
     phase: 'green',
     fullPassValid: false,
-    focusedPassValid: true,
+    focusedPassValid: false,
   });
 });
 
@@ -294,7 +367,11 @@ it('renews RED for a test amended after GREEN and remembers the edit', async ({
   await store.run(cwd, behavior, 'focused');
   const test = join(cwd, 'behavior.test.ts');
   await writeFile(test, (await readFile(test, 'utf8')).replace('toBe(1)', 'toBeGreaterThan(0)'));
-  expect(await store.read(cwd)).toMatchObject({ phase: 'locked', implementationAllowed: false });
+  expect(await store.read(cwd)).toMatchObject({
+    phase: 'green',
+    implementationAllowed: true,
+    focusedPassValid: false,
+  });
   const renewed = await store.run(cwd, behavior, 'focused');
   expect(renewed).toMatchObject({ kind: 'pass', phase: 'green' });
   expect(renewed.evidence.reds[0]?.edited).toBe(true);
@@ -319,7 +396,7 @@ it('renews a test amended after the fix but before GREEN and records the edit', 
   expect(await store.run(cwd, behavior, 'focused')).toMatchObject({
     kind: 'pass',
     phase: 'green',
-    implementationAllowed: false,
+    implementationAllowed: true,
     evidence: { reds: [{ edited: true }] },
   });
   await writeFile(join(cwd, 'src/value.ts'), 'export const value = 0;');
@@ -512,12 +589,12 @@ it.each(['skip', 'todo', 'delete'])(
       );
     }
     expect(await store.run(cwd, behavior, 'focused')).toMatchObject({
-      phase: 'locked',
+      phase: 'green',
       focusedPassValid: false,
-      implementationAllowed: false,
+      implementationAllowed: true,
     });
     expect(await store.run(cwd, behavior, 'full')).toMatchObject({
-      phase: 'locked',
+      phase: 'green',
       fullPassValid: false,
     });
   },

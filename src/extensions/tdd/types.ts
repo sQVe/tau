@@ -13,6 +13,7 @@ export interface RedRecord {
   behavior: Behavior;
   report: RunnerResult;
   testHashes: InputHashes;
+  greenTree: string | null;
   edited: boolean;
   // Each behavior remembers its last focused phase when another behavior becomes active.
   phase: 'locked' | 'red' | 'green';

@@ -1,4 +1,4 @@
-import { realpath } from 'node:fs/promises';
+import { lstat, realpath } from 'node:fs/promises';
 import { dirname, relative, resolve } from 'node:path';
 
 import type { ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
@@ -60,8 +60,6 @@ const pathNextStep = (
   // A file outside the worktree is never its production code, and classifyPath says so.
   if (classifyPath(path) !== 'production' || implementationAllowed) return undefined;
   const colocatedTest = JSON.stringify(`${file.replace(/\.tsx?$/, '')}.test.ts`);
-  if (phase === 'green' && active !== null)
-    return `Verify the current behavior with run_tests ${JSON.stringify({ ...active, scope: 'full' })}, or start the next behavior by writing its test and proving RED with run_tests scope "focused"`;
   if (phase === 'verified')
     return `Start the next behavior with write using path ${colocatedTest} and content that tests the missing behavior`;
   return active === null
@@ -87,19 +85,30 @@ export const guardToolCall = async (
   } catch {
     /* empty */
   }
-  const path = relative(await realPath(cwd), await realPath(resolve(cwd, file))).replaceAll(
-    '\\',
-    '/',
-  );
+  const paths = [
+    relative(resolve(cwd), resolve(cwd, file)),
+    relative(await realPath(cwd), await realPath(resolve(cwd, file))),
+  ].map((path) => path.replaceAll('\\', '/'));
+  const emptyStub =
+    event.toolName === 'write' &&
+    event.input.content === '' &&
+    (await lstat(resolve(cwd, file)).then(
+      () => false,
+      (error: unknown) => error instanceof Error && 'code' in error && error.code === 'ENOENT',
+    ));
   const next = recognized
-    ? pathNextStep(
-        file,
-        path,
-        state.implementationAllowed,
-        state.evidence.active,
-        state.phase,
-        state.notice !== undefined,
-      )
+    ? paths
+        .map((path) =>
+          pathNextStep(
+            file,
+            path,
+            state.implementationAllowed || emptyStub,
+            state.evidence.active,
+            state.phase,
+            state.notice !== undefined,
+          ),
+        )
+        .find((step) => step !== undefined)
     : `Replace unrecognized tool ${event.toolName} with write using a literal path and the intended content`;
   if (next === undefined) return undefined;
   return {

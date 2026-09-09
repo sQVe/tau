@@ -220,7 +220,7 @@ it('enforces file classifications across the evidence phases through pi', async 
       path: join(cwd, 'src/value.ts'),
       content: 'export const value = 1;',
     });
-    expect(production.isError).toBe(phase !== 'red');
+    expect(production.isError).toBe(phase !== 'red' && phase !== 'green');
     for (const path of ['.tau/state.test.ts', 'vite.config.ts', 'package.json']) {
       const before = await readFile(join(cwd, path), 'utf8').catch(() => null);
       const blocked = await call('write', { path, content: 'changed' });
@@ -246,10 +246,8 @@ it('enforces file classifications across the evidence phases through pi', async 
     ).isError,
   ).toBe(false);
   const stale = await call('write', { path: 'src/value.ts', content: 'export const value = 2;' });
-  expect(stale.isError).toBe(true);
-  expect(JSON.stringify(stale.result)).toContain('green');
-  expect(JSON.stringify(stale.result)).toContain('required behavior');
-  expect(await readFile(join(cwd, 'src/value.ts'), 'utf8')).toBe('export const value = 1;');
+  expect(stale.isError).toBe(false);
+  expect(await readFile(join(cwd, 'src/value.ts'), 'utf8')).toBe('export const value = 2;');
   // The behavior reached GREEN, so a focused pass accepts the amended test.
   const behavior = { files: ['src/value.test.ts'] };
   expect((await run(behavior)).details).toMatchObject({ kind: 'pass', phase: 'green' });
@@ -702,7 +700,7 @@ it('verifies two behaviors authored incrementally in one test file through pi', 
     const green = await run(behavior);
     expect(green.details).toMatchObject({
       phase: 'green',
-      implementationAllowed: false,
+      implementationAllowed: true,
       focusedPassValid: true,
       fullPassValid: false,
     });
@@ -713,7 +711,7 @@ it('verifies two behaviors authored incrementally in one test file through pi', 
   expect(verified.details).toMatchObject({ phase: 'verified', fullPassValid: true });
   // Revisiting a recorded behavior after verification keeps the task's REDs.
   const revisited = await run({ behavior: 'relabeled', testFullName: 'behavior 1' });
-  expect(revisited.details).toMatchObject({ phase: 'green', implementationAllowed: false });
+  expect(revisited.details).toMatchObject({ phase: 'green', implementationAllowed: true });
   expect(revisited.details.evidence.reds).toHaveLength(2);
   expect(
     (await run({ behavior: 'relabeled', testFullName: 'behavior 1', scope: 'full' })).details.phase,
@@ -842,11 +840,11 @@ it.each(['skip edit', 'deleted file'])(
     const result = await run({ scope: 'full' });
 
     expect(result.details.fullPassValid).toBe(false);
-    expect(result.content[0]!.text).toContain('pass · phase locked · implementation blocked');
+    expect(result.content[0]!.text).toContain('pass · phase green · implementation allowed');
     expect(result.content[0]!.text).toContain(`Next: ${RESTORE_RED_NEXT_STEP}`);
     expect(
-      (await call('write', { path: 'src/value.ts', content: 'export const value = 4;' })).isError,
-    ).toBe(true);
+      (await call('write', { path: 'src/value.ts', content: 'export const value = 3;' })).isError,
+    ).toBe(false);
     expect(
       (await call('write', { path: 'behavior.test.ts', content: REQUIRED_RED_TEST })).isError,
     ).toBe(false);
@@ -966,7 +964,7 @@ it('renews a test edited after the fix but before GREEN and reports it on the fu
   expect(result.details).toMatchObject({
     kind: 'pass',
     phase: 'green',
-    implementationAllowed: false,
+    implementationAllowed: true,
   });
   expect(result.content[0]!.text).not.toContain('Next:');
   const full = await run({ scope: 'full' });
@@ -1039,7 +1037,7 @@ it('does not report committed tests as never failed', async () => {
   );
 });
 
-it('creates an empty stub for a new module through bash, then proves RED by name', async () => {
+it('creates an empty stub for a new module through write, then proves RED by name', async () => {
   const { run, call } = await createHarness(registerCleanup);
   expect(
     (
@@ -1051,8 +1049,7 @@ it('creates an empty stub for a new module through bash, then proves RED by name
     ).isError,
   ).toBe(false);
   expect((await run()).details).toMatchObject({ kind: 'fail', phase: 'locked' });
-  expect((await call('write', { path: 'src/value.ts', content: '' })).isError).toBe(true);
-  expect((await call('bash', { command: 'mkdir -p src && : > src/value.ts' })).isError).toBe(false);
+  expect((await call('write', { path: 'src/value.ts', content: '' })).isError).toBe(false);
   const red = await run();
   expect(red.details).toMatchObject({ kind: 'fail', phase: 'red' });
   expect(red.content[0]!.text).toContain('is not a function');

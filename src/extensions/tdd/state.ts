@@ -195,6 +195,7 @@ const loadState = async (cwd: string): Promise<EvidenceState> => {
           behavior: entry.behavior,
           report: old.record?.report ?? entry.report,
           testHashes: old.record?.after ?? entry.testHashes,
+          greenTree: entry.greenTree ?? null,
           edited: entry.edited ?? false,
           phase: legacy ? 'locked' : entry.phase,
         };
@@ -242,17 +243,18 @@ export const createEvidenceStore = () => {
             (file) => red.testHashes[resolve(cwd, file)] !== hashes[resolve(cwd, file)],
           );
     let phase: Phase = evidence.phase;
-    if ((phase === 'red' || phase === 'green') && staleSinceRed.length > 0) phase = 'locked';
-    if (
-      phase === 'verified' &&
-      evidence.verifiedTree !== (await treeDigest(cwd, evidence.active?.files ?? []))
-    )
-      phase = 'green';
+    if (phase === 'red' && staleSinceRed.length > 0) phase = 'locked';
+    const currentTree =
+      phase === 'green' || phase === 'verified'
+        ? await treeDigest(cwd, evidence.active?.files ?? [])
+        : null;
+    if (phase === 'verified' && evidence.verifiedTree !== currentTree) phase = 'green';
     return {
       evidence,
       phase,
-      implementationAllowed: phase === 'red',
-      focusedPassValid: phase === 'green' || phase === 'verified',
+      implementationAllowed: phase === 'red' || phase === 'green',
+      focusedPassValid:
+        phase === 'verified' || (phase === 'green' && red?.greenTree === currentTree),
       fullPassValid: phase === 'verified',
       staleSinceRed,
       notice: gateOffNotice(evidence) ?? runnerNotice(cwd, hashes),
@@ -278,10 +280,7 @@ export const createEvidenceStore = () => {
         throw new Error(`Expected a test file inside the worktree: ${file}`);
       }
     }
-    const before =
-      scope === 'full'
-        ? await treeDigest(cwd, behavior.files)
-        : await hashInputs(cwd, behavior.files);
+    const before = await treeDigest(cwd, behavior.files);
     const report = await runTests(
       scope === 'full'
         ? { cwd, scope: 'all', signal }
@@ -296,9 +295,8 @@ export const createEvidenceStore = () => {
           },
     );
     const after = await hashInputs(cwd, behavior.files);
-    const fullTree = scope === 'full' ? await treeDigest(cwd, behavior.files) : null;
-    const current = fullTree ?? after;
-    if (JSON.stringify(before) !== JSON.stringify(current))
+    const currentTree = await treeDigest(cwd, behavior.files);
+    if (before !== currentTree)
       return { kind: 'inputs-changed' as const, report: null, ...(await read(cwd)) };
     const state = await stateFor(cwd);
     const entry = state.reds.find((candidate) => sameBehavior(candidate.behavior, behavior));
@@ -323,7 +321,7 @@ export const createEvidenceStore = () => {
       state.verifiedTree = null;
       if (state.phase === 'verified') state.phase = 'green';
       // Earlier tests may share a file extended by a later RED, but a RED in a different file
-      // cannot authorize an amendment. Only the latest RED proven inside that file renews it.
+      // cannot authorize an amendment. Use the latest accepted focused snapshot in that file.
       const hashes = await hashInputs(
         cwd,
         state.reds.flatMap((red) => red.behavior.files),
@@ -341,7 +339,7 @@ export const createEvidenceStore = () => {
         state.reds.every((red) => redPassed(cwd, red.behavior, red, report))
       ) {
         state.phase = 'verified';
-        state.verifiedTree = fullTree;
+        state.verifiedTree = currentTree;
       }
     } else {
       const transition = `${arrival}:${outcome}` as const;
@@ -353,6 +351,7 @@ export const createEvidenceStore = () => {
             behavior: structuredClone(behavior),
             report,
             testHashes: after,
+            greenTree: null,
             edited: false,
             phase: 'red',
           };
@@ -380,7 +379,10 @@ export const createEvidenceStore = () => {
               (file) => entry.testHashes[resolve(cwd, file)] !== after[resolve(cwd, file)],
             );
             entry.testHashes = after;
+            entry.greenTree = currentTree;
             entry.phase = 'green';
+            state.reds = state.reds.filter((candidate) => candidate !== entry);
+            state.reds.push(entry);
             state.phase = 'green';
             state.verifiedTree = null;
           }

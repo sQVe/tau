@@ -24,17 +24,18 @@ The phase is what the last `run_tests` call stored, initially `locked`:
 
 Only two byte checks can change the phase reported by a read:
 
-- In `red` or `green`, changed test files belonging to the active RED report `locked`, with the
-  changed files in `staleSinceRed`. The stored entry stays, so a later focused run can renew it.
+- In `red`, changed test files belonging to the active RED report `locked`, with the changed files
+  in `staleSinceRed`. The stored entry stays, so a later focused run can renew it.
 - In `verified`, a changed tree digest reports `green`. The digest covers production and test files,
   required files, and verification configuration.
 
 Reads do not rewrite the stored phase. With the gate on, production writes under the configured
-globs open only in stored `red` while the active RED's test files still match. Protected paths stay
-blocked in every phase.
+globs open in `red` while the active RED's test files still match, and in `green` for cleanup.
+Protected paths stay blocked in every phase.
 
 The next focused pass renews a test edited before GREEN and reports the edit on the full run instead
-of leaving the phase locked. A production edit through bash after GREEN does not reopen the gate.
+of leaving the phase locked. After GREEN, changes to production, tests, or configuration invalidate
+the focused pass without closing production writes. Rerun focused tests after cleanup.
 
 ## Hard rules
 
@@ -58,8 +59,9 @@ of leaving the phase locked. A production edit through bash after GREEN does not
 ## Procedure
 
 1. Write the failing test next to the code, following the repository's test conventions. Import the
-   module normally. If it does not exist, create it empty through bash before running the test, for
-   example `mkdir -p src/thing && : > src/thing/index.ts`. An unresolved import is not RED.
+   module normally. If it does not exist, create it with `write`, using its literal path and
+   `content: ""`, before running the test. Only a new, empty file is allowed before RED; existing
+   files and protected paths remain guarded. An unresolved import is not RED.
 2. Call `run_tests` with `scope: "focused"`, `behavior`, `testFullName`, and `files`. Read the
    failure in the summary and the full report in `details`. A qualifying failure stores `red` and
    opens production writes. A pass without prior RED cannot prove the behavior.
@@ -68,8 +70,8 @@ of leaving the phase locked. A production edit through bash after GREEN does not
    qualifying failure stores fresh RED, and a qualifying pass accepts the edit and stores `green`.
 4. Call `run_tests` focused after the fix to reach `green`, then with `scope: "full"` to reach
    `verified`. Full verification requires every recorded RED test to run and pass, and required file
-   hashes to match the latest RED in that file. If a test file changed, run its behavior focused
-   before retrying full verification.
+   hashes to match the latest accepted focused snapshot in that file. If a test file changed, run
+   its behavior focused before retrying full verification.
 5. Read the full run's coverage line, which counts tests in the required files that were "proven RED
    or committed before". It names new tests that "never failed" and proven tests in amended files as
    "edited after RED". Review those edits; a passing run does not prove they kept the original
@@ -87,9 +89,9 @@ step. For example, before any behavior is active:
 Blocked src/thing.ts in phase locked, active behavior: none. Write a failing test with write using path "src/thing.test.ts" and content that checks the missing behavior.
 ```
 
-With an active behavior, a locked write asks you to prove RED with a focused call. In `green`, it
-asks for full verification or the next behavior's RED; in `verified`, it asks for the next test. An
-edited active test file can lock a read, but a focused pass accepts it without removing the fix.
+With an active behavior, a locked write asks you to prove RED with a focused call. GREEN permits
+cleanup; `verified` asks for the next test. An active test edited before GREEN can lock a read, but
+a focused pass accepts it without removing the fix.
 
 The [run_tests summary](../../src/extensions/tdd/index.ts) includes `Next:` when it can name a
 recovery. A focused pass without prior RED gives this guidance for an example behavior:

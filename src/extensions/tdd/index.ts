@@ -219,10 +219,10 @@ export default function tddExtension(pi: ExtensionAPI) {
       label: 'Run tests',
       description:
         'Name a behavior, its test files, and the exact Vitest full name: describe names followed by the it name, joined with spaces, for example "outer inner works", or an array of such names when several small tests prove one behavior together. ' +
-        'Run scope "focused" to prove RED before editing production files, run focused again for GREEN after the fix, then run scope "full" at the end for verified. ' +
-        'Editing a required test file after RED re-locks the gate; a focused pass accepts the edit and the full run reports it. ' +
+        'Create a missing production module with write and content "" so the test can import it; nonempty production writes still require RED. Run scope "focused" to prove RED before editing production files, run focused again for GREEN after the fix, then run scope "full" at the end for verified. ' +
+        'Editing a required test file before GREEN re-locks the gate; a focused pass accepts the edit and the full run reports it. GREEN permits cleanup, but changed inputs invalidate passing evidence. ' +
         'Skipped and deleted tests never count. ' +
-        'Returns kind (run outcome), phase (locked: no valid RED; red: failing test proven; green: that test passed; verified: full run passed with every RED test present and passing), implementationAllowed (true only in red), and report (test results, null if inputs changed). ' +
+        'Returns kind (run outcome), phase (locked: no valid RED; red: failing test proven; green: that test passed; verified: full run passed with every RED test present and passing), implementationAllowed (true in red and green), and report (test results, null if inputs changed). ' +
         'Only files matching the production globs are gated, and a notice string says the gate is off while no test runner resolves from the worktree or the user turned it off with /tdd off. ' +
         'A next string explains recovery when needed; the text is a short summary with counts and failing tests, and details carries the full report.',
       parameters: Type.Object({

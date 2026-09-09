@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -15,7 +15,7 @@ const createStore = (phase: Phase, notice?: string) => ({
     Promise.resolve({
       phase,
       notice,
-      implementationAllowed: phase === 'red',
+      implementationAllowed: phase === 'red' || phase === 'green',
       focusedPassValid: phase === 'green' || phase === 'verified',
       fullPassValid: phase === 'verified',
       staleSinceRed: [],
@@ -39,6 +39,38 @@ const makeEvent = (toolName: string, input: Record<string, unknown>): ToolCallEv
   toolCallId: 'call-1',
   toolName,
   input,
+});
+
+it('allows an empty new production file before RED without allowing implementation or erasure', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-guard-'));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  await mkdir(join(cwd, 'src'));
+  const store = createStore('locked');
+  const write = (path: string, content: string) =>
+    guardToolCall(makeEvent('write', { path, content }), cwd, store);
+  expect(await write('src/new.ts', '')).toBeUndefined();
+  expect((await write('src/new.ts', 'export const value = 1;'))?.block).toBe(true);
+  await writeFile(join(cwd, 'src/existing.ts'), 'export const value = 1;');
+  expect((await write('src/existing.ts', ''))?.block).toBe(true);
+  expect((await write('vitest.config.ts', ''))?.block).toBe(true);
+  await symlink('../vitest.config.ts', join(cwd, 'src/config.ts'));
+  expect((await write('src/config.ts', ''))?.block).toBe(true);
+});
+
+it('protects both symlink spellings and configuration targets', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-guard-'));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  await writeFile(join(cwd, 'shared-config.ts'), 'export default {};');
+  await symlink('shared-config.ts', join(cwd, 'vitest.config.ts'));
+  await writeFile(join(cwd, 'vite.config.ts'), 'export default {};');
+  await symlink('vite.config.ts', join(cwd, 'alias.ts'));
+  for (const path of ['vitest.config.ts', 'alias.ts']) {
+    for (const tool of ['write', 'edit']) {
+      expect(
+        (await guardToolCall(makeEvent(tool, { path }), cwd, createStore('green')))?.block,
+      ).toBe(true);
+    }
+  }
 });
 
 it.each(phases)('allows test writes, including colocated tests, in %s', async (phase) => {
@@ -218,7 +250,7 @@ it.each(phases)('uses the stored implementation decision in %s', async (phase) =
     '/repo',
     store,
   );
-  expect(result?.block === true).toBe(phase !== 'red');
+  expect(result?.block === true).toBe(phase !== 'red' && phase !== 'green');
   expect(store.read).toHaveBeenCalledExactlyOnceWith('/repo');
 });
 
@@ -252,10 +284,6 @@ it.each([
   [
     'locked',
     'Prove RED with run_tests {"behavior":"required behavior","testFullName":"required","files":["value.test.ts"],"scope":"focused"}',
-  ],
-  [
-    'green',
-    'Verify the current behavior with run_tests {"behavior":"required behavior","testFullName":"required","files":["value.test.ts"],"scope":"full"}, or start the next behavior by writing its test and proving RED with run_tests scope "focused"',
   ],
   [
     'verified',
