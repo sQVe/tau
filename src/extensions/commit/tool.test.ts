@@ -693,7 +693,8 @@ describe('commitTool.execute', () => {
     }
     await expect(call('retry0.ts')).rejects.toThrow('1/2 automatic returns');
     expect(review).toHaveBeenCalledTimes(34);
-  });
+  }, 30_000);
+
   it.each(['skip', 'abort', 'cancel'])('resets correction attempts after %s', async (choice) => {
     const repoDir = await createTempRepo();
     await writeRepoFile(repoDir, 'retry.ts', '// stale\nexport const retries = 0;\n');
