@@ -52,6 +52,10 @@ automatically, so name it as the default to search without a key:
 }
 ```
 
+`PI_CODING_AGENT_DIR` overrides that directory and is used verbatim, with no `pi` segment. Otherwise
+`XDG_CONFIG_HOME` selects `$XDG_CONFIG_HOME/pi/web-search.json`, except that an existing
+`~/.pi/web-search.json` still wins when the XDG copy is absent.
+
 ## Manual check
 
 Tests cover the tools themselves, including committing and blocking raw `git commit`. What they

@@ -37,6 +37,7 @@ differ from these defaults.
 - Use straight quotes. Avoid decorative emojis, em dashes, and arrow chains in prose. Split a
   sentence instead of replacing an em dash with another separator.
 - Use colons before lists or examples, not to join unrelated thoughts.
+- Give every code block a language tag.
 
 ## Keep the meaning
 
