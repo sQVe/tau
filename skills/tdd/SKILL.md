@@ -9,100 +9,70 @@ description:
 
 ## When to use
 
-Use this skill when you change behavior in a repository where Tau's `run_tests` tool is available.
+Use this skill when changing behavior in a repository where Tau's `run_tests` tool is available.
 Prove each behavior with a failing test, make it pass, then verify the whole suite.
-
-## Phases
-
-The phase is what the last `run_tests` call stored, initially `locked`:
-
-- `locked`: no valid RED authorizes production writes.
-- `red`: a focused run proved the named tests fail.
-- `green`: the tests recorded in RED passed in a focused run.
-- `verified`: the full suite passed with every recorded RED test present, passing, and its file
-  hashes accepted.
-
-Only two byte checks can change the phase reported by a read:
-
-- In `red`, changed test files belonging to the active RED report `locked`, with the changed files
-  in `staleSinceRed`. The stored entry stays, so a later focused run can renew it.
-- In `verified`, a changed tree digest reports `green`. The digest covers production and test files,
-  required files, and verification configuration.
-
-Reads do not rewrite the stored phase. With the gate on, production writes under the configured
-globs open in `red` while the active RED's test files still match, and in `green` for cleanup.
-Protected paths stay blocked in every phase.
-
-The next focused pass renews a test edited before GREEN and reports the edit on the full run instead
-of leaving the phase locked. After GREEN, changes to production, tests, or configuration invalidate
-the focused pass without closing production writes. Rerun focused tests after cleanup.
 
 ## Hard rules
 
 - Run tests with `run_tests`. A test run through bash records no evidence and cannot open the gate.
-- Keep `testFullName` and `files` identical through the cycle; `behavior` is a label and may change.
-  A new test name or file set starts an unseen behavior in `locked`. Returning to a known behavior
-  restores its stored focused phase before applying the run's result. Earlier REDs remain required
-  until an unseen behavior starts after stored `verified`.
-- `testFullName` is the exact Vitest full name: describe names and the it name joined with single
-  spaces, such as `outer inner works`. Pass an array when several small tests prove one behavior;
-  every named test must fail in RED and pass in GREEN.
-- Give every test a unique full name inside its file. Duplicate names make that file ambiguous.
-  Skipped, todo, deleted, and load-error tests never count as evidence.
-- The test must fail because the behavior is missing. The gate cannot judge whether the assertion is
-  useful or whether an edit weakened it.
-- Use `write` and `edit` with literal paths. They are ungated outside the production globs, except
-  for protected paths. Unrecognized tools are blocked in every phase; bash is exempt.
-- `.tau/`, `package.json`, and the protected vite and vitest configuration paths stay blocked even
-  with the gate off. Configuration changes must go through bash.
+- Keep `testFullName` and `files` the same through the cycle. `behavior` is a label and may change.
+- Use the exact Vitest full name: describe names and the it name joined with spaces, such as
+  `outer inner works`. Pass an array when several small tests prove one behavior together. Every
+  named test must fail in RED and pass in GREEN.
+- Give every test a unique full name inside its file. Skipped, todo, deleted, and load-error tests
+  never count as evidence.
+- Check why the test failed. The gate cannot judge whether an assertion is useful or whether an edit
+  weakened it. Do not change an assertion just to make the implementation pass.
+- Use `write` and `edit` with literal paths. Unrecognized tools are blocked; bash is exempt. `.tau/`
+  and [protected configuration paths](../../src/extensions/tdd/config.ts) stay blocked even with the
+  gate off. Change configuration through bash.
 
 ## Procedure
 
-1. Write the failing test next to the code, following the repository's test conventions. Import the
-   module normally. If it does not exist, create it with `write`, using its literal path and
-   `content: ""`, before running the test. Only a new, empty file is allowed before RED; existing
-   files and protected paths remain guarded. An unresolved import is not RED.
+1. Write the failing test next to the code, following the repository's conventions. Import the
+   module normally. If it does not exist, create it with `write` and `content: ""`. Only a new,
+   empty production file is allowed before RED. An unresolved import is not RED.
 2. Call `run_tests` with `scope: "focused"`, `behavior`, `testFullName`, and `files`. Read the
    failure in the summary and the full report in `details`. A qualifying failure stores `red` and
-   opens production writes. A pass without prior RED cannot prove the behavior.
+   opens production writes. A pass without prior RED does not prove the behavior.
 3. Implement only what the failure asks for. Run the repository's format, typecheck, and lint
-   commands as required. If a test file changes, rerun focused with the same names and files; a
-   qualifying failure stores fresh RED, and a qualifying pass accepts the edit and stores `green`.
-4. Call `run_tests` focused after the fix to reach `green`, then with `scope: "full"` to reach
-   `verified`. Full verification requires every recorded RED test to run and pass, and required file
-   hashes to match the latest accepted focused snapshot in that file. If a test file changed, run
-   its behavior focused before retrying full verification.
-5. Read the full run's coverage line, which counts tests in the required files that were "proven RED
-   or committed before". It names new tests that "never failed" and proven tests in amended files as
-   "edited after RED". Review those edits; a passing run does not prove they kept the original
-   assertion.
-6. Start the next behavior by writing its test and proving RED again. After a formatter or commit
+   commands as required. If a test file changes, review the edit and rerun focused with the same
+   names and files. A qualifying failure stores fresh RED; a qualifying pass accepts the edit and
+   stores `green`.
+4. Clean up after GREEN, then rerun focused tests. GREEN permits production writes, but changed
+   production, tests, or configuration invalidate the passing result.
+5. Call `run_tests` with `scope: "full"`. It reaches `verified` only when every recorded RED test
+   runs and passes, and its verification inputs match an accepted focused snapshot.
+6. Read the full run's coverage line and review tests marked "edited after RED". The committed-title
+   count is an estimate from source text, not proof that an assertion existed or stayed unchanged.
+7. Start the next behavior by writing its test and proving RED again. After formatting or a commit
    hook changes the verified tree, rerun full verification for the same behavior.
 
-## Read recovery messages
+## Phases and recovery
 
-`/tdd status` reports the gate, phase, and whether production writes are allowed. The
-[write guard](../../src/extensions/tdd/guard.ts) names the path, phase, active behavior, and next
-step. For example, before any behavior is active:
+The [evidence store](../../src/extensions/tdd/state.ts) defines the phase transitions. Reads check
+file changes without rewriting the stored phase:
 
-```text
-Blocked src/thing.ts in phase locked, active behavior: none. Write a failing test with write using path "src/thing.test.ts" and content that checks the missing behavior.
-```
+- `locked`: write a failing test and run focused. A test file edited in RED locks production writes
+  until another qualifying focused run. A focused pass accepts that edit without removing the fix.
+- `red`: implement the behavior, then run focused to reach GREEN.
+- `green`: cleanup is allowed. Rerun focused after edits, then run full.
+- `verified`: the full run passed with every recorded RED present and passing. A production, test,
+  or configuration change reports GREEN until verification passes again.
 
-With an active behavior, a locked write asks you to prove RED with a focused call. GREEN permits
-cleanup; `verified` asks for the next test. An active test edited before GREEN can lock a read, but
-a focused pass accepts it without removing the fix.
+Returning to a known behavior restores its stored focused phase. Earlier REDs stay required until an
+unseen behavior starts after stored `verified`. Do not rename or delete those tests to make
+verification pass.
 
-The [run_tests summary](../../src/extensions/tdd/index.ts) includes `Next:` when it can name a
-recovery. A focused pass without prior RED gives this guidance for an example behavior:
+Use `/tdd status`, blocked-write messages, and the summary's `Next:` line for recovery:
 
-```text
-Next: The test does not fail yet; the behavior may already be implemented. Write a test that fails before the fix, then call run_tests {"behavior":"thing works","testFullName":"thing works","files":["src/thing.test.ts"],"scope":"focused"}.
-```
-
-Other guidance names concurrent input changes, duplicate full names, or skipped or missing RED
-tests. Stop concurrent edits and retry; give duplicates unique names; restore required tests so they
-run and pass. A full run cannot verify missing or ambiguous RED tests.
+- Inputs changed during the run: stop concurrent edits and rerun.
+- Duplicate full names: rename the duplicates so each test can be identified.
+- Missing or skipped RED: restore that test so it runs and passes.
+- Stale verification inputs: rerun focused for the affected recorded behaviors, then rerun full. A
+  shared test file uses its latest accepted focused snapshot. Configuration changes require renewing
+  every affected RED.
+- Dangling symlink: repair it before writing. The guard cannot classify a missing target safely.
 
 ## Turning the gate off
 
@@ -113,6 +83,6 @@ blocked either way. Ask the user before turning the gate off.
 
 ## See also
 
-- [Phase storage and transitions](../../src/extensions/tdd/state.ts)
-- [Production globs and protected paths](../../src/extensions/tdd/config.ts)
+- [Write guard](../../src/extensions/tdd/guard.ts)
+- [Run summaries](../../src/extensions/tdd/index.ts)
 - [Skill authoring style](../../docs/adr/0004-skill-authoring-style.md)

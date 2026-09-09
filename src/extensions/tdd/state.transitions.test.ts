@@ -10,7 +10,7 @@ import { protectedPaths } from './config.js';
 import { guardToolCall } from './guard.js';
 import { runTests, runnerAvailable } from './runner/index.js';
 import type { RunnerResult, TestResult } from './runner/types.js';
-import { createEvidenceStore } from './state.js';
+import { createEvidenceStore, tddGateStatus } from './state.js';
 import type { Behavior, Phase } from './types.js';
 
 vi.mock('./runner/index.js', () => ({
@@ -18,8 +18,7 @@ vi.mock('./runner/index.js', () => ({
   runnerAvailable: vi.fn<typeof runnerAvailable>(() => true),
 }));
 
-// AI-155 contract: phase belongs to the evidence, independently of read()'s byte checks.
-// No fallback to the reported phase: that would let the old derived model pass this suite.
+// Check the stored phase separately from the phase reported after hashing files.
 type Event =
   | 'read'
   | 'focusedFail'
@@ -62,18 +61,21 @@ const locked: Expected = {
   implementationAllowed: false,
   reds: ['previous'],
 };
+
 const red: Expected = {
   storedPhase: 'red',
   phase: 'red',
   implementationAllowed: true,
   reds: ['current', 'previous'],
 };
+
 const green: Expected = {
   ...red,
   storedPhase: 'green',
   phase: 'green',
   implementationAllowed: true,
 };
+
 const verified: Expected = {
   ...green,
   storedPhase: 'verified',
@@ -206,19 +208,24 @@ const current: Behavior = {
   testFullName: ['required', 'also required'],
   files: ['behavior.test.ts'],
 };
+
 const previous: Behavior = {
   behavior: 'previous',
   testFullName: 'earlier',
   files: ['previous.test.ts'],
 };
+
 const fresh: Behavior = { behavior: 'new', testFullName: 'new', files: ['other.test.ts'] };
+
 const results = (behavior: Behavior, status: TestResult['status']): TestResult[] =>
   [behavior.testFullName]
     .flat()
     .map((fullname) => ({ file: behavior.files[0]!, fullname, status }));
+
 const pass = (
   tests = [...results(current, 'passed'), ...results(previous, 'passed')],
 ): RunnerResult => ({ kind: 'pass', tests });
+
 const fail = (behavior = current): RunnerResult => ({
   kind: 'fail',
   tests: results(behavior, 'failed'),
@@ -231,7 +238,9 @@ const fail = (behavior = current): RunnerResult => ({
 const createHarness = async (cleanup: TestContext['onTestFinished']) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-transitions-'));
   cleanup(() => rm(cwd, { recursive: true, force: true }));
+
   await mkdir(join(cwd, 'src'));
+
   for (const [file, content] of Object.entries({
     'package.json': '{"type":"module"}',
     'vite.config.ts': 'export default {};',
@@ -242,41 +251,54 @@ const createHarness = async (cleanup: TestContext['onTestFinished']) => {
   })) {
     await writeFile(join(cwd, file), content);
   }
+
   const store = createEvidenceStore();
+
   const run = (report: RunnerResult, scope: 'focused' | 'full' = 'focused', behavior = current) => {
     vi.mocked(runTests).mockResolvedValueOnce(report);
+
     return store.run(cwd, behavior, scope);
   };
+
   // A second entry catches accidental clearing and full runs that check only the active RED.
   await run(fail(previous), 'focused', previous);
   await run(pass(results(previous, 'passed')), 'focused', previous);
+
   return { cwd, store, run };
 };
+
 type Harness = Awaited<ReturnType<typeof createHarness>>;
 
 // One script per starting phase; setup uses run(), never an invented stored-state fixture.
-const reach: Record<Phase, (h: Harness) => Promise<unknown>> = {
-  locked: (h) => h.run({ kind: 'timeout' }),
-  red: (h) => h.run(fail()),
-  green: async (h) => {
-    await reach.red(h);
-    await h.run(pass());
+const reach: Record<Phase, (harness: Harness) => Promise<unknown>> = {
+  locked: (harness) => harness.run({ kind: 'timeout' }),
+  red: (harness) => harness.run(fail()),
+  green: async (harness) => {
+    await reach.red(harness);
+
+    await harness.run(pass());
   },
-  verified: async (h) => {
-    await reach.green(h);
-    await h.run(pass(), 'full');
+  verified: async (harness) => {
+    await reach.green(harness);
+
+    await harness.run(pass(), 'full');
   },
 };
 
-const digest = async (cwd: string, file: string) =>
-  createHash('sha256')
-    .update(await readFile(join(cwd, file)))
-    .digest('hex');
-const edit = async (h: Harness, file: string) => {
-  const before = await digest(h.cwd, file);
-  await writeFile(join(h.cwd, file), '// changed bytes');
-  expect(await digest(h.cwd, file)).not.toBe(before);
+const digest = async (cwd: string, file: string) => {
+  const content = await readFile(join(cwd, file));
+
+  return createHash('sha256').update(content).digest('hex');
 };
+
+const edit = async (harness: Harness, file: string) => {
+  const before = await digest(harness.cwd, file);
+
+  await writeFile(join(harness.cwd, file), '// changed bytes');
+
+  expect(await digest(harness.cwd, file)).not.toBe(before);
+};
+
 const loadError: RunnerResult = {
   kind: 'compile-error',
   message: 'load error',
@@ -284,44 +306,52 @@ const loadError: RunnerResult = {
   stderr: 'load error',
   tests: [],
 };
+
 const ambiguous = (status: 'passed' | 'failed') => {
   const tests = results(current, status);
+
   return [...tests, tests[0]!];
 };
+
 const gateOff = { since: '2026-09-08T00:00:00.000Z' };
+
 const proven = [{ file: 'old.test.ts', fullname: 'survives migration' }];
-const reloadLegacy = async (h: Harness, minimal: boolean) => {
-  const evidence = (await h.store.read(h.cwd)).evidence;
+
+const reloadLegacy = async (harness: Harness, minimal: boolean) => {
+  const { evidence } = await harness.store.read(harness.cwd);
   const legacy = minimal ? { reds: [], gateOff, proven } : { ...evidence, gateOff, proven };
-  // JSON removal works both before and after AI-155 introduces phase into EvidenceState.
+
   await writeFile(
-    join(h.cwd, '.tau/state.json'),
+    join(harness.cwd, '.tau/state.json'),
     JSON.stringify({ tdd: legacy }, (key, value: unknown) => (key === 'phase' ? undefined : value)),
   );
-  return createEvidenceStore().read(h.cwd);
+
+  return createEvidenceStore().read(harness.cwd);
 };
 
-const actions: Record<Event, (h: Harness) => Promise<unknown>> = {
-  read: (h) => h.store.read(h.cwd),
-  focusedFail: (h) => h.run(fail()),
-  focusedPass: (h) => h.run(pass()),
-  focusedLoadError: (h) => h.run(loadError),
-  focusedTimeout: (h) => h.run({ kind: 'timeout' }),
-  focusedNoTests: (h) => h.run({ kind: 'no-tests-collected', tests: [] }),
-  focusedCancelled: (h) => h.run({ kind: 'cancelled' }),
-  focusedAmbiguousFail: (h) => h.run({ ...fail(), tests: ambiguous('failed') } as RunnerResult),
-  focusedAmbiguousPass: (h) => h.run(pass(ambiguous('passed'))),
-  fullPass: (h) => h.run(pass(), 'full'),
-  fullFail: (h) => h.run(fail(), 'full'),
-  fullLoadError: (h) => h.run(loadError, 'full'),
-  fullTimeout: (h) => h.run({ kind: 'timeout' }, 'full'),
-  fullNoTests: (h) => h.run({ kind: 'no-tests-collected', tests: [] }, 'full'),
-  fullCancelled: (h) => h.run({ kind: 'cancelled' }, 'full'),
-  fullSkipped: (h) =>
-    h.run(pass([...results(current, 'passed'), ...results(previous, 'skipped')]), 'full'),
-  fullMissing: (h) => h.run(pass(results(current, 'passed')), 'full'),
-  fullAmbiguous: (h) =>
-    h.run(
+const actions: Record<Event, (harness: Harness) => Promise<unknown>> = {
+  read: (harness) => harness.store.read(harness.cwd),
+  focusedFail: (harness) => harness.run(fail()),
+  focusedPass: (harness) => harness.run(pass()),
+  focusedLoadError: (harness) => harness.run(loadError),
+  focusedTimeout: (harness) => harness.run({ kind: 'timeout' }),
+  focusedNoTests: (harness) => harness.run({ kind: 'no-tests-collected', tests: [] }),
+  focusedCancelled: (harness) => harness.run({ kind: 'cancelled' }),
+  focusedAmbiguousFail: (harness) =>
+    harness.run({ ...fail(), tests: ambiguous('failed') } as RunnerResult),
+  focusedAmbiguousPass: (harness) => harness.run(pass(ambiguous('passed'))),
+
+  fullPass: (harness) => harness.run(pass(), 'full'),
+  fullFail: (harness) => harness.run(fail(), 'full'),
+  fullLoadError: (harness) => harness.run(loadError, 'full'),
+  fullTimeout: (harness) => harness.run({ kind: 'timeout' }, 'full'),
+  fullNoTests: (harness) => harness.run({ kind: 'no-tests-collected', tests: [] }, 'full'),
+  fullCancelled: (harness) => harness.run({ kind: 'cancelled' }, 'full'),
+  fullSkipped: (harness) =>
+    harness.run(pass([...results(current, 'passed'), ...results(previous, 'skipped')]), 'full'),
+  fullMissing: (harness) => harness.run(pass(results(current, 'passed')), 'full'),
+  fullAmbiguous: (harness) =>
+    harness.run(
       pass([
         ...results(current, 'passed'),
         ...results(previous, 'passed'),
@@ -329,41 +359,77 @@ const actions: Record<Event, (h: Harness) => Promise<unknown>> = {
       ]),
       'full',
     ),
-  testEdit: (h) => edit(h, 'behavior.test.ts'),
-  focusedRenew: async (h) => {
-    await edit(h, 'behavior.test.ts');
-    await h.run(pass());
+
+  testEdit: (harness) => edit(harness, 'behavior.test.ts'),
+  focusedRenew: async (harness) => {
+    await edit(harness, 'behavior.test.ts');
+
+    await harness.run(pass());
   },
-  productionEditThroughBash: async (h) => {
-    expect(
-      await guardToolCall(
-        {
-          type: 'tool_call',
-          toolCallId: 'bash',
-          toolName: 'bash',
-          input: { command: "printf '// changed bytes' > src/value.ts" },
-        },
-        h.cwd,
-        h.store,
-      ),
-    ).toBeUndefined();
+  productionEditThroughBash: async (harness) => {
+    const decision = await guardToolCall(
+      {
+        type: 'tool_call',
+        toolCallId: 'bash',
+        toolName: 'bash',
+        input: { command: "printf '// changed bytes' > src/value.ts" },
+      },
+      harness.cwd,
+      harness.store,
+    );
+
+    expect(decision).toBeUndefined();
+
     // Apply the bytes a bash tool writes, bypassing the write/edit guard as real bash does.
-    await edit(h, 'src/value.ts');
+    await edit(harness, 'src/value.ts');
   },
-  otherTestEdit: (h) => edit(h, 'other.test.ts'),
-  protectedEdit: (h) => edit(h, 'vite.config.ts'),
+  otherTestEdit: (harness) => edit(harness, 'other.test.ts'),
+  protectedEdit: (harness) => edit(harness, 'vite.config.ts'),
+
   // A non-evidentiary run isolates switching from a new RED/GREEN result.
-  switchKnown: (h) => h.run({ kind: 'timeout' }, 'focused', previous),
-  switchNew: (h) => h.run({ kind: 'timeout' }, 'focused', fresh),
-  legacyReload: (h) => reloadLegacy(h, false),
-  noPhaseReload: (h) => reloadLegacy(h, true),
+  switchKnown: (harness) => harness.run({ kind: 'timeout' }, 'focused', previous),
+  switchNew: (harness) => harness.run({ kind: 'timeout' }, 'focused', fresh),
+  legacyReload: (harness) => reloadLegacy(harness, false),
+  noPhaseReload: (harness) => reloadLegacy(harness, true),
 };
 
+it('rejects malformed stored evidence before it can authorize writes', async () => {
+  const harness = await createHarness(onTestFinished);
+
+  await reach.green(harness);
+
+  const { evidence } = await harness.store.read(harness.cwd);
+  const entry = evidence.reds.at(-1)!;
+  const invalidStates = [
+    { ...evidence, active: null },
+    { ...evidence, phase: 'unknown' },
+    { ...evidence, gateOff: true },
+    { ...evidence, proven: [null] },
+    { ...evidence, reds: [] },
+    { ...evidence, reds: [{ ...entry, behavior: {} }] },
+    { ...evidence, reds: [{ ...entry, report: { kind: 'fail' } }] },
+    { ...evidence, reds: [{ ...entry, report: { ...entry.report, tests: [] } }] },
+    { ...evidence, reds: [{ ...entry, testHashes: [] }] },
+    { ...evidence, reds: [{ ...entry, phase: 'verified' }] },
+  ];
+
+  for (const state of invalidStates) {
+    await writeFile(join(harness.cwd, '.tau/state.json'), JSON.stringify({ tdd: state }));
+
+    await expect(createEvidenceStore().read(harness.cwd)).rejects.toThrow(
+      'Unreadable test evidence',
+    );
+    expect(await tddGateStatus(harness.cwd)).toContain('status unknown');
+  }
+});
+
 it.each(Object.keys(reach) as Phase[])('reaches %s using the mocked runner', async (phase) => {
-  const h = await createHarness(onTestFinished);
-  await reach[phase](h);
-  expect(await h.store.read(h.cwd)).toMatchObject({ phase, notice: undefined });
-  expect(runnerAvailable).toHaveBeenCalledWith(h.cwd);
+  const harness = await createHarness(onTestFinished);
+
+  await reach[phase](harness);
+
+  expect(await harness.store.read(harness.cwd)).toMatchObject({ phase, notice: undefined });
+  expect(runnerAvailable).toHaveBeenCalledWith(harness.cwd);
 });
 
 const cells = (Object.keys(transitions) as Phase[]).flatMap((from) =>
@@ -376,13 +442,17 @@ const cells = (Object.keys(transitions) as Phase[]).flatMap((from) =>
 
 /* oxlint-disable vitest/no-conditional-expect -- Extra checks depend on the table event, not the observed result. */
 it.each(cells)('$from + $event', async ({ from, event, expected }) => {
-  const h = await createHarness(onTestFinished);
-  await reach[from](h);
-  const before = await h.store.read(h.cwd);
-  await actions[event](h);
+  const harness = await createHarness(onTestFinished);
+
+  await reach[from](harness);
+
+  const before = await harness.store.read(harness.cwd);
+
+  await actions[event](harness);
+
   const reloading = event === 'legacyReload' || event === 'noPhaseReload';
-  const store = reloading ? createEvidenceStore() : h.store;
-  const actual = await store.read(h.cwd);
+  const store = reloading ? createEvidenceStore() : harness.store;
+  const actual = await store.read(harness.cwd);
 
   expect.soft(actual.phase).toBe(expected.phase);
   expect.soft(actual.implementationAllowed).toBe(expected.implementationAllowed);
@@ -390,6 +460,7 @@ it.each(cells)('$from + $event', async ({ from, event, expected }) => {
     .soft(actual.evidence.reds.map(({ behavior }) => behavior.behavior).toSorted())
     .toEqual(expected.reds);
   expect.soft(actual.evidence).toHaveProperty('phase', expected.storedPhase);
+
   if (!reloading) {
     expect(actual.notice).toBeUndefined();
   } else {
@@ -400,36 +471,34 @@ it.each(cells)('$from + $event', async ({ from, event, expected }) => {
     expect(actual.staleSinceRed).toContain('behavior.test.ts');
     expect(actual.evidence.reds).toEqual(before.evidence.reds);
   }
+
   if (event === 'fullPass' && from !== 'locked') {
-    // AI-155's new persisted digest field; its spelling is local to this target contract.
     expect(actual.evidence).toHaveProperty('verifiedTree', expect.stringMatching(/^[a-f0-9]{64}$/));
   }
+
   if (
     ['testEdit', 'productionEditThroughBash', 'otherTestEdit', 'protectedEdit'].includes(event) &&
     from === 'verified'
   ) {
     expect(actual.evidence).toEqual(before.evidence);
   }
+
   if (event === 'focusedFail') {
-    expect(
-      actual.evidence.reds.find(({ behavior }) => behavior.behavior === 'current')?.report,
-    ).toEqual(fail());
-    expect(
-      actual.evidence.reds.find(({ behavior }) => behavior.behavior === 'current')?.testHashes[
-        join(h.cwd, 'behavior.test.ts')
-      ],
-    ).toBe(await digest(h.cwd, 'behavior.test.ts'));
+    const currentRed = actual.evidence.reds.find(({ behavior }) => behavior.behavior === 'current');
+    const testHash = currentRed?.testHashes[join(harness.cwd, 'behavior.test.ts')];
+
+    expect(currentRed?.report).toEqual(fail());
+    expect(testHash).toBe(await digest(harness.cwd, 'behavior.test.ts'));
   }
+
   if (event === 'focusedRenew' && from !== 'locked') {
-    expect(
-      actual.evidence.reds.find(({ behavior }) => behavior.behavior === 'current'),
-    ).toHaveProperty('edited', true);
-    expect(
-      actual.evidence.reds.find(({ behavior }) => behavior.behavior === 'current')?.testHashes[
-        join(h.cwd, 'behavior.test.ts')
-      ],
-    ).toBe(await digest(h.cwd, 'behavior.test.ts'));
+    const currentRed = actual.evidence.reds.find(({ behavior }) => behavior.behavior === 'current');
+    const testHash = currentRed?.testHashes[join(harness.cwd, 'behavior.test.ts')];
+
+    expect(currentRed).toHaveProperty('edited', true);
+    expect(testHash).toBe(await digest(harness.cwd, 'behavior.test.ts'));
   }
+
   if (
     ['fullFail', 'fullLoadError', 'fullTimeout', 'fullNoTests', 'fullCancelled'].includes(event)
   ) {
@@ -437,6 +506,7 @@ it.each(cells)('$from + $event', async ({ from, event, expected }) => {
     expect(actual.fullPassValid).toBe(false);
     expect(actual.evidence).toHaveProperty('verifiedTree', null);
   }
+
   if (
     [
       'focusedLoadError',
@@ -450,22 +520,26 @@ it.each(cells)('$from + $event', async ({ from, event, expected }) => {
   ) {
     expect(actual.evidence).toEqual(before.evidence);
   }
+
   if (event === 'switchKnown') {
     expect(actual.evidence.active).toMatchObject(previous);
   }
+
   if (event === 'switchNew') {
     expect(actual.evidence.active).toMatchObject(fresh);
   }
+
   // Protected paths remain blocked even for RED and migrated gate-off evidence.
   for (const path of protectedPaths) {
     expect(
       await guardToolCall(
         { type: 'tool_call', toolCallId: path, toolName: 'write', input: { path, content: '' } },
-        h.cwd,
+        harness.cwd,
         store,
       ),
     ).toMatchObject({ block: true });
   }
+
   if (!reloading) {
     const blocked = await guardToolCall(
       {
@@ -474,9 +548,10 @@ it.each(cells)('$from + $event', async ({ from, event, expected }) => {
         toolName: 'write',
         input: { path: 'src/value.ts', content: '' },
       },
-      h.cwd,
+      harness.cwd,
       store,
     );
+
     expect(blocked?.block ?? false).toBe(!expected.implementationAllowed);
   }
 });
@@ -490,16 +565,18 @@ it.each(
 )(
   'keeps $phase evidence when a $scope run switching to $behavior.behavior is cancelled',
   async ({ phase, scope, behavior }) => {
-    const h = await createHarness(onTestFinished);
-    await reach[phase](h);
-    const before = await h.store.read(h.cwd);
-    const stored = await readFile(join(h.cwd, '.tau/state.json'), 'utf8');
+    const harness = await createHarness(onTestFinished);
 
-    const result = await h.run({ kind: 'cancelled' }, scope, behavior);
+    await reach[phase](harness);
+
+    const before = await harness.store.read(harness.cwd);
+    const stored = await readFile(join(harness.cwd, '.tau/state.json'), 'utf8');
+
+    const result = await harness.run({ kind: 'cancelled' }, scope, behavior);
 
     expect(result).toMatchObject({ kind: 'cancelled', ...before });
-    expect(await h.store.read(h.cwd)).toEqual(before);
-    expect(await readFile(join(h.cwd, '.tau/state.json'), 'utf8')).toBe(stored);
-    expect(await createEvidenceStore().read(h.cwd)).toEqual(before);
+    expect(await harness.store.read(harness.cwd)).toEqual(before);
+    expect(await readFile(join(harness.cwd, '.tau/state.json'), 'utf8')).toBe(stored);
+    expect(await createEvidenceStore().read(harness.cwd)).toEqual(before);
   },
 );

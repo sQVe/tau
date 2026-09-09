@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto';
 import { glob, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 
+import { Type } from 'typebox';
+import { Value } from 'typebox/value';
+
 import { classifyPath, protectedPaths, tddConfig } from './config.js';
 import { runTests, runnerAvailable } from './runner/index.js';
 import type { RunnerResult, TestResult } from './runner/types.js';
@@ -13,40 +16,42 @@ let pendingRun: Promise<unknown> = Promise.resolve();
 const configPath = resolve(import.meta.dirname, 'config.ts');
 
 const hashInputs = async (cwd: string, files: string[]): Promise<InputHashes> => {
-  return Object.fromEntries(
-    await Promise.all(
-      [...new Set([...[...files, ...protectedPaths].map((file) => resolve(cwd, file)), configPath])]
-        .toSorted()
-        .map(async (file): Promise<[string, string | null]> => {
-          try {
-            return [
-              file,
-              createHash('sha256')
-                .update(await readFile(file))
-                .digest('hex'),
-            ];
-          } catch (error) {
-            if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
-              throw error;
-            }
-            return [file, null];
-          }
-        }),
-    ),
+  const paths = [...files, ...protectedPaths].map((file) => resolve(cwd, file));
+  const uniquePaths = [...new Set([...paths, configPath])].toSorted();
+
+  const entries = await Promise.all(
+    uniquePaths.map(async (file): Promise<[string, string | null]> => {
+      try {
+        const content = await readFile(file);
+        const digest = createHash('sha256').update(content).digest('hex');
+
+        return [file, digest];
+      } catch (error) {
+        if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+          throw error;
+        }
+
+        return [file, null];
+      }
+    }),
   );
+
+  return Object.fromEntries(entries);
 };
 
 const treeDigest = async (cwd: string, files: string[]) => {
   const sources = [...files];
+
   for await (const file of glob([...tddConfig.productionGlobs, ...tddConfig.testGlobs], {
     cwd,
     exclude: ['**/node_modules/**', '**/.git/**'],
   })) {
     sources.push(file);
   }
-  return createHash('sha256')
-    .update(JSON.stringify(await hashInputs(cwd, sources)))
-    .digest('hex');
+
+  const hashes = await hashInputs(cwd, sources);
+
+  return createHash('sha256').update(JSON.stringify(hashes)).digest('hex');
 };
 
 export const testNames = (behavior: Pick<Behavior, 'testFullName'>): string[] =>
@@ -72,6 +77,7 @@ const uniqueStatus = (
   file: string,
 ): TestResult['status'] | null => {
   const matched = tests.filter((test) => identityMatches(cwd, fullname, file, test));
+
   return matched.length === 1 ? (matched[0]?.status ?? null) : null;
 };
 
@@ -106,12 +112,15 @@ const redPassed = (
   if (behavior === null || red?.report.kind !== 'fail' || pass.kind !== 'pass') {
     return false;
   }
+
   const redTests = red.report.tests;
   const passedTests = pass.tests;
+
   return testNames(behavior).every((name) => {
     const required = behavior.files.filter(
       (file) => uniqueStatus(cwd, redTests, name, file) === 'failed',
     );
+
     return (
       required.length > 0 &&
       required.every((file) => uniqueStatus(cwd, passedTests, name, file) === 'passed')
@@ -126,6 +135,33 @@ const failedIn = (cwd: string, { behavior, report }: RedRecord, file: string) =>
   );
 };
 
+const staleVerificationFiles = async (cwd: string, records: RedRecord[]): Promise<string[]> => {
+  const files = records.flatMap((record) => record.behavior.files);
+  const hashes = await hashInputs(cwd, files);
+
+  const protectedKeys = [...protectedPaths.map((path) => resolve(cwd, path)), configPath];
+
+  const staleFiles = records.flatMap((record) => {
+    // A later RED in the same file can accept an amendment; a RED in another file cannot.
+    const staleTests = record.behavior.files.filter((file) => {
+      const key = resolve(cwd, file);
+
+      const latest = records.findLast((candidate) => failedIn(cwd, candidate, file));
+
+      return (latest ?? record).testHashes[key] !== hashes[key];
+    });
+
+    // Configuration can change what runs, so every RED must accept the current configuration.
+    const staleConfiguration = protectedKeys
+      .filter((key) => record.testHashes[key] !== hashes[key])
+      .map((key) => relative(cwd, key));
+
+    return [...staleTests, ...staleConfiguration];
+  });
+
+  return [...new Set(staleFiles)];
+};
+
 const runnerChecks = new Map<string, { packageHash: string | null; available: boolean }>();
 
 // Nothing can be proven without a runner, so production edits stop being gated until the agent
@@ -134,11 +170,13 @@ const runnerNotice = (cwd: string, hashes: InputHashes) => {
   const key = resolve(cwd);
   const packageHash = hashes[resolve(cwd, 'package.json')] ?? null;
   const cached = runnerChecks.get(key);
+
   // An installed runner is cached until package.json changes; an absent one is re-checked every
   // read, because installing it leaves package.json untouched.
   const available =
     cached?.available === true && cached.packageHash === packageHash ? true : runnerAvailable(key);
   runnerChecks.set(key, { packageHash, available });
+
   return available ? undefined : 'no test runner resolves from this worktree';
 };
 
@@ -156,17 +194,63 @@ const emptyState = (): EvidenceState => ({
 const gateOffNotice = (state: EvidenceState) =>
   state.gateOff == null ? undefined : `TDD gate off since ${state.gateOff.since}`;
 
-// The commit tool reports the switch without importing the store the tdd extension owns. Commit is
-// exempt from the guard, so an unreadable file has to be said out loud rather than read as on.
-export const tddGateStatus = async (cwd: string) => {
-  try {
-    return gateOffNotice(await loadState(resolve(cwd)));
-  } catch {
-    return `TDD gate status unknown: unreadable evidence at ${statePath(resolve(cwd))}`;
-  }
-};
+const recordSchema = Type.Record(Type.String(), Type.Unknown());
 
-const isStoredState = (value: unknown): value is { tdd: EvidenceState } =>
+const behaviorSchema = Type.Object({
+  behavior: Type.String({ minLength: 1 }),
+  testFullName: Type.Union([
+    Type.String({ minLength: 1 }),
+    Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+  ]),
+  files: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+});
+
+const digestSchema = Type.Union([Type.String({ pattern: '^[a-f0-9]{64}$' }), Type.Null()]);
+
+const evidenceSchema = Type.Object({
+  active: Type.Union([behaviorSchema, Type.Null()]),
+  phase: Type.Union(
+    (['locked', 'red', 'green', 'verified'] as const).map((phase) => Type.Literal(phase)),
+  ),
+  reds: Type.Array(
+    Type.Object({
+      behavior: behaviorSchema,
+      report: Type.Object({
+        kind: Type.Literal('fail'),
+        tests: Type.Array(
+          Type.Object({
+            file: Type.String(),
+            fullname: Type.String(),
+            status: Type.Union(
+              (['passed', 'failed', 'skipped', 'todo'] as const).map((status) =>
+                Type.Literal(status),
+              ),
+            ),
+          }),
+        ),
+        failures: Type.Array(
+          Type.Object({
+            file: Type.String(),
+            fullname: Type.String(),
+            message: Type.String(),
+          }),
+        ),
+        truncated: Type.Boolean(),
+      }),
+      testHashes: Type.Record(Type.String(), digestSchema),
+      greenTree: digestSchema,
+      edited: Type.Boolean(),
+      phase: Type.Union((['locked', 'red', 'green'] as const).map((phase) => Type.Literal(phase))),
+    }),
+  ),
+  verifiedTree: digestSchema,
+  proven: Type.Array(Type.Object({ file: Type.String(), fullname: Type.String() })),
+  gateOff: Type.Union([Type.Object({ since: Type.String({ minLength: 1 }) }), Type.Null()]),
+});
+
+const isStoredState = (
+  value: unknown,
+): value is { tdd: Record<string, unknown> & { reds: unknown[] } } =>
   value !== null &&
   typeof value === 'object' &&
   'tdd' in value &&
@@ -178,54 +262,90 @@ const isStoredState = (value: unknown): value is { tdd: EvidenceState } =>
 const loadState = async (cwd: string): Promise<EvidenceState> => {
   const path = statePath(cwd);
   let content: string;
+
   try {
     content = await readFile(path, 'utf8');
   } catch (error) {
     if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
       throw error;
     }
+
     return emptyState();
   }
+
   try {
     const parsed: unknown = JSON.parse(content);
+
     if (!isStoredState(parsed)) {
       throw new Error('missing tdd evidence');
     }
+
     const stored = parsed.tdd;
-    const legacy = !['locked', 'red', 'green', 'verified'].includes(stored.phase);
-    return {
+    const legacy = stored.phase === undefined;
+
+    const state = {
       active: stored.active ?? null,
       phase: legacy ? 'locked' : stored.phase,
       reds: stored.reds.map((entry) => {
-        // Old snapshots kept the report and hashes inside record. Discard their derived flags.
-        const old = entry as RedRecord & { record?: { report: RunnerResult; after: InputHashes } };
-        const report = old.record?.report ?? entry.report;
-        const testHashes = old.record?.after ?? entry.testHashes;
-        // An entry without a report or hashes cannot be read; say so here, not on a later deref.
-        if (report == null || testHashes == null) {
-          throw new Error('incomplete RED evidence');
+        if (!Value.Check(recordSchema, entry)) {
+          throw new Error('invalid RED evidence');
         }
+
+        const fields = entry;
+
+        // Old snapshots kept the report and hashes inside record. Discard their derived flags.
+        const record = fields.record;
+        const old = Value.Check(recordSchema, record) ? record : undefined;
+
         return {
-          behavior: entry.behavior,
-          report,
-          testHashes,
-          greenTree: entry.greenTree ?? null,
-          edited: entry.edited ?? false,
-          phase: legacy ? 'locked' : entry.phase,
+          behavior: fields.behavior,
+          report: old?.report ?? fields.report,
+          testHashes: old?.after ?? fields.testHashes,
+          greenTree: fields.greenTree ?? null,
+          edited: fields.edited ?? false,
+          phase: legacy ? 'locked' : fields.phase,
         };
       }),
       verifiedTree: legacy ? null : stored.verifiedTree,
       proven: stored.proven ?? [],
       gateOff: stored.gateOff ?? null,
     };
+
+    if (!Value.Check(evidenceSchema, state)) {
+      throw new Error('invalid evidence fields');
+    }
+
+    if (
+      state.reds.some(({ behavior, report }) => !uniquelyIs(cwd, report.tests, behavior, 'failed'))
+    ) {
+      throw new Error('stored RED report does not prove its named tests');
+    }
+
+    const evidence: EvidenceState = state;
+
+    if (evidence.phase !== 'locked' && activeRed(evidence) === undefined) {
+      throw new Error('active phase has no RED evidence');
+    }
+
+    return evidence;
   } catch (error) {
     throw new Error(`Unreadable test evidence in ${path}`, { cause: error });
+  }
+};
+
+// Commit is exempt from the guard, so it must report unreadable evidence rather than assume gate on.
+export const tddGateStatus = async (cwd: string) => {
+  try {
+    return gateOffNotice(await loadState(resolve(cwd)));
+  } catch {
+    return `TDD gate status unknown: unreadable evidence at ${statePath(resolve(cwd))}`;
   }
 };
 
 const saveState = async (cwd: string, state: EvidenceState) => {
   const path = statePath(cwd);
   const temporary = `${path}.tmp`;
+
   await mkdir(dirname(path), { recursive: true });
   await writeFile(temporary, JSON.stringify({ tdd: state }));
   await rename(temporary, path);
@@ -233,21 +353,27 @@ const saveState = async (cwd: string, state: EvidenceState) => {
 
 export const createEvidenceStore = () => {
   const states = new Map<string, Promise<EvidenceState>>();
+
   const stateFor = (cwd: string) => {
     const key = resolve(cwd);
+
     // A rejected load must not be cached: repairing the file has to take effect on the next read.
     const state =
       states.get(key) ??
       loadState(key).catch((error: unknown) => {
         states.delete(key);
+
         throw error;
       });
     states.set(key, state);
+
     return state;
   };
+
   const read = async (cwd: string) => {
     const state = await stateFor(cwd);
     const evidence = structuredClone(state);
+
     const hashes = await hashInputs(cwd, evidence.active?.files ?? []);
     const red = activeRed(evidence);
     const staleSinceRed =
@@ -256,17 +382,22 @@ export const createEvidenceStore = () => {
         : red.behavior.files.filter(
             (file) => red.testHashes[resolve(cwd, file)] !== hashes[resolve(cwd, file)],
           );
+
     let phase: Phase = evidence.phase;
+
     if (phase === 'red' && staleSinceRed.length > 0) {
       phase = 'locked';
     }
+
     const currentTree =
       phase === 'green' || phase === 'verified'
         ? await treeDigest(cwd, evidence.active?.files ?? [])
         : null;
+
     if (phase === 'verified' && evidence.verifiedTree !== currentTree) {
       phase = 'green';
     }
+
     return {
       evidence,
       phase,
@@ -278,6 +409,7 @@ export const createEvidenceStore = () => {
       notice: gateOffNotice(evidence) ?? runnerNotice(cwd, hashes),
     };
   };
+
   const run = async (
     cwd: string,
     requested: Behavior,
@@ -292,12 +424,15 @@ export const createEvidenceStore = () => {
       testFullName: names.length === 1 ? (names[0] ?? '') : names,
       files: [...new Set(requested.files)].toSorted(),
     };
+
     for (const file of behavior.files) {
       const path = relative(cwd, resolve(cwd, file)).replaceAll('\\', '/');
+
       if (isAbsolute(file) || path.startsWith('../') || classifyPath(path) !== 'test') {
         throw new Error(`Expected a test file inside the worktree: ${file}`);
       }
     }
+
     const before = await treeDigest(cwd, behavior.files);
     const report = await runTests(
       scope === 'full'
@@ -312,61 +447,62 @@ export const createEvidenceStore = () => {
             signal,
           },
     );
+
     const after = await hashInputs(cwd, behavior.files);
     const currentTree = await treeDigest(cwd, behavior.files);
+
     if (before !== currentTree) {
       return { kind: 'inputs-changed' as const, report: null, ...(await read(cwd)) };
     }
+
     const state = await stateFor(cwd);
+
     const entry = state.reds.find((candidate) => sameBehavior(candidate.behavior, behavior));
     let arrival: 'unseen' | 'known' | 'same' = entry === undefined ? 'unseen' : 'known';
+
     if (state.active !== null && sameBehavior(state.active, behavior)) {
       arrival = 'same';
     }
+
     // Cancellation cannot switch behaviors. A full run on the active behavior still clears verification.
     if (report.kind === 'cancelled' && arrival !== 'same') {
       return { kind: 'cancelled' as const, report, ...(await read(cwd)) };
     }
+
     const filesExist = behavior.files.every((file) => after[resolve(cwd, file)] != null);
     let outcome: 'other' | 'fail' | 'pass' = 'other';
+
     if (filesExist && report.kind === 'fail' && uniquelyIs(cwd, report.tests, behavior, 'failed')) {
       outcome = 'fail';
     } else if (filesExist && report.kind === 'pass' && redPassed(cwd, behavior, entry, report)) {
       outcome = 'pass';
     }
+
     if (arrival !== 'same') {
       if (arrival === 'unseen' && state.phase === 'verified') {
         state.reds = [];
       }
+
       state.phase = entry?.phase ?? 'locked';
       state.verifiedTree = null;
     }
+
     state.active = structuredClone(behavior);
+
+    let staleForVerification: string[] = [];
+
     if (scope === 'full') {
       state.verifiedTree = null;
+
       if (state.phase === 'verified') {
         state.phase = 'green';
       }
-      // Earlier tests may share a file extended by a later RED, but a RED in a different file
-      // cannot authorize an amendment. Use the latest accepted focused snapshot in that file.
-      const hashes = await hashInputs(
-        cwd,
-        state.reds.flatMap((red) => red.behavior.files),
-      );
-      const protectedKeys = [...protectedPaths.map((path) => resolve(cwd, path)), configPath];
-      const intact = state.reds.every(
-        (red) =>
-          red.behavior.files.every((file) => {
-            const key = resolve(cwd, file);
-            const latest = state.reds.findLast((candidate) => failedIn(cwd, candidate, file));
-            return (latest ?? red).testHashes[key] === hashes[key];
-          }) &&
-          // A configuration change after RED can decide what the run does, so it voids the proof.
-          protectedKeys.every((key) => red.testHashes[key] === hashes[key]),
-      );
+
+      staleForVerification = await staleVerificationFiles(cwd, state.reds);
+
       if (
         outcome === 'pass' &&
-        intact &&
+        staleForVerification.length === 0 &&
         state.reds.every((red) => redPassed(cwd, red.behavior, red, report))
       ) {
         state.phase = 'verified';
@@ -374,6 +510,7 @@ export const createEvidenceStore = () => {
       }
     } else {
       const transition = `${arrival}:${outcome}` as const;
+
       switch (transition) {
         case 'same:fail':
         case 'known:fail':
@@ -386,12 +523,14 @@ export const createEvidenceStore = () => {
             edited: false,
             phase: 'red',
           };
+
           state.reds = state.reds.filter(
             (candidate) => !sameBehavior(candidate.behavior, behavior),
           );
           state.reds.push(red);
           state.phase = 'red';
           state.verifiedTree = null;
+
           for (const file of behavior.files) {
             for (const fullname of testNames(behavior)) {
               if (
@@ -403,14 +542,17 @@ export const createEvidenceStore = () => {
               }
             }
           }
+
           break;
         }
+
         case 'same:pass':
         case 'known:pass':
           if (entry !== undefined) {
             entry.edited ||= behavior.files.some(
               (file) => entry.testHashes[resolve(cwd, file)] !== after[resolve(cwd, file)],
             );
+
             entry.testHashes = after;
             entry.greenTree = currentTree;
             entry.phase = 'green';
@@ -419,31 +561,41 @@ export const createEvidenceStore = () => {
             state.phase = 'green';
             state.verifiedTree = null;
           }
+
           break;
+
         case 'same:other':
         case 'known:other':
         case 'unseen:other':
         case 'unseen:pass':
           break;
+
         default:
           throw new Error('Unexpected TDD transition', { cause: transition satisfies never });
       }
     }
+
     await saveState(cwd, state);
-    return { kind: report.kind, report, ...(await read(cwd)) };
+
+    return { kind: report.kind, report, staleForVerification, ...(await read(cwd)) };
   };
+
   const setGate = async (cwd: string, gate: 'on' | 'off') => {
     const state = await stateFor(cwd);
     state.gateOff = gate === 'off' ? { since: new Date().toISOString() } : null;
+
     await saveState(cwd, state);
+
     return read(cwd);
   };
+
   return {
     read,
     setGate,
     run: (cwd: string, behavior: Behavior, scope: 'focused' | 'full', signal?: AbortSignal) => {
       const result = pendingRun.then(() => run(cwd, behavior, scope, signal));
       pendingRun = result.catch(() => undefined);
+
       return result;
     },
   };

@@ -23,6 +23,7 @@ const implementationState = (allowed: boolean, notice: string | undefined) => {
   if (notice != null) {
     return 'allowed (gate off)';
   }
+
   return allowed ? 'allowed' : 'blocked';
 };
 
@@ -42,45 +43,57 @@ const summarize = (
     ...(header.notice == null ? [] : [`Notice: ${header.notice}`]),
     `${header.kind} · phase ${header.phase} · implementation ${implementationState(header.implementationAllowed, header.notice)}`,
   ];
+
   if (next != null) {
     lines.push(`Next: ${next}`);
   }
+
   if (report != null && 'message' in report) {
     lines.push(report.message);
   }
+
   if (report != null && 'tests' in report) {
     const count = (...statuses: string[]) =>
       report.tests.filter((test) => statuses.includes(test.status)).length;
+
     lines.push(
       `${count('passed')} passed, ${count('failed')} failed, ${count('skipped', 'todo')} skipped`,
     );
   }
+
   if (redCoverage != null) {
     lines.push(redCoverage);
   }
+
   const failures = report != null && 'failures' in report ? report.failures : [];
   let shown = 0;
+
   for (const failure of failures.slice(0, MAX_FAILURES)) {
     const entry = `✗ ${displayPath(cwd, failure.file)} › ${failure.fullname}\n    ${failure.message}`;
+
     if ([...lines, entry].join('\n').length > MAX_SUMMARY_CHARS - 60) {
       break;
     }
+
     lines.push(entry);
     shown += 1;
   }
+
   if (failures.length > shown) {
     lines.push(`+${failures.length - shown} more`);
   }
+
   if (report != null && 'truncated' in report && report.truncated) {
     lines.push('further failures were not collected');
   }
+
   const text = lines.join('\n');
+
   return text.length > MAX_SUMMARY_CHARS ? `${text.slice(0, MAX_SUMMARY_CHARS - 12)}\n[cut]` : text;
 };
 
-// A test whose quoted title already sits in the committed file predates this task. Longer
-// suffixes of the full name are tried first, since describe names prefix it.
-// ponytail: substring match; it.each templates and dynamic titles read as new.
+// ponytail: quoted-title matching estimates which tests predate the task. Dynamic titles and
+// unrelated matching strings can miscount; use parsed test identities if exact coverage is needed.
 const committedTitles = async (cwd: string, file: string): Promise<string | null> => {
   try {
     const { stdout } = await execFile(
@@ -92,6 +105,7 @@ const committedTitles = async (cwd: string, file: string): Promise<string | null
         maxBuffer: 16 * 1024 * 1024,
       },
     );
+
     return stdout;
   } catch {
     return null;
@@ -118,8 +132,10 @@ const templatePatterns = (content: string): RegExp[] =>
 const titledIn = (content: string, fullname: string) => {
   const words = fullname.split(' ');
   const patterns = templatePatterns(content);
+
   return words.some((_word, index) => {
     const suffix = words.slice(index).join(' ');
+
     return (
       [`'${suffix}'`, `"${suffix}"`, `\`${suffix}\``].some((quoted) => content.includes(quoted)) ||
       patterns.some((pattern) => pattern.test(suffix))
@@ -127,8 +143,18 @@ const titledIn = (content: string, fullname: string) => {
   });
 };
 
-// The gate proves one named test per cycle, so tests added alongside it in the same files pass on
-// their first run without ever failing. The full run names them so the reader can judge.
+const displayTestNames = (cwd: string, tests: TestResult[]): string => {
+  const names = tests
+    .slice(0, 3)
+    .map((test) => `${displayPath(cwd, test.file)} › ${test.fullname}`)
+    .join(', ');
+  const remaining = tests.length > 3 ? ` and ${tests.length - 3} more` : '';
+
+  return names + remaining;
+};
+
+// Only selected tests get RED evidence. Report tests added alongside them without claiming that
+// a matching committed title proves the assertion existed or stayed unchanged.
 const describeRedCoverage = async (
   cwd: string,
   evidence: Pick<EvidenceState, 'reds' | 'proven'>,
@@ -140,70 +166,110 @@ const describeRedCoverage = async (
       evidence.reds.flatMap(({ behavior }) => behavior.files.map((file) => resolve(cwd, file))),
     ),
   ];
+
   const committed = new Map(
     await Promise.all(
       requiredFiles.map(async (file) => [file, await committedTitles(cwd, file)] as const),
     ),
   );
+
   const required = tests.filter(
     (test) =>
       (test.status === 'passed' || test.status === 'failed') &&
       requiredFiles.some((file) => sameFile(file, test.file)),
   );
+
   if (required.length === 0) {
     return undefined;
   }
+
   const proven = (test: TestResult) =>
     evidence.proven.some(
       (known) => known.fullname === test.fullname && sameFile(known.file, test.file),
     );
   const preexisting = (test: TestResult) => {
     const content = committed.get(resolve(cwd, test.file));
+
     return content != null && titledIn(content, test.fullname);
   };
+
   const unproven = required.filter((test) => !proven(test) && !preexisting(test));
+
   const renewedFiles = evidence.reds.flatMap(({ behavior, edited }) =>
     edited ? behavior.files : [],
   );
   const edited = required.filter(
     (test) => proven(test) && renewedFiles.some((file) => sameFile(file, test.file)),
   );
-  const names = (listed: TestResult[]) =>
-    listed
-      .slice(0, 3)
-      .map((test) => `${displayPath(cwd, test.file)} › ${test.fullname}`)
-      .join(', ') + (listed.length > 3 ? ` and ${listed.length - 3} more` : '');
+
   return [
-    `${required.length - unproven.length} of ${required.length} tests in the required files were proven RED or committed before`,
-    ...(unproven.length === 0 ? [] : [`never failed: ${names(unproven)}`]),
-    ...(edited.length === 0 ? [] : [`edited after RED: ${names(edited)}`]),
+    `Estimated RED coverage: ${required.length - unproven.length} of ${required.length} tests in the required files were proven RED or committed before`,
+    ...(unproven.length === 0 ? [] : [`never failed: ${displayTestNames(cwd, unproven)}`]),
+    ...(edited.length === 0 ? [] : [`edited after RED: ${displayTestNames(cwd, edited)}`]),
   ].join('; ');
+};
+
+const missingRedBehavior = (cwd: string, evidence: EvidenceState, report: RunnerResult) => {
+  if (!('tests' in report)) {
+    return undefined;
+  }
+
+  return evidence.reds.find(({ behavior, report: redReport }) => {
+    if (redReport.kind !== 'fail') {
+      return false;
+    }
+
+    return redReport.tests.some((test) => {
+      const requiredFailure =
+        test.status === 'failed' &&
+        testNames(behavior).includes(test.fullname) &&
+        behavior.files.some((file) => resolve(cwd, file) === resolve(cwd, test.file));
+
+      return (
+        requiredFailure &&
+        !report.tests.some(
+          (result) =>
+            result.fullname === test.fullname &&
+            resolve(cwd, result.file) === resolve(cwd, test.file) &&
+            (result.status === 'passed' || result.status === 'failed'),
+        )
+      );
+    });
+  })?.behavior;
 };
 
 export default function tddExtension(pi: ExtensionAPI) {
   const store = createEvidenceStore();
+
   pi.on('tool_call', (event, ctx) => guardToolCall(event, ctx.cwd, store));
+
   pi.registerCommand('tdd', {
     description: 'Turn the TDD gate on or off, or report its state: /tdd on|off|status.',
     handler: async (args, ctx) => {
       const argument = args.trim() || 'status';
+
       if (argument !== 'on' && argument !== 'off' && argument !== 'status') {
         ctx.ui.notify(`Unknown argument ${argument}; use /tdd on|off|status`, 'warning');
+
         return;
       }
+
       const state =
         argument === 'status' ? await store.read(ctx.cwd) : await store.setGate(ctx.cwd, argument);
       let gate = 'on';
+
       if (state.evidence.gateOff != null) {
         gate = `off since ${state.evidence.gateOff.since}`;
       } else if (state.notice != null) {
         gate = `off: ${state.notice}`;
       }
+
       ctx.ui.notify(
         `TDD gate ${gate}\nPhase ${state.phase}; production writes ${state.implementationAllowed || state.notice != null ? 'allowed' : 'blocked'}.`,
       );
     },
   });
+
   pi.registerTool(
     defineTool({
       name: 'run_tests',
@@ -252,28 +318,12 @@ export default function tddExtension(pi: ExtensionAPI) {
       async execute(_id, params, signal, _update, ctx) {
         const { scope, ...behavior } = params;
         const details = await store.run(ctx.cwd, behavior, scope, signal);
+
         const report =
           details.kind === 'inputs-changed' || details.kind === 'cancelled' ? null : details.report;
         const missing =
-          scope === 'full' && report && 'tests' in report
-            ? details.evidence.reds.find(
-                ({ behavior: required, report: redReport }) =>
-                  redReport.kind === 'fail' &&
-                  redReport.tests.some(
-                    (test) =>
-                      test.status === 'failed' &&
-                      testNames(required).includes(test.fullname) &&
-                      required.files.some(
-                        (file) => resolve(ctx.cwd, file) === resolve(ctx.cwd, test.file),
-                      ) &&
-                      !report.tests.some(
-                        (result) =>
-                          result.fullname === test.fullname &&
-                          resolve(ctx.cwd, result.file) === resolve(ctx.cwd, test.file) &&
-                          (result.status === 'passed' || result.status === 'failed'),
-                      ),
-                  ),
-              )?.behavior
+          scope === 'full' && report
+            ? missingRedBehavior(ctx.cwd, details.evidence, report)
             : undefined;
         const ambiguous = report ? ambiguousFiles(ctx.cwd, behavior, report) : [];
         const duplicatedRed =
@@ -287,8 +337,10 @@ export default function tddExtension(pi: ExtensionAPI) {
                 // earlier RED sharing its full name in another file still has to be named here.
                 .find((entry) => entry.files.length > 0)
             : undefined;
+
         let next: string | undefined;
         const call = `run_tests ${JSON.stringify({ ...behavior, scope })}`;
+
         if (details.kind === 'inputs-changed') {
           next = `Inputs changed during the run; no evidence was recorded. Stop concurrent edits, then call ${call}.`;
         } else if (
@@ -299,24 +351,25 @@ export default function tddExtension(pi: ExtensionAPI) {
           next = `More than one test in ${JSON.stringify(ambiguous)} has the full name ${JSON.stringify(behavior.testFullName)}, so that file proves nothing; the evidence recorded from the other required files stands and the phase is ${details.phase}. Give each test a unique full name, then call ${call}.`;
         } else if (ambiguous.length > 0) {
           next = `More than one test in ${JSON.stringify(ambiguous)} has the full name ${JSON.stringify(behavior.testFullName)}, so the report cannot identify it and no evidence was recorded. Give each test a unique full name, then call ${call}.`;
-        } else if (
-          scope === 'focused' &&
-          details.kind === 'pass' &&
-          details.phase === 'locked' &&
-          details.staleSinceRed.length > 0
-        ) {
-          next = `${details.staleSinceRed.join(', ')} changed after RED and before GREEN, so that proof no longer matches. Remove the production change so the test fails again, call ${call} to prove RED, then put the change back.`;
         } else if (scope === 'focused' && details.kind === 'pass' && details.phase === 'locked') {
           next = `The test does not fail yet; the behavior may already be implemented. Write a test that fails before the fix, then call ${call}.`;
         } else if (missing) {
           next = `A required RED test is skipped or missing: ${JSON.stringify(missing.testFullName)} in ${JSON.stringify(missing.files)}. Restore that test so it runs and passes, then call ${call}.`;
         } else if (duplicatedRed) {
           next = `An earlier RED test can no longer be identified: more than one test in ${JSON.stringify(duplicatedRed.files)} has its full name ${JSON.stringify(duplicatedRed.required.testFullName)}, so the full run cannot verify it. Rename the duplicate so each full name is unique, then call ${call}.`;
+        } else if (
+          scope === 'full' &&
+          'staleForVerification' in details &&
+          details.staleForVerification.length > 0
+        ) {
+          next = `Verification inputs changed: ${details.staleForVerification.join(', ')}. Rerun focused tests for the affected recorded behaviors, then call ${call}.`;
         }
+
         const redCoverage =
           scope === 'full' && report && 'tests' in report
             ? await describeRedCoverage(ctx.cwd, details.evidence, report.tests)
             : undefined;
+
         return {
           content: [{ type: 'text', text: summarize(ctx.cwd, details, next, report, redCoverage) }],
           details,
