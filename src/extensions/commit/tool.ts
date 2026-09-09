@@ -127,6 +127,7 @@ const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
 // Literal pathspecs prevent glob expansion from staging unrequested files.
 const stageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: string[]) => {
   const result = await pi.exec('git', ['--literal-pathspecs', 'add', '--', ...files], { cwd });
+
   if (result.code !== 0) {
     throw new Error(
       `git add failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
@@ -136,6 +137,7 @@ const stageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: st
 
 const unstageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: string[]) => {
   const result = await pi.exec('git', ['--literal-pathspecs', 'reset', '--', ...files], { cwd });
+
   if (result.code !== 0) {
     throw new Error(
       `git reset failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
@@ -146,6 +148,7 @@ const unstageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: 
 // Convert cwd-relative requests to repo-relative paths for comparison with staged paths.
 const repoPathPrefix = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
   const result = await pi.exec('git', ['rev-parse', '--show-prefix'], { cwd });
+
   if (result.code !== 0) {
     throw new Error(
       `git rev-parse --show-prefix failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
@@ -158,6 +161,7 @@ const repoPathPrefix = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
 // HEAD is unresolved before the first commit.
 const currentHead = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
   const result = await pi.exec('git', ['rev-parse', 'HEAD'], { cwd });
+
   return result.code === 0 ? result.stdout.trim() : null;
 };
 
@@ -208,16 +212,19 @@ const stagedNumstat = async (
     ['diff', '--cached', '--numstat', '--no-renames', '-z', '--', ...files],
     { cwd },
   );
+
   if (result.code !== 0) {
     throw new Error(
       `git diff --cached --numstat failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
     );
   }
+
   return result.stdout
     .split('\0')
     .filter(Boolean)
     .map((row) => {
       const [added = '0', removed = '0', ...path] = row.split('\t');
+
       return { path: path.join('\t'), added, removed };
     });
 };
@@ -236,6 +243,7 @@ type Reviews = Map<
 // later group whose files changed since must be shown rather than committed unseen.
 const hashFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: string[]) => {
   const hashes: string[] = [];
+
   for (const file of files) {
     const result = await pi.exec('git', ['--literal-pathspecs', 'hash-object', '--', file], {
       cwd,
@@ -251,6 +259,7 @@ interface ReviewSnapshot {
   head: string | null;
   dispute?: string;
 }
+
 type RequestReview = (snapshot: ReviewSnapshot, baseTree: string | null) => Promise<CommentReview>;
 
 const treeOf = async (
@@ -258,10 +267,15 @@ const treeOf = async (
   cwd: string,
   revision: string | null,
   signal?: AbortSignal,
-) =>
-  revision === null
-    ? null
-    : (await reviewGit(pi, cwd, ['rev-parse', `${revision}^{tree}`], signal)).trim();
+) => {
+  if (revision === null) {
+    return null;
+  }
+
+  const tree = await reviewGit(pi, cwd, ['rev-parse', `${revision}^{tree}`], signal);
+
+  return tree.trim();
+};
 
 // Stage the groups cumulatively so each planned pair matches what that group sees at its turn:
 // group N commits before group N+1 stages, so N+1's index tree already contains N's content.
@@ -272,14 +286,20 @@ const planGroupReviews = async (
   signal: AbortSignal | undefined,
 ): Promise<{ baseTree: string; tree: string }[]> => {
   const plan: { baseTree: string; tree: string }[] = [];
-  let baseTree = await treeOf(pi, cwd, await currentHead(pi, cwd), signal);
+  const head = await currentHead(pi, cwd);
+  let baseTree = await treeOf(pi, cwd, head, signal);
+
   if (baseTree === null) {
     return plan;
   }
+
   try {
     for (const group of groups) {
       await stageFiles(pi, cwd, group.files);
-      const tree = (await reviewGit(pi, cwd, ['write-tree'], signal)).trim();
+
+      const treeOutput = await reviewGit(pi, cwd, ['write-tree'], signal);
+      const tree = treeOutput.trim();
+
       plan.push({ baseTree, tree });
       baseTree = tree;
     }
@@ -308,17 +328,21 @@ const executeGroup = async (
 ): Promise<CommitSuccess> => {
   let subject = params.subject;
   let body = params.body ?? null;
+
   const cancelled = (): CommitSuccess => ({
     content: [{ type: 'text', text: 'Commit cancelled' }],
     details: { sha: '', files: params.files, subject, body },
   });
+
   if (signal?.aborted) {
     return cancelled();
   }
 
   const prefix = await repoPathPrefix(pi, ctx.cwd);
+
   const requestedFiles = new Set(params.files.map((file) => normalizeRepoPath(`${prefix}${file}`)));
   const stagedPaths = await listStagedPaths(pi, ctx.cwd);
+
   const unrelatedStagedPaths = stagedPaths.filter((file) => !requestedFiles.has(file));
 
   if (unrelatedStagedPaths.length > 0) {
@@ -328,6 +352,7 @@ const executeGroup = async (
   }
 
   await stageFiles(pi, ctx.cwd, params.files);
+
   let approved = false;
   let reviewedTree = '';
   let reviewedHead: string | null = null;
@@ -336,36 +361,46 @@ const executeGroup = async (
   let projectCheck = '';
   let reviewWaived = false;
   let returningForCorrections = false;
+
   try {
     // Directory arguments can stage unrequested files; convert those paths back to cwd-relative.
-    const unrequestedPaths = (await listStagedPaths(pi, ctx.cwd))
+    const stagedAfterRequest = await listStagedPaths(pi, ctx.cwd);
+    const unrequestedPaths = stagedAfterRequest
       .filter((file) => !requestedFiles.has(file))
       .map((file) => file.slice(prefix.length));
 
     if (unrequestedPaths.length > 0) {
       await unstageFiles(pi, ctx.cwd, unrequestedPaths);
+
       throw new Error(
         `Staging ${params.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}`,
       );
     }
 
-    reviewedTree = (await reviewGit(pi, ctx.cwd, ['write-tree'], signal)).trim();
+    const treeOutput = await reviewGit(pi, ctx.cwd, ['write-tree'], signal);
+    reviewedTree = treeOutput.trim();
     reviewedHead = await currentHead(pi, ctx.cwd);
+
     if (signal?.aborted) {
       return cancelled();
     }
+
     projectCheck = await checkProject(pi, ctx.cwd, reviewedTree, signal);
+
     const reviewedBaseTree = await treeOf(pi, ctx.cwd, reviewedHead, signal);
     reviewGroup = JSON.stringify([ctx.cwd, reviewedHead, [...requestedFiles].toSorted()]);
     const state = reviews.get(reviewGroup) ?? { attempts: 0, disputes: [] };
     reviews.delete(reviewGroup);
     reviews.set(reviewGroup, state);
+
     if (reviews.size > 32) {
       const oldest = reviews.keys().next().value;
+
       if (oldest !== undefined) {
         reviews.delete(oldest);
       }
     }
+
     if (
       params.commentDispute &&
       !state.disputes.some(({ evidence }) => evidence === params.commentDispute)
@@ -375,6 +410,7 @@ const executeGroup = async (
         findings: state.result ? formatCommentReview(state.result) : 'No prior findings available.',
       });
     }
+
     const key = JSON.stringify([
       reviewedTree,
       commentPolicyHash,
@@ -383,6 +419,7 @@ const executeGroup = async (
       params.commentDispute,
     ]);
     let commentReview: CommentReview | undefined;
+
     try {
       commentReview =
         state.key === key && state.result
@@ -397,6 +434,7 @@ const executeGroup = async (
             );
       state.key = key;
       state.result = commentReview;
+
       if (commentReview.findings.some((finding) => finding.kind !== 'missing')) {
         state.attempts += 1;
       }
@@ -404,28 +442,45 @@ const executeGroup = async (
     } catch (error) {
       reviewReport = `Comment review failed: ${error instanceof Error ? error.message : String(error)}\nRetry or explicitly waive this failed review.`;
     }
+
     if (state.disputes.length) {
-      reviewReport = `Comment review rechecked after dispute.\n${state.disputes.map(({ evidence, findings }) => `Prior findings:\n${findings}\nDispute evidence:\n${evidence}`).join('\n')}\nCurrent review:\n${reviewReport || 'No findings.'}`;
+      const disputes = state.disputes
+        .map(
+          ({ evidence, findings }) =>
+            `Prior findings:\n${findings}\nDispute evidence:\n${evidence}`,
+        )
+        .join('\n');
+
+      reviewReport = `Comment review rechecked after dispute.\n${disputes}\nCurrent review:\n${reviewReport || 'No findings.'}`;
     }
+
     if (signal?.aborted) {
       return cancelled();
     }
+
     const reviewBlocked =
       !commentReview || commentReview.findings.some((finding) => finding.kind !== 'missing');
+
     if (commentReview && reviewBlocked && state.attempts <= 2) {
       returningForCorrections = true;
+
       throw new Error(
         `Comment review needs corrections (${state.attempts}/2 automatic returns):\n${reviewReport}\nFix the findings and call commit again. Unresolved findings will require user review after two returns.`,
       );
     }
+
     const files = await stagedNumstat(pi, ctx.cwd, params.files);
     let notice = projectCheck;
+
     while (true) {
       if (signal?.aborted) {
         return cancelled();
       }
+
       batch.prefetchNext();
-      const choice = (await batch.autoApprove())
+
+      const automaticallyApproved = await batch.autoApprove();
+      const choice = automaticallyApproved
         ? 'approve'
         : await confirmCommitOverlay(
             ctx,
@@ -441,41 +496,56 @@ const executeGroup = async (
             signal,
           );
       notice = projectCheck;
+
       if (signal?.aborted) {
         return cancelled();
       }
+
       if ((choice === 'approve' || choice === 'approveAll') && reviewBlocked) {
         throw new Error(`Comment review requires an explicit user waiver.\n${reviewReport}`);
       }
+
       if (choice === 'approve' || choice === 'approveAll' || choice === 'waive') {
-        const currentTree = (await reviewGit(pi, ctx.cwd, ['write-tree'], signal)).trim();
-        if (currentTree !== reviewedTree || (await currentHead(pi, ctx.cwd)) !== reviewedHead) {
+        const currentTreeOutput = await reviewGit(pi, ctx.cwd, ['write-tree'], signal);
+        const currentTree = currentTreeOutput.trim();
+        const changedSinceReview =
+          currentTree !== reviewedTree || (await currentHead(pi, ctx.cwd)) !== reviewedHead;
+
+        if (changedSinceReview) {
           throw new Error(
             'Staged content or HEAD changed since comment review. Call commit again to review the changes.',
           );
         }
+
         if (choice === 'approveAll') {
           await batch.onApproveAll();
         }
         approved = true;
         reviewWaived = choice === 'waive';
+
         break;
       }
+
       if (choice === 'retry') {
         reviews.delete(reviewGroup);
+
         throw new Error(`User requested fixes or another comment review:\n${reviewReport}`);
       }
+
       if (choice === 'skip') {
         return {
           content: [{ type: 'text', text: 'Commit skipped by user' }],
           details: { sha: '', files: params.files, subject, body, skipped: true },
         };
       }
+
       if (choice === 'abort') {
         throw new Error('Commit declined by user');
       }
+
       if (choice === 'subject') {
         const edited = await ctx.ui.editor('Edit subject', subject);
+
         if (edited !== undefined) {
           try {
             validateSubject(edited);
@@ -493,6 +563,7 @@ const executeGroup = async (
       if (!returningForCorrections) {
         reviews.delete(reviewGroup);
       }
+
       await unstageFiles(pi, ctx.cwd, params.files);
     }
   }
@@ -505,15 +576,17 @@ const executeGroup = async (
       cwd: ctx.cwd,
     },
   );
+
   if (commitResult.code !== 0) {
     await unstageFiles(pi, ctx.cwd, params.files);
+
     throw commitFailedError(commitResult.stdout, commitResult.stderr);
   }
 
   // Hooks can stage files after approval, so check the committed paths too.
-  const smuggledPaths = (await listCommitPaths(pi, ctx.cwd)).filter(
-    (file) => !requestedFiles.has(file),
-  );
+  const committedPaths = await listCommitPaths(pi, ctx.cwd);
+
+  const smuggledPaths = committedPaths.filter((file) => !requestedFiles.has(file));
 
   if (smuggledPaths.length > 0) {
     await undoCommit(pi, ctx.cwd, previousHead);
@@ -522,14 +595,18 @@ const executeGroup = async (
       ctx.cwd,
       smuggledPaths.map((file) => file.slice(prefix.length)),
     );
+
     throw new Error(
       `A hook staged paths that were not requested: ${smuggledPaths.join(', ')}. The commit was undone.`,
     );
   }
 
-  const committedTree = (await reviewGit(pi, ctx.cwd, ['rev-parse', 'HEAD^{tree}'])).trim();
+  const committedTreeOutput = await reviewGit(pi, ctx.cwd, ['rev-parse', 'HEAD^{tree}']);
+  const committedTree = committedTreeOutput.trim();
+
   if (committedTree !== reviewedTree) {
     await undoCommit(pi, ctx.cwd, previousHead);
+
     throw new Error(
       'A hook changed reviewed content. The commit was undone. Call commit again to stage and review the current changes.',
     );
@@ -538,6 +615,7 @@ const executeGroup = async (
   const revParseResult = await pi.exec('git', ['rev-parse', 'HEAD'], {
     cwd: ctx.cwd,
   });
+
   if (revParseResult.code !== 0) {
     throw new Error(
       `git rev-parse HEAD failed with exit code ${revParseResult.code}: ${revParseResult.stderr || revParseResult.stdout}`.trim(),
@@ -575,6 +653,7 @@ export const createCommitTool = (
   review = reviewComments,
 ): ToolDefinition<typeof commitToolParameters, { groups: CommitSuccess['details'][] }> => {
   const reviews: Reviews = new Map();
+
   return defineTool({
     name: 'commit',
     label: 'Commit',
@@ -594,9 +673,11 @@ export const createCommitTool = (
         validateSubject(group.subject);
         validatePaths(group.files);
       }
+
       if (!ctx.hasUI) {
         throw new Error('Cannot commit without user confirmation (non-interactive mode)');
       }
+
       const approval = { all: false, seen: new Map<number, string>() };
       const groups: CommitSuccess['details'][] = [];
       const content: CommitSuccess['content'] = [];
@@ -608,12 +689,15 @@ export const createCommitTool = (
           ? await planGroupReviews(pi, ctx.cwd, params.groups, signal)
           : [];
       const started = new Map<number, Promise<CommentReview>>();
+
       const startReview = (index: number) => {
         const step = plan[index];
         const group = params.groups[index];
+
         if (!step || !group || started.has(index)) {
           return;
         }
+
         const pending = review(pi, ctx, signal, {
           tree: step.tree,
           head: step.baseTree,
@@ -634,20 +718,24 @@ export const createCommitTool = (
           if (planned) {
             startReview(index);
             const pending = started.get(index);
+
             if (pending) {
               return pending;
             }
           }
+
           return review(pi, ctx, signal, snapshot);
         };
 
       startReview(0);
+
       for (const [index, group] of params.groups.entries()) {
-        const id = `${index + 1}/${params.groups.length}`;
+        const groupLabel = `${index + 1}/${params.groups.length}`;
+
         try {
           const result = await executeGroup(
             group,
-            params.groups.length > 1 ? id : undefined,
+            params.groups.length > 1 ? groupLabel : undefined,
             pi,
             ctx,
             signal,
@@ -656,6 +744,7 @@ export const createCommitTool = (
             {
               autoApprove: async () => {
                 const seen = approval.seen.get(index);
+
                 return (
                   approval.all &&
                   seen !== undefined &&
@@ -664,8 +753,10 @@ export const createCommitTool = (
               },
               onApproveAll: async () => {
                 approval.all = true;
+
                 for (let rest = index + 1; rest < params.groups.length; rest += 1) {
                   const remaining = params.groups[rest];
+
                   if (!remaining) {
                     continue;
                   }
@@ -678,6 +769,7 @@ export const createCommitTool = (
               },
             },
           );
+
           if (!result.details.sha && !result.details.skipped && params.groups.length > 1) {
             throw new Error('Commit cancelled');
           }
@@ -685,13 +777,14 @@ export const createCommitTool = (
           content.push(
             ...result.content.map((item) => ({
               ...item,
-              text: params.groups.length === 1 ? item.text : `Group ${id}: ${item.text}`,
+              text: params.groups.length === 1 ? item.text : `Group ${groupLabel}: ${item.text}`,
             })),
           );
         } catch (error) {
           if (params.groups.length === 1) {
             throw error;
           }
+
           const committed = groups.flatMap((result, committedIndex) =>
             result.sha
               ? [
@@ -699,14 +792,17 @@ export const createCommitTool = (
                 ]
               : [],
           );
+
           throw new Error(
-            `Group ${id}: ${error instanceof Error ? error.message : String(error)}\nAlready committed:\n${committed.join('\n') || 'None.'}`,
+            `Group ${groupLabel}: ${error instanceof Error ? error.message : String(error)}\nAlready committed:\n${committed.join('\n') || 'None.'}`,
             { cause: error },
           );
         }
       }
+
       // One notice for the whole call, not one per group.
       const gateOff = await tddGateStatus(ctx.cwd);
+
       return {
         content: gateOff === undefined ? content : [{ type: 'text', text: gateOff }, ...content],
         details: { groups },
