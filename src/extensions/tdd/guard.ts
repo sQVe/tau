@@ -75,7 +75,6 @@ export const guardToolCall = async (
   event: ToolCallEvent,
   cwd: string,
   store: Pick<ReturnType<typeof createEvidenceStore>, 'read'>,
-  onState?: (state: Awaited<ReturnType<ReturnType<typeof createEvidenceStore>['read']>>) => void,
 ): Promise<ToolCallEventResult | undefined> => {
   if (passthroughTools.has(event.toolName)) {
     return undefined;
@@ -86,13 +85,6 @@ export const guardToolCall = async (
     return undefined;
   }
   const state = await store.read(cwd);
-  // Pi does not catch a throwing tool_call handler, so a failing footer update would decide
-  // whether a write is gated.
-  try {
-    onState?.(state);
-  } catch {
-    /* empty */
-  }
   const next = recognized
     ? pathNextStep(
         file,

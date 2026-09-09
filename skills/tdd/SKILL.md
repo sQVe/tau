@@ -70,9 +70,8 @@ ones:
 - A required RED test is skipped or missing: restore it so it runs and passes.
 - Duplicate full names: rename the tests so each full name is unique in its file.
 
-The footer shows the phase and active behavior, but it is read before the last write landed, so it
-trails by one tool call. Trust the `run_tests` summary and the block message. `/tdd status` reports
-the gate, the phase, and whether production writes are allowed, without naming the behavior.
+Use the `run_tests` summary and the block message for TDD feedback. `/tdd status` reports the gate,
+the phase, and whether production writes are allowed, without naming the behavior.
 
 ## Turning the gate off
 
