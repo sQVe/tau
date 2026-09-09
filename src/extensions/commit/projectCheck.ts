@@ -4,6 +4,12 @@ import { join } from 'node:path';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
+const exists = (path: string) =>
+  access(path).then(
+    () => true,
+    () => false,
+  );
+
 // Check the index snapshot: unstaged fixes must not make an incomplete commit pass.
 export const checkProject = async (
   pi: Pick<ExtensionAPI, 'exec'>,
@@ -82,15 +88,12 @@ export const checkProject = async (
 
     // ponytail: root dependencies are shared; workspace-aware installs need a separate checkout strategy.
     const dependencies = join(root, 'node_modules');
-    const exists = (path: string) =>
-      access(path).then(
-        () => true,
-        () => false,
-      );
     const candidateDependencies = join(candidate, 'node_modules');
+    const dependenciesExist = await exists(dependencies);
+    const candidateDependenciesExist = await exists(candidateDependencies);
 
     // A tracked node_modules is already checked out, and its staged content is what the check must see.
-    if ((await exists(dependencies)) && !(await exists(candidateDependencies))) {
+    if (dependenciesExist && !candidateDependenciesExist) {
       await symlink(dependencies, candidateDependencies, 'junction');
     }
 

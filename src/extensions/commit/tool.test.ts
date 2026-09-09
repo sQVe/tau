@@ -234,6 +234,10 @@ it('returns cancelled when aborted while the project check runs', async () => {
   const repo = await createTempRepo();
   const controller = new AbortController();
 
+  await git(repo, ['commit', '--allow-empty', '-m', 'test: baseline']);
+
+  const head = await git(repo, ['rev-parse', 'HEAD']);
+
   await writeRepoFile(
     repo,
     'package.json',
@@ -259,7 +263,12 @@ it('returns cancelled when aborted while the project check runs', async () => {
     confirmedContext(repo),
   );
 
+  const currentHead = await git(repo, ['rev-parse', 'HEAD']);
+  const stagedFiles = await git(repo, ['diff', '--cached', '--name-only']);
+
   expect(result.content[0]).toEqual({ type: 'text', text: 'Commit cancelled' });
+  expect(currentHead).toBe(head);
+  expect(stagedFiles).toBe('');
 });
 
 it('rejects check-time formatting without modifying the working file', async () => {
