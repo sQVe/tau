@@ -1,15 +1,20 @@
-import { isAbsolute, relative, resolve } from 'node:path';
+import { execFile as execFileCallback } from 'node:child_process';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { promisify } from 'node:util';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
 import { guardToolCall } from './guard.js';
-import type { RunnerResult } from './runner/types.js';
+import type { RunnerResult, TestResult } from './runner/types.js';
 import { MAX_FAILURES } from './runner/types.js';
-import { ambiguousFiles, createEvidenceStore } from './state.js';
+import { ambiguousFiles, createEvidenceStore, testNames } from './state.js';
+import type { EvidenceState } from './types.js';
 
 const MAX_SUMMARY_CHARS = 2000;
+
+const execFile = promisify(execFileCallback);
 
 const displayPath = (cwd: string, file: string) => (isAbsolute(file) ? relative(cwd, file) : file);
 
@@ -18,6 +23,7 @@ const implementationState = (allowed: boolean, notice: string | undefined) => {
   if (notice != null) {
     return 'allowed (gate off)';
   }
+
   return allowed ? 'allowed' : 'blocked';
 };
 
@@ -31,91 +37,267 @@ const summarize = (
   },
   next: string | undefined,
   report: RunnerResult | null | undefined,
+  redCoverage?: string,
 ): string => {
   const lines = [
     ...(header.notice == null ? [] : [`Notice: ${header.notice}`]),
     `${header.kind} · phase ${header.phase} · implementation ${implementationState(header.implementationAllowed, header.notice)}`,
   ];
+
   if (next != null) {
     lines.push(`Next: ${next}`);
   }
+
   if (report != null && 'message' in report) {
     lines.push(report.message);
   }
+
   if (report != null && 'tests' in report) {
     const count = (...statuses: string[]) =>
       report.tests.filter((test) => statuses.includes(test.status)).length;
+
     lines.push(
       `${count('passed')} passed, ${count('failed')} failed, ${count('skipped', 'todo')} skipped`,
     );
   }
+
+  if (redCoverage != null) {
+    lines.push(redCoverage);
+  }
+
   const failures = report != null && 'failures' in report ? report.failures : [];
   let shown = 0;
+
   for (const failure of failures.slice(0, MAX_FAILURES)) {
     const entry = `✗ ${displayPath(cwd, failure.file)} › ${failure.fullname}\n    ${failure.message}`;
+
     if ([...lines, entry].join('\n').length > MAX_SUMMARY_CHARS - 60) {
       break;
     }
+
     lines.push(entry);
     shown += 1;
   }
+
   if (failures.length > shown) {
     lines.push(`+${failures.length - shown} more`);
   }
+
   if (report != null && 'truncated' in report && report.truncated) {
     lines.push('further failures were not collected');
   }
+
   const text = lines.join('\n');
+
   return text.length > MAX_SUMMARY_CHARS ? `${text.slice(0, MAX_SUMMARY_CHARS - 12)}\n[cut]` : text;
+};
+
+// ponytail: quoted-title matching estimates which tests predate the task. Dynamic titles and
+// unrelated matching strings can miscount; use parsed test identities if exact coverage is needed.
+const committedTitles = async (cwd: string, file: string): Promise<string | null> => {
+  try {
+    const { stdout } = await execFile(
+      'git',
+      // `./` makes git read the path from cwd; a bare path always resolves from the repository root.
+      ['show', `HEAD:./${relative(cwd, resolve(cwd, file)).split(sep).join('/')}`],
+      {
+        cwd,
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
+
+    return stdout;
+  } catch {
+    return null;
+  }
+};
+
+// Parameterized titles hold `%s` or `$name` placeholders that the report has already filled in.
+const templatePatterns = (content: string): RegExp[] =>
+  [...content.matchAll(/(['"`])([^'"`\n]*)\1/g)]
+    .map((match) => match[2] ?? '')
+    .filter((title) => /%[sdifjo#$]|\$[\w.]+/.test(title))
+    // A title that is only placeholders matches every name, so it proves nothing about any test.
+    .filter((title) => title.replace(/%[sdifjo#$]|\$[\w.]+/g, '').trim().length > 0)
+    .map(
+      (title) =>
+        new RegExp(
+          `^${title
+            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+            .replace(/%[sdifjo#]|%\\\$|\\\$[\w.]+/g, '.+?')
+            .replace(/%%/g, '%')}$`,
+        ),
+    );
+
+const titledIn = (content: string, fullname: string) => {
+  const words = fullname.split(' ');
+  const patterns = templatePatterns(content);
+
+  return words.some((_word, index) => {
+    const suffix = words.slice(index).join(' ');
+
+    return (
+      [`'${suffix}'`, `"${suffix}"`, `\`${suffix}\``].some((quoted) => content.includes(quoted)) ||
+      patterns.some((pattern) => pattern.test(suffix))
+    );
+  });
+};
+
+const displayTestNames = (cwd: string, tests: TestResult[]): string => {
+  const names = tests
+    .slice(0, 3)
+    .map((test) => `${displayPath(cwd, test.file)} › ${test.fullname}`)
+    .join(', ');
+  const remaining = tests.length > 3 ? ` and ${tests.length - 3} more` : '';
+
+  return names + remaining;
+};
+
+// Only selected tests get RED evidence. Report tests added alongside them without claiming that
+// a matching committed title proves the assertion existed or stayed unchanged.
+const describeRedCoverage = async (
+  cwd: string,
+  evidence: Pick<EvidenceState, 'reds' | 'proven'>,
+  tests: TestResult[],
+): Promise<string | undefined> => {
+  const sameFile = (left: string, right: string) => resolve(cwd, left) === resolve(cwd, right);
+  const requiredFiles = [
+    ...new Set(
+      evidence.reds.flatMap(({ behavior }) => behavior.files.map((file) => resolve(cwd, file))),
+    ),
+  ];
+
+  const committed = new Map(
+    await Promise.all(
+      requiredFiles.map(async (file) => [file, await committedTitles(cwd, file)] as const),
+    ),
+  );
+
+  const required = tests.filter(
+    (test) =>
+      (test.status === 'passed' || test.status === 'failed') &&
+      requiredFiles.some((file) => sameFile(file, test.file)),
+  );
+
+  if (required.length === 0) {
+    return undefined;
+  }
+
+  const proven = (test: TestResult) =>
+    evidence.proven.some(
+      (known) => known.fullname === test.fullname && sameFile(known.file, test.file),
+    );
+  const preexisting = (test: TestResult) => {
+    const content = committed.get(resolve(cwd, test.file));
+
+    return content != null && titledIn(content, test.fullname);
+  };
+
+  const unproven = required.filter((test) => !proven(test) && !preexisting(test));
+
+  const renewedFiles = evidence.reds.flatMap(({ behavior, edited }) =>
+    edited ? behavior.files : [],
+  );
+  const edited = required.filter(
+    (test) => proven(test) && renewedFiles.some((file) => sameFile(file, test.file)),
+  );
+
+  return [
+    `Estimated RED coverage: ${required.length - unproven.length} of ${required.length} tests in the required files were proven RED or committed before`,
+    ...(unproven.length === 0 ? [] : [`never failed: ${displayTestNames(cwd, unproven)}`]),
+    ...(edited.length === 0 ? [] : [`edited after RED: ${displayTestNames(cwd, edited)}`]),
+  ].join('; ');
+};
+
+const missingRedBehavior = (cwd: string, evidence: EvidenceState, report: RunnerResult) => {
+  if (!('tests' in report)) {
+    return undefined;
+  }
+
+  return evidence.reds.find(({ behavior, report: redReport }) => {
+    if (redReport.kind !== 'fail') {
+      return false;
+    }
+
+    return redReport.tests.some((test) => {
+      const requiredFailure =
+        test.status === 'failed' &&
+        testNames(behavior).includes(test.fullname) &&
+        behavior.files.some((file) => resolve(cwd, file) === resolve(cwd, test.file));
+
+      return (
+        requiredFailure &&
+        !report.tests.some(
+          (result) =>
+            result.fullname === test.fullname &&
+            resolve(cwd, result.file) === resolve(cwd, test.file) &&
+            (result.status === 'passed' || result.status === 'failed'),
+        )
+      );
+    });
+  })?.behavior;
 };
 
 export default function tddExtension(pi: ExtensionAPI) {
   const store = createEvidenceStore();
+
   pi.on('tool_call', (event, ctx) => guardToolCall(event, ctx.cwd, store));
+
   pi.registerCommand('tdd', {
     description: 'Turn the TDD gate on or off, or report its state: /tdd on|off|status.',
     handler: async (args, ctx) => {
       const argument = args.trim() || 'status';
+
       if (argument !== 'on' && argument !== 'off' && argument !== 'status') {
         ctx.ui.notify(`Unknown argument ${argument}; use /tdd on|off|status`, 'warning');
+
         return;
       }
+
       const state =
         argument === 'status' ? await store.read(ctx.cwd) : await store.setGate(ctx.cwd, argument);
       let gate = 'on';
+
       if (state.evidence.gateOff != null) {
         gate = `off since ${state.evidence.gateOff.since}`;
       } else if (state.notice != null) {
         gate = `off: ${state.notice}`;
       }
+
       ctx.ui.notify(
         `TDD gate ${gate}\nPhase ${state.phase}; production writes ${state.implementationAllowed || state.notice != null ? 'allowed' : 'blocked'}.`,
       );
     },
   });
+
   pi.registerTool(
     defineTool({
       name: 'run_tests',
       label: 'Run tests',
       description:
-        'Name a behavior, its test files, and the exact Vitest full name: describe names followed by the it name, joined with spaces, for example "outer inner works". ' +
-        'Run scope "focused" to prove RED before editing production files, run focused again for GREEN after the fix, then run scope "full" at the end for verified. ' +
-        'Editing a required test file after RED re-locks the gate; if edited after the fix, save and revert only the production change with git restore/stash, re-run focused to prove RED, then restore the fix. ' +
+        'Name a behavior, its test files, and the exact Vitest full name: describe names followed by the it name, joined with spaces, for example "outer inner works", or an array of such names when several small tests prove one behavior together. ' +
+        'Create a missing production module with write and content "" so the test can import it; nonempty production writes still require RED. Run scope "focused" to prove RED before editing production files, run focused again for GREEN after the fix, then run scope "full" at the end for verified. ' +
+        'Editing a required test file before GREEN re-locks the gate; a focused pass accepts the edit and the full run reports it. GREEN permits cleanup, but changed inputs invalidate passing evidence. ' +
         'Skipped and deleted tests never count. ' +
-        'Returns kind (run outcome), phase (locked: no valid RED; red: failing test proven; green: that test passed; verified: full run passed with every RED test present and passing), implementationAllowed (true only in red), and report (test results, null if inputs changed). ' +
+        'Returns kind (run outcome), phase (locked: no valid RED; red: failing test proven; green: that test passed; verified: full run passed with every RED test present and passing), implementationAllowed (true in red and green), and report (test results, null if inputs changed). ' +
         'Only files matching the production globs are gated, and a notice string says the gate is off while no test runner resolves from the worktree or the user turned it off with /tdd off. ' +
         'A next string explains recovery when needed; the text is a short summary with counts and failing tests, and details carries the full report.',
       parameters: Type.Object({
         behavior: Type.String({
           minLength: 1,
           description:
-            'Name the behavior to implement; keep it unchanged through RED, GREEN, and full verification.',
+            'Name the behavior to implement. This is a label and may change; testFullName and files identify the behavior and must stay the same through RED, GREEN, and full verification.',
         }),
-        testFullName: Type.String({
-          minLength: 1,
-          description:
-            'Exact Vitest full name: describe names then the it name, joined with spaces, not " > "; for example "outer inner works". Use the same name for focused and full runs.',
-        }),
+        testFullName: Type.Union(
+          [
+            Type.String({ minLength: 1 }),
+            Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+          ],
+          {
+            description:
+              'Exact Vitest full name: describe names then the it name, joined with spaces, not " > "; for example "outer inner works". Give an array when one behavior is proven by several small tests; every one must fail in RED and pass in GREEN. Use the same names for focused and full runs.',
+          },
+        ),
         files: Type.Array(
           Type.String({
             minLength: 1,
@@ -136,30 +318,12 @@ export default function tddExtension(pi: ExtensionAPI) {
       async execute(_id, params, signal, _update, ctx) {
         const { scope, ...behavior } = params;
         const details = await store.run(ctx.cwd, behavior, scope, signal);
+
         const report =
-          details.kind === 'inputs-changed' || details.kind === 'cancelled'
-            ? null
-            : details.evidence.latestRun?.report;
+          details.kind === 'inputs-changed' || details.kind === 'cancelled' ? null : details.report;
         const missing =
-          scope === 'full' && report && 'tests' in report
-            ? details.evidence.reds.find(
-                ({ behavior: required, record }) =>
-                  record.report.kind === 'fail' &&
-                  record.report.tests.some(
-                    (test) =>
-                      test.status === 'failed' &&
-                      test.fullname === required.testFullName &&
-                      required.files.some(
-                        (file) => resolve(ctx.cwd, file) === resolve(ctx.cwd, test.file),
-                      ) &&
-                      !report.tests.some(
-                        (result) =>
-                          result.fullname === test.fullname &&
-                          resolve(ctx.cwd, result.file) === resolve(ctx.cwd, test.file) &&
-                          (result.status === 'passed' || result.status === 'failed'),
-                      ),
-                  ),
-              )?.behavior
+          scope === 'full' && report
+            ? missingRedBehavior(ctx.cwd, details.evidence, report)
             : undefined;
         const ambiguous = report ? ambiguousFiles(ctx.cwd, behavior, report) : [];
         const duplicatedRed =
@@ -173,8 +337,10 @@ export default function tddExtension(pi: ExtensionAPI) {
                 // earlier RED sharing its full name in another file still has to be named here.
                 .find((entry) => entry.files.length > 0)
             : undefined;
+
         let next: string | undefined;
         const call = `run_tests ${JSON.stringify({ ...behavior, scope })}`;
+
         if (details.kind === 'inputs-changed') {
           next = `Inputs changed during the run; no evidence was recorded. Stop concurrent edits, then call ${call}.`;
         } else if (
@@ -191,9 +357,21 @@ export default function tddExtension(pi: ExtensionAPI) {
           next = `A required RED test is skipped or missing: ${JSON.stringify(missing.testFullName)} in ${JSON.stringify(missing.files)}. Restore that test so it runs and passes, then call ${call}.`;
         } else if (duplicatedRed) {
           next = `An earlier RED test can no longer be identified: more than one test in ${JSON.stringify(duplicatedRed.files)} has its full name ${JSON.stringify(duplicatedRed.required.testFullName)}, so the full run cannot verify it. Rename the duplicate so each full name is unique, then call ${call}.`;
+        } else if (
+          scope === 'full' &&
+          'staleForVerification' in details &&
+          details.staleForVerification.length > 0
+        ) {
+          next = `Verification inputs changed: ${details.staleForVerification.join(', ')}. Rerun focused tests for the affected recorded behaviors, then call ${call}.`;
         }
+
+        const redCoverage =
+          scope === 'full' && report && 'tests' in report
+            ? await describeRedCoverage(ctx.cwd, details.evidence, report.tests)
+            : undefined;
+
         return {
-          content: [{ type: 'text', text: summarize(ctx.cwd, details, next, report) }],
+          content: [{ type: 'text', text: summarize(ctx.cwd, details, next, report, redCoverage) }],
           details,
         };
       },

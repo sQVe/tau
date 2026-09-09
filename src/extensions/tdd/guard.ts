@@ -1,4 +1,5 @@
-import { relative, resolve } from 'node:path';
+import { lstat, realpath } from 'node:fs/promises';
+import { dirname, relative, resolve } from 'node:path';
 
 import type { ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 
@@ -25,47 +26,79 @@ const inputPaths = (input: unknown, key = ''): string[] => {
   if (typeof input === 'string') {
     return /path|file|target|destination|directory|^dir$/i.test(key) ? [input] : [];
   }
+
   if (Array.isArray(input)) {
     return input.flatMap((value) => inputPaths(value, key));
   }
+
   if (input !== null && typeof input === 'object') {
     return Object.entries(input).flatMap(([name, value]) => inputPaths(value, name));
   }
+
   return [];
+};
+
+// The deepest existing ancestor decides where a path really lives, so a symlinked spelling of
+// the worktree cannot slip a production file past the globs.
+const realPath = async (path: string): Promise<string> => {
+  try {
+    return await realpath(path);
+  } catch (error) {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+
+  // realpath cannot resolve a dangling link, but write would follow it and create its target.
+  const entry = await lstat(path).catch((error: unknown) => {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+      throw error;
+    }
+
+    return null;
+  });
+
+  if (entry?.isSymbolicLink()) {
+    throw new Error(`Cannot guard a dangling symlink: ${path}. Repair it before writing.`);
+  }
+
+  const parent = dirname(path);
+
+  return parent === path ? path : resolve(await realPath(parent), relative(parent, path));
 };
 
 const pathNextStep = (
   file: string,
-  cwd: string,
+  path: string,
   implementationAllowed: boolean,
   active: Behavior | null,
   phase: Phase,
   gateOff: boolean,
 ) => {
-  const path = relative(cwd, resolve(cwd, file)).replaceAll('\\', '/');
   if (file.startsWith('@') || file.startsWith('~')) {
     return 'List literal worktree paths with ls {"path":"."}';
   }
-  if (path === '..' || path.startsWith('../')) {
-    return 'List worktree files with ls {"path":"."}';
-  }
+
   if (path === '.tau' || path.startsWith('.tau/') || protectedPaths.includes(path)) {
     return 'Choose an unprotected test file with ls {"path":"."}';
   }
-  // The gate only opens for production edits: protected paths and escapes stay blocked.
+
+  // Turning the gate off permits production edits; protected paths above stay blocked.
   if (gateOff) {
     return undefined;
   }
+
+  // A file outside the worktree is never its production code, and classifyPath says so.
   if (classifyPath(path) !== 'production' || implementationAllowed) {
     return undefined;
   }
+
   const colocatedTest = JSON.stringify(`${file.replace(/\.tsx?$/, '')}.test.ts`);
-  if (phase === 'green' && active !== null) {
-    return `Verify the current behavior with run_tests ${JSON.stringify({ ...active, scope: 'full' })}, or start the next behavior by writing its test and proving RED with run_tests scope "focused"`;
-  }
+
   if (phase === 'verified') {
     return `Start the next behavior with write using path ${colocatedTest} and content that tests the missing behavior`;
   }
+
   return active === null
     ? `Write a failing test with write using path ${colocatedTest} and content that checks the missing behavior`
     : `Prove RED with run_tests ${JSON.stringify({ ...active, scope: 'focused' })}`;
@@ -79,25 +112,48 @@ export const guardToolCall = async (
   if (passthroughTools.has(event.toolName)) {
     return undefined;
   }
+
   const recognized = event.toolName === 'write' || event.toolName === 'edit';
   const file = recognized ? event.input.path : (inputPaths(event.input)[0] ?? 'unknown target');
+
   if (typeof file !== 'string') {
     return undefined;
   }
+
   const state = await store.read(cwd);
+  // A relative target traverses from the canonical cwd, so `..` must not be folded away first.
+  const realCwd = await realPath(cwd);
+  const paths = [
+    relative(resolve(cwd), resolve(cwd, file)),
+    relative(realCwd, await realPath(resolve(realCwd, file))),
+  ].map((path) => path.replaceAll('\\', '/'));
+
+  const emptyStub =
+    event.toolName === 'write' &&
+    event.input.content === '' &&
+    (await lstat(resolve(cwd, file)).then(
+      () => false,
+      (error: unknown) => error instanceof Error && 'code' in error && error.code === 'ENOENT',
+    ));
+
   const next = recognized
-    ? pathNextStep(
-        file,
-        cwd,
-        state.implementationAllowed,
-        state.evidence.active,
-        state.phase,
-        state.notice !== undefined,
-      )
+    ? paths
+        .map((path) =>
+          pathNextStep(
+            file,
+            path,
+            state.implementationAllowed || emptyStub,
+            state.evidence.active,
+            state.phase,
+            state.notice !== undefined,
+          ),
+        )
+        .find((step) => step !== undefined)
     : `Replace unrecognized tool ${event.toolName} with write using a literal path and the intended content`;
   if (next === undefined) {
     return undefined;
   }
+
   return {
     block: true,
     reason: `Blocked ${file} in phase ${state.phase}, active behavior: ${state.evidence.active?.behavior ?? 'none'}. ${next}.`,
