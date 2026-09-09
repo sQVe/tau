@@ -8,6 +8,12 @@ import { footerTheme } from './colors.js';
 import { renderFooterLine } from './render.js';
 
 const exec = promisify(execFile);
+
+// A hung git call must never stall the footer, and a tree large enough to overrun the buffer is
+// past the point where an exact answer is worth waiting for.
+const GIT_TIMEOUT_MS = 5000;
+const GIT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
+
 const sessionCost = (ctx: ExtensionContext): number => {
   let cost = 0;
   for (const entry of ctx.sessionManager.getEntries()) {
@@ -31,7 +37,11 @@ export default function statusbarExtension(pi: ExtensionAPI) {
     const id = ++refreshId;
     let nextDirty = false;
     try {
-      const { stdout } = await exec('git', ['status', '--porcelain'], { cwd: ctx.cwd });
+      const { stdout } = await exec('git', ['status', '--porcelain'], {
+        cwd: ctx.cwd,
+        timeout: GIT_TIMEOUT_MS,
+        maxBuffer: GIT_MAX_BUFFER_BYTES,
+      });
       nextDirty = stdout.length > 0;
     } catch {
       // Outside a repository, or when git fails, show no dirty marker.
@@ -83,7 +93,9 @@ export default function statusbarExtension(pi: ExtensionAPI) {
       };
     });
   });
-  pi.on('tool_result', async (_event, ctx) => {
-    if (ctx.mode === 'tui') await refresh(ctx);
+  // Pi awaits every handler before the tool result reaches the model, so the git call stays off
+  // the agent's critical path. The refreshId guard already makes a late result safe to drop.
+  pi.on('tool_result', (_event, ctx) => {
+    if (ctx.mode === 'tui') void refresh(ctx);
   });
 }

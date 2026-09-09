@@ -31,6 +31,16 @@ describe('statusbar rendering', () => {
     expect(renderFooterLine(input, 0, theme)).toBe('');
     expect(visibleWidth(renderFooterLine({ ...input, directory: '界/界' }, 25, theme))).toBe(25);
   });
+  it('keeps the line within the width once the colors are real escape codes', () => {
+    // The identity fg above takes truncateToWidth's plain-ASCII path, which production never does.
+    const colored = { fg: (color, text) => `\x1b[38;2;1;2;3m${text}\x1b[39m` } satisfies Pick<
+      Theme,
+      'fg'
+    >;
+    for (const width of [80, 40, 24, 12, 8, 1]) {
+      expect(visibleWidth(renderFooterLine(input, width, colored))).toBe(width);
+    }
+  });
   it('colors the directory branch and dirty marker and omits missing branches', () => {
     fg.mockClear();
     expect(renderFooterLine({ ...input, dirty: true }, 80, theme)).toContain('main*');

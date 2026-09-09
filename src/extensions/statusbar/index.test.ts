@@ -97,8 +97,13 @@ describe('statusbar extension', () => {
     expect(footer.component.render(100)[0]).not.toContain('main*');
     await writeFile(join(cwd, 'file'), 'dirty');
     expect(footer.component.render(100)[0]).not.toContain('main*');
+    // The tool_result handler refreshes off the agent's critical path, so it returns before git
+    // answers and the marker trails it by a tick.
     await app.emit('tool_result');
-    expect(footer.component.render(100)[0]).toContain('main*');
+    expect(footer.component.render(100)[0]).not.toContain('main*');
+    await vi.waitFor(() => {
+      expect(footer.component.render(100)[0]).toContain('main*');
+    });
     await rm(join(cwd, 'file'));
     footer.branchChange();
     await vi.waitFor(() => {
