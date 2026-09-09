@@ -2,7 +2,7 @@ import { execFile as execFileCallback } from 'node:child_process';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
@@ -10,26 +10,19 @@ import { guardToolCall } from './guard.js';
 import type { RunnerResult, TestResult } from './runner/types.js';
 import { MAX_FAILURES } from './runner/types.js';
 import { ambiguousFiles, createEvidenceStore, testNames } from './state.js';
-import type { Behavior, EvidenceState, Phase } from './types.js';
+import type { EvidenceState } from './types.js';
 
 const MAX_SUMMARY_CHARS = 2000;
 
 const execFile = promisify(execFileCallback);
 
-const STATUS_KEY = 'tdd';
-
-const statusText = (state: {
-  phase: Phase;
-  evidence: { active: Behavior | null };
-  notice: string | undefined;
-}) =>
-  `TDD ${state.notice == null ? state.phase : 'off'}: ${state.evidence.active?.behavior ?? 'no behavior'}`;
-
 const displayPath = (cwd: string, file: string) => (isAbsolute(file) ? relative(cwd, file) : file);
 
 // A notice means the gate is off, and the guard lets production writes through in every phase.
 const implementationState = (allowed: boolean, notice: string | undefined) => {
-  if (notice != null) return 'allowed (gate off)';
+  if (notice != null) {
+    return 'allowed (gate off)';
+  }
   return allowed ? 'allowed' : 'blocked';
 };
 
@@ -49,8 +42,12 @@ const summarize = (
     ...(header.notice == null ? [] : [`Notice: ${header.notice}`]),
     `${header.kind} · phase ${header.phase} · implementation ${implementationState(header.implementationAllowed, header.notice)}`,
   ];
-  if (next != null) lines.push(`Next: ${next}`);
-  if (report != null && 'message' in report) lines.push(report.message);
+  if (next != null) {
+    lines.push(`Next: ${next}`);
+  }
+  if (report != null && 'message' in report) {
+    lines.push(report.message);
+  }
   if (report != null && 'tests' in report) {
     const count = (...statuses: string[]) =>
       report.tests.filter((test) => statuses.includes(test.status)).length;
@@ -58,18 +55,25 @@ const summarize = (
       `${count('passed')} passed, ${count('failed')} failed, ${count('skipped', 'todo')} skipped`,
     );
   }
-  if (redCoverage != null) lines.push(redCoverage);
+  if (redCoverage != null) {
+    lines.push(redCoverage);
+  }
   const failures = report != null && 'failures' in report ? report.failures : [];
   let shown = 0;
   for (const failure of failures.slice(0, MAX_FAILURES)) {
     const entry = `✗ ${displayPath(cwd, failure.file)} › ${failure.fullname}\n    ${failure.message}`;
-    if ([...lines, entry].join('\n').length > MAX_SUMMARY_CHARS - 60) break;
+    if ([...lines, entry].join('\n').length > MAX_SUMMARY_CHARS - 60) {
+      break;
+    }
     lines.push(entry);
     shown += 1;
   }
-  if (failures.length > shown) lines.push(`+${failures.length - shown} more`);
-  if (report != null && 'truncated' in report && report.truncated)
+  if (failures.length > shown) {
+    lines.push(`+${failures.length - shown} more`);
+  }
+  if (report != null && 'truncated' in report && report.truncated) {
     lines.push('further failures were not collected');
+  }
   const text = lines.join('\n');
   return text.length > MAX_SUMMARY_CHARS ? `${text.slice(0, MAX_SUMMARY_CHARS - 12)}\n[cut]` : text;
 };
@@ -146,7 +150,9 @@ const describeRedCoverage = async (
       (test.status === 'passed' || test.status === 'failed') &&
       requiredFiles.some((file) => sameFile(file, test.file)),
   );
-  if (required.length === 0) return undefined;
+  if (required.length === 0) {
+    return undefined;
+  }
   const proven = (test: TestResult) =>
     evidence.proven.some(
       (known) => known.fullname === test.fullname && sameFile(known.file, test.file),
@@ -176,27 +182,7 @@ const describeRedCoverage = async (
 
 export default function tddExtension(pi: ExtensionAPI) {
   const store = createEvidenceStore();
-  // The guard reads the state before the write lands, so the footer trails a write that
-  // invalidates evidence by one tool call. A read of its own here would double the hashing.
-  pi.on('tool_call', (event, ctx) =>
-    guardToolCall(event, ctx.cwd, store, (state) => {
-      ctx.ui.setStatus(STATUS_KEY, statusText(state));
-    }),
-  );
-  const refreshStatus = async (ctx: ExtensionContext) => {
-    ctx.ui.setStatus(STATUS_KEY, statusText(await store.read(ctx.cwd)));
-  };
-  pi.on('session_start', (_event, ctx) => refreshStatus(ctx));
-  // `session_start` fires once per process, so /new, resume, and fork need their own refresh or
-  // the footer keeps reporting the phase of the session the user left.
-  pi.on('session_before_switch', async (_event, ctx) => {
-    await refreshStatus(ctx);
-    return undefined;
-  });
-  pi.on('session_before_fork', async (_event, ctx) => {
-    await refreshStatus(ctx);
-    return undefined;
-  });
+  pi.on('tool_call', (event, ctx) => guardToolCall(event, ctx.cwd, store));
   pi.registerCommand('tdd', {
     description: 'Turn the TDD gate on or off, or report its state: /tdd on|off|status.',
     handler: async (args, ctx) => {
@@ -207,10 +193,12 @@ export default function tddExtension(pi: ExtensionAPI) {
       }
       const state =
         argument === 'status' ? await store.read(ctx.cwd) : await store.setGate(ctx.cwd, argument);
-      ctx.ui.setStatus(STATUS_KEY, statusText(state));
       let gate = 'on';
-      if (state.evidence.gateOff != null) gate = `off since ${state.evidence.gateOff.since}`;
-      else if (state.notice != null) gate = `off: ${state.notice}`;
+      if (state.evidence.gateOff != null) {
+        gate = `off since ${state.evidence.gateOff.since}`;
+      } else if (state.notice != null) {
+        gate = `off: ${state.notice}`;
+      }
       ctx.ui.notify(
         `TDD gate ${gate}\nPhase ${state.phase}; production writes ${state.implementationAllowed || state.notice != null ? 'allowed' : 'blocked'}.`,
       );
@@ -264,7 +252,6 @@ export default function tddExtension(pi: ExtensionAPI) {
       async execute(_id, params, signal, _update, ctx) {
         const { scope, ...behavior } = params;
         const details = await store.run(ctx.cwd, behavior, scope, signal);
-        ctx.ui.setStatus(STATUS_KEY, statusText(details));
         const report =
           details.kind === 'inputs-changed' || details.kind === 'cancelled' ? null : details.report;
         const missing =
@@ -302,29 +289,30 @@ export default function tddExtension(pi: ExtensionAPI) {
             : undefined;
         let next: string | undefined;
         const call = `run_tests ${JSON.stringify({ ...behavior, scope })}`;
-        if (details.kind === 'inputs-changed')
+        if (details.kind === 'inputs-changed') {
           next = `Inputs changed during the run; no evidence was recorded. Stop concurrent edits, then call ${call}.`;
-        else if (
+        } else if (
           ambiguous.length > 0 &&
           ambiguous.length < behavior.files.length &&
           details.phase !== 'locked'
-        )
+        ) {
           next = `More than one test in ${JSON.stringify(ambiguous)} has the full name ${JSON.stringify(behavior.testFullName)}, so that file proves nothing; the evidence recorded from the other required files stands and the phase is ${details.phase}. Give each test a unique full name, then call ${call}.`;
-        else if (ambiguous.length > 0)
+        } else if (ambiguous.length > 0) {
           next = `More than one test in ${JSON.stringify(ambiguous)} has the full name ${JSON.stringify(behavior.testFullName)}, so the report cannot identify it and no evidence was recorded. Give each test a unique full name, then call ${call}.`;
-        else if (
+        } else if (
           scope === 'focused' &&
           details.kind === 'pass' &&
           details.phase === 'locked' &&
           details.staleSinceRed.length > 0
-        )
+        ) {
           next = `${details.staleSinceRed.join(', ')} changed after RED and before GREEN, so that proof no longer matches. Remove the production change so the test fails again, call ${call} to prove RED, then put the change back.`;
-        else if (scope === 'focused' && details.kind === 'pass' && details.phase === 'locked')
+        } else if (scope === 'focused' && details.kind === 'pass' && details.phase === 'locked') {
           next = `The test does not fail yet; the behavior may already be implemented. Write a test that fails before the fix, then call ${call}.`;
-        else if (missing)
+        } else if (missing) {
           next = `A required RED test is skipped or missing: ${JSON.stringify(missing.testFullName)} in ${JSON.stringify(missing.files)}. Restore that test so it runs and passes, then call ${call}.`;
-        else if (duplicatedRed)
+        } else if (duplicatedRed) {
           next = `An earlier RED test can no longer be identified: more than one test in ${JSON.stringify(duplicatedRed.files)} has its full name ${JSON.stringify(duplicatedRed.required.testFullName)}, so the full run cannot verify it. Rename the duplicate so each full name is unique, then call ${call}.`;
+        }
         const redCoverage =
           scope === 'full' && report && 'tests' in report
             ? await describeRedCoverage(ctx.cwd, details.evidence, report.tests)

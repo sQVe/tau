@@ -26,8 +26,9 @@ const hashInputs = async (cwd: string, files: string[]): Promise<InputHashes> =>
                 .digest('hex'),
             ];
           } catch (error) {
-            if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT')
+            if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
               throw error;
+            }
             return [file, null];
           }
         }),
@@ -40,8 +41,9 @@ const treeDigest = async (cwd: string, files: string[]) => {
   for await (const file of glob([...tddConfig.productionGlobs, ...tddConfig.testGlobs], {
     cwd,
     exclude: ['**/node_modules/**', '**/.git/**'],
-  }))
+  })) {
     sources.push(file);
+  }
   return createHash('sha256')
     .update(JSON.stringify(await hashInputs(cwd, sources)))
     .digest('hex');
@@ -101,7 +103,9 @@ const redPassed = (
   red: RedRecord | undefined,
   pass: RunnerResult,
 ) => {
-  if (behavior === null || red?.report.kind !== 'fail' || pass.kind !== 'pass') return false;
+  if (behavior === null || red?.report.kind !== 'fail' || pass.kind !== 'pass') {
+    return false;
+  }
   const redTests = red.report.tests;
   const passedTests = pass.tests;
   return testNames(behavior).every((name) => {
@@ -177,12 +181,16 @@ const loadState = async (cwd: string): Promise<EvidenceState> => {
   try {
     content = await readFile(path, 'utf8');
   } catch (error) {
-    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+      throw error;
+    }
     return emptyState();
   }
   try {
     const parsed: unknown = JSON.parse(content);
-    if (!isStoredState(parsed)) throw new Error('missing tdd evidence');
+    if (!isStoredState(parsed)) {
+      throw new Error('missing tdd evidence');
+    }
     const stored = parsed.tdd;
     const legacy = !['locked', 'red', 'green', 'verified'].includes(stored.phase);
     return {
@@ -194,7 +202,9 @@ const loadState = async (cwd: string): Promise<EvidenceState> => {
         const report = old.record?.report ?? entry.report;
         const testHashes = old.record?.after ?? entry.testHashes;
         // An entry without a report or hashes cannot be read; say so here, not on a later deref.
-        if (report == null || testHashes == null) throw new Error('incomplete RED evidence');
+        if (report == null || testHashes == null) {
+          throw new Error('incomplete RED evidence');
+        }
         return {
           behavior: entry.behavior,
           report,
@@ -247,12 +257,16 @@ export const createEvidenceStore = () => {
             (file) => red.testHashes[resolve(cwd, file)] !== hashes[resolve(cwd, file)],
           );
     let phase: Phase = evidence.phase;
-    if (phase === 'red' && staleSinceRed.length > 0) phase = 'locked';
+    if (phase === 'red' && staleSinceRed.length > 0) {
+      phase = 'locked';
+    }
     const currentTree =
       phase === 'green' || phase === 'verified'
         ? await treeDigest(cwd, evidence.active?.files ?? [])
         : null;
-    if (phase === 'verified' && evidence.verifiedTree !== currentTree) phase = 'green';
+    if (phase === 'verified' && evidence.verifiedTree !== currentTree) {
+      phase = 'green';
+    }
     return {
       evidence,
       phase,
@@ -300,30 +314,39 @@ export const createEvidenceStore = () => {
     );
     const after = await hashInputs(cwd, behavior.files);
     const currentTree = await treeDigest(cwd, behavior.files);
-    if (before !== currentTree)
+    if (before !== currentTree) {
       return { kind: 'inputs-changed' as const, report: null, ...(await read(cwd)) };
+    }
     const state = await stateFor(cwd);
     const entry = state.reds.find((candidate) => sameBehavior(candidate.behavior, behavior));
     let arrival: 'unseen' | 'known' | 'same' = entry === undefined ? 'unseen' : 'known';
-    if (state.active !== null && sameBehavior(state.active, behavior)) arrival = 'same';
+    if (state.active !== null && sameBehavior(state.active, behavior)) {
+      arrival = 'same';
+    }
     // Cancellation cannot switch behaviors. A full run on the active behavior still clears verification.
-    if (report.kind === 'cancelled' && arrival !== 'same')
+    if (report.kind === 'cancelled' && arrival !== 'same') {
       return { kind: 'cancelled' as const, report, ...(await read(cwd)) };
+    }
     const filesExist = behavior.files.every((file) => after[resolve(cwd, file)] != null);
     let outcome: 'other' | 'fail' | 'pass' = 'other';
-    if (filesExist && report.kind === 'fail' && uniquelyIs(cwd, report.tests, behavior, 'failed'))
+    if (filesExist && report.kind === 'fail' && uniquelyIs(cwd, report.tests, behavior, 'failed')) {
       outcome = 'fail';
-    else if (filesExist && report.kind === 'pass' && redPassed(cwd, behavior, entry, report))
+    } else if (filesExist && report.kind === 'pass' && redPassed(cwd, behavior, entry, report)) {
       outcome = 'pass';
+    }
     if (arrival !== 'same') {
-      if (arrival === 'unseen' && state.phase === 'verified') state.reds = [];
+      if (arrival === 'unseen' && state.phase === 'verified') {
+        state.reds = [];
+      }
       state.phase = entry?.phase ?? 'locked';
       state.verifiedTree = null;
     }
     state.active = structuredClone(behavior);
     if (scope === 'full') {
       state.verifiedTree = null;
-      if (state.phase === 'verified') state.phase = 'green';
+      if (state.phase === 'verified') {
+        state.phase = 'green';
+      }
       // Earlier tests may share a file extended by a later RED, but a RED in a different file
       // cannot authorize an amendment. Use the latest accepted focused snapshot in that file.
       const hashes = await hashInputs(
@@ -369,15 +392,17 @@ export const createEvidenceStore = () => {
           state.reds.push(red);
           state.phase = 'red';
           state.verifiedTree = null;
-          for (const file of behavior.files)
+          for (const file of behavior.files) {
             for (const fullname of testNames(behavior)) {
               if (
                 'tests' in report &&
                 uniqueStatus(cwd, report.tests, fullname, file) === 'failed' &&
                 !state.proven.some((known) => known.file === file && known.fullname === fullname)
-              )
+              ) {
                 state.proven.push({ file, fullname });
+              }
             }
+          }
           break;
         }
         case 'same:pass':

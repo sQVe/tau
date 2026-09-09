@@ -239,8 +239,9 @@ const createHarness = async (cleanup: TestContext['onTestFinished']) => {
     'behavior.test.ts': '// current behavior',
     'previous.test.ts': '// previous behavior',
     'other.test.ts': '// unrelated behavior',
-  }))
+  })) {
     await writeFile(join(cwd, file), content);
+  }
   const store = createEvidenceStore();
   const run = (report: RunnerResult, scope: 'focused' | 'full' = 'focused', behavior = current) => {
     vi.mocked(runTests).mockResolvedValueOnce(report);
@@ -389,8 +390,11 @@ it.each(cells)('$from + $event', async ({ from, event, expected }) => {
     .soft(actual.evidence.reds.map(({ behavior }) => behavior.behavior).toSorted())
     .toEqual(expected.reds);
   expect.soft(actual.evidence).toHaveProperty('phase', expected.storedPhase);
-  if (!reloading) expect(actual.notice).toBeUndefined();
-  else expect(actual.evidence).toMatchObject({ gateOff, proven });
+  if (!reloading) {
+    expect(actual.notice).toBeUndefined();
+  } else {
+    expect(actual.evidence).toMatchObject({ gateOff, proven });
+  }
 
   if (event === 'testEdit' && (from === 'red' || from === 'green')) {
     expect(actual.staleSinceRed).toContain('behavior.test.ts');
@@ -446,8 +450,12 @@ it.each(cells)('$from + $event', async ({ from, event, expected }) => {
   ) {
     expect(actual.evidence).toEqual(before.evidence);
   }
-  if (event === 'switchKnown') expect(actual.evidence.active).toMatchObject(previous);
-  if (event === 'switchNew') expect(actual.evidence.active).toMatchObject(fresh);
+  if (event === 'switchKnown') {
+    expect(actual.evidence.active).toMatchObject(previous);
+  }
+  if (event === 'switchNew') {
+    expect(actual.evidence.active).toMatchObject(fresh);
+  }
   // Protected paths remain blocked even for RED and migrated gate-off evidence.
   for (const path of protectedPaths) {
     expect(
