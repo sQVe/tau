@@ -81,7 +81,8 @@ const committedTitles = async (cwd: string, file: string): Promise<string | null
   try {
     const { stdout } = await execFile(
       'git',
-      ['show', `HEAD:${relative(cwd, resolve(cwd, file)).split(sep).join('/')}`],
+      // `./` makes git read the path from cwd; a bare path always resolves from the repository root.
+      ['show', `HEAD:./${relative(cwd, resolve(cwd, file)).split(sep).join('/')}`],
       {
         cwd,
         maxBuffer: 16 * 1024 * 1024,
@@ -98,12 +99,14 @@ const templatePatterns = (content: string): RegExp[] =>
   [...content.matchAll(/(['"`])([^'"`\n]*)\1/g)]
     .map((match) => match[2] ?? '')
     .filter((title) => /%[sdifjo#$]|\$[\w.]+/.test(title))
+    // A title that is only placeholders matches every name, so it proves nothing about any test.
+    .filter((title) => title.replace(/%[sdifjo#$]|\$[\w.]+/g, '').trim().length > 0)
     .map(
       (title) =>
         new RegExp(
           `^${title
             .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-            .replace(/%[sdifjo#]|\\\$[\w.]+/g, '.+?')
+            .replace(/%[sdifjo#]|%\\\$|\\\$[\w.]+/g, '.+?')
             .replace(/%%/g, '%')}$`,
         ),
     );

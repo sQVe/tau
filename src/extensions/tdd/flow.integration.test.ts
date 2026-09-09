@@ -1012,8 +1012,13 @@ it('counts the tests in required files that never failed on the full run', async
 it('does not report committed tests as never failed', async () => {
   const { cwd, run, call } = await createMissingRedHarness();
   const git = (args: string[]) =>
-    promisify(execFile)('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd });
-  const committed = `${UNRELATED_PASSING_TEST} it.each(['skipped', 'missing'])('explains a %s case', () => {}); it.each([{ name: 'x' }])('handles $name', () => {});`;
+    promisify(execFile)(
+      'git',
+      ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args],
+      { cwd },
+    );
+  // The lone `'$schema'` literal is all placeholder: it must not read as a title matching every test.
+  const committed = `${UNRELATED_PASSING_TEST} const key = '$schema'; it.each(['skipped', 'missing'])('explains a %s case', () => {}); it.each([{ name: 'x' }])('handles $name', () => {}); it.each([1, 2])('counts case %$', () => {});`;
   await writeFile(join(cwd, 'behavior.test.ts'), committed);
   await git(['add', 'behavior.test.ts']);
   await git(['commit', '-qm', 'existing']);
@@ -1033,7 +1038,7 @@ it('does not report committed tests as never failed', async () => {
   expect((await run()).details.phase).toBe('green');
   const full = await run({ scope: 'full' });
   expect(full.content[0]!.text).toContain(
-    '5 of 6 tests in the required files were proven RED or committed before; never failed: behavior.test.ts › ride along',
+    '7 of 8 tests in the required files were proven RED or committed before; never failed: behavior.test.ts › ride along',
   );
 });
 
