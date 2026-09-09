@@ -10,6 +10,7 @@ import type { createEvidenceStore } from './state.js';
 import type { Phase } from './types.js';
 
 const phases: Phase[] = ['locked', 'red', 'green', 'verified'];
+
 const createStore = (phase: Phase, notice?: string) => ({
   read: vi.fn<ReturnType<typeof createEvidenceStore>['read']>(() =>
     Promise.resolve({
@@ -34,6 +35,7 @@ const createStore = (phase: Phase, notice?: string) => ({
     }),
   ),
 });
+
 const makeEvent = (toolName: string, input: Record<string, unknown>): ToolCallEvent => ({
   type: 'tool_call',
   toolCallId: 'call-1',
@@ -44,26 +46,55 @@ const makeEvent = (toolName: string, input: Record<string, unknown>): ToolCallEv
 it('allows an empty new production file before RED without allowing implementation or erasure', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-guard-'));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+
   await mkdir(join(cwd, 'src'));
+
   const store = createStore('locked');
+
   const write = (path: string, content: string) =>
     guardToolCall(makeEvent('write', { path, content }), cwd, store);
   expect(await write('src/new.ts', '')).toBeUndefined();
   expect((await write('src/new.ts', 'export const value = 1;'))?.block).toBe(true);
+
   await writeFile(join(cwd, 'src/existing.ts'), 'export const value = 1;');
+
   expect((await write('src/existing.ts', ''))?.block).toBe(true);
   expect((await write('vitest.config.ts', ''))?.block).toBe(true);
+
   await symlink('../vitest.config.ts', join(cwd, 'src/config.ts'));
-  expect((await write('src/config.ts', ''))?.block).toBe(true);
+
+  await expect(write('src/config.ts', '')).rejects.toThrow('dangling symlink');
+});
+
+it('rejects dangling symlinks before they can create protected files', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-guard-'));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+
+  await symlink('vitest.config.ts', join(cwd, 'alias.ts'));
+  await symlink('.tau', join(cwd, 'state'));
+
+  for (const path of ['alias.ts', 'state/state.json']) {
+    for (const notice of [undefined, 'TDD gate off']) {
+      await expect(
+        guardToolCall(
+          makeEvent('write', { path, content: 'changed' }),
+          cwd,
+          createStore('green', notice),
+        ),
+      ).rejects.toThrow('dangling symlink');
+    }
+  }
 });
 
 it('protects both symlink spellings and configuration targets', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-guard-'));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+
   await writeFile(join(cwd, 'shared-config.ts'), 'export default {};');
   await symlink('shared-config.ts', join(cwd, 'vitest.config.ts'));
   await writeFile(join(cwd, 'vite.config.ts'), 'export default {};');
   await symlink('vite.config.ts', join(cwd, 'alias.ts'));
+
   for (const path of ['vitest.config.ts', 'alias.ts']) {
     for (const tool of ['write', 'edit']) {
       expect(
@@ -85,6 +116,7 @@ it.each(phases)('allows test writes, including colocated tests, in %s', async (p
 
 it.each(phases)('allows production writes while no test runner resolves in %s', async (phase) => {
   const store = createStore(phase, 'no test runner resolves from /repo');
+
   for (const tool of ['write', 'edit']) {
     expect(
       await guardToolCall(makeEvent(tool, { path: 'src/value.ts' }), '/repo', store),
@@ -94,6 +126,7 @@ it.each(phases)('allows production writes while no test runner resolves in %s', 
 
 it.each(phases)('keeps protected paths blocked with no runner in %s', async (phase) => {
   const store = createStore(phase, 'no test runner resolves from /repo');
+
   for (const [path, next] of [
     ['.tau/state.json', 'Choose an unprotected test file with ls {"path":"."}'],
     ['package.json', 'Choose an unprotected test file with ls {"path":"."}'],
@@ -101,6 +134,7 @@ it.each(phases)('keeps protected paths blocked with no runner in %s', async (pha
     ['~/value.ts', 'List literal worktree paths with ls {"path":"."}'],
   ]) {
     const result = await guardToolCall(makeEvent('write', { path }), '/repo', store);
+
     expect(result?.block).toBe(true);
     expect(result?.reason).toContain(next);
   }
@@ -129,6 +163,7 @@ it.each(phases)('blocks evidence and verification configuration writes in %s', a
   ]) {
     for (const tool of ['write', 'edit']) {
       const result = await guardToolCall(makeEvent(tool, { path }), '/repo', createStore(phase));
+
       expect(result?.block).toBe(true);
       expect(result?.reason).toContain(path);
       expect(result?.reason).toContain(phase);
@@ -154,6 +189,7 @@ it.each(phases)('blocks unrecognized tools carrying path arguments in %s', async
     { changes: [{ targetPath: 'src/value.ts' }] },
   ]) {
     const result = await guardToolCall(makeEvent('mcp_patch', input), '/repo', createStore(phase));
+
     expect(result?.block).toBe(true);
     expect(result?.reason).toContain('src/value');
     expect(result?.reason).toContain(phase);
@@ -167,6 +203,7 @@ it.each(phases)(
   'passes read-only tools, shell commands, questions, and commit hooks through in %s',
   async (phase) => {
     const store = createStore(phase);
+
     for (const tool of [
       'read',
       'bash',
@@ -193,6 +230,7 @@ it.each(phases)(
         ),
       ).toBeUndefined();
     }
+
     expect(store.read).not.toHaveBeenCalled();
   },
 );
@@ -208,6 +246,7 @@ it.each(phases)('blocks unrecognized tools without path arguments in %s', async 
       '/repo',
       createStore(phase),
     );
+
     expect(result?.block).toBe(true);
     expect(result?.reason).toContain(phase);
     expect(result?.reason).toContain('required behavior');
@@ -239,6 +278,7 @@ it('blocks backslash-separated protected paths', async () => {
     '/repo',
     createStore('red'),
   );
+
   expect(result?.block).toBe(true);
   expect(result?.reason).toContain('Choose an unprotected test file with ls {"path":"."}');
 });
@@ -250,6 +290,7 @@ it.each(phases)('uses the stored implementation decision in %s', async (phase) =
     '/repo',
     store,
   );
+
   expect(result?.block === true).toBe(phase !== 'red' && phase !== 'green');
   expect(store.read).toHaveBeenCalledExactlyOnceWith('/repo');
 });
@@ -261,6 +302,7 @@ it('checks the actual built-in target even when another path argument comes firs
       '/repo',
       createStore('red'),
     );
+
     expect(result?.block).toBe(true);
     expect(result?.reason).toContain('package.json');
   }
@@ -274,6 +316,7 @@ it('requires literal paths instead of Pi aliases that can bypass path checks', a
     '@../outside.test.ts',
   ]) {
     const result = await guardToolCall(makeEvent('write', { path }), '/repo', createStore('red'));
+
     expect(result?.block).toBe(true);
     expect(result?.reason).toContain(path);
     expect(result?.reason).toContain('List literal worktree paths with ls {"path":"."}');
@@ -295,6 +338,7 @@ it.each([
     '/repo',
     createStore(phase),
   );
+
   expect(result?.reason).toBe(
     `Blocked src/value.ts in phase ${phase}, active behavior: required behavior. ${next}.`,
   );
@@ -305,6 +349,7 @@ it('requests a failing test when no behavior is active', async () => {
   const state = await store.read('/repo');
   store.read.mockResolvedValue({ ...state, evidence: { ...state.evidence, active: null } });
   const result = await guardToolCall(makeEvent('write', { path: 'src/value.ts' }), '/repo', store);
+
   expect(result?.reason).toBe(
     'Blocked src/value.ts in phase locked, active behavior: none. Write a failing test with write using path "src/value.test.ts" and content that checks the missing behavior.',
   );
@@ -315,16 +360,20 @@ it('gates a production file addressed through a symlinked spelling of the worktr
   onTestFinished(() => rm(root, { recursive: true, force: true }));
   const real = join(root, 'real');
   const link = join(root, 'link');
+
   await mkdir(join(real, 'src'), { recursive: true });
   await symlink(real, link, 'dir');
+
   for (const [cwd, path] of [
     [link, join(real, 'src/value.ts')],
     [real, join(link, 'src/value.ts')],
     [real, join(link, 'src/new/value.ts')],
   ] as const) {
     const result = await guardToolCall(makeEvent('write', { path }), cwd, createStore('locked'));
+
     expect(result?.block, `${cwd} ${path}`).toBe(true);
   }
+
   expect(
     await guardToolCall(
       makeEvent('write', { path: join(root, 'src/value.ts') }),
