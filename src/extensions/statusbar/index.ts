@@ -7,16 +7,16 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { footerTheme } from './colors.js';
 import { renderFooterLine } from './render.js';
 
-const exec = promisify(execFile);
+const executeFile = promisify(execFile);
 
-// A hung git call must never stall the footer, and a tree large enough to overrun the buffer is
-// past the point where an exact answer is worth waiting for.
+// Bound background Git work. Failures leave the dirty marker hidden.
 const GIT_TIMEOUT_MS = 5000;
 const GIT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 
-const sessionCost = (ctx: ExtensionContext): number => {
+const getSessionCost = (context: ExtensionContext): number => {
   let cost = 0;
-  for (const entry of ctx.sessionManager.getEntries()) {
+
+  for (const entry of context.sessionManager.getEntries()) {
     if (
       entry.type === 'message' &&
       (entry.message.role === 'assistant' || entry.message.role === 'toolResult')
@@ -26,6 +26,7 @@ const sessionCost = (ctx: ExtensionContext): number => {
       cost += entry.usage?.cost.total ?? 0;
     }
   }
+
   return cost;
 };
 
@@ -33,44 +34,54 @@ export default function statusbarExtension(pi: ExtensionAPI) {
   let dirty = false;
   let requestRender: (() => void) | undefined;
   let refreshId = 0;
-  const refresh = async (ctx: ExtensionContext) => {
-    const id = ++refreshId;
+
+  const refreshDirty = async (context: ExtensionContext) => {
+    refreshId += 1;
+    const currentRefreshId = refreshId;
     let nextDirty = false;
+
     try {
-      // Ask for untracked files outright: status.showUntrackedFiles=no would otherwise hide a new
-      // file and leave the marker off.
-      const { stdout } = await exec('git', ['status', '--porcelain', '--untracked-files=normal'], {
-        cwd: ctx.cwd,
-        timeout: GIT_TIMEOUT_MS,
-        maxBuffer: GIT_MAX_BUFFER_BYTES,
-      });
+      // Override status.showUntrackedFiles so new files always count as dirty.
+      const { stdout } = await executeFile(
+        'git',
+        ['status', '--porcelain', '--untracked-files=normal'],
+        {
+          cwd: context.cwd,
+          timeout: GIT_TIMEOUT_MS,
+          maxBuffer: GIT_MAX_BUFFER_BYTES,
+        },
+      );
       nextDirty = stdout.length > 0;
     } catch {
       // Outside a repository, or when git fails, show no dirty marker.
     }
-    // A slower earlier request must not replace a newer result or update a disposed footer.
-    if (id !== refreshId) {
+
+    // Ignore results from older requests and disposed footers.
+    if (currentRefreshId !== refreshId) {
       return;
     }
+
     dirty = nextDirty;
     requestRender?.();
   };
 
-  pi.on('session_start', (_event, ctx) => {
-    if (ctx.mode !== 'tui') {
+  pi.on('session_start', (_event, context) => {
+    if (context.mode !== 'tui') {
       return;
     }
 
-    // Install the footer first. Awaiting git here would hold up the TUI for as long as the timeout
-    // allows, and the marker only needs the render that lands with the result.
-    void refresh(ctx);
-    ctx.ui.setFooter((tui, _theme, footerData) => {
+    context.ui.setFooter((terminal, _theme, footerData) => {
+      dirty = false;
       requestRender = () => {
-        tui.requestRender();
+        terminal.requestRender();
       };
       const unsubscribe = footerData.onBranchChange(() => {
-        void refresh(ctx);
+        void refreshDirty(context);
       });
+
+      // Pi disposes the old footer before calling this factory. Start after that disposal.
+      void refreshDirty(context);
+
       return {
         dispose() {
           unsubscribe();
@@ -81,18 +92,19 @@ export default function statusbarExtension(pi: ExtensionAPI) {
           // No render cache: session values are read on every render.
         },
         render(width) {
-          const usage = ctx.getContextUsage();
+          const usage = context.getContextUsage();
+
           return [
             renderFooterLine(
               {
-                directory: ctx.cwd.split(sep).filter(Boolean).slice(-2).join(sep) || sep,
+                directory: context.cwd.split(sep).filter(Boolean).slice(-2).join(sep) || sep,
                 branch: footerData.getGitBranch(),
                 dirty,
-                cost: sessionCost(ctx),
+                cost: getSessionCost(context),
                 contextPercent: usage?.percent ?? null,
-                contextWindow: usage?.contextWindow ?? ctx.model?.contextWindow ?? 0,
-                modelId: ctx.model?.id ?? 'no-model',
-                thinkingLevel: ctx.model?.reasoning ? pi.getThinkingLevel() : undefined,
+                contextWindow: usage?.contextWindow ?? context.model?.contextWindow ?? 0,
+                modelId: context.model?.id ?? 'no-model',
+                thinkingLevel: context.model?.reasoning ? pi.getThinkingLevel() : undefined,
               },
               width,
               footerTheme,
@@ -102,11 +114,11 @@ export default function statusbarExtension(pi: ExtensionAPI) {
       };
     });
   });
-  // Pi awaits every handler before the tool result reaches the model, so the git call stays off
-  // the agent's critical path. The refreshId guard already makes a late result safe to drop.
-  pi.on('tool_result', (_event, ctx) => {
-    if (ctx.mode === 'tui') {
-      void refresh(ctx);
+
+  // Pi awaits tool_result handlers, so Git must run in the background.
+  pi.on('tool_result', (_event, context) => {
+    if (context.mode === 'tui' && requestRender !== undefined) {
+      void refreshDirty(context);
     }
   });
 }

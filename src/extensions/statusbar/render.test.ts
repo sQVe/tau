@@ -1,7 +1,10 @@
+import { stripVTControlCharacters } from 'node:util';
+
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 import { describe, expect, it, vi } from 'vitest';
 
+import { footerTheme } from './colors.js';
 import { renderFooterLine } from './render.js';
 
 const input = {
@@ -14,13 +17,35 @@ const input = {
   modelId: 'model',
   thinkingLevel: undefined,
 };
-const fg = vi.fn<Theme['fg']>((_color, text) => text);
-const theme = { fg };
+const foreground = vi.fn<Theme['fg']>((_color, text) => text);
+const theme = { fg: foreground };
 
 describe('statusbar rendering', () => {
+  it('renders external text without terminal controls or extra lines', () => {
+    const line = renderFooterLine(
+      {
+        ...input,
+        directory: 'tau/line\nbreak',
+        branch: '\x1b[31mmain\x1b[0m',
+        modelId: 'model\tname\x1b[2J',
+      },
+      100,
+      footerTheme,
+    );
+    const text = stripVTControlCharacters(line);
+
+    expect(text).toContain('tau/line break  main');
+    expect(text).toContain('model name');
+    expect(text).not.toMatch(/[\n\r\t]/);
+    expect(line).not.toContain('\x1b[31m');
+    expect(line).not.toContain('\x1b[2J');
+    expect(visibleWidth(line)).toBe(100);
+  });
+
   it('aligns groups and truncates the right group before the left', () => {
     const left = 'tau/abu-347  main';
     const right = '$0.412  23.4%/200k  model';
+
     expect(renderFooterLine(input, 80, theme)).toBe(
       left + ' '.repeat(80 - left.length - right.length) + right,
     );
@@ -31,30 +56,30 @@ describe('statusbar rendering', () => {
     expect(renderFooterLine(input, 0, theme)).toBe('');
     expect(visibleWidth(renderFooterLine({ ...input, directory: '界/界' }, 25, theme))).toBe(25);
   });
-  it('keeps the line within the width once the colors are real escape codes', () => {
-    // The identity fg above takes truncateToWidth's plain-ASCII path, which production never does.
-    const colored = { fg: (color, text) => `\x1b[38;2;1;2;3m${text}\x1b[39m` } satisfies Pick<
-      Theme,
-      'fg'
-    >;
-    // The line is only guaranteed to fit the width. It fills it when the right group survives.
+
+  it('keeps colored text within the width', () => {
+    // ANSI truncation uses a different path from plain-text truncation.
     for (let width = 1; width <= 80; width += 1) {
-      expect(visibleWidth(renderFooterLine(input, width, colored))).toBeLessThanOrEqual(width);
+      expect(visibleWidth(renderFooterLine(input, width, footerTheme))).toBeLessThanOrEqual(width);
     }
+
     for (const width of [80, 40, 24]) {
-      expect(visibleWidth(renderFooterLine(input, width, colored))).toBe(width);
+      expect(visibleWidth(renderFooterLine(input, width, footerTheme))).toBe(width);
     }
   });
+
   it('colors the directory branch and dirty marker and omits missing branches', () => {
-    fg.mockClear();
+    foreground.mockClear();
+
     expect(renderFooterLine({ ...input, dirty: true }, 80, theme)).toContain('main*');
-    expect(fg).toHaveBeenCalledWith('dim', 'tau/abu-347');
-    expect(fg).toHaveBeenCalledWith('accent', 'main');
-    expect(fg).toHaveBeenCalledWith('warning', '*');
+    expect(foreground).toHaveBeenCalledWith('dim', 'tau/abu-347');
+    expect(foreground).toHaveBeenCalledWith('accent', 'main');
+    expect(foreground).toHaveBeenCalledWith('warning', '*');
     expect(renderFooterLine({ ...input, branch: null, dirty: true }, 80, theme)).not.toMatch(
       /main|\*/,
     );
   });
+
   it('colors context at strict thresholds and shows unknown context', () => {
     for (const [percent, color] of [
       [70, 'text'],
@@ -62,11 +87,17 @@ describe('statusbar rendering', () => {
       [90, 'warning'],
       [90.1, 'error'],
     ] as const) {
-      fg.mockClear();
+      foreground.mockClear();
+
       renderFooterLine({ ...input, contextPercent: percent }, 80, theme);
-      expect(fg).toHaveBeenCalledWith(color, `${percent.toFixed(1)}%/200k`);
+
+      expect(foreground).toHaveBeenCalledWith(color, `${percent.toFixed(1)}%/200k`);
     }
+
     expect(renderFooterLine({ ...input, contextPercent: null }, 80, theme)).toContain('?/200k');
+  });
+
+  it('formats context window sizes', () => {
     for (const [contextWindow, text] of [
       [999, '999'],
       [1500, '1.5k'],
@@ -77,6 +108,7 @@ describe('statusbar rendering', () => {
       expect(renderFooterLine({ ...input, contextWindow }, 80, theme)).toContain(`/${text}`);
     }
   });
+
   it('shows each thinking level with its color only when supplied', () => {
     for (const [thinkingLevel, color] of [
       ['off', 'thinkingOff'],
@@ -87,12 +119,14 @@ describe('statusbar rendering', () => {
       ['xhigh', 'thinkingXhigh'],
       ['max', 'thinkingMax'],
     ] as const) {
-      fg.mockClear();
+      foreground.mockClear();
+
       expect(renderFooterLine({ ...input, thinkingLevel }, 80, theme)).toContain(
         `model • ${thinkingLevel}`,
       );
-      expect(fg).toHaveBeenCalledWith(color, `• ${thinkingLevel}`);
+      expect(foreground).toHaveBeenCalledWith(color, `• ${thinkingLevel}`);
     }
+
     expect(renderFooterLine(input, 80, theme)).not.toContain('•');
   });
 });

@@ -67,9 +67,14 @@ approval. Interactive commits need credentials for the session model; automated 
 provider and make no model API calls.
 
 The statusbar replaces Pi's terminal footer with one line. It shows the last two directory
-components and Git branch on the left, with a dirty marker after file changes. Cost, context usage,
-model, and thinking level sit on the right. Context usage changes color above 70% and 90%. The right
-group truncates first on narrow terminals. Extension statuses are not shown.
+components and Git branch on the left. Cost, context usage, model, and thinking level sit on the
+right. Context usage changes color above 70% and 90%. The right group truncates first on narrow
+terminals. Extension statuses are not shown. Use `run_tests` or `/tdd status` for TDD feedback.
+
+The dirty marker refreshes in the background at startup, after tool results, and on branch changes.
+It includes untracked files. At startup, the marker stays hidden until Git answers. Git failures
+hide the marker. File changes outside Pi appear after the next refresh; the footer does not watch
+files.
 
 The footer uses a fixed Catppuccin Latte (Muted) palette, separate from Pi's theme. The directory is
 dim gray, the branch is teal, and warnings use ochre yellow. It keeps the terminal's background
