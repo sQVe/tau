@@ -82,13 +82,16 @@ export const checkProject = async (
 
     // ponytail: root dependencies are shared; workspace-aware installs need a separate checkout strategy.
     const dependencies = join(root, 'node_modules');
-    const dependenciesExist = await access(dependencies).then(
-      () => true,
-      () => false,
-    );
+    const exists = (path: string) =>
+      access(path).then(
+        () => true,
+        () => false,
+      );
+    const candidateDependencies = join(candidate, 'node_modules');
 
-    if (dependenciesExist) {
-      await symlink(dependencies, join(candidate, 'node_modules'), 'junction');
+    // A tracked node_modules is already checked out, and its staged content is what the check must see.
+    if ((await exists(dependencies)) && !(await exists(candidateDependencies))) {
+      await symlink(dependencies, candidateDependencies, 'junction');
     }
 
     await run(manager, ['run', 'check'], candidate);

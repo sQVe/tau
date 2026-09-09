@@ -205,7 +205,30 @@ it('checks the first commit and leaves unrelated working changes untouched', asy
   expect(result.details.groups[0]?.projectCheck).toContain('Project check passed');
   expect(await readFile(join(repo, 'unrelated.txt'), 'utf8')).toBe('Leave this alone.');
   expect(await git(repo, ['ls-tree', '--name-only', 'HEAD'])).not.toContain('unrelated.txt');
-});
+}, 30_000);
+
+it('checks a staged tree that tracks node_modules', async () => {
+  const repo = await createTempRepo();
+
+  await writeRepoFile(
+    repo,
+    'package.json',
+    JSON.stringify({ scripts: { check: 'node check.cjs' } }),
+  );
+  await writeRepoFile(repo, 'check.cjs', "require('./node_modules/vendored.cjs');");
+  await writeRepoFile(repo, 'node_modules/vendored.cjs', 'module.exports = 1;');
+
+  const result = await executeCommit(repo, {
+    groups: [
+      {
+        files: ['package.json', 'check.cjs', 'node_modules/vendored.cjs'],
+        subject: 'feat: vendored dependency',
+      },
+    ],
+  });
+
+  expect(result.details.groups[0]?.projectCheck).toContain('Project check passed');
+}, 30_000);
 
 it('returns cancelled when aborted while the project check runs', async () => {
   const repo = await createTempRepo();
