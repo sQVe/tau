@@ -118,25 +118,30 @@ export const runnerAvailable = (cwd: string): boolean => {
   }
 };
 
-const nodeOnPath = (path = process.env.PATH ?? '') =>
-  path.split(delimiter).some((directory) => {
-    try {
-      const executable = join(directory, process.platform === 'win32' ? 'node.exe' : 'node');
-      accessSync(executable, constants.X_OK);
+// Debian-family systems name the runtime `nodejs`, so both spellings count as a Node command.
+const nodeNames = process.platform === 'win32' ? ['node.exe'] : ['node', 'nodejs'];
 
-      return statSync(executable).isFile();
-    } catch {
-      return false;
-    }
-  });
+const nodeOnPath = (path = process.env.PATH ?? '') =>
+  path
+    .split(delimiter)
+    .flatMap((directory) => nodeNames.map((name) => join(directory, name)))
+    .find((executable) => {
+      try {
+        accessSync(executable, constants.X_OK);
+
+        return statSync(executable).isFile();
+      } catch {
+        return false;
+      }
+    });
 
 // Pi ships as a compiled executable, so execPath is the agent itself there and would parse
 // vitest's flags as its own. A Node named anything else, such as `nodejs`, still runs vitest, so
-// only trade it for `node` when a `node` command actually exists.
+// only trade it for a discovered Node when one actually exists.
 export const nodeExecutable = (execPath = process.execPath) =>
-  /^node(\.exe)?$/i.test(basename(execPath.replaceAll('\\', '/'))) || !nodeOnPath()
+  /^node(\.exe)?$/i.test(basename(execPath.replaceAll('\\', '/')))
     ? execPath
-    : 'node';
+    : (nodeOnPath() ?? execPath);
 
 export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
   new Promise<SpawnResult>((resolve) => {

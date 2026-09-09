@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -961,13 +961,27 @@ describe('nodeExecutable', () => {
     expect(nodeExecutable('/usr/bin/nodejs')).toBe('/usr/bin/nodejs');
   });
 
-  it('keeps a node executable and falls back to node on PATH for a compiled agent', () => {
+  it.each(['node', 'nodejs'])('finds %s on PATH for a compiled agent', async (name) => {
+    const directory = await mkdtemp(join(tmpdir(), 'tau-node-'));
+    onTestFinished(async () => {
+      vi.unstubAllEnvs();
+      await rm(directory, { recursive: true, force: true });
+    });
+
+    const executable = join(directory, process.platform === 'win32' ? `${name}.exe` : name);
+    await writeFile(executable, '');
+    await chmod(executable, 0o755);
+    vi.stubEnv('PATH', directory);
+
+    expect(nodeExecutable('/usr/bin/pi')).toBe(executable);
+    expect(nodeExecutable('/opt/pi-coding-agent/pi')).toBe(executable);
+  });
+
+  it('keeps a node executable regardless of PATH', () => {
     expect(nodeExecutable('/usr/bin/node')).toBe('/usr/bin/node');
     expect(nodeExecutable('C:\\Program Files\\nodejs\\node.exe')).toBe(
       'C:\\Program Files\\nodejs\\node.exe',
     );
-    expect(nodeExecutable('/usr/bin/pi')).toBe('node');
-    expect(nodeExecutable('/opt/pi-coding-agent/pi')).toBe('node');
   });
 
   it('keeps a nonstandard node name when no node command resolves', () => {
