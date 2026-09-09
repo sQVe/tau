@@ -37,7 +37,11 @@ describe('statusbar rendering', () => {
       Theme,
       'fg'
     >;
-    for (const width of [80, 40, 24, 12, 8, 1]) {
+    // The line is only guaranteed to fit the width. It fills it when the right group survives.
+    for (let width = 1; width <= 80; width += 1) {
+      expect(visibleWidth(renderFooterLine(input, width, colored))).toBeLessThanOrEqual(width);
+    }
+    for (const width of [80, 40, 24]) {
       expect(visibleWidth(renderFooterLine(input, width, colored))).toBe(width);
     }
   });
