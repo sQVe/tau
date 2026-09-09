@@ -207,6 +207,38 @@ it('checks the first commit and leaves unrelated working changes untouched', asy
   expect(await git(repo, ['ls-tree', '--name-only', 'HEAD'])).not.toContain('unrelated.txt');
 });
 
+it('returns cancelled when aborted while the project check runs', async () => {
+  const repo = await createTempRepo();
+  const controller = new AbortController();
+
+  await writeRepoFile(
+    repo,
+    'package.json',
+    JSON.stringify({ scripts: { check: 'node check.cjs' } }),
+  );
+  await writeRepoFile(repo, 'check.cjs', '');
+
+  const commitTool = createCommitTool({
+    exec(command: string, args: string[], options?: { cwd?: string }) {
+      if (args.includes('run') && args.includes('check')) {
+        controller.abort();
+      }
+
+      return runCommand(command, args, options?.cwd ?? repo);
+    },
+  });
+
+  const result = await commitTool.execute(
+    'tool-call-1',
+    { groups: [{ files: ['package.json', 'check.cjs'], subject: 'feat: check' }] },
+    controller.signal,
+    undefined,
+    confirmedContext(repo),
+  );
+
+  expect(result.content[0]).toEqual({ type: 'text', text: 'Commit cancelled' });
+});
+
 it('rejects check-time formatting without modifying the working file', async () => {
   const repo = await createTempRepo();
 

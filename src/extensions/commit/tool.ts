@@ -385,7 +385,15 @@ const executeGroup = async (
       return cancelled();
     }
 
-    projectCheck = await checkProject(pi, ctx.cwd, reviewedTree, signal);
+    try {
+      projectCheck = await checkProject(pi, ctx.cwd, reviewedTree, signal);
+    } catch (error) {
+      if (signal?.aborted) {
+        return cancelled();
+      }
+
+      throw error;
+    }
 
     const reviewedBaseTree = await treeOf(pi, ctx.cwd, reviewedHead, signal);
     reviewGroup = JSON.stringify([ctx.cwd, reviewedHead, [...requestedFiles].toSorted()]);
