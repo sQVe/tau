@@ -1,5 +1,5 @@
 import { spawn as nodeSpawn } from 'node:child_process';
-import { statSync } from 'node:fs';
+import { accessSync, constants, statSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -61,30 +61,37 @@ interface VitestReport {
 
 const nodeRequire = createRequire(import.meta.url);
 
-export const extractBinPath = (pkg: unknown): string | null => {
-  if (pkg == null || typeof pkg !== 'object') {
+export const extractBinPath = (manifest: unknown): string | null => {
+  if (manifest == null || typeof manifest !== 'object') {
     return null;
   }
-  const bin: unknown = (pkg as { bin?: unknown }).bin;
-  if (typeof bin === 'string') {
-    return bin;
+
+  const binary: unknown = (manifest as { bin?: unknown }).bin;
+
+  if (typeof binary === 'string') {
+    return binary;
   }
-  if (bin == null || typeof bin !== 'object') {
+
+  if (binary == null || typeof binary !== 'object') {
     return null;
   }
-  const entry: unknown = (bin as { vitest?: unknown }).vitest;
+
+  const entry: unknown = (binary as { vitest?: unknown }).vitest;
+
   return typeof entry === 'string' ? entry : null;
 };
 
 export const defaultResolveVitest: ResolveVitestFn = (cwd) => {
   try {
-    const pkgPath = nodeRequire.resolve('vitest/package.json', { paths: [cwd] });
-    const pkg: unknown = nodeRequire(pkgPath);
-    const binRel = extractBinPath(pkg);
-    if (binRel == null) {
+    const manifestPath = nodeRequire.resolve('vitest/package.json', { paths: [cwd] });
+    const manifest: unknown = nodeRequire(manifestPath);
+    const binaryPath = extractBinPath(manifest);
+
+    if (binaryPath == null) {
       return null;
     }
-    return join(dirname(pkgPath), binRel);
+
+    return join(dirname(manifestPath), binaryPath);
   } catch {
     return null;
   }
@@ -96,6 +103,7 @@ export const runnerAvailable = (cwd: string): boolean => {
   for (let directory = resolvePath(cwd); ; directory = dirname(directory)) {
     try {
       statSync(join(directory, 'node_modules', 'vitest', 'package.json'));
+
       return true;
     } catch (error) {
       // Only a missing file proves absence; a transient EACCES or EMFILE must not turn the gate off.
@@ -103,6 +111,7 @@ export const runnerAvailable = (cwd: string): boolean => {
         return true;
       }
     }
+
     if (dirname(directory) === directory) {
       return false;
     }
@@ -112,8 +121,10 @@ export const runnerAvailable = (cwd: string): boolean => {
 const nodeOnPath = (path = process.env.PATH ?? '') =>
   path.split(delimiter).some((directory) => {
     try {
-      statSync(join(directory, process.platform === 'win32' ? 'node.exe' : 'node'));
-      return true;
+      const executable = join(directory, process.platform === 'win32' ? 'node.exe' : 'node');
+      accessSync(executable, constants.X_OK);
+
+      return statSync(executable).isFile();
     } catch {
       return false;
     }
@@ -127,13 +138,13 @@ export const nodeExecutable = (execPath = process.execPath) =>
     ? execPath
     : 'node';
 
-export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
+export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
   new Promise<SpawnResult>((resolve) => {
     // detached lets the timeout path signal the whole process group on POSIX.
     // Windows has no equivalent; we fall back to child.kill there.
     const useProcessGroup = process.platform !== 'win32';
-    const child = nodeSpawn(nodeExecutable(), [cmd, ...args], {
-      cwd: opts.cwd,
+    const child = nodeSpawn(nodeExecutable(), [command, ...arguments_], {
+      cwd: options.cwd,
       detached: useProcessGroup,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -150,23 +161,29 @@ export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
 
     const cap = (chunk: Buffer, decoder: StringDecoder, current: string): string => {
       const remaining = MAX_TOTAL_BYTES - bytes;
+
       if (remaining <= 0) {
         return current;
       }
+
       const slice = chunk.length > remaining ? chunk.subarray(0, remaining) : chunk;
       bytes += slice.length;
+
       return current + decoder.write(slice);
     };
 
     let settled = false;
+
     const settle = (code: number | null) => {
       if (settled) {
         return;
       }
+
       settled = true;
       clearTimeout(timer);
       stdout += stdoutDecoder.end();
       stderr += stderrDecoder.end();
+
       resolve({ stdout, stderr, code, timedOut, stdoutOverflow });
     };
 
@@ -182,18 +199,27 @@ export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
       }
     };
 
+    const abort = () => {
+      kill();
+      settle(null);
+    };
+
     child.stdout.on('data', (chunk: Buffer) => {
       // The JSON report must remain complete; bound failure messages after parsing.
       // Past the cap the report can no longer be trusted, so stop instead of parsing it.
       stdoutBytes += chunk.length;
+
       if (stdoutBytes > MAX_STDOUT_BYTES) {
         stdoutOverflow = true;
         kill();
         settle(null);
+
         return;
       }
+
       stdout += stdoutDecoder.write(chunk);
     });
+
     child.stderr.on('data', (chunk: Buffer) => {
       stderr = cap(chunk, stderrDecoder, stderr);
     });
@@ -204,7 +230,7 @@ export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
       timedOut = true;
       kill();
       settle(null);
-    }, opts.timeoutMs);
+    }, options.timeoutMs);
     timer.unref();
 
     child.on('close', settle);
@@ -212,14 +238,10 @@ export const defaultSpawn: SpawnFn = (cmd, args, opts) =>
       settle(null);
     });
 
-    const abort = () => {
-      kill();
-      settle(null);
-    };
-    if (opts.signal?.aborted === true) {
+    if (options.signal?.aborted === true) {
       abort();
     } else {
-      opts.signal?.addEventListener('abort', abort, { once: true });
+      options.signal?.addEventListener('abort', abort, { once: true });
     }
   });
 
@@ -228,15 +250,19 @@ const isVitestReport = (value: unknown): value is VitestReport => {
   if (value == null || typeof value !== 'object') {
     return false;
   }
+
   const keys = ['numTotalTests', 'numFailedTests', 'testResults', 'numTotalTestSuites'];
-  return keys.some((k) => k in value);
+
+  return keys.some((key) => key in value);
 };
 
 // The report is read from the reporter's own output file: stdout carries test-controlled
 // text, so a report scraped from it could be forged by the code under test.
 const readReport = async (path: string): Promise<VitestReport | null> => {
   try {
-    const parsed: unknown = JSON.parse(await readFile(path, 'utf8'));
+    const content = await readFile(path, 'utf8');
+    const parsed: unknown = JSON.parse(content);
+
     return isVitestReport(parsed) ? parsed : null;
   } catch {
     return null;
@@ -252,12 +278,15 @@ const selects = (filter: string | undefined) => {
   if (filter == null) {
     return () => true;
   }
+
   let pattern: RegExp;
+
   try {
     pattern = new RegExp(filter);
   } catch {
     return () => true;
   }
+
   return (fullname: string) => pattern.test(fullname);
 };
 
@@ -280,18 +309,24 @@ const collectTests = (
 
 const frameLocation = (line: string, cwd: string): string | null => {
   const trimmed = line.trim();
+
   if (!trimmed.startsWith('at ')) {
     return null;
   }
+
   const match = /\(?([^()\s]+):(\d+):\d+\)?$/.exec(trimmed);
   const path = match?.[1]?.replace(/^file:\/\//, '');
+
   if (path == null || path.includes('node_modules') || !isAbsolute(path)) {
     return null;
   }
+
   const location = relative(cwd, path);
+
   if (location.length === 0 || location.startsWith('..') || isAbsolute(location)) {
     return null;
   }
+
   return `${location}:${match?.[2]}`;
 };
 
@@ -307,9 +342,11 @@ const assertionMessage = (messages: string[], cwd: string): string => {
     .map((line) => frameLocation(line, cwd))
     .find((location) => location != null);
   const headline = raw.split('\n')[0]?.trim() ?? '';
+
   if (headline.length === 0 || headline.includes('STACK_TRACE_ERROR')) {
     return capMessage(frame ?? '');
   }
+
   return capMessage(frame == null ? headline : `${headline} (${frame})`);
 };
 
@@ -322,29 +359,35 @@ const collectFailures = (
 
   for (const file of report.testResults ?? []) {
     // Hook and load errors live only on the file entry, never on an assertion.
-    const hasFailedAssertion = file.assertionResults?.some((a) => a.status === 'failed') === true;
+    const hasFailedAssertion =
+      file.assertionResults?.some((assertion) => assertion.status === 'failed') === true;
     if (file.status === 'failed' && ((file.message ?? '').length > 0 || !hasFailedAssertion)) {
       if (failures.length >= MAX_FAILURES) {
         return { failures, truncated: true };
       }
+
       failures.push({
         file: file.name ?? '<unknown>',
         fullname: '<file>',
         message: assertionMessage([file.message ?? 'load error'], cwd),
       });
     }
-    for (const a of file.assertionResults ?? []) {
-      if (a.status !== 'failed') {
+
+    for (const assertion of file.assertionResults ?? []) {
+      if (assertion.status !== 'failed') {
         continue;
       }
+
       if (failures.length >= MAX_FAILURES) {
         truncated = true;
+
         return { failures, truncated };
       }
+
       failures.push({
         file: file.name ?? '<unknown>',
-        fullname: assertionFullName(a),
-        message: assertionMessage(a.failureMessages ?? [], cwd),
+        fullname: assertionFullName(assertion),
+        message: assertionMessage(assertion.failureMessages ?? [], cwd),
       });
     }
   }
@@ -357,22 +400,28 @@ const collectFailures = (
 const toFilterArg = (path: string) => (path.startsWith('-') ? `./${path}` : path);
 
 const scopedPaths = (input: RunTestsInput): string[] => {
-  const raw = input.scope === 'file' ? [input.path ?? ''] : (input.files ?? []);
-  return raw.filter((path) => path.trim().length > 0);
+  const paths = input.scope === 'file' ? [input.path ?? ''] : (input.files ?? []);
+
+  return paths.filter((path) => path.trim().length > 0);
 };
 
 const buildArgs = (input: RunTestsInput, outputFile: string): string[] | null => {
   const args: string[] = [...tddConfig.verificationArgv.slice(1), `--outputFile=${outputFile}`];
+
   if (input.scope !== 'all') {
     const paths = scopedPaths(input);
+
     if (paths.length === 0) {
       return null;
     }
+
     args.push(...paths.map(toFilterArg));
   }
+
   if (input.filter != null) {
     args.push('-t', input.filter);
   }
+
   return args;
 };
 
@@ -382,36 +431,29 @@ export const defaultDeps = (scope: RunTestsInput['scope'] = 'changed'): RunnerDe
   timeoutMs: scope === 'all' ? FULL_TIMEOUT_MS : DEFAULT_TIMEOUT_MS,
 });
 
-export const runVitest = async (input: RunTestsInput, deps: RunnerDeps): Promise<RunnerResult> => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-vitest-'));
-  try {
-    return await runInDirectory(input, deps, join(directory, 'report.json'));
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-};
-
 const runInDirectory = async (
   input: RunTestsInput,
-  deps: RunnerDeps,
+  dependencies: RunnerDeps,
   outputFile: string,
 ): Promise<RunnerResult> => {
   const args = buildArgs(input, outputFile);
+
   if (args == null) {
     return { kind: 'no-tests-collected', tests: [] };
   }
 
-  const bin = deps.resolveVitest(input.cwd);
-  if (bin == null) {
+  const binary = dependencies.resolveVitest(input.cwd);
+
+  if (binary == null) {
     return {
       kind: 'runner-missing',
       message: 'vitest not resolvable from this worktree',
     };
   }
 
-  const result = await deps.spawn(bin, args, {
+  const result = await dependencies.spawn(binary, args, {
     cwd: input.cwd,
-    timeoutMs: deps.timeoutMs,
+    timeoutMs: dependencies.timeoutMs,
     signal: input.signal,
   });
 
@@ -452,6 +494,7 @@ const runInDirectory = async (
         truncated: false,
       };
     }
+
     return {
       kind: 'compile-error',
       message: 'no parseable report from vitest',
@@ -466,8 +509,9 @@ const runInDirectory = async (
   const failed = report.numFailedTests ?? 0;
   const files = report.testResults ?? [];
 
-  if (failed > 0 || files.some((f) => f.status === 'failed')) {
+  if (failed > 0 || files.some((file) => file.status === 'failed')) {
     const { failures, truncated } = collectFailures(report, input.cwd);
+
     return {
       kind: 'fail',
       failures,
@@ -491,4 +535,17 @@ const runInDirectory = async (
   }
 
   return { kind: 'pass', tests };
+};
+
+export const runVitest = async (
+  input: RunTestsInput,
+  dependencies: RunnerDeps,
+): Promise<RunnerResult> => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-vitest-'));
+
+  try {
+    return await runInDirectory(input, dependencies, join(directory, 'report.json'));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 };

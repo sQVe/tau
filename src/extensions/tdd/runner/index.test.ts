@@ -1,4 +1,4 @@
-import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -17,9 +17,11 @@ import {
 
 const outputFileFrom = (args: string[]) => {
   const flag = args.find((arg) => arg.startsWith('--outputFile='));
+
   if (flag == null) {
     throw new Error('vitest was spawned without an --outputFile flag');
   }
+
   return flag.slice('--outputFile='.length);
 };
 
@@ -29,6 +31,7 @@ const fakeSpawn =
     if (report !== undefined) {
       await writeFile(outputFileFrom(args), JSON.stringify(report));
     }
+
     return {
       stdout: '',
       stderr: '',
@@ -49,6 +52,7 @@ describe('runTests', () => {
   it('returns every test identity and status from a real four-status fixture', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
     const file = join(cwd, 'statuses.test.ts');
+
     try {
       await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
       await writeFile(
@@ -95,9 +99,11 @@ describe('runTests', () => {
       }),
     });
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
     }
+
     expect(result.failures).toHaveLength(MAX_FAILURES);
     expect(result.truncated).toBe(true);
   });
@@ -119,6 +125,7 @@ describe('runTests', () => {
         },
       }),
     });
+
     expect(await runTests({ scope: 'all', cwd: '/repo', filter: 'unmatched' }, deps)).toEqual({
       kind: 'no-tests-collected',
       tests: [],
@@ -134,6 +141,7 @@ describe('runTests', () => {
       }),
     });
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+
     expect(result.kind).toBe('compile-error');
     expect(result).toHaveProperty('stderr', 'Unhandled rejection');
   });
@@ -155,6 +163,7 @@ describe('runTests', () => {
 
   it('preserves a passing JSON report larger than the diagnostic output cap', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
+
     try {
       const script = join(cwd, 'report.cjs');
       const report = {
@@ -168,6 +177,7 @@ describe('runTests', () => {
           },
         ],
       };
+
       await writeFile(
         script,
         `process.stderr.write('x'.repeat(${MAX_TOTAL_BYTES * 2}));\n` +
@@ -176,6 +186,7 @@ describe('runTests', () => {
             JSON.stringify(report),
           )});\n`,
       );
+
       const deps = makeDeps({ resolveVitest: () => script, spawn: defaultSpawn });
 
       expect(await runTests({ scope: 'all', cwd }, deps)).toEqual({
@@ -189,13 +200,16 @@ describe('runTests', () => {
 
   it('kills the child and names the limit when stdout exceeds the cap', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
+
     try {
       const script = join(cwd, 'flood.cjs');
+
       await writeFile(
         script,
         `process.stdout.write('x'.repeat(${MAX_STDOUT_BYTES + 1}));\n` +
           'setTimeout(() => {}, 60000);\n',
       );
+
       const deps = makeDeps({ resolveVitest: () => script, spawn: defaultSpawn });
 
       const result = await runTests({ scope: 'all', cwd }, deps);
@@ -209,17 +223,21 @@ describe('runTests', () => {
 
   it('settles the timeout even when a descendant keeps the piped stdio open', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
+
     try {
       const script = join(cwd, 'hang.cjs');
+
       await writeFile(
         script,
         "const { spawn } = require('node:child_process');\n" +
           "spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'inherit' }).unref();\n" +
           'setTimeout(() => {}, 60000);\n',
       );
+
       const deps = makeDeps({ resolveVitest: () => script, spawn: defaultSpawn, timeoutMs: 200 });
 
       const started = Date.now();
+
       expect(await runTests({ scope: 'all', cwd }, deps)).toEqual({ kind: 'timeout' });
       expect(Date.now() - started).toBeLessThan(5_000);
     } finally {
@@ -292,6 +310,7 @@ describe('runTests', () => {
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
     }
+
     expect(result.failures).toEqual([
       {
         file: '/repo/b.test.ts',
@@ -348,6 +367,7 @@ describe('runTests', () => {
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
     }
+
     expect(result.failures).toEqual([
       {
         file: '/repo/broken.test.ts',
@@ -401,10 +421,14 @@ describe('runTests', () => {
 
   it('returns cancelled and kills the child when the signal aborts', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
+
     try {
       const script = join(cwd, 'sleep.cjs');
+
       await writeFile(script, 'process.stdout.write("started");\nsetTimeout(() => {}, 60000);\n');
+
       const controller = new AbortController();
+
       const deps = makeDeps({ resolveVitest: () => script, spawn: defaultSpawn });
 
       const started = Date.now();
@@ -476,6 +500,7 @@ describe('runTests', () => {
     if (result.kind !== 'fail') {
       throw new Error('expected fail');
     }
+
     expect(result.failures.map((failure) => failure.message)).toEqual([
       'teardown boom',
       'expected 1 to be 2',
@@ -507,6 +532,7 @@ describe('runTests', () => {
     if (result.kind !== 'fail') {
       throw new Error('expected fail');
     }
+
     expect(result.failures[0]?.message).not.toContain('\uFFFD');
     expect(result.failures[0]?.message.endsWith('é…')).toBe(true);
   });
@@ -536,6 +562,7 @@ describe('runTests', () => {
       spawn: async (_cmd, args) => {
         captured = args;
         await writeFile(outputFileFrom(args), JSON.stringify(report));
+
         return { stdout: '', stderr: '', code: 0, timedOut: false };
       },
     });
@@ -544,16 +571,19 @@ describe('runTests', () => {
       { scope: 'changed', cwd: '/repo', files: ['-a.test.ts', 'src/b.test.ts'] },
       deps,
     );
+
     expect(captured).toContain('./-a.test.ts');
     expect(captured).toContain('src/b.test.ts');
 
     await runTests({ scope: 'file', cwd: '/repo', path: '-a.test.ts' }, deps);
+
     expect(captured).toContain('./-a.test.ts');
     expect(captured).not.toContain('-a.test.ts');
   });
 
   it('caps failures to 10 entries and truncates each assertion message to 300 characters', async () => {
     const longMessage = 'x'.repeat(MAX_MESSAGE_CHARS * 2);
+
     const assertionResults = Array.from({ length: 15 }, (_, i) => ({
       fullName: `case ${i}`,
       status: 'failed',
@@ -571,6 +601,7 @@ describe('runTests', () => {
     if (result.kind !== 'fail') {
       throw new Error('expected fail');
     }
+
     expect(result.tests).toEqual(
       assertionResults.map((assertion) => ({
         file: '/repo/big.test.ts',
@@ -580,6 +611,7 @@ describe('runTests', () => {
     );
     expect(result.failures).toHaveLength(MAX_FAILURES);
     expect(result.truncated).toBe(true);
+
     for (const failure of result.failures) {
       expect(failure.message.length).toBeLessThanOrEqual(MAX_MESSAGE_CHARS + 1);
     }
@@ -657,6 +689,7 @@ describe('runTests', () => {
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
     }
+
     expect(result.failures).toEqual([
       {
         file: '/repo/src/a.test.ts',
@@ -693,6 +726,7 @@ describe('runTests', () => {
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
     }
+
     expect(result.failures[0]?.message).toBe('src/a.test.ts:9');
   });
 
@@ -719,6 +753,7 @@ describe('runTests', () => {
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
     }
+
     expect(result.failures[0]?.message).toBe(
       'Error: Cannot find module ./missing (src/a.test.ts:1)',
     );
@@ -737,6 +772,7 @@ describe('runTests', () => {
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
     }
+
     expect(result.failures[0]?.message).toBe('unparseable vitest output: Error: vitest exploded');
   });
 
@@ -767,6 +803,7 @@ describe('runTests', () => {
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
     }
+
     expect(result.failures[0]?.message).toBe(
       'AssertionError: expected 1 to be 2 (src/a.test.ts:3)',
     );
@@ -799,6 +836,7 @@ describe('runTests', () => {
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
     }
+
     expect(result.failures[0]?.message).toBe('');
   });
 
@@ -814,6 +852,7 @@ describe('runTests', () => {
       spawn: async (_cmd, args) => {
         captured = args;
         await writeFile(outputFileFrom(args), JSON.stringify(report));
+
         return { stdout: '', stderr: '', code: 0, timedOut: false };
       },
     });
@@ -846,6 +885,7 @@ describe('runTests', () => {
       spawn: async (_cmd, args) => {
         captured = args;
         await writeFile(outputFileFrom(args), JSON.stringify(report));
+
         return { stdout: '', stderr: '', code: 0, timedOut: false };
       },
     });
@@ -854,12 +894,14 @@ describe('runTests', () => {
 
     expect(captured.slice(0, 3)).toEqual(['run', '--reporter=json', '--no-color']);
     expect(captured).toContain('src/a.test.ts');
+
     const disallowed = captured.filter(
       (a) =>
         a.startsWith('--') &&
         !['--reporter=json', '--no-color'].includes(a) &&
         !a.startsWith('--outputFile='),
     );
+
     expect(disallowed).toEqual([]);
   });
 });
@@ -885,16 +927,19 @@ it('allows two minutes for full verification and thirty seconds for focused runs
 describe('runnerAvailable', () => {
   it('reports absence only for a missing runner and stays available on other errors', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-available-'));
+
     try {
       expect(runnerAvailable(cwd)).toBe(false);
 
       // A stat that fails with anything but ENOENT (here ENOTDIR) proves nothing about the
       // runner, so the gate must stay on.
       await writeFile(join(cwd, 'node_modules'), '');
+
       expect(runnerAvailable(cwd)).toBe(true);
 
       await rm(join(cwd, 'node_modules'));
       await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
+
       expect(runnerAvailable(cwd)).toBe(true);
     } finally {
       await rm(cwd, { recursive: true, force: true });
@@ -903,6 +948,19 @@ describe('runnerAvailable', () => {
 });
 
 describe('nodeExecutable', () => {
+  it('ignores a directory named node on PATH', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'tau-node-'));
+    onTestFinished(async () => {
+      vi.unstubAllEnvs();
+      await rm(directory, { recursive: true, force: true });
+    });
+
+    await mkdir(join(directory, process.platform === 'win32' ? 'node.exe' : 'node'));
+    vi.stubEnv('PATH', directory);
+
+    expect(nodeExecutable('/usr/bin/nodejs')).toBe('/usr/bin/nodejs');
+  });
+
   it('keeps a node executable and falls back to node on PATH for a compiled agent', () => {
     expect(nodeExecutable('/usr/bin/node')).toBe('/usr/bin/node');
     expect(nodeExecutable('C:\\Program Files\\nodejs\\node.exe')).toBe(
