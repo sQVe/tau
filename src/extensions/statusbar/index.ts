@@ -37,7 +37,9 @@ export default function statusbarExtension(pi: ExtensionAPI) {
     const id = ++refreshId;
     let nextDirty = false;
     try {
-      const { stdout } = await exec('git', ['status', '--porcelain'], {
+      // Ask for untracked files outright: status.showUntrackedFiles=no would otherwise hide a new
+      // file and leave the marker off.
+      const { stdout } = await exec('git', ['status', '--porcelain', '--untracked-files=normal'], {
         cwd: ctx.cwd,
         timeout: GIT_TIMEOUT_MS,
         maxBuffer: GIT_MAX_BUFFER_BYTES,
@@ -52,9 +54,12 @@ export default function statusbarExtension(pi: ExtensionAPI) {
     requestRender?.();
   };
 
-  pi.on('session_start', async (_event, ctx) => {
+  pi.on('session_start', (_event, ctx) => {
     if (ctx.mode !== 'tui') return;
-    await refresh(ctx);
+
+    // Install the footer first. Awaiting git here would hold up the TUI for as long as the timeout
+    // allows, and the marker only needs the render that lands with the result.
+    void refresh(ctx);
     ctx.ui.setFooter((tui, _theme, footerData) => {
       requestRender = () => {
         tui.requestRender();

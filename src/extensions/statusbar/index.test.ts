@@ -109,13 +109,35 @@ describe('statusbar extension', () => {
     await vi.waitFor(() => {
       expect(footer.component.render(100)[0]).not.toContain('main*');
     });
+    // A tree already dirty at startup installs the footer first and marks it once git answers.
     await writeFile(join(cwd, 'file'), 'dirty');
     const dirty = setup(cwd);
     await dirty.emit('session_start');
-    expect(dirty.mount().component.render(100)[0]).toContain('main*');
+    const dirtyFooter = dirty.mount().component;
+    expect(dirtyFooter.render(100)[0]).not.toContain('main*');
+    await vi.waitFor(() => {
+      expect(dirtyFooter.render(100)[0]).toContain('main*');
+    });
     expect(footer.requestRender).toHaveBeenCalled();
     footer.component.dispose?.();
     expect(footer.unsubscribe).toHaveBeenCalledOnce();
+  });
+  it('marks a new file dirty even when git is set to hide untracked files', async ({
+    onTestFinished,
+  }) => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    await git('git', ['init', '-q'], { cwd });
+    await git('git', ['config', 'status.showUntrackedFiles', 'no'], { cwd });
+    await writeFile(join(cwd, 'file'), 'untracked');
+
+    const app = setup(cwd);
+    await app.emit('session_start');
+    const footer = app.mount().component;
+
+    await vi.waitFor(() => {
+      expect(footer.render(100)[0]).toContain('main*');
+    });
   });
   it('handles non-repositories and installs only in tui mode', async ({ onTestFinished }) => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
