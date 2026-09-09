@@ -18,6 +18,7 @@ export default defineConfig({
       'oxc/no-async-endpoint-handlers': 'off',
       'oxc/no-this-in-exported-function': 'off',
 
+      'eslint/curly': 'error',
       'eslint/func-style': ['error', 'expression'],
       'eslint/prefer-const': 'error',
       'eslint/no-nested-ternary': 'error',

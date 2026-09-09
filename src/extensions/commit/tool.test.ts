@@ -274,7 +274,9 @@ describe('commitTool.execute', () => {
       files: [`${name}.txt`],
       subject: `feat: add ${name}`,
     }));
-    for (const group of groups) await writeRepoFile(repoDir, group.files[0]!, group.subject);
+    for (const group of groups) {
+      await writeRepoFile(repoDir, group.files[0]!, group.subject);
+    }
     const review = vi
       .fn<typeof reviewComments>()
       .mockResolvedValueOnce({ findings: [] })
@@ -317,7 +319,9 @@ describe('commitTool.execute', () => {
       files: [`${name}.txt`],
       subject: `feat: add ${name}`,
     }));
-    for (const group of groups) await writeRepoFile(repoDir, group.files[0]!, group.subject);
+    for (const group of groups) {
+      await writeRepoFile(repoDir, group.files[0]!, group.subject);
+    }
     return { repoDir, groups };
   };
 
@@ -399,8 +403,9 @@ describe('commitTool.execute', () => {
         exec: async (command, args, options) => {
           const result = await runCommand(command, args, options?.cwd ?? repoDir);
           // Stand in for a group-1 hook that edits a later group's file without staging it.
-          if (args[0] === 'commit')
+          if (args[0] === 'commit') {
             await writeRepoFile(repoDir, 'three.txt', 'rewritten by a hook');
+          }
           return result;
         },
       },
@@ -430,7 +435,9 @@ describe('commitTool.execute', () => {
     const tool = createReviewedCommitTool(
       {
         exec: (command, args, options) => {
-          if (args[0] === 'commit') events.push('commit');
+          if (args[0] === 'commit') {
+            events.push('commit');
+          }
           return runCommand(command, args, options?.cwd ?? repoDir);
         },
       },
@@ -457,7 +464,9 @@ describe('commitTool.execute', () => {
         files: [`${name}.txt`],
         subject: `feat: add ${name}`,
       }));
-      for (const group of groups) await writeRepoFile(repoDir, group.files[0]!, group.subject);
+      for (const group of groups) {
+        await writeRepoFile(repoDir, group.files[0]!, group.subject);
+      }
       const heads: (string | null)[] = [];
       const trees: string[][] = [];
       const review: typeof reviewComments = async (_pi, _ctx, _signal, snapshot) => {
@@ -482,7 +491,9 @@ describe('commitTool.execute', () => {
         groups.filter((_, index) => middle !== 'skip' || index !== 1).map((group) => group.subject),
       );
       expect(result.details.groups.map((group) => group.sha).filter(Boolean)).toEqual(shas);
-      for (const sha of shas) expect(JSON.stringify(result.content)).toContain(sha);
+      for (const sha of shas) {
+        expect(JSON.stringify(result.content)).toContain(sha);
+      }
       expect(result.details.groups[1]?.skipped).toBe(middle === 'skip' ? true : undefined);
       expect(JSON.stringify(result.content).includes('Group 2/3: Commit skipped')).toBe(
         middle === 'skip',
@@ -519,18 +530,23 @@ describe('commitTool.execute', () => {
         files: [`${name}.txt`],
         subject: `feat: add ${name}`,
       }));
-      for (const group of groups) await writeRepoFile(repoDir, group.files[0]!, group.subject);
+      for (const group of groups) {
+        await writeRepoFile(repoDir, group.files[0]!, group.subject);
+      }
       const controller = new AbortController();
       let reviews = 0;
       const review = async () => {
         reviews += 1;
-        if (reviews === 3 && failure === 'corrections')
+        if (reviews === 3 && failure === 'corrections') {
           return {
             findings: [
               { path: 'three.txt', line: 1, kind: 'policy' as const, message: 'Fix comment.' },
             ],
           };
-        if (reviews === 3 && failure === 'retry') throw new Error('Reviewer unavailable');
+        }
+        if (reviews === 3 && failure === 'retry') {
+          throw new Error('Reviewer unavailable');
+        }
         return { findings: [] };
       };
       let overlays = 0;
@@ -540,8 +556,12 @@ describe('commitTool.execute', () => {
         ui: {
           custom: async () => {
             overlays += 1;
-            if (overlays <= 2) return 'approve';
-            if (failure === 'cancel') controller.abort();
+            if (overlays <= 2) {
+              return 'approve';
+            }
+            if (failure === 'cancel') {
+              controller.abort();
+            }
             if (failure === 'hook') {
               await writeRepoFile(
                 repoDir,
@@ -568,8 +588,9 @@ describe('commitTool.execute', () => {
       const shas = (await git(repoDir, ['log', '--reverse', '--format=%H'])).trim().split('\n');
       expect(failureError).toBeInstanceOf(Error);
       expect(shas).toHaveLength(2);
-      for (const [index, sha] of shas.entries())
+      for (const [index, sha] of shas.entries()) {
         expect((failureError as Error).message).toContain(`Group ${index + 1}/4: ${sha}`);
+      }
       expect((failureError as Error).message).toContain('Group 3/4');
       expect((failureError as Error).message).toContain(
         {
@@ -583,7 +604,9 @@ describe('commitTool.execute', () => {
       expect((await git(repoDir, ['rev-list', '--all', '--count'])).trim()).toBe('2');
       expect(reviews).toBe(3);
       expect(await git(repoDir, ['diff', '--cached', '--name-only'])).toBe('');
-      if (failure === 'hook') await rm(join(repoDir, '.git/hooks/pre-commit'));
+      if (failure === 'hook') {
+        await rm(join(repoDir, '.git/hooks/pre-commit'));
+      }
       const result = await tool.execute(
         'retry',
         { groups: groups.slice(3) },
@@ -689,7 +712,9 @@ describe('commitTool.execute', () => {
       hasUI: true,
       ui: {
         custom: async () => {
-          if (choice === 'cancel') controller.abort();
+          if (choice === 'cancel') {
+            controller.abort();
+          }
           return choice;
         },
       },
@@ -1123,8 +1148,12 @@ const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)
   const editor = vi.fn<ExtensionContext['ui']['editor']>(() => Promise.resolve(edits.shift()));
   const exec = vi.fn<ExtensionAPI['exec']>((_command, args) => {
     let stdout = '';
-    if (args.includes('--numstat')) stdout = '2\t1\tREADME.md\0-\t-\timage.png\0';
-    if (args[0] === 'rev-parse' || args[0] === 'write-tree') stdout = 'abc123\n';
+    if (args.includes('--numstat')) {
+      stdout = '2\t1\tREADME.md\0-\t-\timage.png\0';
+    }
+    if (args[0] === 'rev-parse' || args[0] === 'write-tree') {
+      stdout = 'abc123\n';
+    }
     return Promise.resolve({ code: 0, killed: false, stderr: '', stdout });
   });
   const tool = createCommitTool({ exec });
@@ -1312,7 +1341,9 @@ describe('commit overlay flow', () => {
     const controller = new AbortController();
     const { execute, exec, custom } = fakeCommit(['approve']);
     exec.mockImplementation((_command, args) => {
-      if (args.includes('add')) controller.abort();
+      if (args.includes('add')) {
+        controller.abort();
+      }
       return Promise.resolve({ code: 0, killed: false, stdout: '', stderr: '' });
     });
     await execute(controller.signal);

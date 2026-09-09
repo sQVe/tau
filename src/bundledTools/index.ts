@@ -9,7 +9,9 @@ export const requireRegisteredTools = (
     const registered = new Set(pi.getAllTools().map((tool) => tool.name));
     const missing = required.filter((name) => !registered.has(name));
 
-    if (missing.length === 0) return;
+    if (missing.length === 0) {
+      return;
+    }
 
     const names = missing.map((name) => `"${name}"`).join(', ');
     const subject = missing.length === 1 ? `Tool ${names} is` : `Tools ${names} are`;

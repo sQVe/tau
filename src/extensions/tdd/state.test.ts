@@ -288,8 +288,9 @@ it.each(['skip', 'delete', 'amend'])(
     await writeFile(join(cwd, 'src/value.ts'), 'export const value = 2;');
     await store.run(cwd, second, 'focused');
     const path = join(cwd, 'behavior.test.ts');
-    if (change === 'delete') await rm(path);
-    else
+    if (change === 'delete') {
+      await rm(path);
+    } else {
       await writeFile(
         path,
         (await readFile(path, 'utf8')).replace(
@@ -297,6 +298,7 @@ it.each(['skip', 'delete', 'amend'])(
           change === 'skip' ? "it.skip('required'" : 'toBe(2)',
         ),
       );
+    }
     expect(await store.run(cwd, second, 'full')).toMatchObject({
       kind: 'pass',
       fullPassValid: false,
@@ -440,12 +442,14 @@ it.each(['skip', 'todo', 'delete'])(
     await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
     await store.run(cwd, behavior, 'focused');
     const path = join(cwd, 'behavior.test.ts');
-    if (change === 'delete') await rm(path);
-    else
+    if (change === 'delete') {
+      await rm(path);
+    } else {
       await writeFile(
         path,
         (await readFile(path, 'utf8')).replace("it('required'", `it.${change}('required'`),
       );
+    }
     expect(await store.run(cwd, behavior, 'focused')).toMatchObject({
       phase: 'locked',
       focusedPassValid: false,

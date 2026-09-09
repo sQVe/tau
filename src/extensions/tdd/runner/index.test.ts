@@ -89,7 +89,9 @@ describe('runTests', () => {
       }),
     });
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
-    if (result.kind !== 'fail') throw new Error(`expected fail, got ${result.kind}`);
+    if (result.kind !== 'fail') {
+      throw new Error(`expected fail, got ${result.kind}`);
+    }
     expect(result.failures).toHaveLength(MAX_FAILURES);
     expect(result.truncated).toBe(true);
   });
@@ -646,7 +648,9 @@ describe('runTests', () => {
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
-    if (result.kind !== 'fail') throw new Error(`expected fail, got ${result.kind}`);
+    if (result.kind !== 'fail') {
+      throw new Error(`expected fail, got ${result.kind}`);
+    }
     expect(result.failures).toEqual([
       {
         file: '/repo/src/a.test.ts',
@@ -680,7 +684,9 @@ describe('runTests', () => {
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
-    if (result.kind !== 'fail') throw new Error(`expected fail, got ${result.kind}`);
+    if (result.kind !== 'fail') {
+      throw new Error(`expected fail, got ${result.kind}`);
+    }
     expect(result.failures[0]?.message).toBe('src/a.test.ts:9');
   });
 
@@ -704,7 +710,9 @@ describe('runTests', () => {
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
-    if (result.kind !== 'fail') throw new Error(`expected fail, got ${result.kind}`);
+    if (result.kind !== 'fail') {
+      throw new Error(`expected fail, got ${result.kind}`);
+    }
     expect(result.failures[0]?.message).toBe(
       'Error: Cannot find module ./missing (src/a.test.ts:1)',
     );
@@ -720,7 +728,9 @@ describe('runTests', () => {
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
-    if (result.kind !== 'fail') throw new Error(`expected fail, got ${result.kind}`);
+    if (result.kind !== 'fail') {
+      throw new Error(`expected fail, got ${result.kind}`);
+    }
     expect(result.failures[0]?.message).toBe('unparseable vitest output: Error: vitest exploded');
   });
 
@@ -748,7 +758,9 @@ describe('runTests', () => {
 
     const result = await runTests({ scope: 'all', cwd: '/repo/' }, deps);
 
-    if (result.kind !== 'fail') throw new Error(`expected fail, got ${result.kind}`);
+    if (result.kind !== 'fail') {
+      throw new Error(`expected fail, got ${result.kind}`);
+    }
     expect(result.failures[0]?.message).toBe(
       'AssertionError: expected 1 to be 2 (src/a.test.ts:3)',
     );
@@ -778,7 +790,9 @@ describe('runTests', () => {
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
-    if (result.kind !== 'fail') throw new Error(`expected fail, got ${result.kind}`);
+    if (result.kind !== 'fail') {
+      throw new Error(`expected fail, got ${result.kind}`);
+    }
     expect(result.failures[0]?.message).toBe('');
   });
 

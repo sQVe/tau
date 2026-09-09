@@ -272,7 +272,9 @@ const planGroupReviews = async (
 ): Promise<{ baseTree: string; tree: string }[]> => {
   const plan: { baseTree: string; tree: string }[] = [];
   let baseTree = await treeOf(pi, cwd, await currentHead(pi, cwd), signal);
-  if (baseTree === null) return plan;
+  if (baseTree === null) {
+    return plan;
+  }
   try {
     for (const group of groups) {
       await stageFiles(pi, cwd, group.files);
@@ -281,7 +283,9 @@ const planGroupReviews = async (
       baseTree = tree;
     }
   } finally {
-    for (const group of groups) await unstageFiles(pi, cwd, group.files);
+    for (const group of groups) {
+      await unstageFiles(pi, cwd, group.files);
+    }
   }
 
   return plan;
@@ -352,7 +356,9 @@ const executeGroup = async (
     reviews.set(reviewGroup, state);
     if (reviews.size > 32) {
       const oldest = reviews.keys().next().value;
-      if (oldest !== undefined) reviews.delete(oldest);
+      if (oldest !== undefined) {
+        reviews.delete(oldest);
+      }
     }
     if (
       params.commentDispute &&
@@ -385,7 +391,9 @@ const executeGroup = async (
             );
       state.key = key;
       state.result = commentReview;
-      if (commentReview.findings.some((finding) => finding.kind !== 'missing')) state.attempts += 1;
+      if (commentReview.findings.some((finding) => finding.kind !== 'missing')) {
+        state.attempts += 1;
+      }
       reviewReport = formatCommentReview(commentReview);
     } catch (error) {
       reviewReport = `Comment review failed: ${error instanceof Error ? error.message : String(error)}\nRetry or explicitly waive this failed review.`;
@@ -393,7 +401,9 @@ const executeGroup = async (
     if (state.disputes.length) {
       reviewReport = `Comment review rechecked after dispute.\n${state.disputes.map(({ evidence, findings }) => `Prior findings:\n${findings}\nDispute evidence:\n${evidence}`).join('\n')}\nCurrent review:\n${reviewReport || 'No findings.'}`;
     }
-    if (signal?.aborted) return cancelled();
+    if (signal?.aborted) {
+      return cancelled();
+    }
     const reviewBlocked =
       !commentReview || commentReview.findings.some((finding) => finding.kind !== 'missing');
     if (commentReview && reviewBlocked && state.attempts <= 2) {
@@ -438,7 +448,9 @@ const executeGroup = async (
             'Staged content or HEAD changed since comment review. Call commit again to review the changes.',
           );
         }
-        if (choice === 'approveAll') await batch.onApproveAll();
+        if (choice === 'approveAll') {
+          await batch.onApproveAll();
+        }
         approved = true;
         reviewWaived = choice === 'waive';
         break;
@@ -472,7 +484,9 @@ const executeGroup = async (
     }
   } finally {
     if (!approved) {
-      if (!returningForCorrections) reviews.delete(reviewGroup);
+      if (!returningForCorrections) {
+        reviews.delete(reviewGroup);
+      }
       await unstageFiles(pi, ctx.cwd, params.files);
     }
   }
@@ -589,7 +603,9 @@ export const createCommitTool = (
       const startReview = (index: number) => {
         const step = plan[index];
         const group = params.groups[index];
-        if (!step || !group || started.has(index)) return;
+        if (!step || !group || started.has(index)) {
+          return;
+        }
         const pending = review(pi, ctx, signal, {
           tree: step.tree,
           head: step.baseTree,
@@ -610,7 +626,9 @@ export const createCommitTool = (
           if (planned) {
             startReview(index);
             const pending = started.get(index);
-            if (pending) return pending;
+            if (pending) {
+              return pending;
+            }
           }
           return review(pi, ctx, signal, snapshot);
         };
@@ -640,7 +658,9 @@ export const createCommitTool = (
                 approval.all = true;
                 for (let rest = index + 1; rest < params.groups.length; rest += 1) {
                   const remaining = params.groups[rest];
-                  if (!remaining) continue;
+                  if (!remaining) {
+                    continue;
+                  }
                   approval.seen.set(rest, await hashFiles(pi, ctx.cwd, remaining.files));
                   startReview(rest);
                 }
@@ -661,7 +681,9 @@ export const createCommitTool = (
             })),
           );
         } catch (error) {
-          if (params.groups.length === 1) throw error;
+          if (params.groups.length === 1) {
+            throw error;
+          }
           const committed = groups.flatMap((result, committedIndex) =>
             result.sha
               ? [

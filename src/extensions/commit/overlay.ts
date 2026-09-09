@@ -45,7 +45,9 @@ const sectionCaps = (terminalRows: number) => {
 };
 
 const showCommentReview = async (ctx: ExtensionContext, report: string, signal?: AbortSignal) => {
-  if (signal?.aborted) return 'abort';
+  if (signal?.aborted) {
+    return 'abort';
+  }
   return ctx.ui.custom<'return' | 'abort'>(
     (tui, theme, _keybindings, done) => {
       let offset = 0;
@@ -78,10 +80,18 @@ const showCommentReview = async (ctx: ExtensionContext, report: string, signal?:
             done(matchesKey(data, Key.ctrl('c')) ? 'abort' : 'return');
             return;
           }
-          if (isUp(data)) offset = Math.max(0, offset - 1);
-          if (isDown(data)) offset = Math.min(lastOffset, offset + 1);
-          if (isTop(data)) offset = 0;
-          if (isBottom(data)) offset = lastOffset;
+          if (isUp(data)) {
+            offset = Math.max(0, offset - 1);
+          }
+          if (isDown(data)) {
+            offset = Math.min(lastOffset, offset + 1);
+          }
+          if (isTop(data)) {
+            offset = 0;
+          }
+          if (isBottom(data)) {
+            offset = lastOffset;
+          }
           tui.requestRender();
         },
       };
@@ -230,7 +240,9 @@ export const confirmCommitOverlay = async (
     };
   }, options);
   if (choice === 'review' && view.review) {
-    if ((await showCommentReview(ctx, view.review, signal)) !== 'return') return 'abort';
+    if ((await showCommentReview(ctx, view.review, signal)) !== 'return') {
+      return 'abort';
+    }
     return confirmCommitOverlay(ctx, view, signal);
   }
   return choice ?? 'abort';
