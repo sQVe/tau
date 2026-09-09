@@ -67,5 +67,7 @@ writing guidance without copying the rules. Loading the default policy does not 
 
 - [ADR-0001: Application structure](./0001-application-structure.md)
 - [ADR-0004: Skill authoring style](./0004-skill-authoring-style.md)
+- [ADR-0008: Coding instructions](./0008-coding-instructions.md), which amends the scope above and
+  moves the rules about which comments to keep
 - [Agent writing instructions](../../src/extensions/writing/instructions.md)
 - [Documentation rules](../AGENTS.md)
