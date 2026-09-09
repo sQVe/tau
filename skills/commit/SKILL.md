@@ -56,7 +56,10 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
    `subject`, and `body`. The tool reviews and confirms each group sequentially. Do not end the turn
    before the tool call. If the change looks temporary, wrong, or like a placeholder, still call the
    tool: the overlay is where the user skips or aborts it, or presses `A` to approve all remaining
-   groups. Every group still runs comment review; `A` never waives a blocked review.
+   groups. Every group still runs comment review and the root `package.json` check script on a
+   temporary checkout of its staged content. `A` never waives a blocked review or failed check. A
+   missing check script is reported as unavailable. Checks use installed root dependencies and do
+   not install packages. Run formatting locally first; check-time changes require another call.
 
 4. If the `commit` tool succeeds, report the result and continue.
    - A skipped group is not a failure; the tool continues with later groups.

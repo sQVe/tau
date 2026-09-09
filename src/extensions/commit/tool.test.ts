@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -128,6 +128,90 @@ const executeCommit = async (repoDir: string, input: CommitInput) => {
 
   return commitTool.execute('tool-call-1', input, undefined, undefined, confirmedContext(repoDir));
 };
+
+it('rejects a staged candidate whose project check fails despite an unstaged fix', async () => {
+  const repo = await createTempRepo();
+  await writeRepoFile(
+    repo,
+    'package.json',
+    JSON.stringify({ scripts: { check: 'node check.cjs' } }),
+  );
+  await writeRepoFile(
+    repo,
+    'check.cjs',
+    "if (require('./value.cjs') !== 2) throw Error('wrong value');",
+  );
+  await writeRepoFile(repo, 'value.cjs', 'module.exports = 1;');
+  await git(repo, ['add', '.']);
+  await git(repo, ['commit', '-m', 'test: baseline']);
+  const head = await git(repo, ['rev-parse', 'HEAD']);
+  await writeRepoFile(repo, 'value.cjs', 'module.exports = 2;');
+  await writeRepoFile(repo, 'README.md', 'Document the change.');
+
+  await expect(
+    executeCommit(repo, { groups: [{ files: ['README.md'], subject: 'docs: update' }] }),
+  ).rejects.toThrow(/Project check failed.*|wrong value/s);
+  expect(await git(repo, ['rev-parse', 'HEAD'])).toBe(head);
+  expect(await git(repo, ['diff', '--cached', '--name-only'])).toBe('');
+});
+
+it('checks the first commit and leaves unrelated working changes untouched', async () => {
+  const repo = await createTempRepo();
+  await writeRepoFile(
+    repo,
+    'package.json',
+    JSON.stringify({ packageManager: 'pnpm@12.3.4', scripts: { check: 'node check.cjs' } }),
+  );
+  await writeRepoFile(
+    repo,
+    'check.cjs',
+    "require.resolve('typebox'); require('node:assert').equal(require('./value.cjs'), 2);",
+  );
+  await symlink(
+    join(import.meta.dirname, '../../../node_modules'),
+    join(repo, 'node_modules'),
+    'dir',
+  );
+  await writeRepoFile(repo, 'value.cjs', 'module.exports = 2;');
+  await writeRepoFile(repo, 'unrelated.txt', 'Leave this alone.');
+  const result = await executeCommit(repo, {
+    groups: [
+      {
+        files: ['package.json', 'check.cjs', 'value.cjs'],
+        subject: 'feat: initial value',
+      },
+    ],
+  });
+  expect(result.details.groups[0]?.projectCheck).toContain('Project check passed');
+  expect(await readFile(join(repo, 'unrelated.txt'), 'utf8')).toBe('Leave this alone.');
+  expect(await git(repo, ['ls-tree', '--name-only', 'HEAD'])).not.toContain('unrelated.txt');
+});
+
+it('rejects check-time formatting without modifying the working file', async () => {
+  const repo = await createTempRepo();
+  await writeRepoFile(
+    repo,
+    'package.json',
+    JSON.stringify({ scripts: { check: 'node check.cjs' } }),
+  );
+  await writeRepoFile(
+    repo,
+    'check.cjs',
+    "require('node:fs').writeFileSync('value.cjs', 'module.exports = 2;');",
+  );
+  await writeRepoFile(repo, 'value.cjs', 'module.exports = (2);');
+  await expect(
+    executeCommit(repo, {
+      groups: [
+        {
+          files: ['package.json', 'check.cjs', 'value.cjs'],
+          subject: 'feat: initial value',
+        },
+      ],
+    }),
+  ).rejects.toThrow('Project check changed tracked files');
+  expect(await readFile(join(repo, 'value.cjs'), 'utf8')).toBe('module.exports = (2);');
+});
 
 describe('reviewGit', () => {
   it('identifies the failing command after global Git options', async () => {
@@ -824,6 +908,7 @@ describe('commitTool.execute', () => {
       files: ['README.md'],
       subject: 'feat: add thing',
       body: 'Initial project file.',
+      projectCheck: 'Project check unavailable: no root package.json.',
       commentReview: {
         status: 'passed',
         tree: (await git(repoDir, ['rev-parse', 'HEAD^{tree}'])).trim(),
@@ -831,7 +916,12 @@ describe('commitTool.execute', () => {
         report: '',
       },
     });
-    expect(result.content).toEqual([{ type: 'text', text: `${sha} feat: add thing` }]);
+    expect(result.content).toEqual([
+      {
+        type: 'text',
+        text: `${sha} feat: add thing\nProject check unavailable: no root package.json.`,
+      },
+    ]);
   });
 
   it('includes the body in the committed message when body is provided', async () => {

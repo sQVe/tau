@@ -19,6 +19,7 @@ import {
 import type { CommentReview } from './commentReview.js';
 import type { CommitView } from './overlay.js';
 import { confirmCommitOverlay } from './overlay.js';
+import { checkProject } from './projectCheck.js';
 import type { CommitSuccess } from './types.js';
 
 export const conventionalCommitSubjectPattern =
@@ -332,6 +333,7 @@ const executeGroup = async (
   let reviewedHead: string | null = null;
   let reviewGroup = '';
   let reviewReport = '';
+  let projectCheck = '';
   let reviewWaived = false;
   let returningForCorrections = false;
   try {
@@ -349,6 +351,10 @@ const executeGroup = async (
 
     reviewedTree = (await reviewGit(pi, ctx.cwd, ['write-tree'], signal)).trim();
     reviewedHead = await currentHead(pi, ctx.cwd);
+    if (signal?.aborted) {
+      return cancelled();
+    }
+    projectCheck = await checkProject(pi, ctx.cwd, reviewedTree, signal);
     const reviewedBaseTree = await treeOf(pi, ctx.cwd, reviewedHead, signal);
     reviewGroup = JSON.stringify([ctx.cwd, reviewedHead, [...requestedFiles].toSorted()]);
     const state = reviews.get(reviewGroup) ?? { attempts: 0, disputes: [] };
@@ -413,7 +419,7 @@ const executeGroup = async (
       );
     }
     const files = await stagedNumstat(pi, ctx.cwd, params.files);
-    let notice = '';
+    let notice = projectCheck;
     while (true) {
       if (signal?.aborted) {
         return cancelled();
@@ -434,7 +440,7 @@ const executeGroup = async (
             },
             signal,
           );
-      notice = '';
+      notice = projectCheck;
       if (signal?.aborted) {
         return cancelled();
       }
@@ -545,7 +551,7 @@ const executeGroup = async (
     content: [
       {
         type: 'text',
-        text: `${sha} ${subject}${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
+        text: `${sha} ${subject}\n${projectCheck}${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
       },
     ],
     details: {
@@ -553,6 +559,7 @@ const executeGroup = async (
       files: params.files,
       subject,
       body,
+      projectCheck,
       commentReview: {
         status: reviewWaived ? 'waived' : 'passed',
         tree: reviewedTree,
@@ -576,6 +583,7 @@ export const createCommitTool = (
     promptGuidelines: [
       'When asked to commit, call this tool without asking for confirmation in chat first. Its overlay is the only approval step; the user approves, edits, skips, or aborts there, even for changes that look temporary or wrong.',
       'Only commit the files explicitly provided.',
+      'The root package.json scripts.check runs on each staged candidate before approval. Fix failures and retry. If checks format files, run them locally and include those changes. Projects without scripts.check report verification as unavailable.',
       'Use a conventional commit subject.',
       'Do not commit sensitive files such as .env or SSH keys.',
       'Comment review runs before approval. Fix blocking findings or supply commentDispute with evidence; missing-comment suggestions are advisory. After two automatic returns, unresolved findings go to the user. Never claim a waiver on the user’s behalf.',

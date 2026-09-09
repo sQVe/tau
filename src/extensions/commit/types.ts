@@ -5,6 +5,7 @@ export interface CommitSuccess {
     subject: string;
     body: string | null;
     skipped?: true;
+    projectCheck?: string;
     commentReview?: {
       status: 'passed' | 'waived';
       tree: string;
