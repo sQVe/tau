@@ -78,4 +78,4 @@ This extension defines no types of its own and may omit `types.ts`, an exception
 - [ADR-0001: Application structure](./0001-application-structure.md)
 - [ADR-0006: Default writing policy](./0006-default-writing-policy.md)
 - [Agent coding instructions](../../src/extensions/coding/instructions.md)
-- [Comment review](../comment-review.md)
+- [Comment review policy](../../src/extensions/commit/commentReview.ts)

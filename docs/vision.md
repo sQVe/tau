@@ -10,7 +10,7 @@ rely on, the way we want the agent to write, and the steps we require before wor
 Pi runs the agent and its tools. Tau decides which tools are present, how the agent behaves, and
 which steps it must prove. Tau is one package. Install it and Pi is ready.
 
-This is the goal. See [development](./development.md#current-status) for what works today.
+This is the goal. Tau is under active development, so parts of it are not there yet.
 
 ## Principles
 
@@ -40,5 +40,5 @@ This is the goal. See [development](./development.md#current-status) for what wo
 
 ## See also
 
-- [Development and current status](./development.md#current-status)
+- [Development](./development.md)
 - [Documentation index](./README.md)

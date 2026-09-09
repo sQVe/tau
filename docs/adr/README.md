@@ -2,7 +2,9 @@
 
 ADRs record lasting technical decisions and the reasons for them.
 
-Start with the [template](./TEMPLATE.md). See [writing docs](../AGENTS.md) for shared conventions.
+Start with the [template](./TEMPLATE.md). Follow the
+[writing instructions](../../src/extensions/writing/instructions.md), and see
+[ADR 0010](./0010-documentation-scope.md) for what belongs in an ADR.
 
 ## Index
 
@@ -14,3 +16,5 @@ Start with the [template](./TEMPLATE.md). See [writing docs](../AGENTS.md) for s
 - [0006: Default writing policy](./0006-default-writing-policy.md)
 - [0007: Vim keys in interactive components](./0007-vim-keys-in-interactive-components.md)
 - [0008: Coding instructions](./0008-coding-instructions.md)
+- [0009: Prompt snippets](./0009-prompt-snippets.md)
+- [0010: Documentation scope](./0010-documentation-scope.md)
