@@ -49,13 +49,17 @@ export default function statusbarExtension(pi: ExtensionAPI) {
       // Outside a repository, or when git fails, show no dirty marker.
     }
     // A slower earlier request must not replace a newer result or update a disposed footer.
-    if (id !== refreshId) return;
+    if (id !== refreshId) {
+      return;
+    }
     dirty = nextDirty;
     requestRender?.();
   };
 
   pi.on('session_start', (_event, ctx) => {
-    if (ctx.mode !== 'tui') return;
+    if (ctx.mode !== 'tui') {
+      return;
+    }
 
     // Install the footer first. Awaiting git here would hold up the TUI for as long as the timeout
     // allows, and the marker only needs the render that lands with the result.
@@ -101,6 +105,8 @@ export default function statusbarExtension(pi: ExtensionAPI) {
   // Pi awaits every handler before the tool result reaches the model, so the git call stays off
   // the agent's critical path. The refreshId guard already makes a late result safe to drop.
   pi.on('tool_result', (_event, ctx) => {
-    if (ctx.mode === 'tui') void refresh(ctx);
+    if (ctx.mode === 'tui') {
+      void refresh(ctx);
+    }
   });
 }
