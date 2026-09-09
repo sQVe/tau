@@ -55,12 +55,25 @@ returns results and that `fetch_content` on a URL returns readable markdown.
 **Snippets.** Press `ctrl+q`, turn on one snippet, and send a message. Check that Pi receives the
 snippet text around your message, and that the toggle turns off again.
 
+**Statusbar.** Check that the footer stays on one line and shows the directory, branch, cost,
+context usage, model, and thinking level. Edit a file through a tool and check that `*` appears
+beside the branch. Narrow the terminal and check that the right group truncates before the left.
+
 ## Current status
 
-Tau includes the commit, TDD, writing, coding, snippets, ask-user-question, and web-access
-extensions. The commit extension includes [comment review](./comment-review.md) before approval.
-Interactive commits need credentials for the session model; automated tests use a scripted provider
-and make no model API calls.
+Tau includes the commit, TDD, writing, coding, snippets, statusbar, ask-user-question, and
+web-access extensions. The commit extension includes [comment review](./comment-review.md) before
+approval. Interactive commits need credentials for the session model; automated tests use a scripted
+provider and make no model API calls.
+
+The statusbar replaces Pi's terminal footer with one line. It shows the last two directory
+components and Git branch on the left, with a dirty marker after file changes. Cost, context usage,
+model, and thinking level sit on the right. Context usage changes color above 70% and 90%. The right
+group truncates first on narrow terminals. Extension statuses are not shown.
+
+The footer uses a fixed Catppuccin Latte (Muted) palette, separate from Pi's theme. The directory is
+dim gray, the branch is teal, and warnings use ochre yellow. It keeps the terminal's background
+unchanged. The colors are defined in [colors.ts](../src/extensions/statusbar/colors.ts).
 
 TDD edit enforcement is on. The [run_tests tool](../src/extensions/tdd/index.ts) describes the cycle
 from a failing test through production edits to full verification, with test evidence persisted to
