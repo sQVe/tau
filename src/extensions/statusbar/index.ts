@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
+import { tddGateStatus } from '../tdd/state.js';
 import { footerTheme } from './colors.js';
 import { renderFooterLine } from './render.js';
 
@@ -32,12 +33,14 @@ const getSessionCost = (context: ExtensionContext): number => {
 
 export default function statusbarExtension(pi: ExtensionAPI) {
   let dirty = false;
+  let tddGateOff = false;
   let requestRender: (() => void) | undefined;
   let refreshId = 0;
 
-  const refreshDirty = async (context: ExtensionContext) => {
+  const refresh = async (context: ExtensionContext) => {
     refreshId += 1;
     const currentRefreshId = refreshId;
+    const gateStatus = tddGateStatus(context.cwd);
     let nextDirty = false;
 
     try {
@@ -56,12 +59,15 @@ export default function statusbarExtension(pi: ExtensionAPI) {
       // Outside a repository, or when git fails, show no dirty marker.
     }
 
+    const nextTddGateOff = (await gateStatus) !== undefined;
+
     // Ignore results from older requests and disposed footers.
     if (currentRefreshId !== refreshId) {
       return;
     }
 
     dirty = nextDirty;
+    tddGateOff = nextTddGateOff;
     requestRender?.();
   };
 
@@ -72,15 +78,16 @@ export default function statusbarExtension(pi: ExtensionAPI) {
 
     context.ui.setFooter((terminal, _theme, footerData) => {
       dirty = false;
+      tddGateOff = false;
       requestRender = () => {
         terminal.requestRender();
       };
       const unsubscribe = footerData.onBranchChange(() => {
-        void refreshDirty(context);
+        void refresh(context);
       });
 
       // Pi disposes the old footer before calling this factory. Start after that disposal.
-      void refreshDirty(context);
+      void refresh(context);
 
       return {
         dispose() {
@@ -100,6 +107,7 @@ export default function statusbarExtension(pi: ExtensionAPI) {
                 directory: context.cwd.split(sep).filter(Boolean).slice(-2).join(sep) || sep,
                 branch: footerData.getGitBranch(),
                 dirty,
+                tddGateOff,
                 cost: getSessionCost(context),
                 contextPercent: usage?.percent ?? null,
                 contextWindow: usage?.contextWindow ?? context.model?.contextWindow ?? 0,
@@ -115,10 +123,10 @@ export default function statusbarExtension(pi: ExtensionAPI) {
     });
   });
 
-  // Pi awaits tool_result handlers, so Git must run in the background.
+  // Pi awaits tool_result handlers, so footer reads must run in the background.
   pi.on('tool_result', (_event, context) => {
     if (context.mode === 'tui' && requestRender !== undefined) {
-      void refreshDirty(context);
+      void refresh(context);
     }
   });
 }

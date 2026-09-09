@@ -11,6 +11,7 @@ const input = {
   directory: 'tau/abu-347',
   branch: 'main',
   dirty: false,
+  tddGateOff: false,
   cost: 0.412,
   contextPercent: 23.4,
   contextWindow: 200000,
@@ -21,6 +22,24 @@ const foreground = vi.fn<Theme['fg']>((_color, text) => text);
 const theme = { fg: foreground };
 
 describe('statusbar rendering', () => {
+  it('shows the gate-off glyph in warning color after the dirty branch', () => {
+    const gateOffInput = { ...input, dirty: true, tddGateOff: true };
+    const line = renderFooterLine(gateOffInput, 80, footerTheme);
+
+    expect(stripVTControlCharacters(line)).toContain('tau/abu-347  main*  \u{F0FC6}');
+    expect(line).toContain(footerTheme.fg('warning', '\u{F0FC6}'));
+    expect(renderFooterLine(input, 80, footerTheme)).not.toContain('\u{F0FC6}');
+
+    for (const width of [0, 1, 8, 19, 20, 21, 24, 40, 80]) {
+      const narrowLine = renderFooterLine(gateOffInput, width, footerTheme);
+
+      expect(visibleWidth(narrowLine)).toBeLessThanOrEqual(width);
+      expect(narrowLine.includes('\u{F0FC6}')).toBe(
+        width >= visibleWidth('tau/abu-347  main*  \u{F0FC6}'),
+      );
+    }
+  });
+
   it('renders external text without terminal controls or extra lines', () => {
     const line = renderFooterLine(
       {

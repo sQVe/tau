@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify, stripVTControlCharacters } from 'node:util';
@@ -73,6 +73,67 @@ const setup = (cwd: string, mode = 'tui') => {
 };
 
 describe('statusbar extension', () => {
+  it('refreshes the gate indicator from worktree state', async ({ onTestFinished }) => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    await executeFile('git', ['init', '-q'], { cwd });
+    const app = setup(cwd);
+    await app.emit('session_start');
+    const footer = app.mount();
+    onTestFinished(() => footer.component.dispose?.());
+    await vi.waitFor(() => {
+      expect(footer.requestRender).toHaveBeenCalled();
+    });
+    expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
+
+    await mkdir(join(cwd, '.tau'));
+    const statePath = join(cwd, '.tau/state.json');
+    await writeFile(
+      statePath,
+      JSON.stringify({ tdd: { reds: [], gateOff: { since: '2026-05-01T00:00:00.000Z' } } }),
+    );
+
+    expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
+    await app.emit('tool_result');
+
+    await vi.waitFor(() => {
+      expect(footer.component.render(100)[0]).toContain('main*  \u{F0FC6}');
+    });
+
+    await writeFile(statePath, JSON.stringify({ tdd: { reds: [], gateOff: null } }));
+    footer.branchChange();
+
+    await vi.waitFor(() => {
+      expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
+    });
+
+    await writeFile(statePath, 'corrupt');
+    await app.emit('tool_result');
+
+    await vi.waitFor(() => {
+      expect(footer.component.render(100)[0]).toContain('\u{F0FC6}');
+    });
+  });
+
+  it('shows a persisted gate-off indicator at startup', async ({ onTestFinished }) => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    await executeFile('git', ['init', '-q'], { cwd });
+    await mkdir(join(cwd, '.tau'));
+    await writeFile(
+      join(cwd, '.tau/state.json'),
+      JSON.stringify({ tdd: { reds: [], gateOff: { since: '2026-05-01T00:00:00.000Z' } } }),
+    );
+    const app = setup(cwd);
+    await app.emit('session_start');
+    const footer = app.mount();
+    onTestFinished(() => footer.component.dispose?.());
+
+    await vi.waitFor(() => {
+      expect(footer.rawRender(100)[0]).toContain('\x1b[38;2;128;96;16m\u{F0FC6}\x1b[39m');
+    });
+  });
+
   it('refreshes a replacement footer after the old footer is disposed', async ({
     onTestFinished,
   }) => {
