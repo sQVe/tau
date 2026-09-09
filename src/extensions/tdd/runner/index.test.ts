@@ -961,21 +961,24 @@ describe('nodeExecutable', () => {
     expect(nodeExecutable('/usr/bin/nodejs')).toBe('/usr/bin/nodejs');
   });
 
-  it.each(['node', 'nodejs'])('finds %s on PATH for a compiled agent', async (name) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-node-'));
-    onTestFinished(async () => {
-      vi.unstubAllEnvs();
-      await rm(directory, { recursive: true, force: true });
-    });
+  it.each(process.platform === 'win32' ? ['node'] : ['node', 'nodejs'])(
+    'finds %s on PATH for a compiled agent',
+    async (name) => {
+      const directory = await mkdtemp(join(tmpdir(), 'tau-node-'));
+      onTestFinished(async () => {
+        vi.unstubAllEnvs();
+        await rm(directory, { recursive: true, force: true });
+      });
 
-    const executable = join(directory, process.platform === 'win32' ? `${name}.exe` : name);
-    await writeFile(executable, '');
-    await chmod(executable, 0o755);
-    vi.stubEnv('PATH', directory);
+      const executable = join(directory, process.platform === 'win32' ? `${name}.exe` : name);
+      await writeFile(executable, '');
+      await chmod(executable, 0o755);
+      vi.stubEnv('PATH', directory);
 
-    expect(nodeExecutable('/usr/bin/pi')).toBe(executable);
-    expect(nodeExecutable('/opt/pi-coding-agent/pi')).toBe(executable);
-  });
+      expect(nodeExecutable('/usr/bin/pi')).toBe(executable);
+      expect(nodeExecutable('/opt/pi-coding-agent/pi')).toBe(executable);
+    },
+  );
 
   it('keeps a node executable regardless of PATH', () => {
     expect(nodeExecutable('/usr/bin/node')).toBe('/usr/bin/node');
