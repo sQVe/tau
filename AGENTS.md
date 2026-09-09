@@ -11,5 +11,7 @@ verification.
   [ADR 0010](docs/adr/0010-documentation-scope.md).
 - Keep tests next to source; package and cross-module checks belong in `tests/`.
 - Follow the [writing instructions](src/extensions/writing/instructions.md) for every document.
+- Before finishing a document, check its local links and verify the commands it gives against the
+  repository.
 
 `CLAUDE.md` links to this file. Edit `AGENTS.md` to update instructions for both agents.

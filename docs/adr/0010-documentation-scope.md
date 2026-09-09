@@ -30,6 +30,8 @@ Tau documents decisions, not features.
   key binding. Include only the details needed to understand or follow the decision.
 - Code states behavior. Tool and command descriptions state what the agent needs when it calls them.
 - `docs/` holds only what no feature owns: the vision, the development guide, and the ADRs.
+- The root README introduces the project and links to the rest. Topic details go in `docs/` and are
+  linked from the documentation index.
 - Agent instructions stay beside the extension that loads them.
 
 Do not add a page that explains how a feature works. Write an ADR when a lasting decision needs a
