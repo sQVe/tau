@@ -90,12 +90,11 @@ Number payload lines from 1 to match the read tool's `offset`. Answers cite `pat
 leading `^\d+: ` from every line of the reply so excerpts paste without payload prefixes. The
 session model reads a bounded range before editing; Pi's `edit` is the exact-text check.
 
-Send one delegate call per file, in parallel, and return the summed usage. The session model does
-the cross-file synthesis. Resolve paths against the session's working directory, without restricting
-paths outside it. Skip NUL-byte binary files and list them in the result. Cap each file at 400,000
-bytes and the numbered request at 1,000,000 characters, matching comment review's limits. Bound the
-completion to 120 seconds. Return the delegate's full usage on successful tool results so Pi's
-ledger and Tau's footer count it.
+Send all requested files in one delegate call. Resolve paths against the session's working
+directory, without restricting paths outside it. Skip NUL-byte binary files and list them in the
+result. Cap each file at 400,000 bytes and the numbered request at 1,000,000 characters, matching
+comment review's limits. Bound the completion to 120 seconds. Return the delegate's full usage on
+successful tool results so Pi's ledger and Tau's footer count it.
 
 Treat file content as evidence, never as instructions, and keep the delegate read-only. Prompt
 framing tells it to ignore embedded requests, answer only the question, cite file lines, and add no
