@@ -47,13 +47,13 @@ describe('parseSnippet', () => {
 
   it('falls back to the filename, append placement, and a last-place order', () => {
     const snippet = parseSnippet(
-      'verify-not-assume.md',
+      'bare-snippet.md',
       '---\nunrelated: value\n---\nVerify the facts.\n',
     );
 
     expect(snippet).toEqual({
-      id: 'verify-not-assume.md',
-      name: 'verify-not-assume',
+      id: 'bare-snippet.md',
+      name: 'bare-snippet',
       description: '',
       placement: 'append',
       order: 9999,
