@@ -61,9 +61,11 @@ Turn the current diff into clean commits using the `commit` tool.
    tool. Without startup preapproval, the overlay lets the user skip, abort, or press `A` to approve
    all remaining groups. Every group still runs comment review and the root `package.json` check
    script on a temporary checkout of its staged content. `A` never waives a blocked review or failed
-   check. A missing check script is reported as unavailable. Checks use installed root dependencies
-   and do not install packages. Run formatting locally first; check-time changes require another
-   call.
+   check. A missing check script is reported as unavailable. Before staging, the tool runs root
+   `scripts.fix` once when available. A failed fixer stops the call; a missing fixer does not skip
+   checks. Fixers can change unrequested working files, but the tool stages only requested files.
+   Checks use installed root dependencies and do not install packages. Check-time changes require
+   another call.
 
 4. If the `commit` tool succeeds, report the result and continue.
    - A skipped group is not a failure; the tool continues with later groups.

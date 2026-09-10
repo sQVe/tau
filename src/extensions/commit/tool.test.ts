@@ -192,6 +192,57 @@ const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)
   return { custom, editor, exec, context, input, execute, previews };
 };
 
+it('reports a failing fixer before staging or approval', async () => {
+  const repositoryDirectory = await createTemporaryRepository();
+
+  await writeRepositoryFile(
+    repositoryDirectory,
+    'package.json',
+    JSON.stringify({
+      scripts: {
+        fix: 'echo fixer failed >&2; exit 1',
+        check: 'exit 0',
+      },
+    }),
+  );
+  const approval = vi.fn<ExtensionContext['ui']['custom']>();
+  const tool = createCommitTool({
+    exec: (command, arguments_, options) =>
+      runCommand(command, arguments_, options?.cwd ?? repositoryDirectory),
+  });
+
+  await expect(
+    tool.execute(
+      'fix',
+      { groups: [{ files: ['package.json'], subject: 'feat: fixture' }] },
+      undefined,
+      undefined,
+      { cwd: repositoryDirectory, hasUI: true, ui: { custom: approval } } as never,
+    ),
+  ).rejects.toThrow(/Project fixer failed[\s\S]*fixer failed/);
+  expect(approval).not.toHaveBeenCalled();
+  expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
+});
+
+it('reports a missing fixer while still checking the candidate', async () => {
+  const repositoryDirectory = await createTemporaryRepository();
+
+  await writeRepositoryFile(
+    repositoryDirectory,
+    'package.json',
+    JSON.stringify({ scripts: { check: 'exit 0' } }),
+  );
+
+  const result = await executeCommit(repositoryDirectory, {
+    groups: [{ files: ['package.json'], subject: 'feat: fixture' }],
+  });
+
+  expect(JSON.stringify(result.content)).toContain(
+    'Project fixer unavailable: no root scripts.fix.',
+  );
+  expect(result.details.groups[0]?.projectCheck).toContain('Project check passed');
+});
+
 it('rejects an array as the root package manifest before approval', async () => {
   const repositoryDirectory = await createTemporaryRepository();
 
@@ -211,7 +262,7 @@ it('rejects a staged candidate whose project check fails despite an unstaged fix
   await writeRepositoryFile(
     repositoryDirectory,
     'package.json',
-    JSON.stringify({ scripts: { check: 'node check.cjs' } }),
+    JSON.stringify({ scripts: { fix: 'exit 0', check: 'node check.cjs' } }),
   );
   await writeRepositoryFile(
     repositoryDirectory,
@@ -1231,7 +1282,7 @@ describe('commitTool.execute', () => {
       { type: 'text', text: 'no test runner resolves from this worktree' },
       {
         type: 'text',
-        text: `${commitHash} feat: add thing\nProject check unavailable: no root package.json.`,
+        text: `${commitHash} feat: add thing\nProject fixer unavailable: no root package.json.\nProject check unavailable: no root package.json.`,
       },
     ]);
   });
@@ -1430,37 +1481,63 @@ describe('commitTool.execute', () => {
     ).rejects.toThrow(/already staged: old\.md/i);
   });
 
-  it('requires another review after a formatting hook rewrites files, then commits cleanly', async () => {
+  it('runs the fixer before staging and approves the fixed bytes on the first call', async () => {
     const repositoryDirectory = await createTemporaryRepository();
 
+    await git(repositoryDirectory, ['commit', '--allow-empty', '-m', 'test: baseline']);
+    await writeRepositoryFile(repositoryDirectory, 'second.txt', 'second group');
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
     await writeRepositoryFile(
       repositoryDirectory,
       '.git/hooks/pre-commit',
-      '#!/bin/sh\nprintf "formatted\\n" > README.md\ngit add -- README.md\n',
+      '#!/bin/sh\ngrep -qx formatted README.md || exit 1\n',
     );
     await chmod(join(repositoryDirectory, '.git/hooks/pre-commit'), 0o755);
 
-    await expect(
-      executeCommit(repositoryDirectory, {
-        groups: [
-          {
-            files: ['README.md'],
-            subject: 'feat: add readme',
-          },
-        ],
-      }),
-    ).rejects.toThrow(/changed reviewed content/);
-    expect(await git(repositoryDirectory, ['show', ':README.md'])).toBe('formatted\n');
+    await writeRepositoryFile(
+      repositoryDirectory,
+      'package.json',
+      JSON.stringify({ scripts: { fix: 'node fix.cjs', check: 'grep -qx formatted README.md' } }),
+    );
+    await writeRepositoryFile(
+      repositoryDirectory,
+      'fix.cjs',
+      "require('node:assert').equal(require('node:child_process').execSync('git diff --cached --name-only').toString(), ''); require('node:fs').writeFileSync('README.md', 'formatted\\n'); require('node:fs').writeFileSync('unrelated.txt', 'also fixed');",
+    );
+    const tool = createReviewedCommitTool(
+      {
+        exec: (command, arguments_, options) =>
+          runCommand(command, arguments_, options?.cwd ?? repositoryDirectory),
+      },
+      async (_pi, _context, _signal, snapshot) => {
+        expect(await git(repositoryDirectory, ['show', `${snapshot?.tree}:README.md`])).toBe(
+          'formatted\n',
+        );
 
-    await executeCommit(repositoryDirectory, {
-      groups: [{ files: ['README.md'], subject: 'feat: add readme' }],
-    });
+        return { findings: [] };
+      },
+    );
+    const result = await tool.execute(
+      'fix',
+      {
+        groups: [
+          { files: ['README.md', 'package.json', 'fix.cjs'], subject: 'feat: add readme' },
+          { files: ['second.txt'], subject: 'feat: second group' },
+        ],
+      },
+      undefined,
+      undefined,
+      confirmedContext(repositoryDirectory),
+    );
+
+    expect(JSON.stringify(result.content)).toContain('Project fixer passed: npm run fix');
+    expect(result.details.groups[0]?.projectCheck).toContain('Project check passed');
 
     const statusOutput = await git(repositoryDirectory, ['status', '--short']);
     const committedContent = await git(repositoryDirectory, ['show', 'HEAD:README.md']);
 
-    expect(statusOutput).toBe('');
+    expect(await git(repositoryDirectory, ['rev-list', '--all', '--count'])).toBe('3\n');
+    expect(statusOutput).toBe('?? unrelated.txt\n');
     expect(committedContent).toBe('formatted\n');
   });
 
@@ -1713,7 +1790,8 @@ describe('commit overlay flow', () => {
     expect(previews[0]).not.toContain('1/1');
     expect(previews[0]).toContain('README.md +2 -1');
     expect(previews[0]).toContain('image.png binary');
-    expect(exec.mock.calls.slice(0, 4).map((call) => call[1])).toEqual([
+    expect(exec.mock.calls.slice(0, 5).map((call) => call[1])).toEqual([
+      ['rev-parse', '--show-toplevel'],
       ['rev-parse', '--show-prefix'],
       ['diff', '--cached', '--name-only', '--diff-filter=ACMRDT', '-z'],
       ['--literal-pathspecs', 'add', '--', 'README.md'],
