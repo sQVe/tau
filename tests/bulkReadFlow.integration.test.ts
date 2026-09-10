@@ -23,11 +23,11 @@ import type { TestContext } from 'vitest';
 vi.setConfig({ testTimeout: 60_000 });
 
 beforeEach(() => {
-  // eslint-disable-next-line node/no-process-env -- ADR 0013 defines the delegate environment setting.
+  // eslint-disable-next-line node/no-process-env -- ADR 0014 defines the delegate environment setting.
   process.env.TAU_BULK_READ_MODEL = 'tau-delegate/reader';
 });
 afterEach(() => {
-  // eslint-disable-next-line node/no-process-env -- ADR 0013 defines the delegate environment setting.
+  // eslint-disable-next-line node/no-process-env -- ADR 0014 defines the delegate environment setting.
   delete process.env.TAU_BULK_READ_MODEL;
 });
 

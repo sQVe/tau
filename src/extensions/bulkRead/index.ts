@@ -4,14 +4,14 @@ import { Type } from 'typebox';
 
 import { bulkReadInputError, bulkReadTool, bulkRead } from './tool.js';
 
-// ADR 0013 records the measurement behind this threshold.
+// ADR 0014 records the measurement behind this threshold.
 export const bulkReadLineThreshold = 400;
 
 // Recoverable failures say nothing about whether the delegate is reachable, so trimming stays on.
 const recoverableErrors = new Set(['AbortError', 'TimeoutError', bulkReadInputError]);
 
 export const delegateReference = (): string => {
-  // eslint-disable-next-line node/no-process-env -- ADR 0013 defines the delegate environment setting.
+  // eslint-disable-next-line node/no-process-env -- ADR 0014 defines the delegate environment setting.
   const reference = process.env.TAU_BULK_READ_MODEL;
 
   // An exported but empty setting means unset, so it takes the default rather than a missing model.
@@ -90,7 +90,7 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
     clamped.add(event.toolCallId);
   });
 
-  // The extension outlives a session, but ADR 0013 scopes a stopped trim to the session that
+  // The extension outlives a session, but ADR 0014 scopes a stopped trim to the session that
   // stopped it.
   const resetSession = () => {
     trimming = true;

@@ -61,3 +61,4 @@ ordinary message.
 
 - [ADR-0001: Application structure](./0001-application-structure.md)
 - [ADR-0007: Vim keys in interactive components](./0007-vim-keys-in-interactive-components.md)
+- [ADR-0013: Snippet placement](./0013-snippet-placement.md)

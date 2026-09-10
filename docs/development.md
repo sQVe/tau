@@ -103,7 +103,7 @@ not clamped.
 
 ## Measuring bulk reads
 
-Repeat this when the delegate or the session model changes; ADR 0013 records what the last run
+Repeat this when the delegate or the session model changes; ADR 0014 records what the last run
 found. Measure with real providers on a session too small to compact, using one semantic question
 spanning three files above the threshold. Compare a local build with trimming off and `bulk_read`
 present against the shipped setup, since there is no shipped trimming flag. Run each twice with the
