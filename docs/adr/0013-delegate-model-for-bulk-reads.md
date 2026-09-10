@@ -1,7 +1,7 @@
 # ADR 0013: Delegate model for bulk reads
 
 - Status: Accepted
-- Date: 2026-09-09
+- Date: 2026-09-10
 
 ## Context
 
@@ -85,7 +85,9 @@ the 50KB limit. Reads with an explicit `limit` pass unchanged. Pi's existing 50K
 applies. The constant was kept after the
 [development guide's measurement](../development.md#measuring-bulk-reads). A 400-line file with a
 trailing newline gets a notice for one empty line; accept that edge case rather than adding a file
-stat to the hook.
+stat to the hook. Pi reports no truncation flag on the result, so the rewrite matches the notice
+text. A clamped file whose own last paragraph ends in that exact shape loses it to the hint; accept
+that too rather than guessing truncation from a line count.
 
 Number payload lines from 1 to match the read tool's `offset`, using an arrow separator. Answers
 cite `path:line`. Strip a leading `^\d+→` from every line of the reply so excerpts paste without
@@ -130,7 +132,7 @@ expanding the scope to code writers.
   the shipped setup. Run each twice on the same prompt and files and keep the medians. Record
   session and delegate usage, assistant turns, offset pages, wall clock, and catalog cost ratios in
   [Development](../development.md#measuring-bulk-reads), using the session JSONL rather than hidden
-  per-model rows in `/session`. Those results set the threshold and move this ADR to Accepted.
+  per-model rows in `/session`. Those results set the threshold and moved this ADR to Accepted.
 - File content reaches a weaker model whose output returns as trusted-looking bullets. Prompt
   framing is the mitigation, and it is weaker than in Tau's other uses of it. The delegate has no
   tools, so injected content cannot act. Citation instructions do not establish that an answer is
