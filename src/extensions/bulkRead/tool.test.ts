@@ -1,12 +1,16 @@
+import { execFile as execFileCallback } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { buildPayload, bulkRead, stripLinePrefixes } from './tool.js';
+
+const execFile = promisify(execFileCallback);
 
 const setup = async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-bulk-'));
@@ -106,6 +110,16 @@ it('throws instead of asking the delegate when every file is binary', async () =
   await expect(
     bulkRead(context, model, { paths: ['binary'], question: 'Why?' }, undefined),
   ).rejects.toThrow('Every requested file is binary: binary');
+  expect(complete).not.toHaveBeenCalled();
+});
+
+it('rejects a named pipe instead of blocking on the read', async () => {
+  const { cwd, context, model, complete } = await setup();
+  await execFile('mkfifo', [join(cwd, 'pipe')]);
+
+  await expect(
+    bulkRead(context, model, { paths: ['pipe'], question: 'Why?' }, undefined),
+  ).rejects.toThrow('Not a regular file: pipe');
   expect(complete).not.toHaveBeenCalled();
 });
 

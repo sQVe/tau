@@ -38,9 +38,16 @@ const loadPayload = async (cwd: string, paths: string[], signal: AbortSignal | u
     const absolutePath = resolve(cwd, path.replace(/^@/, '').replace(/^~(?=\/|$)/, homedir()));
 
     // Both caps are measured before reading, so an oversized request never allocates its content.
-    const { size } = await stat(absolutePath).catch((error: unknown) => {
+    const stats = await stat(absolutePath).catch((error: unknown) => {
       throw inputError(error instanceof Error ? error.message : String(error));
     });
+
+    // A FIFO reports size 0 and then blocks the read until a writer appears, past every timeout.
+    if (!stats.isFile()) {
+      throw inputError(`Not a regular file: ${path}`);
+    }
+
+    const { size } = stats;
     if (size > 400_000) {
       throw inputError(`Input is too large: ${path}. Split the request`);
     }
