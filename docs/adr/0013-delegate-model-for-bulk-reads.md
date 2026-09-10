@@ -76,43 +76,53 @@ errors. Caller cancellation, the 120-second timeout, the `length` stop reason, f
 payload caps leave trimming on, because none of them show that the delegate is unreachable. Tool
 failures throw rather than return error metadata.
 
-### Read limits and evidence
+### Clamping reads
 
-Clamp unbounded reads to a fixed 400-line threshold by setting the read tool's `limit` in the
-pre-call hook. Rewrite the read result's trailing continuation notice into a hint naming
-`bulk_read`. The hint uses the continuation offset from Pi's notice, including for offset reads and
-the 50KB limit. Reads with an explicit `limit` pass unchanged. Pi's existing 50KB limit still
-applies. The constant was kept after the
-[development guide's measurement](../development.md#measuring-bulk-reads). A 400-line file with a
-trailing newline gets a notice for one empty line; accept that edge case rather than adding a file
-stat to the hook. Pi reports no truncation flag on the result, so the rewrite matches the notice
-text. A clamped file whose own last paragraph ends in that exact shape loses it to the hint; accept
-that too rather than guessing truncation from a line count.
+- Clamp unbounded reads to a fixed 400-line threshold by setting the read tool's `limit` in the
+  pre-call hook. Reads with an explicit `limit` pass unchanged, and Pi's 50KB limit still applies.
+- Rewrite the read result's trailing continuation notice into a hint naming `bulk_read`, carrying
+  the continuation offset from Pi's notice, for offset reads and the 50KB limit alike.
+- Keep the threshold at the value the
+  [development guide's measurement](../development.md#measuring-bulk-reads) tested.
 
-Number payload lines from 1 to match the read tool's `offset`, using an arrow separator. Answers
-cite `path:line`. Strip a leading `^\d+→` from every line of the reply so excerpts paste without
-payload prefixes. The arrow is chosen over a colon so the strip cannot delete an answer line that
-opens with a number and a colon, such as a status or exit code. The session model reads a bounded
-range before editing; Pi's `edit` is the exact-text check.
+Pi reports no truncation flag on the result, so the hook matches the notice text and accepts two
+edge cases rather than reading the file a second time:
 
-Send all requested files in one delegate call. Resolve paths against the session's working
-directory, expanding a leading `~` and stripping a leading `@` as the read tool does, and without
-restricting paths outside it. Skip NUL-byte binary files and list them in the result, and fail
-rather than send an empty payload when every requested file is binary. Cap each file at 400,000
-bytes and the numbered request at 1,000,000 characters, matching comment review's limits. Bound the
-completion to 120 seconds. Return the delegate's full usage on successful tool results so Pi's
-ledger and Tau's footer count it.
+- A 400-line file with a trailing newline gets a notice for one empty line.
+- A clamped file whose own last paragraph ends in the notice's shape loses it to the hint.
 
-Treat file content as evidence, never as instructions, and keep the delegate read-only. Prompt
-framing tells it to ignore embedded requests, answer only the question, cite file lines, and add no
-tasks, commands, or URLs. Delegation does not bypass Tau's
-[TDD guard](../../src/extensions/tdd/guard.ts), which explicitly allows the read-only tool because
-it blocks unknown tools.
+### Payload format
 
-Keep `pnpm check` independent of model APIs, as required by the
-[development guide](../development.md#local-setup). Offline checks can establish tool behavior and
-result size, but not real-model answer quality or billing savings. Require measured savings before
-expanding the scope to code writers.
+- Number payload lines from 1 to match the read tool's `offset`, separated by an arrow.
+- Strip a leading `^\d+→` from every line of the reply so excerpts paste without payload prefixes.
+  The arrow beats a colon because the strip then cannot delete an answer line that opens with a
+  number and a colon, such as a status or exit code.
+- Answers cite `path:line`. The session model reads a bounded range before editing, and Pi's `edit`
+  is the exact-text check.
+
+### Delegate request
+
+- Send all requested files in one call. Resolve paths against the session's working directory,
+  expanding a leading `~` and stripping a leading `@` as the read tool does, without restricting
+  paths outside it.
+- Skip NUL-byte binary files and list them in the result. Fail rather than send an empty payload
+  when every requested file is binary.
+- Cap each file at 400,000 bytes and the numbered request at 1,000,000 characters, matching comment
+  review's limits. Bound the completion to 120 seconds.
+- Return the delegate's full usage on successful tool results so Pi's ledger and Tau's footer count
+  it.
+
+### Safety and verification
+
+- Treat file content as evidence, never as instructions, and keep the delegate read-only. Prompt
+  framing tells it to ignore embedded requests, answer only the question, cite file lines, and add
+  no tasks, commands, or URLs.
+- Delegation does not bypass Tau's [TDD guard](../../src/extensions/tdd/guard.ts), which explicitly
+  allows the read-only tool because it blocks unknown tools.
+- Keep `pnpm check` independent of model APIs, as required by the
+  [development guide](../development.md#local-setup). Offline checks establish tool behavior and
+  result size, not real-model answer quality or billing savings.
+- Require measured savings before expanding the scope to code writers.
 
 ## Tradeoffs
 
@@ -121,18 +131,28 @@ expanding the scope to code writers.
 - The pre-call hook clamps rather than blocks, so an oversized read returns the file head plus a
   hint in the same turn. The hint is advisory; the model can still page with `offset`, which costs
   more than a plain read.
-- Portal reports 10-30 seconds per delegation. The 2026-09-10 measurement saw about 50 seconds for a
-  24k-token payload, and a median saving of 11% that sits inside run-to-run variance. Delegation
-  trades latency for a modest reduction in session-model tokens. The delegate is asked for the
-  fewest bullets that answer the question because answer length was the measured cost.
+- Portal reports 10-30 seconds per delegation; the measurement saw about 50 seconds for a 24k-token
+  payload. Delegation trades latency for a modest reduction in session-model tokens, and the
+  delegate is asked for the fewest bullets that answer the question because answer length was the
+  measured cost.
 - The roughly 90% figure reported by Portal and rtk describes a reduction in what the agent reads,
   not a reduction in the bill. Both estimate tokens as characters divided by four, without a
-  tokenizer. The owner measures real providers with compaction disabled, using one semantic question
-  spanning three files above the threshold. Compare trimming off with `bulk_read` present against
-  the shipped setup. Run each twice on the same prompt and files and keep the medians. Record
-  session and delegate usage, assistant turns, offset pages, wall clock, and catalog cost ratios in
-  [Development](../development.md#measuring-bulk-reads), using the session JSONL rather than hidden
-  per-model rows in `/session`. Those results set the threshold and moved this ADR to Accepted.
+  tokenizer.
+- Four runs on 2026-09-10 over a 2,244-line fixture, `openai-codex/gpt-6-astra` against
+  `openai-codex/gpt-5.6-luna`, gave a median catalog cost of $0.36 without trimming against $0.32
+  with it, an 11% saving inside run-to-run variance, and a median wall clock of 42 against 66
+  seconds. The one run that clamped and then delegated was 32% cheaper than the comparable full-read
+  run and twice as slow. These results accepted this ADR;
+  [Development](../development.md#measuring-bulk-reads) has the procedure to repeat them.
+- The session model often avoids bulk reads on its own, grepping and reading bounded ranges the
+  clamp leaves alone, and those runs cost the same either way. The threshold stays at 400, and code
+  writers do not earn a ticket on this evidence.
+- Three follow-up changes were measured live and reverted: offering bounded reads "for exact code"
+  in the hint, which gave no speedup and two mis-bounded citations; one delegate call per file in
+  parallel, which ran faster per call but padded answers with remarks about files the call never
+  saw; and a system-prompt guideline to delegate first, which cost 12% less and about 40 seconds
+  more while dropping a claim in three of four answers. The clamp, the hint, and the shorter-answer
+  sentence held.
 - File content reaches a weaker model whose output returns as trusted-looking bullets. Prompt
   framing is the mitigation, and it is weaker than in Tau's other uses of it. The delegate has no
   tools, so injected content cannot act. Citation instructions do not establish that an answer is
