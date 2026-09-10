@@ -18,7 +18,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
-import { WEB_ACCESS_TOOLS } from '../src/extensions/webAccess/index.js';
+import { webAccessTools } from '../src/extensions/webAccess/index.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 
 it('loads Tau through Pi with commit features, bundled question and web tools, and writing and coding rules on every run', async ({
@@ -52,11 +52,12 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     const tauExtension = extensions.find((extension) => extension.tools.has('commit'));
 
     expect(tauExtension?.commands.has('commit')).toBe(true);
-    expect(tauExtension?.handlers.get('tool_call')).toHaveLength(2);
-    expect(tauExtension?.handlers.get('session_start')).toHaveLength(4);
-    expect(tauExtension?.handlers.get('tool_result')).toHaveLength(1);
-    expect(tauExtension?.handlers.get('session_before_switch')).toHaveLength(1);
-    expect(tauExtension?.handlers.get('session_before_fork')).toHaveLength(1);
+    expect(tauExtension?.tools.has('bulk_read')).toBe(true);
+    expect(tauExtension?.handlers.get('tool_call')).toHaveLength(3);
+    expect(tauExtension?.handlers.get('session_start')).toHaveLength(5);
+    expect(tauExtension?.handlers.get('tool_result')).toHaveLength(2);
+    expect(tauExtension?.handlers.get('session_before_switch')).toHaveLength(2);
+    expect(tauExtension?.handlers.get('session_before_fork')).toHaveLength(2);
     expect(extensions.some((extension) => extension.tools.has('ask_user_question'))).toBe(true);
 
     // Catch upgrades that add a web tool the TDD guard would block.
@@ -64,7 +65,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
 
     expect(webAccessExtension).toBeDefined();
     expect([...(webAccessExtension?.tools.keys() ?? [])].toSorted()).toEqual(
-      [...WEB_ACCESS_TOOLS].toSorted(),
+      [...webAccessTools].toSorted(),
     );
     expect(
       loader

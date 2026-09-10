@@ -64,11 +64,11 @@ export interface RunnerDeps {
   timeoutMs: number;
 }
 
-export const DEFAULT_TIMEOUT_MS = 30_000;
-export const FULL_TIMEOUT_MS = 120_000;
-export const MAX_FAILURES = 10;
-export const MAX_MESSAGE_CHARS = 300;
-export const MAX_TOTAL_BYTES = 32 * 1024;
+export const defaultTimeoutMilliseconds = 30_000;
+export const fullTimeoutMilliseconds = 120_000;
+export const maximumFailures = 10;
+export const maximumMessageCharacters = 300;
+export const maximumTotalBytes = 32 * 1024;
 
 // Bound captured process output separately from the shorter diagnostic messages.
-export const MAX_STDOUT_BYTES = 8 * 1024 * 1024;
+export const maximumStdoutBytes = 8 * 1024 * 1024;

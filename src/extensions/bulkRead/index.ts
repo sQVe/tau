@@ -1,0 +1,123 @@
+import { isToolCallEventType } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { Type } from 'typebox';
+
+import { bulkReadInputError, bulkReadTool, bulkRead } from './tool.js';
+
+// ADR 0014 records the measurement behind this threshold.
+export const bulkReadLineThreshold = 400;
+
+// Recoverable failures say nothing about whether the delegate is reachable, so trimming stays on.
+const recoverableErrors = new Set(['AbortError', 'TimeoutError', bulkReadInputError]);
+
+export const delegateReference = (): string => {
+  // eslint-disable-next-line node/no-process-env -- ADR 0014 defines the delegate environment setting.
+  const reference = process.env.TAU_BULK_READ_MODEL;
+
+  // An exported but empty setting means unset, so it takes the default rather than a missing model.
+  return reference == null || reference === '' ? 'openai-codex/gpt-5.6-luna' : reference;
+};
+
+export const rewriteContinuationNotice = (text: string): string =>
+  text.replace(
+    /\n\n\[[^\n]*Use offset=(\d+) to continue\.\]$/,
+    '\n\nFile continues at line $1. For a question about this file call bulk_read with paths and question. To edit, read again with offset and limit.',
+  );
+
+const findDelegate = (ctx: ExtensionContext, reference: string) => {
+  const [provider, ...id] = reference.split('/');
+
+  return ctx.modelRegistry.find(provider ?? '', id.join('/'));
+};
+
+// A throwing registry would escape the hook and block the read itself, so clamping falls back to
+// stock behavior instead. The tool path still reports the error.
+const clampDelegate = (ctx: ExtensionContext) => {
+  try {
+    return findDelegate(ctx, delegateReference());
+  } catch {
+    return undefined;
+  }
+};
+
+export default function bulkReadExtension(pi: ExtensionAPI): void {
+  let trimming = true;
+  const clamped = new Set<string>();
+  const description =
+    'Ask a cheaper model a question about one or more large files instead of reading them.';
+
+  pi.registerTool({
+    name: bulkReadTool,
+    label: 'Bulk read',
+    description,
+    promptSnippet: description,
+    parameters: Type.Object({
+      paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+      question: Type.String({ minLength: 1 }),
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      try {
+        const reference = delegateReference();
+        const model = findDelegate(ctx, reference);
+        if (!model) {
+          throw new Error(
+            `Bulk read ${reference} failed: model not found. Check pi --list-models.`,
+          );
+        }
+
+        return await bulkRead(ctx, model, params, signal);
+      } catch (error) {
+        if (!(error instanceof Error) || !recoverableErrors.has(error.name)) {
+          trimming = false;
+        }
+
+        throw error;
+      }
+    },
+  });
+
+  pi.on('tool_call', (event, ctx) => {
+    if (!trimming || !isToolCallEventType('read', event) || event.input.limit !== undefined) {
+      return;
+    }
+    if (!clampDelegate(ctx)) {
+      trimming = false;
+
+      return;
+    }
+
+    event.input.limit = bulkReadLineThreshold;
+    clamped.add(event.toolCallId);
+  });
+
+  // The extension outlives a session, but ADR 0014 scopes a stopped trim to the session that
+  // stopped it.
+  const resetSession = () => {
+    trimming = true;
+    clamped.clear();
+  };
+
+  pi.on('session_start', resetSession);
+  pi.on('session_before_switch', () => {
+    resetSession();
+
+    return undefined;
+  });
+  pi.on('session_before_fork', () => {
+    resetSession();
+
+    return undefined;
+  });
+
+  pi.on('tool_result', (event) => {
+    if (!clamped.delete(event.toolCallId)) {
+      return undefined;
+    }
+
+    return {
+      content: event.content.map((part) =>
+        part.type === 'text' ? { ...part, text: rewriteContinuationNotice(part.text) } : part,
+      ),
+    };
+  });
+}
