@@ -93,7 +93,7 @@ not clamped.
 
 ## Measuring bulk reads
 
-[ADR 0009](./adr/0009-delegate-model-for-bulk-reads.md) stays Proposed until measured savings are
+[ADR 0011](./adr/0011-delegate-model-for-bulk-reads.md) stays Proposed until measured savings are
 recorded here. Measure with real providers and compaction disabled. Use one semantic question
 spanning three files above the threshold. Compare a local build with trimming off and `bulk_read`
 present against the shipped setup; there is no shipped trimming flag. Run each twice with the same

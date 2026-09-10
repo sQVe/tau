@@ -1,4 +1,4 @@
-# ADR 0009: Delegate model for bulk reads
+# ADR 0011: Delegate model for bulk reads
 
 - Status: Proposed
 - Date: 2026-09-09

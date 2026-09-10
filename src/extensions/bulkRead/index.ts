@@ -9,7 +9,7 @@ import { BULK_READ_TOOL, bulkRead } from './tool.js';
 export const BULK_READ_LINE_THRESHOLD = 400;
 
 export const delegateReference = (): string =>
-  // eslint-disable-next-line node/no-process-env -- ADR 0009 defines the delegate environment setting.
+  // eslint-disable-next-line node/no-process-env -- ADR 0011 defines the delegate environment setting.
   process.env.TAU_BULK_READ_MODEL ?? 'openai-codex/gpt-5.6-luna';
 
 export const rewriteContinuationNotice = (text: string): string =>
