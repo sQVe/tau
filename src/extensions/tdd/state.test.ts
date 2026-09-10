@@ -1,18 +1,72 @@
+import { strictEqual } from 'node:assert';
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import type { ToolCallEvent } from '@earendil-works/pi-coding-agent';
 import type { TestContext } from 'vitest';
-import { expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
 
 import { guardToolCall } from './guard.js';
+import { runTests } from './runner/index.js';
+import type { RunnerResult, TestResult } from './runner/types.js';
 import { createEvidenceStore, tddGateStatus } from './state.js';
 
-// These tests spawn real Vitest processes. The default five-second timeout fails on slow machines.
-vi.setConfig({ testTimeout: 120_000 });
+// Keep runner discovery real, including its install and package-change cache tests.
+vi.mock(import('./runner/index.js'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  runTests: vi.fn<typeof runTests>(),
+}));
+
+let expectedRuns = 0;
+
+beforeEach(() => {
+  expectedRuns = 0;
+  vi.mocked(runTests)
+    .mockReset()
+    .mockImplementation(() => {
+      throw new Error('Unexpected runner call: supply a report for this step');
+    });
+});
+
+afterEach(({ task }) => {
+  // A failed test already reported its cause; leftover reports are its symptom, not a second defect.
+  if (task.result?.state === 'fail') {
+    return;
+  }
+
+  strictEqual(vi.mocked(runTests).mock.calls.length, expectedRuns, 'Unused runner reports');
+});
+
+const queueReports = (...reports: RunnerResult[]) => {
+  expectedRuns += reports.length;
+
+  for (const report of reports) {
+    vi.mocked(runTests).mockResolvedValueOnce(report);
+  }
+};
+
+const result = (
+  status: TestResult['status'],
+  fullname = 'required',
+  file = 'behavior.test.ts',
+): TestResult => ({ file, fullname, status });
+
+const pass = (...tests: TestResult[]): RunnerResult => ({
+  kind: 'pass',
+  tests: tests.length > 0 ? tests : [result('passed')],
+});
+
+const fail = (...tests: TestResult[]): RunnerResult => ({
+  kind: 'fail',
+  tests: tests.length > 0 ? tests : [result('failed')],
+  failures: [],
+  truncated: false,
+});
 
 it('checks active test bytes and accepts restored content', async ({ onTestFinished }) => {
+  queueReports(fail(), { kind: 'no-tests-collected', tests: [] }, pass(), pass());
+
   const cwd = await mkdtemp(join(tmpdir(), 'tau-evidence-'));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
 
@@ -128,9 +182,37 @@ const createHarness = async (cleanup: TestContext['onTestFinished']) => {
   return { cwd, store, behavior };
 };
 
+it('keeps the gate shut for timeout', async ({ onTestFinished }) => {
+  queueReports({ kind: 'timeout' });
+
+  const { cwd, store, behavior } = await createHarness(onTestFinished);
+  const timedOut = await store.run(cwd, behavior, 'focused');
+
+  expect(timedOut).toMatchObject({
+    kind: 'timeout',
+    phase: 'locked',
+    implementationAllowed: false,
+    evidence: { reds: [] },
+  });
+  expect(
+    await guardToolCall(
+      {
+        type: 'tool_call',
+        toolCallId: 'timeout-write',
+        toolName: 'write',
+        input: { path: 'src/value.ts', content: 'export const value = 1;' },
+      },
+      cwd,
+      store,
+    ),
+  ).toMatchObject({ block: true });
+});
+
 it('refuses full verification when a protected input changed after RED', async ({
   onTestFinished,
 }) => {
+  queueReports(fail(), pass(), pass());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await store.run(cwd, behavior, 'focused');
@@ -147,6 +229,8 @@ it('refuses full verification when a protected input changed after RED', async (
 it('allows behavior-preserving production edits after focused GREEN', async ({
   onTestFinished,
 }) => {
+  queueReports(fail(), pass(), pass());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await store.run(cwd, behavior, 'focused');
@@ -176,6 +260,8 @@ it('allows behavior-preserving production edits after focused GREEN', async ({
 it('invalidates a focused pass on changed inputs without closing GREEN', async ({
   onTestFinished,
 }) => {
+  queueReports(fail(), pass());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await store.run(cwd, behavior, 'focused');
@@ -204,6 +290,15 @@ it('invalidates a focused pass on changed inputs without closing GREEN', async (
 });
 
 it('verifies a shared file after renewing the earlier behavior', async ({ onTestFinished }) => {
+  queueReports(
+    fail(),
+    pass(),
+    fail(result('failed', 'second')),
+    pass(result('passed', 'second')),
+    pass(),
+    pass(result('passed'), result('passed', 'second')),
+  );
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
   const path = join(cwd, 'behavior.test.ts');
 
@@ -247,6 +342,8 @@ it('verifies a shared file after renewing the earlier behavior', async ({ onTest
 it('reloads recorded evidence into a new store for the same worktree', async ({
   onTestFinished,
 }) => {
+  queueReports(fail(), pass(), pass());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await store.run(cwd, behavior, 'focused');
@@ -268,6 +365,8 @@ it('reloads recorded evidence into a new store for the same worktree', async ({
 });
 
 it('keeps the stored evidence loadable after an interrupted write', async ({ onTestFinished }) => {
+  queueReports(fail());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await store.run(cwd, behavior, 'focused');
@@ -282,6 +381,8 @@ it('keeps the stored evidence loadable after an interrupted write', async ({ onT
 });
 
 it('keeps evidence out of another worktree', async ({ onTestFinished }) => {
+  queueReports(fail());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
   const other = await createHarness(onTestFinished);
 
@@ -330,9 +431,11 @@ it('reads the repaired evidence after a failed load', async ({ onTestFinished })
 it('loads the previous evidence shape locked while preserving gate and proven tests', async ({
   onTestFinished,
 }) => {
+  queueReports(fail());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
-  const result = await store.run(cwd, behavior, 'focused');
-  const entry = result.evidence.reds[0]!;
+  const recorded = await store.run(cwd, behavior, 'focused');
+  const entry = recorded.evidence.reds[0]!;
   const record = {
     before: entry.testHashes,
     after: entry.testHashes,
@@ -377,11 +480,15 @@ it('loads the previous evidence shape locked while preserving gate and proven te
 });
 
 it('leaves the recorded evidence untouched when a run is aborted', async ({ onTestFinished }) => {
+  queueReports(fail(), { kind: 'cancelled' });
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
   const red = await store.run(cwd, behavior, 'focused');
 
-  const aborted = await store.run(cwd, behavior, 'full', AbortSignal.abort());
+  const signal = AbortSignal.abort();
+  const aborted = await store.run(cwd, behavior, 'full', signal);
 
+  expect(runTests).toHaveBeenLastCalledWith({ cwd, scope: 'all', signal });
   expect(aborted).toMatchObject({ kind: 'cancelled', phase: 'red' });
   expect(await store.read(cwd)).toMatchObject({
     phase: 'red',
@@ -390,6 +497,14 @@ it('leaves the recorded evidence untouched when a run is aborted', async ({ onTe
 });
 
 it('requires RED and a final full pass to verify', async ({ onTestFinished }) => {
+  queueReports(
+    pass(),
+    fail(),
+    pass(),
+    fail(result('passed'), result('failed', 'other', 'other.test.ts')),
+    pass(result('passed'), result('passed', 'other', 'other.test.ts')),
+  );
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
@@ -435,6 +550,8 @@ it('requires RED and a final full pass to verify', async ({ onTestFinished }) =>
 });
 
 it('keeps GREEN after production changes invalidate verification', async ({ onTestFinished }) => {
+  queueReports(fail(), pass(), pass(), pass(), pass());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await store.run(cwd, behavior, 'focused');
@@ -483,6 +600,8 @@ it('keeps GREEN after production changes invalidate verification', async ({ onTe
 it('renews RED for a test amended after GREEN and remembers the edit', async ({
   onTestFinished,
 }) => {
+  queueReports(fail(), pass(), pass(), pass(), pass());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await store.run(cwd, behavior, 'focused');
@@ -523,6 +642,8 @@ it('renews RED for a test amended after GREEN and remembers the edit', async ({
 it('renews a test amended after the fix but before GREEN and records the edit', async ({
   onTestFinished,
 }) => {
+  queueReports(fail(), pass(), fail(), pass(), pass());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await store.run(cwd, behavior, 'focused');
@@ -560,6 +681,16 @@ it('renews a test amended after the fix but before GREEN and records the edit', 
 it.each(['skip', 'delete', 'amend'])(
   'requires earlier RED to remain intact after %s',
   async (change) => {
+    const earlier = change === 'delete' ? [] : [result(change === 'skip' ? 'skipped' : 'passed')];
+
+    queueReports(
+      fail(),
+      pass(),
+      fail(result('failed', 'second', 'second.test.ts')),
+      pass(result('passed', 'second', 'second.test.ts')),
+      pass(...earlier, result('passed', 'second', 'second.test.ts')),
+    );
+
     const { cwd, store, behavior } = await createHarness(registerCleanup);
 
     await writeFile(
@@ -617,6 +748,22 @@ it('drops earlier REDs once a verified full pass closes the task', async ({ onTe
       `import { it, expect } from 'vitest'; import { value } from './src/value'; it('behavior ${index}', () => expect(value).toBeGreaterThanOrEqual(${index}));`,
     );
 
+    const fullname = `behavior ${index}`;
+    const file = behavior.files[0]!;
+    const passed = Array.from({ length: index }, (_, offset) =>
+      result(
+        'passed',
+        offset === 0 && index === 4 ? 'renamed' : `behavior ${offset + 1}`,
+        `behavior${offset + 1}.test.ts`,
+      ),
+    );
+
+    queueReports(
+      fail(result('failed', fullname, file)),
+      pass(result('passed', fullname, file)),
+      pass(...passed),
+    );
+
     expect(await store.run(cwd, behavior, 'focused')).toMatchObject({ phase: 'red' });
 
     await writeFile(join(cwd, 'src/value.ts'), `export const value = ${index};`);
@@ -645,6 +792,14 @@ it('drops earlier REDs once a verified full pass closes the task', async ({ onTe
 it('rejects a skipped earlier RED even when its test hash is unchanged', async ({
   onTestFinished,
 }) => {
+  queueReports(
+    fail(),
+    pass(),
+    fail(result('failed', 'second', 'second.test.ts')),
+    pass(result('passed', 'second', 'second.test.ts')),
+    pass(result('skipped'), result('passed', 'second', 'second.test.ts')),
+  );
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await writeFile(
@@ -680,6 +835,14 @@ it('rejects a skipped earlier RED even when its test hash is unchanged', async (
 it('renews a shared test file only for the RED that failed inside it', async ({
   onTestFinished,
 }) => {
+  queueReports(
+    fail(),
+    pass(),
+    fail(result('failed', 'second', 'second.test.ts')),
+    pass(result('passed', 'second', 'second.test.ts')),
+    pass(result('passed'), result('passed', 'second', 'second.test.ts')),
+  );
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await store.run(cwd, behavior, 'focused');
@@ -718,6 +881,8 @@ it('renews a shared test file only for the RED that failed inside it', async ({
 });
 
 it('treats the same behavior with reordered files as unchanged', async ({ onTestFinished }) => {
+  queueReports(fail(), pass());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await writeFile(
@@ -737,6 +902,8 @@ it('treats the same behavior with reordered files as unchanged', async ({ onTest
 });
 
 it('never accepts a missing required test file as evidence', async ({ onTestFinished }) => {
+  queueReports(fail(), pass(), pass());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
   const selection = { ...behavior, files: [...behavior.files, 'deleted.test.ts'] };
 
@@ -756,6 +923,14 @@ it('never accepts a missing required test file as evidence', async ({ onTestFini
 });
 
 it('invalidates verification when the rest of the suite changes', async ({ onTestFinished }) => {
+  queueReports(
+    fail(),
+    pass(),
+    pass(),
+    pass(result('passed'), result('passed', 'other', 'other.test.ts')),
+    pass(result('passed'), result('passed', 'changed', 'other.test.ts')),
+  );
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await store.run(cwd, behavior, 'focused');
@@ -787,6 +962,15 @@ it('invalidates verification when the rest of the suite changes', async ({ onTes
 it.each(['skip', 'todo', 'delete'])(
   'rejects a required test changed to %s at both steps',
   async (change) => {
+    const tests = change === 'delete' ? [] : [result(change === 'skip' ? 'skipped' : 'todo')];
+
+    queueReports(
+      fail(),
+      pass(),
+      { kind: 'no-tests-collected', tests },
+      { kind: 'no-tests-collected', tests },
+    );
+
     const { cwd, store, behavior } = await createHarness(registerCleanup);
 
     await store.run(cwd, behavior, 'focused');
@@ -821,6 +1005,8 @@ it.each(['skip', 'todo', 'delete'])(
 it('records nothing when one file holds two tests with the same full name', async ({
   onTestFinished,
 }) => {
+  queueReports(fail(result('failed'), result('passed')), fail(result('passed'), result('failed')));
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await writeFile(
@@ -845,6 +1031,12 @@ it('records nothing when one file holds two tests with the same full name', asyn
 });
 
 it('requires the same failing test file when full names collide', async ({ onTestFinished }) => {
+  queueReports(
+    fail(result('failed'), result('passed', 'required', 'other.test.ts')),
+    pass(result('skipped'), result('passed', 'required', 'other.test.ts')),
+    pass(result('skipped'), result('passed', 'required', 'other.test.ts')),
+  );
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await writeFile(
@@ -873,6 +1065,8 @@ it('requires the same failing test file when full names collide', async ({ onTes
 });
 
 it('turns the gate off through the switch and back on', async ({ onTestFinished }) => {
+  queueReports(fail());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
   const write: ToolCallEvent = {
     type: 'tool_call',
@@ -923,6 +1117,8 @@ it('reports an unreadable evidence file instead of a gate that is on', async ({
 it('keeps evidence when the same behavior arrives with reordered fields', async ({
   onTestFinished,
 }) => {
+  queueReports(fail(), pass());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await store.run(cwd, behavior, 'focused');
@@ -939,6 +1135,8 @@ it('keeps evidence when the same behavior arrives with reordered fields', async 
 });
 
 it('keeps RED when a vitest configuration appears', async ({ onTestFinished }) => {
+  queueReports(fail());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await store.run(cwd, behavior, 'focused');
@@ -953,6 +1151,16 @@ it('keeps RED when a vitest configuration appears', async ({ onTestFinished }) =
 it('keeps a proven RED when the agent returns to an earlier behavior', async ({
   onTestFinished,
 }) => {
+  queueReports(
+    fail(),
+    pass(),
+    fail(result('failed', 'second', 'second.test.ts')),
+    pass(result('passed', 'second', 'second.test.ts')),
+    pass(),
+    pass(result('passed', 'second', 'second.test.ts')),
+    fail(),
+  );
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await writeFile(
@@ -991,6 +1199,8 @@ it('keeps a proven RED when the agent returns to an earlier behavior', async ({
 });
 
 it('treats a relabeled behavior as the same behavior', async ({ onTestFinished }) => {
+  queueReports(fail(), pass());
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await store.run(cwd, behavior, 'focused');
@@ -1006,6 +1216,15 @@ it('treats a relabeled behavior as the same behavior', async ({ onTestFinished }
 });
 
 it('proves one behavior with several named tests together', async ({ onTestFinished }) => {
+  queueReports(
+    fail(result('failed', 'is one'), result('failed', 'is positive')),
+    fail(result('failed', 'is one'), result('passed', 'is positive')),
+    pass(result('passed', 'is one'), result('passed', 'is positive')),
+    pass(result('passed', 'is one'), result('passed', 'is positive'), result('passed', 'other')),
+    pass(result('passed', 'is one')),
+    pass(result('passed', 'is one')),
+  );
+
   const { cwd, store } = await createHarness(onTestFinished);
 
   await writeFile(
@@ -1046,6 +1265,17 @@ it('proves one behavior with several named tests together', async ({ onTestFinis
 it('keeps recorded REDs when returning to a behavior after a verified full pass', async ({
   onTestFinished,
 }) => {
+  queueReports(
+    fail(),
+    fail(result('failed', 'second', 'second.test.ts')),
+    pass(),
+    pass(result('passed', 'second', 'second.test.ts')),
+    pass(result('passed'), result('passed', 'second', 'second.test.ts')),
+    pass(),
+    pass(result('passed'), result('passed', 'second', 'second.test.ts')),
+    fail(result('failed', 'third', 'third.test.ts')),
+  );
+
   const { cwd, store, behavior } = await createHarness(onTestFinished);
 
   await writeFile(
