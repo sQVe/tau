@@ -1,3 +1,6 @@
+# pi resolves extension imports from the literal node_modules path, so
+# transitive deps must not sit behind a symlink.
+nodeLinker: hoisted
 allowBuilds:
   '@google/genai': false
   esbuild: true
