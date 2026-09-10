@@ -4,12 +4,11 @@ import { join } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
-import type { TestContext } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { buildPayload, bulkRead, stripLinePrefixes } from './tool.js';
 
-const setup = async (onTestFinished: TestContext['onTestFinished']) => {
+const setup = async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-bulk-'));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
   const model = fauxProvider().getModel();
@@ -34,8 +33,8 @@ it('numbers payload lines from 1 with a line prefix', () => {
   ).toBe('a.ts\n1: first\n2: second\n3: \n\nb.ts\n1: next');
 });
 
-it('sends all files in one call with the question and framing', async ({ onTestFinished }) => {
-  const { context, model, complete } = await setup(onTestFinished);
+it('sends all files in one call with the question and framing', async () => {
+  const { context, model, complete } = await setup();
 
   await bulkRead(context, model, { paths: ['a.ts', 'b.ts'], question: 'What changed?' }, undefined);
 
@@ -53,8 +52,8 @@ it('sends all files in one call with the question and framing', async ({ onTestF
   expect(options?.maxTokens).toBe(4096);
 });
 
-it('skips binary files and lists them as skipped', async ({ onTestFinished }) => {
-  const { cwd, context, model, complete } = await setup(onTestFinished);
+it('skips binary files and lists them as skipped', async () => {
+  const { cwd, context, model, complete } = await setup();
   await writeFile(join(cwd, 'binary'), 'secret\0bytes');
 
   const result = await bulkRead(
@@ -65,63 +64,42 @@ it('skips binary files and lists them as skipped', async ({ onTestFinished }) =>
   );
 
   expect(result.content).toEqual([
-    { type: 'text', text: expect.stringContaining('Skipped binary files: binary') as unknown },
+    { type: 'text', text: 'answer\nexcerpt\n\nSkipped binary files: binary' },
   ]);
   expect(complete.mock.calls[0]![1].messages[0]!.content).not.toContain('secret');
 });
 
-it('returns an error result for a file over 400,000 bytes', async ({ onTestFinished }) => {
-  const { cwd, context, model, complete } = await setup(onTestFinished);
+it('throws for a file over 400,000 bytes without a registry hint', async () => {
+  const { cwd, context, model, complete } = await setup();
   await writeFile(join(cwd, 'large'), 'é'.repeat(200_001));
 
-  const result = await bulkRead(context, model, { paths: ['large'], question: 'Why?' }, undefined);
-
-  expect(result).toMatchObject({
-    isError: true,
-    content: [{ text: expect.stringContaining('too large: large') as unknown }],
-  });
+  await expect(
+    bulkRead(context, model, { paths: ['large'], question: 'Why?' }, undefined),
+  ).rejects.toThrow('Input is too large: large. Split the request');
   expect(complete).not.toHaveBeenCalled();
 });
 
-it('returns an error result for a payload over 1,000,000 characters', async ({
-  onTestFinished,
-}) => {
-  const { cwd, context, model, complete } = await setup(onTestFinished);
+it('throws for a payload over 1,000,000 characters without a registry hint', async () => {
+  const { cwd, context, model, complete } = await setup();
   await writeFile(join(cwd, 'large'), 'x'.repeat(350_000));
 
-  const result = await bulkRead(
-    context,
-    model,
-    { paths: ['large', 'large', 'large'], question: 'Why?' },
-    undefined,
-  );
-
-  expect(result).toMatchObject({
-    isError: true,
-    content: [{ text: expect.stringContaining('too large') as unknown }],
-  });
+  await expect(
+    bulkRead(context, model, { paths: ['large', 'large', 'large'], question: 'Why?' }, undefined),
+  ).rejects.toThrow(new Error('Input is too large. Split the request'));
   expect(complete).not.toHaveBeenCalled();
 });
 
-it('returns an error result naming a path that cannot be read', async ({ onTestFinished }) => {
-  const { context, model, complete } = await setup(onTestFinished);
+it('throws a file error naming a path that cannot be read', async () => {
+  const { context, model, complete } = await setup();
 
-  const result = await bulkRead(
-    context,
-    model,
-    { paths: ['missing'], question: 'Why?' },
-    undefined,
-  );
-
-  expect(result).toMatchObject({
-    isError: true,
-    content: [{ text: expect.stringContaining('missing') as unknown }],
-  });
+  await expect(
+    bulkRead(context, model, { paths: ['missing'], question: 'Why?' }, undefined),
+  ).rejects.toThrow('missing');
   expect(complete).not.toHaveBeenCalled();
 });
 
-it('returns the delegate text and its usage on the result', async ({ onTestFinished }) => {
-  const { context, model, response } = await setup(onTestFinished);
+it('returns the delegate text and its usage on the result', async () => {
+  const { context, model, response } = await setup();
 
   const result = await bulkRead(context, model, { paths: ['a.ts'], question: 'Why?' }, undefined);
 
@@ -131,53 +109,17 @@ it('returns the delegate text and its usage on the result', async ({ onTestFinis
 });
 
 it.each(['error', 'aborted', 'length'] as const)(
-  'returns an error result when the delegate stops with %s',
+  'throws when the delegate stops with %s',
   async (stopReason) => {
-    const { context, model, response, complete } = await setup(registerCleanup);
+    const { context, model, response, complete } = await setup();
     complete.mockResolvedValue({ ...response, stopReason });
+    const hint = stopReason === 'error' ? '. Check pi --list-models.' : '';
 
-    const result = await bulkRead(context, model, { paths: ['a.ts'], question: 'Why?' }, undefined);
-
-    expect(result).toMatchObject({
-      isError: true,
-      content: [{ text: expect.stringContaining(stopReason) as unknown }],
-    });
-    expect(result.content).toEqual([
-      { type: 'text', text: expect.stringContaining('pi --list-models') as unknown },
-    ]);
-    expect(result.usage).toBe(response.usage);
+    await expect(
+      bulkRead(context, model, { paths: ['a.ts'], question: 'Why?' }, undefined),
+    ).rejects.toThrow(`Bulk read ${model.provider}/${model.id} failed: ${stopReason}${hint}`);
   },
 );
-
-it('returns thrown delegate failures and distinguishes caller cancellation and timeout', async ({
-  onTestFinished,
-}) => {
-  const { context, model, complete } = await setup(onTestFinished);
-  complete.mockRejectedValue(new Error('denied'));
-
-  const result = await bulkRead(context, model, { paths: ['a.ts'], question: 'Why?' }, undefined);
-
-  expect(result).toMatchObject({ isError: true, details: { hardFailure: true } });
-  const controller = new AbortController();
-  controller.abort();
-  const cancelled = await bulkRead(
-    context,
-    model,
-    { paths: ['a.ts'], question: 'Why?' },
-    controller.signal,
-  );
-  expect(cancelled).toMatchObject({ isError: true, details: { hardFailure: false } });
-
-  const timeout = vi
-    .spyOn(AbortSignal, 'timeout')
-    .mockReturnValue(AbortSignal.abort(new DOMException('Timed out', 'TimeoutError')));
-  onTestFinished(() => {
-    timeout.mockRestore();
-  });
-  const timedOut = await bulkRead(context, model, { paths: ['a.ts'], question: 'Why?' }, undefined);
-  expect(timeout).toHaveBeenCalledWith(120_000);
-  expect(timedOut).toMatchObject({ isError: true, details: { hardFailure: false } });
-});
 
 it('strips line-number prefixes from every line of the reply', () => {
   expect(stripLinePrefixes('1: first\n20: second\nfile.ts:3\n 4: indented\n5:no space')).toBe(

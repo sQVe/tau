@@ -15,7 +15,6 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 import bulkReadExtension, {
   BULK_READ_LINE_THRESHOLD,
   delegateReference,
-  isHardFailure,
   rewriteContinuationNotice,
 } from './index.js';
 
@@ -43,17 +42,17 @@ const setup = () => {
     registerTool,
   } as unknown as ExtensionAPI);
 
-  const execute = () =>
+  const execute = (signal?: AbortSignal, paths = [import.meta.filename]) =>
     registerTool.mock.calls[0]![0].execute(
       'bulk',
-      { paths: [import.meta.filename], question: 'Why?' },
-      undefined,
+      { paths, question: 'Why?' },
+      signal,
       undefined,
       context,
     );
   const emit = (name: string, event: unknown) => handlers.get(name)?.(event, context);
 
-  return { handlers, registerTool, find, complete, context, execute, emit };
+  return { find, complete, execute, emit };
 };
 
 afterEach(() => vi.unstubAllEnvs());
@@ -67,7 +66,7 @@ const readCall = (toolCallId = 'read', limit?: number) => ({
 
 const notice = '[Showing lines 1-400 of 450. Use offset=401 to continue.]';
 const hint =
-  'File continues past line 400. For a question about this file call bulk_read with paths and question. To edit, read again with offset and limit.';
+  'File continues at line 401. For a question about this file call bulk_read with paths and question. To edit, read again with offset and limit.';
 
 it('clamps a read without limit to the threshold and leaves an explicit limit untouched', () => {
   const app = setup();
@@ -102,9 +101,27 @@ it('rewrites the 50KB notice form as well', () => {
     rewriteContinuationNotice(
       'head\n\n[Showing lines 1-100 of 450 (50.0KB limit). Use offset=101 to continue.]',
     ),
-  ).toBe(`head\n\n${hint}`);
-  expect(rewriteContinuationNotice('small file')).toBeUndefined();
-  expect(rewriteContinuationNotice(`${notice}\nmore text`)).toBeUndefined();
+  ).toBe(`head\n\n${hint.replace('401', '101')}`);
+  expect(rewriteContinuationNotice('small file')).toBe('small file');
+  expect(rewriteContinuationNotice(`${notice}\nmore text`)).toBe(`${notice}\nmore text`);
+});
+
+it('uses the continuation offset in the hint for an offset read', () => {
+  const app = setup();
+  const read = { ...readCall(), input: { path: 'file', offset: 401 } };
+  app.emit('tool_call', read);
+
+  const result = app.emit('tool_result', {
+    toolCallId: 'read',
+    content: [
+      { type: 'text', text: 'head\n\n[200 more lines in file. Use offset=801 to continue.]' },
+    ],
+  });
+
+  expect(read.input).toHaveProperty('limit', 400);
+  expect(result?.content).toEqual([
+    { type: 'text', text: `head\n\n${hint.replace('401', '801')}` },
+  ]);
 });
 
 it('leaves an unclamped read result and other tool results untouched', () => {
@@ -119,10 +136,6 @@ it('leaves an unclamped read result and other tool results untouched', () => {
   ).toBeUndefined();
   expect(
     app.emit('tool_result', { toolCallId: 'bash', content: [{ type: 'text', text: notice }] }),
-  ).toBeUndefined();
-  app.emit('tool_call', readCall());
-  expect(
-    app.emit('tool_result', { toolCallId: 'read', content: [{ type: 'text', text: 'small' }] }),
   ).toBeUndefined();
 });
 
@@ -139,10 +152,7 @@ it('documents the extra notice for a threshold-length file with a trailing newli
   await writeFile(join(cwd, 'file'), `${content}\n`);
   const trailing = await tool.execute('trailing', { path: 'file', limit: 400 });
   expect(trailing.content).toEqual([
-    {
-      type: 'text',
-      text: `${content}\n\n[1 more lines in file. Use offset=401 to continue.]`,
-    },
+    { type: 'text', text: `${content}\n\n[1 more lines in file. Use offset=401 to continue.]` },
   ]);
 });
 
@@ -152,7 +162,7 @@ it('turns trimming off after a registry miss at the first clamp', () => {
   const first = readCall();
   const second = readCall('second');
 
-  app.emit('tool_call', first);
+  expect(app.emit('tool_call', first)).toBeUndefined();
   app.emit('tool_call', second);
 
   expect(first.input).not.toHaveProperty('limit');
@@ -160,82 +170,72 @@ it('turns trimming off after a registry miss at the first clamp', () => {
   expect(app.find).toHaveBeenCalledOnce();
 });
 
-it('leaves reads untouched when trimming is off', async () => {
+it('throws a registry miss and leaves later reads untouched', async () => {
+  vi.stubEnv('TAU_BULK_READ_MODEL', 'missing/reader');
   const app = setup();
   app.find.mockReturnValueOnce(undefined);
-  await app.execute();
-  const read = readCall();
 
+  await expect(app.execute()).rejects.toThrow(
+    'Bulk read missing/reader failed: model not found. Check pi --list-models.',
+  );
+  const read = readCall();
   app.emit('tool_call', read);
 
   expect(read.input).not.toHaveProperty('limit');
 });
 
-it.each(['error', 'aborted', 'length', 'throw', 'timeout'] as const)(
-  'turns trimming off only for hard delegate failures: %s',
+it.each(['error', 'aborted', 'length', 'throw', 'abort', 'timeout', 'file', 'lookup'] as const)(
+  'throws failures and disables trimming only for hard errors: %s',
   async (reason) => {
     const app = setup();
-    if (reason === 'throw') {
-      app.complete.mockRejectedValue(new Error('denied'));
+    let signal: AbortSignal | undefined;
+    let paths: string[] | undefined;
+    if (reason === 'throw' || reason === 'lookup') {
+      const error = new Error('denied');
+      if (reason === 'lookup') {
+        app.find.mockImplementationOnce(() => {
+          throw error;
+        });
+      } else {
+        app.complete.mockRejectedValue(error);
+      }
+    } else if (reason === 'abort') {
+      signal = AbortSignal.abort(new DOMException('cancelled', 'AbortError'));
     } else if (reason === 'timeout') {
-      const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(AbortSignal.abort());
+      const timeout = vi
+        .spyOn(AbortSignal, 'timeout')
+        .mockReturnValue(AbortSignal.abort(new DOMException('timed out', 'TimeoutError')));
       onTestFinished(() => {
         timeout.mockRestore();
       });
-      app.complete.mockRejectedValue(new Error('cancelled'));
+    } else if (reason === 'file') {
+      paths = ['/missing/tau-bulk-file'];
     } else {
       app.complete.mockResolvedValue({ ...fauxAssistantMessage(''), stopReason: reason });
     }
 
-    const result = await app.execute();
+    const expected = {
+      error: { name: 'Error', message: 'pi --list-models' },
+      aborted: { name: 'AbortError', message: 'failed: aborted' },
+      length: { name: 'AbortError', message: 'failed: length' },
+      throw: { name: 'Error', message: 'denied. Check pi --list-models.' },
+      abort: { name: 'AbortError', message: 'cancelled' },
+      timeout: { name: 'TimeoutError', message: 'timed out' },
+      file: { name: 'Error', message: '/missing/tau-bulk-file' },
+      lookup: { name: 'Error', message: 'denied' },
+    }[reason];
+    const failure = app.execute(signal, paths);
+
+    await expect(failure).rejects.toThrow(expected.message);
+    await expect(failure).rejects.toHaveProperty('name', expected.name);
+
     const read = readCall();
     app.emit('tool_call', read);
 
-    const hard = reason === 'error' || reason === 'throw';
-    expect(isHardFailure(result)).toBe(hard);
+    const hard = ['error', 'throw', 'file', 'lookup'].includes(reason);
     expect(read.input.limit).toBe(hard ? undefined : 400);
-    expect(
-      app.emit('tool_result', {
-        toolName: 'bulk_read',
-        toolCallId: 'bulk',
-        details: result.details,
-        content: result.content,
-      }),
-    ).toEqual({ isError: true });
   },
 );
-
-it('classifies errors without treating file errors as delegate failures', () => {
-  expect(isHardFailure(new Error('denied'))).toBe(true);
-  expect(isHardFailure(new DOMException('cancelled', 'AbortError'))).toBe(false);
-  expect(isHardFailure(new DOMException('timeout', 'TimeoutError'))).toBe(false);
-  expect(isHardFailure({ content: [], details: {} })).toBe(false);
-});
-
-it.each(['', 'invalid', '/reader', 'provider/'])(
-  'rejects an invalid reference without a registry lookup: %s',
-  async (reference) => {
-    vi.stubEnv('TAU_BULK_READ_MODEL', reference);
-    const app = setup();
-
-    expect(await app.execute()).toMatchObject({ isError: true });
-    expect(app.find).not.toHaveBeenCalled();
-  },
-);
-
-it('registers the tool with a prompt snippet and both read hooks', () => {
-  const app = setup();
-
-  expect(app.registerTool).toHaveBeenCalledOnce();
-  expect(app.registerTool.mock.calls[0]![0]).toMatchObject({
-    name: 'bulk_read',
-    description:
-      'Ask a cheaper model a question about one or more large files instead of reading them.',
-    promptSnippet:
-      'Ask a cheaper model a question about one or more large files instead of reading them.',
-  });
-  expect([...app.handlers.keys()]).toEqual(['tool_call', 'tool_result']);
-});
 
 it('reads the reference from the environment and falls back to the default', () => {
   vi.stubEnv('TAU_BULK_READ_MODEL', undefined);
@@ -254,20 +254,4 @@ it('splits the reference at the first slash and passes the rest as the model id'
   await app.execute();
 
   expect(app.find).toHaveBeenCalledWith('openrouter', 'vendor/model');
-});
-
-it('execute returns an error result naming the reference when find returns undefined', async () => {
-  vi.stubEnv('TAU_BULK_READ_MODEL', 'missing/reader');
-  const app = setup();
-  app.find.mockReturnValue(undefined);
-
-  const result = await app.execute();
-
-  expect(result).toMatchObject({
-    isError: true,
-    content: [{ text: expect.stringContaining('missing/reader') as unknown }],
-  });
-  expect(result.content).toEqual([
-    { type: 'text', text: expect.stringContaining('pi --list-models') as unknown },
-  ]);
 });

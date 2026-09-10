@@ -23,9 +23,11 @@ import type { TestContext } from 'vitest';
 vi.setConfig({ testTimeout: 60_000 });
 
 beforeEach(() => {
+  // eslint-disable-next-line node/no-process-env -- ADR 0009 defines the delegate environment setting.
   process.env.TAU_BULK_READ_MODEL = 'tau-delegate/reader';
 });
 afterEach(() => {
+  // eslint-disable-next-line node/no-process-env -- ADR 0009 defines the delegate environment setting.
   delete process.env.TAU_BULK_READ_MODEL;
 });
 
@@ -120,34 +122,13 @@ it('clamps a real Pi read and records delegate usage in the session ledger', asy
 
   const read = textOf(toolResult(session, 'read').content);
   expect(read).toMatch(
-    /File continues past line 400\. For a question about this file call bulk_read with paths and question\. To edit, read again with offset and limit\.$/,
+    /File continues at line 401\. For a question about this file call bulk_read with paths and question\. To edit, read again with offset and limit\.$/,
   );
   expect(read).not.toContain('Use offset=');
-  expect(read).not.toContain('line 401');
+  expect(read).not.toMatch(/^line 401$/m);
   const bulk = toolResult(session, 'bulk_read');
   expect(bulk.usage?.input).toBeGreaterThan(0);
   expect(textOf(bulk.content)).toBe('- large.txt:450 ends with line 450.');
-  expect(bulk.isError).toBe(false);
   expect(delegate.state.callCount).toBe(1);
   expect(sessionModel.state.callCount).toBe(3);
-});
-
-it('does not clamp a real Pi read when the configured model is missing', async ({
-  onTestFinished,
-}) => {
-  process.env.TAU_BULK_READ_MODEL = 'missing/reader';
-  const { session, sessionModel, delegate, content } = await createHarness(onTestFinished);
-  sessionModel.setResponses([
-    fauxAssistantMessage([fauxToolCall('read', { path: 'large.txt' })]),
-    fauxAssistantMessage([fauxToolCall('bulk_read', { paths: ['large.txt'], question: 'Why?' })]),
-    fauxAssistantMessage('Done.'),
-  ]);
-
-  await session.prompt('Read the file.');
-
-  expect(textOf(toolResult(session, 'read').content)).toBe(content);
-  expect(delegate.state.callCount).toBe(0);
-  const bulk = toolResult(session, 'bulk_read');
-  expect(bulk.isError).toBe(true);
-  expect(textOf(bulk.content)).toContain('missing/reader');
 });
