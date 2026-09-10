@@ -718,12 +718,35 @@ export const createCommitTool = (
         throw new Error('Cannot commit without user confirmation (non-interactive mode)');
       }
 
-      const projectFix = signal?.aborted
-        ? 'Project fixer cancelled.'
-        : await fixProject(pi, context.cwd, signal);
       const approval = { all: false, seen: new Map<number, string>() };
       const groups: CommitSuccess['details'][] = [];
       const content: CommitSuccess['content'] = [];
+
+      // Commit is exempt from the guard, so it must report unreadable evidence rather than stay quiet.
+      const finish = async (items: CommitSuccess['content']) => {
+        const gateOff = await tddGateStatus(context.cwd).catch(() =>
+          unknownGateStatus(context.cwd),
+        );
+
+        const reported: CommitSuccess['content'] =
+          gateOff === undefined ? items : [{ type: 'text', text: gateOff }, ...items];
+
+        return { content: reported, details: { groups } };
+      };
+
+      let projectFix = 'Project fixer cancelled.';
+
+      if (!signal?.aborted) {
+        try {
+          projectFix = await fixProject(pi, context.cwd, signal);
+        } catch (error) {
+          if (signal?.aborted) {
+            return finish([{ type: 'text', text: 'Commit cancelled' }]);
+          }
+
+          throw error;
+        }
+      }
 
       // Hide model latency by reviewing the next group while the user reads the overlay.
       // Approve-all starts reviews for every remaining group.
@@ -861,13 +884,7 @@ export const createCommitTool = (
         }
       }
 
-      // Commit is exempt from the guard, so it must report unreadable evidence rather than stay quiet.
-      const gateOff = await tddGateStatus(context.cwd).catch(() => unknownGateStatus(context.cwd));
-
-      return {
-        content: gateOff === undefined ? content : [{ type: 'text', text: gateOff }, ...content],
-        details: { groups },
-      };
+      return finish(content);
     },
   });
 };

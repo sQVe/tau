@@ -401,6 +401,53 @@ it('returns cancelled when aborted while the project check runs', async () => {
   expect(stagedFiles).toBe('');
 });
 
+it('returns cancelled when aborted while the project fixer runs', async () => {
+  const repositoryDirectory = await createTemporaryRepository();
+  const controller = new AbortController();
+
+  await git(repositoryDirectory, ['commit', '--allow-empty', '-m', 'test: baseline']);
+
+  const head = await git(repositoryDirectory, ['rev-parse', 'HEAD']);
+
+  await writeRepositoryFile(
+    repositoryDirectory,
+    'package.json',
+    JSON.stringify({ scripts: { check: 'node check.cjs', fix: 'node fix.cjs' } }),
+  );
+  await writeRepositoryFile(repositoryDirectory, 'check.cjs', '');
+  await writeRepositoryFile(repositoryDirectory, 'fix.cjs', '');
+
+  const commitTool = createCommitTool({
+    exec(command: string, commandArguments: string[], options?: { cwd?: string }) {
+      if (commandArguments.includes('run') && commandArguments.includes('fix')) {
+        controller.abort();
+      }
+
+      return runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory);
+    },
+  });
+
+  const result = await commitTool.execute(
+    'tool-call-1',
+    {
+      groups: [{ files: ['package.json', 'check.cjs', 'fix.cjs'], subject: 'feat: fix and check' }],
+    },
+    controller.signal,
+    undefined,
+    confirmedContext(repositoryDirectory),
+  );
+
+  const currentHead = await git(repositoryDirectory, ['rev-parse', 'HEAD']);
+  const stagedFiles = await git(repositoryDirectory, ['diff', '--cached', '--name-only']);
+
+  expect(result.content).toEqual([
+    { type: 'text', text: 'no test runner resolves from this worktree' },
+    { type: 'text', text: 'Commit cancelled' },
+  ]);
+  expect(currentHead).toBe(head);
+  expect(stagedFiles).toBe('');
+});
+
 it('rejects check-time formatting without modifying the working file', async () => {
   const repositoryDirectory = await createTemporaryRepository();
 
