@@ -13,7 +13,7 @@ import type {
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import bulkReadExtension, {
-  BULK_READ_LINE_THRESHOLD,
+  bulkReadLineThreshold,
   delegateReference,
   rewriteContinuationNotice,
 } from './index.js';
@@ -76,7 +76,7 @@ it('clamps a read without limit to the threshold and leaves an explicit limit un
   expect(app.emit('tool_call', unbounded)).toBeUndefined();
   app.emit('tool_call', bounded);
 
-  expect(unbounded.input).toHaveProperty('limit', BULK_READ_LINE_THRESHOLD);
+  expect(unbounded.input).toHaveProperty('limit', bulkReadLineThreshold);
   expect(bounded.input.limit).toBe(600);
   expect(app.find).toHaveBeenCalledOnce();
 });

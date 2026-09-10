@@ -2,14 +2,13 @@ import { isToolCallEventType } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { BULK_READ_INPUT_ERROR, BULK_READ_TOOL, bulkRead } from './tool.js';
+import { bulkReadInputError, bulkReadTool, bulkRead } from './tool.js';
 
-// ponytail: seeded at 400 and kept after the 2026-09-10 measurement in docs/development.md, which
-// found the saving inside run-to-run variance. Revisit when the delegate or session model changes.
-export const BULK_READ_LINE_THRESHOLD = 400;
+// ADR 0013 records the measurement behind this threshold.
+export const bulkReadLineThreshold = 400;
 
 // Recoverable failures say nothing about whether the delegate is reachable, so trimming stays on.
-const RECOVERABLE_ERRORS = new Set(['AbortError', 'TimeoutError', BULK_READ_INPUT_ERROR]);
+const recoverableErrors = new Set(['AbortError', 'TimeoutError', bulkReadInputError]);
 
 export const delegateReference = (): string => {
   // eslint-disable-next-line node/no-process-env -- ADR 0013 defines the delegate environment setting.
@@ -48,7 +47,7 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
     'Ask a cheaper model a question about one or more large files instead of reading them.';
 
   pi.registerTool({
-    name: BULK_READ_TOOL,
+    name: bulkReadTool,
     label: 'Bulk read',
     description,
     promptSnippet: description,
@@ -68,7 +67,7 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
 
         return await bulkRead(ctx, model, params, signal);
       } catch (error) {
-        if (!(error instanceof Error) || !RECOVERABLE_ERRORS.has(error.name)) {
+        if (!(error instanceof Error) || !recoverableErrors.has(error.name)) {
           trimming = false;
         }
 
@@ -87,7 +86,7 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
       return;
     }
 
-    event.input.limit = BULK_READ_LINE_THRESHOLD;
+    event.input.limit = bulkReadLineThreshold;
     clamped.add(event.toolCallId);
   });
 

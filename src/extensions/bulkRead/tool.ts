@@ -5,9 +5,9 @@ import { resolve } from 'node:path';
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { AgentToolResult, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-export const BULK_READ_TOOL = 'bulk_read';
+export const bulkReadTool = 'bulk_read';
 
-export const BULK_READ_INPUT_ERROR = 'BulkReadInputError';
+export const bulkReadInputError = 'BulkReadInputError';
 
 // The arrow prefix cannot collide with an answer line that opens with a number and a colon.
 export const buildPayload = (files: { path: string; content: string }[]): string =>
@@ -24,7 +24,7 @@ export const buildPayload = (files: { path: string; content: string }[]): string
 export const stripLinePrefixes = (text: string): string => text.replace(/^\d+→/gm, '');
 
 const inputError = (message: string) =>
-  Object.assign(new Error(message), { name: BULK_READ_INPUT_ERROR });
+  Object.assign(new Error(message), { name: bulkReadInputError });
 
 const loadPayload = async (cwd: string, paths: string[], signal: AbortSignal | undefined) => {
   const files: { path: string; content: string }[] = [];
