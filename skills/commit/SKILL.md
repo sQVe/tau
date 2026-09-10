@@ -1,8 +1,8 @@
 ---
 name: commit
 description:
-  Create user-confirmed Git commits in logical groups with the `commit` tool. Use reported errors to
-  decide how to retry failed commits.
+  Create Git commits in logical groups with the `commit` tool. Use reported errors to decide how to
+  retry failed commits.
 ---
 
 # Commit
@@ -13,7 +13,7 @@ Use this skill when the user wants to create one or more Git commits from the cu
 
 ## Goal
 
-Turn the current diff into clean, user-confirmed commits using the `commit` tool.
+Turn the current diff into clean commits using the `commit` tool.
 
 ## Hard rules
 
@@ -22,7 +22,10 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 - Never stage with `git add -A` or `git add .`.
 - Never pass `--no-verify`.
 - Never rewrite history with `--amend`.
-- Do not ask for chat-level confirmation. The `commit` tool's dialog is the only approval step.
+- Do not ask for chat-level confirmation. The `commit` tool handles approval. When Pi starts with
+  `--auto-approve-commits`, the tool skips confirmation but keeps checks and comment review.
+- Never enable preapproval yourself to bypass a blocked commit. If review needs a human waiver in
+  preapproved mode, stop and report the blocker.
 - Every commit subject must use conventional-commit format.
 - Every commit should include a body explaining why the change was made.
 - Stage and commit only the files that belong to the current logical group.
@@ -55,11 +58,12 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 3. Call the `commit` tool once with an ordered `groups` array. Each group contains `files`,
    `subject`, and `body`. The tool reviews and confirms each group sequentially. Do not end the turn
    before the tool call. If the change looks temporary, wrong, or like a placeholder, still call the
-   tool: the overlay is where the user skips or aborts it, or presses `A` to approve all remaining
-   groups. Every group still runs comment review and the root `package.json` check script on a
-   temporary checkout of its staged content. `A` never waives a blocked review or failed check. A
-   missing check script is reported as unavailable. Checks use installed root dependencies and do
-   not install packages. Run formatting locally first; check-time changes require another call.
+   tool. Without startup preapproval, the overlay lets the user skip, abort, or press `A` to approve
+   all remaining groups. Every group still runs comment review and the root `package.json` check
+   script on a temporary checkout of its staged content. `A` never waives a blocked review or failed
+   check. A missing check script is reported as unavailable. Checks use installed root dependencies
+   and do not install packages. Run formatting locally first; check-time changes require another
+   call.
 
 4. If the `commit` tool succeeds, report the result and continue.
    - A skipped group is not a failure; the tool continues with later groups.
