@@ -18,4 +18,5 @@ Start with the [template](./TEMPLATE.md). Follow the
 - [0008: Coding instructions](./0008-coding-instructions.md)
 - [0009: Prompt snippets](./0009-prompt-snippets.md)
 - [0010: Documentation scope](./0010-documentation-scope.md)
-- [0011: Shared TDD state](./0011-shared-tdd-state.md)
+- [0011: Commit preapproval at startup](./0011-commit-preapproval.md)
+- [0012: Shared TDD state](./0012-shared-tdd-state.md)

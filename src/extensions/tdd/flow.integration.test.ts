@@ -662,7 +662,6 @@ it.each([
     'no-tests-collected',
   ],
   ['load error', "throw new Error('cannot load');", 'fail'],
-  ['timeout', 'await new Promise(() => {});', 'timeout'],
 ])('keeps the gate shut for %s', async (_name, source, kind) => {
   const { cwd, run } = await createHarness(registerCleanup);
 

@@ -1,4 +1,4 @@
-# ADR 0011: Shared TDD state
+# ADR 0012: Shared TDD state
 
 - Status: Proposed
 - Date: 2026-09-10
