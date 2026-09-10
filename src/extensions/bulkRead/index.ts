@@ -4,8 +4,8 @@ import { Type } from 'typebox';
 
 import { BULK_READ_TOOL, bulkRead } from './tool.js';
 
-// ponytail: unmeasured. Seeded at 400 because the delegate's input is 50x cheaper, so early trimming
-// costs latency, not money. Revise from the measurement table in docs/development.md.
+// ponytail: seeded at 400 and kept after the 2026-09-10 measurement in docs/development.md, which
+// found the saving inside run-to-run variance. Revisit when the delegate or session model changes.
 export const BULK_READ_LINE_THRESHOLD = 400;
 
 export const delegateReference = (): string =>

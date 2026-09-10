@@ -1,6 +1,6 @@
 # ADR 0011: Delegate model for bulk reads
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-09
 
 ## Context
@@ -81,8 +81,8 @@ Clamp unbounded reads to a fixed 400-line threshold by setting the read tool's `
 pre-call hook. Rewrite the read result's trailing continuation notice into a hint naming
 `bulk_read`. The hint uses the continuation offset from Pi's notice, including for offset reads and
 the 50KB limit. Reads with an explicit `limit` pass unchanged. Pi's existing 50KB limit still
-applies. The constant is unmeasured until the
-[development guide's measurement table](../development.md#bulk-read) exists. A 400-line file with a
+applies. The constant was kept after the
+[development guide's measurement](../development.md#measuring-bulk-reads). A 400-line file with a
 trailing newline gets a notice for one empty line; accept that edge case rather than adding a file
 stat to the hook.
 
@@ -114,9 +114,9 @@ expanding the scope to code writers.
 - The pre-call hook clamps rather than blocks, so an oversized read returns the file head plus a
   hint in the same turn. The hint is advisory; the model can still page with `offset`, which costs
   more than a plain read.
-- Portal reports 10-30 seconds per delegation. Below roughly 800 lines, delegation may take longer
-  and use more total tokens than reading the file directly. The threshold needs tuning; 800 lines is
-  not a measured Tau break-even point.
+- Portal reports 10-30 seconds per delegation. The 2026-09-10 measurement saw about 50 seconds for a
+  24k-token payload, and a median saving of 11% that sits inside run-to-run variance. Delegation
+  trades latency for a modest reduction in session-model tokens.
 - The roughly 90% figure reported by Portal and rtk describes a reduction in what the agent reads,
   not a reduction in the bill. Both estimate tokens as characters divided by four, without a
   tokenizer. The owner measures real providers with compaction disabled, using one semantic question

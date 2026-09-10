@@ -93,11 +93,11 @@ not clamped.
 
 ## Measuring bulk reads
 
-[ADR 0011](./adr/0011-delegate-model-for-bulk-reads.md) stays Proposed until measured savings are
-recorded here. Measure with real providers and compaction disabled. Use one semantic question
-spanning three files above the threshold. Compare a local build with trimming off and `bulk_read`
-present against the shipped setup; there is no shipped trimming flag. Run each twice with the same
-prompt and files and keep the medians.
+[ADR 0011](./adr/0011-delegate-model-for-bulk-reads.md) was accepted on the measurement below.
+Repeat it when the delegate or the session model changes. Measure with real providers on a session
+too small to compact. Use one semantic question spanning three files above the threshold. Compare a
+local build with trimming off and `bulk_read` present against the shipped setup; there is no shipped
+trimming flag. Run each twice with the same prompt and files and keep the medians.
 
 Sum usage by role from the session JSONL. Pi's `/session` can hide per-model rows when catalog cost
 is zero or only one model was used:
@@ -108,8 +108,35 @@ jq -r 'select(.type=="message") | .message | select(.role=="assistant" or .role=
 
 Record configuration, session input, cache read, cache write, output, delegate input, delegate
 output, assistant turns, `offset` pages after a clamped read, wall clock, and catalog cost as a
-ratio, not an invoice. No live measurements have been recorded. Offline faux tests prove usage
-plumbing and result size, not savings.
+ratio, not an invoice. Offline faux tests prove usage plumbing and result size, not savings.
+
+### Results, 2026-09-10
+
+Session model `openai-codex/gpt-6-astra` at medium thinking, delegate `openai-codex/gpt-5.6-luna`,
+Pi 0.85.1 in print mode. Fixture: Pi's `loader.js`, `runner.js`, and `model-resolver.js`, 2,244
+lines, with one question about flags, tool-call handlers, and model resolution. Tokens in thousands,
+cost in catalog dollars.
+
+| Run             | Session in | Cache read | Out | Delegate in | Delegate out | Turns | Reads                    | Wall | Cost |
+| --------------- | ---------- | ---------- | --- | ----------- | ------------ | ----- | ------------------------ | ---- | ---- |
+| A1 trimming off | 30.2       | 60.9       | 0.9 | 0           | 0            | 4     | 3 full                   | 40s  | 0.41 |
+| A2 trimming off | 23.0       | 30.8       | 1.1 | 0           | 0            | 4     | 6 bounded                | 44s  | 0.32 |
+| B1 shipped      | 26.1       | 54.1       | 1.0 | 0           | 0            | 8     | 5 bounded                | 52s  | 0.37 |
+| B2 shipped      | 19.9       | 23.8       | 0.9 | 23.6        | 2.2          | 3     | 3 clamped, 1 `bulk_read` | 80s  | 0.28 |
+| Median A        | 26.6       | 45.9       | 1.0 | 0           | 0            | 4     |                          | 42s  | 0.36 |
+| Median B        | 23.0       | 39.0       | 1.0 | 11.8        | 1.1          | 5.5   |                          | 66s  | 0.32 |
+
+Cost includes the delegate, which was $0.007 in B2. Findings:
+
+- The session model often avoids bulk reads on its own: in A2 and B1 it grepped with bash and read
+  bounded ranges, which the clamp leaves alone. Those runs cost the same in either configuration.
+- When it does read unbounded, the clamp works as designed. B2 hit three clamped reads, followed the
+  hint into one `bulk_read`, and finished in three turns. Against A1, the comparable full-read run,
+  that is 32% cheaper and twice as slow. No run paged with `offset` after a clamped read.
+- The delegate call took about 50 seconds for a 24k-token payload, longer than Portal's reported 10
+  to 30 seconds. Latency, not money, is the cost of delegation with this pair of models.
+- Median saving across all four runs is 11%, inside the run-to-run variance. The 400-line threshold
+  stays. Code writers do not earn a ticket on this evidence.
 
 ## Versioning
 
