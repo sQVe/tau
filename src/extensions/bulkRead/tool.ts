@@ -47,6 +47,11 @@ const loadPayload = async (cwd: string, paths: string[]) => {
     }
   }
 
+  // An empty payload would let the delegate answer the question without evidence.
+  if (files.length === 0) {
+    throw inputError(`Every requested file is binary: ${skipped.join(', ')}`);
+  }
+
   return { payload: buildPayload(files), skipped };
 };
 

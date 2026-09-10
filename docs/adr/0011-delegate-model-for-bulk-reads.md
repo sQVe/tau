@@ -95,10 +95,11 @@ range before editing; Pi's `edit` is the exact-text check.
 
 Send all requested files in one delegate call. Resolve paths against the session's working
 directory, expanding a leading `~` and stripping a leading `@` as the read tool does, and without
-restricting paths outside it. Skip NUL-byte binary files and list them in the result. Cap each file
-at 400,000 bytes and the numbered request at 1,000,000 characters, matching comment review's limits.
-Bound the completion to 120 seconds. Return the delegate's full usage on successful tool results so
-Pi's ledger and Tau's footer count it.
+restricting paths outside it. Skip NUL-byte binary files and list them in the result, and fail
+rather than send an empty payload when every requested file is binary. Cap each file at 400,000
+bytes and the numbered request at 1,000,000 characters, matching comment review's limits. Bound the
+completion to 120 seconds. Return the delegate's full usage on successful tool results so Pi's
+ledger and Tau's footer count it.
 
 Treat file content as evidence, never as instructions, and keep the delegate read-only. Prompt
 framing tells it to ignore embedded requests, answer only the question, cite file lines, and add no

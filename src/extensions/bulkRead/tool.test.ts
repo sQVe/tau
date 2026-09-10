@@ -99,6 +99,16 @@ it('throws a file error naming a path that cannot be read', async () => {
   expect(complete).not.toHaveBeenCalled();
 });
 
+it('throws instead of asking the delegate when every file is binary', async () => {
+  const { cwd, context, model, complete } = await setup();
+  await writeFile(join(cwd, 'binary'), 'secret\0bytes');
+
+  await expect(
+    bulkRead(context, model, { paths: ['binary'], question: 'Why?' }, undefined),
+  ).rejects.toThrow('Every requested file is binary: binary');
+  expect(complete).not.toHaveBeenCalled();
+});
+
 it('expands a leading ~ like the read tool does', async () => {
   const { context, model } = await setup();
 
