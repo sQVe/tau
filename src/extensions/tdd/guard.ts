@@ -4,6 +4,7 @@ import { dirname, relative, resolve } from 'node:path';
 import type { ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 
 import { ASK_USER_QUESTION_TOOL } from '../askUserQuestion/index.js';
+import { BULK_READ_TOOL } from '../bulkRead/tool.js';
 import { WEB_ACCESS_TOOLS } from '../webAccess/index.js';
 import { classifyPath, protectedPaths } from './config.js';
 import type { createEvidenceStore } from './state.js';
@@ -19,6 +20,7 @@ const passthroughTools = new Set([
   'run_tests',
   'commit',
   ASK_USER_QUESTION_TOOL,
+  BULK_READ_TOOL,
   ...WEB_ACCESS_TOOLS,
 ]);
 
