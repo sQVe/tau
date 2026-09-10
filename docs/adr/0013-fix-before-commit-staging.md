@@ -28,8 +28,9 @@ without fixing. Do not alter hooks in other repositories or remove the post-comm
 
 ## Tradeoffs
 
-The approved tree includes local fixes without a second commit call. Repositories without a fixer
-still get candidate checks. A failing fixer stops before staging and reports its output.
-
-A repository-wide fixer can change unrequested working files. Those changes remain outside the
-commit unless requested. Fixers must be safe to rerun; the tool does not undo their working changes.
+- The approved tree includes local fixes without a second commit call.
+- Repositories without a fixer still get candidate checks.
+- A failing fixer stops before staging and reports its output.
+- A repository-wide fixer can change unrequested working files. Those changes stay outside the
+  commit unless requested.
+- Fixers must be safe to rerun; the tool does not undo their working changes.
