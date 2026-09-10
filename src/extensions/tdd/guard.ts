@@ -3,9 +3,9 @@ import { dirname, relative, resolve } from 'node:path';
 
 import type { ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 
-import { ASK_USER_QUESTION_TOOL } from '../askUserQuestion/index.js';
+import { askUserQuestionTool } from '../askUserQuestion/index.js';
 import { bulkReadTool } from '../bulkRead/tool.js';
-import { WEB_ACCESS_TOOLS } from '../webAccess/index.js';
+import { webAccessTools } from '../webAccess/index.js';
 import { classifyPath, protectedPaths } from './config.js';
 import type { createEvidenceStore } from './state.js';
 import type { Behavior, Phase } from './types.js';
@@ -19,9 +19,9 @@ const passthroughTools = new Set([
   'ls',
   'run_tests',
   'commit',
-  ASK_USER_QUESTION_TOOL,
+  askUserQuestionTool,
   bulkReadTool,
-  ...WEB_ACCESS_TOOLS,
+  ...webAccessTools,
 ]);
 
 const inputPaths = (input: unknown, key = ''): string[] => {

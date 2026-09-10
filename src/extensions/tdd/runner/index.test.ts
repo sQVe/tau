@@ -6,7 +6,12 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { runTests } from './index.js';
 import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js';
-import { MAX_FAILURES, MAX_MESSAGE_CHARS, MAX_STDOUT_BYTES, MAX_TOTAL_BYTES } from './types.js';
+import {
+  maximumFailures,
+  maximumMessageCharacters,
+  maximumStdoutBytes,
+  maximumTotalBytes,
+} from './types.js';
 import {
   defaultDeps,
   defaultSpawn,
@@ -89,7 +94,7 @@ describe('runTests', () => {
         report: {
           numTotalTests: 0,
           numFailedTests: 0,
-          testResults: Array.from({ length: MAX_FAILURES + 1 }, (_, index) => ({
+          testResults: Array.from({ length: maximumFailures + 1 }, (_, index) => ({
             name: `file${index}.test.ts`,
             status: 'failed',
             message: 'load error',
@@ -104,7 +109,7 @@ describe('runTests', () => {
       throw new Error(`expected fail, got ${result.kind}`);
     }
 
-    expect(result.failures).toHaveLength(MAX_FAILURES);
+    expect(result.failures).toHaveLength(maximumFailures);
     expect(result.truncated).toBe(true);
   });
 
@@ -171,7 +176,7 @@ describe('runTests', () => {
         numFailedTests: 0,
         testResults: [
           {
-            name: 'x'.repeat(MAX_TOTAL_BYTES * 2),
+            name: 'x'.repeat(maximumTotalBytes * 2),
             status: 'passed',
             assertionResults: [{ fullName: 'passes', status: 'passed' }],
           },
@@ -180,7 +185,7 @@ describe('runTests', () => {
 
       await writeFile(
         script,
-        `process.stderr.write('x'.repeat(${MAX_TOTAL_BYTES * 2}));\n` +
+        `process.stderr.write('x'.repeat(${maximumTotalBytes * 2}));\n` +
           "const flag = process.argv.find((a) => a.startsWith('--outputFile='));\n" +
           `require('node:fs').writeFileSync(flag.slice('--outputFile='.length), ${JSON.stringify(
             JSON.stringify(report),
@@ -191,7 +196,7 @@ describe('runTests', () => {
 
       expect(await runTests({ scope: 'all', cwd }, deps)).toEqual({
         kind: 'pass',
-        tests: [{ file: 'x'.repeat(MAX_TOTAL_BYTES * 2), fullname: 'passes', status: 'passed' }],
+        tests: [{ file: 'x'.repeat(maximumTotalBytes * 2), fullname: 'passes', status: 'passed' }],
       });
     } finally {
       await rm(cwd, { recursive: true, force: true });
@@ -206,7 +211,7 @@ describe('runTests', () => {
 
       await writeFile(
         script,
-        `process.stdout.write('x'.repeat(${MAX_STDOUT_BYTES + 1}));\n` +
+        `process.stdout.write('x'.repeat(${maximumStdoutBytes + 1}));\n` +
           'setTimeout(() => {}, 60000);\n',
       );
 
@@ -215,7 +220,7 @@ describe('runTests', () => {
       const result = await runTests({ scope: 'all', cwd }, deps);
 
       expect(result.kind).toBe('output-limit');
-      expect(result).toHaveProperty('message', expect.stringContaining(String(MAX_STDOUT_BYTES)));
+      expect(result).toHaveProperty('message', expect.stringContaining(String(maximumStdoutBytes)));
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -519,7 +524,7 @@ describe('runTests', () => {
             {
               fullName: 'case',
               status: 'failed',
-              failureMessages: [`a${'é'.repeat(MAX_MESSAGE_CHARS)}`],
+              failureMessages: [`a${'é'.repeat(maximumMessageCharacters)}`],
             },
           ],
         },
@@ -582,7 +587,7 @@ describe('runTests', () => {
   });
 
   it('caps failures to 10 entries and truncates each assertion message to 300 characters', async () => {
-    const longMessage = 'x'.repeat(MAX_MESSAGE_CHARS * 2);
+    const longMessage = 'x'.repeat(maximumMessageCharacters * 2);
 
     const assertionResults = Array.from({ length: 15 }, (_, index) => ({
       fullName: `case ${index}`,
@@ -609,11 +614,11 @@ describe('runTests', () => {
         status: 'failed',
       })),
     );
-    expect(result.failures).toHaveLength(MAX_FAILURES);
+    expect(result.failures).toHaveLength(maximumFailures);
     expect(result.truncated).toBe(true);
 
     for (const failure of result.failures) {
-      expect(failure.message.length).toBeLessThanOrEqual(MAX_MESSAGE_CHARS + 1);
+      expect(failure.message.length).toBeLessThanOrEqual(maximumMessageCharacters + 1);
     }
   });
 

@@ -18,7 +18,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
-import { WEB_ACCESS_TOOLS } from '../src/extensions/webAccess/index.js';
+import { webAccessTools } from '../src/extensions/webAccess/index.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 
 it('loads Tau through Pi with commit features, bundled question and web tools, and writing and coding rules on every run', async ({
@@ -65,7 +65,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
 
     expect(webAccessExtension).toBeDefined();
     expect([...(webAccessExtension?.tools.keys() ?? [])].toSorted()).toEqual(
-      [...WEB_ACCESS_TOOLS].toSorted(),
+      [...webAccessTools].toSorted(),
     );
     expect(
       loader
