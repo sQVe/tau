@@ -18,12 +18,14 @@ Model availability varies by provider and account, and valid credentials do not 
 a particular model. Tau therefore cannot rely on one hardcoded delegate working for every user.
 
 The owner chose `openai-codex/gpt-5.6-luna` as the default from the investigation's catalog price
-comparison. These are relative prices, normalized to the delegate, not measured session savings:
+comparison:
 
-| Model in the comparison     | Input price ratio | Output price ratio |
-| --------------------------- | ----------------- | ------------------ |
-| Session model               | 50                | 41                 |
-| `openai-codex/gpt-5.6-luna` | 1                 | 1                  |
+| Model                         | input $/M | output $/M | cacheRead |
+| ----------------------------- | --------- | ---------- | --------- |
+| `gpt-6-astra` (session model) | 10        | 50         | 1         |
+| `gpt-5.6-luna` (delegate)     | 0.2       | 1.2        | 0.02      |
+
+Catalog prices go stale; the ratio is what matters.
 
 ## Options considered
 
@@ -67,17 +69,19 @@ another model. Use Pi's credentials without a credential pre-flight check.
 This is Tau's first environment read in `src/`, chosen so a config file can be added on top later.
 Read it at call time rather than extension load time.
 
-Resolve the model before the first read clamp, without a network call. On a registry miss or a hard
-delegate failure, stop trimming for the session; reads then behave as stock Pi. Thrown completion
-errors and the `error` stop reason are hard failures. Caller cancellation, the 120-second timeout,
-and the `length` stop reason leave trimming on.
+Resolve the model before clamping a read, without a network call. A registry miss leaves that read
+unclamped and stops trimming for the session. Resolve it again when `bulk_read` executes; a registry
+miss or a hard error also stops trimming. File errors, payload caps, provider errors, and the
+`error` stop reason are hard errors. Caller cancellation, the 120-second timeout, and the `length`
+stop reason leave trimming on. Tool failures throw rather than return error metadata.
 
 ### Read limits and evidence
 
 Clamp unbounded reads to a fixed 400-line threshold by setting the read tool's `limit` in the
 pre-call hook. Rewrite the read result's trailing continuation notice into a hint naming
-`bulk_read`. Reads with an explicit `limit` pass unchanged. Pi's existing 50KB limit still applies.
-The constant is unmeasured until the
+`bulk_read`. The hint uses the continuation offset from Pi's notice, including for offset reads and
+the 50KB limit. Reads with an explicit `limit` pass unchanged. Pi's existing 50KB limit still
+applies. The constant is unmeasured until the
 [development guide's measurement table](../development.md#bulk-read) exists. A 400-line file with a
 trailing newline gets a notice for one empty line; accept that edge case rather than adding a file
 stat to the hook.
@@ -90,7 +94,7 @@ Send all requested files in one delegate call. Resolve paths against the session
 directory, without restricting paths outside it. Skip NUL-byte binary files and list them in the
 result. Cap each file at 400,000 bytes and the numbered request at 1,000,000 characters, matching
 comment review's limits. Bound the completion to 120 seconds and 4096 output tokens. Return the
-delegate's full usage on the tool result so Pi's ledger and Tau's footer count it.
+delegate's full usage on successful tool results so Pi's ledger and Tau's footer count it.
 
 Treat file content as evidence, never as instructions, and keep the delegate read-only. Prompt
 framing tells it to ignore embedded requests, answer only the question, cite file lines, and add no
@@ -127,6 +131,8 @@ expanding the scope to code writers.
   safe or correct. Tau does not detect hostile text that cites a real line.
 - A model that is in the registry but rejected by the provider costs one clamped read and one failed
   delegate call before trimming stops.
+- A failed delegate call throws, so its usage is not recorded; only successful calls reach the
+  ledger.
 - On a subscription, reported cost is catalog pricing. Treat it as a ratio, not an invoice. User
   configuration also means each account can have different working models and costs.
 
