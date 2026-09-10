@@ -253,6 +253,21 @@ it.each(['error', 'aborted', 'length', 'throw', 'abort', 'timeout', 'file', 'loo
   },
 );
 
+it.each(['session_start', 'session_before_switch', 'session_before_fork'] as const)(
+  'restores trimming for the next session on %s',
+  (event) => {
+    const app = setup();
+    app.find.mockReturnValueOnce(undefined);
+    app.emit('tool_call', readCall('first'));
+
+    app.emit(event, {});
+    const later = readCall('later');
+    app.emit('tool_call', later);
+
+    expect(later.input).toHaveProperty('limit', bulkReadLineThreshold);
+  },
+);
+
 it('reads the reference from the environment and falls back to the default', () => {
   vi.stubEnv('TAU_BULK_READ_MODEL', undefined);
 

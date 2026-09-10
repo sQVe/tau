@@ -90,6 +90,25 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
     clamped.add(event.toolCallId);
   });
 
+  // The extension outlives a session, but ADR 0013 scopes a stopped trim to the session that
+  // stopped it.
+  const resetSession = () => {
+    trimming = true;
+    clamped.clear();
+  };
+
+  pi.on('session_start', resetSession);
+  pi.on('session_before_switch', () => {
+    resetSession();
+
+    return undefined;
+  });
+  pi.on('session_before_fork', () => {
+    resetSession();
+
+    return undefined;
+  });
+
   pi.on('tool_result', (event) => {
     if (!clamped.delete(event.toolCallId)) {
       return undefined;
