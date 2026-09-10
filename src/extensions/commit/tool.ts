@@ -19,7 +19,9 @@ import {
 import type { CommentReview } from './commentReview.js';
 import type { CommitView } from './overlay.js';
 import { confirmCommitOverlay } from './overlay.js';
-import { checkProject, prepareProject } from './projectCheck.js';
+import { snapshotPreparation } from './preparation.js';
+import { checkProject, prepareProject, readPreparation } from './projectCheck.js';
+import type { Preparation } from './projectCheck.js';
 import type { CommitSuccess } from './types.js';
 
 export const conventionalCommitSubjectPattern =
@@ -72,13 +74,16 @@ export const validateSubject = (subject: string) => {
 };
 
 const normalizeRepositoryPath = (file: string) =>
-  posix.normalize(file.replaceAll('\\', '/')).replace(/\/+$/, '');
+  posix
+    .normalize(process.platform === 'win32' ? file.replaceAll('\\', '/') : file)
+    .replace(/\/+$/, '');
 
 export const validatePaths = (files: string[]) => {
   for (const rawFile of files) {
-    const file = normalizeRepositoryPath(rawFile);
+    const file = posix.normalize(rawFile.replaceAll('\\', '/')).replace(/\/+$/, '');
 
     if (
+      rawFile.includes('\0') ||
       file === '' ||
       file === '.' ||
       rawFile.startsWith(':') ||
@@ -167,7 +172,7 @@ const repositoryPathPrefix = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirec
     );
   }
 
-  return result.stdout.trim();
+  return result.stdout.replace(/\n$/, '');
 };
 
 // HEAD is unresolved before the first commit.
@@ -221,7 +226,7 @@ const stagedNumstat = async (
 ): Promise<CommitView['files']> => {
   const result = await pi.exec(
     'git',
-    ['diff', '--cached', '--numstat', '--no-renames', '-z', '--', ...files],
+    ['--literal-pathspecs', 'diff', '--cached', '--numstat', '--no-renames', '-z', '--', ...files],
     { cwd: workingDirectory },
   );
 
@@ -333,7 +338,9 @@ const planGroupReviews = async (
 const executeGroup = async (
   parameters: CommitInput['groups'][number],
   groupLabel: string | undefined,
-  projectPreparation: string,
+  preparation: Preparation,
+  ownership: Awaited<ReturnType<typeof snapshotPreparation>> | undefined,
+  otherGroups: Set<string>,
   pi: Pick<ExtensionAPI, 'exec'>,
   context: ExtensionContext,
   signal: AbortSignal | undefined,
@@ -372,8 +379,7 @@ const executeGroup = async (
     );
   }
 
-  await stageFiles(pi, context.cwd, parameters.files);
-
+  let projectPreparation = preparation.notice;
   let approved = false;
   let reviewedTree = '';
   let reviewedHead: string | null = null;
@@ -384,6 +390,27 @@ const executeGroup = async (
   let returningForCorrections = false;
 
   try {
+    const staging = ownership?.isolated ?? pi;
+
+    if (ownership) {
+      await ownership.stage(requestedFiles);
+      try {
+        projectPreparation = await prepareProject(staging, preparation, signal);
+      } catch (error) {
+        if (signal?.aborted) {
+          return cancelled();
+        }
+
+        throw error;
+      }
+
+      await ownership.stage(requestedFiles);
+      await ownership.validate(requestedFiles, otherGroups);
+      await ownership.publish();
+    } else {
+      await stageFiles(staging, context.cwd, parameters.files);
+    }
+
     // Directory arguments can stage unrequested files.
     // Reset needs paths relative to the working directory.
     const stagedAfterRequest = await listStagedPaths(pi, context.cwd);
@@ -599,7 +626,9 @@ const executeGroup = async (
         reviews.delete(reviewGroup);
       }
 
-      await unstageFiles(pi, context.cwd, parameters.files);
+      if (!ownership) {
+        await unstageFiles(pi, context.cwd, parameters.files);
+      }
     }
   }
 
@@ -613,7 +642,9 @@ const executeGroup = async (
   );
 
   if (commitResult.code !== 0) {
-    await unstageFiles(pi, context.cwd, parameters.files);
+    if (!ownership) {
+      await unstageFiles(pi, context.cwd, parameters.files);
+    }
 
     throw commitFailedError(commitResult.stdout, commitResult.stderr);
   }
@@ -695,21 +726,36 @@ export const createCommitTool = (
     name: 'commit',
     label: 'Commit',
     description:
-      'Stage and commit logical groups sequentially. Confirm each group unless started with --auto-approve-commits.',
+      'Stage, prepare, check, review, and commit each group sequentially. Preparation-added paths require explicit assignment and a retry. Confirm each group unless started with --auto-approve-commits.',
     promptSnippet: 'Create git commits for an ordered groups array in one call.',
     promptGuidelines: [
       'When asked to commit, call commit without asking for confirmation in chat first. The commit overlay is the only approval step unless Pi was started with --auto-approve-commits. That flag skips confirmation, not checks or comment review.',
       'Only commit the files explicitly provided.',
-      'The tool runs configured preparation and candidate checks itself. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
+      'The commit tool runs configured preparation once after staging each executed group, then restages requested files and checks the candidate. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
+      'Configured preparation disables speculative review planning and approve-all reuse for later groups. It never expands requested files. Assign clean generated paths explicitly to a group and retry; do not absorb ownership conflicts.',
+      'Preparation recovery requires a local POSIX checkout, a regular supported index, and at most 100 MiB of tracked and nonignored untracked working data. Unsupported states fail before preparation. Ignored files, external symlink targets, and background writers are outside recovery coverage; this is not a sandbox.',
+      'On preparation failure, cancellation, rejection, or ownership conflict, read the reported recovery instructions. Working edits remain; never restore a saved index or working files over concurrent user edits. Git hooks and post-commit guards remain enabled. checkMessage and hooks settings remain reserved and rejected.',
       'Use a conventional commit subject.',
       'Do not commit sensitive files such as .env or SSH keys.',
       "Comment review runs before commit approval. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. After two automatic returns, unresolved findings need a user waiver. With --auto-approve-commits, commit returns an error instead of asking for a waiver. Stop and report the blocker. Never claim a waiver on the user's behalf.",
     ],
     parameters: commitToolParameters,
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
+      const assigned = new Set<string>();
+
       for (const group of parameters.groups) {
         validateSubject(group.subject);
         validatePaths(group.files);
+
+        for (const file of new Set(group.files.map(normalizeRepositoryPath))) {
+          if (assigned.has(file)) {
+            throw new Error(
+              `Path assigned to multiple groups: ${JSON.stringify(file)}. Assign it to one group and retry.`,
+            );
+          }
+
+          assigned.add(file);
+        }
       }
 
       const preapproved = autoApproveCommits();
@@ -734,24 +780,18 @@ export const createCommitTool = (
         return { content: reported, details: { groups } };
       };
 
-      let projectPreparation = 'Project preparation cancelled.';
-
-      if (!signal?.aborted) {
-        try {
-          projectPreparation = await prepareProject(pi, context.cwd, signal);
-        } catch (error) {
-          if (signal?.aborted) {
-            return finish([{ type: 'text', text: 'Commit cancelled' }]);
-          }
-
-          throw error;
-        }
+      if (signal?.aborted) {
+        return finish([{ type: 'text', text: 'Commit cancelled' }]);
       }
+
+      const preparation = await readPreparation(pi, context.cwd);
 
       // Hide model latency by reviewing the next group while the user reads the overlay.
       // Approve-all starts reviews for every remaining group.
       const plan =
-        parameters.groups.length > 1 && (await listStagedPaths(pi, context.cwd)).length === 0
+        !preparation.command &&
+        parameters.groups.length > 1 &&
+        (await listStagedPaths(pi, context.cwd)).length === 0
           ? await planGroupReviews(pi, context.cwd, parameters.groups, signal)
           : [];
       const started = new Map<number, Promise<CommentReview>>();
@@ -802,11 +842,32 @@ export const createCommitTool = (
       for (const [index, group] of parameters.groups.entries()) {
         const groupLabel = `${index + 1}/${parameters.groups.length}`;
 
+        let ownership: Awaited<ReturnType<typeof snapshotPreparation>> | undefined;
+        let completed = false;
+
         try {
+          const prefix = preparation.command ? await repositoryPathPrefix(pi, context.cwd) : '';
+
+          if (preparation.command) {
+            ownership = await snapshotPreparation(
+              pi,
+              preparation.repositoryRoot,
+              group.files.map((file) => normalizeRepositoryPath(`${prefix}${file}`)),
+            );
+          }
+          const otherGroups = new Set(
+            parameters.groups
+              .filter((_, groupIndex) => groupIndex !== index)
+              .flatMap((other) =>
+                other.files.map((file) => normalizeRepositoryPath(`${prefix}${file}`)),
+              ),
+          );
           const result = await executeGroup(
             group,
             parameters.groups.length > 1 ? groupLabel : undefined,
-            projectPreparation,
+            preparation,
+            ownership,
+            otherGroups,
             pi,
             context,
             signal,
@@ -821,6 +882,7 @@ export const createCommitTool = (
                 const seen = approval.seen.get(index);
 
                 return (
+                  !preparation.command &&
                   approval.all &&
                   seen !== undefined &&
                   seen === (await hashFiles(pi, context.cwd, group.files))
@@ -852,6 +914,24 @@ export const createCommitTool = (
             },
           );
 
+          completed = Boolean(result.details.sha);
+
+          if (ownership) {
+            if (completed) {
+              try {
+                await ownership.discard();
+              } catch (error) {
+                result.content.push({
+                  type: 'text',
+                  text: `Commit succeeded; recovery cleanup failed: ${String(error)}\n${ownership.notice}`,
+                });
+              }
+            } else {
+              await ownership.cleanup();
+              result.content.push({ type: 'text', text: ownership.notice });
+            }
+          }
+
           if (!result.details.sha && !result.details.skipped && parameters.groups.length > 1) {
             throw new Error('Commit cancelled');
           }
@@ -865,8 +945,25 @@ export const createCommitTool = (
             })),
           );
         } catch (error) {
+          let cleanupDiagnostic = '';
+
+          if (ownership && !completed) {
+            try {
+              await ownership.cleanup();
+            } catch (cleanupError) {
+              cleanupDiagnostic = `\nIndex cleanup failed: ${String(cleanupError)}`;
+            }
+          }
+
+          const failure = ownership
+            ? new Error(
+                `${error instanceof Error ? error.message : String(error)}${cleanupDiagnostic}\n${ownership.notice}`,
+                { cause: error },
+              )
+            : error;
+
           if (parameters.groups.length === 1) {
-            throw error;
+            throw failure;
           }
 
           const committed = groups.flatMap((result, committedIndex) =>
@@ -878,7 +975,7 @@ export const createCommitTool = (
           );
 
           throw new Error(
-            `Group ${groupLabel}: ${error instanceof Error ? error.message : String(error)}\nAlready committed:\n${committed.join('\n') || 'None.'}`,
+            `Group ${groupLabel}: ${failure instanceof Error ? failure.message : String(failure)}\nAlready committed:\n${committed.join('\n') || 'None.'}`,
             { cause: error },
           );
         }

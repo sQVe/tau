@@ -68,36 +68,46 @@ const parseConfig = (content: string): CommitConfig => {
   return commands;
 };
 
-// Prepare the working tree before even temporary staging for batch review planning.
-export const prepareProject = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
-  workingDirectory: string,
-  signal?: AbortSignal,
-): Promise<string> => {
+export const readPreparation = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
   const root = await pi.exec('git', ['rev-parse', '--show-toplevel'], { cwd: workingDirectory });
 
   if (root.code !== 0) {
     throw new Error(`Project preparation failed: ${root.stderr || root.stdout}`);
   }
 
-  const repositoryRoot = root.stdout.trim();
+  const repositoryRoot = root.stdout.replace(/\n$/, '');
   let configContent: string;
 
   try {
     configContent = await readFile(join(repositoryRoot, 'tau.json'), 'utf8');
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-      return 'Project preparation unavailable: no root tau.json.';
+      return { repositoryRoot, notice: 'Project preparation unavailable: no root tau.json.' };
     }
 
     throw error;
   }
 
-  // Validate every setting before preparation can change working files.
   const { prepare: command } = parseConfig(configContent);
 
+  return {
+    repositoryRoot,
+    command,
+    notice: 'Project preparation unavailable: no prepare command in tau.json.',
+  };
+};
+
+export type Preparation = Awaited<ReturnType<typeof readPreparation>>;
+
+export const prepareProject = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  preparation: Preparation,
+  signal?: AbortSignal,
+): Promise<string> => {
+  const { repositoryRoot, command, notice } = preparation;
+
   if (!command) {
-    return 'Project preparation unavailable: no prepare command in tau.json.';
+    return notice;
   }
 
   const [executable, ...arguments_] = command;

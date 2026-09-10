@@ -1,5 +1,16 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import type * as fileSystem from 'node:fs/promises';
+import {
+  chmod,
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -22,6 +33,12 @@ import {
 const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
   createReviewedCommitTool(pi, async () => ({ findings: [] }));
 
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const original = await importOriginal<typeof fileSystem>();
+
+  return { ...original, rename: vi.fn<typeof rename>(original.rename) };
+});
+
 const execFileAsync = promisify(execFile);
 
 const temporaryDirectories: string[] = [];
@@ -38,10 +55,12 @@ const runCommand = async (
   command: string,
   commandArguments: string[],
   workingDirectory: string,
+  signal?: AbortSignal,
 ): Promise<{ stdout: string; stderr: string; code: number; killed: boolean }> => {
   try {
     const { stdout, stderr } = await execFileAsync(command, commandArguments, {
       cwd: workingDirectory,
+      ...(signal ? { signal } : {}),
     });
 
     return { stdout, stderr, code: 0, killed: false };
@@ -225,6 +244,615 @@ it('rejects calls outside Git before running configured commands or changing fil
   expect(await readFile(join(directory, 'tau.json'), 'utf8')).toBe(config);
   await expect(readFile(join(directory, 'mutated'))).rejects.toThrow(/ENOENT/);
   await expect(readFile(join(directory, 'checked'))).rejects.toThrow(/ENOENT/);
+});
+
+it('prepares each executed group after staging and reviews prepared bytes', async () => {
+  const directory = await createTemporaryRepository();
+
+  await writeRepositoryFile(
+    directory,
+    'tau.json',
+    JSON.stringify({
+      prepare: [
+        'node',
+        '-e',
+        `const fs = require('node:fs'); const cp = require('node:child_process'); const paths = cp.execFileSync('git', ['diff', '--cached', '--name-only', '-z']).toString().split('\\0').filter(Boolean); if (paths.length !== 1) throw Error('expected one staged path'); fs.writeFileSync(paths[0], 'prepared');`,
+      ],
+      check: [
+        'node',
+        '-e',
+        `const fs = require('node:fs'); if (!['one', 'two'].some(path => fs.readFileSync(path, 'utf8') === 'prepared')) process.exit(1);`,
+      ],
+    }),
+  );
+  await writeRepositoryFile(directory, 'one', 'base');
+  await writeRepositoryFile(directory, 'two', 'base');
+  await git(directory, ['add', '.']);
+  await git(directory, ['commit', '-m', 'test: baseline']);
+  await writeRepositoryFile(directory, 'one', 'dirty');
+  await writeRepositoryFile(directory, 'two', 'dirty');
+
+  const exec = vi.fn<ExtensionAPI['exec']>((command, arguments_, options) =>
+    runCommand(command, arguments_, options?.cwd ?? directory),
+  );
+  const review = vi.fn<typeof reviewComments>(async (_pi, _context, _signal, snapshot) => {
+    expect(
+      await git(directory, [
+        'show',
+        `${snapshot.tree}:${review.mock.calls.length === 1 ? 'one' : 'two'}`,
+      ]),
+    ).toBe('prepared');
+
+    return { findings: [] };
+  });
+  const tool = createReviewedCommitTool({ exec }, review);
+  const result = await tool.execute(
+    'groups',
+    {
+      groups: [
+        { files: ['one'], subject: 'feat: one' },
+        { files: ['two'], subject: 'feat: two' },
+      ],
+    },
+    undefined,
+    undefined,
+    confirmedContext(directory),
+  );
+
+  expect(result.details.groups).toHaveLength(2);
+  expect(review).toHaveBeenCalledTimes(2);
+  expect(
+    exec.mock.calls.filter(([, arguments_]) =>
+      arguments_.some((argument) => argument.includes('expected one staged path')),
+    ),
+  ).toHaveLength(2);
+  expect(await git(directory, ['show', 'HEAD:two'])).toBe('prepared');
+});
+
+describe('preparation ownership', () => {
+  const fixture = async (script: string) => {
+    const directory = await createTemporaryRepository();
+
+    await writeRepositoryFile(
+      directory,
+      'tau.json',
+      JSON.stringify({ prepare: ['node', '-e', script] }),
+    );
+    await writeRepositoryFile(directory, 'requested', 'base');
+    await writeRepositoryFile(directory, 'other', 'base');
+    await git(directory, ['add', '.']);
+    await git(directory, ['commit', '-m', 'test: baseline']);
+    await writeRepositoryFile(directory, 'requested', 'staged');
+    await git(directory, ['add', 'requested']);
+    await writeRepositoryFile(directory, 'requested', 'working');
+    await writeRepositoryFile(directory, 'user data\n.txt', 'untracked prior bytes');
+
+    return directory;
+  };
+
+  const recovery = async (directory: string) => {
+    const root = (
+      await git(directory, ['rev-parse', '--path-format=absolute', '--git-path', 'tau-recovery'])
+    ).trim();
+    const paths = await readdir(root);
+    const path = join(root, paths[0]!);
+    const working = JSON.parse(await readFile(join(path, 'working.json'), 'utf8')) as Record<
+      string,
+      { content: string; kind: string; mode: number } | null
+    >;
+
+    return { path, working };
+  };
+
+  it('allows index cache refreshes but restores the exact original index', async () => {
+    const directory = await fixture("require('node:fs').writeFileSync('requested', 'formatted')");
+    const originalIndex = await readFile(join(directory, '.git/index'));
+    const tool = createCommitTool({
+      exec: (command, arguments_, options) =>
+        runCommand(command, arguments_, options?.cwd ?? directory),
+    });
+    const result = await tool.execute(
+      'refresh',
+      { groups: [{ files: ['requested'], subject: 'feat: requested' }] },
+      undefined,
+      undefined,
+      {
+        cwd: directory,
+        hasUI: true,
+        ui: {
+          custom: async () => {
+            await writeFile(join(directory, 'requested'), 'formatted');
+            await git(directory, ['update-index', '--refresh']);
+
+            return 'skip';
+          },
+        },
+      } as never,
+    );
+
+    expect(result.details.groups[0]?.skipped).toBe(true);
+    expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+  });
+
+  it('does not remove a later writer lock after publishing its index', async () => {
+    const directory = await fixture('');
+    const original = await vi.importActual<typeof fileSystem>('node:fs/promises');
+
+    vi.mocked(rename).mockImplementationOnce(async (source, destination) => {
+      await original.rename(source, destination);
+      await writeFile(`${String(destination)}.lock`, 'another writer');
+    });
+
+    try {
+      await expect(
+        executeCommit(directory, {
+          groups: [{ files: ['requested'], subject: 'feat: requested' }],
+        }),
+      ).rejects.toThrow(/lock/);
+      expect(await readFile(join(directory, '.git/index.lock'), 'utf8')).toBe('another writer');
+    } finally {
+      vi.mocked(rename).mockImplementation(original.rename);
+    }
+  });
+
+  it('rejects paths assigned to two groups before preparation', async () => {
+    const directory = await fixture("require('node:fs').writeFileSync('requested', 'mutated')");
+    const originalIndex = await readFile(join(directory, '.git/index'));
+
+    await expect(
+      executeCommit(directory, {
+        groups: [
+          { files: ['requested'], subject: 'feat: one' },
+          { files: ['./requested'], subject: 'feat: two' },
+        ],
+      }),
+    ).rejects.toThrow(/assigned.*multiple groups/i);
+    expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+    expect(await readFile(join(directory, 'requested'), 'utf8')).toBe('working');
+  });
+
+  it('reports earlier commits on cancellation without a second cleanup conflict', async () => {
+    const directory = await fixture('');
+    await writeFile(join(directory, 'other'), 'second change');
+    const controller = new AbortController();
+    let preparations = 0;
+    let firstSha = '';
+    const tool = createCommitTool({
+      exec: async (command, arguments_, options) => {
+        if (command === 'env' && arguments_.includes('node')) {
+          preparations += 1;
+
+          if (preparations === 2) {
+            firstSha = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+            controller.abort();
+          }
+        }
+
+        return runCommand(command, arguments_, options?.cwd ?? directory);
+      },
+    });
+    const caught = await tool
+      .execute(
+        'batch',
+        {
+          groups: [
+            { files: ['requested'], subject: 'feat: one' },
+            { files: ['other'], subject: 'feat: two' },
+          ],
+        },
+        controller.signal,
+        undefined,
+        confirmedContext(directory),
+      )
+      .catch((error: unknown) => {
+        if (error instanceof Error) {
+          return error;
+        }
+
+        throw error;
+      });
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain(firstSha);
+    expect((caught as Error).message).toContain('Commit cancelled');
+    expect((caught as Error).message).not.toContain('ownership conflict');
+    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
+  });
+
+  it('reports earlier commits when later cleanup encounters concurrent staging', async () => {
+    const directory = await fixture('');
+    await writeFile(join(directory, 'other'), 'second change');
+    let approvals = 0;
+    let firstSha = '';
+    const tool = createCommitTool({
+      exec: (command, arguments_, options) =>
+        runCommand(command, arguments_, options?.cwd ?? directory),
+    });
+
+    const caught = await tool
+      .execute(
+        'batch',
+        {
+          groups: [
+            { files: ['requested'], subject: 'feat: one' },
+            { files: ['other'], subject: 'feat: two' },
+          ],
+        },
+        undefined,
+        undefined,
+        {
+          cwd: directory,
+          hasUI: true,
+          ui: {
+            custom: async () => {
+              approvals += 1;
+
+              if (approvals === 2) {
+                firstSha = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+                await writeFile(join(directory, 'other'), 'concurrent staging');
+                await git(directory, ['add', 'other']);
+
+                return 'abort';
+              }
+
+              return 'approve';
+            },
+          },
+        } as never,
+      )
+      .catch((error: unknown) => {
+        if (error instanceof Error) {
+          return error;
+        }
+
+        throw error;
+      });
+
+    expect((caught as Error).message).toMatch(
+      /declined[\s\S]*ownership conflict[\s\S]*Already committed:[\s\S]*feat: one/,
+    );
+    expect(firstSha).toHaveLength(40);
+    expect((caught as Error).message).toContain(firstSha);
+    expect(await git(directory, ['show', ':other'])).toBe('concurrent staging');
+  });
+
+  it('returns cancellation and recovery after interrupting a real preparation process', async () => {
+    const directory = await fixture(
+      "require('node:fs').writeFileSync('requested', 'interrupted'); setInterval(() => {}, 1000)",
+    );
+    const originalIndex = await readFile(join(directory, '.git/index'));
+    const controller = new AbortController();
+    const tool = createCommitTool({
+      exec: async (command, arguments_, options) => {
+        const pending = runCommand(command, arguments_, options?.cwd ?? directory, options?.signal);
+
+        if (command === 'env' && arguments_.includes('node')) {
+          await vi.waitFor(async () =>
+            readFile(join(directory, 'requested'), 'utf8').then((content) => {
+              if (content !== 'interrupted') {
+                throw new Error('Preparation has not started.');
+              }
+            }),
+          );
+          controller.abort();
+        }
+
+        return pending;
+      },
+    });
+    const result = await tool.execute(
+      'cancel',
+      { groups: [{ files: ['requested'], subject: 'feat: requested' }] },
+      controller.signal,
+      undefined,
+      confirmedContext(directory),
+    );
+
+    expect(result.content).toContainEqual({ type: 'text', text: 'Commit cancelled' });
+    expect(JSON.stringify(result.content)).toContain('Recovery saved');
+    expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+    expect(
+      Buffer.from((await recovery(directory)).working.requested!.content, 'base64').toString(),
+    ).toBe('working');
+  });
+
+  it.each(['', "; require('node:child_process').execFileSync('git', ['add', 'generated'])"])(
+    'stops unassigned generated additions before approval: %s',
+    async (stage) => {
+      const directory = await fixture(
+        `require('node:fs').writeFileSync('generated', 'new bytes')${stage}`,
+      );
+      const originalIndex = await readFile(join(directory, '.git/index'));
+
+      await expect(
+        executeCommit(directory, {
+          groups: [{ files: ['requested'], subject: 'feat: requested' }],
+        }),
+      ).rejects.toThrow(/Preparation added paths.*generated.*Assign/s);
+      expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+      expect(await readFile(join(directory, 'generated'), 'utf8')).toBe('new bytes');
+      const saved = await recovery(directory);
+      expect(Buffer.from(saved.working['user data\n.txt']!.content, 'base64').toString()).toBe(
+        'untracked prior bytes',
+      );
+    },
+  );
+
+  it.each(['other', 'user data\n.txt'])(
+    'rejects unrequested worktree edits without absorbing them: %s',
+    async (path) => {
+      const directory = await fixture(
+        `require('node:fs').writeFileSync(${JSON.stringify(path)}, 'formatter bytes')`,
+      );
+      const originalIndex = await readFile(join(directory, '.git/index'));
+
+      await expect(
+        executeCommit(directory, {
+          groups: [
+            { files: ['requested'], subject: 'feat: requested' },
+            { files: ['other'], subject: 'feat: other' },
+          ],
+        }),
+      ).rejects.toThrow(/ownership conflict/);
+      expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+      expect(await readFile(join(directory, path), 'utf8')).toBe('formatter bytes');
+    },
+  );
+
+  it('recovers exact tracked and untracked bytes after a real process is killed', async () => {
+    const directory = await fixture(
+      `const fs = require('node:fs'); fs.writeFileSync('requested', 'damaged'); fs.unlinkSync('user data\\n.txt'); process.kill(process.pid, 'SIGKILL');`,
+    );
+    const originalIndex = await readFile(join(directory, '.git/index'));
+
+    await expect(
+      executeCommit(directory, { groups: [{ files: ['requested'], subject: 'feat: requested' }] }),
+    ).rejects.toThrow(/preparation failed[\s\S]*Recovery saved/i);
+    expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+    const saved = await recovery(directory);
+    expect(Buffer.from(saved.working.requested!.content, 'base64').toString()).toBe('working');
+    expect(Buffer.from(saved.working['user data\n.txt']!.content, 'base64').toString()).toBe(
+      'untracked prior bytes',
+    );
+    expect(await readFile(join(saved.path, 'original-index'))).toEqual(originalIndex);
+    expect(await readFile(join(saved.path, 'recovery.txt'), 'utf8')).toContain('Never copy');
+  });
+
+  it('classifies clean tracked generated changes separately from user edits', async () => {
+    const directory = await fixture("require('node:fs').writeFileSync('other', 'generated bytes')");
+
+    await expect(
+      executeCommit(directory, { groups: [{ files: ['requested'], subject: 'feat: requested' }] }),
+    ).rejects.toThrow(/Preparation added paths.*other.*Assign/s);
+    await writeFile(join(directory, 'other'), 'user edit');
+
+    await expect(
+      executeCommit(directory, { groups: [{ files: ['requested'], subject: 'feat: requested' }] }),
+    ).rejects.toThrow(/ownership conflict.*other/);
+  });
+
+  it('handles a requested new file deleted by preparation', async () => {
+    const directory = await fixture(
+      "require('node:fs').unlinkSync('new file'); require('node:child_process').execFileSync('git', ['add', '-A', '--', 'new file']);",
+    );
+    await writeFile(join(directory, 'new file'), 'new data');
+
+    const result = await executeCommit(directory, {
+      groups: [{ files: ['requested', 'new file'], subject: 'feat: requested' }],
+    });
+
+    expect(result.details.groups[0]?.sha).toBeTruthy();
+    expect(await git(directory, ['ls-tree', '--name-only', 'HEAD', '--', 'new file'])).toBe('');
+  });
+
+  it('uses literal root-relative paths from a nested cwd in a linked worktree', async () => {
+    const directory = await fixture(
+      `const fs = require('node:fs'); const cp = require('node:child_process'); for (const path of cp.execFileSync('git', ['diff', '--cached', '--name-only', '-z']).toString().split('\\0').filter(Boolean)) fs.writeFileSync(path, 'prepared literal');`,
+    );
+    const linked = join(directory, 'linked');
+    await git(directory, ['worktree', 'add', '-b', 'linked', linked, 'HEAD']);
+    const files = ['space name', 'line\nname', '[literal]', 'back\\slash', './:(literal)name'];
+
+    for (const file of files) {
+      await writeRepositoryFile(linked, `nested\nfolder/${file}`, 'new');
+    }
+
+    const result = await executeCommit(join(linked, 'nested\nfolder'), {
+      groups: [{ files, subject: 'feat: literal paths' }],
+    });
+
+    expect(result.details.groups[0]?.sha).toBeTruthy();
+    for (const file of files) {
+      expect(await git(linked, ['show', `HEAD:nested\nfolder/${file.replace(/^\.\//, '')}`])).toBe(
+        'prepared literal',
+      );
+    }
+
+    const recoveryRoot = (
+      await git(linked, ['rev-parse', '--path-format=absolute', '--git-path', 'tau-recovery'])
+    ).trim();
+    expect(recoveryRoot).toContain('/worktrees/linked/');
+    expect(await readdir(recoveryRoot)).toEqual([]);
+  });
+
+  it('saves executable modes and symlink targets without following symlinks', async () => {
+    const directory = await fixture(
+      "const fs = require('node:fs'); fs.unlinkSync('link'); fs.chmodSync('other', 0o644); process.exit(1)",
+    );
+    await symlink('other', join(directory, 'link'));
+    await chmod(join(directory, 'other'), 0o755);
+
+    await expect(
+      executeCommit(directory, { groups: [{ files: ['requested'], subject: 'feat: requested' }] }),
+    ).rejects.toThrow(/Recovery saved/);
+    const saved = await recovery(directory);
+
+    expect(saved.working.other!.mode).toBe(0o755);
+    expect(saved.working.link!.kind).toBe('symlink');
+    expect(Buffer.from(saved.working.link!.content, 'base64').toString()).toBe('other');
+  });
+
+  it('rejects a symlink ancestor before running preparation', async () => {
+    const directory = await fixture("require('node:fs').writeFileSync('requested', 'mutated')");
+    await writeRepositoryFile(directory, 'folder/child', 'tracked');
+    await git(directory, ['add', 'folder/child']);
+    await rm(join(directory, 'folder'), { recursive: true });
+    await mkdir(join(directory, 'elsewhere'));
+    await symlink('elsewhere', join(directory, 'folder'));
+
+    await expect(
+      executeCommit(directory, {
+        groups: [{ files: ['requested', 'folder/child'], subject: 'feat: requested' }],
+      }),
+    ).rejects.toThrow(/directory symlinks/);
+    expect(await readFile(join(directory, 'requested'), 'utf8')).toBe('working');
+  });
+
+  it.each(['--assume-unchanged', '--skip-worktree'])(
+    'rejects unsupported index flags before running preparation: %s',
+    async (flag) => {
+      const directory = await fixture("require('node:fs').writeFileSync('requested', 'mutated')");
+      await git(directory, ['update-index', flag, 'other']);
+      const originalIndex = await readFile(join(directory, '.git/index'));
+
+      await expect(
+        executeCommit(directory, {
+          groups: [{ files: ['requested'], subject: 'feat: requested' }],
+        }),
+      ).rejects.toThrow(/Unsupported index/);
+      expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+      expect(await readFile(join(directory, 'requested'), 'utf8')).toBe('working');
+    },
+  );
+
+  it('leaves unknown pre-staged files untouched without running preparation', async () => {
+    const directory = await fixture("require('node:fs').writeFileSync('requested', 'mutated')");
+    await writeFile(join(directory, 'other'), 'staged user content');
+    await git(directory, ['add', 'other']);
+    const originalIndex = await readFile(join(directory, '.git/index'));
+
+    await expect(
+      executeCommit(directory, { groups: [{ files: ['requested'], subject: 'feat: requested' }] }),
+    ).rejects.toThrow(/already staged: other/);
+    expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+    expect(await readFile(join(directory, 'requested'), 'utf8')).toBe('working');
+  });
+
+  it('rejects submodules before preparation and keeps recovery objects reachable', async () => {
+    const directory = await fixture('process.exit(1)');
+
+    await expect(
+      executeCommit(directory, { groups: [{ files: ['requested'], subject: 'feat: requested' }] }),
+    ).rejects.toThrow(/Recovery saved/);
+    const saved = await recovery(directory);
+    const reference = (await readFile(join(saved.path, 'recovery-ref'), 'utf8')).trim();
+    await git(directory, ['gc', '--prune=now']);
+    expect(await git(directory, ['show', `${reference}:requested`])).toBe('staged');
+    expect(await git(directory, ['stash', 'list'])).toBe('');
+
+    const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+    await git(directory, ['update-index', '--add', '--cacheinfo', `160000,${head},submodule`]);
+    const originalIndex = await readFile(join(directory, '.git/index'));
+
+    await expect(
+      executeCommit(directory, { groups: [{ files: ['requested'], subject: 'feat: requested' }] }),
+    ).rejects.toThrow(/Unsupported index/);
+    expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+  });
+
+  it('rejects a symlink index before snapshot or preparation', async () => {
+    const directory = await fixture("require('node:fs').writeFileSync('requested', 'mutated')");
+    const index = join(directory, '.git/index');
+    const originalIndex = await readFile(index);
+    await rename(index, `${index}-target`);
+    await symlink('index-target', index);
+
+    await expect(
+      executeCommit(directory, { groups: [{ files: ['requested'], subject: 'feat: requested' }] }),
+    ).rejects.toThrow(/regular index file/);
+    expect(await readFile(index)).toEqual(originalIndex);
+    expect(await readFile(join(directory, 'requested'), 'utf8')).toBe('working');
+    await expect(readdir(join(directory, '.git/tau-recovery'))).rejects.toThrow(/ENOENT/);
+  });
+
+  it('supports an existing staged-only requested deletion', async () => {
+    const directory = await fixture('');
+    await git(directory, ['rm', '-f', 'requested']);
+
+    const result = await executeCommit(directory, {
+      groups: [{ files: ['requested'], subject: 'feat: delete requested' }],
+    });
+
+    expect(result.details.groups[0]?.sha).toBeTruthy();
+    expect(await git(directory, ['ls-tree', '--name-only', 'HEAD', '--', 'requested'])).toBe('');
+  });
+
+  it('rejects directory requests before running preparation', async () => {
+    const directory = await fixture("require('node:fs').writeFileSync('requested', 'mutated')");
+    await writeRepositoryFile(directory, 'folder/child', 'child');
+
+    await expect(
+      executeCommit(directory, {
+        groups: [{ files: ['requested', 'folder'], subject: 'feat: folder' }],
+      }),
+    ).rejects.toThrow(/individual files.*directory/i);
+    expect(await readFile(join(directory, 'requested'), 'utf8')).toBe('working');
+  });
+
+  it('restages requested deletions after preparation', async () => {
+    const directory = await fixture('');
+
+    await rm(join(directory, 'requested'));
+    const result = await executeCommit(directory, {
+      groups: [{ files: ['requested'], subject: 'feat: delete requested' }],
+    });
+
+    expect(result.details.groups[0]?.sha).toBeTruthy();
+    expect(await git(directory, ['ls-tree', '--name-only', 'HEAD', '--', 'requested'])).toBe('');
+  });
+
+  it.each(['skip', 'abort'])(
+    'preserves prior staging and current user edits on %s',
+    async (choice) => {
+      const directory = await fixture("require('node:fs').writeFileSync('requested', 'formatted')");
+      const originalIndex = await readFile(join(directory, '.git/index'));
+      const tool = createCommitTool({
+        exec: (command, arguments_, options) =>
+          runCommand(command, arguments_, options?.cwd ?? directory),
+      });
+      const call = tool.execute(
+        'cleanup',
+        { groups: [{ files: ['requested'], subject: 'feat: requested' }] },
+        undefined,
+        undefined,
+        {
+          cwd: directory,
+          hasUI: true,
+          ui: {
+            custom: async () => {
+              await writeFile(join(directory, 'requested'), 'concurrent working edit');
+
+              return choice;
+            },
+          },
+        } as never,
+      );
+
+      const outcome = await call.then(
+        (result) => JSON.stringify(result.content),
+        (error: unknown) => String(error),
+      );
+
+      expect(outcome).toContain(
+        choice === 'abort' ? 'Commit declined by user' : 'Commit skipped by user',
+      );
+      expect(outcome).toContain('Recovery saved');
+
+      expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+      expect(await readFile(join(directory, 'requested'), 'utf8')).toBe('concurrent working edit');
+      expect((await recovery(directory)).working.requested).not.toBeNull();
+    },
+  );
 });
 
 it('prepares and checks without a package manifest', async () => {
@@ -615,7 +1243,7 @@ it('returns cancelled when aborted while project preparation runs', async () => 
 
   const commitTool = createCommitTool({
     exec(command: string, commandArguments: string[], options?: { cwd?: string }) {
-      if (command === 'node' && commandArguments.includes('prepare.cjs')) {
+      if (command === 'env' && commandArguments.includes('prepare.cjs')) {
         controller.abort();
       }
 
@@ -638,10 +1266,11 @@ it('returns cancelled when aborted while project preparation runs', async () => 
   const currentHead = await git(repositoryDirectory, ['rev-parse', 'HEAD']);
   const stagedFiles = await git(repositoryDirectory, ['diff', '--cached', '--name-only']);
 
-  expect(result.content).toEqual([
+  expect(result.content.slice(0, 2)).toEqual([
     { type: 'text', text: 'no test runner resolves from this worktree' },
     { type: 'text', text: 'Commit cancelled' },
   ]);
+  expect(JSON.stringify(result.content[2])).toContain('Recovery saved at');
   expect(currentHead).toBe(head);
   expect(stagedFiles).toBe('');
 });
@@ -865,6 +1494,20 @@ describe('validatePaths', () => {
     expect(() => {
       validatePaths(['/etc/passwd']);
     }).toThrow(/Invalid path/);
+  });
+
+  it('keeps backslash traversal and sensitive path validation', () => {
+    for (const path of [
+      '..\\private',
+      'src\\..\\..\\private',
+      '.ssh\\config',
+      'config\\.env',
+      'folder\\credentials.json',
+    ]) {
+      expect(() => {
+        validatePaths([path]);
+      }).toThrow(/Invalid path/);
+    }
   });
 
   it('rejects traversal that only escapes the repository once collapsed', () => {
@@ -1811,7 +2454,7 @@ describe('commitTool.execute', () => {
     ).rejects.toThrow(/already staged: old\.md/i);
   });
 
-  it('prepares once before staging and approves the prepared bytes on the first call', async () => {
+  it('prepares each staged group and keeps hooks enabled on the first call', async () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     await git(repositoryDirectory, ['commit', '--allow-empty', '-m', 'test: baseline']);
@@ -1827,7 +2470,7 @@ describe('commitTool.execute', () => {
     await writeRepositoryFile(
       repositoryDirectory,
       'prepare.cjs',
-      "require('node:assert').equal(require('node:child_process').execSync('git diff --cached --name-only').toString(), ''); require('node:fs').writeFileSync('README.md', 'formatted\\n'); require('node:fs').writeFileSync('unrelated.txt', 'also fixed');",
+      "require('node:assert').notEqual(require('node:child_process').execSync('git diff --cached --name-only').toString(), ''); require('node:fs').writeFileSync('README.md', 'formatted\\n');",
     );
     await writeRepositoryFile(
       repositoryDirectory,
@@ -1867,14 +2510,19 @@ describe('commitTool.execute', () => {
       'Project preparation passed: node prepare.cjs',
     );
     expect(result.details.groups[0]?.projectCheck).toContain('Project check passed');
-    expect(exec.mock.calls.filter(([command]) => command === 'node')).toHaveLength(1);
+    expect(
+      exec.mock.calls.filter(
+        ([command, arguments_]) =>
+          command === 'env' && arguments_.includes('prepare.cjs') && arguments_.includes('node'),
+      ),
+    ).toHaveLength(2);
     expect(exec.mock.calls.filter(([command]) => command === 'grep')).toHaveLength(2);
 
     const statusOutput = await git(repositoryDirectory, ['status', '--short']);
     const committedContent = await git(repositoryDirectory, ['show', 'HEAD:README.md']);
 
     expect(await git(repositoryDirectory, ['rev-list', '--all', '--count'])).toBe('3\n');
-    expect(statusOutput).toBe('?? unrelated.txt\n');
+    expect(statusOutput).toBe('');
     expect(committedContent).toBe('formatted\n');
   });
 
@@ -2298,7 +2946,12 @@ describe('commit overlay flow', () => {
         controller.abort();
       }
 
-      return Promise.resolve({ code: 0, killed: false, stdout: '', stderr: '' });
+      return Promise.resolve({
+        code: 0,
+        killed: false,
+        stdout: commandArguments.includes('--show-toplevel') ? '/repo\n' : '',
+        stderr: '',
+      });
     });
 
     await execute(controller.signal);

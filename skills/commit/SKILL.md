@@ -28,7 +28,8 @@ Turn the current diff into clean commits using the `commit` tool.
   preapproved mode, stop and report the blocker.
 - Every commit subject must use conventional-commit format.
 - Every commit should include a body explaining why the change was made.
-- Stage and commit only the files that belong to the current logical group.
+- Stage and commit only the files that belong to the current logical group. Assign each path to only
+  one group.
 - The `commit` tool rejects sensitive paths (`.env*`, credentials, keys). Remove rejected files from
   the group instead of retrying.
 
@@ -58,7 +59,8 @@ Turn the current diff into clean commits using the `commit` tool.
 3. Call the `commit` tool once with an ordered `groups` array. Each group contains `files`,
    `subject`, and `body`. The tool runs configured commands, reviews changes, and handles approval.
    Do not run those commands separately to duplicate the tool's work. Report unavailable checks as
-   unavailable, not passed.
+   unavailable, not passed. With preparation configured, expect separate approval for each group
+   unless Pi started with `--auto-approve-commits`.
 
 4. If the `commit` tool succeeds, report the result and continue.
    - A skipped group is not a failure; the tool continues with later groups.
@@ -72,7 +74,12 @@ Turn the current diff into clean commits using the `commit` tool.
    - If changes remain, use the tool's error output to guide retries:
      - Read the reported command, configuration, hook, or review error.
      - Fix the underlying issue, such as lint, format, or test failures.
-     - Include any files modified during the fix in the retried group's `files` list.
+     - If preparation reports additional files, inspect them before assigning them to a group and
+       retrying. Do not add unrelated user edits just to clear an error.
+     - If the tool reports an ownership conflict, stop and inspect the current changes. Follow any
+       recovery instructions before restoring files or staging. A failed commit does not undo
+       preparation's working edits.
+     - Include files that belong to the fix in the retried group's `files` list.
      - Retry the `commit` tool with the corrected group and any remaining groups in `groups`. Leave
        out the groups already committed and the ones the user skipped; a skipped group carries no
        commit hash, so its absence from the error's list does not mean it still needs a commit.
@@ -98,3 +105,4 @@ Turn the current diff into clean commits using the `commit` tool.
 ## See also
 
 - [Skill authoring style](../../docs/adr/0004-skill-authoring-style.md)
+- [Staged preparation ownership](../../docs/adr/0014-staged-preparation-ownership.md)

@@ -478,8 +478,8 @@ it('allows commit and its project preparation writes outside the file-tool guard
   await writeFile(
     join(cwd, 'tau.json'),
     JSON.stringify({
-      prepare: ['pnpm', 'exec', 'vp', 'fmt', 'src/value.ts'],
-      check: ['pnpm', 'exec', 'vp', 'fmt', '--check', 'src/value.ts'],
+      prepare: ['node_modules/.bin/vp', 'fmt', 'src/value.ts'],
+      check: ['node_modules/.bin/vp', 'fmt', '--check', 'src/value.ts'],
     }),
   );
   await mkdir(join(cwd, 'src'));
@@ -509,7 +509,9 @@ it('allows commit and its project preparation writes outside the file-tool guard
 
   expect(await readFile(join(cwd, 'src/value.ts'), 'utf8')).toBe('export const value = 1;\n');
 
-  expect(committed).toMatchObject({ isError: false });
+  const commitFailure = committed.isError && JSON.stringify(committed.result);
+
+  expect(commitFailure).toBe(false);
   expect(JSON.stringify(committed.result)).toContain('Project check passed');
   expect((await git(['show', 'HEAD:src/value.ts'])).stdout).toBe('export const value = 1;\n');
 });
