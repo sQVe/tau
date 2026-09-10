@@ -29,7 +29,12 @@ beforeEach(() => {
     });
 });
 
-afterEach(() => {
+afterEach(({ task }) => {
+  // A failed test already reported its cause; leftover reports are its symptom, not a second defect.
+  if (task.result?.state === 'fail') {
+    return;
+  }
+
   strictEqual(vi.mocked(runTests).mock.calls.length, expectedRuns, 'Unused runner reports');
 });
 
