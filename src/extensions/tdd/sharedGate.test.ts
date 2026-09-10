@@ -316,15 +316,28 @@ it('never writes through a symlink planted at the temporary state path', async (
 
   const outside = join(root, 'target.json');
   const original = 'untouched';
+  const temporary = join(cwd, '.tau/state.json.tmp');
 
   await writeFile(outside, original);
-  await mkdir(join(cwd, '.tau'), { recursive: true });
-  await symlink(outside, join(cwd, '.tau/state.json.tmp'));
 
-  await store.setGate(cwd, 'off');
+  // Re-plant the link in the window between the unlink and the create, so only the exclusive
+  // create can refuse it. Planting it beforehand would prove nothing: the unlink alone clears it.
+  const actualRemove = filesystem.rm;
+  const remove = vi
+    .spyOn(filesystem, 'rm')
+    .mockImplementationOnce(async (path: Parameters<typeof actualRemove>[0], options) => {
+      await actualRemove(path, options);
+      await symlink(outside, temporary);
+    });
 
+  syncBuiltinESMExports();
+  onTestFinished(() => {
+    remove.mockRestore();
+    syncBuiltinESMExports();
+  });
+
+  await expect(store.setGate(cwd, 'off')).rejects.toThrow(/EEXIST/);
   expect(await readFile(outside, 'utf8')).toBe(original);
-  expect((await store.read(cwd)).notice).toContain('TDD gate off');
 });
 
 it('preserves disk state and releases the lock after a failed save', async () => {
