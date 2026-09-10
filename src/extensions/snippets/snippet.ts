@@ -3,12 +3,12 @@ import { join } from 'node:path';
 
 import type { Snippet, SnippetPlacement } from './types.js';
 
-// The header is optional, so a snippet that sets no field still parses.
+// Header fields are optional, so an empty frontmatter block still parses.
 const frontmatterPattern = /^---\r?\n((?:[\S\s]*?\r?\n)?)---\r?\n?([\S\s]*)$/;
 const metadataPattern = /^([A-Za-z][\w-]*)\s*:\s*(.*)$/;
 const quotePattern = /^["']|["']$/g;
 
-// Sorts last, so snippets without an order keep their relative order by name.
+// Snippets without an order use this value and sort by name when orders match.
 const defaultOrder = 9999;
 
 const readPlacement = (value: string | undefined): SnippetPlacement =>
@@ -16,26 +16,31 @@ const readPlacement = (value: string | undefined): SnippetPlacement =>
 
 const readOrder = (value: string | undefined) => {
   const order = Number.parseInt(value ?? '', 10);
+
   return Number.isFinite(order) ? order : defaultOrder;
 };
 
 /** Returns null when the file has no frontmatter block or no body text. */
 export const parseSnippet = (filename: string, raw: string): Snippet | null => {
   const frontmatter = frontmatterPattern.exec(raw);
+
   if (frontmatter === null) {
     return null;
   }
 
   const [, header = '', rest = ''] = frontmatter;
   const metadata = new Map<string, string>();
+
   for (const line of header.split(/\r?\n/)) {
     const field = metadataPattern.exec(line);
+
     if (field === null) {
       continue;
     }
 
     const [, key = '', rawValue = ''] = field;
     const value = rawValue.trim().replace(quotePattern, '');
+
     if (value !== '') {
       metadata.set(key.toLowerCase(), value);
     }
@@ -44,6 +49,7 @@ export const parseSnippet = (filename: string, raw: string): Snippet | null => {
   // The menu splits the body on newlines, and a stray carriage return there
   // returns the cursor to column 0 and corrupts the frame.
   const body = rest.replaceAll('\r\n', '\n').trim();
+
   if (body === '') {
     return null;
   }
@@ -58,8 +64,8 @@ export const parseSnippet = (filename: string, raw: string): Snippet | null => {
   };
 };
 
-const compareSnippets = (a: Snippet, b: Snippet) =>
-  a.order === b.order ? a.name.localeCompare(b.name) : a.order - b.order;
+const compareSnippets = (first: Snippet, second: Snippet) =>
+  first.order === second.order ? first.name.localeCompare(second.name) : first.order - second.order;
 
 /**
  * Reads every markdown snippet in `directory`, sorted with the prepend group
@@ -75,10 +81,13 @@ export const loadSnippets = async (directory: string): Promise<Snippet[]> => {
   const filenames = entries
     .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.md'))
     .map((entry) => entry.name);
+
   const parsed = await Promise.all(
-    filenames.map(async (name) =>
-      parseSnippet(name, await readFile(join(directory, name), 'utf8')),
-    ),
+    filenames.map(async (filename) => {
+      const content = await readFile(join(directory, filename), 'utf8');
+
+      return parseSnippet(filename, content);
+    }),
   );
   const snippets = parsed.filter((snippet) => snippet !== null);
 

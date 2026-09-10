@@ -50,6 +50,7 @@ export const renderFooterLine = (
   }
 
   const left = [theme.fg('dim', sanitizeText(input.directory))];
+
   if (input.branch !== null) {
     left.push(
       theme.fg('accent', sanitizeText(input.branch)) +
@@ -64,14 +65,17 @@ export const renderFooterLine = (
 
   const percent = input.contextPercent;
   let contextColor: ThemeColor = 'text';
+
   if (percent !== null && percent > 90) {
     contextColor = 'error';
   } else if (percent !== null && percent > 70) {
     contextColor = 'warning';
   }
+
   const context = `${percent === null ? '?' : `${percent.toFixed(1)}%`}/${formatTokens(input.contextWindow)}`;
 
   let model = theme.fg('muted', sanitizeText(input.modelId));
+
   if (input.thinkingLevel !== undefined) {
     model += ` ${theme.fg(thinkingColors[input.thinkingLevel], `• ${input.thinkingLevel}`)}`;
   }
@@ -81,9 +85,11 @@ export const renderFooterLine = (
     theme.fg(contextColor, context),
     model,
   ].join('  ');
+
   const leftText = truncateToWidth(left.join('  '), width);
   const leftWidth = visibleWidth(leftText);
   const rightWidth = width - leftWidth - 2;
+
   if (rightWidth <= 0) {
     return leftText;
   }

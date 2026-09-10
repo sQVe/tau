@@ -19,7 +19,7 @@ import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import type { TestContext } from 'vitest';
 import { expect, it, vi } from 'vitest';
 
-// Real pi sessions need extra time on slow CI.
+// Real Pi sessions need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
 
 type RegisterCleanup = TestContext['onTestFinished'];
@@ -27,8 +27,8 @@ type RegisterCleanup = TestContext['onTestFinished'];
 const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
 
 /**
- * A custom UI context makes pi report hasUI=true. The menu is driven by the
- * keys in `keys`, which are fed to the component after it renders once.
+ * A custom UI context makes Pi report hasUI=true. Render the menu once before
+ * sending the scripted keys so the test follows the terminal input order.
  */
 const createScriptedUI = (overlays: string[], keys: string[]): ExtensionUIContext => {
   const widgets = new Map<string, string[] | undefined>();
@@ -50,6 +50,7 @@ const createScriptedUI = (overlays: string[], keys: string[]): ExtensionUIContex
       );
 
       overlays.push(component.render(80).join('\n'));
+
       for (const key of keys) {
         component.handleInput?.(key);
       }
@@ -72,17 +73,17 @@ const createScriptedUI = (overlays: string[], keys: string[]): ExtensionUIContex
 };
 
 const createHarness = async (registerCleanup: RegisterCleanup, keys: string[]) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-snippet-flow-'));
-  const agentDir = await mkdtemp(join(tmpdir(), 'tau-snippet-agent-'));
-  registerCleanup(() => rm(cwd, { recursive: true, force: true }));
-  registerCleanup(() => rm(agentDir, { recursive: true, force: true }));
+  const directory = await mkdtemp(join(tmpdir(), 'tau-snippet-flow-'));
+  const agentDirectory = await mkdtemp(join(tmpdir(), 'tau-snippet-agent-'));
+  registerCleanup(() => rm(directory, { recursive: true, force: true }));
+  registerCleanup(() => rm(agentDirectory, { recursive: true, force: true }));
 
   const faux = fauxProvider({ provider: 'tau-snippet-test' });
 
   const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
   const loader = new DefaultResourceLoader({
-    cwd,
-    agentDir,
+    cwd: directory,
+    agentDir: agentDirectory,
     settingsManager,
     additionalExtensionPaths: [tauExtensionsPath],
     noExtensions: true,
@@ -90,6 +91,7 @@ const createHarness = async (registerCleanup: RegisterCleanup, keys: string[]) =
     noPromptTemplates: true,
     noThemes: true,
   });
+
   await loader.reload();
 
   const modelRuntime = await ModelRuntime.create({
@@ -101,12 +103,12 @@ const createHarness = async (registerCleanup: RegisterCleanup, keys: string[]) =
   modelRuntime.registerNativeProvider(faux.provider);
 
   const { session, extensionsResult } = await createAgentSession({
-    cwd,
-    agentDir,
+    cwd: directory,
+    agentDir: agentDirectory,
     modelRuntime,
     model: faux.getModel(),
     resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(cwd),
+    sessionManager: SessionManager.inMemory(directory),
     settingsManager,
     // These tests send no tool calls; the list only has to be valid.
     tools: ['read'],
@@ -118,6 +120,7 @@ const createHarness = async (registerCleanup: RegisterCleanup, keys: string[]) =
   expect(extensionsResult.errors).toEqual([]);
 
   const overlays: string[] = [];
+
   // The menu is a terminal component, so it only runs when the mode is "tui".
   await session.bindExtensions({ uiContext: createScriptedUI(overlays, keys), mode: 'tui' });
 
@@ -141,7 +144,7 @@ const promptTextOf = (context: { messages: { role: string; content: unknown }[] 
     .join('');
 };
 
-it('registers the snippets command in a real pi session', async ({ onTestFinished }) => {
+it('registers the snippets command in a real Pi session', async ({ onTestFinished }) => {
   const { commandNames } = await createHarness(onTestFinished, []);
 
   expect(commandNames).toContain('snippets');
@@ -161,10 +164,12 @@ it('prepends a toggled snippet to the next message and then resets', async ({ on
   faux.setResponses([
     (context) => {
       sent.push(promptTextOf(context));
+
       return fauxAssistantMessage('Understood.');
     },
     (context) => {
       sent.push(promptTextOf(context));
+
       return fauxAssistantMessage('Done.');
     },
   ]);
@@ -172,10 +177,8 @@ it('prepends a toggled snippet to the next message and then resets', async ({ on
   await session.prompt('Add the retry policy.');
   await session.prompt('Now ship it.');
 
-  // Matched without the line breaks, which the markdown formatter owns.
   expect(sent[0]).toMatch(/^Interview me before you start\./);
   expect(sent[0]).toMatch(/until I say we agree\.\n\nAdd the retry policy\.$/);
-  // Toggles reset after each send.
   expect(sent[1]).toBe('Now ship it.');
 });
 
@@ -189,8 +192,10 @@ it('keeps a slash command at the start of the text and keeps the toggle on', asy
   const sent: string[] = [];
   const record = (context: Parameters<typeof promptTextOf>[0]) => {
     sent.push(promptTextOf(context));
+
     return fauxAssistantMessage('Done.');
   };
+
   faux.setResponses([record, record]);
 
   // Pi expands /skill: and prompt templates only at the start of the text.
@@ -198,7 +203,6 @@ it('keeps a slash command at the start of the text and keeps the toggle on', asy
   await session.prompt('Add the retry policy.');
 
   expect(sent[0]).toBe('/skill:commit');
-  // The toggle survived the slash message and applies to the next one.
   expect(sent[1]).toMatch(/^Interview me before you start\./);
 });
 
@@ -211,6 +215,7 @@ it('leaves the message unchanged when the user cancels the menu', async ({ onTes
   faux.setResponses([
     (context) => {
       sent.push(promptTextOf(context));
+
       return fauxAssistantMessage('Done.');
     },
   ]);
