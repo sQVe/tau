@@ -50,7 +50,7 @@ it('sends all files in one call with the question and framing', async () => {
   expect(payload.messages[0]!.content).toContain('a.ts\n1: first\n2: second');
   expect(payload.messages[0]!.content).toContain('b.ts\n1: third');
   expect(options?.signal).toBeInstanceOf(AbortSignal);
-  expect(options?.maxTokens).toBe(2048);
+  expect(options).not.toHaveProperty('maxTokens');
 });
 
 it('skips binary files and lists them as skipped', async () => {

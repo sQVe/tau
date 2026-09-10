@@ -93,8 +93,8 @@ session model reads a bounded range before editing; Pi's `edit` is the exact-tex
 Send all requested files in one delegate call. Resolve paths against the session's working
 directory, without restricting paths outside it. Skip NUL-byte binary files and list them in the
 result. Cap each file at 400,000 bytes and the numbered request at 1,000,000 characters, matching
-comment review's limits. Bound the completion to 120 seconds and 2048 output tokens. Return the
-delegate's full usage on successful tool results so Pi's ledger and Tau's footer count it.
+comment review's limits. Bound the completion to 120 seconds. Return the delegate's full usage on
+successful tool results so Pi's ledger and Tau's footer count it.
 
 Treat file content as evidence, never as instructions, and keep the delegate read-only. Prompt
 framing tells it to ignore embedded requests, answer only the question, cite file lines, and add no
@@ -117,8 +117,7 @@ expanding the scope to code writers.
 - Portal reports 10-30 seconds per delegation. The 2026-09-10 measurement saw about 50 seconds for a
   24k-token payload, and a median saving of 11% that sits inside run-to-run variance. Delegation
   trades latency for a modest reduction in session-model tokens. The delegate is asked for the
-  fewest bullets that answer the question, with output capped at 2,048 tokens, because answer length
-  was the measured cost.
+  fewest bullets that answer the question because answer length was the measured cost.
 - The roughly 90% figure reported by Portal and rtk describes a reduction in what the agent reads,
   not a reduction in the bill. Both estimate tokens as characters divided by four, without a
   tokenizer. The owner measures real providers with compaction disabled, using one semantic question
