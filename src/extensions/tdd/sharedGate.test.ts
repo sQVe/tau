@@ -307,7 +307,25 @@ it('does not replace an existing lock or follow state symlinks', async () => {
   await symlink(root, join(cwd, '.tau'), 'dir');
   await expect(store.setGate(cwd, 'off')).rejects.toThrow(/symlink/i);
   await expect(store.read(cwd)).rejects.toThrow(/symlink/i);
-}, 15_000);
+  // Waits out the full lock deadline once.
+}, 30_000);
+
+it('never writes through a symlink planted at the temporary state path', async () => {
+  const { cwd, root } = await fixture();
+  const store = createEvidenceStore();
+
+  const outside = join(root, 'target.json');
+  const original = 'untouched';
+
+  await writeFile(outside, original);
+  await mkdir(join(cwd, '.tau'), { recursive: true });
+  await symlink(outside, join(cwd, '.tau/state.json.tmp'));
+
+  await store.setGate(cwd, 'off');
+
+  expect(await readFile(outside, 'utf8')).toBe(original);
+  expect((await store.read(cwd)).notice).toContain('TDD gate off');
+});
 
 it('preserves disk state and releases the lock after a failed save', async () => {
   const { cwd } = await fixture();

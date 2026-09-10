@@ -21,10 +21,10 @@ Use disk state as the source of truth. Use the canonical worktree path for state
 Permission and status use the same gate-off conditions. Protected paths remain blocked.
 
 Use an exclusive directory lock for state updates. Run tests outside the lock so gate switches can
-finish during long runs, and report the resulting state after releasing it, because reads need no
-lock and hashing the tree twice under one doubles the critical section. Load the latest state and
-check test inputs after acquiring the lock. Publish a complete snapshot by atomic rename from a
-temporary file, which the lock already keeps to one writer.
+finish during long runs, but read the resulting state inside it: callers correlate the returned
+evidence with their own test report, so another session must not replace the state in between. Load
+the latest state and check test inputs after acquiring the lock. Publish a complete snapshot by
+atomic rename from a temporary file, created exclusively so a planted symlink is never followed.
 
 Unreadable state raises an error rather than returning a message. It is the most restrictive state,
 not the least: the guard blocks every write while it holds. The commit tool, exempt from the guard,
@@ -39,6 +39,8 @@ removing it. Reject symlinked state paths.
 - Sessions no longer retain stale permission or overwrite unrelated state from another session.
 - Reads do not write evidence or wait for a state lock.
 - A process crash can leave a lock that needs manual removal.
+- Holding the read inside the lock hashes the worktree twice per run, so the lock wait is set well
+  above that cost rather than risking a timeout that discards a finished test run.
 - All writers must use the locking protocol. Older Tau processes must be restarted before sharing
   the worktree with updated processes.
 - The file-tool guard still cannot prevent changes made through bash or external programs.

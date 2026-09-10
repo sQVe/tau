@@ -383,9 +383,13 @@ const saveState = async (cwd: string, state: EvidenceState) => {
   const temporary = `${path}.tmp`;
 
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(temporary, JSON.stringify({ tdd: state }));
+
+  // Unlink first so a leftover file cannot fail the exclusive create, and exclusively so a symlink
+  // planted at the temporary path is never followed. rm unlinks the link itself, never its target.
+  await rm(temporary, { force: true });
 
   try {
+    await writeFile(temporary, JSON.stringify({ tdd: state }), { flag: 'wx' });
     await rename(temporary, path);
   } catch (error) {
     await rm(temporary, { force: true });
@@ -402,7 +406,11 @@ const withStateLock = async <Result>(
   await mkdir(dirname(statePath(cwd)), { recursive: true });
 
   const lock = resolve(cwd, '.tau/state.lock');
-  const deadline = Date.now() + 5000;
+
+  // Generous, because the holder hashes the worktree twice and losing a finished test run to a
+  // timeout costs far more than waiting. ponytail: fixed wait, make it adaptive if large
+  // repositories still time out.
+  const deadline = Date.now() + 15_000;
 
   while (true) {
     try {
@@ -514,15 +522,15 @@ export const createEvidenceStore = () => {
           },
     );
 
-    // Test execution and the closing read stay outside the lock so a user can switch the gate
-    // during a long run. Holding the lock across read's own tree digest doubles the critical
-    // section and can time out a second session that already finished its tests.
-    const settled = await withStateLock(cwd, async () => {
+    // Test execution stays outside the lock so a user can switch the gate during a long run. The
+    // closing read stays inside it: callers correlate the returned evidence with this run's report,
+    // so another session must not replace the state between the save and the read.
+    return withStateLock(cwd, async () => {
       const after = await hashInputs(cwd, behavior.files);
       const currentTree = await treeDigest(cwd, behavior.files);
 
       if (before !== currentTree) {
-        return { kind: 'inputs-changed' as const, report: null };
+        return { kind: 'inputs-changed' as const, report: null, ...(await read(cwd)) };
       }
 
       const state = await loadState(cwd);
@@ -536,7 +544,7 @@ export const createEvidenceStore = () => {
 
       // Cancellation cannot switch behaviors. A full run on the active behavior still clears verification.
       if (report.kind === 'cancelled' && arrival !== 'same') {
-        return { kind: 'cancelled' as const, report };
+        return { kind: 'cancelled' as const, report, ...(await read(cwd)) };
       }
 
       const filesExist = behavior.files.every((file) => after[resolve(cwd, file)] != null);
@@ -651,24 +659,22 @@ export const createEvidenceStore = () => {
 
       await saveState(cwd, state);
 
-      return { kind: report.kind, report, staleForVerification };
+      return { kind: report.kind, report, staleForVerification, ...(await read(cwd)) };
     });
-
-    return { ...settled, ...(await read(cwd)) };
   };
 
   const setGate = async (directory: string, gate: 'on' | 'off') => {
     const cwd = await realpath(directory);
 
-    await withStateLock(cwd, async () => {
+    return withStateLock(cwd, async () => {
       const state = await loadState(cwd);
 
       state.gateOff = gate === 'off' ? { since: new Date().toISOString() } : null;
 
       await saveState(cwd, state);
-    });
 
-    return read(cwd);
+      return read(cwd);
+    });
   };
 
   return {
