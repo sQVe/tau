@@ -137,6 +137,10 @@ Cost includes the delegate, which was $0.007 in B2. Findings:
   to 30 seconds. Latency, not money, is the cost of delegation with this pair of models.
 - Median saving across all four runs is 11%, inside the run-to-run variance. The 400-line threshold
   stays. Code writers do not earn a ticket on this evidence.
+- The delegate's time went into its 2,162-token answer, not reasoning (273 tokens) or input. After
+  asking for the fewest bullets and capping output at 2,048 tokens, two forced full-read runs saw
+  delegate calls of 26 to 35 seconds for 800 to 1,250 output tokens, with the session model's final
+  answers unchanged in substance.
 
 ## Versioning
 
