@@ -89,7 +89,7 @@ export const openSnippetMenu = async (
 
   // Pi resolves this to undefined when no component ran, which counts as a cancel.
   const confirmed = await context.ui.custom<boolean | undefined>(
-    (terminalInterface, theme, _keybindings, done) => {
+    (terminal, theme, _keybindings, done) => {
       let mode: 'list' | 'preview' = 'list';
       let cursor = 0;
       let listScroll = 0;
@@ -204,7 +204,7 @@ export const openSnippetMenu = async (
           return;
         }
 
-        terminalInterface.requestRender();
+        terminal.requestRender();
       };
 
       const handlePreviewInput = (data: string) => {
@@ -220,7 +220,7 @@ export const openSnippetMenu = async (
           mode = 'list';
         }
 
-        terminalInterface.requestRender();
+        terminal.requestRender();
       };
 
       return {
@@ -229,8 +229,8 @@ export const openSnippetMenu = async (
           const maximumHeight = Math.max(
             1,
             Math.min(
-              terminalInterface.terminal.rows - chromeHeight,
-              Math.max(minimumViewHeight, terminalInterface.terminal.rows - frameHeight),
+              terminal.terminal.rows - chromeHeight,
+              Math.max(minimumViewHeight, terminal.terminal.rows - frameHeight),
             ),
           );
           const { content, title, hints } =
