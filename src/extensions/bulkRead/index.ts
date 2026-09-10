@@ -15,7 +15,7 @@ export const delegateReference = (): string =>
 export const rewriteContinuationNotice = (text: string): string =>
   text.replace(
     /\n\n\[[^\n]*Use offset=(\d+) to continue\.\]$/,
-    '\n\nFile continues at line $1. For a question about this file call bulk_read with paths and question. For exact code or to edit, read again with offset and limit.',
+    '\n\nFile continues at line $1. For a question about this file call bulk_read with paths and question. To edit, read again with offset and limit.',
   );
 
 const findDelegate = (ctx: ExtensionContext, reference: string) => {

@@ -122,7 +122,7 @@ it('clamps a real Pi read and records delegate usage in the session ledger', asy
 
   const read = textOf(toolResult(session, 'read').content);
   expect(read).toMatch(
-    /File continues at line 401\. For a question about this file call bulk_read with paths and question\. For exact code or to edit, read again with offset and limit\.$/,
+    /File continues at line 401\. For a question about this file call bulk_read with paths and question\. To edit, read again with offset and limit\.$/,
   );
   expect(read).not.toContain('Use offset=');
   expect(read).not.toMatch(/^line 401$/m);
