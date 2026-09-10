@@ -9,7 +9,7 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
-import { tddGateStatus } from '../tdd/state.js';
+import { tddGateStatus, unknownGateStatus } from '../tdd/state.js';
 import {
   reviewComments,
   formatCommentReview,
@@ -848,7 +848,8 @@ export const createCommitTool = (
         }
       }
 
-      const gateOff = await tddGateStatus(context.cwd);
+      // Commit is exempt from the guard, so it must report unreadable evidence rather than stay quiet.
+      const gateOff = await tddGateStatus(context.cwd).catch(() => unknownGateStatus(context.cwd));
 
       return {
         content: gateOff === undefined ? content : [{ type: 'text', text: gateOff }, ...content],

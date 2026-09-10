@@ -21,8 +21,14 @@ Use disk state as the source of truth. Use the canonical worktree path for state
 Permission and status use the same gate-off conditions. Protected paths remain blocked.
 
 Use an exclusive directory lock for state updates. Run tests outside the lock so gate switches can
-finish during long runs. Load the latest state and check test inputs after acquiring the lock.
-Publish a complete snapshot by atomic rename from a unique temporary directory.
+finish during long runs, and report the resulting state after releasing it, because reads need no
+lock and hashing the tree twice under one doubles the critical section. Load the latest state and
+check test inputs after acquiring the lock. Publish a complete snapshot by atomic rename from a
+temporary file, which the lock already keeps to one writer.
+
+Unreadable state raises an error rather than returning a message. It is the most restrictive state,
+not the least: the guard blocks every write while it holds. The commit tool, exempt from the guard,
+turns that error into a status line; the footer leaves its gate marker clear.
 
 Bound lock waits and report failures. Never remove a lock because of its age: the owner may be
 paused rather than dead. Recovery from an abandoned lock requires stopping other Tau sessions before

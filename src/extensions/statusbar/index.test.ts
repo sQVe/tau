@@ -124,11 +124,22 @@ describe('statusbar extension', () => {
       expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
     });
 
-    await writeFile(statePath, 'corrupt');
+    // Unreadable state blocks every write, so the gate-off marker must clear rather than persist.
+    await writeFile(
+      statePath,
+      JSON.stringify({ tdd: { reds: [], gateOff: { since: '2026-05-01T00:00:00.000Z' } } }),
+    );
     await application.emit('tool_result');
 
     await vi.waitFor(() => {
       expect(footer.component.render(100)[0]).toContain('\u{F0FC6}');
+    });
+
+    await writeFile(statePath, 'corrupt');
+    await application.emit('tool_result');
+
+    await vi.waitFor(() => {
+      expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
     });
   });
 

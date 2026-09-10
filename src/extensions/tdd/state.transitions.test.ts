@@ -419,7 +419,7 @@ it('rejects malformed stored evidence before it can authorize writes', async () 
     await expect(createEvidenceStore().read(harness.cwd)).rejects.toThrow(
       'Unreadable test evidence',
     );
-    expect(await tddGateStatus(harness.cwd)).toContain('status unknown');
+    await expect(tddGateStatus(harness.cwd)).rejects.toThrow('Unreadable test evidence');
   }
 });
 

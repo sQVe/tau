@@ -3,7 +3,6 @@ import {
   glob,
   lstat,
   mkdir,
-  mkdtemp,
   readFile,
   realpath,
   rename,
@@ -362,30 +361,36 @@ const loadState = async (cwd: string): Promise<EvidenceState> => {
 const effectiveNotice = (cwd: string, state: EvidenceState, hashes: InputHashes) =>
   gateOffNotice(state) ?? runnerNotice(cwd, hashes);
 
-// Commit is exempt from the guard, so it must report unreadable evidence rather than assume gate on.
+// Throws on unreadable state. A caller must never read that as gate off: the guard blocks every
+// write while state cannot be read, so an unknown status is the most restrictive state, not the
+// least.
 export const tddGateStatus = async (cwd: string) => {
-  try {
-    const directory = await realpath(cwd);
-    const state = await loadState(directory);
+  const directory = await realpath(cwd);
+  const state = await loadState(directory);
 
-    return effectiveNotice(directory, state, await hashInputs(directory, []));
-  } catch {
-    return `TDD gate status unknown: unreadable evidence at ${statePath(resolve(cwd))}`;
-  }
+  return effectiveNotice(directory, state, await hashInputs(directory, []));
 };
 
+export const unknownGateStatus = (cwd: string) =>
+  `TDD gate status unknown: unreadable evidence at ${statePath(resolve(cwd))}`;
+
+// Only ever called under withStateLock, which admits one writer per worktree, so a fixed temporary
+// name cannot collide.
 const saveState = async (cwd: string, state: EvidenceState) => {
   const path = statePath(cwd);
   await rejectStateSymlinks(cwd);
 
-  const temporaryDirectory = await mkdtemp(`${path}.`);
-  const temporary = resolve(temporaryDirectory, 'state.json');
+  const temporary = `${path}.tmp`;
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(temporary, JSON.stringify({ tdd: state }));
 
   try {
-    await writeFile(temporary, JSON.stringify({ tdd: state }), { flag: 'wx' });
     await rename(temporary, path);
-  } finally {
-    await rm(temporaryDirectory, { recursive: true, force: true });
+  } catch (error) {
+    await rm(temporary, { force: true });
+
+    throw error;
   }
 };
 
@@ -509,13 +514,15 @@ export const createEvidenceStore = () => {
           },
     );
 
-    // Test execution stays outside the lock so a user can switch the gate during a long run.
-    return withStateLock(cwd, async () => {
+    // Test execution and the closing read stay outside the lock so a user can switch the gate
+    // during a long run. Holding the lock across read's own tree digest doubles the critical
+    // section and can time out a second session that already finished its tests.
+    const settled = await withStateLock(cwd, async () => {
       const after = await hashInputs(cwd, behavior.files);
       const currentTree = await treeDigest(cwd, behavior.files);
 
       if (before !== currentTree) {
-        return { kind: 'inputs-changed' as const, report: null, ...(await read(cwd)) };
+        return { kind: 'inputs-changed' as const, report: null };
       }
 
       const state = await loadState(cwd);
@@ -529,7 +536,7 @@ export const createEvidenceStore = () => {
 
       // Cancellation cannot switch behaviors. A full run on the active behavior still clears verification.
       if (report.kind === 'cancelled' && arrival !== 'same') {
-        return { kind: 'cancelled' as const, report, ...(await read(cwd)) };
+        return { kind: 'cancelled' as const, report };
       }
 
       const filesExist = behavior.files.every((file) => after[resolve(cwd, file)] != null);
@@ -644,22 +651,24 @@ export const createEvidenceStore = () => {
 
       await saveState(cwd, state);
 
-      return { kind: report.kind, report, staleForVerification, ...(await read(cwd)) };
+      return { kind: report.kind, report, staleForVerification };
     });
+
+    return { ...settled, ...(await read(cwd)) };
   };
 
   const setGate = async (directory: string, gate: 'on' | 'off') => {
     const cwd = await realpath(directory);
 
-    return withStateLock(cwd, async () => {
+    await withStateLock(cwd, async () => {
       const state = await loadState(cwd);
 
       state.gateOff = gate === 'off' ? { since: new Date().toISOString() } : null;
 
       await saveState(cwd, state);
-
-      return read(cwd);
     });
+
+    return read(cwd);
   };
 
   return {

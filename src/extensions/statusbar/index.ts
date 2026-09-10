@@ -41,7 +41,8 @@ export default function statusbarExtension(pi: ExtensionAPI) {
     refreshId += 1;
     const currentRefreshId = refreshId;
 
-    const gateStatus = tddGateStatus(context.cwd);
+    // Unreadable state blocks every write, so it must not show the gate-off marker.
+    const gateStatus = tddGateStatus(context.cwd).catch(() => undefined);
     let nextDirty = false;
 
     try {

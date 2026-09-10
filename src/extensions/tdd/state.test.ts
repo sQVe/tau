@@ -7,7 +7,7 @@ import type { TestContext } from 'vitest';
 import { expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
 
 import { guardToolCall } from './guard.js';
-import { createEvidenceStore, tddGateStatus } from './state.js';
+import { createEvidenceStore, tddGateStatus, unknownGateStatus } from './state.js';
 
 // These tests spawn real Vitest processes. The default five-second timeout fails on slow machines.
 vi.setConfig({ testTimeout: 120_000 });
@@ -915,7 +915,8 @@ it('reports an unreadable evidence file instead of a gate that is on', async ({
   await mkdir(join(cwd, '.tau'), { recursive: true });
   await writeFile(join(cwd, '.tau/state.json'), '{"tdd":{"active"');
 
-  expect(await tddGateStatus(cwd)).toBe(
+  await expect(tddGateStatus(cwd)).rejects.toThrow('Unreadable test evidence');
+  expect(unknownGateStatus(cwd)).toBe(
     `TDD gate status unknown: unreadable evidence at ${join(cwd, '.tau/state.json')}`,
   );
 });

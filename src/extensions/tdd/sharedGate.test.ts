@@ -151,7 +151,7 @@ it('fails closed when previously loaded evidence becomes unreadable', async () =
 
   await expect(store.read(cwd)).rejects.toThrow('Unreadable test evidence');
   await expect(store.setGate(cwd, 'on')).rejects.toThrow('Unreadable test evidence');
-  expect(await tddGateStatus(cwd)).toContain('status unknown');
+  await expect(tddGateStatus(cwd)).rejects.toThrow('Unreadable test evidence');
   expect(await readFile(join(cwd, '.tau/state.json'), 'utf8')).toBe('{broken');
   expect(await readdir(join(cwd, '.tau'))).toEqual(['state.json']);
 });
