@@ -1,4 +1,5 @@
 import { execFile as execFileCallback } from 'node:child_process';
+import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -92,8 +93,8 @@ const summarize = (
   return text.length > MAX_SUMMARY_CHARS ? `${text.slice(0, MAX_SUMMARY_CHARS - 12)}\n[cut]` : text;
 };
 
-// ponytail: quoted-title matching estimates which tests predate the task. Dynamic titles and
-// unrelated matching strings can miscount; use parsed test identities if exact coverage is needed.
+// ponytail: estimate existing tests from quoted titles. Dynamic titles and unrelated matching
+// strings can miscount; parse test identities if exact coverage is needed.
 const committedTitles = async (cwd: string, file: string): Promise<string | null> => {
   try {
     const { stdout } = await execFile(
@@ -241,21 +242,23 @@ const missingRedBehavior = (cwd: string, evidence: EvidenceState, report: Runner
 export default function tddExtension(pi: ExtensionAPI) {
   const store = createEvidenceStore();
 
-  pi.on('tool_call', (event, ctx) => guardToolCall(event, ctx.cwd, store));
+  pi.on('tool_call', (event, context) => guardToolCall(event, context.cwd, store));
 
   pi.registerCommand('tdd', {
     description: 'Turn the TDD gate on or off, or report its state: /tdd on|off|status.',
-    handler: async (args, ctx) => {
-      const argument = args.trim() || 'status';
+    handler: async (arguments_, context) => {
+      const argument = arguments_.trim() || 'status';
 
       if (argument !== 'on' && argument !== 'off' && argument !== 'status') {
-        ctx.ui.notify(`Unknown argument ${argument}; use /tdd on|off|status`, 'warning');
+        context.ui.notify(`Unknown argument ${argument}; use /tdd on|off|status`, 'warning');
 
         return;
       }
 
       const state =
-        argument === 'status' ? await store.read(ctx.cwd) : await store.setGate(ctx.cwd, argument);
+        argument === 'status'
+          ? await store.read(context.cwd)
+          : await store.setGate(context.cwd, argument);
       let gate = 'on';
 
       if (state.evidence.gateOff != null) {
@@ -264,8 +267,8 @@ export default function tddExtension(pi: ExtensionAPI) {
         gate = `off: ${state.notice}`;
       }
 
-      ctx.ui.notify(
-        `TDD gate ${gate}\nPhase ${state.phase}; production writes ${state.implementationAllowed || state.notice != null ? 'allowed' : 'blocked'}.`,
+      context.ui.notify(
+        `TDD gate ${gate}\nPhase ${state.phase}; production writes ${state.implementationAllowed ? 'allowed' : 'blocked'}.`,
       );
     },
   });
@@ -275,13 +278,13 @@ export default function tddExtension(pi: ExtensionAPI) {
       name: 'run_tests',
       label: 'Run tests',
       description:
-        'Name a behavior, its test files, and the exact Vitest full name: describe names followed by the it name, joined with spaces, for example "outer inner works", or an array of such names when several small tests prove one behavior together. ' +
-        'Create a missing production module with write and content "" so the test can import it; nonempty production writes still require RED. Run scope "focused" to prove RED before editing production files, run focused again for GREEN after the fix, then run scope "full" at the end for verified. ' +
+        'Name a behavior, its test files, and the exact Vitest full name. Join describe names and the it name with spaces, for example "outer inner works". Give an array of names when several small tests prove one behavior together. ' +
+        'Create a missing production module with write and content "" so the test can import it. Nonempty production writes still require RED. Run scope "focused" to prove RED before editing production files. Run focused again for GREEN after the fix, then run scope "full" at the end for verified. ' +
         'Editing a required test file before GREEN re-locks the gate; a focused pass accepts the edit and the full run reports it. GREEN permits cleanup, but changed inputs invalidate passing evidence. ' +
         'Skipped and deleted tests never count. ' +
-        'Returns kind (run outcome), phase (locked: no valid RED; red: failing test proven; green: that test passed; verified: full run passed with every RED test present and passing), implementationAllowed (true in red and green), and report (test results, null if inputs changed). ' +
-        'Only files matching the production globs are gated, and a notice string says the gate is off while no test runner resolves from the worktree or the user turned it off with /tdd off. ' +
-        'A next string explains recovery when needed; the text is a short summary with counts and failing tests, and details carries the full report.',
+        'Returns kind (run outcome), phase (locked: no valid RED; red: failing test proven; green: that test passed; verified: full run passed with every RED test present and passing), implementationAllowed (true in red and green, or when the gate is off), and report (test results, null if inputs changed). ' +
+        'Only files matching the production globs are gated. A notice string says the gate is off when no test runner resolves from the worktree or the user ran /tdd off. ' +
+        'A next string explains recovery when needed. The text gives a short summary with counts and failing tests. The details field carries the full report.',
       parameters: Type.Object({
         behavior: Type.String({
           minLength: 1,
@@ -315,26 +318,27 @@ export default function tddExtension(pi: ExtensionAPI) {
             'Use focused for the exact test in files to prove RED and GREEN; use full for all tests at the end to verify every recorded RED.',
         }),
       }),
-      async execute(_id, params, signal, _update, ctx) {
-        const { scope, ...behavior } = params;
-        const details = await store.run(ctx.cwd, behavior, scope, signal);
+      async execute(_toolCallId, parameters, signal, _onUpdate, context) {
+        const { scope, ...behavior } = parameters;
+        const cwd = await realpath(context.cwd);
+        const details = await store.run(cwd, behavior, scope, signal);
 
         const report =
           details.kind === 'inputs-changed' || details.kind === 'cancelled' ? null : details.report;
         const missing =
           scope === 'full' && report
-            ? missingRedBehavior(ctx.cwd, details.evidence, report)
+            ? missingRedBehavior(cwd, details.evidence, report)
             : undefined;
-        const ambiguous = report ? ambiguousFiles(ctx.cwd, behavior, report) : [];
+        const ambiguous = report ? ambiguousFiles(cwd, behavior, report) : [];
         const duplicatedRed =
           scope === 'full' && report
             ? details.evidence.reds
                 .map(({ behavior: required }) => ({
                   required,
-                  files: ambiguousFiles(ctx.cwd, required, report),
+                  files: ambiguousFiles(cwd, required, report),
                 }))
-                // The ambiguous branches already cover the current behavior's own files, so an
-                // earlier RED sharing its full name in another file still has to be named here.
+                // The ambiguous branches cover the current behavior's files. Also name earlier
+                // REDs with duplicate full names, including those that share the current name.
                 .find((entry) => entry.files.length > 0)
             : undefined;
 
@@ -367,11 +371,11 @@ export default function tddExtension(pi: ExtensionAPI) {
 
         const redCoverage =
           scope === 'full' && report && 'tests' in report
-            ? await describeRedCoverage(ctx.cwd, details.evidence, report.tests)
+            ? await describeRedCoverage(cwd, details.evidence, report.tests)
             : undefined;
 
         return {
-          content: [{ type: 'text', text: summarize(ctx.cwd, details, next, report, redCoverage) }],
+          content: [{ type: 'text', text: summarize(cwd, details, next, report, redCoverage) }],
           details,
         };
       },

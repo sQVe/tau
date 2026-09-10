@@ -28,16 +28,15 @@ interface Menu {
   isPending: () => boolean;
 }
 
-/**
- * Drives the menu through a context that behaves like pi's: the promise from
- * `custom` settles only when the component calls `done`, so a key that resolves
- * the menu is distinguishable from one the component ignores.
- */
 interface MenuComponent {
   render: (width: number) => string[];
   handleInput?: (data: string) => void;
 }
 
+/**
+ * The `custom` promise settles only when the component calls `done`, as in Pi.
+ * This distinguishes keys that close the menu from keys it ignores.
+ */
 const openMenu = (snippets: Snippet[], enabled: string[] = [], rows = 60): Menu => {
   // A holder keeps the component readable after the factory assigns it inside
   // the promise, which a plain variable would narrow away.
@@ -49,13 +48,13 @@ const openMenu = (snippets: Snippet[], enabled: string[] = [], rows = 60): Menu 
     bold: (text: string) => text,
   };
 
-  const ctx = {
+  const context = {
     mode: 'tui',
     ui: {
       theme,
       custom: async <T>(
         factory: (
-          tui: unknown,
+          terminalUI: unknown,
           theme: unknown,
           keybindings: unknown,
           done: (result: T) => void,
@@ -68,6 +67,7 @@ const openMenu = (snippets: Snippet[], enabled: string[] = [], rows = 60): Menu 
             {},
             (value) => {
               settled = true;
+
               resolve(value);
             },
           );
@@ -75,16 +75,16 @@ const openMenu = (snippets: Snippet[], enabled: string[] = [], rows = 60): Menu 
     },
   } as unknown as ExtensionContext;
 
-  const selected = openSnippetMenu(ctx, snippets, new Set(enabled));
-  const built = holder.component;
+  const selected = openSnippetMenu(context, snippets, new Set(enabled));
+  const component = holder.component;
 
-  if (built === undefined) {
+  if (component === undefined) {
     throw new Error('The menu never built a component');
   }
 
   return {
-    render: (width: number) => built.render(width),
-    press: (key: string) => built.handleInput?.(key),
+    render: (width: number) => component.render(width),
+    press: (key: string) => component.handleInput?.(key),
     selected,
     isPending: () => !settled,
   };
@@ -160,9 +160,11 @@ describe('openSnippetMenu', () => {
     expect(menu.render(80).join('\n')).toContain('> [ ] First');
 
     menu.press('j');
+
     expect(menu.render(80).join('\n')).toContain('> [ ] Second');
 
     menu.press('k');
+
     expect(menu.render(80).join('\n')).toContain('> [ ] First');
   });
 
@@ -174,9 +176,11 @@ describe('openSnippetMenu', () => {
     const menu = openMenu(manySnippets);
 
     menu.press('G');
+
     expect(menu.render(80).join('\n')).toContain(`> [ ] ${lastRow?.name}`);
 
     menu.press('g');
+
     expect(menu.render(80).join('\n')).toContain(`> [ ] ${firstRow?.name}`);
   });
 
@@ -200,7 +204,6 @@ describe('openSnippetMenu', () => {
     const lines = menu.render(80);
     const body = lines.join('\n');
 
-    // Frame lines plus the clipped viewport, never more than the terminal.
     expect(lines.length).toBeLessThanOrEqual(20);
     expect(body).toContain('more');
   });
@@ -215,7 +218,6 @@ describe('openSnippetMenu', () => {
 
     const body = menu.render(80).join('\n');
 
-    // Rows are hidden above, and the cursor row is still inside the viewport.
     expect(body).toContain('↑');
     expect(body).toContain('> [ ]');
   });
@@ -226,6 +228,7 @@ describe('openSnippetMenu', () => {
     ]);
 
     menu.press(tab);
+
     const preview = menu.render(80).join('\n');
 
     expect(preview).toContain('Preview: First');

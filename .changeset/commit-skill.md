@@ -2,4 +2,4 @@
 'tau': minor
 ---
 
-Add commit skill with typed tool, tree-sitter-bash guard, and TUI confirmation gate.
+Add a commit skill with a typed tool, a tree-sitter-bash guard, and required terminal confirmation.

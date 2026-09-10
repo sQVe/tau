@@ -2,6 +2,6 @@
 'tau': minor
 ---
 
-Settle application structure under `src/`, tighten oxlint and oxfmt rulesets, add the ast-grep
-`types-before-runtime-code` rule, and scaffold the documentation system (ADRs 0001-0004,
-policy/guide/foundation templates, writing rules).
+Put application code under `src/` and tighten oxlint and oxfmt rules. Add the ast-grep
+`types-before-runtime-code` rule. Set up ADRs 0001-0004, policy/guide/foundation templates, and
+writing rules.

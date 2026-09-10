@@ -1,19 +1,21 @@
 /**
- * pi-web-access reads its config from PI_CODING_AGENT_DIR, falling back to the real
- * ~/.pi/web-search.json. Point it at a test directory so a developer's own settings cannot
- * change which tools register, and an unparsable config cannot fail the extension load.
+ * pi-web-access reads its configuration from PI_CODING_AGENT_DIR, falling back to
+ * ~/.pi/web-search.json. Use a test directory so personal settings cannot change
+ * which tools register or prevent the extension from loading.
  */
 export const isolateWebAccessConfig = (
-  agentDir: string,
+  agentDirectory: string,
   registerCleanup: (restore: () => void) => void,
 ) => {
-  const previous = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = agentDir;
+  const previousAgentDirectory = process.env.PI_CODING_AGENT_DIR;
+
+  process.env.PI_CODING_AGENT_DIR = agentDirectory;
+
   registerCleanup(() => {
-    if (previous === undefined) {
+    if (previousAgentDirectory === undefined) {
       delete process.env.PI_CODING_AGENT_DIR;
     } else {
-      process.env.PI_CODING_AGENT_DIR = previous;
+      process.env.PI_CODING_AGENT_DIR = previousAgentDirectory;
     }
   });
 };

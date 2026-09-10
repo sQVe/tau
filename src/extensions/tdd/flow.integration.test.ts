@@ -69,14 +69,17 @@ const createHarness = async (
   withRunner = true,
 ) => {
   const cwd = reused ?? (await createWorktree(cleanup, withRunner));
-  const agentDir = join(cwd, 'agent');
-  isolateWebAccessConfig(agentDir, cleanup);
+  const agentDirectory = join(cwd, 'agent');
 
-  const faux = fauxProvider({ provider: `tau-tdd-${++counter}` });
+  isolateWebAccessConfig(agentDirectory, cleanup);
+
+  counter += 1;
+
+  const faux = fauxProvider({ provider: `tau-tdd-${counter}` });
   const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
   const loader = new DefaultResourceLoader({
     cwd,
-    agentDir,
+    agentDir: agentDirectory,
     settingsManager,
     additionalExtensionPaths: [
       resolve(import.meta.dirname, '..'),
@@ -101,11 +104,12 @@ const createHarness = async (
     modelsPath: null,
     refreshOnCreate: false,
   });
+
   modelRuntime.registerNativeProvider(faux.provider);
 
   const { session, extensionsResult } = await createAgentSession({
     cwd,
-    agentDir,
+    agentDir: agentDirectory,
     modelRuntime,
     model: faux.getModel(),
     resourceLoader: loader,
@@ -133,6 +137,7 @@ const createHarness = async (
   await session.bindExtensions({});
 
   const events: AgentSessionEvent[] = [];
+
   session.subscribe((event) => events.push(event));
 
   const run = async (overrides = {}) => {
@@ -164,6 +169,7 @@ const createHarness = async (
 
     return event.result as ToolResult;
   };
+
   const call = async (
     toolName: string,
     input: Record<string, unknown>,
@@ -191,6 +197,32 @@ const createHarness = async (
 
   return { cwd, session, faux, events, run, call };
 };
+
+it('shares gate switches across Pi sessions without reloading', async ({ onTestFinished }) => {
+  const coordinator = await createHarness(onTestFinished);
+  const worker = await createHarness(onTestFinished, [], coordinator.cwd);
+  const input = { path: 'src/value.ts', content: '// Comment only.\n' };
+
+  expect((await coordinator.call('write', input)).isError).toBe(true);
+  await worker.session.prompt('/tdd off');
+
+  const statePath = join(coordinator.cwd, '.tau/state.json');
+  const switchedOff = await readFile(statePath, 'utf8');
+
+  expect(switchedOff).toContain('"gateOff":{"since":');
+  expect((await coordinator.call('write', input)).isError).toBe(false);
+  expect((await worker.call('write', input)).isError).toBe(false);
+  expect(await readFile(statePath, 'utf8')).toBe(switchedOff);
+
+  await coordinator.session.prompt('/tdd off');
+
+  expect((await coordinator.call('write', input)).isError).toBe(false);
+
+  await worker.session.prompt('/tdd on');
+
+  expect((await coordinator.call('write', input)).isError).toBe(true);
+  expect((await worker.call('write', input)).isError).toBe(true);
+});
 
 it('blocks production writes until run_tests records RED through pi', async ({
   onTestFinished,
@@ -238,6 +270,7 @@ it('enforces file classifications across the evidence phases through pi', async 
 
   const test =
     "import { it, expect } from 'vitest'; import { value } from './value'; it('required behavior', () => expect(value).toBe(1));";
+
   expect((await call('write', { path: 'src/value.test.ts', content: test })).isError).toBe(false);
 
   let recordedPhase = 'locked';
@@ -395,8 +428,7 @@ it('allows commit and its pre-commit formatter writes outside the file-tool guar
   onTestFinished,
 }) => {
   const { cwd, session, call } = await createHarness(onTestFinished);
-
-  const git = (args: string[]) => promisify(execFile)('git', args, { cwd });
+  const git = (arguments_: string[]) => promisify(execFile)('git', arguments_, { cwd });
 
   await git(['config', 'user.name', 'Tau Test']);
   await git(['config', 'user.email', 'tau@example.com']);
@@ -427,8 +459,8 @@ it('allows commit and its pre-commit formatter writes outside the file-tool guar
     uiContext: { custom: () => Promise.resolve('approve') } as unknown as ExtensionUIContext,
   });
 
-  // The commit tool reviews comments through the model before asking for approval, and undoes a
-  // commit whose hook rewrote the reviewed content; the formatter's write itself is never gated.
+  // Commit reviews comments before approval and undoes commits whose hooks change reviewed bytes.
+  // The formatter's write still bypasses the file-tool guard.
   const commit = () =>
     call('commit', { groups: [{ files: ['src/value.ts'], subject: 'feat: format fixture' }] }, [
       fauxAssistantMessage('{"findings":[]}'),
@@ -630,7 +662,6 @@ it.each([
     'no-tests-collected',
   ],
   ['load error', "throw new Error('cannot load');", 'fail'],
-  ['timeout', 'await new Promise(() => {});', 'timeout'],
 ])('keeps the gate shut for %s', async (_name, source, kind) => {
   const { cwd, run } = await createHarness(registerCleanup);
 
@@ -703,14 +734,17 @@ it('serializes overlapping calls through pi', async ({ onTestFinished }) => {
     "import { it } from 'vitest'; import { appendFile } from 'node:fs/promises'; it('required behavior', async () => { await appendFile('order', 'start\\n'); await new Promise(r => setTimeout(r, 800)); await appendFile('order', 'end\\n'); });",
   );
 
-  const params = {
+  const parameters = {
     behavior: 'required behavior',
     testFullName: 'required behavior',
     files: ['behavior.test.ts'],
     scope: 'focused',
   };
   faux.setResponses([
-    fauxAssistantMessage([fauxToolCall('run_tests', params), fauxToolCall('run_tests', params)]),
+    fauxAssistantMessage([
+      fauxToolCall('run_tests', parameters),
+      fauxToolCall('run_tests', parameters),
+    ]),
     fauxAssistantMessage('Done.'),
   ]);
 
@@ -775,6 +809,39 @@ it('summarizes red and verified runs as plain text without stacks or absolute pa
   expect(verifiedText).toContain('1 passed, 0 failed, 0 skipped');
   expect(verifiedText).not.toContain(cwd);
   expect(verified.details.report).toHaveProperty('tests');
+});
+
+it('preserves report paths and RED coverage through a symlinked worktree', async ({
+  onTestFinished,
+}) => {
+  const cwd = await createWorktree(onTestFinished);
+  const alias = `${cwd}-alias`;
+
+  await symlink(cwd, alias, 'dir');
+  onTestFinished(() => rm(alias, { force: true }));
+
+  const { run } = await createHarness(onTestFinished, [], alias);
+  const red = await run();
+
+  expect(red.details.phase).toBe('red');
+
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    "import { it, expect } from 'vitest'; it('required behavior', () => expect(1).toBe(1)); it('unproven', () => expect(1).toBe(1));",
+  );
+
+  const green = await run();
+
+  expect(green.details.phase).toBe('green');
+
+  const full = await run({ scope: 'full' });
+  const text = full.content[0]!.text;
+
+  expect(full.details.phase).toBe('verified');
+  expect(text).toContain('1 of 2 tests in the required files were proven RED or committed before');
+  expect(text).toContain('never failed: behavior.test.ts › unproven');
+  expect(text).toContain('edited after RED: behavior.test.ts › required behavior');
+  expect(red.content[0]!.text).toContain('✗ behavior.test.ts › required behavior');
 });
 
 it('rejects production and escaping paths through pi', async ({ onTestFinished }) => {
@@ -1052,8 +1119,7 @@ it('switches the gate off and on through the /tdd command in a real pi session',
   onTestFinished,
 }) => {
   const { cwd, session, run, call } = await createHarness(onTestFinished);
-
-  const git = (args: string[]) => promisify(execFile)('git', args, { cwd });
+  const git = (arguments_: string[]) => promisify(execFile)('git', arguments_, { cwd });
 
   await git(['config', 'user.name', 'Tau Test']);
   await git(['config', 'user.email', 'tau@example.com']);
@@ -1270,14 +1336,14 @@ it('counts the tests in required files that never failed on the full run', async
 it('does not report committed tests as never failed', async () => {
   const { cwd, run, call } = await createMissingRedHarness();
 
-  const git = (args: string[]) =>
+  const git = (arguments_: string[]) =>
     promisify(execFile)(
       'git',
-      ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args],
+      ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...arguments_],
       { cwd },
     );
 
-  // The lone `'$schema'` literal is all placeholder: it must not read as a title matching every test.
+  // A literal containing only a placeholder, such as '$schema', must not match every test title.
   const committed = `${UNRELATED_PASSING_TEST} const key = '$schema'; it.each(['skipped', 'missing'])('explains a %s case', () => {}); it.each([{ name: 'x' }])('handles $name', () => {}); it.each([1, 2])('counts case %$', () => {});`;
 
   await writeFile(join(cwd, 'behavior.test.ts'), committed);

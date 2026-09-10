@@ -2,5 +2,5 @@
 'tau': minor
 ---
 
-Take every logical commit group in one `commit` tool call, stepping through each group's review and
-overlay in turn, with `A` to approve all remaining.
+Accept all logical commit groups in one `commit` tool call. Run each group's review and approval
+overlay in order. Press `A` to approve all remaining groups.

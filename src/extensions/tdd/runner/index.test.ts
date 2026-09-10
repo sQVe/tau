@@ -15,8 +15,8 @@ import {
   runnerAvailable,
 } from './vitest.js';
 
-const outputFileFrom = (args: string[]) => {
-  const flag = args.find((arg) => arg.startsWith('--outputFile='));
+const outputFileFrom = (arguments_: string[]) => {
+  const flag = arguments_.find((argument) => argument.startsWith('--outputFile='));
 
   if (flag == null) {
     throw new Error('vitest was spawned without an --outputFile flag');
@@ -27,9 +27,9 @@ const outputFileFrom = (args: string[]) => {
 
 const fakeSpawn =
   ({ report, ...result }: Partial<SpawnResult> & { report?: unknown }): SpawnFn =>
-  async (_cmd, args) => {
+  async (_command, arguments_) => {
     if (report !== undefined) {
-      await writeFile(outputFileFrom(args), JSON.stringify(report));
+      await writeFile(outputFileFrom(arguments_), JSON.stringify(report));
     }
 
     return {
@@ -89,8 +89,8 @@ describe('runTests', () => {
         report: {
           numTotalTests: 0,
           numFailedTests: 0,
-          testResults: Array.from({ length: MAX_FAILURES + 1 }, (_, i) => ({
-            name: `file${i}.test.ts`,
+          testResults: Array.from({ length: MAX_FAILURES + 1 }, (_, index) => ({
+            name: `file${index}.test.ts`,
             status: 'failed',
             message: 'load error',
             assertionResults: [],
@@ -584,8 +584,8 @@ describe('runTests', () => {
   it('caps failures to 10 entries and truncates each assertion message to 300 characters', async () => {
     const longMessage = 'x'.repeat(MAX_MESSAGE_CHARS * 2);
 
-    const assertionResults = Array.from({ length: 15 }, (_, i) => ({
-      fullName: `case ${i}`,
+    const assertionResults = Array.from({ length: 15 }, (_, index) => ({
+      fullName: `case ${index}`,
       status: 'failed',
       failureMessages: [longMessage],
     }));
@@ -873,7 +873,7 @@ describe('runTests', () => {
     expect(captured).toContain('adds item');
   });
 
-  it('emits only fixed args (run --reporter=json --no-color) plus scope-derived paths', async () => {
+  it('passes only fixed arguments (run --reporter=json --no-color) plus scoped paths', async () => {
     let captured: string[] = [];
     const report = {
       numTotalTests: 1,
@@ -896,10 +896,10 @@ describe('runTests', () => {
     expect(captured).toContain('src/a.test.ts');
 
     const disallowed = captured.filter(
-      (a) =>
-        a.startsWith('--') &&
-        !['--reporter=json', '--no-color'].includes(a) &&
-        !a.startsWith('--outputFile='),
+      (argument) =>
+        argument.startsWith('--') &&
+        !['--reporter=json', '--no-color'].includes(argument) &&
+        !argument.startsWith('--outputFile='),
     );
 
     expect(disallowed).toEqual([]);
@@ -931,8 +931,7 @@ describe('runnerAvailable', () => {
     try {
       expect(runnerAvailable(cwd)).toBe(false);
 
-      // A stat that fails with anything but ENOENT (here ENOTDIR) proves nothing about the
-      // runner, so the gate must stay on.
+      // ENOTDIR does not prove that the runner is absent. Only ENOENT can turn the gate off.
       await writeFile(join(cwd, 'node_modules'), '');
 
       expect(runnerAvailable(cwd)).toBe(true);
@@ -952,6 +951,7 @@ describe('nodeExecutable', () => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-node-'));
     onTestFinished(async () => {
       vi.unstubAllEnvs();
+
       await rm(directory, { recursive: true, force: true });
     });
 
@@ -967,12 +967,15 @@ describe('nodeExecutable', () => {
       const directory = await mkdtemp(join(tmpdir(), 'tau-node-'));
       onTestFinished(async () => {
         vi.unstubAllEnvs();
+
         await rm(directory, { recursive: true, force: true });
       });
 
       const executable = join(directory, process.platform === 'win32' ? `${name}.exe` : name);
+
       await writeFile(executable, '');
       await chmod(executable, 0o755);
+
       vi.stubEnv('PATH', directory);
 
       expect(nodeExecutable('/usr/bin/pi')).toBe(executable);

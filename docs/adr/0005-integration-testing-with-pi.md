@@ -1,4 +1,4 @@
-# ADR 0005: Integration testing against a real pi session
+# ADR 0005: Integration testing against a real Pi session
 
 - Status: Proposed
 - Date: 2026-09-05
@@ -9,7 +9,7 @@
   `pi.registerTool`, and `pi.registerCommand` connect Tau to Pi correctly.
 - Tau needs to check that Pi blocks a bash call or asks for commit approval. A test that replaces
   Pi's event handling with a stub cannot catch a broken connection.
-- `ctx.hasUI` and `ctx.ui.confirm` behave differently per pi mode, and the commit tool branches on
+- `ctx.hasUI` and `ctx.ui.confirm` behave differently per Pi mode, and the commit tool branches on
   both.
 - CI tests must give repeatable results without network access or model fees.
 
@@ -38,7 +38,7 @@ model responses through the faux provider from `@earendil-works/pi-ai`.
 
 ### Isolation
 
-Every integration test gets a temp `cwd` and a temp `agentDir`, plus `SessionManager.inMemory()`,
+Every integration test gets a temporary `cwd` and `agentDir`, plus `SessionManager.inMemory()`,
 `SettingsManager.inMemory()`, and a `ModelRuntime` with in-memory credential and model stores. Model
 configuration loading and initial catalog refresh are disabled. Resource discovery is disabled
 (`noExtensions`, `noSkills`, `noPromptTemplates`, `noThemes`) so a developer's `~/.pi` can never

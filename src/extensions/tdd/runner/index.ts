@@ -14,5 +14,5 @@ export type {
 
 export const runTests = (
   input: RunTestsInput,
-  deps: RunnerDeps = defaultDeps(input.scope),
-): Promise<RunnerResult> => runVitest(input, deps);
+  dependencies: RunnerDeps = defaultDeps(input.scope),
+): Promise<RunnerResult> => runVitest(input, dependencies);

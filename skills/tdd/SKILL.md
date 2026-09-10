@@ -1,8 +1,8 @@
 ---
 name: tdd
 description:
-  Drive the red-green-verified cycle that Tau's `run_tests` tool enforces, including how to recover
-  when the gate locks production writes. Covers the tool protocol, not how to design a test.
+  Follow the red-green-verified cycle enforced by Tau's `run_tests` tool. Use when changing behavior
+  or recovering from blocked production writes. Covers the tool protocol, not test design.
 ---
 
 # TDD
@@ -60,9 +60,9 @@ file changes without rewriting the stored phase:
 - `verified`: the full run passed with every recorded RED present and passing. A production, test,
   or configuration change reports GREEN until verification passes again.
 
-Returning to a known behavior restores its stored focused phase. Earlier REDs stay required until an
-unseen behavior starts after stored `verified`. Do not rename or delete those tests to make
-verification pass.
+Returning to a known behavior restores its stored focused phase. Earlier REDs stay required until a
+new behavior starts after the stored phase reaches `verified`. Do not rename or delete those tests
+to make verification pass.
 
 Use `/tdd status`, blocked-write messages, and the summary's `Next:` line for recovery:
 
@@ -78,8 +78,8 @@ Use `/tdd status`, blocked-write messages, and the summary's `Next:` line for re
 
 The gate turns itself off when no test runner resolves from the worktree. `/tdd off` turns it off
 for this worktree, recorded in `.tau/state.json`, until `/tdd on`. Both cases print a notice in
-`run_tests` summaries, but only the explicit switch appears in commit results. Protected paths stay
-blocked either way. Ask the user before turning the gate off.
+`run_tests` summaries and commit results. Protected paths stay blocked either way. Ask the user
+before turning the gate off.
 
 ## See also
 

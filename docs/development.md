@@ -63,27 +63,37 @@ automatically, so name it as the default to search without a key:
 
 ## Manual check
 
-Tests cover the tools themselves, including committing and blocking raw `git commit`. What they
-cannot reach is terminal rendering and the live network. In a session started as above:
+Tests cover the tools themselves, including committing and blocking raw `git commit`. Check terminal
+rendering and live network access manually in a session started as above:
 
-**Questions.** Ask Pi something underspecified so it calls `ask_user_question`. Check that the
-questionnaire renders, that arrow keys and Enter select an option, and that Esc abandons it.
+### Questions
 
-**Web access.** With a search provider configured, ask Pi to search the web. Check that `web_search`
-returns results and that `fetch_content` on a URL returns readable markdown.
+Ask Pi something underspecified so it calls `ask_user_question`. Check that the questionnaire
+renders, that arrow keys and Enter select an option, and that Esc abandons it.
 
-**Snippets.** Press `ctrl+q`, turn on one snippet, and send a message. Check that Pi receives the
-snippet text around your message, and that the toggle turns off again.
+### Web access
 
-**Statusbar.** Check that the footer stays on one line and shows the directory, branch, cost,
-context usage, model, and thinking level. Edit a file through a tool and check that `*` appears
-beside the branch. Narrow the terminal and check that the right group truncates before the left. Run
-`/tdd off`, then call a tool and check that the ochre open-lock glyph appears after the branch. Run
-`/tdd on`, then call a tool and check that the glyph disappears.
+With a search provider configured, ask Pi to search the web. Check that `web_search` returns results
+and that `fetch_content` on a URL returns readable markdown.
 
-**Commits.** Configure credentials for the session model; comment review makes a model API call.
-Stage a change that touches a comment and call `commit`. Check that the approval overlay renders and
-that the comment review report scrolls.
+### Snippets
+
+Press `ctrl+q`, turn on one snippet, and send a message. Check that Pi receives the snippet text
+around your message, and that the toggle turns off again.
+
+### Statusbar
+
+Check that the footer stays on one line and shows the directory, branch, cost, context usage, model,
+and thinking level. Edit a file through a tool and check that `*` appears beside the branch. Narrow
+the terminal and check that the right group truncates before the left. Run `/tdd off`, then call a
+tool and check that the ochre open-lock glyph appears after the branch. Run `/tdd on`, then call a
+tool and check that the glyph disappears.
+
+### Commits
+
+Configure credentials for the session model; comment review makes a model API call. Stage a change
+that touches a comment and call `commit`. Check that the approval overlay renders and that the
+comment review report scrolls.
 
 **Bulk read.** With a working delegate, read a file longer than 400 lines without a limit. Check
 that the result ends with a `bulk_read` hint instead of `Use offset=`. Ask `bulk_read` a question
@@ -93,7 +103,7 @@ not clamped.
 
 ## Measuring bulk reads
 
-[ADR 0011](./adr/0011-delegate-model-for-bulk-reads.md) was accepted on the measurement below.
+[ADR 0013](./adr/0013-delegate-model-for-bulk-reads.md) was accepted on the measurement below.
 Repeat it when the delegate or the session model changes. Measure with real providers on a session
 too small to compact. Use one semantic question spanning three files above the threshold. Compare a
 local build with trimming off and `bulk_read` present against the shipped setup; there is no shipped

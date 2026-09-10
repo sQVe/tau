@@ -111,8 +111,8 @@ const transitions: Record<Phase, Record<Event, Expected>> = {
     protectedEdit: locked,
     switchKnown: { ...green, reds: ['previous'] },
     switchNew: { ...locked, reds: locked.reds },
-    legacyReload: { ...locked, reds: locked.reds },
-    noPhaseReload: { ...locked, reds: [] },
+    legacyReload: { ...locked, reds: locked.reds, implementationAllowed: true },
+    noPhaseReload: { ...locked, reds: [], implementationAllowed: true },
   },
   red: {
     read: red,
@@ -140,8 +140,8 @@ const transitions: Record<Phase, Record<Event, Expected>> = {
     protectedEdit: red,
     switchKnown: green,
     switchNew: { ...locked, reds: red.reds },
-    legacyReload: { ...locked, reds: red.reds },
-    noPhaseReload: { ...locked, reds: [] },
+    legacyReload: { ...locked, reds: red.reds, implementationAllowed: true },
+    noPhaseReload: { ...locked, reds: [], implementationAllowed: true },
   },
   green: {
     read: green,
@@ -169,8 +169,8 @@ const transitions: Record<Phase, Record<Event, Expected>> = {
     protectedEdit: green,
     switchKnown: green,
     switchNew: { ...locked, reds: green.reds },
-    legacyReload: { ...locked, reds: green.reds },
-    noPhaseReload: { ...locked, reds: [] },
+    legacyReload: { ...locked, reds: green.reds, implementationAllowed: true },
+    noPhaseReload: { ...locked, reds: [], implementationAllowed: true },
   },
   verified: {
     read: verified,
@@ -198,8 +198,8 @@ const transitions: Record<Phase, Record<Event, Expected>> = {
     protectedEdit: { ...verified, phase: 'green', implementationAllowed: true },
     switchKnown: green,
     switchNew: { ...locked, reds: [] },
-    legacyReload: { ...locked, reds: verified.reds },
-    noPhaseReload: { ...locked, reds: [] },
+    legacyReload: { ...locked, reds: verified.reds, implementationAllowed: true },
+    noPhaseReload: { ...locked, reds: [], implementationAllowed: true },
   },
 };
 
@@ -233,8 +233,8 @@ const fail = (behavior = current): RunnerResult => ({
   truncated: false,
 });
 
-// Reuse state.test.ts's createHarness layout locally: importing that test would register its
-// real-runner suite. No node_modules symlink is needed because both runner exports are mocked.
+// Keep this setup local. Importing state.test.ts would register its real-runner tests.
+// Both runner exports are mocked, so no node_modules symlink is needed.
 const createHarness = async (cleanup: TestContext['onTestFinished']) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-transitions-'));
   cleanup(() => rm(cwd, { recursive: true, force: true }));
@@ -269,7 +269,7 @@ const createHarness = async (cleanup: TestContext['onTestFinished']) => {
 
 type Harness = Awaited<ReturnType<typeof createHarness>>;
 
-// One script per starting phase; setup uses run(), never an invented stored-state fixture.
+// Reach each starting phase through run() rather than writing a stored-state fixture.
 const reach: Record<Phase, (harness: Harness) => Promise<unknown>> = {
   locked: (harness) => harness.run({ kind: 'timeout' }),
   red: (harness) => harness.run(fail()),
@@ -380,13 +380,13 @@ const actions: Record<Event, (harness: Harness) => Promise<unknown>> = {
 
     expect(decision).toBeUndefined();
 
-    // Apply the bytes a bash tool writes, bypassing the write/edit guard as real bash does.
+    // Match bash's file write, which bypasses the write/edit guard.
     await edit(harness, 'src/value.ts');
   },
   otherTestEdit: (harness) => edit(harness, 'other.test.ts'),
   protectedEdit: (harness) => edit(harness, 'vite.config.ts'),
 
-  // A non-evidentiary run isolates switching from a new RED/GREEN result.
+  // A timeout tests behavior switching without recording a new RED or GREEN.
   switchKnown: (harness) => harness.run({ kind: 'timeout' }, 'focused', previous),
   switchNew: (harness) => harness.run({ kind: 'timeout' }, 'focused', fresh),
   legacyReload: (harness) => reloadLegacy(harness, false),
@@ -419,7 +419,7 @@ it('rejects malformed stored evidence before it can authorize writes', async () 
     await expect(createEvidenceStore().read(harness.cwd)).rejects.toThrow(
       'Unreadable test evidence',
     );
-    expect(await tddGateStatus(harness.cwd)).toContain('status unknown');
+    await expect(tddGateStatus(harness.cwd)).rejects.toThrow('Unreadable test evidence');
   }
 });
 

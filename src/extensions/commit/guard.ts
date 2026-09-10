@@ -4,8 +4,8 @@ import type { ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-codi
 export const commitGuardReason = 'Blocked git commit via bash. Use the `commit` tool instead.';
 
 // Allow options between `git` and `commit`, but stop at command separators and exclude paths.
-// Accept `commit-` to catch commit-tree, also blocking commit-graph and `git log --grep commit`.
-// These false positives favor blocking; variable indirection (`g=git; $g commit`) bypasses this.
+// Matching `commit-` catches commit-tree but also blocks commit-graph and `git log --grep commit`.
+// These false positives favor blocking. Variable indirection (`g=git; $g commit`) bypasses this.
 const gitCommitPattern = /\bgit\b[^;|&\n]*(?<![\w/-])commit(?![\w/])|\bgit-commit\b/i;
 
 // Normalize common shell spellings such as `g\it c''ommit` before matching.
@@ -17,7 +17,10 @@ export const guardToolCall = (event: ToolCallEvent): ToolCallEventResult | undef
     return undefined;
   }
 
-  if (gitCommitPattern.test(unescapeShellWord(event.input.command))) {
+  const command = unescapeShellWord(event.input.command);
+  const createsCommit = gitCommitPattern.test(command);
+
+  if (createsCommit) {
     return { block: true, reason: commitGuardReason };
   }
 

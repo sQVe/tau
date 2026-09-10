@@ -75,7 +75,6 @@ const pathNextStep = (
   implementationAllowed: boolean,
   active: Behavior | null,
   phase: Phase,
-  gateOff: boolean,
 ) => {
   if (file.startsWith('@') || file.startsWith('~')) {
     return 'List literal worktree paths with ls {"path":"."}';
@@ -83,11 +82,6 @@ const pathNextStep = (
 
   if (path === '.tau' || path.startsWith('.tau/') || protectedPaths.includes(path)) {
     return 'Choose an unprotected test file with ls {"path":"."}';
-  }
-
-  // Turning the gate off permits production edits; protected paths above stay blocked.
-  if (gateOff) {
-    return undefined;
   }
 
   // A file outside the worktree is never its production code, and classifyPath says so.
@@ -123,7 +117,8 @@ export const guardToolCall = async (
   }
 
   const state = await store.read(cwd);
-  // A relative target traverses from the canonical cwd, so `..` must not be folded away first.
+
+  // Resolve relative targets from the real working directory before collapsing `..`.
   const realCwd = await realPath(cwd);
   const paths = [
     relative(resolve(cwd), resolve(cwd, file)),
@@ -147,11 +142,11 @@ export const guardToolCall = async (
             state.implementationAllowed || emptyStub,
             state.evidence.active,
             state.phase,
-            state.notice !== undefined,
           ),
         )
         .find((step) => step !== undefined)
     : `Replace unrecognized tool ${event.toolName} with write using a literal path and the intended content`;
+
   if (next === undefined) {
     return undefined;
   }

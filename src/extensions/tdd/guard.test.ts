@@ -16,7 +16,7 @@ const createStore = (phase: Phase, notice?: string) => ({
     Promise.resolve({
       phase,
       notice,
-      implementationAllowed: phase === 'red' || phase === 'green',
+      implementationAllowed: notice !== undefined || phase === 'red' || phase === 'green',
       focusedPassValid: phase === 'green' || phase === 'verified',
       fullPassValid: phase === 'verified',
       staleSinceRed: [],
@@ -47,12 +47,12 @@ it('allows an empty new production file before RED without allowing implementati
   const cwd = await mkdtemp(join(tmpdir(), 'tau-guard-'));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
 
-  await mkdir(join(cwd, 'src'));
-
   const store = createStore('locked');
-
   const write = (path: string, content: string) =>
     guardToolCall(makeEvent('write', { path, content }), cwd, store);
+
+  await mkdir(join(cwd, 'src'));
+
   expect(await write('src/new.ts', '')).toBeUndefined();
   expect((await write('src/new.ts', 'export const value = 1;'))?.block).toBe(true);
 
@@ -360,7 +360,9 @@ it.each([
 it('requests a failing test when no behavior is active', async () => {
   const store = createStore('locked');
   const state = await store.read('/repo');
+
   store.read.mockResolvedValue({ ...state, evidence: { ...state.evidence, active: null } });
+
   const result = await guardToolCall(makeEvent('write', { path: 'src/value.ts' }), '/repo', store);
 
   expect(result?.reason).toBe(
@@ -371,16 +373,17 @@ it('requests a failing test when no behavior is active', async () => {
 it('gates a production file addressed through a symlinked spelling of the worktree', async () => {
   const root = await mkdtemp(join(tmpdir(), 'tau-guard-'));
   onTestFinished(() => rm(root, { recursive: true, force: true }));
-  const real = join(root, 'real');
-  const link = join(root, 'link');
 
-  await mkdir(join(real, 'src'), { recursive: true });
-  await symlink(real, link, 'dir');
+  const realDirectory = join(root, 'real');
+  const linkedDirectory = join(root, 'link');
+
+  await mkdir(join(realDirectory, 'src'), { recursive: true });
+  await symlink(realDirectory, linkedDirectory, 'dir');
 
   for (const [cwd, path] of [
-    [link, join(real, 'src/value.ts')],
-    [real, join(link, 'src/value.ts')],
-    [real, join(link, 'src/new/value.ts')],
+    [linkedDirectory, join(realDirectory, 'src/value.ts')],
+    [realDirectory, join(linkedDirectory, 'src/value.ts')],
+    [realDirectory, join(linkedDirectory, 'src/new/value.ts')],
   ] as const) {
     const result = await guardToolCall(makeEvent('write', { path }), cwd, createStore('locked'));
 
@@ -390,7 +393,7 @@ it('gates a production file addressed through a symlinked spelling of the worktr
   expect(
     await guardToolCall(
       makeEvent('write', { path: join(root, 'src/value.ts') }),
-      real,
+      realDirectory,
       createStore('locked'),
     ),
   ).toBeUndefined();
@@ -399,15 +402,16 @@ it('gates a production file addressed through a symlinked spelling of the worktr
 it('gates a relative traversal that re-enters the worktree from a symlinked cwd', async () => {
   const root = await mkdtemp(join(tmpdir(), 'tau-guard-'));
   onTestFinished(() => rm(root, { recursive: true, force: true }));
-  const real = join(root, 'nested/real');
-  const link = join(root, 'link');
 
-  await mkdir(join(real, 'src'), { recursive: true });
-  await symlink(real, link, 'dir');
+  const realDirectory = join(root, 'nested/real');
+  const linkedDirectory = join(root, 'link');
+
+  await mkdir(join(realDirectory, 'src'), { recursive: true });
+  await symlink(realDirectory, linkedDirectory, 'dir');
 
   const result = await guardToolCall(
     makeEvent('write', { path: '../real/src/value.ts' }),
-    link,
+    linkedDirectory,
     createStore('locked'),
   );
 

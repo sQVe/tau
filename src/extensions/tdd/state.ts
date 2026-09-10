@@ -1,6 +1,17 @@
 import { createHash } from 'node:crypto';
-import { glob, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import {
+  glob,
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  rmdir,
+  writeFile,
+} from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { setTimeout } from 'node:timers/promises';
 
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -68,8 +79,8 @@ const activeRed = (state: EvidenceState) =>
 const identityMatches = (cwd: string, fullname: string, file: string, test: TestResult) =>
   test.fullname === fullname && resolve(cwd, test.file) === resolve(cwd, file);
 
-// Vitest permits duplicate full names in one file, so (file, fullname) only identifies a test
-// when exactly one result carries it. Anything else is ambiguous and proves nothing.
+// Vitest permits duplicate full names in one file. A (file, fullname) pair proves a test's
+// status only when it identifies exactly one result.
 const uniqueStatus = (
   cwd: string,
   tests: TestResult[],
@@ -128,12 +139,9 @@ const redPassed = (
   });
 };
 
-const failedIn = (cwd: string, { behavior, report }: RedRecord, file: string) => {
-  return (
-    report.kind === 'fail' &&
-    testNames(behavior).some((name) => uniqueStatus(cwd, report.tests, name, file) === 'failed')
-  );
-};
+const failedIn = (cwd: string, { behavior, report }: RedRecord, file: string) =>
+  report.kind === 'fail' &&
+  testNames(behavior).some((name) => uniqueStatus(cwd, report.tests, name, file) === 'failed');
 
 const staleVerificationFiles = async (cwd: string, records: RedRecord[]): Promise<string[]> => {
   const files = records.flatMap((record) => record.behavior.files);
@@ -145,7 +153,6 @@ const staleVerificationFiles = async (cwd: string, records: RedRecord[]): Promis
     // A later RED in the same file can accept an amendment; a RED in another file cannot.
     const staleTests = record.behavior.files.filter((file) => {
       const key = resolve(cwd, file);
-
       const latest = records.findLast((candidate) => failedIn(cwd, candidate, file));
 
       return (latest ?? record).testHashes[key] !== hashes[key];
@@ -164,8 +171,7 @@ const staleVerificationFiles = async (cwd: string, records: RedRecord[]): Promis
 
 const runnerChecks = new Map<string, { packageHash: string | null; available: boolean }>();
 
-// Nothing can be proven without a runner, so production edits stop being gated until the agent
-// installs one through the exempt bash tool.
+// Without a runner, no test can prove RED. Allow production edits until a runner is installed.
 const runnerNotice = (cwd: string, hashes: InputHashes) => {
   const key = resolve(cwd);
   const packageHash = hashes[resolve(cwd, 'package.json')] ?? null;
@@ -175,6 +181,7 @@ const runnerNotice = (cwd: string, hashes: InputHashes) => {
   // read, because installing it leaves package.json untouched.
   const available =
     cached?.available === true && cached.packageHash === packageHash ? true : runnerAvailable(key);
+
   runnerChecks.set(key, { packageHash, available });
 
   return available ? undefined : 'no test runner resolves from this worktree';
@@ -259,7 +266,25 @@ const isStoredState = (
   'reds' in value.tdd &&
   Array.isArray(value.tdd.reds);
 
+const rejectStateSymlinks = async (cwd: string) => {
+  for (const path of [dirname(statePath(cwd)), statePath(cwd)]) {
+    const entry = await lstat(path).catch((error: unknown) => {
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+        throw error;
+      }
+
+      return null;
+    });
+
+    if (entry?.isSymbolicLink()) {
+      throw new Error(`Cannot use a symlink for TDD state: ${path}`);
+    }
+  }
+};
+
 const loadState = async (cwd: string): Promise<EvidenceState> => {
+  await rejectStateSymlinks(cwd);
+
   const path = statePath(cwd);
   let content: string;
 
@@ -291,19 +316,17 @@ const loadState = async (cwd: string): Promise<EvidenceState> => {
           throw new Error('invalid RED evidence');
         }
 
-        const fields = entry;
-
         // Old snapshots kept the report and hashes inside record. Discard their derived flags.
-        const record = fields.record;
-        const old = Value.Check(recordSchema, record) ? record : undefined;
+        const record = entry.record;
+        const legacyRecord = Value.Check(recordSchema, record) ? record : undefined;
 
         return {
-          behavior: fields.behavior,
-          report: old?.report ?? fields.report,
-          testHashes: old?.after ?? fields.testHashes,
-          greenTree: fields.greenTree ?? null,
-          edited: fields.edited ?? false,
-          phase: legacy ? 'locked' : fields.phase,
+          behavior: entry.behavior,
+          report: legacyRecord?.report ?? entry.report,
+          testHashes: legacyRecord?.after ?? entry.testHashes,
+          greenTree: entry.greenTree ?? null,
+          edited: entry.edited ?? false,
+          phase: legacy ? 'locked' : entry.phase,
         };
       }),
       verifiedTree: legacy ? null : stored.verifiedTree,
@@ -315,9 +338,11 @@ const loadState = async (cwd: string): Promise<EvidenceState> => {
       throw new Error('invalid evidence fields');
     }
 
-    if (
-      state.reds.some(({ behavior, report }) => !uniquelyIs(cwd, report.tests, behavior, 'failed'))
-    ) {
+    const hasInvalidRed = state.reds.some(
+      ({ behavior, report }) => !uniquelyIs(cwd, report.tests, behavior, 'failed'),
+    );
+
+    if (hasInvalidRed) {
       throw new Error('stored RED report does not prove its named tests');
     }
 
@@ -333,46 +358,92 @@ const loadState = async (cwd: string): Promise<EvidenceState> => {
   }
 };
 
-// Commit is exempt from the guard, so it must report unreadable evidence rather than assume gate on.
+const effectiveNotice = (cwd: string, state: EvidenceState, hashes: InputHashes) =>
+  gateOffNotice(state) ?? runnerNotice(cwd, hashes);
+
+// Throws on unreadable state. A caller must never read that as gate off: the guard blocks every
+// write while state cannot be read, so an unknown status is the most restrictive state, not the
+// least.
 export const tddGateStatus = async (cwd: string) => {
-  try {
-    return gateOffNotice(await loadState(resolve(cwd)));
-  } catch {
-    return `TDD gate status unknown: unreadable evidence at ${statePath(resolve(cwd))}`;
-  }
+  const directory = await realpath(cwd);
+  const state = await loadState(directory);
+
+  return effectiveNotice(directory, state, await hashInputs(directory, []));
 };
 
+export const unknownGateStatus = (cwd: string) =>
+  `TDD gate status unknown: unreadable evidence at ${statePath(resolve(cwd))}`;
+
+// Only ever called under withStateLock, which admits one writer per worktree, so a fixed temporary
+// name cannot collide.
 const saveState = async (cwd: string, state: EvidenceState) => {
   const path = statePath(cwd);
+  await rejectStateSymlinks(cwd);
+
   const temporary = `${path}.tmp`;
 
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(temporary, JSON.stringify({ tdd: state }));
-  await rename(temporary, path);
+
+  // Unlink first so a leftover file cannot fail the exclusive create, and exclusively so a symlink
+  // planted at the temporary path is never followed. rm unlinks the link itself, never its target.
+  await rm(temporary, { force: true });
+
+  try {
+    await writeFile(temporary, JSON.stringify({ tdd: state }), { flag: 'wx' });
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true });
+
+    throw error;
+  }
+};
+
+const withStateLock = async <Result>(
+  cwd: string,
+  update: () => Promise<Result>,
+): Promise<Result> => {
+  await rejectStateSymlinks(cwd);
+  await mkdir(dirname(statePath(cwd)), { recursive: true });
+
+  const lock = resolve(cwd, '.tau/state.lock');
+
+  // Generous, because the holder hashes the worktree twice and losing a finished test run to a
+  // timeout costs far more than waiting. ponytail: fixed wait, make it adaptive if large
+  // repositories still time out.
+  const deadline = Date.now() + 15_000;
+
+  while (true) {
+    try {
+      await mkdir(lock);
+      break;
+    } catch (error) {
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 'EEXIST') {
+        throw error;
+      }
+
+      // Never steal an old lock: its owner may only be paused, not dead.
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `Timed out waiting for TDD state lock at ${lock}. Stop other Tau sessions before removing an abandoned lock.`,
+          { cause: error },
+        );
+      }
+
+      await setTimeout(25);
+    }
+  }
+
+  try {
+    return await update();
+  } finally {
+    await rmdir(lock);
+  }
 };
 
 export const createEvidenceStore = () => {
-  const states = new Map<string, Promise<EvidenceState>>();
-
-  const stateFor = (cwd: string) => {
-    const key = resolve(cwd);
-
-    // A rejected load must not be cached: repairing the file has to take effect on the next read.
-    const state =
-      states.get(key) ??
-      loadState(key).catch((error: unknown) => {
-        states.delete(key);
-
-        throw error;
-      });
-    states.set(key, state);
-
-    return state;
-  };
-
-  const read = async (cwd: string) => {
-    const state = await stateFor(cwd);
-    const evidence = structuredClone(state);
+  const read = async (directory: string) => {
+    const cwd = await realpath(directory);
+    const evidence = await loadState(cwd);
 
     const hashes = await hashInputs(cwd, evidence.active?.files ?? []);
     const red = activeRed(evidence);
@@ -398,26 +469,29 @@ export const createEvidenceStore = () => {
       phase = 'green';
     }
 
+    const notice = effectiveNotice(cwd, evidence, hashes);
+
     return {
       evidence,
       phase,
-      implementationAllowed: phase === 'red' || phase === 'green',
+      implementationAllowed: notice !== undefined || phase === 'red' || phase === 'green',
       focusedPassValid:
         phase === 'verified' || (phase === 'green' && red?.greenTree === currentTree),
       fullPassValid: phase === 'verified',
       staleSinceRed,
-      notice: gateOffNotice(evidence) ?? runnerNotice(cwd, hashes),
+      notice,
     };
   };
 
   const run = async (
-    cwd: string,
+    directory: string,
     requested: Behavior,
     scope: 'focused' | 'full',
     signal?: AbortSignal,
   ) => {
-    // Canonical field and file order so the same behavior submitted differently stays the same
-    // behavior: identity is compared as serialized JSON, which key order would otherwise change.
+    const cwd = await realpath(directory);
+
+    // Sort and deduplicate names and files because behavior identity compares serialized arrays.
     const names = [...new Set(testNames(requested))].toSorted();
     const behavior: Behavior = {
       behavior: requested.behavior,
@@ -448,145 +522,159 @@ export const createEvidenceStore = () => {
           },
     );
 
-    const after = await hashInputs(cwd, behavior.files);
-    const currentTree = await treeDigest(cwd, behavior.files);
+    // Test execution stays outside the lock so a user can switch the gate during a long run. The
+    // closing read stays inside it: callers correlate the returned evidence with this run's report,
+    // so another session must not replace the state between the save and the read.
+    return withStateLock(cwd, async () => {
+      const after = await hashInputs(cwd, behavior.files);
+      const currentTree = await treeDigest(cwd, behavior.files);
 
-    if (before !== currentTree) {
-      return { kind: 'inputs-changed' as const, report: null, ...(await read(cwd)) };
-    }
-
-    const state = await stateFor(cwd);
-
-    const entry = state.reds.find((candidate) => sameBehavior(candidate.behavior, behavior));
-    let arrival: 'unseen' | 'known' | 'same' = entry === undefined ? 'unseen' : 'known';
-
-    if (state.active !== null && sameBehavior(state.active, behavior)) {
-      arrival = 'same';
-    }
-
-    // Cancellation cannot switch behaviors. A full run on the active behavior still clears verification.
-    if (report.kind === 'cancelled' && arrival !== 'same') {
-      return { kind: 'cancelled' as const, report, ...(await read(cwd)) };
-    }
-
-    const filesExist = behavior.files.every((file) => after[resolve(cwd, file)] != null);
-    let outcome: 'other' | 'fail' | 'pass' = 'other';
-
-    if (filesExist && report.kind === 'fail' && uniquelyIs(cwd, report.tests, behavior, 'failed')) {
-      outcome = 'fail';
-    } else if (filesExist && report.kind === 'pass' && redPassed(cwd, behavior, entry, report)) {
-      outcome = 'pass';
-    }
-
-    if (arrival !== 'same') {
-      if (arrival === 'unseen' && state.phase === 'verified') {
-        state.reds = [];
+      if (before !== currentTree) {
+        return { kind: 'inputs-changed' as const, report: null, ...(await read(cwd)) };
       }
 
-      state.phase = entry?.phase ?? 'locked';
-      state.verifiedTree = null;
-    }
+      const state = await loadState(cwd);
 
-    state.active = structuredClone(behavior);
+      const entry = state.reds.find((candidate) => sameBehavior(candidate.behavior, behavior));
+      let arrival: 'unseen' | 'known' | 'same' = entry === undefined ? 'unseen' : 'known';
 
-    let staleForVerification: string[] = [];
-
-    if (scope === 'full') {
-      state.verifiedTree = null;
-
-      if (state.phase === 'verified') {
-        state.phase = 'green';
+      if (state.active !== null && sameBehavior(state.active, behavior)) {
+        arrival = 'same';
       }
 
-      staleForVerification = await staleVerificationFiles(cwd, state.reds);
+      // Cancellation cannot switch behaviors. A full run on the active behavior still clears verification.
+      if (report.kind === 'cancelled' && arrival !== 'same') {
+        return { kind: 'cancelled' as const, report, ...(await read(cwd)) };
+      }
+
+      const filesExist = behavior.files.every((file) => after[resolve(cwd, file)] != null);
+      let outcome: 'other' | 'fail' | 'pass' = 'other';
 
       if (
-        outcome === 'pass' &&
-        staleForVerification.length === 0 &&
-        state.reds.every((red) => redPassed(cwd, red.behavior, red, report))
+        filesExist &&
+        report.kind === 'fail' &&
+        uniquelyIs(cwd, report.tests, behavior, 'failed')
       ) {
-        state.phase = 'verified';
-        state.verifiedTree = currentTree;
+        outcome = 'fail';
+      } else if (filesExist && report.kind === 'pass' && redPassed(cwd, behavior, entry, report)) {
+        outcome = 'pass';
       }
-    } else {
-      const transition = `${arrival}:${outcome}` as const;
 
-      switch (transition) {
-        case 'same:fail':
-        case 'known:fail':
-        case 'unseen:fail': {
-          const red: RedRecord = {
-            behavior: structuredClone(behavior),
-            report,
-            testHashes: after,
-            greenTree: null,
-            edited: false,
-            phase: 'red',
-          };
-
-          state.reds = state.reds.filter(
-            (candidate) => !sameBehavior(candidate.behavior, behavior),
-          );
-          state.reds.push(red);
-          state.phase = 'red';
-          state.verifiedTree = null;
-
-          for (const file of behavior.files) {
-            for (const fullname of testNames(behavior)) {
-              if (
-                'tests' in report &&
-                uniqueStatus(cwd, report.tests, fullname, file) === 'failed' &&
-                !state.proven.some((known) => known.file === file && known.fullname === fullname)
-              ) {
-                state.proven.push({ file, fullname });
-              }
-            }
-          }
-
-          break;
+      if (arrival !== 'same') {
+        if (arrival === 'unseen' && state.phase === 'verified') {
+          state.reds = [];
         }
 
-        case 'same:pass':
-        case 'known:pass':
-          if (entry !== undefined) {
-            entry.edited ||= behavior.files.some(
-              (file) => entry.testHashes[resolve(cwd, file)] !== after[resolve(cwd, file)],
-            );
+        state.phase = entry?.phase ?? 'locked';
+        state.verifiedTree = null;
+      }
 
-            entry.testHashes = after;
-            entry.greenTree = currentTree;
-            entry.phase = 'green';
-            state.reds = state.reds.filter((candidate) => candidate !== entry);
-            state.reds.push(entry);
-            state.phase = 'green';
+      state.active = structuredClone(behavior);
+
+      let staleForVerification: string[] = [];
+
+      if (scope === 'full') {
+        state.verifiedTree = null;
+
+        if (state.phase === 'verified') {
+          state.phase = 'green';
+        }
+
+        staleForVerification = await staleVerificationFiles(cwd, state.reds);
+
+        if (
+          outcome === 'pass' &&
+          staleForVerification.length === 0 &&
+          state.reds.every((red) => redPassed(cwd, red.behavior, red, report))
+        ) {
+          state.phase = 'verified';
+          state.verifiedTree = currentTree;
+        }
+      } else {
+        const transition = `${arrival}:${outcome}` as const;
+
+        switch (transition) {
+          case 'same:fail':
+          case 'known:fail':
+          case 'unseen:fail': {
+            const red: RedRecord = {
+              behavior: structuredClone(behavior),
+              report,
+              testHashes: after,
+              greenTree: null,
+              edited: false,
+              phase: 'red',
+            };
+
+            state.reds = state.reds.filter(
+              (candidate) => !sameBehavior(candidate.behavior, behavior),
+            );
+            state.reds.push(red);
+            state.phase = 'red';
             state.verifiedTree = null;
+
+            for (const file of behavior.files) {
+              for (const fullname of testNames(behavior)) {
+                if (
+                  'tests' in report &&
+                  uniqueStatus(cwd, report.tests, fullname, file) === 'failed' &&
+                  !state.proven.some((known) => known.file === file && known.fullname === fullname)
+                ) {
+                  state.proven.push({ file, fullname });
+                }
+              }
+            }
+
+            break;
           }
 
-          break;
+          case 'same:pass':
+          case 'known:pass':
+            if (entry !== undefined) {
+              entry.edited ||= behavior.files.some(
+                (file) => entry.testHashes[resolve(cwd, file)] !== after[resolve(cwd, file)],
+              );
 
-        case 'same:other':
-        case 'known:other':
-        case 'unseen:other':
-        case 'unseen:pass':
-          break;
+              entry.testHashes = after;
+              entry.greenTree = currentTree;
+              entry.phase = 'green';
+              state.reds = state.reds.filter((candidate) => candidate !== entry);
+              state.reds.push(entry);
+              state.phase = 'green';
+              state.verifiedTree = null;
+            }
 
-        default:
-          throw new Error('Unexpected TDD transition', { cause: transition satisfies never });
+            break;
+
+          case 'same:other':
+          case 'known:other':
+          case 'unseen:other':
+          case 'unseen:pass':
+            break;
+
+          default:
+            throw new Error('Unexpected TDD transition', { cause: transition satisfies never });
+        }
       }
-    }
 
-    await saveState(cwd, state);
+      await saveState(cwd, state);
 
-    return { kind: report.kind, report, staleForVerification, ...(await read(cwd)) };
+      return { kind: report.kind, report, staleForVerification, ...(await read(cwd)) };
+    });
   };
 
-  const setGate = async (cwd: string, gate: 'on' | 'off') => {
-    const state = await stateFor(cwd);
-    state.gateOff = gate === 'off' ? { since: new Date().toISOString() } : null;
+  const setGate = async (directory: string, gate: 'on' | 'off') => {
+    const cwd = await realpath(directory);
 
-    await saveState(cwd, state);
+    return withStateLock(cwd, async () => {
+      const state = await loadState(cwd);
 
-    return read(cwd);
+      state.gateOff = gate === 'off' ? { since: new Date().toISOString() } : null;
+
+      await saveState(cwd, state);
+
+      return read(cwd);
+    });
   };
 
   return {
@@ -594,6 +682,7 @@ export const createEvidenceStore = () => {
     setGate,
     run: (cwd: string, behavior: Behavior, scope: 'focused' | 'full', signal?: AbortSignal) => {
       const result = pendingRun.then(() => run(cwd, behavior, scope, signal));
+
       pendingRun = result.catch(() => undefined);
 
       return result;

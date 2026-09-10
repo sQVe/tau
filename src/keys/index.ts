@@ -13,9 +13,9 @@ export const isBottom = (data: string) =>
   matchesKey(data, Key.end) || matchesKey(data, Key.shift('g'));
 
 /**
- * Rewrites the vim keys as the arrow sequences pi's SelectList reads, which is
- * the only way to move it. It handles its own input and keeps its index
- * private, so tau cannot set the selection directly.
+ * Rewrites Vim keys as the arrow sequences Pi's SelectList reads.
+ * SelectList keeps its current index private, so forwarding input preserves
+ * its movement and wraparound behavior without tracking another index.
  */
 export const toCursorKey = (data: string) => {
   if (isUp(data)) {

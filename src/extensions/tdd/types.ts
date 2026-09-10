@@ -2,7 +2,8 @@ import type { RunnerResult } from './runner/types.js';
 
 export interface Behavior {
   behavior: string;
-  // One full name, or several when one behavior is proven by a few small tests together.
+
+  // When several tests prove one behavior, every named test must fail in RED and pass in GREEN.
   testFullName: string | string[];
   files: string[];
 }
@@ -15,6 +16,7 @@ export interface RedRecord {
   testHashes: InputHashes;
   greenTree: string | null;
   edited: boolean;
+
   // Each behavior remembers its last focused phase when another behavior becomes active.
   phase: 'locked' | 'red' | 'green';
 }
@@ -24,7 +26,8 @@ export interface EvidenceState {
   phase: Phase;
   reds: RedRecord[];
   verifiedTree: string | null;
-  // Every test that ever failed by name under the gate, kept across verified task boundaries.
+
+  // Keep tests that failed by name under the gate, even after a task reaches verified.
   proven: { file: string; fullname: string }[];
   gateOff: { since: string } | null;
 }

@@ -30,7 +30,7 @@ describe('vim navigation keys', () => {
     ]);
   });
 
-  it.for(['a', 'w', 'x', ' ', '\r', ''])('ignores %j, which other keys own', (data) => {
+  it.for(['a', 'w', 'x', ' ', '\r', ''])('ignores the non-navigation key %j', (data) => {
     expect([isUp(data), isDown(data), isTop(data), isBottom(data)]).toEqual([
       false,
       false,

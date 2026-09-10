@@ -12,7 +12,7 @@ export const BULK_READ_LINE_THRESHOLD = 400;
 const RECOVERABLE_ERRORS = new Set(['AbortError', 'TimeoutError', BULK_READ_INPUT_ERROR]);
 
 export const delegateReference = (): string => {
-  // eslint-disable-next-line node/no-process-env -- ADR 0011 defines the delegate environment setting.
+  // eslint-disable-next-line node/no-process-env -- ADR 0013 defines the delegate environment setting.
   const reference = process.env.TAU_BULK_READ_MODEL;
 
   // An exported but empty setting means unset, so it takes the default rather than a missing model.

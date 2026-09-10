@@ -10,14 +10,15 @@ import tddExtension from './tdd/index.js';
 import webAccessExtension from './webAccess/index.js';
 import writingExtension from './writing/index.js';
 
-export default async function tauExtension(pi: ExtensionAPI) {
-  await writingExtension(pi);
-  await codingExtension(pi);
-  commitExtension(pi);
-  tddExtension(pi);
-  bulkReadExtension(pi);
-  askUserQuestionExtension(pi);
-  webAccessExtension(pi);
-  snippetsExtension(pi);
-  statusbarExtension(pi);
+export default async function tauExtension(extensionApi: ExtensionAPI) {
+  await writingExtension(extensionApi);
+  await codingExtension(extensionApi);
+
+  commitExtension(extensionApi);
+  tddExtension(extensionApi);
+  bulkReadExtension(extensionApi);
+  askUserQuestionExtension(extensionApi);
+  webAccessExtension(extensionApi);
+  snippetsExtension(extensionApi);
+  statusbarExtension(extensionApi);
 }

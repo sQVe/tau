@@ -140,7 +140,7 @@ describe('loadSnippets', () => {
     expect(snippets.map((snippet) => snippet.id)).toEqual(['first.md', 'later.md', 'second.md']);
   });
 
-  it('breaks an equal order by name', async ({ onTestFinished }) => {
+  it('sorts snippets with equal orders by name', async ({ onTestFinished }) => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-snippets-'));
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
@@ -167,7 +167,9 @@ describe('loadSnippets', () => {
     await mkdir(join(directory, 'draft.md'));
     await writeFile(join(directory, 'real.md'), snippetFile('Real', 'append', 10, 'Real body.'));
 
-    expect((await loadSnippets(directory)).map((snippet) => snippet.name)).toEqual(['Real']);
+    const snippets = await loadSnippets(directory);
+
+    expect(snippets.map((snippet) => snippet.name)).toEqual(['Real']);
   });
 });
 
@@ -178,6 +180,7 @@ describe('the shipped snippets', () => {
     const snippets = await loadSnippets(shippedDirectory);
 
     expect(snippets.length).toBeGreaterThan(0);
+
     for (const snippet of snippets) {
       // A newline with text on both sides is a hard wrap inside a paragraph.
       expect(snippet.body, `${snippet.id} is wrapped`).not.toMatch(/[^\n]\n[^\n]/);
@@ -194,7 +197,7 @@ describe('the shipped snippets', () => {
 
 describe('acceptsSnippets', () => {
   it.for(['/skill:commit', '/commit stage the fix', '  /skill:commit', '/my-prompt-template'])(
-    'refuses %s, which pi expands only at the start of the text',
+    'refuses the slash command %s',
     (text) => {
       expect(acceptsSnippets(text)).toBe(false);
     },
