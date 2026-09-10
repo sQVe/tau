@@ -142,6 +142,21 @@ Cost includes the delegate, which was $0.007 in B2. Findings:
   substance. An output cap was tried alongside and removed: Pi's Codex adapter ignores it, and on
   other providers it would throw on a long answer.
 
+### Follow-up experiments, 2026-09-10
+
+Three further changes were each committed, measured live with the same fixture, and reverted. The
+criteria came from a review of the first six sessions; every run's citations were checked against
+the fixture by a separate agent.
+
+| Change                                                       | Runs                | Result                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Hint offers bounded reads "for exact code", not only to edit | 4 forced, 2 natural | No delegate speedup. Two of five clamped runs skipped delegation for bounded reads; one was the most expensive run measured and had two mis-bounded citations. Reverted.                                                                                                       |
+| One delegate call per file, in parallel                      | 6 forced            | Delegate calls 23 to 33 seconds, throughput 73 to 111 tokens per second against 41 to 51. Per-file answers padded a quarter of their words with remarks about files the call did not see, grew longer in total, and one run doubled its calls. Reverted as not worth the code. |
+| System-prompt guideline to delegate before whole-file reads  | 4 natural           | Every run delegated first, then read four to six bounded ranges anyway. Session cost down 12%, wall clock up about 40 seconds, and three of four answers dropped a claim the clamp-then-delegate runs kept. Reverted.                                                          |
+
+What held: the clamp and hint, the shorter-answer sentence, and the delegate's default reasoning.
+The single delegate call at 26 to 37 seconds is the remaining latency, and it tracks answer length.
+
 ## Versioning
 
 Add a changeset for user-facing changes:
