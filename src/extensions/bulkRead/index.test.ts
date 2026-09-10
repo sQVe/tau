@@ -52,7 +52,7 @@ const setup = () => {
     );
   const emit = (name: string, event: unknown) => handlers.get(name)?.(event, context);
 
-  return { find, complete, execute, emit };
+  return { find, complete, execute, emit, registerTool };
 };
 
 afterEach(() => vi.unstubAllEnvs());
@@ -67,6 +67,14 @@ const readCall = (toolCallId = 'read', limit?: number) => ({
 const notice = '[Showing lines 1-400 of 450. Use offset=401 to continue.]';
 const hint =
   'File continues at line 401. For a question about this file call bulk_read with paths and question. To edit, read again with offset and limit.';
+
+it('registers a guideline to delegate before whole-file reads', () => {
+  const { registerTool } = setup();
+
+  expect(registerTool.mock.calls[0]![0].promptGuidelines).toEqual([
+    `Before reading a file longer than ${BULK_READ_LINE_THRESHOLD} lines in full, ask bulk_read your question about it.`,
+  ]);
+});
 
 it('clamps a read without limit to the threshold and leaves an explicit limit untouched', () => {
   const app = setup();
