@@ -113,8 +113,13 @@ Sum usage by role from the session JSONL. Pi's `/session` can hide per-model row
 is zero or only one model was used:
 
 ```sh
-jq -r 'select(.type=="message") | .message | select(.role=="assistant" or .role=="toolResult") | [.role, .usage.input, .usage.cacheRead, .usage.cacheWrite, .usage.output, .usage.cost.total] | @tsv' session.jsonl
+jq -rs '[.[] | select(.type=="message") | .message | select(.role=="assistant" or .role=="toolResult")]
+  | group_by(.role)[]
+  | [.[0].role, (map(.usage.input // 0) | add), (map(.usage.cacheRead // 0) | add), (map(.usage.cacheWrite // 0) | add), (map(.usage.output // 0) | add), (map(.usage.cost.total // 0) | add)]
+  | @tsv' session.jsonl
 ```
+
+It prints one row per role: input, cache read, cache write, output, and cost.
 
 Record configuration, session input, cache read, cache write, output, delegate input, delegate
 output, assistant turns, `offset` pages after a clamped read, wall clock, and catalog cost as a
