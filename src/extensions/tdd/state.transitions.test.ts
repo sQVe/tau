@@ -233,8 +233,8 @@ const fail = (behavior = current): RunnerResult => ({
   truncated: false,
 });
 
-// Reuse state.test.ts's createHarness layout locally: importing that test would register its
-// real-runner suite. No node_modules symlink is needed because both runner exports are mocked.
+// Keep this setup local. Importing state.test.ts would register its real-runner tests.
+// Both runner exports are mocked, so no node_modules symlink is needed.
 const createHarness = async (cleanup: TestContext['onTestFinished']) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-transitions-'));
   cleanup(() => rm(cwd, { recursive: true, force: true }));
@@ -269,7 +269,7 @@ const createHarness = async (cleanup: TestContext['onTestFinished']) => {
 
 type Harness = Awaited<ReturnType<typeof createHarness>>;
 
-// One script per starting phase; setup uses run(), never an invented stored-state fixture.
+// Reach each starting phase through run() rather than writing a stored-state fixture.
 const reach: Record<Phase, (harness: Harness) => Promise<unknown>> = {
   locked: (harness) => harness.run({ kind: 'timeout' }),
   red: (harness) => harness.run(fail()),
@@ -380,13 +380,13 @@ const actions: Record<Event, (harness: Harness) => Promise<unknown>> = {
 
     expect(decision).toBeUndefined();
 
-    // Apply the bytes a bash tool writes, bypassing the write/edit guard as real bash does.
+    // Match bash's file write, which bypasses the write/edit guard.
     await edit(harness, 'src/value.ts');
   },
   otherTestEdit: (harness) => edit(harness, 'other.test.ts'),
   protectedEdit: (harness) => edit(harness, 'vite.config.ts'),
 
-  // A non-evidentiary run isolates switching from a new RED/GREEN result.
+  // A timeout tests behavior switching without recording a new RED or GREEN.
   switchKnown: (harness) => harness.run({ kind: 'timeout' }, 'focused', previous),
   switchNew: (harness) => harness.run({ kind: 'timeout' }, 'focused', fresh),
   legacyReload: (harness) => reloadLegacy(harness, false),

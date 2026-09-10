@@ -9,7 +9,7 @@ import { expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
 import { guardToolCall } from './guard.js';
 import { createEvidenceStore, tddGateStatus } from './state.js';
 
-// Every test here spawns real vitest children; the default 5s budget flakes on slow machines.
+// These tests spawn real Vitest processes. The default five-second timeout fails on slow machines.
 vi.setConfig({ testTimeout: 120_000 });
 
 it('checks active test bytes and accepts restored content', async ({ onTestFinished }) => {
@@ -207,7 +207,10 @@ it('verifies a shared file after renewing the earlier behavior', async ({ onTest
   const { cwd, store, behavior } = await createHarness(onTestFinished);
   const path = join(cwd, 'behavior.test.ts');
 
-  await writeFile(path, (await readFile(path, 'utf8')).replace('toBe(1)', 'toBeGreaterThan(0)'));
+  const originalTest = await readFile(path, 'utf8');
+  const amendedTest = originalTest.replace('toBe(1)', 'toBeGreaterThan(0)');
+
+  await writeFile(path, amendedTest);
 
   await store.run(cwd, behavior, 'focused');
 
@@ -215,10 +218,10 @@ it('verifies a shared file after renewing the earlier behavior', async ({ onTest
 
   await store.run(cwd, behavior, 'focused');
 
-  await writeFile(
-    path,
-    `${await readFile(path, 'utf8')}\nit('second', () => expect(value).toBe(2));`,
-  );
+  const firstTest = await readFile(path, 'utf8');
+  const combinedTests = `${firstTest}\nit('second', () => expect(value).toBe(2));`;
+
+  await writeFile(path, combinedTests);
 
   const second = { ...behavior, behavior: 'second', testFullName: 'second' };
 
@@ -228,10 +231,9 @@ it('verifies a shared file after renewing the earlier behavior', async ({ onTest
 
   await store.run(cwd, second, 'focused');
 
-  await writeFile(
-    path,
-    `${await readFile(path, 'utf8')}\n// formatting after both behaviors passed\n`,
-  );
+  const passingTests = await readFile(path, 'utf8');
+
+  await writeFile(path, `${passingTests}\n// formatting after both behaviors passed\n`);
 
   const renewed = await store.run(cwd, behavior, 'focused');
 
@@ -491,7 +493,10 @@ it('renews RED for a test amended after GREEN and remembers the edit', async ({
 
   const test = join(cwd, 'behavior.test.ts');
 
-  await writeFile(test, (await readFile(test, 'utf8')).replace('toBe(1)', 'toBeGreaterThan(0)'));
+  const originalTest = await readFile(test, 'utf8');
+  const amendedTest = originalTest.replace('toBe(1)', 'toBeGreaterThan(0)');
+
+  await writeFile(test, amendedTest);
 
   expect(await store.read(cwd)).toMatchObject({
     phase: 'green',
@@ -505,6 +510,7 @@ it('renews RED for a test amended after GREEN and remembers the edit', async ({
   expect(renewed.evidence.reds[0]?.edited).toBe(true);
   expect(await createEvidenceStore().read(cwd)).toMatchObject({ phase: 'green' });
   expect(await store.run(cwd, behavior, 'full')).toMatchObject({ phase: 'verified' });
+
   // Protected inputs affect verification, but do not discard the behavior's RED.
   await writeFile(join(cwd, 'vite.config.ts'), 'export default { test: {} };');
 
@@ -525,7 +531,10 @@ it('renews a test amended after the fix but before GREEN and records the edit', 
 
   const test = join(cwd, 'behavior.test.ts');
 
-  await writeFile(test, (await readFile(test, 'utf8')).replace('toBe(1)', 'toBeGreaterThan(0)'));
+  const originalTest = await readFile(test, 'utf8');
+  const amendedTest = originalTest.replace('toBe(1)', 'toBeGreaterThan(0)');
+
+  await writeFile(test, amendedTest);
 
   expect(await store.run(cwd, behavior, 'focused')).toMatchObject({
     kind: 'pass',
@@ -577,13 +586,13 @@ it.each(['skip', 'delete', 'amend'])(
     if (change === 'delete') {
       await rm(path);
     } else {
-      await writeFile(
-        path,
-        (await readFile(path, 'utf8')).replace(
-          change === 'skip' ? "it('required'" : 'toBe(1)',
-          change === 'skip' ? "it.skip('required'" : 'toBe(2)',
-        ),
+      const originalTest = await readFile(path, 'utf8');
+      const amendedTest = originalTest.replace(
+        change === 'skip' ? "it('required'" : 'toBe(1)',
+        change === 'skip' ? "it.skip('required'" : 'toBe(2)',
       );
+
+      await writeFile(path, amendedTest);
     }
 
     expect(await store.run(cwd, second, 'full')).toMatchObject({
@@ -595,8 +604,6 @@ it.each(['skip', 'delete', 'amend'])(
 
 it('drops earlier REDs once a verified full pass closes the task', async ({ onTestFinished }) => {
   const { cwd, store } = await createHarness(onTestFinished);
-
-  await rm(join(cwd, 'behavior.test.ts'));
 
   const cycle = async (index: number) => {
     const behavior = {
@@ -619,13 +626,18 @@ it('drops earlier REDs once a verified full pass closes the task', async ({ onTe
     return store.run(cwd, behavior, 'full');
   };
 
+  await rm(join(cwd, 'behavior.test.ts'));
+
   for (const index of [1, 2, 3]) {
     expect(await cycle(index)).toMatchObject({ phase: 'verified' });
   }
 
   const path = join(cwd, 'behavior1.test.ts');
 
-  await writeFile(path, (await readFile(path, 'utf8')).replaceAll('behavior 1', 'renamed'));
+  const originalTest = await readFile(path, 'utf8');
+  const renamedTest = originalTest.replaceAll('behavior 1', 'renamed');
+
+  await writeFile(path, renamedTest);
 
   expect(await cycle(4)).toMatchObject({ phase: 'verified', fullPassValid: true });
 });
@@ -678,7 +690,10 @@ it('renews a shared test file only for the RED that failed inside it', async ({
 
   const path = join(cwd, 'behavior.test.ts');
 
-  await writeFile(path, (await readFile(path, 'utf8')).replace('toBe(1)', 'toBeGreaterThan(0)'));
+  const originalTest = await readFile(path, 'utf8');
+  const amendedTest = originalTest.replace('toBe(1)', 'toBeGreaterThan(0)');
+
+  await writeFile(path, amendedTest);
   await writeFile(
     join(cwd, 'second.test.ts'),
     "import { it, expect } from 'vitest'; import { value } from './src/value'; it('second', () => expect(value).toBe(2));",
@@ -785,10 +800,10 @@ it.each(['skip', 'todo', 'delete'])(
     if (change === 'delete') {
       await rm(path);
     } else {
-      await writeFile(
-        path,
-        (await readFile(path, 'utf8')).replace("it('required'", `it.${change}('required'`),
-      );
+      const originalTest = await readFile(path, 'utf8');
+      const amendedTest = originalTest.replace("it('required'", `it.${change}('required'`);
+
+      await writeFile(path, amendedTest);
     }
 
     expect(await store.run(cwd, behavior, 'focused')).toMatchObject({
@@ -1008,7 +1023,8 @@ it('proves one behavior with several named tests together', async ({ onTestFinis
   expect(red).toMatchObject({ kind: 'fail', phase: 'red' });
   expect(red.evidence.active?.testFullName).toEqual(['is one', 'is positive']);
   expect(red.evidence.proven.map((entry) => entry.fullname)).toEqual(['is one', 'is positive']);
-  // Only one of the two passing keeps the behavior in red.
+
+  // Both tests must pass before the behavior can reach GREEN.
   await writeFile(join(cwd, 'src/value.ts'), 'export const value = 2;');
 
   expect(await store.run(cwd, behavior, 'focused')).toMatchObject({ kind: 'fail', phase: 'red' });
@@ -1017,6 +1033,7 @@ it('proves one behavior with several named tests together', async ({ onTestFinis
 
   expect(await store.run(cwd, behavior, 'focused')).toMatchObject({ kind: 'pass', phase: 'green' });
   expect(await store.run(cwd, behavior, 'full')).toMatchObject({ phase: 'verified' });
+
   // A single name in an array is the same behavior as the plain string.
   const single = { behavior: 'one', testFullName: ['is one'], files: ['behavior.test.ts'] };
   const plain = { ...single, testFullName: 'is one' };
@@ -1047,17 +1064,20 @@ it('keeps recorded REDs when returning to a behavior after a verified full pass'
   await store.run(cwd, second, 'focused');
 
   expect(await store.run(cwd, second, 'full')).toMatchObject({ phase: 'verified' });
-  // A formatter touched the first test after verification.
+
   const test = join(cwd, 'behavior.test.ts');
 
-  await writeFile(test, `${await readFile(test, 'utf8')}\n`);
+  const originalTest = await readFile(test, 'utf8');
+
+  await writeFile(test, `${originalTest}\n`);
 
   const revisited = await store.run(cwd, behavior, 'focused');
 
   expect(revisited).toMatchObject({ kind: 'pass', phase: 'green' });
   expect(revisited.evidence.reds).toHaveLength(2);
   expect(await store.run(cwd, behavior, 'full')).toMatchObject({ phase: 'verified' });
-  // A brand-new behavior after verification starts the next task without the spent REDs.
+
+  // A new behavior after verification starts the next task without the previous task's REDs.
   await writeFile(
     join(cwd, 'third.test.ts'),
     "import { it, expect } from 'vitest'; import { value } from './src/value'; it('third', () => expect(value).toBe(3));",

@@ -13,27 +13,24 @@ const executeFile = promisify(execFile);
 
 type EventHandler = (event: unknown, context: ExtensionContext) => void | Promise<void>;
 
-const setup = (cwd: string, mode = 'tui') => {
+const setup = (directory: string, mode = 'tui') => {
   const handlers = new Map<string, EventHandler>();
   const setFooter = vi.fn<ExtensionContext['ui']['setFooter']>();
   const context = {
-    cwd,
+    cwd: directory,
     mode,
     ui: { setFooter },
     sessionManager: { getEntries: () => [] },
     getContextUsage: () => undefined,
   } as unknown as ExtensionContext;
 
-  statusbarExtension({
-    on: (name: string, handler: EventHandler) => handlers.set(name, handler),
-    getThinkingLevel: () => 'high',
-  } as unknown as ExtensionAPI);
-
   const emit = async (name: string) => {
     await handlers.get(name)?.({}, context);
   };
+
   const mount = () => {
     const factory = setFooter.mock.calls.at(-1)?.[0];
+
     if (factory === undefined) {
       throw new Error('No footer factory registered');
     }
@@ -55,6 +52,7 @@ const setup = (cwd: string, mode = 'tui') => {
         getExtensionStatuses: () => new Map([['hidden', 'HIDDEN']]),
       },
     );
+
     const rawRender = component.render.bind(component);
     component.render = (width) => rawRender(width).map(stripVTControlCharacters);
 
@@ -69,32 +67,44 @@ const setup = (cwd: string, mode = 'tui') => {
     };
   };
 
+  statusbarExtension({
+    on: (name: string, handler: EventHandler) => handlers.set(name, handler),
+    getThinkingLevel: () => 'high',
+  } as unknown as ExtensionAPI);
+
   return { context, emit, mount, setFooter };
 };
 
 describe('statusbar extension', () => {
   it('refreshes the gate indicator from worktree state', async ({ onTestFinished }) => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
-    await executeFile('git', ['init', '-q'], { cwd });
-    const app = setup(cwd);
-    await app.emit('session_start');
-    const footer = app.mount();
+    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+    await executeFile('git', ['init', '-q'], { cwd: directory });
+
+    const application = setup(directory);
+    await application.emit('session_start');
+
+    const footer = application.mount();
     onTestFinished(() => footer.component.dispose?.());
+
     await vi.waitFor(() => {
       expect(footer.requestRender).toHaveBeenCalled();
     });
+
     expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
 
-    await mkdir(join(cwd, '.tau'));
-    const statePath = join(cwd, '.tau/state.json');
+    await mkdir(join(directory, '.tau'));
+
+    const statePath = join(directory, '.tau/state.json');
     await writeFile(
       statePath,
       JSON.stringify({ tdd: { reds: [], gateOff: { since: '2026-05-01T00:00:00.000Z' } } }),
     );
 
     expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
-    await app.emit('tool_result');
+
+    await application.emit('tool_result');
 
     await vi.waitFor(() => {
       expect(footer.component.render(100)[0]).toContain('main*  \u{F0FC6}');
@@ -108,7 +118,7 @@ describe('statusbar extension', () => {
     });
 
     await writeFile(statePath, 'corrupt');
-    await app.emit('tool_result');
+    await application.emit('tool_result');
 
     await vi.waitFor(() => {
       expect(footer.component.render(100)[0]).toContain('\u{F0FC6}');
@@ -116,17 +126,20 @@ describe('statusbar extension', () => {
   });
 
   it('shows a persisted gate-off indicator at startup', async ({ onTestFinished }) => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
-    await executeFile('git', ['init', '-q'], { cwd });
-    await mkdir(join(cwd, '.tau'));
+    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+    await executeFile('git', ['init', '-q'], { cwd: directory });
+    await mkdir(join(directory, '.tau'));
     await writeFile(
-      join(cwd, '.tau/state.json'),
+      join(directory, '.tau/state.json'),
       JSON.stringify({ tdd: { reds: [], gateOff: { since: '2026-05-01T00:00:00.000Z' } } }),
     );
-    const app = setup(cwd);
-    await app.emit('session_start');
-    const footer = app.mount();
+
+    const application = setup(directory);
+    await application.emit('session_start');
+
+    const footer = application.mount();
     onTestFinished(() => footer.component.dispose?.());
 
     await vi.waitFor(() => {
@@ -137,36 +150,48 @@ describe('statusbar extension', () => {
   it('refreshes a replacement footer after the old footer is disposed', async ({
     onTestFinished,
   }) => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
-    await executeFile('git', ['init', '-q'], { cwd });
-    const app = setup(cwd);
-    await app.emit('session_start');
-    const previous = app.mount();
+    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+    await executeFile('git', ['init', '-q'], { cwd: directory });
+
+    const application = setup(directory);
+    await application.emit('session_start');
+
+    const previous = application.mount();
+
     await vi.waitFor(() => {
       expect(previous.requestRender).toHaveBeenCalled();
     });
-    await writeFile(join(cwd, 'file'), 'dirty');
 
-    await app.emit('session_start');
+    await writeFile(join(directory, 'file'), 'dirty');
+    await application.emit('session_start');
+
     // Pi disposes the old component before calling the replacement factory.
     previous.component.dispose?.();
-    const replacement = app.mount();
+    const replacement = application.mount();
 
     await vi.waitFor(() => {
       expect(replacement.component.render(100)[0]).toContain('main*');
     });
+
     expect(previous.unsubscribe).toHaveBeenCalledOnce();
+
     replacement.component.dispose?.();
   });
 
   it('uses the Latte colors without a background', async () => {
-    const app = setup('/missing/tau/abu-347');
-    app.context.model = { id: 'model', reasoning: true, contextWindow: 200000 } as never;
-    app.context.getContextUsage = () => ({ tokens: 46800, percent: 23.4, contextWindow: 200000 });
-    await app.emit('session_start');
-    const footer = app.mount();
+    const application = setup('/missing/tau/abu-347');
+    application.context.model = { id: 'model', reasoning: true, contextWindow: 200000 } as never;
+    application.context.getContextUsage = () => ({
+      tokens: 46800,
+      percent: 23.4,
+      contextWindow: 200000,
+    });
 
+    await application.emit('session_start');
+
+    const footer = application.mount();
     const line = footer.rawRender(100)[0];
 
     expect(line).toContain('\x1b[38;2;97;100;117mtau/abu-347\x1b[39m');
@@ -176,105 +201,131 @@ describe('statusbar extension', () => {
     expect(line).toContain('\x1b[38;2;62;65;82mmodel\x1b[39m');
     expect(line).toContain('\x1b[38;2;124;50;168m• high\x1b[39m');
     expect(line).not.toContain('\x1b[48;');
+
     for (let color = 40; color <= 47; color += 1) {
       expect(line).not.toContain(`\x1b[${color}m`);
       expect(line).not.toContain(`\x1b[${color + 60}m`);
     }
 
-    app.context.getContextUsage = () => ({ tokens: 150000, percent: 75, contextWindow: 200000 });
+    application.context.getContextUsage = () => ({
+      tokens: 150000,
+      percent: 75,
+      contextWindow: 200000,
+    });
 
     expect(footer.rawRender(100)[0]).toContain('\x1b[38;2;128;96;16m75.0%/200k\x1b[39m');
 
-    app.context.getContextUsage = () => ({ tokens: 190000, percent: 95, contextWindow: 200000 });
+    application.context.getContextUsage = () => ({
+      tokens: 190000,
+      percent: 95,
+      contextWindow: 200000,
+    });
 
     expect(footer.rawRender(100)[0]).toContain('\x1b[38;2;184;37;48m95.0%/200k\x1b[39m');
+
     footer.component.dispose?.();
   });
 
   it('refreshes dirty state on tool results and branch changes outside render', async ({
     onTestFinished,
   }) => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
-    await executeFile('git', ['init', '-q'], { cwd });
-    const app = setup(cwd);
-    await app.emit('session_start');
-    const footer = app.mount();
+    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+    await executeFile('git', ['init', '-q'], { cwd: directory });
+
+    const application = setup(directory);
+    await application.emit('session_start');
+
+    const footer = application.mount();
+
     await vi.waitFor(() => {
       expect(footer.requestRender).toHaveBeenCalled();
     });
+
     expect(footer.component.render(100)[0]).not.toContain('main*');
 
-    await writeFile(join(cwd, 'file'), 'dirty');
+    await writeFile(join(directory, 'file'), 'dirty');
 
     expect(footer.component.render(100)[0]).not.toContain('main*');
 
     // The handler returns before Git finishes, so the marker changes on a later render.
-    await app.emit('tool_result');
+    await application.emit('tool_result');
 
     expect(footer.component.render(100)[0]).not.toContain('main*');
+
     await vi.waitFor(() => {
       expect(footer.component.render(100)[0]).toContain('main*');
     });
 
-    await rm(join(cwd, 'file'));
+    await rm(join(directory, 'file'));
     footer.branchChange();
 
     await vi.waitFor(() => {
       expect(footer.component.render(100)[0]).not.toContain('main*');
     });
+
     footer.component.dispose?.();
+
     expect(footer.unsubscribe).toHaveBeenCalledOnce();
   });
 
   it('marks a new file dirty at startup even when git hides untracked files', async ({
     onTestFinished,
   }) => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
-    await executeFile('git', ['init', '-q'], { cwd });
-    await executeFile('git', ['config', 'status.showUntrackedFiles', 'no'], { cwd });
-    await writeFile(join(cwd, 'file'), 'untracked');
+    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
-    const app = setup(cwd);
-    await app.emit('session_start');
-    const footer = app.mount().component;
+    await executeFile('git', ['init', '-q'], { cwd: directory });
+    await executeFile('git', ['config', 'status.showUntrackedFiles', 'no'], { cwd: directory });
+    await writeFile(join(directory, 'file'), 'untracked');
+
+    const application = setup(directory);
+    await application.emit('session_start');
+
+    const footer = application.mount().component;
 
     expect(footer.render(100)[0]).not.toContain('main*');
+
     await vi.waitFor(() => {
       expect(footer.render(100)[0]).toContain('main*');
     });
+
     footer.dispose?.();
   });
 
   it('handles non-repositories', async ({ onTestFinished }) => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
-    const app = setup(cwd);
+    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
-    await app.emit('session_start');
-    const footer = app.mount();
+    const application = setup(directory);
+
+    await application.emit('session_start');
+
+    const footer = application.mount();
+
     await vi.waitFor(() => {
       expect(footer.requestRender).toHaveBeenCalled();
     });
 
     expect(footer.component.render(100)[0]).not.toContain('main*');
+
     footer.component.dispose?.();
   });
 
   it.each(['rpc', 'json', 'print'])('does not install in %s mode', async (mode) => {
-    const app = setup('/missing/tau/abu-347', mode);
+    const application = setup('/missing/tau/abu-347', mode);
 
-    await app.emit('session_start');
-    await app.emit('tool_result');
+    await application.emit('session_start');
+    await application.emit('tool_result');
 
-    expect(app.setFooter).not.toHaveBeenCalled();
+    expect(application.setFooter).not.toHaveBeenCalled();
   });
 
   it('reads all usage categories and live model context and thinking state', async () => {
-    const app = setup('/missing/tau/abu-347');
+    const application = setup('/missing/tau/abu-347');
     const usage = { cost: { total: 0.103 } };
-    app.context.sessionManager.getEntries = () =>
+    application.context.sessionManager.getEntries = () =>
       [
         { type: 'message', message: { role: 'assistant', usage } },
         { type: 'message', message: { role: 'toolResult', usage } },
@@ -284,26 +335,32 @@ describe('statusbar extension', () => {
         { type: 'compaction' },
         { type: 'message', message: { role: 'user' } },
       ] as never;
-    app.context.model = { id: 'model', reasoning: true, contextWindow: 200000 } as never;
-    app.context.getContextUsage = () => ({ tokens: 23400, percent: 23.4, contextWindow: 100000 });
+    application.context.model = { id: 'model', reasoning: true, contextWindow: 200000 } as never;
+    application.context.getContextUsage = () => ({
+      tokens: 23400,
+      percent: 23.4,
+      contextWindow: 100000,
+    });
 
-    await app.emit('session_start');
-    const footer = app.mount().component;
+    await application.emit('session_start');
+
+    const footer = application.mount().component;
 
     expect(footer.render(100)[0]).toMatch(
       /^tau\/abu-347  main +\$0.412  23.4%\/100k  model • high$/,
     );
 
-    app.context.getContextUsage = () => undefined;
-    app.context.model = { id: 'plain', reasoning: false, contextWindow: 200000 } as never;
+    application.context.getContextUsage = () => undefined;
+    application.context.model = { id: 'plain', reasoning: false, contextWindow: 200000 } as never;
 
     expect(footer.render(100)[0]).toMatch(/\?\/200k  plain$/);
 
-    app.context.model = undefined;
+    application.context.model = undefined;
 
     expect(footer.render(100)[0]).toMatch(/\?\/0  no-model$/);
     expect(footer.render(100)).toHaveLength(1);
-    expect(app.setFooter).toHaveBeenCalledOnce();
+    expect(application.setFooter).toHaveBeenCalledOnce();
+
     footer.dispose?.();
   });
 });

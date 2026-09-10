@@ -12,11 +12,13 @@ import { commitGuardReason, guardToolCall } from './guard.js';
 import commitExtension from './index.js';
 
 const execFileAsync = promisify(execFile);
-const tempDirs: string[] = [];
+const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    tempDirs.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
   );
 });
 
@@ -36,11 +38,14 @@ const makeBashEvent = (command: string): ToolCallEvent => ({
 
 const runCommand = async (
   command: string,
-  args: string[],
-  cwd: string,
+  commandArguments: string[],
+  workingDirectory: string,
 ): Promise<{ stdout: string; stderr: string; code: number; killed: boolean }> => {
   try {
-    const { stdout, stderr } = await execFileAsync(command, args, { cwd });
+    const { stdout, stderr } = await execFileAsync(command, commandArguments, {
+      cwd: workingDirectory,
+    });
+
     return { stdout, stderr, code: 0, killed: false };
   } catch (error) {
     const failure = error as Error & {
@@ -59,34 +64,35 @@ const runCommand = async (
   }
 };
 
-const git = async (repoDir: string, args: string[]): Promise<string> => {
-  const result = await runCommand('git', args, repoDir);
+const git = async (repositoryDirectory: string, commandArguments: string[]): Promise<string> => {
+  const result = await runCommand('git', commandArguments, repositoryDirectory);
 
   if (result.code !== 0) {
-    throw new Error(`git ${args.join(' ')} failed: ${result.stderr || result.stdout}`);
+    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr || result.stdout}`);
   }
 
   return result.stdout;
 };
 
-const createTempRepo = async (): Promise<string> => {
-  const repoDir = await mkdtemp(join(tmpdir(), 'tau-commit-guard-'));
-  tempDirs.push(repoDir);
+const createTemporaryRepository = async (): Promise<string> => {
+  const repositoryDirectory = await mkdtemp(join(tmpdir(), 'tau-commit-guard-'));
+  temporaryDirectories.push(repositoryDirectory);
 
-  await git(repoDir, ['init']);
-  await git(repoDir, ['config', 'user.name', 'Tau Test']);
-  await git(repoDir, ['config', 'user.email', 'tau@example.com']);
-  await git(repoDir, ['config', 'commit.gpgsign', 'false']);
+  await git(repositoryDirectory, ['init']);
+  await git(repositoryDirectory, ['config', 'user.name', 'Tau Test']);
+  await git(repositoryDirectory, ['config', 'user.email', 'tau@example.com']);
+  await git(repositoryDirectory, ['config', 'commit.gpgsign', 'false']);
 
-  return repoDir;
+  return repositoryDirectory;
 };
 
-const writeRepoFile = async (
-  repoDir: string,
+const writeRepositoryFile = async (
+  repositoryDirectory: string,
   relativePath: string,
   content: string,
 ): Promise<void> => {
-  const fullPath = join(repoDir, relativePath);
+  const fullPath = join(repositoryDirectory, relativePath);
+
   await mkdir(dirname(fullPath), { recursive: true });
   await writeFile(fullPath, content);
 };
@@ -97,7 +103,7 @@ describe('guardToolCall', () => {
   });
 
   it.each(['git status', 'git diff HEAD', 'git log --oneline', 'git add src/foo.ts'])(
-    'returns undefined for bash commands that are not git-commit invocations: %s',
+    'allows bash commands that do not run git commit: %s',
     (command) => {
       expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
     },
@@ -116,7 +122,7 @@ describe('guardToolCall', () => {
     "echo $(git commit -m 'x')",
     "(git commit -m 'x')",
     "git-commit -m 'feat: add'",
-  ])('blocks the positive corpus: %s', (command) => {
+  ])('blocks commands that create commits: %s', (command) => {
     expect(guardToolCall(makeBashEvent(command))).toEqual({
       block: true,
       reason: commitGuardReason,
@@ -130,18 +136,15 @@ describe('guardToolCall', () => {
     "bash -lc 'git commit -m x'",
     "bash -c   'git commit -m x'",
     "bash -c $'git commit -m x'",
-  ])(
-    'blocks shell eval commands containing commit invocations via the git-commit pattern: %s',
-    (command) => {
-      expect(guardToolCall(makeBashEvent(command))).toEqual({
-        block: true,
-        reason: commitGuardReason,
-      });
-    },
-  );
+  ])('blocks shell commands that contain git commit: %s', (command) => {
+    expect(guardToolCall(makeBashEvent(command))).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
 
   it.each(["sh -c 'git status'", "bash -c 'echo hello'"])(
-    'does not block shell eval commands without commit invocations: %s',
+    'allows shell commands without git commit: %s',
     (command) => {
       expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
     },
@@ -188,7 +191,7 @@ describe('guardToolCall', () => {
   });
 
   it.each(['g\\it c\\ommit -m x', 'git co""mmit -m x', "g''it commit -m x", 'git \\commit -m x'])(
-    'blocks invocations that bash strips escapes and empty quotes from: %s',
+    'blocks git commit with shell escapes or empty quotes: %s',
     (command) => {
       expect(guardToolCall(makeBashEvent(command))).toEqual({
         block: true,
@@ -208,18 +211,18 @@ describe('guardToolCall', () => {
 describe('commitExtension', () => {
   interface CommandEntry {
     description?: string;
-    handler: (args: string, ctx: { isIdle(): boolean }) => Promise<void>;
+    handler: (commandArguments: string, context: { isIdle(): boolean }) => Promise<void>;
   }
 
-  const createFakePi = (execFn?: ExtensionAPI['exec']) => {
+  const createFakePi = (executeCommand?: ExtensionAPI['exec']) => {
     let registeredTool: ToolDefinition | undefined;
-    const registeredHandlers: Record<string, ((...args: never[]) => unknown)[]> = {};
+    const registeredHandlers: Record<string, ((...commandArguments: never[]) => unknown)[]> = {};
     const registeredCommands = new Map<string, CommandEntry>();
     const sentUserMessages: { content: string; options?: { deliverAs?: string } }[] = [];
 
     const fakePi = {
-      exec: execFn ?? (() => Promise.reject(new Error('not wired'))),
-      on(eventName: string, handler: (...args: never[]) => unknown) {
+      exec: executeCommand ?? (() => Promise.reject(new Error('not wired'))),
+      on(eventName: string, handler: (...commandArguments: never[]) => unknown) {
         registeredHandlers[eventName] ??= [];
         registeredHandlers[eventName].push(handler);
       },
@@ -254,12 +257,13 @@ describe('commitExtension', () => {
     expect(registeredCommands.has('commit')).toBe(true);
   });
 
-  it('sends skill messages with correct deliverAs based on idle state', async () => {
+  it('sends skill messages as follow-ups when idle and steering messages when busy', async () => {
     const { fakePi, registeredCommands, sentUserMessages } = createFakePi();
 
     commitExtension(fakePi);
 
     const commitCommand = registeredCommands.get('commit');
+
     if (commitCommand == null) {
       throw new Error('Expected commit command to be registered');
     }
@@ -286,19 +290,20 @@ describe('commitExtension', () => {
 
   it("does not affect the tool's own git invocations", async () => {
     const reviewer = vi.spyOn(commentReview, 'reviewComments').mockResolvedValue({ findings: [] });
-    const repoDir = await createTempRepo();
-    await writeRepoFile(repoDir, 'README.md', 'hello\n');
+    const repositoryDirectory = await createTemporaryRepository();
+    await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
 
-    const execFn: ExtensionAPI['exec'] = (
+    const executeCommand: ExtensionAPI['exec'] = (
       command: string,
-      args: string[],
+      commandArguments: string[],
       options?: { cwd?: string },
-    ) => runCommand(command, args, options?.cwd ?? repoDir);
-    const { fakePi, registeredTool } = createFakePi(execFn);
+    ) => runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory);
+    const { fakePi, registeredTool } = createFakePi(executeCommand);
 
     commitExtension(fakePi);
 
     const tool = registeredTool();
+
     if (tool == null) {
       throw new Error('Expected commit tool to be registered');
     }
@@ -308,15 +313,21 @@ describe('commitExtension', () => {
       { groups: [{ files: ['README.md'], subject: 'feat: add thing' }] },
       undefined,
       undefined,
-      { cwd: repoDir, hasUI: true, ui: { custom: () => Promise.resolve('approve') } } as never,
+      {
+        cwd: repositoryDirectory,
+        hasUI: true,
+        ui: { custom: () => Promise.resolve('approve') },
+      } as never,
     );
 
-    const commitCountOutput = await git(repoDir, ['rev-list', '--all', '--count']);
+    const commitCountOutput = await git(repositoryDirectory, ['rev-list', '--all', '--count']);
     const commitCount = commitCountOutput.trim();
+
     expect(commitCount).toBe('1');
     expect(result.details).toMatchObject({
       groups: [{ files: ['README.md'], subject: 'feat: add thing' }],
     });
+
     reviewer.mockRestore();
   });
 });

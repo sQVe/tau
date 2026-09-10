@@ -68,8 +68,8 @@ const activeRed = (state: EvidenceState) =>
 const identityMatches = (cwd: string, fullname: string, file: string, test: TestResult) =>
   test.fullname === fullname && resolve(cwd, test.file) === resolve(cwd, file);
 
-// Vitest permits duplicate full names in one file, so (file, fullname) only identifies a test
-// when exactly one result carries it. Anything else is ambiguous and proves nothing.
+// Vitest permits duplicate full names in one file. A (file, fullname) pair proves a test's
+// status only when it identifies exactly one result.
 const uniqueStatus = (
   cwd: string,
   tests: TestResult[],
@@ -128,12 +128,9 @@ const redPassed = (
   });
 };
 
-const failedIn = (cwd: string, { behavior, report }: RedRecord, file: string) => {
-  return (
-    report.kind === 'fail' &&
-    testNames(behavior).some((name) => uniqueStatus(cwd, report.tests, name, file) === 'failed')
-  );
-};
+const failedIn = (cwd: string, { behavior, report }: RedRecord, file: string) =>
+  report.kind === 'fail' &&
+  testNames(behavior).some((name) => uniqueStatus(cwd, report.tests, name, file) === 'failed');
 
 const staleVerificationFiles = async (cwd: string, records: RedRecord[]): Promise<string[]> => {
   const files = records.flatMap((record) => record.behavior.files);
@@ -145,7 +142,6 @@ const staleVerificationFiles = async (cwd: string, records: RedRecord[]): Promis
     // A later RED in the same file can accept an amendment; a RED in another file cannot.
     const staleTests = record.behavior.files.filter((file) => {
       const key = resolve(cwd, file);
-
       const latest = records.findLast((candidate) => failedIn(cwd, candidate, file));
 
       return (latest ?? record).testHashes[key] !== hashes[key];
@@ -164,8 +160,7 @@ const staleVerificationFiles = async (cwd: string, records: RedRecord[]): Promis
 
 const runnerChecks = new Map<string, { packageHash: string | null; available: boolean }>();
 
-// Nothing can be proven without a runner, so production edits stop being gated until the agent
-// installs one through the exempt bash tool.
+// Without a runner, no test can prove RED. Allow production edits until a runner is installed.
 const runnerNotice = (cwd: string, hashes: InputHashes) => {
   const key = resolve(cwd);
   const packageHash = hashes[resolve(cwd, 'package.json')] ?? null;
@@ -175,6 +170,7 @@ const runnerNotice = (cwd: string, hashes: InputHashes) => {
   // read, because installing it leaves package.json untouched.
   const available =
     cached?.available === true && cached.packageHash === packageHash ? true : runnerAvailable(key);
+
   runnerChecks.set(key, { packageHash, available });
 
   return available ? undefined : 'no test runner resolves from this worktree';
@@ -291,19 +287,17 @@ const loadState = async (cwd: string): Promise<EvidenceState> => {
           throw new Error('invalid RED evidence');
         }
 
-        const fields = entry;
-
         // Old snapshots kept the report and hashes inside record. Discard their derived flags.
-        const record = fields.record;
-        const old = Value.Check(recordSchema, record) ? record : undefined;
+        const record = entry.record;
+        const legacyRecord = Value.Check(recordSchema, record) ? record : undefined;
 
         return {
-          behavior: fields.behavior,
-          report: old?.report ?? fields.report,
-          testHashes: old?.after ?? fields.testHashes,
-          greenTree: fields.greenTree ?? null,
-          edited: fields.edited ?? false,
-          phase: legacy ? 'locked' : fields.phase,
+          behavior: entry.behavior,
+          report: legacyRecord?.report ?? entry.report,
+          testHashes: legacyRecord?.after ?? entry.testHashes,
+          greenTree: entry.greenTree ?? null,
+          edited: entry.edited ?? false,
+          phase: legacy ? 'locked' : entry.phase,
         };
       }),
       verifiedTree: legacy ? null : stored.verifiedTree,
@@ -315,9 +309,11 @@ const loadState = async (cwd: string): Promise<EvidenceState> => {
       throw new Error('invalid evidence fields');
     }
 
-    if (
-      state.reds.some(({ behavior, report }) => !uniquelyIs(cwd, report.tests, behavior, 'failed'))
-    ) {
+    const hasInvalidRed = state.reds.some(
+      ({ behavior, report }) => !uniquelyIs(cwd, report.tests, behavior, 'failed'),
+    );
+
+    if (hasInvalidRed) {
       throw new Error('stored RED report does not prove its named tests');
     }
 
@@ -365,6 +361,7 @@ export const createEvidenceStore = () => {
 
         throw error;
       });
+
     states.set(key, state);
 
     return state;
@@ -416,8 +413,7 @@ export const createEvidenceStore = () => {
     scope: 'focused' | 'full',
     signal?: AbortSignal,
   ) => {
-    // Canonical field and file order so the same behavior submitted differently stays the same
-    // behavior: identity is compared as serialized JSON, which key order would otherwise change.
+    // Sort and deduplicate names and files because behavior identity compares serialized arrays.
     const names = [...new Set(testNames(requested))].toSorted();
     const behavior: Behavior = {
       behavior: requested.behavior,
@@ -582,6 +578,7 @@ export const createEvidenceStore = () => {
 
   const setGate = async (cwd: string, gate: 'on' | 'off') => {
     const state = await stateFor(cwd);
+
     state.gateOff = gate === 'off' ? { since: new Date().toISOString() } : null;
 
     await saveState(cwd, state);
@@ -594,6 +591,7 @@ export const createEvidenceStore = () => {
     setGate,
     run: (cwd: string, behavior: Behavior, scope: 'focused' | 'full', signal?: AbortSignal) => {
       const result = pendingRun.then(() => run(cwd, behavior, scope, signal));
+
       pendingRun = result.catch(() => undefined);
 
       return result;

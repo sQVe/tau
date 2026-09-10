@@ -10,13 +10,13 @@ description:
 
 ## When to use
 
-Use this skill when the last assistant response did not land and the user asks for it again in plain
+Use this skill when the user did not understand the last assistant response and asks for it in plain
 language.
 
 ## Goal
 
-Say the last assistant response again, plainly. The user already got the answer once, so the job is
-translation, not new work.
+Restate the last assistant response in plain language. Explain the existing answer without doing new
+work.
 
 ## Hard rules
 
@@ -33,4 +33,4 @@ translation, not new work.
 
 ## See also
 
-- `docs/adr/0004-skill-authoring-style.md`
+- [Skill authoring style](../../docs/adr/0004-skill-authoring-style.md)

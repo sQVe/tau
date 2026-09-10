@@ -97,8 +97,8 @@ export const defaultResolveVitest: ResolveVitestFn = (cwd) => {
   }
 };
 
-// Deliberately not defaultResolveVitest: require.resolve also honours NODE_PATH, which a parent
-// test runner sets to its own installation, so it answers about this process, not the worktree.
+// Do not use defaultResolveVitest here. require.resolve also searches NODE_PATH, which a parent
+// test runner can set to its own installation rather than the worktree's.
 export const runnerAvailable = (cwd: string): boolean => {
   for (let directory = resolvePath(cwd); ; directory = dirname(directory)) {
     try {
@@ -135,13 +135,12 @@ const nodeOnPath = (path = process.env.PATH ?? '') =>
       }
     });
 
-// Pi ships as a compiled executable, so execPath is the agent itself there and would parse
-// vitest's flags as its own. A Node named anything else, such as `nodejs`, still runs vitest, so
-// only trade it for a discovered Node when one actually exists.
-export const nodeExecutable = (execPath = process.execPath) =>
-  /^node(\.exe)?$/i.test(basename(execPath.replaceAll('\\', '/')))
-    ? execPath
-    : (nodeOnPath() ?? execPath);
+// In compiled Pi, process.execPath is the agent and cannot run Vitest. Prefer Node from PATH.
+// Keep the fallback for Node executables with other names, such as `nodejs`.
+export const nodeExecutable = (executablePath = process.execPath) =>
+  /^node(\.exe)?$/i.test(basename(executablePath.replaceAll('\\', '/')))
+    ? executablePath
+    : (nodeOnPath() ?? executablePath);
 
 export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
   new Promise<SpawnResult>((resolve) => {
@@ -158,21 +157,26 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
     let stderr = '';
     let timedOut = false;
     let stdoutOverflow = false;
-    let bytes = 0;
+    let diagnosticBytes = 0;
     let stdoutBytes = 0;
 
     const stdoutDecoder = new StringDecoder('utf8');
     const stderrDecoder = new StringDecoder('utf8');
 
-    const cap = (chunk: Buffer, decoder: StringDecoder, current: string): string => {
-      const remaining = MAX_TOTAL_BYTES - bytes;
+    const appendDiagnosticChunk = (
+      chunk: Buffer,
+      decoder: StringDecoder,
+      current: string,
+    ): string => {
+      const remaining = MAX_TOTAL_BYTES - diagnosticBytes;
 
       if (remaining <= 0) {
         return current;
       }
 
       const slice = chunk.length > remaining ? chunk.subarray(0, remaining) : chunk;
-      bytes += slice.length;
+
+      diagnosticBytes += slice.length;
 
       return current + decoder.write(slice);
     };
@@ -210,8 +214,7 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
     };
 
     child.stdout.on('data', (chunk: Buffer) => {
-      // The JSON report must remain complete; bound failure messages after parsing.
-      // Past the cap the report can no longer be trusted, so stop instead of parsing it.
+      // Stop on stdout overflow rather than accepting a result from a run that exceeded its limit.
       stdoutBytes += chunk.length;
 
       if (stdoutBytes > MAX_STDOUT_BYTES) {
@@ -226,7 +229,7 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
     });
 
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr = cap(chunk, stderrDecoder, stderr);
+      stderr = appendDiagnosticChunk(chunk, stderrDecoder, stderr);
     });
 
     // Settle here rather than waiting for `close`: on Windows only the direct child dies,
@@ -236,6 +239,7 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
       kill();
       settle(null);
     }, options.timeoutMs);
+
     timer.unref();
 
     child.on('close', settle);
@@ -338,8 +342,7 @@ const frameLocation = (line: string, cwd: string): string | null => {
 const capMessage = (text: string) =>
   text.length > MAX_MESSAGE_CHARS ? `${text.slice(0, MAX_MESSAGE_CHARS)}…` : text;
 
-// The stack is noise the model cannot act on; the assertion line and the frame in the worktree
-// are the whole story.
+// Keep the assertion and its worktree location. Omit the rest of the stack to limit output.
 const assertionMessage = (messages: string[], cwd: string): string => {
   const raw = messages[0] ?? '';
   const frame = raw
@@ -366,6 +369,7 @@ const collectFailures = (
     // Hook and load errors live only on the file entry, never on an assertion.
     const hasFailedAssertion =
       file.assertionResults?.some((assertion) => assertion.status === 'failed') === true;
+
     if (file.status === 'failed' && ((file.message ?? '').length > 0 || !hasFailedAssertion)) {
       if (failures.length >= MAX_FAILURES) {
         return { failures, truncated: true };
@@ -402,7 +406,7 @@ const collectFailures = (
 
 // Vitest's CLI parses dash-leading positionals as options and treats an empty
 // filter as "match every file", so neither may reach it as a scoped path.
-const toFilterArg = (path: string) => (path.startsWith('-') ? `./${path}` : path);
+const toFilterArgument = (path: string) => (path.startsWith('-') ? `./${path}` : path);
 
 const scopedPaths = (input: RunTestsInput): string[] => {
   const paths = input.scope === 'file' ? [input.path ?? ''] : (input.files ?? []);
@@ -410,8 +414,11 @@ const scopedPaths = (input: RunTestsInput): string[] => {
   return paths.filter((path) => path.trim().length > 0);
 };
 
-const buildArgs = (input: RunTestsInput, outputFile: string): string[] | null => {
-  const args: string[] = [...tddConfig.verificationArgv.slice(1), `--outputFile=${outputFile}`];
+const buildArguments = (input: RunTestsInput, outputFile: string): string[] | null => {
+  const runnerArguments: string[] = [
+    ...tddConfig.verificationArgv.slice(1),
+    `--outputFile=${outputFile}`,
+  ];
 
   if (input.scope !== 'all') {
     const paths = scopedPaths(input);
@@ -420,14 +427,14 @@ const buildArgs = (input: RunTestsInput, outputFile: string): string[] | null =>
       return null;
     }
 
-    args.push(...paths.map(toFilterArg));
+    runnerArguments.push(...paths.map(toFilterArgument));
   }
 
   if (input.filter != null) {
-    args.push('-t', input.filter);
+    runnerArguments.push('-t', input.filter);
   }
 
-  return args;
+  return runnerArguments;
 };
 
 export const defaultDeps = (scope: RunTestsInput['scope'] = 'changed'): RunnerDeps => ({
@@ -441,9 +448,9 @@ const runInDirectory = async (
   dependencies: RunnerDeps,
   outputFile: string,
 ): Promise<RunnerResult> => {
-  const args = buildArgs(input, outputFile);
+  const runnerArguments = buildArguments(input, outputFile);
 
-  if (args == null) {
+  if (runnerArguments == null) {
     return { kind: 'no-tests-collected', tests: [] };
   }
 
@@ -456,7 +463,7 @@ const runInDirectory = async (
     };
   }
 
-  const result = await dependencies.spawn(binary, args, {
+  const result = await dependencies.spawn(binary, runnerArguments, {
     cwd: input.cwd,
     timeoutMs: dependencies.timeoutMs,
     signal: input.signal,

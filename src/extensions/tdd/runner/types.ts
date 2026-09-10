@@ -50,7 +50,11 @@ export interface SpawnOptions {
   signal?: AbortSignal | undefined;
 }
 
-export type SpawnFn = (cmd: string, args: string[], opts: SpawnOptions) => Promise<SpawnResult>;
+export type SpawnFn = (
+  command: string,
+  arguments_: string[],
+  options: SpawnOptions,
+) => Promise<SpawnResult>;
 
 export type ResolveVitestFn = (cwd: string) => string | null;
 
@@ -65,6 +69,6 @@ export const FULL_TIMEOUT_MS = 120_000;
 export const MAX_FAILURES = 10;
 export const MAX_MESSAGE_CHARS = 300;
 export const MAX_TOTAL_BYTES = 32 * 1024;
-// The JSON report must stay complete, so stdout gets a far larger cap than the
-// diagnostic one: enough for a full-suite report, small enough to bound memory.
+
+// Bound captured process output separately from the shorter diagnostic messages.
 export const MAX_STDOUT_BYTES = 8 * 1024 * 1024;

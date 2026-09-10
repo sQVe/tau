@@ -1,15 +1,15 @@
 ---
 name: commit
 description:
-  Create confirmed, logically grouped git commits with the `commit` tool and evidence-driven retry
-  handling.
+  Create user-confirmed Git commits in logical groups with the `commit` tool. Use reported errors to
+  decide how to retry failed commits.
 ---
 
 # Commit
 
 ## When to use
 
-Use this skill when the user wants to create one or more git commits from the current working tree.
+Use this skill when the user wants to create one or more Git commits from the current working tree.
 
 ## Goal
 
@@ -31,7 +31,7 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 
 ## Procedure
 
-1. Gather the current git state before proposing anything.
+1. Read the current Git state before proposing anything.
    - Run `git status --porcelain`.
    - Run `git diff` for unstaged changes and `git diff --cached` for staged changes.
    - For untracked files shown by `git status`, read them or run
@@ -41,14 +41,14 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
    - If there are no relevant changes (nothing staged, nothing modified), tell the user the working
      tree is clean and stop.
    - If files are already staged, explicitly assign each to a commit group or unstage them with
-     `git reset HEAD -- <file>` before proceeding. Never leave unassigned staged files — the tool
-     commits only pathspec-listed files, but stale index state causes confusion.
+     `git reset HEAD -- <file>` before proceeding. Never leave unassigned staged files. The tool
+     commits only files listed in its pathspecs, but stale index state causes confusion.
 
 2. Identify logical commit groups.
-   - Split unrelated changes into separate groups. The tool stages whole files, so groups are
-     file-granular: every hunk in a file goes to the same group.
-   - When one file holds changes with genuinely different intents, put it in the group that fits
-     best and say so when reporting, rather than trying to split it.
+   - Split unrelated changes into separate groups. The tool stages whole files, so every change in a
+     file goes to the same group.
+   - When one file contains changes with different purposes, put it in the group that fits best.
+     Report that choice instead of trying to split the file.
    - Keep each group coherent and reviewable.
    - For each group, prepare a conventional-commit subject and the exact file list.
 
@@ -65,19 +65,19 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
    - A skipped group is not a failure; the tool continues with later groups.
    - Note each created commit and any skipped groups.
 
-5. If the `commit` tool fails, triage before investigating.
-   - The error lists groups already committed with their ids and SHAs. Exclude them from retries.
+5. If the `commit` tool fails, read the current state before investigating.
+   - The error lists groups already committed with their identifiers and commit hashes. Exclude them
+     from retries.
    - Run `git status --porcelain` first. If the working tree is clean, the changes were already
-     committed (e.g., absorbed by a prior group). Report this and move on.
-   - If changes remain and the error text names a failing hook, handle it as an evidence-driven
-     retry loop:
+     committed, for example by a prior group. Report this and move on.
+   - If changes remain and the error text names a failing hook, use its output to guide retries:
      - Read the error text carefully. It carries the hook's own output.
      - Diagnose the actual failure from the hook output.
      - Fix the underlying issue, such as lint, format, or test failures.
      - Include any files modified during the fix in the retried group's `files` list.
      - Retry the `commit` tool with the corrected group and any remaining groups in `groups`. Leave
        out the groups already committed and the ones the user skipped; a skipped group carries no
-       SHA, so it is absent from the error's list without meaning it still needs a commit.
+       commit hash, so its absence from the error's list does not mean it still needs a commit.
      - Cap retries at 3 for the same group.
      - After 3 failed retries, stop and report the failure to the user instead of pushing through.
 
@@ -99,4 +99,4 @@ Turn the current diff into clean, user-confirmed commits using the `commit` tool
 
 ## See also
 
-- `docs/adr/0004-skill-authoring-style.md`
+- [Skill authoring style](../../docs/adr/0004-skill-authoring-style.md)

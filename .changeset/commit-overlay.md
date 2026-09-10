@@ -2,5 +2,5 @@
 'tau': minor
 ---
 
-Replace the commit tool's yes/no confirm dialog with an overlay that shows subject, body, and
-per-file diff stats, with approve, edit subject, edit body, skip, and abort choices.
+Replace the commit tool's yes/no confirmation dialog with an overlay showing the subject, body, and
+per-file diff statistics. Offer choices to approve, edit the subject, edit the body, skip, or abort.

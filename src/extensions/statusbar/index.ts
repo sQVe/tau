@@ -40,6 +40,7 @@ export default function statusbarExtension(pi: ExtensionAPI) {
   const refresh = async (context: ExtensionContext) => {
     refreshId += 1;
     const currentRefreshId = refreshId;
+
     const gateStatus = tddGateStatus(context.cwd);
     let nextDirty = false;
 
@@ -59,7 +60,8 @@ export default function statusbarExtension(pi: ExtensionAPI) {
       // Outside a repository, or when git fails, show no dirty marker.
     }
 
-    const nextTddGateOff = (await gateStatus) !== undefined;
+    const resolvedGateStatus = await gateStatus;
+    const nextTddGateOff = resolvedGateStatus !== undefined;
 
     // Ignore results from older requests and disposed footers.
     if (currentRefreshId !== refreshId) {
@@ -79,9 +81,11 @@ export default function statusbarExtension(pi: ExtensionAPI) {
     context.ui.setFooter((terminal, _theme, footerData) => {
       dirty = false;
       tddGateOff = false;
+
       requestRender = () => {
         terminal.requestRender();
       };
+
       const unsubscribe = footerData.onBranchChange(() => {
         void refresh(context);
       });
@@ -92,6 +96,7 @@ export default function statusbarExtension(pi: ExtensionAPI) {
       return {
         dispose() {
           unsubscribe();
+
           requestRender = undefined;
           refreshId += 1;
         },

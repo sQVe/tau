@@ -17,7 +17,7 @@
 ## Options considered
 
 - Add the rules to the writing policy. One extension already loads instructions, but a prose policy
-  is the wrong home for code structure, and the file then answers two questions.
+  should not also govern code structure.
 - Enforce the rules with lint. Oxlint has no layout rules, and adding a second linter for them was
   rejected. A rule that matches statement types cannot see logical steps anyway.
 - Extend the comment review gate to block unreadable code. The gate gives evidence for concrete
