@@ -17,6 +17,14 @@ The ABU-359 investigation confirmed that delegation works with both OAuth and AP
 Model availability varies by provider and account, and valid credentials do not guarantee access to
 a particular model. Tau therefore cannot rely on one hardcoded delegate working for every user.
 
+The owner chose `openai-codex/gpt-5.6-luna` as the default from the investigation's catalog price
+comparison. These are relative prices, normalized to the delegate, not measured session savings:
+
+| Model in the comparison     | Input price ratio | Output price ratio |
+| --------------------------- | ----------------- | ------------------ |
+| Session model               | 50                | 41                 |
+| `openai-codex/gpt-5.6-luna` | 1                 | 1                  |
+
 ## Options considered
 
 1. Do nothing. Rely on grep and bounded reads. This is the cheapest option for locating symbols, but
@@ -51,31 +59,44 @@ models.
 
 ### User choice and availability
 
-The user chooses the delegate's provider and model ID. Do not ship a hardcoded pair or silently
-choose another model when a call fails. Users need to choose a model their account can access and
-whose cost and quality fit their needs.
+Read the delegate from `TAU_BULK_READ_MODEL` as `provider/id`, defaulting to
+`openai-codex/gpt-5.6-luna`. Split at the first slash to preserve model IDs that contain slashes.
+Resolve the reference exactly against Pi's model registry. Do not fuzzy-match or silently choose
+another model. Use Pi's credentials without a credential pre-flight check.
 
-Use Pi's model registry and credentials rather than separate authentication or a settings loader. Pi
-0.85.1 has no settings slot for extension config; its extension flags are the available per-user
-control. Ordinary reads must remain available when no delegate is configured or a delegate call
-fails. A successful credential check must not be treated as proof that the model can answer.
+This is Tau's first environment read in `src/`, chosen so a config file can be added on top later.
+Read it at call time rather than extension load time.
+
+Resolve the model before the first read clamp, without a network call. On a registry miss or a hard
+delegate failure, stop trimming for the session; reads then behave as stock Pi. Thrown completion
+errors and the `error` stop reason are hard failures. Caller cancellation, the 120-second timeout,
+and the `length` stop reason leave trimming on.
 
 ### Read limits and evidence
 
-Use a configurable threshold to steer oversized reads toward delegation while preserving bounded
-reads. Pi already truncates reads at 2000 lines or 50KB, whichever comes first. A lower threshold
-adds a limit rather than duplicating that truncation. Choose its value from measured results, not a
-claim that delegation always saves money.
+Clamp unbounded reads to a fixed 400-line threshold by setting the read tool's `limit` in the
+pre-call hook. Rewrite the read result's trailing continuation notice into a hint naming
+`bulk_read`. Reads with an explicit `limit` pass unchanged. Pi's existing 50KB limit still applies.
+The constant is unmeasured until the
+[development guide's measurement table](../development.md#bulk-read) exists. A 400-line file with a
+trailing newline gets a notice for one empty line; accept that edge case rather than adding a file
+stat to the hook.
 
-Require verbatim source snippets when a delegate answer supports an edit. Tau must check that each
-anchor appears exactly once in the named file before presenting it as editing evidence. Pi's edit
-tool uses exact text matches, so line numbers alone are insufficient. This check establishes that
-the text exists, not that the delegate interpreted it correctly.
+Number payload lines from 1 to match the read tool's `offset`. Answers cite `path:line`. Strip a
+leading `^\d+: ` from every line of the reply so excerpts paste without payload prefixes. The
+session model reads a bounded range before editing; Pi's `edit` is the exact-text check.
+
+Send all requested files in one delegate call. Resolve paths against the session's working
+directory, without restricting paths outside it. Skip NUL-byte binary files and list them in the
+result. Cap each file at 400,000 bytes and the numbered request at 1,000,000 characters, matching
+comment review's limits. Bound the completion to 120 seconds and 4096 output tokens. Return the
+delegate's full usage on the tool result so Pi's ledger and Tau's footer count it.
 
 Treat file content as evidence, never as instructions, and keep the delegate read-only. Prompt
-framing must tell it to ignore requests embedded in files to change its policy or redirect its
-answer. Delegation does not bypass Tau's [TDD guard](../../src/extensions/tdd/guard.ts), which must
-explicitly allow the read-only tool because it blocks unknown tools.
+framing tells it to ignore embedded requests, answer only the question, cite file lines, and add no
+tasks, commands, or URLs. Delegation does not bypass Tau's
+[TDD guard](../../src/extensions/tdd/guard.ts), which explicitly allows the read-only tool because
+it blocks unknown tools.
 
 Keep `pnpm check` independent of model APIs, as required by the
 [development guide](../development.md#local-setup). Offline checks can establish tool behavior and
@@ -86,21 +107,28 @@ expanding the scope to code writers.
 
 - The session model can receive an answer instead of several full files, regardless of their
   language. The delegate can still omit relevant facts or misunderstand code.
-- Pi's pre-call hook can block a read but cannot substitute a result, so a blocked read costs an
-  extra turn. The worst case is three turns where one read would have done: a blocked read,
-  delegation, and a bounded re-read before editing.
+- The pre-call hook clamps rather than blocks, so an oversized read returns the file head plus a
+  hint in the same turn. The hint is advisory; the model can still page with `offset`, which costs
+  more than a plain read.
 - Portal reports 10-30 seconds per delegation. Below roughly 800 lines, delegation may take longer
   and use more total tokens than reading the file directly. The threshold needs tuning; 800 lines is
   not a measured Tau break-even point.
 - The roughly 90% figure reported by Portal and rtk describes a reduction in what the agent reads,
   not a reduction in the bill. Both estimate tokens as characters divided by four, without a
-  tokenizer. Measure delegate input, output, extra session turns, elapsed time, and reported cost
-  separately from the reduction in what the session model reads.
+  tokenizer. The owner measures real providers with compaction disabled, using one semantic question
+  spanning three files above the threshold. Compare trimming off with `bulk_read` present against
+  the shipped setup. Run each twice on the same prompt and files and keep the medians. Record
+  session and delegate usage, assistant turns, offset pages, wall clock, and catalog cost ratios in
+  [Development](../development.md#bulk-read), using the session JSONL rather than hidden per-model
+  rows in `/session`. Those results set the threshold and move this ADR to Accepted.
 - File content reaches a weaker model whose output returns as trusted-looking bullets. Prompt
-  framing is the mitigation, and it is weaker than in Tau's other uses of it. Exact anchor checks do
-  not establish that the delegate's interpretation is safe or correct.
-- On a subscription, Pi's reported cost comes from catalog pricing and may not reflect actual
-  billing. User configuration also means each account can have different working models and costs.
+  framing is the mitigation, and it is weaker than in Tau's other uses of it. The delegate has no
+  tools, so injected content cannot act. Citation instructions do not establish that an answer is
+  safe or correct. Tau does not detect hostile text that cites a real line.
+- A model that is in the registry but rejected by the provider costs one clamped read and one failed
+  delegate call before trimming stops.
+- On a subscription, reported cost is catalog pricing. Treat it as a ratio, not an invoice. User
+  configuration also means each account can have different working models and costs.
 
 ## See also
 

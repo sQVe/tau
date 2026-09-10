@@ -35,6 +35,11 @@ pnpm exec pi --no-extensions --no-skills -e ./src/extensions/index.ts \
   -e ./node_modules/pi-web-access/index.ts --skill ./skills/commit
 ```
 
+Set `TAU_BULK_READ_MODEL=provider/id` before launching Pi to choose the bulk-read delegate. It
+defaults to `openai-codex/gpt-5.6-luna` and uses Pi's model registry and credentials. For example,
+prefix the launch command with `TAU_BULK_READ_MODEL=openrouter/vendor/model` for a model your
+account can access. The reference must match `pi --list-models` exactly.
+
 Pass all three extension entries. `package.json` declares the same set, so a checkout that loads
 only `./src/extensions/index.ts` is missing the bundled question and web tools and reports it at
 session start.
@@ -79,6 +84,32 @@ beside the branch. Narrow the terminal and check that the right group truncates 
 **Commits.** Configure credentials for the session model; comment review makes a model API call.
 Stage a change that touches a comment and call `commit`. Check that the approval overlay renders and
 that the comment review report scrolls.
+
+**Bulk read.** With a working delegate, read a file longer than 400 lines without a limit. Check
+that the result ends with a `bulk_read` hint instead of `Use offset=`. Ask `bulk_read` a question
+using `paths` and `question`, then read a bounded range before editing. Check that the delegate's
+usage appears in the session totals. Restart with a missing model reference and check that reads are
+not clamped.
+
+## Measuring bulk reads
+
+[ADR 0009](./adr/0009-delegate-model-for-bulk-reads.md) stays Proposed until measured savings are
+recorded here. Measure with real providers and compaction disabled. Use one semantic question
+spanning three files above the threshold. Compare a local build with trimming off and `bulk_read`
+present against the shipped setup; there is no shipped trimming flag. Run each twice with the same
+prompt and files and keep the medians.
+
+Sum usage by role from the session JSONL. Pi's `/session` can hide per-model rows when catalog cost
+is zero or only one model was used:
+
+```sh
+jq -r 'select(.type=="message") | .message | select(.role=="assistant" or .role=="toolResult") | [.role, .usage.input, .usage.cacheRead, .usage.cacheWrite, .usage.output, .usage.cost.total] | @tsv' session.jsonl
+```
+
+Record configuration, session input, cache read, cache write, output, delegate input, delegate
+output, assistant turns, `offset` pages after a clamped read, wall clock, and catalog cost as a
+ratio, not an invoice. No live measurements have been recorded. Offline faux tests prove usage
+plumbing and result size, not savings.
 
 ## Versioning
 
