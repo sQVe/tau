@@ -55,8 +55,8 @@ its policy as the whole system prompt for a separate model call. That call never
 prompt, so the policy cannot link to the coding instructions. It states the comment rules itself.
 
 Keep both statements in agreement. The instructions guide the agent as it writes; the gate decides
-whether a commit passes. When the gate protects a comment the instructions do not mention, the agent
-deletes it in good faith and the commit is blocked. Change both files together.
+whether a commit passes. If the gate protects a comment the instructions do not mention, the agent
+may delete it, and the gate may block the commit. Change both files together.
 
 ### Types
 

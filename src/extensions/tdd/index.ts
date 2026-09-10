@@ -1,4 +1,5 @@
 import { execFile as execFileCallback } from 'node:child_process';
+import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -267,7 +268,7 @@ export default function tddExtension(pi: ExtensionAPI) {
       }
 
       context.ui.notify(
-        `TDD gate ${gate}\nPhase ${state.phase}; production writes ${state.implementationAllowed || state.notice != null ? 'allowed' : 'blocked'}.`,
+        `TDD gate ${gate}\nPhase ${state.phase}; production writes ${state.implementationAllowed ? 'allowed' : 'blocked'}.`,
       );
     },
   });
@@ -281,7 +282,7 @@ export default function tddExtension(pi: ExtensionAPI) {
         'Create a missing production module with write and content "" so the test can import it. Nonempty production writes still require RED. Run scope "focused" to prove RED before editing production files. Run focused again for GREEN after the fix, then run scope "full" at the end for verified. ' +
         'Editing a required test file before GREEN re-locks the gate; a focused pass accepts the edit and the full run reports it. GREEN permits cleanup, but changed inputs invalidate passing evidence. ' +
         'Skipped and deleted tests never count. ' +
-        'Returns kind (run outcome), phase (locked: no valid RED; red: failing test proven; green: that test passed; verified: full run passed with every RED test present and passing), implementationAllowed (true in red and green), and report (test results, null if inputs changed). ' +
+        'Returns kind (run outcome), phase (locked: no valid RED; red: failing test proven; green: that test passed; verified: full run passed with every RED test present and passing), implementationAllowed (true in red and green, or when the gate is off), and report (test results, null if inputs changed). ' +
         'Only files matching the production globs are gated. A notice string says the gate is off when no test runner resolves from the worktree or the user ran /tdd off. ' +
         'A next string explains recovery when needed. The text gives a short summary with counts and failing tests. The details field carries the full report.',
       parameters: Type.Object({
@@ -319,21 +320,22 @@ export default function tddExtension(pi: ExtensionAPI) {
       }),
       async execute(_toolCallId, parameters, signal, _onUpdate, context) {
         const { scope, ...behavior } = parameters;
-        const details = await store.run(context.cwd, behavior, scope, signal);
+        const cwd = await realpath(context.cwd);
+        const details = await store.run(cwd, behavior, scope, signal);
 
         const report =
           details.kind === 'inputs-changed' || details.kind === 'cancelled' ? null : details.report;
         const missing =
           scope === 'full' && report
-            ? missingRedBehavior(context.cwd, details.evidence, report)
+            ? missingRedBehavior(cwd, details.evidence, report)
             : undefined;
-        const ambiguous = report ? ambiguousFiles(context.cwd, behavior, report) : [];
+        const ambiguous = report ? ambiguousFiles(cwd, behavior, report) : [];
         const duplicatedRed =
           scope === 'full' && report
             ? details.evidence.reds
                 .map(({ behavior: required }) => ({
                   required,
-                  files: ambiguousFiles(context.cwd, required, report),
+                  files: ambiguousFiles(cwd, required, report),
                 }))
                 // The ambiguous branches cover the current behavior's files. Also name earlier
                 // REDs with duplicate full names, including those that share the current name.
@@ -369,13 +371,11 @@ export default function tddExtension(pi: ExtensionAPI) {
 
         const redCoverage =
           scope === 'full' && report && 'tests' in report
-            ? await describeRedCoverage(context.cwd, details.evidence, report.tests)
+            ? await describeRedCoverage(cwd, details.evidence, report.tests)
             : undefined;
 
         return {
-          content: [
-            { type: 'text', text: summarize(context.cwd, details, next, report, redCoverage) },
-          ],
+          content: [{ type: 'text', text: summarize(cwd, details, next, report, redCoverage) }],
           details,
         };
       },

@@ -111,8 +111,8 @@ const transitions: Record<Phase, Record<Event, Expected>> = {
     protectedEdit: locked,
     switchKnown: { ...green, reds: ['previous'] },
     switchNew: { ...locked, reds: locked.reds },
-    legacyReload: { ...locked, reds: locked.reds },
-    noPhaseReload: { ...locked, reds: [] },
+    legacyReload: { ...locked, reds: locked.reds, implementationAllowed: true },
+    noPhaseReload: { ...locked, reds: [], implementationAllowed: true },
   },
   red: {
     read: red,
@@ -140,8 +140,8 @@ const transitions: Record<Phase, Record<Event, Expected>> = {
     protectedEdit: red,
     switchKnown: green,
     switchNew: { ...locked, reds: red.reds },
-    legacyReload: { ...locked, reds: red.reds },
-    noPhaseReload: { ...locked, reds: [] },
+    legacyReload: { ...locked, reds: red.reds, implementationAllowed: true },
+    noPhaseReload: { ...locked, reds: [], implementationAllowed: true },
   },
   green: {
     read: green,
@@ -169,8 +169,8 @@ const transitions: Record<Phase, Record<Event, Expected>> = {
     protectedEdit: green,
     switchKnown: green,
     switchNew: { ...locked, reds: green.reds },
-    legacyReload: { ...locked, reds: green.reds },
-    noPhaseReload: { ...locked, reds: [] },
+    legacyReload: { ...locked, reds: green.reds, implementationAllowed: true },
+    noPhaseReload: { ...locked, reds: [], implementationAllowed: true },
   },
   verified: {
     read: verified,
@@ -198,8 +198,8 @@ const transitions: Record<Phase, Record<Event, Expected>> = {
     protectedEdit: { ...verified, phase: 'green', implementationAllowed: true },
     switchKnown: green,
     switchNew: { ...locked, reds: [] },
-    legacyReload: { ...locked, reds: verified.reds },
-    noPhaseReload: { ...locked, reds: [] },
+    legacyReload: { ...locked, reds: verified.reds, implementationAllowed: true },
+    noPhaseReload: { ...locked, reds: [], implementationAllowed: true },
   },
 };
 
@@ -419,7 +419,7 @@ it('rejects malformed stored evidence before it can authorize writes', async () 
     await expect(createEvidenceStore().read(harness.cwd)).rejects.toThrow(
       'Unreadable test evidence',
     );
-    expect(await tddGateStatus(harness.cwd)).toContain('status unknown');
+    await expect(tddGateStatus(harness.cwd)).rejects.toThrow('Unreadable test evidence');
   }
 });
 

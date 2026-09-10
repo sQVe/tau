@@ -34,15 +34,15 @@ export interface CommitView {
 }
 
 // Overlays do not scroll; cap body and file rows to leave room for choices.
-const MAX_BODY_LINES = 10;
-const MAX_FILE_ROWS = 15;
-const FIXED_ROWS = 15;
+const maximumBodyLines = 10;
+const maximumFileRows = 15;
+const fixedRows = 15;
 
 const sectionCaps = (terminalRows: number) => {
-  const budget = Math.max(6, Math.floor(terminalRows * 0.9) - FIXED_ROWS);
-  const bodyLines = Math.min(MAX_BODY_LINES, Math.floor(budget / 2));
+  const budget = Math.max(6, Math.floor(terminalRows * 0.9) - fixedRows);
+  const bodyLines = Math.min(maximumBodyLines, Math.floor(budget / 2));
 
-  return { bodyLines, fileRows: Math.min(MAX_FILE_ROWS, budget - bodyLines) };
+  return { bodyLines, fileRows: Math.min(maximumFileRows, budget - bodyLines) };
 };
 
 const showCommentReview = async (

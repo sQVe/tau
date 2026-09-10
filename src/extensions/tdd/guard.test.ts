@@ -16,7 +16,7 @@ const createStore = (phase: Phase, notice?: string) => ({
     Promise.resolve({
       phase,
       notice,
-      implementationAllowed: phase === 'red' || phase === 'green',
+      implementationAllowed: notice !== undefined || phase === 'red' || phase === 'green',
       focusedPassValid: phase === 'green' || phase === 'verified',
       fullPassValid: phase === 'verified',
       staleSinceRed: [],

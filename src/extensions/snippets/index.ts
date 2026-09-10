@@ -86,8 +86,6 @@ export default function snippetsExtension(pi: ExtensionAPI) {
     resetToggles(context);
   });
 
-  // `session_start` fires once per process, so /new and resume need their own
-  // reset or the toggles carry into a session the user never picked them for.
   pi.on('session_before_switch', (_event, context) => {
     resetToggles(context);
 
@@ -149,9 +147,7 @@ export default function snippetsExtension(pi: ExtensionAPI) {
     return { action: 'transform' as const, text: buildSnippetMessage(event.text, active) };
   });
 
-  // Pi binds every other ctrl+letter a terminal can deliver, and reusing one makes
-  // Pi print a shortcut conflict at startup. Ctrl+q reaches the app because Pi's
-  // raw mode turns off terminal flow control.
+  // Ctrl+q reaches the app because Pi's raw mode turns off terminal flow control.
   pi.registerShortcut('ctrl+q', {
     description: 'Toggle prompt snippets',
     handler: openMenu,

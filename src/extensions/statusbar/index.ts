@@ -11,8 +11,8 @@ import { renderFooterLine } from './render.js';
 const executeFile = promisify(execFile);
 
 // Bound background Git work. Failures leave the dirty marker hidden.
-const GIT_TIMEOUT_MS = 5000;
-const GIT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
+const gitTimeoutMilliseconds = 5000;
+const gitMaximumBufferBytes = 10 * 1024 * 1024;
 
 const getSessionCost = (context: ExtensionContext): number => {
   let cost = 0;
@@ -41,7 +41,8 @@ export default function statusbarExtension(pi: ExtensionAPI) {
     refreshId += 1;
     const currentRefreshId = refreshId;
 
-    const gateStatus = tddGateStatus(context.cwd);
+    // Unreadable state blocks every write, so it must not show the gate-off marker.
+    const gateStatus = tddGateStatus(context.cwd).catch(() => undefined);
     let nextDirty = false;
 
     try {
@@ -51,8 +52,8 @@ export default function statusbarExtension(pi: ExtensionAPI) {
         ['status', '--porcelain', '--untracked-files=normal'],
         {
           cwd: context.cwd,
-          timeout: GIT_TIMEOUT_MS,
-          maxBuffer: GIT_MAX_BUFFER_BYTES,
+          timeout: gitTimeoutMilliseconds,
+          maxBuffer: gitMaximumBufferBytes,
         },
       );
       nextDirty = stdout.length > 0;

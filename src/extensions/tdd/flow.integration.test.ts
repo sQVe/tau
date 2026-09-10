@@ -198,6 +198,32 @@ const createHarness = async (
   return { cwd, session, faux, events, run, call };
 };
 
+it('shares gate switches across Pi sessions without reloading', async ({ onTestFinished }) => {
+  const coordinator = await createHarness(onTestFinished);
+  const worker = await createHarness(onTestFinished, [], coordinator.cwd);
+  const input = { path: 'src/value.ts', content: '// Comment only.\n' };
+
+  expect((await coordinator.call('write', input)).isError).toBe(true);
+  await worker.session.prompt('/tdd off');
+
+  const statePath = join(coordinator.cwd, '.tau/state.json');
+  const switchedOff = await readFile(statePath, 'utf8');
+
+  expect(switchedOff).toContain('"gateOff":{"since":');
+  expect((await coordinator.call('write', input)).isError).toBe(false);
+  expect((await worker.call('write', input)).isError).toBe(false);
+  expect(await readFile(statePath, 'utf8')).toBe(switchedOff);
+
+  await coordinator.session.prompt('/tdd off');
+
+  expect((await coordinator.call('write', input)).isError).toBe(false);
+
+  await worker.session.prompt('/tdd on');
+
+  expect((await coordinator.call('write', input)).isError).toBe(true);
+  expect((await worker.call('write', input)).isError).toBe(true);
+});
+
 it('blocks production writes until run_tests records RED through pi', async ({
   onTestFinished,
 }) => {
@@ -783,6 +809,39 @@ it('summarizes red and verified runs as plain text without stacks or absolute pa
   expect(verifiedText).toContain('1 passed, 0 failed, 0 skipped');
   expect(verifiedText).not.toContain(cwd);
   expect(verified.details.report).toHaveProperty('tests');
+});
+
+it('preserves report paths and RED coverage through a symlinked worktree', async ({
+  onTestFinished,
+}) => {
+  const cwd = await createWorktree(onTestFinished);
+  const alias = `${cwd}-alias`;
+
+  await symlink(cwd, alias, 'dir');
+  onTestFinished(() => rm(alias, { force: true }));
+
+  const { run } = await createHarness(onTestFinished, [], alias);
+  const red = await run();
+
+  expect(red.details.phase).toBe('red');
+
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    "import { it, expect } from 'vitest'; it('required behavior', () => expect(1).toBe(1)); it('unproven', () => expect(1).toBe(1));",
+  );
+
+  const green = await run();
+
+  expect(green.details.phase).toBe('green');
+
+  const full = await run({ scope: 'full' });
+  const text = full.content[0]!.text;
+
+  expect(full.details.phase).toBe('verified');
+  expect(text).toContain('1 of 2 tests in the required files were proven RED or committed before');
+  expect(text).toContain('never failed: behavior.test.ts › unproven');
+  expect(text).toContain('edited after RED: behavior.test.ts › required behavior');
+  expect(red.content[0]!.text).toContain('✗ behavior.test.ts › required behavior');
 });
 
 it('rejects production and escaping paths through pi', async ({ onTestFinished }) => {

@@ -10,7 +10,7 @@ import { afterEach, beforeEach, expect, it, onTestFinished as registerCleanup, v
 import { guardToolCall } from './guard.js';
 import { runTests } from './runner/index.js';
 import type { RunnerResult, TestResult } from './runner/types.js';
-import { createEvidenceStore, tddGateStatus } from './state.js';
+import { createEvidenceStore, tddGateStatus, unknownGateStatus } from './state.js';
 
 // Keep runner discovery real, including its install and package-change cache tests.
 vi.mock(import('./runner/index.js'), async (importOriginal) => ({
@@ -1109,7 +1109,8 @@ it('reports an unreadable evidence file instead of a gate that is on', async ({
   await mkdir(join(cwd, '.tau'), { recursive: true });
   await writeFile(join(cwd, '.tau/state.json'), '{"tdd":{"active"');
 
-  expect(await tddGateStatus(cwd)).toBe(
+  await expect(tddGateStatus(cwd)).rejects.toThrow('Unreadable test evidence');
+  expect(unknownGateStatus(cwd)).toBe(
     `TDD gate status unknown: unreadable evidence at ${join(cwd, '.tau/state.json')}`,
   );
 });

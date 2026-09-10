@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { promisify, stripVTControlCharacters } from 'node:util';
 
 import type { ExtensionAPI, ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
@@ -92,7 +92,14 @@ describe('statusbar extension', () => {
       expect(footer.requestRender).toHaveBeenCalled();
     });
 
-    expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
+    expect(footer.component.render(100)[0]).toContain('\u{F0FC6}');
+
+    await symlink(resolve('node_modules'), join(directory, 'node_modules'), 'dir');
+    await application.emit('tool_result');
+
+    await vi.waitFor(() => {
+      expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
+    });
 
     await mkdir(join(directory, '.tau'));
 
@@ -117,11 +124,22 @@ describe('statusbar extension', () => {
       expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
     });
 
-    await writeFile(statePath, 'corrupt');
+    // Unreadable state blocks every write, so the gate-off marker must clear rather than persist.
+    await writeFile(
+      statePath,
+      JSON.stringify({ tdd: { reds: [], gateOff: { since: '2026-05-01T00:00:00.000Z' } } }),
+    );
     await application.emit('tool_result');
 
     await vi.waitFor(() => {
       expect(footer.component.render(100)[0]).toContain('\u{F0FC6}');
+    });
+
+    await writeFile(statePath, 'corrupt');
+    await application.emit('tool_result');
+
+    await vi.waitFor(() => {
+      expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
     });
   });
 
