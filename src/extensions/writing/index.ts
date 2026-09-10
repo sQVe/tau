@@ -6,9 +6,7 @@ export default async function writingExtension(extensionApi: ExtensionAPI) {
   const instructionsPath = new URL('./instructions.md', import.meta.url);
   const instructions = await readFile(instructionsPath, 'utf8');
 
-  const trimmedInstructions = instructions.trim();
-
-  if (!trimmedInstructions) {
+  if (!instructions.trim()) {
     throw new Error(`Writing instructions are empty: ${instructionsPath.href}`);
   }
 

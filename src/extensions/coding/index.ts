@@ -6,9 +6,7 @@ export default async function codingExtension(extensionApi: ExtensionAPI) {
   const instructionsPath = new URL('./instructions.md', import.meta.url);
   const instructions = await readFile(instructionsPath, 'utf8');
 
-  const trimmedInstructions = instructions.trim();
-
-  if (!trimmedInstructions) {
+  if (!instructions.trim()) {
     throw new Error(`Coding instructions are empty: ${instructionsPath.href}`);
   }
 

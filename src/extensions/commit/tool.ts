@@ -344,13 +344,13 @@ const executeGroup = async (
     prefetchNext: () => void;
   },
 ): Promise<CommitSuccess> => {
+  let subject = parameters.subject;
+  let body = parameters.body ?? null;
+
   const cancelled = (): CommitSuccess => ({
     content: [{ type: 'text', text: 'Commit cancelled' }],
     details: { sha: '', files: parameters.files, subject, body },
   });
-
-  let subject = parameters.subject;
-  let body = parameters.body ?? null;
 
   if (signal?.aborted) {
     return cancelled();
@@ -848,6 +848,7 @@ export const createCommitTool = (
         }
       }
 
+      // One notice for the whole call, not one per group.
       const gateOff = await tddGateStatus(context.cwd);
 
       return {
