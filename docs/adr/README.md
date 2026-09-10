@@ -22,3 +22,4 @@ Start with the [template](./TEMPLATE.md). Follow the
 - [0012: Shared TDD state](./0012-shared-tdd-state.md)
 - [0013: Explicit repository commit commands](./0013-explicit-repository-commit-commands.md)
 - [0014: Staged preparation ownership](./0014-staged-preparation-ownership.md)
+- [0015: Preparation addition assignment](./0015-preparation-addition-assignment.md)

@@ -631,6 +631,568 @@ describe('preparation ownership', () => {
     ).rejects.toThrow(/ownership conflict.*other/);
   });
 
+  it('assigns generated paths from a nested cwd before checks review and final approval', async () => {
+    const directory = await fixture(
+      `const fs = require('node:fs'); fs.writeFileSync('generated', 'new bytes'); fs.writeFileSync('other', 'generated tracked'); require('node:child_process').execFileSync('git', ['add', 'other']);`,
+    );
+    await git(directory, ['reset']);
+    await writeRepositoryFile(directory, 'sub/requested', 'nested bytes');
+    const config = JSON.parse(await readFile(join(directory, 'tau.json'), 'utf8')) as {
+      prepare: string[];
+      check?: string[];
+    };
+    config.check = [
+      'node',
+      '-e',
+      `const fs = require('node:fs'); if (fs.readFileSync('generated', 'utf8') !== 'new bytes' || fs.readFileSync('other', 'utf8') !== 'generated tracked') process.exit(1)`,
+    ];
+    await writeFile(join(directory, 'tau.json'), JSON.stringify(config));
+    await git(directory, ['add', 'tau.json']);
+    await git(directory, ['commit', '-m', 'test: configure check']);
+    const previews: string[] = [];
+    const reviewer = vi.fn<typeof reviewComments>(async (_pi, _context, _signal, snapshot) => {
+      expect(previews).toHaveLength(1);
+      expect(await git(directory, ['show', `${snapshot.tree}:generated`])).toBe('new bytes');
+      expect(await git(directory, ['show', `${snapshot.tree}:other`])).toBe('generated tracked');
+
+      return { findings: [] };
+    });
+    const tool = createReviewedCommitTool(
+      {
+        exec: (command, arguments_, options) =>
+          runCommand(command, arguments_, options?.cwd ?? directory),
+      },
+      reviewer,
+    );
+    const result = await tool.execute(
+      'nested',
+      { groups: [{ files: ['requested'], subject: 'feat: nested' }] },
+      undefined,
+      undefined,
+      {
+        cwd: join(directory, 'sub'),
+        hasUI: true,
+        ui: {
+          custom: async (factory: Parameters<ExtensionContext['ui']['custom']>[0]) => {
+            const component = await factory(
+              { requestRender: () => {}, terminal: { rows: 60 } } as never,
+              { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
+              {} as never,
+              () => {},
+            );
+            previews.push(component.render(100).join('\n'));
+
+            return previews.length === 1 ? 'assign' : 'approve';
+          },
+        },
+      } as never,
+    );
+
+    expect(previews).toHaveLength(2);
+    expect(previews[0]).toContain('Requested paths (repository-relative)');
+    expect(previews[0]).toContain('sub/requested');
+    expect(previews[0]).toContain('Preparation-added paths');
+    expect(previews[1]).toContain('[preparation-added]');
+    expect(previews[1]).not.toContain('Approve all remaining');
+    expect(result.details.groups[0]).toMatchObject({
+      files: ['sub/requested', 'generated', 'other'],
+      preparationAddedFiles: ['generated', 'other'],
+      pathBase: 'repository',
+    });
+    expect(await git(directory, ['show', 'HEAD:generated'])).toBe('new bytes');
+    expect(reviewer).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['working', 'private index'])(
+    'rejects generated candidate changes during assignment: %s',
+    async (target) => {
+      const directory = await fixture("require('node:fs').writeFileSync('generated', 'prepared')");
+      const originalIndex = await readFile(join(directory, '.git/index'));
+      const reviewer = vi.fn<typeof reviewComments>(async () => ({ findings: [] }));
+      const tool = createReviewedCommitTool(
+        {
+          exec: (command, arguments_, options) =>
+            runCommand(command, arguments_, options?.cwd ?? directory),
+        },
+        reviewer,
+      );
+
+      await expect(
+        tool.execute(
+          'mutation',
+          { groups: [{ files: ['requested'], subject: 'feat: requested' }] },
+          undefined,
+          undefined,
+          {
+            cwd: directory,
+            hasUI: true,
+            ui: {
+              custom: async () => {
+                if (target === 'working') {
+                  await writeFile(join(directory, 'generated'), 'concurrent edit');
+                } else {
+                  const saved = await recovery(directory);
+                  await runCommand(
+                    'env',
+                    [
+                      `GIT_INDEX_FILE=${join(saved.path, 'candidate-index')}`,
+                      'git',
+                      'add',
+                      'generated',
+                    ],
+                    directory,
+                  );
+                }
+
+                return 'assign';
+              },
+            },
+          } as never,
+        ),
+      ).rejects.toThrow(/changed during preparation assignment/);
+      expect(reviewer).not.toHaveBeenCalled();
+      expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+    },
+  );
+
+  it('reserves accepted generated paths against later preparation in the batch', async () => {
+    const directory = await fixture(
+      `const fs = require('node:fs'); const cp = require('node:child_process'); const staged = cp.execFileSync('git', ['diff', '--cached', '--name-only']).toString(); fs.writeFileSync('generated', staged.includes('requested') ? 'first group' : 'second group');`,
+    );
+    await writeFile(join(directory, 'other'), 'second request');
+    const choices = ['assign', 'approveAll', 'assign', 'approve'];
+    let preparations = 0;
+    const reviewer = vi.fn<typeof reviewComments>(async () => ({ findings: [] }));
+    const tool = createReviewedCommitTool(
+      {
+        exec: (command, arguments_, options) => {
+          if (command === 'env' && arguments_.includes('node')) {
+            preparations += 1;
+          }
+
+          return runCommand(command, arguments_, options?.cwd ?? directory);
+        },
+      },
+      reviewer,
+    );
+    const result = await tool
+      .execute(
+        'batch',
+        {
+          groups: [
+            { files: ['requested'], subject: 'feat: first' },
+            { files: ['other'], subject: 'feat: second' },
+          ],
+        },
+        undefined,
+        undefined,
+        { cwd: directory, hasUI: true, ui: { custom: async () => choices.shift() } } as never,
+      )
+      .catch((error: unknown) => error);
+
+    expect(result).toBeInstanceOf(Error);
+    expect((result as Error).message).toMatch(
+      /ownership conflict.*generated[\s\S]*Already committed:[\s\S]*feat: first/,
+    );
+    expect((result as Error).message).toContain(
+      (await git(directory, ['rev-parse', 'HEAD'])).trim(),
+    );
+    expect(await git(directory, ['show', 'HEAD:generated'])).toBe('first group');
+    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
+    expect(preparations).toBe(2);
+    expect(reviewer).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['decline', 'abort', 'error'])(
+    'retains preparation recovery when assignment ends with %s',
+    async (choice) => {
+      const directory = await fixture("require('node:fs').writeFileSync('generated', 'prepared')");
+      const originalIndex = await readFile(join(directory, '.git/index'));
+      const reviewer = vi.fn<typeof reviewComments>(async () => ({ findings: [] }));
+      const custom = vi.fn<() => Promise<string>>(async () => {
+        if (choice === 'error') {
+          throw new Error('UI failed');
+        }
+
+        return choice;
+      });
+      const tool = createReviewedCommitTool(
+        {
+          exec: (command, arguments_, options) =>
+            runCommand(command, arguments_, options?.cwd ?? directory),
+        },
+        reviewer,
+      );
+      const pending = tool.execute(
+        'decline',
+        { groups: [{ files: ['requested'], subject: 'feat: requested' }] },
+        undefined,
+        undefined,
+        { cwd: directory, hasUI: true, ui: { custom } } as never,
+      );
+
+      const outcome = await pending.then(
+        (result) => JSON.stringify(result.content),
+        (error: unknown) => String(error),
+      );
+      const expected = {
+        abort: /Commit cancelled[\s\S]*Recovery saved/,
+        decline: /assignment declined[\s\S]*Recovery saved/,
+        error: /UI failed[\s\S]*Recovery saved/,
+      };
+
+      expect(outcome).toMatch(expected[choice as keyof typeof expected]);
+      expect(custom).toHaveBeenCalledTimes(1);
+      expect(reviewer).not.toHaveBeenCalled();
+      expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+      expect(await readFile(join(directory, 'generated'), 'utf8')).toBe('prepared');
+    },
+  );
+
+  it('restores a nested prepared index when a hook stages a sibling path', async () => {
+    const directory = await fixture("require('node:fs').writeFileSync('generated', 'prepared')");
+    await git(directory, ['reset']);
+    await writeRepositoryFile(directory, 'sub/requested', 'nested');
+    await writeFile(
+      join(directory, '.git/hooks/pre-commit'),
+      '#!/bin/sh\nprintf smuggled > sibling\ngit add sibling\n',
+      { mode: 0o755 },
+    );
+    const originalIndex = await readFile(join(directory, '.git/index'));
+    const previousHead = await git(directory, ['rev-parse', 'HEAD']);
+    const choices = ['assign', 'approve'];
+    const tool = createCommitTool({
+      exec: (command, arguments_, options) =>
+        runCommand(command, arguments_, options?.cwd ?? directory),
+    });
+    const failure: unknown = await tool
+      .execute(
+        'hook',
+        { groups: [{ files: ['requested'], subject: 'feat: nested' }] },
+        undefined,
+        undefined,
+        {
+          cwd: join(directory, 'sub'),
+          hasUI: true,
+          ui: { custom: () => Promise.resolve(choices.shift()) },
+        } as never,
+      )
+      .catch((error: unknown) => error);
+
+    expect(String(failure)).toMatch(/hook staged paths.*sibling.*undone/);
+    expect(String(failure)).not.toContain('Index cleanup failed');
+    expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+    expect(await git(directory, ['rev-parse', 'HEAD'])).toBe(previousHead);
+  });
+
+  it('does not mislabel nested cancellation paths before group normalization', async () => {
+    const directory = await fixture('');
+    await git(directory, ['reset']);
+    await writeRepositoryFile(directory, 'sub/requested', 'nested');
+    const controller = new AbortController();
+    const tool = createCommitTool({
+      exec: async (command, arguments_, options) => {
+        const result = await runCommand(command, arguments_, options?.cwd ?? directory);
+
+        if (arguments_[0] === 'update-ref' && arguments_[1]?.startsWith('refs/tau/recovery/')) {
+          controller.abort();
+        }
+
+        return result;
+      },
+    });
+    const result = await tool.execute(
+      'cancel',
+      { groups: [{ files: ['requested'], subject: 'feat: nested' }] },
+      controller.signal,
+      undefined,
+      confirmedContext(join(directory, 'sub')),
+    );
+
+    expect(result.details.groups[0]).toMatchObject({ sha: '', files: ['requested'] });
+    expect(result.details.groups[0]).not.toHaveProperty('pathBase');
+  });
+
+  it('preserves concurrent staging immediately after publishing a prepared nested candidate', async () => {
+    const directory = await fixture("require('node:fs').writeFileSync('generated', 'prepared')");
+    await git(directory, ['reset']);
+    await writeRepositoryFile(directory, 'sub/requested', 'nested');
+    const original = await vi.importActual<typeof fileSystem>('node:fs/promises');
+    vi.mocked(rename).mockImplementationOnce(async (source, destination) => {
+      await original.rename(source, destination);
+      await writeFile(join(directory, 'sibling'), 'concurrent bytes');
+      await git(directory, ['add', 'sibling']);
+    });
+    const choices = ['assign', 'approve'];
+    const tool = createCommitTool({
+      exec: (command, arguments_, options) =>
+        runCommand(command, arguments_, options?.cwd ?? directory),
+    });
+
+    try {
+      await expect(
+        tool.execute(
+          'race',
+          { groups: [{ files: ['requested'], subject: 'feat: nested' }] },
+          undefined,
+          undefined,
+          {
+            cwd: join(directory, 'sub'),
+            hasUI: true,
+            ui: { custom: () => Promise.resolve(choices.shift()) },
+          } as never,
+        ),
+      ).rejects.toThrow(/Index ownership conflict/);
+      expect(await git(directory, ['show', ':sibling'])).toBe('concurrent bytes');
+    } finally {
+      vi.mocked(rename).mockImplementation(original.rename);
+    }
+  });
+
+  it.each(['working', 'staged', 'staged-only', 'tracked-index-only'])(
+    'commits explicitly assigned generated bytes from %s output',
+    async (kind) => {
+      const path = kind === 'tracked-index-only' ? 'other' : 'generated\nfile';
+      const script = `const fs = require('node:fs'); const cp = require('node:child_process'); const path = ${JSON.stringify(path)}; fs.writeFileSync(path, 'prepared bytes'); ${kind !== 'working' ? "cp.execFileSync('git', ['add', '--', path]);" : ''} ${kind === 'staged-only' ? 'fs.unlinkSync(path);' : ''} ${kind === 'tracked-index-only' ? "fs.writeFileSync(path, 'base');" : ''}`;
+      const directory = await fixture(script);
+      const choices = ['assign', 'approve'];
+      const tool = createCommitTool({
+        exec: (command, arguments_, options) =>
+          runCommand(command, arguments_, options?.cwd ?? directory),
+      });
+      const result = await tool.execute(
+        'output',
+        { groups: [{ files: ['requested'], subject: 'feat: output' }] },
+        undefined,
+        undefined,
+        {
+          cwd: directory,
+          hasUI: true,
+          ui: { custom: () => Promise.resolve(choices.shift()) },
+        } as never,
+      );
+
+      expect(await git(directory, ['show', `HEAD:${path}`])).toBe('prepared bytes');
+      expect(result.details.groups[0]?.preparationAddedFiles).toEqual([path]);
+      expect(choices).toEqual([]);
+    },
+  );
+
+  it.each(['.env', '.ssh/id_rsa', ':generated'])(
+    'rejects guarded generated path %s before assignment',
+    async (path) => {
+      const directory = await fixture(
+        `const fs = require('node:fs'); fs.mkdirSync('.ssh', { recursive: true }); fs.writeFileSync(${JSON.stringify(path)}, 'generated');`,
+      );
+      const originalIndex = await readFile(join(directory, '.git/index'));
+      const custom = vi.fn<() => Promise<string>>(() => Promise.resolve('assign'));
+      const tool = createCommitTool({
+        exec: (command, arguments_, options) =>
+          runCommand(command, arguments_, options?.cwd ?? directory),
+      });
+
+      await expect(
+        tool.execute(
+          'guard',
+          { groups: [{ files: ['requested'], subject: 'feat: guarded' }] },
+          undefined,
+          undefined,
+          { cwd: directory, hasUI: true, ui: { custom } } as never,
+        ),
+      ).rejects.toThrow(/Invalid path/);
+      expect(custom).not.toHaveBeenCalled();
+      expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+    },
+  );
+
+  it.each([true, false])(
+    'stops startup-preapproved additions without UI when hasUI is %s',
+    async (hasUI) => {
+      const directory = await fixture("require('node:fs').writeFileSync('generated', 'prepared')");
+      const originalIndex = await readFile(join(directory, '.git/index'));
+      const custom = vi.fn<() => Promise<string>>(() => Promise.resolve('assign'));
+      const reviewer = vi.fn<typeof reviewComments>(() => Promise.resolve({ findings: [] }));
+      const tool = createReviewedCommitTool(
+        {
+          exec: (command, arguments_, options) =>
+            runCommand(command, arguments_, options?.cwd ?? directory),
+        },
+        reviewer,
+        () => true,
+      );
+
+      await expect(
+        tool.execute(
+          'preapproved',
+          { groups: [{ files: ['requested'], subject: 'feat: requested' }] },
+          undefined,
+          undefined,
+          { cwd: directory, hasUI, ui: { custom } } as never,
+        ),
+      ).rejects.toThrow(/Preparation added paths \(repository-relative\).*generated.*Assign/);
+      expect(custom).not.toHaveBeenCalled();
+      expect(reviewer).not.toHaveBeenCalled();
+      expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+    },
+  );
+
+  it('reviews and approves each executed prepared batch candidate without speculative preparation', async () => {
+    const directory = await fixture(
+      `const fs = require('node:fs'); const cp = require('node:child_process'); const staged = cp.execFileSync('git', ['diff', '--cached', '--name-only']).toString(); fs.writeFileSync(staged.includes('requested') ? 'generated-one' : 'generated-two', 'prepared');`,
+    );
+    await writeFile(join(directory, 'other'), 'second request');
+    const events: string[] = [];
+    const choices = ['assign', 'approveAll', 'assign', 'approve'];
+    const reviewer = vi.fn<typeof reviewComments>(async (_pi, _context, _signal, snapshot) => {
+      const diff = await git(directory, ['diff', '--name-only', snapshot.head!, snapshot.tree]);
+      events.push(diff.includes('generated-one') ? 'review one' : 'review two');
+
+      return { findings: [] };
+    });
+    const tool = createReviewedCommitTool(
+      {
+        exec: (command, arguments_, options) => {
+          if (command === 'env' && arguments_.includes('node')) {
+            events.push('prepare');
+          }
+
+          return runCommand(command, arguments_, options?.cwd ?? directory);
+        },
+      },
+      reviewer,
+    );
+    const result = await tool.execute(
+      'batch',
+      {
+        groups: [
+          { files: ['requested'], subject: 'feat: one' },
+          { files: ['other'], subject: 'feat: two' },
+        ],
+      },
+      undefined,
+      undefined,
+      {
+        cwd: directory,
+        hasUI: true,
+        ui: {
+          custom: () => {
+            const choice = choices.shift();
+            events.push(choice!);
+
+            return Promise.resolve(choice);
+          },
+        },
+      } as never,
+    );
+
+    expect(events).toEqual([
+      'prepare',
+      'assign',
+      'review one',
+      'approveAll',
+      'prepare',
+      'assign',
+      'review two',
+      'approve',
+    ]);
+    expect(result.details.groups.map((group) => group.preparationAddedFiles)).toEqual([
+      ['generated-one'],
+      ['generated-two'],
+    ]);
+  });
+
+  it('rejects generated bytes changed after review and rechecks the new candidate on retry', async () => {
+    const directory = await fixture(
+      "const fs = require('node:fs'); if (!fs.existsSync('generated')) fs.writeFileSync('generated', 'prepared')",
+    );
+    const originalIndex = await readFile(join(directory, '.git/index'));
+    const reviewedBytes: string[] = [];
+    const reviewer = vi.fn<typeof reviewComments>(async (_pi, _context, _signal, snapshot) => {
+      reviewedBytes.push(await git(directory, ['show', `${snapshot.tree}:generated`]));
+
+      return { findings: [] };
+    });
+    const tool = createReviewedCommitTool(
+      {
+        exec: (command, arguments_, options) =>
+          runCommand(command, arguments_, options?.cwd ?? directory),
+      },
+      reviewer,
+    );
+    let overlays = 0;
+
+    await expect(
+      tool.execute(
+        'mutate',
+        { groups: [{ files: ['requested'], subject: 'feat: requested' }] },
+        undefined,
+        undefined,
+        {
+          cwd: directory,
+          hasUI: true,
+          ui: {
+            custom: async () => {
+              overlays += 1;
+              if (overlays === 1) {
+                return 'assign';
+              }
+
+              await writeFile(join(directory, 'generated'), 'changed');
+              await git(directory, ['add', 'generated']);
+
+              return 'approve';
+            },
+          },
+        } as never,
+      ),
+    ).rejects.toThrow(/changed since comment review/);
+    expect(await git(directory, ['show', ':generated'])).toBe('changed');
+    await writeFile(join(directory, '.git/index'), originalIndex);
+    const result = await tool.execute(
+      'retry',
+      { groups: [{ files: ['requested', 'generated'], subject: 'feat: requested' }] },
+      undefined,
+      undefined,
+      confirmedContext(directory),
+    );
+
+    expect(reviewedBytes).toEqual(['prepared', 'changed']);
+    expect(result.details.groups[0]?.sha).toBeTruthy();
+  });
+
+  it('retains the original index when the check rejects accepted generated bytes', async () => {
+    const directory = await fixture("require('node:fs').writeFileSync('generated', 'prepared')");
+    const config = JSON.parse(await readFile(join(directory, 'tau.json'), 'utf8')) as {
+      prepare: string[];
+      check?: string[];
+    };
+    config.check = ['sh', '-c', 'test ! -e generated'];
+    await writeFile(join(directory, 'tau.json'), JSON.stringify(config));
+    const originalIndex = await readFile(join(directory, '.git/index'));
+    const reviewer = vi.fn<typeof reviewComments>(() => Promise.resolve({ findings: [] }));
+    const tool = createReviewedCommitTool(
+      {
+        exec: (command, arguments_, options) =>
+          runCommand(command, arguments_, options?.cwd ?? directory),
+      },
+      reviewer,
+    );
+    const custom = vi.fn<() => Promise<string>>(() => Promise.resolve('assign'));
+
+    await expect(
+      tool.execute(
+        'check',
+        { groups: [{ files: ['requested', 'tau.json'], subject: 'feat: requested' }] },
+        undefined,
+        undefined,
+        { cwd: directory, hasUI: true, ui: { custom } } as never,
+      ),
+    ).rejects.toThrow(/Project check failed[\s\S]*Recovery saved/);
+    expect(custom).toHaveBeenCalledTimes(1);
+    expect(reviewer).not.toHaveBeenCalled();
+    expect(await readFile(join(directory, '.git/index'))).toEqual(originalIndex);
+  });
+
   it('handles a requested new file deleted by preparation', async () => {
     const directory = await fixture(
       "require('node:fs').unlinkSync('new file'); require('node:child_process').execFileSync('git', ['add', '-A', '--', 'new file']);",

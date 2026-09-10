@@ -61,10 +61,18 @@ Turn the current diff into clean commits using the `commit` tool.
    Do not run those commands separately to duplicate the tool's work. Report unavailable checks as
    unavailable, not passed. With preparation configured, expect separate approval for each group
    unless Pi started with `--auto-approve-commits`.
+   - The overlay lists clean preparation-added paths separately. The user can assign all of them to
+     the current group or stop. Assignment comes before checks, review, and final commit approval.
+   - Startup preapproval stops on additions without opening UI. Inspect and explicitly assign those
+     files in the next call. Never treat preapproval as permission to expand a group.
+   - Preparation can invalidate TDD evidence. Follow the TDD tool's evidence rules; preparation is
+     not a bypass.
 
 4. If the `commit` tool succeeds, report the result and continue.
    - A skipped group is not a failure; the tool continues with later groups.
-   - Note each created commit and any skipped groups.
+   - Note each created commit, any skipped groups, and preparation-added paths.
+   - Prepared results mark `pathBase: repository`. Their `files` and `preparationAddedFiles` are
+     repository-relative, even when the tool ran from a nested directory.
 
 5. If the `commit` tool fails, read the current state before investigating.
    - The error lists groups already committed with their identifiers and commit hashes. Exclude them
@@ -75,7 +83,10 @@ Turn the current diff into clean commits using the `commit` tool.
      - Read the reported command, configuration, hook, or review error.
      - Fix the underlying issue, such as lint, format, or test failures.
      - If preparation reports additional files, inspect them before assigning them to a group and
-       retrying. Do not add unrelated user edits just to clear an error.
+       retrying. Do not add unrelated user edits just to clear an error. Accepted paths belong to
+       their assigned group for the rest of the call.
+     - Convert repository-relative result paths before retrying from a nested directory. If an added
+       path is outside that directory, retry from the repository root.
      - If the tool reports an ownership conflict, stop and inspect the current changes. Follow any
        recovery instructions before restoring files or staging. A failed commit does not undo
        preparation's working edits.
@@ -101,8 +112,3 @@ Turn the current diff into clean commits using the `commit` tool.
 - On failure, checked `git status` before investigating.
 - On failure, read the error text, fixed the cause, and retried no more than 3 times.
 - Stopped when the working tree was clean or the user chose to stop.
-
-## See also
-
-- [Skill authoring style](../../docs/adr/0004-skill-authoring-style.md)
-- [Staged preparation ownership](../../docs/adr/0014-staged-preparation-ownership.md)

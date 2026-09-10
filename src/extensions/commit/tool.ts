@@ -18,7 +18,7 @@ import {
 } from './commentReview.js';
 import type { CommentReview } from './commentReview.js';
 import type { CommitView } from './overlay.js';
-import { confirmCommitOverlay } from './overlay.js';
+import { confirmCommitOverlay, confirmPreparationAssignment } from './overlay.js';
 import { snapshotPreparation } from './preparation.js';
 import { checkProject, prepareProject, readPreparation } from './projectCheck.js';
 import type { Preparation } from './projectCheck.js';
@@ -347,14 +347,22 @@ const executeGroup = async (
   reviews: Reviews,
   requestReview: RequestReview,
   batch: {
+    preapproved: boolean;
     autoApprove: () => Promise<boolean>;
     onApproveAll: () => Promise<void>;
     prefetchNext: () => void;
   },
 ): Promise<CommitSuccess> => {
+  let resultFiles = parameters.files;
+  let repositoryRelative = false;
+  let preparationAddedFiles: string[] = [];
+  const pathDetails = () => ({
+    files: resultFiles,
+    ...(repositoryRelative ? { pathBase: 'repository' as const, preparationAddedFiles } : {}),
+  });
   const cancelled = (): CommitSuccess => ({
     content: [{ type: 'text', text: 'Commit cancelled' }],
-    details: { sha: '', files: parameters.files, subject, body },
+    details: { sha: '', ...pathDetails(), subject, body },
   });
 
   let subject = parameters.subject;
@@ -369,6 +377,11 @@ const executeGroup = async (
   const requestedFiles = new Set(
     parameters.files.map((file) => normalizeRepositoryPath(`${prefix}${file}`)),
   );
+  if (ownership) {
+    resultFiles = [...requestedFiles];
+    repositoryRelative = true;
+  }
+
   const stagedPaths = await listStagedPaths(pi, context.cwd);
 
   const unrelatedStagedPaths = stagedPaths.filter((file) => !requestedFiles.has(file));
@@ -405,7 +418,51 @@ const executeGroup = async (
       }
 
       await ownership.stage(requestedFiles);
-      await ownership.validate(requestedFiles, otherGroups);
+
+      const candidate = await ownership.validate(requestedFiles, otherGroups);
+      validatePaths(candidate.added);
+
+      if (candidate.added.length) {
+        const assignmentRequired = `Preparation added paths (repository-relative): ${JSON.stringify(candidate.added)}. Assign each clean generated path explicitly to a group and retry.`;
+
+        if (batch.preapproved) {
+          throw new Error(assignmentRequired);
+        }
+
+        const assignment = await confirmPreparationAssignment(
+          context,
+          subject,
+          [...requestedFiles],
+          candidate.added,
+          groupLabel,
+          signal,
+        );
+
+        if (signal?.aborted || assignment === 'abort' || assignment === undefined) {
+          return cancelled();
+        }
+
+        if (assignment !== 'assign') {
+          throw new Error(`Preparation assignment declined. ${assignmentRequired}`);
+        }
+
+        await candidate.accept();
+
+        preparationAddedFiles = candidate.added;
+        for (const path of preparationAddedFiles) {
+          requestedFiles.add(path);
+        }
+        resultFiles = [...requestedFiles];
+
+        const remaining = await ownership.validate(requestedFiles, otherGroups);
+
+        if (remaining.added.length) {
+          throw new Error(
+            `Preparation added paths changed during assignment: ${JSON.stringify(remaining.added)}. Inspect and retry.`,
+          );
+        }
+      }
+
       await ownership.publish();
     } else {
       await stageFiles(staging, context.cwd, parameters.files);
@@ -416,9 +473,15 @@ const executeGroup = async (
     const stagedAfterRequest = await listStagedPaths(pi, context.cwd);
     const unrequestedPaths = stagedAfterRequest
       .filter((file) => !requestedFiles.has(file))
-      .map((file) => file.slice(prefix.length));
+      .map((file) => (ownership ? file : file.slice(prefix.length)));
 
     if (unrequestedPaths.length > 0) {
+      if (ownership) {
+        throw new Error(
+          `Index ownership conflict after publication: ${JSON.stringify(unrequestedPaths)}. Concurrent staging was left untouched.`,
+        );
+      }
+
       await unstageFiles(pi, context.cwd, unrequestedPaths);
 
       throw new Error(
@@ -530,7 +593,11 @@ const executeGroup = async (
       );
     }
 
-    const files = await stagedNumstat(pi, context.cwd, parameters.files);
+    const files = await stagedNumstat(
+      pi,
+      ownership ? preparation.repositoryRoot : context.cwd,
+      resultFiles,
+    );
     let notice = `${projectPreparation}\n${projectCheck}`;
 
     while (true) {
@@ -553,6 +620,9 @@ const executeGroup = async (
               notice,
               review: reviewReport,
               reviewBlocked,
+              ...(ownership
+                ? { allowApproveAll: false, repositoryRelative: true, preparationAddedFiles }
+                : {}),
             },
             signal,
           );
@@ -578,7 +648,7 @@ const executeGroup = async (
           );
         }
 
-        if (choice === 'approveAll') {
+        if (choice === 'approveAll' && !ownership) {
           await batch.onApproveAll();
         }
 
@@ -597,7 +667,7 @@ const executeGroup = async (
       if (choice === 'skip') {
         return {
           content: [{ type: 'text', text: 'Commit skipped by user' }],
-          details: { sha: '', files: parameters.files, subject, body, skipped: true },
+          details: { sha: '', ...pathDetails(), subject, body, skipped: true },
         };
       }
 
@@ -658,8 +728,8 @@ const executeGroup = async (
     await undoCommit(pi, context.cwd, previousHead);
     await unstageFiles(
       pi,
-      context.cwd,
-      smuggledPaths.map((file) => file.slice(prefix.length)),
+      ownership ? preparation.repositoryRoot : context.cwd,
+      smuggledPaths.map((file) => (ownership ? file : file.slice(prefix.length))),
     );
 
     throw new Error(
@@ -696,12 +766,12 @@ const executeGroup = async (
     content: [
       {
         type: 'text',
-        text: `${commitHash} ${subject}\n${projectPreparation}\n${projectCheck}${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
+        text: `${commitHash} ${subject}${preparationAddedFiles.length ? `\nPreparation-added paths (repository-relative): ${JSON.stringify(preparationAddedFiles)}` : ''}\n${projectPreparation}\n${projectCheck}${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
       },
     ],
     details: {
       sha: commitHash,
-      files: parameters.files,
+      ...pathDetails(),
       subject,
       body,
       projectCheck,
@@ -726,13 +796,15 @@ export const createCommitTool = (
     name: 'commit',
     label: 'Commit',
     description:
-      'Stage, prepare, check, review, and commit each group sequentially. Preparation-added paths require explicit assignment and a retry. Confirm each group unless started with --auto-approve-commits.',
+      'Stage, prepare, check, review, and commit each group sequentially. Assign clean preparation-added paths through the overlay before candidate review and approval. Startup preapproval stops on additions for explicit assignment in a new call.',
     promptSnippet: 'Create git commits for an ordered groups array in one call.',
     promptGuidelines: [
       'When asked to commit, call commit without asking for confirmation in chat first. The commit overlay is the only approval step unless Pi was started with --auto-approve-commits. That flag skips confirmation, not checks or comment review.',
-      'Only commit the files explicitly provided.',
-      'The commit tool runs configured preparation once after staging each executed group, then restages requested files and checks the candidate. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
-      'Configured preparation disables speculative review planning and approve-all reuse for later groups. It never expands requested files. Assign clean generated paths explicitly to a group and retry; do not absorb ownership conflicts.',
+      'The commit tool commits only requested files and clean preparation-added paths explicitly assigned by the user in its overlay.',
+      'The commit tool runs configured preparation once after staging each executed group, then restages requested files. Assignment changes must be accepted before checks and review. Preparation does not bypass TDD evidence rules. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
+      'Configured preparation disables speculative review planning and approve-all reuse for later groups. The commit overlay lists added paths separately for assignment, then checks, reviews, and approves the complete candidate. Assignment never waives review. Accepted paths remain reserved for that group throughout the call.',
+      "With --auto-approve-commits, preparation-added paths stop the commit without UI. Inspect them, assign them explicitly in the next commit call, and retry. Never absorb prior dirty or untracked user edits, other groups' paths, or rejected sensitive paths to clear an error.",
+      'Prepared commit results use repository-relative files and preparationAddedFiles with pathBase: repository, including paths outside the invoking directory. For a retry, convert paths within the invoking directory to relative paths. Retry from the repository root when added paths are outside that directory.',
       'Preparation recovery requires a local POSIX checkout, a regular supported index, and at most 100 MiB of tracked and nonignored untracked working data. Unsupported states fail before preparation. Ignored files, external symlink targets, and background writers are outside recovery coverage; this is not a sandbox.',
       'On preparation failure, cancellation, rejection, or ownership conflict, read the reported recovery instructions. Working edits remain; never restore a saved index or working files over concurrent user edits. Git hooks and post-commit guards remain enabled. checkMessage and hooks settings remain reserved and rejected.',
       'Use a conventional commit subject.',
@@ -855,13 +927,14 @@ export const createCommitTool = (
               group.files.map((file) => normalizeRepositoryPath(`${prefix}${file}`)),
             );
           }
-          const otherGroups = new Set(
-            parameters.groups
+          const otherGroups = new Set([
+            ...(preparation.command ? groups.flatMap((result) => result.files) : []),
+            ...parameters.groups
               .filter((_, groupIndex) => groupIndex !== index)
               .flatMap((other) =>
                 other.files.map((file) => normalizeRepositoryPath(`${prefix}${file}`)),
               ),
-          );
+          ]);
           const result = await executeGroup(
             group,
             parameters.groups.length > 1 ? groupLabel : undefined,
@@ -874,6 +947,7 @@ export const createCommitTool = (
             reviews,
             requestReview(index),
             {
+              preapproved,
               autoApprove: async () => {
                 if (preapproved) {
                   return true;

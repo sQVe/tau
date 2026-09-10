@@ -1,7 +1,7 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, vi } from 'vitest';
 
-import { confirmCommitOverlay } from './overlay.js';
+import { confirmCommitOverlay, confirmPreparationAssignment } from './overlay.js';
 
 const view = {
   subject: 'feat: add overlay',
@@ -44,6 +44,76 @@ const setup = (keys: string[], terminalRows = 60, followUps: string[][] = []) =>
 
   return { context: { ui: { custom } } as unknown as ExtensionContext, custom, done, render };
 };
+
+describe('preparation assignment', () => {
+  it('escapes control characters in assignment and full candidate lists', async () => {
+    const path = 'generated\n\t\u001b\u007f\u0085.txt';
+    const assignment = setup(['a']);
+
+    expect(
+      await confirmPreparationAssignment(assignment.context, view.subject, ['requested'], [path]),
+    ).toBe('assign');
+    expect(assignment.render.mock.lastCall?.[0]).toContain(
+      '"generated\\n\\t\\u001b\\u007f\\u0085.txt"',
+    );
+
+    const approval = setup(['f'], 30, [['\u001b'], ['a']]);
+    await confirmCommitOverlay(approval.context, {
+      ...view,
+      files: [{ path, added: '1', removed: '0' }],
+      preparationAddedFiles: [path],
+      repositoryRelative: true,
+      allowApproveAll: false,
+    });
+
+    expect(
+      approval.render.mock.calls.some(([output]) =>
+        output.includes('[preparation-added] "generated\\n\\t\\u001b\\u007f\\u0085.txt"'),
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    ['a', 'assign'],
+    ['d', 'decline'],
+    ['\u001b', 'abort'],
+    ['\u0003', 'abort'],
+  ])('handles assignment key %j as %s', async (key, choice) => {
+    const { context, render } = setup([key]);
+
+    expect(
+      await confirmPreparationAssignment(
+        context,
+        view.subject,
+        ['requested'],
+        ['generated'],
+        '1/2',
+      ),
+    ).toBe(choice);
+    expect(render.mock.lastCall?.[0]).toContain('Assignment is not commit approval');
+    expect(render.mock.lastCall?.[0]).toContain('Preparation assignment 1/2');
+  });
+
+  it('scrolls every generated path and does not accept ordinary approval shortcuts', async () => {
+    const added = Array.from({ length: 60 }, (_, index) => `generated ${index + 1}`);
+    const { context, done, render } = setup(['A', 'w', '\r', 'G'], 20);
+
+    await confirmPreparationAssignment(context, view.subject, ['requested'], added);
+
+    expect(done).not.toHaveBeenCalled();
+    expect(render.mock.lastCall?.[0]).toContain('"generated 60"');
+  });
+
+  it('hides and ignores approve all for prepared candidates', async () => {
+    const { context, done, render } = setup(['A', 'a']);
+
+    expect(await confirmCommitOverlay(context, { ...view, allowApproveAll: false })).toBe(
+      'approve',
+    );
+    expect(done).toHaveBeenCalledExactlyOnceWith('approve');
+    expect(render.mock.lastCall?.[0]).not.toContain('Approve all remaining');
+  });
+});
 
 describe('confirmCommitOverlay', () => {
   it('aborts the commit when Ctrl+C is pressed in the review viewer', async () => {

@@ -293,29 +293,31 @@ export const snapshotPreparation = async (
     }
   };
 
+  const stage = async (requested: Set<string>) => {
+    const paths: string[] = [];
+    const indexed = new Set(
+      pathsFrom(await gitBytes(root, ['ls-files', '--cached', '-z'], privateIndex)),
+    );
+
+    for (const path of requested) {
+      const status = await lstat(join(root, path)).catch(missingFile);
+
+      if (status || indexed.has(path)) {
+        paths.push(path);
+      } else if (!knownPaths.has(path)) {
+        throw new Error(`Requested path does not exist: ${JSON.stringify(path)}`);
+      }
+    }
+
+    if (paths.length) {
+      await reviewGit(isolated, root, ['--literal-pathspecs', 'add', '-A', '--', ...paths]);
+    }
+  };
+
   return {
     isolated,
     notice,
-    async stage(requested: Set<string>) {
-      const paths: string[] = [];
-      const indexed = new Set(
-        pathsFrom(await gitBytes(root, ['ls-files', '--cached', '-z'], privateIndex)),
-      );
-
-      for (const path of requested) {
-        const status = await lstat(join(root, path)).catch(missingFile);
-
-        if (status || indexed.has(path)) {
-          paths.push(path);
-        } else if (!knownPaths.has(path)) {
-          throw new Error(`Requested path does not exist: ${JSON.stringify(path)}`);
-        }
-      }
-
-      if (paths.length) {
-        await reviewGit(isolated, root, ['--literal-pathspecs', 'add', '-A', '--', ...paths]);
-      }
-    },
+    stage,
     async validate(requested: Set<string>, otherGroups: Set<string>) {
       const after = await workingState(root, Object.keys(before));
       const stagedPaths = pathsFrom(
@@ -333,23 +335,46 @@ export const snapshotPreparation = async (
       ]);
       const unrequested = [...changed].filter((path) => !requested.has(path));
 
-      if (unrequested.length) {
-        const conflicts = unrequested.filter((path) => otherGroups.has(path) || dirty.has(path));
-        const added = unrequested.filter((path) => !conflicts.includes(path));
+      const conflicts = unrequested.filter((path) => otherGroups.has(path) || dirty.has(path));
 
+      if (conflicts.length) {
         throw new Error(
-          [
-            conflicts.length
-              ? `Preparation ownership conflict on unrequested paths: ${JSON.stringify(conflicts)}. Do not absorb these edits.`
-              : '',
-            added.length
-              ? `Preparation added paths: ${JSON.stringify(added)}. Assign each clean generated path explicitly to a group and retry.`
-              : '',
-          ]
-            .filter(Boolean)
-            .join('\n'),
+          `Preparation ownership conflict on unrequested paths: ${JSON.stringify(conflicts)}. Do not absorb these edits.`,
         );
       }
+
+      const preparedIndex = await indexIdentity(root, privateIndex);
+      const sameWorking = async () =>
+        JSON.stringify(after) === JSON.stringify(await workingState(root, Object.keys(after)));
+
+      return {
+        added: unrequested.toSorted(),
+        async accept() {
+          const unchangedWorking = await sameWorking();
+          const unchangedIndex =
+            JSON.stringify(preparedIndex) ===
+            JSON.stringify(await indexIdentity(root, privateIndex));
+
+          if (!unchangedWorking || !unchangedIndex) {
+            throw new Error(
+              'Working files or private index changed during preparation assignment. Inspect the changes and retry.',
+            );
+          }
+
+          // Preserve staged-only output. Restage only generated working changes, including tracked deletions.
+          const workingChanges = unrequested.filter(
+            (path) => JSON.stringify(before[path] ?? null) !== JSON.stringify(after[path] ?? null),
+          );
+
+          await stage(new Set(workingChanges));
+
+          if (!(await sameWorking())) {
+            throw new Error(
+              'Working files changed during preparation assignment. Inspect the changes and retry.',
+            );
+          }
+        },
+      };
     },
     async publish() {
       await reviewGit(isolated, root, ['write-tree']);
