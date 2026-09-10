@@ -29,52 +29,67 @@ const setup = (keys: string[], terminalRows = 60, followUps: string[][] = []) =>
       {} as never,
       done,
     );
+
     render(component.render(80).join('\n'));
     component.invalidate();
+
     for (const key of steps.shift() ?? []) {
       component.handleInput?.(key);
     }
+
     render(component.render(80).join('\n'));
+
     return done.mock.lastCall?.[0];
   });
-  return { ctx: { ui: { custom } } as unknown as ExtensionContext, custom, done, render };
+
+  return { context: { ui: { custom } } as unknown as ExtensionContext, custom, done, render };
 };
 
 describe('confirmCommitOverlay', () => {
   it('aborts the commit when Ctrl+C is pressed in the review viewer', async () => {
-    const { ctx, custom } = setup(['r'], 30, [['\u0003'], ['a']]);
-    expect(await confirmCommitOverlay(ctx, { ...view, review: 'Review findings' })).toBe('abort');
+    const { context, custom } = setup(['r'], 30, [['\u0003'], ['a']]);
+
+    expect(await confirmCommitOverlay(context, { ...view, review: 'Review findings' })).toBe(
+      'abort',
+    );
     expect(custom).toHaveBeenCalledTimes(2);
   });
+
   it('opens a scrollable read-only review and returns to commit approval', async () => {
-    const { ctx, render } = setup(['r'], 30, [['\u001b[F', '\u001b'], ['a']]);
+    const { context, render } = setup(['r'], 30, [['\u001b[F', '\u001b'], ['a']]);
     const review = Array.from({ length: 60 }, (_, index) => `Finding ${index + 1}`).join('\n');
-    expect(await confirmCommitOverlay(ctx, { ...view, review })).toBe('approve');
+
+    expect(await confirmCommitOverlay(context, { ...view, review })).toBe('approve');
     expect(render.mock.calls.some(([output]) => output.includes('Finding 60'))).toBe(true);
   });
+
   it('requires an explicit waiver instead of ordinary approval for a blocked review', async () => {
-    const { ctx, done, render } = setup(['a', 'w']);
-    const choice = await confirmCommitOverlay(ctx, {
+    const { context, done, render } = setup(['a', 'w']);
+    const choice = await confirmCommitOverlay(context, {
       ...view,
       review: 'retry.ts:1 [blocking] The comment is stale.',
       reviewBlocked: true,
     });
+
     expect(choice).toBe('waive');
     expect(done).toHaveBeenCalledExactlyOnceWith('waive');
     expect(render.mock.lastCall?.[0]).toContain('Waive comment review and commit');
     expect(render.mock.lastCall?.[0]).not.toContain('Approve and commit');
   });
-  it('hides approve all for a blocked review, where it could only fail', async () => {
-    const { ctx, done, render } = setup(['A', 'w']);
-    const choice = await confirmCommitOverlay(ctx, {
+
+  it('hides approve all for a blocked review', async () => {
+    const { context, done, render } = setup(['A', 'w']);
+    const choice = await confirmCommitOverlay(context, {
       ...view,
       review: 'retry.ts:1 [blocking] The comment is stale.',
       reviewBlocked: true,
     });
+
     expect(choice).toBe('waive');
     expect(done).toHaveBeenCalledExactlyOnceWith('waive');
     expect(render.mock.lastCall?.[0]).not.toContain('Approve all remaining');
   });
+
   it.each([
     ['a', 'approve'],
     ['A', 'approveAll'],
@@ -84,41 +99,45 @@ describe('confirmCommitOverlay', () => {
     ['\u001b', 'abort'],
     ['\u0003', 'abort'],
   ])('handles %j as %s before list navigation', async (key, choice) => {
-    const { ctx, done } = setup([key]);
-    expect(await confirmCommitOverlay(ctx, view)).toBe(choice);
+    const { context, done } = setup([key]);
+
+    expect(await confirmCommitOverlay(context, view)).toBe(choice);
     expect(done).toHaveBeenCalledExactlyOnceWith(choice);
   });
 
-  it('moves the choice list with j, which SelectList only reads as an arrow key', async () => {
-    const { ctx } = setup(['j', '\r']);
+  it('moves the choice list down with j', async () => {
+    const { context } = setup(['j', '\r']);
 
-    // Approve is first, so one step down lands on Approve all remaining.
-    expect(await confirmCommitOverlay(ctx, view)).toBe('approveAll');
+    expect(await confirmCommitOverlay(context, view)).toBe('approveAll');
   });
 
   it.for([
     ['G', 'abort'],
     ['g', 'approve'],
   ])('jumps the choice list to an end with %j', async ([key, choice]) => {
-    const { ctx } = setup([key as string, '\r']);
+    const { context } = setup([key as string, '\r']);
 
-    expect(await confirmCommitOverlay(ctx, view)).toBe(choice);
+    expect(await confirmCommitOverlay(context, view)).toBe(choice);
   });
 
   it.each(['approve', 'approveAll', 'subject', 'body', 'skip', 'abort'])(
     'selects %s with arrows and enter',
     async (choice) => {
       const index = ['approve', 'approveAll', 'subject', 'body', 'skip', 'abort'].indexOf(choice);
-      const { ctx, done } = setup([...Array.from({ length: index }, () => '\u001b[B'), '\r']);
-      expect(await confirmCommitOverlay(ctx, view)).toBe(choice);
+      const { context, done } = setup([...Array.from({ length: index }, () => '\u001b[B'), '\r']);
+
+      expect(await confirmCommitOverlay(context, view)).toBe(choice);
       expect(done).toHaveBeenCalledExactlyOnceWith(choice);
     },
   );
 
   it('renders the commit, file counts, totals and actions in a centered overlay', async () => {
-    const { ctx, custom, render } = setup(['a']);
-    await confirmCommitOverlay(ctx, view);
+    const { context, custom, render } = setup(['a']);
+
+    await confirmCommitOverlay(context, view);
+
     const output = render.mock.lastCall?.[0];
+
     for (const text of [
       'commit 1/2',
       view.subject,
@@ -152,40 +171,44 @@ describe('confirmCommitOverlay', () => {
   });
 
   it('renders a body and validation notice', async () => {
-    const { ctx, render } = setup(['a']);
-    await confirmCommitOverlay(ctx, {
+    const { context, render } = setup(['a']);
+
+    await confirmCommitOverlay(context, {
       ...view,
       body: 'Why\nMore context',
       notice: 'Invalid subject: nope',
     });
+
     expect(render.mock.lastCall?.[0]).toContain('Why');
     expect(render.mock.lastCall?.[0]).toContain('More context');
     expect(render.mock.lastCall?.[0]).toContain('Invalid subject: nope');
   });
 
   it('caps a long body at ten lines with a remainder note', async () => {
-    const { ctx, render } = setup(['a']);
+    const { context, render } = setup(['a']);
     const body = Array.from({ length: 14 }, (_, index) => `line ${index + 1}`).join('\n');
 
-    await confirmCommitOverlay(ctx, { ...view, body });
+    await confirmCommitOverlay(context, { ...view, body });
 
     const output = render.mock.lastCall?.[0] ?? '';
+
     expect(output).toContain('line 10');
     expect(output).not.toContain('line 11');
     expect(output).toContain('… 4 more lines');
   });
 
   it('caps the file list at fifteen rows and still totals every file', async () => {
-    const { ctx, render } = setup(['a']);
+    const { context, render } = setup(['a']);
     const files = Array.from({ length: 20 }, (_, index) => ({
       path: `src/file${index + 1}.ts`,
       added: '1',
       removed: '1',
     }));
 
-    await confirmCommitOverlay(ctx, { ...view, files });
+    await confirmCommitOverlay(context, { ...view, files });
 
     const output = render.mock.lastCall?.[0] ?? '';
+
     expect(output).toContain('src/file15.ts');
     expect(output).not.toContain('src/file16.ts');
     expect(output).toContain('… 5 more files');
@@ -193,7 +216,7 @@ describe('confirmCommitOverlay', () => {
   });
 
   it('shrinks both caps on a short terminal', async () => {
-    const { ctx, render } = setup(['a'], 30);
+    const { context, render } = setup(['a'], 30);
     const body = Array.from({ length: 10 }, (_, index) => `line ${index + 1}`).join('\n');
     const files = Array.from({ length: 10 }, (_, index) => ({
       path: `src/file${index + 1}.ts`,
@@ -201,34 +224,39 @@ describe('confirmCommitOverlay', () => {
       removed: '1',
     }));
 
-    await confirmCommitOverlay(ctx, { ...view, body, files });
+    await confirmCommitOverlay(context, { ...view, body, files });
 
     const output = render.mock.lastCall?.[0] ?? '';
+
     expect(output).toContain('… 4 more lines');
     expect(output).toContain('… 4 more files');
   });
 
   it('truncates long rows to the width instead of wrapping', async () => {
-    const { ctx, render } = setup(['a']);
+    const { context, render } = setup(['a']);
     const body = 'x'.repeat(300);
     const files = [{ path: `src/${'y'.repeat(300)}.ts`, added: '1', removed: '1' }];
 
-    await confirmCommitOverlay(ctx, { ...view, body, files });
+    await confirmCommitOverlay(context, { ...view, body, files });
 
     const lines = (render.mock.lastCall?.[0] ?? '').split('\n');
+
     expect(lines.filter((line) => line.includes('xxxxxxxx'))).toHaveLength(1);
     expect(lines.filter((line) => line.includes('yyyyyyyy'))).toHaveLength(1);
   });
 
   it('does not resolve inherited object keys as shortcuts', async () => {
-    const { ctx, done } = setup(['constructor']);
-    await confirmCommitOverlay(ctx, view);
+    const { context, done } = setup(['constructor']);
+
+    await confirmCommitOverlay(context, view);
+
     expect(done).not.toHaveBeenCalled();
   });
 
   it('treats dismissal as abort', async () => {
-    const { ctx } = setup([]);
-    expect(await confirmCommitOverlay(ctx, view)).toBe('abort');
+    const { context } = setup([]);
+
+    expect(await confirmCommitOverlay(context, view)).toBe('abort');
   });
 
   it('resolves abort when the signal aborts while the overlay is open', async () => {
@@ -243,21 +271,23 @@ describe('confirmCommitOverlay', () => {
         {} as never,
         done,
       );
+
       controller.abort();
       component.dispose?.();
       controller.abort();
+
       return done.mock.lastCall?.[0];
     });
-    const ctx = { ui: { custom } } as unknown as ExtensionContext;
+    const context = { ui: { custom } } as unknown as ExtensionContext;
 
-    expect(await confirmCommitOverlay(ctx, view, controller.signal)).toBe('abort');
+    expect(await confirmCommitOverlay(context, view, controller.signal)).toBe('abort');
     expect(done).toHaveBeenCalledExactlyOnceWith('abort');
   });
 
   it('returns abort without opening the overlay when the signal is already aborted', async () => {
-    const { ctx, custom } = setup(['a']);
+    const { context, custom } = setup(['a']);
 
-    expect(await confirmCommitOverlay(ctx, view, AbortSignal.abort())).toBe('abort');
+    expect(await confirmCommitOverlay(context, view, AbortSignal.abort())).toBe('abort');
     expect(custom).not.toHaveBeenCalled();
   });
 });

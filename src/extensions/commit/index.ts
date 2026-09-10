@@ -5,20 +5,22 @@ import { createCommitTool } from './tool.js';
 
 const commitSkillCommandPrefix = '/skill:commit';
 
-const buildCommitSkillMessage = (args: string) => {
-  const trimmedArgs = args.trim();
+const buildCommitSkillMessage = (argumentsText: string) => {
+  const trimmedArguments = argumentsText.trim();
 
-  return trimmedArgs ? `${commitSkillCommandPrefix} ${trimmedArgs}` : commitSkillCommandPrefix;
+  return trimmedArguments
+    ? `${commitSkillCommandPrefix} ${trimmedArguments}`
+    : commitSkillCommandPrefix;
 };
 
 export default function commitExtension(pi: ExtensionAPI) {
   pi.on('tool_call', guardToolCall);
   pi.registerTool(createCommitTool(pi));
   pi.registerCommand('commit', {
-    description: 'Delegate to the commit skill.',
-    handler: (args, ctx) => {
-      pi.sendUserMessage(buildCommitSkillMessage(args), {
-        deliverAs: ctx.isIdle() ? 'followUp' : 'steer',
+    description: 'Run the commit skill.',
+    handler: (argumentsText, context) => {
+      pi.sendUserMessage(buildCommitSkillMessage(argumentsText), {
+        deliverAs: context.isIdle() ? 'followUp' : 'steer',
       });
 
       return Promise.resolve();

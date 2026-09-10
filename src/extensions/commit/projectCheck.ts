@@ -13,12 +13,12 @@ const exists = (path: string) =>
 // Check the index snapshot: unstaged fixes must not make an incomplete commit pass.
 export const checkProject = async (
   pi: Pick<ExtensionAPI, 'exec'>,
-  cwd: string,
+  workingDirectory: string,
   tree: string,
   signal?: AbortSignal,
 ): Promise<string> => {
-  const run = async (command: string, args: string[], directory = cwd) => {
-    const result = await pi.exec(command, args, {
+  const run = async (command: string, commandArguments: string[], directory = workingDirectory) => {
+    const result = await pi.exec(command, commandArguments, {
       cwd: directory,
       ...(signal ? { signal } : {}),
       timeout: 600_000,
@@ -26,7 +26,7 @@ export const checkProject = async (
 
     if (result.code !== 0 || result.killed || signal?.aborted) {
       throw new Error(
-        `Project check failed (${command} ${args.join(' ')}):\n${result.stderr}\n${result.stdout}`,
+        `Project check failed (${command} ${commandArguments.join(' ')}):\n${result.stderr}\n${result.stdout}`,
       );
     }
 
@@ -34,18 +34,18 @@ export const checkProject = async (
   };
 
   const rootOutput = await run('git', ['rev-parse', '--show-toplevel']);
-  const root = rootOutput.trim();
+  const repositoryRoot = rootOutput.trim();
   const manifestPath = await run(
     'git',
     ['ls-tree', '--name-only', tree, '--', 'package.json'],
-    root,
+    repositoryRoot,
   );
 
   if (!manifestPath.trim()) {
     return 'Project check unavailable: no root package.json.';
   }
 
-  const manifestContent = await run('git', ['show', `${tree}:package.json`], root);
+  const manifestContent = await run('git', ['show', `${tree}:package.json`], repositoryRoot);
   const manifest: unknown = JSON.parse(manifestContent);
 
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
@@ -63,32 +63,39 @@ export const checkProject = async (
     return 'Project check unavailable: no root scripts.check.';
   }
 
-  let manager: string | undefined = 'npm';
+  let packageManager: string | undefined = 'npm';
 
   if ('packageManager' in manifest) {
-    manager =
+    packageManager =
       typeof manifest.packageManager === 'string'
         ? manifest.packageManager.split('@')[0]
         : undefined;
   }
 
-  if (!manager || !['npm', 'pnpm', 'yarn', 'bun'].includes(manager)) {
+  if (!packageManager || !['npm', 'pnpm', 'yarn', 'bun'].includes(packageManager)) {
     throw new Error(
       'Project check failed: unsupported packageManager. Use npm, pnpm, yarn, or bun.',
     );
   }
 
-  const temporary = await mkdtemp(join(tmpdir(), 'tau-project-check-'));
-  const candidate = join(temporary, 'candidate');
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), 'tau-project-check-'));
+  const candidateDirectory = join(temporaryDirectory, 'candidate');
 
   try {
-    await run('git', ['clone', '--shared', '--no-checkout', '--', root, candidate]);
-    await run('git', ['read-tree', tree], candidate);
-    await run('git', ['checkout-index', '--all'], candidate);
+    await run('git', [
+      'clone',
+      '--shared',
+      '--no-checkout',
+      '--',
+      repositoryRoot,
+      candidateDirectory,
+    ]);
+    await run('git', ['read-tree', tree], candidateDirectory);
+    await run('git', ['checkout-index', '--all'], candidateDirectory);
 
     // ponytail: root dependencies are shared; workspace-aware installs need a separate checkout strategy.
-    const dependencies = join(root, 'node_modules');
-    const candidateDependencies = join(candidate, 'node_modules');
+    const dependencies = join(repositoryRoot, 'node_modules');
+    const candidateDependencies = join(candidateDirectory, 'node_modules');
     const dependenciesExist = await exists(dependencies);
     const candidateDependenciesExist = await exists(candidateDependencies);
 
@@ -97,9 +104,9 @@ export const checkProject = async (
       await symlink(dependencies, candidateDependencies, 'junction');
     }
 
-    await run(manager, ['run', 'check'], candidate);
+    await run(packageManager, ['run', 'check'], candidateDirectory);
 
-    const changedFiles = await run('git', ['diff', '--name-only', tree, '--'], candidate);
+    const changedFiles = await run('git', ['diff', '--name-only', tree, '--'], candidateDirectory);
 
     if (changedFiles.trim()) {
       throw new Error(
@@ -107,8 +114,8 @@ export const checkProject = async (
       );
     }
 
-    return `Project check passed: ${manager} run check on ${tree}.`;
+    return `Project check passed: ${packageManager} run check on ${tree}.`;
   } finally {
-    await rm(temporary, { recursive: true, force: true });
+    await rm(temporaryDirectory, { recursive: true, force: true });
   }
 };

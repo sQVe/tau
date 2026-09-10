@@ -71,12 +71,12 @@ export const validateSubject = (subject: string) => {
   }
 };
 
-const normalizeRepoPath = (file: string) =>
+const normalizeRepositoryPath = (file: string) =>
   posix.normalize(file.replaceAll('\\', '/')).replace(/\/+$/, '');
 
 export const validatePaths = (files: string[]) => {
   for (const rawFile of files) {
-    const file = normalizeRepoPath(rawFile);
+    const file = normalizeRepositoryPath(rawFile);
 
     if (
       file === '' ||
@@ -103,12 +103,12 @@ const buildCommitMessage = (subject: string, body?: string) => {
   return subject;
 };
 
-const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
+const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
   const result = await pi.exec(
     'git',
     ['diff', '--cached', '--name-only', '--diff-filter=ACMRDT', '-z'],
     {
-      cwd,
+      cwd: workingDirectory,
     },
   );
 
@@ -121,12 +121,18 @@ const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
   return result.stdout
     .split('\0')
     .filter(Boolean)
-    .map((file) => normalizeRepoPath(file));
+    .map((file) => normalizeRepositoryPath(file));
 };
 
 // Literal pathspecs prevent glob expansion from staging unrequested files.
-const stageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: string[]) => {
-  const result = await pi.exec('git', ['--literal-pathspecs', 'add', '--', ...files], { cwd });
+const stageFiles = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+  files: string[],
+) => {
+  const result = await pi.exec('git', ['--literal-pathspecs', 'add', '--', ...files], {
+    cwd: workingDirectory,
+  });
 
   if (result.code !== 0) {
     throw new Error(
@@ -135,8 +141,14 @@ const stageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: st
   }
 };
 
-const unstageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: string[]) => {
-  const result = await pi.exec('git', ['--literal-pathspecs', 'reset', '--', ...files], { cwd });
+const unstageFiles = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+  files: string[],
+) => {
+  const result = await pi.exec('git', ['--literal-pathspecs', 'reset', '--', ...files], {
+    cwd: workingDirectory,
+  });
 
   if (result.code !== 0) {
     throw new Error(
@@ -145,9 +157,9 @@ const unstageFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: 
   }
 };
 
-// Convert cwd-relative requests to repo-relative paths for comparison with staged paths.
-const repoPathPrefix = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
-  const result = await pi.exec('git', ['rev-parse', '--show-prefix'], { cwd });
+// Staged paths are repository-relative; requested paths are relative to the working directory.
+const repositoryPathPrefix = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
+  const result = await pi.exec('git', ['rev-parse', '--show-prefix'], { cwd: workingDirectory });
 
   if (result.code !== 0) {
     throw new Error(
@@ -159,17 +171,17 @@ const repoPathPrefix = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
 };
 
 // HEAD is unresolved before the first commit.
-const currentHead = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
-  const result = await pi.exec('git', ['rev-parse', 'HEAD'], { cwd });
+const currentHead = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
+  const result = await pi.exec('git', ['rev-parse', 'HEAD'], { cwd: workingDirectory });
 
   return result.code === 0 ? result.stdout.trim() : null;
 };
 
-const listCommitPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
+const listCommitPaths = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
   const result = await pi.exec(
     'git',
     ['diff-tree', '--root', '-r', '--no-commit-id', '--name-only', '-z', 'HEAD'],
-    { cwd },
+    { cwd: workingDirectory },
   );
 
   if (result.code !== 0) {
@@ -181,18 +193,18 @@ const listCommitPaths = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string) => {
   return result.stdout
     .split('\0')
     .filter(Boolean)
-    .map((file) => normalizeRepoPath(file));
+    .map((file) => normalizeRepositoryPath(file));
 };
 
 const undoCommit = async (
   pi: Pick<ExtensionAPI, 'exec'>,
-  cwd: string,
+  workingDirectory: string,
   previousHead: string | null,
 ) => {
   const result = await pi.exec(
     'git',
     previousHead === null ? ['update-ref', '-d', 'HEAD'] : ['reset', '--soft', previousHead],
-    { cwd },
+    { cwd: workingDirectory },
   );
 
   if (result.code !== 0) {
@@ -204,13 +216,13 @@ const undoCommit = async (
 
 const stagedNumstat = async (
   pi: Pick<ExtensionAPI, 'exec'>,
-  cwd: string,
+  workingDirectory: string,
   files: string[],
 ): Promise<CommitView['files']> => {
   const result = await pi.exec(
     'git',
     ['diff', '--cached', '--numstat', '--no-renames', '-z', '--', ...files],
-    { cwd },
+    { cwd: workingDirectory },
   );
 
   if (result.code !== 0) {
@@ -241,14 +253,20 @@ type Reviews = Map<
 
 // Worktree fingerprint for a group's files. Approve-all covers the content the user saw, so a
 // later group whose files changed since must be shown rather than committed unseen.
-const hashFiles = async (pi: Pick<ExtensionAPI, 'exec'>, cwd: string, files: string[]) => {
+const hashFiles = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+  files: string[],
+) => {
   const hashes: string[] = [];
 
   for (const file of files) {
     const result = await pi.exec('git', ['--literal-pathspecs', 'hash-object', '--', file], {
-      cwd,
+      cwd: workingDirectory,
     });
-    hashes.push(result.code === 0 ? result.stdout.trim() : `absent:${file}`);
+    const hash = result.code === 0 ? result.stdout.trim() : `absent:${file}`;
+
+    hashes.push(hash);
   }
 
   return hashes.join(' ');
@@ -264,7 +282,7 @@ type RequestReview = (snapshot: ReviewSnapshot, baseTree: string | null) => Prom
 
 const treeOf = async (
   pi: Pick<ExtensionAPI, 'exec'>,
-  cwd: string,
+  workingDirectory: string,
   revision: string | null,
   signal?: AbortSignal,
 ) => {
@@ -272,7 +290,7 @@ const treeOf = async (
     return null;
   }
 
-  const tree = await reviewGit(pi, cwd, ['rev-parse', `${revision}^{tree}`], signal);
+  const tree = await reviewGit(pi, workingDirectory, ['rev-parse', `${revision}^{tree}`], signal);
 
   return tree.trim();
 };
@@ -281,13 +299,13 @@ const treeOf = async (
 // group N commits before group N+1 stages, so N+1's index tree already contains N's content.
 const planGroupReviews = async (
   pi: Pick<ExtensionAPI, 'exec'>,
-  cwd: string,
+  workingDirectory: string,
   groups: CommitInput['groups'],
   signal: AbortSignal | undefined,
 ): Promise<{ baseTree: string; tree: string }[]> => {
   const plan: { baseTree: string; tree: string }[] = [];
-  const head = await currentHead(pi, cwd);
-  let baseTree = await treeOf(pi, cwd, head, signal);
+  const head = await currentHead(pi, workingDirectory);
+  let baseTree = await treeOf(pi, workingDirectory, head, signal);
 
   if (baseTree === null) {
     return plan;
@@ -295,9 +313,9 @@ const planGroupReviews = async (
 
   try {
     for (const group of groups) {
-      await stageFiles(pi, cwd, group.files);
+      await stageFiles(pi, workingDirectory, group.files);
 
-      const treeOutput = await reviewGit(pi, cwd, ['write-tree'], signal);
+      const treeOutput = await reviewGit(pi, workingDirectory, ['write-tree'], signal);
       const tree = treeOutput.trim();
 
       plan.push({ baseTree, tree });
@@ -305,7 +323,7 @@ const planGroupReviews = async (
     }
   } finally {
     for (const group of groups) {
-      await unstageFiles(pi, cwd, group.files);
+      await unstageFiles(pi, workingDirectory, group.files);
     }
   }
 
@@ -313,10 +331,10 @@ const planGroupReviews = async (
 };
 
 const executeGroup = async (
-  params: CommitInput['groups'][number],
-  group: string | undefined,
+  parameters: CommitInput['groups'][number],
+  groupLabel: string | undefined,
   pi: Pick<ExtensionAPI, 'exec'>,
-  ctx: ExtensionContext,
+  context: ExtensionContext,
   signal: AbortSignal | undefined,
   reviews: Reviews,
   requestReview: RequestReview,
@@ -326,22 +344,24 @@ const executeGroup = async (
     prefetchNext: () => void;
   },
 ): Promise<CommitSuccess> => {
-  let subject = params.subject;
-  let body = params.body ?? null;
-
   const cancelled = (): CommitSuccess => ({
     content: [{ type: 'text', text: 'Commit cancelled' }],
-    details: { sha: '', files: params.files, subject, body },
+    details: { sha: '', files: parameters.files, subject, body },
   });
+
+  let subject = parameters.subject;
+  let body = parameters.body ?? null;
 
   if (signal?.aborted) {
     return cancelled();
   }
 
-  const prefix = await repoPathPrefix(pi, ctx.cwd);
+  const prefix = await repositoryPathPrefix(pi, context.cwd);
 
-  const requestedFiles = new Set(params.files.map((file) => normalizeRepoPath(`${prefix}${file}`)));
-  const stagedPaths = await listStagedPaths(pi, ctx.cwd);
+  const requestedFiles = new Set(
+    parameters.files.map((file) => normalizeRepositoryPath(`${prefix}${file}`)),
+  );
+  const stagedPaths = await listStagedPaths(pi, context.cwd);
 
   const unrelatedStagedPaths = stagedPaths.filter((file) => !requestedFiles.has(file));
 
@@ -351,7 +371,7 @@ const executeGroup = async (
     );
   }
 
-  await stageFiles(pi, ctx.cwd, params.files);
+  await stageFiles(pi, context.cwd, parameters.files);
 
   let approved = false;
   let reviewedTree = '';
@@ -363,30 +383,31 @@ const executeGroup = async (
   let returningForCorrections = false;
 
   try {
-    // Directory arguments can stage unrequested files; convert those paths back to cwd-relative.
-    const stagedAfterRequest = await listStagedPaths(pi, ctx.cwd);
+    // Directory arguments can stage unrequested files.
+    // Reset needs paths relative to the working directory.
+    const stagedAfterRequest = await listStagedPaths(pi, context.cwd);
     const unrequestedPaths = stagedAfterRequest
       .filter((file) => !requestedFiles.has(file))
       .map((file) => file.slice(prefix.length));
 
     if (unrequestedPaths.length > 0) {
-      await unstageFiles(pi, ctx.cwd, unrequestedPaths);
+      await unstageFiles(pi, context.cwd, unrequestedPaths);
 
       throw new Error(
-        `Staging ${params.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}`,
+        `Staging ${parameters.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}`,
       );
     }
 
-    const treeOutput = await reviewGit(pi, ctx.cwd, ['write-tree'], signal);
+    const treeOutput = await reviewGit(pi, context.cwd, ['write-tree'], signal);
     reviewedTree = treeOutput.trim();
-    reviewedHead = await currentHead(pi, ctx.cwd);
+    reviewedHead = await currentHead(pi, context.cwd);
 
     if (signal?.aborted) {
       return cancelled();
     }
 
     try {
-      projectCheck = await checkProject(pi, ctx.cwd, reviewedTree, signal);
+      projectCheck = await checkProject(pi, context.cwd, reviewedTree, signal);
     } catch (error) {
       if (signal?.aborted) {
         return cancelled();
@@ -395,9 +416,12 @@ const executeGroup = async (
       throw error;
     }
 
-    const reviewedBaseTree = await treeOf(pi, ctx.cwd, reviewedHead, signal);
-    reviewGroup = JSON.stringify([ctx.cwd, reviewedHead, [...requestedFiles].toSorted()]);
+    const reviewedBaseTree = await treeOf(pi, context.cwd, reviewedHead, signal);
+
+    reviewGroup = JSON.stringify([context.cwd, reviewedHead, [...requestedFiles].toSorted()]);
+
     const state = reviews.get(reviewGroup) ?? { attempts: 0, disputes: [] };
+
     reviews.delete(reviewGroup);
     reviews.set(reviewGroup, state);
 
@@ -410,42 +434,43 @@ const executeGroup = async (
     }
 
     if (
-      params.commentDispute &&
-      !state.disputes.some(({ evidence }) => evidence === params.commentDispute)
+      parameters.commentDispute &&
+      !state.disputes.some(({ evidence }) => evidence === parameters.commentDispute)
     ) {
       state.disputes.push({
-        evidence: params.commentDispute,
+        evidence: parameters.commentDispute,
         findings: state.result ? formatCommentReview(state.result) : 'No prior findings available.',
       });
     }
 
-    const key = JSON.stringify([
+    const reviewKey = JSON.stringify([
       reviewedTree,
       commentPolicyHash,
-      ctx.model?.provider,
-      ctx.model?.id,
-      params.commentDispute,
+      context.model?.provider,
+      context.model?.id,
+      parameters.commentDispute,
     ]);
     let commentReview: CommentReview | undefined;
 
     try {
       commentReview =
-        state.key === key && state.result
+        state.key === reviewKey && state.result
           ? state.result
           : await requestReview(
               {
                 tree: reviewedTree,
                 head: reviewedHead,
-                ...(params.commentDispute ? { dispute: params.commentDispute } : {}),
+                ...(parameters.commentDispute ? { dispute: parameters.commentDispute } : {}),
               },
               reviewedBaseTree,
             );
-      state.key = key;
+      state.key = reviewKey;
       state.result = commentReview;
 
       if (commentReview.findings.some((finding) => finding.kind !== 'missing')) {
         state.attempts += 1;
       }
+
       reviewReport = formatCommentReview(commentReview);
     } catch (error) {
       reviewReport = `Comment review failed: ${error instanceof Error ? error.message : String(error)}\nRetry or explicitly waive this failed review.`;
@@ -477,7 +502,7 @@ const executeGroup = async (
       );
     }
 
-    const files = await stagedNumstat(pi, ctx.cwd, params.files);
+    const files = await stagedNumstat(pi, context.cwd, parameters.files);
     let notice = projectCheck;
 
     while (true) {
@@ -491,12 +516,12 @@ const executeGroup = async (
       const choice = automaticallyApproved
         ? 'approve'
         : await confirmCommitOverlay(
-            ctx,
+            context,
             {
               subject,
               body,
               files,
-              ...(group ? { group } : {}),
+              ...(groupLabel ? { group: groupLabel } : {}),
               notice,
               review: reviewReport,
               reviewBlocked,
@@ -514,10 +539,10 @@ const executeGroup = async (
       }
 
       if (choice === 'approve' || choice === 'approveAll' || choice === 'waive') {
-        const currentTreeOutput = await reviewGit(pi, ctx.cwd, ['write-tree'], signal);
+        const currentTreeOutput = await reviewGit(pi, context.cwd, ['write-tree'], signal);
         const currentTree = currentTreeOutput.trim();
         const changedSinceReview =
-          currentTree !== reviewedTree || (await currentHead(pi, ctx.cwd)) !== reviewedHead;
+          currentTree !== reviewedTree || (await currentHead(pi, context.cwd)) !== reviewedHead;
 
         if (changedSinceReview) {
           throw new Error(
@@ -528,6 +553,7 @@ const executeGroup = async (
         if (choice === 'approveAll') {
           await batch.onApproveAll();
         }
+
         approved = true;
         reviewWaived = choice === 'waive';
 
@@ -543,7 +569,7 @@ const executeGroup = async (
       if (choice === 'skip') {
         return {
           content: [{ type: 'text', text: 'Commit skipped by user' }],
-          details: { sha: '', files: params.files, subject, body, skipped: true },
+          details: { sha: '', files: parameters.files, subject, body, skipped: true },
         };
       }
 
@@ -552,7 +578,7 @@ const executeGroup = async (
       }
 
       if (choice === 'subject') {
-        const edited = await ctx.ui.editor('Edit subject', subject);
+        const edited = await context.ui.editor('Edit subject', subject);
 
         if (edited !== undefined) {
           try {
@@ -563,7 +589,7 @@ const executeGroup = async (
           }
         }
       } else {
-        body = (await ctx.ui.editor('Edit body', body ?? '')) ?? body;
+        body = (await context.ui.editor('Edit body', body ?? '')) ?? body;
       }
     }
   } finally {
@@ -572,35 +598,35 @@ const executeGroup = async (
         reviews.delete(reviewGroup);
       }
 
-      await unstageFiles(pi, ctx.cwd, params.files);
+      await unstageFiles(pi, context.cwd, parameters.files);
     }
   }
 
-  const previousHead = await currentHead(pi, ctx.cwd);
+  const previousHead = await currentHead(pi, context.cwd);
   const commitResult = await pi.exec(
     'git',
     ['commit', '-m', buildCommitMessage(subject, body ?? undefined)],
     {
-      cwd: ctx.cwd,
+      cwd: context.cwd,
     },
   );
 
   if (commitResult.code !== 0) {
-    await unstageFiles(pi, ctx.cwd, params.files);
+    await unstageFiles(pi, context.cwd, parameters.files);
 
     throw commitFailedError(commitResult.stdout, commitResult.stderr);
   }
 
   // Hooks can stage files after approval, so check the committed paths too.
-  const committedPaths = await listCommitPaths(pi, ctx.cwd);
+  const committedPaths = await listCommitPaths(pi, context.cwd);
 
   const smuggledPaths = committedPaths.filter((file) => !requestedFiles.has(file));
 
   if (smuggledPaths.length > 0) {
-    await undoCommit(pi, ctx.cwd, previousHead);
+    await undoCommit(pi, context.cwd, previousHead);
     await unstageFiles(
       pi,
-      ctx.cwd,
+      context.cwd,
       smuggledPaths.map((file) => file.slice(prefix.length)),
     );
 
@@ -609,11 +635,11 @@ const executeGroup = async (
     );
   }
 
-  const committedTreeOutput = await reviewGit(pi, ctx.cwd, ['rev-parse', 'HEAD^{tree}']);
+  const committedTreeOutput = await reviewGit(pi, context.cwd, ['rev-parse', 'HEAD^{tree}']);
   const committedTree = committedTreeOutput.trim();
 
   if (committedTree !== reviewedTree) {
-    await undoCommit(pi, ctx.cwd, previousHead);
+    await undoCommit(pi, context.cwd, previousHead);
 
     throw new Error(
       'A hook changed reviewed content. The commit was undone. Call commit again to stage and review the current changes.',
@@ -621,7 +647,7 @@ const executeGroup = async (
   }
 
   const revParseResult = await pi.exec('git', ['rev-parse', 'HEAD'], {
-    cwd: ctx.cwd,
+    cwd: context.cwd,
   });
 
   if (revParseResult.code !== 0) {
@@ -630,19 +656,20 @@ const executeGroup = async (
     );
   }
 
-  const sha = revParseResult.stdout.trim();
+  const commitHash = revParseResult.stdout.trim();
+
   reviews.delete(reviewGroup);
 
   return {
     content: [
       {
         type: 'text',
-        text: `${sha} ${subject}\n${projectCheck}${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
+        text: `${commitHash} ${subject}\n${projectCheck}${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
       },
     ],
     details: {
-      sha,
-      files: params.files,
+      sha: commitHash,
+      files: parameters.files,
       subject,
       body,
       projectCheck,
@@ -668,21 +695,21 @@ export const createCommitTool = (
     description: 'Stage and commit logical groups sequentially, confirming each group.',
     promptSnippet: 'Create git commits for an ordered groups array in one call.',
     promptGuidelines: [
-      'When asked to commit, call this tool without asking for confirmation in chat first. Its overlay is the only approval step; the user approves, edits, skips, or aborts there, even for changes that look temporary or wrong.',
+      'When asked to commit, call commit without asking for confirmation in chat first. Its overlay is the only approval step. The user approves, edits, skips, or aborts there, even for changes that look temporary or wrong.',
       'Only commit the files explicitly provided.',
-      'The root package.json scripts.check runs on each staged candidate before approval. Fix failures and retry. If checks format files, run them locally and include those changes. Projects without scripts.check report verification as unavailable.',
+      'Before commit approval, the root package.json scripts.check runs on each staged candidate. Fix failures and retry. If checks format files, run them locally and include those changes. Projects without scripts.check report verification as unavailable.',
       'Use a conventional commit subject.',
       'Do not commit sensitive files such as .env or SSH keys.',
-      'Comment review runs before approval. Fix blocking findings or supply commentDispute with evidence; missing-comment suggestions are advisory. After two automatic returns, unresolved findings go to the user. Never claim a waiver on the user’s behalf.',
+      "Comment review runs before commit approval. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. After two automatic returns, unresolved findings go to the user. Never claim a waiver on the user's behalf.",
     ],
     parameters: commitToolParameters,
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      for (const group of params.groups) {
+    async execute(_toolCallId, parameters, signal, _onUpdate, context) {
+      for (const group of parameters.groups) {
         validateSubject(group.subject);
         validatePaths(group.files);
       }
 
-      if (!ctx.hasUI) {
+      if (!context.hasUI) {
         throw new Error('Cannot commit without user confirmation (non-interactive mode)');
       }
 
@@ -690,31 +717,33 @@ export const createCommitTool = (
       const groups: CommitSuccess['details'][] = [];
       const content: CommitSuccess['content'] = [];
 
-      // A review is a model round-trip, so run it ahead of the group that needs it: one group ahead
-      // while the user reads an overlay, and all remaining groups the moment they approve all.
+      // Hide model latency by reviewing the next group while the user reads the overlay.
+      // Approve-all starts reviews for every remaining group.
       const plan =
-        params.groups.length > 1 && (await listStagedPaths(pi, ctx.cwd)).length === 0
-          ? await planGroupReviews(pi, ctx.cwd, params.groups, signal)
+        parameters.groups.length > 1 && (await listStagedPaths(pi, context.cwd)).length === 0
+          ? await planGroupReviews(pi, context.cwd, parameters.groups, signal)
           : [];
       const started = new Map<number, Promise<CommentReview>>();
 
       const startReview = (index: number) => {
         const step = plan[index];
-        const group = params.groups[index];
+        const group = parameters.groups[index];
 
         if (!step || !group || started.has(index)) {
           return;
         }
 
-        const pending = review(pi, ctx, signal, {
+        const pending = review(pi, context, signal, {
           tree: step.tree,
           head: step.baseTree,
           ...(group.commentDispute ? { dispute: group.commentDispute } : {}),
         });
-        // A prefetch nobody awaits yet must not surface as an unhandled rejection.
+
+        // A review started ahead of time may reject before its group awaits it.
         pending.catch(() => {});
         started.set(index, pending);
       };
+
       const requestReview =
         (index: number): RequestReview =>
         (snapshot, baseTree) => {
@@ -722,9 +751,11 @@ export const createCommitTool = (
           const planned =
             step?.tree === snapshot.tree &&
             step?.baseTree === baseTree &&
-            params.groups[index]?.commentDispute === snapshot.dispute;
+            parameters.groups[index]?.commentDispute === snapshot.dispute;
+
           if (planned) {
             startReview(index);
+
             const pending = started.get(index);
 
             if (pending) {
@@ -732,20 +763,20 @@ export const createCommitTool = (
             }
           }
 
-          return review(pi, ctx, signal, snapshot);
+          return review(pi, context, signal, snapshot);
         };
 
       startReview(0);
 
-      for (const [index, group] of params.groups.entries()) {
-        const groupLabel = `${index + 1}/${params.groups.length}`;
+      for (const [index, group] of parameters.groups.entries()) {
+        const groupLabel = `${index + 1}/${parameters.groups.length}`;
 
         try {
           const result = await executeGroup(
             group,
-            params.groups.length > 1 ? groupLabel : undefined,
+            parameters.groups.length > 1 ? groupLabel : undefined,
             pi,
-            ctx,
+            context,
             signal,
             reviews,
             requestReview(index),
@@ -756,20 +787,27 @@ export const createCommitTool = (
                 return (
                   approval.all &&
                   seen !== undefined &&
-                  seen === (await hashFiles(pi, ctx.cwd, group.files))
+                  seen === (await hashFiles(pi, context.cwd, group.files))
                 );
               },
               onApproveAll: async () => {
                 approval.all = true;
 
-                for (let rest = index + 1; rest < params.groups.length; rest += 1) {
-                  const remaining = params.groups[rest];
+                for (
+                  let remainingIndex = index + 1;
+                  remainingIndex < parameters.groups.length;
+                  remainingIndex += 1
+                ) {
+                  const remaining = parameters.groups[remainingIndex];
 
                   if (!remaining) {
                     continue;
                   }
-                  approval.seen.set(rest, await hashFiles(pi, ctx.cwd, remaining.files));
-                  startReview(rest);
+
+                  const fingerprint = await hashFiles(pi, context.cwd, remaining.files);
+
+                  approval.seen.set(remainingIndex, fingerprint);
+                  startReview(remainingIndex);
                 }
               },
               prefetchNext: () => {
@@ -778,25 +816,27 @@ export const createCommitTool = (
             },
           );
 
-          if (!result.details.sha && !result.details.skipped && params.groups.length > 1) {
+          if (!result.details.sha && !result.details.skipped && parameters.groups.length > 1) {
             throw new Error('Commit cancelled');
           }
+
           groups.push(result.details);
           content.push(
             ...result.content.map((item) => ({
               ...item,
-              text: params.groups.length === 1 ? item.text : `Group ${groupLabel}: ${item.text}`,
+              text:
+                parameters.groups.length === 1 ? item.text : `Group ${groupLabel}: ${item.text}`,
             })),
           );
         } catch (error) {
-          if (params.groups.length === 1) {
+          if (parameters.groups.length === 1) {
             throw error;
           }
 
           const committed = groups.flatMap((result, committedIndex) =>
             result.sha
               ? [
-                  `Group ${committedIndex + 1}/${params.groups.length}: ${result.sha} ${result.subject}`,
+                  `Group ${committedIndex + 1}/${parameters.groups.length}: ${result.sha} ${result.subject}`,
                 ]
               : [],
           );
@@ -808,8 +848,7 @@ export const createCommitTool = (
         }
       }
 
-      // One notice for the whole call, not one per group.
-      const gateOff = await tddGateStatus(ctx.cwd);
+      const gateOff = await tddGateStatus(context.cwd);
 
       return {
         content: gateOff === undefined ? content : [{ type: 'text', text: gateOff }, ...content],
