@@ -1579,6 +1579,101 @@ describe('commitTool.execute', () => {
   });
 });
 
+describe('preapproved commits', () => {
+  it('reviews and commits every group without opening the overlay', async () => {
+    const { exec, context, custom } = fakeCommit(['abort']);
+    const review = vi.fn<typeof reviewComments>().mockResolvedValue({ findings: [] });
+    const tool = createReviewedCommitTool({ exec }, review, () => true);
+    const groups = [
+      { files: ['one.txt'], subject: 'feat: add one' },
+      { files: ['two.txt'], subject: 'feat: add two' },
+    ];
+
+    const result = await tool.execute('batch', { groups }, undefined, undefined, context as never);
+
+    expect(result.details.groups.map((group) => group.subject)).toEqual(
+      groups.map((group) => group.subject),
+    );
+    expect(review).toHaveBeenCalledTimes(2);
+    expect(exec.mock.calls.filter((call) => call[1][0] === 'commit')).toHaveLength(2);
+    expect(custom).not.toHaveBeenCalled();
+  });
+
+  it('returns review failures and never opens a waiver dialog', async () => {
+    const { exec, context, custom, input } = fakeCommit(['waive']);
+    const review = vi
+      .fn<typeof reviewComments>()
+      .mockRejectedValue(new Error('Reviewer unavailable'));
+    const tool = createReviewedCommitTool({ exec }, review, () => true);
+
+    await expect(
+      tool.execute('call', input, undefined, undefined, context as never),
+    ).rejects.toThrow(/requires an explicit user waiver.*Reviewer unavailable/s);
+
+    expect(custom).not.toHaveBeenCalled();
+    expect(exec.mock.calls.some((call) => call[1][0] === 'commit')).toBe(false);
+    expect(exec).toHaveBeenLastCalledWith(
+      'git',
+      ['--literal-pathspecs', 'reset', '--', 'README.md'],
+      { cwd: '/repo' },
+    );
+  });
+
+  it('returns a blocker after two correction attempts without waiving findings', async () => {
+    const { exec, context, custom, input } = fakeCommit(['waive']);
+    const review = vi.fn<typeof reviewComments>().mockResolvedValue({
+      findings: [{ path: 'README.md', line: 1, kind: 'inaccurate', message: 'Incorrect claim.' }],
+    });
+    const tool = createReviewedCommitTool({ exec }, review, () => true);
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await expect(
+        tool.execute('call', input, undefined, undefined, context as never),
+      ).rejects.toThrow(
+        attempt <= 2 ? `needs corrections (${attempt}/2` : 'requires an explicit user waiver',
+      );
+    }
+
+    expect(custom).not.toHaveBeenCalled();
+    expect(exec.mock.calls.some((call) => call[1][0] === 'commit')).toBe(false);
+  });
+
+  it('still rejects failed project checks without a UI', async () => {
+    const repositoryDirectory = await createTemporaryRepository();
+    const review = vi.fn<typeof reviewComments>().mockResolvedValue({ findings: [] });
+    const tool = createReviewedCommitTool(
+      {
+        exec: (command, commandArguments, options) =>
+          runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
+      },
+      review,
+      () => true,
+    );
+
+    await writeRepositoryFile(
+      repositoryDirectory,
+      'package.json',
+      JSON.stringify({ scripts: { check: 'node -e "process.exit(1)"' } }),
+    );
+
+    await expect(
+      tool.execute(
+        'call',
+        {
+          groups: [{ files: ['package.json'], subject: 'feat: add package' }],
+        },
+        undefined,
+        undefined,
+        noUiContext(repositoryDirectory),
+      ),
+    ).rejects.toThrow('Project check failed');
+
+    expect(review).not.toHaveBeenCalled();
+    expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
+    expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('0');
+  });
+});
+
 describe('commit overlay flow', () => {
   it('applies a dispute only to the group carrying it', async () => {
     const { exec, context } = fakeCommit(['approve', 'approve']);

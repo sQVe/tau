@@ -222,6 +222,8 @@ describe('commitExtension', () => {
 
     const fakePi = {
       exec: executeCommand ?? (() => Promise.reject(new Error('not wired'))),
+      registerFlag: vi.fn<ExtensionAPI['registerFlag']>(),
+      getFlag: vi.fn<ExtensionAPI['getFlag']>().mockReturnValue(false),
       on(eventName: string, handler: (...commandArguments: never[]) => unknown) {
         registeredHandlers[eventName] ??= [];
         registeredHandlers[eventName].push(handler);
@@ -255,6 +257,51 @@ describe('commitExtension', () => {
     expect(registeredHandlers.tool_call).toHaveLength(1);
     expect(registeredHandlers.tool_call?.[0]).toBe(guardToolCall);
     expect(registeredCommands.has('commit')).toBe(true);
+  });
+
+  it('reads commit preapproval from the CLI flag at execution time', async () => {
+    const reviewer = vi.spyOn(commentReview, 'reviewComments').mockResolvedValue({ findings: [] });
+    const repositoryDirectory = await createTemporaryRepository();
+    const { fakePi, registeredTool } = createFakePi((command, commandArguments, options) =>
+      runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
+    );
+    const custom = vi.fn<() => Promise<string>>().mockResolvedValue('abort');
+
+    commitExtension(fakePi);
+
+    expect(fakePi.registerFlag).toHaveBeenCalledWith('auto-approve-commits', {
+      description:
+        'Skip commit confirmation for this process. Checks and comment review still apply.',
+      type: 'boolean',
+      default: false,
+    });
+    vi.mocked(fakePi.getFlag).mockImplementation((name) => name === 'auto-approve-commits');
+
+    try {
+      for (const hasUI of [true, false]) {
+        const file = hasUI ? 'interactive.txt' : 'headless.txt';
+
+        await writeRepositoryFile(repositoryDirectory, file, 'hello\n');
+
+        const result = await registeredTool()!.execute(
+          'call',
+          { groups: [{ files: [file], subject: 'feat: add file' }] },
+          undefined,
+          undefined,
+          { cwd: repositoryDirectory, hasUI, ui: { custom } } as never,
+        );
+
+        expect(result.details).toMatchObject({
+          groups: [{ files: [file], commentReview: { status: 'passed' } }],
+        });
+      }
+
+      expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('2');
+      expect(reviewer).toHaveBeenCalledTimes(2);
+      expect(custom).not.toHaveBeenCalled();
+    } finally {
+      reviewer.mockRestore();
+    }
   });
 
   it('sends skill messages as follow-ups when idle and steering messages when busy', async () => {

@@ -686,21 +686,23 @@ const executeGroup = async (
 export const createCommitTool = (
   pi: Pick<ExtensionAPI, 'exec'>,
   review = reviewComments,
+  autoApproveCommits = () => false,
 ): ToolDefinition<typeof commitToolParameters, { groups: CommitSuccess['details'][] }> => {
   const reviews: Reviews = new Map();
 
   return defineTool({
     name: 'commit',
     label: 'Commit',
-    description: 'Stage and commit logical groups sequentially, confirming each group.',
+    description:
+      'Stage and commit logical groups sequentially. Confirm each group unless started with --auto-approve-commits.',
     promptSnippet: 'Create git commits for an ordered groups array in one call.',
     promptGuidelines: [
-      'When asked to commit, call commit without asking for confirmation in chat first. Its overlay is the only approval step. The user approves, edits, skips, or aborts there, even for changes that look temporary or wrong.',
+      'When asked to commit, call commit without asking for confirmation in chat first. The commit overlay is the only approval step unless Pi was started with --auto-approve-commits. That flag skips confirmation, not checks or comment review.',
       'Only commit the files explicitly provided.',
       'Before commit approval, the root package.json scripts.check runs on each staged candidate. Fix failures and retry. If checks format files, run them locally and include those changes. Projects without scripts.check report verification as unavailable.',
       'Use a conventional commit subject.',
       'Do not commit sensitive files such as .env or SSH keys.',
-      "Comment review runs before commit approval. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. After two automatic returns, unresolved findings go to the user. Never claim a waiver on the user's behalf.",
+      "Comment review runs before commit approval. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. After two automatic returns, unresolved findings need a user waiver. With --auto-approve-commits, commit returns an error instead of asking for a waiver. Stop and report the blocker. Never claim a waiver on the user's behalf.",
     ],
     parameters: commitToolParameters,
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
@@ -709,7 +711,9 @@ export const createCommitTool = (
         validatePaths(group.files);
       }
 
-      if (!context.hasUI) {
+      const preapproved = autoApproveCommits();
+
+      if (!context.hasUI && !preapproved) {
         throw new Error('Cannot commit without user confirmation (non-interactive mode)');
       }
 
@@ -782,6 +786,10 @@ export const createCommitTool = (
             requestReview(index),
             {
               autoApprove: async () => {
+                if (preapproved) {
+                  return true;
+                }
+
                 const seen = approval.seen.get(index);
 
                 return (
