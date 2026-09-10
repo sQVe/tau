@@ -56,7 +56,7 @@ prompt, so the policy cannot link to the coding instructions. It states the comm
 
 Keep both statements in agreement. The instructions guide the agent as it writes; the gate decides
 whether a commit passes. If the gate protects a comment the instructions do not mention, the agent
-may delete it and block the commit. Change both files together.
+may delete it, and the gate may block the commit. Change both files together.
 
 ### Types
 
