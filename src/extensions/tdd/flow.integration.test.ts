@@ -449,7 +449,7 @@ it('rejects unformatted files in the real hook without rewriting them', async ({
   expect((await git(['rev-list', '--all', '--count'])).stdout.trim()).toBe('0');
 });
 
-it('allows commit and its project fixer writes outside the file-tool guard', async ({
+it('allows commit and its project preparation writes outside the file-tool guard', async ({
   onTestFinished,
 }) => {
   const { cwd, session, call } = await createHarness(onTestFinished);
@@ -473,7 +473,13 @@ it('allows commit and its project fixer writes outside the file-tool guard', asy
     join(cwd, 'package.json'),
     JSON.stringify({
       type: 'module',
-      scripts: { fix: 'vp fmt src/value.ts', check: 'vp fmt --check src/value.ts' },
+    }),
+  );
+  await writeFile(
+    join(cwd, 'tau.json'),
+    JSON.stringify({
+      prepare: ['pnpm', 'exec', 'vp', 'fmt', 'src/value.ts'],
+      check: ['pnpm', 'exec', 'vp', 'fmt', '--check', 'src/value.ts'],
     }),
   );
   await mkdir(join(cwd, 'src'));
@@ -493,13 +499,18 @@ it('allows commit and its project fixer writes outside the file-tool guard', asy
 
   const committed = await call(
     'commit',
-    { groups: [{ files: ['src/value.ts', 'package.json'], subject: 'feat: format fixture' }] },
+    {
+      groups: [
+        { files: ['src/value.ts', 'package.json', 'tau.json'], subject: 'feat: format fixture' },
+      ],
+    },
     [fauxAssistantMessage('{"findings":[]}')],
   );
 
   expect(await readFile(join(cwd, 'src/value.ts'), 'utf8')).toBe('export const value = 1;\n');
 
   expect(committed).toMatchObject({ isError: false });
+  expect(JSON.stringify(committed.result)).toContain('Project check passed');
   expect((await git(['show', 'HEAD:src/value.ts'])).stdout).toBe('export const value = 1;\n');
 });
 

@@ -192,17 +192,208 @@ const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)
   return { custom, editor, exec, context, input, execute, previews };
 };
 
-it('reports a failing fixer before staging or approval', async () => {
+it('rejects calls outside Git before running configured commands or changing files', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-no-git-'));
+  temporaryDirectories.push(directory);
+
+  const config = JSON.stringify({
+    prepare: ['sh', '-c', 'touch mutated'],
+    check: ['sh', '-c', 'touch checked'],
+  });
+
+  await writeFile(join(directory, 'tau.json'), config);
+
+  const exec = vi.fn<ExtensionAPI['exec']>((command, arguments_, options) =>
+    runCommand(command, arguments_, options?.cwd ?? directory),
+  );
+  const tool = createCommitTool({ exec });
+
+  await expect(
+    tool.execute(
+      'outside-git',
+      {
+        groups: [{ files: ['tau.json'], subject: 'chore: configure commands' }],
+      },
+      undefined,
+      undefined,
+      confirmedContext(directory),
+    ),
+  ).rejects.toThrow(/not a git repository/i);
+  expect(exec.mock.calls.map(([command, arguments_]) => [command, arguments_])).toEqual([
+    ['git', ['rev-parse', '--show-toplevel']],
+  ]);
+  expect(await readFile(join(directory, 'tau.json'), 'utf8')).toBe(config);
+  await expect(readFile(join(directory, 'mutated'))).rejects.toThrow(/ENOENT/);
+  await expect(readFile(join(directory, 'checked'))).rejects.toThrow(/ENOENT/);
+});
+
+it('prepares and checks without a package manifest', async () => {
+  const repositoryDirectory = await createTemporaryRepository();
+
+  await writeRepositoryFile(repositoryDirectory, 'README.md', 'unformatted');
+  await writeRepositoryFile(
+    repositoryDirectory,
+    'tau.json',
+    JSON.stringify({
+      prepare: [
+        'sh',
+        '-c',
+        'test "$#" = 1 && test "$1" = "" && printf "formatted\\n" > README.md',
+        'prepare',
+        '',
+      ],
+      check: [
+        'sh',
+        '-c',
+        'grep -qx formatted README.md && test "$#" = 1 && test "$1" = ""',
+        'check',
+        '',
+      ],
+    }),
+  );
+
+  const result = await executeCommit(repositoryDirectory, {
+    groups: [{ files: ['README.md', 'tau.json'], subject: 'docs: format readme' }],
+  });
+
+  expect(JSON.stringify(result.content)).toContain('Project preparation passed: sh');
+  expect(result.details.groups[0]?.projectCheck).toContain('Project check passed: sh');
+  expect(await git(repositoryDirectory, ['show', 'HEAD:README.md'])).toBe('formatted\n');
+});
+
+it.each([
+  '{',
+  'null',
+  '[]',
+  '{"prepare":null}',
+  '{"prepare":[]}',
+  '{"prepare":"make format"}',
+  '{"prepare":[" "]}',
+  '{"prepare":["make",1]}',
+  '{"prepare":["make","\\u0000"]}',
+  '{"check":null}',
+  '{"check":[]}',
+  '{"check":"make check"}',
+  '{"check":[" "]}',
+  '{"check":["make",1]}',
+  '{"check":["make","\\u0000"]}',
+])('rejects invalid command config before staging: %s', async (config) => {
+  const repositoryDirectory = await createTemporaryRepository();
+
+  await writeRepositoryFile(repositoryDirectory, 'tau.json', config);
+
+  await expect(
+    executeCommit(repositoryDirectory, {
+      groups: [{ files: ['tau.json'], subject: 'chore: configure commands' }],
+    }),
+  ).rejects.toThrow(/tau.json/);
+  expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
+});
+
+it.each([false, true])(
+  'does not infer commands from package scripts with config present: %s',
+  async (present) => {
+    const repositoryDirectory = await createTemporaryRepository();
+
+    if (present) {
+      await writeRepositoryFile(repositoryDirectory, 'tau.json', '{}');
+    }
+
+    await writeRepositoryFile(
+      repositoryDirectory,
+      'package.json',
+      JSON.stringify({
+        packageManager: 'unsupported@1',
+        scripts: { fix: 'exit 1', prepare: 'exit 1', check: 'exit 1' },
+      }),
+    );
+
+    const result = await executeCommit(repositoryDirectory, {
+      groups: [
+        {
+          files: present ? ['tau.json', 'package.json'] : ['package.json'],
+          subject: 'chore: configure project',
+        },
+      ],
+    });
+
+    expect(JSON.stringify(result.content)).toContain(
+      present
+        ? 'Project preparation unavailable: no prepare command in tau.json.'
+        : 'Project preparation unavailable: no root tau.json.',
+    );
+    expect(result.details.groups[0]?.projectCheck).toBe(
+      present
+        ? 'Project check unavailable: no check command in tau.json.'
+        : 'Project check unavailable: no root tau.json.',
+    );
+  },
+);
+
+it('rejects obsolete reserved and unknown settings before preparation or staging', async () => {
+  const repositoryDirectory = await createTemporaryRepository();
+  const exec = vi.fn<ExtensionAPI['exec']>((command, arguments_, options) =>
+    runCommand(command, arguments_, options?.cwd ?? repositoryDirectory),
+  );
+  const tool = createCommitTool({ exec });
+  const settings = [
+    { fix: ['make', 'format'] },
+    { checkMessage: ['make', 'message'] },
+    { hooks: 'skip' },
+    { hooks: 'run' },
+    { chek: ['make', 'check'] },
+    { check: [] },
+  ];
+  const errors = [
+    /fix.*rename.*prepare/i,
+    /checkMessage.*not implemented/i,
+    /hooks.*not implemented/i,
+    /hooks.*not implemented/i,
+    /unknown.*chek/i,
+    /check.*nonempty/i,
+  ];
+
+  for (const [index, setting] of settings.entries()) {
+    await writeRepositoryFile(
+      repositoryDirectory,
+      'tau.json',
+      JSON.stringify({
+        prepare: ['sh', '-c', 'touch mutated'],
+        ...setting,
+      }),
+    );
+    exec.mockClear();
+
+    await expect(
+      tool.execute(
+        'invalid',
+        {
+          groups: [{ files: ['tau.json'], subject: 'chore: config' }],
+        },
+        undefined,
+        undefined,
+        confirmedContext(repositoryDirectory),
+      ),
+    ).rejects.toThrow(errors[index]);
+    expect(
+      exec.mock.calls.every(
+        ([command, arguments_]) => command === 'git' && arguments_[0] === 'rev-parse',
+      ),
+    ).toBe(true);
+    await expect(readFile(join(repositoryDirectory, 'mutated'))).rejects.toThrow(/ENOENT/);
+    expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
+  }
+});
+
+it('reports a failing preparation before staging or approval', async () => {
   const repositoryDirectory = await createTemporaryRepository();
 
   await writeRepositoryFile(
     repositoryDirectory,
-    'package.json',
+    'tau.json',
     JSON.stringify({
-      scripts: {
-        fix: 'echo fixer failed >&2; exit 1',
-        check: 'exit 0',
-      },
+      prepare: ['sh', '-c', 'echo preparation failed >&2; exit 1'],
+      check: ['sh', '-c', 'exit 0'],
     }),
   );
   const approval = vi.fn<ExtensionContext['ui']['custom']>();
@@ -214,45 +405,45 @@ it('reports a failing fixer before staging or approval', async () => {
   await expect(
     tool.execute(
       'fix',
-      { groups: [{ files: ['package.json'], subject: 'feat: fixture' }] },
+      { groups: [{ files: ['tau.json'], subject: 'feat: fixture' }] },
       undefined,
       undefined,
       { cwd: repositoryDirectory, hasUI: true, ui: { custom: approval } } as never,
     ),
-  ).rejects.toThrow(/Project fixer failed[\s\S]*fixer failed/);
+  ).rejects.toThrow(/Project preparation failed[\s\S]*preparation failed/);
   expect(approval).not.toHaveBeenCalled();
   expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
 });
 
-it('reports a missing fixer while still checking the candidate', async () => {
+it('reports missing preparation while still checking the candidate', async () => {
   const repositoryDirectory = await createTemporaryRepository();
 
   await writeRepositoryFile(
     repositoryDirectory,
-    'package.json',
-    JSON.stringify({ scripts: { check: 'exit 0' } }),
+    'tau.json',
+    JSON.stringify({ check: ['sh', '-c', 'exit 0'] }),
   );
 
   const result = await executeCommit(repositoryDirectory, {
-    groups: [{ files: ['package.json'], subject: 'feat: fixture' }],
+    groups: [{ files: ['tau.json'], subject: 'feat: fixture' }],
   });
 
   expect(JSON.stringify(result.content)).toContain(
-    'Project fixer unavailable: no root scripts.fix.',
+    'Project preparation unavailable: no prepare command in tau.json.',
   );
   expect(result.details.groups[0]?.projectCheck).toContain('Project check passed');
 });
 
-it('rejects an array as the root package manifest before approval', async () => {
+it('rejects an array as the root config before approval', async () => {
   const repositoryDirectory = await createTemporaryRepository();
 
-  await writeRepositoryFile(repositoryDirectory, 'package.json', '[]');
+  await writeRepositoryFile(repositoryDirectory, 'tau.json', '[]');
 
   await expect(
     executeCommit(repositoryDirectory, {
-      groups: [{ files: ['package.json'], subject: 'feat: package' }],
+      groups: [{ files: ['tau.json'], subject: 'feat: package' }],
     }),
-  ).rejects.toThrow('package.json must be an object');
+  ).rejects.toThrow('tau.json must be an object');
   expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
 });
 
@@ -261,8 +452,8 @@ it('rejects a staged candidate whose project check fails despite an unstaged fix
 
   await writeRepositoryFile(
     repositoryDirectory,
-    'package.json',
-    JSON.stringify({ scripts: { fix: 'exit 0', check: 'node check.cjs' } }),
+    'tau.json',
+    JSON.stringify({ prepare: ['sh', '-c', 'exit 0'], check: ['node', 'check.cjs'] }),
   );
   await writeRepositoryFile(
     repositoryDirectory,
@@ -276,6 +467,11 @@ it('rejects a staged candidate whose project check fails despite an unstaged fix
   const head = await git(repositoryDirectory, ['rev-parse', 'HEAD']);
 
   await writeRepositoryFile(repositoryDirectory, 'value.cjs', 'module.exports = 2;');
+  await writeRepositoryFile(
+    repositoryDirectory,
+    'tau.json',
+    JSON.stringify({ check: ['node', '-e', 'process.exit(0)'] }),
+  );
   await writeRepositoryFile(repositoryDirectory, 'README.md', 'Document the change.');
 
   await expect(
@@ -292,8 +488,8 @@ it('checks the first commit and leaves unrelated working changes untouched', asy
 
   await writeRepositoryFile(
     repositoryDirectory,
-    'package.json',
-    JSON.stringify({ packageManager: 'pnpm@12.3.4', scripts: { check: 'node check.cjs' } }),
+    'tau.json',
+    JSON.stringify({ check: ['node', 'check.cjs'] }),
   );
   await writeRepositoryFile(
     repositoryDirectory,
@@ -311,7 +507,7 @@ it('checks the first commit and leaves unrelated working changes untouched', asy
   const result = await executeCommit(repositoryDirectory, {
     groups: [
       {
-        files: ['package.json', 'check.cjs', 'value.cjs'],
+        files: ['tau.json', 'check.cjs', 'value.cjs'],
         subject: 'feat: initial value',
       },
     ],
@@ -331,8 +527,8 @@ it('checks a staged tree that tracks node_modules', async () => {
 
   await writeRepositoryFile(
     repositoryDirectory,
-    'package.json',
-    JSON.stringify({ scripts: { check: 'node check.cjs' } }),
+    'tau.json',
+    JSON.stringify({ check: ['node', 'check.cjs'] }),
   );
   await writeRepositoryFile(
     repositoryDirectory,
@@ -348,7 +544,7 @@ it('checks a staged tree that tracks node_modules', async () => {
   const result = await executeCommit(repositoryDirectory, {
     groups: [
       {
-        files: ['package.json', 'check.cjs', 'node_modules/vendored.cjs'],
+        files: ['tau.json', 'check.cjs', 'node_modules/vendored.cjs'],
         subject: 'feat: vendored dependency',
       },
     ],
@@ -367,14 +563,14 @@ it('returns cancelled when aborted while the project check runs', async () => {
 
   await writeRepositoryFile(
     repositoryDirectory,
-    'package.json',
-    JSON.stringify({ scripts: { check: 'node check.cjs' } }),
+    'tau.json',
+    JSON.stringify({ check: ['node', 'check.cjs'] }),
   );
   await writeRepositoryFile(repositoryDirectory, 'check.cjs', '');
 
   const commitTool = createCommitTool({
     exec(command: string, commandArguments: string[], options?: { cwd?: string }) {
-      if (commandArguments.includes('run') && commandArguments.includes('check')) {
+      if (command === 'node' && commandArguments.includes('check.cjs')) {
         controller.abort();
       }
 
@@ -384,7 +580,7 @@ it('returns cancelled when aborted while the project check runs', async () => {
 
   const result = await commitTool.execute(
     'tool-call-1',
-    { groups: [{ files: ['package.json', 'check.cjs'], subject: 'feat: check' }] },
+    { groups: [{ files: ['tau.json', 'check.cjs'], subject: 'feat: check' }] },
     controller.signal,
     undefined,
     confirmedContext(repositoryDirectory),
@@ -401,7 +597,7 @@ it('returns cancelled when aborted while the project check runs', async () => {
   expect(stagedFiles).toBe('');
 });
 
-it('returns cancelled when aborted while the project fixer runs', async () => {
+it('returns cancelled when aborted while project preparation runs', async () => {
   const repositoryDirectory = await createTemporaryRepository();
   const controller = new AbortController();
 
@@ -409,17 +605,17 @@ it('returns cancelled when aborted while the project fixer runs', async () => {
 
   const head = await git(repositoryDirectory, ['rev-parse', 'HEAD']);
 
+  await writeRepositoryFile(repositoryDirectory, 'check.cjs', '');
+  await writeRepositoryFile(repositoryDirectory, 'prepare.cjs', '');
   await writeRepositoryFile(
     repositoryDirectory,
-    'package.json',
-    JSON.stringify({ scripts: { check: 'node check.cjs', fix: 'node fix.cjs' } }),
+    'tau.json',
+    JSON.stringify({ prepare: ['node', 'prepare.cjs'], check: ['node', 'check.cjs'] }),
   );
-  await writeRepositoryFile(repositoryDirectory, 'check.cjs', '');
-  await writeRepositoryFile(repositoryDirectory, 'fix.cjs', '');
 
   const commitTool = createCommitTool({
     exec(command: string, commandArguments: string[], options?: { cwd?: string }) {
-      if (commandArguments.includes('run') && commandArguments.includes('fix')) {
+      if (command === 'node' && commandArguments.includes('prepare.cjs')) {
         controller.abort();
       }
 
@@ -430,7 +626,9 @@ it('returns cancelled when aborted while the project fixer runs', async () => {
   const result = await commitTool.execute(
     'tool-call-1',
     {
-      groups: [{ files: ['package.json', 'check.cjs', 'fix.cjs'], subject: 'feat: fix and check' }],
+      groups: [
+        { files: ['tau.json', 'check.cjs', 'prepare.cjs'], subject: 'feat: prepare and check' },
+      ],
     },
     controller.signal,
     undefined,
@@ -448,13 +646,78 @@ it('returns cancelled when aborted while the project fixer runs', async () => {
   expect(stagedFiles).toBe('');
 });
 
+it.each(['pass', 'fail', 'killed', 'cancel'] as const)(
+  'cleans up the candidate after check result: %s',
+  async (outcome) => {
+    const repositoryDirectory = await createTemporaryRepository();
+    const controller = new AbortController();
+    let candidateDirectory = '';
+
+    await writeRepositoryFile(
+      repositoryDirectory,
+      'tau.json',
+      JSON.stringify({ check: ['check-command', ''] }),
+    );
+
+    const tool = createCommitTool({
+      exec: (command, arguments_, options) => {
+        if (command !== 'check-command') {
+          return runCommand(command, arguments_, options?.cwd ?? repositoryDirectory);
+        }
+
+        candidateDirectory = options?.cwd ?? '';
+        expect(candidateDirectory).not.toBe(repositoryDirectory);
+        expect(arguments_).toEqual(['']);
+        expect(options).toMatchObject({ signal: controller.signal, timeout: 600_000 });
+
+        if (outcome === 'cancel') {
+          controller.abort();
+        }
+
+        return Promise.resolve({
+          code: outcome === 'fail' ? 1 : 0,
+          killed: outcome === 'killed',
+          stdout: '',
+          stderr: 'check diagnostic',
+        });
+      },
+    });
+    const result = tool.execute(
+      'cleanup',
+      {
+        groups: [{ files: ['tau.json'], subject: 'chore: configure check' }],
+      },
+      controller.signal,
+      undefined,
+      confirmedContext(repositoryDirectory),
+    );
+
+    const message = await result.then(
+      (committed) => JSON.stringify(committed.content),
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
+    const expected = {
+      pass: /Project check passed/,
+      fail: /Project check failed.*check diagnostic/s,
+      killed: /Project check failed.*check diagnostic/s,
+      cancel: /Commit cancelled/,
+    };
+
+    expect(message).toMatch(expected[outcome]);
+
+    expect(candidateDirectory).not.toBe('');
+    await expect(readFile(join(candidateDirectory, 'tau.json'))).rejects.toThrow(/ENOENT/);
+    expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
+  },
+);
+
 it('rejects check-time formatting without modifying the working file', async () => {
   const repositoryDirectory = await createTemporaryRepository();
 
   await writeRepositoryFile(
     repositoryDirectory,
-    'package.json',
-    JSON.stringify({ scripts: { check: 'node check.cjs' } }),
+    'tau.json',
+    JSON.stringify({ check: ['node', 'check.cjs'] }),
   );
   await writeRepositoryFile(
     repositoryDirectory,
@@ -467,7 +730,7 @@ it('rejects check-time formatting without modifying the working file', async () 
     executeCommit(repositoryDirectory, {
       groups: [
         {
-          files: ['package.json', 'check.cjs', 'value.cjs'],
+          files: ['tau.json', 'check.cjs', 'value.cjs'],
           subject: 'feat: initial value',
         },
       ],
@@ -1316,7 +1579,7 @@ describe('commitTool.execute', () => {
       files: ['README.md'],
       subject: 'feat: add thing',
       body: 'Initial project file.',
-      projectCheck: 'Project check unavailable: no root package.json.',
+      projectCheck: 'Project check unavailable: no root tau.json.',
       commentReview: {
         status: 'passed',
         tree: (await git(repositoryDirectory, ['rev-parse', 'HEAD^{tree}'])).trim(),
@@ -1329,7 +1592,7 @@ describe('commitTool.execute', () => {
       { type: 'text', text: 'no test runner resolves from this worktree' },
       {
         type: 'text',
-        text: `${commitHash} feat: add thing\nProject fixer unavailable: no root package.json.\nProject check unavailable: no root package.json.`,
+        text: `${commitHash} feat: add thing\nProject preparation unavailable: no root tau.json.\nProject check unavailable: no root tau.json.`,
       },
     ]);
   });
@@ -1410,6 +1673,24 @@ describe('commitTool.execute', () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     await writeRepositoryFile(repositoryDirectory, 'sub/a.txt', 'hello\n');
+    await writeRepositoryFile(
+      repositoryDirectory,
+      'sub/tau.json',
+      JSON.stringify({
+        prepare: ['sh', '-c', 'exit 81'],
+        check: ['sh', '-c', 'exit 82'],
+      }),
+    );
+    await writeRepositoryFile(
+      repositoryDirectory,
+      'tau.json',
+      JSON.stringify({
+        prepare: ['sh', '-c', 'printf "prepared\\n" > sub/a.txt'],
+        check: ['grep', '-qx', 'prepared', 'sub/a.txt'],
+      }),
+    );
+    await git(repositoryDirectory, ['add', 'tau.json', 'sub/tau.json']);
+    await git(repositoryDirectory, ['commit', '-m', 'chore: configure commands']);
 
     const commitTool = createCommitTool({
       exec(command: string, commandArguments: string[], options?: { cwd?: string }) {
@@ -1417,7 +1698,7 @@ describe('commitTool.execute', () => {
       },
     });
 
-    await commitTool.execute(
+    const result = await commitTool.execute(
       'tool-call-1',
       { groups: [{ files: ['a.txt'], subject: 'feat: add a' }] },
       undefined,
@@ -1425,7 +1706,9 @@ describe('commitTool.execute', () => {
       confirmedContext(join(repositoryDirectory, 'sub')),
     );
 
-    expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('1');
+    expect(result.details.groups[0]?.projectCheck).toContain('Project check passed');
+    expect(await git(repositoryDirectory, ['show', 'HEAD:sub/a.txt'])).toBe('prepared\n');
+    expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('2');
     expect(
       (await git(repositoryDirectory, ['show', '--name-only', '--format=', 'HEAD'])).trim(),
     ).toBe('sub/a.txt');
@@ -1528,7 +1811,7 @@ describe('commitTool.execute', () => {
     ).rejects.toThrow(/already staged: old\.md/i);
   });
 
-  it('runs the fixer before staging and approves the fixed bytes on the first call', async () => {
+  it('prepares once before staging and approves the prepared bytes on the first call', async () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     await git(repositoryDirectory, ['commit', '--allow-empty', '-m', 'test: baseline']);
@@ -1543,32 +1826,35 @@ describe('commitTool.execute', () => {
 
     await writeRepositoryFile(
       repositoryDirectory,
-      'package.json',
-      JSON.stringify({ scripts: { fix: 'node fix.cjs', check: 'grep -qx formatted README.md' } }),
+      'prepare.cjs',
+      "require('node:assert').equal(require('node:child_process').execSync('git diff --cached --name-only').toString(), ''); require('node:fs').writeFileSync('README.md', 'formatted\\n'); require('node:fs').writeFileSync('unrelated.txt', 'also fixed');",
     );
     await writeRepositoryFile(
       repositoryDirectory,
-      'fix.cjs',
-      "require('node:assert').equal(require('node:child_process').execSync('git diff --cached --name-only').toString(), ''); require('node:fs').writeFileSync('README.md', 'formatted\\n'); require('node:fs').writeFileSync('unrelated.txt', 'also fixed');",
+      'tau.json',
+      JSON.stringify({
+        prepare: ['node', 'prepare.cjs'],
+        check: ['grep', '-qx', 'formatted', 'README.md'],
+      }),
     );
-    const tool = createReviewedCommitTool(
-      {
-        exec: (command, arguments_, options) =>
-          runCommand(command, arguments_, options?.cwd ?? repositoryDirectory),
-      },
-      async (_pi, _context, _signal, snapshot) => {
-        expect(await git(repositoryDirectory, ['show', `${snapshot?.tree}:README.md`])).toBe(
-          'formatted\n',
-        );
+    const exec = vi.fn<ExtensionAPI['exec']>((command, arguments_, options) =>
+      runCommand(command, arguments_, options?.cwd ?? repositoryDirectory),
+    );
+    const tool = createReviewedCommitTool({ exec }, async (_pi, _context, _signal, snapshot) => {
+      expect(await git(repositoryDirectory, ['show', `${snapshot?.tree}:README.md`])).toBe(
+        'formatted\n',
+      );
 
-        return { findings: [] };
-      },
-    );
+      return { findings: [] };
+    });
     const result = await tool.execute(
       'fix',
       {
         groups: [
-          { files: ['README.md', 'package.json', 'fix.cjs'], subject: 'feat: add readme' },
+          {
+            files: ['README.md', 'prepare.cjs', 'tau.json'],
+            subject: 'feat: add readme',
+          },
           { files: ['second.txt'], subject: 'feat: second group' },
         ],
       },
@@ -1577,8 +1863,12 @@ describe('commitTool.execute', () => {
       confirmedContext(repositoryDirectory),
     );
 
-    expect(JSON.stringify(result.content)).toContain('Project fixer passed: npm run fix');
+    expect(JSON.stringify(result.content)).toContain(
+      'Project preparation passed: node prepare.cjs',
+    );
     expect(result.details.groups[0]?.projectCheck).toContain('Project check passed');
+    expect(exec.mock.calls.filter(([command]) => command === 'node')).toHaveLength(1);
+    expect(exec.mock.calls.filter(([command]) => command === 'grep')).toHaveLength(2);
 
     const statusOutput = await git(repositoryDirectory, ['status', '--short']);
     const committedContent = await git(repositoryDirectory, ['show', 'HEAD:README.md']);
@@ -1780,15 +2070,15 @@ describe('preapproved commits', () => {
 
     await writeRepositoryFile(
       repositoryDirectory,
-      'package.json',
-      JSON.stringify({ scripts: { check: 'node -e "process.exit(1)"' } }),
+      'tau.json',
+      JSON.stringify({ check: ['node', '-e', 'process.exit(1)'] }),
     );
 
     await expect(
       tool.execute(
         'call',
         {
-          groups: [{ files: ['package.json'], subject: 'feat: add package' }],
+          groups: [{ files: ['tau.json'], subject: 'feat: add package' }],
         },
         undefined,
         undefined,

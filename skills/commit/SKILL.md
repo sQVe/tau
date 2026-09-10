@@ -56,16 +56,9 @@ Turn the current diff into clean commits using the `commit` tool.
    - For each group, prepare a conventional-commit subject and the exact file list.
 
 3. Call the `commit` tool once with an ordered `groups` array. Each group contains `files`,
-   `subject`, and `body`. The tool reviews and confirms each group sequentially. Do not end the turn
-   before the tool call. If the change looks temporary, wrong, or like a placeholder, still call the
-   tool. Without startup preapproval, the overlay lets the user skip, abort, or press `A` to approve
-   all remaining groups. Every group still runs comment review and the root `package.json` check
-   script on a temporary checkout of its staged content. `A` never waives a blocked review or failed
-   check. A missing check script is reported as unavailable. Before staging, the tool runs root
-   `scripts.fix` once when available. A failed fixer stops the call; a missing fixer does not skip
-   checks. Fixers can change unrequested working files, but the tool stages only requested files.
-   Checks use installed root dependencies and do not install packages. Check-time changes require
-   another call.
+   `subject`, and `body`. The tool runs configured commands, reviews changes, and handles approval.
+   Do not run those commands separately to duplicate the tool's work. Report unavailable checks as
+   unavailable, not passed.
 
 4. If the `commit` tool succeeds, report the result and continue.
    - A skipped group is not a failure; the tool continues with later groups.
@@ -76,9 +69,8 @@ Turn the current diff into clean commits using the `commit` tool.
      from retries.
    - Run `git status --porcelain` first. If the working tree is clean, the changes were already
      committed, for example by a prior group. Report this and move on.
-   - If changes remain and the error text names a failing hook, use its output to guide retries:
-     - Read the error text carefully. It carries the hook's own output.
-     - Diagnose the actual failure from the hook output.
+   - If changes remain, use the tool's error output to guide retries:
+     - Read the reported command, configuration, hook, or review error.
      - Fix the underlying issue, such as lint, format, or test failures.
      - Include any files modified during the fix in the retried group's `files` list.
      - Retry the `commit` tool with the corrected group and any remaining groups in `groups`. Leave
@@ -100,7 +92,7 @@ Turn the current diff into clean commits using the `commit` tool.
 - Proposed each group with exact files, a conventional-commit subject, and a body.
 - Used the `commit` tool, not bash, for every commit. The tool handles user confirmation.
 - On failure, checked `git status` before investigating.
-- On a hook failure, read the error text, fixed the cause, and retried no more than 3 times.
+- On failure, read the error text, fixed the cause, and retried no more than 3 times.
 - Stopped when the working tree was clean or the user chose to stop.
 
 ## See also

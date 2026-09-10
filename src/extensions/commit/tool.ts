@@ -19,7 +19,7 @@ import {
 import type { CommentReview } from './commentReview.js';
 import type { CommitView } from './overlay.js';
 import { confirmCommitOverlay } from './overlay.js';
-import { checkProject, fixProject } from './projectCheck.js';
+import { checkProject, prepareProject } from './projectCheck.js';
 import type { CommitSuccess } from './types.js';
 
 export const conventionalCommitSubjectPattern =
@@ -333,7 +333,7 @@ const planGroupReviews = async (
 const executeGroup = async (
   parameters: CommitInput['groups'][number],
   groupLabel: string | undefined,
-  projectFix: string,
+  projectPreparation: string,
   pi: Pick<ExtensionAPI, 'exec'>,
   context: ExtensionContext,
   signal: AbortSignal | undefined,
@@ -504,7 +504,7 @@ const executeGroup = async (
     }
 
     const files = await stagedNumstat(pi, context.cwd, parameters.files);
-    let notice = `${projectFix}\n${projectCheck}`;
+    let notice = `${projectPreparation}\n${projectCheck}`;
 
     while (true) {
       if (signal?.aborted) {
@@ -529,7 +529,7 @@ const executeGroup = async (
             },
             signal,
           );
-      notice = `${projectFix}\n${projectCheck}`;
+      notice = `${projectPreparation}\n${projectCheck}`;
 
       if (signal?.aborted) {
         return cancelled();
@@ -665,7 +665,7 @@ const executeGroup = async (
     content: [
       {
         type: 'text',
-        text: `${commitHash} ${subject}\n${projectFix}\n${projectCheck}${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
+        text: `${commitHash} ${subject}\n${projectPreparation}\n${projectCheck}${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
       },
     ],
     details: {
@@ -700,7 +700,7 @@ export const createCommitTool = (
     promptGuidelines: [
       'When asked to commit, call commit without asking for confirmation in chat first. The commit overlay is the only approval step unless Pi was started with --auto-approve-commits. That flag skips confirmation, not checks or comment review.',
       'Only commit the files explicitly provided.',
-      'Before staging, the root package.json scripts.fix runs when available. Then scripts.check runs on each staged candidate before approval. Fix failures and retry. Missing scripts are reported; a missing fixer does not skip verification.',
+      'The tool runs configured preparation and candidate checks itself. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
       'Use a conventional commit subject.',
       'Do not commit sensitive files such as .env or SSH keys.',
       "Comment review runs before commit approval. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. After two automatic returns, unresolved findings need a user waiver. With --auto-approve-commits, commit returns an error instead of asking for a waiver. Stop and report the blocker. Never claim a waiver on the user's behalf.",
@@ -734,11 +734,11 @@ export const createCommitTool = (
         return { content: reported, details: { groups } };
       };
 
-      let projectFix = 'Project fixer cancelled.';
+      let projectPreparation = 'Project preparation cancelled.';
 
       if (!signal?.aborted) {
         try {
-          projectFix = await fixProject(pi, context.cwd, signal);
+          projectPreparation = await prepareProject(pi, context.cwd, signal);
         } catch (error) {
           if (signal?.aborted) {
             return finish([{ type: 'text', text: 'Commit cancelled' }]);
@@ -806,7 +806,7 @@ export const createCommitTool = (
           const result = await executeGroup(
             group,
             parameters.groups.length > 1 ? groupLabel : undefined,
-            projectFix,
+            projectPreparation,
             pi,
             context,
             signal,

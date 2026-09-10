@@ -20,4 +20,4 @@ Start with the [template](./TEMPLATE.md). Follow the
 - [0010: Documentation scope](./0010-documentation-scope.md)
 - [0011: Commit preapproval at startup](./0011-commit-preapproval.md)
 - [0012: Shared TDD state](./0012-shared-tdd-state.md)
-- [0013: Fix before commit staging](./0013-fix-before-commit-staging.md)
+- [0013: Explicit repository commit commands](./0013-explicit-repository-commit-commands.md)
