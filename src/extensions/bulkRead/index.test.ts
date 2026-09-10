@@ -221,7 +221,7 @@ it.each(['error', 'aborted', 'length', 'throw', 'abort', 'timeout', 'file', 'loo
       throw: { name: 'Error', message: 'denied. Check pi --list-models.' },
       abort: { name: 'AbortError', message: 'cancelled' },
       timeout: { name: 'TimeoutError', message: 'timed out' },
-      file: { name: 'Error', message: '/missing/tau-bulk-file' },
+      file: { name: 'BulkReadInputError', message: '/missing/tau-bulk-file' },
       lookup: { name: 'Error', message: 'denied' },
     }[reason];
     const failure = app.execute(signal, paths);
@@ -232,13 +232,17 @@ it.each(['error', 'aborted', 'length', 'throw', 'abort', 'timeout', 'file', 'loo
     const read = readCall();
     app.emit('tool_call', read);
 
-    const hard = ['error', 'throw', 'file', 'lookup'].includes(reason);
+    const hard = ['error', 'throw', 'lookup'].includes(reason);
     expect(read.input.limit).toBe(hard ? undefined : 400);
   },
 );
 
 it('reads the reference from the environment and falls back to the default', () => {
   vi.stubEnv('TAU_BULK_READ_MODEL', undefined);
+
+  expect(delegateReference()).toBe('openai-codex/gpt-5.6-luna');
+
+  vi.stubEnv('TAU_BULK_READ_MODEL', '');
 
   expect(delegateReference()).toBe('openai-codex/gpt-5.6-luna');
 

@@ -2,15 +2,22 @@ import { isToolCallEventType } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { BULK_READ_TOOL, bulkRead } from './tool.js';
+import { BULK_READ_INPUT_ERROR, BULK_READ_TOOL, bulkRead } from './tool.js';
 
 // ponytail: seeded at 400 and kept after the 2026-09-10 measurement in docs/development.md, which
 // found the saving inside run-to-run variance. Revisit when the delegate or session model changes.
 export const BULK_READ_LINE_THRESHOLD = 400;
 
-export const delegateReference = (): string =>
+// Recoverable failures say nothing about whether the delegate is reachable, so trimming stays on.
+const RECOVERABLE_ERRORS = new Set(['AbortError', 'TimeoutError', BULK_READ_INPUT_ERROR]);
+
+export const delegateReference = (): string => {
   // eslint-disable-next-line node/no-process-env -- ADR 0011 defines the delegate environment setting.
-  process.env.TAU_BULK_READ_MODEL ?? 'openai-codex/gpt-5.6-luna';
+  const reference = process.env.TAU_BULK_READ_MODEL;
+
+  // An exported but empty setting means unset, so it takes the default rather than a missing model.
+  return reference == null || reference === '' ? 'openai-codex/gpt-5.6-luna' : reference;
+};
 
 export const rewriteContinuationNotice = (text: string): string =>
   text.replace(
@@ -51,7 +58,7 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
 
         return await bulkRead(ctx, model, params, signal);
       } catch (error) {
-        if (!(error instanceof Error) || !['AbortError', 'TimeoutError'].includes(error.name)) {
+        if (!(error instanceof Error) || !RECOVERABLE_ERRORS.has(error.name)) {
           trimming = false;
         }
 

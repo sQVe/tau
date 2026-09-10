@@ -1,5 +1,5 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
@@ -12,7 +12,7 @@ const setup = async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-bulk-'));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
   const model = fauxProvider().getModel();
-  const response = fauxAssistantMessage('1: answer\n2: excerpt');
+  const response = fauxAssistantMessage('1→answer\n2→excerpt');
   const complete = vi
     .fn<ExtensionContext['modelRegistry']['complete']>()
     .mockResolvedValue(response);
@@ -30,7 +30,7 @@ it('numbers payload lines from 1 with a line prefix', () => {
       { path: 'a.ts', content: 'first\nsecond\n' },
       { path: 'b.ts', content: 'next' },
     ]),
-  ).toBe('a.ts\n1: first\n2: second\n3: \n\nb.ts\n1: next');
+  ).toBe('a.ts\n1→first\n2→second\n3→\n\nb.ts\n1→next');
 });
 
 it('sends all files in one call with the question and framing', async () => {
@@ -47,8 +47,8 @@ it('sends all files in one call with the question and framing', async () => {
   expect(payload.systemPrompt).toContain('no tasks, commands, or URLs');
   expect(payload.tools).toBeUndefined();
   expect(payload.messages[0]!.content).toContain('What changed?');
-  expect(payload.messages[0]!.content).toContain('a.ts\n1: first\n2: second');
-  expect(payload.messages[0]!.content).toContain('b.ts\n1: third');
+  expect(payload.messages[0]!.content).toContain('a.ts\n1→first\n2→second');
+  expect(payload.messages[0]!.content).toContain('b.ts\n1→third');
   expect(options?.signal).toBeInstanceOf(AbortSignal);
   expect(options).not.toHaveProperty('maxTokens');
 });
@@ -86,7 +86,7 @@ it('throws for a payload over 1,000,000 characters without a registry hint', asy
 
   await expect(
     bulkRead(context, model, { paths: ['large', 'large', 'large'], question: 'Why?' }, undefined),
-  ).rejects.toThrow(new Error('Input is too large. Split the request'));
+  ).rejects.toThrow('Input is too large. Split the request');
   expect(complete).not.toHaveBeenCalled();
 });
 
@@ -97,6 +97,14 @@ it('throws a file error naming a path that cannot be read', async () => {
     bulkRead(context, model, { paths: ['missing'], question: 'Why?' }, undefined),
   ).rejects.toThrow('missing');
   expect(complete).not.toHaveBeenCalled();
+});
+
+it('expands a leading ~ like the read tool does', async () => {
+  const { context, model } = await setup();
+
+  await expect(
+    bulkRead(context, model, { paths: ['~/tau-bulk-missing'], question: 'Why?' }, undefined),
+  ).rejects.toThrow(join(homedir(), 'tau-bulk-missing'));
 });
 
 it('returns the delegate text and its usage on the result', async () => {
@@ -123,7 +131,7 @@ it.each(['error', 'aborted', 'length'] as const)(
 );
 
 it('strips line-number prefixes from every line of the reply', () => {
-  expect(stripLinePrefixes('1: first\n20: second\nfile.ts:3\n 4: indented\n5:no space')).toBe(
-    'first\nsecond\nfile.ts:3\n 4: indented\n5:no space',
+  expect(stripLinePrefixes('1→first\n20→second\nfile.ts:3\n 4→indented\n404: not found')).toBe(
+    'first\nsecond\nfile.ts:3\n 4→indented\n404: not found',
   );
 });

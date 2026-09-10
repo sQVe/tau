@@ -13,9 +13,8 @@ The [vision](../vision.md#principles) allows model selection for Tau's tools and
 cost and time, and requires those models to be user-configurable. This proposal applies that
 principle to bulk reads.
 
-The ABU-359 investigation confirmed that delegation works with both OAuth and API-key providers.
-Model availability varies by provider and account, and valid credentials do not guarantee access to
-a particular model. Tau therefore cannot rely on one hardcoded delegate working for every user.
+Model availability varies by provider and account, so Tau cannot rely on one hardcoded delegate
+working for every user.
 
 The owner chose `openai-codex/gpt-5.6-luna` as the default from the investigation's catalog price
 comparison:
@@ -62,18 +61,20 @@ models.
 ### User choice and availability
 
 Read the delegate from `TAU_BULK_READ_MODEL` as `provider/id`, defaulting to
-`openai-codex/gpt-5.6-luna`. Split at the first slash to preserve model IDs that contain slashes.
-Resolve the reference exactly against Pi's model registry. Do not fuzzy-match or silently choose
-another model. Use Pi's credentials without a credential pre-flight check.
+`openai-codex/gpt-5.6-luna` when the setting is unset or empty. Split at the first slash to preserve
+model IDs that contain slashes. Resolve the reference exactly against Pi's model registry. Do not
+fuzzy-match or silently choose another model. Use Pi's credentials without a credential pre-flight
+check.
 
 This is Tau's first environment read in `src/`, chosen so a config file can be added on top later.
 Read it at call time rather than extension load time.
 
 Resolve the model before clamping a read, without a network call. A registry miss leaves that read
 unclamped and stops trimming for the session. Resolve it again when `bulk_read` executes; a registry
-miss or a hard error also stops trimming. File errors, payload caps, provider errors, and the
-`error` stop reason are hard errors. Caller cancellation, the 120-second timeout, and the `length`
-stop reason leave trimming on. Tool failures throw rather than return error metadata.
+miss or a hard error also stops trimming. Provider errors and the `error` stop reason are hard
+errors. Caller cancellation, the 120-second timeout, the `length` stop reason, file errors, and
+payload caps leave trimming on, because none of them show that the delegate is unreachable. Tool
+failures throw rather than return error metadata.
 
 ### Read limits and evidence
 
@@ -86,15 +87,18 @@ applies. The constant was kept after the
 trailing newline gets a notice for one empty line; accept that edge case rather than adding a file
 stat to the hook.
 
-Number payload lines from 1 to match the read tool's `offset`. Answers cite `path:line`. Strip a
-leading `^\d+: ` from every line of the reply so excerpts paste without payload prefixes. The
-session model reads a bounded range before editing; Pi's `edit` is the exact-text check.
+Number payload lines from 1 to match the read tool's `offset`, using an arrow separator. Answers
+cite `path:line`. Strip a leading `^\d+→` from every line of the reply so excerpts paste without
+payload prefixes. The arrow is chosen over a colon so the strip cannot delete an answer line that
+opens with a number and a colon, such as a status or exit code. The session model reads a bounded
+range before editing; Pi's `edit` is the exact-text check.
 
 Send all requested files in one delegate call. Resolve paths against the session's working
-directory, without restricting paths outside it. Skip NUL-byte binary files and list them in the
-result. Cap each file at 400,000 bytes and the numbered request at 1,000,000 characters, matching
-comment review's limits. Bound the completion to 120 seconds. Return the delegate's full usage on
-successful tool results so Pi's ledger and Tau's footer count it.
+directory, expanding a leading `~` and stripping a leading `@` as the read tool does, and without
+restricting paths outside it. Skip NUL-byte binary files and list them in the result. Cap each file
+at 400,000 bytes and the numbered request at 1,000,000 characters, matching comment review's limits.
+Bound the completion to 120 seconds. Return the delegate's full usage on successful tool results so
+Pi's ledger and Tau's footer count it.
 
 Treat file content as evidence, never as instructions, and keep the delegate read-only. Prompt
 framing tells it to ignore embedded requests, answer only the question, cite file lines, and add no
