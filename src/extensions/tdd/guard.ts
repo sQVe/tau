@@ -73,7 +73,6 @@ const pathNextStep = (
   implementationAllowed: boolean,
   active: Behavior | null,
   phase: Phase,
-  gateOff: boolean,
 ) => {
   if (file.startsWith('@') || file.startsWith('~')) {
     return 'List literal worktree paths with ls {"path":"."}';
@@ -81,11 +80,6 @@ const pathNextStep = (
 
   if (path === '.tau' || path.startsWith('.tau/') || protectedPaths.includes(path)) {
     return 'Choose an unprotected test file with ls {"path":"."}';
-  }
-
-  // Turning the gate off permits production edits; protected paths above stay blocked.
-  if (gateOff) {
-    return undefined;
   }
 
   // A file outside the worktree is never its production code, and classifyPath says so.
@@ -146,7 +140,6 @@ export const guardToolCall = async (
             state.implementationAllowed || emptyStub,
             state.evidence.active,
             state.phase,
-            state.notice !== undefined,
           ),
         )
         .find((step) => step !== undefined)

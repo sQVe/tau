@@ -342,7 +342,10 @@ it('returns cancelled when aborted while the project check runs', async () => {
   const currentHead = await git(repositoryDirectory, ['rev-parse', 'HEAD']);
   const stagedFiles = await git(repositoryDirectory, ['diff', '--cached', '--name-only']);
 
-  expect(result.content[0]).toEqual({ type: 'text', text: 'Commit cancelled' });
+  expect(result.content).toEqual([
+    { type: 'text', text: 'no test runner resolves from this worktree' },
+    { type: 'text', text: 'Commit cancelled' },
+  ]);
   expect(currentHead).toBe(head);
   expect(stagedFiles).toBe('');
 });
@@ -1225,6 +1228,7 @@ describe('commitTool.execute', () => {
     });
 
     expect(result.content).toEqual([
+      { type: 'text', text: 'no test runner resolves from this worktree' },
       {
         type: 'text',
         text: `${commitHash} feat: add thing\nProject check unavailable: no root package.json.`,
@@ -1689,7 +1693,13 @@ describe('commit overlay flow', () => {
     const { execute, exec } = fakeCommit(['skip']);
     const result = await execute();
 
-    expect(result.content).toEqual([{ type: 'text', text: 'Commit skipped by user' }]);
+    expect(result.content).toEqual([
+      {
+        type: 'text',
+        text: 'TDD gate status unknown: unreadable evidence at /repo/.tau/state.json',
+      },
+      { type: 'text', text: 'Commit skipped by user' },
+    ]);
     expect(result.details.groups[0]!.skipped).toBe(true);
     expect(exec).toHaveBeenLastCalledWith(
       'git',
@@ -1752,7 +1762,13 @@ describe('commit overlay flow', () => {
 
     const result = await execute(controller.signal);
 
-    expect(result.content[0]).toEqual({ type: 'text', text: 'Commit cancelled' });
+    expect(result.content).toEqual([
+      {
+        type: 'text',
+        text: 'TDD gate status unknown: unreadable evidence at /repo/.tau/state.json',
+      },
+      { type: 'text', text: 'Commit cancelled' },
+    ]);
     expect(exec).toHaveBeenCalledWith('git', ['--literal-pathspecs', 'reset', '--', 'README.md'], {
       cwd: '/repo',
     });

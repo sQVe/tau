@@ -78,8 +78,8 @@ Use `/tdd status`, blocked-write messages, and the summary's `Next:` line for re
 
 The gate turns itself off when no test runner resolves from the worktree. `/tdd off` turns it off
 for this worktree, recorded in `.tau/state.json`, until `/tdd on`. Both cases print a notice in
-`run_tests` summaries, but only the explicit switch appears in commit results. Protected paths stay
-blocked either way. Ask the user before turning the gate off.
+`run_tests` summaries and commit results. Protected paths stay blocked either way. Ask the user
+before turning the gate off.
 
 ## See also
 
