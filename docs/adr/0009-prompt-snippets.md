@@ -41,6 +41,22 @@ Each file starts with a frontmatter block. Every field is optional.
 
 A file without a frontmatter block, or without body text, is skipped.
 
+### Placement rule
+
+Choose placement by the snippet's main purpose, so new snippets follow a consistent rule:
+
+- **Prepend** sets how to approach the work: gather context, clarify the request, question
+  assumptions, or verify claims.
+- **Append** sets the action boundary or expected output: investigate without changes, draft without
+  posting, or produce a specific kind of response.
+
+When a snippet serves both purposes, use its main purpose. If neither is primary, consider splitting
+it. Triage findings belongs after the message because its main purpose is to turn findings into
+actions and a structured report; verification supports that purpose.
+
+Placement organizes the message. It does not enforce execution order or give instructions extra
+authority. State safety boundaries explicitly in the snippet text regardless of placement.
+
 ### Toggling
 
 `ctrl+q` and `/snippets` both open the toggle menu. Tau registers both because a terminal or
