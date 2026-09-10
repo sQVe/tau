@@ -170,6 +170,22 @@ it('turns trimming off after a registry miss at the first clamp', () => {
   expect(app.find).toHaveBeenCalledOnce();
 });
 
+it('turns trimming off when the registry throws at the first clamp', () => {
+  const app = setup();
+  app.find.mockImplementationOnce(() => {
+    throw new Error('denied');
+  });
+  const first = readCall();
+  const second = readCall('second');
+
+  expect(() => app.emit('tool_call', first)).not.toThrow();
+  app.emit('tool_call', second);
+
+  expect(first.input).not.toHaveProperty('limit');
+  expect(second.input).not.toHaveProperty('limit');
+  expect(app.find).toHaveBeenCalledOnce();
+});
+
 it('throws a registry miss and leaves later reads untouched', async () => {
   vi.stubEnv('TAU_BULK_READ_MODEL', 'missing/reader');
   const app = setup();

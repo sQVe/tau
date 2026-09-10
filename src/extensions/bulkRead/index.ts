@@ -31,6 +31,16 @@ const findDelegate = (ctx: ExtensionContext, reference: string) => {
   return ctx.modelRegistry.find(provider ?? '', id.join('/'));
 };
 
+// A throwing registry would escape the hook and block the read itself, so clamping falls back to
+// stock behavior instead. The tool path still reports the error.
+const clampDelegate = (ctx: ExtensionContext) => {
+  try {
+    return findDelegate(ctx, delegateReference());
+  } catch {
+    return undefined;
+  }
+};
+
 export default function bulkReadExtension(pi: ExtensionAPI): void {
   let trimming = true;
   const clamped = new Set<string>();
@@ -71,7 +81,7 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
     if (!trimming || !isToolCallEventType('read', event) || event.input.limit !== undefined) {
       return;
     }
-    if (!findDelegate(ctx, delegateReference())) {
+    if (!clampDelegate(ctx)) {
       trimming = false;
 
       return;
