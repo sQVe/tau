@@ -109,6 +109,14 @@ it('throws instead of asking the delegate when every file is binary', async () =
   expect(complete).not.toHaveBeenCalled();
 });
 
+it('strips a leading @ like the read tool does', async () => {
+  const { context, model, complete } = await setup();
+
+  await bulkRead(context, model, { paths: ['@a.ts'], question: 'Why?' }, undefined);
+
+  expect(complete.mock.calls[0]![1].messages[0]!.content).toContain('@a.ts\n1→first\n2→second');
+});
+
 it('expands a leading ~ like the read tool does', async () => {
   const { context, model } = await setup();
 

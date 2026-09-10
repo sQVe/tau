@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 
@@ -26,19 +26,33 @@ export const stripLinePrefixes = (text: string): string => text.replace(/^\d+→
 const inputError = (message: string) =>
   Object.assign(new Error(message), { name: BULK_READ_INPUT_ERROR });
 
-const loadPayload = async (cwd: string, paths: string[]) => {
+const loadPayload = async (cwd: string, paths: string[], signal: AbortSignal | undefined) => {
   const files: { path: string; content: string }[] = [];
   const skipped: string[] = [];
+  let remaining = 1_000_000;
 
   for (const path of paths) {
+    signal?.throwIfAborted();
+
     // Pi's unexported read helper strips @ and expands ~, so bulk_read accepts the same spellings.
     const absolutePath = resolve(cwd, path.replace(/^@/, '').replace(/^~(?=\/|$)/, homedir()));
+
+    // Both caps are measured before reading, so an oversized request never allocates its content.
+    const { size } = await stat(absolutePath).catch((error: unknown) => {
+      throw inputError(error instanceof Error ? error.message : String(error));
+    });
+    if (size > 400_000) {
+      throw inputError(`Input is too large: ${path}. Split the request`);
+    }
+
+    remaining -= size;
+    if (remaining < 0) {
+      throw inputError('Input is too large. Split the request');
+    }
+
     const content = await readFile(absolutePath, 'utf8').catch((error: unknown) => {
       throw inputError(error instanceof Error ? error.message : String(error));
     });
-    if (Buffer.byteLength(content) > 400_000) {
-      throw inputError(`Input is too large: ${path}. Split the request`);
-    }
 
     if (content.includes('\0')) {
       skipped.push(path);
@@ -62,7 +76,7 @@ export const bulkRead = async (
   signal: AbortSignal | undefined,
 ): Promise<AgentToolResult<Record<string, never>>> => {
   const reference = `${model.provider}/${model.id}`;
-  const input = await loadPayload(ctx.cwd, params.paths);
+  const input = await loadPayload(ctx.cwd, params.paths, signal);
   const content = `Question: ${params.question}\n\n${input.payload}`;
   if (content.length > 1_000_000) {
     throw inputError('Input is too large. Split the request');
