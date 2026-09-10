@@ -60,6 +60,20 @@ it('sends one delegate call per file with the same question', async () => {
   expect(options).not.toHaveProperty('maxTokens');
 });
 
+it('starts each per-file payload with the single-file scope instruction', async () => {
+  const { context, model, complete } = await setup();
+  const instruction =
+    'You are given one of the files the question names; the others are answered separately. Answer only for this file and do not mention files you were not given.';
+
+  await bulkRead(context, model, { paths: ['a.ts', 'b.ts'], question: 'What changed?' }, undefined);
+
+  expect(complete).toHaveBeenCalledTimes(2);
+  const prefix = `${instruction}\n\nQuestion: What changed?`;
+  for (const [, payload] of complete.mock.calls) {
+    expect(payload.messages[0]!.content.slice(0, prefix.length)).toBe(prefix);
+  }
+});
+
 it('skips binary files and lists them as skipped', async () => {
   const { cwd, context, model, complete } = await setup();
   await writeFile(join(cwd, 'binary'), 'secret\0bytes');

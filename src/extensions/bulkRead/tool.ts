@@ -50,7 +50,7 @@ export const bulkRead = async (
   const reference = `${model.provider}/${model.id}`;
   const input = await loadPayload(ctx.cwd, params.paths);
   const contents = input.files.map((file) => {
-    const content = `Question: ${params.question}\n\n${buildPayload([file])}`;
+    const content = `You are given one of the files the question names; the others are answered separately. Answer only for this file and do not mention files you were not given.\n\nQuestion: ${params.question}\n\n${buildPayload([file])}`;
     if (content.length > 1_000_000) {
       throw new Error('Input is too large. Split the request');
     }
