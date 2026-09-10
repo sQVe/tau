@@ -35,9 +35,6 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
     label: 'Bulk read',
     description,
     promptSnippet: description,
-    promptGuidelines: [
-      `Before reading a file longer than ${BULK_READ_LINE_THRESHOLD} lines in full, ask bulk_read your question about it.`,
-    ],
     parameters: Type.Object({
       paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
       question: Type.String({ minLength: 1 }),
