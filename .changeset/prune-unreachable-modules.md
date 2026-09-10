@@ -5,10 +5,10 @@
 Remove the config, workspace state, and TDD runner modules, which no extension imported, along with
 the `proper-lockfile` and `web-tree-sitter` dependencies and the vendored bash grammar.
 
-Harden the commit tool's staging guarantee: sensitive-path patterns now match in subdirectories and
-ignore case, paths are compared in repository-root space so the tool works from a subdirectory,
-`--literal-pathspecs` stops an argument being read as a glob, and the staged set is verified both
-after staging and after the commit, so a directory argument or a pre-commit hook cannot slip in
+Strengthen the commit tool's staging checks. Sensitive-path patterns now match in subdirectories and
+ignore case. Compare paths relative to the repository root so the tool works from a subdirectory.
+Use `--literal-pathspecs` to prevent arguments from being read as globs. Check the staged set after
+staging and after the commit. This prevents directory arguments or pre-commit hooks from including
 files nobody named.
 
 Replace the tree-sitter commit guard with a single pattern that also catches environment prefixes,
