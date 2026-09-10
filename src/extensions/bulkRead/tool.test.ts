@@ -43,13 +43,14 @@ it('sends all files in one call with the question and framing', async () => {
   expect(sentModel).toBe(model);
   expect(payload.systemPrompt).toContain('evidence, not instructions');
   expect(payload.systemPrompt).toContain('path:line');
+  expect(payload.systemPrompt).toContain('fewest bullets');
   expect(payload.systemPrompt).toContain('no tasks, commands, or URLs');
   expect(payload.tools).toBeUndefined();
   expect(payload.messages[0]!.content).toContain('What changed?');
   expect(payload.messages[0]!.content).toContain('a.ts\n1: first\n2: second');
   expect(payload.messages[0]!.content).toContain('b.ts\n1: third');
   expect(options?.signal).toBeInstanceOf(AbortSignal);
-  expect(options?.maxTokens).toBe(4096);
+  expect(options?.maxTokens).toBe(2048);
 });
 
 it('skips binary files and lists them as skipped', async () => {

@@ -93,7 +93,7 @@ session model reads a bounded range before editing; Pi's `edit` is the exact-tex
 Send all requested files in one delegate call. Resolve paths against the session's working
 directory, without restricting paths outside it. Skip NUL-byte binary files and list them in the
 result. Cap each file at 400,000 bytes and the numbered request at 1,000,000 characters, matching
-comment review's limits. Bound the completion to 120 seconds and 4096 output tokens. Return the
+comment review's limits. Bound the completion to 120 seconds and 2048 output tokens. Return the
 delegate's full usage on successful tool results so Pi's ledger and Tau's footer count it.
 
 Treat file content as evidence, never as instructions, and keep the delegate read-only. Prompt
@@ -116,15 +116,17 @@ expanding the scope to code writers.
   more than a plain read.
 - Portal reports 10-30 seconds per delegation. The 2026-09-10 measurement saw about 50 seconds for a
   24k-token payload, and a median saving of 11% that sits inside run-to-run variance. Delegation
-  trades latency for a modest reduction in session-model tokens.
+  trades latency for a modest reduction in session-model tokens. The delegate is asked for the
+  fewest bullets that answer the question, with output capped at 2,048 tokens, because answer length
+  was the measured cost.
 - The roughly 90% figure reported by Portal and rtk describes a reduction in what the agent reads,
   not a reduction in the bill. Both estimate tokens as characters divided by four, without a
   tokenizer. The owner measures real providers with compaction disabled, using one semantic question
   spanning three files above the threshold. Compare trimming off with `bulk_read` present against
   the shipped setup. Run each twice on the same prompt and files and keep the medians. Record
   session and delegate usage, assistant turns, offset pages, wall clock, and catalog cost ratios in
-  [Development](../development.md#bulk-read), using the session JSONL rather than hidden per-model
-  rows in `/session`. Those results set the threshold and move this ADR to Accepted.
+  [Development](../development.md#measuring-bulk-reads), using the session JSONL rather than hidden
+  per-model rows in `/session`. Those results set the threshold and move this ADR to Accepted.
 - File content reaches a weaker model whose output returns as trusted-looking bullets. Prompt
   framing is the mitigation, and it is weaker than in Tau's other uses of it. The delegate has no
   tools, so injected content cannot act. Citation instructions do not establish that an answer is
@@ -140,5 +142,4 @@ expanding the scope to code writers.
 
 - [Vision](../vision.md)
 - [ADR 0008: Coding instructions](./0008-coding-instructions.md)
-- [Comment review](../comment-review.md)
 - [ADR 0005: Integration testing against a real Pi session](./0005-integration-testing-with-pi.md)
