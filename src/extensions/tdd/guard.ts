@@ -121,7 +121,8 @@ export const guardToolCall = async (
   }
 
   const state = await store.read(cwd);
-  // A relative target traverses from the canonical cwd, so `..` must not be folded away first.
+
+  // Resolve relative targets from the real working directory before collapsing `..`.
   const realCwd = await realPath(cwd);
   const paths = [
     relative(resolve(cwd), resolve(cwd, file)),
@@ -150,6 +151,7 @@ export const guardToolCall = async (
         )
         .find((step) => step !== undefined)
     : `Replace unrecognized tool ${event.toolName} with write using a literal path and the intended content`;
+
   if (next === undefined) {
     return undefined;
   }
