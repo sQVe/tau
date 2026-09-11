@@ -20,7 +20,7 @@ import { reviewGit } from './commentReview.js';
 const executeFile = promisify(execFile);
 const maximumBytes = 100 * 1024 * 1024;
 
-type WorkingEntry = { mode: number; kind: 'file' | 'symlink'; content: string } | null;
+export type WorkingEntry = { mode: number; kind: 'file' | 'symlink'; content: string } | null;
 
 const missingFile = (error: unknown) => {
   if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
@@ -35,13 +35,33 @@ const optionalRead = (path: string) => readFile(path).catch(missingFile);
 const sameIndex = (left: Buffer | null, right: Buffer | null) =>
   left === null ? right === null : right !== null && left.equals(right);
 
-const gitBytes = async (root: string, arguments_: string[], index?: string) => {
-  const result = await executeFile('git', arguments_, {
+export const gitBytes = async (
+  root: string,
+  arguments_: string[],
+  index?: string,
+  input?: string,
+) => {
+  const execution = executeFile('git', arguments_, {
     cwd: root,
     encoding: 'buffer',
     maxBuffer: maximumBytes,
     env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', ...(index ? { GIT_INDEX_FILE: index } : {}) },
   });
+  const sent =
+    input === undefined
+      ? Promise.resolve()
+      : new Promise<void>((resolve, reject) => {
+          const standardInput = execution.child.stdin;
+
+          if (!standardInput) {
+            reject(new Error('Git standard input is unavailable'));
+            return;
+          }
+
+          standardInput.once('error', reject);
+          standardInput.end(input, resolve);
+        });
+  const [result] = await Promise.all([execution, sent]);
 
   return result.stdout;
 };
@@ -52,7 +72,7 @@ const pathsFrom = (buffer: Buffer) => {
   return text.split('\0').filter(Boolean);
 };
 
-const indexIdentity = async (root: string, index?: string) => {
+export const indexIdentity = async (root: string, index?: string) => {
   const entries = await gitBytes(root, ['ls-files', '--stage', '-v', '-z'], index);
   const debug = await gitBytes(root, ['ls-files', '--debug', '-z'], index);
   const text = new TextDecoder('utf-8', { fatal: true }).decode(debug);
@@ -77,7 +97,59 @@ const indexIdentity = async (root: string, index?: string) => {
   return { entries: entries.toString('base64'), flags };
 };
 
-const workingState = async (root: string, originalPaths: string[] = []) => {
+export const readWorkingEntry = async (
+  root: string,
+  path: string,
+  remainingBytes = maximumBytes,
+): Promise<{ entry: WorkingEntry; bytes: number }> => {
+  const absolute = join(root, path);
+  let parent = dirname(absolute);
+
+  while (parent !== root) {
+    const status = await lstat(parent).catch(missingFile);
+
+    if (status && !status.isDirectory()) {
+      throw new Error(
+        `Unsupported parent of ${JSON.stringify(path)}. Replace directory symlinks before retrying.`,
+      );
+    }
+
+    parent = dirname(parent);
+  }
+
+  const status = await lstat(absolute).catch(missingFile);
+
+  if (!status) {
+    return { entry: null, bytes: 0 };
+  }
+
+  if (!status.isFile() && !status.isSymbolicLink()) {
+    throw new Error(
+      `Unsupported working path ${JSON.stringify(path)}. Move nested repositories or special files outside the checkout before retrying.`,
+    );
+  }
+
+  if (status.size > remainingBytes) {
+    throw new Error(
+      'Preparation recovery exceeds 100 MiB. Move large untracked files outside the checkout or ignore them before retrying.',
+    );
+  }
+
+  const content = status.isSymbolicLink()
+    ? await readlink(absolute, { encoding: 'buffer' })
+    : await readFile(absolute);
+
+  return {
+    bytes: status.size,
+    entry: {
+      mode: status.mode & 0o7777,
+      kind: status.isSymbolicLink() ? 'symlink' : 'file',
+      content: content.toString('base64'),
+    },
+  };
+};
+
+export const workingState = async (root: string, originalPaths: string[] = []) => {
   const listed = await gitBytes(root, [
     'ls-files',
     '--cached',
@@ -90,51 +162,9 @@ const workingState = async (root: string, originalPaths: string[] = []) => {
   let bytes = 0;
 
   for (const path of paths) {
-    const absolute = join(root, path);
-    let parent = dirname(absolute);
-
-    while (parent !== root) {
-      const status = await lstat(parent).catch(missingFile);
-
-      if (status && !status.isDirectory()) {
-        throw new Error(
-          `Unsupported parent of ${JSON.stringify(path)}. Replace directory symlinks before retrying.`,
-        );
-      }
-
-      parent = dirname(parent);
-    }
-
-    const status = await lstat(absolute).catch(missingFile);
-
-    if (!status) {
-      entries.set(path, null);
-      continue;
-    }
-
-    if (!status.isFile() && !status.isSymbolicLink()) {
-      throw new Error(
-        `Unsupported working path ${JSON.stringify(path)}. Move nested repositories or special files outside the checkout before retrying.`,
-      );
-    }
-
-    bytes += status.size;
-
-    if (bytes > maximumBytes) {
-      throw new Error(
-        'Preparation recovery exceeds 100 MiB. Move large untracked files outside the checkout or ignore them before retrying.',
-      );
-    }
-
-    const content = status.isSymbolicLink()
-      ? await readlink(absolute, { encoding: 'buffer' })
-      : await readFile(absolute);
-
-    entries.set(path, {
-      mode: status.mode & 0o7777,
-      kind: status.isSymbolicLink() ? 'symlink' : 'file',
-      content: content.toString('base64'),
-    });
+    const snapshot = await readWorkingEntry(root, path, maximumBytes - bytes);
+    bytes += snapshot.bytes;
+    entries.set(path, snapshot.entry);
   }
 
   return Object.fromEntries(entries);
@@ -315,6 +345,7 @@ export const snapshotPreparation = async (
   };
 
   return {
+    directory,
     isolated,
     notice,
     stage,

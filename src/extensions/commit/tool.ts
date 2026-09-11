@@ -24,6 +24,7 @@ import { confirmCommitOverlay, confirmPreparationAssignment } from './overlay.js
 import { snapshotPreparation } from './preparation.js';
 import { createCandidateChecks, prepareProject, readPreparation } from './projectCheck.js';
 import type { Preparation } from './projectCheck.js';
+import { assertNoPendingRecovery } from './recovery.js';
 import type { CommitSuccess } from './types.js';
 
 export const conventionalCommitSubjectPattern =
@@ -962,6 +963,11 @@ export const createCommitTool = (
       if (signal?.aborted) {
         return finish([{ type: 'text', text: 'Commit cancelled' }]);
       }
+
+      const gitDirectory = (
+        await reviewGit(pi, context.cwd, ['rev-parse', '--absolute-git-dir'], signal)
+      ).trimEnd();
+      await assertNoPendingRecovery(gitDirectory);
 
       const preparation = await readPreparation(pi, context.cwd);
 

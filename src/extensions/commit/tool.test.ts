@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
 import type * as fileSystem from 'node:fs/promises';
 import {
   chmod,
@@ -169,6 +170,9 @@ const executeCommit = async (repositoryDirectory: string, input: CommitInput) =>
 };
 
 const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)[] = []) => {
+  const gitDirectory = mkdtempSync(join(tmpdir(), 'tau-mock-git-'));
+  temporaryDirectories.push(gitDirectory);
+
   const previews: string[] = [];
   const custom = vi.fn<
     (factory: Parameters<ExtensionContext['ui']['custom']>[0]) => Promise<string | undefined>
@@ -203,7 +207,7 @@ const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)
     }
 
     if (commandArguments[0] === 'rev-parse' || commandArguments[0] === 'write-tree') {
-      stdout = 'abc123\n';
+      stdout = commandArguments.includes('--absolute-git-dir') ? `${gitDirectory}\n` : 'abc123\n';
     }
 
     return { code: 0, killed: false, stderr: '', stdout };
@@ -223,8 +227,44 @@ const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)
   const execute = (signal?: AbortSignal) =>
     tool.execute('call', input, signal, undefined, context as never);
 
-  return { custom, editor, exec, context, input, execute, previews };
+  return { custom, editor, exec, context, input, execute, previews, gitDirectory };
 };
+
+it('checks the absolute fixture Git directory in mocked commit flows', async () => {
+  const { execute, exec, gitDirectory } = fakeCommit(['approve']);
+  await mkdir(join(gitDirectory, 'tau-recovery/pending'), { recursive: true });
+
+  await expect(execute()).rejects.toThrow(gitDirectory);
+  expect(exec.mock.calls.map(([, arguments_]) => arguments_)).toEqual([
+    ['rev-parse', '--absolute-git-dir'],
+  ]);
+});
+
+it('blocks incomplete pending recovery before preparation staging or review', async () => {
+  const directory = await createTemporaryRepository();
+  await mkdir(join(directory, '.git/tau-recovery/pending'), { recursive: true });
+  const exec = vi.fn<ExtensionAPI['exec']>((command, arguments_) =>
+    runCommand(command, arguments_, directory),
+  );
+  const review = vi.fn<typeof reviewComments>(async () => ({ findings: [] }));
+  const tool = createReviewedCommitTool({ exec }, review);
+
+  await expect(
+    tool.execute(
+      'pending',
+      {
+        groups: [{ files: ['file'], subject: 'fix: blocked' }],
+      },
+      undefined,
+      undefined,
+      confirmedContext('/repo'),
+    ),
+  ).rejects.toThrow(directory);
+  expect(exec.mock.calls.map(([, arguments_]) => arguments_)).toEqual([
+    ['rev-parse', '--absolute-git-dir'],
+  ]);
+  expect(review).not.toHaveBeenCalled();
+});
 
 it('rejects calls outside Git before running configured commands or changing files', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'tau-no-git-'));
@@ -254,7 +294,7 @@ it('rejects calls outside Git before running configured commands or changing fil
     ),
   ).rejects.toThrow(/not a git repository/i);
   expect(exec.mock.calls.map(([command, arguments_]) => [command, arguments_])).toEqual([
-    ['git', ['rev-parse', '--show-toplevel']],
+    ['git', ['rev-parse', '--absolute-git-dir']],
   ]);
   expect(await readFile(join(directory, 'tau.json'), 'utf8')).toBe(config);
   await expect(readFile(join(directory, 'mutated'))).rejects.toThrow(/ENOENT/);
@@ -4044,7 +4084,8 @@ describe('commit overlay flow', () => {
     expect(previews[0]).not.toContain('1/1');
     expect(previews[0]).toContain('README.md +2 -1');
     expect(previews[0]).toContain('image.png binary');
-    expect(exec.mock.calls.slice(0, 5).map((call) => call[1])).toEqual([
+    expect(exec.mock.calls.slice(0, 6).map((call) => call[1])).toEqual([
+      ['rev-parse', '--absolute-git-dir'],
       ['rev-parse', '--show-toplevel'],
       ['rev-parse', '--show-prefix'],
       ['diff', '--cached', '--name-only', '--diff-filter=ACMRDT', '-z'],
@@ -4216,18 +4257,21 @@ describe('commit overlay flow', () => {
 
   it('unstages without opening UI if cancelled while staging', async () => {
     const controller = new AbortController();
-    const { execute, exec, custom } = fakeCommit(['approve']);
+    const { execute, exec, custom, gitDirectory } = fakeCommit(['approve']);
     exec.mockImplementation((_command, commandArguments) => {
       if (commandArguments.includes('add')) {
         controller.abort();
       }
 
-      return Promise.resolve({
-        code: 0,
-        killed: false,
-        stdout: commandArguments.includes('--show-toplevel') ? '/repo\n' : '',
-        stderr: '',
-      });
+      let stdout = '';
+
+      if (commandArguments.includes('--absolute-git-dir')) {
+        stdout = `${gitDirectory}\n`;
+      } else if (commandArguments.includes('--show-toplevel')) {
+        stdout = '/repo\n';
+      }
+
+      return Promise.resolve({ code: 0, killed: false, stdout, stderr: '' });
     });
 
     await execute(controller.signal);
