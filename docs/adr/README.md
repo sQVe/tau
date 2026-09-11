@@ -8,16 +8,14 @@ Follow the [writing instructions](../../src/extensions/writing/instructions.md) 
 [ADR 0010](./0010-documentation-scope.md) for documentation scope. Before opening the
 [template](./TEMPLATE.md), answer:
 
-- What architectural choice are we making?
+- What choice are we making, and what lasting reason stands behind it?
 - What credible alternative did we consider, and why did we reject it?
-- What lasting constraint or convention does this choice establish beyond the local implementation?
 
-If the answers only describe local implementation, do not write an ADR. Code and tests can hold
-those details. A feature change does not require a new document.
+If the answers only restate what the code does, do not write an ADR. Code and tests hold behavior. A
+feature change does not require a new document.
 
-Use a title that names the choice. State it at the start of the Decision section, not buried in
-implementation requirements. Include a detail only when changing it would change the decision or its
-rationale. An ADR is not a feature summary, implementation plan, or acceptance checklist.
+Use a title that names the choice, and state that choice at the start of the Decision section. An
+ADR is not a feature summary, implementation plan, or acceptance checklist.
 
 ## Index
 
