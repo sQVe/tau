@@ -1,4 +1,6 @@
-import { posix } from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, posix } from 'node:path';
 
 import type {
   ExtensionAPI,
@@ -20,7 +22,7 @@ import type { CommentReview } from './commentReview.js';
 import type { CommitView } from './overlay.js';
 import { confirmCommitOverlay, confirmPreparationAssignment } from './overlay.js';
 import { snapshotPreparation } from './preparation.js';
-import { checkProject, prepareProject, readPreparation } from './projectCheck.js';
+import { createCandidateChecks, prepareProject, readPreparation } from './projectCheck.js';
 import type { Preparation } from './projectCheck.js';
 import type { CommitSuccess } from './types.js';
 
@@ -68,6 +70,10 @@ export const commitFailedError = (stdout: string, stderr: string) =>
   );
 
 export const validateSubject = (subject: string) => {
+  if (subject.includes('\0')) {
+    throw new Error('Invalid subject: NUL is not allowed.');
+  }
+
   if (!conventionalCommitSubjectPattern.test(subject)) {
     throw new Error(`Invalid subject: ${subject}`);
   }
@@ -100,12 +106,27 @@ export const validatePaths = (files: string[]) => {
   }
 };
 
-const buildCommitMessage = (subject: string, body?: string) => {
-  if (body !== undefined) {
-    return `${subject}\n\n${body}`;
+const normalizeBody = (body: string | null) => {
+  if (body?.includes('\0')) {
+    throw new Error('Invalid body: NUL is not allowed.');
   }
 
-  return subject;
+  const normalized = body?.replaceAll(/\r\n?/g, '\n') ?? null;
+
+  return normalized && !normalized.endsWith('\n') ? `${normalized}\n` : normalized;
+};
+
+const buildCommitMessage = (subject: string, body: string | null) =>
+  body ? `${subject}\n\n${body}` : `${subject}\n`;
+
+const cleanupTemporary = async (directory: string) => {
+  try {
+    await rm(directory, { recursive: true, force: true });
+
+    return '';
+  } catch (error) {
+    return `Temporary cleanup failed at ${directory}: ${String(error)}`;
+  }
 };
 
 const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
@@ -338,6 +359,7 @@ const planGroupReviews = async (
 const executeGroup = async (
   parameters: CommitInput['groups'][number],
   groupLabel: string | undefined,
+  temporaryDirectory: string,
   preparation: Preparation,
   ownership: Awaited<ReturnType<typeof snapshotPreparation>> | undefined,
   otherGroups: Set<string>,
@@ -366,7 +388,7 @@ const executeGroup = async (
   });
 
   let subject = parameters.subject;
-  let body = parameters.body ?? null;
+  let body = normalizeBody(parameters.body ?? null);
 
   if (signal?.aborted) {
     return cancelled();
@@ -401,6 +423,8 @@ const executeGroup = async (
   let projectCheck = '';
   let reviewWaived = false;
   let returningForCorrections = false;
+  let candidate: Awaited<ReturnType<typeof createCandidateChecks>>;
+  let messageCheck = '';
 
   try {
     const staging = ownership?.isolated ?? pi;
@@ -419,11 +443,11 @@ const executeGroup = async (
 
       await ownership.stage(requestedFiles);
 
-      const candidate = await ownership.validate(requestedFiles, otherGroups);
-      validatePaths(candidate.added);
+      const preparedCandidate = await ownership.validate(requestedFiles, otherGroups);
+      validatePaths(preparedCandidate.added);
 
-      if (candidate.added.length) {
-        const assignmentRequired = `Preparation added paths (repository-relative): ${JSON.stringify(candidate.added)}. Assign each clean generated path explicitly to a group and retry.`;
+      if (preparedCandidate.added.length) {
+        const assignmentRequired = `Preparation added paths (repository-relative): ${JSON.stringify(preparedCandidate.added)}. Assign each clean generated path explicitly to a group and retry.`;
 
         if (batch.preapproved) {
           throw new Error(assignmentRequired);
@@ -433,7 +457,7 @@ const executeGroup = async (
           context,
           subject,
           [...requestedFiles],
-          candidate.added,
+          preparedCandidate.added,
           groupLabel,
           signal,
         );
@@ -446,9 +470,9 @@ const executeGroup = async (
           throw new Error(`Preparation assignment declined. ${assignmentRequired}`);
         }
 
-        await candidate.accept();
+        await preparedCandidate.accept();
 
-        preparationAddedFiles = candidate.added;
+        preparationAddedFiles = preparedCandidate.added;
         for (const path of preparationAddedFiles) {
           requestedFiles.add(path);
         }
@@ -498,7 +522,14 @@ const executeGroup = async (
     }
 
     try {
-      projectCheck = await checkProject(pi, context.cwd, reviewedTree, signal);
+      candidate = await createCandidateChecks(
+        pi,
+        context.cwd,
+        reviewedTree,
+        temporaryDirectory,
+        signal,
+      );
+      projectCheck = await candidate.checkProject();
     } catch (error) {
       if (signal?.aborted) {
         return cancelled();
@@ -598,16 +629,39 @@ const executeGroup = async (
       ownership ? preparation.repositoryRoot : context.cwd,
       resultFiles,
     );
-    let notice = `${projectPreparation}\n${projectCheck}`;
+    let notice = '';
+    let checkedMessage: string | undefined;
+    let messageBlocked = false;
 
     while (true) {
       if (signal?.aborted) {
         return cancelled();
       }
 
+      const message = buildCommitMessage(subject, body);
+
+      if (message !== checkedMessage) {
+        try {
+          const result = await candidate.checkMessage(message);
+          messageCheck = result.notice;
+          messageBlocked = !result.passed;
+          checkedMessage = message;
+        } catch (error) {
+          if (signal?.aborted) {
+            return cancelled();
+          }
+
+          throw error;
+        }
+      }
+
       batch.prefetchNext();
 
       const automaticallyApproved = await batch.autoApprove();
+      if (automaticallyApproved && messageBlocked) {
+        throw new Error(messageCheck);
+      }
+
       const choice = automaticallyApproved
         ? 'approve'
         : await confirmCommitOverlay(
@@ -617,7 +671,16 @@ const executeGroup = async (
               body,
               files,
               ...(groupLabel ? { group: groupLabel } : {}),
-              notice,
+              notice: [
+                notice,
+                projectPreparation,
+                projectCheck,
+                messageCheck,
+                `Git hooks: ${candidate.hooks} (staged policy).`,
+              ]
+                .filter(Boolean)
+                .join('\n'),
+              messageBlocked,
               review: reviewReport,
               reviewBlocked,
               ...(ownership
@@ -626,10 +689,17 @@ const executeGroup = async (
             },
             signal,
           );
-      notice = `${projectPreparation}\n${projectCheck}`;
+      notice = '';
 
       if (signal?.aborted) {
         return cancelled();
+      }
+
+      if (
+        (choice === 'approve' || choice === 'approveAll' || choice === 'waive') &&
+        messageBlocked
+      ) {
+        throw new Error(messageCheck);
       }
 
       if ((choice === 'approve' || choice === 'approveAll') && reviewBlocked) {
@@ -651,6 +721,11 @@ const executeGroup = async (
         if (choice === 'approveAll' && !ownership) {
           await batch.onApproveAll();
         }
+
+        await candidate.verifyMessage(
+          message,
+          'Message file changed after validation. Retry commit.',
+        );
 
         approved = true;
         reviewWaived = choice === 'waive';
@@ -687,7 +762,15 @@ const executeGroup = async (
           }
         }
       } else {
-        body = (await context.ui.editor('Edit body', body ?? '')) ?? body;
+        const edited = await context.ui.editor('Edit body', body ?? '');
+
+        if (edited !== undefined) {
+          try {
+            body = normalizeBody(edited);
+          } catch (error) {
+            notice = error instanceof Error ? error.message : String(error);
+          }
+        }
       }
     }
   } finally {
@@ -702,16 +785,23 @@ const executeGroup = async (
     }
   }
 
+  const message = buildCommitMessage(subject, body);
   const previousHead = await currentHead(pi, context.cwd);
   const commitResult = await pi.exec(
     'git',
-    ['commit', '-m', buildCommitMessage(subject, body ?? undefined)],
+    [
+      ...(candidate.hooks === 'skip' ? ['-c', `core.hooksPath=${candidate.hooksPath}`] : []),
+      'commit',
+      '--cleanup=verbatim',
+      '-F',
+      candidate.messagePath,
+    ],
     {
       cwd: context.cwd,
     },
   );
 
-  if (commitResult.code !== 0) {
+  if (commitResult.code !== 0 || commitResult.killed) {
     if (!ownership) {
       await unstageFiles(pi, context.cwd, parameters.files);
     }
@@ -748,6 +838,17 @@ const executeGroup = async (
     );
   }
 
+  const commitObject = await reviewGit(pi, context.cwd, ['cat-file', '-p', 'HEAD']);
+  const storedMessage = commitObject.slice(commitObject.indexOf('\n\n') + 2);
+
+  if (storedMessage !== message) {
+    await undoCommit(pi, context.cwd, previousHead);
+
+    throw new Error(
+      'A hook changed the checked message. The commit was undone. Retry with the final message; hooks must not rewrite it.',
+    );
+  }
+
   const revParseResult = await pi.exec('git', ['rev-parse', 'HEAD'], {
     cwd: context.cwd,
   });
@@ -766,7 +867,7 @@ const executeGroup = async (
     content: [
       {
         type: 'text',
-        text: `${commitHash} ${subject}${preparationAddedFiles.length ? `\nPreparation-added paths (repository-relative): ${JSON.stringify(preparationAddedFiles)}` : ''}\n${projectPreparation}\n${projectCheck}${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
+        text: `${commitHash} ${subject}${preparationAddedFiles.length ? `\nPreparation-added paths (repository-relative): ${JSON.stringify(preparationAddedFiles)}` : ''}\n${projectPreparation}\n${projectCheck}\n${messageCheck}\nGit hooks: ${candidate.hooks} (staged policy).${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
       },
     ],
     details: {
@@ -775,6 +876,8 @@ const executeGroup = async (
       subject,
       body,
       projectCheck,
+      messageCheck,
+      hooks: candidate.hooks,
       commentReview: {
         status: reviewWaived ? 'waived' : 'passed',
         tree: reviewedTree,
@@ -806,7 +909,10 @@ export const createCommitTool = (
       "With --auto-approve-commits, preparation-added paths stop the commit without UI. Inspect them, assign them explicitly in the next commit call, and retry. Never absorb prior dirty or untracked user edits, other groups' paths, or rejected sensitive paths to clear an error.",
       'Prepared commit results use repository-relative files and preparationAddedFiles with pathBase: repository, including paths outside the invoking directory. For a retry, convert paths within the invoking directory to relative paths. Retry from the repository root when added paths are outside that directory.',
       'Preparation recovery requires a local POSIX checkout, a regular supported index, and at most 100 MiB of tracked and nonignored untracked working data. Unsupported states fail before preparation. Ignored files, external symlink targets, and background writers are outside recovery coverage; this is not a sandbox.',
-      'On preparation failure, cancellation, rejection, or ownership conflict, read the reported recovery instructions. Working edits remain; never restore a saved index or working files over concurrent user edits. Git hooks and post-commit guards remain enabled. checkMessage and hooks settings remain reserved and rejected.',
+      'On preparation failure, cancellation, rejection, or ownership conflict, read the reported recovery instructions. Working edits remain; never restore a saved index or working files over concurrent user edits. Post-commit tree, path, and message guards remain enabled.',
+      'Working root tau.json selects prepare. The actual staged candidate selects check, checkMessage, and hooks. hooks defaults to run; only explicit staged hooks: skip disables hooks for the final Git commit. Never bypass hooks ad hoc through --no-verify, core.hooksPath, environment variables, or config changes to evade a failure.',
+      'checkMessage is optional argv without an implicit shell. Tau appends an absolute temporary full-message file path and runs it in the staged candidate. Missing message checks are unavailable, not passed. Message-only edits rerun only message validation. A failed check cannot be waived; checker mutations stop the group.',
+      'Messages reject NUL. Body CRLF and CR become LF; other whitespace is preserved. Nonempty bodies end in LF. Tau commits the displayed normalized message through git commit --cleanup=verbatim -F. Hook message rewrites undo the commit and require retry with the final message.',
       'Use a conventional commit subject.',
       'Do not commit sensitive files such as .env or SSH keys.',
       "Comment review runs before commit approval. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. After two automatic returns, unresolved findings need a user waiver. With --auto-approve-commits, commit returns an error instead of asking for a waiver. Stop and report the blocker. Never claim a waiver on the user's behalf.",
@@ -817,6 +923,7 @@ export const createCommitTool = (
 
       for (const group of parameters.groups) {
         validateSubject(group.subject);
+        normalizeBody(group.body ?? null);
         validatePaths(group.files);
 
         for (const file of new Set(group.files.map(normalizeRepositoryPath))) {
@@ -916,6 +1023,8 @@ export const createCommitTool = (
 
         let ownership: Awaited<ReturnType<typeof snapshotPreparation>> | undefined;
         let completed = false;
+        let temporaryDirectory = '';
+        let temporaryCleanup = '';
 
         try {
           const prefix = preparation.command ? await repositoryPathPrefix(pi, context.cwd) : '';
@@ -935,9 +1044,12 @@ export const createCommitTool = (
                 other.files.map((file) => normalizeRepositoryPath(`${prefix}${file}`)),
               ),
           ]);
+          temporaryDirectory = await mkdtemp(join(tmpdir(), 'tau-commit-check-'));
+
           const result = await executeGroup(
             group,
             parameters.groups.length > 1 ? groupLabel : undefined,
+            temporaryDirectory,
             preparation,
             ownership,
             otherGroups,
@@ -989,6 +1101,12 @@ export const createCommitTool = (
           );
 
           completed = Boolean(result.details.sha);
+          temporaryCleanup = await cleanupTemporary(temporaryDirectory);
+          temporaryDirectory = '';
+
+          if (temporaryCleanup) {
+            result.content.push({ type: 'text', text: temporaryCleanup });
+          }
 
           if (ownership) {
             if (completed) {
@@ -1019,22 +1137,25 @@ export const createCommitTool = (
             })),
           );
         } catch (error) {
-          let cleanupDiagnostic = '';
+          let cleanupDiagnostic = temporaryDirectory
+            ? await cleanupTemporary(temporaryDirectory)
+            : temporaryCleanup;
 
           if (ownership && !completed) {
             try {
               await ownership.cleanup();
             } catch (cleanupError) {
-              cleanupDiagnostic = `\nIndex cleanup failed: ${String(cleanupError)}`;
+              cleanupDiagnostic += `\nIndex cleanup failed: ${String(cleanupError)}`;
             }
           }
 
-          const failure = ownership
-            ? new Error(
-                `${error instanceof Error ? error.message : String(error)}${cleanupDiagnostic}\n${ownership.notice}`,
-                { cause: error },
-              )
-            : error;
+          const failure =
+            ownership || cleanupDiagnostic
+              ? new Error(
+                  `${error instanceof Error ? error.message : String(error)}${cleanupDiagnostic ? `\n${cleanupDiagnostic}` : ''}${ownership ? `\n${ownership.notice}` : ''}`,
+                  { cause: error },
+                )
+              : error;
 
           if (parameters.groups.length === 1) {
             throw failure;

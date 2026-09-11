@@ -1,5 +1,13 @@
-import { access, mkdtemp, readFile, rm, symlink } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import {
+  access,
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  readlink,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
@@ -13,6 +21,8 @@ const exists = (path: string) =>
 interface CommitConfig {
   prepare?: [string, ...string[]];
   check?: [string, ...string[]];
+  checkMessage?: [string, ...string[]];
+  hooks?: 'run' | 'skip';
 }
 
 const parseConfig = (content: string): CommitConfig => {
@@ -35,14 +45,21 @@ const parseConfig = (content: string): CommitConfig => {
       throw new Error('Obsolete tau.json fix setting: rename fix to prepare.');
     }
 
-    if (key === 'checkMessage' || key === 'hooks') {
-      throw new Error(
-        `tau.json ${key} is reserved and not implemented. Remove it; Git hooks still run normally.`,
-      );
+    if (key === 'hooks') {
+      const hooks: unknown = Reflect.get(config, key);
+
+      if (hooks !== 'run' && hooks !== 'skip') {
+        throw new Error('tau.json hooks must be "run" or "skip".');
+      }
+
+      commands.hooks = hooks;
+      continue;
     }
 
-    if (key !== 'prepare' && key !== 'check') {
-      throw new Error(`Unknown tau.json setting "${key}". Only prepare and check are supported.`);
+    if (key !== 'prepare' && key !== 'check' && key !== 'checkMessage') {
+      throw new Error(
+        `Unknown tau.json setting "${key}". Only prepare, check, checkMessage and hooks are supported.`,
+      );
     }
 
     const command: unknown = Reflect.get(config, key);
@@ -127,13 +144,14 @@ export const prepareProject = async (
   return `Project preparation passed: ${command.join(' ')}.`;
 };
 
-// Check the index snapshot: unstaged fixes must not make an incomplete commit pass.
-export const checkProject = async (
+// Both checks use one staged checkout. Message edits never repeat the project check.
+export const createCandidateChecks = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
   tree: string,
+  temporaryDirectory: string,
   signal?: AbortSignal,
-): Promise<string> => {
+) => {
   const run = async (command: string, commandArguments: string[], directory = workingDirectory) => {
     const result = await pi.exec(command, commandArguments, {
       cwd: directory,
@@ -151,30 +169,26 @@ export const checkProject = async (
   };
 
   const rootOutput = await run('git', ['rev-parse', '--show-toplevel']);
-  const repositoryRoot = rootOutput.trim();
+  const repositoryRoot = rootOutput.replace(/\n$/, '');
   const configPath = await run(
     'git',
     ['ls-tree', '--name-only', tree, '--', 'tau.json'],
     repositoryRoot,
   );
 
-  if (!configPath.trim()) {
-    return 'Project check unavailable: no root tau.json.';
-  }
-
-  const configContent = await run('git', ['show', `${tree}:tau.json`], repositoryRoot);
-  const { check: command } = parseConfig(configContent);
-
-  if (!command) {
-    return 'Project check unavailable: no check command in tau.json.';
-  }
-
-  const [executable, ...arguments_] = command;
-
-  const temporaryDirectory = await mkdtemp(join(tmpdir(), 'tau-project-check-'));
+  const config = configPath.trim()
+    ? parseConfig(await run('git', ['show', `${tree}:tau.json`], repositoryRoot))
+    : {};
+  const { check: command, checkMessage, hooks = 'run' } = config;
   const candidateDirectory = join(temporaryDirectory, 'candidate');
+  const messagePath = join(temporaryDirectory, 'message');
+  const hooksPath = join(temporaryDirectory, 'empty-hooks');
 
-  try {
+  if (hooks === 'skip') {
+    await mkdir(hooksPath);
+  }
+
+  if (command || checkMessage) {
     await run('git', [
       'clone',
       '--shared',
@@ -196,19 +210,148 @@ export const checkProject = async (
     if (dependenciesExist && !candidateDependenciesExist) {
       await symlink(dependencies, candidateDependencies, 'junction');
     }
+  }
 
-    await run(executable, arguments_, candidateDirectory);
-
+  const assertCandidate = async (label: string) => {
     const changedFiles = await run('git', ['diff', '--name-only', tree, '--'], candidateDirectory);
+    const candidateTree = await run('git', ['write-tree'], candidateDirectory);
 
-    if (changedFiles.trim()) {
+    if (changedFiles.trim() || candidateTree.trim() !== tree) {
       throw new Error(
-        'Project check changed tracked files. Run it locally, review the changes, and retry commit.',
+        `${label} changed tracked files or index. Inspect the checker and retry commit.`,
+      );
+    }
+  };
+
+  const untrackedState = async () => {
+    // Git omits FIFOs and sockets from ls-files. Inspect entry types without opening their contents.
+    const workingEntries = await readdir(candidateDirectory, {
+      recursive: true,
+      withFileTypes: true,
+    });
+
+    if (
+      workingEntries.some(
+        (entry) => !entry.isDirectory() && !entry.isFile() && !entry.isSymbolicLink(),
+      )
+    ) {
+      throw new Error(
+        'Message check changed the candidate: unsupported special file. Fix the checker and retry.',
       );
     }
 
-    return `Project check passed: ${command.join(' ')} on ${tree}.`;
-  } finally {
-    await rm(temporaryDirectory, { recursive: true, force: true });
-  }
+    const listed = await run(
+      'git',
+      ['ls-files', '--others', '--exclude-standard', '-z'],
+      candidateDirectory,
+    );
+    const entries = await Promise.all(
+      listed
+        .split('\0')
+        .filter(Boolean)
+        .toSorted()
+        .map(async (path) => {
+          const absolute = join(candidateDirectory, path);
+          const status = await lstat(absolute);
+
+          if (!status.isFile() && !status.isSymbolicLink()) {
+            throw new Error(
+              `Message check changed the candidate: unsupported file ${JSON.stringify(path)}. Retry after fixing the checker.`,
+            );
+          }
+
+          const content = status.isSymbolicLink()
+            ? await readlink(absolute, { encoding: 'buffer' })
+            : await readFile(absolute);
+
+          return [path, status.mode, content.toString('base64')];
+        }),
+    );
+
+    return JSON.stringify(entries);
+  };
+
+  const verifyMessage = async (message: string, diagnostic: string) => {
+    const status = await lstat(messagePath).catch(() => null);
+
+    if (!status?.isFile()) {
+      throw new Error(diagnostic);
+    }
+
+    const bytes = await readFile(messagePath);
+
+    if (!bytes.equals(Buffer.from(message))) {
+      throw new Error(diagnostic);
+    }
+  };
+
+  const assertMessageCheck = async (before: string, message: string) => {
+    await assertCandidate('Message check');
+    const after = await untrackedState();
+    const diagnostic =
+      'Message check changed the candidate or message file. Inspect the checker and retry commit.';
+
+    if (before !== after) {
+      throw new Error(diagnostic);
+    }
+
+    await verifyMessage(message, diagnostic);
+  };
+
+  return {
+    hooks,
+    hooksPath,
+    messagePath,
+    verifyMessage,
+    async checkProject() {
+      if (!command) {
+        return `Project check unavailable: ${configPath.trim() ? 'no check command in tau.json.' : 'no root tau.json.'}`;
+      }
+
+      const [executable, ...arguments_] = command;
+
+      await run(executable, arguments_, candidateDirectory);
+      await assertCandidate('Project check');
+
+      return `Project check passed: ${command.join(' ')} on ${tree}.`;
+    },
+    async checkMessage(message: string) {
+      await writeFile(messagePath, message, { mode: 0o600 });
+
+      if (!checkMessage) {
+        return {
+          passed: true,
+          notice: `Message check unavailable: ${configPath.trim() ? 'no checkMessage command in tau.json.' : 'no root tau.json.'}`,
+        };
+      }
+
+      await assertCandidate('Message check');
+      const before = await untrackedState();
+      const [executable, ...arguments_] = checkMessage;
+      let result: Awaited<ReturnType<ExtensionAPI['exec']>>;
+
+      try {
+        result = await pi.exec(executable, [...arguments_, messagePath], {
+          cwd: candidateDirectory,
+          ...(signal ? { signal } : {}),
+          timeout: 600_000,
+        });
+      } finally {
+        // Check mutations even after failure or a killed process. A dirty checkout cannot be retried.
+        if (!signal?.aborted) {
+          await assertMessageCheck(before, message);
+        }
+      }
+
+      const notice = `Message check failed (${checkMessage.join(' ')}):\n${result.stderr}\n${result.stdout}`;
+
+      if (result.killed || signal?.aborted) {
+        throw new Error(notice);
+      }
+
+      return result.code === 0
+        ? { passed: true, notice: `Message check passed: ${checkMessage.join(' ')}.` }
+        : { passed: false, notice };
+    },
+  };
 };

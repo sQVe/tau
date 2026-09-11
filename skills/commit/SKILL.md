@@ -20,7 +20,9 @@ Turn the current diff into clean commits using the `commit` tool.
 - Use the `commit` tool for every commit. Do not run `git commit` through bash.
 - If the `commit` tool is unavailable, stop and tell the user.
 - Never stage with `git add -A` or `git add .`.
-- Never pass `--no-verify`.
+- Never bypass hooks ad hoc with `--no-verify`, `-c core.hooksPath`, environment variables, or
+  config changes to evade a failure. Only the commit tool's explicit staged `hooks: "skip"` policy
+  controls hook bypass for its final Git commit.
 - Never rewrite history with `--amend`.
 - Do not ask for chat-level confirmation. The `commit` tool handles approval. When Pi starts with
   `--auto-approve-commits`, the tool skips confirmation but keeps checks and comment review.
@@ -81,7 +83,10 @@ Turn the current diff into clean commits using the `commit` tool.
      committed, for example by a prior group. Report this and move on.
    - If changes remain, use the tool's error output to guide retries:
      - Read the reported command, configuration, hook, or review error.
-     - Fix the underlying issue, such as lint, format, or test failures.
+     - Fix the underlying issue, such as lint, format, test, or message-check failures. Message
+       checks cannot be waived. Hook message rewrites undo the commit. Report the hook
+       rewrite/configuration blocker; do not alter human hooks to clear it. Retry with the final
+       message under the owner's explicit staged hook policy.
      - If preparation reports additional files, inspect them before assigning them to a group and
        retrying. Do not add unrelated user edits just to clear an error. Accepted paths belong to
        their assigned group for the rest of the call.

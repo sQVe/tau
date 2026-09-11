@@ -23,3 +23,4 @@ Start with the [template](./TEMPLATE.md). Follow the
 - [0013: Explicit repository commit commands](./0013-explicit-repository-commit-commands.md)
 - [0014: Staged preparation ownership](./0014-staged-preparation-ownership.md)
 - [0015: Preparation addition assignment](./0015-preparation-addition-assignment.md)
+- [0016: Staged message and hook policy](./0016-staged-message-and-hook-policy.md)

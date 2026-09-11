@@ -8,6 +8,8 @@ export interface CommitSuccess {
     body: string | null;
     skipped?: true;
     projectCheck?: string;
+    messageCheck?: string;
+    hooks?: 'run' | 'skip';
     commentReview?: {
       status: 'passed' | 'waived';
       tree: string;

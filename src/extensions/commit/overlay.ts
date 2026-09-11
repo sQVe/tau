@@ -32,6 +32,7 @@ export interface CommitView {
   notice?: string;
   review?: string;
   reviewBlocked?: boolean;
+  messageBlocked?: boolean;
   allowApproveAll?: boolean;
   preparationAddedFiles?: string[];
   repositoryRelative?: boolean;
@@ -264,11 +265,15 @@ export const confirmCommitOverlay = async (
       }
 
       const items: { value: CommitChoice; label: string }[] = [
-        view.reviewBlocked
-          ? { value: 'waive', label: 'w    Waive comment review and commit' }
-          : { value: 'approve', label: 'a    Approve and commit' },
+        ...(view.messageBlocked
+          ? []
+          : [
+              view.reviewBlocked
+                ? { value: 'waive' as const, label: 'w    Waive comment review and commit' }
+                : { value: 'approve' as const, label: 'a    Approve and commit' },
+            ]),
         // Approve-all cannot waive a blocked review.
-        ...(view.reviewBlocked || view.allowApproveAll === false
+        ...(view.messageBlocked || view.reviewBlocked || view.allowApproveAll === false
           ? []
           : [{ value: 'approveAll' as const, label: 'A    Approve all remaining' }]),
         ...(view.review ? [{ value: 'review' as const, label: 'r    Read comment review' }] : []),
@@ -320,8 +325,10 @@ export const confirmCommitOverlay = async (
           }
 
           const shortcuts: Record<string, CommitChoice> = {
-            ...(view.reviewBlocked
-              ? { w: 'waive' as const, t: 'retry' as const }
+            ...(view.reviewBlocked ? { t: 'retry' as const } : {}),
+            ...(!view.messageBlocked && view.reviewBlocked ? { w: 'waive' as const } : {}),
+            ...(view.messageBlocked || view.reviewBlocked
+              ? {}
               : {
                   a: 'approve' as const,
                   ...(view.allowApproveAll === false ? {} : { A: 'approveAll' as const }),
