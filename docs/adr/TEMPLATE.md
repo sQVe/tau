@@ -24,8 +24,9 @@ are several. Include a detail only when changing it would change the decision or
 
 ## Tradeoffs
 
-State what this choice gains and what costs or limits we accept. Include consequences of the choice,
-not a checklist for implementing it.
+State what this choice gains and what costs or limits we accept, in one list. Write benefits as
+plain bullets and prefix each cost or limit with `Cost:`. Include consequences of the choice, not a
+checklist for implementing it.
 
 ## See also
 

@@ -1,6 +1,6 @@
 # Architecture decision records
 
-ADRs record architectural choices and why we made them, not how we implemented a feature.
+Record lasting decisions and the reasons behind them, not how a feature works.
 
 ## Before writing
 
