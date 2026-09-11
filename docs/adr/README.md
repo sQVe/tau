@@ -1,10 +1,21 @@
 # Architecture decision records
 
-ADRs record lasting technical decisions and the reasons for them.
+Record lasting decisions and the reasons behind them, not how a feature works.
 
-Start with the [template](./TEMPLATE.md). Follow the
-[writing instructions](../../src/extensions/writing/instructions.md), and see
-[ADR 0010](./0010-documentation-scope.md) for what belongs in an ADR.
+## Before writing
+
+Follow the [writing instructions](../../src/extensions/writing/instructions.md) and
+[ADR 0010](./0010-documentation-scope.md) for documentation scope. Before opening the
+[template](./TEMPLATE.md), answer:
+
+- What choice are we making, and what lasting reason stands behind it?
+- What credible alternative did we consider, and why did we reject it?
+
+If the answers only restate what the code does, do not write an ADR. Code and tests hold behavior. A
+feature change does not require a new document.
+
+Use a title that names the choice, and state that choice at the start of the Decision section. An
+ADR is not a feature summary, implementation plan, or acceptance checklist.
 
 ## Index
 
