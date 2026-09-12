@@ -221,7 +221,7 @@ export default defineConfig({
     },
     overrides: [
       {
-        files: ['**/*.test.{ts,tsx}', 'tests/**/*.{ts,tsx}'],
+        files: ['**/*.test.{ts,tsx}'],
         rules: {
           'typescript/no-explicit-any': 'off',
           'typescript/no-non-null-assertion': 'off',
@@ -235,7 +235,14 @@ export default defineConfig({
           'unicorn/no-await-expression-member': 'off',
           'eslint/complexity': 'off',
           'eslint/max-depth': 'off',
-          // Integration tests isolate the real process environment.
+          // Tests isolate the real process environment.
+          'node/no-process-env': 'off',
+        },
+      },
+      {
+        files: ['tests/*.ts'],
+        rules: {
+          // Test helpers isolate the real process environment.
           'node/no-process-env': 'off',
         },
       },
