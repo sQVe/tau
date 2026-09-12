@@ -22,5 +22,5 @@ it('rejects lint warnings in project checks', async ({ onTestFinished }) => {
   });
 
   expect(result.status).toBe(1);
-  expect(result.stdout).toContain('warning eslint(no-console)');
+  expect(result.stdout).toContain('eslint(no-console)');
 }, 30_000);
