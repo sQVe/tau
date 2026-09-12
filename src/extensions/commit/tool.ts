@@ -1,4 +1,3 @@
-/* oxlint-disable eslint/no-await-in-loop -- Groups and approval steps share staging and recovery ownership, so each must finish before the next. */
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, posix } from 'node:path';
@@ -296,6 +295,7 @@ const hashFiles = async (
   const hashes: string[] = [];
 
   for (const file of files) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Hash files in request order so the fingerprint is stable.
     const result = await pi.exec('git', ['--literal-pathspecs', 'hash-object', '--', file], {
       cwd: workingDirectory,
     });
@@ -620,6 +620,7 @@ const executeGroup = async (
     );
     let notice = '';
 
+    /* oxlint-disable eslint/no-await-in-loop -- Each approval round must finish before the next reads the amended message. */
     for (;;) {
       if (signal?.aborted) {
         return cancelled();
@@ -772,6 +773,7 @@ const executeGroup = async (
         }
       }
     }
+    /* oxlint-enable eslint/no-await-in-loop */
   } catch (error) {
     groupError = error;
     throw error;
@@ -999,6 +1001,7 @@ export const createCommitTool = (
       // Review runs only after restoration, never speculatively across a later check window.
       const requestReview: RequestReview = (snapshot) => review(pi, context, signal, snapshot);
 
+      /* oxlint-disable eslint/no-await-in-loop -- Groups share staging and recovery ownership, so each must finish before the next. */
       for (const [index, group] of parameters.groups.entries()) {
         const groupLabel = `${index + 1}/${parameters.groups.length}`;
 
@@ -1165,6 +1168,7 @@ export const createCommitTool = (
           );
         }
       }
+      /* oxlint-enable eslint/no-await-in-loop */
 
       return finish(content);
     },

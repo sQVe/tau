@@ -1,4 +1,3 @@
-/* oxlint-disable eslint/no-await-in-loop -- Parent checks and snapshots run in order with a shared byte budget. */
 import { execFile } from 'node:child_process';
 import {
   lstat,
@@ -109,6 +108,7 @@ export const readWorkingEntry = async (
   let parent = dirname(absolute);
 
   while (parent !== root) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Reject the nearest symlinked parent before inspecting the next.
     const status = await lstat(parent).catch(missingFile);
 
     if (status && !status.isDirectory()) {
@@ -165,6 +165,7 @@ export const workingState = async (root: string, originalPaths: string[] = []) =
   let bytes = 0;
 
   for (const path of paths) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Each read consumes the remaining snapshot byte budget.
     const snapshot = await readWorkingEntry(root, path, maximumWorkingBytes - bytes);
     bytes += snapshot.bytes;
     entries.set(path, snapshot.entry);
@@ -188,6 +189,7 @@ export const snapshotPreparation = async (
   }
 
   for (const path of requestedPaths) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Report the first invalid path in request order.
     const status = await lstat(join(root, path)).catch(missingFile);
 
     if (status?.isDirectory()) {
@@ -338,6 +340,7 @@ export const snapshotPreparation = async (
     );
 
     for (const path of requested) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Report the first missing path in request order.
       const status = await lstat(join(root, path)).catch(missingFile);
 
       if (status || indexed.has(path)) {
