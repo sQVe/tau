@@ -52,6 +52,7 @@ export default function statusbarExtension(pi: ExtensionAPI) {
         ['status', '--porcelain', '--untracked-files=normal'],
         {
           cwd: context.cwd,
+          // oxlint-disable-next-line node/no-process-env -- Status inherits Git configuration but must not lock the index.
           env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
           timeout: gitTimeoutMilliseconds,
           maxBuffer: gitMaximumBufferBytes,

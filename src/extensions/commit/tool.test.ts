@@ -4051,7 +4051,7 @@ describe('commitTool.execute', () => {
       runCommand(command, arguments_, options?.cwd ?? repositoryDirectory),
     );
     const tool = createReviewedCommitTool({ exec }, async (_pi, _context, _signal, snapshot) => {
-      expect(await git(repositoryDirectory, ['show', `${snapshot?.tree}:README.md`])).toBe(
+      expect(await git(repositoryDirectory, ['show', `${snapshot.tree}:README.md`])).toBe(
         'formatted\n',
       );
 

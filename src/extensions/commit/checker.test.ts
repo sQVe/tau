@@ -46,6 +46,7 @@ it('bounds output from a real noisy checker with an explicit truncation notice',
 });
 
 it('drains trailing stdout and stderr after the child exit event', async () => {
+  // oxlint-disable-next-line unicorn/prefer-event-target -- ChildProcess uses the Node EventEmitter API.
   const child = Object.assign(new EventEmitter(), {
     stdout: new PassThrough(),
     stderr: new PassThrough(),

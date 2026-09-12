@@ -28,6 +28,7 @@ const implementationState = (allowed: boolean, notice: string | undefined) => {
   return allowed ? 'allowed' : 'blocked';
 };
 
+// oxlint-disable-next-line eslint/complexity -- Summary sections are optional and share one output-size budget.
 const summarize = (
   cwd: string,
   header: {
@@ -320,6 +321,7 @@ export default function tddExtension(pi: ExtensionAPI) {
             'Use focused for the exact test in files to prove RED and GREEN; use full for all tests at the end to verify every recorded RED.',
         }),
       }),
+      // oxlint-disable-next-line eslint/complexity -- Recovery guidance follows the precedence of gate outcomes and ambiguous test evidence.
       async execute(_toolCallId, parameters, signal, _onUpdate, context) {
         const { scope, ...behavior } = parameters;
         const cwd = await realpath(context.cwd);

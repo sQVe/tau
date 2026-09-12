@@ -19,7 +19,9 @@ const captureOutput = (stream: Readable) => {
   };
   const closed = new Promise<void>((resolve) => stream.once('close', resolve));
   stream.on('data', append);
-  stream.on('error', (error) => append(Buffer.from(String(error))));
+  stream.on('error', (error) => {
+    append(Buffer.from(String(error)));
+  });
 
   return {
     append,
@@ -31,6 +33,7 @@ const captureOutput = (stream: Readable) => {
 };
 
 const checkerEnvironment = () => {
+  // oxlint-disable-next-line node/no-process-env -- Checkers inherit the caller's environment while preventing Git index refreshes.
   const environment: NodeJS.ProcessEnv = { ...process.env, GIT_OPTIONAL_LOCKS: '0' };
   const count = Number(environment.GIT_CONFIG_COUNT ?? '0');
 
@@ -124,26 +127,26 @@ export const runChecker = async (command: string[], root: string, signal?: Abort
         );
       }
 
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Poll until the process group exits before allowing recovery.
       await delay(10);
     }
 
     await Promise.race([
       Promise.all([stdout.closed, stderr.closed]),
       new Promise<never>((_resolve, reject) => {
-        drainTimeout = setTimeout(
-          () =>
-            reject(
-              new Error(
-                'Checker output streams did not close. Keep pending recovery and stop detached writers before manual recovery.',
-              ),
+        drainTimeout = setTimeout(() => {
+          reject(
+            new Error(
+              'Checker output streams did not close. Keep pending recovery and stop detached writers before manual recovery.',
             ),
-          1000,
-        );
+          );
+        }, 1000);
       }),
     ]);
 
     return {
       code: survivingChildren ? 1 : code,
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- Abort and exit callbacks can change killed while awaiting child termination.
       killed: killed || survivingChildren,
       stdout: stdout.text(),
       stderr: stderr.text(),

@@ -193,6 +193,7 @@ export const confirmCommitOverlay = async (
     },
   } as const;
   const choice = await context.ui.custom<CommitChoice | undefined>(
+    // oxlint-disable-next-line eslint/complexity -- Optional review, message and file sections share the terminal's height budget.
     (terminalInterface, theme, _keybindings, done) => {
       const onAbort = () => {
         done('abort');

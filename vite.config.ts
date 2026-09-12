@@ -221,13 +221,22 @@ export default defineConfig({
     },
     overrides: [
       {
-        files: ['**/*.test.{ts,tsx}'],
+        files: ['**/*.test.{ts,tsx}', 'tests/**/*.{ts,tsx}'],
         rules: {
           'typescript/no-explicit-any': 'off',
           'typescript/no-non-null-assertion': 'off',
           'typescript/no-unsafe-type-assertion': 'off',
           'eslint/no-empty-function': 'off',
           'eslint/max-nested-callbacks': 'off',
+          // Test steps are ordered, and async mocks need not suspend.
+          'eslint/no-await-in-loop': 'off',
+          'typescript/require-await': 'off',
+          // Direct assertions and nested fixtures keep test scenarios together.
+          'unicorn/no-await-expression-member': 'off',
+          'eslint/complexity': 'off',
+          'eslint/max-depth': 'off',
+          // Integration tests isolate the real process environment.
+          'node/no-process-env': 'off',
         },
       },
     ],
@@ -251,7 +260,7 @@ export default defineConfig({
     },
   },
   staged: {
-    '*.{ts,tsx}': ['vp lint', 'vp fmt --check'],
+    '*.{ts,tsx}': ['vp lint --deny-warnings', 'vp fmt --check'],
     '!(pnpm-lock).{json,md,yaml,yml,css}': 'vp fmt --check',
   },
 });
