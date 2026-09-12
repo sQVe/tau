@@ -39,3 +39,4 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0018: Repository owners choose commit checks and hooks](./0018-staged-message-and-hook-policy.md)
 - [0019: Verify backups before hiding working edits](./0019-verified-raw-recovery.md)
 - [0020: Run staged checks in the existing checkout](./0020-checks-in-the-existing-checkout.md)
+- [0021: Prune recovery snapshots after verified restoration](./0021-prune-verified-recovery.md)
