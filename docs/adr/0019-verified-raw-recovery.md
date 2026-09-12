@@ -44,3 +44,5 @@ every concurrent write or filesystem failure.
 
 - [Staged preparation ownership](./0016-staged-preparation-ownership.md)
 - [Checks in the existing checkout](./0020-checks-in-the-existing-checkout.md)
+- [Prune recovery snapshots after verified restoration](./0021-prune-verified-recovery.md) replaces
+  the retention rule.

@@ -33,6 +33,14 @@ const pi: Pick<ExtensionAPI, 'exec'> = {
     return { ...result, code: 0, killed: false };
   },
 };
+const readOptional = (path: string) =>
+  readFile(path, 'utf8').catch((error: unknown) => {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return null;
+    }
+
+    throw error;
+  });
 const repository = async () => {
   const root = await mkdtemp(join(tmpdir(), 'tau-in-place-check-'));
   const temporary = await mkdtemp(join(tmpdir(), 'tau-check-message-'));
@@ -186,12 +194,11 @@ it.each(['failure', 'file', 'stage', 'new-file'])(
     expect(pending).toBe(outcome !== 'failure');
     const names = await readdir(join(root, '.git/tau-recovery'));
     const name = names.find((entry) => entry.startsWith('prepare-'))!;
-    const original: unknown = JSON.parse(
-      await readFile(join(root, '.git/tau-recovery', name, 'working.json'), 'utf8'),
+    const backup = await readOptional(join(root, '.git/tau-recovery', name, 'working.json'));
+    const originalBase64 = Buffer.from('original working').toString('base64');
+    expect(backup?.includes(originalBase64) ?? 'pruned').toBe(
+      outcome === 'failure' ? 'pruned' : true,
     );
-    expect(original).toMatchObject({
-      file: { content: Buffer.from('original working').toString('base64') },
-    });
     expect(await git(root, ['show', ':file'])).toBe(
       outcome === 'stage' ? 'checker output' : 'staged',
     );
@@ -448,6 +455,136 @@ it.each(['create', 'change', 'external'])(
     await expect(assertNoPendingRecovery(join(root, '.git'))).rejects.toThrow(/recovery/i);
   },
 );
+
+it('restores work when the checker creates output matched only by an external exclude', async () => {
+  const { root, temporary } = await repository();
+  await writeFile(join(root, '.git/info/exclude'), '.cache/\n');
+  await writeFile(
+    join(root, 'tau.json'),
+    JSON.stringify({
+      check: [
+        process.execPath,
+        '-e',
+        "const fs = require('node:fs'); fs.mkdirSync('.cache'); fs.writeFileSync('.cache/output', 'checker output');",
+      ],
+    }),
+  );
+  await git(root, ['add', '.']);
+  const tree = await git(root, ['write-tree']);
+  await writeFile(join(root, 'file'), 'original working');
+  const checks = await createCandidateChecks(pi, root, tree, temporary);
+
+  await checks.checkProject();
+
+  expect(await readFile(join(root, 'file'), 'utf8')).toBe('original working');
+  expect(await readFile(join(root, '.cache/output'), 'utf8')).toBe('checker output');
+  await assertNoPendingRecovery(join(root, '.git'));
+});
+
+it('applies frozen exclude rules in git precedence order', async () => {
+  const { root, temporary } = await repository();
+  await writeFile(join(temporary, 'global-ignore'), '!*.log\n');
+  await git(root, ['config', 'core.excludesFile', join(temporary, 'global-ignore')]);
+  await writeFile(join(root, '.git/info/exclude'), '*.log\n');
+  await writeFile(
+    join(root, 'tau.json'),
+    JSON.stringify({
+      check: [
+        process.execPath,
+        '-e',
+        "require('node:fs').writeFileSync('checker.log', 'checker output');",
+      ],
+    }),
+  );
+  await git(root, ['add', '.']);
+  const tree = await git(root, ['write-tree']);
+  await writeFile(join(root, 'file'), 'original working');
+  const checks = await createCandidateChecks(pi, root, tree, temporary);
+
+  await checks.checkProject();
+
+  expect(await readFile(join(root, 'file'), 'utf8')).toBe('original working');
+  await assertNoPendingRecovery(join(root, '.git'));
+});
+
+it('resolves a relative global excludes file against the repository root', async () => {
+  const { root, temporary } = await repository();
+  await writeFile(join(root, 'global-ignore'), '*.log\n');
+  await git(root, ['config', 'core.excludesFile', 'global-ignore']);
+  await writeFile(
+    join(root, 'tau.json'),
+    JSON.stringify({
+      check: [
+        process.execPath,
+        '-e',
+        "require('node:fs').writeFileSync('checker.log', 'checker output');",
+      ],
+    }),
+  );
+  await git(root, ['add', 'tau.json']);
+  const tree = await git(root, ['write-tree']);
+  await writeFile(join(root, 'file'), 'original working');
+  const checks = await createCandidateChecks(pi, root, tree, temporary);
+
+  await checks.checkProject();
+
+  expect(await readFile(join(root, 'file'), 'utf8')).toBe('original working');
+  await assertNoPendingRecovery(join(root, '.git'));
+});
+
+it('follows a symlinked global excludes file when freezing rules', async () => {
+  const { root, temporary } = await repository();
+  await writeFile(join(temporary, 'global-ignore-target'), '*.log\n');
+  await symlink(join(temporary, 'global-ignore-target'), join(temporary, 'global-ignore'));
+  await git(root, ['config', 'core.excludesFile', join(temporary, 'global-ignore')]);
+  await writeFile(
+    join(root, 'tau.json'),
+    JSON.stringify({
+      check: [
+        process.execPath,
+        '-e',
+        "require('node:fs').writeFileSync('checker.log', 'checker output');",
+      ],
+    }),
+  );
+  await git(root, ['add', '.']);
+  const tree = await git(root, ['write-tree']);
+  await writeFile(join(root, 'file'), 'original working');
+  const checks = await createCandidateChecks(pi, root, tree, temporary);
+
+  await checks.checkProject();
+
+  expect(await readFile(join(root, 'file'), 'utf8')).toBe('original working');
+  await assertNoPendingRecovery(join(root, '.git'));
+});
+
+it('prunes recovery snapshots and refs after verified restoration', async () => {
+  const { root, temporary } = await repository();
+  await writeFile(join(root, 'tau.json'), JSON.stringify({ check: ['true'] }));
+  await git(root, ['add', '.']);
+  const tree = await git(root, ['write-tree']);
+  await writeFile(join(root, 'file'), 'original working');
+  const checks = await createCandidateChecks(pi, root, tree, temporary);
+
+  await checks.checkProject();
+
+  const [archive] = await readdir(join(root, '.git/tau-recovery'));
+  const retained = await readdir(join(root, '.git/tau-recovery', String(archive)));
+  expect(retained).toContain('hidden-displaced');
+  expect(
+    JSON.parse(
+      await readFile(
+        join(root, '.git/tau-recovery', String(archive), 'displaced-paths.json'),
+        'utf8',
+      ),
+    ),
+  ).toEqual(['file', 'tau.json']);
+  expect(retained).not.toContain('working.json');
+  expect(retained).not.toContain('manifest.json');
+  expect(retained).not.toContain('original-index');
+  expect(await git(root, ['for-each-ref', 'refs/tau/recovery'])).toBe('');
+  expect(await readFile(join(root, 'file'), 'utf8')).toBe('original working');
+});
 
 it('refuses file-directory transitions before hiding any working file', async () => {
   const { root, temporary } = await repository();
