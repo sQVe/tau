@@ -92,6 +92,8 @@ const normalizeRepositoryPath = (file: string) =>
 
 export const validatePaths = (files: string[]) => {
   for (const rawFile of files) {
+    // Validate the backslash reading on every platform so a Windows-style traversal or sensitive
+    // name is rejected everywhere, while staging keeps the literal name on POSIX.
     const file = posix.normalize(rawFile.replaceAll('\\', '/')).replace(/\/+$/, '');
 
     if (
