@@ -168,8 +168,7 @@ find "$HOME/.pi/agent/sessions" -type f -name "*.jsonl" -print0 |
 ```
 
 The query joins calls and results by `toolCallId` within each file and totals catalog cost by role.
-Sessions before `bulk_read` shipped are counted; files under 400 lines count as unbounded reads; the
-offset count is an upper bound without a same-path join.
+ADR 0014 records its known holes with the numbers.
 
 Record configuration, session input, cache read, cache write, output, delegate input, delegate
 output, assistant turns, `offset` pages after a clamped read, wall clock, and catalog cost as a
