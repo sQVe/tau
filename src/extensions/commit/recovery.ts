@@ -5,13 +5,17 @@ import {
   link,
   lstat,
   mkdir,
+  mkdtemp,
   open,
+  readFile,
   readdir,
   readlink,
   rename,
   rm,
   symlink,
+  writeFile,
 } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, posix } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -287,6 +291,25 @@ const ignoredPaths = async (root: string) =>
     .split('\0')
     .filter(Boolean);
 
+// Freeze external exclude rules so a checker's later edits to them cannot hide new work.
+// Git reads the global file first and info/exclude second; the last matching pattern wins.
+// Both are read before any checker runs, and git follows the same symlinks, so plain reads suffice.
+const externalExcludes = async (root: string) => {
+  const infoExclude = (
+    await gitBytes(root, ['rev-parse', '--path-format=absolute', '--git-path', 'info/exclude'])
+  )
+    .toString()
+    .trim();
+  const globalExclude = await gitBytes(root, ['config', '--path', '--get', 'core.excludesFile'])
+    .then((bytes) => bytes.toString().trim())
+    .catch(() => join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'git/ignore'));
+  const contents = await Promise.all(
+    [globalExclude, infoExclude].map((path) => readFile(path, 'utf8').catch(() => '')),
+  );
+
+  return contents.map((content) => `${content}\n`).join('');
+};
+
 const isExcluded = (path: string, ignored: string[]) =>
   ignored.some(
     (excluded) =>
@@ -300,6 +323,7 @@ export const newIgnoredArtifacts = async (
   expected: Working,
   untouched?: Working,
   originalIgnored: string[] = [],
+  excludes = '',
 ) => {
   const knownPaths = Object.keys(expected);
   const ignoreFiles = knownPaths.filter(isIgnoreFile);
@@ -316,14 +340,32 @@ export const newIgnoredArtifacts = async (
     }
   }
 
-  // Only per-directory rules apply to new artifacts. Changes to external Git excludes cannot hide new work.
-  const listed = await gitBytes(root, [
-    'ls-files',
-    '--others',
-    '--ignored',
-    '--exclude-per-directory=.gitignore',
-    '-z',
-  ]);
+  // Only per-directory rules and the frozen external rules apply. Current external excludes are never read.
+  const excludeDirectory = excludes ? await mkdtemp(join(tmpdir(), 'tau-excludes-')) : null;
+  let listed: Buffer;
+
+  try {
+    const excludeFrom: string[] = [];
+
+    if (excludeDirectory) {
+      await writeFile(join(excludeDirectory, 'excludes'), excludes, { mode: 0o600 });
+      excludeFrom.push(`--exclude-from=${join(excludeDirectory, 'excludes')}`);
+    }
+
+    listed = await gitBytes(root, [
+      'ls-files',
+      '--others',
+      '--ignored',
+      '--exclude-per-directory=.gitignore',
+      ...excludeFrom,
+      '-z',
+    ]);
+  } finally {
+    if (excludeDirectory) {
+      await rm(excludeDirectory, { recursive: true, force: true });
+    }
+  }
+
   const paths = new TextDecoder('utf-8', { fatal: true })
     .decode(listed)
     .split('\0')
@@ -371,6 +413,7 @@ export const recoveryWorkingState = async (
 
 interface Manifest {
   ignored: string[];
+  excludes?: string;
   root: string;
   head: string | null;
   headFile: string;
@@ -394,6 +437,7 @@ const verifyArchive = async (pi: Git, root: string, gitDirectory: string, archiv
   const schema = Type.Object(
     {
       ignored: Type.Array(Type.String()),
+      excludes: Type.Optional(Type.String()),
       root: Type.String(),
       head: Type.Union([Type.String(), Type.Null()]),
       headFile: Type.String(),
@@ -522,6 +566,7 @@ export const saveRecovery = async (
 
     const manifest: Manifest = {
       ignored,
+      excludes: await externalExcludes(root),
       root,
       head: originalHead,
       headFile,
@@ -539,10 +584,10 @@ export const saveRecovery = async (
       join(archive, 'check-recovery.txt'),
       'Stop checkers and other writers before recovery. A pending owner.lock can belong to a live or interrupted operation; never remove it while a writer may survive.\n' +
         'working.json preserves original bytes, permissions, symlink targets and absence. manifest.json records the expected staged working state and original ignore exclusions.\n' +
-        'hidden-displaced holds original inodes moved during hiding. displaced holds inodes moved during restoration. Numeric names follow the order of paths in manifest.original. Keep both directories: open writers may still append to these files.\n' +
+        'hidden-displaced holds original inodes moved during hiding. displaced holds inodes moved during restoration. Numeric names index the path order of manifest.original, kept as displaced-paths.json after pruning. Keep both directories: open writers may still append to these files.\n' +
         'Compare backups and current files in a separate directory. Partial hiding or restoration requires manual inspection, not stash apply or forced checkout.\n' +
         'original-index and the recovery ref preserve staging. Never copy that index over concurrent staging or move HEAD to clear a recovery error.\n' +
-        'Keep pending until writers have stopped and working files, staging and HEAD have been inspected and recovered. Retain archives after clearing pending; deleting them may discard late writer bytes.\n',
+        'Keep pending until writers have stopped and working files, staging and HEAD have been inspected and recovered. After verified restoration Tau removes the snapshots and the ref and keeps displaced and hidden-displaced; delete those only once no writer can still hold them open.\n',
     );
     await syncTree(archive);
 
@@ -687,6 +732,34 @@ const replaceWorking = async (
   }
 };
 
+// Verified restoration leaves nothing for the snapshots to protect. Displaced inodes stay: open writers may still append to them.
+const retainedNames = [
+  'displaced',
+  'hidden-displaced',
+  'displaced-paths.json',
+  'check-recovery.txt',
+];
+const pruneArchive = async (pi: Git, root: string, archive: string, manifest: Manifest) => {
+  await save(join(archive, 'displaced-paths.json'), JSON.stringify(Object.keys(manifest.original)));
+  await reviewGit(pi, root, ['update-ref', '-d', manifest.recoveryRef, manifest.tree]);
+
+  for (const name of await readdir(archive)) {
+    if (!retainedNames.includes(name)) {
+      await rm(join(archive, name), { recursive: true, force: true });
+    }
+  }
+
+  for (const name of ['displaced', 'hidden-displaced']) {
+    if ((await readdir(join(archive, name)).catch(() => ['missing'])).length === 0) {
+      await rm(join(archive, name), { recursive: true });
+    }
+  }
+
+  if ((await readdir(archive)).every((name) => !name.endsWith('displaced'))) {
+    await rm(archive, { recursive: true });
+  }
+};
+
 export const recoverPending = async (pi: Git, root: string) => {
   const gitDirectory = (await reviewGit(pi, root, ['rev-parse', '--absolute-git-dir'])).trimEnd();
   const { directory, pending } = recoveryPaths(gitDirectory);
@@ -715,7 +788,13 @@ export const recoverPending = async (pi: Git, root: string) => {
     const knownPaths = Object.keys(manifest.original);
     const ignored = [
       ...manifest.ignored,
-      ...(await newIgnoredArtifacts(root, manifest.hidden, manifest.original, manifest.ignored)),
+      ...(await newIgnoredArtifacts(
+        root,
+        manifest.hidden,
+        manifest.original,
+        manifest.ignored,
+        manifest.excludes,
+      )),
     ];
     const current = await recoveryWorkingState(root, knownPaths, ignored);
     const untouched = isDeepStrictEqual(current, manifest.original);
@@ -739,6 +818,8 @@ export const recoverPending = async (pi: Git, root: string) => {
 
     await rm(pending, { recursive: true });
     await sync(directory);
+    // Leftovers are harmless; a locked ref or busy file must not fail a verified restoration.
+    await pruneArchive(pi, root, archive, manifest).catch(() => undefined);
   } catch (error) {
     throw new Error(`Recovery stopped. Keep data at ${directory}. ${String(error)}`, {
       cause: error,
@@ -786,7 +867,13 @@ export const hidePending = async (pi: Git, root: string) => {
       const knownPaths = Object.keys(manifest.original);
       const ignored = [
         ...manifest.ignored,
-        ...(await newIgnoredArtifacts(root, manifest.hidden, undefined, manifest.ignored)),
+        ...(await newIgnoredArtifacts(
+          root,
+          manifest.hidden,
+          undefined,
+          manifest.ignored,
+          manifest.excludes,
+        )),
       ];
 
       if (

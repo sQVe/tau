@@ -508,10 +508,11 @@ it.each(['complete', 'raced', 'failure'])(
     expect(pending).toBe(outcome !== 'complete');
     const current = await readFile(join(root, 'file')).catch(() => null);
     expect(current).toEqual(outcome === 'complete' ? Buffer.from([0, 255, 13, 10]) : null);
-    const backup: unknown = JSON.parse(await readFile(join(archive, 'working.json'), 'utf8'));
-    expect(backup).toMatchObject({
-      file: { content: Buffer.from([0, 255, 13, 10]).toString('base64') },
-    });
+    const backup = await readFile(join(archive, 'working.json'), 'utf8').catch(() => null);
+    const originalBase64 = Buffer.from([0, 255, 13, 10]).toString('base64');
+    expect(backup?.includes(originalBase64) ?? 'pruned').toBe(
+      outcome === 'complete' ? 'pruned' : true,
+    );
   },
 );
 

@@ -27,8 +27,8 @@ change or restore staging. Preserve unexpected work rather than merge or overwri
 
 Partial changes, interrupted recovery, or ambiguous conditions require manual inspection. Keep
 backups and block further commits while recovery is pending, even if backup creation stopped before
-files changed. Retain recovery copies after success: deleting them could discard user work written
-to displaced files.
+files changed. After verified restoration, remove the snapshots and the ref and keep only the
+displaced inodes and their path list: open writers may still append to those inodes.
 
 This decision establishes recovery requirements. Running checks in the existing checkout will be a
 separate change. It does not yet hide edits or change existing preparation recovery.
