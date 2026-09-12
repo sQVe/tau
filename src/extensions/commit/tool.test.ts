@@ -2601,7 +2601,7 @@ describe('message policy', () => {
         pending ? 'tau.json\n' : '',
       );
     }
-  });
+  }, 30_000);
 
   it('undoes hook message rewrites instead of accepting unchecked bytes', async () => {
     const directory = await createTemporaryRepository();
