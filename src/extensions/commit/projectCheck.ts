@@ -1,10 +1,10 @@
-import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { runChecker } from './checker.js';
-import { gitBytes, maximumWorkingBytes, workingState } from './preparation.js';
+import { gitBytes, maximumWorkingBytes, readWorkingEntry, workingState } from './preparation.js';
 import type { WorkingEntry } from './preparation.js';
 import { hidePending, saveRecovery } from './recovery.js';
 
@@ -142,7 +142,7 @@ export const prepareProject = async (
   return `Project preparation passed: ${command.join(' ')}.`;
 };
 
-const stagedEntries = async (root: string, tree: string) => {
+const stagedEntries = async (root: string, tree: string, temporaryDirectory: string) => {
   const listed = new TextDecoder('utf-8', { fatal: true }).decode(
     await gitBytes(root, ['ls-tree', '-r', '-l', '-z', tree]),
   );
@@ -166,13 +166,7 @@ const stagedEntries = async (root: string, tree: string) => {
         throw new Error('Staged recovery exceeds 100 MiB. Reduce staged data before retrying.');
       }
 
-      return {
-        mode: match[1],
-        object: match[2],
-        size,
-        path: match[4],
-        header: Buffer.from(`${match[2]} blob ${size}\n`),
-      };
+      return match[4];
     });
   const staged: Record<string, WorkingEntry> = {};
 
@@ -180,50 +174,41 @@ const stagedEntries = async (root: string, tree: string) => {
     return staged;
   }
 
-  const outputBytes =
-    totalBytes + entries.reduce((bytes, entry) => bytes + entry.header.length + 1, 0);
-  const output = await gitBytes(
-    root,
-    ['cat-file', '--batch'],
-    undefined,
-    entries.map((entry) => `${entry.object}\n`).join(''),
-    outputBytes,
-  );
-  let offset = 0;
+  const directory = await mkdtemp(join(temporaryDirectory, 'projection-'));
+  const index = join(directory, 'index');
+  const checkout = join(directory, 'checkout');
 
-  for (const entry of entries) {
-    const start = offset + entry.header.length;
-    const end = start + entry.size;
+  try {
+    await mkdir(checkout);
+    await gitBytes(root, ['read-tree', tree], index);
+    // Use candidate attributes, not unstaged rules. Convert outside the checkout before hiding work.
+    await gitBytes(
+      root,
+      [`--attr-source=${tree}`, 'checkout-index', '--all', `--prefix=${checkout}/`],
+      index,
+    );
+    let bytes = 0;
 
-    // Payloads may contain any bytes, including LF and NUL. Only Git's framing is textual.
-    if (!output.subarray(offset, start).equals(entry.header) || output[end] !== 10) {
-      throw new Error('Invalid staged object batch. No working files were hidden.');
+    for (const path of entries) {
+      const snapshot = await readWorkingEntry(checkout, path, maximumWorkingBytes - bytes);
+      bytes += snapshot.bytes;
+      staged[path] = snapshot.entry;
     }
-
-    const fileMode = entry.mode === '100755' ? 0o755 : 0o644;
-    staged[entry.path] = {
-      kind: entry.mode === '120000' ? 'symlink' : 'file',
-      mode: entry.mode === '120000' ? 0o777 : fileMode,
-      content: output.subarray(start, end).toString('base64'),
-    };
-    offset = end + 1;
-  }
-
-  if (offset !== output.length) {
-    throw new Error('Unexpected trailing staged object data. No working files were hidden.');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 
   return staged;
 };
 
-const stagedWorking = async (root: string, tree: string) => {
+const stagedWorking = async (root: string, tree: string, temporaryDirectory: string) => {
   await gitBytes(root, ['diff-index', '--cached', '--quiet', tree, '--']).catch(
     (error: unknown) => {
       throw new Error('Staged content changed before checks. Retry commit.', { cause: error });
     },
   );
 
-  const staged = await stagedEntries(root, tree);
+  const staged = await stagedEntries(root, tree, temporaryDirectory);
   const changedPaths = new TextDecoder('utf-8', { fatal: true })
     .decode(await gitBytes(root, ['diff', '--cached', '--no-renames', '--name-only', '-z']))
     .split('\0')
@@ -292,7 +277,7 @@ export const createCandidateChecks = async (
       return { projectNotice, messageResult };
     }
 
-    const hidden = await stagedWorking(repositoryRoot, tree);
+    const hidden = await stagedWorking(repositoryRoot, tree, temporaryDirectory);
     const archive = await saveRecovery(pi, repositoryRoot, hidden, tree);
     const recovery = await hidePending(pi, repositoryRoot);
     let safeToRestore = true;

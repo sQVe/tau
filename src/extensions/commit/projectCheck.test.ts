@@ -111,6 +111,37 @@ it('checks staged scripts and workspace sources in place then restores raw work 
   expect(await readFile(join(root, 'working-only-ignore'), 'utf8')).toBe('ignored user bytes');
 });
 
+it('applies staged checkout attributes and restores exact working bytes and staging', async () => {
+  const { root, temporary } = await repository();
+  const attributes = 'encoded working-tree-encoding=UTF-16LE\nlines text eol=crlf\n';
+  const check = [
+    process.execPath,
+    '-e',
+    "const fs = require('node:fs'); const assert = require('node:assert/strict'); assert.deepEqual(fs.readFileSync('encoded'), Buffer.from('staged\\n', 'utf16le')); assert.equal(fs.readFileSync('lines', 'utf8'), 'staged\\r\\n');",
+  ];
+  await writeFile(join(root, '.gitattributes'), attributes);
+  await writeFile(join(root, 'encoded'), Buffer.from('staged\n', 'utf16le'));
+  await writeFile(join(root, 'lines'), 'staged\r\n');
+  await writeFile(join(root, 'tau.json'), JSON.stringify({ check, checkMessage: check }));
+  await git(root, ['add', '.']);
+  const tree = await git(root, ['write-tree']);
+  const index = await readFile(join(root, '.git/index'));
+  const workingAttributes = 'encoded -working-tree-encoding\nlines text eol=lf\n';
+  const workingBytes = Buffer.from([255, 0, 13, 10, 128]);
+  await writeFile(join(root, '.gitattributes'), workingAttributes);
+  await writeFile(join(root, 'encoded'), workingBytes);
+  await writeFile(join(root, 'lines'), 'working\n');
+  const checks = await createCandidateChecks(pi, root, tree, temporary);
+
+  await checks.checkInitial('feat: check\n');
+
+  expect(await readFile(join(root, '.gitattributes'), 'utf8')).toBe(workingAttributes);
+  expect(await readFile(join(root, 'encoded'))).toEqual(workingBytes);
+  expect(await readFile(join(root, 'lines'), 'utf8')).toBe('working\n');
+  expect(await readFile(join(root, '.git/index'))).toEqual(index);
+  await assertNoPendingRecovery(join(root, '.git'));
+});
+
 it.each(['failure', 'file', 'stage', 'new-file'])(
   'preserves originals and checker output after %s',
   async (outcome) => {
@@ -233,7 +264,9 @@ it('reads many staged binary blobs with one native batch', async () => {
 
   await checks.checkProject();
 
-  expect(reads.mock.calls.filter(([, arguments_]) => arguments_[0] === 'cat-file')).toHaveLength(1);
+  expect(
+    reads.mock.calls.filter(([, arguments_]) => arguments_.includes('checkout-index')),
+  ).toHaveLength(1);
   expect(await readFile(join(root, 'binary-79\nfile'))).toEqual(binary);
 });
 
@@ -261,7 +294,9 @@ it('rejects aggregate staged data over 100 MiB before reading blob payloads or h
   const checks = await createCandidateChecks(pi, root, tree, temporary);
 
   await expect(checks.checkProject()).rejects.toThrow(/100 MiB/);
-  expect(reads.mock.calls.filter(([, arguments_]) => arguments_[0] === 'cat-file')).toHaveLength(0);
+  expect(
+    reads.mock.calls.filter(([, arguments_]) => arguments_.includes('checkout-index')),
+  ).toHaveLength(0);
   expect(await readFile(join(root, 'file'), 'utf8')).toBe('base');
   expect(await readFile(join(root, '.git/index'))).toEqual(index);
   await expect(lstat(join(root, '.git/tau-recovery/pending'))).rejects.toThrow(/ENOENT/);
