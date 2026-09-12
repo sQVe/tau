@@ -7,113 +7,60 @@ description:
 
 # Commit
 
-## When to use
-
-Use this skill when the user wants to create one or more Git commits from the current working tree.
-
-## Goal
-
-Turn the current diff into clean commits using the `commit` tool.
+Use this skill when the user wants to commit changes from the current working tree.
 
 ## Hard rules
 
-- Use the `commit` tool for every commit. Do not run `git commit` through bash.
-- If the `commit` tool is unavailable, stop and tell the user.
-- Never stage with `git add -A` or `git add .`.
-- Never bypass hooks ad hoc with `--no-verify`, `-c core.hooksPath`, environment variables, or
-  config changes to evade a failure. Only the commit tool's explicit staged `hooks: "skip"` policy
-  controls hook bypass for its final Git commit.
-- Never rewrite history with `--amend`.
-- Do not ask for chat-level confirmation. The `commit` tool handles approval. When Pi starts with
-  `--auto-approve-commits`, the tool skips confirmation but keeps checks and comment review.
-- Never enable preapproval yourself to bypass a blocked commit. If review needs a human waiver in
-  preapproved mode, stop and report the blocker.
-- Every commit subject must use conventional-commit format.
-- Every commit should include a body explaining why the change was made.
-- Stage and commit only the files that belong to the current logical group. Assign each path to only
-  one group.
-- The `commit` tool rejects sensitive paths (`.env*`, credentials, keys). Remove rejected files from
-  the group instead of retrying.
+- Use the `commit` tool for every commit, never `git commit` through bash. If the tool is
+  unavailable, stop and tell the user.
+- Never stage with `git add -A` or `git add .`, or rewrite history with `--amend`.
+- Never bypass hooks with `--no-verify`, `core.hooksPath`, environment variables, or configuration
+  changes to evade a failure. Leave hook policy to the repository owner and the commit tool.
+- Do not ask for chat-level confirmation. The tool handles approval. Never enable preapproval
+  yourself or claim a human review waiver. If preapproved mode needs a human waiver, stop and report
+  the blocker.
+- Commit only files in the requested groups. Never add unrelated edits or rejected sensitive files
+  to clear an error. Preapproval does not authorize additional files.
 
 ## Procedure
 
-1. Read the current Git state before proposing anything.
-   - Run `git status --porcelain`.
-   - Run `git diff` for unstaged changes and `git diff --cached` for staged changes.
-   - For untracked files shown by `git status`, read them or run
-     `git diff --no-index /dev/null <file>` to understand their content before grouping.
-   - Use the diff output directly to understand what changed. Do not read individual files unless a
-     diff is genuinely ambiguous.
-   - If there are no relevant changes (nothing staged, nothing modified), tell the user the working
-     tree is clean and stop.
-   - If files are already staged, explicitly assign each to a commit group or unstage them with
-     `git reset HEAD -- <file>` before proceeding. Never leave unassigned staged files. The tool
-     commits only files listed in its pathspecs, but stale index state causes confusion.
+1. Read the current Git state.
+   - If an earlier commit call reported pending recovery, report the retained data and stop. Follow
+     its recovery instructions before changing files or staging. A clean-looking working tree during
+     pending recovery does not prove work was committed.
+   - Run `git status --porcelain`, `git diff`, and `git diff --cached`.
+   - Read untracked files before grouping them. Use the diffs for tracked files unless ambiguous.
+   - If there are no changes and no recovery blocker, report the clean tree and stop.
+   - Assign each pre-staged file to a group or unstage it with `git reset HEAD -- <file>`.
 
-2. Identify logical commit groups.
-   - Split unrelated changes into separate groups. The tool stages whole files, so every change in a
-     file goes to the same group.
-   - When one file contains changes with different purposes, put it in the group that fits best.
-     Report that choice instead of trying to split the file.
-   - Keep each group coherent and reviewable.
-   - For each group, prepare a conventional-commit subject and the exact file list.
+2. Plan exact, ordered groups.
+   - Split unrelated changes into separate groups. Assign each path to only one group.
+   - The tool stages whole files. For mixed-purpose files, choose the best-fitting group and report
+     that choice rather than splitting hunks.
+   - Give each group an exact `files` list, a conventional-commit `subject`, and a `body` explaining
+     why the change was made.
 
-3. Call the `commit` tool once with an ordered `groups` array. Each group contains `files`,
-   `subject`, and `body`. The tool runs configured commands, reviews changes, and handles approval.
-   Do not run those commands separately to duplicate the tool's work. Report unavailable checks as
-   unavailable, not passed. With preparation configured, expect separate approval for each group
-   unless Pi started with `--auto-approve-commits`.
-   - The overlay lists clean preparation-added paths separately. The user can assign all of them to
-     the current group or stop. Assignment comes before checks, review, and final commit approval.
-   - Startup preapproval stops on additions without opening UI. Inspect and explicitly assign those
-     files in the next call. Never treat preapproval as permission to expand a group.
-   - Preparation can invalidate TDD evidence. Follow the TDD tool's evidence rules; preparation is
-     not a bypass.
+3. Call `commit` with the ordered `groups` array.
+   - Do not manually duplicate the tool's preparation or checks.
+   - Report unavailable checks as unavailable, not passed.
+   - Report created commits, skipped groups, and any preparation-added files. A skipped group is not
+     a failure or permission to retry it.
 
-4. If the `commit` tool succeeds, report the result and continue.
-   - A skipped group is not a failure; the tool continues with later groups.
-   - Note each created commit, any skipped groups, and preparation-added paths.
-   - Prepared results mark `pathBase: repository`. Their `files` and `preparationAddedFiles` are
-     repository-relative, even when the tool ran from a nested directory.
+4. On failure, read the tool's error before deciding what to retry.
+   - Handle pending recovery first: report retained data and stop, even if Git status looks clean.
+     For staging conflicts, inspect current changes and follow recovery instructions. Never restore
+     files or staging over concurrent edits. Preparation failures leave working edits in place.
+   - If the user declined or cancelled, stop without retrying, even when the tool reports an error.
+   - Otherwise, run `git status --porcelain` and compare the remaining changes with reported
+     commits. Do not infer commit success from a clean tree alone.
+   - Fix the reported cause. Do not alter human hooks to clear a blocker. Include only files that
+     belong to the fix.
+   - Inspect preparation-added files and obtain explicit assignment before including them in a
+     retry. Do not expand into unrelated edits or another group's files.
+   - Prepared result paths are repository-relative. Convert them before retrying from a nested
+     directory; retry from the repository root if an added path is outside that directory.
+   - Retry only corrected and remaining groups that were neither committed nor skipped. Stop after
+     three failed retries of the same group and report the blocker.
 
-5. If the `commit` tool fails, read the current state before investigating.
-   - The error lists groups already committed with their identifiers and commit hashes. Exclude them
-     from retries.
-   - Run `git status --porcelain` first. If the working tree is clean, the changes were already
-     committed, for example by a prior group. Report this and move on.
-   - If changes remain, use the tool's error output to guide retries:
-     - Read the reported command, configuration, hook, or review error.
-     - Fix the underlying issue, such as lint, format, test, or message-check failures. Message
-       checks cannot be waived. Hook message rewrites undo the commit. Report the hook
-       rewrite/configuration blocker; do not alter human hooks to clear it. Retry with the final
-       message under the owner's explicit staged hook policy.
-     - If preparation reports additional files, inspect them before assigning them to a group and
-       retrying. Do not add unrelated user edits just to clear an error. Accepted paths belong to
-       their assigned group for the rest of the call.
-     - Convert repository-relative result paths before retrying from a nested directory. If an added
-       path is outside that directory, retry from the repository root.
-     - If the tool reports an ownership conflict, stop and inspect the current changes. Follow any
-       recovery instructions before restoring files or staging. A failed commit does not undo
-       preparation's working edits.
-     - Include files that belong to the fix in the retried group's `files` list.
-     - Retry the `commit` tool with the corrected group and any remaining groups in `groups`. Leave
-       out the groups already committed and the ones the user skipped; a skipped group carries no
-       commit hash, so its absence from the error's list does not mean it still needs a commit.
-     - Cap retries at 3 for the same group.
-     - After 3 failed retries, stop and report the failure to the user instead of pushing through.
-
-6. Continue until done.
-   - Loop until the working tree is clean or the user tells you to stop.
-   - If the user declines a commit in the confirmation dialog, stop or re-plan based on their
-     instructions.
-
-## Checklist
-
-- Confirmed the current state with `git status --porcelain`, `git diff`, and `git diff --cached`.
-- Assigned every pre-staged file to a group or unstaged it.
-- Split changes into logical groups.
-- Proposed each group with exact files, a conventional-commit subject, and a body.
-- Used the `commit` tool, not bash, for every commit. The tool handles user confirmation.
-- On failure, checked `git status` before investigating.
-- On failure, read the error text, fixed the cause, and retried no more than 3 times.
-- Stopped when the working tree was clean or the user chose to stop.
+Stop when the requested groups are committed or skipped, or the user stops the operation. Do not
+expand the task just to make the working tree clean.
