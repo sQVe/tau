@@ -17,7 +17,16 @@ it('sets the delegate only for answer fetches without an explicit answerModel', 
   const cases = [
     { toolName: 'fetch_content', input: { mode: 'answer' }, answerModel: 'test-provider/delegate' },
     { toolName: 'fetch_content', input: { mode: 'answer', answerModel: 'custom/model' } },
-    { toolName: 'fetch_content', input: { mode: 'answer', answerModel: '' } },
+    {
+      toolName: 'fetch_content',
+      input: { mode: 'answer', answerModel: '' },
+      answerModel: 'test-provider/delegate',
+    },
+    {
+      toolName: 'fetch_content',
+      input: { mode: 'answer', answerModel: '  ' },
+      answerModel: 'test-provider/delegate',
+    },
     { toolName: 'fetch_content', input: { mode: 'readable' } },
     { toolName: 'fetch_content', input: { mode: 'raw' } },
     { toolName: 'fetch_content', input: {} },
