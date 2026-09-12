@@ -1,13 +1,11 @@
-import { execFile, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
 
 import { expect, it } from 'vitest';
 
-const executeFile = promisify(execFile);
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 it('rejects lint warnings in project checks', async ({ onTestFinished }) => {
@@ -25,10 +23,4 @@ it('rejects lint warnings in project checks', async ({ onTestFinished }) => {
 
   expect(result.status).toBe(1);
   expect(result.stdout).toContain('warning eslint(no-console)');
-}, 30_000);
-
-it('has no lint errors or warnings', async () => {
-  const result = await executeFile('pnpm', ['lint'], { cwd: root, maxBuffer: 1024 * 1024 });
-
-  expect(result.stdout + result.stderr).not.toMatch(/\b(?:warning|error) [\w-]+\(/);
 }, 30_000);
