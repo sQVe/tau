@@ -1,4 +1,4 @@
-# ADR 0014: Prepare each commit with separate staging
+# ADR 0016: Prepare each commit with separate staging
 
 - Status: Proposed
 - Date: 2026-09-10
@@ -35,11 +35,11 @@ its selections. After a successful commit, discard the preparation backup instea
 original staging.
 
 Never restore working files automatically after preparation fails: they may contain newer edits.
-[Later checks](./0018-checks-in-the-existing-checkout.md) temporarily hide unrelated working edits
+[Later checks](./0020-checks-in-the-existing-checkout.md) temporarily hide unrelated working edits
 to test the selected content, then restore those edits from a verified backup.
 
 This replaces preparation ordering and recovery in
-[ADR 0013](./0013-explicit-repository-commit-commands.md), not its configuration or hook policy.
+[ADR 0015](./0015-explicit-repository-commit-commands.md), not its configuration or hook policy.
 
 ## Tradeoffs
 

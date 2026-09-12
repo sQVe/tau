@@ -13,7 +13,7 @@ import { maximumFailures } from './runner/types.js';
 import { ambiguousFiles, createEvidenceStore, testNames } from './state.js';
 import type { EvidenceState } from './types.js';
 
-const MAX_SUMMARY_CHARS = 2000;
+const maximumSummaryCharacters = 2000;
 
 const execFile = promisify(execFileCallback);
 
@@ -72,7 +72,7 @@ const summarize = (
   for (const failure of failures.slice(0, maximumFailures)) {
     const entry = `✗ ${displayPath(cwd, failure.file)} › ${failure.fullname}\n    ${failure.message}`;
 
-    if ([...lines, entry].join('\n').length > MAX_SUMMARY_CHARS - 60) {
+    if ([...lines, entry].join('\n').length > maximumSummaryCharacters - 60) {
       break;
     }
 
@@ -90,7 +90,9 @@ const summarize = (
 
   const text = lines.join('\n');
 
-  return text.length > MAX_SUMMARY_CHARS ? `${text.slice(0, MAX_SUMMARY_CHARS - 12)}\n[cut]` : text;
+  return text.length > maximumSummaryCharacters
+    ? `${text.slice(0, maximumSummaryCharacters - 12)}\n[cut]`
+    : text;
 };
 
 // ponytail: estimate existing tests from quoted titles. Dynamic titles and unrelated matching

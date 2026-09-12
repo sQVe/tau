@@ -39,6 +39,13 @@ differ from these defaults.
 - Use colons before lists or examples, not to join unrelated thoughts.
 - Give every code block a language tag.
 
+## Match the document to its purpose
+
+- Do not create a document just because code changed. Name its reader and question. Use an existing
+  document when it already answers that question.
+- Include only details needed to answer that question. Follow the repository's guide or template for
+  the document type.
+
 ## Keep the meaning
 
 - Preserve claims, conditions, sources, intent, and real uncertainty.

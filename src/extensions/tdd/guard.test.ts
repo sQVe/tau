@@ -104,6 +104,19 @@ it('protects both symlink spellings and configuration targets', async () => {
   }
 });
 
+it('lets bulk_read through without reading state', async () => {
+  const store = createStore('locked');
+
+  expect(
+    await guardToolCall(
+      makeEvent('bulk_read', { paths: ['src/value.ts'], question: 'Why?' }),
+      '/repo',
+      store,
+    ),
+  ).toBeUndefined();
+  expect(store.read).not.toHaveBeenCalled();
+});
+
 it.each(phases)('allows test writes, including colocated tests, in %s', async (phase) => {
   for (const path of ['value.test.ts', 'src/value.test.ts', 'src/value.spec.tsx']) {
     for (const tool of ['write', 'edit']) {

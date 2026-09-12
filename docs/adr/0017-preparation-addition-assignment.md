@@ -1,4 +1,4 @@
-# ADR 0015: Ask before adding generated files
+# ADR 0017: Ask before adding generated files
 
 - Status: Proposed
 - Date: 2026-09-10
@@ -31,7 +31,7 @@ commit confirmation disabled. Do not offer approval of all remaining prepared co
 Startup preapproval cannot authorize undiscovered files: stop on additions for inspection and
 explicit assignment in a new commit tool call.
 
-Keep the separate staging and backup decision in [ADR 0014](./0014-staged-preparation-ownership.md).
+Keep the separate staging and backup decision in [ADR 0016](./0016-staged-preparation-ownership.md).
 
 ## Tradeoffs
 

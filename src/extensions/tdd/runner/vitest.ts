@@ -30,8 +30,8 @@ import {
   fullTimeoutMilliseconds,
   maximumFailures,
   maximumMessageCharacters,
-  maximumStandardOutputBytes,
-  maximumDiagnosticBytes,
+  maximumStdoutBytes,
+  maximumTotalBytes,
 } from './types.js';
 
 interface VitestAssertionResult {
@@ -168,7 +168,7 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
       decoder: StringDecoder,
       current: string,
     ): string => {
-      const remaining = maximumDiagnosticBytes - diagnosticBytes;
+      const remaining = maximumTotalBytes - diagnosticBytes;
 
       if (remaining <= 0) {
         return current;
@@ -217,7 +217,7 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
       // Stop on stdout overflow rather than accepting a result from a run that exceeded its limit.
       stdoutBytes += chunk.length;
 
-      if (stdoutBytes > maximumStandardOutputBytes) {
+      if (stdoutBytes > maximumStdoutBytes) {
         stdoutOverflow = true;
         kill();
         settle(null);
@@ -480,7 +480,7 @@ const runInDirectory = async (
   if (result.stdoutOverflow === true) {
     return {
       kind: 'output-limit',
-      message: `vitest stdout exceeded ${maximumStandardOutputBytes} bytes; the run was killed without parsing a truncated report`,
+      message: `vitest stdout exceeded ${maximumStdoutBytes} bytes; the run was killed without parsing a truncated report`,
     };
   }
 

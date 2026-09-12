@@ -1036,7 +1036,7 @@ it('describes the cycle and exact nested test names in the registered tool', asy
 const REQUIRED_RED_TEST =
   "import { it, expect } from 'vitest'; import { value } from './src/value'; if (value !== 2) it.skipIf(value === 1)('required behavior', () => expect(value).toBe(3)); it('other in file', () => {});";
 
-const UNRELATED_PASSING_TEST = "import { it } from 'vitest'; it('other', () => {});";
+const unrelatedPassingTest = "import { it } from 'vitest'; it('other', () => {});";
 
 const RESTORE_RED_NEXT_STEP =
   'A required RED test is skipped or missing: "required behavior" in ["behavior.test.ts"]. Restore that test so it runs and passes, then call run_tests {"behavior":"required behavior","testFullName":"required behavior","files":["behavior.test.ts"],"scope":"full"}.';
@@ -1062,7 +1062,7 @@ it.each([
   });
   const unrelatedTest = await call('write', {
     path: 'other.test.ts',
-    content: UNRELATED_PASSING_TEST,
+    content: unrelatedPassingTest,
   });
 
   expect(requiredTest.isError).toBe(false);
@@ -1097,7 +1097,7 @@ it.each(['skip edit', 'deleted file'])(
     });
     const unrelatedTest = await call('write', {
       path: 'other.test.ts',
-      content: UNRELATED_PASSING_TEST,
+      content: unrelatedPassingTest,
     });
 
     expect(requiredTest.isError).toBe(false);
@@ -1384,7 +1384,7 @@ it('does not report committed tests as never failed', async () => {
     );
 
   // A literal containing only a placeholder, such as '$schema', must not match every test title.
-  const committed = `${UNRELATED_PASSING_TEST} const key = '$schema'; it.each(['skipped', 'missing'])('explains a %s case', () => {}); it.each([{ name: 'x' }])('handles $name', () => {}); it.each([1, 2])('counts case %$', () => {});`;
+  const committed = `${unrelatedPassingTest} const key = '$schema'; it.each(['skipped', 'missing'])('explains a %s case', () => {}); it.each([{ name: 'x' }])('handles $name', () => {}); it.each([1, 2])('counts case %$', () => {});`;
 
   await writeFile(join(cwd, 'behavior.test.ts'), committed);
   await git(['add', 'behavior.test.ts']);

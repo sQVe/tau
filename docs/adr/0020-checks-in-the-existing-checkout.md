@@ -1,4 +1,4 @@
-# ADR 0018: Run staged checks in the existing checkout
+# ADR 0020: Run staged checks in the existing checkout
 
 - Status: Proposed
 - Date: 2026-09-11
@@ -30,8 +30,8 @@ Git submodules or working data exceeding the 100 MiB backup limit. Keep installe
 dependencies available, but do not claim to protect their contents.
 
 This replaces temporary checkouts and dependency sharing from
-[ADR 0013](./0013-explicit-repository-commit-commands.md), using the backup-before-hiding decision
-in [ADR 0017](./0017-verified-raw-recovery.md). It changes where checks run, not which checks,
+[ADR 0015](./0015-explicit-repository-commit-commands.md), using the backup-before-hiding decision
+in [ADR 0019](./0019-verified-raw-recovery.md). It changes where checks run, not which checks,
 reviews, approvals, or Git hooks are required.
 
 ## Tradeoffs

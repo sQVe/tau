@@ -6,15 +6,10 @@ import { requireRegisteredTools } from '../../bundledTools/index.js';
 // must allow every tool the package registers, including tools Tau does not require.
 // The package's `toolNames` option cannot rename tools under Tau: renamed tools
 // register, but the guard blocks them because it only knows the default names.
-export const WEB_ACCESS_TOOLS = [
-  'web_search',
-  'source_check',
-  'fetch_content',
-  'get_search_content',
-];
+export const webAccessTools = ['web_search', 'source_check', 'fetch_content', 'get_search_content'];
 
-const REQUIRED_WEB_ACCESS_TOOLS = ['web_search', 'fetch_content'];
+const requiredWebAccessTools = ['web_search', 'fetch_content'];
 
 export default function webAccessExtension(extensionApi: ExtensionAPI) {
-  requireRegisteredTools(extensionApi, 'pi-web-access', REQUIRED_WEB_ACCESS_TOOLS);
+  requireRegisteredTools(extensionApi, 'pi-web-access', requiredWebAccessTools);
 }

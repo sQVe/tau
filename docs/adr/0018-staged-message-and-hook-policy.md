@@ -1,4 +1,4 @@
-# ADR 0016: Repository owners choose commit checks and hooks
+# ADR 0018: Repository owners choose commit checks and hooks
 
 - Status: Proposed
 - Date: 2026-09-10
@@ -37,7 +37,7 @@ rewrites require undoing the commit and retrying.
 
 Skipping hooks does not skip approval, comment review, TDD, or content and path safeguards. Working
 configuration still selects preparation. This replaces the reserved message and hook settings in
-[ADR 0013](./0013-explicit-repository-commit-commands.md).
+[ADR 0015](./0015-explicit-repository-commit-commands.md).
 
 ## Tradeoffs
 

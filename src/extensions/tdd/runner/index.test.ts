@@ -9,8 +9,8 @@ import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js
 import {
   maximumFailures,
   maximumMessageCharacters,
-  maximumStandardOutputBytes,
-  maximumDiagnosticBytes,
+  maximumStdoutBytes,
+  maximumTotalBytes,
 } from './types.js';
 import {
   defaultDeps,
@@ -176,7 +176,7 @@ describe('runTests', () => {
         numFailedTests: 0,
         testResults: [
           {
-            name: 'x'.repeat(maximumDiagnosticBytes * 2),
+            name: 'x'.repeat(maximumTotalBytes * 2),
             status: 'passed',
             assertionResults: [{ fullName: 'passes', status: 'passed' }],
           },
@@ -185,7 +185,7 @@ describe('runTests', () => {
 
       await writeFile(
         script,
-        `process.stderr.write('x'.repeat(${maximumDiagnosticBytes * 2}));\n` +
+        `process.stderr.write('x'.repeat(${maximumTotalBytes * 2}));\n` +
           "const flag = process.argv.find((a) => a.startsWith('--outputFile='));\n" +
           `require('node:fs').writeFileSync(flag.slice('--outputFile='.length), ${JSON.stringify(
             JSON.stringify(report),
@@ -196,9 +196,7 @@ describe('runTests', () => {
 
       expect(await runTests({ scope: 'all', cwd }, deps)).toEqual({
         kind: 'pass',
-        tests: [
-          { file: 'x'.repeat(maximumDiagnosticBytes * 2), fullname: 'passes', status: 'passed' },
-        ],
+        tests: [{ file: 'x'.repeat(maximumTotalBytes * 2), fullname: 'passes', status: 'passed' }],
       });
     } finally {
       await rm(cwd, { recursive: true, force: true });
@@ -213,7 +211,7 @@ describe('runTests', () => {
 
       await writeFile(
         script,
-        `process.stdout.write('x'.repeat(${maximumStandardOutputBytes + 1}));\n` +
+        `process.stdout.write('x'.repeat(${maximumStdoutBytes + 1}));\n` +
           'setTimeout(() => {}, 60000);\n',
       );
 
@@ -222,10 +220,7 @@ describe('runTests', () => {
       const result = await runTests({ scope: 'all', cwd }, deps);
 
       expect(result.kind).toBe('output-limit');
-      expect(result).toHaveProperty(
-        'message',
-        expect.stringContaining(String(maximumStandardOutputBytes)),
-      );
+      expect(result).toHaveProperty('message', expect.stringContaining(String(maximumStdoutBytes)));
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

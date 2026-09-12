@@ -1,4 +1,4 @@
-# ADR 0013: Explicit repository commit commands
+# ADR 0015: Explicit repository commit commands
 
 - Status: Proposed
 - Date: 2026-09-10
@@ -56,5 +56,5 @@ later contract is optional message-check argv and `hooks: run|skip`, defaulting 
 
 ## See also
 
-- [Checks in the existing checkout](./0018-checks-in-the-existing-checkout.md) replaces temporary
+- [Checks in the existing checkout](./0020-checks-in-the-existing-checkout.md) replaces temporary
   checkouts and dependency sharing.

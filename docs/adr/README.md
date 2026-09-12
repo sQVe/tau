@@ -1,11 +1,21 @@
 # Architecture decision records
 
-ADRs record lasting technical decisions and the reasons for them. Each record must stand alone: a
-reader should understand the choice and its reason without ticket, chat, or implementation context.
+Record lasting decisions and the reasons behind them, not how a feature works.
 
-Start with the [template](./TEMPLATE.md). Follow the
-[writing instructions](../../src/extensions/writing/instructions.md), and see
-[ADR 0010](./0010-documentation-scope.md) for what belongs in an ADR.
+## Before writing
+
+Follow the [writing instructions](../../src/extensions/writing/instructions.md) and
+[ADR 0010](./0010-documentation-scope.md) for documentation scope. Before opening the
+[template](./TEMPLATE.md), answer:
+
+- What choice are we making, and what lasting reason stands behind it?
+- What credible alternative did we consider, and why did we reject it?
+
+If the answers only restate what the code does, do not write an ADR. Code and tests hold behavior. A
+feature change does not require a new document.
+
+Use a title that names the choice, and state that choice at the start of the Decision section. An
+ADR is not a feature summary, implementation plan, or acceptance checklist.
 
 ## Index
 
@@ -21,9 +31,11 @@ Start with the [template](./TEMPLATE.md). Follow the
 - [0010: Documentation scope](./0010-documentation-scope.md)
 - [0011: Commit preapproval at startup](./0011-commit-preapproval.md)
 - [0012: Shared TDD state](./0012-shared-tdd-state.md)
-- [0013: Explicit repository commit commands](./0013-explicit-repository-commit-commands.md)
-- [0014: Prepare each commit with separate staging](./0014-staged-preparation-ownership.md)
-- [0015: Ask before adding generated files](./0015-preparation-addition-assignment.md)
-- [0016: Repository owners choose commit checks and hooks](./0016-staged-message-and-hook-policy.md)
-- [0017: Verify backups before hiding working edits](./0017-verified-raw-recovery.md)
-- [0018: Run staged checks in the existing checkout](./0018-checks-in-the-existing-checkout.md)
+- [0013: Snippet placement](./0013-snippet-placement.md)
+- [0014: Delegate model for bulk reads](./0014-delegate-model-for-bulk-reads.md)
+- [0015: Explicit repository commit commands](./0015-explicit-repository-commit-commands.md)
+- [0016: Prepare each commit with separate staging](./0016-staged-preparation-ownership.md)
+- [0017: Ask before adding generated files](./0017-preparation-addition-assignment.md)
+- [0018: Repository owners choose commit checks and hooks](./0018-staged-message-and-hook-policy.md)
+- [0019: Verify backups before hiding working edits](./0019-verified-raw-recovery.md)
+- [0020: Run staged checks in the existing checkout](./0020-checks-in-the-existing-checkout.md)

@@ -1,4 +1,4 @@
-# ADR 0017: Verify backups before hiding working edits
+# ADR 0019: Verify backups before hiding working edits
 
 - Status: Accepted
 - Date: 2026-09-10
@@ -42,5 +42,5 @@ every concurrent write or filesystem failure.
 
 ## See also
 
-- [Staged preparation ownership](./0014-staged-preparation-ownership.md)
-- [Checks in the existing checkout](./0018-checks-in-the-existing-checkout.md)
+- [Staged preparation ownership](./0016-staged-preparation-ownership.md)
+- [Checks in the existing checkout](./0020-checks-in-the-existing-checkout.md)
