@@ -129,6 +129,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     expect(codingInstructions).toContain(
       'Separate the logical steps inside a function with a blank line.',
     );
+    expect(codingInstructions).not.toContain('bulk_read');
     expect(prompts[0]?.startsWith(basePrompt)).toBe(true);
 
     for (const prompt of prompts) {

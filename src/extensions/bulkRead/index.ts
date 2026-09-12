@@ -21,7 +21,7 @@ export const delegateReference = (): string => {
 export const rewriteContinuationNotice = (text: string): string =>
   text.replace(
     /\n\n\[[^\n]*Use offset=(\d+) to continue\.\]$/,
-    '\n\nFile continues at line $1. For a question about this file call bulk_read with paths and question. To edit, read again with offset and limit.',
+    '\n\nFile continues at line $1. For a summary or evidence from this file, call bulk_read with paths and question. To edit, read again with offset and limit.',
   );
 
 const findDelegate = (ctx: ExtensionContext, reference: string) => {
@@ -44,13 +44,17 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
   let trimming = true;
   const clamped = new Set<string>();
   const description =
-    'Ask a cheaper model a question about one or more large files instead of reading them.';
+    'Ask a cheaper model for focused summaries, test inventories, and line-cited evidence from supplied files, not correctness or branch review judgments.';
 
   pi.registerTool({
     name: bulkReadTool,
     label: 'Bulk read',
     description,
     promptSnippet: description,
+    promptGuidelines: [
+      'Use bulk_read summaries for navigation without rereading files. Verify only consequential claims before edits or reports using bounded reads. Integration claims need production callers.',
+      'For bulk_read-based branch judgments, including alleged regressions, inspect the actual diff and applicable project rules. Distinguish inherited code from changes.',
+    ],
     parameters: Type.Object({
       paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
       question: Type.String({ minLength: 1 }),

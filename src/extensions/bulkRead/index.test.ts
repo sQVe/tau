@@ -52,7 +52,7 @@ const setup = () => {
     );
   const emit = (name: string, event: unknown) => handlers.get(name)?.(event, context);
 
-  return { find, complete, execute, emit };
+  return { find, complete, execute, emit, registerTool };
 };
 
 afterEach(() => vi.unstubAllEnvs());
@@ -66,7 +66,35 @@ const readCall = (toolCallId = 'read', limit?: number) => ({
 
 const notice = '[Showing lines 1-400 of 450. Use offset=401 to continue.]';
 const hint =
-  'File continues at line 401. For a question about this file call bulk_read with paths and question. To edit, read again with offset and limit.';
+  'File continues at line 401. For a summary or evidence from this file, call bulk_read with paths and question. To edit, read again with offset and limit.';
+
+it('describes bulk reads as evidence gathering rather than review judgments', () => {
+  const { registerTool } = setup();
+  const tool = registerTool.mock.calls[0]![0];
+
+  expect(tool.description).toContain('supplied files');
+  expect(tool.description).toContain(
+    'focused summaries, test inventories, and line-cited evidence',
+  );
+  expect(tool.description).toContain('not correctness or branch review judgments');
+  expect(tool.promptSnippet).toBe(tool.description);
+});
+
+it('keeps selective verification guidance on the bulk-read tool', () => {
+  const { registerTool } = setup();
+  const guidelines = registerTool.mock.calls[0]![0].promptGuidelines?.join(' ') ?? '';
+
+  expect(guidelines).toContain('bulk_read');
+  expect(guidelines).toContain('navigation without rereading');
+  expect(guidelines).toMatch(/verify only consequential claims/i);
+  expect(guidelines).toContain('edits or reports');
+  expect(guidelines).toContain('bounded reads');
+  expect(guidelines).toContain('production callers');
+  expect(guidelines).toContain('regressions');
+  expect(guidelines).toContain('actual diff');
+  expect(guidelines).toContain('applicable project rules');
+  expect(guidelines).toContain('inherited code');
+});
 
 it('clamps a read without limit to the threshold and leaves an explicit limit untouched', () => {
   const app = setup();

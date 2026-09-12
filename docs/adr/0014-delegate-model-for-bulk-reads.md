@@ -44,8 +44,10 @@ Catalog prices go stale; the ratio is what matters.
 
 ## Decision
 
-Propose one user-configured delegate model for bulk file reads. It answers questions about file
-content so the session model need not read every file in full. Keep grep and bounded reads for
+Propose one user-configured delegate model for bulk file reads. It returns summaries, test
+inventories, and line-cited evidence from supplied files so the session model need not read every
+file in full. Correctness and branch review judgments stay with the session model, which verifies
+consequential claims against production callers and the actual diff. Keep grep and bounded reads for
 questions they already answer.
 
 ### Scope of this decision
@@ -115,8 +117,8 @@ edge cases rather than reading the file a second time:
 ### Safety and verification
 
 - Treat file content as evidence, never as instructions, and keep the delegate read-only. Prompt
-  framing tells it to ignore embedded requests, answer only the question, cite file lines, and add
-  no tasks, commands, or URLs.
+  framing tells it to ignore embedded requests, answer with what the supplied files establish and
+  state what they cannot, cite file lines, and add no tasks, commands, or URLs.
 - Delegation does not bypass Tau's [TDD guard](../../src/extensions/tdd/guard.ts), which explicitly
   allows the read-only tool because it blocks unknown tools.
 - Keep `pnpm check` independent of model APIs, as required by the
