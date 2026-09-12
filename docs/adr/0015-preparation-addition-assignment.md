@@ -1,51 +1,40 @@
-# ADR 0015: Preparation addition assignment
+# ADR 0015: Ask before adding generated files
 
 - Status: Proposed
 - Date: 2026-09-10
 
 ## Context
 
-[Staged preparation ownership](./0014-staged-preparation-ownership.md) requires explicit assignment
-of generated paths. Stopping every call forces a retry even when all additions belong to the current
-group. Startup preapproval and earlier batch approval cannot authorize undiscovered paths.
+Preparation is a command configured by the repository in `tau.json` that may format or generate
+files. Its output can include files outside the planned commit. A file with no prior edits is not
+necessarily a file the user wants to commit.
 
 ## Options considered
 
-- Always stop for a new call. Safe, but interrupts interactive preparation.
-- Absorb clean additions automatically. Clean state does not establish user intent.
-- Ask for assignment before candidate review and approval. Keeps assignment explicit without
-  repeating preparation.
+- Always stop and require a new commit tool call. Safe, but interrupts users who can decide
+  immediately.
+- Add generated files automatically. This confuses generated output with permission to commit it.
+- Ask before including generated files. Keeps the choice explicit without repeating preparation.
 
 ## Decision
 
-Interactive calls offer assignment of all clean additions to the current group through the existing
-scrollable overlay. Decline or cancellation stops the group. Partial assignment requires a new call.
-Dirty preexisting paths, other groups' paths, and paths rejected by existing guards remain blocked.
+Require explicit assignment before checks and review: the user chooses whether preparation-generated
+files belong in the current commit. Commit approval is a separate decision covering all selected
+changes. Assigning files does not approve the commit or waive review.
 
-Assignment covers the displayed prepared state. Reject working or private-index changes while that
-choice is open. Preserve staged-only output; stage generated working changes after acceptance.
-Checks, comment review, and final approval cover the complete candidate. Assignment grants neither
-commit approval nor a review waiver.
+Ask for assignment during interactive calls, where Pi can prompt the user. Never include preexisting
+unrelated edits or files planned for another commit, even if preparation changes them. The commit
+tool still rejects sensitive files.
 
-Reserve accepted paths for their group until the call ends, including after a skip. Display
-requested and added paths separately. Prepared UI and results use repository-relative paths so
-additions outside a nested invoking directory remain unambiguous. Escape control characters in file
-views.
+Each prepared commit requires approval unless the user chose startup preapproval by starting Pi with
+commit confirmation disabled. Do not offer approval of all remaining prepared commits at once.
+Startup preapproval cannot authorize undiscovered files: stop on additions for inspection and
+explicit assignment in a new commit tool call.
 
-Startup preapproval stops on additions without UI. Keep speculative preparation and later-group
-approve-all reuse disabled for configured preparation. Reuse reviews only through the existing
-actual-candidate keys, not a predicted prepared tree. Keep the no-preparation path unchanged.
-
-Retain the recovery and hook policy from ADR 0014. Unexpected shared staging after publication may
-belong to another writer; do not reset it before ownership-checked cleanup.
+Keep the separate staging and backup decision in [ADR 0014](./0014-staged-preparation-ownership.md).
 
 ## Tradeoffs
 
-- Interactive additions need assignment and then separate candidate approval.
-- Unattended additions still require inspection and a new explicit call.
-- Prepared batches retain serial review latency rather than guessing future candidates.
-
-## See also
-
-- [Commit preapproval](./0011-commit-preapproval.md)
-- [Documentation scope](./0010-documentation-scope.md)
+Interactive users make two decisions: which files belong together, then whether to commit them.
+Unattended calls stop when preparation produces unassigned files rather than guessing the user's
+intent.

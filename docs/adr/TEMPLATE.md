@@ -9,7 +9,8 @@ Preserve historical reasoning when superseding a decision and link to its replac
 
 ## Context
 
-Describe the problem and limits that require a decision.
+Explain the problem and limits without assuming the reader knows the ticket, chat, or
+implementation. Define unfamiliar terms needed to understand the choice.
 
 ## Options considered
 
@@ -18,7 +19,9 @@ behavior when relevant.
 
 ## Decision
 
-State the choice. Add details or examples needed to follow it.
+State the choice clearly in the first paragraph. Make it understandable without following a link.
+Explain why it addresses the problem. Keep only details needed to understand the decision, not a
+list of implementation steps.
 
 ## Tradeoffs
 

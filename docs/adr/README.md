@@ -1,6 +1,7 @@
 # Architecture decision records
 
-ADRs record lasting technical decisions and the reasons for them.
+ADRs record lasting technical decisions and the reasons for them. Each record must stand alone: a
+reader should understand the choice and its reason without ticket, chat, or implementation context.
 
 Start with the [template](./TEMPLATE.md). Follow the
 [writing instructions](../../src/extensions/writing/instructions.md), and see
@@ -21,8 +22,8 @@ Start with the [template](./TEMPLATE.md). Follow the
 - [0011: Commit preapproval at startup](./0011-commit-preapproval.md)
 - [0012: Shared TDD state](./0012-shared-tdd-state.md)
 - [0013: Explicit repository commit commands](./0013-explicit-repository-commit-commands.md)
-- [0014: Staged preparation ownership](./0014-staged-preparation-ownership.md)
-- [0015: Preparation addition assignment](./0015-preparation-addition-assignment.md)
+- [0014: Prepare each commit with separate staging](./0014-staged-preparation-ownership.md)
+- [0015: Ask before adding generated files](./0015-preparation-addition-assignment.md)
 - [0016: Repository owners choose commit checks and hooks](./0016-staged-message-and-hook-policy.md)
 - [0017: Verify backups before hiding working edits](./0017-verified-raw-recovery.md)
 - [0018: Run staged checks in the existing checkout](./0018-checks-in-the-existing-checkout.md)

@@ -5,37 +5,36 @@
 
 ## Context
 
-Temporary candidate checkouts cannot reuse workspace dependency links reliably. Those links can
-resolve to working sources outside the candidate. Copying repositories and installing dependencies
-for every check adds cost and requires knowledge of each repository's tools.
+Staged files are the files and content selected for the commit. A temporary checkout is a separate
+directory containing that selected content. Installed workspace dependencies can still link back to
+the original checkout. For example, an app's installed dependency can link to a sibling library's
+source directory. Reusing that link in a temporary checkout checks the working library, not its
+selected content.
 
 ## Options considered
 
-- Keep temporary checkouts and share dependencies. Workspace links can check the wrong sources.
-- Copy repositories and install dependencies. Slow and dependent on repository-specific setup.
-- Temporarily present staged files in the existing checkout. Keeps installed dependencies usable but
-  requires verified recovery and stopped writers.
+- Share dependencies with a temporary checkout. Links can resolve to the wrong sources.
+- Copy the repository and install dependencies again. Slow, and requires repository-specific setup.
+- Check in the current checkout. Preserves dependency links but temporarily changes visible files.
 
 ## Decision
 
-Run checks in the existing checkout. Use the verified raw recovery rules from
-[ADR 0017](./0017-verified-raw-recovery.md) before hiding working edits. Restore before any review
-or approval. Run reviews serially so speculative review cannot observe a hidden checkout.
+Run staged checks in the current checkout with its installed dependencies. Save and verify a backup
+before temporarily hiding unrelated working edits and presenting the content selected for the
+commit. Hiding those edits prevents them from affecting the check result. Restore them before any
+review or approval.
 
-Keep original ignore exclusions during the window. Changing staged ignore rules must not remove
-installed dependencies. Reject unsupported layouts and checker writes rather than overwrite work.
-Keep pending recovery and stop further commits when restoration is uncertain.
+If another process writes during checks and makes restoration unsafe, stop further commits and
+retain the backup rather than overwrite work. Reject unsupported states before hiding edits, such as
+Git submodules or working data exceeding the 100 MiB backup limit. Keep installed ignored
+dependencies available, but do not claim to protect their contents.
 
-This replaces temporary candidate checkouts and optional dependency sharing retained by
-[ADR 0013](./0013-explicit-repository-commit-commands.md). Keep preparation ownership, message
-validation, and the final-commit-only hook policy unchanged.
+This replaces temporary checkouts and dependency sharing from
+[ADR 0013](./0013-explicit-repository-commit-commands.md), using the backup-before-hiding decision
+in [ADR 0017](./0017-verified-raw-recovery.md). It changes where checks run, not which checks,
+reviews, approvals, or Git hooks are required.
 
 ## Tradeoffs
 
-Checks use existing dependencies without installing anything. Recovery costs storage, and retained
-archives need manual inspection before removal. Reference-transaction hooks still run when recovery
-refs change; writes during backup can prevent authorization.
-
-Cancellation stops and awaits cooperative POSIX process groups before restoration. Detached writers,
-ignored dependencies, and arbitrary external writes remain outside that guarantee. Interrupted or
-ambiguous file changes require manual recovery rather than a merge or forced restoration.
+Checks avoid new installs, but temporarily change what editors and other processes see. Backups need
+storage; interrupted checks or uncertain file changes may require manual recovery.

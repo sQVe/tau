@@ -1,50 +1,48 @@
-# ADR 0014: Staged preparation ownership
+# ADR 0014: Prepare each commit with separate staging
 
 - Status: Proposed
 - Date: 2026-09-10
 
 ## Context
 
-Preparation before staging cannot select the current group's changes. Preparation can also stage
-unrequested paths or overwrite working data belonging to another group. Resetting requested paths to
-HEAD loses prior staging. Restoring working files can overwrite concurrent user edits.
+Preparation is a command configured by the repository in `tau.json` that may format or generate
+files. One request can contain several planned commits. Running preparation before their files are
+selected gives commands that read Git's staging area no way to identify the current commit. Using
+the user's staging area directly risks changing what the user already selected.
 
 ## Options considered
 
-- Prepare in the shared index and restore a stash on failure. Stashes do not establish ownership,
-  and restoring them can conflict with concurrent edits.
-- Treat every prepared path as authorized. This absorbs unrelated changes without explicit
-  assignment.
-- Prepare with a private index, retain recovery data, and publish only an authorized candidate. This
-  separates preparation staging from shared staging without changing HEAD or the stash stack.
+- Prepare in shared staging and restore on failure. Restoration can overwrite newer selections made
+  by another process.
+- Include every changed file. Absorbs unrelated work without permission.
+- Prepare with separate staging and backups. Keeps preparation's selections apart from the user's.
 
 ## Decision
 
-This replaces the preparation ordering and recovery choices in
-[ADR 0013](./0013-explicit-repository-commit-commands.md). Keep its configuration contract and hook
-policy.
+Run preparation for each planned commit using a temporary copy of Git's staging area. Preparation
+still runs in the current checkout. Select that commit's files in the copy before running
+preparation. Run checks, review, and approval afterward so they cover the prepared changes.
 
-Validate configuration before mutation. Prepare each staged group in a private index before checks,
-review, and approval. Those decisions must cover the actual candidate, not an earlier version.
+Back up existing staging and working files first: tracked files and nonignored untracked files
+within the backup's size and file-type limits. Require explicit assignment for additional files: the
+user chooses whether they belong in this commit. Exclude unrelated edits and files planned for other
+commits.
 
-Preserve the original index and covered working data before preparation. Use a private recovery ref
-to protect saved Git objects from garbage collection, without changing HEAD or the shared stash
-stack.
+Copy the prepared selections back only if shared staging has not changed since the backup. For a
+failed, cancelled, or skipped commit, restore original staging only if staging still matches what
+Tau put there. If another process has changed it, stop and retain the backup rather than overwrite
+its selections. After a successful commit, discard the preparation backup instead of restoring
+original staging.
 
-Preparation does not grant permission to commit additional paths. Require explicit group assignment
-and distinguish generated changes from prior user edits and other groups' files.
+Never restore working files automatically after preparation fails: they may contain newer edits.
+[Later checks](./0018-checks-in-the-existing-checkout.md) temporarily hide unrelated working edits
+to test the selected content, then restore those edits from a verified backup.
 
-Restore only Tau-owned staging. On ownership conflicts, retain recovery data and report instructions
-rather than overwrite concurrent changes. Never restore working files automatically.
+This replaces preparation ordering and recovery in
+[ADR 0013](./0013-explicit-repository-commit-commands.md), not its configuration or hook policy.
 
 ## Tradeoffs
 
-- Recovery needs storage proportional to covered data and can require manual inspection and removal.
-- Unsupported states must fail before preparation rather than receive incomplete recovery coverage.
-- Preparation runs cooperative repository commands. Recovery is not a sandbox and cannot protect
-  against arbitrary writes outside its coverage.
-
-## See also
-
-- [ADR 0010: Documentation scope](./0010-documentation-scope.md)
-- [ADR 0011: Commit preapproval at startup](./0011-commit-preapproval.md)
+Separate staging isolates what gets staged, not which working files preparation can change in the
+current checkout. Tau does not automatically undo those edits. Backups cost storage and may need
+manual recovery; writes outside their coverage remain unprotected.
