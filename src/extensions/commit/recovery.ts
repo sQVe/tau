@@ -298,13 +298,16 @@ const ignoredPaths = async (root: string) =>
 // Git reads the global file first and info/exclude second; the last matching pattern wins.
 // Both are read before any checker runs, and git follows the same symlinks, so plain reads suffice.
 const externalExcludes = async (root: string) => {
-  const infoExclude = (
-    await gitBytes(root, ['rev-parse', '--path-format=absolute', '--git-path', 'info/exclude'])
-  )
-    .toString()
-    .trim();
+  const infoExcludeBytes = await gitBytes(root, [
+    'rev-parse',
+    '--path-format=absolute',
+    '--git-path',
+    'info/exclude',
+  ]);
+  const infoExclude = infoExcludeBytes.toString().trim();
   const globalExclude = await gitBytes(root, ['config', '--path', '--get', 'core.excludesFile'])
     .then((bytes) => bytes.toString().trim())
+    // oxlint-disable-next-line node/no-process-env -- Git resolves its default global excludes file from XDG_CONFIG_HOME.
     .catch(() => join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'git/ignore'));
   const contents = await Promise.all(
     [globalExclude, infoExclude].map((path) =>
@@ -755,29 +758,33 @@ const replaceWorking = async (
 };
 
 // Verified restoration leaves nothing for the snapshots to protect. Displaced inodes stay: open writers may still append to them.
-const retainedNames = [
+const retainedNames = new Set([
   'displaced',
   'hidden-displaced',
   'displaced-paths.json',
   'check-recovery.txt',
-];
+]);
 const pruneArchive = async (pi: Git, root: string, archive: string, manifest: Manifest) => {
   await save(join(archive, 'displaced-paths.json'), JSON.stringify(Object.keys(manifest.original)));
   await reviewGit(pi, root, ['update-ref', '-d', manifest.recoveryRef, manifest.tree]);
 
   for (const name of await readdir(archive)) {
-    if (!retainedNames.includes(name)) {
+    if (!retainedNames.has(name)) {
       await rm(join(archive, name), { recursive: true, force: true });
     }
   }
 
   for (const name of ['displaced', 'hidden-displaced']) {
-    if ((await readdir(join(archive, name)).catch(() => ['missing'])).length === 0) {
+    const entries = await readdir(join(archive, name)).catch(() => ['missing']);
+
+    if (entries.length === 0) {
       await rm(join(archive, name), { recursive: true });
     }
   }
 
-  if ((await readdir(archive)).every((name) => !name.endsWith('displaced'))) {
+  const remaining = await readdir(archive);
+
+  if (remaining.every((name) => !name.endsWith('displaced'))) {
     await rm(archive, { recursive: true });
   }
 };
