@@ -53,6 +53,14 @@ const file = (content: string, mode = 0o600) => ({
   mode,
   content: Buffer.from(content).toString('base64'),
 });
+const readOptional = (path: string) =>
+  readFile(path, 'utf8').catch((error: unknown) => {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return null;
+    }
+
+    throw error;
+  });
 const repository = async () => {
   const root = await mkdtemp(join(tmpdir(), 'tau-raw-recovery-'));
   directories.push(root);
@@ -508,7 +516,7 @@ it.each(['complete', 'raced', 'failure'])(
     expect(pending).toBe(outcome !== 'complete');
     const current = await readFile(join(root, 'file')).catch(() => null);
     expect(current).toEqual(outcome === 'complete' ? Buffer.from([0, 255, 13, 10]) : null);
-    const backup = await readFile(join(archive, 'working.json'), 'utf8').catch(() => null);
+    const backup = await readOptional(join(archive, 'working.json'));
     const originalBase64 = Buffer.from([0, 255, 13, 10]).toString('base64');
     expect(backup?.includes(originalBase64) ?? 'pruned').toBe(
       outcome === 'complete' ? 'pruned' : true,

@@ -33,6 +33,14 @@ const pi: Pick<ExtensionAPI, 'exec'> = {
     return { ...result, code: 0, killed: false };
   },
 };
+const readOptional = (path: string) =>
+  readFile(path, 'utf8').catch((error: unknown) => {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return null;
+    }
+
+    throw error;
+  });
 const repository = async () => {
   const root = await mkdtemp(join(tmpdir(), 'tau-in-place-check-'));
   const temporary = await mkdtemp(join(tmpdir(), 'tau-check-message-'));
@@ -186,10 +194,7 @@ it.each(['failure', 'file', 'stage', 'new-file'])(
     expect(pending).toBe(outcome !== 'failure');
     const names = await readdir(join(root, '.git/tau-recovery'));
     const name = names.find((entry) => entry.startsWith('prepare-'))!;
-    const backup = await readFile(
-      join(root, '.git/tau-recovery', name, 'working.json'),
-      'utf8',
-    ).catch(() => null);
+    const backup = await readOptional(join(root, '.git/tau-recovery', name, 'working.json'));
     const originalBase64 = Buffer.from('original working').toString('base64');
     expect(backup?.includes(originalBase64) ?? 'pruned').toBe(
       outcome === 'failure' ? 'pruned' : true,
@@ -492,6 +497,31 @@ it('applies frozen exclude rules in git precedence order', async () => {
     }),
   );
   await git(root, ['add', '.']);
+  const tree = await git(root, ['write-tree']);
+  await writeFile(join(root, 'file'), 'original working');
+  const checks = await createCandidateChecks(pi, root, tree, temporary);
+
+  await checks.checkProject();
+
+  expect(await readFile(join(root, 'file'), 'utf8')).toBe('original working');
+  await assertNoPendingRecovery(join(root, '.git'));
+});
+
+it('resolves a relative global excludes file against the repository root', async () => {
+  const { root, temporary } = await repository();
+  await writeFile(join(root, 'global-ignore'), '*.log\n');
+  await git(root, ['config', 'core.excludesFile', 'global-ignore']);
+  await writeFile(
+    join(root, 'tau.json'),
+    JSON.stringify({
+      check: [
+        process.execPath,
+        '-e',
+        "require('node:fs').writeFileSync('checker.log', 'checker output');",
+      ],
+    }),
+  );
+  await git(root, ['add', 'tau.json']);
   const tree = await git(root, ['write-tree']);
   await writeFile(join(root, 'file'), 'original working');
   const checks = await createCandidateChecks(pi, root, tree, temporary);

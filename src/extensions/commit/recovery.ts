@@ -304,7 +304,9 @@ const externalExcludes = async (root: string) => {
     .then((bytes) => bytes.toString().trim())
     .catch(() => join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'git/ignore'));
   const contents = await Promise.all(
-    [globalExclude, infoExclude].map((path) => readFile(path, 'utf8').catch(() => '')),
+    [globalExclude, infoExclude].map((path) =>
+      readFile(isAbsolute(path) ? path : join(root, path), 'utf8').catch(() => ''),
+    ),
   );
 
   return contents.map((content) => `${content}\n`).join('');
