@@ -66,7 +66,7 @@ const readCall = (toolCallId = 'read', limit?: number) => ({
 
 const notice = '[Showing lines 1-400 of 450. Use offset=401 to continue.]';
 const hint =
-  'File continues at line 401. For a question about this file call bulk_read with paths and question. To edit, read again with offset and limit.';
+  'File continues at line 401. For a summary or evidence from this file, call bulk_read with paths and question. To edit, read again with offset and limit.';
 
 it('describes bulk reads as evidence gathering rather than review judgments', () => {
   const { registerTool } = setup();

@@ -109,8 +109,13 @@ it('clamps a real Pi read and records delegate usage in the session ledger', asy
   onTestFinished,
 }) => {
   const { session, sessionModel, delegate } = await createHarness(onTestFinished);
+  let sessionPrompt = '';
   sessionModel.setResponses([
-    fauxAssistantMessage([fauxToolCall('read', { path: 'large.txt' })]),
+    (context) => {
+      sessionPrompt = context.systemPrompt ?? '';
+
+      return fauxAssistantMessage([fauxToolCall('read', { path: 'large.txt' })]);
+    },
     fauxAssistantMessage([
       fauxToolCall('bulk_read', { paths: ['large.txt'], question: 'What does this file contain?' }),
     ]),
@@ -120,9 +125,14 @@ it('clamps a real Pi read and records delegate usage in the session ledger', asy
 
   await session.prompt('Explain the large file.');
 
+  expect(sessionPrompt).toContain('Use bulk_read summaries for navigation without rereading');
+  expect(sessionPrompt).toContain('Verify only consequential claims');
+  expect(sessionPrompt).toContain('Integration claims need production callers');
+  expect(sessionPrompt).toContain('actual diff and applicable project rules');
+
   const read = textOf(toolResult(session, 'read').content);
   expect(read).toMatch(
-    /File continues at line 401\. For a question about this file call bulk_read with paths and question\. To edit, read again with offset and limit\.$/,
+    /File continues at line 401\. For a summary or evidence from this file, call bulk_read with paths and question\. To edit, read again with offset and limit\.$/,
   );
   expect(read).not.toContain('Use offset=');
   expect(read).not.toMatch(/^line 401$/m);
