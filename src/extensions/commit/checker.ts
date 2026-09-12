@@ -19,7 +19,9 @@ const captureOutput = (stream: Readable) => {
   };
   const closed = new Promise<void>((resolve) => stream.once('close', resolve));
   stream.on('data', append);
-  stream.on('error', (error) => append(Buffer.from(String(error))));
+  stream.on('error', (error) => {
+    append(Buffer.from(String(error)));
+  });
 
   return {
     append,
@@ -130,15 +132,13 @@ export const runChecker = async (command: string[], root: string, signal?: Abort
     await Promise.race([
       Promise.all([stdout.closed, stderr.closed]),
       new Promise<never>((_resolve, reject) => {
-        drainTimeout = setTimeout(
-          () =>
-            reject(
-              new Error(
-                'Checker output streams did not close. Keep pending recovery and stop detached writers before manual recovery.',
-              ),
+        drainTimeout = setTimeout(() => {
+          reject(
+            new Error(
+              'Checker output streams did not close. Keep pending recovery and stop detached writers before manual recovery.',
             ),
-          1000,
-        );
+          );
+        }, 1000);
       }),
     ]);
 
