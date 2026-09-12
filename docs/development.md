@@ -121,6 +121,11 @@ jq -rs '[.[] | select(.type=="message") | .message | select(.role=="assistant" o
 
 It prints one row per role: input, cache read, cache write, output, and cost.
 
+To count how often sessions reach the clamp, run
+[scripts/bulk-read-population.sh](../scripts/bulk-read-population.sh) from a clean shell. It reads
+`~/.pi/agent/sessions` unless given another directory and prints session count, read calls,
+unbounded reads, truncated-or-hinted results, offset pages, `bulk_read` calls, and cost by role.
+
 Record configuration, session input, cache read, cache write, output, delegate input, delegate
 output, assistant turns, `offset` pages after a clamped read, wall clock, and catalog cost as a
 ratio, not an invoice. Offline faux tests prove usage plumbing and result size, not savings.

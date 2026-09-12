@@ -146,6 +146,17 @@ edge cases rather than reading the file a second time:
   seconds. The one run that clamped and then delegated was 32% cheaper than the comparable full-read
   run and twice as slow. These results accepted this ADR;
   [Development](../development.md#measuring-bulk-reads) has the procedure to repeat them.
+- The [population script](../../scripts/bulk-read-population.sh) run on 2026-09-12 counted 194
+  sessions, 2,981 reads, 2,137 unbounded reads, 568 truncated or hinted results (19.1%), and at most
+  470 offset pages. That day's review had counted 2.3% truncated or hinted; the query also matches
+  Pi's own continuation notice, which is where the rest comes from. Nine `bulk_read` calls cost
+  $0.08 against $84.65 of assistant spend in the seven sessions that used it. Cumulative catalog
+  cost to that date was $555.49 for `assistant`
+  and $0.08 for `toolResult`. Sessions before
+  `bulk_read` shipped are counted, files under 400 lines count as unbounded reads, and the offset
+  count is an upper bound without a same-path join. These counts compare no thresholds and establish
+  no savings, so measure savings in sessions using delegation before expanding delegation work,
+  including code writers.
 - The session model often avoids bulk reads on its own, grepping and reading bounded ranges the
   clamp leaves alone, and those runs cost the same either way. The threshold stays at 400, and code
   writers do not earn a ticket on this evidence.
