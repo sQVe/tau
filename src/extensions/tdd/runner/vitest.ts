@@ -26,12 +26,12 @@ import type {
   TestResult,
 } from './types.js';
 import {
-  DEFAULT_TIMEOUT_MS,
-  FULL_TIMEOUT_MS,
-  MAX_FAILURES,
-  MAX_MESSAGE_CHARS,
-  MAX_STDOUT_BYTES,
-  MAX_TOTAL_BYTES,
+  defaultTimeoutMilliseconds,
+  fullTimeoutMilliseconds,
+  maximumFailures,
+  maximumMessageCharacters,
+  maximumStandardOutputBytes,
+  maximumDiagnosticBytes,
 } from './types.js';
 
 interface VitestAssertionResult {
@@ -168,7 +168,7 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
       decoder: StringDecoder,
       current: string,
     ): string => {
-      const remaining = MAX_TOTAL_BYTES - diagnosticBytes;
+      const remaining = maximumDiagnosticBytes - diagnosticBytes;
 
       if (remaining <= 0) {
         return current;
@@ -217,7 +217,7 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
       // Stop on stdout overflow rather than accepting a result from a run that exceeded its limit.
       stdoutBytes += chunk.length;
 
-      if (stdoutBytes > MAX_STDOUT_BYTES) {
+      if (stdoutBytes > maximumStandardOutputBytes) {
         stdoutOverflow = true;
         kill();
         settle(null);
@@ -340,7 +340,7 @@ const frameLocation = (line: string, cwd: string): string | null => {
 };
 
 const capMessage = (text: string) =>
-  text.length > MAX_MESSAGE_CHARS ? `${text.slice(0, MAX_MESSAGE_CHARS)}…` : text;
+  text.length > maximumMessageCharacters ? `${text.slice(0, maximumMessageCharacters)}…` : text;
 
 // Keep the assertion and its worktree location. Omit the rest of the stack to limit output.
 const assertionMessage = (messages: string[], cwd: string): string => {
@@ -371,7 +371,7 @@ const collectFailures = (
       file.assertionResults?.some((assertion) => assertion.status === 'failed') === true;
 
     if (file.status === 'failed' && ((file.message ?? '').length > 0 || !hasFailedAssertion)) {
-      if (failures.length >= MAX_FAILURES) {
+      if (failures.length >= maximumFailures) {
         return { failures, truncated: true };
       }
 
@@ -387,7 +387,7 @@ const collectFailures = (
         continue;
       }
 
-      if (failures.length >= MAX_FAILURES) {
+      if (failures.length >= maximumFailures) {
         truncated = true;
 
         return { failures, truncated };
@@ -440,7 +440,7 @@ const buildArguments = (input: RunTestsInput, outputFile: string): string[] | nu
 export const defaultDeps = (scope: RunTestsInput['scope'] = 'changed'): RunnerDeps => ({
   resolveVitest: defaultResolveVitest,
   spawn: defaultSpawn,
-  timeoutMs: scope === 'all' ? FULL_TIMEOUT_MS : DEFAULT_TIMEOUT_MS,
+  timeoutMs: scope === 'all' ? fullTimeoutMilliseconds : defaultTimeoutMilliseconds,
 });
 
 const runInDirectory = async (
@@ -480,7 +480,7 @@ const runInDirectory = async (
   if (result.stdoutOverflow === true) {
     return {
       kind: 'output-limit',
-      message: `vitest stdout exceeded ${MAX_STDOUT_BYTES} bytes; the run was killed without parsing a truncated report`,
+      message: `vitest stdout exceeded ${maximumStandardOutputBytes} bytes; the run was killed without parsing a truncated report`,
     };
   }
 

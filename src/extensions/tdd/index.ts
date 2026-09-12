@@ -9,7 +9,7 @@ import { Type } from 'typebox';
 
 import { guardToolCall } from './guard.js';
 import type { RunnerResult, TestResult } from './runner/types.js';
-import { MAX_FAILURES } from './runner/types.js';
+import { maximumFailures } from './runner/types.js';
 import { ambiguousFiles, createEvidenceStore, testNames } from './state.js';
 import type { EvidenceState } from './types.js';
 
@@ -69,7 +69,7 @@ const summarize = (
   const failures = report != null && 'failures' in report ? report.failures : [];
   let shown = 0;
 
-  for (const failure of failures.slice(0, MAX_FAILURES)) {
+  for (const failure of failures.slice(0, maximumFailures)) {
     const entry = `✗ ${displayPath(cwd, failure.file)} › ${failure.fullname}\n    ${failure.message}`;
 
     if ([...lines, entry].join('\n').length > MAX_SUMMARY_CHARS - 60) {
