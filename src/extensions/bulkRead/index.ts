@@ -44,13 +44,17 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
   let trimming = true;
   const clamped = new Set<string>();
   const description =
-    'Ask a cheaper model a question about one or more large files instead of reading them.';
+    'Ask a cheaper model for focused summaries, test inventories, and line-cited evidence from supplied files, not correctness or branch review judgments.';
 
   pi.registerTool({
     name: bulkReadTool,
     label: 'Bulk read',
     description,
     promptSnippet: description,
+    promptGuidelines: [
+      'Use bulk_read summaries for navigation without rereading files. Verify only consequential claims before edits or reports using bounded reads. Integration claims need production callers.',
+      'For bulk_read-based branch judgments, including alleged regressions, inspect the actual diff and applicable project rules. Distinguish inherited code from changes.',
+    ],
     parameters: Type.Object({
       paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
       question: Type.String({ minLength: 1 }),
