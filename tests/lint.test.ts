@@ -21,6 +21,8 @@ it('rejects lint warnings in project checks', async ({ onTestFinished }) => {
     timeout: 20_000,
   });
 
+  expect(result.error).toBeUndefined();
+  expect(result.signal).toBeNull();
   expect(result.status).toBe(1);
   expect(result.stdout).toContain('eslint(no-console)');
 }, 30_000);
