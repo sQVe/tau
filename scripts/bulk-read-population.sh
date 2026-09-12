@@ -4,6 +4,11 @@ set -euo pipefail
 
 readonly sessions_dir="${1:-${HOME}/.pi/agent/sessions}"
 
+if [[ ! -d "${sessions_dir}" ]]; then
+  echo "no such directory: ${sessions_dir}" >&2
+  exit 1
+fi
+
 find "${sessions_dir}" -type f -name '*.jsonl' -print0 \
   | while IFS= read -r -d '' session; do
     jq -rs '
