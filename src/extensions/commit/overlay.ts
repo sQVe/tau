@@ -21,7 +21,8 @@ export type CommitChoice =
   | 'abort'
   | 'waive'
   | 'review'
-  | 'retry';
+  | 'retry'
+  | 'files';
 
 export interface CommitView {
   subject: string;
@@ -31,6 +32,10 @@ export interface CommitView {
   notice?: string;
   review?: string;
   reviewBlocked?: boolean;
+  messageBlocked?: boolean;
+  allowApproveAll?: boolean;
+  preparationAddedFiles?: string[];
+  repositoryRelative?: boolean;
 }
 
 // Overlays do not scroll; cap body and file rows to leave room for choices.
@@ -45,16 +50,18 @@ const sectionCaps = (terminalRows: number) => {
   return { bodyLines, fileRows: Math.min(maximumFileRows, budget - bodyLines) };
 };
 
-const showCommentReview = async (
+const showCommitText = async (
   context: ExtensionContext,
+  title: string,
   report: string,
   signal?: AbortSignal,
+  assignment = false,
 ) => {
   if (signal?.aborted) {
     return 'abort';
   }
 
-  return context.ui.custom<'return' | 'abort'>(
+  return context.ui.custom<'return' | 'abort' | 'assign' | 'decline'>(
     (terminalInterface, theme, _keybindings, done) => {
       const onAbort = () => {
         done('abort');
@@ -69,16 +76,23 @@ const showCommentReview = async (
       return {
         render(width) {
           const lines = text.render(width);
-          const height = Math.max(1, Math.floor(terminalInterface.terminal.rows * 0.9) - 3);
+          const footer = new Text(
+            assignment
+              ? 'a Assign all added paths to this group · d Decline · Esc cancel\nj/k or ↑/↓ scroll · g/G or Home/End'
+              : 'j/k or ↑/↓ scroll · g/G or Home/End · Esc return · Ctrl+C abort',
+            0,
+            0,
+          ).render(width);
+          const heading = new Text(theme.fg('accent', title), 0, 0).render(width);
+          const height = Math.max(
+            1,
+            Math.floor(terminalInterface.terminal.rows * 0.9) - heading.length - footer.length,
+          );
 
           lastOffset = Math.max(0, lines.length - height);
           offset = Math.min(offset, lastOffset);
 
-          return [
-            theme.fg('accent', 'Comment review'),
-            ...lines.slice(offset, offset + height),
-            theme.fg('dim', 'j/k or ↑/↓ scroll · g/G or Home/End · Esc return · Ctrl+C abort'),
-          ];
+          return [...heading, ...lines.slice(offset, offset + height), ...footer];
         },
         invalidate() {
           text.invalidate();
@@ -88,9 +102,15 @@ const showCommentReview = async (
         },
         handleInput(data) {
           if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl('c'))) {
-            const choice = matchesKey(data, Key.ctrl('c')) ? 'abort' : 'return';
+            const choice = assignment || matchesKey(data, Key.ctrl('c')) ? 'abort' : 'return';
 
             done(choice);
+
+            return;
+          }
+
+          if (assignment && (data === 'a' || data === 'd')) {
+            done(data === 'a' ? 'assign' : 'decline');
 
             return;
           }
@@ -118,6 +138,40 @@ const showCommentReview = async (
     { overlay: true, overlayOptions: { width: '90%', maxHeight: '90%' } },
   );
 };
+
+const displayPath = (path: string) =>
+  JSON.stringify(path).replace(
+    /[\u007f-\u009f]/g,
+    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+
+export const confirmPreparationAssignment = (
+  context: ExtensionContext,
+  subject: string,
+  requested: string[],
+  added: string[],
+  group?: string,
+  signal?: AbortSignal,
+) =>
+  showCommitText(
+    context,
+    `Preparation assignment${group ? ` ${group}` : ''}`,
+    [
+      subject,
+      'Assignment is not commit approval. Checks, review, and approval follow.',
+      'Requested paths (repository-relative)',
+      ...requested.map(displayPath),
+      'Preparation-added paths (repository-relative)',
+      ...added.map(displayPath),
+    ].join('\n'),
+    signal,
+    true,
+  );
+
+const fileLabel = (view: CommitView, path: string) =>
+  view.preparationAddedFiles
+    ? `${view.preparationAddedFiles.includes(path) ? '[preparation-added]' : '[requested]'} ${displayPath(path)}`
+    : path;
 
 export const confirmCommitOverlay = async (
   context: ExtensionContext,
@@ -175,7 +229,13 @@ export const confirmCommitOverlay = async (
       }
 
       container.addChild(new Spacer());
-      container.addChild(new Text(theme.fg('dim', 'Files'), 1, 0));
+      container.addChild(
+        new Text(
+          theme.fg('dim', view.repositoryRelative ? 'Files (repository-relative)' : 'Files'),
+          1,
+          0,
+        ),
+      );
 
       for (const file of view.files.slice(0, limits.fileRows)) {
         const statistics =
@@ -183,7 +243,7 @@ export const confirmCommitOverlay = async (
             ? theme.fg('dim', 'binary')
             : `${theme.fg('success', `+${file.added}`)} ${theme.fg('error', `-${file.removed}`)}`;
 
-        container.addChild(new TruncatedText(`${file.path} ${statistics}`, 1, 0));
+        container.addChild(new TruncatedText(`${fileLabel(view, file.path)} ${statistics}`, 1, 0));
       }
 
       if (view.files.length > limits.fileRows) {
@@ -205,14 +265,21 @@ export const confirmCommitOverlay = async (
       }
 
       const items: { value: CommitChoice; label: string }[] = [
-        view.reviewBlocked
-          ? { value: 'waive', label: 'w    Waive comment review and commit' }
-          : { value: 'approve', label: 'a    Approve and commit' },
+        ...(view.messageBlocked
+          ? []
+          : [
+              view.reviewBlocked
+                ? { value: 'waive' as const, label: 'w    Waive comment review and commit' }
+                : { value: 'approve' as const, label: 'a    Approve and commit' },
+            ]),
         // Approve-all cannot waive a blocked review.
-        ...(view.reviewBlocked
+        ...(view.messageBlocked || view.reviewBlocked || view.allowApproveAll === false
           ? []
           : [{ value: 'approveAll' as const, label: 'A    Approve all remaining' }]),
         ...(view.review ? [{ value: 'review' as const, label: 'r    Read comment review' }] : []),
+        ...(view.preparationAddedFiles
+          ? [{ value: 'files' as const, label: 'f    Read full file list' }]
+          : []),
         ...(view.reviewBlocked
           ? [{ value: 'retry' as const, label: 't    Return for fixes or retry' }]
           : []),
@@ -258,9 +325,15 @@ export const confirmCommitOverlay = async (
           }
 
           const shortcuts: Record<string, CommitChoice> = {
-            ...(view.reviewBlocked
-              ? { w: 'waive' as const, t: 'retry' as const }
-              : { a: 'approve' as const, A: 'approveAll' as const }),
+            ...(view.reviewBlocked ? { t: 'retry' as const } : {}),
+            ...(!view.messageBlocked && view.reviewBlocked ? { w: 'waive' as const } : {}),
+            ...(view.messageBlocked || view.reviewBlocked
+              ? {}
+              : {
+                  a: 'approve' as const,
+                  ...(view.allowApproveAll === false ? {} : { A: 'approveAll' as const }),
+                }),
+            ...(view.preparationAddedFiles ? { f: 'files' as const } : {}),
             ...(view.review ? { r: 'review' as const } : {}),
             s: 'subject',
             b: 'body',
@@ -289,8 +362,17 @@ export const confirmCommitOverlay = async (
     options,
   );
 
-  if (choice === 'review' && view.review) {
-    const reviewChoice = await showCommentReview(context, view.review, signal);
+  if ((choice === 'review' && view.review) || choice === 'files') {
+    const report =
+      choice === 'files'
+        ? view.files.map((file) => fileLabel(view, file.path)).join('\n')
+        : (view.review ?? '');
+    const reviewChoice = await showCommitText(
+      context,
+      choice === 'files' ? 'Files (repository-relative)' : 'Comment review',
+      report,
+      signal,
+    );
 
     if (reviewChoice !== 'return') {
       return 'abort';

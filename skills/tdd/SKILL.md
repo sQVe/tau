@@ -80,9 +80,3 @@ The gate turns itself off when no test runner resolves from the worktree. `/tdd 
 for this worktree, recorded in `.tau/state.json`, until `/tdd on`. Both cases print a notice in
 `run_tests` summaries and commit results. Protected paths stay blocked either way. Ask the user
 before turning the gate off.
-
-## See also
-
-- [Write guard](../../src/extensions/tdd/guard.ts)
-- [Run summaries](../../src/extensions/tdd/index.ts)
-- [Skill authoring style](../../docs/adr/0004-skill-authoring-style.md)

@@ -30,7 +30,3 @@ work.
   "mostly working" and do not turn a warning into a crisis.
 - If that response asked a question or laid out a decision, restate the choice and what each option
   costs. Do not pick one. The decision is still the user's.
-
-## See also
-
-- [Skill authoring style](../../docs/adr/0004-skill-authoring-style.md)

@@ -251,7 +251,7 @@ export default defineConfig({
     },
   },
   staged: {
-    '*.{ts,tsx}': ['vp lint --fix', 'vp fmt --write'],
-    '!(pnpm-lock).{json,md,yaml,yml,css}': 'vp fmt --write',
+    '*.{ts,tsx}': ['vp lint', 'vp fmt --check'],
+    '!(pnpm-lock).{json,md,yaml,yml,css}': 'vp fmt --check',
   },
 });
