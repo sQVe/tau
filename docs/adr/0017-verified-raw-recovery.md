@@ -43,3 +43,4 @@ every concurrent write or filesystem failure.
 ## See also
 
 - [Staged preparation ownership](./0014-staged-preparation-ownership.md)
+- [Checks in the existing checkout](./0018-checks-in-the-existing-checkout.md)

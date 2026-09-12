@@ -1,22 +1,21 @@
-import {
-  access,
-  lstat,
-  mkdir,
-  readFile,
-  readdir,
-  readlink,
-  symlink,
-  writeFile,
-} from 'node:fs/promises';
+import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-const exists = (path: string) =>
-  access(path).then(
-    () => true,
-    () => false,
-  );
+import { runChecker } from './checker.js';
+import { gitBytes, maximumWorkingBytes, workingState } from './preparation.js';
+import type { WorkingEntry } from './preparation.js';
+import { hidePending, saveRecovery } from './recovery.js';
+
+export class MessageMutationError extends Error {
+  constructor(directory: string, cause: unknown) {
+    super(
+      `Message check changed the message file. Original and checker output retained at ${directory}. Inspect the checker and retry commit.`,
+      { cause },
+    );
+  }
+}
 
 interface CommitConfig {
   prepare?: [string, ...string[]];
@@ -128,7 +127,6 @@ export const prepareProject = async (
   }
 
   const [executable, ...arguments_] = command;
-
   const result = await pi.exec(executable, arguments_, {
     cwd: repositoryRoot,
     ...(signal ? { signal } : {}),
@@ -144,7 +142,99 @@ export const prepareProject = async (
   return `Project preparation passed: ${command.join(' ')}.`;
 };
 
-// Both checks use one staged checkout. Message edits never repeat the project check.
+const stagedEntries = async (root: string, tree: string) => {
+  const listed = new TextDecoder('utf-8', { fatal: true }).decode(
+    await gitBytes(root, ['ls-tree', '-r', '-l', '-z', tree]),
+  );
+  let totalBytes = 0;
+  const entries = listed
+    .split('\0')
+    .filter(Boolean)
+    .map((row) => {
+      const match = /^(100644|100755|120000) blob ([a-f0-9]+) +([0-9]+)\t([\s\S]+)$/.exec(row);
+
+      if (!match?.[1] || !match[2] || !match[3] || !match[4]) {
+        throw new Error(
+          'Unsupported staged tree. Remove submodules and resolve index conflicts before retrying.',
+        );
+      }
+
+      const size = Number(match[3]);
+      totalBytes += size;
+
+      if (!Number.isSafeInteger(size) || totalBytes > maximumWorkingBytes) {
+        throw new Error('Staged recovery exceeds 100 MiB. Reduce staged data before retrying.');
+      }
+
+      return {
+        mode: match[1],
+        object: match[2],
+        size,
+        path: match[4],
+        header: Buffer.from(`${match[2]} blob ${size}\n`),
+      };
+    });
+  const staged: Record<string, WorkingEntry> = {};
+
+  if (!entries.length) {
+    return staged;
+  }
+
+  const outputBytes =
+    totalBytes + entries.reduce((bytes, entry) => bytes + entry.header.length + 1, 0);
+  const output = await gitBytes(
+    root,
+    ['cat-file', '--batch'],
+    undefined,
+    entries.map((entry) => `${entry.object}\n`).join(''),
+    outputBytes,
+  );
+  let offset = 0;
+
+  for (const entry of entries) {
+    const start = offset + entry.header.length;
+    const end = start + entry.size;
+
+    // Payloads may contain any bytes, including LF and NUL. Only Git's framing is textual.
+    if (!output.subarray(offset, start).equals(entry.header) || output[end] !== 10) {
+      throw new Error('Invalid staged object batch. No working files were hidden.');
+    }
+
+    const fileMode = entry.mode === '100755' ? 0o755 : 0o644;
+    staged[entry.path] = {
+      kind: entry.mode === '120000' ? 'symlink' : 'file',
+      mode: entry.mode === '120000' ? 0o777 : fileMode,
+      content: output.subarray(start, end).toString('base64'),
+    };
+    offset = end + 1;
+  }
+
+  if (offset !== output.length) {
+    throw new Error('Unexpected trailing staged object data. No working files were hidden.');
+  }
+
+  return staged;
+};
+
+const stagedWorking = async (root: string, tree: string) => {
+  await gitBytes(root, ['diff-index', '--cached', '--quiet', tree, '--']).catch(
+    (error: unknown) => {
+      throw new Error('Staged content changed before checks. Retry commit.', { cause: error });
+    },
+  );
+
+  const staged = await stagedEntries(root, tree);
+  const changedPaths = new TextDecoder('utf-8', { fatal: true })
+    .decode(await gitBytes(root, ['diff', '--cached', '--no-renames', '--name-only', '-z']))
+    .split('\0')
+    .filter(Boolean);
+  const original = await workingState(root, changedPaths);
+  const hidden: Record<string, WorkingEntry> = Object.fromEntries(
+    Object.keys(original).map((path) => [path, null]),
+  );
+  return { ...hidden, ...staged };
+};
+
 export const createCandidateChecks = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
@@ -152,8 +242,8 @@ export const createCandidateChecks = async (
   temporaryDirectory: string,
   signal?: AbortSignal,
 ) => {
-  const run = async (command: string, commandArguments: string[], directory = workingDirectory) => {
-    const result = await pi.exec(command, commandArguments, {
+  const run = async (arguments_: string[], directory = workingDirectory) => {
+    const result = await pi.exec('git', arguments_, {
       cwd: directory,
       ...(signal ? { signal } : {}),
       timeout: 600_000,
@@ -161,26 +251,18 @@ export const createCandidateChecks = async (
 
     if (result.code !== 0 || result.killed || signal?.aborted) {
       throw new Error(
-        `Project check failed (${command} ${commandArguments.join(' ')}):\n${result.stderr}\n${result.stdout}`,
+        `Project check failed (git ${arguments_.join(' ')}):\n${result.stderr}\n${result.stdout}`,
       );
     }
 
     return result.stdout;
   };
-
-  const rootOutput = await run('git', ['rev-parse', '--show-toplevel']);
-  const repositoryRoot = rootOutput.replace(/\n$/, '');
-  const configPath = await run(
-    'git',
-    ['ls-tree', '--name-only', tree, '--', 'tau.json'],
-    repositoryRoot,
-  );
-
+  const repositoryRoot = (await run(['rev-parse', '--show-toplevel'])).replace(/\n$/, '');
+  const configPath = await run(['ls-tree', '--name-only', tree, '--', 'tau.json'], repositoryRoot);
   const config = configPath.trim()
-    ? parseConfig(await run('git', ['show', `${tree}:tau.json`], repositoryRoot))
+    ? parseConfig(await run(['show', `${tree}:tau.json`], repositoryRoot))
     : {};
   const { check: command, checkMessage, hooks = 'run' } = config;
-  const candidateDirectory = join(temporaryDirectory, 'candidate');
   const messagePath = join(temporaryDirectory, 'message');
   const hooksPath = join(temporaryDirectory, 'empty-hooks');
 
@@ -188,114 +270,100 @@ export const createCandidateChecks = async (
     await mkdir(hooksPath);
   }
 
-  if (command || checkMessage) {
-    await run('git', [
-      'clone',
-      '--shared',
-      '--no-checkout',
-      '--',
-      repositoryRoot,
-      candidateDirectory,
-    ]);
-    await run('git', ['read-tree', tree], candidateDirectory);
-    await run('git', ['checkout-index', '--all'], candidateDirectory);
-
-    // ponytail: root dependencies are shared; workspace-aware installs need a separate checkout strategy.
-    const dependencies = join(repositoryRoot, 'node_modules');
-    const candidateDependencies = join(candidateDirectory, 'node_modules');
-    const dependenciesExist = await exists(dependencies);
-    const candidateDependenciesExist = await exists(candidateDependencies);
-
-    // A tracked node_modules is already checked out, and its staged content is what the check must see.
-    if (dependenciesExist && !candidateDependenciesExist) {
-      await symlink(dependencies, candidateDependencies, 'junction');
-    }
-  }
-
-  const assertCandidate = async (label: string) => {
-    const changedFiles = await run('git', ['diff', '--name-only', tree, '--'], candidateDirectory);
-    const candidateTree = await run('git', ['write-tree'], candidateDirectory);
-
-    if (changedFiles.trim() || candidateTree.trim() !== tree) {
-      throw new Error(
-        `${label} changed tracked files or index. Inspect the checker and retry commit.`,
-      );
-    }
-  };
-
-  const untrackedState = async () => {
-    // Git omits FIFOs and sockets from ls-files. Inspect entry types without opening their contents.
-    const workingEntries = await readdir(candidateDirectory, {
-      recursive: true,
-      withFileTypes: true,
-    });
-
-    if (
-      workingEntries.some(
-        (entry) => !entry.isDirectory() && !entry.isFile() && !entry.isSymbolicLink(),
-      )
-    ) {
-      throw new Error(
-        'Message check changed the candidate: unsupported special file. Fix the checker and retry.',
-      );
-    }
-
-    const listed = await run(
-      'git',
-      ['ls-files', '--others', '--exclude-standard', '-z'],
-      candidateDirectory,
-    );
-    const entries = await Promise.all(
-      listed
-        .split('\0')
-        .filter(Boolean)
-        .toSorted()
-        .map(async (path) => {
-          const absolute = join(candidateDirectory, path);
-          const status = await lstat(absolute);
-
-          if (!status.isFile() && !status.isSymbolicLink()) {
-            throw new Error(
-              `Message check changed the candidate: unsupported file ${JSON.stringify(path)}. Retry after fixing the checker.`,
-            );
-          }
-
-          const content = status.isSymbolicLink()
-            ? await readlink(absolute, { encoding: 'buffer' })
-            : await readFile(absolute);
-
-          return [path, status.mode, content.toString('base64')];
-        }),
-    );
-
-    return JSON.stringify(entries);
-  };
-
   const verifyMessage = async (message: string, diagnostic: string) => {
     const status = await lstat(messagePath).catch(() => null);
 
-    if (!status?.isFile()) {
-      throw new Error(diagnostic);
-    }
-
-    const bytes = await readFile(messagePath);
-
-    if (!bytes.equals(Buffer.from(message))) {
+    if (!status?.isFile() || !(await readFile(messagePath)).equals(Buffer.from(message))) {
       throw new Error(diagnostic);
     }
   };
-
-  const assertMessageCheck = async (before: string, message: string) => {
-    await assertCandidate('Message check');
-    const after = await untrackedState();
-    const diagnostic =
-      'Message check changed the candidate or message file. Inspect the checker and retry commit.';
-
-    if (before !== after) {
-      throw new Error(diagnostic);
+  const unavailable = (label: string, key: string) =>
+    `${label} unavailable: ${configPath.trim() ? `no ${key} command in tau.json.` : 'no root tau.json.'}`;
+  const window = async (message: string | undefined, project: boolean) => {
+    if (message !== undefined) {
+      await writeFile(messagePath, message, { mode: 0o600 });
+      await writeFile(`${messagePath}.original`, message, { mode: 0o600 });
     }
 
-    await verifyMessage(message, diagnostic);
+    let projectNotice = unavailable('Project check', 'check');
+    let messageResult = { passed: true, notice: unavailable('Message check', 'checkMessage') };
+
+    if (!(project && command) && !(message !== undefined && checkMessage)) {
+      return { projectNotice, messageResult };
+    }
+
+    const hidden = await stagedWorking(repositoryRoot, tree);
+    const archive = await saveRecovery(pi, repositoryRoot, hidden, tree);
+    const recovery = await hidePending(pi, repositoryRoot);
+    let safeToRestore = true;
+    let checkFailure: Error | undefined;
+    const check = async (arguments_: string[], label: string) => {
+      safeToRestore = false;
+      const result = await runChecker(arguments_, repositoryRoot, signal);
+      await recovery.assertHidden();
+      safeToRestore = true;
+
+      return {
+        result,
+        notice: `${label} failed (${arguments_.join(' ')}):\n${result.stderr}\n${result.stdout}`,
+      };
+    };
+
+    try {
+      if (project && command) {
+        const { result, notice } = await check(command, 'Project check');
+
+        if (result.code !== 0 || result.killed || signal?.aborted) {
+          throw new Error(notice);
+        }
+
+        projectNotice = `Project check passed: ${command.join(' ')} on ${tree}.`;
+      }
+
+      if (message !== undefined && checkMessage) {
+        const { result, notice } = await check([...checkMessage, messagePath], 'Message check');
+        await verifyMessage(message, 'Message check changed the message file.').catch(
+          (error: unknown) => {
+            throw new MessageMutationError(temporaryDirectory, error);
+          },
+        );
+
+        if (result.killed || signal?.aborted) {
+          throw new Error(notice);
+        }
+
+        messageResult =
+          result.code === 0
+            ? { passed: true, notice: `Message check passed: ${checkMessage.join(' ')}.` }
+            : { passed: false, notice };
+      }
+    } catch (error) {
+      checkFailure = error instanceof Error ? error : new Error(String(error));
+    }
+
+    if (!safeToRestore) {
+      throw new Error(
+        `${String(checkFailure)}\nChecker changed files or index, or termination could not be established. Pending recovery retained at ${archive}. Stop writers and inspect recovery data before retrying.`,
+        { cause: checkFailure },
+      );
+    }
+
+    try {
+      await recovery.restore();
+    } catch (error) {
+      const primaryFailure =
+        checkFailure?.message ?? (messageResult.passed ? '' : messageResult.notice);
+      throw new Error(
+        `${primaryFailure ? `${primaryFailure}\n` : ''}Restoration failed: ${String(error)}\nRecovery retained at ${archive}. Read check-recovery.txt before restoring anything.`,
+        { cause: error },
+      );
+    }
+
+    if (checkFailure) {
+      throw checkFailure;
+    }
+
+    return { projectNotice, messageResult };
   };
 
   return {
@@ -303,55 +371,12 @@ export const createCandidateChecks = async (
     hooksPath,
     messagePath,
     verifyMessage,
+    checkInitial: (message: string) => window(message, true),
     async checkProject() {
-      if (!command) {
-        return `Project check unavailable: ${configPath.trim() ? 'no check command in tau.json.' : 'no root tau.json.'}`;
-      }
-
-      const [executable, ...arguments_] = command;
-
-      await run(executable, arguments_, candidateDirectory);
-      await assertCandidate('Project check');
-
-      return `Project check passed: ${command.join(' ')} on ${tree}.`;
+      return (await window(undefined, true)).projectNotice;
     },
     async checkMessage(message: string) {
-      await writeFile(messagePath, message, { mode: 0o600 });
-
-      if (!checkMessage) {
-        return {
-          passed: true,
-          notice: `Message check unavailable: ${configPath.trim() ? 'no checkMessage command in tau.json.' : 'no root tau.json.'}`,
-        };
-      }
-
-      await assertCandidate('Message check');
-      const before = await untrackedState();
-      const [executable, ...arguments_] = checkMessage;
-      let result: Awaited<ReturnType<ExtensionAPI['exec']>>;
-
-      try {
-        result = await pi.exec(executable, [...arguments_, messagePath], {
-          cwd: candidateDirectory,
-          ...(signal ? { signal } : {}),
-          timeout: 600_000,
-        });
-      } finally {
-        // Check mutations even after failure or a killed process. A dirty checkout cannot be retried.
-        if (!signal?.aborted) {
-          await assertMessageCheck(before, message);
-        }
-      }
-
-      const notice = `Message check failed (${checkMessage.join(' ')}):\n${result.stderr}\n${result.stdout}`;
-
-      if (result.killed || signal?.aborted) {
-        throw new Error(notice);
-      }
-
-      return result.code === 0
-        ? { passed: true, notice: `Message check passed: ${checkMessage.join(' ')}.` }
-        : { passed: false, notice };
+      return (await window(message, false)).messageResult;
     },
   };
 };

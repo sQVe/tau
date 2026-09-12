@@ -22,7 +22,12 @@ import type { CommentReview } from './commentReview.js';
 import type { CommitView } from './overlay.js';
 import { confirmCommitOverlay, confirmPreparationAssignment } from './overlay.js';
 import { snapshotPreparation } from './preparation.js';
-import { createCandidateChecks, prepareProject, readPreparation } from './projectCheck.js';
+import {
+  createCandidateChecks,
+  MessageMutationError,
+  prepareProject,
+  readPreparation,
+} from './projectCheck.js';
 import type { Preparation } from './projectCheck.js';
 import { assertNoPendingRecovery } from './recovery.js';
 import type { CommitSuccess } from './types.js';
@@ -305,57 +310,7 @@ interface ReviewSnapshot {
   dispute?: string;
 }
 
-type RequestReview = (snapshot: ReviewSnapshot, baseTree: string | null) => Promise<CommentReview>;
-
-const treeOf = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
-  workingDirectory: string,
-  revision: string | null,
-  signal?: AbortSignal,
-) => {
-  if (revision === null) {
-    return null;
-  }
-
-  const tree = await reviewGit(pi, workingDirectory, ['rev-parse', `${revision}^{tree}`], signal);
-
-  return tree.trim();
-};
-
-// Stage the groups cumulatively so each planned pair matches what that group sees at its turn:
-// group N commits before group N+1 stages, so N+1's index tree already contains N's content.
-const planGroupReviews = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
-  workingDirectory: string,
-  groups: CommitInput['groups'],
-  signal: AbortSignal | undefined,
-): Promise<{ baseTree: string; tree: string }[]> => {
-  const plan: { baseTree: string; tree: string }[] = [];
-  const head = await currentHead(pi, workingDirectory);
-  let baseTree = await treeOf(pi, workingDirectory, head, signal);
-
-  if (baseTree === null) {
-    return plan;
-  }
-
-  try {
-    for (const group of groups) {
-      await stageFiles(pi, workingDirectory, group.files);
-
-      const treeOutput = await reviewGit(pi, workingDirectory, ['write-tree'], signal);
-      const tree = treeOutput.trim();
-
-      plan.push({ baseTree, tree });
-      baseTree = tree;
-    }
-  } finally {
-    for (const group of groups) {
-      await unstageFiles(pi, workingDirectory, group.files);
-    }
-  }
-
-  return plan;
-};
+type RequestReview = (snapshot: ReviewSnapshot) => Promise<CommentReview>;
 
 const executeGroup = async (
   parameters: CommitInput['groups'][number],
@@ -373,7 +328,6 @@ const executeGroup = async (
     preapproved: boolean;
     autoApprove: () => Promise<boolean>;
     onApproveAll: () => Promise<void>;
-    prefetchNext: () => void;
   },
 ): Promise<CommitSuccess> => {
   let resultFiles = parameters.files;
@@ -418,6 +372,7 @@ const executeGroup = async (
   let projectPreparation = preparation.notice;
   let approved = false;
   let reviewedTree = '';
+  let reviewedIndex = '';
   let reviewedHead: string | null = null;
   let reviewGroup = '';
   let reviewReport = '';
@@ -426,6 +381,27 @@ const executeGroup = async (
   let returningForCorrections = false;
   let candidate: Awaited<ReturnType<typeof createCandidateChecks>>;
   let messageCheck = '';
+  let checkedMessage: string | undefined;
+  let messageBlocked = false;
+  let groupError: unknown;
+  const assertCleanupOwnership = async () => {
+    const currentIndex = await reviewGit(pi, context.cwd, [
+      'ls-files',
+      '--stage',
+      '--debug',
+      '-v',
+      '-z',
+    ]);
+
+    if (
+      reviewedTree &&
+      (currentIndex !== reviewedIndex || (await currentHead(pi, context.cwd)) !== reviewedHead)
+    ) {
+      throw new Error(
+        `${groupError instanceof Error ? `${groupError.message}\n` : ''}Staged content or HEAD changed. Concurrent staging was left untouched.`,
+      );
+    }
+  };
 
   try {
     const staging = ownership?.isolated ?? pi;
@@ -516,6 +492,13 @@ const executeGroup = async (
 
     const treeOutput = await reviewGit(pi, context.cwd, ['write-tree'], signal);
     reviewedTree = treeOutput.trim();
+    reviewedIndex = await reviewGit(pi, context.cwd, [
+      'ls-files',
+      '--stage',
+      '--debug',
+      '-v',
+      '-z',
+    ]);
     reviewedHead = await currentHead(pi, context.cwd);
 
     if (signal?.aborted) {
@@ -530,7 +513,12 @@ const executeGroup = async (
         temporaryDirectory,
         signal,
       );
-      projectCheck = await candidate.checkProject();
+      const message = buildCommitMessage(subject, body);
+      const initial = await candidate.checkInitial(message);
+      projectCheck = initial.projectNotice;
+      messageCheck = initial.messageResult.notice;
+      messageBlocked = !initial.messageResult.passed;
+      checkedMessage = message;
     } catch (error) {
       if (signal?.aborted) {
         return cancelled();
@@ -538,8 +526,6 @@ const executeGroup = async (
 
       throw error;
     }
-
-    const reviewedBaseTree = await treeOf(pi, context.cwd, reviewedHead, signal);
 
     reviewGroup = JSON.stringify([context.cwd, reviewedHead, [...requestedFiles].toSorted()]);
 
@@ -579,14 +565,11 @@ const executeGroup = async (
       commentReview =
         state.key === reviewKey && state.result
           ? state.result
-          : await requestReview(
-              {
-                tree: reviewedTree,
-                head: reviewedHead,
-                ...(parameters.commentDispute ? { dispute: parameters.commentDispute } : {}),
-              },
-              reviewedBaseTree,
-            );
+          : await requestReview({
+              tree: reviewedTree,
+              head: reviewedHead,
+              ...(parameters.commentDispute ? { dispute: parameters.commentDispute } : {}),
+            });
       state.key = reviewKey;
       state.result = commentReview;
 
@@ -631,8 +614,6 @@ const executeGroup = async (
       resultFiles,
     );
     let notice = '';
-    let checkedMessage: string | undefined;
-    let messageBlocked = false;
 
     while (true) {
       if (signal?.aborted) {
@@ -655,8 +636,6 @@ const executeGroup = async (
           throw error;
         }
       }
-
-      batch.prefetchNext();
 
       const automaticallyApproved = await batch.autoApprove();
       if (automaticallyApproved && messageBlocked) {
@@ -708,6 +687,20 @@ const executeGroup = async (
       }
 
       if (choice === 'approve' || choice === 'approveAll' || choice === 'waive') {
+        const currentIndex = await reviewGit(pi, context.cwd, [
+          'ls-files',
+          '--stage',
+          '--debug',
+          '-v',
+          '-z',
+        ]);
+
+        if (currentIndex !== reviewedIndex) {
+          throw new Error(
+            'Staged content changed since comment review. Call commit again to review the changes.',
+          );
+        }
+
         const currentTreeOutput = await reviewGit(pi, context.cwd, ['write-tree'], signal);
         const currentTree = currentTreeOutput.trim();
         const changedSinceReview =
@@ -774,13 +767,27 @@ const executeGroup = async (
         }
       }
     }
+  } catch (error) {
+    groupError = error;
+    throw error;
   } finally {
     if (!approved) {
       if (!returningForCorrections) {
         reviews.delete(reviewGroup);
       }
 
+      const gitDirectory = (
+        await reviewGit(pi, context.cwd, ['rev-parse', '--absolute-git-dir'])
+      ).trimEnd();
+      await assertNoPendingRecovery(gitDirectory).catch((error: unknown) => {
+        throw new Error(
+          `${groupError instanceof Error ? `${groupError.message}\n` : ''}${String(error)}`,
+          { cause: groupError ?? error },
+        );
+      });
+
       if (!ownership) {
+        await assertCleanupOwnership();
         await unstageFiles(pi, context.cwd, parameters.files);
       }
     }
@@ -788,6 +795,10 @@ const executeGroup = async (
 
   const message = buildCommitMessage(subject, body);
   const previousHead = await currentHead(pi, context.cwd);
+  const gitDirectory = (
+    await reviewGit(pi, context.cwd, ['rev-parse', '--absolute-git-dir'])
+  ).trimEnd();
+  await assertNoPendingRecovery(gitDirectory);
   const commitResult = await pi.exec(
     'git',
     [
@@ -906,13 +917,14 @@ export const createCommitTool = (
       'When asked to commit, call commit without asking for confirmation in chat first. The commit overlay is the only approval step unless Pi was started with --auto-approve-commits. That flag skips confirmation, not checks or comment review.',
       'The commit tool commits only requested files and clean preparation-added paths explicitly assigned by the user in its overlay.',
       'The commit tool runs configured preparation once after staging each executed group, then restages requested files. Assignment changes must be accepted before checks and review. Preparation does not bypass TDD evidence rules. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
-      'Configured preparation disables speculative review planning and approve-all reuse for later groups. The commit overlay lists added paths separately for assignment, then checks, reviews, and approves the complete candidate. Assignment never waives review. Accepted paths remain reserved for that group throughout the call.',
+      'Checks run in the existing checkout with installed dependencies. Tau saves verified recovery before hiding working edits and restores before review or approval. Reviews run serially. Configured preparation disables approve-all reuse for later groups. Assignment never waives review; accepted paths remain reserved for their group.',
       "With --auto-approve-commits, preparation-added paths stop the commit without UI. Inspect them, assign them explicitly in the next commit call, and retry. Never absorb prior dirty or untracked user edits, other groups' paths, or rejected sensitive paths to clear an error.",
       'Prepared commit results use repository-relative files and preparationAddedFiles with pathBase: repository, including paths outside the invoking directory. For a retry, convert paths within the invoking directory to relative paths. Retry from the repository root when added paths are outside that directory.',
       'Preparation recovery requires a local POSIX checkout, a regular supported index, and at most 100 MiB of tracked and nonignored untracked working data. Unsupported states fail before preparation. Ignored files, external symlink targets, and background writers are outside recovery coverage; this is not a sandbox.',
       'On preparation failure, cancellation, rejection, or ownership conflict, read the reported recovery instructions. Working edits remain; never restore a saved index or working files over concurrent user edits. Post-commit tree, path, and message guards remain enabled.',
       'Working root tau.json selects prepare. The actual staged candidate selects check, checkMessage, and hooks. hooks defaults to run; only explicit staged hooks: skip disables hooks for the final Git commit. Never bypass hooks ad hoc through --no-verify, core.hooksPath, environment variables, or config changes to evade a failure.',
-      'checkMessage is optional argv without an implicit shell. Tau appends an absolute temporary full-message file path and runs it in the staged candidate. Missing message checks are unavailable, not passed. Message-only edits rerun only message validation. A failed check cannot be waived; checker mutations stop the group.',
+      'checkMessage is optional argv without an implicit shell. Tau appends an absolute temporary full-message file path. Initial project and message checks share a staged working window. Message edits rerun only message validation. Missing checks are unavailable, not passed. Failed checks cannot be waived; checker mutations stop the group.',
+      'Pending recovery blocks commits and staging cleanup. Stop writers and inspect the reported archives; never overwrite concurrent staging or HEAD. Partial hiding or restoration needs manual inspection. Successful recovery archives remain because displaced files may receive late writes. Checkers must keep children in their POSIX process group; detached writers and ignored dependencies are outside recovery coverage.',
       'Messages reject NUL. Body CRLF and CR become LF; other whitespace is preserved. Nonempty bodies end in LF. Tau commits the displayed normalized message through git commit --cleanup=verbatim -F. Hook message rewrites undo the commit and require retry with the final message.',
       'Use a conventional commit subject.',
       'Do not commit sensitive files such as .env or SSH keys.',
@@ -971,58 +983,8 @@ export const createCommitTool = (
 
       const preparation = await readPreparation(pi, context.cwd);
 
-      // Hide model latency by reviewing the next group while the user reads the overlay.
-      // Approve-all starts reviews for every remaining group.
-      const plan =
-        !preparation.command &&
-        parameters.groups.length > 1 &&
-        (await listStagedPaths(pi, context.cwd)).length === 0
-          ? await planGroupReviews(pi, context.cwd, parameters.groups, signal)
-          : [];
-      const started = new Map<number, Promise<CommentReview>>();
-
-      const startReview = (index: number) => {
-        const step = plan[index];
-        const group = parameters.groups[index];
-
-        if (!step || !group || started.has(index)) {
-          return;
-        }
-
-        const pending = review(pi, context, signal, {
-          tree: step.tree,
-          head: step.baseTree,
-          ...(group.commentDispute ? { dispute: group.commentDispute } : {}),
-        });
-
-        // A review started ahead of time may reject before its group awaits it.
-        pending.catch(() => {});
-        started.set(index, pending);
-      };
-
-      const requestReview =
-        (index: number): RequestReview =>
-        (snapshot, baseTree) => {
-          const step = plan[index];
-          const planned =
-            step?.tree === snapshot.tree &&
-            step?.baseTree === baseTree &&
-            parameters.groups[index]?.commentDispute === snapshot.dispute;
-
-          if (planned) {
-            startReview(index);
-
-            const pending = started.get(index);
-
-            if (pending) {
-              return pending;
-            }
-          }
-
-          return review(pi, context, signal, snapshot);
-        };
-
-      startReview(0);
+      // Review runs only after restoration, never speculatively across a later check window.
+      const requestReview: RequestReview = (snapshot) => review(pi, context, signal, snapshot);
 
       for (const [index, group] of parameters.groups.entries()) {
         const groupLabel = `${index + 1}/${parameters.groups.length}`;
@@ -1033,6 +995,7 @@ export const createCommitTool = (
         let temporaryCleanup = '';
 
         try {
+          await assertNoPendingRecovery(gitDirectory);
           const prefix = preparation.command ? await repositoryPathPrefix(pi, context.cwd) : '';
 
           if (preparation.command) {
@@ -1063,7 +1026,7 @@ export const createCommitTool = (
             context,
             signal,
             reviews,
-            requestReview(index),
+            requestReview,
             {
               preapproved,
               autoApprove: async () => {
@@ -1097,11 +1060,7 @@ export const createCommitTool = (
                   const fingerprint = await hashFiles(pi, context.cwd, remaining.files);
 
                   approval.seen.set(remainingIndex, fingerprint);
-                  startReview(remainingIndex);
                 }
-              },
-              prefetchNext: () => {
-                startReview(index + 1);
               },
             },
           );
@@ -1143,11 +1102,21 @@ export const createCommitTool = (
             })),
           );
         } catch (error) {
-          let cleanupDiagnostic = temporaryDirectory
-            ? await cleanupTemporary(temporaryDirectory)
-            : temporaryCleanup;
+          const recovered = await assertNoPendingRecovery(gitDirectory).then(
+            () => true,
+            () => false,
+          );
+          let cleanupDiagnostic = temporaryCleanup;
 
-          if (ownership && !completed) {
+          if (!recovered) {
+            cleanupDiagnostic = `Pending recovery: temporary check data retained at ${temporaryDirectory}. No staging cleanup was attempted.`;
+          } else if (error instanceof MessageMutationError) {
+            cleanupDiagnostic = `Checker message output retained at ${temporaryDirectory}.`;
+          } else if (temporaryDirectory) {
+            cleanupDiagnostic = await cleanupTemporary(temporaryDirectory);
+          }
+
+          if (ownership && !completed && recovered) {
             try {
               await ownership.cleanup();
             } catch (cleanupError) {

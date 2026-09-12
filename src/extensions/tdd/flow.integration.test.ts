@@ -454,6 +454,7 @@ it('allows commit and its project preparation writes outside the file-tool guard
 }) => {
   const { cwd, session, call } = await createHarness(onTestFinished);
   const git = (arguments_: string[]) => promisify(execFile)('git', arguments_, { cwd });
+  await writeFile(join(cwd, '.git/info/exclude'), 'node_modules\n');
 
   await git(['config', 'user.name', 'Tau Test']);
   await git(['config', 'user.email', 'tau@example.com']);

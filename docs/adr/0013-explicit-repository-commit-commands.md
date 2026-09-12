@@ -53,3 +53,8 @@ later contract is optional message-check argv and `hooks: run|skip`, defaulting 
 - Preparation must be safe to rerun; Tau does not undo its working changes.
 - Command selection is ecosystem-neutral, but dependency sharing is not: existing optional
   `node_modules` sharing remains. General dependency setup is outside this decision.
+
+## See also
+
+- [Checks in the existing checkout](./0018-checks-in-the-existing-checkout.md) replaces temporary
+  checkouts and dependency sharing.

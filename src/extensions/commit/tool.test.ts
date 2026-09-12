@@ -20,6 +20,7 @@ import { promisify } from 'node:util';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import * as checker from './checker.js';
 import { commentPolicyHash, reviewGit } from './commentReview.js';
 import type { CommentReview, reviewComments } from './commentReview.js';
 import type { CommitInput } from './tool.js';
@@ -48,8 +49,15 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 const execFileAsync = promisify(execFile);
 
 const temporaryDirectories: string[] = [];
+const realChecker = checker.runChecker;
+const useCheckerExec = (exec: ExtensionAPI['exec']) => {
+  vi.spyOn(checker, 'runChecker').mockImplementation(([command, ...arguments_], root, signal) =>
+    exec(command!, arguments_, { cwd: root, ...(signal ? { signal } : {}), timeout: 600_000 }),
+  );
+};
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -229,6 +237,205 @@ const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)
 
   return { custom, editor, exec, context, input, execute, previews, gitDirectory };
 };
+
+it('restores a shared initial check window before review and message-only correction', async () => {
+  const root = await createTemporaryRepository();
+  const output = await mkdtemp(join(tmpdir(), 'tau-check-events-'));
+  temporaryDirectories.push(output);
+  const events = join(output, 'events');
+  const script = `const fs = require('node:fs'); fs.appendFileSync(${JSON.stringify(events)}, process.argv[2] + '\\n'); if (process.argv[2] === 'message' && !fs.readFileSync(process.argv[3], 'utf8').includes('corrected')) process.exitCode = 1;`;
+  await writeRepositoryFile(root, 'check.cjs', script);
+  await writeRepositoryFile(
+    root,
+    'tau.json',
+    JSON.stringify({
+      check: [process.execPath, 'check.cjs', 'project'],
+      checkMessage: [process.execPath, 'check.cjs', 'message'],
+    }),
+  );
+  await writeRepositoryFile(root, 'file', 'base');
+  await git(root, ['add', '.']);
+  await git(root, ['commit', '-m', 'base']);
+  await writeRepositoryFile(root, 'file', 'changed');
+  await writeRepositoryFile(root, 'check.cjs', 'unstaged script');
+  const review = vi.fn<typeof reviewComments>(async () => {
+    expect(await readFile(events, 'utf8')).toBe('project\nmessage\n');
+    expect(await readFile(join(root, 'check.cjs'), 'utf8')).toBe('unstaged script');
+    await expect(readFile(join(root, '.git/tau-recovery/pending/archive'))).rejects.toThrow(
+      /ENOENT/,
+    );
+
+    return { findings: [] };
+  });
+  let approvals = 0;
+  const context = {
+    cwd: root,
+    hasUI: true,
+    ui: {
+      custom: async () => {
+        expect(await readFile(join(root, 'check.cjs'), 'utf8')).toBe('unstaged script');
+        approvals += 1;
+
+        return approvals === 1 ? 'subject' : 'approve';
+      },
+      editor: async () => 'feat: corrected',
+    },
+  };
+  const tool = createReviewedCommitTool(
+    {
+      exec: (command, arguments_, options) => runCommand(command, arguments_, options?.cwd ?? root),
+    },
+    review,
+  );
+
+  await tool.execute(
+    'call',
+    { groups: [{ files: ['file'], subject: 'feat: initial' }] },
+    undefined,
+    undefined,
+    context as never,
+  );
+
+  expect(review).toHaveBeenCalledTimes(1);
+  expect(await readFile(events, 'utf8')).toBe('project\nmessage\nmessage\n');
+  const archives = await readdir(join(root, '.git/tau-recovery'));
+  expect(archives.filter((name) => name.startsWith('prepare-'))).toHaveLength(2);
+  expect(await getStoredCommitMessage(root)).toBe('feat: corrected\n');
+});
+
+it.each([false, true])(
+  'pending check recovery blocks later staging cleanup with preparation %s',
+  async (prepared) => {
+    const root = await createTemporaryRepository();
+    await writeRepositoryFile(root, 'requested', 'base');
+    await git(root, ['add', '.']);
+    await git(root, ['commit', '-m', 'base']);
+    const head = await git(root, ['rev-parse', 'HEAD']);
+    await writeRepositoryFile(root, 'requested', 'original staged');
+    await git(root, ['add', 'requested']);
+    await writeRepositoryFile(root, 'requested', 'requested working');
+    await writeRepositoryFile(
+      root,
+      'tau.json',
+      JSON.stringify({
+        ...(prepared ? { prepare: ['true'] } : {}),
+        check: [
+          process.execPath,
+          '-e',
+          "require('node:fs').writeFileSync('concurrent', 'checker staging'); require('node:child_process').execFileSync('git', ['add', 'concurrent']);",
+        ],
+      }),
+    );
+    const review = vi.fn<typeof reviewComments>().mockResolvedValue({ findings: [] });
+    const exec = vi.fn<ExtensionAPI['exec']>((command, arguments_, options) =>
+      runCommand(command, arguments_, options?.cwd ?? root),
+    );
+    const tool = createReviewedCommitTool({ exec }, review);
+    const input = { groups: [{ files: ['requested', 'tau.json'], subject: 'feat: check' }] };
+
+    await expect(
+      tool.execute('call', input, undefined, undefined, confirmedContext(root)),
+    ).rejects.toThrow(/Pending recovery/);
+    const index = await readFile(join(root, '.git/index'));
+    expect(await git(root, ['show', ':concurrent'])).toBe('checker staging');
+    expect(await git(root, ['show', ':requested'])).toBe('requested working');
+    expect(await git(root, ['rev-parse', 'HEAD'])).toBe(head);
+    expect(review).not.toHaveBeenCalled();
+    exec.mockClear();
+    await expect(
+      tool.execute('retry', input, undefined, undefined, confirmedContext(root)),
+    ).rejects.toThrow(/Commit blocked/);
+    expect(await readFile(join(root, '.git/index'))).toEqual(index);
+    expect(exec.mock.calls).toHaveLength(1);
+  },
+);
+
+it('does not unstage concurrent changes before a message-only retry', async () => {
+  const root = await createTemporaryRepository();
+  await writeRepositoryFile(root, 'tau.json', JSON.stringify({ checkMessage: ['true'] }));
+  await writeRepositoryFile(root, 'requested', 'base');
+  await git(root, ['add', '.']);
+  await git(root, ['commit', '-m', 'base']);
+  await writeRepositoryFile(root, 'requested', 'candidate');
+  let index: Buffer | undefined;
+  const context = {
+    cwd: root,
+    hasUI: true,
+    ui: {
+      custom: async () => {
+        await writeRepositoryFile(root, 'requested', 'concurrent');
+        await git(root, ['add', 'requested']);
+        index = await readFile(join(root, '.git/index'));
+
+        return 'subject';
+      },
+      editor: async () => 'feat: edited',
+    },
+  };
+  const tool = createCommitTool({
+    exec: (command, arguments_, options) => runCommand(command, arguments_, options?.cwd ?? root),
+  });
+
+  await expect(
+    tool.execute(
+      'call',
+      { groups: [{ files: ['requested'], subject: 'feat: initial' }] },
+      undefined,
+      undefined,
+      context as never,
+    ),
+  ).rejects.toThrow(/changed/);
+  expect(await git(root, ['show', ':requested'])).toBe('concurrent');
+  expect(await readFile(join(root, '.git/index'))).toEqual(index);
+});
+
+it('blocks a recovery reservation made during approval before committing', async () => {
+  const { execute, custom, exec, gitDirectory } = fakeCommit(['approve']);
+  custom.mockImplementationOnce(async () => {
+    await mkdir(join(gitDirectory, 'tau-recovery/pending'), { recursive: true });
+
+    return 'approve';
+  });
+
+  await expect(execute()).rejects.toThrow(/Commit blocked/);
+  expect(exec.mock.calls.filter(([, arguments_]) => arguments_.includes('commit'))).toHaveLength(0);
+});
+
+it('restores working files but retains both messages when a checker rewrites the message', async () => {
+  const root = await createTemporaryRepository();
+  const marker = join(root, '.git/message-path');
+  await writeRepositoryFile(
+    root,
+    'tau.json',
+    JSON.stringify({
+      checkMessage: [
+        process.execPath,
+        '-e',
+        `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(marker)}, process.argv[1]); fs.writeFileSync(process.argv[1], 'checker rewrite');`,
+      ],
+    }),
+  );
+  await writeRepositoryFile(root, 'requested', 'value');
+  await writeRepositoryFile(root, 'untracked', 'user bytes');
+  const tool = createCommitTool({
+    exec: (command, arguments_, options) => runCommand(command, arguments_, options?.cwd ?? root),
+  });
+
+  await expect(
+    tool.execute(
+      'call',
+      { groups: [{ files: ['requested', 'tau.json'], subject: 'feat: original' }] },
+      undefined,
+      undefined,
+      confirmedContext(root),
+    ),
+  ).rejects.toThrow(/Message check changed/);
+  const message = await readFile(marker, 'utf8');
+  temporaryDirectories.push(dirname(message));
+  expect(await readFile(join(root, 'untracked'), 'utf8')).toBe('user bytes');
+  expect(await readFile(message, 'utf8')).toBe('checker rewrite');
+  expect(await readFile(`${message}.original`, 'utf8')).toBe('feat: original\n');
+});
 
 it('checks the absolute fixture Git directory in mocked commit flows', async () => {
   const { execute, exec, gitDirectory } = fakeCommit(['approve']);
@@ -1739,6 +1946,7 @@ it('rejects a staged candidate whose project check fails despite an unstaged fix
 
 it('checks the first commit and leaves unrelated working changes untouched', async () => {
   const repositoryDirectory = await createTemporaryRepository();
+  await writeFile(join(repositoryDirectory, '.git/info/exclude'), 'node_modules\n');
 
   await writeRepositoryFile(
     repositoryDirectory,
@@ -1822,14 +2030,14 @@ it('returns cancelled when aborted while the project check runs', async () => {
   );
   await writeRepositoryFile(repositoryDirectory, 'check.cjs', '');
 
-  const commitTool = createCommitTool({
-    exec(command: string, commandArguments: string[], options?: { cwd?: string }) {
-      if (command === 'node' && commandArguments.includes('check.cjs')) {
-        controller.abort();
-      }
+  vi.spyOn(checker, 'runChecker').mockImplementation(async (command, root, signal) => {
+    controller.abort();
 
-      return runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory);
-    },
+    return realChecker(command, root, signal);
+  });
+  const commitTool = createCommitTool({
+    exec: (command, arguments_, options) =>
+      runCommand(command, arguments_, options?.cwd ?? repositoryDirectory),
   });
 
   const result = await commitTool.execute(
@@ -1902,7 +2110,7 @@ it('returns cancelled when aborted while project preparation runs', async () => 
 });
 
 it.each(['pass', 'fail', 'killed', 'cancel'] as const)(
-  'cleans up the candidate after check result: %s',
+  'restores the checkout after check result: %s',
   async (outcome) => {
     const repositoryDirectory = await createTemporaryRepository();
     const controller = new AbortController();
@@ -1914,29 +2122,29 @@ it.each(['pass', 'fail', 'killed', 'cancel'] as const)(
       JSON.stringify({ check: ['check-command', ''] }),
     );
 
-    const tool = createCommitTool({
-      exec: (command, arguments_, options) => {
-        if (command !== 'check-command') {
-          return runCommand(command, arguments_, options?.cwd ?? repositoryDirectory);
-        }
+    const exec: ExtensionAPI['exec'] = (command, arguments_, options) => {
+      if (command !== 'check-command') {
+        return runCommand(command, arguments_, options?.cwd ?? repositoryDirectory);
+      }
 
-        candidateDirectory = options?.cwd ?? '';
-        expect(candidateDirectory).not.toBe(repositoryDirectory);
-        expect(arguments_).toEqual(['']);
-        expect(options).toMatchObject({ signal: controller.signal, timeout: 600_000 });
+      candidateDirectory = options?.cwd ?? '';
+      expect(candidateDirectory).toBe(repositoryDirectory);
+      expect(arguments_).toEqual(['']);
+      expect(options).toMatchObject({ signal: controller.signal, timeout: 600_000 });
 
-        if (outcome === 'cancel') {
-          controller.abort();
-        }
+      if (outcome === 'cancel') {
+        controller.abort();
+      }
 
-        return Promise.resolve({
-          code: outcome === 'fail' ? 1 : 0,
-          killed: outcome === 'killed',
-          stdout: '',
-          stderr: 'check diagnostic',
-        });
-      },
-    });
+      return Promise.resolve({
+        code: outcome === 'fail' ? 1 : 0,
+        killed: outcome === 'killed',
+        stdout: '',
+        stderr: 'check diagnostic',
+      });
+    };
+    useCheckerExec(exec);
+    const tool = createCommitTool({ exec });
     const result = tool.execute(
       'cleanup',
       {
@@ -1961,12 +2169,15 @@ it.each(['pass', 'fail', 'killed', 'cancel'] as const)(
     expect(message).toMatch(expected[outcome]);
 
     expect(candidateDirectory).not.toBe('');
-    await expect(readFile(join(candidateDirectory, 'tau.json'))).rejects.toThrow(/ENOENT/);
+    expect(await readFile(join(candidateDirectory, 'tau.json'), 'utf8')).toContain('check-command');
+    await expect(
+      readFile(join(candidateDirectory, '.git/tau-recovery/pending/archive')),
+    ).rejects.toThrow(/ENOENT/);
     expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
   },
 );
 
-it('rejects check-time formatting without modifying the working file', async () => {
+it('rejects check-time formatting and retains original and checker bytes', async () => {
   const repositoryDirectory = await createTemporaryRepository();
 
   await writeRepositoryFile(
@@ -1990,10 +2201,21 @@ it('rejects check-time formatting without modifying the working file', async () 
         },
       ],
     }),
-  ).rejects.toThrow('Project check changed tracked files');
+  ).rejects.toThrow(/Checker changed.*Pending recovery/s);
   expect(await readFile(join(repositoryDirectory, 'value.cjs'), 'utf8')).toBe(
-    'module.exports = (2);',
+    'module.exports = 2;',
   );
+  const archive = await readFile(
+    join(repositoryDirectory, '.git/tau-recovery/pending/archive'),
+    'utf8',
+  );
+  const saved = await readFile(
+    join(repositoryDirectory, '.git/tau-recovery', archive, 'working.json'),
+    'utf8',
+  );
+  expect(JSON.parse(saved)).toMatchObject({
+    'value.cjs': { content: Buffer.from('module.exports = (2);').toString('base64') },
+  });
 });
 
 describe('reviewGit', () => {
@@ -2052,6 +2274,7 @@ describe('message policy', () => {
       'message.cjs',
       "require('node:assert').equal(process.argv[2], '');",
     );
+    useCheckerExec(exec);
     const tool = createReviewedCommitTool({ exec }, review);
     const result = await tool.execute(
       'messages',
@@ -2084,7 +2307,7 @@ describe('message policy', () => {
     expect(result.details.groups[0]?.preparationAddedFiles).toEqual(['generated']);
     expect(review).toHaveBeenCalledTimes(1);
     expect(exec.mock.calls.filter(([, arguments_]) => arguments_.includes('clone'))).toHaveLength(
-      1,
+      0,
     );
     expect(
       exec.mock.calls.filter(
@@ -2098,7 +2321,8 @@ describe('message policy', () => {
     ).toHaveLength(1);
     expect(new Set(candidates).size).toBe(1);
     await expect(readFile(messagePaths[0]!)).rejects.toThrow(/ENOENT/);
-    await expect(readdir(candidates[0]!)).rejects.toThrow(/ENOENT/);
+    expect(candidates).toEqual([directory, directory, directory]);
+    expect(await readdir(directory)).toContain('tau.json');
   });
 
   it('uses staged skip only for final commit and leaves human hooks intact', async () => {
@@ -2133,7 +2357,7 @@ describe('message policy', () => {
       await writeRepositoryFile(
         directory,
         `.human-hooks/${hook}`,
-        `#!/bin/sh\nprintf '${hook}\\n' >> hooks.log\n`,
+        `#!/bin/sh\nprintf '${hook}\\n' >> .git/hooks.log\n`,
       );
       await chmod(join(directory, `.human-hooks/${hook}`), 0o755);
     }
@@ -2170,10 +2394,16 @@ describe('message policy', () => {
         .every(([, arguments_]) => arguments_.includes('commit')),
     ).toBe(true);
     await expect(readdir(emptyHooks)).rejects.toThrow(/ENOENT/);
-    await expect(readFile(join(directory, 'hooks.log'))).rejects.toThrow(/ENOENT/);
+    const recoveryHooks = await readFile(join(directory, '.git/hooks.log'), 'utf8');
+    expect(
+      recoveryHooks
+        .trim()
+        .split('\n')
+        .every((hook) => hook === 'reference-transaction'),
+    ).toBe(true);
     expect(await git(directory, ['config', '--get', 'core.hooksPath'])).toBe('.human-hooks\n');
     await git(directory, ['commit', '--allow-empty', '-m', 'test: human']);
-    const log = await readFile(join(directory, 'hooks.log'), 'utf8');
+    const log = await readFile(join(directory, '.git/hooks.log'), 'utf8');
     for (const hook of hooks) {
       expect(log).toContain(hook);
     }
@@ -2260,13 +2490,7 @@ describe('message policy', () => {
     ).rejects.toThrow(/Message check failed/);
   });
 
-  it('hard-stops mutating and killed message checkers and cleans every temporary path', async () => {
-    const directory = await createTemporaryRepository();
-    await writeRepositoryFile(
-      directory,
-      'tau.json',
-      JSON.stringify({ checkMessage: ['message-command'] }),
-    );
+  it('hard-stops mutating and killed message checkers and retains pending work', async () => {
     for (const outcome of [
       'message',
       'tracked',
@@ -2280,6 +2504,12 @@ describe('message policy', () => {
       'abort',
       'throw',
     ] as const) {
+      const directory = await createTemporaryRepository();
+      await writeRepositoryFile(
+        directory,
+        'tau.json',
+        JSON.stringify({ checkMessage: ['message-command'] }),
+      );
       const controller = new AbortController();
       let candidate = '';
       let message = '';
@@ -2330,6 +2560,7 @@ describe('message policy', () => {
           stderr: 'killed diagnostic',
         };
       };
+      useCheckerExec(exec);
       const tool = createCommitTool({ exec });
       const result = await tool
         .execute(
@@ -2346,14 +2577,29 @@ describe('message policy', () => {
       const expected: Record<string, RegExp> = {
         abort: /Commit cancelled/,
         killed: /Message check.*killed diagnostic/s,
-        throw: /spawn failed/,
+        throw: /Pending recovery/,
       };
-      expect(result).toMatch(expected[outcome] ?? /Message check changed/);
+      expect(result).toMatch(expected[outcome] ?? /Message check changed|Checker changed/);
       expect(custom).not.toHaveBeenCalled();
       expect(candidate).not.toBe('');
-      await expect(readdir(candidate)).rejects.toThrow(/ENOENT/);
-      await expect(readFile(message)).rejects.toThrow(/ENOENT/);
-      expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
+      expect(candidate).toBe(directory);
+      const pending = !['message', 'message-fifo', 'killed', 'abort'].includes(outcome);
+      const reservation = await readdir(join(directory, '.git/tau-recovery'));
+      expect(reservation.includes('pending')).toBe(pending);
+      const retainsOutput = pending || outcome === 'message' || outcome === 'message-fifo';
+
+      if (retainsOutput) {
+        temporaryDirectories.push(dirname(message));
+      }
+
+      const retainedMessage = await readdir(dirname(message)).then(
+        () => true,
+        () => false,
+      );
+      expect(retainedMessage).toBe(retainsOutput);
+      expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe(
+        pending ? 'tau.json\n' : '',
+      );
     }
   });
 
@@ -2424,17 +2670,17 @@ describe('message policy', () => {
     );
     for (const mutation of ['change', 'delete', 'fifo', 'symlink']) {
       let messagePath = '';
-      const tool = createCommitTool({
-        exec: (command, arguments_, options) => {
-          if (command === 'message-command') {
-            messagePath = arguments_.at(-1)!;
+      const exec: ExtensionAPI['exec'] = (command, arguments_, options) => {
+        if (command === 'message-command') {
+          messagePath = arguments_.at(-1)!;
 
-            return Promise.resolve({ code: 0, killed: false, stdout: '', stderr: '' });
-          }
+          return Promise.resolve({ code: 0, killed: false, stdout: '', stderr: '' });
+        }
 
-          return runCommand(command, arguments_, options?.cwd ?? directory);
-        },
-      });
+        return runCommand(command, arguments_, options?.cwd ?? directory);
+      };
+      useCheckerExec(exec);
+      const tool = createCommitTool({ exec });
       const custom = async () => {
         if (mutation === 'change') {
           await writeFile(messagePath, 'tampered');
@@ -2476,33 +2722,46 @@ describe('message policy', () => {
     const leftovers: string[] = [];
     let checkCount = 0;
     let controller = new AbortController();
-    const tool = createReviewedCommitTool(
-      {
-        exec: (command, arguments_, options) => {
-          if (command === 'message-command') {
-            checkCount += 1;
-            leftovers.push(dirname(arguments_.at(-1)!));
-            vi.mocked(rm).mockRejectedValueOnce(new Error('cleanup denied'));
-
-            if (checkCount === 4 || checkCount === 6) {
-              controller.abort();
-            }
-
-            if (checkCount === 6) {
-              vi.mocked(rename).mockRejectedValueOnce(new Error('index cleanup denied'));
-            }
-
-            return Promise.resolve({
-              code: checkCount === 2 ? 1 : 0,
-              killed: false,
-              stdout: '',
-              stderr: 'primary checker failure',
-            });
+    const originalFilesystem = await vi.importActual<typeof fileSystem>('node:fs/promises');
+    const exec: ExtensionAPI['exec'] = (command, arguments_, options) => {
+      if (command === 'message-command') {
+        checkCount += 1;
+        leftovers.push(dirname(arguments_.at(-1)!));
+        vi.mocked(rm).mockImplementation(async (path, removalOptions) => {
+          if (leftovers.includes(String(path))) {
+            throw new Error('cleanup denied');
           }
 
-          return runCommand(command, arguments_, options?.cwd ?? directory);
-        },
-      },
+          await originalFilesystem.rm(path, removalOptions);
+        });
+
+        if (checkCount === 4 || checkCount === 6) {
+          controller.abort();
+        }
+
+        if (checkCount === 6) {
+          vi.mocked(rename).mockImplementation(async (source, destination) => {
+            if (String(source).endsWith('/index.lock')) {
+              throw new Error('index cleanup denied');
+            }
+
+            await originalFilesystem.rename(source, destination);
+          });
+        }
+
+        return Promise.resolve({
+          code: checkCount === 2 ? 1 : 0,
+          killed: false,
+          stdout: '',
+          stderr: 'primary checker failure',
+        });
+      }
+
+      return runCommand(command, arguments_, options?.cwd ?? directory);
+    };
+    useCheckerExec(exec);
+    const tool = createReviewedCommitTool(
+      { exec },
       async () => ({ findings: [] }),
       () => true,
     );
@@ -2560,14 +2819,15 @@ describe('message policy', () => {
         expect(failure).toContain(prepared ? 'index cleanup denied' : 'Commit cancelled');
       }
     } finally {
-      vi.mocked(rename).mockClear();
+      vi.mocked(rename).mockImplementation(originalFilesystem.rename);
+      vi.mocked(rm).mockImplementation(originalFilesystem.rm);
       await Promise.all(leftovers.map((path) => rm(path, { recursive: true, force: true })));
     }
   });
 
-  it('cleans candidates after real message subprocess termination and cancellation', async () => {
+  it('restores after real message subprocess termination and cancellation', async () => {
     const directory = await createTemporaryRepository();
-    const processFile = join(directory, 'checker-process');
+    const processFile = join(directory, '.git/checker-process');
     for (const abort of [false, true]) {
       const controller = new AbortController();
       await rm(processFile, { force: true });
@@ -2584,34 +2844,31 @@ describe('message policy', () => {
       let candidate = '';
       let message = '';
       const custom = vi.fn<() => Promise<string>>().mockResolvedValue('approve');
-      const tool = createCommitTool({
-        exec: async (command, arguments_, options) => {
-          const pending = runCommand(
-            command,
-            arguments_,
-            options?.cwd ?? directory,
-            options?.signal,
-          );
-          if (command === 'node') {
-            candidate = options!.cwd!;
-            message = arguments_.at(-1)!;
-            if (abort) {
-              try {
-                for (let attempt = 0; attempt < 100; attempt += 1) {
-                  const ready = await readFile(processFile).catch(() => null);
-                  if (ready) {
-                    break;
-                  }
-                  await delay(20);
+      vi.spyOn(checker, 'runChecker').mockImplementation(async (command, root, signal) => {
+        const pending = realChecker(command, root, signal);
+        if (command[0] === 'node') {
+          candidate = root;
+          message = command.at(-1)!;
+          if (abort) {
+            try {
+              for (let attempt = 0; attempt < 100; attempt += 1) {
+                const ready = await readFile(processFile).catch(() => null);
+                if (ready) {
+                  break;
                 }
-              } finally {
-                controller.abort();
+                await delay(20);
               }
+            } finally {
+              controller.abort();
             }
           }
+        }
 
-          return pending;
-        },
+        return pending;
+      });
+      const tool = createCommitTool({
+        exec: (command, arguments_, options) =>
+          runCommand(command, arguments_, options?.cwd ?? directory),
       });
       const result = await tool
         .execute(
@@ -2629,7 +2886,10 @@ describe('message policy', () => {
       expect(custom).not.toHaveBeenCalled();
       const processId = Number(await readFile(processFile, 'utf8'));
       expect(() => process.kill(processId, 0)).toThrow(/ESRCH/);
-      await expect(readdir(candidate)).rejects.toThrow(/ENOENT/);
+      expect(candidate).toBe(directory);
+      await expect(readFile(join(candidate, '.git/tau-recovery/pending/archive'))).rejects.toThrow(
+        /ENOENT/,
+      );
       await expect(readFile(message)).rejects.toThrow(/ENOENT/);
       expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
     }
@@ -2642,20 +2902,20 @@ describe('message policy', () => {
       'tau.json',
       JSON.stringify({ checkMessage: ['message-command'] }),
     );
-    const tool = createCommitTool({
-      exec: async (command, arguments_, options) => {
-        if (command === 'message-command') {
-          const message = arguments_.at(-1)!;
-          const replacement = join(dirname(message), 'replacement');
-          await rename(message, replacement);
-          await symlink(replacement, message);
+    const exec: ExtensionAPI['exec'] = async (command, arguments_, options) => {
+      if (command === 'message-command') {
+        const message = arguments_.at(-1)!;
+        const replacement = join(dirname(message), 'replacement');
+        await rename(message, replacement);
+        await symlink(replacement, message);
 
-          return { code: 0, killed: false, stdout: '', stderr: '' };
-        }
+        return { code: 0, killed: false, stdout: '', stderr: '' };
+      }
 
-        return runCommand(command, arguments_, options?.cwd ?? directory);
-      },
-    });
+      return runCommand(command, arguments_, options?.cwd ?? directory);
+    };
+    useCheckerExec(exec);
+    const tool = createCommitTool({ exec });
 
     await expect(
       tool.execute(
@@ -2909,7 +3169,7 @@ describe('commitTool.execute', () => {
     expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
   });
 
-  it('reviews the next group while the current overlay is open', async () => {
+  it('reviews each group only at its turn before opening its overlay', async () => {
     const { repositoryDirectory, groups } = await createPrefetchRepository();
     const review = vi.fn<typeof reviewComments>().mockResolvedValue({ findings: [] });
     const reviewsWhenOverlayOpened: number[] = [];
@@ -2934,14 +3194,14 @@ describe('commitTool.execute', () => {
 
     await tool.execute('batch', { groups }, undefined, undefined, context as never);
 
-    expect(reviewsWhenOverlayOpened).toEqual([2, 3, 3]);
+    expect(reviewsWhenOverlayOpened).toEqual([1, 2, 3]);
     expect(review).toHaveBeenCalledTimes(3);
     expect(
       (await git(repositoryDirectory, ['log', '--format=%s', '-3'])).trim().split('\n'),
     ).toEqual(['feat: add three', 'feat: add two', 'feat: add one']);
   });
 
-  it('re-reviews a group whose prefetch assumed an earlier group would commit', async () => {
+  it('reviews the actual later tree after an earlier group is skipped', async () => {
     const { repositoryDirectory, groups } = await createPrefetchRepository();
     const reviewed: string[][] = [];
 
@@ -2969,11 +3229,9 @@ describe('commitTool.execute', () => {
       ui: { custom: () => Promise.resolve(choices.shift()) },
     } as never);
 
-    // Skipping two.txt invalidates the third group's planned tree, so it needs another review.
     expect(reviewed).toEqual([
       ['base.txt', 'one.txt'],
       ['base.txt', 'one.txt', 'two.txt'],
-      ['base.txt', 'one.txt', 'three.txt', 'two.txt'],
       ['base.txt', 'one.txt', 'three.txt'],
     ]);
 
@@ -3021,7 +3279,7 @@ describe('commitTool.execute', () => {
     expect((await git(repositoryDirectory, ['rev-list', '--count', 'HEAD'])).trim()).toBe('4');
   });
 
-  it('reviews every remaining group as soon as approve all is chosen', async () => {
+  it('keeps approve-all reuse while reviewing remaining groups serially', async () => {
     const { repositoryDirectory, groups } = await createPrefetchRepository();
     const events: string[] = [];
 
@@ -3052,7 +3310,7 @@ describe('commitTool.execute', () => {
     } as never);
 
     expect(custom).toHaveBeenCalledTimes(1);
-    expect(events).toEqual(['review', 'review', 'review', 'commit', 'commit', 'commit']);
+    expect(events).toEqual(['review', 'commit', 'review', 'commit', 'review', 'commit']);
     expect((await git(repositoryDirectory, ['rev-list', '--count', 'HEAD'])).trim()).toBe('4');
   });
 
@@ -3825,7 +4083,7 @@ describe('commitTool.execute', () => {
           command === 'env' && arguments_.includes('prepare.cjs') && arguments_.includes('node'),
       ),
     ).toHaveLength(2);
-    expect(exec.mock.calls.filter(([command]) => command === 'grep')).toHaveLength(2);
+    expect(result.details.groups[1]?.projectCheck).toContain('Project check passed');
 
     const statusOutput = await git(repositoryDirectory, ['status', '--short']);
     const committedContent = await git(repositoryDirectory, ['show', 'HEAD:README.md']);

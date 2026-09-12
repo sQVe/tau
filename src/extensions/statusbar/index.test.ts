@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify, stripVTControlCharacters } from 'node:util';
@@ -76,6 +76,34 @@ const setup = (directory: string, mode = 'tui') => {
 };
 
 describe('statusbar extension', () => {
+  it('reads dirty state without refreshing the shared index', async ({ onTestFinished }) => {
+    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    await executeFile('git', ['init', '-q'], { cwd: directory });
+    await writeFile(join(directory, 'tracked'), 'same bytes');
+    await executeFile('git', ['add', 'tracked'], { cwd: directory });
+    await executeFile(
+      'git',
+      ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-qm', 'base'],
+      { cwd: directory },
+    );
+    const index = await readFile(join(directory, '.git/index'));
+    await writeFile(join(directory, 'replacement'), 'same bytes');
+    await rename(join(directory, 'replacement'), join(directory, 'tracked'));
+    await writeFile(join(directory, 'dirty'), 'user work');
+    const application = setup(directory);
+    await application.emit('session_start');
+    const footer = application.mount();
+    onTestFinished(() => footer.component.dispose?.());
+
+    await vi.waitFor(() => {
+      expect(footer.requestRender).toHaveBeenCalled();
+    });
+
+    expect(footer.component.render(100)[0]).toContain('main*');
+    expect(await readFile(join(directory, '.git/index'))).toEqual(index);
+  });
+
   it('refreshes the gate indicator from worktree state', async ({ onTestFinished }) => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
     onTestFinished(() => rm(directory, { recursive: true, force: true }));

@@ -20,13 +20,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { reviewGit } from './commentReview.js';
-import {
-  gitBytes,
-  indexIdentity,
-  readWorkingEntry,
-  snapshotPreparation,
-  workingState,
-} from './preparation.js';
+import { gitBytes, indexIdentity, readWorkingEntry, snapshotPreparation } from './preparation.js';
 import type { WorkingEntry } from './preparation.js';
 
 type Git = Pick<ExtensionAPI, 'exec'>;
@@ -265,12 +259,120 @@ const saveIndexObjects = async (root: string, commonDirectory: string, tree: str
   await gitBytes(root, ['verify-pack', `${pack}.idx`]);
 };
 
-const head = async (root: string) =>
-  (await gitBytes(root, ['rev-parse', '--verify', 'HEAD'])).toString().trim();
+const head = async (root: string) => {
+  try {
+    return (await gitBytes(root, ['rev-parse', '--verify', '--quiet', 'HEAD'])).toString().trim();
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 1) {
+      return null;
+    }
+
+    throw error;
+  }
+};
+
+// Freeze exclusions before hiding ignore files. Installed dependencies remain outside coverage.
+const ignoredPaths = async (root: string) =>
+  new TextDecoder('utf-8', { fatal: true })
+    .decode(
+      await gitBytes(root, [
+        'ls-files',
+        '--others',
+        '--ignored',
+        '--exclude-standard',
+        '--directory',
+        '-z',
+      ]),
+    )
+    .split('\0')
+    .filter(Boolean);
+
+const isExcluded = (path: string, ignored: string[]) =>
+  ignored.some(
+    (excluded) =>
+      path === excluded ||
+      `${path}/` === excluded ||
+      (excluded.endsWith('/') && path.startsWith(excluded)),
+  );
+const isIgnoreFile = (path: string) => path === '.gitignore' || path.endsWith('/.gitignore');
+export const newIgnoredArtifacts = async (
+  root: string,
+  expected: Working,
+  untouched?: Working,
+  originalIgnored: string[] = [],
+) => {
+  const knownPaths = Object.keys(expected);
+  const ignoreFiles = knownPaths.filter(isIgnoreFile);
+  let matchesExpected = true;
+  let matchesUntouched = untouched !== undefined;
+
+  for (const path of ignoreFiles) {
+    const { entry } = await readWorkingEntry(root, path);
+    matchesExpected &&= isDeepStrictEqual(entry, expected[path]);
+    matchesUntouched &&= isDeepStrictEqual(entry, untouched?.[path]);
+
+    if (!matchesExpected && !matchesUntouched) {
+      throw new Error('Recorded ignore files changed. Keep checker output for manual recovery.');
+    }
+  }
+
+  // Only per-directory rules apply to new artifacts. Changes to external Git excludes cannot hide new work.
+  const listed = await gitBytes(root, [
+    'ls-files',
+    '--others',
+    '--ignored',
+    '--exclude-per-directory=.gitignore',
+    '-z',
+  ]);
+  const paths = new TextDecoder('utf-8', { fatal: true })
+    .decode(listed)
+    .split('\0')
+    .filter(Boolean);
+  const known = new Set(knownPaths);
+
+  return paths.filter(
+    (path) => !known.has(path) && !isIgnoreFile(path) && !isExcluded(path, originalIgnored),
+  );
+};
+
+export const recoveryWorkingState = async (
+  root: string,
+  knownPaths: string[],
+  ignored: string[],
+): Promise<Working> => {
+  const paths = new Set(knownPaths);
+  const visit = async (directory: string) => {
+    for (const entry of await readdir(join(root, directory), { withFileTypes: true })) {
+      const path = directory ? `${directory}/${entry.name}` : entry.name;
+
+      if (entry.name === '.git' || isExcluded(path, ignored)) {
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        await visit(path);
+      } else {
+        paths.add(path);
+      }
+    }
+  };
+  await visit('');
+  const entries: Working = {};
+  let bytes = 0;
+
+  for (const path of [...paths].toSorted()) {
+    const snapshot = await readWorkingEntry(root, path, 100 * 1024 * 1024 - bytes);
+    bytes += snapshot.bytes;
+    entries[path] = snapshot.entry;
+  }
+
+  return entries;
+};
 
 interface Manifest {
+  ignored: string[];
   root: string;
-  head: string;
+  head: string | null;
   headFile: string;
   identity: Awaited<ReturnType<typeof indexIdentity>>;
   original: Working;
@@ -291,8 +393,9 @@ const verifyArchive = async (pi: Git, root: string, gitDirectory: string, archiv
   const value: unknown = JSON.parse(bytes.toString());
   const schema = Type.Object(
     {
+      ignored: Type.Array(Type.String()),
       root: Type.String(),
-      head: Type.String(),
+      head: Type.Union([Type.String(), Type.Null()]),
       headFile: Type.String(),
       identity: Type.Object({ entries: Type.String(), flags: Type.Array(Type.String()) }),
       original: workingSchema,
@@ -358,7 +461,12 @@ const verifyGlobal = async (root: string, gitDirectory: string, manifest: Manife
   }
 };
 
-export const saveRecovery = async (pi: Git, root: string, expectedHidden: Working) => {
+export const saveRecovery = async (
+  pi: Git,
+  root: string,
+  expectedHidden: Working,
+  candidateTree?: string,
+) => {
   const gitDirectory = (await reviewGit(pi, root, ['rev-parse', '--absolute-git-dir'])).trimEnd();
   const { directory, pending } = recoveryPaths(gitDirectory);
   await assertNoPendingRecovery(gitDirectory);
@@ -377,6 +485,7 @@ export const saveRecovery = async (pi: Git, root: string, expectedHidden: Workin
       throw new Error('External Git object storage is unsupported');
     }
 
+    const ignored = await ignoredPaths(root);
     const originalHead = await head(root);
     const headFile = (await read(join(gitDirectory, 'HEAD'))).toString('base64');
     const ownership = await snapshotPreparation(pi, root, []);
@@ -404,7 +513,15 @@ export const saveRecovery = async (pi: Git, root: string, expectedHidden: Workin
 
     const recoveryRef = (await read(join(archive, 'recovery-ref'))).toString().trim();
     const tree = (await reviewGit(pi, root, ['rev-parse', recoveryRef])).trim();
+
+    if (candidateTree && (tree !== candidateTree || !isDeepStrictEqual(hidden, expectedHidden))) {
+      throw new Error(
+        'Staging or working coverage changed since projection. Inspect concurrent work before retrying.',
+      );
+    }
+
     const manifest: Manifest = {
+      ignored,
       root,
       head: originalHead,
       headFile,
@@ -418,6 +535,15 @@ export const saveRecovery = async (pi: Git, root: string, expectedHidden: Workin
     const bytes = Buffer.from(JSON.stringify(manifest));
     await save(join(archive, 'manifest.json'), bytes);
     await save(join(archive, 'manifest.sha256'), digest(bytes));
+    await save(
+      join(archive, 'check-recovery.txt'),
+      'Stop checkers and other writers before recovery. A pending owner.lock can belong to a live or interrupted operation; never remove it while a writer may survive.\n' +
+        'working.json preserves original bytes, permissions, symlink targets and absence. manifest.json records the expected staged working state and original ignore exclusions.\n' +
+        'hidden-displaced holds original inodes moved during hiding. displaced holds inodes moved during restoration. Numeric names follow the order of paths in manifest.original. Keep both directories: open writers may still append to these files.\n' +
+        'Compare backups and current files in a separate directory. Partial hiding or restoration requires manual inspection, not stash apply or forced checkout.\n' +
+        'original-index and the recovery ref preserve staging. Never copy that index over concurrent staging or move HEAD to clear a recovery error.\n' +
+        'Keep pending until writers have stopped and working files, staging and HEAD have been inspected and recovered. Retain archives after clearing pending; deleting them may discard late writer bytes.\n',
+    );
     await syncTree(archive);
 
     const commonDirectory = (
@@ -436,7 +562,9 @@ export const saveRecovery = async (pi: Git, root: string, expectedHidden: Workin
     await verifyArchive(pi, root, gitDirectory, archive);
     await verifyGlobal(root, gitDirectory, manifest);
 
-    if (!isDeepStrictEqual(original, await workingState(root, Object.keys(original)))) {
+    if (
+      !isDeepStrictEqual(original, await recoveryWorkingState(root, Object.keys(original), ignored))
+    ) {
       throw new Error('Working state changed during backup');
     }
 
@@ -455,7 +583,9 @@ export const saveRecovery = async (pi: Git, root: string, expectedHidden: Workin
     await verifyGlobal(root, gitDirectory, manifest);
     await supportedWorking(root, original);
 
-    if (!isDeepStrictEqual(original, await workingState(root, Object.keys(original)))) {
+    if (
+      !isDeepStrictEqual(original, await recoveryWorkingState(root, Object.keys(original), ignored))
+    ) {
       throw new Error('Working state changed before authorization');
     }
 
@@ -470,20 +600,24 @@ export const saveRecovery = async (pi: Git, root: string, expectedHidden: Workin
   }
 };
 
-const restoreWorking = async (
+const replaceWorking = async (
   root: string,
   gitDirectory: string,
   archive: string,
   manifest: Manifest,
+  hiding = false,
 ) => {
-  const displaced = join(archive, 'displaced');
-  const replacements = join(archive, 'replacements');
+  const displaced = join(archive, hiding ? 'hidden-displaced' : 'displaced');
+  const replacements = join(archive, hiding ? 'hidden-replacements' : 'replacements');
   await mkdir(displaced, { mode: 0o700 });
   await mkdir(replacements, { mode: 0o700 });
   await sync(archive);
 
-  for (const [position, [path, original]] of Object.entries(manifest.original).entries()) {
-    const hidden = manifest.hidden[path];
+  const destination = hiding ? manifest.hidden : manifest.original;
+  const source = hiding ? manifest.original : manifest.hidden;
+
+  for (const [position, [path, original]] of Object.entries(destination).entries()) {
+    const hidden = source[path];
 
     if (isDeepStrictEqual(original, hidden)) {
       continue;
@@ -578,7 +712,12 @@ export const recoverPending = async (pi: Git, root: string) => {
 
     await verifyGlobal(root, gitDirectory, manifest);
     await supportedWorking(root, manifest.original);
-    const current = await workingState(root, Object.keys(manifest.original));
+    const knownPaths = Object.keys(manifest.original);
+    const ignored = [
+      ...manifest.ignored,
+      ...(await newIgnoredArtifacts(root, manifest.hidden, manifest.original, manifest.ignored)),
+    ];
+    const current = await recoveryWorkingState(root, knownPaths, ignored);
     const untouched = isDeepStrictEqual(current, manifest.original);
 
     if (!untouched && !isDeepStrictEqual(current, manifest.hidden)) {
@@ -586,17 +725,14 @@ export const recoverPending = async (pi: Git, root: string) => {
     }
 
     if (!untouched) {
-      await restoreWorking(root, gitDirectory, archive, manifest);
+      await replaceWorking(root, gitDirectory, archive, manifest);
     }
 
     await verifyGlobal(root, gitDirectory, manifest);
     await supportedWorking(root, manifest.original);
 
     if (
-      !isDeepStrictEqual(
-        await workingState(root, Object.keys(manifest.original)),
-        manifest.original,
-      )
+      !isDeepStrictEqual(await recoveryWorkingState(root, knownPaths, ignored), manifest.original)
     ) {
       throw new Error('Restoration verification failed');
     }
@@ -607,5 +743,75 @@ export const recoverPending = async (pi: Git, root: string) => {
     throw new Error(`Recovery stopped. Keep data at ${directory}. ${String(error)}`, {
       cause: error,
     });
+  }
+};
+
+export const hidePending = async (pi: Git, root: string) => {
+  const gitDirectory = (await reviewGit(pi, root, ['rev-parse', '--absolute-git-dir'])).trimEnd();
+  const { directory, pending } = recoveryPaths(gitDirectory);
+
+  try {
+    await requireDirectory(directory);
+    await requireDirectory(pending);
+    await mkdir(join(pending, 'owner.lock'), { mode: 0o700 });
+    await sync(pending);
+    const name = (await read(join(pending, 'archive'))).toString();
+
+    if (!/^prepare-[A-Za-z0-9]+$/.test(name)) {
+      throw new Error('Invalid recovery archive path');
+    }
+
+    const archive = join(directory, name);
+    const { manifest, checksum } = await verifyArchive(pi, root, gitDirectory, archive);
+
+    if ((await read(join(pending, 'ready'))).toString() !== checksum) {
+      throw new Error('Incomplete pending recovery');
+    }
+
+    await verifyGlobal(root, gitDirectory, manifest);
+    await supportedWorking(root, manifest.original);
+
+    if (
+      !isDeepStrictEqual(
+        await recoveryWorkingState(root, Object.keys(manifest.original), manifest.ignored),
+        manifest.original,
+      )
+    ) {
+      throw new Error('Working state changed before hiding');
+    }
+
+    const assertHidden = async () => {
+      await verifyGlobal(root, gitDirectory, manifest);
+      await supportedWorking(root, manifest.hidden);
+      const knownPaths = Object.keys(manifest.original);
+      const ignored = [
+        ...manifest.ignored,
+        ...(await newIgnoredArtifacts(root, manifest.hidden, undefined, manifest.ignored)),
+      ];
+
+      if (
+        !isDeepStrictEqual(await recoveryWorkingState(root, knownPaths, ignored), manifest.hidden)
+      ) {
+        throw new Error(
+          'Checker changed working files. Keep original and checker output for manual recovery.',
+        );
+      }
+    };
+    await replaceWorking(root, gitDirectory, archive, manifest, true);
+    await assertHidden();
+
+    return {
+      assertHidden,
+      async restore() {
+        // Keep ownership throughout command execution. Only this window can release it for recovery.
+        await rm(join(pending, 'owner.lock'), { recursive: true });
+        await recoverPending(pi, root);
+      },
+    };
+  } catch (error) {
+    throw new Error(
+      `Hiding stopped. Keep recovery data at ${directory}. Read the archive's check-recovery.txt. ${String(error)}`,
+      { cause: error },
+    );
   }
 };

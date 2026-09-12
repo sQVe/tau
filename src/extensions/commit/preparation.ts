@@ -18,7 +18,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { reviewGit } from './commentReview.js';
 
 const executeFile = promisify(execFile);
-const maximumBytes = 100 * 1024 * 1024;
+export const maximumWorkingBytes = 100 * 1024 * 1024;
 
 export type WorkingEntry = { mode: number; kind: 'file' | 'symlink'; content: string } | null;
 
@@ -40,11 +40,12 @@ export const gitBytes = async (
   arguments_: string[],
   index?: string,
   input?: string,
+  maximumOutputBytes = maximumWorkingBytes,
 ) => {
   const execution = executeFile('git', arguments_, {
     cwd: root,
     encoding: 'buffer',
-    maxBuffer: maximumBytes,
+    maxBuffer: maximumOutputBytes,
     env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', ...(index ? { GIT_INDEX_FILE: index } : {}) },
   });
   const sent =
@@ -100,7 +101,7 @@ export const indexIdentity = async (root: string, index?: string) => {
 export const readWorkingEntry = async (
   root: string,
   path: string,
-  remainingBytes = maximumBytes,
+  remainingBytes = maximumWorkingBytes,
 ): Promise<{ entry: WorkingEntry; bytes: number }> => {
   const absolute = join(root, path);
   let parent = dirname(absolute);
@@ -162,7 +163,7 @@ export const workingState = async (root: string, originalPaths: string[] = []) =
   let bytes = 0;
 
   for (const path of paths) {
-    const snapshot = await readWorkingEntry(root, path, maximumBytes - bytes);
+    const snapshot = await readWorkingEntry(root, path, maximumWorkingBytes - bytes);
     bytes += snapshot.bytes;
     entries.set(path, snapshot.entry);
   }
@@ -225,7 +226,9 @@ export const snapshotPreparation = async (
     await gitBytes(root, ['diff', '--cached', '--no-renames', '--name-only', '-z']),
   );
   const before = await workingState(root, staged);
-  const unstaged = pathsFrom(await gitBytes(root, ['diff', '--no-renames', '--name-only', '-z']));
+  const unstaged = pathsFrom(
+    await gitBytes(root, ['diff-files', '--no-renames', '--name-only', '-z']),
+  );
   const untracked = pathsFrom(
     await gitBytes(root, ['ls-files', '--others', '--exclude-standard', '-z']),
   );
@@ -266,12 +269,13 @@ export const snapshotPreparation = async (
     await reviewGit(pi, root, ['update-ref', recoveryRef, recoveryTree, '']);
     await writeFile(join(directory, 'recovery-ref'), `${recoveryRef}\n`, { mode: 0o600 });
 
-    if (
-      !sameIndex(originalIndex, await optionalRead(indexPath)) ||
-      JSON.stringify(before) !== JSON.stringify(await workingState(root, Object.keys(before)))
-    ) {
+    if (!sameIndex(originalIndex, await optionalRead(indexPath))) {
+      throw new Error('Index changed while taking the snapshot. Stop other writers and retry.');
+    }
+
+    if (JSON.stringify(before) !== JSON.stringify(await workingState(root, Object.keys(before)))) {
       throw new Error(
-        'Working files or index changed while taking the snapshot. Stop other writers and retry.',
+        'Working files changed while taking the snapshot. Stop other writers and retry.',
       );
     }
   } catch (error) {

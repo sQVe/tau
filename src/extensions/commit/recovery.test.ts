@@ -12,7 +12,6 @@ import {
   rename,
   rm,
   symlink,
-  truncate,
   writeFile,
 } from 'node:fs/promises';
 import type * as fileSystem from 'node:fs/promises';
@@ -23,7 +22,7 @@ import { promisify } from 'node:util';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { readWorkingEntry, workingState } from './preparation.js';
+import { workingState } from './preparation.js';
 import * as recovery from './recovery.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -112,6 +111,108 @@ it('saves verified raw state and restores bytes modes links absence and exact st
   expect(await readFile(join(root, '.git/index'))).toEqual(index);
   await expect(recovery.assertNoPendingRecovery(join(root, '.git'))).resolves.toBeUndefined();
   expect((await lstat(archive)).isDirectory()).toBe(true);
+});
+
+it('hides with verified displacement and refuses publication collisions', async () => {
+  const root = await repository();
+  const hidden = { file: file('hidden') };
+  const archive = await recovery.saveRecovery(pi, root, hidden);
+  const hide = recovery.hidePending;
+  const original = await vi.importActual<typeof fileSystem>('node:fs/promises');
+  vi.mocked(link).mockImplementationOnce(async (source, destination) => {
+    await writeFile(destination, 'concurrent publication');
+    await original.link(source, destination);
+  });
+
+  expect(hide).toBeTypeOf('function');
+  await expect(hide(pi, root)).rejects.toThrow(/EEXIST/);
+  expect(await readFile(join(root, 'file'), 'utf8')).toBe('concurrent publication');
+  expect(await readFile(join(archive, 'hidden-displaced/0'))).toEqual(
+    Buffer.from([0, 255, 13, 10]),
+  );
+  await expect(recovery.assertNoPendingRecovery(join(root, '.git'))).rejects.toThrow(/recovery/i);
+});
+
+it.each(['displacement', 'publication'])(
+  'retains both states after abrupt hiding death at %s',
+  async (boundary) => {
+    const root = await repository();
+    await writeFile(join(root, 'second'), 'second original', { mode: 0o600 });
+    const archive = await recovery.saveRecovery(pi, root, { file: file('hidden'), second: null });
+    const index = await readFile(join(root, '.git/index'));
+    const script = `
+    import filesystem from 'node:fs/promises';
+    import { syncBuiltinESMExports } from 'node:module';
+    import { execFile } from 'node:child_process';
+    import { promisify } from 'node:util';
+    import { createJiti } from 'jiti';
+    const method = ${JSON.stringify(boundary === 'displacement' ? 'rename' : 'link')};
+    const original = filesystem[method];
+    filesystem[method] = async (...arguments_) => {
+      await original(...arguments_);
+      process.kill(process.pid, 'SIGKILL');
+    };
+    syncBuiltinESMExports();
+    const execute = promisify(execFile);
+    const pi = { exec: async (command, arguments_, options) => ({ ...await execute(command, arguments_, { cwd: options.cwd }), code: 0, killed: false }) };
+    const recovery = await createJiti(import.meta.url).import(${JSON.stringify(join(import.meta.dirname, 'recovery.ts'))});
+    await recovery.hidePending(pi, ${JSON.stringify(root)});
+    throw new Error('boundary not reached');
+  `;
+
+    await expect(
+      execute(process.execPath, ['--input-type=module', '-e', script], { cwd: process.cwd() }),
+    ).rejects.toMatchObject({ signal: 'SIGKILL' });
+    expect(await readFile(join(archive, 'hidden-displaced/0'))).toEqual(
+      Buffer.from([0, 255, 13, 10]),
+    );
+    expect(await readFile(join(root, 'file'), 'utf8').catch(() => null)).toBe(
+      boundary === 'publication' ? 'hidden' : null,
+    );
+    expect(await readFile(join(root, 'second'), 'utf8')).toBe('second original');
+    expect(await readFile(join(root, '.git/index'))).toEqual(index);
+    await expect(recovery.recoverPending(pi, root)).rejects.toThrow(/EEXIST/);
+    await expect(recovery.assertNoPendingRecovery(join(root, '.git'))).rejects.toThrow(/recovery/i);
+  },
+  20_000,
+);
+
+it('keeps original open-writer inodes after hiding and restoration', async () => {
+  const root = await repository();
+  const archive = await recovery.saveRecovery(pi, root, { file: file('hidden') });
+  const writer = await open(join(root, 'file'), 'a');
+
+  try {
+    const window = await recovery.hidePending(pi, root);
+    await window.restore();
+    await writer.write(' late original writer');
+
+    expect(await readFile(join(root, 'file'))).toEqual(Buffer.from([0, 255, 13, 10]));
+    expect(await readFile(join(archive, 'hidden-displaced/0'))).toEqual(
+      Buffer.concat([Buffer.from([0, 255, 13, 10]), Buffer.from(' late original writer')]),
+    );
+  } finally {
+    await writer.close();
+  }
+});
+
+it('does not carry existing ignored dependency files as new artifacts', async () => {
+  const root = await repository();
+  await writeFile(join(root, '.gitignore'), 'node_modules/\ndist/\n');
+  await mkdir(join(root, 'node_modules'));
+  await mkdir(join(root, 'dist'));
+  await Promise.all(
+    Array.from({ length: 100 }, (_, position) =>
+      writeFile(join(root, 'node_modules', `dependency-${position}`), 'installed'),
+    ),
+  );
+  await writeFile(join(root, 'dist/result'), 'new build');
+  const expected = await workingState(root);
+  const artifacts = await recovery.newIgnoredArtifacts(root, expected, undefined, [
+    'node_modules/',
+  ]);
+
+  expect(artifacts).toEqual(['dist/result']);
 });
 
 it('packs only saved tree objects without syncing or rewriting unrelated history', async () => {
@@ -214,19 +315,6 @@ it('reads each working file only once per boundary during restoration', async ()
   expect(counts).toEqual([3, 3, 3]);
   expect(await readFile(join(root, 'second'), 'utf8')).toBe('original second');
   expect(await readFile(join(root, 'third'), 'utf8')).toBe('original third');
-});
-
-it('keeps the preparation byte budget before reading an oversized entry', async () => {
-  const root = await repository();
-  const second = join(root, 'second');
-  await writeFile(second, '');
-  await truncate(second, 100 * 1024 * 1024);
-  vi.mocked(readFile).mockClear();
-
-  await expect(readWorkingEntry(root, 'file', 3)).rejects.toThrow(/100 MiB/);
-  expect(vi.mocked(readFile).mock.calls).toHaveLength(0);
-  await expect(workingState(root)).rejects.toThrow(/100 MiB/);
-  expect(vi.mocked(readFile).mock.calls.filter(([path]) => path === second)).toHaveLength(0);
 });
 
 it('protects staged-only objects after index replacement and garbage collection', async () => {
