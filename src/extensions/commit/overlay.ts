@@ -61,7 +61,7 @@ const showCommitText = async (
     return 'abort';
   }
 
-  return context.ui.custom<'return' | 'abort' | 'assign' | 'decline'>(
+  return context.ui.custom<'return' | 'abort' | 'assign' | 'decline' | undefined>(
     (terminalInterface, theme, _keybindings, done) => {
       const onAbort = () => {
         done('abort');

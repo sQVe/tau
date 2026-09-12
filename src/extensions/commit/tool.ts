@@ -444,7 +444,7 @@ const executeGroup = async (
           signal,
         );
 
-        if (signal?.aborted || assignment === 'abort') {
+        if (signal?.aborted || assignment === 'abort' || assignment === undefined) {
           return cancelled();
         }
 
