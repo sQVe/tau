@@ -121,6 +121,7 @@ export const runnerAvailable = (cwd: string): boolean => {
 // Debian-family systems name the runtime `nodejs`, so both spellings count as a Node command.
 const nodeNames = process.platform === 'win32' ? ['node.exe'] : ['node', 'nodejs'];
 
+// oxlint-disable-next-line node/no-process-env -- Compiled Pi needs a real Node executable from the caller's PATH.
 const nodeOnPath = (path = process.env.PATH ?? '') =>
   path
     .split(delimiter)
@@ -358,6 +359,7 @@ const assertionMessage = (messages: string[], cwd: string): string => {
   return capMessage(frame == null ? headline : `${headline} (${frame})`);
 };
 
+// oxlint-disable-next-line eslint/complexity -- File errors and assertion failures share one truncation budget.
 const collectFailures = (
   report: VitestReport,
   cwd: string,
@@ -443,6 +445,7 @@ export const defaultDeps = (scope: RunTestsInput['scope'] = 'changed'): RunnerDe
   timeoutMs: scope === 'all' ? fullTimeoutMilliseconds : defaultTimeoutMilliseconds,
 });
 
+// oxlint-disable-next-line eslint/complexity -- Process failures and report validity must be classified before accepting test evidence.
 const runInDirectory = async (
   input: RunTestsInput,
   dependencies: RunnerDeps,

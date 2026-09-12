@@ -38,6 +38,7 @@ const loadPayload = async (cwd: string, paths: string[], signal: AbortSignal | u
     const absolutePath = resolve(cwd, path.replace(/^@/, '').replace(/^~(?=\/|$)/, homedir()));
 
     // Both caps are measured before reading, so an oversized request never allocates its content.
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Validate each file against the remaining byte budget before reading it.
     const stats = await stat(absolutePath).catch((error: unknown) => {
       throw inputError(error instanceof Error ? error.message : String(error));
     });
@@ -57,6 +58,7 @@ const loadPayload = async (cwd: string, paths: string[], signal: AbortSignal | u
       throw inputError('Input is too large. Split the request');
     }
 
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Serial reads preserve request order and stop at the first invalid input.
     const content = await readFile(absolutePath, 'utf8').catch((error: unknown) => {
       throw inputError(error instanceof Error ? error.message : String(error));
     });

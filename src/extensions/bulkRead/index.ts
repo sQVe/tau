@@ -27,6 +27,7 @@ export const rewriteContinuationNotice = (text: string): string =>
 const findDelegate = (ctx: ExtensionContext, reference: string) => {
   const [provider, ...id] = reference.split('/');
 
+  // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model ID, not an array callback and thisArg.
   return ctx.modelRegistry.find(provider ?? '', id.join('/'));
 };
 

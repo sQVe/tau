@@ -1,3 +1,4 @@
+/* oxlint-disable eslint/no-await-in-loop -- Recovery validates, replaces and syncs files in order; parallel writes would break ownership checks. */
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import {
@@ -141,6 +142,7 @@ export const assertNoPendingRecovery = async (gitDirectory: string) => {
   }
 };
 
+// oxlint-disable-next-line eslint/complexity -- Recovery path, content and symlink constraints are checked before any writes.
 const validateWorking = (working: Working) => {
   let bytes = 0;
 
@@ -163,7 +165,6 @@ const validateWorking = (working: Working) => {
     }
 
     if (
-      !entry ||
       !['file', 'symlink'].includes(entry.kind) ||
       !Number.isInteger(entry.mode) ||
       entry.mode < 0 ||
@@ -265,7 +266,9 @@ const saveIndexObjects = async (root: string, commonDirectory: string, tree: str
 
 const head = async (root: string) => {
   try {
-    return (await gitBytes(root, ['rev-parse', '--verify', '--quiet', 'HEAD'])).toString().trim();
+    const output = await gitBytes(root, ['rev-parse', '--verify', '--quiet', 'HEAD']);
+
+    return output.toString().trim();
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 1) {
       return null;
@@ -295,13 +298,16 @@ const ignoredPaths = async (root: string) =>
 // Git reads the global file first and info/exclude second; the last matching pattern wins.
 // Both are read before any checker runs, and git follows the same symlinks, so plain reads suffice.
 const externalExcludes = async (root: string) => {
-  const infoExclude = (
-    await gitBytes(root, ['rev-parse', '--path-format=absolute', '--git-path', 'info/exclude'])
-  )
-    .toString()
-    .trim();
+  const infoExcludeBytes = await gitBytes(root, [
+    'rev-parse',
+    '--path-format=absolute',
+    '--git-path',
+    'info/exclude',
+  ]);
+  const infoExclude = infoExcludeBytes.toString().trim();
   const globalExclude = await gitBytes(root, ['config', '--path', '--get', 'core.excludesFile'])
     .then((bytes) => bytes.toString().trim())
+    // oxlint-disable-next-line node/no-process-env -- Git resolves its default global excludes file from XDG_CONFIG_HOME.
     .catch(() => join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'git/ignore'));
   const contents = await Promise.all(
     [globalExclude, infoExclude].map((path) =>
@@ -431,7 +437,9 @@ const verifyArchive = async (pi: Git, root: string, gitDirectory: string, archiv
   await requireDirectory(archive);
   const bytes = await read(join(archive, 'manifest.json'));
 
-  if (digest(bytes) !== (await read(join(archive, 'manifest.sha256'))).toString()) {
+  const checksum = await read(join(archive, 'manifest.sha256'));
+
+  if (digest(bytes) !== checksum.toString()) {
     throw new Error('Corrupt recovery manifest');
   }
 
@@ -480,6 +488,7 @@ const verifyArchive = async (pi: Git, root: string, gitDirectory: string, archiv
   if (
     !isDeepStrictEqual(original, manifest.original) ||
     (index ? digest(index) : null) !== manifest.indexDigest ||
+    // oxlint-disable-next-line unicorn/no-await-expression-member -- Read the ref only after backup integrity checks pass.
     (await reviewGit(pi, root, ['rev-parse', manifest.recoveryRef])).trim() !== manifest.tree
   ) {
     throw new Error('Corrupt recovery backup or object ref');
@@ -494,6 +503,7 @@ const verifyGlobal = async (root: string, gitDirectory: string, manifest: Manife
 
   if (
     (await head(root)) !== manifest.head ||
+    // oxlint-disable-next-line unicorn/no-await-expression-member -- Read HEAD bytes only after its resolved identity matches.
     (await read(join(gitDirectory, 'HEAD'))).toString('base64') !== manifest.headFile
   ) {
     throw new Error('HEAD changed; recovery refused');
@@ -507,13 +517,15 @@ const verifyGlobal = async (root: string, gitDirectory: string, manifest: Manife
   }
 };
 
+// oxlint-disable-next-line eslint/complexity -- Backup authorization keeps durability and ownership checks in execution order.
 export const saveRecovery = async (
   pi: Git,
   root: string,
   expectedHidden: Working,
   candidateTree?: string,
 ) => {
-  const gitDirectory = (await reviewGit(pi, root, ['rev-parse', '--absolute-git-dir'])).trimEnd();
+  const gitDirectoryOutput = await reviewGit(pi, root, ['rev-parse', '--absolute-git-dir']);
+  const gitDirectory = gitDirectoryOutput.trimEnd();
   const { directory, pending } = recoveryPaths(gitDirectory);
   await assertNoPendingRecovery(gitDirectory);
   await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -527,13 +539,15 @@ export const saveRecovery = async (
     await sync(directory);
     await sync(gitDirectory);
 
+    // oxlint-disable-next-line node/no-process-env -- Redirected object storage cannot be made durable by syncing this repository.
     if (process.env.GIT_OBJECT_DIRECTORY || process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES) {
       throw new Error('External Git object storage is unsupported');
     }
 
     const ignored = await ignoredPaths(root);
     const originalHead = await head(root);
-    const headFile = (await read(join(gitDirectory, 'HEAD'))).toString('base64');
+    const headBytes = await read(join(gitDirectory, 'HEAD'));
+    const headFile = headBytes.toString('base64');
     const ownership = await snapshotPreparation(pi, root, []);
     const archive = ownership.directory;
     await save(join(pending, 'archive'), basename(archive));
@@ -557,8 +571,10 @@ export const saveRecovery = async (
       throw new Error('Index changed during backup');
     }
 
-    const recoveryRef = (await read(join(archive, 'recovery-ref'))).toString().trim();
-    const tree = (await reviewGit(pi, root, ['rev-parse', recoveryRef])).trim();
+    const recoveryRefBytes = await read(join(archive, 'recovery-ref'));
+    const recoveryRef = recoveryRefBytes.toString().trim();
+    const treeOutput = await reviewGit(pi, root, ['rev-parse', recoveryRef]);
+    const tree = treeOutput.trim();
 
     if (candidateTree && (tree !== candidateTree || !isDeepStrictEqual(hidden, expectedHidden))) {
       throw new Error(
@@ -593,9 +609,12 @@ export const saveRecovery = async (
     );
     await syncTree(archive);
 
-    const commonDirectory = (
-      await reviewGit(pi, root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
-    ).trimEnd();
+    const commonDirectoryOutput = await reviewGit(pi, root, [
+      'rev-parse',
+      '--path-format=absolute',
+      '--git-common-dir',
+    ]);
+    const commonDirectory = commonDirectoryOutput.trimEnd();
     await saveIndexObjects(root, commonDirectory, tree);
     let refPath = join(commonDirectory, recoveryRef);
     await sync(refPath);
@@ -619,8 +638,11 @@ export const saveRecovery = async (
     await sync(pending);
     await sync(directory);
 
+    const readyBytes = await read(join(pending, 'ready'));
+
     if (
-      (await read(join(pending, 'ready'))).toString() !== digest(bytes) ||
+      readyBytes.toString() !== digest(bytes) ||
+      // oxlint-disable-next-line unicorn/no-await-expression-member -- Read the archive marker only after the authorization checksum matches.
       (await read(join(pending, 'archive'))).toString() !== basename(archive)
     ) {
       throw new Error('Pending marker readback failed');
@@ -647,6 +669,7 @@ export const saveRecovery = async (
   }
 };
 
+// oxlint-disable-next-line eslint/complexity -- File and symlink replacement share the same race checks and durability barriers.
 const replaceWorking = async (
   root: string,
   gitDirectory: string,
@@ -735,35 +758,40 @@ const replaceWorking = async (
 };
 
 // Verified restoration leaves nothing for the snapshots to protect. Displaced inodes stay: open writers may still append to them.
-const retainedNames = [
+const retainedNames = new Set([
   'displaced',
   'hidden-displaced',
   'displaced-paths.json',
   'check-recovery.txt',
-];
+]);
 const pruneArchive = async (pi: Git, root: string, archive: string, manifest: Manifest) => {
   await save(join(archive, 'displaced-paths.json'), JSON.stringify(Object.keys(manifest.original)));
   await reviewGit(pi, root, ['update-ref', '-d', manifest.recoveryRef, manifest.tree]);
 
   for (const name of await readdir(archive)) {
-    if (!retainedNames.includes(name)) {
+    if (!retainedNames.has(name)) {
       await rm(join(archive, name), { recursive: true, force: true });
     }
   }
 
   for (const name of ['displaced', 'hidden-displaced']) {
-    if ((await readdir(join(archive, name)).catch(() => ['missing'])).length === 0) {
+    const entries = await readdir(join(archive, name)).catch(() => ['missing']);
+
+    if (entries.length === 0) {
       await rm(join(archive, name), { recursive: true });
     }
   }
 
-  if ((await readdir(archive)).every((name) => !name.endsWith('displaced'))) {
+  const remaining = await readdir(archive);
+
+  if (remaining.every((name) => !name.endsWith('displaced'))) {
     await rm(archive, { recursive: true });
   }
 };
 
 export const recoverPending = async (pi: Git, root: string) => {
-  const gitDirectory = (await reviewGit(pi, root, ['rev-parse', '--absolute-git-dir'])).trimEnd();
+  const gitDirectoryOutput = await reviewGit(pi, root, ['rev-parse', '--absolute-git-dir']);
+  const gitDirectory = gitDirectoryOutput.trimEnd();
   const { directory, pending } = recoveryPaths(gitDirectory);
 
   try {
@@ -772,7 +800,8 @@ export const recoverPending = async (pi: Git, root: string) => {
     // A dead recovery owner requires manual inspection. Never steal its lock and guess what it displaced.
     await mkdir(join(pending, 'owner.lock'), { mode: 0o700 });
     await sync(pending);
-    const name = (await read(join(pending, 'archive'))).toString();
+    const archiveBytes = await read(join(pending, 'archive'));
+    const name = archiveBytes.toString();
 
     if (!/^prepare-[A-Za-z0-9]+$/.test(name)) {
       throw new Error('Invalid recovery archive path');
@@ -781,7 +810,9 @@ export const recoverPending = async (pi: Git, root: string) => {
     const archive = join(directory, name);
     const { manifest, checksum } = await verifyArchive(pi, root, gitDirectory, archive);
 
-    if ((await read(join(pending, 'ready'))).toString() !== checksum) {
+    const readyBytes = await read(join(pending, 'ready'));
+
+    if (readyBytes.toString() !== checksum) {
       throw new Error('Incomplete pending recovery');
     }
 
@@ -830,7 +861,8 @@ export const recoverPending = async (pi: Git, root: string) => {
 };
 
 export const hidePending = async (pi: Git, root: string) => {
-  const gitDirectory = (await reviewGit(pi, root, ['rev-parse', '--absolute-git-dir'])).trimEnd();
+  const gitDirectoryOutput = await reviewGit(pi, root, ['rev-parse', '--absolute-git-dir']);
+  const gitDirectory = gitDirectoryOutput.trimEnd();
   const { directory, pending } = recoveryPaths(gitDirectory);
 
   try {
@@ -838,7 +870,8 @@ export const hidePending = async (pi: Git, root: string) => {
     await requireDirectory(pending);
     await mkdir(join(pending, 'owner.lock'), { mode: 0o700 });
     await sync(pending);
-    const name = (await read(join(pending, 'archive'))).toString();
+    const archiveBytes = await read(join(pending, 'archive'));
+    const name = archiveBytes.toString();
 
     if (!/^prepare-[A-Za-z0-9]+$/.test(name)) {
       throw new Error('Invalid recovery archive path');
@@ -847,7 +880,9 @@ export const hidePending = async (pi: Git, root: string) => {
     const archive = join(directory, name);
     const { manifest, checksum } = await verifyArchive(pi, root, gitDirectory, archive);
 
-    if ((await read(join(pending, 'ready'))).toString() !== checksum) {
+    const readyBytes = await read(join(pending, 'ready'));
+
+    if (readyBytes.toString() !== checksum) {
       throw new Error('Incomplete pending recovery');
     }
 

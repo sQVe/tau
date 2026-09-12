@@ -46,6 +46,7 @@ export const gitBytes = async (
     cwd: root,
     encoding: 'buffer',
     maxBuffer: maximumOutputBytes,
+    // oxlint-disable-next-line node/no-process-env -- Git must inherit credentials and configuration while using a private index.
     env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', ...(index ? { GIT_INDEX_FILE: index } : {}) },
   });
   const sent =
@@ -107,6 +108,7 @@ export const readWorkingEntry = async (
   let parent = dirname(absolute);
 
   while (parent !== root) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Reject the nearest symlinked parent before inspecting the next.
     const status = await lstat(parent).catch(missingFile);
 
     if (status && !status.isDirectory()) {
@@ -163,6 +165,7 @@ export const workingState = async (root: string, originalPaths: string[] = []) =
   let bytes = 0;
 
   for (const path of paths) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Each read consumes the remaining snapshot byte budget.
     const snapshot = await readWorkingEntry(root, path, maximumWorkingBytes - bytes);
     bytes += snapshot.bytes;
     entries.set(path, snapshot.entry);
@@ -172,11 +175,13 @@ export const workingState = async (root: string, originalPaths: string[] = []) =
 };
 
 // Recovery is outside the worktree and stash stack. Working files are never rolled back automatically.
+// oxlint-disable-next-line eslint/complexity -- Snapshot validation keeps index and working-tree ownership checks together.
 export const snapshotPreparation = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   root: string,
   requestedPaths: string[],
 ) => {
+  // oxlint-disable-next-line node/no-process-env -- An inherited index override would redirect the shared-index safety checks.
   if (!isAbsolute(root) || process.platform === 'win32' || process.env.GIT_INDEX_FILE) {
     throw new Error(
       'Safe preparation requires a local POSIX checkout without GIT_INDEX_FILE. Use a normal checkout before retrying.',
@@ -184,6 +189,7 @@ export const snapshotPreparation = async (
   }
 
   for (const path of requestedPaths) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Report the first invalid path in request order.
     const status = await lstat(join(root, path)).catch(missingFile);
 
     if (status?.isDirectory()) {
@@ -192,10 +198,8 @@ export const snapshotPreparation = async (
   }
 
   // --git-path can resolve an index symlink, hiding the unsupported path we must reject.
-  const gitDirectory = (await reviewGit(pi, root, ['rev-parse', '--absolute-git-dir'])).replace(
-    /\n$/,
-    '',
-  );
+  const gitDirectoryOutput = await reviewGit(pi, root, ['rev-parse', '--absolute-git-dir']);
+  const gitDirectory = gitDirectoryOutput.replace(/\n$/, '');
   const indexPath = join(gitDirectory, 'index');
   const indexStatus = await lstat(indexPath).catch(missingFile);
 
@@ -209,7 +213,8 @@ export const snapshotPreparation = async (
   const originalIdentity = await indexIdentity(root);
   const entries = pathsFrom(await gitBytes(root, ['ls-files', '--stage', '-z']));
   const flags = pathsFrom(await gitBytes(root, ['ls-files', '-v', '-z']));
-  const splitIndex = (await reviewGit(pi, root, ['rev-parse', '--shared-index-path'])).trim();
+  const splitIndexOutput = await reviewGit(pi, root, ['rev-parse', '--shared-index-path']);
+  const splitIndex = splitIndexOutput.trim();
 
   if (
     originalIdentity.flags.some((flag) => flag !== '0') ||
@@ -265,7 +270,8 @@ export const snapshotPreparation = async (
       await reviewGit(isolated, root, ['read-tree', '--empty']);
     }
 
-    recoveryTree = (await reviewGit(isolated, root, ['write-tree'])).trim();
+    const treeOutput = await reviewGit(isolated, root, ['write-tree']);
+    recoveryTree = treeOutput.trim();
     await reviewGit(pi, root, ['update-ref', recoveryRef, recoveryTree, '']);
     await writeFile(join(directory, 'recovery-ref'), `${recoveryRef}\n`, { mode: 0o600 });
 
@@ -334,6 +340,7 @@ export const snapshotPreparation = async (
     );
 
     for (const path of requested) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Report the first missing path in request order.
       const status = await lstat(join(root, path)).catch(missingFile);
 
       if (status || indexed.has(path)) {

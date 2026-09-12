@@ -558,6 +558,7 @@ describe('commit flow', () => {
       join(repositoryDirectory, 'retry.ts'),
       '// Retries every error\nexport const retries = 0;\n',
     );
+    // oxlint-disable-next-line unicorn/consistent-function-scoping -- This repeated tool request belongs only to the retry scenario.
     const request = () =>
       fauxAssistantMessage([
         fauxToolCall('commit', {

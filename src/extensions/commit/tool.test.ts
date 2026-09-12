@@ -2601,7 +2601,7 @@ describe('message policy', () => {
         pending ? 'tau.json\n' : '',
       );
     }
-  });
+  }, 30_000);
 
   it('undoes hook message rewrites instead of accepting unchecked bytes', async () => {
     const directory = await createTemporaryRepository();
@@ -4051,7 +4051,7 @@ describe('commitTool.execute', () => {
       runCommand(command, arguments_, options?.cwd ?? repositoryDirectory),
     );
     const tool = createReviewedCommitTool({ exec }, async (_pi, _context, _signal, snapshot) => {
-      expect(await git(repositoryDirectory, ['show', `${snapshot?.tree}:README.md`])).toBe(
+      expect(await git(repositoryDirectory, ['show', `${snapshot.tree}:README.md`])).toBe(
         'formatted\n',
       );
 

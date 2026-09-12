@@ -268,6 +268,7 @@ const isStoredState = (
 
 const rejectStateSymlinks = async (cwd: string) => {
   for (const path of [dirname(statePath(cwd)), statePath(cwd)]) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Reject a symlinked parent before inspecting the state file.
     const entry = await lstat(path).catch((error: unknown) => {
       if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
         throw error;
@@ -282,6 +283,7 @@ const rejectStateSymlinks = async (cwd: string) => {
   }
 };
 
+// oxlint-disable-next-line eslint/complexity -- Legacy migration and evidence validation share a fail-closed parse boundary.
 const loadState = async (cwd: string): Promise<EvidenceState> => {
   await rejectStateSymlinks(cwd);
 
@@ -412,8 +414,9 @@ const withStateLock = async <Result>(
   // repositories still time out.
   const deadline = Date.now() + 15_000;
 
-  while (true) {
+  for (;;) {
     try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Exclusive lock acquisition must finish before retrying.
       await mkdir(lock);
       break;
     } catch (error) {
@@ -429,6 +432,7 @@ const withStateLock = async <Result>(
         );
       }
 
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Back off between failed lock acquisitions.
       await setTimeout(25);
     }
   }
@@ -441,6 +445,7 @@ const withStateLock = async <Result>(
 };
 
 export const createEvidenceStore = () => {
+  // oxlint-disable-next-line eslint/complexity -- Derived phases account for stale inputs without rewriting stored evidence.
   const read = async (directory: string) => {
     const cwd = await realpath(directory);
     const evidence = await loadState(cwd);
@@ -525,6 +530,7 @@ export const createEvidenceStore = () => {
     // Test execution stays outside the lock so a user can switch the gate during a long run. The
     // closing read stays inside it: callers correlate the returned evidence with this run's report,
     // so another session must not replace the state between the save and the read.
+    // oxlint-disable-next-line eslint/complexity -- All evidence transitions must use the same locked snapshot.
     return withStateLock(cwd, async () => {
       const after = await hashInputs(cwd, behavior.files);
       const currentTree = await treeDigest(cwd, behavior.files);
@@ -615,6 +621,7 @@ export const createEvidenceStore = () => {
 
             for (const file of behavior.files) {
               for (const fullname of testNames(behavior)) {
+                // oxlint-disable-next-line eslint/max-depth -- Record only uniquely failed names inside the RED transition's file/name pairs.
                 if (
                   'tests' in report &&
                   uniqueStatus(cwd, report.tests, fullname, file) === 'failed' &&

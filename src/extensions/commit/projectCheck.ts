@@ -14,6 +14,8 @@ export class MessageMutationError extends Error {
       `Message check changed the message file. Original and checker output retained at ${directory}. Inspect the checker and retry commit.`,
       { cause },
     );
+
+    this.name = 'MessageMutationError';
   }
 }
 
@@ -24,6 +26,7 @@ interface CommitConfig {
   hooks?: 'run' | 'skip';
 }
 
+// oxlint-disable-next-line eslint/complexity -- Each supported config key is validated at this boundary.
 const parseConfig = (content: string): CommitConfig => {
   let config: unknown;
 
@@ -190,6 +193,7 @@ const stagedEntries = async (root: string, tree: string, temporaryDirectory: str
     let bytes = 0;
 
     for (const path of entries) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Each read consumes the remaining snapshot byte budget.
       const snapshot = await readWorkingEntry(checkout, path, maximumWorkingBytes - bytes);
       bytes += snapshot.bytes;
       staged[path] = snapshot.entry;
@@ -242,7 +246,8 @@ export const createCandidateChecks = async (
 
     return result.stdout;
   };
-  const repositoryRoot = (await run(['rev-parse', '--show-toplevel'])).replace(/\n$/, '');
+  const rootOutput = await run(['rev-parse', '--show-toplevel']);
+  const repositoryRoot = rootOutput.replace(/\n$/, '');
   const configPath = await run(['ls-tree', '--name-only', tree, '--', 'tau.json'], repositoryRoot);
   const config = configPath.trim()
     ? parseConfig(await run(['show', `${tree}:tau.json`], repositoryRoot))
@@ -258,12 +263,15 @@ export const createCandidateChecks = async (
   const verifyMessage = async (message: string, diagnostic: string) => {
     const status = await lstat(messagePath).catch(() => null);
 
-    if (!status?.isFile() || !(await readFile(messagePath)).equals(Buffer.from(message))) {
+    const content = status?.isFile() ? await readFile(messagePath) : null;
+
+    if (!content?.equals(Buffer.from(message))) {
       throw new Error(diagnostic);
     }
   };
   const unavailable = (label: string, key: string) =>
     `${label} unavailable: ${configPath.trim() ? `no ${key} command in tau.json.` : 'no root tau.json.'}`;
+  // oxlint-disable-next-line eslint/complexity -- Check failures and restoration ownership must share one cleanup path.
   const window = async (message: string | undefined, project: boolean) => {
     if (message !== undefined) {
       await writeFile(messagePath, message, { mode: 0o600 });
@@ -326,6 +334,7 @@ export const createCandidateChecks = async (
       checkFailure = error instanceof Error ? error : new Error(String(error));
     }
 
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- The awaited check callback changes restoration ownership, including on failure.
     if (!safeToRestore) {
       throw new Error(
         `${String(checkFailure)}\nChecker changed files or index, or termination could not be established. Pending recovery retained at ${archive}. Stop writers and inspect recovery data before retrying.`,
@@ -358,10 +367,14 @@ export const createCandidateChecks = async (
     verifyMessage,
     checkInitial: (message: string) => window(message, true),
     async checkProject() {
-      return (await window(undefined, true)).projectNotice;
+      const result = await window(undefined, true);
+
+      return result.projectNotice;
     },
     async checkMessage(message: string) {
-      return (await window(message, false)).messageResult;
+      const result = await window(message, false);
+
+      return result.messageResult;
     },
   };
 };

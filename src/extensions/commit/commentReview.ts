@@ -128,6 +128,7 @@ const readBlob = async (
   return content.includes('\0') ? null : content;
 };
 
+// oxlint-disable-next-line eslint/complexity -- Review input limits, authentication and bounded retries are checked before accepting findings.
 export const reviewComments = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   context: ExtensionContext,
@@ -196,7 +197,7 @@ export const reviewComments = async (
   for (const path of paths) {
     let directory = posix.dirname(path);
 
-    while (true) {
+    for (;;) {
       policyPaths.add(posix.join(directory, 'AGENTS.md'));
 
       if (directory === '.') {
@@ -238,6 +239,7 @@ export const reviewComments = async (
   const reviewSignal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(120_000)]);
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Retry only after parsing the previous response fails.
     const response = await context.modelRegistry.complete(
       model,
       {

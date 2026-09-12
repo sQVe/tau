@@ -228,6 +228,22 @@ export default defineConfig({
           'typescript/no-unsafe-type-assertion': 'off',
           'eslint/no-empty-function': 'off',
           'eslint/max-nested-callbacks': 'off',
+          // Test steps are ordered, and async mocks need not suspend.
+          'eslint/no-await-in-loop': 'off',
+          'typescript/require-await': 'off',
+          // Direct assertions and nested fixtures keep test scenarios together.
+          'unicorn/no-await-expression-member': 'off',
+          'eslint/complexity': 'off',
+          'eslint/max-depth': 'off',
+          // Tests isolate the real process environment.
+          'node/no-process-env': 'off',
+        },
+      },
+      {
+        files: ['tests/*.ts'],
+        rules: {
+          // Test helpers isolate the real process environment.
+          'node/no-process-env': 'off',
         },
       },
     ],
@@ -251,7 +267,7 @@ export default defineConfig({
     },
   },
   staged: {
-    '*.{ts,tsx}': ['vp lint', 'vp fmt --check'],
+    '*.{ts,tsx}': ['vp lint --deny-warnings', 'vp fmt --check'],
     '!(pnpm-lock).{json,md,yaml,yml,css}': 'vp fmt --check',
   },
 });

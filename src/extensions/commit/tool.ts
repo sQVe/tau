@@ -295,6 +295,7 @@ const hashFiles = async (
   const hashes: string[] = [];
 
   for (const file of files) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Hash files in request order so the fingerprint is stable.
     const result = await pi.exec('git', ['--literal-pathspecs', 'hash-object', '--', file], {
       cwd: workingDirectory,
     });
@@ -314,6 +315,8 @@ interface ReviewSnapshot {
 
 type RequestReview = (snapshot: ReviewSnapshot) => Promise<CommentReview>;
 
+/* oxlint-disable eslint/max-depth -- Approval, message editing and cleanup branches stay inside their ownership scope. */
+// oxlint-disable-next-line eslint/complexity -- This transaction keeps preparation, review, approval and rollback in one ownership scope.
 const executeGroup = async (
   parameters: CommitInput['groups'][number],
   groupLabel: string | undefined,
@@ -617,7 +620,8 @@ const executeGroup = async (
     );
     let notice = '';
 
-    while (true) {
+    /* oxlint-disable eslint/no-await-in-loop -- Each approval round must finish before the next reads the amended message. */
+    for (;;) {
       if (signal?.aborted) {
         return cancelled();
       }
@@ -769,6 +773,7 @@ const executeGroup = async (
         }
       }
     }
+    /* oxlint-enable eslint/no-await-in-loop */
   } catch (error) {
     groupError = error;
     throw error;
@@ -778,9 +783,11 @@ const executeGroup = async (
         reviews.delete(reviewGroup);
       }
 
-      const gitDirectory = (
-        await reviewGit(pi, context.cwd, ['rev-parse', '--absolute-git-dir'])
-      ).trimEnd();
+      const gitDirectoryOutput = await reviewGit(pi, context.cwd, [
+        'rev-parse',
+        '--absolute-git-dir',
+      ]);
+      const gitDirectory = gitDirectoryOutput.trimEnd();
       await assertNoPendingRecovery(gitDirectory).catch((error: unknown) => {
         throw new Error(
           `${groupError instanceof Error ? `${groupError.message}\n` : ''}${String(error)}`,
@@ -797,9 +804,8 @@ const executeGroup = async (
 
   const message = buildCommitMessage(subject, body);
   const previousHead = await currentHead(pi, context.cwd);
-  const gitDirectory = (
-    await reviewGit(pi, context.cwd, ['rev-parse', '--absolute-git-dir'])
-  ).trimEnd();
+  const gitDirectoryOutput = await reviewGit(pi, context.cwd, ['rev-parse', '--absolute-git-dir']);
+  const gitDirectory = gitDirectoryOutput.trimEnd();
   await assertNoPendingRecovery(gitDirectory);
   const commitResult = await pi.exec(
     'git',
@@ -902,6 +908,8 @@ const executeGroup = async (
   };
 };
 
+/* oxlint-enable eslint/max-depth */
+
 export const createCommitTool = (
   pi: Pick<ExtensionAPI, 'exec'>,
   review = reviewComments,
@@ -933,6 +941,7 @@ export const createCommitTool = (
       "Comment review runs before commit approval. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. After two automatic returns, unresolved findings need a user waiver. With --auto-approve-commits, commit returns an error instead of asking for a waiver. Stop and report the blocker. Never claim a waiver on the user's behalf.",
     ],
     parameters: commitToolParameters,
+    // oxlint-disable-next-line eslint/complexity -- Group execution owns partial success reporting and recovery cleanup across failures.
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       const assigned = new Set<string>();
 
@@ -978,9 +987,13 @@ export const createCommitTool = (
         return finish([{ type: 'text', text: 'Commit cancelled' }]);
       }
 
-      const gitDirectory = (
-        await reviewGit(pi, context.cwd, ['rev-parse', '--absolute-git-dir'], signal)
-      ).trimEnd();
+      const gitDirectoryOutput = await reviewGit(
+        pi,
+        context.cwd,
+        ['rev-parse', '--absolute-git-dir'],
+        signal,
+      );
+      const gitDirectory = gitDirectoryOutput.trimEnd();
       await assertNoPendingRecovery(gitDirectory);
 
       const preparation = await readPreparation(pi, context.cwd);
@@ -988,6 +1001,7 @@ export const createCommitTool = (
       // Review runs only after restoration, never speculatively across a later check window.
       const requestReview: RequestReview = (snapshot) => review(pi, context, signal, snapshot);
 
+      /* oxlint-disable eslint/no-await-in-loop -- Groups share staging and recovery ownership, so each must finish before the next. */
       for (const [index, group] of parameters.groups.entries()) {
         const groupLabel = `${index + 1}/${parameters.groups.length}`;
 
@@ -1077,6 +1091,7 @@ export const createCommitTool = (
 
           if (ownership) {
             if (completed) {
+              // oxlint-disable-next-line eslint/max-depth -- Report cleanup failure without rolling back an already completed commit.
               try {
                 await ownership.discard();
               } catch (error) {
@@ -1097,6 +1112,7 @@ export const createCommitTool = (
 
           groups.push(result.details);
           content.push(
+            // oxlint-disable-next-line oxc/no-map-spread -- Prefix copies without mutating the group's original result.
             ...result.content.map((item) => ({
               ...item,
               text:
@@ -1152,6 +1168,7 @@ export const createCommitTool = (
           );
         }
       }
+      /* oxlint-enable eslint/no-await-in-loop */
 
       return finish(content);
     },
