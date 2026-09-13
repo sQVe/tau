@@ -38,7 +38,8 @@ pnpm exec pi --no-extensions --no-skills -e ./src/extensions/index.ts \
 Set `TAU_BULK_READ_MODEL=provider/id` before launching Pi to choose the bulk-read delegate. It
 defaults to `openai-codex/gpt-5.6-luna` and uses Pi's model registry and credentials. For example,
 prefix the launch command with `TAU_BULK_READ_MODEL=openrouter/vendor/model` for a model your
-account can access. The reference must match `pi --list-models` exactly.
+account can access. The reference must match `pi --list-models` exactly. `TAU_BULK_READ_MODEL` also
+drives answer-mode `fetch_content` calls unless the call passes `answerModel`.
 
 Pass all three extension entries. `package.json` declares the same set, so a checkout that loads
 only `./src/extensions/index.ts` is missing the bundled question and web tools and reports it at
