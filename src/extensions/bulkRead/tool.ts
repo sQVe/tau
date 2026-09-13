@@ -42,8 +42,8 @@ const loadPayload = async (
     // Pi's unexported read helper strips @ and expands ~, so bulk_read accepts the same spellings.
     const absolutePath = resolve(cwd, path.replace(/^@/, '').replace(/^~(?=\/|$)/, homedir()));
 
-    // Both caps are measured before reading, so an oversized request never allocates its content.
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Validate each file against the remaining byte budget before reading it.
+    // The per-file cap is measured before reading, so one oversized file never allocates its content.
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Validate each file before reading it and stop at the first invalid input.
     const stats = await stat(absolutePath).catch((error: unknown) => {
       throw inputError(error instanceof Error ? error.message : String(error));
     });
@@ -58,11 +58,6 @@ const loadPayload = async (
       throw inputError(`Input is too large: ${path}. Split the request`);
     }
 
-    remaining -= size;
-    if (remaining < 0) {
-      throw inputError('Input is too large. Split the request');
-    }
-
     // oxlint-disable-next-line eslint/no-await-in-loop -- Serial reads preserve request order and stop at the first invalid input.
     const content = await readFile(absolutePath, 'utf8').catch((error: unknown) => {
       throw inputError(error instanceof Error ? error.message : String(error));
@@ -70,9 +65,15 @@ const loadPayload = async (
 
     if (content.includes('\0')) {
       skipped.push(path);
-    } else {
-      files.push({ path, content });
+      continue;
     }
+
+    remaining -= content.length;
+    if (remaining < 0) {
+      throw inputError('Input is too large. Split the request');
+    }
+
+    files.push({ path, content });
   }
 
   // An empty payload would let the delegate answer the question without evidence.
@@ -90,8 +91,9 @@ export const bulkRead = async (
   signal: AbortSignal | undefined,
 ): Promise<AgentToolResult<Record<string, never>>> => {
   const reference = `${model.provider}/${model.id}`;
-  // Three characters per token is a conservative estimate to avoid overflowing the delegate window.
-  const maxCharacters = Math.min(1_000_000, model.contextWindow * 3);
+  // Three characters per token is a conservative estimate to avoid overflowing the delegate window,
+  // and the output allowance is reserved so a request at the cap leaves room for the answer.
+  const maxCharacters = Math.min(1_000_000, (model.contextWindow - model.maxTokens) * 3);
   const input = await loadPayload(ctx.cwd, params.paths, maxCharacters, signal);
   const content = `Question: ${params.question}\n\n${input.payload}`;
   if (content.length > maxCharacters) {

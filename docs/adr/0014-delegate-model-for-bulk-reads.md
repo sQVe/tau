@@ -110,9 +110,11 @@ edge cases rather than reading the file a second time:
 - Skip NUL-byte binary files and list them in the result. Fail rather than send an empty payload
   when every requested file is binary.
 - Keep the 400,000-byte per-file cap. Cap the numbered request, including the question, at
-  `min(1_000_000, model.contextWindow * 3)` characters. Three characters per token is a conservative
-  estimate to avoid overflowing smaller delegate windows. Reject oversized input before a provider
-  request and leave trimming on. Bound the completion to 120 seconds.
+  `min(1_000_000, (model.contextWindow - model.maxTokens) * 3)` characters. Three characters per
+  token is a conservative estimate to avoid overflowing smaller delegate windows, and reserving the
+  output allowance leaves room for the answer at the cap. Skipped binary files do not count toward
+  the cap. Reject oversized input before a provider request and leave trimming on. Bound the
+  completion to 120 seconds.
 - Pass `maxRetries: 1` to explicitly allow one retry and `cacheRetention: 'none'` to avoid cache
   writes for one-off payloads where the provider supports it. Do not add a `sessionId`; the default
   Codex adapter suppresses the cache key with retention set to `none` regardless of session ID.

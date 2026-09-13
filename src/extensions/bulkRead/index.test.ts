@@ -283,7 +283,7 @@ it.each(['error', 'aborted', 'length', 'throw', 'abort', 'timeout', 'file', 'loo
 
 it('keeps trimming and accepts a smaller request after exceeding the model cap', async () => {
   const app = setup();
-  const model = { ...fauxProvider().getModel(), contextWindow: 100 };
+  const model = { ...fauxProvider().getModel(), contextWindow: 200, maxTokens: 100 };
   app.find.mockReturnValue(model);
   const cwd = await mkdtemp(join(tmpdir(), 'tau-bulk-recovery-'));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
