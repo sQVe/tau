@@ -17,7 +17,14 @@ import {
   createAgentSession,
 } from '@earendil-works/pi-coding-agent';
 import type { AgentSession } from '@earendil-works/pi-coding-agent';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  expect,
+  it,
+  onTestFinished as registerTestCleanup,
+  vi,
+} from 'vitest';
 import type { TestContext } from 'vitest';
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -80,7 +87,7 @@ const createHarness = async (registerCleanup: TestContext['onTestFinished']) => 
   expect(extensionsResult.errors).toEqual([]);
   await session.bindExtensions({});
 
-  return { session, sessionModel, delegate, content };
+  return { session, sessionModel, delegate, content, cwd };
 };
 
 const toolResult = (session: AgentSession, name: string) => {
@@ -131,10 +138,8 @@ it('clamps a real Pi read and records delegate usage in the session ledger', asy
   expect(sessionPrompt).toContain('actual diff and applicable project rules');
 
   const read = textOf(toolResult(session, 'read').content);
-  expect(read).toMatch(
-    /File continues at line 401\. For a summary or evidence from this file, call bulk_read with paths and question\. To edit, read again with offset and limit\.$/,
-  );
-  expect(read).not.toContain('Use offset=');
+  expect(read).toMatch(/Lines 401-450 remain\. Read with offset=401 and limit=50 to continue\.$/);
+  expect(read).not.toContain('bulk_read');
   expect(read).not.toMatch(/^line 401$/m);
   const bulk = toolResult(session, 'bulk_read');
   expect(bulk.usage?.input).toBeGreaterThan(0);
@@ -142,3 +147,55 @@ it('clamps a real Pi read and records delegate usage in the session ledger', asy
   expect(delegate.state.callCount).toBe(1);
   expect(sessionModel.state.callCount).toBe(3);
 });
+
+it.each([400, 401])(
+  'rewrites a real byte-truncated read with %i remaining lines and preserves bounded continuation',
+  async (remaining) => {
+    const { session, sessionModel, delegate, cwd } = await createHarness(registerTestCleanup);
+    const head = Array.from({ length: 50 }, () => 'x'.repeat(1023)).join('\n');
+    const tail = Array.from({ length: remaining }, (_, index) => `line ${index + 51}`).join('\n');
+    await writeFile(join(cwd, 'byte-limited.txt'), `${head}\n${tail}`);
+    sessionModel.setResponses([
+      fauxAssistantMessage([fauxToolCall('read', { path: 'byte-limited.txt' })]),
+      fauxAssistantMessage([
+        fauxToolCall('read', { path: 'byte-limited.txt', offset: 51, limit: remaining }),
+      ]),
+      fauxAssistantMessage('Done.'),
+    ]);
+
+    await session.prompt('Read the file, then read the remaining lines with an explicit limit.');
+
+    const reads = session.sessionManager
+      .getEntries()
+      .flatMap((entry) =>
+        entry.type === 'message' &&
+        entry.message.role === 'toolResult' &&
+        entry.message.toolName === 'read'
+          ? [entry.message]
+          : [],
+      );
+    expect(reads).toHaveLength(2);
+    expect(reads[0]!.details).toMatchObject({
+      truncation: {
+        truncated: true,
+        truncatedBy: 'bytes',
+        totalLines: 400,
+        outputLines: 50,
+        outputBytes: 51_199,
+        maxBytes: 51_200,
+      },
+    });
+
+    const guidance =
+      remaining > 400
+        ? 'For questions, call bulk_read with paths and question. To edit, use a bounded read with offset and limit.'
+        : 'Read with offset=51 and limit=400 to continue.';
+    expect(textOf(reads[0]!.content)).toBe(
+      `${head}\n\nLines 51-${50 + remaining} remain. ${guidance}`,
+    );
+    expect(textOf(reads[0]!.content).includes('bulk_read')).toBe(remaining > 400);
+    expect(reads.every((read) => !read.isError)).toBe(true);
+    expect(textOf(reads[1]!.content)).toBe(tail);
+    expect(delegate.state.callCount).toBe(0);
+  },
+);

@@ -82,8 +82,10 @@ failures throw rather than return error metadata.
 
 - Clamp unbounded reads to a fixed 400-line threshold by setting the read tool's `limit` in the
   pre-call hook. Reads with an explicit `limit` pass unchanged, and Pi's 50KB limit still applies.
-- Rewrite the read result's trailing continuation notice into a hint naming `bulk_read`, carrying
-  the continuation offset from Pi's notice, for offset reads and the 50KB limit alike.
+- Rewrite the read result's trailing continuation notice to state the remaining line range, for
+  offset reads and the 50KB limit alike. Suggest `bulk_read` for questions and bounded reads for
+  edits only when more than 400 lines remain. Otherwise, suggest a bounded read with `offset` and
+  `limit`, without naming `bulk_read`, to avoid delegation overhead for small remainders.
 - Keep the threshold at the value the
   [development guide's measurement](../development.md#measuring-bulk-reads) tested.
 

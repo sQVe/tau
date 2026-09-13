@@ -65,8 +65,7 @@ const readCall = (toolCallId = 'read', limit?: number) => ({
 });
 
 const notice = '[Showing lines 1-400 of 450. Use offset=401 to continue.]';
-const hint =
-  'File continues at line 401. For a summary or evidence from this file, call bulk_read with paths and question. To edit, read again with offset and limit.';
+const hint = 'Lines 401-450 remain. Read with offset=401 and limit=50 to continue.';
 
 it('describes bulk reads as evidence gathering rather than review judgments', () => {
   const { registerTool } = setup();
@@ -124,12 +123,37 @@ it('rewrites the trailing continuation notice of a clamped read into the hint', 
   expect(app.emit('tool_result', event)).toBeUndefined();
 });
 
-it('rewrites the 50KB notice form as well', () => {
-  expect(
-    rewriteContinuationNotice(
-      'head\n\n[Showing lines 1-100 of 450 (50.0KB limit). Use offset=101 to continue.]',
-    ),
-  ).toBe(`head\n\n${hint.replace('401', '101')}`);
+it('states the remaining range and gates delegation for count notices', () => {
+  for (const remaining of [1, 50, 400, 401]) {
+    const text = `head\n\n[${remaining} more lines in file. Use offset=801 to continue.]`;
+    const guidance =
+      remaining > 400
+        ? 'For questions, call bulk_read with paths and question. To edit, use a bounded read with offset and limit.'
+        : `Read with offset=801 and limit=${remaining} to continue.`;
+
+    expect
+      .soft(rewriteContinuationNotice(text))
+      .toBe(`head\n\nLines 801-${800 + remaining} remain. ${guidance}`);
+  }
+});
+
+it('states the remaining range and gates delegation for showing-lines notices', () => {
+  for (const suffix of ['', ' (50.0KB limit)']) {
+    for (const remaining of [1, 350, 400, 401]) {
+      const text = `head\n\n[Showing lines 51-100 of ${100 + remaining}${suffix}. Use offset=101 to continue.]`;
+      const guidance =
+        remaining > 400
+          ? 'For questions, call bulk_read with paths and question. To edit, use a bounded read with offset and limit.'
+          : `Read with offset=101 and limit=${remaining} to continue.`;
+
+      expect
+        .soft(rewriteContinuationNotice(text))
+        .toBe(`head\n\nLines 101-${100 + remaining} remain. ${guidance}`);
+    }
+  }
+});
+
+it('leaves text without a trailing continuation notice unchanged', () => {
   expect(rewriteContinuationNotice('small file')).toBe('small file');
   expect(rewriteContinuationNotice(`${notice}\nmore text`)).toBe(`${notice}\nmore text`);
 });
@@ -148,7 +172,10 @@ it('uses the continuation offset in the hint for an offset read', () => {
 
   expect(read.input).toHaveProperty('limit', 400);
   expect(result?.content).toEqual([
-    { type: 'text', text: `head\n\n${hint.replace('401', '801')}` },
+    {
+      type: 'text',
+      text: 'head\n\nLines 801-1000 remain. Read with offset=801 and limit=200 to continue.',
+    },
   ]);
 });
 
