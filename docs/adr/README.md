@@ -40,3 +40,4 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0019: Verify backups before hiding working edits](./0019-verified-raw-recovery.md)
 - [0020: Run staged checks in the existing checkout](./0020-checks-in-the-existing-checkout.md)
 - [0021: Prune recovery snapshots after verified restoration](./0021-prune-verified-recovery.md)
+- [0022: Gate the clamped read hint on the remainder](./0022-gate-the-clamped-read-hint-on-the-remainder.md)
