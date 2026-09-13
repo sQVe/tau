@@ -281,6 +281,32 @@ it.each(['error', 'aborted', 'length', 'throw', 'abort', 'timeout', 'file', 'loo
   },
 );
 
+it('keeps trimming and accepts a smaller request after exceeding the model cap', async () => {
+  const app = setup();
+  const model = { ...fauxProvider().getModel(), contextWindow: 100 };
+  app.find.mockReturnValue(model);
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-bulk-recovery-'));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const path = join(cwd, 'file');
+  await writeFile(path, 'x'.repeat(301));
+
+  await expect(app.execute(undefined, [path])).rejects.toMatchObject({
+    name: 'BulkReadInputError',
+    message: 'Input is too large. Split the request',
+  });
+  expect(app.complete).not.toHaveBeenCalled();
+  const read = readCall();
+  app.emit('tool_call', read);
+
+  expect(read.input.limit).toBe(bulkReadLineThreshold);
+  await writeFile(path, 'small');
+
+  await expect(app.execute(undefined, [path])).resolves.toMatchObject({
+    content: [{ type: 'text', text: 'answer' }],
+  });
+  expect(app.complete).toHaveBeenCalledOnce();
+});
+
 it.each(['session_start', 'session_before_switch', 'session_before_fork'] as const)(
   'restores trimming for the next session on %s',
   (event) => {

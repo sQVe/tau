@@ -109,8 +109,13 @@ edge cases rather than reading the file a second time:
   paths outside it.
 - Skip NUL-byte binary files and list them in the result. Fail rather than send an empty payload
   when every requested file is binary.
-- Cap each file at 400,000 bytes and the numbered request at 1,000,000 characters, matching comment
-  review's limits. Bound the completion to 120 seconds.
+- Keep the 400,000-byte per-file cap. Cap the numbered request, including the question, at
+  `min(1_000_000, model.contextWindow * 3)` characters. Three characters per token is a conservative
+  estimate to avoid overflowing smaller delegate windows. Reject oversized input before a provider
+  request and leave trimming on. Bound the completion to 120 seconds.
+- Pass `maxRetries: 1` to explicitly allow one retry and `cacheRetention: 'none'` to avoid cache
+  writes for one-off payloads where the provider supports it. Do not add a `sessionId`; the default
+  Codex adapter suppresses the cache key with retention set to `none` regardless of session ID.
 - Return the delegate's full usage on successful tool results so Pi's ledger and Tau's footer count
   it.
 

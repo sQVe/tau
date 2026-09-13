@@ -64,7 +64,11 @@ it('sends all files in one call with the question and framing', async () => {
   expect(payload.messages[0]!.content).toContain('a.ts\n1→first\n2→second');
   expect(payload.messages[0]!.content).toContain('b.ts\n1→third');
   expect(options?.signal).toBeInstanceOf(AbortSignal);
-  expect(options).not.toHaveProperty('maxTokens');
+  expect(options).toEqual({
+    signal: options?.signal,
+    maxRetries: 1,
+    cacheRetention: 'none',
+  });
 });
 
 it('skips binary files and lists them as skipped', async () => {
@@ -96,6 +100,7 @@ it('throws for a file over 400,000 bytes without a registry hint', async () => {
 
 it('throws for a payload over 1,000,000 characters without a registry hint', async () => {
   const { cwd, context, model, complete } = await setup();
+  model.contextWindow = 1_000_000;
   await writeFile(join(cwd, 'large'), 'x'.repeat(350_000));
 
   await expect(
@@ -103,6 +108,48 @@ it('throws for a payload over 1,000,000 characters without a registry hint', asy
   ).rejects.toThrow('Input is too large. Split the request');
   expect(complete).not.toHaveBeenCalled();
 });
+
+it('rejects aggregate file sizes above the model cap before loading later paths', async () => {
+  const { cwd, context, model, complete } = await setup();
+  model.contextWindow = 100;
+  await writeFile(join(cwd, 'large'), 'x'.repeat(151));
+
+  await expect(
+    bulkRead(context, model, { paths: ['large', 'large', 'missing'], question: 'Why?' }, undefined),
+  ).rejects.toMatchObject({
+    name: 'BulkReadInputError',
+    message: 'Input is too large. Split the request',
+  });
+  expect(complete).not.toHaveBeenCalled();
+});
+
+it.each([
+  { contextWindow: 100, cap: 300 },
+  { contextWindow: 1_000_000, cap: 1_000_000 },
+])(
+  'caps the numbered request at $cap characters for window $contextWindow',
+  async ({ contextWindow, cap }) => {
+    const { context, model, complete } = await setup();
+    model.contextWindow = contextWindow;
+    const framing = 'Question: \n\na.ts\n1→first\n2→second\n\nb.ts\n1→third';
+    const question = 'q'.repeat(cap - framing.length);
+    const params = { paths: ['a.ts', 'b.ts'], question };
+
+    await bulkRead(context, model, params, undefined);
+
+    expect(complete).toHaveBeenCalledOnce();
+    expect(complete.mock.calls[0]![1].messages[0]!.content).toHaveLength(cap);
+    complete.mockClear();
+
+    await expect(
+      bulkRead(context, model, { ...params, question: `${question}?` }, undefined),
+    ).rejects.toMatchObject({
+      name: 'BulkReadInputError',
+      message: 'Input is too large. Split the request',
+    });
+    expect(complete).not.toHaveBeenCalled();
+  },
+);
 
 it('throws a file error naming a path that cannot be read', async () => {
   const { context, model, complete } = await setup();
