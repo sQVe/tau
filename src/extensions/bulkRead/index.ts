@@ -20,7 +20,7 @@ export const delegateReference = (): string => {
 
 export const rewriteContinuationNotice = (text: string): string =>
   text.replace(
-    /\n\n\[(?:(\d+) more lines in file\. Use offset=(\d+)|Showing lines \d+-(\d+) of (\d+)(?: \(50\.0KB limit\))?\. Use offset=\d+) to continue\.\]$/,
+    /\n\n\[(?:(\d+) more lines in file\. Use offset=(\d+)|Showing lines \d+-(\d+) of (\d+)(?: \([^)]*limit\))?\. Use offset=\d+) to continue\.\]$/,
     (
       _notice,
       remainingCount: string | undefined,
