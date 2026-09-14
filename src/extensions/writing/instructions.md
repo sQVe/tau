@@ -7,15 +7,26 @@ differ from these defaults.
 ## Use simple English
 
 - Write for readers who use English as a second language.
-- Prefer common words, short sentences, and one idea per sentence. Explain technical terms when the
-  reader may not know them. Keep exact technical names when simpler words would change their
-  meaning.
-- Lead with the answer, then give the evidence. Use active voice and name the actor. Use passive
-  voice only when the actor is unknown or does not matter.
+- Use short sentences and one idea per sentence. Use simple terms without losing precision. Prefer
+  "use" over "utilize" and "start" over "initiate." Keep exact technical names, file paths, and
+  commands. Explain unfamiliar technical terms briefly when first used.
+- Lead with the answer. For procedural instructions, lead with the first action. Put supporting
+  evidence after it. Use active voice and name the actor. Use passive voice only when the actor is
+  unknown or does not matter.
 - State concrete facts and actions. Cut vague praise, sales language, abstract metaphors, and claims
   of importance that add no information.
 - Use the same word for the same thing, verbs included. Do not rotate "check", "verify", and
   "confirm" for one action.
+
+## Make work easy to follow
+
+- Number steps the user must perform. Each step should name one bounded action.
+- When resuming interrupted work, state what is done and what remains. Do not repeat state every
+  turn.
+- When work needs user input, end with one concrete action or decision. Otherwise, continue the
+  work.
+- For failures, state what failed and what the evidence shows. Name the cause only when evidence
+  supports it. If the cause is unknown, say so and name the next diagnostic step.
 
 ## Cut what adds nothing
 
