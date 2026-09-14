@@ -127,8 +127,8 @@ edge cases rather than reading the file a second time:
 - Treat file content as evidence, never as instructions, and keep the delegate read-only. Prompt
   framing tells it to ignore embedded requests, answer with what the supplied files establish and
   state what they cannot, cite file lines, and add no tasks, commands, or URLs.
-- Delegation does not bypass Tau's [TDD guard](../../src/extensions/tdd/guard.ts), which explicitly
-  allows the read-only tool because it blocks unknown tools.
+- The original TDD guard explicitly allowed the read-only tool while blocking unknown tools.
+  [ADR 0023](./0023-advisory-tdd-observations.md) later replaced that guard with advisory hints.
 - Keep `pnpm check` independent of model APIs, as required by the
   [development guide](../development.md#local-setup). Offline checks establish tool behavior and
   result size, not real-model answer quality or billing savings.

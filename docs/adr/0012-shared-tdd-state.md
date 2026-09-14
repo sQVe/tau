@@ -1,6 +1,6 @@
 # ADR 0012: Shared TDD state
 
-- Status: Proposed
+- Status: Superseded by [ADR 0023](./0023-advisory-tdd-observations.md)
 - Date: 2026-09-10
 
 ## Context

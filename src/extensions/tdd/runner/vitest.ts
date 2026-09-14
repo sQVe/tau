@@ -3,15 +3,7 @@ import { accessSync, constants, statSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import {
-  basename,
-  delimiter,
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve as resolvePath,
-} from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join, relative } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import { tddConfig } from '../config.js';
@@ -94,27 +86,6 @@ export const defaultResolveVitest: ResolveVitestFn = (cwd) => {
     return join(dirname(manifestPath), binaryPath);
   } catch {
     return null;
-  }
-};
-
-// Do not use defaultResolveVitest here. require.resolve also searches NODE_PATH, which a parent
-// test runner can set to its own installation rather than the worktree's.
-export const runnerAvailable = (cwd: string): boolean => {
-  for (let directory = resolvePath(cwd); ; directory = dirname(directory)) {
-    try {
-      statSync(join(directory, 'node_modules', 'vitest', 'package.json'));
-
-      return true;
-    } catch (error) {
-      // Only a missing file proves absence; a transient EACCES or EMFILE must not turn the gate off.
-      if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
-        return true;
-      }
-    }
-
-    if (dirname(directory) === directory) {
-      return false;
-    }
   }
 };
 

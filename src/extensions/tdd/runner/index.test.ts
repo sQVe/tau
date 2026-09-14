@@ -12,13 +12,7 @@ import {
   maximumStdoutBytes,
   maximumTotalBytes,
 } from './types.js';
-import {
-  defaultDeps,
-  defaultSpawn,
-  extractBinPath,
-  nodeExecutable,
-  runnerAvailable,
-} from './vitest.js';
+import { defaultDeps, defaultSpawn, extractBinPath, nodeExecutable } from './vitest.js';
 
 const outputFileFrom = (arguments_: string[]) => {
   const flag = arguments_.find((argument) => argument.startsWith('--outputFile='));
@@ -927,28 +921,6 @@ it('allows two minutes for full verification and thirty seconds for focused runs
   expect(defaultDeps('all').timeoutMs).toBe(120_000);
   expect(defaultDeps('changed').timeoutMs).toBe(30_000);
   expect(defaultDeps('file').timeoutMs).toBe(30_000);
-});
-
-describe('runnerAvailable', () => {
-  it('reports absence only for a missing runner and stays available on other errors', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-available-'));
-
-    try {
-      expect(runnerAvailable(cwd)).toBe(false);
-
-      // ENOTDIR does not prove that the runner is absent. Only ENOENT can turn the gate off.
-      await writeFile(join(cwd, 'node_modules'), '');
-
-      expect(runnerAvailable(cwd)).toBe(true);
-
-      await rm(join(cwd, 'node_modules'));
-      await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
-
-      expect(runnerAvailable(cwd)).toBe(true);
-    } finally {
-      await rm(cwd, { recursive: true, force: true });
-    }
-  });
 });
 
 describe('nodeExecutable', () => {

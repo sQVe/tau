@@ -1,9 +1,8 @@
 # Tau
 
-Tau adds required work steps and checks to [Pi](https://github.com/badlogic/pi-mono).
+Tau adds tools, work steps, and checks to [Pi](https://github.com/badlogic/pi-mono).
 
-We wanted a consistent way to work, with proof that each step is complete. Tau's first goal is to
-enforce test-driven development, or TDD:
+Tau guides test-driven development, or TDD, with test results and nonblocking hints:
 
 - write a failing test first
 - prove the failure
@@ -11,8 +10,8 @@ enforce test-driven development, or TDD:
 - prove the pass
 - optionally refactor safely
 
-Pi runs the agent and its tools. Tau controls the steps the agent must follow. Tau is not a general
-agent framework.
+Pi runs the agent and its tools. Tau keeps commit checks and approval mandatory, but test results
+never control edit permission. Tau is not a general agent framework.
 
 <!-- prettier-ignore -->
 > [!IMPORTANT]

@@ -6,16 +6,14 @@ export const tddConfig = {
   verificationArgv: ['vitest', 'run', '--reporter=json', '--no-color'],
 } as const;
 
-// Vitest loads its own configuration before Vite's. Hash and protect both configurations
-// because either can change which tests run.
-export const protectedPaths = [
+// Vitest loads its own configuration before Vite's. Hash both because either can change which tests run.
+const configurationExtensions = ['ts', 'mts', 'cts', 'js', 'mjs', 'cjs'];
+
+export const configurationPaths = [
   'package.json',
-  'vite.config.ts',
-  'vite.config.mts',
-  'vite.config.js',
-  'vitest.config.ts',
-  'vitest.config.mts',
-  'vitest.config.js',
+  ...['vite', 'vitest'].flatMap((name) =>
+    configurationExtensions.map((extension) => `${name}.config.${extension}`),
+  ),
 ];
 
 export const classifyPath = (path: string): 'test' | 'production' | 'other' => {

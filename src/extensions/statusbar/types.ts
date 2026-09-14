@@ -4,7 +4,6 @@ export interface FooterInput {
   directory: string;
   branch: string | null;
   dirty: boolean;
-  tddGateOff: boolean;
   cost: number;
   contextPercent: number | null;
   contextWindow: number;

@@ -58,11 +58,6 @@ export const renderFooterLine = (
     );
   }
 
-  if (input.tddGateOff) {
-    // Nerd Font nf-md-lock-open-variant.
-    left.push(theme.fg('warning', '\u{F0FC6}'));
-  }
-
   const percent = input.contextPercent;
   let contextColor: ThemeColor = 'text';
 

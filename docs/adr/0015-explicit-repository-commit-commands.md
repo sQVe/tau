@@ -56,5 +56,7 @@ later contract is optional message-check argv and `hooks: run|skip`, defaulting 
 
 ## See also
 
+- [Advisory TDD observations](./0023-advisory-tdd-observations.md) replaces evidence-based edit
+  permissions. Preparation can still make test results stale.
 - [Checks in the existing checkout](./0020-checks-in-the-existing-checkout.md) replaces temporary
   checkouts and dependency sharing.
