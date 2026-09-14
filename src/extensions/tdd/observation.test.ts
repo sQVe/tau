@@ -238,23 +238,45 @@ it('still hints stale after a focused pass already hinted missing RED', async ({
   expect(await observation.checkpoint(true)).toBeUndefined();
 });
 
-it('requires every requested file and name pair to fail uniquely', async ({ onTestFinished }) => {
+it('records RED when each name fails once across the listed files', async ({ onTestFinished }) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  const multiple = {
+    ...behavior,
+    files: ['value.test.ts', 'second.test.ts'],
+    testFullName: ['value works', 'second works'],
+  };
+  await writeFile(join(cwd, 'second.test.ts'), 'test');
+  vi.mocked(runTests).mockResolvedValueOnce({
+    kind: 'fail',
+    failures: [],
+    truncated: false,
+    tests: [
+      { file: 'value.test.ts', fullname: 'value works', status: 'failed' },
+      { file: 'second.test.ts', fullname: 'second works', status: 'failed' },
+    ],
+  });
+
+  await observation.run(multiple, 'focused');
+
+  expect((await observation.run(multiple, 'focused')).hint).toContain('scope "full"');
+});
+
+it('does not record RED when a name fails in more than one listed file', async ({
+  onTestFinished,
+}) => {
   const { cwd, observation } = await setup(onTestFinished);
   const multiple = { ...behavior, files: ['value.test.ts', 'second.test.ts'] };
   await writeFile(join(cwd, 'second.test.ts'), 'test');
-  vi.mocked(runTests).mockResolvedValueOnce(result('failed'));
-
-  await observation.run(multiple, 'focused');
-  expect((await observation.run(multiple, 'focused')).hint).toContain('RED');
-
   vi.mocked(runTests).mockResolvedValueOnce({
     kind: 'fail',
     failures: [],
     truncated: false,
     tests: multiple.files.map((file) => ({ file, fullname: 'value works', status: 'failed' })),
   });
+
   await observation.run(multiple, 'focused');
-  expect((await observation.run(multiple, 'focused')).hint).toContain('scope "full"');
+
+  expect((await observation.run(multiple, 'focused')).hint).toContain('RED');
 });
 
 it('requires every selected name to fail uniquely', async ({ onTestFinished }) => {
@@ -316,6 +338,17 @@ it('keeps the actual report when inputs change during the run', async ({ onTestF
   expect(observed.report).toBe(report);
   expect(observed.hint).toContain('stale');
   expect((await observation.run(behavior, 'focused')).hint).toContain('RED');
+});
+
+it('recovers freshness after a transient fingerprint failure', async ({ onTestFinished }) => {
+  const { cwd, observation } = await setup(onTestFinished);
+
+  expect((await observation.run(behavior, 'full')).hint).toBeUndefined();
+  await mkdir(join(cwd, 'package.json'));
+  expect(await observation.checkpoint(true)).toContain('unknown');
+
+  await rm(join(cwd, 'package.json'), { recursive: true });
+  expect(await observation.checkpoint(true)).toBeUndefined();
 });
 
 it('keeps reports and successful edits when fingerprints fail', async ({ onTestFinished }) => {

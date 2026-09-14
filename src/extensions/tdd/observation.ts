@@ -51,7 +51,7 @@ const compareInputs = (before: string | null, after: string | null): Freshness =
 // Keep the existing source, test, and configuration coverage. This is a checkpoint, not an atomic snapshot.
 const fingerprint = async (cwd: string, files: string[]): Promise<string | null> => {
   try {
-    const paths = [...files, ...configurationPaths, resolve(import.meta.dirname, 'config.ts')];
+    const paths = [...files, ...configurationPaths];
 
     for await (const file of glob([...tddConfig.productionGlobs, ...tddConfig.testGlobs], {
       cwd,
@@ -89,15 +89,15 @@ const fingerprint = async (cwd: string, files: string[]): Promise<string | null>
 
 const selectedFailed = (cwd: string, behavior: Behavior, report: RunnerResult) =>
   report.kind === 'fail' &&
-  behavior.files.every((file) =>
-    testNames(behavior).every((name) => {
-      const matches = report.tests.filter(
-        (test) => test.fullname === name && resolve(cwd, test.file) === resolve(cwd, file),
-      );
+  testNames(behavior).every((name) => {
+    const matches = report.tests.filter(
+      (test) =>
+        test.fullname === name &&
+        behavior.files.some((file) => resolve(cwd, test.file) === resolve(cwd, file)),
+    );
 
-      return matches.length === 1 && matches[0]?.status === 'failed';
-    }),
-  );
+    return matches.length === 1 && matches[0]?.status === 'failed';
+  });
 
 interface LatestRun {
   behavior: Behavior;
@@ -183,8 +183,12 @@ export const createTestObservation = (cwd: string) => {
       ) {
         current = await fingerprint(cwd, latest.behavior.files);
 
-        if (current === null || current !== latest.fingerprint) {
-          latest.freshness = current === null ? 'unknown' : 'stale';
+        if (current === null) {
+          latest.freshness = 'unknown';
+        } else if (current !== latest.fingerprint) {
+          latest.freshness = 'stale';
+        } else if (latest.freshness === 'unknown') {
+          latest.freshness = 'fresh';
         }
       }
 
