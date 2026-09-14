@@ -399,7 +399,7 @@ export const snapshotPreparation = async (
 
           if (!unchangedWorking || !unchangedIndex) {
             throw new Error(
-              'Working files or private index changed during preparation assignment. Inspect the changes and retry.',
+              'Working files or private index changed during preparation. Inspect the changes and retry.',
             );
           }
 
@@ -412,7 +412,7 @@ export const snapshotPreparation = async (
 
           if (!(await sameWorking())) {
             throw new Error(
-              'Working files changed during preparation assignment. Inspect the changes and retry.',
+              'Working files changed during preparation. Inspect the changes and retry.',
             );
           }
         },
