@@ -2490,118 +2490,116 @@ describe('message policy', () => {
     ).rejects.toThrow(/Message check failed/);
   });
 
-  it('hard-stops mutating and killed message checkers and retains pending work', async () => {
-    for (const outcome of [
-      'message',
-      'tracked',
-      'tracked-fail',
-      'tracked-killed',
-      'staged',
-      'untracked',
-      'fifo',
-      'message-fifo',
-      'killed',
-      'abort',
-      'throw',
-    ] as const) {
-      const directory = await createTemporaryRepository();
-      await writeRepositoryFile(
-        directory,
-        'tau.json',
-        JSON.stringify({ checkMessage: ['message-command'] }),
-      );
-      const controller = new AbortController();
-      let candidate = '';
-      let message = '';
-      const custom = vi.fn<() => Promise<string>>().mockResolvedValue('body');
-      const exec: ExtensionAPI['exec'] = async (command, arguments_, options) => {
-        if (command !== 'message-command') {
-          return runCommand(command, arguments_, options?.cwd ?? directory, options?.signal);
-        }
-        candidate = options!.cwd!;
-        message = arguments_.at(-1)!;
-        expect(options).toMatchObject({ signal: controller.signal, timeout: 600_000 });
-        if (outcome === 'message') {
-          await writeFile(message, 'rewritten');
-        }
-
-        if (outcome.startsWith('tracked') || outcome === 'staged') {
-          await writeFile(join(candidate, 'tau.json'), '{}');
-        }
-        if (outcome === 'staged') {
-          await git(candidate, ['add', 'tau.json']);
-          await git(candidate, ['checkout-index', '--all', '--force']);
-        }
-        if (outcome === 'untracked') {
-          await writeFile(join(candidate, 'contamination'), 'bad');
-        }
-
-        if (outcome === 'fifo') {
-          await runCommand('mkfifo', ['contamination'], candidate);
-        }
-
-        if (outcome === 'message-fifo') {
-          await rm(message);
-          await runCommand('mkfifo', [message], candidate);
-        }
-
-        if (outcome === 'abort') {
-          controller.abort();
-        }
-
-        if (outcome === 'throw') {
-          throw new Error('spawn failed');
-        }
-
-        return {
-          code: outcome === 'tracked-fail' ? 1 : 0,
-          killed: outcome === 'killed' || outcome === 'tracked-killed',
-          stdout: '',
-          stderr: 'killed diagnostic',
-        };
-      };
-      useCheckerExec(exec);
-      const tool = createCommitTool({ exec });
-      const result = await tool
-        .execute(
-          'mutation',
-          { groups: [{ files: ['tau.json'], subject: 'feat: policy' }] },
-          controller.signal,
-          undefined,
-          { cwd: directory, hasUI: true, ui: { custom } } as never,
-        )
-        .then(
-          (value) => JSON.stringify(value.content),
-          (error: unknown) => String(error),
-        );
-      const expected: Record<string, RegExp> = {
-        abort: /Commit cancelled/,
-        killed: /Message check.*killed diagnostic/s,
-        throw: /Pending recovery/,
-      };
-      expect(result).toMatch(expected[outcome] ?? /Message check changed|Checker changed/);
-      expect(custom).not.toHaveBeenCalled();
-      expect(candidate).not.toBe('');
-      expect(candidate).toBe(directory);
-      const pending = !['message', 'message-fifo', 'killed', 'abort'].includes(outcome);
-      const reservation = await readdir(join(directory, '.git/tau-recovery'));
-      expect(reservation.includes('pending')).toBe(pending);
-      const retainsOutput = pending || outcome === 'message' || outcome === 'message-fifo';
-
-      if (retainsOutput) {
-        temporaryDirectories.push(dirname(message));
+  it.each([
+    'message',
+    'tracked',
+    'tracked-fail',
+    'tracked-killed',
+    'staged',
+    'untracked',
+    'fifo',
+    'message-fifo',
+    'killed',
+    'abort',
+    'throw',
+  ] as const)('hard-stops message checkers for %s and retains pending work', async (outcome) => {
+    const directory = await createTemporaryRepository();
+    await writeRepositoryFile(
+      directory,
+      'tau.json',
+      JSON.stringify({ checkMessage: ['message-command'] }),
+    );
+    const controller = new AbortController();
+    let candidate = '';
+    let message = '';
+    const custom = vi.fn<() => Promise<string>>().mockResolvedValue('body');
+    const exec: ExtensionAPI['exec'] = async (command, arguments_, options) => {
+      if (command !== 'message-command') {
+        return runCommand(command, arguments_, options?.cwd ?? directory, options?.signal);
+      }
+      candidate = options!.cwd!;
+      message = arguments_.at(-1)!;
+      expect(options).toMatchObject({ signal: controller.signal, timeout: 600_000 });
+      if (outcome === 'message') {
+        await writeFile(message, 'rewritten');
       }
 
-      const retainedMessage = await readdir(dirname(message)).then(
-        () => true,
-        () => false,
+      if (outcome.startsWith('tracked') || outcome === 'staged') {
+        await writeFile(join(candidate, 'tau.json'), '{}');
+      }
+      if (outcome === 'staged') {
+        await git(candidate, ['add', 'tau.json']);
+        await git(candidate, ['checkout-index', '--all', '--force']);
+      }
+      if (outcome === 'untracked') {
+        await writeFile(join(candidate, 'contamination'), 'bad');
+      }
+
+      if (outcome === 'fifo') {
+        await runCommand('mkfifo', ['contamination'], candidate);
+      }
+
+      if (outcome === 'message-fifo') {
+        await rm(message);
+        await runCommand('mkfifo', [message], candidate);
+      }
+
+      if (outcome === 'abort') {
+        controller.abort();
+      }
+
+      if (outcome === 'throw') {
+        throw new Error('spawn failed');
+      }
+
+      return {
+        code: outcome === 'tracked-fail' ? 1 : 0,
+        killed: outcome === 'killed' || outcome === 'tracked-killed',
+        stdout: '',
+        stderr: 'killed diagnostic',
+      };
+    };
+    useCheckerExec(exec);
+    const tool = createCommitTool({ exec });
+    const result = await tool
+      .execute(
+        'mutation',
+        { groups: [{ files: ['tau.json'], subject: 'feat: policy' }] },
+        controller.signal,
+        undefined,
+        { cwd: directory, hasUI: true, ui: { custom } } as never,
+      )
+      .then(
+        (value) => JSON.stringify(value.content),
+        (error: unknown) => String(error),
       );
-      expect(retainedMessage).toBe(retainsOutput);
-      expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe(
-        pending ? 'tau.json\n' : '',
-      );
+    const expected: Record<string, RegExp> = {
+      abort: /Commit cancelled/,
+      killed: /Message check.*killed diagnostic/s,
+      throw: /Pending recovery/,
+    };
+    expect(result).toMatch(expected[outcome] ?? /Message check changed|Checker changed/);
+    expect(custom).not.toHaveBeenCalled();
+    expect(candidate).not.toBe('');
+    expect(candidate).toBe(directory);
+    const pending = !['message', 'message-fifo', 'killed', 'abort'].includes(outcome);
+    const reservation = await readdir(join(directory, '.git/tau-recovery'));
+    expect(reservation.includes('pending')).toBe(pending);
+    const retainsOutput = pending || outcome === 'message' || outcome === 'message-fifo';
+
+    if (retainsOutput) {
+      temporaryDirectories.push(dirname(message));
     }
-  }, 30_000);
+
+    const retainedMessage = await readdir(dirname(message)).then(
+      () => true,
+      () => false,
+    );
+    expect(retainedMessage).toBe(retainsOutput);
+    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe(
+      pending ? 'tau.json\n' : '',
+    );
+  });
 
   it('undoes hook message rewrites instead of accepting unchecked bytes', async () => {
     const directory = await createTemporaryRepository();
@@ -2711,7 +2709,9 @@ describe('message policy', () => {
     }
   });
 
-  it('preserves successful hashes and primary batch errors when temporary cleanup fails', async () => {
+  const cleanupFailureFixture = async (
+    outcome: 'checker failure' | 'ordinary cancellation' | 'prepared cancellation',
+  ) => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(
       directory,
@@ -2721,7 +2721,7 @@ describe('message policy', () => {
     await writeRepositoryFile(directory, 'second', 'value');
     const leftovers: string[] = [];
     let checkCount = 0;
-    let controller = new AbortController();
+    const controller = new AbortController();
     const originalFilesystem = await vi.importActual<typeof fileSystem>('node:fs/promises');
     const exec: ExtensionAPI['exec'] = (command, arguments_, options) => {
       if (command === 'message-command') {
@@ -2735,11 +2735,11 @@ describe('message policy', () => {
           await originalFilesystem.rm(path, removalOptions);
         });
 
-        if (checkCount === 4 || checkCount === 6) {
+        if (checkCount === 2 && outcome !== 'checker failure') {
           controller.abort();
         }
 
-        if (checkCount === 6) {
+        if (checkCount === 2 && outcome === 'prepared cancellation') {
           vi.mocked(rename).mockImplementation(async (source, destination) => {
             if (String(source).endsWith('/index.lock')) {
               throw new Error('index cleanup denied');
@@ -2750,7 +2750,7 @@ describe('message policy', () => {
         }
 
         return Promise.resolve({
-          code: checkCount === 2 ? 1 : 0,
+          code: checkCount === 2 && outcome === 'checker failure' ? 1 : 0,
           killed: false,
           stdout: '',
           stderr: 'primary checker failure',
@@ -2765,6 +2765,18 @@ describe('message policy', () => {
       async () => ({ findings: [] }),
       () => true,
     );
+    const cleanup = async () => {
+      vi.mocked(rename).mockImplementation(originalFilesystem.rename);
+      vi.mocked(rm).mockImplementation(originalFilesystem.rm);
+      await Promise.all(leftovers.map((path) => rm(path, { recursive: true, force: true })));
+    };
+
+    return { directory, controller, tool, cleanup };
+  };
+
+  it('preserves successful hashes and primary checker failures when temporary cleanup fails', async () => {
+    const { directory, tool, cleanup } = await cleanupFailureFixture('checker failure');
+
     try {
       const result = await tool.execute(
         'first',
@@ -2786,9 +2798,23 @@ describe('message policy', () => {
         ),
       ).rejects.toThrow(/primary checker failure.*cleanup denied/s);
       expect((await git(directory, ['rev-parse', 'HEAD'])).trim()).toBe(head);
+    } finally {
+      await cleanup();
+    }
+  });
 
-      for (const prepared of [false, true]) {
-        controller = new AbortController();
+  it.each(['ordinary cancellation', 'prepared cancellation'] as const)(
+    'preserves successful hashes and primary errors after %s when temporary cleanup fails',
+    async (outcome) => {
+      const { directory, controller, tool, cleanup } = await cleanupFailureFixture(outcome);
+
+      try {
+        // Cancellation needs a committed policy, but does not depend on the checker failure case.
+        await git(directory, ['add', 'tau.json']);
+        await git(directory, ['commit', '-m', 'test: baseline']);
+
+        const prepared = outcome === 'prepared cancellation';
+
         if (prepared) {
           await writeRepositoryFile(
             directory,
@@ -2817,13 +2843,11 @@ describe('message policy', () => {
         expect(failure).toContain(`Group 1/2: ${committed} feat: ${name}`);
         expect(failure).toContain('cleanup denied');
         expect(failure).toContain(prepared ? 'index cleanup denied' : 'Commit cancelled');
+      } finally {
+        await cleanup();
       }
-    } finally {
-      vi.mocked(rename).mockImplementation(originalFilesystem.rename);
-      vi.mocked(rm).mockImplementation(originalFilesystem.rm);
-      await Promise.all(leftovers.map((path) => rm(path, { recursive: true, force: true })));
-    }
-  });
+    },
+  );
 
   it('restores after real message subprocess termination and cancellation', async () => {
     const directory = await createTemporaryRepository();
