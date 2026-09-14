@@ -84,6 +84,7 @@ failures throw rather than return error metadata.
   pre-call hook. Reads with an explicit `limit` pass unchanged, and Pi's 50KB limit still applies.
 - Rewrite the read result's trailing continuation notice into a hint naming `bulk_read`, carrying
   the continuation offset from Pi's notice, for offset reads and the 50KB limit alike.
+  [ADR 0022](./0022-gate-the-clamped-read-hint-on-the-remainder.md) replaces this rule.
 - Keep the threshold at the value the
   [development guide's measurement](../development.md#measuring-bulk-reads) tested.
 
@@ -189,3 +190,4 @@ edge cases rather than reading the file a second time:
 - [Vision](../vision.md)
 - [ADR 0008: Coding instructions](./0008-coding-instructions.md)
 - [ADR 0005: Integration testing against a real Pi session](./0005-integration-testing-with-pi.md)
+- [ADR 0022: Gate the clamped read hint on the remainder](./0022-gate-the-clamped-read-hint-on-the-remainder.md)

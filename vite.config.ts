@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite-plus';
 
 export default defineConfig({
+  test: {
+    // Integration tests launch Git, Node, and nested Vitest processes. Limit competing workers.
+    maxWorkers: 4,
+  },
   lint: {
     plugins: ['typescript', 'unicorn', 'oxc', 'import', 'vitest', 'node'],
     categories: {

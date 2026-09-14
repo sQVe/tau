@@ -20,8 +20,25 @@ export const delegateReference = (): string => {
 
 export const rewriteContinuationNotice = (text: string): string =>
   text.replace(
-    /\n\n\[[^\n]*Use offset=(\d+) to continue\.\]$/,
-    '\n\nFile continues at line $1. For a summary or evidence from this file, call bulk_read with paths and question. To edit, read again with offset and limit.',
+    /\n\n\[(?:(\d+) more lines in file\. Use offset=(\d+)|Showing lines \d+-(\d+) of (\d+)(?: \([^)]*limit\))?\. Use offset=\d+) to continue\.\]$/,
+    (
+      _notice,
+      remainingCount: string | undefined,
+      nextOffset: string | undefined,
+      shownEnd: string | undefined,
+      totalLines: string | undefined,
+    ) => {
+      const start = remainingCount === undefined ? Number(shownEnd) + 1 : Number(nextOffset);
+      const end =
+        remainingCount === undefined ? Number(totalLines) : start + Number(remainingCount) - 1;
+      const remaining = end - start + 1;
+      const guidance =
+        remaining > bulkReadLineThreshold
+          ? 'For questions, call bulk_read with paths and question. To edit, use a bounded read with offset and limit.'
+          : `Read with offset=${start} and limit=${remaining} to continue.`;
+
+      return `\n\nLines ${start}-${end} remain. ${guidance}`;
+    },
   );
 
 const findDelegate = (ctx: ExtensionContext, reference: string) => {
