@@ -19,8 +19,9 @@ Use this skill when the user wants to commit changes from the current working tr
 - Do not ask for chat-level confirmation. The tool handles approval. Never enable preapproval
   yourself or claim a human review waiver. If preapproved mode needs a human waiver, stop and report
   the blocker.
-- Commit only files in the requested groups. Never add unrelated edits or rejected sensitive files
-  to clear an error. Preapproval does not authorize additional files.
+- Commit only requested files and clean preparation-added files covered by the final approval. Never
+  add unrelated edits or rejected sensitive files to clear an error. Preapproval does not authorize
+  additional files.
 
 ## Procedure
 
@@ -55,8 +56,9 @@ Use this skill when the user wants to commit changes from the current working tr
      commits. Do not infer commit success from a clean tree alone.
    - Fix the reported cause. Do not alter human hooks to clear a blocker. Include only files that
      belong to the fix.
-   - Inspect preparation-added files and obtain explicit assignment before including them in a
-     retry. Do not expand into unrelated edits or another group's files.
+   - Inspect preparation-added files before listing them explicitly in a retry's `files`. Startup
+     preapproval still stops on additions. Do not expand into unrelated edits or another group's
+     files.
    - Prepared result paths are repository-relative. Convert them before retrying from a nested
      directory; retry from the repository root if an added path is outside that directory.
    - Retry only corrected and remaining groups that were neither committed nor skipped. Stop after

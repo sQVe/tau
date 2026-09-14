@@ -42,3 +42,4 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0021: Prune recovery snapshots after verified restoration](./0021-prune-verified-recovery.md)
 - [0022: Gate the clamped read hint on the remainder](./0022-gate-the-clamped-read-hint-on-the-remainder.md)
 - [0023: Use advisory TDD observations instead of edit permissions](./0023-advisory-tdd-observations.md)
+- [0024: Approve preparation-added files with the commit](./0024-approve-preparation-additions-once.md)

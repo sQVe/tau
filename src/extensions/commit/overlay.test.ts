@@ -1,7 +1,7 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, vi } from 'vitest';
 
-import { confirmCommitOverlay, confirmPreparationAssignment } from './overlay.js';
+import { confirmCommitOverlay } from './overlay.js';
 
 const view = {
   subject: 'feat: add overlay',
@@ -45,18 +45,9 @@ const setup = (keys: string[], terminalRows = 60, followUps: string[][] = []) =>
   return { context: { ui: { custom } } as unknown as ExtensionContext, custom, done, render };
 };
 
-describe('preparation assignment', () => {
-  it('escapes control characters in assignment and full candidate lists', async () => {
+describe('prepared approval', () => {
+  it('escapes control characters in the full candidate list', async () => {
     const path = 'generated\n\t\u001b\u007f\u0085.txt';
-    const assignment = setup(['a']);
-
-    expect(
-      await confirmPreparationAssignment(assignment.context, view.subject, ['requested'], [path]),
-    ).toBe('assign');
-    expect(assignment.render.mock.lastCall?.[0]).toContain(
-      '"generated\\n\\t\\u001b\\u007f\\u0085.txt"',
-    );
-
     const approval = setup(['f'], 30, [['\u001b'], ['a']]);
     await confirmCommitOverlay(approval.context, {
       ...view,
@@ -73,35 +64,31 @@ describe('preparation assignment', () => {
     ).toBe(true);
   });
 
-  it.each([
-    ['a', 'assign'],
-    ['d', 'decline'],
-    ['\u001b', 'abort'],
-    ['\u0003', 'abort'],
-  ])('handles assignment key %j as %s', async (key, choice) => {
-    const { context, render } = setup([key]);
+  it('scrolls every generated path in the full candidate list', async () => {
+    const added = Array.from({ length: 60 }, (_, index) => `generated ${index + 1}`);
+    const { context, render } = setup(['f'], 20, [['G', '\u001b'], ['a']]);
 
     expect(
-      await confirmPreparationAssignment(
-        context,
-        view.subject,
-        ['requested'],
-        ['generated'],
-        '1/2',
-      ),
-    ).toBe(choice);
-    expect(render.mock.lastCall?.[0]).toContain('Assignment is not commit approval');
-    expect(render.mock.lastCall?.[0]).toContain('Preparation assignment 1/2');
+      await confirmCommitOverlay(context, {
+        ...view,
+        preparationAddedFiles: added,
+        files: added.map((path) => ({ path, added: '1', removed: '0' })),
+      }),
+    ).toBe('approve');
+    expect(render.mock.calls.some(([output]) => output.includes('"generated 60"'))).toBe(true);
   });
 
-  it('scrolls every generated path and does not accept ordinary approval shortcuts', async () => {
-    const added = Array.from({ length: 60 }, (_, index) => `generated ${index + 1}`);
-    const { context, done, render } = setup(['A', 'w', '\r', 'G'], 20);
+  it('aborts from the preparation diff viewer without returning to approval', async () => {
+    const { context, custom } = setup(['d'], 30, [['\u0003'], ['a']]);
 
-    await confirmPreparationAssignment(context, view.subject, ['requested'], added);
-
-    expect(done).not.toHaveBeenCalled();
-    expect(render.mock.lastCall?.[0]).toContain('"generated 60"');
+    expect(
+      await confirmCommitOverlay(context, {
+        ...view,
+        preparationAddedFiles: ['generated'],
+        preparationDiff: '+prepared',
+      }),
+    ).toBe('abort');
+    expect(custom).toHaveBeenCalledTimes(2);
   });
 
   it('hides and ignores approve all for prepared candidates', async () => {
@@ -116,6 +103,71 @@ describe('preparation assignment', () => {
 });
 
 describe('confirmCommitOverlay', () => {
+  it('opens the preparation diff and returns to approval', async () => {
+    const { context, custom, render } = setup(['d'], 30, [['G', '\u001b'], ['a']]);
+    const preparationDiff = Array.from({ length: 60 }, (_, index) => `+Line ${index + 1}`).join(
+      '\n',
+    );
+
+    expect(
+      await confirmCommitOverlay(context, {
+        ...view,
+        preparationAddedFiles: ['generated'],
+        preparationDiff,
+        allowApproveAll: false,
+      }),
+    ).toBe('approve');
+    expect(custom).toHaveBeenCalledTimes(3);
+    expect(render.mock.calls.some(([output]) => output.includes('Preparation-added'))).toBe(true);
+    expect(render.mock.calls.some(([output]) => output.includes('Preparation added 1 path'))).toBe(
+      true,
+    );
+    expect(render.mock.calls.some(([output]) => output.includes('"generated"'))).toBe(true);
+    expect(
+      render.mock.calls.some(([output]) => output.includes('d    Read preparation diff')),
+    ).toBe(true);
+    expect(render.mock.calls.some(([output]) => output.includes('+Line 60'))).toBe(true);
+  });
+
+  it.each([undefined, []])(
+    'hides the preparation notice and diff action without additions: %j',
+    async (preparationAddedFiles) => {
+      const { context, done, render } = setup(['d', 'a']);
+
+      expect(
+        await confirmCommitOverlay(context, {
+          ...view,
+          ...(preparationAddedFiles ? { preparationAddedFiles } : {}),
+        }),
+      ).toBe('approve');
+      expect(done).toHaveBeenCalledExactlyOnceWith('approve');
+      expect(render.mock.lastCall?.[0]).not.toContain('Preparation-added');
+      expect(render.mock.lastCall?.[0]).not.toContain('Read preparation diff');
+    },
+  );
+
+  it('renders diff tabs and CRLF while escaping other control characters', async () => {
+    const { context, render } = setup(['d'], 60, [['\u001b'], ['a']]);
+
+    await confirmCommitOverlay(context, {
+      ...view,
+      preparationAddedFiles: ['generated'],
+      preparationDiff: '+\tindented\r\n+before\u001b[2J\r\u0000\u007f\u0085after\n+next',
+    });
+
+    expect(
+      render.mock.calls.some(([output]) =>
+        output.includes('+before\\u001b[2J\\u000d\\u0000\\u007f\\u0085after'),
+      ),
+    ).toBe(true);
+    const diff = render.mock.calls.find(([output]) => output.includes('+next'))?.[0];
+
+    expect(diff).toContain('+   indented');
+    expect(diff).not.toContain('\\u0009');
+    expect(diff).not.toContain('indented\\u000d');
+    expect(diff).not.toContain('\r');
+  });
+
   it('aborts the commit when Ctrl+C is pressed in the review viewer', async () => {
     const { context, custom } = setup(['r'], 30, [['\u0003'], ['a']]);
 

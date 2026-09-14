@@ -22,7 +22,8 @@ export type CommitChoice =
   | 'waive'
   | 'review'
   | 'retry'
-  | 'files';
+  | 'files'
+  | 'diff';
 
 export interface CommitView {
   subject: string;
@@ -35,6 +36,7 @@ export interface CommitView {
   messageBlocked?: boolean;
   allowApproveAll?: boolean;
   preparationAddedFiles?: string[];
+  preparationDiff?: string;
   repositoryRelative?: boolean;
 }
 
@@ -55,13 +57,12 @@ const showCommitText = async (
   title: string,
   report: string,
   signal?: AbortSignal,
-  assignment = false,
 ) => {
   if (signal?.aborted) {
     return 'abort';
   }
 
-  return context.ui.custom<'return' | 'abort' | 'assign' | 'decline' | undefined>(
+  return context.ui.custom<'return' | 'abort' | undefined>(
     (terminalInterface, theme, _keybindings, done) => {
       const onAbort = () => {
         done('abort');
@@ -77,9 +78,7 @@ const showCommitText = async (
         render(width) {
           const lines = text.render(width);
           const footer = new Text(
-            assignment
-              ? 'a Assign all added paths to this group · d Decline · Esc cancel\nj/k or ↑/↓ scroll · g/G or Home/End'
-              : 'j/k or ↑/↓ scroll · g/G or Home/End · Esc return · Ctrl+C abort',
+            'j/k or ↑/↓ scroll · g/G or Home/End · Esc return · Ctrl+C abort',
             0,
             0,
           ).render(width);
@@ -102,15 +101,9 @@ const showCommitText = async (
         },
         handleInput(data) {
           if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl('c'))) {
-            const choice = assignment || matchesKey(data, Key.ctrl('c')) ? 'abort' : 'return';
+            const choice = matchesKey(data, Key.ctrl('c')) ? 'abort' : 'return';
 
             done(choice);
-
-            return;
-          }
-
-          if (assignment && (data === 'a' || data === 'd')) {
-            done(data === 'a' ? 'assign' : 'decline');
 
             return;
           }
@@ -139,34 +132,14 @@ const showCommitText = async (
   );
 };
 
-const displayPath = (path: string) =>
-  JSON.stringify(path).replace(
-    /[\u007f-\u009f]/g,
-    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`,
+const escapeControls = (text: string) =>
+  text.replace(/\p{Cc}/gu, (character) =>
+    character === '\n' || character === '\t'
+      ? character
+      : `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`,
   );
 
-export const confirmPreparationAssignment = (
-  context: ExtensionContext,
-  subject: string,
-  requested: string[],
-  added: string[],
-  group?: string,
-  signal?: AbortSignal,
-) =>
-  showCommitText(
-    context,
-    `Preparation assignment${group ? ` ${group}` : ''}`,
-    [
-      subject,
-      'Assignment is not commit approval. Checks, review, and approval follow.',
-      'Requested paths (repository-relative)',
-      ...requested.map(displayPath),
-      'Preparation-added paths (repository-relative)',
-      ...added.map(displayPath),
-    ].join('\n'),
-    signal,
-    true,
-  );
+const displayPath = (path: string) => escapeControls(JSON.stringify(path));
 
 const fileLabel = (view: CommitView, path: string) =>
   view.preparationAddedFiles
@@ -208,7 +181,12 @@ export const confirmCommitOverlay = async (
       );
       container.addChild(new Text(theme.fg('accent', theme.bold(view.subject)), 1, 0));
 
-      const limits = sectionCaps(terminalInterface.terminal.rows - (view.review ? 3 : 0));
+      const preparationAddedFiles = view.preparationAddedFiles ?? [];
+      const limits = sectionCaps(
+        terminalInterface.terminal.rows -
+          (view.review ? 3 : 0) -
+          (preparationAddedFiles.length ? 3 : 0),
+      );
       const bodyLines = view.body?.length ? view.body.split('\n') : [];
 
       if (bodyLines.length === 0) {
@@ -227,6 +205,17 @@ export const confirmCommitOverlay = async (
 
       if (view.notice) {
         container.addChild(new Text(theme.fg('warning', view.notice), 1, 0));
+      }
+
+      if (preparationAddedFiles.length) {
+        container.addChild(new Text(theme.fg('warning', 'Preparation-added'), 1, 0));
+        container.addChild(
+          new TruncatedText(
+            `Preparation added ${preparationAddedFiles.length} ${preparationAddedFiles.length === 1 ? 'path' : 'paths'}: ${preparationAddedFiles.map(displayPath).join(', ')}`,
+            1,
+            0,
+          ),
+        );
       }
 
       container.addChild(new Spacer());
@@ -278,6 +267,9 @@ export const confirmCommitOverlay = async (
           ? []
           : [{ value: 'approveAll' as const, label: 'A    Approve all remaining' }]),
         ...(view.review ? [{ value: 'review' as const, label: 'r    Read comment review' }] : []),
+        ...(preparationAddedFiles.length
+          ? [{ value: 'diff' as const, label: 'd    Read preparation diff' }]
+          : []),
         ...(view.preparationAddedFiles
           ? [{ value: 'files' as const, label: 'f    Read full file list' }]
           : []),
@@ -309,6 +301,23 @@ export const confirmCommitOverlay = async (
       container.addChild(list);
       container.addChild(new DynamicBorder((text) => theme.fg('accent', text)));
 
+      const shortcuts: Record<string, CommitChoice> = {
+        ...(view.reviewBlocked ? { t: 'retry' as const } : {}),
+        ...(!view.messageBlocked && view.reviewBlocked ? { w: 'waive' as const } : {}),
+        ...(view.messageBlocked || view.reviewBlocked
+          ? {}
+          : {
+              a: 'approve' as const,
+              ...(view.allowApproveAll === false ? {} : { A: 'approveAll' as const }),
+            }),
+        ...(view.preparationAddedFiles ? { f: 'files' as const } : {}),
+        ...(preparationAddedFiles.length ? { d: 'diff' as const } : {}),
+        ...(view.review ? { r: 'review' as const } : {}),
+        s: 'subject',
+        b: 'body',
+        x: 'skip',
+      };
+
       return {
         render: (width) => container.render(width),
         invalidate: () => {
@@ -325,21 +334,6 @@ export const confirmCommitOverlay = async (
             return;
           }
 
-          const shortcuts: Record<string, CommitChoice> = {
-            ...(view.reviewBlocked ? { t: 'retry' as const } : {}),
-            ...(!view.messageBlocked && view.reviewBlocked ? { w: 'waive' as const } : {}),
-            ...(view.messageBlocked || view.reviewBlocked
-              ? {}
-              : {
-                  a: 'approve' as const,
-                  ...(view.allowApproveAll === false ? {} : { A: 'approveAll' as const }),
-                }),
-            ...(view.preparationAddedFiles ? { f: 'files' as const } : {}),
-            ...(view.review ? { r: 'review' as const } : {}),
-            s: 'subject',
-            b: 'body',
-            x: 'skip',
-          };
           const shortcut = Object.hasOwn(shortcuts, data) ? shortcuts[data] : undefined;
 
           if (shortcut) {
@@ -363,17 +357,20 @@ export const confirmCommitOverlay = async (
     options,
   );
 
-  if ((choice === 'review' && view.review) || choice === 'files') {
-    const report =
-      choice === 'files'
-        ? view.files.map((file) => fileLabel(view, file.path)).join('\n')
-        : (view.review ?? '');
-    const reviewChoice = await showCommitText(
-      context,
-      choice === 'files' ? 'Files (repository-relative)' : 'Comment review',
-      report,
-      signal,
-    );
+  if ((choice === 'review' && view.review) || choice === 'files' || choice === 'diff') {
+    const reports = {
+      files: {
+        title: 'Files (repository-relative)',
+        text: view.files.map((file) => fileLabel(view, file.path)).join('\n'),
+      },
+      review: { title: 'Comment review', text: view.review ?? '' },
+      diff: {
+        title: 'Preparation diff (repository-relative)',
+        text: escapeControls((view.preparationDiff ?? '').replace(/\r\n/g, '\n')),
+      },
+    };
+    const report = reports[choice];
+    const reviewChoice = await showCommitText(context, report.title, report.text, signal);
 
     if (reviewChoice !== 'return') {
       return 'abort';

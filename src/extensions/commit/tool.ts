@@ -19,7 +19,7 @@ import {
 } from './commentReview.js';
 import type { CommentReview } from './commentReview.js';
 import type { CommitView } from './overlay.js';
-import { confirmCommitOverlay, confirmPreparationAssignment } from './overlay.js';
+import { confirmCommitOverlay } from './overlay.js';
 import { snapshotPreparation } from './preparation.js';
 import {
   createCandidateChecks,
@@ -428,27 +428,10 @@ const executeGroup = async (
       validatePaths(preparedCandidate.added);
 
       if (preparedCandidate.added.length) {
-        const assignmentRequired = `Preparation added paths (repository-relative): ${JSON.stringify(preparedCandidate.added)}. Assign each clean generated path explicitly to a group and retry.`;
-
         if (batch.preapproved) {
-          throw new Error(assignmentRequired);
-        }
-
-        const assignment = await confirmPreparationAssignment(
-          context,
-          subject,
-          [...requestedFiles],
-          preparedCandidate.added,
-          groupLabel,
-          signal,
-        );
-
-        if (signal?.aborted || assignment === 'abort' || assignment === undefined) {
-          return cancelled();
-        }
-
-        if (assignment !== 'assign') {
-          throw new Error(`Preparation assignment declined. ${assignmentRequired}`);
+          throw new Error(
+            `Preparation added paths (repository-relative): ${JSON.stringify(preparedCandidate.added)}. Inspect these paths and list them explicitly in the group's files in a new commit call.`,
+          );
         }
 
         await preparedCandidate.accept();
@@ -463,7 +446,7 @@ const executeGroup = async (
 
         if (remaining.added.length) {
           throw new Error(
-            `Preparation added paths changed during assignment: ${JSON.stringify(remaining.added)}. Inspect and retry.`,
+            `Preparation added paths changed during preparation: ${JSON.stringify(remaining.added)}. Inspect and retry.`,
           );
         }
       }
@@ -530,6 +513,25 @@ const executeGroup = async (
 
       throw error;
     }
+
+    const preparationDiff = preparationAddedFiles.length
+      ? await reviewGit(
+          pi,
+          preparation.repositoryRoot,
+          [
+            '--literal-pathspecs',
+            'diff',
+            '--cached',
+            '--no-renames',
+            '--no-ext-diff',
+            '--no-textconv',
+            '--no-color',
+            '--',
+            ...preparationAddedFiles,
+          ],
+          signal,
+        )
+      : undefined;
 
     reviewGroup = JSON.stringify([context.cwd, reviewedHead, [...requestedFiles].toSorted()]);
 
@@ -669,7 +671,12 @@ const executeGroup = async (
               review: reviewReport,
               reviewBlocked,
               ...(ownership
-                ? { allowApproveAll: false, repositoryRelative: true, preparationAddedFiles }
+                ? {
+                    allowApproveAll: false,
+                    repositoryRelative: true,
+                    preparationAddedFiles,
+                    ...(preparationDiff !== undefined ? { preparationDiff } : {}),
+                  }
                 : {}),
             },
             signal,
@@ -746,7 +753,9 @@ const executeGroup = async (
       }
 
       if (choice === 'abort') {
-        throw new Error('Commit declined by user');
+        throw new Error(
+          `Commit declined by user${preparationAddedFiles.length ? `\nPreparation-added paths (repository-relative): ${JSON.stringify(preparationAddedFiles)}` : ''}`,
+        );
       }
 
       if (choice === 'subject') {
@@ -920,14 +929,14 @@ export const createCommitTool = (
     name: 'commit',
     label: 'Commit',
     description:
-      'Stage, prepare, check, review, and commit each group sequentially. Assign clean preparation-added paths through the overlay before candidate review and approval. Startup preapproval stops on additions for explicit assignment in a new call.',
+      'Stage, prepare, check, review, and commit each group sequentially. One approval covers requested and clean preparation-added paths, with their diff available in the overlay. Startup preapproval stops on additions for inspection and an explicit files list in a new call.',
     promptSnippet: 'Create git commits for an ordered groups array in one call.',
     promptGuidelines: [
       'When asked to commit, call commit without asking for confirmation in chat first. The commit overlay is the only approval step unless Pi was started with --auto-approve-commits. That flag skips confirmation, not checks or comment review.',
-      'The commit tool commits only requested files and clean preparation-added paths explicitly assigned by the user in its overlay.',
-      'The commit tool runs configured preparation once after staging each executed group, then restages requested files. Assignment changes must be accepted before checks and review. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
-      'Checks run in the existing checkout with installed dependencies. Tau saves verified recovery before hiding working edits and restores before review or approval. Reviews run serially. Configured preparation disables approve-all reuse for later groups. Assignment never waives review; accepted paths remain reserved for their group.',
-      "With --auto-approve-commits, preparation-added paths stop the commit without UI. Inspect them, assign them explicitly in the next commit call, and retry. Never absorb prior dirty or untracked user edits, other groups' paths, or rejected sensitive paths to clear an error.",
+      'The commit tool includes requested files and eligible clean preparation-added paths in checks and review. One approval covers all these paths, with the added-path diff available in the overlay.',
+      'The commit tool runs configured preparation once after staging each executed group, then restages requested files. Clean preparation-added paths join the candidate before checks and review. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
+      'Checks run in the existing checkout with installed dependencies. Tau saves verified recovery before hiding working edits and restores before review or approval. Reviews run serially. Configured preparation disables approve-all reuse for later groups. Including preparation-added paths never waives review; those paths remain reserved for their group.',
+      "With --auto-approve-commits, preparation-added paths stop the commit without UI. Inspect them and list them explicitly in the group's files in a new commit call. Never absorb prior dirty or untracked user edits, other groups' paths, or rejected sensitive paths to clear an error.",
       'Prepared commit results use repository-relative files and preparationAddedFiles with pathBase: repository, including paths outside the invoking directory. For a retry, convert paths within the invoking directory to relative paths. Retry from the repository root when added paths are outside that directory.',
       'Preparation recovery requires a local POSIX checkout, a regular supported index, and at most 100 MiB of tracked and nonignored untracked working data. Unsupported states fail before preparation. Ignored files, external symlink targets, and background writers are outside recovery coverage; this is not a sandbox.',
       'On preparation failure, cancellation, rejection, or ownership conflict, read the reported recovery instructions. Working edits remain; never restore a saved index or working files over concurrent user edits. Post-commit tree, path, and message guards remain enabled.',

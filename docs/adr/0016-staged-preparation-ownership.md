@@ -24,9 +24,9 @@ still runs in the current checkout. Select that commit's files in the copy befor
 preparation. Run checks, review, and approval afterward so they cover the prepared changes.
 
 Back up existing staging and working files first: tracked files and nonignored untracked files
-within the backup's size and file-type limits. Require explicit assignment for additional files: the
-user chooses whether they belong in this commit. Exclude unrelated edits and files planned for other
-commits.
+within the backup's size and file-type limits. Require approval for additional files as decided in
+[ADR 0024](./0024-approve-preparation-additions-once.md). Exclude unrelated edits and files planned
+for other commits.
 
 Copy the prepared selections back only if shared staging has not changed since the backup. For a
 failed, cancelled, or skipped commit, restore original staging only if staging still matches what
