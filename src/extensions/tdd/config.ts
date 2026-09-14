@@ -6,9 +6,8 @@ export const tddConfig = {
   verificationArgv: ['vitest', 'run', '--reporter=json', '--no-color'],
 } as const;
 
-// Vitest loads its own configuration before Vite's. Hash and protect both configurations
-// because either can change which tests run.
-export const protectedPaths = [
+// Vitest loads its own configuration before Vite's. Hash both because either can change which tests run.
+export const configurationPaths = [
   'package.json',
   'vite.config.ts',
   'vite.config.mts',

@@ -11,7 +11,6 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
-import { tddGateStatus, unknownGateStatus } from '../tdd/state.js';
 import {
   reviewComments,
   formatCommentReview,
@@ -926,7 +925,7 @@ export const createCommitTool = (
     promptGuidelines: [
       'When asked to commit, call commit without asking for confirmation in chat first. The commit overlay is the only approval step unless Pi was started with --auto-approve-commits. That flag skips confirmation, not checks or comment review.',
       'The commit tool commits only requested files and clean preparation-added paths explicitly assigned by the user in its overlay.',
-      'The commit tool runs configured preparation once after staging each executed group, then restages requested files. Assignment changes must be accepted before checks and review. Preparation does not bypass TDD evidence rules. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
+      'The commit tool runs configured preparation once after staging each executed group, then restages requested files. Assignment changes must be accepted before checks and review. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
       'Checks run in the existing checkout with installed dependencies. Tau saves verified recovery before hiding working edits and restores before review or approval. Reviews run serially. Configured preparation disables approve-all reuse for later groups. Assignment never waives review; accepted paths remain reserved for their group.',
       "With --auto-approve-commits, preparation-added paths stop the commit without UI. Inspect them, assign them explicitly in the next commit call, and retry. Never absorb prior dirty or untracked user edits, other groups' paths, or rejected sensitive paths to clear an error.",
       'Prepared commit results use repository-relative files and preparationAddedFiles with pathBase: repository, including paths outside the invoking directory. For a retry, convert paths within the invoking directory to relative paths. Retry from the repository root when added paths are outside that directory.',
@@ -971,17 +970,7 @@ export const createCommitTool = (
       const groups: CommitSuccess['details'][] = [];
       const content: CommitSuccess['content'] = [];
 
-      // Commit is exempt from the guard, so it must report unreadable evidence rather than stay quiet.
-      const finish = async (items: CommitSuccess['content']) => {
-        const gateOff = await tddGateStatus(context.cwd).catch(() =>
-          unknownGateStatus(context.cwd),
-        );
-
-        const reported: CommitSuccess['content'] =
-          gateOff === undefined ? items : [{ type: 'text', text: gateOff }, ...items];
-
-        return { content: reported, details: { groups } };
-      };
+      const finish = (items: CommitSuccess['content']) => ({ content: items, details: { groups } });
 
       if (signal?.aborted) {
         return finish([{ type: 'text', text: 'Commit cancelled' }]);

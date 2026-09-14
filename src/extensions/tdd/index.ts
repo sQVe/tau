@@ -1,60 +1,24 @@
-import { execFile as execFileCallback } from 'node:child_process';
-import { realpath } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { promisify } from 'node:util';
+import { isAbsolute, relative, resolve } from 'node:path';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { guardToolCall } from './guard.js';
-import type { RunnerResult, TestResult } from './runner/types.js';
+import { classifyPath } from './config.js';
+import { createTestObservation, observationDirectory } from './observation.js';
+import type { RunnerResult } from './runner/types.js';
 import { maximumFailures } from './runner/types.js';
-import { ambiguousFiles, createEvidenceStore, testNames } from './state.js';
-import type { EvidenceState } from './types.js';
 
 const maximumSummaryCharacters = 2000;
 
-const execFile = promisify(execFileCallback);
+const summarize = (cwd: string, report: RunnerResult, freshness: string): string => {
+  const lines = [`${report.kind} · ${freshness}`];
 
-const displayPath = (cwd: string, file: string) => (isAbsolute(file) ? relative(cwd, file) : file);
-
-// A notice means the gate is off, and the guard lets production writes through in every phase.
-const implementationState = (allowed: boolean, notice: string | undefined) => {
-  if (notice != null) {
-    return 'allowed (gate off)';
-  }
-
-  return allowed ? 'allowed' : 'blocked';
-};
-
-// oxlint-disable-next-line eslint/complexity -- Summary sections are optional and share one output-size budget.
-const summarize = (
-  cwd: string,
-  header: {
-    kind: string;
-    phase: string;
-    implementationAllowed: boolean;
-    notice: string | undefined;
-  },
-  next: string | undefined,
-  report: RunnerResult | null | undefined,
-  redCoverage?: string,
-): string => {
-  const lines = [
-    ...(header.notice == null ? [] : [`Notice: ${header.notice}`]),
-    `${header.kind} · phase ${header.phase} · implementation ${implementationState(header.implementationAllowed, header.notice)}`,
-  ];
-
-  if (next != null) {
-    lines.push(`Next: ${next}`);
-  }
-
-  if (report != null && 'message' in report) {
+  if ('message' in report) {
     lines.push(report.message);
   }
 
-  if (report != null && 'tests' in report) {
+  if ('tests' in report) {
     const count = (...statuses: string[]) =>
       report.tests.filter((test) => statuses.includes(test.status)).length;
 
@@ -63,15 +27,12 @@ const summarize = (
     );
   }
 
-  if (redCoverage != null) {
-    lines.push(redCoverage);
-  }
-
-  const failures = report != null && 'failures' in report ? report.failures : [];
+  const failures = 'failures' in report ? report.failures : [];
   let shown = 0;
 
   for (const failure of failures.slice(0, maximumFailures)) {
-    const entry = `✗ ${displayPath(cwd, failure.file)} › ${failure.fullname}\n    ${failure.message}`;
+    const file = isAbsolute(failure.file) ? relative(cwd, failure.file) : failure.file;
+    const entry = `✗ ${file} › ${failure.fullname}\n    ${failure.message}`;
 
     if ([...lines, entry].join('\n').length > maximumSummaryCharacters - 60) {
       break;
@@ -85,7 +46,7 @@ const summarize = (
     lines.push(`+${failures.length - shown} more`);
   }
 
-  if (report != null && 'truncated' in report && report.truncated) {
+  if ('truncated' in report && report.truncated) {
     lines.push('further failures were not collected');
   }
 
@@ -96,184 +57,47 @@ const summarize = (
     : text;
 };
 
-// ponytail: estimate existing tests from quoted titles. Dynamic titles and unrelated matching
-// strings can miscount; parse test identities if exact coverage is needed.
-const committedTitles = async (cwd: string, file: string): Promise<string | null> => {
-  try {
-    const { stdout } = await execFile(
-      'git',
-      // `./` makes git read the path from cwd; a bare path always resolves from the repository root.
-      ['show', `HEAD:./${relative(cwd, resolve(cwd, file)).split(sep).join('/')}`],
-      {
-        cwd,
-        maxBuffer: 16 * 1024 * 1024,
-      },
-    );
+export default function tddExtension(pi: ExtensionAPI) {
+  let current: { cwd: string; observation: ReturnType<typeof createTestObservation> } | undefined;
 
-    return stdout;
-  } catch {
-    return null;
-  }
-};
+  const observationFor = async (directory: string) => {
+    const cwd = await observationDirectory(directory);
 
-// Parameterized titles hold `%s` or `$name` placeholders that the report has already filled in.
-const templatePatterns = (content: string): RegExp[] =>
-  [...content.matchAll(/(['"`])([^'"`\n]*)\1/g)]
-    .map((match) => match[2] ?? '')
-    .filter((title) => /%[sdifjo#$]|\$[\w.]+/.test(title))
-    // A title that is only placeholders matches every name, so it proves nothing about any test.
-    .filter((title) => title.replace(/%[sdifjo#$]|\$[\w.]+/g, '').trim().length > 0)
-    .map(
-      (title) =>
-        new RegExp(
-          `^${title
-            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-            .replace(/%[sdifjo#]|%\\\$|\\\$[\w.]+/g, '.+?')
-            .replace(/%%/g, '%')}$`,
-        ),
-    );
-
-const titledIn = (content: string, fullname: string) => {
-  const words = fullname.split(' ');
-  const patterns = templatePatterns(content);
-
-  return words.some((_word, index) => {
-    const suffix = words.slice(index).join(' ');
-
-    return (
-      [`'${suffix}'`, `"${suffix}"`, `\`${suffix}\``].some((quoted) => content.includes(quoted)) ||
-      patterns.some((pattern) => pattern.test(suffix))
-    );
-  });
-};
-
-const displayTestNames = (cwd: string, tests: TestResult[]): string => {
-  const names = tests
-    .slice(0, 3)
-    .map((test) => `${displayPath(cwd, test.file)} › ${test.fullname}`)
-    .join(', ');
-  const remaining = tests.length > 3 ? ` and ${tests.length - 3} more` : '';
-
-  return names + remaining;
-};
-
-// Only selected tests get RED evidence. Report tests added alongside them without claiming that
-// a matching committed title proves the assertion existed or stayed unchanged.
-const describeRedCoverage = async (
-  cwd: string,
-  evidence: Pick<EvidenceState, 'reds' | 'proven'>,
-  tests: TestResult[],
-): Promise<string | undefined> => {
-  const sameFile = (left: string, right: string) => resolve(cwd, left) === resolve(cwd, right);
-  const requiredFiles = [
-    ...new Set(
-      evidence.reds.flatMap(({ behavior }) => behavior.files.map((file) => resolve(cwd, file))),
-    ),
-  ];
-
-  const committed = new Map(
-    await Promise.all(
-      requiredFiles.map(async (file) => [file, await committedTitles(cwd, file)] as const),
-    ),
-  );
-
-  const required = tests.filter(
-    (test) =>
-      (test.status === 'passed' || test.status === 'failed') &&
-      requiredFiles.some((file) => sameFile(file, test.file)),
-  );
-
-  if (required.length === 0) {
-    return undefined;
-  }
-
-  const proven = (test: TestResult) =>
-    evidence.proven.some(
-      (known) => known.fullname === test.fullname && sameFile(known.file, test.file),
-    );
-  const preexisting = (test: TestResult) => {
-    const content = committed.get(resolve(cwd, test.file));
-
-    return content != null && titledIn(content, test.fullname);
-  };
-
-  const unproven = required.filter((test) => !proven(test) && !preexisting(test));
-
-  const renewedFiles = evidence.reds.flatMap(({ behavior, edited }) =>
-    edited ? behavior.files : [],
-  );
-  const edited = required.filter(
-    (test) => proven(test) && renewedFiles.some((file) => sameFile(file, test.file)),
-  );
-
-  return [
-    `Estimated RED coverage: ${required.length - unproven.length} of ${required.length} tests in the required files were proven RED or committed before`,
-    ...(unproven.length === 0 ? [] : [`never failed: ${displayTestNames(cwd, unproven)}`]),
-    ...(edited.length === 0 ? [] : [`edited after RED: ${displayTestNames(cwd, edited)}`]),
-  ].join('; ');
-};
-
-const missingRedBehavior = (cwd: string, evidence: EvidenceState, report: RunnerResult) => {
-  if (!('tests' in report)) {
-    return undefined;
-  }
-
-  return evidence.reds.find(({ behavior, report: redReport }) => {
-    if (redReport.kind !== 'fail') {
-      return false;
+    if (current?.cwd !== cwd) {
+      current = { cwd, observation: createTestObservation(cwd) };
     }
 
-    return redReport.tests.some((test) => {
-      const requiredFailure =
-        test.status === 'failed' &&
-        testNames(behavior).includes(test.fullname) &&
-        behavior.files.some((file) => resolve(cwd, file) === resolve(cwd, test.file));
+    return current;
+  };
 
-      return (
-        requiredFailure &&
-        !report.tests.some(
-          (result) =>
-            result.fullname === test.fullname &&
-            resolve(cwd, result.file) === resolve(cwd, test.file) &&
-            (result.status === 'passed' || result.status === 'failed'),
-        )
-      );
-    });
-  })?.behavior;
-};
+  pi.on('session_start', () => {
+    current = undefined;
+  });
 
-export default function tddExtension(pi: ExtensionAPI) {
-  const store = createEvidenceStore();
+  pi.on('session_shutdown', () => {
+    current = undefined;
+  });
 
-  pi.on('tool_call', (event, context) => guardToolCall(event, context.cwd, store));
+  pi.on('tool_result', async (event, context) => {
+    if (!['write', 'edit', 'bash'].includes(event.toolName)) {
+      return undefined;
+    }
 
-  pi.registerCommand('tdd', {
-    description: 'Turn the TDD gate on or off, or report its state: /tdd on|off|status.',
-    handler: async (arguments_, context) => {
-      const argument = arguments_.trim() || 'status';
+    const { cwd, observation } = await observationFor(context.cwd);
+    const path = typeof event.input.path === 'string' ? event.input.path.replace(/^@/, '') : '';
+    const target = await observationDirectory(resolve(context.cwd, path));
+    const productionEdit =
+      !event.isError &&
+      event.toolName !== 'bash' &&
+      path.length > 0 &&
+      classifyPath(relative(cwd, target)) === 'production';
+    const hint = await observation.checkpoint(productionEdit);
 
-      if (argument !== 'on' && argument !== 'off' && argument !== 'status') {
-        context.ui.notify(`Unknown argument ${argument}; use /tdd on|off|status`, 'warning');
+    if (hint === undefined) {
+      return undefined;
+    }
 
-        return;
-      }
-
-      const state =
-        argument === 'status'
-          ? await store.read(context.cwd)
-          : await store.setGate(context.cwd, argument);
-      let gate = 'on';
-
-      if (state.evidence.gateOff != null) {
-        gate = `off since ${state.evidence.gateOff.since}`;
-      } else if (state.notice != null) {
-        gate = `off: ${state.notice}`;
-      }
-
-      context.ui.notify(
-        `TDD gate ${gate}\nPhase ${state.phase}; production writes ${state.implementationAllowed ? 'allowed' : 'blocked'}.`,
-      );
-    },
+    return { content: [...event.content, { type: 'text' as const, text: hint }] };
   });
 
   pi.registerTool(
@@ -281,18 +105,16 @@ export default function tddExtension(pi: ExtensionAPI) {
       name: 'run_tests',
       label: 'Run tests',
       description:
-        'Name a behavior, its test files, and the exact Vitest full name. Join describe names and the it name with spaces, for example "outer inner works". Give an array of names when several small tests prove one behavior together. ' +
-        'Create a missing production module with write and content "" so the test can import it. Nonempty production writes still require RED. Run scope "focused" to prove RED before editing production files. Run focused again for GREEN after the fix, then run scope "full" at the end for verified. ' +
-        'Editing a required test file before GREEN re-locks the gate; a focused pass accepts the edit and the full run reports it. GREEN permits cleanup, but changed inputs invalidate passing evidence. ' +
-        'Skipped and deleted tests never count. ' +
-        'Returns kind (run outcome), phase (locked: no valid RED; red: failing test proven; green: that test passed; verified: full run passed with every RED test present and passing), implementationAllowed (true in red and green, or when the gate is off), and report (test results, null if inputs changed). ' +
-        'Only files matching the production globs are gated. A notice string says the gate is off when no test runner resolves from the worktree or the user ran /tdd off. ' +
-        'A next string explains recovery when needed. The text gives a short summary with counts and failing tests. The details field carries the full report.',
+        'Run focused tests for a behavior, then the full suite. Use exact Vitest full names: join describe names and the it name with spaces, for example "outer inner works". ' +
+        'Start with a failing focused test (RED), implement the behavior, then rerun focused (GREEN) and scope "full". These are observations, never edit permissions. ' +
+        'Returns kind, scope, freshness (fresh, stale, or unknown), and the actual runner report, even when inputs changed during the run. ' +
+        'A full pass counts without prior RED or focused renewal after formatting. Duplicate, skipped, and missing tests cannot establish RED. ' +
+        'Short session-local hints suggest missing RED, full verification, or rerunning stale results. Hints never block or require acknowledgment. ' +
+        'Freshness covers source, test, and configuration content at bounded checkpoints, not an atomic snapshot. The summary is capped at 2000 characters, plus at most one hint; details keep the runner report.',
       parameters: Type.Object({
         behavior: Type.String({
           minLength: 1,
-          description:
-            'Name the behavior to implement. This is a label and may change; testFullName and files identify the behavior and must stay the same through RED, GREEN, and full verification.',
+          description: 'Name the behavior. This label does not affect test selection.',
         }),
         testFullName: Type.Union(
           [
@@ -301,87 +123,32 @@ export default function tddExtension(pi: ExtensionAPI) {
           ],
           {
             description:
-              'Exact Vitest full name: describe names then the it name, joined with spaces, not " > "; for example "outer inner works". Give an array when one behavior is proven by several small tests; every one must fail in RED and pass in GREEN. Use the same names for focused and full runs.',
+              'Exact Vitest full name, or names that prove one behavior together. Keep names stable between focused runs.',
           },
         ),
-        files: Type.Array(
-          Type.String({
-            minLength: 1,
-            description:
-              'Literal worktree-relative .test.ts, .test.tsx, .spec.ts, or .spec.tsx path.',
-          }),
-          {
-            minItems: 1,
-            description:
-              'Required test files as worktree-relative paths; keep the same files through the cycle, including full runs.',
-          },
-        ),
+        files: Type.Array(Type.String({ minLength: 1 }), {
+          minItems: 1,
+          description:
+            'Literal worktree-relative test file paths. Keep files stable between focused runs.',
+        }),
         scope: Type.Union([Type.Literal('focused'), Type.Literal('full')], {
           description:
-            'Use focused for the exact test in files to prove RED and GREEN; use full for all tests at the end to verify every recorded RED.',
+            'focused selects the exact names in the supplied files; full runs the whole suite.',
         }),
       }),
-      // oxlint-disable-next-line eslint/complexity -- Recovery guidance follows the precedence of gate outcomes and ambiguous test evidence.
       async execute(_toolCallId, parameters, signal, _onUpdate, context) {
+        const { cwd, observation } = await observationFor(context.cwd);
         const { scope, ...behavior } = parameters;
-        const cwd = await realpath(context.cwd);
-        const details = await store.run(cwd, behavior, scope, signal);
+        const { hint, ...details } = await observation.run(behavior, scope, signal);
+        const content = [
+          { type: 'text' as const, text: summarize(cwd, details.report, details.freshness) },
+        ];
 
-        const report =
-          details.kind === 'inputs-changed' || details.kind === 'cancelled' ? null : details.report;
-        const missing =
-          scope === 'full' && report
-            ? missingRedBehavior(cwd, details.evidence, report)
-            : undefined;
-        const ambiguous = report ? ambiguousFiles(cwd, behavior, report) : [];
-        const duplicatedRed =
-          scope === 'full' && report
-            ? details.evidence.reds
-                .map(({ behavior: required }) => ({
-                  required,
-                  files: ambiguousFiles(cwd, required, report),
-                }))
-                // The ambiguous branches cover the current behavior's files. Also name earlier
-                // REDs with duplicate full names, including those that share the current name.
-                .find((entry) => entry.files.length > 0)
-            : undefined;
-
-        let next: string | undefined;
-        const call = `run_tests ${JSON.stringify({ ...behavior, scope })}`;
-
-        if (details.kind === 'inputs-changed') {
-          next = `Inputs changed during the run; no evidence was recorded. Stop concurrent edits, then call ${call}.`;
-        } else if (
-          ambiguous.length > 0 &&
-          ambiguous.length < behavior.files.length &&
-          details.phase !== 'locked'
-        ) {
-          next = `More than one test in ${JSON.stringify(ambiguous)} has the full name ${JSON.stringify(behavior.testFullName)}, so that file proves nothing; the evidence recorded from the other required files stands and the phase is ${details.phase}. Give each test a unique full name, then call ${call}.`;
-        } else if (ambiguous.length > 0) {
-          next = `More than one test in ${JSON.stringify(ambiguous)} has the full name ${JSON.stringify(behavior.testFullName)}, so the report cannot identify it and no evidence was recorded. Give each test a unique full name, then call ${call}.`;
-        } else if (scope === 'focused' && details.kind === 'pass' && details.phase === 'locked') {
-          next = `The test does not fail yet; the behavior may already be implemented. Write a test that fails before the fix, then call ${call}.`;
-        } else if (missing) {
-          next = `A required RED test is skipped or missing: ${JSON.stringify(missing.testFullName)} in ${JSON.stringify(missing.files)}. Restore that test so it runs and passes, then call ${call}.`;
-        } else if (duplicatedRed) {
-          next = `An earlier RED test can no longer be identified: more than one test in ${JSON.stringify(duplicatedRed.files)} has its full name ${JSON.stringify(duplicatedRed.required.testFullName)}, so the full run cannot verify it. Rename the duplicate so each full name is unique, then call ${call}.`;
-        } else if (
-          scope === 'full' &&
-          'staleForVerification' in details &&
-          details.staleForVerification.length > 0
-        ) {
-          next = `Verification inputs changed: ${details.staleForVerification.join(', ')}. Rerun focused tests for the affected recorded behaviors, then call ${call}.`;
+        if (hint !== undefined) {
+          content.push({ type: 'text', text: hint });
         }
 
-        const redCoverage =
-          scope === 'full' && report && 'tests' in report
-            ? await describeRedCoverage(cwd, details.evidence, report.tests)
-            : undefined;
-
-        return {
-          content: [{ type: 'text', text: summarize(cwd, details, next, report, redCoverage) }],
-          details,
-        };
+        return { content, details };
       },
     }),
   );

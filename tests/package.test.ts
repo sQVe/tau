@@ -53,14 +53,15 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
 
     expect(tauExtension?.commands.has('commit')).toBe(true);
     expect(tauExtension?.tools.has('bulk_read')).toBe(true);
-    expect(tauExtension?.handlers.get('tool_call')).toHaveLength(4);
-    expect(tauExtension?.handlers.get('session_start')).toHaveLength(5);
-    expect(tauExtension?.handlers.get('tool_result')).toHaveLength(2);
+    expect(tauExtension?.commands.has('tdd')).toBe(false);
+    expect(tauExtension?.tools.has('run_tests')).toBe(true);
+    expect(tauExtension?.handlers.get('tool_call')).toHaveLength(3);
+    expect(tauExtension?.handlers.get('session_start')).toHaveLength(6);
+    expect(tauExtension?.handlers.get('tool_result')).toHaveLength(3);
     expect(tauExtension?.handlers.get('session_before_switch')).toHaveLength(2);
     expect(tauExtension?.handlers.get('session_before_fork')).toHaveLength(2);
     expect(extensions.some((extension) => extension.tools.has('ask_user_question'))).toBe(true);
 
-    // Catch upgrades that add a web tool the TDD guard would block.
     const webAccessExtension = extensions.find((extension) => extension.tools.has('web_search'));
 
     expect(webAccessExtension).toBeDefined();

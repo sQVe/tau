@@ -86,9 +86,7 @@ around your message, and that the toggle turns off again.
 
 Check that the footer stays on one line and shows the directory, branch, cost, context usage, model,
 and thinking level. Edit a file through a tool and check that `*` appears beside the branch. Narrow
-the terminal and check that the right group truncates before the left. Run `/tdd off`, then call a
-tool and check that the ochre open-lock glyph appears after the branch. Run `/tdd on`, then call a
-tool and check that the glyph disappears.
+the terminal and check that the right group truncates before the left.
 
 ### Commits
 

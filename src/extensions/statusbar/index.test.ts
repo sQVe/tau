@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { promisify, stripVTControlCharacters } from 'node:util';
 
 import type { ExtensionAPI, ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
@@ -104,74 +104,7 @@ describe('statusbar extension', () => {
     expect(await readFile(join(directory, '.git/index'))).toEqual(index);
   });
 
-  it('refreshes the gate indicator from worktree state', async ({ onTestFinished }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
-
-    await executeFile('git', ['init', '-q'], { cwd: directory });
-
-    const application = setup(directory);
-    await application.emit('session_start');
-
-    const footer = application.mount();
-    onTestFinished(() => footer.component.dispose?.());
-
-    await vi.waitFor(() => {
-      expect(footer.requestRender).toHaveBeenCalled();
-    });
-
-    expect(footer.component.render(100)[0]).toContain('\u{F0FC6}');
-
-    await symlink(resolve('node_modules'), join(directory, 'node_modules'), 'dir');
-    await application.emit('tool_result');
-
-    await vi.waitFor(() => {
-      expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
-    });
-
-    await mkdir(join(directory, '.tau'));
-
-    const statePath = join(directory, '.tau/state.json');
-    await writeFile(
-      statePath,
-      JSON.stringify({ tdd: { reds: [], gateOff: { since: '2026-05-01T00:00:00.000Z' } } }),
-    );
-
-    expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
-
-    await application.emit('tool_result');
-
-    await vi.waitFor(() => {
-      expect(footer.component.render(100)[0]).toContain('main*  \u{F0FC6}');
-    });
-
-    await writeFile(statePath, JSON.stringify({ tdd: { reds: [], gateOff: null } }));
-    footer.branchChange();
-
-    await vi.waitFor(() => {
-      expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
-    });
-
-    // Unreadable state blocks every write, so the gate-off marker must clear rather than persist.
-    await writeFile(
-      statePath,
-      JSON.stringify({ tdd: { reds: [], gateOff: { since: '2026-05-01T00:00:00.000Z' } } }),
-    );
-    await application.emit('tool_result');
-
-    await vi.waitFor(() => {
-      expect(footer.component.render(100)[0]).toContain('\u{F0FC6}');
-    });
-
-    await writeFile(statePath, 'corrupt');
-    await application.emit('tool_result');
-
-    await vi.waitFor(() => {
-      expect(footer.component.render(100)[0]).not.toContain('\u{F0FC6}');
-    });
-  });
-
-  it('shows a persisted gate-off indicator at startup', async ({ onTestFinished }) => {
+  it('ignores old TDD state in the footer', async ({ onTestFinished }) => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
@@ -189,7 +122,8 @@ describe('statusbar extension', () => {
     onTestFinished(() => footer.component.dispose?.());
 
     await vi.waitFor(() => {
-      expect(footer.rawRender(100)[0]).toContain('\x1b[38;2;128;96;16m\u{F0FC6}\x1b[39m');
+      expect(footer.requestRender).toHaveBeenCalled();
+      expect(footer.rawRender(100)[0]).not.toContain('\u{F0FC6}');
     });
   });
 

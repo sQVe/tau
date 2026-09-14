@@ -35,9 +35,12 @@ Invalid configuration stops the commit. Unavailable checks are not a pass, and f
 be waived. Checks must not change the files or message being approved; Tau stops if they do. Hook
 rewrites require undoing the commit and retrying.
 
-Skipping hooks does not skip approval, comment review, TDD, or content and path safeguards. Working
+Skipping hooks does not skip approval, comment review, or content and path safeguards. Working
 configuration still selects preparation. This replaces the reserved message and hook settings in
 [ADR 0015](./0015-explicit-repository-commit-commands.md).
+
+[ADR 0023](./0023-advisory-tdd-observations.md) later replaced TDD enforcement with hints. Commit
+checks, review, approval, and safeguards remain independent of those hints.
 
 ## Tradeoffs
 
