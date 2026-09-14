@@ -299,29 +299,33 @@ it('does not retain ancient RED when switching away and back', async ({ onTestFi
   expect((await observation.run(behavior, 'focused')).hint).toContain('RED');
 });
 
-it.each(['src/value.ts', 'value.test.ts', 'package.json', 'vitest.config.ts', 'new.test.ts'])(
-  'detects changed tracked input at checkpoints: %s',
-  async (file) => {
-    const { cwd, observation } = await setup(registerCleanup);
+it.each([
+  'src/value.ts',
+  'value.test.ts',
+  'package.json',
+  'vitest.config.ts',
+  'vitest.config.mjs',
+  'new.test.ts',
+])('detects changed tracked input at checkpoints: %s', async (file) => {
+  const { cwd, observation } = await setup(registerCleanup);
 
-    expect(await observation.run(behavior, 'full')).toMatchObject({
-      kind: 'pass',
-      freshness: 'fresh',
-    });
-    await writeFile(join(cwd, file), 'changed');
-    expect(await observation.checkpoint(false)).toBeUndefined();
-    expect(await observation.checkpoint(true)).toContain('stale');
-    await writeFile(join(cwd, file), 'changed again');
-    expect(await observation.checkpoint(true)).toContain('RED');
-    expect(await observation.checkpoint(true)).toBeUndefined();
-    expect(await observation.run(behavior, 'full')).toMatchObject({
-      kind: 'pass',
-      freshness: 'fresh',
-    });
-    await writeFile(join(cwd, file), 'next change');
-    expect(await observation.checkpoint(true)).toContain('stale');
-  },
-);
+  expect(await observation.run(behavior, 'full')).toMatchObject({
+    kind: 'pass',
+    freshness: 'fresh',
+  });
+  await writeFile(join(cwd, file), 'changed');
+  expect(await observation.checkpoint(false)).toBeUndefined();
+  expect(await observation.checkpoint(true)).toContain('stale');
+  await writeFile(join(cwd, file), 'changed again');
+  expect(await observation.checkpoint(true)).toContain('RED');
+  expect(await observation.checkpoint(true)).toBeUndefined();
+  expect(await observation.run(behavior, 'full')).toMatchObject({
+    kind: 'pass',
+    freshness: 'fresh',
+  });
+  await writeFile(join(cwd, file), 'next change');
+  expect(await observation.checkpoint(true)).toContain('stale');
+});
 
 it('keeps the actual report when inputs change during the run', async ({ onTestFinished }) => {
   const { cwd, observation } = await setup(onTestFinished);
