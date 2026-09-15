@@ -3,7 +3,7 @@ import { defineConfig } from 'vite-plus';
 export default defineConfig({
   test: {
     // Integration tests launch Git, Node, and nested Vitest processes. Limit competing workers.
-    maxWorkers: 4,
+    maxWorkers: 6,
   },
   lint: {
     plugins: ['typescript', 'unicorn', 'oxc', 'import', 'vitest', 'node'],
@@ -225,7 +225,7 @@ export default defineConfig({
     },
     overrides: [
       {
-        files: ['**/*.test.{ts,tsx}'],
+        files: ['**/*.test.{ts,tsx}', 'tests/commitTool.ts'],
         rules: {
           'typescript/no-explicit-any': 'off',
           'typescript/no-non-null-assertion': 'off',

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -79,9 +79,10 @@ const createTemporaryRepository = async (): Promise<string> => {
   temporaryDirectories.push(repositoryDirectory);
 
   await git(repositoryDirectory, ['init']);
-  await git(repositoryDirectory, ['config', 'user.name', 'Tau Test']);
-  await git(repositoryDirectory, ['config', 'user.email', 'tau@example.com']);
-  await git(repositoryDirectory, ['config', 'commit.gpgsign', 'false']);
+  await appendFile(
+    join(repositoryDirectory, '.git/config'),
+    '\n[user]\n\tname = Tau Test\n\temail = tau@example.com\n[commit]\n\tgpgsign = false\n',
+  );
 
   return repositoryDirectory;
 };
