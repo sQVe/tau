@@ -272,7 +272,7 @@ export const createCandidateChecks = async (
   const unavailable = (label: string, key: string) =>
     `${label} unavailable: ${configPath.trim() ? `no ${key} command in tau.json.` : 'no root tau.json.'}`;
   // oxlint-disable-next-line eslint/complexity -- Check failures and restoration ownership must share one cleanup path.
-  const window = async (message: string | undefined, project: boolean) => {
+  const window = async (message: string | undefined) => {
     if (message !== undefined) {
       await writeFile(messagePath, message, { mode: 0o600 });
       await writeFile(`${messagePath}.original`, message, { mode: 0o600 });
@@ -281,7 +281,7 @@ export const createCandidateChecks = async (
     let projectNotice = unavailable('Project check', 'check');
     let messageResult = { passed: true, notice: unavailable('Message check', 'checkMessage') };
 
-    if (!(project && command) && !(message !== undefined && checkMessage)) {
+    if (!command && !(message !== undefined && checkMessage)) {
       return { projectNotice, messageResult };
     }
 
@@ -303,7 +303,7 @@ export const createCandidateChecks = async (
     };
 
     try {
-      if (project && command) {
+      if (command) {
         const { result, notice } = await check(command, 'Project check');
 
         if (result.code !== 0 || result.killed || signal?.aborted) {
@@ -365,16 +365,11 @@ export const createCandidateChecks = async (
     hooksPath,
     messagePath,
     verifyMessage,
-    checkInitial: (message: string) => window(message, true),
+    checkInitial: (message: string) => window(message),
     async checkProject() {
-      const result = await window(undefined, true);
+      const result = await window(undefined);
 
       return result.projectNotice;
-    },
-    async checkMessage(message: string) {
-      const result = await window(message, false);
-
-      return result.messageResult;
     },
   };
 };

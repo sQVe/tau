@@ -260,7 +260,7 @@ describe('commitExtension', () => {
     expect(registeredCommands.has('commit')).toBe(true);
   });
 
-  it('reads commit preapproval from the CLI flag at execution time', async () => {
+  it('commits without registering or reading an approval flag', async () => {
     const reviewer = vi.spyOn(commentReview, 'reviewComments').mockResolvedValue({ findings: [] });
     const repositoryDirectory = await createTemporaryRepository();
     const { fakePi, registeredTool } = createFakePi((command, commandArguments, options) =>
@@ -270,13 +270,7 @@ describe('commitExtension', () => {
 
     commitExtension(fakePi);
 
-    expect(fakePi.registerFlag).toHaveBeenCalledWith('auto-approve-commits', {
-      description:
-        'Skip commit confirmation for this process. Checks and comment review still apply.',
-      type: 'boolean',
-      default: false,
-    });
-    vi.mocked(fakePi.getFlag).mockImplementation((name) => name === 'auto-approve-commits');
+    expect(fakePi.registerFlag).not.toHaveBeenCalled();
 
     try {
       for (const hasUI of [true, false]) {
@@ -300,6 +294,7 @@ describe('commitExtension', () => {
       expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('2');
       expect(reviewer).toHaveBeenCalledTimes(2);
       expect(custom).not.toHaveBeenCalled();
+      expect(fakePi.getFlag).not.toHaveBeenCalled();
     } finally {
       reviewer.mockRestore();
     }

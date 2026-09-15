@@ -107,8 +107,11 @@ it('checks staged scripts and workspace sources in place then restores raw work 
   const index = await readFile(join(root, '.git/index'));
   const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-  await checks.checkProject();
-  await checks.checkMessage('feat: check\n');
+  const result = await checks.checkInitial('feat: check\n');
+
+  expect(result.projectNotice).toContain('Project check passed');
+  expect(result.messageResult).toMatchObject({ passed: true });
+  expect(result.messageResult.notice).toContain('Message check passed');
 
   expect(await readFile(join(root, 'file'), 'utf8')).toBe('raw\r\nworking');
   expect((await lstat(join(root, 'file'))).mode & 0o777).toBe(0o600);

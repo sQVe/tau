@@ -118,9 +118,7 @@ const readBlob = async (
   }
 
   if (Number(size) > 400_000) {
-    throw new Error(
-      `Comment review input is too large: ${path}. Reduce the file or explicitly waive review.`,
-    );
+    throw new Error(`Comment review input is too large: ${path}. Reduce the file and retry.`);
   }
 
   const content = await reviewGit(pi, workingDirectory, ['cat-file', 'blob', hash], signal);
@@ -167,7 +165,7 @@ export const reviewComments = async (
 
   if (paths.length > 300) {
     throw new Error(
-      `Comment review input is too large: ${paths.length} files. Split the commit or explicitly waive review.`,
+      `Comment review input is too large: ${paths.length} files. Split the commit and retry.`,
     );
   }
 
@@ -218,9 +216,7 @@ export const reviewComments = async (
   const input = JSON.stringify({ diff, files, policies, binaryPaths, dispute: snapshot.dispute });
 
   if (input.length > 1_000_000) {
-    throw new Error(
-      'Comment review input is too large. Split the commit or explicitly waive review.',
-    );
+    throw new Error('Comment review input is too large. Split the commit and retry.');
   }
 
   const modelApi: unknown = context.model.api;

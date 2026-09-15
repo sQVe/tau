@@ -257,7 +257,7 @@ export const snapshotPreparation = async (
     await writeFile(join(directory, 'working.json'), JSON.stringify(before), { mode: 0o600 });
     await writeFile(
       join(directory, 'recovery.txt'),
-      'Working files were not restored automatically. Stop writers and inspect current edits first.\nworking.json maps root-relative paths to null (absent), or kind, permission mode, and base64 content. Decode content into a separate directory for comparison. For symlinks the content is the link target.\noriginal-index is the exact prior index, if one existed. The ref named in recovery-ref keeps its Git objects reachable. Do not delete that ref until recovery is complete.\nNever copy the original index over concurrent staging without comparing it first. candidate-index is private preparation state, not an approved index.\n',
+      'Working files were not restored automatically. Stop writers and inspect current edits first.\nworking.json maps root-relative paths to null (absent), or kind, permission mode, and base64 content. Decode content into a separate directory for comparison. For symlinks the content is the link target.\noriginal-index is the exact prior index, if one existed. The ref named in recovery-ref keeps its Git objects reachable. Do not delete that ref until recovery is complete.\nNever copy the original index over concurrent staging without comparing it first. candidate-index is private preparation state, not a recovery copy of the original index.\n',
       { mode: 0o600 },
     );
 
@@ -385,38 +385,7 @@ export const snapshotPreparation = async (
         );
       }
 
-      const preparedIndex = await indexIdentity(root, privateIndex);
-      const sameWorking = async () =>
-        JSON.stringify(after) === JSON.stringify(await workingState(root, Object.keys(after)));
-
-      return {
-        added: unrequested.toSorted(),
-        async accept() {
-          const unchangedWorking = await sameWorking();
-          const unchangedIndex =
-            JSON.stringify(preparedIndex) ===
-            JSON.stringify(await indexIdentity(root, privateIndex));
-
-          if (!unchangedWorking || !unchangedIndex) {
-            throw new Error(
-              'Working files or private index changed during preparation assignment. Inspect the changes and retry.',
-            );
-          }
-
-          // Preserve staged-only output. Restage only generated working changes, including tracked deletions.
-          const workingChanges = unrequested.filter(
-            (path) => JSON.stringify(before[path] ?? null) !== JSON.stringify(after[path] ?? null),
-          );
-
-          await stage(new Set(workingChanges));
-
-          if (!(await sameWorking())) {
-            throw new Error(
-              'Working files changed during preparation assignment. Inspect the changes and retry.',
-            );
-          }
-        },
-      };
+      return { added: unrequested.toSorted() };
     },
     async publish() {
       await reviewGit(isolated, root, ['write-tree']);

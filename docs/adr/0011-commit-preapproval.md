@@ -1,6 +1,6 @@
 # ADR 0011: Commit preapproval at startup
 
-- Status: Accepted
+- Status: Superseded by [ADR 0024](./0024-commit-without-human-approval.md)
 - Date: 2026-09-10
 
 ## Context

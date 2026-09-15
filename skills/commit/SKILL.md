@@ -16,11 +16,10 @@ Use this skill when the user wants to commit changes from the current working tr
 - Never stage with `git add -A` or `git add .`, or rewrite history with `--amend`.
 - Never bypass hooks with `--no-verify`, `core.hooksPath`, environment variables, or configuration
   changes to evade a failure. Leave hook policy to the repository owner and the commit tool.
-- Do not ask for chat-level confirmation. The tool handles approval. Never enable preapproval
-  yourself or claim a human review waiver. If preapproved mode needs a human waiver, stop and report
-  the blocker.
+- Do not ask for confirmation. The tool commits without human approval. Failed checks and blocking
+  comment reviews return errors; they cannot be waived.
 - Commit only files in the requested groups. Never add unrelated edits or rejected sensitive files
-  to clear an error. Preapproval does not authorize additional files.
+  to clear an error.
 
 ## Procedure
 
@@ -43,24 +42,23 @@ Use this skill when the user wants to commit changes from the current working tr
 3. Call `commit` with the ordered `groups` array.
    - Do not manually duplicate the tool's preparation or checks.
    - Report unavailable checks as unavailable, not passed.
-   - Report created commits, skipped groups, and any preparation-added files. A skipped group is not
-     a failure or permission to retry it.
+   - Report created commits and any preparation-added files.
 
 4. On failure, read the tool's error before deciding what to retry.
    - Handle pending recovery first: report retained data and stop, even if Git status looks clean.
      For staging conflicts, inspect current changes and follow recovery instructions. Never restore
      files or staging over concurrent edits. Preparation failures leave working edits in place.
-   - If the user declined or cancelled, stop without retrying, even when the tool reports an error.
+   - If the user cancelled, stop without retrying, even when the tool reports an error.
    - Otherwise, run `git status --porcelain` and compare the remaining changes with reported
      commits. Do not infer commit success from a clean tree alone.
    - Fix the reported cause. Do not alter human hooks to clear a blocker. Include only files that
      belong to the fix.
-   - Inspect preparation-added files and obtain explicit assignment before including them in a
-     retry. Do not expand into unrelated edits or another group's files.
+   - Inspect preparation-added files and assign each relevant path explicitly in the next call. Do
+     not expand into unrelated edits or another group's files.
    - Prepared result paths are repository-relative. Convert them before retrying from a nested
      directory; retry from the repository root if an added path is outside that directory.
-   - Retry only corrected and remaining groups that were neither committed nor skipped. Stop after
-     three failed retries of the same group and report the blocker.
+   - Retry only corrected and remaining groups that were not committed. Stop after three failed
+     retries of the same group and report the blocker.
 
-Stop when the requested groups are committed or skipped, or the user stops the operation. Do not
-expand the task just to make the working tree clean.
+Stop when the requested groups are committed or the user stops the operation. Do not expand the task
+just to make the working tree clean.

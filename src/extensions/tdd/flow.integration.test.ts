@@ -497,7 +497,7 @@ it('rejects unformatted files in the real hook without rewriting them', async ({
   expect((await git(['rev-list', '--all', '--count'])).stdout.trim()).toBe('0');
 });
 
-it('keeps commit preparation, staged checks, and approval through Pi without TDD notices', async ({
+it('keeps commit preparation and staged checks through Pi without approval or TDD notices', async ({
   onTestFinished,
 }) => {
   const { cwd, session, call } = await createHarness(onTestFinished);
@@ -541,7 +541,7 @@ it('keeps commit preparation, staged checks, and approval through Pi without TDD
   );
 
   expect(committed.isError && JSON.stringify(committed.result)).toBe(false);
-  expect(custom).toHaveBeenCalled();
+  expect(custom).not.toHaveBeenCalled();
   expect(JSON.stringify(committed.result)).toContain('Project check passed');
   expect(JSON.stringify(committed.result)).not.toContain('TDD');
   expect(await readFile(join(cwd, 'src/value.ts'), 'utf8')).toBe('export const value = 1;\n');
