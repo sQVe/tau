@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -86,16 +86,12 @@ const createTemporaryRepository = async (registerCleanup: RegisterCleanup): Prom
   const repositoryDirectory = await createTemporaryDirectory(registerCleanup, 'tau-flow-repo-');
 
   await git(repositoryDirectory, ['init', '--initial-branch=main']);
-  await git(repositoryDirectory, ['config', 'user.email', 'tau@example.com']);
-  await git(repositoryDirectory, ['config', 'user.name', 'Tau Test']);
-  await git(repositoryDirectory, ['config', 'commit.gpgsign', 'false']);
-
   // Pi's Git calls do not use gitEnvironment, so disable hooks in the repository too.
-  await git(repositoryDirectory, [
-    'config',
-    'core.hooksPath',
-    join(repositoryDirectory, '.no-hooks'),
-  ]);
+  await appendFile(
+    join(repositoryDirectory, '.git/config'),
+    '\n[user]\n\temail = tau@example.com\n\tname = Tau Test\n[commit]\n\tgpgsign = false\n' +
+      `\n[core]\n\thooksPath = ${JSON.stringify(join(repositoryDirectory, '.no-hooks'))}\n`,
+  );
 
   await writeFile(join(repositoryDirectory, 'README.md'), '# fixture\n', 'utf8');
   await git(repositoryDirectory, ['add', 'README.md']);

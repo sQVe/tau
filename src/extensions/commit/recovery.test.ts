@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import {
+  appendFile,
   chmod,
   link,
   lstat,
@@ -66,8 +67,10 @@ const repository = async () => {
   directories.push(root);
 
   await git(root, ['init']);
-  await git(root, ['config', 'user.name', 'Test']);
-  await git(root, ['config', 'user.email', 'test@example.com']);
+  await appendFile(
+    join(root, '.git/config'),
+    '\n[user]\n\tname = Test\n\temail = test@example.com\n',
+  );
   await writeFile(join(root, 'file'), 'base');
   await git(root, ['add', '.']);
   await git(root, ['commit', '-m', 'base']);

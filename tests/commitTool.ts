@@ -1,0 +1,215 @@
+import { execFile } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
+import { appendFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { promisify } from 'node:util';
+
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { afterEach, vi } from 'vitest';
+
+import * as checker from '../src/extensions/commit/checker.js';
+import type { CommitInput } from '../src/extensions/commit/tool.js';
+import { createCommitTool as createReviewedCommitTool } from '../src/extensions/commit/tool.js';
+
+// Git and approval tests use a clean reviewer.
+// tests/commitFlow.integration.test.ts covers real Pi review.
+export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
+  createReviewedCommitTool(pi, async () => ({ findings: [] }));
+
+const execFileAsync = promisify(execFile);
+
+// Vitest isolates this module and its cleanup hook per test file.
+export const temporaryDirectories: string[] = [];
+export const realChecker = checker.runChecker;
+export const useCheckerExec = (exec: ExtensionAPI['exec']) => {
+  vi.spyOn(checker, 'runChecker').mockImplementation(([command, ...arguments_], root, signal) =>
+    exec(command!, arguments_, { cwd: root, ...(signal ? { signal } : {}), timeout: 600_000 }),
+  );
+};
+
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await Promise.all(
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
+  );
+});
+
+export const runCommand = async (
+  command: string,
+  commandArguments: string[],
+  workingDirectory: string,
+  signal?: AbortSignal,
+): Promise<{ stdout: string; stderr: string; code: number; killed: boolean }> => {
+  try {
+    const { stdout, stderr } = await execFileAsync(command, commandArguments, {
+      cwd: workingDirectory,
+      ...(signal ? { signal } : {}),
+    });
+
+    return { stdout, stderr, code: 0, killed: false };
+  } catch (error) {
+    const failure = error as Error & {
+      stdout?: string;
+      stderr?: string;
+      code?: number;
+      killed?: boolean;
+      signal?: string | null;
+    };
+
+    return {
+      stdout: failure.stdout ?? '',
+      stderr: failure.stderr ?? '',
+      code: failure.code ?? 1,
+      killed: failure.killed === true || typeof failure.signal === 'string',
+    };
+  }
+};
+
+export const git = async (
+  repositoryDirectory: string,
+  commandArguments: string[],
+): Promise<string> => {
+  const result = await runCommand('git', commandArguments, repositoryDirectory);
+
+  if (result.code !== 0) {
+    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr || result.stdout}`);
+  }
+
+  return result.stdout;
+};
+
+export const createTemporaryRepository = async (): Promise<string> => {
+  const repositoryDirectory = await mkdtemp(join(tmpdir(), 'tau-commit-'));
+  temporaryDirectories.push(repositoryDirectory);
+
+  await git(repositoryDirectory, ['init']);
+  await appendFile(
+    join(repositoryDirectory, '.git/config'),
+    '\n[user]\n\tname = Tau Test\n\temail = tau@example.com\n[commit]\n\tgpgsign = false\n',
+  );
+
+  return repositoryDirectory;
+};
+
+export const writeRepositoryFile = async (
+  repositoryDirectory: string,
+  relativePath: string,
+  content: string,
+): Promise<void> => {
+  const fullPath = join(repositoryDirectory, relativePath);
+
+  await mkdir(dirname(fullPath), { recursive: true });
+  await writeFile(fullPath, content);
+};
+
+export const getStoredCommitMessage = async (repositoryDirectory: string): Promise<string> => {
+  const commitObject = await git(repositoryDirectory, ['cat-file', '-p', 'HEAD']);
+  const separatorIndex = commitObject.indexOf('\n\n');
+
+  if (separatorIndex === -1) {
+    throw new Error('Could not locate commit message in git cat-file output');
+  }
+
+  return commitObject.slice(separatorIndex + 2);
+};
+
+export const confirmedContext = (repositoryDirectory: string) =>
+  ({
+    cwd: repositoryDirectory,
+    hasUI: true,
+    ui: { custom: () => Promise.resolve('approve') },
+  }) as never;
+
+export const declinedContext = (repositoryDirectory: string) =>
+  ({
+    cwd: repositoryDirectory,
+    hasUI: true,
+    ui: { custom: () => Promise.resolve('abort') },
+  }) as never;
+
+export const noUiContext = (repositoryDirectory: string) =>
+  ({
+    cwd: repositoryDirectory,
+    hasUI: false,
+    ui: {},
+  }) as never;
+
+export const executeCommit = async (repositoryDirectory: string, input: CommitInput) => {
+  const commitTool = createCommitTool({
+    exec(command: string, commandArguments: string[], options?: { cwd?: string }) {
+      return runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory);
+    },
+  });
+
+  return commitTool.execute(
+    'tool-call-1',
+    input,
+    undefined,
+    undefined,
+    confirmedContext(repositoryDirectory),
+  );
+};
+
+export const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)[] = []) => {
+  const gitDirectory = mkdtempSync(join(tmpdir(), 'tau-mock-git-'));
+  temporaryDirectories.push(gitDirectory);
+
+  const previews: string[] = [];
+  const custom = vi.fn<
+    (factory: Parameters<ExtensionContext['ui']['custom']>[0]) => Promise<string | undefined>
+  >(async (factory) => {
+    const component = await factory(
+      { requestRender: () => {}, terminal: { rows: 60 } } as never,
+      { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
+      {} as never,
+      () => {},
+    );
+    previews.push(component.render(80).join('\n'));
+
+    return choices.shift();
+  });
+
+  const editor = vi.fn<ExtensionContext['ui']['editor']>(() => Promise.resolve(edits.shift()));
+
+  let storedMessage = '';
+  const exec = vi.fn<ExtensionAPI['exec']>(async (_command, commandArguments) => {
+    let stdout = '';
+
+    if (commandArguments[0] === 'commit') {
+      storedMessage = await readFile(commandArguments.at(-1)!, 'utf8');
+    }
+
+    if (commandArguments[0] === 'cat-file') {
+      stdout = `tree abc123\n\n${storedMessage}`;
+    }
+
+    if (commandArguments.includes('--numstat')) {
+      stdout = '2\t1\tREADME.md\0-\t-\timage.png\0';
+    }
+
+    if (commandArguments[0] === 'rev-parse' || commandArguments[0] === 'write-tree') {
+      stdout = commandArguments.includes('--absolute-git-dir') ? `${gitDirectory}\n` : 'abc123\n';
+    }
+
+    return { code: 0, killed: false, stderr: '', stdout };
+  });
+  const tool = createCommitTool({ exec });
+  const context = { cwd: '/repo', hasUI: true, ui: { custom, editor } };
+  const input = {
+    groups: [
+      {
+        files: ['README.md'],
+        subject: 'feat: add thing',
+        body: 'Original body',
+      },
+    ],
+  };
+
+  const execute = (signal?: AbortSignal) =>
+    tool.execute('call', input, signal, undefined, context as never);
+
+  return { custom, editor, exec, context, input, execute, previews, gitDirectory };
+};
