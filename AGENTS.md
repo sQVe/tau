@@ -11,9 +11,24 @@ verification.
   feature works; see [ADR 0010](docs/adr/0010-documentation-scope.md).
 - Name values in camelCase and types in PascalCase. Never SCREAMING_CASE, not even for module
   constants.
-- Keep tests next to source; package and cross-module checks belong in `tests/`.
 - Follow the [writing instructions](src/extensions/writing/instructions.md) for every document.
 - Before finishing a document, check its local links and verify the commands it gives against the
   repository.
+
+## Tests
+
+Keep tests fast so the full suite stays practical as coverage grows.
+
+- Keep tests next to source; package and cross-module checks belong in `tests/`.
+- Test logic without subprocesses when the process itself is not part of the behavior. Reuse
+  existing fakes rather than building a second implementation in mocks.
+- Keep real Git, filesystem, and Pi integration tests where those boundaries matter. Do not remove
+  assertions or skip failure cases to save time.
+- Use fake timers for time-based logic and explicit signals for async coordination. Keep real timers
+  where elapsed time or process termination is the behavior under test.
+- Keep mutable fixtures isolated. Reduce repeated setup work without sharing repositories that tests
+  can change.
+- Measure slow tests before optimizing. Split a slow test file by behavior when it prevents workers
+  from sharing the work. Compare repeated full-suite runs before changing worker limits.
 
 `CLAUDE.md` links to this file. Edit `AGENTS.md` to update instructions for both agents.
