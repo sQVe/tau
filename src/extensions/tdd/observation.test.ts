@@ -362,6 +362,47 @@ it.each([
   expect(await observation.checkpoint(true)).toContain('stale');
 });
 
+it('fingerprints test-support additions, edits, and deletions between and during runs', async ({
+  onTestFinished,
+}) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  const directory = join(cwd, 'tests/fixtures');
+  const helper = join(directory, 'helper.ts');
+
+  await mkdir(directory, { recursive: true });
+  let previous = await observation.run(behavior, 'full');
+
+  for (const content of ['created', 'edited', undefined]) {
+    if (content === undefined) {
+      await rm(helper);
+    } else {
+      await writeFile(helper, content);
+    }
+
+    expect(await observation.checkpoint(false)).toBeUndefined();
+    expect(await observation.checkpoint(true)).toContain('stale');
+    const current = await observation.run(behavior, 'full');
+
+    expect(current).toMatchObject({ kind: 'pass', freshness: 'fresh' });
+    expect(current.inputs.before).not.toBeNull();
+    expect(current.inputs.before).not.toBe(previous.inputs.after);
+    previous = current;
+  }
+
+  await writeFile(helper, 'before');
+  const report = result('failed');
+  vi.mocked(runTests).mockImplementationOnce(async () => {
+    await writeFile(helper, 'during run');
+
+    return report;
+  });
+  const observed = await observation.run(behavior, 'focused');
+
+  expect(observed).toMatchObject({ kind: 'fail', freshness: 'stale' });
+  expect(observed.inputs.before).not.toBe(observed.inputs.after);
+  expect(observed.report).toBe(report);
+});
+
 it('keeps the actual report when inputs change during the run', async ({ onTestFinished }) => {
   const { cwd, observation } = await setup(onTestFinished);
   const report = result('failed');

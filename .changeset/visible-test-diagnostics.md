@@ -13,3 +13,6 @@ Record the command at the spawn point and save the selection and before/after in
 Show when execution did not start. Store diagnostics in the Pi agent's private `test-runs`
 directory. Cleanup keeps up to 32 completed runs for seven days and protects recent unfinished runs.
 These files are diagnostics, not reusable verification.
+
+Include test-support code under `tests/` in input fingerprints so helper-only changes invalidate
+freshness without making helpers selectable as tests.

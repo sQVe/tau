@@ -3,6 +3,7 @@ import { matchesGlob } from 'node:path';
 export const tddConfig = {
   productionGlobs: ['src/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
   testGlobs: ['**/*.test.{ts,tsx,js,jsx,mjs,cjs}', '**/*.spec.{ts,tsx,js,jsx,mjs,cjs}'],
+  testSupportGlobs: ['tests/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
   // The default reporter keeps console and setup diagnostics; JSON alone omits them.
   verificationArgv: ['vitest', 'run', '--reporter=json', '--reporter=default', '--no-color'],
 } as const;

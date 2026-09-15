@@ -49,15 +49,15 @@ const compareInputs = (before: string | null, after: string | null): Freshness =
   return before === after ? 'fresh' : 'stale';
 };
 
-// Keep the existing source, test, and configuration coverage. This is a checkpoint, not an atomic snapshot.
+// Content is checked at bounded checkpoints, not as an atomic snapshot.
 const fingerprint = async (cwd: string, files: string[]): Promise<string | null> => {
   try {
     const paths = [...files, ...configurationPaths];
 
-    for await (const file of glob([...tddConfig.productionGlobs, ...tddConfig.testGlobs], {
-      cwd,
-      exclude: ['**/node_modules/**', '**/.git/**'],
-    })) {
+    for await (const file of glob(
+      [...tddConfig.productionGlobs, ...tddConfig.testGlobs, ...tddConfig.testSupportGlobs],
+      { cwd, exclude: ['**/node_modules/**', '**/.git/**'] },
+    )) {
       paths.push(file);
     }
 

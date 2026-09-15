@@ -25,6 +25,8 @@ describe('TDD config', () => {
     expect(classifyPath('src/example.test.ts')).toBe('test');
     expect(classifyPath('src/component.spec.tsx')).toBe('test');
     expect(classifyPath('tests/example.test.ts')).toBe('test');
+    expect(classifyPath('tests/commitTool.ts')).toBe('other');
+    expect(classifyPath('tests/fixtures/helper.ts')).toBe('other');
     expect(classifyPath('example.spec.ts')).toBe('test');
     expect(classifyPath('src/example.ts')).toBe('production');
     expect(classifyPath('src/component.tsx')).toBe('production');
