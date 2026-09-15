@@ -1,4 +1,0 @@
-{
-  "prepare": ["pnpm", "run", "fix"],
-  "check": ["pnpm", "check"]
-}

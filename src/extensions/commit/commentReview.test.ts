@@ -1,7 +1,25 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { reviewComments } from './commentReview.js';
+import { createTemporaryRepository, runCommand } from '../../../tests/commitTool.js';
+import { reviewComments, reviewGit } from './commentReview.js';
+
+describe('reviewGit', () => {
+  it('identifies the failing command after global Git options', async () => {
+    const repositoryDirectory = await createTemporaryRepository();
+
+    await expect(
+      reviewGit(
+        {
+          exec: (command, commandArguments, options) =>
+            runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
+        },
+        repositoryDirectory,
+        ['--literal-pathspecs', 'ls-tree', 'missing-tree'],
+      ),
+    ).rejects.toThrow('git --literal-pathspecs ls-tree missing-tree failed');
+  });
+});
 
 it.each([
   ['file', 'Comment review input is too large: file.ts. Reduce the file and retry.'],

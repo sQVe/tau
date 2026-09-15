@@ -15,48 +15,44 @@ Use this skill when the user wants to commit changes from the current working tr
   unavailable, stop and tell the user.
 - Never stage with `git add -A` or `git add .`, or rewrite history with `--amend`.
 - Never bypass hooks with `--no-verify`, `core.hooksPath`, environment variables, or configuration
-  changes to evade a failure. Leave hook policy to the repository owner and the commit tool.
-- Do not ask for confirmation. The tool commits without human approval. Failed checks and blocking
-  comment reviews return errors; they cannot be waived.
+  changes to evade a failure.
+- Do not ask for confirmation. Hook failures and blocking comment reviews return errors. Fix the
+  cause before retrying.
 - Commit only files in the requested groups. Never add unrelated edits or rejected sensitive files
   to clear an error.
 
 ## Procedure
 
 1. Read the current Git state.
-   - If an earlier commit call reported pending recovery, report the retained data and stop. Follow
-     its recovery instructions before changing files or staging. A clean-looking working tree during
-     pending recovery does not prove work was committed.
    - Run `git status --porcelain`, `git diff`, and `git diff --cached`.
    - Read untracked files before grouping them. Use the diffs for tracked files unless ambiguous.
-   - If there are no changes and no recovery blocker, report the clean tree and stop.
+   - If there are no changes, report the clean tree and stop.
    - Assign each pre-staged file to a group or unstage it with `git reset HEAD -- <file>`.
 
 2. Plan exact, ordered groups.
    - Split unrelated changes into separate groups. Assign each path to only one group.
-   - The tool stages whole files. For mixed-purpose files, choose the best-fitting group and report
-     that choice rather than splitting hunks.
+   - The tool stages whole files on the real index. It does not hide unrelated working edits from
+     hooks. For mixed-purpose files, choose the best-fitting group and report that choice rather
+     than splitting hunks.
    - Give each group an exact `files` list, a conventional-commit `subject`, and a `body` explaining
      why the change was made.
 
 3. Call `commit` with the ordered `groups` array.
-   - Do not manually duplicate the tool's preparation or checks.
-   - Report unavailable checks as unavailable, not passed.
-   - Report created commits and any preparation-added files.
+   - The tool runs comment review before committing with the repository's installed Git hooks.
+   - Report created commits and any errors.
 
 4. On failure, read the tool's error before deciding what to retry.
-   - Handle pending recovery first: report retained data and stop, even if Git status looks clean.
-     For staging conflicts, inspect current changes and follow recovery instructions. Never restore
-     files or staging over concurrent edits. Preparation failures leave working edits in place.
    - If the user cancelled, stop without retrying, even when the tool reports an error.
    - Otherwise, run `git status --porcelain` and compare the remaining changes with reported
      commits. Do not infer commit success from a clean tree alone.
-   - Fix the reported cause. Do not alter human hooks to clear a blocker. Include only files that
-     belong to the fix.
-   - Inspect preparation-added files and assign each relevant path explicitly in the next call. Do
-     not expand into unrelated edits or another group's files.
-   - Prepared result paths are repository-relative. Convert them before retrying from a nested
-     directory; retry from the repository root if an added path is outside that directory.
+   - For staging conflicts, inspect current changes. Never restore files or staging over concurrent
+     edits.
+   - Fix the reported cause. Do not alter hooks to clear a blocker. Include only files that belong
+     to the fix.
+   - Hook failures unstage the requested files. Hook changes to committed paths, content, or
+     messages undo the commit. Inspect the remaining changes before retrying.
+   - Fix blocking comment findings or supply `commentDispute` with evidence. Missing-comment
+     suggestions are advisory.
    - Retry only corrected and remaining groups that were not committed. Stop after three failed
      retries of the same group and report the blocker.
 

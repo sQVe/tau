@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { lstat, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, posix } from 'node:path';
 
@@ -18,15 +18,6 @@ import {
   commentPolicyHash,
 } from './commentReview.js';
 import type { CommentReview } from './commentReview.js';
-import { snapshotPreparation } from './preparation.js';
-import {
-  createCandidateChecks,
-  MessageMutationError,
-  prepareProject,
-  readPreparation,
-} from './projectCheck.js';
-import type { Preparation } from './projectCheck.js';
-import { assertNoPendingRecovery } from './recovery.js';
 import type { CommitSuccess } from './types.js';
 
 export const conventionalCommitSubjectPattern =
@@ -155,6 +146,26 @@ const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory:
     .map((file) => normalizeRepositoryPath(file));
 };
 
+const validateFileRequests = async (workingDirectory: string, files: string[]) => {
+  await Promise.all(
+    files.map(async (file) => {
+      const status = await lstat(join(workingDirectory, file)).catch((error: unknown) => {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+          return null;
+        }
+
+        throw error;
+      });
+
+      if (status?.isDirectory()) {
+        throw new Error(
+          `Directory requests are not supported: ${file}. Name each file explicitly.`,
+        );
+      }
+    }),
+  );
+};
+
 // Literal pathspecs prevent glob expansion from staging unrequested files.
 const stageFiles = async (
   pi: Pick<ExtensionAPI, 'exec'>,
@@ -262,29 +273,20 @@ interface ReviewSnapshot {
 
 type RequestReview = (snapshot: ReviewSnapshot) => Promise<CommentReview>;
 
-/* oxlint-disable eslint/max-depth -- Preparation and cleanup branches stay inside their ownership scope. */
-// oxlint-disable-next-line eslint/complexity -- This transaction keeps preparation, review and rollback in one ownership scope.
+// oxlint-disable-next-line eslint/complexity -- Review, commit guards, and failure cleanup share the staged candidate.
 const executeGroup = async (
   parameters: CommitInput['groups'][number],
   temporaryDirectory: string,
-  preparation: Preparation,
-  ownership: Awaited<ReturnType<typeof snapshotPreparation>> | undefined,
-  otherGroups: Set<string>,
   pi: Pick<ExtensionAPI, 'exec'>,
   context: ExtensionContext,
   signal: AbortSignal | undefined,
   reviews: Reviews,
   requestReview: RequestReview,
 ): Promise<CommitSuccess> => {
-  let resultFiles = parameters.files;
-  let repositoryRelative = false;
-  const pathDetails = () => ({
-    files: resultFiles,
-    ...(repositoryRelative ? { pathBase: 'repository' as const } : {}),
-  });
+  const messagePath = join(temporaryDirectory, 'message');
   const cancelled = (): CommitSuccess => ({
     content: [{ type: 'text', text: 'Commit cancelled' }],
-    details: { sha: '', ...pathDetails(), subject, body },
+    details: { sha: '', files: parameters.files, subject, body },
   });
 
   const subject = parameters.subject;
@@ -299,10 +301,6 @@ const executeGroup = async (
   const requestedFiles = new Set(
     parameters.files.map((file) => normalizeRepositoryPath(`${prefix}${file}`)),
   );
-  if (ownership) {
-    resultFiles = [...requestedFiles];
-    repositoryRelative = true;
-  }
 
   const stagedPaths = await listStagedPaths(pi, context.cwd);
 
@@ -314,19 +312,26 @@ const executeGroup = async (
     );
   }
 
-  let projectPreparation = preparation.notice;
+  await validateFileRequests(context.cwd, parameters.files);
+
   let readyToCommit = false;
   let reviewedTree = '';
   let reviewedIndex = '';
   let reviewedHead: string | null = null;
   let reviewGroup = '';
   let reviewReport = '';
-  let projectCheck = '';
   let returningForCorrections = false;
-  let candidate: Awaited<ReturnType<typeof createCandidateChecks>>;
-  let messageCheck = '';
   let groupError: unknown;
   const assertCleanupOwnership = async () => {
+    // Before the candidate snapshot, unexpected entries may belong to another writer.
+    const staged = await listStagedPaths(pi, context.cwd);
+
+    if (!reviewedTree && staged.some((file) => !requestedFiles.has(file))) {
+      throw new Error(
+        `${groupError instanceof Error ? `${groupError.message}\n` : ''}Concurrent staging was left untouched. Inspect the index before retrying.`,
+      );
+    }
+
     const currentIndex = await reviewGit(pi, context.cwd, [
       'ls-files',
       '--stage',
@@ -346,59 +351,12 @@ const executeGroup = async (
   };
 
   try {
-    const staging = ownership?.isolated ?? pi;
+    await stageFiles(pi, context.cwd, parameters.files);
 
-    if (ownership) {
-      await ownership.stage(requestedFiles);
-      try {
-        projectPreparation = await prepareProject(staging, preparation, signal);
-      } catch (error) {
-        await ownership.preserve().catch((recoveryError: unknown) => {
-          throw new Error(
-            `${error instanceof Error ? error.message : String(error)}\nPrivate-index recovery failed: ${String(recoveryError)}. Do not prune Git objects. Inspect the retained candidate-index before retrying.`,
-            { cause: error },
-          );
-        });
-
-        if (signal?.aborted) {
-          return cancelled();
-        }
-
-        throw error;
-      }
-
-      await ownership.restage(requestedFiles);
-
-      const preparedCandidate = await ownership.validate(requestedFiles, otherGroups);
-      validatePaths(preparedCandidate.added);
-
-      if (preparedCandidate.added.length) {
-        const assignmentRequired = `Preparation added paths (repository-relative): ${JSON.stringify(preparedCandidate.added)}. Assign each clean generated path explicitly to a group and retry.`;
-
-        throw new Error(assignmentRequired);
-      }
-
-      await ownership.publish();
-    } else {
-      await stageFiles(staging, context.cwd, parameters.files);
-    }
-
-    // Directory arguments can stage unrequested files.
-    // Reset needs paths relative to the working directory.
     const stagedAfterRequest = await listStagedPaths(pi, context.cwd);
-    const unrequestedPaths = stagedAfterRequest
-      .filter((file) => !requestedFiles.has(file))
-      .map((file) => (ownership ? file : file.slice(prefix.length)));
+    const unrequestedPaths = stagedAfterRequest.filter((file) => !requestedFiles.has(file));
 
     if (unrequestedPaths.length > 0) {
-      if (ownership) {
-        throw new Error(
-          `Index ownership conflict after publication: ${JSON.stringify(unrequestedPaths)}. Concurrent staging was left untouched.`,
-        );
-      }
-
-      await unstageFiles(pi, context.cwd, unrequestedPaths);
-
       throw new Error(
         `Staging ${parameters.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}`,
       );
@@ -419,29 +377,7 @@ const executeGroup = async (
       return cancelled();
     }
 
-    try {
-      candidate = await createCandidateChecks(
-        pi,
-        context.cwd,
-        reviewedTree,
-        temporaryDirectory,
-        signal,
-      );
-      const message = buildCommitMessage(subject, body);
-      const initial = await candidate.checkInitial(message);
-      projectCheck = initial.projectNotice;
-      messageCheck = initial.messageResult.notice;
-
-      if (!initial.messageResult.passed) {
-        throw new Error(messageCheck);
-      }
-    } catch (error) {
-      if (signal?.aborted) {
-        return cancelled();
-      }
-
-      throw error;
-    }
+    await writeFile(messagePath, buildCommitMessage(subject, body), { mode: 0o600 });
 
     reviewGroup = JSON.stringify([context.cwd, reviewedHead, [...requestedFiles].toSorted()]);
 
@@ -551,10 +487,12 @@ const executeGroup = async (
       );
     }
 
-    await candidate.verifyMessage(
-      buildCommitMessage(subject, body),
-      'Message file changed after validation. Retry commit.',
-    );
+    const messageStatus = await lstat(messagePath).catch(() => null);
+    const messageContent = messageStatus?.isFile() ? await readFile(messagePath) : null;
+
+    if (!messageContent?.equals(Buffer.from(buildCommitMessage(subject, body)))) {
+      throw new Error('Message file changed before commit. Retry commit.');
+    }
 
     readyToCommit = true;
   } catch (error) {
@@ -566,48 +504,19 @@ const executeGroup = async (
         reviews.delete(reviewGroup);
       }
 
-      const gitDirectoryOutput = await reviewGit(pi, context.cwd, [
-        'rev-parse',
-        '--absolute-git-dir',
-      ]);
-      const gitDirectory = gitDirectoryOutput.trimEnd();
-      await assertNoPendingRecovery(gitDirectory).catch((error: unknown) => {
-        throw new Error(
-          `${groupError instanceof Error ? `${groupError.message}\n` : ''}${String(error)}`,
-          { cause: groupError ?? error },
-        );
-      });
-
-      if (!ownership) {
-        await assertCleanupOwnership();
-        await unstageFiles(pi, context.cwd, parameters.files);
-      }
+      await assertCleanupOwnership();
+      await unstageFiles(pi, context.cwd, parameters.files);
     }
   }
 
   const message = buildCommitMessage(subject, body);
   const previousHead = await currentHead(pi, context.cwd);
-  const gitDirectoryOutput = await reviewGit(pi, context.cwd, ['rev-parse', '--absolute-git-dir']);
-  const gitDirectory = gitDirectoryOutput.trimEnd();
-  await assertNoPendingRecovery(gitDirectory);
-  const commitResult = await pi.exec(
-    'git',
-    [
-      ...(candidate.hooks === 'skip' ? ['-c', `core.hooksPath=${candidate.hooksPath}`] : []),
-      'commit',
-      '--cleanup=verbatim',
-      '-F',
-      candidate.messagePath,
-    ],
-    {
-      cwd: context.cwd,
-    },
-  );
+  const commitResult = await pi.exec('git', ['commit', '--cleanup=verbatim', '-F', messagePath], {
+    cwd: context.cwd,
+  });
 
   if (commitResult.code !== 0 || commitResult.killed) {
-    if (!ownership) {
-      await unstageFiles(pi, context.cwd, parameters.files);
-    }
+    await unstageFiles(pi, context.cwd, parameters.files);
 
     throw commitFailedError(commitResult.stdout, commitResult.stderr);
   }
@@ -619,11 +528,8 @@ const executeGroup = async (
 
   if (smuggledPaths.length > 0) {
     await undoCommit(pi, context.cwd, previousHead);
-    await unstageFiles(
-      pi,
-      ownership ? preparation.repositoryRoot : context.cwd,
-      smuggledPaths.map((file) => (ownership ? file : file.slice(prefix.length))),
-    );
+    const repositoryRoot = await reviewGit(pi, context.cwd, ['rev-parse', '--show-toplevel']);
+    await unstageFiles(pi, repositoryRoot.replace(/\n$/, ''), smuggledPaths);
 
     throw new Error(
       `A hook staged paths that were not requested: ${smuggledPaths.join(', ')}. The commit was undone.`,
@@ -648,7 +554,7 @@ const executeGroup = async (
     await undoCommit(pi, context.cwd, previousHead);
 
     throw new Error(
-      'A hook changed the checked message. The commit was undone. Retry with the final message; hooks must not rewrite it.',
+      'A hook changed the requested message. The commit was undone. Retry with the final message; hooks must not rewrite it.',
     );
   }
 
@@ -670,17 +576,15 @@ const executeGroup = async (
     content: [
       {
         type: 'text',
-        text: `${commitHash} ${subject}\n${projectPreparation}\n${projectCheck}\n${messageCheck}\nGit hooks: ${candidate.hooks} (staged policy).${reviewReport ? `\nComment review:\n${reviewReport}` : ''}`,
+        text: `${commitHash} ${subject}\nGit hooks: run.${reviewReport ? `\nComment review:\n${reviewReport}` : ''}`,
       },
     ],
     details: {
       sha: commitHash,
-      ...pathDetails(),
+      files: parameters.files,
       subject,
       body,
-      projectCheck,
-      messageCheck,
-      hooks: candidate.hooks,
+      hooks: 'run',
       commentReview: {
         status: 'passed',
         tree: reviewedTree,
@@ -690,8 +594,6 @@ const executeGroup = async (
     },
   };
 };
-
-/* oxlint-enable eslint/max-depth */
 
 export const createCommitTool = (
   pi: Pick<ExtensionAPI, 'exec'>,
@@ -703,27 +605,22 @@ export const createCommitTool = (
     name: 'commit',
     label: 'Commit',
     description:
-      'Stage, prepare, check, review, and commit each group sequentially without human approval. Preparation-added paths require explicit assignment in a new call. Failed checks and blocking comment reviews return errors.',
+      'Stage, review, and commit each group sequentially with Git hooks. Hook failures and blocking comment reviews return errors.',
     promptSnippet: 'Create git commits for an ordered groups array in one call.',
     promptGuidelines: [
-      'When asked to commit, call commit without asking for confirmation. The commit tool runs without human approval; checks and comment review still apply.',
+      'When asked to commit, call commit without asking for confirmation. Git hooks and comment review still apply.',
       'The commit tool commits only files explicitly assigned to the requested groups.',
-      'The commit tool runs configured preparation once after staging each executed group, then restages requested files. Staged-only preparation output stops the group and is retained under a recovery ref. Inspect it and change preparation to leave output in working files before retrying. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
-      'Checks run in the existing checkout with installed dependencies. Tau saves verified recovery before hiding working edits and restores before review. Reviews run serially. Requested paths remain reserved for their group.',
-      "Preparation-added paths stop the commit without UI. Inspect them, assign them explicitly in the next commit call, and retry. Never absorb prior dirty or untracked user edits, other groups' paths, or rejected sensitive paths to clear an error.",
-      'Prepared commit results use repository-relative files with pathBase: repository, including paths outside the invoking directory. For a retry, convert paths within the invoking directory to relative paths. Retry from the repository root when added paths are outside that directory.',
-      'Preparation recovery requires a local POSIX checkout, a regular supported index, and at most 100 MiB of tracked and nonignored untracked working data. Unsupported states fail before preparation. Ignored files, external symlink targets, and background writers are outside recovery coverage; this is not a sandbox.',
-      'On preparation failure, cancellation, or ownership conflict, read the reported recovery instructions. Working edits remain; never restore a saved index or working files over concurrent user edits. Post-commit tree, path, and message guards remain enabled.',
-      'Working root tau.json selects prepare. The actual staged candidate selects check, checkMessage, and hooks. hooks defaults to run; only explicit staged hooks: skip disables hooks for the final Git commit. Never bypass hooks ad hoc through --no-verify, core.hooksPath, environment variables, or config changes to evade a failure.',
-      'checkMessage is optional argv without an implicit shell. Tau appends an absolute temporary full-message file path. Initial project and message checks share a staged working window. Missing checks are unavailable, not passed. Failed checks cannot be waived; checker mutations stop the group.',
-      'Pending recovery blocks commits and staging cleanup. Stop writers and inspect the reported archives; never overwrite concurrent staging or HEAD. Partial hiding or restoration needs manual inspection. Successful recovery archives remain because displaced files may receive late writes. Checkers must keep children in their POSIX process group; detached writers and ignored dependencies are outside recovery coverage.',
+      'The tool stages whole requested files on the real index. Working edits remain visible to Git hooks. Groups run serially.',
+      "Never absorb unrelated edits, another group's paths, or rejected sensitive paths to clear an error. Never overwrite concurrent staging or HEAD.",
+      "Git commits run with the repository's installed hooks. Never bypass hooks through --no-verify, core.hooksPath, environment variables, or config changes to evade a failure.",
+      'Hook failures unstage requested files and return diagnostics. Hook changes to committed paths, content, or messages undo the commit. Inspect changes before retrying.',
       'Messages reject NUL. Body CRLF and CR become LF; other whitespace is preserved. Nonempty bodies end in LF. Tau commits the requested normalized message through git commit --cleanup=verbatim -F. Hook message rewrites undo the commit and require retry with the final message.',
       'Use a conventional commit subject.',
       'Do not commit sensitive files such as .env or SSH keys.',
       'Comment review runs before committing. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. Blocking findings and review failures return tool errors on every call; there are no review waivers.',
     ],
     parameters: commitToolParameters,
-    // oxlint-disable-next-line eslint/complexity -- Group execution owns partial success reporting and recovery cleanup across failures.
+    // oxlint-disable-next-line eslint/complexity -- Group failures retain earlier commit results and temporary cleanup diagnostics.
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       const assigned = new Set<string>();
 
@@ -752,56 +649,21 @@ export const createCommitTool = (
         return finish([{ type: 'text', text: 'Commit cancelled' }]);
       }
 
-      const gitDirectoryOutput = await reviewGit(
-        pi,
-        context.cwd,
-        ['rev-parse', '--absolute-git-dir'],
-        signal,
-      );
-      const gitDirectory = gitDirectoryOutput.trimEnd();
-      await assertNoPendingRecovery(gitDirectory);
-
-      const preparation = await readPreparation(pi, context.cwd);
-
-      // Review runs only after restoration, never speculatively across a later check window.
       const requestReview: RequestReview = (snapshot) => review(pi, context, signal, snapshot);
 
-      /* oxlint-disable eslint/no-await-in-loop -- Groups share staging and recovery ownership, so each must finish before the next. */
+      /* oxlint-disable eslint/no-await-in-loop -- Each group must finish before the next stages its files. */
       for (const [index, group] of parameters.groups.entries()) {
         const groupLabel = `${index + 1}/${parameters.groups.length}`;
 
-        let ownership: Awaited<ReturnType<typeof snapshotPreparation>> | undefined;
-        let completed = false;
         let temporaryDirectory = '';
         let temporaryCleanup = '';
 
         try {
-          await assertNoPendingRecovery(gitDirectory);
-          const prefix = preparation.command ? await repositoryPathPrefix(pi, context.cwd) : '';
-
-          if (preparation.command) {
-            ownership = await snapshotPreparation(
-              pi,
-              preparation.repositoryRoot,
-              group.files.map((file) => normalizeRepositoryPath(`${prefix}${file}`)),
-            );
-          }
-          const otherGroups = new Set([
-            ...(preparation.command ? groups.flatMap((result) => result.files) : []),
-            ...parameters.groups
-              .filter((_, groupIndex) => groupIndex !== index)
-              .flatMap((other) =>
-                other.files.map((file) => normalizeRepositoryPath(`${prefix}${file}`)),
-              ),
-          ]);
-          temporaryDirectory = await mkdtemp(join(tmpdir(), 'tau-commit-check-'));
+          temporaryDirectory = await mkdtemp(join(tmpdir(), 'tau-commit-message-'));
 
           const result = await executeGroup(
             group,
             temporaryDirectory,
-            preparation,
-            ownership,
-            otherGroups,
             pi,
             context,
             signal,
@@ -809,29 +671,11 @@ export const createCommitTool = (
             requestReview,
           );
 
-          completed = Boolean(result.details.sha);
           temporaryCleanup = await cleanupTemporary(temporaryDirectory);
           temporaryDirectory = '';
 
           if (temporaryCleanup) {
             result.content.push({ type: 'text', text: temporaryCleanup });
-          }
-
-          if (ownership) {
-            if (completed) {
-              // oxlint-disable-next-line eslint/max-depth -- Report cleanup failure without rolling back an already completed commit.
-              try {
-                await ownership.discard();
-              } catch (error) {
-                result.content.push({
-                  type: 'text',
-                  text: `Commit succeeded; recovery cleanup failed: ${String(error)}\n${ownership.notice}`,
-                });
-              }
-            } else {
-              await ownership.cleanup();
-              result.content.push({ type: 'text', text: ownership.notice });
-            }
           }
 
           if (!result.details.sha && parameters.groups.length > 1) {
@@ -848,35 +692,15 @@ export const createCommitTool = (
             })),
           );
         } catch (error) {
-          const recovered = await assertNoPendingRecovery(gitDirectory).then(
-            () => true,
-            () => false,
-          );
-          let cleanupDiagnostic = temporaryCleanup;
-
-          if (!recovered) {
-            cleanupDiagnostic = `Pending recovery: temporary check data retained at ${temporaryDirectory}. No staging cleanup was attempted.`;
-          } else if (error instanceof MessageMutationError) {
-            cleanupDiagnostic = `Checker message output retained at ${temporaryDirectory}.`;
-          } else if (temporaryDirectory) {
-            cleanupDiagnostic = await cleanupTemporary(temporaryDirectory);
-          }
-
-          if (ownership && !completed && recovered) {
-            try {
-              await ownership.cleanup();
-            } catch (cleanupError) {
-              cleanupDiagnostic += `\nIndex cleanup failed: ${String(cleanupError)}`;
-            }
-          }
-
-          const failure =
-            ownership || cleanupDiagnostic
-              ? new Error(
-                  `${error instanceof Error ? error.message : String(error)}${cleanupDiagnostic ? `\n${cleanupDiagnostic}` : ''}${ownership ? `\n${ownership.notice}` : ''}`,
-                  { cause: error },
-                )
-              : error;
+          const cleanupDiagnostic = temporaryDirectory
+            ? await cleanupTemporary(temporaryDirectory)
+            : temporaryCleanup;
+          const failure = cleanupDiagnostic
+            ? new Error(
+                `${error instanceof Error ? error.message : String(error)}\n${cleanupDiagnostic}`,
+                { cause: error },
+              )
+            : error;
 
           if (parameters.groups.length === 1) {
             throw failure;

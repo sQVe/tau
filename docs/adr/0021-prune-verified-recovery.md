@@ -1,6 +1,6 @@
 # ADR 0021: Prune recovery snapshots after verified restoration
 
-- Status: Proposed
+- Status: Superseded by [ADR 0025](./0025-use-git-hooks-without-preparation.md)
 - Date: 2026-09-12
 
 ## Context

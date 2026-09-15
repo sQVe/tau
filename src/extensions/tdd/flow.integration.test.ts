@@ -497,9 +497,7 @@ it('rejects unformatted files in the real hook without rewriting them', async ({
   expect((await git(['rev-list', '--all', '--count'])).stdout.trim()).toBe('0');
 });
 
-it('keeps commit preparation and staged checks through Pi without approval or TDD notices', async ({
-  onTestFinished,
-}) => {
+it('runs commit hooks through Pi without approval or TDD notices', async ({ onTestFinished }) => {
   const { cwd, session, call } = await createHarness(onTestFinished);
   const git = (arguments_: string[]) => promisify(execFile)('git', arguments_, { cwd });
 
@@ -518,15 +516,8 @@ it('keeps commit preparation and staged checks through Pi without approval or TD
     join(cwd, 'vite.config.ts'),
     "export default { staged: { '*.ts': 'vp fmt --check' } };",
   );
-  await writeFile(
-    join(cwd, 'tau.json'),
-    JSON.stringify({
-      prepare: ['node_modules/.bin/vp', 'fmt', 'src/value.ts'],
-      check: ['node_modules/.bin/vp', 'fmt', '--check', 'src/value.ts'],
-    }),
-  );
   await mkdir(join(cwd, 'src'));
-  await writeFile(join(cwd, 'src/value.ts'), 'export const value=1');
+  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;\n');
 
   const custom = vi.fn<() => never>(() => {
     throw new Error('Unexpected approval UI');
@@ -535,16 +526,14 @@ it('keeps commit preparation and staged checks through Pi without approval or TD
   const committed = await call(
     'commit',
     {
-      groups: [
-        { files: ['src/value.ts', 'package.json', 'tau.json'], subject: 'feat: format fixture' },
-      ],
+      groups: [{ files: ['src/value.ts', 'package.json'], subject: 'feat: add formatted fixture' }],
     },
     [fauxAssistantMessage('{"findings":[]}')],
   );
 
   expect(committed.isError && JSON.stringify(committed.result)).toBe(false);
   expect(custom).not.toHaveBeenCalled();
-  expect(JSON.stringify(committed.result)).toContain('Project check passed');
+  expect(JSON.stringify(committed.result)).toContain('Git hooks: run');
   expect(JSON.stringify(committed.result)).not.toContain('TDD');
   expect(await readFile(join(cwd, 'src/value.ts'), 'utf8')).toBe('export const value = 1;\n');
   expect((await git(['show', 'HEAD:src/value.ts'])).stdout).toBe('export const value = 1;\n');

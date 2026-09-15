@@ -1,6 +1,6 @@
 # ADR 0019: Verify backups before hiding working edits
 
-- Status: Accepted
+- Status: Superseded by [ADR 0025](./0025-use-git-hooks-without-preparation.md)
 - Date: 2026-09-10
 
 ## Context

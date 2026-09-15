@@ -1,7 +1,6 @@
 import { chmod, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -556,9 +555,7 @@ describe('commitTool.execute', () => {
       files: ['README.md'],
       subject: 'feat: add thing',
       body: 'Initial project file.\n',
-      messageCheck: 'Message check unavailable: no root tau.json.',
       hooks: 'run',
-      projectCheck: 'Project check unavailable: no root tau.json.',
       commentReview: {
         status: 'passed',
         tree: (await git(repositoryDirectory, ['rev-parse', 'HEAD^{tree}'])).trim(),
@@ -570,7 +567,7 @@ describe('commitTool.execute', () => {
     expect(result.content).toEqual([
       {
         type: 'text',
-        text: `${commitHash} feat: add thing\nProject preparation unavailable: no root tau.json.\nProject check unavailable: no root tau.json.\nMessage check unavailable: no root tau.json.\nGit hooks: run (staged policy).`,
+        text: `${commitHash} feat: add thing\nGit hooks: run.`,
       },
     ]);
   });
@@ -684,15 +681,15 @@ describe('commitTool.execute', () => {
       commitContext(join(repositoryDirectory, 'sub')),
     );
 
-    expect(result.details.groups[0]?.projectCheck).toContain('Project check passed');
-    expect(await git(repositoryDirectory, ['show', 'HEAD:sub/a.txt'])).toBe('prepared\n');
+    expect(result.details.groups[0]?.files).toEqual(['a.txt']);
+    expect(await git(repositoryDirectory, ['show', 'HEAD:sub/a.txt'])).toBe('hello\n');
     expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('2');
     expect(
       (await git(repositoryDirectory, ['show', '--name-only', '--format=', 'HEAD'])).trim(),
     ).toBe('sub/a.txt');
   });
 
-  it('restores the index when staging pulls in files alongside a requested one', async () => {
+  it('rejects mixed file and directory requests before staging', async () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     await writeRepositoryFile(repositoryDirectory, 'src/a.ts', 'export const a = 1;\n');
@@ -707,12 +704,12 @@ describe('commitTool.execute', () => {
           },
         ],
       }),
-    ).rejects.toThrow(/staged paths that were not requested/i);
+    ).rejects.toThrow(/Directory requests are not supported/i);
 
     expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
   });
 
-  it('refuses to commit when staging a named path pulls in files it did not name', async () => {
+  it('rejects directory requests before staging their contents', async () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     await writeRepositoryFile(repositoryDirectory, 'src/a.ts', 'export const a = 1;\n');
@@ -727,7 +724,7 @@ describe('commitTool.execute', () => {
           },
         ],
       }),
-    ).rejects.toThrow(/staged paths that were not requested/i);
+    ).rejects.toThrow(/Directory requests are not supported/i);
 
     expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
 
@@ -787,78 +784,6 @@ describe('commitTool.execute', () => {
         ],
       }),
     ).rejects.toThrow(/already staged: old\.md/i);
-  });
-
-  it('prepares each staged group and keeps hooks enabled on the first call', async () => {
-    const repositoryDirectory = await createTemporaryRepository();
-
-    await git(repositoryDirectory, ['commit', '--allow-empty', '-m', 'test: baseline']);
-    await writeRepositoryFile(repositoryDirectory, 'second.txt', 'second group');
-    await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
-    await writeRepositoryFile(
-      repositoryDirectory,
-      '.git/hooks/pre-commit',
-      '#!/bin/sh\ngrep -qx formatted README.md || exit 1\n',
-    );
-    await chmod(join(repositoryDirectory, '.git/hooks/pre-commit'), 0o755);
-
-    await writeRepositoryFile(
-      repositoryDirectory,
-      'prepare.cjs',
-      "require('node:assert').notEqual(require('node:child_process').execSync('git diff --cached --name-only').toString(), ''); require('node:fs').writeFileSync('README.md', 'formatted\\n');",
-    );
-    await writeRepositoryFile(
-      repositoryDirectory,
-      'tau.json',
-      JSON.stringify({
-        prepare: ['node', 'prepare.cjs'],
-        check: ['grep', '-qx', 'formatted', 'README.md'],
-      }),
-    );
-    const exec = vi.fn<ExtensionAPI['exec']>((command, arguments_, options) =>
-      runCommand(command, arguments_, options?.cwd ?? repositoryDirectory),
-    );
-    const tool = createReviewedCommitTool({ exec }, async (_pi, _context, _signal, snapshot) => {
-      expect(await git(repositoryDirectory, ['show', `${snapshot.tree}:README.md`])).toBe(
-        'formatted\n',
-      );
-
-      return { findings: [] };
-    });
-    const result = await tool.execute(
-      'fix',
-      {
-        groups: [
-          {
-            files: ['README.md', 'prepare.cjs', 'tau.json'],
-            subject: 'feat: add readme',
-          },
-          { files: ['second.txt'], subject: 'feat: second group' },
-        ],
-      },
-      undefined,
-      undefined,
-      commitContext(repositoryDirectory),
-    );
-
-    expect(JSON.stringify(result.content)).toContain(
-      'Project preparation passed: node prepare.cjs',
-    );
-    expect(result.details.groups[0]?.projectCheck).toContain('Project check passed');
-    expect(
-      exec.mock.calls.filter(
-        ([command, arguments_]) =>
-          command === 'env' && arguments_.includes('prepare.cjs') && arguments_.includes('node'),
-      ),
-    ).toHaveLength(2);
-    expect(result.details.groups[1]?.projectCheck).toContain('Project check passed');
-
-    const statusOutput = await git(repositoryDirectory, ['status', '--short']);
-    const committedContent = await git(repositoryDirectory, ['show', 'HEAD:README.md']);
-
-    expect(await git(repositoryDirectory, ['rev-list', '--all', '--count'])).toBe('3\n');
-    expect(statusOutput).toBe('');
-    expect(committedContent).toBe('formatted\n');
   });
 
   it('undoes the commit when a hook stages unrequested paths', async () => {
@@ -1039,7 +964,7 @@ describe('commits without approvals', () => {
     expect(exec.mock.calls.some((call) => call[1][0] === 'commit')).toBe(false);
   });
 
-  it('still rejects failed project checks without a UI', async () => {
+  it('ignores obsolete project checks without a UI', async () => {
     const repositoryDirectory = await createTemporaryRepository();
     const review = vi.fn<typeof reviewComments>().mockResolvedValue({ findings: [] });
     const tool = createReviewedCommitTool(
@@ -1066,11 +991,11 @@ describe('commits without approvals', () => {
         undefined,
         noUiContext(repositoryDirectory),
       ),
-    ).rejects.toThrow('Project check failed');
+    ).resolves.toHaveProperty('details.groups.0.sha');
 
-    expect(review).not.toHaveBeenCalled();
+    expect(review).toHaveBeenCalledOnce();
     expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
-    expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('0');
+    expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('1');
   });
 });
 

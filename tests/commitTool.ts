@@ -8,7 +8,6 @@ import { promisify } from 'node:util';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, vi } from 'vitest';
 
-import * as checker from '../src/extensions/commit/checker.js';
 import type { reviewComments } from '../src/extensions/commit/commentReview.js';
 import type { CommitInput } from '../src/extensions/commit/tool.js';
 import { createCommitTool as createReviewedCommitTool } from '../src/extensions/commit/tool.js';
@@ -22,12 +21,6 @@ const execFileAsync = promisify(execFile);
 
 // Vitest isolates this module and its cleanup hook per test file.
 export const temporaryDirectories: string[] = [];
-export const realChecker = checker.runChecker;
-export const useCheckerExec = (exec: ExtensionAPI['exec']) => {
-  vi.spyOn(checker, 'runChecker').mockImplementation(([command, ...arguments_], root, signal) =>
-    exec(command!, arguments_, { cwd: root, ...(signal ? { signal } : {}), timeout: 600_000 }),
-  );
-};
 
 afterEach(async () => {
   vi.restoreAllMocks();
