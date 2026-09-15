@@ -59,9 +59,7 @@ export type CommitInput = Static<typeof commitToolParameters>;
 
 // Pi forwards only error.message, so include hook diagnostics from both streams.
 export const commitFailedError = (stdout: string, stderr: string) =>
-  new Error(
-    `git commit failed: ${[stderr.trim(), stdout.trim()].filter(Boolean).join('\n')}`.trim(),
-  );
+  new Error(`git commit failed:\n${stdout}${stderr}`);
 
 export const validateSubject = (subject: string) => {
   if (subject.includes('\0')) {
@@ -128,7 +126,7 @@ const cleanupTemporary = async (directory: string) => {
 const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
   const result = await pi.exec(
     'git',
-    ['diff', '--cached', '--name-only', '--diff-filter=ACMRDT', '-z'],
+    ['diff', '--cached', '--no-relative', '--name-only', '--diff-filter=ACMRDT', '-z'],
     {
       cwd: workingDirectory,
     },
@@ -219,10 +217,25 @@ const currentHead = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: str
   return result.code === 0 ? result.stdout.trim() : null;
 };
 
-const listCommitPaths = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
+const listCommitPaths = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+  commitHash: string,
+) => {
   const result = await pi.exec(
     'git',
-    ['diff-tree', '--root', '-r', '--no-commit-id', '--name-only', '-z', 'HEAD'],
+    [
+      'diff-tree',
+      '--root',
+      '--diff-merges=first-parent',
+      '--no-relative',
+      '-r',
+      '--no-commit-id',
+      '--no-renames',
+      '--name-only',
+      '-z',
+      commitHash,
+    ],
     { cwd: workingDirectory },
   );
 
@@ -238,29 +251,13 @@ const listCommitPaths = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory:
     .map((file) => normalizeRepositoryPath(file));
 };
 
-const undoCommit = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
-  workingDirectory: string,
-  previousHead: string | null,
-) => {
-  const result = await pi.exec(
-    'git',
-    previousHead === null ? ['update-ref', '-d', 'HEAD'] : ['reset', '--soft', previousHead],
-    { cwd: workingDirectory },
-  );
-
-  if (result.code !== 0) {
-    throw new Error(
-      `git failed to undo the commit, which stands with unrequested paths in it: ${result.stderr || result.stdout}`.trim(),
-    );
-  }
-};
-
 type Reviews = Map<
   string,
   {
     key?: string;
     result?: CommentReview;
+    returns: number;
+    refusedTree?: string;
     disputes: { evidence: string; findings: string }[];
   }
 >;
@@ -282,6 +279,7 @@ const executeGroup = async (
   signal: AbortSignal | undefined,
   reviews: Reviews,
   requestReview: RequestReview,
+  committedFiles: Set<string>,
 ): Promise<CommitSuccess> => {
   const messagePath = join(temporaryDirectory, 'message');
   const cancelled = (): CommitSuccess => ({
@@ -320,7 +318,6 @@ const executeGroup = async (
   let reviewedHead: string | null = null;
   let reviewGroup = '';
   let reviewReport = '';
-  let returningForCorrections = false;
   let groupError: unknown;
   const assertCleanupOwnership = async () => {
     // Before the candidate snapshot, unexpected entries may belong to another writer.
@@ -362,6 +359,20 @@ const executeGroup = async (
       );
     }
 
+    if (signal?.aborted) {
+      return cancelled();
+    }
+
+    if (stagedAfterRequest.length === 0) {
+      const consumed = [...requestedFiles].some((file) => committedFiles.has(file));
+
+      throw new Error(
+        consumed
+          ? 'Requested changes were already committed by an earlier hook. Stopped remaining groups. Inspect the reported commits and remaining working changes before retrying.'
+          : 'No staged changes for the requested files. Stopped before comment review and Git hooks.',
+      );
+    }
+
     const treeOutput = await reviewGit(pi, context.cwd, ['write-tree'], signal);
     reviewedTree = treeOutput.trim();
     reviewedIndex = await reviewGit(pi, context.cwd, [
@@ -381,7 +392,7 @@ const executeGroup = async (
 
     reviewGroup = JSON.stringify([context.cwd, reviewedHead, [...requestedFiles].toSorted()]);
 
-    const state = reviews.get(reviewGroup) ?? { disputes: [] };
+    const state = reviews.get(reviewGroup) ?? { disputes: [], returns: 0 };
 
     reviews.delete(reviewGroup);
     reviews.set(reviewGroup, state);
@@ -392,6 +403,12 @@ const executeGroup = async (
       if (oldest !== undefined) {
         reviews.delete(oldest);
       }
+    }
+
+    if (state.refusedTree === reviewedTree) {
+      throw new Error(
+        `Comment review refused for this unchanged tree:\n${state.result ? formatCommentReview(state.result) : ''}\nStop automatic retries and report the blocker. Evidence alone cannot reopen a refused tree.`,
+      );
     }
 
     if (
@@ -455,7 +472,15 @@ const executeGroup = async (
     const reviewBlocked = commentReview.findings.some((finding) => finding.kind !== 'missing');
 
     if (reviewBlocked) {
-      returningForCorrections = true;
+      if (state.returns >= 2) {
+        state.refusedTree = reviewedTree;
+
+        throw new Error(
+          `Comment review refused after two automatic returns:\n${reviewReport}\nStop automatic retries and report the blocker. Findings cannot be waived.`,
+        );
+      }
+
+      state.returns += 1;
 
       throw new Error(
         `Comment review needs corrections:\n${reviewReport}\nFix the findings or supply commentDispute with evidence and call commit again.`,
@@ -500,99 +525,119 @@ const executeGroup = async (
     throw error;
   } finally {
     if (!readyToCommit) {
-      if (!returningForCorrections) {
-        reviews.delete(reviewGroup);
-      }
-
       await assertCleanupOwnership();
       await unstageFiles(pi, context.cwd, parameters.files);
     }
   }
 
-  const message = buildCommitMessage(subject, body);
-  const previousHead = await currentHead(pi, context.cwd);
   const commitResult = await pi.exec('git', ['commit', '--cleanup=verbatim', '-F', messagePath], {
     cwd: context.cwd,
   });
 
   if (commitResult.code !== 0 || commitResult.killed) {
-    await unstageFiles(pi, context.cwd, parameters.files);
+    const failure = commitFailedError(commitResult.stdout, commitResult.stderr);
 
-    throw commitFailedError(commitResult.stdout, commitResult.stderr);
+    try {
+      if ((await currentHead(pi, context.cwd)) !== reviewedHead) {
+        throw new Error(
+          'HEAD changed during git commit. Staging was left untouched. Inspect the repository before retrying.',
+        );
+      }
+
+      // Requested-path staging during hooks is hook-owned; same-path concurrent writers are unsupported.
+      await unstageFiles(pi, context.cwd, parameters.files);
+    } catch (error) {
+      throw new Error(`${failure.message}\n${String(error)}`, { cause: error });
+    }
+
+    throw failure;
   }
-
-  // Hooks can stage files after review, so check the committed paths too.
-  const committedPaths = await listCommitPaths(pi, context.cwd);
-
-  const smuggledPaths = committedPaths.filter((file) => !requestedFiles.has(file));
-
-  if (smuggledPaths.length > 0) {
-    await undoCommit(pi, context.cwd, previousHead);
-    const repositoryRoot = await reviewGit(pi, context.cwd, ['rev-parse', '--show-toplevel']);
-    await unstageFiles(pi, repositoryRoot.replace(/\n$/, ''), smuggledPaths);
-
-    throw new Error(
-      `A hook staged paths that were not requested: ${smuggledPaths.join(', ')}. The commit was undone.`,
-    );
-  }
-
-  const committedTreeOutput = await reviewGit(pi, context.cwd, ['rev-parse', 'HEAD^{tree}']);
-  const committedTree = committedTreeOutput.trim();
-
-  if (committedTree !== reviewedTree) {
-    await undoCommit(pi, context.cwd, previousHead);
-
-    throw new Error(
-      'A hook changed reviewed content. The commit was undone. Call commit again to stage and review the current changes.',
-    );
-  }
-
-  const commitObject = await reviewGit(pi, context.cwd, ['cat-file', '-p', 'HEAD']);
-  const storedMessage = commitObject.slice(commitObject.indexOf('\n\n') + 2);
-
-  if (storedMessage !== message) {
-    await undoCommit(pi, context.cwd, previousHead);
-
-    throw new Error(
-      'A hook changed the requested message. The commit was undone. Retry with the final message; hooks must not rewrite it.',
-    );
-  }
-
-  const revParseResult = await pi.exec('git', ['rev-parse', 'HEAD'], {
-    cwd: context.cwd,
-  });
-
-  if (revParseResult.code !== 0) {
-    throw new Error(
-      `git rev-parse HEAD failed with exit code ${revParseResult.code}: ${revParseResult.stderr || revParseResult.stdout}`.trim(),
-    );
-  }
-
-  const commitHash = revParseResult.stdout.trim();
 
   reviews.delete(reviewGroup);
 
-  return {
-    content: [
-      {
-        type: 'text',
-        text: `${commitHash} ${subject}\nGit hooks: run.${reviewReport ? `\nComment review:\n${reviewReport}` : ''}`,
+  let commitHash = '';
+
+  // A reporting failure must not hide a successful commit or undo hooks' work.
+  try {
+    const commitHashOutput = await reviewGit(pi, context.cwd, ['rev-parse', 'HEAD']);
+    const capturedHead = commitHashOutput.trim();
+    const commitObject = await reviewGit(pi, context.cwd, ['cat-file', '-p', capturedHead]);
+    const messageOffset = commitObject.indexOf('\n\n');
+    const firstParent = commitObject.slice(0, messageOffset).match(/^parent (.+)$/m)?.[1] ?? null;
+
+    // First-parent matching detects an intervening commit, not rewrites sharing the same parent.
+    if (firstParent !== reviewedHead) {
+      throw new Error(
+        "HEAD changed before commit reporting. The captured HEAD could not be verified as this group's commit. HEAD and staging were left untouched.",
+      );
+    }
+
+    commitHash = capturedHead;
+
+    const committedPaths = await listCommitPaths(pi, context.cwd, commitHash);
+    const storedMessage = commitObject.slice(messageOffset + 2);
+    const firstNewline = storedMessage.indexOf('\n');
+    const storedSubject =
+      firstNewline === -1 ? storedMessage : storedMessage.slice(0, firstNewline);
+    const storedBody =
+      firstNewline === -1 ? '' : storedMessage.slice(firstNewline + 1).replace(/^\n/, '');
+
+    const changedPathsOutput = await reviewGit(pi, context.cwd, [
+      'diff',
+      '--no-ext-diff',
+      '--no-textconv',
+      '--no-renames',
+      '--no-relative',
+      '--name-only',
+      '-z',
+      reviewedTree,
+      `${commitHash}^{tree}`,
+      '--',
+    ]);
+    const hookChanges = {
+      files: changedPathsOutput.split('\0').filter(Boolean),
+      message: storedMessage !== buildCommitMessage(subject, body),
+    };
+    const sensitivePaths = committedPaths.filter((file) =>
+      sensitivePathDenylist.some((pattern) => pattern.test(file.replaceAll('\\', '/'))),
+    );
+    const hookReport = [
+      ...(sensitivePaths.length
+        ? [`Warning: committed sensitive paths: ${sensitivePaths.join(', ')}`]
+        : []),
+      ...(hookChanges.files.length ? [`Hook changed paths: ${hookChanges.files.join(', ')}`] : []),
+      ...(hookChanges.message ? [`Hook changed the commit message:\n${storedMessage}`] : []),
+    ].join('\n');
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `${commitHash} ${storedSubject}\nGit hooks: run.${hookReport ? `\n${hookReport}` : ''}${reviewReport ? `\nComment review:\n${reviewReport}` : ''}`,
+        },
+      ],
+      details: {
+        sha: commitHash,
+        files: committedPaths,
+        subject: storedSubject,
+        body: storedBody || null,
+        message: storedMessage,
+        hooks: 'run',
+        hookChanges,
+        commentReview: {
+          status: 'passed',
+          tree: reviewedTree,
+          policy: commentPolicyHash,
+          report: reviewReport,
+        },
       },
-    ],
-    details: {
-      sha: commitHash,
-      files: parameters.files,
-      subject,
-      body,
-      hooks: 'run',
-      commentReview: {
-        status: 'passed',
-        tree: reviewedTree,
-        policy: commentPolicyHash,
-        report: reviewReport,
-      },
-    },
-  };
+    };
+  } catch (error) {
+    throw new Error(
+      `Git commit succeeded${commitHash ? `: ${commitHash}` : ''}. The commit was not undone.\nReporting failed: ${String(error)}\nDo not retry this group. Inspect Git history first.\n${commitResult.stdout}${commitResult.stderr}`,
+      { cause: error },
+    );
+  }
 };
 
 export const createCommitTool = (
@@ -609,15 +654,15 @@ export const createCommitTool = (
     promptSnippet: 'Create git commits for an ordered groups array in one call.',
     promptGuidelines: [
       'When asked to commit, call commit without asking for confirmation. Git hooks and comment review still apply.',
-      'The commit tool commits only files explicitly assigned to the requested groups.',
+      'The commit tool stages only files explicitly assigned to the requested groups. Installed Git hooks may add paths; successful results report actual committed files relative to the repository root.',
       'The tool stages whole requested files on the real index. Working edits remain visible to Git hooks. Groups run serially.',
       "Never absorb unrelated edits, another group's paths, or rejected sensitive paths to clear an error. Never overwrite concurrent staging or HEAD.",
       "Git commits run with the repository's installed hooks. Never bypass hooks through --no-verify, core.hooksPath, environment variables, or config changes to evade a failure.",
-      'Hook failures unstage requested files and return diagnostics. Hook changes to committed paths, content, or messages undo the commit. Inspect changes before retrying.',
-      'Messages reject NUL. Body CRLF and CR become LF; other whitespace is preserved. Nonempty bodies end in LF. Tau commits the requested normalized message through git commit --cleanup=verbatim -F. Hook message rewrites undo the commit and require retry with the final message.',
+      'Hook failures unstage requested files and return raw output. Successful hook content and message rewrites and added paths stay committed and are reported. If a hook fully consumed a later group with no new staged changes, the batch stops. If reporting fails after commit success, inspect Git history before retrying.',
+      'Messages reject NUL. Body CRLF and CR become LF; other whitespace is preserved. Nonempty bodies end in LF. Tau supplies the normalized message through git commit --cleanup=verbatim -F and reports the actual stored message.',
       'Use a conventional commit subject.',
       'Do not commit sensitive files such as .env or SSH keys.',
-      'Comment review runs before committing. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. Blocking findings and review failures return tool errors on every call; there are no review waivers.',
+      'Comment review checks the staged tree before committing. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. After two automatic returns for a group, remaining findings cause a refusal: stop automatic retries and report the blocker. Evidence alone cannot reopen a refused tree; corrected trees can still pass review. Findings cannot be waived.',
     ],
     parameters: commitToolParameters,
     // oxlint-disable-next-line eslint/complexity -- Group failures retain earlier commit results and temporary cleanup diagnostics.
@@ -669,6 +714,7 @@ export const createCommitTool = (
             signal,
             reviews,
             requestReview,
+            new Set(groups.flatMap((committedGroup) => committedGroup.files)),
           );
 
           temporaryCleanup = await cleanupTemporary(temporaryDirectory);
@@ -706,13 +752,7 @@ export const createCommitTool = (
             throw failure;
           }
 
-          const committed = groups.flatMap((result, committedIndex) =>
-            result.sha
-              ? [
-                  `Group ${committedIndex + 1}/${parameters.groups.length}: ${result.sha} ${result.subject}`,
-                ]
-              : [],
-          );
+          const committed = content.map((item) => item.text);
 
           throw new Error(
             `Group ${groupLabel}: ${failure instanceof Error ? failure.message : String(failure)}\nAlready committed:\n${committed.join('\n') || 'None.'}`,

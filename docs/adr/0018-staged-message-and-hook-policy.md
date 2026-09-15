@@ -1,6 +1,6 @@
 # ADR 0018: Repository owners choose commit checks and hooks
 
-- Status: Superseded by [ADR 0025](./0025-use-git-hooks-without-preparation.md)
+- Status: Superseded by [ADR 0026](./0026-let-git-hooks-own-commit-checks.md)
 - Date: 2026-09-10
 
 ## Context

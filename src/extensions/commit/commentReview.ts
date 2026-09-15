@@ -62,9 +62,7 @@ export const reviewGit = async (
   });
 
   if (result.code !== 0 || result.killed) {
-    throw new Error(
-      `Comment review: git ${commandArguments.join(' ')} failed: ${result.stderr || result.stdout}`,
-    );
+    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr || result.stdout}`);
   }
 
   return result.stdout;

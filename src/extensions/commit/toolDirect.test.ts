@@ -14,6 +14,26 @@ import {
 import { createCommitTool } from './tool.js';
 
 describe('direct commit staging', () => {
+  it('preserves unrelated staging outside nested cwd with relative diffs enabled', async () => {
+    const directory = await createTemporaryRepository();
+    await git(directory, ['config', 'diff.relative', 'true']);
+    await writeRepositoryFile(directory, 'sub/requested', 'requested');
+    await writeRepositoryFile(directory, 'other', 'staged bytes');
+    await git(directory, ['add', 'other']);
+    await writeRepositoryFile(directory, 'other', 'working bytes');
+
+    await expect(
+      executeCommit(join(directory, 'sub'), {
+        groups: [{ files: ['requested'], subject: 'feat: requested' }],
+      }),
+    ).rejects.toThrow('other paths are already staged: other');
+
+    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('other\n');
+    expect(await git(directory, ['show', ':other'])).toBe('staged bytes');
+    expect(await readFile(join(directory, 'other'), 'utf8')).toBe('working bytes');
+    expect(await git(directory, ['rev-list', '--all', '--count'])).toBe('0\n');
+  });
+
   it('preserves concurrent staging before the candidate snapshot', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'requested');
@@ -53,12 +73,13 @@ describe('direct commit staging', () => {
     expect((await git(directory, ['rev-list', '--all', '--count'])).trim()).toBe('0');
   });
 
-  it('unstages hook-added paths outside a nested working directory', async () => {
+  it('commits and reports hook-added paths outside a nested working directory', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'baseline', 'baseline');
     await git(directory, ['add', 'baseline']);
     await git(directory, ['commit', '-m', 'test: baseline']);
     const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+    await git(directory, ['config', 'diff.relative', 'true']);
     await writeRepositoryFile(directory, 'sub/requested', 'requested');
     await writeRepositoryFile(directory, 'root.txt', 'root');
     await writeRepositoryFile(directory, 'sibling/extra', 'sibling');
@@ -77,24 +98,31 @@ describe('direct commit staging', () => {
       async () => ({ findings: [] }),
     );
 
-    await expect(
-      tool.execute(
-        'nested',
-        {
-          groups: [{ files: ['requested'], subject: 'feat: requested' }],
-        },
-        undefined,
-        undefined,
-        commitContext(join(directory, 'sub')),
-      ),
-    ).rejects.toThrow(/hook staged paths.*commit was undone/s);
+    const result = await tool.execute(
+      'nested',
+      { groups: [{ files: ['requested'], subject: 'feat: requested' }] },
+      undefined,
+      undefined,
+      commitContext(join(directory, 'sub')),
+    );
 
-    expect((await git(directory, ['rev-parse', 'HEAD'])).trim()).toBe(head);
-    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('sub/requested\n');
+    expect((await git(directory, ['rev-parse', 'HEAD^'])).trim()).toBe(head);
+    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
+    expect(result.details.groups[0]).toMatchObject({
+      files: ['root.txt', 'sibling/extra', 'sub/extra', 'sub/requested'],
+      hookChanges: { files: ['root.txt', 'sibling/extra', 'sub/extra'], message: false },
+    });
+    expect(JSON.stringify(result.content)).toContain(
+      'Hook changed paths: root.txt, sibling/extra, sub/extra',
+    );
+    expect(await git(directory, ['show', 'HEAD:root.txt'])).toBe('root');
+    expect(await git(directory, ['show', 'HEAD:sibling/extra'])).toBe('sibling');
+    expect(await git(directory, ['show', 'HEAD:sub/extra'])).toBe('local');
     expect(await readFile(join(directory, 'root.txt'), 'utf8')).toBe('root');
     expect(await readFile(join(directory, 'sibling/extra'), 'utf8')).toBe('sibling');
     expect(await readFile(join(directory, 'sub/extra'), 'utf8')).toBe('local');
   });
+
   it('rejects duplicate group paths before staging', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'working');

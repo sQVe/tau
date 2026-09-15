@@ -41,21 +41,30 @@ describe('message policy', () => {
     expect(JSON.stringify(result.content)).toContain('Git hooks: run');
   });
 
-  it('undoes hook message rewrites instead of accepting unrequested bytes', async () => {
+  it('commits and reports the actual hook-rewritten message', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'value');
     await writeRepositoryFile(
       directory,
       '.git/hooks/commit-msg',
-      '#!/bin/sh\nprintf "rewritten\\n" >> "$1"\n',
+      '#!/bin/sh\nprintf "fix: rewritten\\n\\nHook body  \\n" > "$1"\n',
     );
     await chmod(join(directory, '.git/hooks/commit-msg'), 0o755);
 
-    await expect(
-      executeCommit(directory, { groups: [{ files: ['requested'], subject: 'feat: requested' }] }),
-    ).rejects.toThrow(/hook changed.*message.*undone/is);
+    const result = await executeCommit(directory, {
+      groups: [{ files: ['requested'], subject: 'feat: requested' }],
+    });
 
-    expect(await git(directory, ['rev-list', '--all', '--count'])).toBe('0\n');
+    expect(await git(directory, ['rev-list', '--all', '--count'])).toBe('1\n');
+    expect(await getStoredCommitMessage(directory)).toBe('fix: rewritten\n\nHook body  \n');
+    expect(result.details.groups[0]).toMatchObject({
+      subject: 'fix: rewritten',
+      body: 'Hook body  \n',
+      message: 'fix: rewritten\n\nHook body  \n',
+      files: ['requested'],
+      hookChanges: { files: [], message: true },
+    });
+    expect(JSON.stringify(result.content)).toContain('Hook changed the commit message');
   });
 
   it('keeps earlier group hashes when a message hook stops a batch', async () => {
@@ -79,7 +88,7 @@ describe('message policy', () => {
     const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
 
     expect(failure).toContain(`Group 1/2: ${head} feat: first`);
-    expect(failure).toContain('Group 2/2: git commit failed: invalid message');
+    expect(failure).toContain('Group 2/2: git commit failed:\ninvalid message');
     expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
   });
 

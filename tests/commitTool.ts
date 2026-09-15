@@ -156,19 +156,37 @@ export const fakeCommit = () => {
   });
 
   let storedMessage = '';
+  let stagedFiles: string[] = [];
   const exec = vi.fn<ExtensionAPI['exec']>(async (_command, commandArguments) => {
     let stdout = '';
 
+    if (commandArguments.includes('add')) {
+      stagedFiles = commandArguments.slice(commandArguments.indexOf('--') + 1);
+    }
+
+    if (commandArguments[0] === 'diff' && commandArguments.includes('--cached')) {
+      stdout = stagedFiles.map((file) => `${file}\0`).join('');
+    }
+
     if (commandArguments[0] === 'commit') {
       storedMessage = await readFile(commandArguments.at(-1)!, 'utf8');
+      stagedFiles = [];
+    }
+
+    if (commandArguments.includes('reset')) {
+      stagedFiles = [];
     }
 
     if (commandArguments[0] === 'cat-file') {
-      stdout = `tree abc123\n\n${storedMessage}`;
+      stdout = `tree abc123\nparent abc123\n\n${storedMessage}`;
     }
 
     if (commandArguments[0] === 'rev-parse' || commandArguments[0] === 'write-tree') {
       stdout = commandArguments.includes('--absolute-git-dir') ? `${gitDirectory}\n` : 'abc123\n';
+    }
+
+    if (commandArguments.includes('--show-prefix')) {
+      stdout = '';
     }
 
     return { code: 0, killed: false, stderr: '', stdout };

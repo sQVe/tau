@@ -574,7 +574,11 @@ describe('commit flow', () => {
       true,
     ]);
 
-    expect(JSON.stringify(results.at(-1))).toContain('Comment review needs corrections');
+    expect(JSON.stringify(results[0])).toContain('Comment review needs corrections');
+    expect(JSON.stringify(results[1])).toContain('Comment review needs corrections');
+    expect(JSON.stringify(results.at(-1))).toContain(
+      'Comment review refused after two automatic returns',
+    );
     expect((await git(repositoryDirectory, ['log', '-1', '--pretty=%s'])).trim()).toBe(
       'chore: initial commit',
     );
