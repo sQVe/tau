@@ -14,6 +14,87 @@ import {
 import { createCommitTool } from './tool.js';
 
 describe('direct commit staging', () => {
+  it('preserves concurrent staging before the candidate snapshot', async () => {
+    const directory = await createTemporaryRepository();
+    await writeRepositoryFile(directory, 'requested', 'requested');
+    await writeRepositoryFile(directory, 'other', 'working bytes');
+    const tool = createCommitTool(
+      {
+        exec: async (command, arguments_, options) => {
+          const result = await runCommand(command, arguments_, options?.cwd ?? directory);
+
+          if (arguments_.includes('add')) {
+            await writeRepositoryFile(directory, 'other', 'staged bytes');
+            await git(directory, ['add', 'other']);
+            await writeRepositoryFile(directory, 'other', 'working bytes');
+          }
+
+          return result;
+        },
+      },
+      async () => ({ findings: [] }),
+    );
+
+    await expect(
+      tool.execute(
+        'concurrent',
+        {
+          groups: [{ files: ['requested'], subject: 'feat: requested' }],
+        },
+        undefined,
+        undefined,
+        commitContext(directory),
+      ),
+    ).rejects.toThrow(/Concurrent staging was left untouched/);
+
+    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('other\nrequested\n');
+    expect(await git(directory, ['show', ':other'])).toBe('staged bytes');
+    expect(await readFile(join(directory, 'other'), 'utf8')).toBe('working bytes');
+    expect((await git(directory, ['rev-list', '--all', '--count'])).trim()).toBe('0');
+  });
+
+  it('unstages hook-added paths outside a nested working directory', async () => {
+    const directory = await createTemporaryRepository();
+    await writeRepositoryFile(directory, 'baseline', 'baseline');
+    await git(directory, ['add', 'baseline']);
+    await git(directory, ['commit', '-m', 'test: baseline']);
+    const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+    await writeRepositoryFile(directory, 'sub/requested', 'requested');
+    await writeRepositoryFile(directory, 'root.txt', 'root');
+    await writeRepositoryFile(directory, 'sibling/extra', 'sibling');
+    await writeRepositoryFile(directory, 'sub/extra', 'local');
+    await writeRepositoryFile(
+      directory,
+      '.git/hooks/pre-commit',
+      '#!/bin/sh\ngit add -- root.txt sibling/extra sub/extra\n',
+    );
+    await chmod(join(directory, '.git/hooks/pre-commit'), 0o755);
+    const tool = createCommitTool(
+      {
+        exec: (command, arguments_, options) =>
+          runCommand(command, arguments_, options?.cwd ?? directory),
+      },
+      async () => ({ findings: [] }),
+    );
+
+    await expect(
+      tool.execute(
+        'nested',
+        {
+          groups: [{ files: ['requested'], subject: 'feat: requested' }],
+        },
+        undefined,
+        undefined,
+        commitContext(join(directory, 'sub')),
+      ),
+    ).rejects.toThrow(/hook staged paths.*commit was undone/s);
+
+    expect((await git(directory, ['rev-parse', 'HEAD'])).trim()).toBe(head);
+    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('sub/requested\n');
+    expect(await readFile(join(directory, 'root.txt'), 'utf8')).toBe('root');
+    expect(await readFile(join(directory, 'sibling/extra'), 'utf8')).toBe('sibling');
+    expect(await readFile(join(directory, 'sub/extra'), 'utf8')).toBe('local');
+  });
   it('rejects duplicate group paths before staging', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'working');

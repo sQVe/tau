@@ -689,7 +689,7 @@ describe('commitTool.execute', () => {
     ).toBe('sub/a.txt');
   });
 
-  it('restores the index when staging pulls in files alongside a requested one', async () => {
+  it('rejects mixed file and directory requests before staging', async () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     await writeRepositoryFile(repositoryDirectory, 'src/a.ts', 'export const a = 1;\n');
@@ -704,12 +704,12 @@ describe('commitTool.execute', () => {
           },
         ],
       }),
-    ).rejects.toThrow(/staged paths that were not requested/i);
+    ).rejects.toThrow(/Directory requests are not supported/i);
 
     expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
   });
 
-  it('refuses to commit when staging a named path pulls in files it did not name', async () => {
+  it('rejects directory requests before staging their contents', async () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     await writeRepositoryFile(repositoryDirectory, 'src/a.ts', 'export const a = 1;\n');
@@ -724,7 +724,7 @@ describe('commitTool.execute', () => {
           },
         ],
       }),
-    ).rejects.toThrow(/staged paths that were not requested/i);
+    ).rejects.toThrow(/Directory requests are not supported/i);
 
     expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
 

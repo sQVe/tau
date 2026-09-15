@@ -146,6 +146,26 @@ const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory:
     .map((file) => normalizeRepositoryPath(file));
 };
 
+const validateFileRequests = async (workingDirectory: string, files: string[]) => {
+  await Promise.all(
+    files.map(async (file) => {
+      const status = await lstat(join(workingDirectory, file)).catch((error: unknown) => {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+          return null;
+        }
+
+        throw error;
+      });
+
+      if (status?.isDirectory()) {
+        throw new Error(
+          `Directory requests are not supported: ${file}. Name each file explicitly.`,
+        );
+      }
+    }),
+  );
+};
+
 // Literal pathspecs prevent glob expansion from staging unrequested files.
 const stageFiles = async (
   pi: Pick<ExtensionAPI, 'exec'>,
@@ -292,6 +312,8 @@ const executeGroup = async (
     );
   }
 
+  await validateFileRequests(context.cwd, parameters.files);
+
   let readyToCommit = false;
   let reviewedTree = '';
   let reviewedIndex = '';
@@ -301,6 +323,15 @@ const executeGroup = async (
   let returningForCorrections = false;
   let groupError: unknown;
   const assertCleanupOwnership = async () => {
+    // Before the candidate snapshot, unexpected entries may belong to another writer.
+    const staged = await listStagedPaths(pi, context.cwd);
+
+    if (!reviewedTree && staged.some((file) => !requestedFiles.has(file))) {
+      throw new Error(
+        `${groupError instanceof Error ? `${groupError.message}\n` : ''}Concurrent staging was left untouched. Inspect the index before retrying.`,
+      );
+    }
+
     const currentIndex = await reviewGit(pi, context.cwd, [
       'ls-files',
       '--stage',
@@ -322,16 +353,10 @@ const executeGroup = async (
   try {
     await stageFiles(pi, context.cwd, parameters.files);
 
-    // Directory arguments can stage unrequested files.
-    // Reset needs paths relative to the working directory.
     const stagedAfterRequest = await listStagedPaths(pi, context.cwd);
-    const unrequestedPaths = stagedAfterRequest
-      .filter((file) => !requestedFiles.has(file))
-      .map((file) => file.slice(prefix.length));
+    const unrequestedPaths = stagedAfterRequest.filter((file) => !requestedFiles.has(file));
 
     if (unrequestedPaths.length > 0) {
-      await unstageFiles(pi, context.cwd, unrequestedPaths);
-
       throw new Error(
         `Staging ${parameters.files.join(', ')} produced staged paths that were not requested: ${unrequestedPaths.join(', ')}`,
       );
@@ -503,11 +528,8 @@ const executeGroup = async (
 
   if (smuggledPaths.length > 0) {
     await undoCommit(pi, context.cwd, previousHead);
-    await unstageFiles(
-      pi,
-      context.cwd,
-      smuggledPaths.map((file) => file.slice(prefix.length)),
-    );
+    const repositoryRoot = await reviewGit(pi, context.cwd, ['rev-parse', '--show-toplevel']);
+    await unstageFiles(pi, repositoryRoot.replace(/\n$/, ''), smuggledPaths);
 
     throw new Error(
       `A hook staged paths that were not requested: ${smuggledPaths.join(', ')}. The commit was undone.`,
