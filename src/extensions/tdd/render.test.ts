@@ -72,6 +72,19 @@ it('keeps run scope outcome and input freshness distinct', () => {
   expect(failed).not.toContain('Full suite passed');
 });
 
+it('distinguishes an execution that did not start from a completed run', () => {
+  const report: RunnerResult = {
+    kind: 'runner-missing',
+    message: 'vitest not found',
+    diagnostics: { directory: '/tmp/run', durationMs: 0, timeoutMs: 30_000, exitCode: null },
+  };
+  const text = runContext(behavior, observation(report));
+
+  expect(text).toContain('Execution did not start');
+  expect(text).not.toContain('Elapsed:');
+  expect(text).not.toContain('exit:');
+});
+
 it('shows bounded process diagnostics and readable artifact paths', () => {
   const report: RunnerResult = {
     kind: 'timeout',
@@ -91,7 +104,7 @@ it('shows bounded process diagnostics and readable artifact paths', () => {
 
   expect(text).toContain('Elapsed: 120000 ms; timeout: 120000 ms; exit: unavailable');
   expect(text).toContain('/tmp/run/run.json');
-  expect(text).toContain('/tmp/run/stderr.txt (32768/40000 observed bytes, truncated)');
+  expect(text).toContain('/tmp/run/stderr.txt (32768/40000 bytes, truncated)');
   expect(text).toContain('No JSON report was saved');
   expect(text).toContain('Setup failed');
   expect(text).not.toContain('\u001b');

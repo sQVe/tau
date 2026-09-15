@@ -64,8 +64,10 @@ export default function tddExtension(pi: ExtensionAPI) {
         'Short session-local hints suggest missing RED, full verification, or rerunning stale results. Hints never block or require acknowledgment. ' +
         'Freshness covers source, test, and configuration content at bounded checkpoints, not an atomic snapshot or reusable verification. ' +
         'Shows focused files and exact names, or full-suite scope. The summary is capped at 2000 characters, with up to 4000 characters of run context and at most one hint. ' +
-        'Read the saved run.json for command, selection, and before/after input fingerprints. Temporary diagnostics retain up to 8 MiB stdout, 32 KiB stderr, and 8 MiB raw JSON, including passes. ' +
-        'Truncation is explicit; files remain until temporary-file cleanup. Runner output is diagnostic text, never the source of test verdicts.',
+        'Read the saved run.json for command, selection, and before/after input fingerprints. Diagnostics retain up to 8 MiB stdout, 32 KiB stderr, and 8 MiB raw JSON, including passes. ' +
+        'Console output beyond the capture limit is discarded without stopping tests. Truncation distinguishes process bytes from decoded text bytes. ' +
+        'Files live in the Pi agent test-runs directory. After each run, cleanup keeps up to 32 completed runs for seven days; recent unfinished runs are protected. ' +
+        'Runner output is diagnostic text, never the source of test verdicts.',
       parameters: Type.Object({
         behavior: Type.String({
           minLength: 1,

@@ -4,6 +4,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { classifyPath, configurationPaths, tddConfig } from './config.js';
 import { runTests } from './runner/index.js';
+import { finishDiagnostics } from './runner/retention.js';
 import type { RunDiagnostics, RunnerResult } from './runner/types.js';
 import type { Behavior } from './types.js';
 
@@ -300,6 +301,8 @@ export const createTestObservation = (cwd: string) => {
         inputs,
         diagnostics: report.diagnostics,
       });
+
+      await finishDiagnostics(report.diagnostics);
 
       return {
         kind: report.kind,

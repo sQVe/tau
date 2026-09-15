@@ -2,7 +2,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { runTests as runTestsWithDiagnostics } from './index.js';
 import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js';
@@ -39,7 +39,7 @@ const outputFileFrom = (arguments_: string[]) => {
 
 const fakeSpawn =
   ({ report, ...result }: Partial<SpawnResult> & { report?: unknown }): SpawnFn =>
-  async (_command, arguments_) => {
+  async (command, arguments_) => {
     if (report !== undefined) {
       await writeFile(outputFileFrom(arguments_), JSON.stringify(report));
     }
@@ -49,6 +49,8 @@ const fakeSpawn =
       stderr: '',
       code: 0,
       timedOut: false,
+      command: ['fake-runner', command, ...arguments_],
+      started: true,
       ...result,
     };
   };
@@ -61,6 +63,16 @@ const makeDeps = (overrides: Partial<RunnerDeps>): RunnerDeps => ({
 });
 
 describe('runTests', () => {
+  beforeEach(async () => {
+    const agentDirectory = await mkdtemp(join(tmpdir(), 'tau-runner-agent-'));
+    vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+    onTestFinished(async () => {
+      vi.unstubAllEnvs();
+
+      await rm(agentDirectory, { recursive: true, force: true });
+    });
+  });
+
   it('retains diagnostics for successful failed skipped and interrupted runs', async () => {
     const passingReport = {
       numTotalTests: 1,
@@ -87,11 +99,11 @@ describe('runTests', () => {
       { kind: 'timeout', report: undefined, code: null, timedOut: true },
       { kind: 'cancelled', report: undefined, code: null, timedOut: false },
       {
-        kind: 'output-limit',
-        report: undefined,
-        code: null,
+        kind: 'pass',
+        report: passingReport,
+        code: 0,
         timedOut: false,
-        stdoutOverflow: true,
+        stdoutTruncated: true,
       },
     ];
     const directories = new Set<string>();
@@ -121,7 +133,6 @@ describe('runTests', () => {
       expect(result.kind).toBe(fixture.kind);
       expect(result).toHaveProperty('diagnostics.directory');
       const diagnostics = result.diagnostics!;
-      onTestFinished(() => rm(diagnostics.directory, { recursive: true, force: true }));
       directories.add(diagnostics.directory);
 
       expect(diagnostics.durationMs).toBeGreaterThanOrEqual(0);
@@ -131,7 +142,7 @@ describe('runTests', () => {
       expect(diagnostics).toMatchObject({
         timeoutMs: 30_000,
         exitCode: fixture.code,
-        stdout: { bytes: 20, truncated: fixture.kind === 'output-limit' },
+        stdout: { bytes: 20, truncated: fixture.stdoutTruncated ?? false },
         stderr: { bytes: 14, truncated: false },
       });
       expect(await readFile(diagnostics.stdout!.path, 'utf8')).toBe('test console output\n');
@@ -370,28 +381,26 @@ describe('runTests', () => {
     }
   });
 
-  it('kills the child and names the limit when stdout exceeds the cap', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
+  it('preserves passing and failing verdicts when console output exceeds the capture limit', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-noisy-runner-'));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
 
-    try {
-      const script = join(cwd, 'flood.cjs');
+    await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
 
+    for (const expected of [1, 2]) {
       await writeFile(
-        script,
-        `process.stdout.write('x'.repeat(${maximumStdoutBytes + 1}));\n` +
-          'setTimeout(() => {}, 60000);\n',
+        join(cwd, 'noise.test.ts'),
+        `import { it, expect } from 'vitest'; it('noisy test', () => { for (let index = 0; index < 100; index++) console.log('x'.repeat(100 * 1024)); expect(1).toBe(${expected}); });`,
       );
+      const result = await runTests({ scope: 'all', cwd });
 
-      const deps = makeDeps({ resolveVitest: () => script, spawn: defaultSpawn });
-
-      const result = await runTests({ scope: 'all', cwd }, deps);
-
-      expect(result.kind).toBe('output-limit');
-      expect(result).toHaveProperty('message', expect.stringContaining(String(maximumStdoutBytes)));
-    } finally {
-      await rm(cwd, { recursive: true, force: true });
+      expect(result.kind).toBe(expected === 1 ? 'pass' : 'fail');
+      expect(result.diagnostics?.stdout?.truncated).toBe(true);
+      expect(result.diagnostics?.stdout?.savedBytes).toBeLessThanOrEqual(maximumStdoutBytes);
+      expect(result.diagnostics?.command?.[0]).toBe(nodeExecutable());
+      expect(result.diagnostics?.command?.[1]).toContain('vitest');
     }
-  });
+  }, 125_000);
 
   it('settles the timeout even when a descendant keeps the piped stdio open', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
@@ -415,6 +424,30 @@ describe('runTests', () => {
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
+  });
+
+  it('records a spawn error as an execution that did not start', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-unstarted-runner-'));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const result = await runTests(
+      { scope: 'all', cwd: join(cwd, 'missing') },
+      makeDeps({ spawn: defaultSpawn }),
+    );
+
+    expect(result.kind).toBe('compile-error');
+    expect(result.diagnostics?.started).toBe(false);
+    expect(result.diagnostics?.excerpt).toContain('ENOENT');
+    expect(result.diagnostics?.command?.[0]).toBe(nodeExecutable());
+  });
+
+  it('records the injected spawn command without inventing an executable', async () => {
+    const command = ['remote-node', '/remote/vitest.mjs', 'run'];
+    const result = await runTests(
+      { scope: 'all', cwd: '/repo' },
+      makeDeps({ spawn: fakeSpawn({ command, report: { numTotalTests: 1, numPassedTests: 1 } }) }),
+    );
+
+    expect(result.diagnostics?.command).toEqual(command);
   });
 
   it('returns runner-missing when vitest cannot be resolved', async () => {

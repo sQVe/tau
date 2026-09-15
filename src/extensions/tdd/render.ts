@@ -2,8 +2,9 @@ import { isAbsolute, relative } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
 import type { createTestObservation } from './observation.js';
+import { maximumRetainedRuns } from './runner/retention.js';
 import { maximumFailures } from './runner/types.js';
-import type { RunnerResult } from './runner/types.js';
+import type { DiagnosticFile, RunnerResult } from './runner/types.js';
 import type { Behavior } from './types.js';
 
 type Observation = Omit<
@@ -114,6 +115,15 @@ const freshnessDescriptions = {
   unknown: 'input freshness could not be checked',
 };
 
+const diagnosticFileLine = (label: string, file: DiagnosticFile): string => {
+  const size =
+    file.decodedBytes === undefined
+      ? `${file.savedBytes}/${file.bytes} bytes`
+      : `${file.savedBytes}/${file.decodedBytes} decoded bytes; ${file.bytes} process bytes observed`;
+
+  return `${label}: ${file.path} (${size}${file.truncated ? ', truncated' : ''})`;
+};
+
 export const runContext = (behavior: Behavior, observation: Observation): string => {
   const { scope, freshness, report, runPath } = observation;
   const lines = [selectionSummary(behavior, scope)];
@@ -135,9 +145,13 @@ export const runContext = (behavior: Behavior, observation: Observation): string
     return lines.join('\n');
   }
 
-  lines.push(
-    `Elapsed: ${diagnostics.durationMs} ms; timeout: ${diagnostics.timeoutMs} ms; exit: ${diagnostics.exitCode ?? 'unavailable'}.`,
-  );
+  if (diagnostics.started === false || report.kind === 'runner-missing') {
+    lines.push('Execution did not start.');
+  } else {
+    lines.push(
+      `Elapsed: ${diagnostics.durationMs} ms; timeout: ${diagnostics.timeoutMs} ms; exit: ${diagnostics.exitCode ?? 'unavailable'}.`,
+    );
+  }
 
   if (runPath !== undefined) {
     lines.push(`Run record (command, selection, input fingerprints): ${runPath}`);
@@ -149,9 +163,7 @@ export const runContext = (behavior: Behavior, observation: Observation): string
     ['JSON report', diagnostics.report],
   ] as const) {
     if (file !== undefined) {
-      lines.push(
-        `${label}: ${file.path} (${file.savedBytes}/${file.bytes} observed bytes${file.truncated ? ', truncated' : ''})`,
-      );
+      lines.push(diagnosticFileLine(label, file));
     }
   }
 
@@ -164,7 +176,7 @@ export const runContext = (behavior: Behavior, observation: Observation): string
   }
 
   lines.push(
-    'Saved files are temporary diagnostics, not reusable verification. They remain until temporary-file cleanup.',
+    `Saved diagnostics are not reusable verification. Cleanup keeps up to ${maximumRetainedRuns} completed runs for seven days.`,
   );
 
   if (report.kind !== 'pass' && diagnostics.excerpt) {

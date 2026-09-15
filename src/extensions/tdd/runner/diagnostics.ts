@@ -1,5 +1,6 @@
 import { chmod, lstat, truncate, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 
 import type { DiagnosticFile, RunDiagnostics, SpawnResult } from './types.js';
 import { maximumReportBytes, maximumStdoutBytes, maximumTotalBytes } from './types.js';
@@ -9,17 +10,21 @@ const saveOutput = async (
   text: string,
   limit: number,
   observedBytes = Buffer.byteLength(text),
-  overflow = false,
+  captureTruncated = false,
 ): Promise<DiagnosticFile> => {
-  const content = Buffer.from(text).subarray(0, limit);
+  const decoded = Buffer.from(text);
+  // Do not flush the decoder: a partial UTF-8 character at the boundary must be omitted.
+  const content = new StringDecoder('utf8').write(decoded.subarray(0, limit));
+  const savedBytes = Buffer.byteLength(content);
 
   await writeFile(path, content, { mode: 0o600, flag: 'wx' });
 
   return {
     path,
     bytes: observedBytes,
-    savedBytes: content.length,
-    truncated: overflow || observedBytes > content.length,
+    decodedBytes: decoded.length,
+    savedBytes,
+    truncated: captureTruncated || decoded.length > savedBytes || observedBytes > decoded.length,
   };
 };
 
@@ -62,28 +67,43 @@ export const saveDiagnostics = async (
   diagnostics: RunDiagnostics,
   result: SpawnResult | undefined,
 ): Promise<RunDiagnostics> => {
-  try {
-    diagnostics.report = await retainReport(diagnostics.directory);
+  const errors: string[] = [];
+  const retain = async (save: () => Promise<DiagnosticFile | undefined>) => {
+    try {
+      return await save();
+    } catch (error) {
+      // One unavailable artifact must not discard other diagnostics or the test outcome.
+      errors.push(String(error));
 
-    if (result !== undefined) {
-      diagnostics.stdout = await saveOutput(
+      return undefined;
+    }
+  };
+
+  diagnostics.report = await retain(() => retainReport(diagnostics.directory));
+
+  if (result !== undefined) {
+    diagnostics.excerpt = (result.stderr || result.stdout).slice(0, 800);
+    diagnostics.stdout = await retain(() =>
+      saveOutput(
         join(diagnostics.directory, 'stdout.txt'),
         result.stdout,
         maximumStdoutBytes,
         result.stdoutBytes,
-        result.stdoutOverflow,
-      );
-      diagnostics.stderr = await saveOutput(
+        result.stdoutTruncated,
+      ),
+    );
+    diagnostics.stderr = await retain(() =>
+      saveOutput(
         join(diagnostics.directory, 'stderr.txt'),
         result.stderr,
         maximumTotalBytes,
         result.stderrBytes,
-      );
-      diagnostics.excerpt = (result.stderr || result.stdout).slice(0, 800);
-    }
-  } catch (error) {
-    // Saving diagnostics must not discard the observed test outcome.
-    diagnostics.error = `Could not save all diagnostics: ${String(error)}`;
+      ),
+    );
+  }
+
+  if (errors.length > 0) {
+    diagnostics.error = `Could not save all diagnostics:\n${errors.join('\n')}`;
   }
 
   return diagnostics;

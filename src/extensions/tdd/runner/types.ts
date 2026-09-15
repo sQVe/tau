@@ -24,6 +24,7 @@ export interface TestResult {
 export interface DiagnosticFile {
   path: string;
   bytes: number;
+  decodedBytes?: number;
   savedBytes: number;
   truncated: boolean;
 }
@@ -32,10 +33,11 @@ export interface RunDiagnostics {
   directory: string;
   durationMs: number;
   timeoutMs: number;
+  started?: boolean;
   command?: string[] | undefined;
   exitCode: number | null;
-  stdout?: DiagnosticFile;
-  stderr?: DiagnosticFile;
+  stdout?: DiagnosticFile | undefined;
+  stderr?: DiagnosticFile | undefined;
   report?: DiagnosticFile | undefined;
   excerpt?: string;
   error?: string;
@@ -53,7 +55,6 @@ export type RunnerResult = { diagnostics?: RunDiagnostics } & (
   | { kind: 'no-tests-collected'; tests: TestResult[] }
   | { kind: 'timeout' }
   | { kind: 'cancelled' }
-  | { kind: 'output-limit'; message: string }
   | { kind: 'runner-missing'; message: string }
 );
 
@@ -62,7 +63,9 @@ export interface SpawnResult {
   stderr: string;
   code: number | null;
   timedOut: boolean;
-  stdoutOverflow?: boolean;
+  command?: string[];
+  started?: boolean;
+  stdoutTruncated?: boolean;
   stdoutBytes?: number;
   stderrBytes?: number;
 }

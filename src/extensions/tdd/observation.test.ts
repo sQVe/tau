@@ -404,23 +404,25 @@ it('keeps reports and successful edits when fingerprints fail', async ({ onTestF
   await expect(observation.checkpoint(true)).resolves.toBeUndefined();
 });
 
-it.each([
-  'cancelled',
-  'timeout',
-  'runner-missing',
-  'output-limit',
-  'compile-error',
-  'no-tests-collected',
-])('preserves runner outcome %s', async (kind) => {
-  const { observation } = await setup(registerCleanup);
-  const report = { kind, message: 'diagnostic', tests: [], stdout: '', stderr: '' } as RunnerResult;
-  vi.mocked(runTests).mockResolvedValue(report);
+it.each(['cancelled', 'timeout', 'runner-missing', 'compile-error', 'no-tests-collected'])(
+  'preserves runner outcome %s',
+  async (kind) => {
+    const { observation } = await setup(registerCleanup);
+    const report = {
+      kind,
+      message: 'diagnostic',
+      tests: [],
+      stdout: '',
+      stderr: '',
+    } as RunnerResult;
+    vi.mocked(runTests).mockResolvedValue(report);
 
-  const observed = await observation.run(behavior, 'full');
+    const observed = await observation.run(behavior, 'full');
 
-  expect(observed.kind).toBe(kind);
-  expect(observed.report).toBe(report);
-});
+    expect(observed.kind).toBe(kind);
+    expect(observed.report).toBe(report);
+  },
+);
 
 it('orders run completion and queued edit checkpoints without marking later edits fresh', async ({
   onTestFinished,

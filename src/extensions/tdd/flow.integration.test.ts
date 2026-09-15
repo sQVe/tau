@@ -206,6 +206,7 @@ it('shows the selected tests before completion and saves full-suite input eviden
   expect(full.details.inputs.before).toMatch(/^[a-f0-9]{64}$/);
   expect(full.details.inputs.before).toBe(full.details.inputs.after);
   expect(await readFile(diagnostics.stderr!.path, 'utf8')).toContain('warning remains');
+  expect(await readFile(join(diagnostics.directory, 'completed'), 'utf8')).toBe('');
   expect(JSON.stringify(updates)).not.toContain('Full suite passed');
 });
 
