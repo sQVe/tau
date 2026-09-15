@@ -5,14 +5,15 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, vi } from 'vitest';
 
 import * as checker from '../src/extensions/commit/checker.js';
+import type { reviewComments } from '../src/extensions/commit/commentReview.js';
 import type { CommitInput } from '../src/extensions/commit/tool.js';
 import { createCommitTool as createReviewedCommitTool } from '../src/extensions/commit/tool.js';
 
-// Git and approval tests use a clean reviewer.
+// Git tests use a clean reviewer.
 // tests/commitFlow.integration.test.ts covers real Pi review.
 export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
   createReviewedCommitTool(pi, async () => ({ findings: [] }));
@@ -116,18 +117,15 @@ export const getStoredCommitMessage = async (repositoryDirectory: string): Promi
   return commitObject.slice(separatorIndex + 2);
 };
 
-export const confirmedContext = (repositoryDirectory: string) =>
+export const commitContext = (repositoryDirectory: string) =>
   ({
     cwd: repositoryDirectory,
     hasUI: true,
-    ui: { custom: () => Promise.resolve('approve') },
-  }) as never;
-
-export const declinedContext = (repositoryDirectory: string) =>
-  ({
-    cwd: repositoryDirectory,
-    hasUI: true,
-    ui: { custom: () => Promise.resolve('abort') },
+    ui: {
+      custom: () => {
+        throw new Error('Unexpected approval UI');
+      },
+    },
   }) as never;
 
 export const noUiContext = (repositoryDirectory: string) =>
@@ -149,30 +147,20 @@ export const executeCommit = async (repositoryDirectory: string, input: CommitIn
     input,
     undefined,
     undefined,
-    confirmedContext(repositoryDirectory),
+    commitContext(repositoryDirectory),
   );
 };
 
-export const fakeCommit = (choices: (string | undefined)[], edits: (string | undefined)[] = []) => {
+export const fakeCommit = () => {
   const gitDirectory = mkdtempSync(join(tmpdir(), 'tau-mock-git-'));
   temporaryDirectories.push(gitDirectory);
 
-  const previews: string[] = [];
-  const custom = vi.fn<
-    (factory: Parameters<ExtensionContext['ui']['custom']>[0]) => Promise<string | undefined>
-  >(async (factory) => {
-    const component = await factory(
-      { requestRender: () => {}, terminal: { rows: 60 } } as never,
-      { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
-      {} as never,
-      () => {},
-    );
-    previews.push(component.render(80).join('\n'));
-
-    return choices.shift();
+  const custom = vi.fn<() => never>(() => {
+    throw new Error('Unexpected approval UI');
   });
-
-  const editor = vi.fn<ExtensionContext['ui']['editor']>(() => Promise.resolve(edits.shift()));
+  const editor = vi.fn<() => never>(() => {
+    throw new Error('Unexpected message editor');
+  });
 
   let storedMessage = '';
   const exec = vi.fn<ExtensionAPI['exec']>(async (_command, commandArguments) => {
@@ -186,17 +174,14 @@ export const fakeCommit = (choices: (string | undefined)[], edits: (string | und
       stdout = `tree abc123\n\n${storedMessage}`;
     }
 
-    if (commandArguments.includes('--numstat')) {
-      stdout = '2\t1\tREADME.md\0-\t-\timage.png\0';
-    }
-
     if (commandArguments[0] === 'rev-parse' || commandArguments[0] === 'write-tree') {
       stdout = commandArguments.includes('--absolute-git-dir') ? `${gitDirectory}\n` : 'abc123\n';
     }
 
     return { code: 0, killed: false, stderr: '', stdout };
   });
-  const tool = createCommitTool({ exec });
+  const review = vi.fn<typeof reviewComments>().mockResolvedValue({ findings: [] });
+  const tool = createReviewedCommitTool({ exec }, review);
   const context = { cwd: '/repo', hasUI: true, ui: { custom, editor } };
   const input = {
     groups: [
@@ -211,5 +196,5 @@ export const fakeCommit = (choices: (string | undefined)[], edits: (string | und
   const execute = (signal?: AbortSignal) =>
     tool.execute('call', input, signal, undefined, context as never);
 
-  return { custom, editor, exec, context, input, execute, previews, gitDirectory };
+  return { custom, editor, exec, context, input, execute, review, gitDirectory };
 };

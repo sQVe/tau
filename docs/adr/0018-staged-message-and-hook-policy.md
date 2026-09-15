@@ -47,5 +47,8 @@ processes.
 
 ## See also
 
+- [Commit without human approval](./0024-commit-without-human-approval.md) replaces in-place message
+  editing with a new commit call. Check and hook policy remain unchanged.
+
 - [Advisory TDD observations](./0023-advisory-tdd-observations.md) later replaced TDD enforcement
   with hints. Commit checks, review, approval, and safeguards remain independent of those hints.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isBottom, isDown, isTop, isUp, toCursorKey } from './index.js';
+import { isBottom, isDown, isTop, isUp } from './index.js';
 
 const arrowUp = '\u001b[A';
 const arrowDown = '\u001b[B';
@@ -37,18 +37,5 @@ describe('vim navigation keys', () => {
       false,
       false,
     ]);
-  });
-});
-
-describe('toCursorKey', () => {
-  it.for([
-    ['k', arrowUp],
-    ['j', arrowDown],
-  ])('rewrites %j as the arrow sequence SelectList reads', ([data, expected]) => {
-    expect(toCursorKey(data as string)).toBe(expected);
-  });
-
-  it.for([arrowUp, arrowDown, 'x', '\r'])('passes %j through unchanged', (data) => {
-    expect(toCursorKey(data)).toBe(data);
   });
 });

@@ -15,7 +15,7 @@ import {
   createTemporaryRepository,
   writeRepositoryFile,
   getStoredCommitMessage,
-  confirmedContext,
+  commitContext,
   executeCommit,
   fakeCommit,
 } from '../../../tests/commitTool.js';
@@ -24,7 +24,7 @@ import { reviewGit } from './commentReview.js';
 import type { reviewComments } from './commentReview.js';
 import { createCommitTool as createReviewedCommitTool } from './tool.js';
 
-it('restores a shared initial check window before review and message-only correction', async () => {
+it('restores a shared initial check window before review and an agent message correction', async () => {
   const root = await createTemporaryRepository();
   const output = await mkdtemp(join(tmpdir(), 'tau-check-events-'));
   temporaryDirectories.push(output);
@@ -45,7 +45,7 @@ it('restores a shared initial check window before review and message-only correc
   await writeRepositoryFile(root, 'file', 'changed');
   await writeRepositoryFile(root, 'check.cjs', 'unstaged script');
   const review = vi.fn<typeof reviewComments>(async () => {
-    expect(await readFile(events, 'utf8')).toBe('project\nmessage\n');
+    expect(await readFile(events, 'utf8')).toMatch(/project\nmessage\n$/);
     expect(await readFile(join(root, 'check.cjs'), 'utf8')).toBe('unstaged script');
     await expect(readFile(join(root, '.git/tau-recovery/pending/archive'))).rejects.toThrow(
       /ENOENT/,
@@ -53,20 +53,7 @@ it('restores a shared initial check window before review and message-only correc
 
     return { findings: [] };
   });
-  let approvals = 0;
-  const context = {
-    cwd: root,
-    hasUI: true,
-    ui: {
-      custom: async () => {
-        expect(await readFile(join(root, 'check.cjs'), 'utf8')).toBe('unstaged script');
-        approvals += 1;
-
-        return approvals === 1 ? 'subject' : 'approve';
-      },
-      editor: async () => 'feat: corrected',
-    },
-  };
+  const context = commitContext(root);
   const tool = createReviewedCommitTool(
     {
       exec: (command, arguments_, options) => runCommand(command, arguments_, options?.cwd ?? root),
@@ -74,16 +61,29 @@ it('restores a shared initial check window before review and message-only correc
     review,
   );
 
+  await expect(
+    tool.execute(
+      'call',
+      { groups: [{ files: ['file'], subject: 'feat: initial' }] },
+      undefined,
+      undefined,
+      context,
+    ),
+  ).rejects.toThrow(/Message check failed/);
+  expect(review).not.toHaveBeenCalled();
+  expect(await readFile(join(root, 'check.cjs'), 'utf8')).toBe('unstaged script');
+  await expect(readFile(join(root, '.git/tau-recovery/pending/archive'))).rejects.toThrow(/ENOENT/);
+
   await tool.execute(
-    'call',
-    { groups: [{ files: ['file'], subject: 'feat: initial' }] },
+    'retry',
+    { groups: [{ files: ['file'], subject: 'feat: corrected' }] },
     undefined,
     undefined,
-    context as never,
+    context,
   );
 
   expect(review).toHaveBeenCalledTimes(1);
-  expect(await readFile(events, 'utf8')).toBe('project\nmessage\nmessage\n');
+  expect(await readFile(events, 'utf8')).toBe('project\nmessage\nproject\nmessage\n');
   const archives = await readdir(join(root, '.git/tau-recovery'));
   expect(archives.filter((name) => name.startsWith('prepare-'))).toHaveLength(2);
   expect(await getStoredCommitMessage(root)).toBe('feat: corrected\n');
@@ -120,7 +120,7 @@ it.each([false, true])(
     const input = { groups: [{ files: ['requested', 'tau.json'], subject: 'feat: check' }] };
 
     await expect(
-      tool.execute('call', input, undefined, undefined, confirmedContext(root)),
+      tool.execute('call', input, undefined, undefined, commitContext(root)),
     ).rejects.toThrow(/Pending recovery/);
     const index = await readFile(join(root, '.git/index'));
     expect(await git(root, ['show', ':concurrent'])).toBe('checker staging');
@@ -129,14 +129,14 @@ it.each([false, true])(
     expect(review).not.toHaveBeenCalled();
     exec.mockClear();
     await expect(
-      tool.execute('retry', input, undefined, undefined, confirmedContext(root)),
+      tool.execute('retry', input, undefined, undefined, commitContext(root)),
     ).rejects.toThrow(/Commit blocked/);
     expect(await readFile(join(root, '.git/index'))).toEqual(index);
     expect(exec.mock.calls).toHaveLength(1);
   },
 );
 
-it('does not unstage concurrent changes before a message-only retry', async () => {
+it('does not unstage concurrent changes during comment review', async () => {
   const root = await createTemporaryRepository();
   await writeRepositoryFile(root, 'tau.json', JSON.stringify({ checkMessage: ['true'] }));
   await writeRepositoryFile(root, 'requested', 'base');
@@ -144,23 +144,18 @@ it('does not unstage concurrent changes before a message-only retry', async () =
   await git(root, ['commit', '-m', 'base']);
   await writeRepositoryFile(root, 'requested', 'candidate');
   let index: Buffer | undefined;
-  const context = {
-    cwd: root,
-    hasUI: true,
-    ui: {
-      custom: async () => {
-        await writeRepositoryFile(root, 'requested', 'concurrent');
-        await git(root, ['add', 'requested']);
-        index = await readFile(join(root, '.git/index'));
-
-        return 'subject';
-      },
-      editor: async () => 'feat: edited',
+  const tool = createReviewedCommitTool(
+    {
+      exec: (command, arguments_, options) => runCommand(command, arguments_, options?.cwd ?? root),
     },
-  };
-  const tool = createCommitTool({
-    exec: (command, arguments_, options) => runCommand(command, arguments_, options?.cwd ?? root),
-  });
+    async () => {
+      await writeRepositoryFile(root, 'requested', 'concurrent');
+      await git(root, ['add', 'requested']);
+      index = await readFile(join(root, '.git/index'));
+
+      return { findings: [] };
+    },
+  );
 
   await expect(
     tool.execute(
@@ -168,19 +163,19 @@ it('does not unstage concurrent changes before a message-only retry', async () =
       { groups: [{ files: ['requested'], subject: 'feat: initial' }] },
       undefined,
       undefined,
-      context as never,
+      commitContext(root),
     ),
   ).rejects.toThrow(/changed/);
   expect(await git(root, ['show', ':requested'])).toBe('concurrent');
   expect(await readFile(join(root, '.git/index'))).toEqual(index);
 });
 
-it('blocks a recovery reservation made during approval before committing', async () => {
-  const { execute, custom, exec, gitDirectory } = fakeCommit(['approve']);
-  custom.mockImplementationOnce(async () => {
+it('blocks a recovery reservation made during review before committing', async () => {
+  const { execute, review, exec, gitDirectory } = fakeCommit();
+  review.mockImplementationOnce(async () => {
     await mkdir(join(gitDirectory, 'tau-recovery/pending'), { recursive: true });
 
-    return 'approve';
+    return { findings: [] };
   });
 
   await expect(execute()).rejects.toThrow(/Commit blocked/);
@@ -213,7 +208,7 @@ it('restores working files but retains both messages when a checker rewrites the
       { groups: [{ files: ['requested', 'tau.json'], subject: 'feat: original' }] },
       undefined,
       undefined,
-      confirmedContext(root),
+      commitContext(root),
     ),
   ).rejects.toThrow(/Message check changed/);
   const message = await readFile(marker, 'utf8');
@@ -224,7 +219,7 @@ it('restores working files but retains both messages when a checker rewrites the
 });
 
 it('checks the absolute fixture Git directory in mocked commit flows', async () => {
-  const { execute, exec, gitDirectory } = fakeCommit(['approve']);
+  const { execute, exec, gitDirectory } = fakeCommit();
   await mkdir(join(gitDirectory, 'tau-recovery/pending'), { recursive: true });
 
   await expect(execute()).rejects.toThrow(gitDirectory);
@@ -250,7 +245,7 @@ it('blocks incomplete pending recovery before preparation staging or review', as
       },
       undefined,
       undefined,
-      confirmedContext('/repo'),
+      commitContext('/repo'),
     ),
   ).rejects.toThrow(directory);
   expect(exec.mock.calls.map(([, arguments_]) => arguments_)).toEqual([
@@ -283,7 +278,7 @@ it('rejects calls outside Git before running configured commands or changing fil
       },
       undefined,
       undefined,
-      confirmedContext(directory),
+      commitContext(directory),
     ),
   ).rejects.toThrow(/not a git repository/i);
   expect(exec.mock.calls.map(([command, arguments_]) => [command, arguments_])).toEqual([
@@ -344,7 +339,7 @@ it('prepares each executed group after staging and reviews prepared bytes', asyn
     },
     undefined,
     undefined,
-    confirmedContext(directory),
+    commitContext(directory),
   );
 
   expect(result.details.groups).toHaveLength(2);
@@ -511,7 +506,7 @@ it('rejects obsolete invalid and unknown settings before preparation or staging'
         },
         undefined,
         undefined,
-        confirmedContext(repositoryDirectory),
+        commitContext(repositoryDirectory),
       ),
     ).rejects.toThrow(errors[index]);
     expect(
@@ -524,7 +519,7 @@ it('rejects obsolete invalid and unknown settings before preparation or staging'
   }
 });
 
-it('reports a failing preparation before staging or approval', async () => {
+it('reports a failing preparation without opening UI', async () => {
   const repositoryDirectory = await createTemporaryRepository();
 
   await writeRepositoryFile(
@@ -573,7 +568,7 @@ it('reports missing preparation while still checking the candidate', async () =>
   expect(result.details.groups[0]?.projectCheck).toContain('Project check passed');
 });
 
-it('rejects an array as the root config before approval', async () => {
+it('rejects an array as the root config before staging', async () => {
   const repositoryDirectory = await createTemporaryRepository();
 
   await writeRepositoryFile(repositoryDirectory, 'tau.json', '[]');
@@ -723,7 +718,7 @@ it('returns cancelled when aborted while the project check runs', async () => {
     { groups: [{ files: ['tau.json', 'check.cjs'], subject: 'feat: check' }] },
     controller.signal,
     undefined,
-    confirmedContext(repositoryDirectory),
+    commitContext(repositoryDirectory),
   );
 
   const currentHead = await git(repositoryDirectory, ['rev-parse', 'HEAD']);
@@ -769,7 +764,7 @@ it('returns cancelled when aborted while project preparation runs', async () => 
     },
     controller.signal,
     undefined,
-    confirmedContext(repositoryDirectory),
+    commitContext(repositoryDirectory),
   );
 
   const currentHead = await git(repositoryDirectory, ['rev-parse', 'HEAD']);
@@ -824,7 +819,7 @@ it.each(['pass', 'fail', 'killed', 'cancel'] as const)(
       },
       controller.signal,
       undefined,
-      confirmedContext(repositoryDirectory),
+      commitContext(repositoryDirectory),
     );
 
     const message = await result.then(

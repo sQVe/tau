@@ -257,7 +257,7 @@ export const snapshotPreparation = async (
     await writeFile(join(directory, 'working.json'), JSON.stringify(before), { mode: 0o600 });
     await writeFile(
       join(directory, 'recovery.txt'),
-      'Working files were not restored automatically. Stop writers and inspect current edits first.\nworking.json maps root-relative paths to null (absent), or kind, permission mode, and base64 content. Decode content into a separate directory for comparison. For symlinks the content is the link target.\noriginal-index is the exact prior index, if one existed. The ref named in recovery-ref keeps its Git objects reachable. Do not delete that ref until recovery is complete.\nNever copy the original index over concurrent staging without comparing it first. candidate-index is private preparation state, not an approved index.\n',
+      'Working files were not restored automatically. Stop writers and inspect current edits first.\nworking.json maps root-relative paths to null (absent), or kind, permission mode, and base64 content. Decode content into a separate directory for comparison. For symlinks the content is the link target.\noriginal-index is the exact prior index, if one existed. The ref named in recovery-ref keeps its Git objects reachable. Do not delete that ref until recovery is complete.\nNever copy the original index over concurrent staging without comparing it first. candidate-index is private preparation state, not a recovery copy of the original index.\nprepared-ref, when present, keeps staged-only preparation output reachable. Inspect it with git show <ref>:<path> into a separate file. Keep this ref until that output has been recovered.\n',
       { mode: 0o600 },
     );
 
@@ -355,11 +355,83 @@ export const snapshotPreparation = async (
     }
   };
 
+  const preserve = async () => {
+    const treeOutput = await reviewGit(isolated, root, ['write-tree']);
+    const preparedRef = `${recoveryRef}-prepared`;
+
+    // Keep private-index objects reachable without publishing or replacing user staging.
+    await reviewGit(pi, root, ['update-ref', preparedRef, treeOutput.trim(), '']);
+    await writeFile(join(directory, 'prepared-ref'), `${preparedRef}\n`, { mode: 0o600 });
+
+    return preparedRef;
+  };
+  let stagedTree = '';
+
   return {
     directory,
     isolated,
     notice,
-    stage,
+    preserve,
+    async stage(requested: Set<string>) {
+      await stage(requested);
+
+      const treeOutput = await reviewGit(isolated, root, ['write-tree']);
+      stagedTree = treeOutput.trim();
+    },
+    async restage(requested: Set<string>) {
+      const treeOutput = await reviewGit(isolated, root, ['write-tree']);
+      const preparedTree = treeOutput.trim();
+      const changedIndexPaths = pathsFrom(
+        await gitBytes(
+          root,
+          [
+            'diff-tree',
+            '--no-commit-id',
+            '--no-renames',
+            '--name-only',
+            '-r',
+            '-z',
+            stagedTree,
+            preparedTree,
+          ],
+          privateIndex,
+        ),
+      );
+      const workingDifferences = new Set(
+        pathsFrom(
+          await gitBytes(root, ['diff-files', '--no-renames', '--name-only', '-z'], privateIndex),
+        ),
+      );
+      const indexed = new Set(
+        pathsFrom(await gitBytes(root, ['ls-files', '--cached', '-z'], privateIndex)),
+      );
+
+      // diff-files omits paths removed from the index, even when working files remain.
+      for (const path of changedIndexPaths) {
+        if (indexed.has(path)) {
+          continue;
+        }
+
+        // oxlint-disable-next-line eslint/no-await-in-loop -- Inspect only changed paths absent from the private index.
+        const status = await lstat(join(root, path)).catch(missingFile);
+
+        if (status) {
+          workingDifferences.add(path);
+        }
+      }
+
+      const stagedOnly = changedIndexPaths.filter((path) => workingDifferences.has(path));
+
+      if (stagedOnly.length) {
+        const preparedRef = await preserve();
+
+        throw new Error(
+          `Staged-only preparation output on repository-relative paths: ${JSON.stringify(stagedOnly)}. Preserved at ${preparedRef}; prepared-ref records this ref. Inspect with git show <ref>:<path> into a separate file. Do not overwrite current edits or the index. Change preparation to leave its output in working files, assign generated paths explicitly, and retry.\n${notice}`,
+        );
+      }
+
+      await stage(requested);
+    },
     async validate(requested: Set<string>, otherGroups: Set<string>) {
       const after = await workingState(root, Object.keys(before));
       const stagedPaths = pathsFrom(
@@ -385,38 +457,7 @@ export const snapshotPreparation = async (
         );
       }
 
-      const preparedIndex = await indexIdentity(root, privateIndex);
-      const sameWorking = async () =>
-        JSON.stringify(after) === JSON.stringify(await workingState(root, Object.keys(after)));
-
-      return {
-        added: unrequested.toSorted(),
-        async accept() {
-          const unchangedWorking = await sameWorking();
-          const unchangedIndex =
-            JSON.stringify(preparedIndex) ===
-            JSON.stringify(await indexIdentity(root, privateIndex));
-
-          if (!unchangedWorking || !unchangedIndex) {
-            throw new Error(
-              'Working files or private index changed during preparation assignment. Inspect the changes and retry.',
-            );
-          }
-
-          // Preserve staged-only output. Restage only generated working changes, including tracked deletions.
-          const workingChanges = unrequested.filter(
-            (path) => JSON.stringify(before[path] ?? null) !== JSON.stringify(after[path] ?? null),
-          );
-
-          await stage(new Set(workingChanges));
-
-          if (!(await sameWorking())) {
-            throw new Error(
-              'Working files changed during preparation assignment. Inspect the changes and retry.',
-            );
-          }
-        },
-      };
+      return { added: unrequested.toSorted() };
     },
     async publish() {
       await reviewGit(isolated, root, ['write-tree']);

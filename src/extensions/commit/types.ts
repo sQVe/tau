@@ -3,15 +3,13 @@ export interface CommitSuccess {
     sha: string;
     files: string[];
     pathBase?: 'repository';
-    preparationAddedFiles?: string[];
     subject: string;
     body: string | null;
-    skipped?: true;
     projectCheck?: string;
     messageCheck?: string;
     hooks?: 'run' | 'skip';
     commentReview?: {
-      status: 'passed' | 'waived';
+      status: 'passed';
       tree: string;
       policy: string;
       report: string;

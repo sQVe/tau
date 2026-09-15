@@ -18,8 +18,6 @@ import {
   commentPolicyHash,
 } from './commentReview.js';
 import type { CommentReview } from './commentReview.js';
-import type { CommitView } from './overlay.js';
-import { confirmCommitOverlay, confirmPreparationAssignment } from './overlay.js';
 import { snapshotPreparation } from './preparation.js';
 import {
   createCandidateChecks,
@@ -247,64 +245,14 @@ const undoCommit = async (
   }
 };
 
-const stagedNumstat = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
-  workingDirectory: string,
-  files: string[],
-): Promise<CommitView['files']> => {
-  const result = await pi.exec(
-    'git',
-    ['--literal-pathspecs', 'diff', '--cached', '--numstat', '--no-renames', '-z', '--', ...files],
-    { cwd: workingDirectory },
-  );
-
-  if (result.code !== 0) {
-    throw new Error(
-      `git diff --cached --numstat failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
-    );
-  }
-
-  return result.stdout
-    .split('\0')
-    .filter(Boolean)
-    .map((row) => {
-      const [added = '0', removed = '0', ...path] = row.split('\t');
-
-      return { path: path.join('\t'), added, removed };
-    });
-};
-
 type Reviews = Map<
   string,
   {
-    attempts: number;
     key?: string;
     result?: CommentReview;
     disputes: { evidence: string; findings: string }[];
   }
 >;
-
-// Worktree fingerprint for a group's files. Approve-all covers the content the user saw, so a
-// later group whose files changed since must be shown rather than committed unseen.
-const hashFiles = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
-  workingDirectory: string,
-  files: string[],
-) => {
-  const hashes: string[] = [];
-
-  for (const file of files) {
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Hash files in request order so the fingerprint is stable.
-    const result = await pi.exec('git', ['--literal-pathspecs', 'hash-object', '--', file], {
-      cwd: workingDirectory,
-    });
-    const hash = result.code === 0 ? result.stdout.trim() : `absent:${file}`;
-
-    hashes.push(hash);
-  }
-
-  return hashes.join(' ');
-};
 
 interface ReviewSnapshot {
   tree: string;
@@ -314,11 +262,10 @@ interface ReviewSnapshot {
 
 type RequestReview = (snapshot: ReviewSnapshot) => Promise<CommentReview>;
 
-/* oxlint-disable eslint/max-depth -- Approval, message editing and cleanup branches stay inside their ownership scope. */
-// oxlint-disable-next-line eslint/complexity -- This transaction keeps preparation, review, approval and rollback in one ownership scope.
+/* oxlint-disable eslint/max-depth -- Preparation and cleanup branches stay inside their ownership scope. */
+// oxlint-disable-next-line eslint/complexity -- This transaction keeps preparation, review and rollback in one ownership scope.
 const executeGroup = async (
   parameters: CommitInput['groups'][number],
-  groupLabel: string | undefined,
   temporaryDirectory: string,
   preparation: Preparation,
   ownership: Awaited<ReturnType<typeof snapshotPreparation>> | undefined,
@@ -328,26 +275,20 @@ const executeGroup = async (
   signal: AbortSignal | undefined,
   reviews: Reviews,
   requestReview: RequestReview,
-  batch: {
-    preapproved: boolean;
-    autoApprove: () => Promise<boolean>;
-    onApproveAll: () => Promise<void>;
-  },
 ): Promise<CommitSuccess> => {
   let resultFiles = parameters.files;
   let repositoryRelative = false;
-  let preparationAddedFiles: string[] = [];
   const pathDetails = () => ({
     files: resultFiles,
-    ...(repositoryRelative ? { pathBase: 'repository' as const, preparationAddedFiles } : {}),
+    ...(repositoryRelative ? { pathBase: 'repository' as const } : {}),
   });
   const cancelled = (): CommitSuccess => ({
     content: [{ type: 'text', text: 'Commit cancelled' }],
     details: { sha: '', ...pathDetails(), subject, body },
   });
 
-  let subject = parameters.subject;
-  let body = normalizeBody(parameters.body ?? null);
+  const subject = parameters.subject;
+  const body = normalizeBody(parameters.body ?? null);
 
   if (signal?.aborted) {
     return cancelled();
@@ -374,19 +315,16 @@ const executeGroup = async (
   }
 
   let projectPreparation = preparation.notice;
-  let approved = false;
+  let readyToCommit = false;
   let reviewedTree = '';
   let reviewedIndex = '';
   let reviewedHead: string | null = null;
   let reviewGroup = '';
   let reviewReport = '';
   let projectCheck = '';
-  let reviewWaived = false;
   let returningForCorrections = false;
   let candidate: Awaited<ReturnType<typeof createCandidateChecks>>;
   let messageCheck = '';
-  let checkedMessage: string | undefined;
-  let messageBlocked = false;
   let groupError: unknown;
   const assertCleanupOwnership = async () => {
     const currentIndex = await reviewGit(pi, context.cwd, [
@@ -415,6 +353,13 @@ const executeGroup = async (
       try {
         projectPreparation = await prepareProject(staging, preparation, signal);
       } catch (error) {
+        await ownership.preserve().catch((recoveryError: unknown) => {
+          throw new Error(
+            `${error instanceof Error ? error.message : String(error)}\nPrivate-index recovery failed: ${String(recoveryError)}. Do not prune Git objects. Inspect the retained candidate-index before retrying.`,
+            { cause: error },
+          );
+        });
+
         if (signal?.aborted) {
           return cancelled();
         }
@@ -422,7 +367,7 @@ const executeGroup = async (
         throw error;
       }
 
-      await ownership.stage(requestedFiles);
+      await ownership.restage(requestedFiles);
 
       const preparedCandidate = await ownership.validate(requestedFiles, otherGroups);
       validatePaths(preparedCandidate.added);
@@ -430,42 +375,7 @@ const executeGroup = async (
       if (preparedCandidate.added.length) {
         const assignmentRequired = `Preparation added paths (repository-relative): ${JSON.stringify(preparedCandidate.added)}. Assign each clean generated path explicitly to a group and retry.`;
 
-        if (batch.preapproved) {
-          throw new Error(assignmentRequired);
-        }
-
-        const assignment = await confirmPreparationAssignment(
-          context,
-          subject,
-          [...requestedFiles],
-          preparedCandidate.added,
-          groupLabel,
-          signal,
-        );
-
-        if (signal?.aborted || assignment === 'abort' || assignment === undefined) {
-          return cancelled();
-        }
-
-        if (assignment !== 'assign') {
-          throw new Error(`Preparation assignment declined. ${assignmentRequired}`);
-        }
-
-        await preparedCandidate.accept();
-
-        preparationAddedFiles = preparedCandidate.added;
-        for (const path of preparationAddedFiles) {
-          requestedFiles.add(path);
-        }
-        resultFiles = [...requestedFiles];
-
-        const remaining = await ownership.validate(requestedFiles, otherGroups);
-
-        if (remaining.added.length) {
-          throw new Error(
-            `Preparation added paths changed during assignment: ${JSON.stringify(remaining.added)}. Inspect and retry.`,
-          );
-        }
+        throw new Error(assignmentRequired);
       }
 
       await ownership.publish();
@@ -521,8 +431,10 @@ const executeGroup = async (
       const initial = await candidate.checkInitial(message);
       projectCheck = initial.projectNotice;
       messageCheck = initial.messageResult.notice;
-      messageBlocked = !initial.messageResult.passed;
-      checkedMessage = message;
+
+      if (!initial.messageResult.passed) {
+        throw new Error(messageCheck);
+      }
     } catch (error) {
       if (signal?.aborted) {
         return cancelled();
@@ -533,7 +445,7 @@ const executeGroup = async (
 
     reviewGroup = JSON.stringify([context.cwd, reviewedHead, [...requestedFiles].toSorted()]);
 
-    const state = reviews.get(reviewGroup) ?? { attempts: 0, disputes: [] };
+    const state = reviews.get(reviewGroup) ?? { disputes: [] };
 
     reviews.delete(reviewGroup);
     reviews.set(reviewGroup, state);
@@ -577,13 +489,16 @@ const executeGroup = async (
       state.key = reviewKey;
       state.result = commentReview;
 
-      if (commentReview.findings.some((finding) => finding.kind !== 'missing')) {
-        state.attempts += 1;
-      }
-
       reviewReport = formatCommentReview(commentReview);
     } catch (error) {
-      reviewReport = `Comment review failed: ${error instanceof Error ? error.message : String(error)}\nRetry or explicitly waive this failed review.`;
+      if (signal?.aborted) {
+        return cancelled();
+      }
+
+      throw new Error(
+        `Comment review failed: ${error instanceof Error ? error.message : String(error)}\nFix the cause and call commit again.`,
+        { cause: error },
+      );
     }
 
     if (state.disputes.length) {
@@ -601,183 +516,52 @@ const executeGroup = async (
       return cancelled();
     }
 
-    const reviewBlocked =
-      !commentReview || commentReview.findings.some((finding) => finding.kind !== 'missing');
+    const reviewBlocked = commentReview.findings.some((finding) => finding.kind !== 'missing');
 
-    if (commentReview && reviewBlocked && state.attempts <= 2) {
+    if (reviewBlocked) {
       returningForCorrections = true;
 
       throw new Error(
-        `Comment review needs corrections (${state.attempts}/2 automatic returns):\n${reviewReport}\nFix the findings and call commit again. Unresolved findings will require user review after two returns.`,
+        `Comment review needs corrections:\n${reviewReport}\nFix the findings or supply commentDispute with evidence and call commit again.`,
       );
     }
 
-    const files = await stagedNumstat(
-      pi,
-      ownership ? preparation.repositoryRoot : context.cwd,
-      resultFiles,
-    );
-    let notice = '';
+    const currentIndex = await reviewGit(pi, context.cwd, [
+      'ls-files',
+      '--stage',
+      '--debug',
+      '-v',
+      '-z',
+    ]);
 
-    /* oxlint-disable eslint/no-await-in-loop -- Each approval round must finish before the next reads the amended message. */
-    for (;;) {
-      if (signal?.aborted) {
-        return cancelled();
-      }
-
-      const message = buildCommitMessage(subject, body);
-
-      if (message !== checkedMessage) {
-        try {
-          const result = await candidate.checkMessage(message);
-          messageCheck = result.notice;
-          messageBlocked = !result.passed;
-          checkedMessage = message;
-        } catch (error) {
-          if (signal?.aborted) {
-            return cancelled();
-          }
-
-          throw error;
-        }
-      }
-
-      const automaticallyApproved = await batch.autoApprove();
-      if (automaticallyApproved && messageBlocked) {
-        throw new Error(messageCheck);
-      }
-
-      const choice = automaticallyApproved
-        ? 'approve'
-        : await confirmCommitOverlay(
-            context,
-            {
-              subject,
-              body,
-              files,
-              ...(groupLabel ? { group: groupLabel } : {}),
-              notice: [
-                notice,
-                projectPreparation,
-                projectCheck,
-                messageCheck,
-                `Git hooks: ${candidate.hooks} (staged policy).`,
-              ]
-                .filter(Boolean)
-                .join('\n'),
-              messageBlocked,
-              review: reviewReport,
-              reviewBlocked,
-              ...(ownership
-                ? { allowApproveAll: false, repositoryRelative: true, preparationAddedFiles }
-                : {}),
-            },
-            signal,
-          );
-      notice = '';
-
-      if (signal?.aborted) {
-        return cancelled();
-      }
-
-      if (
-        (choice === 'approve' || choice === 'approveAll' || choice === 'waive') &&
-        messageBlocked
-      ) {
-        throw new Error(messageCheck);
-      }
-
-      if ((choice === 'approve' || choice === 'approveAll') && reviewBlocked) {
-        throw new Error(`Comment review requires an explicit user waiver.\n${reviewReport}`);
-      }
-
-      if (choice === 'approve' || choice === 'approveAll' || choice === 'waive') {
-        const currentIndex = await reviewGit(pi, context.cwd, [
-          'ls-files',
-          '--stage',
-          '--debug',
-          '-v',
-          '-z',
-        ]);
-
-        if (currentIndex !== reviewedIndex) {
-          throw new Error(
-            'Staged content changed since comment review. Call commit again to review the changes.',
-          );
-        }
-
-        const currentTreeOutput = await reviewGit(pi, context.cwd, ['write-tree'], signal);
-        const currentTree = currentTreeOutput.trim();
-        const changedSinceReview =
-          currentTree !== reviewedTree || (await currentHead(pi, context.cwd)) !== reviewedHead;
-
-        if (changedSinceReview) {
-          throw new Error(
-            'Staged content or HEAD changed since comment review. Call commit again to review the changes.',
-          );
-        }
-
-        if (choice === 'approveAll' && !ownership) {
-          await batch.onApproveAll();
-        }
-
-        await candidate.verifyMessage(
-          message,
-          'Message file changed after validation. Retry commit.',
-        );
-
-        approved = true;
-        reviewWaived = choice === 'waive';
-
-        break;
-      }
-
-      if (choice === 'retry') {
-        reviews.delete(reviewGroup);
-
-        throw new Error(`User requested fixes or another comment review:\n${reviewReport}`);
-      }
-
-      if (choice === 'skip') {
-        return {
-          content: [{ type: 'text', text: 'Commit skipped by user' }],
-          details: { sha: '', ...pathDetails(), subject, body, skipped: true },
-        };
-      }
-
-      if (choice === 'abort') {
-        throw new Error('Commit declined by user');
-      }
-
-      if (choice === 'subject') {
-        const edited = await context.ui.editor('Edit subject', subject);
-
-        if (edited !== undefined) {
-          try {
-            validateSubject(edited);
-            subject = edited;
-          } catch (error) {
-            notice = error instanceof Error ? error.message : String(error);
-          }
-        }
-      } else {
-        const edited = await context.ui.editor('Edit body', body ?? '');
-
-        if (edited !== undefined) {
-          try {
-            body = normalizeBody(edited);
-          } catch (error) {
-            notice = error instanceof Error ? error.message : String(error);
-          }
-        }
-      }
+    if (currentIndex !== reviewedIndex) {
+      throw new Error(
+        'Staged content changed since comment review. Call commit again to review the changes.',
+      );
     }
-    /* oxlint-enable eslint/no-await-in-loop */
+
+    const currentTreeOutput = await reviewGit(pi, context.cwd, ['write-tree'], signal);
+    const currentTree = currentTreeOutput.trim();
+    const changedSinceReview =
+      currentTree !== reviewedTree || (await currentHead(pi, context.cwd)) !== reviewedHead;
+
+    if (changedSinceReview) {
+      throw new Error(
+        'Staged content or HEAD changed since comment review. Call commit again to review the changes.',
+      );
+    }
+
+    await candidate.verifyMessage(
+      buildCommitMessage(subject, body),
+      'Message file changed after validation. Retry commit.',
+    );
+
+    readyToCommit = true;
   } catch (error) {
     groupError = error;
     throw error;
   } finally {
-    if (!approved) {
+    if (!readyToCommit) {
       if (!returningForCorrections) {
         reviews.delete(reviewGroup);
       }
@@ -828,7 +612,7 @@ const executeGroup = async (
     throw commitFailedError(commitResult.stdout, commitResult.stderr);
   }
 
-  // Hooks can stage files after approval, so check the committed paths too.
+  // Hooks can stage files after review, so check the committed paths too.
   const committedPaths = await listCommitPaths(pi, context.cwd);
 
   const smuggledPaths = committedPaths.filter((file) => !requestedFiles.has(file));
@@ -886,7 +670,7 @@ const executeGroup = async (
     content: [
       {
         type: 'text',
-        text: `${commitHash} ${subject}${preparationAddedFiles.length ? `\nPreparation-added paths (repository-relative): ${JSON.stringify(preparationAddedFiles)}` : ''}\n${projectPreparation}\n${projectCheck}\n${messageCheck}\nGit hooks: ${candidate.hooks} (staged policy).${reviewReport ? `\nComment review${reviewWaived ? ' waived by user' : ''}:\n${reviewReport}` : ''}`,
+        text: `${commitHash} ${subject}\n${projectPreparation}\n${projectCheck}\n${messageCheck}\nGit hooks: ${candidate.hooks} (staged policy).${reviewReport ? `\nComment review:\n${reviewReport}` : ''}`,
       },
     ],
     details: {
@@ -898,7 +682,7 @@ const executeGroup = async (
       messageCheck,
       hooks: candidate.hooks,
       commentReview: {
-        status: reviewWaived ? 'waived' : 'passed',
+        status: 'passed',
         tree: reviewedTree,
         policy: commentPolicyHash,
         report: reviewReport,
@@ -912,7 +696,6 @@ const executeGroup = async (
 export const createCommitTool = (
   pi: Pick<ExtensionAPI, 'exec'>,
   review = reviewComments,
-  autoApproveCommits = () => false,
 ): ToolDefinition<typeof commitToolParameters, { groups: CommitSuccess['details'][] }> => {
   const reviews: Reviews = new Map();
 
@@ -920,24 +703,24 @@ export const createCommitTool = (
     name: 'commit',
     label: 'Commit',
     description:
-      'Stage, prepare, check, review, and commit each group sequentially. Assign clean preparation-added paths through the overlay before candidate review and approval. Startup preapproval stops on additions for explicit assignment in a new call.',
+      'Stage, prepare, check, review, and commit each group sequentially without human approval. Preparation-added paths require explicit assignment in a new call. Failed checks and blocking comment reviews return errors.',
     promptSnippet: 'Create git commits for an ordered groups array in one call.',
     promptGuidelines: [
-      'When asked to commit, call commit without asking for confirmation in chat first. The commit overlay is the only approval step unless Pi was started with --auto-approve-commits. That flag skips confirmation, not checks or comment review.',
-      'The commit tool commits only requested files and clean preparation-added paths explicitly assigned by the user in its overlay.',
-      'The commit tool runs configured preparation once after staging each executed group, then restages requested files. Assignment changes must be accepted before checks and review. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
-      'Checks run in the existing checkout with installed dependencies. Tau saves verified recovery before hiding working edits and restores before review or approval. Reviews run serially. Configured preparation disables approve-all reuse for later groups. Assignment never waives review; accepted paths remain reserved for their group.',
-      "With --auto-approve-commits, preparation-added paths stop the commit without UI. Inspect them, assign them explicitly in the next commit call, and retry. Never absorb prior dirty or untracked user edits, other groups' paths, or rejected sensitive paths to clear an error.",
-      'Prepared commit results use repository-relative files and preparationAddedFiles with pathBase: repository, including paths outside the invoking directory. For a retry, convert paths within the invoking directory to relative paths. Retry from the repository root when added paths are outside that directory.',
+      'When asked to commit, call commit without asking for confirmation. The commit tool runs without human approval; checks and comment review still apply.',
+      'The commit tool commits only files explicitly assigned to the requested groups.',
+      'The commit tool runs configured preparation once after staging each executed group, then restages requested files. Staged-only preparation output stops the group and is retained under a recovery ref. Inspect it and change preparation to leave output in working files before retrying. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
+      'Checks run in the existing checkout with installed dependencies. Tau saves verified recovery before hiding working edits and restores before review. Reviews run serially. Requested paths remain reserved for their group.',
+      "Preparation-added paths stop the commit without UI. Inspect them, assign them explicitly in the next commit call, and retry. Never absorb prior dirty or untracked user edits, other groups' paths, or rejected sensitive paths to clear an error.",
+      'Prepared commit results use repository-relative files with pathBase: repository, including paths outside the invoking directory. For a retry, convert paths within the invoking directory to relative paths. Retry from the repository root when added paths are outside that directory.',
       'Preparation recovery requires a local POSIX checkout, a regular supported index, and at most 100 MiB of tracked and nonignored untracked working data. Unsupported states fail before preparation. Ignored files, external symlink targets, and background writers are outside recovery coverage; this is not a sandbox.',
-      'On preparation failure, cancellation, rejection, or ownership conflict, read the reported recovery instructions. Working edits remain; never restore a saved index or working files over concurrent user edits. Post-commit tree, path, and message guards remain enabled.',
+      'On preparation failure, cancellation, or ownership conflict, read the reported recovery instructions. Working edits remain; never restore a saved index or working files over concurrent user edits. Post-commit tree, path, and message guards remain enabled.',
       'Working root tau.json selects prepare. The actual staged candidate selects check, checkMessage, and hooks. hooks defaults to run; only explicit staged hooks: skip disables hooks for the final Git commit. Never bypass hooks ad hoc through --no-verify, core.hooksPath, environment variables, or config changes to evade a failure.',
-      'checkMessage is optional argv without an implicit shell. Tau appends an absolute temporary full-message file path. Initial project and message checks share a staged working window. Message edits rerun only message validation. Missing checks are unavailable, not passed. Failed checks cannot be waived; checker mutations stop the group.',
+      'checkMessage is optional argv without an implicit shell. Tau appends an absolute temporary full-message file path. Initial project and message checks share a staged working window. Missing checks are unavailable, not passed. Failed checks cannot be waived; checker mutations stop the group.',
       'Pending recovery blocks commits and staging cleanup. Stop writers and inspect the reported archives; never overwrite concurrent staging or HEAD. Partial hiding or restoration needs manual inspection. Successful recovery archives remain because displaced files may receive late writes. Checkers must keep children in their POSIX process group; detached writers and ignored dependencies are outside recovery coverage.',
-      'Messages reject NUL. Body CRLF and CR become LF; other whitespace is preserved. Nonempty bodies end in LF. Tau commits the displayed normalized message through git commit --cleanup=verbatim -F. Hook message rewrites undo the commit and require retry with the final message.',
+      'Messages reject NUL. Body CRLF and CR become LF; other whitespace is preserved. Nonempty bodies end in LF. Tau commits the requested normalized message through git commit --cleanup=verbatim -F. Hook message rewrites undo the commit and require retry with the final message.',
       'Use a conventional commit subject.',
       'Do not commit sensitive files such as .env or SSH keys.',
-      "Comment review runs before commit approval. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. After two automatic returns, unresolved findings need a user waiver. With --auto-approve-commits, commit returns an error instead of asking for a waiver. Stop and report the blocker. Never claim a waiver on the user's behalf.",
+      'Comment review runs before committing. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. Blocking findings and review failures return tool errors on every call; there are no review waivers.',
     ],
     parameters: commitToolParameters,
     // oxlint-disable-next-line eslint/complexity -- Group execution owns partial success reporting and recovery cleanup across failures.
@@ -960,13 +743,6 @@ export const createCommitTool = (
         }
       }
 
-      const preapproved = autoApproveCommits();
-
-      if (!context.hasUI && !preapproved) {
-        throw new Error('Cannot commit without user confirmation (non-interactive mode)');
-      }
-
-      const approval = { all: false, seen: new Map<number, string>() };
       const groups: CommitSuccess['details'][] = [];
       const content: CommitSuccess['content'] = [];
 
@@ -1022,7 +798,6 @@ export const createCommitTool = (
 
           const result = await executeGroup(
             group,
-            parameters.groups.length > 1 ? groupLabel : undefined,
             temporaryDirectory,
             preparation,
             ownership,
@@ -1032,42 +807,6 @@ export const createCommitTool = (
             signal,
             reviews,
             requestReview,
-            {
-              preapproved,
-              autoApprove: async () => {
-                if (preapproved) {
-                  return true;
-                }
-
-                const seen = approval.seen.get(index);
-
-                return (
-                  !preparation.command &&
-                  approval.all &&
-                  seen !== undefined &&
-                  seen === (await hashFiles(pi, context.cwd, group.files))
-                );
-              },
-              onApproveAll: async () => {
-                approval.all = true;
-
-                for (
-                  let remainingIndex = index + 1;
-                  remainingIndex < parameters.groups.length;
-                  remainingIndex += 1
-                ) {
-                  const remaining = parameters.groups[remainingIndex];
-
-                  if (!remaining) {
-                    continue;
-                  }
-
-                  const fingerprint = await hashFiles(pi, context.cwd, remaining.files);
-
-                  approval.seen.set(remainingIndex, fingerprint);
-                }
-              },
-            },
           );
 
           completed = Boolean(result.details.sha);
@@ -1095,7 +834,7 @@ export const createCommitTool = (
             }
           }
 
-          if (!result.details.sha && !result.details.skipped && parameters.groups.length > 1) {
+          if (!result.details.sha && parameters.groups.length > 1) {
             throw new Error('Commit cancelled');
           }
 
