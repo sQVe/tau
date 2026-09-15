@@ -1,0 +1,309 @@
+{
+  "provenance": {
+    "sourceRunDirectory": "tau-abu392-IUAtN8",
+    "sourceFile": "observations.json",
+    "originalSha256": "d55da4c4ab9da55da97c416d516c2346b97112410360f5d9fec8bc9aba7fabf7",
+    "sanitization": "Only absolute probe, Node executable, and checkout paths were replaced with <probe-root>, <node-executable>, and <checkout>. Measurements, process identities, responses, and outcomes are unchanged. This is the original recorded run, not a rerun."
+  },
+  "platform": "linux",
+  "passed": true,
+  "cleanup": "isolated server exited",
+  "observations": [
+    {
+      "server": "herdr server running; you can use any herdr CLI command in another terminal.\napi socket: <probe-root>/config/herdr/sessions/deadline-probe/herdr.sock\nclient socket: <probe-root>/config/herdr/sessions/deadline-probe/herdr-client.sock\nlogs: <probe-root>/config/herdr/sessions/deadline-probe/herdr-server.log\ndid you mean to open the Herdr TUI? run `herdr`; you do not need `herdr server`.\n"
+    },
+    {
+      "arguments": ["workspace", "create", "--cwd", "<probe-root>", "--no-focus"],
+      "response": "{\"id\":\"cli:workspace:create\",\"result\":{\"root_pane\":{\"agent_status\":\"unknown\",\"cwd\":\"<probe-root>\",\"focused\":true,\"foreground_cwd\":\"<probe-root>\",\"pane_id\":\"w1:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65b8a31a8c4281\",\"workspace_id\":\"w1\"},\"tab\":{\"agent_status\":\"unknown\",\"focused\":true,\"label\":\"1\",\"number\":1,\"pane_count\":1,\"tab_id\":\"w1:t1\",\"workspace_id\":\"w1\"},\"type\":\"workspace_created\",\"workspace\":{\"active_tab_id\":\"w1:t1\",\"agent_status\":\"unknown\",\"focused\":true,\"label\":\"~\",\"number\":1,\"pane_count\":1,\"tab_count\":1,\"workspace_id\":\"w1\"}}}\n"
+    },
+    {
+      "arguments": [
+        "pane",
+        "split",
+        "--pane",
+        "w1:p1",
+        "--direction",
+        "right",
+        "--cwd",
+        "<probe-root>",
+        "--no-focus"
+      ],
+      "response": "{\"id\":\"cli:pane:split\",\"result\":{\"pane\":{\"agent_status\":\"unknown\",\"cwd\":\"<probe-root>\",\"focused\":false,\"foreground_cwd\":\"<probe-root>\",\"pane_id\":\"w1:p2\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65b8a31a8d69c2\",\"workspace_id\":\"w1\"},\"type\":\"pane_info\"}}\n"
+    },
+    {
+      "arguments": [
+        "pane",
+        "run",
+        "w1:p2",
+        "\"<node-executable>\" \"<probe-root>/ordinaryWorker.mjs\""
+      ],
+      "response": ""
+    },
+    {
+      "arguments": ["pane", "process-info", "--pane", "w1:p2"],
+      "response": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":963970,\"foreground_processes\":[{\"argv\":[\"<node-executable>\",\"<probe-root>/ordinaryWorker.mjs\"],\"cmdline\":\"<node-executable> <probe-root>/ordinaryWorker.mjs\",\"cwd\":\"<probe-root>\",\"name\":\"node\",\"pid\":963970}],\"pane_id\":\"w1:p2\",\"shell_pid\":963964},\"type\":\"pane_process_info\"}}\n"
+    },
+    {
+      "arguments": ["pane", "process-info", "--pane", "w1:p2"],
+      "response": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":963970,\"foreground_processes\":[{\"argv\":[\"<node-executable>\",\"<probe-root>/ordinaryWorker.mjs\"],\"cmdline\":\"<node-executable> <probe-root>/ordinaryWorker.mjs\",\"cwd\":\"<probe-root>\",\"name\":\"MainThread\",\"pid\":963970}],\"pane_id\":\"w1:p2\",\"shell_pid\":963964},\"type\":\"pane_process_info\"}}\n"
+    },
+    {
+      "arguments": ["pane", "process-info", "--pane", "w1:p2"],
+      "response": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":963970,\"foreground_processes\":[{\"argv\":[\"<node-executable>\",\"<probe-root>/ordinaryWorker.mjs\"],\"cmdline\":\"<node-executable> <probe-root>/ordinaryWorker.mjs\",\"cwd\":\"<probe-root>\",\"name\":\"MainThread\",\"pid\":963970}],\"pane_id\":\"w1:p2\",\"shell_pid\":963964},\"type\":\"pane_process_info\"}}\n"
+    },
+    {
+      "arguments": ["pane", "process-info", "--pane", "w1:p2"],
+      "response": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":963970,\"foreground_processes\":[{\"argv\":[\"<node-executable>\",\"<probe-root>/ordinaryWorker.mjs\"],\"cmdline\":\"<node-executable> <probe-root>/ordinaryWorker.mjs\",\"cwd\":\"<probe-root>\",\"name\":\"MainThread\",\"pid\":963970}],\"pane_id\":\"w1:p2\",\"shell_pid\":963964},\"type\":\"pane_process_info\"}}\n"
+    },
+    {
+      "injectedClientFailure": "unavailable",
+      "elapsed": 4.773109000000005,
+      "result": {
+        "cleanup": "unconfirmed",
+        "detail": "Error: Command failed: herdr pane send-keys w1:p2 ctrl+c\n{\"id\":\"cli:request\",\"error\":{\"code\":\"server_not_running\",\"message\":\"no herdr server is running at <probe-root>/missing.sock; run `herdr` to start or attach it\"}}\n Check w1:p2 and worker 963970 (<probe-root>/ordinaryWorker.mjs) for manual cleanup."
+      },
+      "workerStillAlive": true
+    },
+    {
+      "arguments": ["pane", "process-info", "--pane", "w1:p2"],
+      "response": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":963970,\"foreground_processes\":[{\"argv\":[\"<node-executable>\",\"<probe-root>/ordinaryWorker.mjs\"],\"cmdline\":\"<node-executable> <probe-root>/ordinaryWorker.mjs\",\"cwd\":\"<probe-root>\",\"name\":\"MainThread\",\"pid\":963970}],\"pane_id\":\"w1:p2\",\"shell_pid\":963964},\"type\":\"pane_process_info\"}}\n"
+    },
+    {
+      "injectedClientFailure": "stalled",
+      "elapsed": 302.163809,
+      "result": {
+        "cleanup": "unconfirmed",
+        "detail": "Error: Client call cancelled; delivery and cleanup are unconfirmed. Check w1:p2 and worker 963970 (<probe-root>/ordinaryWorker.mjs) for manual cleanup."
+      },
+      "workerStillAlive": true
+    },
+    {
+      "arguments": ["pane", "process-info", "--pane", "w1:p2"],
+      "response": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":963970,\"foreground_processes\":[{\"argv\":[\"<node-executable>\",\"<probe-root>/ordinaryWorker.mjs\"],\"cmdline\":\"<node-executable> <probe-root>/ordinaryWorker.mjs\",\"cwd\":\"<probe-root>\",\"name\":\"MainThread\",\"pid\":963970}],\"pane_id\":\"w1:p2\",\"shell_pid\":963964},\"type\":\"pane_process_info\"}}\n"
+    },
+    {
+      "arguments": ["pane", "send-keys", "w1:p2", "ctrl+c"],
+      "response": ""
+    },
+    {
+      "arguments": ["pane", "process-info", "--pane", "w1:p2"],
+      "response": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":963964,\"foreground_processes\":[{\"argv\":[\"/bin/sh\"],\"cmdline\":\"/bin/sh\",\"cwd\":\"<probe-root>\",\"name\":\"sh\",\"pid\":963964}],\"pane_id\":\"w1:p2\",\"shell_pid\":963964},\"type\":\"pane_process_info\"}}\n"
+    },
+    {
+      "ordinaryCleanup": {
+        "cleanup": "confirmed",
+        "detail": "The owned process is absent and its shell is foreground; detached or background descendants are not covered."
+      }
+    },
+    {
+      "arguments": [
+        "agent",
+        "start",
+        "deadline-worker",
+        "--kind",
+        "pi",
+        "--pane",
+        "w1:p2",
+        "--timeout",
+        "15000",
+        "--",
+        "--offline",
+        "--no-extensions",
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-themes",
+        "--no-context-files",
+        "--no-tools",
+        "--no-approve",
+        "--session",
+        "<probe-root>/worker.jsonl",
+        "-e",
+        "<probe-root>/agent/extensions/herdr-agent-state.ts",
+        "-e",
+        "<checkout>/scripts/subagentTimeoutPiFixture.ts"
+      ],
+      "response": "{\"id\":\"cli:agent:start\",\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"<probe-root>/worker.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"<probe-root>\",\"focused\":false,\"foreground_cwd\":\"<probe-root>\",\"interactive_ready\":true,\"name\":\"deadline-worker\",\"pane_id\":\"w1:p2\",\"revision\":1,\"screen_detection_skipped\":true,\"state_change_seq\":1,\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65b8a31a8d69c2\",\"terminal_title\":\"π - tau-abu392-IUAtN8\",\"terminal_title_stripped\":\"π - tau-abu392-IUAtN8\",\"workspace_id\":\"w1\"},\"argv\":[\"pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-context-files\",\"--no-tools\",\"--no-approve\",\"--session\",\"<probe-root>/worker.jsonl\",\"-e\",\"<probe-root>/agent/extensions/herdr-agent-state.ts\",\"-e\",\"<checkout>/scripts/subagentTimeoutPiFixture.ts\"],\"type\":\"agent_started\"}}\n"
+    },
+    {
+      "canonicalWorkerStart": {
+        "agent": {
+          "agent": "pi",
+          "agent_session": {
+            "agent": "pi",
+            "kind": "path",
+            "source": "herdr:pi",
+            "value": "<probe-root>/worker.jsonl"
+          },
+          "agent_status": "idle",
+          "cwd": "<probe-root>",
+          "focused": false,
+          "foreground_cwd": "<probe-root>",
+          "interactive_ready": true,
+          "name": "deadline-worker",
+          "pane_id": "w1:p2",
+          "revision": 1,
+          "screen_detection_skipped": true,
+          "state_change_seq": 1,
+          "tab_id": "w1:t1",
+          "terminal_id": "term_65b8a31a8d69c2",
+          "terminal_title": "π - tau-abu392-IUAtN8",
+          "terminal_title_stripped": "π - tau-abu392-IUAtN8",
+          "workspace_id": "w1"
+        },
+        "argv": [
+          "pi",
+          "--offline",
+          "--no-extensions",
+          "--no-skills",
+          "--no-prompt-templates",
+          "--no-themes",
+          "--no-context-files",
+          "--no-tools",
+          "--no-approve",
+          "--session",
+          "<probe-root>/worker.jsonl",
+          "-e",
+          "<probe-root>/agent/extensions/herdr-agent-state.ts",
+          "-e",
+          "<checkout>/scripts/subagentTimeoutPiFixture.ts"
+        ],
+        "type": "agent_started"
+      }
+    },
+    {
+      "arguments": ["pane", "process-info", "--pane", "w1:p2"],
+      "response": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":964025,\"foreground_processes\":[{\"argv\":[\"pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-context-files\",\"--no-tools\",\"--no-approve\",\"--session\",\"<probe-root>/worker.jsonl\",\"-e\",\"<probe-root>/agent/extensions/herdr-agent-state.ts\",\"-e\",\"<checkout>/scripts/subagentTimeoutPiFixture.ts\"],\"cmdline\":\"pi --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-context-files --no-tools --no-approve --session <probe-root>/worker.jsonl -e <probe-root>/agent/extensions/herdr-agent-state.ts -e <checkout>/scripts/subagentTimeoutPiFixture.ts\",\"cwd\":\"<probe-root>\",\"name\":\"pi\",\"pid\":964025}],\"pane_id\":\"w1:p2\",\"shell_pid\":963964},\"type\":\"pane_process_info\"}}\n"
+    },
+    {
+      "arguments": [
+        "agent",
+        "prompt",
+        "deadline-worker",
+        "!!\"<node-executable>\" \"<probe-root>/ordinaryWorker.mjs\" \"<probe-root>/piChildPid\""
+      ],
+      "response": "{\"id\":\"cli:agent:prompt\",\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"<probe-root>/worker.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"<probe-root>\",\"focused\":false,\"foreground_cwd\":\"<probe-root>\",\"interactive_ready\":true,\"name\":\"deadline-worker\",\"pane_id\":\"w1:p2\",\"revision\":1,\"screen_detection_skipped\":true,\"state_change_seq\":1,\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65b8a31a8d69c2\",\"terminal_title\":\"π - tau-abu392-IUAtN8\",\"terminal_title_stripped\":\"π - tau-abu392-IUAtN8\",\"workspace_id\":\"w1\"},\"type\":\"agent_prompted\"}}\n"
+    },
+    {
+      "arguments": [
+        "agent",
+        "start",
+        "deadline-parent",
+        "--kind",
+        "pi",
+        "--pane",
+        "w1:p1",
+        "--timeout",
+        "15000",
+        "--",
+        "--offline",
+        "--no-extensions",
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-themes",
+        "--no-context-files",
+        "--no-tools",
+        "--no-approve",
+        "--session",
+        "<probe-root>/parent.jsonl",
+        "-e",
+        "<probe-root>/agent/extensions/herdr-agent-state.ts",
+        "-e",
+        "<checkout>/scripts/subagentTimeoutPiFixture.ts"
+      ],
+      "response": "{\"id\":\"cli:agent:start\",\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"<probe-root>/parent.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"<probe-root>\",\"focused\":true,\"foreground_cwd\":\"<probe-root>\",\"interactive_ready\":true,\"name\":\"deadline-parent\",\"pane_id\":\"w1:p1\",\"revision\":1,\"screen_detection_skipped\":true,\"state_change_seq\":2,\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65b8a31a8c4281\",\"terminal_title\":\"π - tau-abu392-IUAtN8\",\"terminal_title_stripped\":\"π - tau-abu392-IUAtN8\",\"workspace_id\":\"w1\"},\"argv\":[\"pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-context-files\",\"--no-tools\",\"--no-approve\",\"--session\",\"<probe-root>/parent.jsonl\",\"-e\",\"<probe-root>/agent/extensions/herdr-agent-state.ts\",\"-e\",\"<checkout>/scripts/subagentTimeoutPiFixture.ts\"],\"type\":\"agent_started\"}}\n"
+    },
+    {
+      "canonicalStart": {
+        "agent": {
+          "agent": "pi",
+          "agent_session": {
+            "agent": "pi",
+            "kind": "path",
+            "source": "herdr:pi",
+            "value": "<probe-root>/parent.jsonl"
+          },
+          "agent_status": "idle",
+          "cwd": "<probe-root>",
+          "focused": true,
+          "foreground_cwd": "<probe-root>",
+          "interactive_ready": true,
+          "name": "deadline-parent",
+          "pane_id": "w1:p1",
+          "revision": 1,
+          "screen_detection_skipped": true,
+          "state_change_seq": 2,
+          "tab_id": "w1:t1",
+          "terminal_id": "term_65b8a31a8c4281",
+          "terminal_title": "π - tau-abu392-IUAtN8",
+          "terminal_title_stripped": "π - tau-abu392-IUAtN8",
+          "workspace_id": "w1"
+        },
+        "argv": [
+          "pi",
+          "--offline",
+          "--no-extensions",
+          "--no-skills",
+          "--no-prompt-templates",
+          "--no-themes",
+          "--no-context-files",
+          "--no-tools",
+          "--no-approve",
+          "--session",
+          "<probe-root>/parent.jsonl",
+          "-e",
+          "<probe-root>/agent/extensions/herdr-agent-state.ts",
+          "-e",
+          "<checkout>/scripts/subagentTimeoutPiFixture.ts"
+        ],
+        "type": "agent_started"
+      }
+    },
+    {
+      "arguments": ["agent", "get", "deadline-parent"],
+      "response": "{\"id\":\"cli:agent:get\",\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"<probe-root>/parent.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"<probe-root>\",\"focused\":true,\"foreground_cwd\":\"<probe-root>\",\"interactive_ready\":true,\"name\":\"deadline-parent\",\"pane_id\":\"w1:p1\",\"revision\":1,\"screen_detection_skipped\":true,\"state_change_seq\":2,\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65b8a31a8c4281\",\"terminal_title\":\"π - tau-abu392-IUAtN8\",\"terminal_title_stripped\":\"π - tau-abu392-IUAtN8\",\"workspace_id\":\"w1\"},\"type\":\"agent_info\"}}\n"
+    },
+    {
+      "arguments": ["agent", "prompt", "deadline-parent", "/deadline-probe arm"],
+      "response": "{\"id\":\"cli:agent:prompt\",\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"<probe-root>/parent.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"<probe-root>\",\"focused\":true,\"foreground_cwd\":\"<probe-root>\",\"interactive_ready\":true,\"name\":\"deadline-parent\",\"pane_id\":\"w1:p1\",\"revision\":1,\"screen_detection_skipped\":true,\"state_change_seq\":2,\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65b8a31a8c4281\",\"terminal_title\":\"π - tau-abu392-IUAtN8\",\"terminal_title_stripped\":\"π - tau-abu392-IUAtN8\",\"workspace_id\":\"w1\"},\"type\":\"agent_prompted\"}}\n"
+    },
+    {
+      "arguments": ["agent", "prompt", "deadline-parent", "/deadline-probe activity"],
+      "response": "{\"id\":\"cli:agent:prompt\",\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"<probe-root>/parent.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"<probe-root>\",\"focused\":true,\"foreground_cwd\":\"<probe-root>\",\"interactive_ready\":true,\"name\":\"deadline-parent\",\"pane_id\":\"w1:p1\",\"revision\":1,\"screen_detection_skipped\":true,\"state_change_seq\":2,\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65b8a31a8c4281\",\"terminal_title\":\"π - tau-abu392-IUAtN8\",\"terminal_title_stripped\":\"π - tau-abu392-IUAtN8\",\"workspace_id\":\"w1\"},\"type\":\"agent_prompted\"}}\n"
+    },
+    {
+      "arguments": ["agent", "prompt", "deadline-parent", "/deadline-probe reconnect"],
+      "response": "{\"id\":\"cli:agent:prompt\",\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"<probe-root>/parent.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"<probe-root>\",\"focused\":true,\"foreground_cwd\":\"<probe-root>\",\"interactive_ready\":true,\"name\":\"deadline-parent\",\"pane_id\":\"w1:p1\",\"revision\":1,\"screen_detection_skipped\":true,\"state_change_seq\":2,\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65b8a31a8c4281\",\"terminal_title\":\"π - tau-abu392-IUAtN8\",\"terminal_title_stripped\":\"π - tau-abu392-IUAtN8\",\"workspace_id\":\"w1\"},\"type\":\"agent_prompted\"}}\n"
+    },
+    {
+      "piCancellation": {
+        "cleanup": "confirmed",
+        "detail": "The owned process is absent and its shell is foreground; detached or background descendants are not covered.",
+        "reason": "timeout",
+        "output": "incomplete"
+      },
+      "timeoutElapsed": 3431.963412,
+      "piProcessAbsent": true,
+      "ordinaryPiChildAbsent": true
+    },
+    {
+      "arguments": ["agent", "prompt", "deadline-parent", "/deadline-probe exit"],
+      "response": "{\"id\":\"cli:agent:prompt\",\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_session\":{\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\",\"value\":\"<probe-root>/parent.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"<probe-root>\",\"focused\":true,\"foreground_cwd\":\"<probe-root>\",\"interactive_ready\":true,\"name\":\"deadline-parent\",\"pane_id\":\"w1:p1\",\"revision\":1,\"screen_detection_skipped\":true,\"state_change_seq\":2,\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65b8a31a8c4281\",\"terminal_title\":\"π - tau-abu392-IUAtN8\",\"terminal_title_stripped\":\"π - tau-abu392-IUAtN8\",\"workspace_id\":\"w1\"},\"type\":\"agent_prompted\"}}\n"
+    },
+    {
+      "arguments": ["pane", "process-info", "--pane", "w1:p1"],
+      "response": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":964353,\"foreground_processes\":[{\"argv\":[\"pi\",\"--offline\",\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"--no-context-files\",\"--no-tools\",\"--no-approve\",\"--session\",\"<probe-root>/parent.jsonl\",\"-e\",\"<probe-root>/agent/extensions/herdr-agent-state.ts\",\"-e\",\"<checkout>/scripts/subagentTimeoutPiFixture.ts\"],\"cmdline\":\"pi --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-context-files --no-tools --no-approve --session <probe-root>/parent.jsonl -e <probe-root>/agent/extensions/herdr-agent-state.ts -e <checkout>/scripts/subagentTimeoutPiFixture.ts\",\"cwd\":\"<probe-root>\",\"name\":\"pi\",\"pid\":964353}],\"pane_id\":\"w1:p1\",\"shell_pid\":963954},\"type\":\"pane_process_info\"}}\n"
+    },
+    {
+      "arguments": ["pane", "process-info", "--pane", "w1:p1"],
+      "response": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":964353,\"foreground_processes\":[{\"name\":\"pi\",\"pid\":964353}],\"pane_id\":\"w1:p1\",\"shell_pid\":963954},\"type\":\"pane_process_info\"}}\n"
+    },
+    {
+      "arguments": ["pane", "process-info", "--pane", "w1:p1"],
+      "response": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":963954,\"foreground_processes\":[{\"argv\":[\"/bin/sh\"],\"cmdline\":\"/bin/sh\",\"cwd\":\"<probe-root>\",\"name\":\"sh\",\"pid\":963954}],\"pane_id\":\"w1:p1\",\"shell_pid\":963954},\"type\":\"pane_process_info\"}}\n"
+    },
+    {
+      "arguments": ["server", "stop"],
+      "response": ""
+    }
+  ]
+}

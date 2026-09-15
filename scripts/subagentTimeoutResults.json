@@ -16,7 +16,7 @@
     "pnpm check"
   ],
   "probeRequirements": "Run from this checkout in an authorized herdr pane with Node, Pi, and herdr installed. The probe creates an isolated server and retains its temporary evidence directory.",
-  "linuxEvidence": "/tmp/tau-abu392-IUAtN8/observations.json",
+  "linuxEvidence": "scripts/subagentTimeoutObservations.json",
   "capabilities": [
     {
       "name": "Canonical Pi recognition and input",
@@ -99,7 +99,7 @@
       "dist/core/extensions/runner.js:820-848 catches before_provider_request errors. The fixture does not use that hook as a request guard."
     ]
   },
-  "cleanup": "The isolated server exited. Results, partial evidence, and raw observations remain in the named temporary directory. The active herdr server and unrelated panes were not stopped. Earlier setup attempts used separate temporary directories and left no running test servers.",
+  "cleanup": "The isolated server exited. Sanitized original observations are retained in scripts/subagentTimeoutObservations.json. Results and partial evidence remain in the original temporary directory. The active herdr server and unrelated panes were not stopped. Earlier setup attempts used separate temporary directories and left no running test servers.",
   "historicalEvidence": "The initial worktree was clean and contained neither scripts/subagentExperimentResults.json nor systemd implementation artifacts. No historical evidence was removed or rewritten.",
   "decision": "No ADR or changeset added. This is bounded feasibility tooling, not a lasting production choice or user-facing extension."
 }
