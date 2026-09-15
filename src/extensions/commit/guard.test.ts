@@ -359,7 +359,11 @@ describe('commitExtension', () => {
       {
         cwd: repositoryDirectory,
         hasUI: true,
-        ui: { custom: () => Promise.resolve('approve') },
+        ui: {
+          custom: () => {
+            throw new Error('Unexpected approval UI');
+          },
+        },
       } as never,
     );
 

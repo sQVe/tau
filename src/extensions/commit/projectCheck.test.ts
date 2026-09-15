@@ -183,7 +183,7 @@ it.each(['failure', 'file', 'stage', 'new-file'])(
     await writeFile(join(root, 'file'), 'original working');
     const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-    await expect(checks.checkProject()).rejects.toThrow(
+    await expect(checks.checkInitial('feat: check\n')).rejects.toThrow(
       outcome === 'failure' ? /Project check failed/ : /Pending recovery/,
     );
     const expected: Record<string, string> = {
@@ -244,7 +244,7 @@ it.each(['staging', 'untracked'])(
     };
     const checks = await createCandidateChecks(concurrent, root, tree, temporary);
 
-    await expect(checks.checkProject()).rejects.toThrow(/changed|projection/);
+    await expect(checks.checkInitial('feat: check\n')).rejects.toThrow(/changed|projection/);
     expect(await readFile(join(root, 'concurrent'), 'utf8')).toBe('new user work');
     expect(await readFile(join(root, '.git/index'))).toEqual(index);
     await expect(readFile(join(root, '.git/ran'))).rejects.toThrow(/ENOENT/);
@@ -275,7 +275,7 @@ it('reads many staged binary blobs with one native batch', async () => {
   const reads = vi.spyOn(preparation, 'gitBytes');
   const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-  await checks.checkProject();
+  await checks.checkInitial('feat: check\n');
 
   expect(
     reads.mock.calls.filter(([, arguments_]) => arguments_.includes('checkout-index')),
@@ -306,7 +306,7 @@ it('rejects aggregate staged data over 100 MiB before reading blob payloads or h
   const reads = vi.spyOn(preparation, 'gitBytes');
   const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-  await expect(checks.checkProject()).rejects.toThrow(/100 MiB/);
+  await expect(checks.checkInitial('feat: check\n')).rejects.toThrow(/100 MiB/);
   expect(
     reads.mock.calls.filter(([, arguments_]) => arguments_.includes('checkout-index')),
   ).toHaveLength(0);
@@ -334,7 +334,7 @@ it('allows new artifacts covered by the original ignore rules', async () => {
   const index = await readFile(join(root, '.git/index'));
   const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-  await checks.checkProject();
+  await checks.checkInitial('feat: check\n');
 
   expect(await readFile(join(root, 'dist/result'), 'utf8')).toBe('build output');
   expect(await readFile(join(root, 'file'), 'utf8')).toBe('raw\r\nworking');
@@ -354,7 +354,7 @@ it.each(['status', 'diff'])(
     const index = await readFile(join(root, '.git/index'));
     const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-    await checks.checkProject();
+    await checks.checkInitial('feat: check\n');
 
     expect(await readFile(join(root, '.git/index'))).toEqual(index);
     expect(await readFile(join(root, 'file'), 'utf8')).toBe('raw\r\nworking');
@@ -386,7 +386,7 @@ it('reports both checker and restoration failures while retaining recovery', asy
   });
   const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-  await expect(checks.checkProject()).rejects.toThrow(
+  await expect(checks.checkInitial('feat: check\n')).rejects.toThrow(
     /compiler diagnostic[\s\S]*injected restoration failure[\s\S]*tau-recovery/,
   );
   const name = await readFile(join(root, '.git/tau-recovery/pending/archive'), 'utf8');
@@ -421,7 +421,7 @@ it('keeps staged-rule artifacts after restoring different working ignore rules',
   await writeFile(join(root, 'file'), 'original working');
   const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-  await checks.checkProject();
+  await checks.checkInitial('feat: check\n');
 
   expect(await readFile(join(root, 'dist/result'), 'utf8')).toBe('build output');
   expect(await readFile(join(root, 'project.tsbuildinfo'), 'utf8')).toBe('metadata');
@@ -455,7 +455,7 @@ it.each(['create', 'change', 'external'])(
     await writeFile(join(root, 'file'), 'original working');
     const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-    await expect(checks.checkProject()).rejects.toThrow(/Pending recovery/);
+    await expect(checks.checkInitial('feat: check\n')).rejects.toThrow(/Pending recovery/);
     expect(await readFile(join(root, 'new-output'), 'utf8')).toBe('checker output');
     expect(await readFile(join(root, '.git/index'))).toEqual(index);
     await expect(assertNoPendingRecovery(join(root, '.git'))).rejects.toThrow(/recovery/i);
@@ -480,7 +480,7 @@ it('restores work when the checker creates output matched only by an external ex
   await writeFile(join(root, 'file'), 'original working');
   const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-  await checks.checkProject();
+  await checks.checkInitial('feat: check\n');
 
   expect(await readFile(join(root, 'file'), 'utf8')).toBe('original working');
   expect(await readFile(join(root, '.cache/output'), 'utf8')).toBe('checker output');
@@ -507,7 +507,7 @@ it('applies frozen exclude rules in git precedence order', async () => {
   await writeFile(join(root, 'file'), 'original working');
   const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-  await checks.checkProject();
+  await checks.checkInitial('feat: check\n');
 
   expect(await readFile(join(root, 'file'), 'utf8')).toBe('original working');
   await assertNoPendingRecovery(join(root, '.git'));
@@ -532,7 +532,7 @@ it('resolves a relative global excludes file against the repository root', async
   await writeFile(join(root, 'file'), 'original working');
   const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-  await checks.checkProject();
+  await checks.checkInitial('feat: check\n');
 
   expect(await readFile(join(root, 'file'), 'utf8')).toBe('original working');
   await assertNoPendingRecovery(join(root, '.git'));
@@ -558,7 +558,7 @@ it('follows a symlinked global excludes file when freezing rules', async () => {
   await writeFile(join(root, 'file'), 'original working');
   const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-  await checks.checkProject();
+  await checks.checkInitial('feat: check\n');
 
   expect(await readFile(join(root, 'file'), 'utf8')).toBe('original working');
   await assertNoPendingRecovery(join(root, '.git'));
@@ -572,7 +572,7 @@ it('prunes recovery snapshots and refs after verified restoration', async () => 
   await writeFile(join(root, 'file'), 'original working');
   const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-  await checks.checkProject();
+  await checks.checkInitial('feat: check\n');
 
   const [archive] = await readdir(join(root, '.git/tau-recovery'));
   const retained = await readdir(join(root, '.git/tau-recovery', String(archive)));
@@ -603,7 +603,7 @@ it('refuses file-directory transitions before hiding any working file', async ()
   const index = await readFile(join(root, '.git/index'));
   const checks = await createCandidateChecks(pi, root, tree, temporary);
 
-  await expect(checks.checkProject()).rejects.toThrow(/Unsupported working path/);
+  await expect(checks.checkInitial('feat: check\n')).rejects.toThrow(/Unsupported working path/);
   expect(await readFile(join(root, 'file/user'), 'utf8')).toBe('user bytes');
   expect(await readFile(join(root, '.git/index'))).toEqual(index);
 });

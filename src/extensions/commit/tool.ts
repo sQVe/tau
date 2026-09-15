@@ -278,10 +278,9 @@ const executeGroup = async (
 ): Promise<CommitSuccess> => {
   let resultFiles = parameters.files;
   let repositoryRelative = false;
-  const preparationAddedFiles: string[] = [];
   const pathDetails = () => ({
     files: resultFiles,
-    ...(repositoryRelative ? { pathBase: 'repository' as const, preparationAddedFiles } : {}),
+    ...(repositoryRelative ? { pathBase: 'repository' as const } : {}),
   });
   const cancelled = (): CommitSuccess => ({
     content: [{ type: 'text', text: 'Commit cancelled' }],
@@ -326,7 +325,6 @@ const executeGroup = async (
   let returningForCorrections = false;
   let candidate: Awaited<ReturnType<typeof createCandidateChecks>>;
   let messageCheck = '';
-  let messageBlocked = false;
   let groupError: unknown;
   const assertCleanupOwnership = async () => {
     const currentIndex = await reviewGit(pi, context.cwd, [
@@ -355,6 +353,13 @@ const executeGroup = async (
       try {
         projectPreparation = await prepareProject(staging, preparation, signal);
       } catch (error) {
+        await ownership.preserve().catch((recoveryError: unknown) => {
+          throw new Error(
+            `${error instanceof Error ? error.message : String(error)}\nPrivate-index recovery failed: ${String(recoveryError)}. Do not prune Git objects. Inspect the retained candidate-index before retrying.`,
+            { cause: error },
+          );
+        });
+
         if (signal?.aborted) {
           return cancelled();
         }
@@ -362,7 +367,7 @@ const executeGroup = async (
         throw error;
       }
 
-      await ownership.stage(requestedFiles);
+      await ownership.restage(requestedFiles);
 
       const preparedCandidate = await ownership.validate(requestedFiles, otherGroups);
       validatePaths(preparedCandidate.added);
@@ -426,7 +431,10 @@ const executeGroup = async (
       const initial = await candidate.checkInitial(message);
       projectCheck = initial.projectNotice;
       messageCheck = initial.messageResult.notice;
-      messageBlocked = !initial.messageResult.passed;
+
+      if (!initial.messageResult.passed) {
+        throw new Error(messageCheck);
+      }
     } catch (error) {
       if (signal?.aborted) {
         return cancelled();
@@ -483,7 +491,14 @@ const executeGroup = async (
 
       reviewReport = formatCommentReview(commentReview);
     } catch (error) {
-      reviewReport = `Comment review failed: ${error instanceof Error ? error.message : String(error)}\nFix the cause and call commit again.`;
+      if (signal?.aborted) {
+        return cancelled();
+      }
+
+      throw new Error(
+        `Comment review failed: ${error instanceof Error ? error.message : String(error)}\nFix the cause and call commit again.`,
+        { cause: error },
+      );
     }
 
     if (state.disputes.length) {
@@ -501,12 +516,7 @@ const executeGroup = async (
       return cancelled();
     }
 
-    const reviewBlocked =
-      !commentReview || commentReview.findings.some((finding) => finding.kind !== 'missing');
-
-    if (messageBlocked) {
-      throw new Error(messageCheck);
-    }
+    const reviewBlocked = commentReview.findings.some((finding) => finding.kind !== 'missing');
 
     if (reviewBlocked) {
       returningForCorrections = true;
@@ -660,7 +670,7 @@ const executeGroup = async (
     content: [
       {
         type: 'text',
-        text: `${commitHash} ${subject}${preparationAddedFiles.length ? `\nPreparation-added paths (repository-relative): ${JSON.stringify(preparationAddedFiles)}` : ''}\n${projectPreparation}\n${projectCheck}\n${messageCheck}\nGit hooks: ${candidate.hooks} (staged policy).${reviewReport ? `\nComment review:\n${reviewReport}` : ''}`,
+        text: `${commitHash} ${subject}\n${projectPreparation}\n${projectCheck}\n${messageCheck}\nGit hooks: ${candidate.hooks} (staged policy).${reviewReport ? `\nComment review:\n${reviewReport}` : ''}`,
       },
     ],
     details: {
@@ -698,10 +708,10 @@ export const createCommitTool = (
     promptGuidelines: [
       'When asked to commit, call commit without asking for confirmation. The commit tool runs without human approval; checks and comment review still apply.',
       'The commit tool commits only files explicitly assigned to the requested groups.',
-      'The commit tool runs configured preparation once after staging each executed group, then restages requested files. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
+      'The commit tool runs configured preparation once after staging each executed group, then restages requested files. Staged-only preparation output stops the group and is retained under a recovery ref. Inspect it and change preparation to leave output in working files before retrying. Fix reported errors before retrying. Report unavailable checks as unavailable, not passed.',
       'Checks run in the existing checkout with installed dependencies. Tau saves verified recovery before hiding working edits and restores before review. Reviews run serially. Requested paths remain reserved for their group.',
       "Preparation-added paths stop the commit without UI. Inspect them, assign them explicitly in the next commit call, and retry. Never absorb prior dirty or untracked user edits, other groups' paths, or rejected sensitive paths to clear an error.",
-      'Prepared commit results use repository-relative files and preparationAddedFiles with pathBase: repository, including paths outside the invoking directory. For a retry, convert paths within the invoking directory to relative paths. Retry from the repository root when added paths are outside that directory.',
+      'Prepared commit results use repository-relative files with pathBase: repository, including paths outside the invoking directory. For a retry, convert paths within the invoking directory to relative paths. Retry from the repository root when added paths are outside that directory.',
       'Preparation recovery requires a local POSIX checkout, a regular supported index, and at most 100 MiB of tracked and nonignored untracked working data. Unsupported states fail before preparation. Ignored files, external symlink targets, and background writers are outside recovery coverage; this is not a sandbox.',
       'On preparation failure, cancellation, or ownership conflict, read the reported recovery instructions. Working edits remain; never restore a saved index or working files over concurrent user edits. Post-commit tree, path, and message guards remain enabled.',
       'Working root tau.json selects prepare. The actual staged candidate selects check, checkMessage, and hooks. hooks defaults to run; only explicit staged hooks: skip disables hooks for the final Git commit. Never bypass hooks ad hoc through --no-verify, core.hooksPath, environment variables, or config changes to evade a failure.',

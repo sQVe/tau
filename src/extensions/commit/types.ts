@@ -3,7 +3,6 @@ export interface CommitSuccess {
     sha: string;
     files: string[];
     pathBase?: 'repository';
-    preparationAddedFiles?: string[];
     subject: string;
     body: string | null;
     projectCheck?: string;

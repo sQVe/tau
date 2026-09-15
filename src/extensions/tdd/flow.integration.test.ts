@@ -528,7 +528,9 @@ it('keeps commit preparation and staged checks through Pi without approval or TD
   await mkdir(join(cwd, 'src'));
   await writeFile(join(cwd, 'src/value.ts'), 'export const value=1');
 
-  const custom = vi.fn<() => Promise<string>>(() => Promise.resolve('approve'));
+  const custom = vi.fn<() => never>(() => {
+    throw new Error('Unexpected approval UI');
+  });
   await session.bindExtensions({ uiContext: { custom } as unknown as ExtensionUIContext });
   const committed = await call(
     'commit',

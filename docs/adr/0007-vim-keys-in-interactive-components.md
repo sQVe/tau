@@ -3,6 +3,10 @@
 - Status: Accepted
 - Date: 2026-09-08
 
+[ADR 0024](./0024-commit-without-human-approval.md) removed the commit overlay and its tests. The
+`SelectList` adapter described below was removed with the follow-up cleanup. Those details record
+the original decision; the navigation rule still applies to remaining components.
+
 ## Context
 
 - Tau draws two interactive components: the snippet menu with its preview pane, and the commit
@@ -77,7 +81,8 @@ everywhere. Both could be added, but familiarity alone is not enough reason.
 - Cost: action letters compete with navigation letters, and navigation wins. Moving `k` to `x`
   changed a shortcut that users had already learned.
 - Cost: driving `SelectList` through rewritten input depends on the escape sequences it reads. A Pi
-  release that changes them breaks navigation without an error. The overlay tests catch this.
+  release that changes them breaks navigation without an error. The original overlay tests covered
+  this.
 
 ## See also
 
