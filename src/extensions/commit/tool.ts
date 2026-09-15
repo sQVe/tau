@@ -148,14 +148,13 @@ const cleanupTemporary = async (directory: string) => {
 };
 
 const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
-  const output = await reviewGit(pi, workingDirectory, [
-    'diff',
-    '--cached',
-    '--no-relative',
-    '--name-only',
-    '--diff-filter=ACMRDT',
-    '-z',
-  ]);
+  const output = await reviewGit(
+    pi,
+    workingDirectory,
+    ['diff', '--cached', '--no-relative', '--name-only', '--diff-filter=ACMRDT', '-z'],
+    undefined,
+    null,
+  );
 
   return output
     .split('\0')
@@ -185,14 +184,26 @@ const validateFileRequests = async (workingDirectory: string, files: string[]) =
 
 // Literal pathspecs prevent glob expansion from staging unrequested files.
 const stageFiles = (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string, files: string[]) =>
-  reviewGit(pi, workingDirectory, ['--literal-pathspecs', 'add', '--', ...files]);
+  reviewGit(pi, workingDirectory, ['--literal-pathspecs', 'add', '--', ...files], undefined, null);
 
 const unstageFiles = (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string, files: string[]) =>
-  reviewGit(pi, workingDirectory, ['--literal-pathspecs', 'reset', '--', ...files]);
+  reviewGit(
+    pi,
+    workingDirectory,
+    ['--literal-pathspecs', 'reset', '--', ...files],
+    undefined,
+    null,
+  );
 
 // Staged paths are repository-relative; requested paths are relative to the working directory.
 const repositoryPathPrefix = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
-  const output = await reviewGit(pi, workingDirectory, ['rev-parse', '--show-prefix']);
+  const output = await reviewGit(
+    pi,
+    workingDirectory,
+    ['rev-parse', '--show-prefix'],
+    undefined,
+    null,
+  );
 
   return output.replace(/\n$/, '');
 };
@@ -209,18 +220,24 @@ const listCommitPaths = async (
   workingDirectory: string,
   commitHash: string,
 ) => {
-  const output = await reviewGit(pi, workingDirectory, [
-    'diff-tree',
-    '--root',
-    '--diff-merges=first-parent',
-    '--no-relative',
-    '-r',
-    '--no-commit-id',
-    '--no-renames',
-    '--name-only',
-    '-z',
-    commitHash,
-  ]);
+  const output = await reviewGit(
+    pi,
+    workingDirectory,
+    [
+      'diff-tree',
+      '--root',
+      '--diff-merges=first-parent',
+      '--no-relative',
+      '-r',
+      '--no-commit-id',
+      '--no-renames',
+      '--name-only',
+      '-z',
+      commitHash,
+    ],
+    undefined,
+    null,
+  );
 
   return output
     .split('\0')

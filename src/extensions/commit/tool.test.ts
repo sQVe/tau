@@ -950,7 +950,7 @@ describe('commits without approvals', () => {
     expect(exec).toHaveBeenLastCalledWith(
       'git',
       ['--literal-pathspecs', 'reset', '--', 'README.md'],
-      { cwd: '/repo', timeout: 30_000 },
+      { cwd: '/repo' },
     );
   });
 
@@ -1139,7 +1139,7 @@ describe('commit execution', () => {
     expect(exec).toHaveBeenLastCalledWith(
       'git',
       ['--literal-pathspecs', 'reset', '--', 'README.md'],
-      { cwd: '/repo', timeout: 30_000 },
+      { cwd: '/repo' },
     );
   });
 });

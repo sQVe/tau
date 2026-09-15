@@ -15,6 +15,51 @@ import {
 import { createCommitTool } from './tool.js';
 
 describe('direct commit staging', () => {
+  it('preserves untimed wrappers and bounded review calls', async () => {
+    const { execute, exec } = fakeCommit();
+    const signal = new AbortController().signal;
+
+    await execute(signal);
+
+    const untimedCalls = exec.mock.calls.filter(
+      ([, arguments_]) =>
+        arguments_.includes('--show-prefix') ||
+        arguments_.includes('--cached') ||
+        arguments_.includes('add') ||
+        arguments_[0] === 'diff-tree',
+    );
+
+    expect(untimedCalls).toHaveLength(5);
+
+    for (const call of untimedCalls) {
+      expect(call[2]).toEqual({ cwd: '/repo' });
+    }
+
+    for (const command of ['ls-files', 'write-tree', 'cat-file']) {
+      const calls = exec.mock.calls.filter(([, arguments_]) => arguments_[0] === command);
+
+      expect(calls.length).toBeGreaterThan(0);
+
+      for (const call of calls) {
+        expect(call[2]).toEqual({
+          cwd: '/repo',
+          timeout: 30_000,
+          ...(command === 'write-tree' ? { signal } : {}),
+        });
+      }
+    }
+
+    const headCalls = exec.mock.calls.filter(
+      ([, arguments_]) => arguments_[0] === 'rev-parse' && arguments_[1] === 'HEAD',
+    );
+    const hookDiff = exec.mock.calls.find(
+      ([, arguments_]) => arguments_[0] === 'diff' && !arguments_.includes('--cached'),
+    );
+
+    expect(headCalls.at(-1)?.[2]).toEqual({ cwd: '/repo', timeout: 30_000 });
+    expect(hookDiff?.[2]).toEqual({ cwd: '/repo', timeout: 30_000 });
+  });
+
   it('stops and unstages when Git staging is killed despite a zero exit code', async () => {
     const { execute, exec, review } = fakeCommit();
     const executeGit = exec.getMockImplementation()!;
@@ -34,7 +79,7 @@ describe('direct commit staging', () => {
     expect(exec).toHaveBeenLastCalledWith(
       'git',
       ['--literal-pathspecs', 'reset', '--', 'README.md'],
-      { cwd: '/repo', timeout: 30_000 },
+      { cwd: '/repo' },
     );
   });
 
