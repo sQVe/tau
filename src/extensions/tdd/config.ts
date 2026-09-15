@@ -3,7 +3,9 @@ import { matchesGlob } from 'node:path';
 export const tddConfig = {
   productionGlobs: ['src/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
   testGlobs: ['**/*.test.{ts,tsx,js,jsx,mjs,cjs}', '**/*.spec.{ts,tsx,js,jsx,mjs,cjs}'],
-  verificationArgv: ['vitest', 'run', '--reporter=json', '--no-color'],
+  testSupportGlobs: ['tests/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+  // The default reporter keeps console and setup diagnostics; JSON alone omits them.
+  verificationArgv: ['vitest', 'run', '--reporter=json', '--reporter=default', '--no-color'],
 } as const;
 
 // Vitest loads its own configuration before Vite's. Hash both because either can change which tests run.

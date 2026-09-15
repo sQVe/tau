@@ -1,61 +1,13 @@
-import { isAbsolute, relative, resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
+import { Text } from '@earendil-works/pi-tui';
 import { Type } from 'typebox';
 
 import { classifyPath } from './config.js';
 import { createTestObservation, observationDirectory } from './observation.js';
-import type { RunnerResult } from './runner/types.js';
-import { maximumFailures } from './runner/types.js';
-
-const maximumSummaryCharacters = 2000;
-
-const summarize = (cwd: string, report: RunnerResult, freshness: string): string => {
-  const lines = [`${report.kind} · ${freshness}`];
-
-  if ('message' in report) {
-    lines.push(report.message);
-  }
-
-  if ('tests' in report) {
-    const count = (...statuses: string[]) =>
-      report.tests.filter((test) => statuses.includes(test.status)).length;
-
-    lines.push(
-      `${count('passed')} passed, ${count('failed')} failed, ${count('skipped', 'todo')} skipped`,
-    );
-  }
-
-  const failures = 'failures' in report ? report.failures : [];
-  let shown = 0;
-
-  for (const failure of failures.slice(0, maximumFailures)) {
-    const file = isAbsolute(failure.file) ? relative(cwd, failure.file) : failure.file;
-    const entry = `✗ ${file} › ${failure.fullname}\n    ${failure.message}`;
-
-    if ([...lines, entry].join('\n').length > maximumSummaryCharacters - 60) {
-      break;
-    }
-
-    lines.push(entry);
-    shown += 1;
-  }
-
-  if (failures.length > shown) {
-    lines.push(`+${failures.length - shown} more`);
-  }
-
-  if ('truncated' in report && report.truncated) {
-    lines.push('further failures were not collected');
-  }
-
-  const text = lines.join('\n');
-
-  return text.length > maximumSummaryCharacters
-    ? `${text.slice(0, maximumSummaryCharacters - 12)}\n[cut]`
-    : text;
-};
+import { runContext, selectionSummary, summarize } from './render.js';
 
 export default function tddExtension(pi: ExtensionAPI) {
   let current: { cwd: string; observation: ReturnType<typeof createTestObservation> } | undefined;
@@ -110,7 +62,12 @@ export default function tddExtension(pi: ExtensionAPI) {
         'Returns kind, scope, freshness (fresh, stale, or unknown), and the actual runner report, even when inputs changed during the run. ' +
         'A full pass counts without prior RED or focused renewal after formatting. Duplicate, skipped, and missing tests cannot establish RED. ' +
         'Short session-local hints suggest missing RED, full verification, or rerunning stale results. Hints never block or require acknowledgment. ' +
-        'Freshness covers source, test, and configuration content at bounded checkpoints, not an atomic snapshot. The summary is capped at 2000 characters, plus at most one hint; details keep the runner report.',
+        'Freshness covers source, test, and configuration content at bounded checkpoints, not an atomic snapshot or reusable verification. ' +
+        'Shows focused files and exact names, or full-suite scope. The summary is capped at 2000 characters, with up to 4000 characters of run context and at most one hint. ' +
+        'Read the saved run.json for command, selection, and before/after input fingerprints. Diagnostics retain up to 8 MiB stdout, 32 KiB stderr, and 8 MiB raw JSON, including passes. ' +
+        'Console output beyond the capture limit is discarded without stopping tests. Truncation distinguishes process bytes from decoded text bytes. ' +
+        'Files live in the Pi agent test-runs directory. After each run, cleanup keeps up to 32 completed runs for seven days; recent unfinished runs are protected. ' +
+        'Runner output is diagnostic text, never the source of test verdicts.',
       parameters: Type.Object({
         behavior: Type.String({
           minLength: 1,
@@ -136,12 +93,35 @@ export default function tddExtension(pi: ExtensionAPI) {
             'focused selects the exact names in the supplied files; full runs the whole suite.',
         }),
       }),
-      async execute(_toolCallId, parameters, signal, _onUpdate, context) {
-        const { cwd, observation } = await observationFor(context.cwd);
+      renderCall(parameters, theme) {
+        return new Text(
+          `${theme.fg('toolTitle', theme.bold('Run tests'))}\n${selectionSummary(parameters, parameters.scope)}`,
+          0,
+          0,
+        );
+      },
+      async execute(_toolCallId, parameters, signal, onUpdate, context) {
         const { scope, ...behavior } = parameters;
-        const { hint, ...details } = await observation.run(behavior, scope, signal);
+
+        onUpdate?.({
+          content: [
+            { type: 'text', text: `Preparing test run\n${selectionSummary(behavior, scope)}` },
+          ],
+          details: undefined,
+        });
+
+        const { cwd, observation } = await observationFor(context.cwd);
+        const { hint, ...details } = await observation.run(behavior, scope, signal, (selected) => {
+          onUpdate?.({
+            content: [
+              { type: 'text', text: `Running tests\n${selectionSummary(selected, scope)}` },
+            ],
+            details: undefined,
+          });
+        });
         const content = [
-          { type: 'text' as const, text: summarize(cwd, details.report, details.freshness) },
+          { type: 'text' as const, text: summarize(cwd, details) },
+          { type: 'text' as const, text: runContext(behavior, details) },
         ];
 
         if (hint !== undefined) {

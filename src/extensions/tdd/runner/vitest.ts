@@ -1,12 +1,13 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import { accessSync, constants, statSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
 import { basename, delimiter, dirname, isAbsolute, join, relative } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import { tddConfig } from '../config.js';
+import { saveDiagnostics } from './diagnostics.js';
+import { createDiagnosticsDirectory } from './retention.js';
 import type {
   ResolveVitestFn,
   RunTestsInput,
@@ -114,12 +115,26 @@ export const nodeExecutable = (executablePath = process.execPath) =>
     ? executablePath
     : (nodeOnPath() ?? executablePath);
 
+const appendChunk = (
+  chunk: Buffer,
+  decoder: StringDecoder,
+  current: string,
+  remaining: number,
+): string => {
+  if (remaining <= 0) {
+    return current;
+  }
+
+  return current + decoder.write(chunk.subarray(0, remaining));
+};
+
 export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
   new Promise<SpawnResult>((resolve) => {
     // detached lets the timeout path signal the whole process group on POSIX.
     // Windows has no equivalent; we fall back to child.kill there.
     const useProcessGroup = process.platform !== 'win32';
-    const child = nodeSpawn(nodeExecutable(), [command, ...arguments_], {
+    const executable = nodeExecutable();
+    const child = nodeSpawn(executable, [command, ...arguments_], {
       cwd: options.cwd,
       detached: useProcessGroup,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -128,30 +143,11 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-    let stdoutOverflow = false;
-    let diagnosticBytes = 0;
     let stdoutBytes = 0;
+    let stderrBytes = 0;
 
     const stdoutDecoder = new StringDecoder('utf8');
     const stderrDecoder = new StringDecoder('utf8');
-
-    const appendDiagnosticChunk = (
-      chunk: Buffer,
-      decoder: StringDecoder,
-      current: string,
-    ): string => {
-      const remaining = maximumTotalBytes - diagnosticBytes;
-
-      if (remaining <= 0) {
-        return current;
-      }
-
-      const slice = chunk.length > remaining ? chunk.subarray(0, remaining) : chunk;
-
-      diagnosticBytes += slice.length;
-
-      return current + decoder.write(slice);
-    };
 
     let settled = false;
 
@@ -165,7 +161,17 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
       stdout += stdoutDecoder.end();
       stderr += stderrDecoder.end();
 
-      resolve({ stdout, stderr, code, timedOut, stdoutOverflow });
+      resolve({
+        stdout,
+        stderr,
+        code,
+        timedOut,
+        stdoutBytes,
+        stderrBytes,
+        stdoutTruncated: stdoutBytes > maximumStdoutBytes,
+        command: [executable, command, ...arguments_],
+        started: child.pid !== undefined,
+      });
     };
 
     const kill = () => {
@@ -186,22 +192,14 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
     };
 
     child.stdout.on('data', (chunk: Buffer) => {
-      // Stop on stdout overflow rather than accepting a result from a run that exceeded its limit.
+      // Continue draining after the capture limit; console noise cannot decide the test verdict.
+      stdout = appendChunk(chunk, stdoutDecoder, stdout, maximumStdoutBytes - stdoutBytes);
       stdoutBytes += chunk.length;
-
-      if (stdoutBytes > maximumStdoutBytes) {
-        stdoutOverflow = true;
-        kill();
-        settle(null);
-
-        return;
-      }
-
-      stdout += stdoutDecoder.write(chunk);
     });
 
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr = appendDiagnosticChunk(chunk, stderrDecoder, stderr);
+      stderr = appendChunk(chunk, stderrDecoder, stderr, maximumTotalBytes - stderrBytes);
+      stderrBytes += chunk.length;
     });
 
     // Settle here rather than waiting for `close`: on Windows only the direct child dies,
@@ -215,7 +213,11 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
     timer.unref();
 
     child.on('close', settle);
-    child.on('error', () => {
+    child.on('error', (error) => {
+      const message = Buffer.from(error.message);
+
+      stderr = appendChunk(message, stderrDecoder, stderr, maximumTotalBytes - stderrBytes);
+      stderrBytes += message.length;
       settle(null);
     });
 
@@ -351,7 +353,9 @@ const collectFailures = (
       failures.push({
         file: file.name ?? '<unknown>',
         fullname: '<file>',
-        message: assertionMessage([file.message ?? 'load error'], cwd),
+        message:
+          assertionMessage([file.message ?? ''], cwd) ||
+          'File setup or load failed; inspect the saved runner diagnostics.',
       });
     }
 
@@ -417,45 +421,17 @@ export const defaultDeps = (scope: RunTestsInput['scope'] = 'changed'): RunnerDe
 });
 
 // oxlint-disable-next-line eslint/complexity -- Process failures and report validity must be classified before accepting test evidence.
-const runInDirectory = async (
+const classifyResult = async (
   input: RunTestsInput,
-  dependencies: RunnerDeps,
+  result: SpawnResult,
   outputFile: string,
 ): Promise<RunnerResult> => {
-  const runnerArguments = buildArguments(input, outputFile);
-
-  if (runnerArguments == null) {
-    return { kind: 'no-tests-collected', tests: [] };
-  }
-
-  const binary = dependencies.resolveVitest(input.cwd);
-
-  if (binary == null) {
-    return {
-      kind: 'runner-missing',
-      message: 'vitest not resolvable from this worktree',
-    };
-  }
-
-  const result = await dependencies.spawn(binary, runnerArguments, {
-    cwd: input.cwd,
-    timeoutMs: dependencies.timeoutMs,
-    signal: input.signal,
-  });
-
   if (input.signal?.aborted === true) {
     return { kind: 'cancelled' };
   }
 
   if (result.timedOut) {
     return { kind: 'timeout' };
-  }
-
-  if (result.stdoutOverflow === true) {
-    return {
-      kind: 'output-limit',
-      message: `vitest stdout exceeded ${maximumStdoutBytes} bytes; the run was killed without parsing a truncated report`,
-    };
   }
 
   const report = await readReport(outputFile);
@@ -523,15 +499,63 @@ const runInDirectory = async (
   return { kind: 'pass', tests };
 };
 
+const runInDirectory = async (
+  input: RunTestsInput,
+  dependencies: RunnerDeps,
+  outputFile: string,
+): Promise<{ report: RunnerResult; result?: SpawnResult }> => {
+  const runnerArguments = buildArguments(input, outputFile);
+
+  if (runnerArguments == null) {
+    return { report: { kind: 'no-tests-collected', tests: [] } };
+  }
+
+  const binary = dependencies.resolveVitest(input.cwd);
+
+  if (binary == null) {
+    return {
+      report: { kind: 'runner-missing', message: 'vitest not resolvable from this worktree' },
+    };
+  }
+
+  const result = await dependencies.spawn(binary, runnerArguments, {
+    cwd: input.cwd,
+    timeoutMs: dependencies.timeoutMs,
+    signal: input.signal,
+  });
+
+  return { report: await classifyResult(input, result, outputFile), result };
+};
+
 export const runVitest = async (
   input: RunTestsInput,
   dependencies: RunnerDeps,
 ): Promise<RunnerResult> => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-vitest-'));
+  const directory = await createDiagnosticsDirectory();
+  const started = performance.now();
 
   try {
-    return await runInDirectory(input, dependencies, join(directory, 'report.json'));
-  } finally {
+    const { report, result } = await runInDirectory(
+      input,
+      dependencies,
+      join(directory, 'report.json'),
+    );
+    const diagnostics = await saveDiagnostics(
+      {
+        directory,
+        durationMs: Math.round(performance.now() - started),
+        timeoutMs: dependencies.timeoutMs,
+        command: result?.command,
+        started: result?.started ?? result !== undefined,
+        exitCode: result?.code ?? null,
+      },
+      result,
+    );
+
+    return { ...report, diagnostics };
+  } catch (error) {
     await rm(directory, { recursive: true, force: true });
+
+    throw error;
   }
 };

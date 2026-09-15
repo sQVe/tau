@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
-import { glob, readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { glob, readFile, realpath, writeFile } from 'node:fs/promises';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { classifyPath, configurationPaths, tddConfig } from './config.js';
 import { runTests } from './runner/index.js';
-import type { RunnerResult } from './runner/types.js';
+import { finishDiagnostics } from './runner/retention.js';
+import type { RunDiagnostics, RunnerResult } from './runner/types.js';
 import type { Behavior } from './types.js';
 
 export type Freshness = 'fresh' | 'stale' | 'unknown';
@@ -48,15 +49,15 @@ const compareInputs = (before: string | null, after: string | null): Freshness =
   return before === after ? 'fresh' : 'stale';
 };
 
-// Keep the existing source, test, and configuration coverage. This is a checkpoint, not an atomic snapshot.
+// Content is checked at bounded checkpoints, not as an atomic snapshot.
 const fingerprint = async (cwd: string, files: string[]): Promise<string | null> => {
   try {
     const paths = [...files, ...configurationPaths];
 
-    for await (const file of glob([...tddConfig.productionGlobs, ...tddConfig.testGlobs], {
-      cwd,
-      exclude: ['**/node_modules/**', '**/.git/**'],
-    })) {
+    for await (const file of glob(
+      [...tddConfig.productionGlobs, ...tddConfig.testGlobs, ...tddConfig.testSupportGlobs],
+      { cwd, exclude: ['**/node_modules/**', '**/.git/**'] },
+    )) {
       paths.push(file);
     }
 
@@ -112,6 +113,26 @@ const hints = {
   full: 'Focused tests passed; run_tests with scope "full" to verify the suite.',
   stale: 'Test results are stale; rerun run_tests on the current inputs.',
   unknown: 'Test freshness is unknown; rerun run_tests when inputs can be read.',
+};
+
+const saveRunRecord = async (diagnostics: RunDiagnostics | undefined, record: unknown) => {
+  if (diagnostics === undefined) {
+    return undefined;
+  }
+
+  const path = join(diagnostics.directory, 'run.json');
+
+  try {
+    await writeFile(path, JSON.stringify(record, null, 2), { mode: 0o600, flag: 'wx' });
+
+    return path;
+  } catch (error) {
+    diagnostics.error = [diagnostics.error, `Could not save run.json: ${String(error)}`]
+      .filter(Boolean)
+      .join('\n');
+
+    return undefined;
+  }
 };
 
 export const createTestObservation = (cwd: string) => {
@@ -215,7 +236,12 @@ export const createTestObservation = (cwd: string) => {
     return undefined;
   };
 
-  const run = (requested: Behavior, scope: 'focused' | 'full', signal?: AbortSignal) =>
+  const run = (
+    requested: Behavior,
+    scope: 'focused' | 'full',
+    signal?: AbortSignal,
+    onStart?: (behavior: Behavior) => void,
+  ) =>
     enqueue(async () => {
       const behavior = normalizeBehavior(cwd, requested);
       const key = identity(behavior);
@@ -231,6 +257,9 @@ export const createTestObservation = (cwd: string) => {
       active = key;
 
       const before = await fingerprint(cwd, behavior.files);
+
+      onStart?.(behavior);
+
       const report = await runTests(
         scope === 'full'
           ? { cwd, scope: 'all', signal }
@@ -262,10 +291,25 @@ export const createTestObservation = (cwd: string) => {
         shownHints.clear();
       }
 
+      const inputs = { before, after };
+      const runPath = await saveRunRecord(report.diagnostics, {
+        cwd,
+        ...behavior,
+        scope,
+        kind: report.kind,
+        freshness,
+        inputs,
+        diagnostics: report.diagnostics,
+      });
+
+      await finishDiagnostics(report.diagnostics);
+
       return {
         kind: report.kind,
         scope,
         freshness,
+        inputs,
+        runPath,
         report,
         hint: hint(runHint(scope, report, freshness), after),
       };

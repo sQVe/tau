@@ -21,7 +21,29 @@ export interface TestResult {
   status: 'passed' | 'failed' | 'skipped' | 'todo';
 }
 
-export type RunnerResult =
+export interface DiagnosticFile {
+  path: string;
+  bytes: number;
+  decodedBytes?: number;
+  savedBytes: number;
+  truncated: boolean;
+}
+
+export interface RunDiagnostics {
+  directory: string;
+  durationMs: number;
+  timeoutMs: number;
+  started?: boolean;
+  command?: string[] | undefined;
+  exitCode: number | null;
+  stdout?: DiagnosticFile | undefined;
+  stderr?: DiagnosticFile | undefined;
+  report?: DiagnosticFile | undefined;
+  excerpt?: string;
+  error?: string;
+}
+
+export type RunnerResult = { diagnostics?: RunDiagnostics } & (
   | { kind: 'pass'; tests: TestResult[] }
   | {
       kind: 'fail';
@@ -33,15 +55,19 @@ export type RunnerResult =
   | { kind: 'no-tests-collected'; tests: TestResult[] }
   | { kind: 'timeout' }
   | { kind: 'cancelled' }
-  | { kind: 'output-limit'; message: string }
-  | { kind: 'runner-missing'; message: string };
+  | { kind: 'runner-missing'; message: string }
+);
 
 export interface SpawnResult {
   stdout: string;
   stderr: string;
   code: number | null;
   timedOut: boolean;
-  stdoutOverflow?: boolean;
+  command?: string[];
+  started?: boolean;
+  stdoutTruncated?: boolean;
+  stdoutBytes?: number;
+  stderrBytes?: number;
 }
 
 export interface SpawnOptions {
@@ -72,3 +98,4 @@ export const maximumTotalBytes = 32 * 1024;
 
 // Bound captured process output separately from the shorter diagnostic messages.
 export const maximumStdoutBytes = 8 * 1024 * 1024;
+export const maximumReportBytes = 8 * 1024 * 1024;

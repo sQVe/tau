@@ -11,7 +11,13 @@ describe('TDD config', () => {
       '**/*.test.{ts,tsx,js,jsx,mjs,cjs}',
       '**/*.spec.{ts,tsx,js,jsx,mjs,cjs}',
     ]);
-    expect(tddConfig.verificationArgv).toEqual(['vitest', 'run', '--reporter=json', '--no-color']);
+    expect(tddConfig.verificationArgv).toEqual([
+      'vitest',
+      'run',
+      '--reporter=json',
+      '--reporter=default',
+      '--no-color',
+    ]);
   });
 
   it('gives test globs precedence, then production globs, then other', () => {
@@ -19,6 +25,8 @@ describe('TDD config', () => {
     expect(classifyPath('src/example.test.ts')).toBe('test');
     expect(classifyPath('src/component.spec.tsx')).toBe('test');
     expect(classifyPath('tests/example.test.ts')).toBe('test');
+    expect(classifyPath('tests/commitTool.ts')).toBe('other');
+    expect(classifyPath('tests/fixtures/helper.ts')).toBe('other');
     expect(classifyPath('example.spec.ts')).toBe('test');
     expect(classifyPath('src/example.ts')).toBe('production');
     expect(classifyPath('src/component.tsx')).toBe('production');

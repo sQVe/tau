@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -34,6 +34,41 @@ const setup = async (cleanup: TestContext['onTestFinished']) => {
 beforeEach(() => {
   vi.mocked(runTests).mockReset();
   vi.mocked(runTests).mockResolvedValue(result('passed'));
+});
+
+it('saves stale input fingerprints and preserves the outcome when the run record cannot be saved', async ({
+  onTestFinished,
+}) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  const directory = join(cwd, 'diagnostics');
+
+  await mkdir(directory);
+  vi.mocked(runTests).mockImplementationOnce(async () => {
+    await writeFile(join(cwd, 'src/value.ts'), 'changed during tests');
+
+    return {
+      ...result('passed'),
+      diagnostics: { directory, durationMs: 10, timeoutMs: 30_000, exitCode: 0 },
+    };
+  });
+  const stale = await observation.run(behavior, 'full');
+  const record: unknown = JSON.parse(await readFile(join(directory, 'run.json'), 'utf8'));
+
+  expect(stale).toMatchObject({ kind: 'pass', freshness: 'stale' });
+  expect(stale.inputs.before).not.toBe(stale.inputs.after);
+  expect(record).toMatchObject({ cwd, scope: 'full', freshness: 'stale', inputs: stale.inputs });
+
+  const existing = await readFile(join(directory, 'run.json'), 'utf8');
+  vi.mocked(runTests).mockResolvedValueOnce({
+    ...result('passed'),
+    diagnostics: { directory, durationMs: 10, timeoutMs: 30_000, exitCode: 0 },
+  });
+  const passed = await observation.run(behavior, 'full');
+
+  expect(passed).toMatchObject({ kind: 'pass', freshness: 'fresh' });
+  expect(passed.runPath).toBeUndefined();
+  expect(passed.report.diagnostics?.error).toContain('Could not save run.json');
+  expect(await readFile(join(directory, 'run.json'), 'utf8')).toBe(existing);
 });
 
 it('rejects nonliteral test selection before running tests', async ({ onTestFinished }) => {
@@ -327,6 +362,47 @@ it.each([
   expect(await observation.checkpoint(true)).toContain('stale');
 });
 
+it('fingerprints test-support additions, edits, and deletions between and during runs', async ({
+  onTestFinished,
+}) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  const directory = join(cwd, 'tests/fixtures');
+  const helper = join(directory, 'helper.ts');
+
+  await mkdir(directory, { recursive: true });
+  let previous = await observation.run(behavior, 'full');
+
+  for (const content of ['created', 'edited', undefined]) {
+    if (content === undefined) {
+      await rm(helper);
+    } else {
+      await writeFile(helper, content);
+    }
+
+    expect(await observation.checkpoint(false)).toBeUndefined();
+    expect(await observation.checkpoint(true)).toContain('stale');
+    const current = await observation.run(behavior, 'full');
+
+    expect(current).toMatchObject({ kind: 'pass', freshness: 'fresh' });
+    expect(current.inputs.before).not.toBeNull();
+    expect(current.inputs.before).not.toBe(previous.inputs.after);
+    previous = current;
+  }
+
+  await writeFile(helper, 'before');
+  const report = result('failed');
+  vi.mocked(runTests).mockImplementationOnce(async () => {
+    await writeFile(helper, 'during run');
+
+    return report;
+  });
+  const observed = await observation.run(behavior, 'focused');
+
+  expect(observed).toMatchObject({ kind: 'fail', freshness: 'stale' });
+  expect(observed.inputs.before).not.toBe(observed.inputs.after);
+  expect(observed.report).toBe(report);
+});
+
 it('keeps the actual report when inputs change during the run', async ({ onTestFinished }) => {
   const { cwd, observation } = await setup(onTestFinished);
   const report = result('failed');
@@ -369,23 +445,25 @@ it('keeps reports and successful edits when fingerprints fail', async ({ onTestF
   await expect(observation.checkpoint(true)).resolves.toBeUndefined();
 });
 
-it.each([
-  'cancelled',
-  'timeout',
-  'runner-missing',
-  'output-limit',
-  'compile-error',
-  'no-tests-collected',
-])('preserves runner outcome %s', async (kind) => {
-  const { observation } = await setup(registerCleanup);
-  const report = { kind, message: 'diagnostic', tests: [], stdout: '', stderr: '' } as RunnerResult;
-  vi.mocked(runTests).mockResolvedValue(report);
+it.each(['cancelled', 'timeout', 'runner-missing', 'compile-error', 'no-tests-collected'])(
+  'preserves runner outcome %s',
+  async (kind) => {
+    const { observation } = await setup(registerCleanup);
+    const report = {
+      kind,
+      message: 'diagnostic',
+      tests: [],
+      stdout: '',
+      stderr: '',
+    } as RunnerResult;
+    vi.mocked(runTests).mockResolvedValue(report);
 
-  const observed = await observation.run(behavior, 'full');
+    const observed = await observation.run(behavior, 'full');
 
-  expect(observed.kind).toBe(kind);
-  expect(observed.report).toBe(report);
-});
+    expect(observed.kind).toBe(kind);
+    expect(observed.report).toBe(report);
+  },
+);
 
 it('orders run completion and queued edit checkpoints without marking later edits fresh', async ({
   onTestFinished,
