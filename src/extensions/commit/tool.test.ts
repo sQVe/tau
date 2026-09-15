@@ -644,7 +644,7 @@ describe('commitTool.execute', () => {
           },
         ],
       }),
-    ).rejects.toThrow(/git add failed/i);
+    ).rejects.toThrow(/git --literal-pathspecs add -- \* failed/i);
 
     const revListResult = await runCommand(
       'git',

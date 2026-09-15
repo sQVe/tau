@@ -7,7 +7,8 @@ description:
 
 # Commit
 
-Use this skill when the user wants to commit changes from the current working tree.
+Use this skill when the user wants to commit changes from the current working tree. The `commit`
+tool stages each group, reviews comments, and commits with installed Git hooks without a prompt.
 
 ## Hard rules
 
@@ -27,19 +28,20 @@ Use this skill when the user wants to commit changes from the current working tr
    - Run `git status --porcelain`, `git diff`, and `git diff --cached`.
    - Read untracked files before grouping them. Use the diffs for tracked files unless ambiguous.
    - If there are no changes, report the clean tree and stop.
-   - Assign each pre-staged file to a group or unstage it with `git reset HEAD -- <file>`.
+   - Account for pre-staged files before calling `commit`. Assign them to a group or unstage only
+     known staging with `git reset HEAD -- <file>`. Leave concurrent staging untouched.
 
 2. Plan exact, ordered groups.
    - Split unrelated changes into separate groups. Assign each path to only one group.
    - The tool stages whole files on the real index. It does not hide unrelated working edits from
      hooks. For mixed-purpose files, choose the best-fitting group and report that choice rather
      than splitting hunks.
-   - Give each group an exact `files` list, a conventional-commit `subject`, and a `body` explaining
-     why the change was made.
+   - Give each group an exact `files` list and a conventional-commit `subject`. Use the optional
+     `body` to explain why the change was made.
 
 3. Call `commit` with the ordered `groups` array.
-   - The tool runs comment review before committing with the repository's installed Git hooks.
-   - Report created commits and any errors.
+   - The tool runs groups in order and stops on failure. Earlier successful commits remain.
+   - Report created commits, actual committed paths, hook rewrites, and any errors.
 
 4. On failure, read the tool's error before deciding what to retry.
    - If the user cancelled, stop without retrying, even when the tool reports an error.
@@ -49,13 +51,16 @@ Use this skill when the user wants to commit changes from the current working tr
      edits.
    - Fix the reported cause. Do not alter hooks to clear a blocker. Include only files that belong
      to the fix.
-   - Hook failures unstage the requested files and return raw output. Successful hook rewrites and
-     added paths stay committed. Inspect reported changes; do not retry committed groups.
+   - Hook failures unstage the requested files and return raw output unless HEAD changed or
+     unstaging failed. Read any cleanup diagnostic before changing the index.
+   - Successful hook rewrites and added paths stay committed. If a hook consumed a later group's
+     changes, the batch stops when that group has no staged changes. Inspect reported commits and
+     remaining changes; do not retry committed groups.
    - If reporting fails after commit success, inspect Git history before retrying.
-   - Fix blocking comment findings or supply `commentDispute` with evidence. Missing-comment
-     suggestions are advisory. After two automatic returns, remaining findings cause a refusal. Stop
-     automatic retries and report the blocker. Evidence alone cannot reopen a refused tree;
-     corrected trees can still pass review.
+   - Comment review must pass. Fix blocking findings or supply `commentDispute` with evidence.
+     Missing-comment suggestions are advisory. After two automatic returns, remaining findings cause
+     a refusal. Stop automatic retries and report the blocker. Evidence alone cannot reopen a
+     refused tree; corrected trees can still pass review.
    - Retry only corrected and remaining groups that were not committed. Stop after three failed
      retries of the same group and report the blocker.
 

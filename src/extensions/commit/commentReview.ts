@@ -54,11 +54,12 @@ export const reviewGit = async (
   workingDirectory: string,
   commandArguments: string[],
   signal?: AbortSignal,
+  timeout: number | null = 30_000,
 ) => {
   const result = await pi.exec('git', commandArguments, {
     cwd: workingDirectory,
     ...(signal ? { signal } : {}),
-    timeout: 30_000,
+    ...(timeout === null ? {} : { timeout }),
   });
 
   if (result.code !== 0 || result.killed) {

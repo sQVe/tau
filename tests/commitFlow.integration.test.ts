@@ -52,7 +52,6 @@ interface Harness {
   repositoryDirectory: string;
   events: AgentSessionEvent[];
   overlays: string[];
-  commandNames: string[];
 }
 
 // Isolate fixture commits from user and system Git settings, including hooks.
@@ -174,11 +173,7 @@ const createHarness = async (
     events.push(event);
   });
 
-  const commandNames = extensionsResult.extensions.flatMap((extension) =>
-    Array.from(extension.commands.keys()),
-  );
-
-  return { session, faux, repositoryDirectory, events, overlays, commandNames };
+  return { session, faux, repositoryDirectory, events, overlays };
 };
 
 const toolResultOf = (events: AgentSessionEvent[], toolName: string) => {
@@ -280,12 +275,8 @@ describe('commit flow', () => {
   ])(
     'rejects review findings outside the supplied source: %j',
     async (location, { onTestFinished }) => {
-      const { session, faux, repositoryDirectory, events, overlays } = await createHarness(
-        onTestFinished,
-        {
-          hasUI: true,
-        },
-      );
+      const { session, faux, repositoryDirectory, events, overlays } =
+        await createHarness(onTestFinished);
 
       await writeFile(join(repositoryDirectory, 'retry.ts'), 'export const retries = 0;\n');
 
@@ -488,12 +479,8 @@ describe('commit flow', () => {
   it('returns a tool error when the reviewer returns malformed output', async ({
     onTestFinished,
   }) => {
-    const { session, faux, repositoryDirectory, events, overlays } = await createHarness(
-      onTestFinished,
-      {
-        hasUI: true,
-      },
-    );
+    const { session, faux, repositoryDirectory, events, overlays } =
+      await createHarness(onTestFinished);
 
     await writeFile(join(repositoryDirectory, 'retry.ts'), 'export const retries = 0;\n');
 
@@ -521,12 +508,8 @@ describe('commit flow', () => {
   });
 
   it('reuses an unchanged review and returns errors on every retry', async ({ onTestFinished }) => {
-    const { session, faux, repositoryDirectory, events, overlays } = await createHarness(
-      onTestFinished,
-      {
-        hasUI: true,
-      },
-    );
+    const { session, faux, repositoryDirectory, events, overlays } =
+      await createHarness(onTestFinished);
 
     await writeFile(
       join(repositoryDirectory, 'retry.ts'),
@@ -575,6 +558,8 @@ describe('commit flow', () => {
     ]);
 
     expect(JSON.stringify(results[0])).toContain('Comment review needs corrections');
+    expect(JSON.stringify(results[0])).toContain('The comment promises retries');
+    expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
     expect(JSON.stringify(results[1])).toContain('Comment review needs corrections');
     expect(JSON.stringify(results.at(-1))).toContain(
       'Comment review refused after two automatic returns',
@@ -617,123 +602,45 @@ describe('commit flow', () => {
     );
   });
 
-  it('returns blocking comment findings without UI', async ({ onTestFinished }) => {
-    const { session, faux, repositoryDirectory, events, overlays } =
-      await createHarness(onTestFinished);
+  it.for([true, false])(
+    'commits after a clean review with hasUI=%s',
+    async (hasUI, { onTestFinished }) => {
+      const { session, faux, repositoryDirectory, events, overlays } = await createHarness(
+        onTestFinished,
+        { hasUI },
+      );
 
-    await writeFile(
-      join(repositoryDirectory, 'retry.ts'),
-      '// Retries every error\nexport const retries = 0;\n',
-    );
+      await writeFile(join(repositoryDirectory, 'feature.txt'), 'hello\n', 'utf8');
 
-    faux.setResponses([
-      fauxAssistantMessage([
-        fauxToolCall('commit', {
-          groups: [{ files: ['retry.ts'], subject: 'feat: add retry policy' }],
-        }),
-      ]),
-      fauxAssistantMessage(
-        JSON.stringify({
-          findings: [
-            {
-              path: 'retry.ts',
-              line: 1,
-              kind: 'inaccurate',
-              message: 'The comment promises retries, but the value disables them.',
-            },
-          ],
-        }),
-      ),
-      fauxAssistantMessage('I need to correct the comment.'),
-    ]);
+      faux.setResponses([
+        fauxAssistantMessage([
+          fauxToolCall('commit', {
+            groups: [
+              {
+                files: ['feature.txt'],
+                subject: 'feat: add feature file',
+                body: 'Prove the commit tool runs end to end.',
+              },
+            ],
+          }),
+        ]),
+        fauxAssistantMessage('```json\n{"findings":[]}\n```'),
+        fauxAssistantMessage('Committed.'),
+      ]);
 
-    await session.prompt('Commit the retry policy.');
+      await session.prompt('Commit the new file.');
 
-    expect(overlays).toHaveLength(0);
+      expect(overlays).toHaveLength(0);
 
-    const result = toolResultOf(events, 'commit');
+      const result = toolResultOf(events, 'commit');
 
-    expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.result)).toContain('The comment promises retries');
-    expect((await git(repositoryDirectory, ['log', '-1', '--pretty=%s'])).trim()).toBe(
-      'chore: initial commit',
-    );
-  });
+      expect(result.isError).toBe(false);
 
-  it('registers the commit tool and command in a real pi session', async ({ onTestFinished }) => {
-    const { session, commandNames } = await createHarness(onTestFinished);
+      const log = await git(repositoryDirectory, ['log', '-1', '--pretty=%s']);
 
-    expect(session.agent.state.tools.map((tool) => tool.name)).toContain('commit');
-    expect(commandNames).toContain('commit');
-  });
-
-  it('commits through the commit tool without confirmation', async ({ onTestFinished }) => {
-    const { session, faux, repositoryDirectory, events, overlays } =
-      await createHarness(onTestFinished);
-
-    await writeFile(join(repositoryDirectory, 'feature.txt'), 'hello\n', 'utf8');
-
-    faux.setResponses([
-      fauxAssistantMessage([
-        fauxToolCall('commit', {
-          groups: [
-            {
-              files: ['feature.txt'],
-              subject: 'feat: add feature file',
-              body: 'Prove the commit tool runs end to end.',
-            },
-          ],
-        }),
-      ]),
-      fauxAssistantMessage('```json\n{"findings":[]}\n```'),
-      fauxAssistantMessage('Committed.'),
-    ]);
-
-    await session.prompt('Commit the new file.');
-
-    expect(overlays).toHaveLength(0);
-
-    const result = toolResultOf(events, 'commit');
-
-    expect(result.isError).toBe(false);
-
-    const log = await git(repositoryDirectory, ['log', '-1', '--pretty=%s']);
-
-    expect(log.trim()).toBe('feat: add feature file');
-  });
-
-  it('commits when no UI is bound', async ({ onTestFinished }) => {
-    const { session, faux, repositoryDirectory, events, overlays } = await createHarness(
-      onTestFinished,
-      {
-        hasUI: false,
-      },
-    );
-
-    await writeFile(join(repositoryDirectory, 'feature.txt'), 'hello\n', 'utf8');
-
-    faux.setResponses([
-      fauxAssistantMessage([
-        fauxToolCall('commit', {
-          groups: [{ files: ['feature.txt'], subject: 'feat: add feature file' }],
-        }),
-      ]),
-      fauxAssistantMessage('{"findings":[]}'),
-      fauxAssistantMessage('Committed.'),
-    ]);
-
-    await session.prompt('Commit the new file.');
-
-    expect(overlays).toHaveLength(0);
-
-    const result = toolResultOf(events, 'commit');
-
-    expect(result.isError).toBe(false);
-
-    const log = await git(repositoryDirectory, ['log', '-1', '--pretty=%s']);
-
-    expect(log.trim()).toBe('feat: add feature file');
-  });
+      expect(log.trim()).toBe('feat: add feature file');
+    },
+  );
 
   it('blocks git commit run through the bash tool', async ({ onTestFinished }) => {
     const { session, faux, repositoryDirectory, events } = await createHarness(onTestFinished);

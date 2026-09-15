@@ -21,8 +21,8 @@ make it pass, then run the whole suite.
   tests cannot establish RED.
 - Read why a test failed. A failure does not prove that the assertion is useful. Do not weaken an
   assertion just to make the implementation pass.
-- Hints never block work or need acknowledgment. Commit checks and comment review remain separate;
-  commits do not require human approval.
+- Hints never block work or need acknowledgment. Git hooks and comment review remain separate from
+  TDD observations.
 
 ## Procedure
 
