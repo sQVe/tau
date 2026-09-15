@@ -7,6 +7,7 @@ import {
   commitContext,
   createTemporaryRepository,
   executeCommit,
+  fakeCommit,
   git,
   runCommand,
   writeRepositoryFile,
@@ -14,6 +15,29 @@ import {
 import { createCommitTool } from './tool.js';
 
 describe('direct commit staging', () => {
+  it('stops and unstages when Git staging is killed despite a zero exit code', async () => {
+    const { execute, exec, review } = fakeCommit();
+    const executeGit = exec.getMockImplementation()!;
+
+    exec.mockImplementation(async (command, arguments_, options) => {
+      const result = await executeGit(command, arguments_, options);
+
+      return arguments_.includes('add')
+        ? { ...result, killed: true, stderr: 'staging interrupted' }
+        : result;
+    });
+
+    await expect(execute()).rejects.toThrow('staging interrupted');
+
+    expect(review).not.toHaveBeenCalled();
+    expect(exec.mock.calls.some((call) => call[1][0] === 'commit')).toBe(false);
+    expect(exec).toHaveBeenLastCalledWith(
+      'git',
+      ['--literal-pathspecs', 'reset', '--', 'README.md'],
+      { cwd: '/repo', timeout: 30_000 },
+    );
+  });
+
   it('preserves unrelated staging outside nested cwd with relative diffs enabled', async () => {
     const directory = await createTemporaryRepository();
     await git(directory, ['config', 'diff.relative', 'true']);

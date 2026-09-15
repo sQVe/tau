@@ -644,7 +644,7 @@ describe('commitTool.execute', () => {
           },
         ],
       }),
-    ).rejects.toThrow(/git add failed/i);
+    ).rejects.toThrow(/git --literal-pathspecs add -- \* failed/i);
 
     const revListResult = await runCommand(
       'git',
@@ -950,7 +950,7 @@ describe('commits without approvals', () => {
     expect(exec).toHaveBeenLastCalledWith(
       'git',
       ['--literal-pathspecs', 'reset', '--', 'README.md'],
-      { cwd: '/repo' },
+      { cwd: '/repo', timeout: 30_000 },
     );
   });
 
@@ -1139,7 +1139,7 @@ describe('commit execution', () => {
     expect(exec).toHaveBeenLastCalledWith(
       'git',
       ['--literal-pathspecs', 'reset', '--', 'README.md'],
-      { cwd: '/repo' },
+      { cwd: '/repo', timeout: 30_000 },
     );
   });
 });

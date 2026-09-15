@@ -90,12 +90,13 @@ the terminal and check that the right group truncates before the left.
 
 ### Commits
 
-Configure credentials for the session model; comment review makes a model API call. Stage a change
-that touches a comment and call `commit`. Check that it commits without a prompt and includes the
-comment review report in the result. Try a blocking finding and check that it returns a tool error
-without opening a prompt. In a temporary repository, install a failing `commit-msg` hook and call
-`commit`. Check that the hook output returns as a tool error, the requested files are unstaged, and
-no commit was created.
+Use a temporary repository. Comment review calls the model currently selected in Pi, so that model
+needs working credentials.
+
+1. Change a file with an accurate comment and call `commit`. Let the tool stage the file. Check that
+   a clean review commits without a prompt.
+2. Submit a change with an inaccurate comment. Check that a blocking finding returns a tool error
+   without a prompt or a new commit. Correct the comment and call `commit` again.
 
 **Bulk read.** With a working delegate, read a file longer than 400 lines without a limit. Check
 that the result ends with a `bulk_read` hint instead of `Use offset=`. Ask `bulk_read` a question

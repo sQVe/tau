@@ -18,7 +18,31 @@ import {
   commentPolicyHash,
 } from './commentReview.js';
 import type { CommentReview } from './commentReview.js';
-import type { CommitSuccess } from './types.js';
+
+interface CommitSuccess {
+  details: {
+    sha: string;
+    files: string[];
+    subject: string;
+    body: string | null;
+    message?: string;
+    hooks?: 'run';
+    hookChanges?: {
+      files: string[];
+      message: boolean;
+    };
+    commentReview?: {
+      status: 'passed';
+      tree: string;
+      policy: string;
+      report: string;
+    };
+  };
+  content: {
+    type: 'text';
+    text: string;
+  }[];
+}
 
 export const conventionalCommitSubjectPattern =
   /^(feat|fix|chore|refactor|docs|test|style|perf|build|ci|revert)(\([a-z0-9-]+\))?!?: [^\r\n]+$/;
@@ -47,7 +71,7 @@ export const commitToolParameters = Type.Object({
       commentDispute: Type.Optional(
         Type.String({
           maxLength: 4000,
-          description: 'Evidence for rechecking a comment finding. This never waives review.',
+          description: 'Evidence for rechecking a comment finding. Review must still pass.',
         }),
       ),
     }),
@@ -124,21 +148,16 @@ const cleanupTemporary = async (directory: string) => {
 };
 
 const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
-  const result = await pi.exec(
-    'git',
-    ['diff', '--cached', '--no-relative', '--name-only', '--diff-filter=ACMRDT', '-z'],
-    {
-      cwd: workingDirectory,
-    },
-  );
+  const output = await reviewGit(pi, workingDirectory, [
+    'diff',
+    '--cached',
+    '--no-relative',
+    '--name-only',
+    '--diff-filter=ACMRDT',
+    '-z',
+  ]);
 
-  if (result.code !== 0) {
-    throw new Error(
-      `git diff --cached --name-only failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
-    );
-  }
-
-  return result.stdout
+  return output
     .split('\0')
     .filter(Boolean)
     .map((file) => normalizeRepositoryPath(file));
@@ -165,49 +184,17 @@ const validateFileRequests = async (workingDirectory: string, files: string[]) =
 };
 
 // Literal pathspecs prevent glob expansion from staging unrequested files.
-const stageFiles = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
-  workingDirectory: string,
-  files: string[],
-) => {
-  const result = await pi.exec('git', ['--literal-pathspecs', 'add', '--', ...files], {
-    cwd: workingDirectory,
-  });
+const stageFiles = (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string, files: string[]) =>
+  reviewGit(pi, workingDirectory, ['--literal-pathspecs', 'add', '--', ...files]);
 
-  if (result.code !== 0) {
-    throw new Error(
-      `git add failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
-    );
-  }
-};
-
-const unstageFiles = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
-  workingDirectory: string,
-  files: string[],
-) => {
-  const result = await pi.exec('git', ['--literal-pathspecs', 'reset', '--', ...files], {
-    cwd: workingDirectory,
-  });
-
-  if (result.code !== 0) {
-    throw new Error(
-      `git reset failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
-    );
-  }
-};
+const unstageFiles = (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string, files: string[]) =>
+  reviewGit(pi, workingDirectory, ['--literal-pathspecs', 'reset', '--', ...files]);
 
 // Staged paths are repository-relative; requested paths are relative to the working directory.
 const repositoryPathPrefix = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
-  const result = await pi.exec('git', ['rev-parse', '--show-prefix'], { cwd: workingDirectory });
+  const output = await reviewGit(pi, workingDirectory, ['rev-parse', '--show-prefix']);
 
-  if (result.code !== 0) {
-    throw new Error(
-      `git rev-parse --show-prefix failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
-    );
-  }
-
-  return result.stdout.replace(/\n$/, '');
+  return output.replace(/\n$/, '');
 };
 
 // HEAD is unresolved before the first commit.
@@ -222,30 +209,20 @@ const listCommitPaths = async (
   workingDirectory: string,
   commitHash: string,
 ) => {
-  const result = await pi.exec(
-    'git',
-    [
-      'diff-tree',
-      '--root',
-      '--diff-merges=first-parent',
-      '--no-relative',
-      '-r',
-      '--no-commit-id',
-      '--no-renames',
-      '--name-only',
-      '-z',
-      commitHash,
-    ],
-    { cwd: workingDirectory },
-  );
+  const output = await reviewGit(pi, workingDirectory, [
+    'diff-tree',
+    '--root',
+    '--diff-merges=first-parent',
+    '--no-relative',
+    '-r',
+    '--no-commit-id',
+    '--no-renames',
+    '--name-only',
+    '-z',
+    commitHash,
+  ]);
 
-  if (result.code !== 0) {
-    throw new Error(
-      `git diff-tree failed with exit code ${result.code}: ${result.stderr || result.stdout}`.trim(),
-    );
-  }
-
-  return result.stdout
+  return output
     .split('\0')
     .filter(Boolean)
     .map((file) => normalizeRepositoryPath(file));
@@ -476,7 +453,7 @@ const executeGroup = async (
         state.refusedTree = reviewedTree;
 
         throw new Error(
-          `Comment review refused after two automatic returns:\n${reviewReport}\nStop automatic retries and report the blocker. Findings cannot be waived.`,
+          `Comment review refused after two automatic returns:\n${reviewReport}\nStop automatic retries and report the blocker. Review must pass before committing.`,
         );
       }
 
@@ -653,16 +630,15 @@ export const createCommitTool = (
       'Stage, review, and commit each group sequentially with Git hooks. Hook failures and blocking comment reviews return errors.',
     promptSnippet: 'Create git commits for an ordered groups array in one call.',
     promptGuidelines: [
-      'When asked to commit, call commit without asking for confirmation. Git hooks and comment review still apply.',
-      'The commit tool stages only files explicitly assigned to the requested groups. Installed Git hooks may add paths; successful results report actual committed files relative to the repository root.',
-      'The tool stages whole requested files on the real index. Working edits remain visible to Git hooks. Groups run serially.',
-      "Never absorb unrelated edits, another group's paths, or rejected sensitive paths to clear an error. Never overwrite concurrent staging or HEAD.",
-      "Git commits run with the repository's installed hooks. Never bypass hooks through --no-verify, core.hooksPath, environment variables, or config changes to evade a failure.",
-      'Hook failures unstage requested files and return raw output. Successful hook content and message rewrites and added paths stay committed and are reported. If a hook fully consumed a later group with no new staged changes, the batch stops. If reporting fails after commit success, inspect Git history before retrying.',
-      'Messages reject NUL. Body CRLF and CR become LF; other whitespace is preserved. Nonempty bodies end in LF. Tau supplies the normalized message through git commit --cleanup=verbatim -F and reports the actual stored message.',
+      'When asked to commit, call commit with exact, ordered groups without asking for confirmation. It stages, reviews comments, and commits each group with installed Git hooks.',
+      'The commit tool stages whole requested files on the real index. Assign each path to one group. Working edits remain visible to hooks. Installed hooks may add paths; commit reports actual committed files relative to the repository root.',
+      "Never absorb unrelated edits, another group's paths, or rejected sensitive paths to clear a commit error. Never overwrite concurrent staging or HEAD.",
+      "The commit tool runs the repository's installed hooks. Never bypass hooks through --no-verify, core.hooksPath, environment variables, or config changes to evade a failure.",
+      'On hook failure, commit unstages requested files and returns raw output unless HEAD changed or unstaging failed. Read cleanup diagnostics before changing the index. Successful hook rewrites and added paths stay committed and are reported. If a hook consumed a later group with no new staged changes, the batch stops. If reporting fails after commit success, inspect Git history before retrying.',
+      'The commit tool rejects NUL in messages. Body CRLF and CR become LF; other whitespace is preserved. Nonempty bodies end in LF. Tau supplies the normalized message through git commit --cleanup=verbatim -F and reports the actual stored message.',
       'Use a conventional commit subject.',
       'Do not commit sensitive files such as .env or SSH keys.',
-      'Comment review checks the staged tree before committing. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. After two automatic returns for a group, remaining findings cause a refusal: stop automatic retries and report the blocker. Evidence alone cannot reopen a refused tree; corrected trees can still pass review. Findings cannot be waived.',
+      'The commit tool reviews the staged tree before hooks run. Review must pass before committing. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. After two automatic returns for a group, remaining findings cause a refusal. Stop automatic retries and report the blocker. Evidence alone cannot reopen a refused tree; corrected trees can still pass review.',
     ],
     parameters: commitToolParameters,
     // oxlint-disable-next-line eslint/complexity -- Group failures retain earlier commit results and temporary cleanup diagnostics.
