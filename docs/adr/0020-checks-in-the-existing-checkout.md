@@ -1,6 +1,6 @@
 # ADR 0020: Run staged checks in the existing checkout
 
-- Status: Proposed
+- Status: Superseded by [ADR 0025](./0025-use-git-hooks-without-preparation.md)
 - Date: 2026-09-11
 
 ## Context

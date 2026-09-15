@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -580,30 +580,31 @@ describe('commit flow', () => {
     );
   });
 
-  it('returns a message check failure as a tool error without UI', async ({ onTestFinished }) => {
+  it('returns a message hook failure as a tool error without UI', async ({ onTestFinished }) => {
     const { session, faux, repositoryDirectory, events, overlays } =
       await createHarness(onTestFinished);
+    await git(repositoryDirectory, ['config', 'core.hooksPath', '.git/hooks']);
     await writeFile(
-      join(repositoryDirectory, 'tau.json'),
-      JSON.stringify({
-        checkMessage: [process.execPath, '-e', 'console.error("invalid message"); process.exit(1)'],
-      }),
+      join(repositoryDirectory, '.git/hooks/commit-msg'),
+      '#!/bin/sh\necho invalid message >&2\nexit 1\n',
     );
+    await chmod(join(repositoryDirectory, '.git/hooks/commit-msg'), 0o755);
+    await writeFile(join(repositoryDirectory, 'message.txt'), 'value\n');
     faux.setResponses([
       fauxAssistantMessage([
         fauxToolCall('commit', {
-          groups: [{ files: ['tau.json'], subject: 'feat: add message policy' }],
+          groups: [{ files: ['message.txt'], subject: 'feat: add message' }],
         }),
       ]),
       fauxAssistantMessage('{"findings":[]}'),
-      fauxAssistantMessage('The message check failed.'),
+      fauxAssistantMessage('The message hook failed.'),
     ]);
 
-    await session.prompt('Commit the message policy.');
+    await session.prompt('Commit the message file.');
 
     const result = toolResultOf(events, 'commit');
     expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.result)).toContain('Message check failed');
+    expect(JSON.stringify(result.result)).toContain('git commit failed');
     expect(JSON.stringify(result.result)).toContain('invalid message');
     expect(overlays).toHaveLength(0);
     expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');

@@ -1,6 +1,7 @@
 # ADR 0024: Commit without human approval
 
-- Status: Proposed
+- Status: Proposed; preparation and check rules superseded by
+  [ADR 0025](./0025-use-git-hooks-without-preparation.md)
 - Date: 2026-09-15
 
 ## Context

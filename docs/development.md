@@ -93,9 +93,9 @@ the terminal and check that the right group truncates before the left.
 Configure credentials for the session model; comment review makes a model API call. Stage a change
 that touches a comment and call `commit`. Check that it commits without a prompt and includes the
 comment review report in the result. Try a blocking finding and check that it returns a tool error
-without opening a prompt. To test a failing message check, first configure `checkMessage` in the
-candidate's root `tau.json`. Check that the failure also returns a tool error without opening a
-prompt.
+without opening a prompt. In a temporary repository, install a failing `commit-msg` hook and call
+`commit`. Check that the hook output returns as a tool error, the requested files are unstaged, and
+no commit was created.
 
 **Bulk read.** With a working delegate, read a file longer than 400 lines without a limit. Check
 that the result ends with a `bulk_read` hint instead of `Use offset=`. Ask `bulk_read` a question

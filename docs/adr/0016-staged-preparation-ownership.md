@@ -1,6 +1,6 @@
 # ADR 0016: Prepare each commit with separate staging
 
-- Status: Proposed
+- Status: Superseded by [ADR 0025](./0025-use-git-hooks-without-preparation.md)
 - Date: 2026-09-10
 
 ## Context
