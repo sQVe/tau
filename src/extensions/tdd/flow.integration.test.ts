@@ -154,11 +154,60 @@ const createHarness = async (
 
     expect(event.isError).toBe(false);
 
-    return event.result as ToolResult;
+    const result = event.result as ToolResult;
+    const directory = result.details.report.diagnostics?.directory;
+
+    if (directory !== undefined) {
+      cleanup(() => rm(directory, { recursive: true, force: true }));
+    }
+
+    return result;
   };
 
   return { cwd, session, faux, events, run, call };
 };
+
+it('shows the selected tests before completion and saves full-suite input evidence', async ({
+  onTestFinished,
+}) => {
+  const { cwd, run, events } = await createHarness(onTestFinished);
+  const focused = await run();
+  const updates = events.filter((event) => event.type === 'tool_execution_update');
+
+  expect(JSON.stringify(updates)).toContain('behavior.test.ts');
+  expect(JSON.stringify(updates)).toContain('required behavior');
+  expect(focused.content.map((block) => block.text).join('\n')).toContain('Scope: focused');
+
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    "import { it } from 'vitest'; it('required behavior', () => { console.warn('warning remains'); });",
+  );
+  const full = await run({ scope: 'full' });
+  const text = full.content.map((block) => block.text).join('\n');
+
+  expect(text).toContain('Scope: full suite');
+  expect(text).toContain('Full suite passed');
+  expect(text).toContain('inputs unchanged during this run');
+  expect(text).toContain('run.json');
+  expect(text).toContain('stdout.txt');
+  expect(text).toContain('stderr.txt');
+  const diagnostics = full.details.report.diagnostics!;
+  const manifest: unknown = JSON.parse(
+    await readFile(join(diagnostics.directory, 'run.json'), 'utf8'),
+  );
+
+  expect(manifest).toMatchObject({
+    cwd,
+    scope: 'full',
+    kind: 'pass',
+    freshness: 'fresh',
+    inputs: full.details.inputs,
+  });
+  expect(full.details.inputs.before).toMatch(/^[a-f0-9]{64}$/);
+  expect(full.details.inputs.before).toBe(full.details.inputs.after);
+  expect(await readFile(diagnostics.stderr!.path, 'utf8')).toContain('warning remains');
+  expect(JSON.stringify(updates)).not.toContain('Full suite passed');
+});
 
 it('allows production edits with one advisory hint and no persisted permission state', async ({
   onTestFinished,
@@ -203,14 +252,14 @@ it('observes RED and focused passes, then accepts full verification after format
 
   expect(green.details.kind).toBe('pass');
   expect(green.content.at(-1)?.text).toContain('scope "full"');
-  expect((await run()).content).toHaveLength(1);
+  expect((await run()).content).toHaveLength(2);
 
   await call('bash', { command: "printf '\n' >> behavior.test.ts" });
   const full = await run({ scope: 'full' });
 
   expect(full.details).toMatchObject({ kind: 'pass', scope: 'full', freshness: 'fresh' });
-  expect(full.content).toHaveLength(1);
-  expect((await run({ scope: 'full' })).content).toHaveLength(1);
+  expect(full.content).toHaveLength(2);
+  expect((await run({ scope: 'full' })).content).toHaveLength(2);
 
   const edited = await call('write', { path: 'src/value.ts', content: 'export const value = 2;' });
 

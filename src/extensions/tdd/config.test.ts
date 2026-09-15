@@ -11,7 +11,13 @@ describe('TDD config', () => {
       '**/*.test.{ts,tsx,js,jsx,mjs,cjs}',
       '**/*.spec.{ts,tsx,js,jsx,mjs,cjs}',
     ]);
-    expect(tddConfig.verificationArgv).toEqual(['vitest', 'run', '--reporter=json', '--no-color']);
+    expect(tddConfig.verificationArgv).toEqual([
+      'vitest',
+      'run',
+      '--reporter=json',
+      '--reporter=default',
+      '--no-color',
+    ]);
   });
 
   it('gives test globs precedence, then production globs, then other', () => {

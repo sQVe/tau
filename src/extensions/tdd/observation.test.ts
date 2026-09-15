@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -34,6 +34,41 @@ const setup = async (cleanup: TestContext['onTestFinished']) => {
 beforeEach(() => {
   vi.mocked(runTests).mockReset();
   vi.mocked(runTests).mockResolvedValue(result('passed'));
+});
+
+it('saves stale input fingerprints and preserves the outcome when the run record cannot be saved', async ({
+  onTestFinished,
+}) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  const directory = join(cwd, 'diagnostics');
+
+  await mkdir(directory);
+  vi.mocked(runTests).mockImplementationOnce(async () => {
+    await writeFile(join(cwd, 'src/value.ts'), 'changed during tests');
+
+    return {
+      ...result('passed'),
+      diagnostics: { directory, durationMs: 10, timeoutMs: 30_000, exitCode: 0 },
+    };
+  });
+  const stale = await observation.run(behavior, 'full');
+  const record: unknown = JSON.parse(await readFile(join(directory, 'run.json'), 'utf8'));
+
+  expect(stale).toMatchObject({ kind: 'pass', freshness: 'stale' });
+  expect(stale.inputs.before).not.toBe(stale.inputs.after);
+  expect(record).toMatchObject({ cwd, scope: 'full', freshness: 'stale', inputs: stale.inputs });
+
+  const existing = await readFile(join(directory, 'run.json'), 'utf8');
+  vi.mocked(runTests).mockResolvedValueOnce({
+    ...result('passed'),
+    diagnostics: { directory, durationMs: 10, timeoutMs: 30_000, exitCode: 0 },
+  });
+  const passed = await observation.run(behavior, 'full');
+
+  expect(passed).toMatchObject({ kind: 'pass', freshness: 'fresh' });
+  expect(passed.runPath).toBeUndefined();
+  expect(passed.report.diagnostics?.error).toContain('Could not save run.json');
+  expect(await readFile(join(directory, 'run.json'), 'utf8')).toBe(existing);
 });
 
 it('rejects nonliteral test selection before running tests', async ({ onTestFinished }) => {

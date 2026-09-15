@@ -1,18 +1,31 @@
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
-import { runTests } from './index.js';
+import { runTests as runTestsWithDiagnostics } from './index.js';
 import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js';
 import {
   maximumFailures,
   maximumMessageCharacters,
+  maximumReportBytes,
   maximumStdoutBytes,
   maximumTotalBytes,
 } from './types.js';
 import { defaultDeps, defaultSpawn, extractBinPath, nodeExecutable } from './vitest.js';
+
+const runTests = async (...arguments_: Parameters<typeof runTestsWithDiagnostics>) => {
+  const result = await runTestsWithDiagnostics(...arguments_);
+
+  if (result.diagnostics !== undefined) {
+    const directory = result.diagnostics.directory;
+
+    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  }
+
+  return result;
+};
 
 const outputFileFrom = (arguments_: string[]) => {
   const flag = arguments_.find((argument) => argument.startsWith('--outputFile='));
@@ -48,6 +61,164 @@ const makeDeps = (overrides: Partial<RunnerDeps>): RunnerDeps => ({
 });
 
 describe('runTests', () => {
+  it('retains diagnostics for successful failed skipped and interrupted runs', async () => {
+    const passingReport = {
+      numTotalTests: 1,
+      numPassedTests: 1,
+      testResults: [
+        {
+          name: '/repo/value.test.ts',
+          status: 'passed',
+          assertionResults: [{ fullName: 'value works', status: 'passed' }],
+        },
+      ],
+    };
+    const failingReport = {
+      numTotalTests: 0,
+      testResults: [
+        { name: '/repo/value.test.ts', status: 'failed', message: '', assertionResults: [] },
+      ],
+    };
+    const cases = [
+      { kind: 'pass', report: passingReport, code: 0, timedOut: false },
+      { kind: 'fail', report: failingReport, code: 1, timedOut: false },
+      { kind: 'no-tests-collected', report: { numTotalTests: 0 }, code: 0, timedOut: false },
+      { kind: 'compile-error', report: undefined, code: 1, timedOut: false },
+      { kind: 'timeout', report: undefined, code: null, timedOut: true },
+      { kind: 'cancelled', report: undefined, code: null, timedOut: false },
+      {
+        kind: 'output-limit',
+        report: undefined,
+        code: null,
+        timedOut: false,
+        stdoutOverflow: true,
+      },
+    ];
+    const directories = new Set<string>();
+
+    for (const fixture of cases) {
+      const controller = new AbortController();
+      const spawn = fakeSpawn({
+        ...fixture,
+        stdout: 'test console output\n',
+        stderr: 'setup warning\n',
+      });
+      const result = await runTests(
+        { scope: 'all', cwd: '/repo', signal: controller.signal },
+        makeDeps({
+          spawn: async (...arguments_) => {
+            const spawned = await spawn(...arguments_);
+
+            if (fixture.kind === 'cancelled') {
+              controller.abort();
+            }
+
+            return spawned;
+          },
+        }),
+      );
+
+      expect(result.kind).toBe(fixture.kind);
+      expect(result).toHaveProperty('diagnostics.directory');
+      const diagnostics = result.diagnostics!;
+      onTestFinished(() => rm(diagnostics.directory, { recursive: true, force: true }));
+      directories.add(diagnostics.directory);
+
+      expect(diagnostics.durationMs).toBeGreaterThanOrEqual(0);
+      expect(diagnostics.command).toEqual(
+        expect.arrayContaining(['/fake/vitest.js', 'run', '--reporter=json', '--reporter=default']),
+      );
+      expect(diagnostics).toMatchObject({
+        timeoutMs: 30_000,
+        exitCode: fixture.code,
+        stdout: { bytes: 20, truncated: fixture.kind === 'output-limit' },
+        stderr: { bytes: 14, truncated: false },
+      });
+      expect(await readFile(diagnostics.stdout!.path, 'utf8')).toBe('test console output\n');
+      expect(await readFile(diagnostics.stderr!.path, 'utf8')).toBe('setup warning\n');
+
+      const savedReport: unknown =
+        diagnostics.report === undefined
+          ? undefined
+          : JSON.parse(await readFile(diagnostics.report.path, 'utf8'));
+
+      expect(savedReport).toEqual(fixture.report);
+      expect(
+        process.platform === 'win32' ||
+          ((await stat(diagnostics.directory)).mode & 0o777) === 0o700,
+      ).toBe(true);
+    }
+
+    expect(directories.size).toBe(cases.length);
+  });
+
+  it('bounds saved logs and raw reports without truncating test evidence', async () => {
+    const rawReport = {
+      numTotalTests: 1,
+      numPassedTests: 1,
+      padding: 'x'.repeat(maximumReportBytes),
+      testResults: [
+        {
+          name: '/repo/value.test.ts',
+          status: 'passed',
+          assertionResults: [{ fullName: 'works', status: 'passed' }],
+        },
+      ],
+    };
+    const result = await runTests(
+      { scope: 'all', cwd: '/repo' },
+      makeDeps({
+        spawn: fakeSpawn({
+          report: rawReport,
+          stdout: 'o'.repeat(maximumStdoutBytes + 1),
+          stderr: 'e'.repeat(maximumTotalBytes + 1),
+        }),
+      }),
+    );
+    const diagnostics = result.diagnostics!;
+
+    expect(result).toMatchObject({
+      kind: 'pass',
+      tests: [{ fullname: 'works', status: 'passed' }],
+    });
+    expect(diagnostics.stdout).toMatchObject({
+      savedBytes: maximumStdoutBytes,
+      bytes: maximumStdoutBytes + 1,
+      truncated: true,
+    });
+    expect(diagnostics.stderr).toMatchObject({
+      savedBytes: maximumTotalBytes,
+      bytes: maximumTotalBytes + 1,
+      truncated: true,
+    });
+    expect(diagnostics.report).toMatchObject({ savedBytes: maximumReportBytes, truncated: true });
+    expect((await stat(diagnostics.stdout!.path)).size).toBe(maximumStdoutBytes);
+    expect((await stat(diagnostics.stderr!.path)).size).toBe(maximumTotalBytes);
+    expect((await stat(diagnostics.report!.path)).size).toBe(maximumReportBytes);
+  });
+
+  it('keeps the verdict and reports artifact write failures without overwriting files', async () => {
+    const result = await runTests(
+      { scope: 'all', cwd: '/repo' },
+      makeDeps({
+        spawn: async (_command, arguments_) => {
+          const reportPath = outputFileFrom(arguments_);
+
+          await writeFile(reportPath, JSON.stringify({ numTotalTests: 1, numPassedTests: 1 }));
+          await writeFile(join(reportPath, '..', 'stdout.txt'), 'keep this content');
+
+          return { stdout: 'new output', stderr: '', code: 0, timedOut: false };
+        },
+      }),
+    );
+
+    expect(result.kind).toBe('pass');
+    expect(result.diagnostics?.error).toContain('Could not save all diagnostics');
+    expect(await readFile(join(result.diagnostics!.directory, 'stdout.txt'), 'utf8')).toBe(
+      'keep this content',
+    );
+  });
+
   it('returns every test identity and status from a real four-status fixture', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
     const file = join(cwd, 'statuses.test.ts');
@@ -125,10 +296,12 @@ describe('runTests', () => {
       }),
     });
 
-    expect(await runTests({ scope: 'all', cwd: '/repo', filter: 'unmatched' }, deps)).toEqual({
-      kind: 'no-tests-collected',
-      tests: [],
-    });
+    expect(await runTests({ scope: 'all', cwd: '/repo', filter: 'unmatched' }, deps)).toMatchObject(
+      {
+        kind: 'no-tests-collected',
+        tests: [],
+      },
+    );
   });
 
   it('rejects a nonzero exit even when every reported test passed', async () => {
@@ -157,7 +330,7 @@ describe('runTests', () => {
       },
     });
 
-    expect(await runTests(input, deps)).toEqual({ kind: 'no-tests-collected', tests: [] });
+    expect(await runTests(input, deps)).toMatchObject({ kind: 'no-tests-collected', tests: [] });
   });
 
   it('preserves a passing JSON report larger than the diagnostic output cap', async () => {
@@ -188,7 +361,7 @@ describe('runTests', () => {
 
       const deps = makeDeps({ resolveVitest: () => script, spawn: defaultSpawn });
 
-      expect(await runTests({ scope: 'all', cwd }, deps)).toEqual({
+      expect(await runTests({ scope: 'all', cwd }, deps)).toMatchObject({
         kind: 'pass',
         tests: [{ file: 'x'.repeat(maximumTotalBytes * 2), fullname: 'passes', status: 'passed' }],
       });
@@ -237,7 +410,7 @@ describe('runTests', () => {
 
       const started = Date.now();
 
-      expect(await runTests({ scope: 'all', cwd }, deps)).toEqual({ kind: 'timeout' });
+      expect(await runTests({ scope: 'all', cwd }, deps)).toMatchObject({ kind: 'timeout' });
       expect(Date.now() - started).toBeLessThan(5_000);
     } finally {
       await rm(cwd, { recursive: true, force: true });
@@ -273,7 +446,7 @@ describe('runTests', () => {
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       kind: 'pass',
       tests: ['first', 'second', 'third'].map((fullname) => ({
         file: '/repo/a.test.ts',
@@ -436,7 +609,7 @@ describe('runTests', () => {
         controller.abort();
       }, 50);
 
-      expect(await pending).toEqual({ kind: 'cancelled' });
+      expect(await pending).toMatchObject({ kind: 'cancelled' });
       expect(Date.now() - started).toBeLessThan(5_000);
     } finally {
       await rm(cwd, { recursive: true, force: true });
@@ -469,7 +642,7 @@ describe('runTests', () => {
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       kind: 'fail',
       failures: [{ file: '/repo/hook.test.ts', fullname: '<file>', message: 'teardown boom' }],
       tests: [{ file: '/repo/hook.test.ts', fullname: 'passes', status: 'passed' }],
@@ -543,7 +716,9 @@ describe('runTests', () => {
       },
     });
 
-    expect(await runTests({ scope: 'changed', cwd: '/repo', files: ['', ' '] }, deps)).toEqual({
+    expect(
+      await runTests({ scope: 'changed', cwd: '/repo', files: ['', ' '] }, deps),
+    ).toMatchObject({
       kind: 'no-tests-collected',
       tests: [],
     });
@@ -645,7 +820,7 @@ describe('runTests', () => {
       deps,
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       kind: 'pass',
       tests: [
         { file: '/repo/a.test.ts', fullname: 'selected', status: 'passed' },
@@ -872,7 +1047,7 @@ describe('runTests', () => {
     expect(captured).toContain('adds item');
   });
 
-  it('passes only fixed arguments (run --reporter=json --no-color) plus scoped paths', async () => {
+  it('passes only fixed reporter arguments plus scoped paths', async () => {
     let captured: string[] = [];
     const report = {
       numTotalTests: 1,
@@ -891,13 +1066,18 @@ describe('runTests', () => {
 
     await runTests({ scope: 'file', cwd: '/repo', path: 'src/a.test.ts' }, deps);
 
-    expect(captured.slice(0, 3)).toEqual(['run', '--reporter=json', '--no-color']);
+    expect(captured.slice(0, 4)).toEqual([
+      'run',
+      '--reporter=json',
+      '--reporter=default',
+      '--no-color',
+    ]);
     expect(captured).toContain('src/a.test.ts');
 
     const disallowed = captured.filter(
       (argument) =>
         argument.startsWith('--') &&
-        !['--reporter=json', '--no-color'].includes(argument) &&
+        !['--reporter=json', '--reporter=default', '--no-color'].includes(argument) &&
         !argument.startsWith('--outputFile='),
     );
 

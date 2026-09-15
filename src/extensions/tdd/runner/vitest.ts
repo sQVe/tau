@@ -7,6 +7,7 @@ import { basename, delimiter, dirname, isAbsolute, join, relative } from 'node:p
 import { StringDecoder } from 'node:string_decoder';
 
 import { tddConfig } from '../config.js';
+import { saveDiagnostics } from './diagnostics.js';
 import type {
   ResolveVitestFn,
   RunTestsInput,
@@ -131,6 +132,7 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
     let stdoutOverflow = false;
     let diagnosticBytes = 0;
     let stdoutBytes = 0;
+    let stderrBytes = 0;
 
     const stdoutDecoder = new StringDecoder('utf8');
     const stderrDecoder = new StringDecoder('utf8');
@@ -165,7 +167,7 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
       stdout += stdoutDecoder.end();
       stderr += stderrDecoder.end();
 
-      resolve({ stdout, stderr, code, timedOut, stdoutOverflow });
+      resolve({ stdout, stderr, code, timedOut, stdoutOverflow, stdoutBytes, stderrBytes });
     };
 
     const kill = () => {
@@ -201,6 +203,7 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
     });
 
     child.stderr.on('data', (chunk: Buffer) => {
+      stderrBytes += chunk.length;
       stderr = appendDiagnosticChunk(chunk, stderrDecoder, stderr);
     });
 
@@ -215,7 +218,11 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
     timer.unref();
 
     child.on('close', settle);
-    child.on('error', () => {
+    child.on('error', (error) => {
+      const message = Buffer.from(error.message);
+
+      stderrBytes += message.length;
+      stderr = appendDiagnosticChunk(message, stderrDecoder, stderr);
       settle(null);
     });
 
@@ -351,7 +358,9 @@ const collectFailures = (
       failures.push({
         file: file.name ?? '<unknown>',
         fullname: '<file>',
-        message: assertionMessage([file.message ?? 'load error'], cwd),
+        message:
+          assertionMessage([file.message ?? ''], cwd) ||
+          'File setup or load failed; inspect the saved runner diagnostics.',
       });
     }
 
@@ -528,10 +537,38 @@ export const runVitest = async (
   dependencies: RunnerDeps,
 ): Promise<RunnerResult> => {
   const directory = await mkdtemp(join(tmpdir(), 'tau-vitest-'));
+  const started = performance.now();
+  const execution: { result?: SpawnResult; command?: string[] } = {};
 
   try {
-    return await runInDirectory(input, dependencies, join(directory, 'report.json'));
-  } finally {
+    const report = await runInDirectory(
+      input,
+      {
+        ...dependencies,
+        spawn: async (command, arguments_, options) => {
+          execution.command = [nodeExecutable(), command, ...arguments_];
+          execution.result = await dependencies.spawn(command, arguments_, options);
+
+          return execution.result;
+        },
+      },
+      join(directory, 'report.json'),
+    );
+    const diagnostics = await saveDiagnostics(
+      {
+        directory,
+        durationMs: Math.round(performance.now() - started),
+        timeoutMs: dependencies.timeoutMs,
+        command: execution.command,
+        exitCode: execution.result?.code ?? null,
+      },
+      execution.result,
+    );
+
+    return { ...report, diagnostics };
+  } catch (error) {
     await rm(directory, { recursive: true, force: true });
+
+    throw error;
   }
 };
