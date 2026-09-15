@@ -44,3 +44,4 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0023: Use advisory TDD observations instead of edit permissions](./0023-advisory-tdd-observations.md)
 - [0024: Commit without human approval](./0024-commit-without-human-approval.md)
 - [0025: Use Git hooks without preparation](./0025-use-git-hooks-without-preparation.md)
+- [0026: Let Git hooks own commit checks](./0026-let-git-hooks-own-commit-checks.md)

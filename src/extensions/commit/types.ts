@@ -4,7 +4,12 @@ export interface CommitSuccess {
     files: string[];
     subject: string;
     body: string | null;
+    message?: string;
     hooks?: 'run';
+    hookChanges?: {
+      files: string[];
+      message: boolean;
+    };
     commentReview?: {
       status: 'passed';
       tree: string;

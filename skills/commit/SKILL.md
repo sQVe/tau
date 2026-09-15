@@ -18,8 +18,8 @@ Use this skill when the user wants to commit changes from the current working tr
   changes to evade a failure.
 - Do not ask for confirmation. Hook failures and blocking comment reviews return errors. Fix the
   cause before retrying.
-- Commit only files in the requested groups. Never add unrelated edits or rejected sensitive files
-  to clear an error.
+- Stage only files in the requested groups. Installed hooks may add paths, which the tool reports.
+  Never add unrelated edits or rejected sensitive files to clear an error.
 
 ## Procedure
 
@@ -49,10 +49,13 @@ Use this skill when the user wants to commit changes from the current working tr
      edits.
    - Fix the reported cause. Do not alter hooks to clear a blocker. Include only files that belong
      to the fix.
-   - Hook failures unstage the requested files. Hook changes to committed paths, content, or
-     messages undo the commit. Inspect the remaining changes before retrying.
+   - Hook failures unstage the requested files and return raw output. Successful hook rewrites and
+     added paths stay committed. Inspect reported changes; do not retry committed groups.
+   - If reporting fails after commit success, inspect Git history before retrying.
    - Fix blocking comment findings or supply `commentDispute` with evidence. Missing-comment
-     suggestions are advisory.
+     suggestions are advisory. After two automatic returns, remaining findings cause a refusal. Stop
+     automatic retries and report the blocker. Evidence alone cannot reopen a refused tree;
+     corrected trees can still pass review.
    - Retry only corrected and remaining groups that were not committed. Stop after three failed
      retries of the same group and report the blocker.
 
