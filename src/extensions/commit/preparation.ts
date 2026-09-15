@@ -402,6 +402,24 @@ export const snapshotPreparation = async (
           await gitBytes(root, ['diff-files', '--no-renames', '--name-only', '-z'], privateIndex),
         ),
       );
+      const indexed = new Set(
+        pathsFrom(await gitBytes(root, ['ls-files', '--cached', '-z'], privateIndex)),
+      );
+
+      // diff-files omits paths removed from the index, even when working files remain.
+      for (const path of changedIndexPaths) {
+        if (indexed.has(path)) {
+          continue;
+        }
+
+        // oxlint-disable-next-line eslint/no-await-in-loop -- Inspect only changed paths absent from the private index.
+        const status = await lstat(join(root, path)).catch(missingFile);
+
+        if (status) {
+          workingDifferences.add(path);
+        }
+      }
+
       const stagedOnly = changedIndexPaths.filter((path) => workingDifferences.has(path));
 
       if (stagedOnly.length) {
