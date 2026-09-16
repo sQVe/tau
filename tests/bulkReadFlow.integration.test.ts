@@ -30,12 +30,12 @@ import type { TestContext } from 'vitest';
 vi.setConfig({ testTimeout: 60_000 });
 
 beforeEach(() => {
-  // eslint-disable-next-line node/no-process-env -- ADR 0014 defines the delegate environment setting.
-  process.env.TAU_BULK_READ_MODEL = 'tau-delegate/reader';
+  // eslint-disable-next-line node/no-process-env -- Exercise the shared delegate setting through Pi.
+  process.env.TAU_DELEGATE_MODEL = 'tau-delegate/reader';
 });
 afterEach(() => {
-  // eslint-disable-next-line node/no-process-env -- ADR 0014 defines the delegate environment setting.
-  delete process.env.TAU_BULK_READ_MODEL;
+  // eslint-disable-next-line node/no-process-env -- Restore the integration test environment.
+  delete process.env.TAU_DELEGATE_MODEL;
 });
 
 const createHarness = async (registerCleanup: TestContext['onTestFinished']) => {

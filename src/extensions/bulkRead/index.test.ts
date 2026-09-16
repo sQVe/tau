@@ -12,11 +12,7 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import bulkReadExtension, {
-  bulkReadLineThreshold,
-  delegateReference,
-  rewriteContinuationNotice,
-} from './index.js';
+import bulkReadExtension, { bulkReadLineThreshold, rewriteContinuationNotice } from './index.js';
 
 type ToolResultEventResult = Partial<Pick<ToolResultEvent, 'content' | 'isError'>>;
 
@@ -242,12 +238,12 @@ it('turns trimming off when the registry throws at the first clamp', () => {
 });
 
 it('throws a registry miss and leaves later reads untouched', async () => {
-  vi.stubEnv('TAU_BULK_READ_MODEL', 'missing/reader');
+  vi.stubEnv('TAU_DELEGATE_MODEL', 'missing/reader');
   const app = setup();
   app.find.mockReturnValueOnce(undefined);
 
   await expect(app.execute()).rejects.toThrow(
-    'Bulk read missing/reader failed: model not found. Check pi --list-models.',
+    'Delegate missing/reader failed: model not found. Check pi --list-models.',
   );
   const read = readCall();
   app.emit('tool_call', read);
@@ -349,22 +345,56 @@ it.each(['session_start', 'session_before_switch', 'session_before_fork'] as con
   },
 );
 
-it('reads the reference from the environment and falls back to the default', () => {
-  vi.stubEnv('TAU_BULK_READ_MODEL', undefined);
+it.each(['model', '/model', 'provider/', ' ', ' provider/model', 'provider/model '])(
+  'rejects invalid shared configuration %j without clamping reads',
+  async (reference) => {
+    vi.stubEnv('TAU_DELEGATE_MODEL', reference);
+    const app = setup();
 
-  expect(delegateReference()).toBe('openai-codex/gpt-5.6-luna');
+    await expect(app.execute()).rejects.toThrow('Invalid delegate model');
+    const read = readCall();
+    app.emit('tool_call', read);
 
-  vi.stubEnv('TAU_BULK_READ_MODEL', '');
+    expect(read.input).not.toHaveProperty('limit');
+    expect(app.complete).not.toHaveBeenCalled();
+  },
+);
 
-  expect(delegateReference()).toBe('openai-codex/gpt-5.6-luna');
+it('reports delegate authentication failures without another model call', async () => {
+  const app = setup();
+  app.complete.mockRejectedValue(new Error('Authentication failed: credentials expired'));
 
-  vi.stubEnv('TAU_BULK_READ_MODEL', 'openrouter/vendor/model');
+  await expect(app.execute()).rejects.toThrow('Authentication failed: credentials expired');
 
-  expect(delegateReference()).toBe('openrouter/vendor/model');
+  expect(app.complete).toHaveBeenCalledOnce();
+  const read = readCall();
+  app.emit('tool_call', read);
+
+  expect(read.input).not.toHaveProperty('limit');
+});
+
+it('reads the shared reference and ignores the removed bulk-read setting', async () => {
+  vi.stubEnv('TAU_DELEGATE_MODEL', undefined);
+  vi.stubEnv('TAU_BULK_READ_MODEL', 'removed/model');
+  const app = setup();
+
+  await app.execute();
+
+  expect(app.find).toHaveBeenLastCalledWith('openai-codex', 'gpt-5.6-luna');
+
+  vi.stubEnv('TAU_DELEGATE_MODEL', '');
+  await app.execute();
+
+  expect(app.find).toHaveBeenLastCalledWith('openai-codex', 'gpt-5.6-luna');
+
+  vi.stubEnv('TAU_DELEGATE_MODEL', 'openrouter/vendor/model');
+  await app.execute();
+
+  expect(app.find).toHaveBeenLastCalledWith('openrouter', 'vendor/model');
 });
 
 it('splits the reference at the first slash and passes the rest as the model id', async () => {
-  vi.stubEnv('TAU_BULK_READ_MODEL', 'openrouter/vendor/model');
+  vi.stubEnv('TAU_DELEGATE_MODEL', 'openrouter/vendor/model');
   const app = setup();
 
   await app.execute();

@@ -498,7 +498,11 @@ it('rejects unformatted files in the real hook without rewriting them', async ({
 });
 
 it('runs commit hooks through Pi without approval or TDD notices', async ({ onTestFinished }) => {
-  const { cwd, session, call } = await createHarness(onTestFinished);
+  const { cwd, session, call, faux } = await createHarness(onTestFinished);
+  vi.stubEnv('TAU_DELEGATE_MODEL', `${faux.getModel().provider}/${faux.getModel().id}`);
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
   const git = (arguments_: string[]) => promisify(execFile)('git', arguments_, { cwd });
 
   await writeFile(join(cwd, '.git/info/exclude'), 'node_modules\n');

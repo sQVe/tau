@@ -2,6 +2,7 @@ import { isToolCallEventType } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
+import { resolveDelegate } from '../../delegateModel/index.js';
 import { bulkReadInputError, bulkReadTool, bulkRead } from './tool.js';
 
 // ADR 0014 records the measurement behind this threshold.
@@ -9,14 +10,6 @@ export const bulkReadLineThreshold = 400;
 
 // Recoverable failures say nothing about whether the delegate is reachable, so trimming stays on.
 const recoverableErrors = new Set(['AbortError', 'TimeoutError', bulkReadInputError]);
-
-export const delegateReference = (): string => {
-  // eslint-disable-next-line node/no-process-env -- ADR 0014 defines the delegate environment setting.
-  const reference = process.env.TAU_BULK_READ_MODEL;
-
-  // An exported but empty setting means unset, so it takes the default rather than a missing model.
-  return reference == null || reference === '' ? 'openai-codex/gpt-5.6-luna' : reference;
-};
 
 export const rewriteContinuationNotice = (text: string): string =>
   text.replace(
@@ -41,18 +34,11 @@ export const rewriteContinuationNotice = (text: string): string =>
     },
   );
 
-const findDelegate = (ctx: ExtensionContext, reference: string) => {
-  const [provider, ...id] = reference.split('/');
-
-  // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model ID, not an array callback and thisArg.
-  return ctx.modelRegistry.find(provider ?? '', id.join('/'));
-};
-
 // A throwing registry would escape the hook and block the read itself, so clamping falls back to
 // stock behavior instead. The tool path still reports the error.
 const clampDelegate = (ctx: ExtensionContext) => {
   try {
-    return findDelegate(ctx, delegateReference());
+    return resolveDelegate(ctx);
   } catch {
     return undefined;
   }
@@ -79,13 +65,7 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       try {
-        const reference = delegateReference();
-        const model = findDelegate(ctx, reference);
-        if (!model) {
-          throw new Error(
-            `Bulk read ${reference} failed: model not found. Check pi --list-models.`,
-          );
-        }
+        const model = resolveDelegate(ctx);
 
         return await bulkRead(ctx, model, params, signal);
       } catch (error) {

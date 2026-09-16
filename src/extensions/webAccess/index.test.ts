@@ -1,22 +1,55 @@
-import type { ExtensionAPI, ToolCallEvent } from '@earendil-works/pi-coding-agent';
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { fauxProvider } from '@earendil-works/pi-ai';
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ToolCallEvent,
+} from '@earendil-works/pi-coding-agent';
+import { afterEach, expect, it, vi } from 'vitest';
 
 import webAccessExtension from './index.js';
 
-it('sets the delegate only for answer fetches without an explicit answerModel', () => {
-  vi.stubEnv('TAU_BULK_READ_MODEL', 'test-provider/delegate');
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-  const handlers = new Map<string, (event: ToolCallEvent) => void>();
+const setup = () => {
+  const delegate = fauxProvider({
+    provider: 'test-provider',
+    models: [{ id: 'delegate' }],
+  }).getModel();
+  const override = fauxProvider({ provider: 'custom', models: [{ id: 'model' }] }).getModel();
+  const available = [delegate, override];
+  const find = vi.fn<ExtensionContext['modelRegistry']['find']>((provider, id) =>
+    available.find((model) => model.provider === provider && model.id === id),
+  );
+  const getAvailable = vi.fn<ExtensionContext['modelRegistry']['getAvailable']>(() => available);
+  const context = { modelRegistry: { find, getAvailable } } as unknown as ExtensionContext;
+  const handlers = new Map<string, (event: ToolCallEvent, context: ExtensionContext) => void>();
 
   webAccessExtension({
-    on: (name: string, handler: (event: ToolCallEvent) => void) => handlers.set(name, handler),
+    on: (name: string, handler: (event: ToolCallEvent, context: ExtensionContext) => void) =>
+      handlers.set(name, handler),
   } as unknown as ExtensionAPI);
 
+  const emit = (input: Record<string, unknown>, toolName = 'fetch_content') => {
+    const event: ToolCallEvent = { type: 'tool_call', toolCallId: 'fetch', toolName, input };
+    handlers.get('tool_call')?.(event, context);
+
+    return event.input;
+  };
+
+  return { emit, find, getAvailable };
+};
+
+afterEach(() => vi.unstubAllEnvs());
+
+it('sets the delegate only for answer fetches without an explicit answerModel', () => {
+  vi.stubEnv('TAU_DELEGATE_MODEL', 'test-provider/delegate');
+  const app = setup();
   const cases = [
     { toolName: 'fetch_content', input: { mode: 'answer' }, answerModel: 'test-provider/delegate' },
     { toolName: 'fetch_content', input: { mode: 'answer', answerModel: 'custom/model' } },
+    {
+      toolName: 'fetch_content',
+      input: { mode: 'answer', answerModel: ' custom/model ' },
+      answerModel: 'custom/model',
+    },
     {
       toolName: 'fetch_content',
       input: { mode: 'answer', answerModel: '' },
@@ -34,11 +67,43 @@ it('sets the delegate only for answer fetches without an explicit answerModel', 
   ];
 
   for (const { toolName, input, answerModel } of cases) {
-    const event: ToolCallEvent = { type: 'tool_call', toolCallId: 'fetch', toolName, input };
     const expected = { ...input, ...(answerModel === undefined ? {} : { answerModel }) };
 
-    handlers.get('tool_call')?.(event);
-
-    expect(event.input).toStrictEqual(expected);
+    expect(app.emit(input, toolName)).toStrictEqual(expected);
   }
+});
+
+it('uses an explicit web override even when the shared configuration is invalid', () => {
+  vi.stubEnv('TAU_DELEGATE_MODEL', 'invalid');
+  const app = setup();
+
+  expect(app.emit({ mode: 'answer', answerModel: 'custom/model' })).toEqual({
+    mode: 'answer',
+    answerModel: 'custom/model',
+  });
+});
+
+it.each(['invalid', 'missing/model'])(
+  'rejects invalid or missing web delegates: %s',
+  (reference) => {
+    vi.stubEnv('TAU_DELEGATE_MODEL', reference);
+    const app = setup();
+
+    expect(() => app.emit({ mode: 'answer' })).toThrow(
+      reference === 'invalid' ? 'Invalid delegate model' : 'model not found',
+    );
+    expect(app.emit({ mode: 'raw' })).toEqual({ mode: 'raw' });
+  },
+);
+
+it('blocks unavailable web delegates instead of letting the package route to another provider', () => {
+  vi.stubEnv('TAU_DELEGATE_MODEL', 'test-provider/delegate');
+  const app = setup();
+  const routed = fauxProvider({
+    provider: 'router',
+    models: [{ id: 'test-provider/delegate' }],
+  }).getModel();
+  app.getAvailable.mockReturnValue([routed]);
+
+  expect(() => app.emit({ mode: 'answer' })).toThrow('not available');
 });

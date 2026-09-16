@@ -110,7 +110,7 @@ const createScriptedUI = (overlays: string[]): ExtensionUIContext =>
 
 const createHarness = async (
   registerCleanup: RegisterCleanup,
-  options: { hasUI?: boolean } = {},
+  options: { hasUI?: boolean; delegate?: FauxProviderHandle } = {},
 ): Promise<Harness> => {
   const repositoryDirectory = await createTemporaryRepository(registerCleanup);
   const agentDirectory = await createTemporaryDirectory(registerCleanup, 'tau-flow-agent-');
@@ -118,6 +118,11 @@ const createHarness = async (
   isolateWebAccessConfig(agentDirectory, registerCleanup);
 
   const faux = fauxProvider({ provider: 'tau-test' });
+  const delegate = options.delegate ?? faux;
+  vi.stubEnv('TAU_DELEGATE_MODEL', `${delegate.getModel().provider}/${delegate.getModel().id}`);
+  registerCleanup(() => {
+    vi.unstubAllEnvs();
+  });
   const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
   const loader = new DefaultResourceLoader({
     cwd: repositoryDirectory,
@@ -144,6 +149,9 @@ const createHarness = async (
   });
 
   modelRuntime.registerNativeProvider(faux.provider);
+  if (delegate !== faux) {
+    modelRuntime.registerNativeProvider(delegate.provider);
+  }
 
   const { session, extensionsResult } = await createAgentSession({
     cwd: repositoryDirectory,
@@ -189,6 +197,73 @@ const toolResultOf = (events: AgentSessionEvent[], toolName: string) => {
 };
 
 describe('commit flow', () => {
+  it('uses a separate delegate for review while the session model keeps control', async ({
+    onTestFinished,
+  }) => {
+    const delegate = fauxProvider({ provider: 'review-delegate' });
+    const { session, faux, repositoryDirectory, events } = await createHarness(onTestFinished, {
+      delegate,
+    });
+    await writeFile(join(repositoryDirectory, 'feature.txt'), 'hello\n');
+    faux.setResponses([
+      fauxAssistantMessage([
+        fauxToolCall('commit', {
+          groups: [{ files: ['feature.txt'], subject: 'feat: add feature' }],
+        }),
+      ]),
+      fauxAssistantMessage('Committed.'),
+    ]);
+    delegate.setResponses([fauxAssistantMessage('{"findings":[]}')]);
+
+    await session.prompt('Commit the file.');
+
+    expect(toolResultOf(events, 'commit').isError).toBe(false);
+    expect(session.model?.provider).toBe('tau-test');
+    expect(delegate.state.callCount).toBe(1);
+    expect(faux.state.callCount).toBe(2);
+  });
+
+  it.for(['invalid', 'missing', 'authentication', 'provider'] as const)(
+    'blocks commits on delegate %s failure without falling back',
+    async (failure, { onTestFinished }) => {
+      const delegate = fauxProvider({ provider: 'review-delegate' });
+      const { session, faux, repositoryDirectory, events } = await createHarness(onTestFinished, {
+        delegate,
+      });
+      await writeFile(join(repositoryDirectory, 'feature.txt'), 'hello\n');
+      if (failure === 'invalid' || failure === 'missing') {
+        vi.stubEnv('TAU_DELEGATE_MODEL', failure === 'invalid' ? 'invalid' : 'missing/model');
+      } else if (failure === 'authentication') {
+        const authentication = vi
+          .spyOn(delegate.provider.auth.apiKey!, 'resolve')
+          .mockRejectedValue(new Error('credentials expired'));
+        onTestFinished(() => {
+          authentication.mockRestore();
+        });
+      }
+      delegate.setResponses([
+        fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'provider unavailable' }),
+      ]);
+      faux.setResponses([
+        fauxAssistantMessage([
+          fauxToolCall('commit', {
+            groups: [{ files: ['feature.txt'], subject: 'feat: add feature' }],
+          }),
+        ]),
+        fauxAssistantMessage('Stopped.'),
+      ]);
+
+      await session.prompt('Commit the file.');
+
+      expect(toolResultOf(events, 'commit').isError).toBe(true);
+      expect(faux.state.callCount).toBe(2);
+      expect((await git(repositoryDirectory, ['log', '-1', '--pretty=%s'])).trim()).toBe(
+        'chore: initial commit',
+      );
+      expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
+    },
+  );
+
   it('preserves the provider-resolved endpoint during comment review', async ({
     onTestFinished,
   }) => {

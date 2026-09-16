@@ -35,11 +35,29 @@ pnpm exec pi --no-extensions --no-skills -e ./src/extensions/index.ts \
   -e ./node_modules/pi-web-access/index.ts --skill ./skills/commit
 ```
 
-Set `TAU_BULK_READ_MODEL=provider/id` before launching Pi to choose the bulk-read delegate. It
-defaults to `openai-codex/gpt-5.6-luna` and uses Pi's model registry and credentials. For example,
-prefix the launch command with `TAU_BULK_READ_MODEL=openrouter/vendor/model` for a model your
-account can access. The reference must match `pi --list-models` exactly. `TAU_BULK_READ_MODEL` also
-drives answer-mode `fetch_content` calls unless the call passes `answerModel`.
+Set `TAU_DELEGATE_MODEL=provider/id` before launching Pi to choose the delegate for `bulk_read`,
+answer-mode `fetch_content`, and commit comment review. This does not change Pi's session model.
+Unset or empty settings use `openai-codex/gpt-5.6-luna`. Tau uses Pi's model registry and
+credentials; the reference must match `pi --list-models` exactly, with no whitespace. Model IDs may
+contain slashes. For example, prefix the launch command with
+`TAU_DELEGATE_MODEL=openrouter/vendor/model` for a model your account can access.
+`TAU_BULK_READ_MODEL` has been removed and is ignored.
+
+For web answers, a nonblank per-call `answerModel` wins over the shared setting, then the built-in
+default. Tau continues to override `fetch.answerProvider` and `fetch.answerModel` in the web
+package's configuration. Other web modes are unchanged.
+
+Per-call overrides also require the exact provider and model reference. Unlike the web package's
+standalone behavior, Tau does not infer a router from a native-provider reference. If a model is
+available only through OpenRouter, use its full reference, such as `openrouter/anthropic/model-id`,
+rather than `anthropic/model-id`. Check the provider and model ID columns in `pi --list-models` for
+the exact values.
+
+Invalid references, missing models, and authentication or provider failures return errors rather
+than switch to another model or provider. Failed comment review blocks the commit. Bulk-read hard
+failures stop read clamping for the session, so ordinary reads remain available. Cancellation,
+timeouts, input limits, and length stops do not disable clamping. The
+[shared-delegate decision](adr/0027-share-one-delegate-model.md) records the default's comparison.
 
 Pass all three extension entries. `package.json` declares the same set, so a checkout that loads
 only `./src/extensions/index.ts` is missing the bundled question and web tools and reports it at
@@ -90,8 +108,8 @@ the terminal and check that the right group truncates before the left.
 
 ### Commits
 
-Use a temporary repository. Comment review calls the model currently selected in Pi, so that model
-needs working credentials.
+Use a temporary repository. Comment review calls the shared delegate, so that model needs working
+credentials.
 
 1. Change a file with an accurate comment and call `commit`. Let the tool stage the file. Check that
    a clean review commits without a prompt.

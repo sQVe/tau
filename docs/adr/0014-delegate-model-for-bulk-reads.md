@@ -187,6 +187,8 @@ edge cases rather than reading the file a second time:
 
 ## See also
 
+- [ADR 0027: Share one delegate model](./0027-share-one-delegate-model.md) replaces the environment
+  setting and the restriction on delegating comment review.
 - [Vision](../vision.md)
 - [ADR 0008: Coding instructions](./0008-coding-instructions.md)
 - [ADR 0005: Integration testing against a real Pi session](./0005-integration-testing-with-pi.md)
