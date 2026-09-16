@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +13,7 @@ import { expect, it, vi } from 'vitest';
 
 import { resolveLoadout } from './loadout.js';
 import * as loadoutModule from './loadout.js';
-import { discoverProfiles, parseProfile } from './profiles.js';
+import { resolveProfile, parseProfile } from './profiles.js';
 
 const closure = (setting: string) => () => setting;
 
@@ -32,6 +32,29 @@ it('refuses distinct provider closures even when their source text matches', () 
 });
 
 const profile = (body: string) => `---\nname: worker\nrole: editing\nthinking: off\n---\n${body}`;
+
+it('defaults bundled roles to medium effort without model or effort settings in markdown', () => {
+  for (const name of ['investigator', 'worker']) {
+    const source = new URL(`./profiles/${name}.md`, import.meta.url);
+    const content = readFileSync(source, 'utf8');
+
+    expect(content).not.toMatch(/^(?:model|thinking|effort):/m);
+    expect(parseProfile(content, name, source.pathname)).toMatchObject({
+      name,
+      model: undefined,
+      thinking: 'medium',
+    });
+  }
+});
+
+it('preserves custom thinking profiles and rejects invalid settings without normalization', () => {
+  expect(parseProfile(profile('Custom instructions.'), 'worker', 'fixture').thinking).toBe('off');
+  for (const thinking of ['invalid', 'Medium', 'maximum']) {
+    expect(() =>
+      parseProfile(`---\nrole: editing\nthinking: ${thinking}\n---\nTask`, 'worker', 'fixture'),
+    ).toThrow('Invalid profile thinking level');
+  }
+});
 
 it('reproduces CLI provider integrations but refuses runtime headers and invalid authority', async ({
   onTestFinished,
@@ -76,6 +99,30 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
     model: 'tau-worker-fixture/faux-1',
   };
   const resolved = await resolveLoadout(request, context, pi);
+  const withoutModel = { profile: 'worker', permissions: 'trusted-full-tools' };
+  await expect(resolveLoadout(withoutModel, context, pi)).rejects.toThrow('no fallback');
+  vi.stubEnv('TAU_SUBAGENT_MODEL', request.model);
+  expect((await resolveLoadout(withoutModel, context, pi)).model).toBe(request.model);
+
+  mkdirSync(join(directory, 'agents'));
+  const customProfile = join(directory, 'agents', 'worker.md');
+  writeFileSync(
+    customProfile,
+    profile('Custom task.').replace('role: editing', `role: editing\nmodel: ${request.model}`),
+  );
+  vi.stubEnv('TAU_SUBAGENT_MODEL', 'missing/environment');
+  expect((await resolveLoadout(withoutModel, context, pi)).model).toBe(request.model);
+  writeFileSync(
+    customProfile,
+    profile('Custom task.').replace('role: editing', 'role: editing\nmodel: missing/profile'),
+  );
+  await expect(resolveLoadout(withoutModel, context, pi)).rejects.toThrow('missing/profile');
+  expect((await resolveLoadout(request, context, pi)).model).toBe(request.model);
+  await expect(resolveLoadout({ ...request, model: 'invalid model' }, context, pi)).rejects.toThrow(
+    'no fallback',
+  );
+  rmSync(customProfile);
+
   const authStarted = Promise.withResolvers<undefined>();
   const stalledAuth =
     Promise.withResolvers<Awaited<ReturnType<ModelRegistry['getApiKeyAndHeaders']>>>();
@@ -138,6 +185,97 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
   await expect(resolveLoadout(request, context, pi)).rejects.toThrow('CC Safety Net');
 });
 
+it('selects a valid named winner using the strict parser whitespace syntax', ({
+  onTestFinished,
+}) => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-profile-whitespace-'));
+  onTestFinished(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const project = join(directory, '.pi', 'agents');
+  mkdirSync(project, { recursive: true });
+  const source = join(project, 'custom.md');
+  const content = profile('Winning instructions.').replace('name: worker', 'name:\rworker');
+  writeFileSync(source, content);
+
+  expect(parseProfile(content, 'custom', source).name).toBe('worker');
+  expect(resolveProfile(directory, directory, true, 'worker')).toMatchObject({
+    source,
+    name: 'worker',
+    instructions: 'Winning instructions.',
+  });
+});
+
+it('rejects an invalid named winner using the strict parser whitespace syntax', ({
+  onTestFinished,
+}) => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-profile-whitespace-'));
+  onTestFinished(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const project = join(directory, '.pi', 'agents');
+  mkdirSync(project, { recursive: true });
+  const content = profile('Invalid winning instructions.')
+    .replace('name: worker', 'name:\rworker')
+    .replace('thinking: off', 'thinking: invalid');
+  writeFileSync(join(project, 'custom.md'), content);
+
+  expect(() => resolveProfile(directory, directory, true, 'worker')).toThrow(
+    'Invalid profile thinking level.',
+  );
+});
+
+it('validates only the requested winning profile and rejects malformed overrides', ({
+  onTestFinished,
+}) => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-profile-selection-'));
+  onTestFinished(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const user = join(directory, 'agents');
+  const project = join(directory, '.pi', 'agents');
+  mkdirSync(user);
+  mkdirSync(project, { recursive: true });
+  writeFileSync(join(user, 'unrelated.md'), 'Not a profile.');
+  writeFileSync(join(user, 'renamed.md'), profile('Invalid overridden.').replace('editing', 'bad'));
+  const winner = join(project, 'custom.md');
+  writeFileSync(winner, profile('Chosen project instructions.'));
+  const selected = () => resolveProfile(directory, directory, true, 'worker');
+
+  expect(selected()).toMatchObject({
+    name: 'worker',
+    source: winner,
+    instructions: 'Chosen project instructions.',
+  });
+  for (const content of [
+    profile('Task').replace('editing', 'bad'),
+    profile('Task').replace('thinking: off', 'thinking: invalid'),
+    profile('Task').replace('thinking: off', 'tools: read'),
+    '---\nname: worker\nrole: editing\nTask without closing frontmatter',
+  ]) {
+    writeFileSync(winner, content);
+    expect(selected).toThrow(/Profile requires|Invalid profile|Unsupported/);
+  }
+  rmSync(winner);
+  for (const content of [
+    'Malformed winning profile.',
+    '---\nname:\nrole: editing\n---\nTask',
+    '---\nname: worker\nname: renamed\nrole: editing\n---\nTask',
+  ]) {
+    writeFileSync(join(project, 'worker.md'), content);
+    expect(selected).toThrow(/Invalid profile|Unsupported/);
+  }
+  writeFileSync(
+    join(project, 'worker.md'),
+    profile('Renamed instructions.').replace('name: worker', 'name: custom'),
+  );
+  expect(resolveProfile(directory, directory, true, 'custom')?.instructions).toBe(
+    'Renamed instructions.',
+  );
+  expect(selected).toThrow('Profile requires');
+  expect(resolveProfile(directory, directory, true, 'missing')).toBeUndefined();
+});
+
 it('resolves profile precedence and refuses discarded isolation and transcript settings', ({
   onTestFinished,
 }) => {
@@ -150,14 +288,12 @@ it('resolves profile precedence and refuses discarded isolation and transcript s
   writeFileSync(join(directory, 'agents', 'worker.md'), profile('User instructions.'));
   writeFileSync(join(directory, '.pi', 'agents', 'worker.md'), profile('Project instructions.'));
 
-  expect(
-    discoverProfiles(directory, directory, true).find((entry) => entry.name === 'worker')
-      ?.instructions,
-  ).toBe('Project instructions.');
-  expect(
-    discoverProfiles(directory, directory, false).find((entry) => entry.name === 'worker')
-      ?.instructions,
-  ).toBe('User instructions.');
+  expect(resolveProfile(directory, directory, true, 'worker')?.instructions).toBe(
+    'Project instructions.',
+  );
+  expect(resolveProfile(directory, directory, false, 'worker')?.instructions).toBe(
+    'User instructions.',
+  );
   expect(() =>
     parseProfile('---\nrole: editing\nsession-mode: fork\n---\nTask', 'worker', 'fixture'),
   ).toThrow('lineage-only');

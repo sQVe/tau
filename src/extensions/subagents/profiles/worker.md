@@ -1,7 +1,6 @@
 ---
 name: worker
 role: editing
-thinking: medium
 ---
 
 Implement the assigned change. Read source, callers, tests, and project rules first. Preserve

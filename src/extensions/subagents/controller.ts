@@ -172,6 +172,7 @@ const launchTiming = (timeout: number, startedAt?: { wall: number; monotonic: nu
 export class WorkerController {
   readonly ownerId = randomUUID();
   private readonly handles = new Map<string, Handle>();
+  private readonly lifetime = new AbortController();
   private closed = false;
 
   constructor(
@@ -215,9 +216,11 @@ export class WorkerController {
       cancellationBudget,
       loadout: input.loadout,
     });
+
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     publish(directory, 'task.json', task);
     seedSession(task);
+
     const handle: Handle = {
       directory,
       task,
@@ -225,6 +228,7 @@ export class WorkerController {
       expires,
     };
     this.handles.set(taskId, handle);
+
     const abortLaunch = () => {
       void this.stop(handle, 'cancelled');
     };
@@ -403,6 +407,9 @@ export class WorkerController {
     handle.removeLaunchAbort?.();
     handle.abort.abort();
     handle.stopping = this.cleanup(handle, reason).catch((error: unknown) => {
+      if (this.closed) {
+        return;
+      }
       this.notify(
         `Worker ${handle.task.taskId}: cleanup unconfirmed. ${String(error)}. Check pane ${handle.paneId ?? 'unknown'} manually.`,
       );
@@ -428,16 +435,19 @@ export class WorkerController {
       1,
       Math.floor(Math.min(task.cancellationBudget, handle.expires - performance.now())),
     );
-    const signal = AbortSignal.timeout(budget);
+    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(budget)]);
+    const call = (arguments_: string[]) => {
+      signal.throwIfAborted();
+
+      return this.client(arguments_, budget, signal);
+    };
     let stopped = false;
     let detail = `Cleanup unconfirmed. Check pane ${handle.paneId ?? 'unknown'} manually. No automatic retry.`;
 
     if (owned) {
       const shellIsOwned = async () => {
         const information = object(
-          result(
-            await this.client(['pane', 'process-info', '--pane', owned.paneId], budget, signal),
-          ).process_info,
+          result(await call(['pane', 'process-info', '--pane', owned.paneId])).process_info,
         );
 
         return (
@@ -449,6 +459,7 @@ export class WorkerController {
       };
       try {
         stopped = await shellIsOwned();
+        signal.throwIfAborted();
         if (!stopped) {
           const cancellation = await cancelOwnedWorker(
             owned,
@@ -461,7 +472,7 @@ export class WorkerController {
         }
         // Close only an unchanged shell after the owned process has exited. Never close a reused pane.
         if (stopped && (await shellIsOwned())) {
-          await this.client(['pane', 'close', owned.paneId], budget, signal);
+          await call(['pane', 'close', owned.paneId]);
           detail = 'Owned process stopped and pane closed. Detached descendants are not covered.';
         }
       } catch (error) {
@@ -469,7 +480,7 @@ export class WorkerController {
       }
     }
     recordEvent(directory, task.taskId, 'cleanup', detail, stopped);
-    if (!readEvent(directory, task.taskId, 'notified')) {
+    if (!this.closed && !readEvent(directory, task.taskId, 'notified')) {
       recordEvent(directory, task.taskId, 'notified', 'Parent notification attempted once.');
       this.notify(
         `Worker ${task.taskId}: ${taskStatus(directory, this.ownerId).outcome}. ${detail} Records: ${directory}`,
@@ -513,6 +524,8 @@ export class WorkerController {
 
   close(): void {
     this.closed = true;
+    this.lifetime.abort();
+
     for (const handle of this.handles.values()) {
       clearTimeout(handle.timer);
       handle.removeLaunchAbort?.();

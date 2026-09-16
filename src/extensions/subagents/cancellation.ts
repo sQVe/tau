@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 
 export interface OwnedWorker {
   readonly kind: 'process' | 'pi';
@@ -15,27 +16,7 @@ interface CleanupResult {
   detail: string;
 }
 
-interface DeadlineResult extends CleanupResult {
-  reason: 'timeout' | 'parent-stopped';
-  output: 'incomplete';
-}
-
 type Client = (arguments_: string[], budget: number, signal: AbortSignal) => Promise<string>;
-
-const delay = (milliseconds: number, signal: AbortSignal): Promise<void> =>
-  new Promise((resolve, reject) => {
-    signal.throwIfAborted();
-    const finish = () => {
-      signal.removeEventListener('abort', abort);
-      resolve();
-    };
-    const abort = () => {
-      clearTimeout(timer);
-      reject(new Error('Parent or cancellation budget ended.'));
-    };
-    const timer = setTimeout(finish, milliseconds);
-    signal.addEventListener('abort', abort, { once: true });
-  });
 
 const validateBudget = (budget: number) => {
   if (!Number.isSafeInteger(budget) || budget <= 0 || budget > 2_147_483_647) {
@@ -242,56 +223,11 @@ export const cancelOwnedWorker = async (
       }
 
       // oxlint-disable-next-line eslint/no-await-in-loop -- Polling is bounded by the shared cancellation signal.
-      await delay(25, signal);
+      await delay(25, undefined, { signal });
     }
   } catch (error) {
     return { cleanup: 'unconfirmed', detail: `${String(error)} ${manual}` };
   } finally {
     clearTimeout(timer);
   }
-};
-
-// Keep this handle in the active parent. Reconnect observes it; it never launches or resubmits work.
-export const createParentDeadline = (
-  worker: OwnedWorker,
-  timeout: number,
-  cancellationBudget: number,
-  client: Client,
-  parent: AbortSignal,
-) => {
-  validateBudget(timeout);
-  validateBudget(cancellationBudget);
-  const owned = { ...worker };
-  validateWorker(owned);
-  if (cancellationBudget >= timeout) {
-    throw new Error('Reserve a cancellation budget smaller than the total task timeout.');
-  }
-
-  const deadline = performance.now() + timeout;
-  const result: Promise<DeadlineResult> = (async () => {
-    try {
-      await delay(timeout - cancellationBudget, parent);
-      const remaining = Math.ceil(deadline - performance.now());
-      if (remaining <= 0) {
-        throw new Error('The fixed deadline expired before cancellation could start.');
-      }
-
-      const cleanup = await cancelOwnedWorker(owned, remaining, client, parent);
-
-      return {
-        ...cleanup,
-        reason: parent.aborted ? 'parent-stopped' : 'timeout',
-        output: 'incomplete',
-      };
-    } catch (error) {
-      return {
-        reason: parent.aborted ? 'parent-stopped' : 'timeout',
-        output: 'incomplete',
-        cleanup: 'unconfirmed',
-        detail: `${String(error)} No continuing enforcement is promised. Check ${owned.paneId} for manual cleanup.`,
-      };
-    }
-  })();
-
-  return { deadline, watch: () => result };
 };

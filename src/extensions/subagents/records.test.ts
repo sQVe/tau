@@ -53,6 +53,28 @@ it('keeps report and event publication within their existing byte limits', ({ on
   expect(records.readEvent(directory, 'task-one', 'ready')?.detail).toBe(accepted.summary);
 });
 
+it('rejects oversized Unicode reports during recovery without replacing evidence', ({
+  onTestFinished,
+}) => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-report-recovery-'));
+  onTestFinished(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const report = {
+    taskId: 'task-one',
+    outcome: 'success',
+    summary: '界'.repeat(22_000),
+    evidence: [],
+  };
+  records.publish(directory, 'report.json', report);
+  const original = readFileSync(join(directory, 'report.json'), 'utf8');
+
+  expect(Buffer.byteLength(original)).toBeGreaterThan(64_000);
+  expect(Buffer.byteLength(original)).toBeLessThan(128_000);
+  expect(() => records.readReport(directory, 'task-one')).toThrow('Invalid saved worker report.');
+  expect(readFileSync(join(directory, 'report.json'), 'utf8')).toBe(original);
+});
+
 it('accepts one validated report without replacing durable evidence', ({ onTestFinished }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-worker-records-'));
   onTestFinished(() => {

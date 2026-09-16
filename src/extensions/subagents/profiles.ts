@@ -9,10 +9,12 @@ import { Value } from 'typebox/value';
 import { thinkingSchema } from './types.js';
 import type { Profile, Task } from './types.js';
 
+const matchField = (line: string) => line.match(/^([a-z-]+):\s*(.+)$/);
+
 const parseFields = (frontmatter: string) => {
   const fields = new Map<string, string>();
   for (const line of frontmatter.split('\n')) {
-    const [, key = '', value = ''] = line.match(/^([a-z-]+):\s*(.+)$/) ?? [];
+    const [, key = '', value = ''] = matchField(line) ?? [];
     if (
       !key ||
       fields.has(key) ||
@@ -80,12 +82,13 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
   };
 };
 
-export const discoverProfiles = (
+export const resolveProfile = (
   cwd: string,
   agentDirectory: string,
   trusted: boolean,
-): Profile[] => {
-  const profiles = new Map<string, Profile>();
+  requestedName: string,
+): Profile | undefined => {
+  let winner: { content: string; fallbackName: string; source: string } | undefined;
   const directories = [
     fileURLToPath(new URL('./profiles/', import.meta.url)),
     join(agentDirectory, 'agents'),
@@ -100,12 +103,25 @@ export const discoverProfiles = (
       .filter((name) => name.endsWith('.md'))
       .toSorted()) {
       const source = join(directory, file);
-      const profile = parseProfile(readFileSync(source, 'utf8'), file.slice(0, -3), source);
-      profiles.set(profile.name, profile);
+      const content = readFileSync(source, 'utf8');
+      const fallbackName = file.slice(0, -3);
+      // Read only identity before selection. A malformed winner must still reach strict validation.
+      const frontmatter = content
+        .replaceAll('\r\n', '\n')
+        .match(/^---\n([\s\S]*?)(?:\n---(?:\n|$)|$)/)?.[1];
+      const name =
+        frontmatter
+          ?.split('\n')
+          .map(matchField)
+          .find((field) => field?.[1] === 'name')?.[2]
+          ?.trim() ?? fallbackName;
+      if (name === requestedName) {
+        winner = { content, fallbackName, source };
+      }
     }
   }
 
-  return [...profiles.values()];
+  return winner ? parseProfile(winner.content, winner.fallbackName, winner.source) : undefined;
 };
 
 export const seedSession = (task: Task): void => {

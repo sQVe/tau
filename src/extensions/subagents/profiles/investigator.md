@@ -1,7 +1,6 @@
 ---
 name: investigator
 role: investigation
-thinking: medium
 ---
 
 Investigate the assigned question. Read source, callers, tests, and project rules. Run relevant

@@ -28,7 +28,11 @@ export const fixtureLoadout = (directory: string): Loadout => {
   };
 };
 
-const setup = (onTestFinished: (callback: () => void) => void, readyDelay = 0) => {
+const setup = (
+  onTestFinished: (callback: () => void) => void,
+  readyDelay = 0,
+  intercept?: HerdrClient,
+) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-controller-'));
   onTestFinished(() => {
     vi.useRealTimers();
@@ -36,8 +40,14 @@ const setup = (onTestFinished: (callback: () => void) => void, readyDelay = 0) =
   });
   let token = '';
   const calls: string[][] = [];
-  const client: HerdrClient = async (arguments_) => {
+  const client: HerdrClient = async (arguments_, budget, signal) => {
     calls.push(arguments_);
+    if (intercept) {
+      const response = await intercept(arguments_, budget, signal);
+      if (response) {
+        return response;
+      }
+    }
     if (arguments_[1] === 'split') {
       return JSON.stringify({ result: { pane: { pane_id: 'owned-pane' } } });
     }
@@ -124,6 +134,14 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
   });
   expect(task.nativeSessionId).not.toBe(task.taskId);
   expect(task.loadout).toEqual(input.loadout);
+  expect(workerArguments(task).slice(3, 9)).toEqual([
+    '--provider',
+    'faux',
+    '--model',
+    'test',
+    '--thinking',
+    'off',
+  ]);
   expect(workerArguments(task)).not.toContain('--no-extensions');
   expect(workerArguments(task)).toContain(input.loadout.safetyExtension);
   expect(launched.accepted).toBe(false);
@@ -233,6 +251,100 @@ it('includes prior loadout resolution in the original task deadline', async ({
   await vi.advanceTimersByTimeAsync(3600);
   await controller.cancel(launched.taskId, 'parent-id');
   expect(controller.status(launched.taskId, 'parent-id').outcome).toBe('timeout');
+});
+
+it('ends enforcement on parent shutdown without claiming cleanup', async ({ onTestFinished }) => {
+  vi.useFakeTimers();
+  const { controller, calls, input, notifications } = setup(onTestFinished);
+  const launched = await controller.launch(input);
+  const callCount = calls.length;
+
+  controller.close();
+  await vi.advanceTimersByTimeAsync(20_000);
+
+  expect(controller.status(launched.taskId, 'parent-id')).toMatchObject({
+    outcome: 'incomplete',
+    stopped: false,
+    deadlineActive: false,
+  });
+  expect(calls).toHaveLength(callCount);
+  expect(notifications).toEqual([]);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('ends in-flight cleanup on parent shutdown without further calls or notification', async ({
+  onTestFinished,
+}) => {
+  const entered = Promise.withResolvers<AbortSignal>();
+  const released = Promise.withResolvers<string>();
+  let cleaning = false;
+  const { controller, input, calls, notifications } = setup(
+    onTestFinished,
+    0,
+    async (_arguments, _budget, signal) => {
+      if (!cleaning || !signal) {
+        return '';
+      }
+      entered.resolve(signal);
+
+      return released.promise;
+    },
+  );
+  const launched = await controller.launch(input);
+  cleaning = true;
+  const cancellation = controller.cancel(launched.taskId, 'parent-id');
+  const signal = await entered.promise;
+  const callCount = calls.length;
+
+  controller.close();
+  const abortedOnClose = signal.aborted;
+  released.resolve(JSON.stringify({ result: { process_info: {} } }));
+  await cancellation;
+
+  expect(abortedOnClose).toBe(true);
+  expect(calls).toHaveLength(callCount);
+  expect(notifications).toEqual([]);
+  expect(readdirSync(launched.directory)).not.toContain('notified.json');
+  expect(controller.status(launched.taskId, 'parent-id')).toMatchObject({
+    outcome: 'cancelled',
+    stopped: false,
+    deadlineActive: false,
+  });
+  expect(controller.status(launched.taskId, 'parent-id').cleanup).toContain('manually');
+});
+
+it('refuses expired work and invalid deadlines before creating a pane', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, calls } = setup(onTestFinished);
+  const startedAt = {
+    wall: Date.now() - input.timeout,
+    monotonic: performance.now() - input.timeout,
+  };
+
+  await expect(controller.launch({ ...input, startedAt })).rejects.toThrow('work budget expired');
+  for (const timeout of [0, -1, Number.NaN, 2_147_483_648]) {
+    await expect(controller.launch({ ...input, timeout })).rejects.toThrow(
+      /work budget expired|Invalid fixed worker deadline/,
+    );
+  }
+  expect(calls).toEqual([]);
+});
+
+it('rejects invalid model and thinking in saved loadouts without replacing the task', async ({
+  onTestFinished,
+}) => {
+  const { controller, input } = setup(onTestFinished);
+  const launched = await controller.launch(input);
+  const path = join(launched.directory, 'task.json');
+  const task = readTask(launched.directory);
+
+  for (const invalid of [{ model: 'missing-provider' }, { thinking: 'invalid' }]) {
+    writeFileSync(path, JSON.stringify({ ...task, loadout: { ...task.loadout, ...invalid } }));
+    expect(() => readTask(launched.directory)).toThrow('Invalid saved worker task or loadout');
+  }
+  writeFileSync(path, JSON.stringify(task));
+  expect(readTask(launched.directory).loadout).toEqual(input.loadout);
 });
 
 it('waits for worker readiness after herdr readiness without a new startup budget', async ({

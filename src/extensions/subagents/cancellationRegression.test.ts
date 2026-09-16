@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import * as timeout from './subagentTimeout.ts';
+import * as timeout from './cancellation.js';
 
 type Client = Parameters<typeof timeout.cancelOwnedWorker>[2];
 
@@ -25,7 +25,7 @@ const snapshot = (processId = owned.processId, token = owned.token) =>
 
 const shell = () => snapshot(owned.shellPid);
 
-describe('parent-scoped timeout', () => {
+describe('owned worker cancellation', () => {
   beforeEach(() => {
     vi.spyOn(process, 'kill').mockImplementation(() => {
       throw Object.assign(new Error('Process absent'), { code: 'ESRCH' });
@@ -34,35 +34,6 @@ describe('parent-scoped timeout', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
-  });
-
-  it('keeps one deadline and cancellation attempt across activity and reconnect', async () => {
-    vi.useFakeTimers();
-    const client = vi
-      .fn<Client>()
-      .mockResolvedValueOnce(snapshot())
-      .mockResolvedValueOnce('{}')
-      .mockResolvedValue(shell());
-    const parent = new AbortController();
-    const task = timeout.createParentDeadline(owned, 1000, 200, client, parent.signal);
-    const first = task.watch();
-
-    await vi.advanceTimersByTimeAsync(700);
-    const reconnected = task.watch();
-
-    expect(reconnected).toBe(first);
-    expect(client).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(300);
-
-    await expect(first).resolves.toMatchObject({
-      reason: 'timeout',
-      output: 'incomplete',
-      cleanup: 'confirmed',
-    });
-    expect(client.mock.calls.filter(([arguments_]) => arguments_[1] === 'send-keys')).toHaveLength(
-      1,
-    );
-    expect(task.watch()).toBe(first);
   });
 
   it('uses Pi clear then exit keys instead of a terminal interrupt', async () => {
@@ -90,23 +61,6 @@ describe('parent-scoped timeout', () => {
       expect.any(Number),
       expect.any(AbortSignal),
     );
-  });
-
-  it('ends observation on parent shutdown without promising cleanup', async () => {
-    vi.useFakeTimers();
-    const client = vi.fn<Client>();
-    const parent = new AbortController();
-    const task = timeout.createParentDeadline(owned, 1000, 200, client, parent.signal);
-
-    parent.abort();
-    await expect(task.watch()).resolves.toMatchObject({
-      reason: 'parent-stopped',
-      output: 'incomplete',
-      cleanup: 'unconfirmed',
-    });
-    await vi.advanceTimersByTimeAsync(2000);
-    expect(client).not.toHaveBeenCalled();
-    expect(vi.getTimerCount()).toBe(0);
   });
 
   it.each([snapshot(102), snapshot(101, '/tmp/replacement'), '{}'])(
@@ -167,43 +121,17 @@ describe('parent-scoped timeout', () => {
     expect(process.kill).toHaveBeenCalledWith(owned.processId, 0);
   });
 
-  it('refuses cancellation when the parent resumes after the fixed deadline', async () => {
-    vi.useFakeTimers();
-    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
-    const client = vi
-      .fn<Client>()
-      .mockResolvedValueOnce(snapshot())
-      .mockResolvedValueOnce('{}')
-      .mockResolvedValue(shell());
-    const task = timeout.createParentDeadline(
-      owned,
-      1000,
-      200,
-      client,
-      new AbortController().signal,
-    );
+  it.each([0, -1, Number.NaN, 2_147_483_648])(
+    'rejects invalid cancellation budget %s',
+    async (budget) => {
+      const client = vi.fn<Client>();
 
-    clock.mockReturnValue(1001);
-    await vi.advanceTimersByTimeAsync(800);
-
-    await expect(task.watch()).resolves.toMatchObject({
-      reason: 'timeout',
-      cleanup: 'unconfirmed',
-    });
-    expect(client).not.toHaveBeenCalled();
-  });
-
-  it('rejects invalid deadline budgets', () => {
-    const client = vi.fn<Client>();
-    const parent = new AbortController();
-
-    expect(() => timeout.createParentDeadline(owned, 100, 100, client, parent.signal)).toThrow(
-      'smaller',
-    );
-    expect(() =>
-      timeout.createParentDeadline(owned, Number.NaN, 10, client, parent.signal),
-    ).toThrow('integer');
-  });
+      await expect(
+        timeout.cancelOwnedWorker(owned, budget, client, new AbortController().signal),
+      ).rejects.toThrow('integer');
+      expect(client).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('bounded client', () => {

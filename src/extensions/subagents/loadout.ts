@@ -12,7 +12,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { discoverProfiles } from './profiles.js';
+import { resolveProfile } from './profiles.js';
 import type { Loadout } from './types.js';
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -192,9 +192,7 @@ export const resolveLoadout = async (
     throw new Error('Launch from the target cwd after trusting that project.');
   }
   const agentDirectory = realpathSync(getAgentDir());
-  const profile = discoverProfiles(cwd, agentDirectory, true).find(
-    (candidate) => candidate.name === input.profile,
-  );
+  const profile = resolveProfile(cwd, agentDirectory, true, input.profile);
   if (!profile) {
     throw new Error(`Worker profile not found: ${input.profile}`);
   }

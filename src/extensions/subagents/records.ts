@@ -100,12 +100,13 @@ export const readTask = (directory: string): Task => {
   return validateTask(readRecord(directory, 'task.json'));
 };
 
+const validReport = (value: unknown, taskId: string): value is Report =>
+  Value.Check(reportSchema, value) &&
+  value.taskId === taskId &&
+  Buffer.byteLength(JSON.stringify(value)) <= 64_000;
+
 export const acceptReport = (directory: string, taskId: string, value: unknown): Report => {
-  if (
-    !Value.Check(reportSchema, value) ||
-    value.taskId !== taskId ||
-    Buffer.byteLength(JSON.stringify(value)) > 64_000
-  ) {
+  if (!validReport(value, taskId)) {
     throw new Error('Invalid, oversized, or wrong-task report.');
   }
 
@@ -117,7 +118,7 @@ export const acceptReport = (directory: string, taskId: string, value: unknown):
 export const readReport = (directory: string, taskId: string): Report | undefined => {
   try {
     const value = readRecord(directory, 'report.json');
-    if (!Value.Check(reportSchema, value) || value.taskId !== taskId) {
+    if (!validReport(value, taskId)) {
       throw new Error('Invalid saved worker report.');
     }
 
