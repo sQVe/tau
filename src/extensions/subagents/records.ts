@@ -4,8 +4,7 @@ import {
   fsyncSync,
   linkSync,
   openSync,
-  readFileSync,
-  statSync,
+  readSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -49,12 +48,30 @@ export const publish = (directory: string, name: string, value: unknown): void =
 };
 
 export const readRecord = (directory: string, name: string): unknown => {
-  const path = join(directory, name);
-  if (statSync(path).size > recordByteLimit) {
-    throw new Error('Worker record exceeds 128 KB.');
-  }
+  const descriptor = openSync(join(directory, name), 'r');
+  try {
+    const buffer = Buffer.alloc(recordByteLimit + 1);
+    let bytesRead = 0;
+    while (bytesRead < buffer.length) {
+      const read = readSync(descriptor, buffer, {
+        offset: bytesRead,
+        length: buffer.length - bytesRead,
+        position: bytesRead,
+      });
+      if (read === 0) {
+        break;
+      }
+      bytesRead += read;
+    }
 
-  return JSON.parse(readFileSync(path, 'utf8'));
+    if (bytesRead > recordByteLimit) {
+      throw new Error('Worker record exceeds 128 KB.');
+    }
+
+    return JSON.parse(buffer.subarray(0, bytesRead).toString('utf8'));
+  } finally {
+    closeSync(descriptor);
+  }
 };
 
 export const validateTask = (value: unknown): Task => {

@@ -68,13 +68,8 @@ export default function workerExtension(pi: ExtensionAPI): void {
         context.shutdown();
         return;
       }
-      if (Date.now() >= task.deadline - task.cancellationBudget) {
-        throw new Error('The original task deadline has expired.');
-      }
-      const readinessSignal = AbortSignal.timeout(
-        Math.max(1, task.deadline - task.cancellationBudget - Date.now()),
-      );
-      await checkWorkerRuntime(task.loadout, pi, context, readinessSignal);
+      // Only the parent enforces the task deadline; wall-clock records are for display and recovery.
+      await checkWorkerRuntime(task.loadout, pi, context);
       recordEvent(
         directory,
         task.taskId,
@@ -85,11 +80,6 @@ export default function workerExtension(pi: ExtensionAPI): void {
       );
       kickoff = setInterval(() => {
         if (!task) {
-          return;
-        }
-        if (Date.now() >= task.deadline - task.cancellationBudget) {
-          clearInterval(kickoff);
-          context.shutdown();
           return;
         }
         if (!existsSync(join(directory, 'dispatch.json'))) {
@@ -133,16 +123,10 @@ export default function workerExtension(pi: ExtensionAPI): void {
     accepted = true;
   });
   pi.on('tool_call', (event, context) => {
-    if (
-      !accepted ||
-      settled ||
-      reported ||
-      !task ||
-      Date.now() >= task.deadline - task.cancellationBudget
-    ) {
+    if (!accepted || settled || reported || !task) {
       return {
         block: true,
-        reason: 'Worker task is inactive or its work budget expired.',
+        reason: 'Worker task is inactive.',
         terminate: true,
       };
     }

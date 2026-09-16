@@ -58,6 +58,9 @@ it('accepts blank and comment frontmatter lines without relaxing selected profil
     role: 'editing',
     thinking: 'off',
   });
+  expect(() => parseProfile('---\nrole: editing\nname:\n---\nTask', 'worker', 'fixture')).toThrow(
+    'Malformed profile setting',
+  );
   for (const setting of ['name: replacement', 'unknown: value', 'thinking: invalid']) {
     expect(() =>
       parseProfile(
@@ -300,7 +303,7 @@ it('validates only the requested winning profile and rejects malformed overrides
     '---\nname: worker\nname: renamed\nrole: editing\n---\nTask',
   ]) {
     writeFileSync(join(project, 'worker.md'), content);
-    expect(selected).toThrow(/Invalid profile|Unsupported/);
+    expect(selected).toThrow(/Invalid profile|Unsupported|Malformed/);
   }
   writeFileSync(
     join(project, 'worker.md'),

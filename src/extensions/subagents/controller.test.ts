@@ -463,6 +463,57 @@ it('detects an owned worker exiting before readiness without waiting for the tas
   expect(calls.some((call) => call[1] === 'send-keys')).toBe(false);
 });
 
+it.each(['missing report', 'accepted report'])(
+  'detects post-readiness exit with %s before the deadline',
+  async (reportState) => {
+    vi.useFakeTimers();
+    let exited = false;
+    const { controller, input, calls, notifications } = setup(afterTest, 0, async (arguments_) => {
+      if (exited && arguments_[1] === 'process-info') {
+        return JSON.stringify({
+          result: {
+            process_info: {
+              pane_id: 'owned-pane',
+              shell_pid: 100,
+              foreground_process_group_id: 100,
+            },
+          },
+        });
+      }
+
+      return arguments_[1] === 'close' ? '{}' : '';
+    });
+    const launched = await controller.launch({ ...input, timeout: 60_000 });
+    recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
+    const report = {
+      taskId: launched.taskId,
+      outcome: 'success',
+      summary: 'Saved handover.',
+      evidence: ['source.ts:1'],
+    };
+    if (reportState === 'accepted report') {
+      acceptReport(launched.directory, launched.taskId, report);
+    }
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+    });
+    exited = true;
+
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(controller.status(launched.taskId, 'parent-id')).toMatchObject({
+      outcome: reportState === 'accepted report' ? 'success' : 'incomplete',
+      deadlineActive: false,
+      stopped: true,
+      report: reportState === 'accepted report' ? report : undefined,
+    });
+    expect(notifications).toHaveLength(1);
+    expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
+    expect(calls.filter((call) => call[1] === 'close')).toHaveLength(1);
+    expect(calls.some((call) => call[1] === 'send-keys')).toBe(false);
+  },
+);
+
 it('cleans up an owned live pane even when startup failure evidence is corrupt', async ({
   onTestFinished,
 }) => {

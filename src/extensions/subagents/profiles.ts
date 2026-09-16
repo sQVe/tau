@@ -18,9 +18,15 @@ const parseFields = (frontmatter: string) => {
       continue;
     }
 
-    const [, key = '', value = ''] = matchField(line) ?? [];
+    const match = matchField(line);
+    if (!match) {
+      throw new Error(`Malformed profile setting: ${line}`);
+    }
+    const key = match[1];
+    const value = match[2];
     if (
       !key ||
+      !value ||
       fields.has(key) ||
       ![
         'name',

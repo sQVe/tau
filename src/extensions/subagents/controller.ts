@@ -384,7 +384,8 @@ export class WorkerController {
           }
           if (
             readEvent(handle.directory, handle.task.taskId, 'settled') ||
-            readEvent(handle.directory, handle.task.taskId, 'startupFailure')
+            readEvent(handle.directory, handle.task.taskId, 'startupFailure') ||
+            (handle.owned !== undefined && processAbsent(handle.owned.processId))
           ) {
             void this.stop(handle, 'completion');
             return;
