@@ -13,10 +13,10 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { runClient } from './cancellation.js';
-import { WorkerController } from './controller.js';
-import { fixtureModel } from './fixtures/controlledProvider.js';
-import { resolveLoadout } from './loadout.js';
+import { runClient } from '../src/extensions/subagents/cancellation.js';
+import { WorkerController } from '../src/extensions/subagents/controller.js';
+import { fixtureModel } from '../src/extensions/subagents/fixtures/controlledProvider.js';
+import { resolveLoadout } from '../src/extensions/subagents/loadout.js';
 
 const hasHerdr = spawnSync('herdr', ['--version'], { timeout: 2000, stdio: 'ignore' }).status === 0;
 const hasPi = spawnSync('pi', ['--version'], { timeout: 2000, stdio: 'ignore' }).status === 0;
@@ -95,7 +95,9 @@ it.runIf(hasHerdr && hasPi).each(['completion', 'active cancellation', 'active t
       'pi',
       'index.js',
     );
-    const provider = fileURLToPath(new URL('./fixtures/controlledProvider.ts', import.meta.url));
+    const provider = fileURLToPath(
+      new URL('../src/extensions/subagents/fixtures/controlledProvider.ts', import.meta.url),
+    );
     const integration = join(environment.PI_CODING_AGENT_DIR, 'extensions', 'herdr-agent-state.ts');
     writeFileSync(
       join(environment.PI_CODING_AGENT_DIR, 'auth.json'),

@@ -20,10 +20,19 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
-import { modelFingerprint, providerFingerprint, integrationFingerprint } from './loadout.js';
-import { nativeIdentity, seedSession } from './profiles.js';
-import { publish, readEvent, readReport, validateTask } from './records.js';
-import workerExtension from './worker.js';
+import {
+  modelFingerprint,
+  providerFingerprint,
+  integrationFingerprint,
+} from '../src/extensions/subagents/loadout.js';
+import { nativeIdentity, seedSession } from '../src/extensions/subagents/profiles.js';
+import {
+  publish,
+  readEvent,
+  readReport,
+  validateTask,
+} from '../src/extensions/subagents/records.js';
+import workerExtension from '../src/extensions/subagents/worker.js';
 
 it.each(['editing', 'investigation'] as const)(
   'runs real Pi %s with Safety Net and durable handover',
