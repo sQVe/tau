@@ -84,7 +84,17 @@ describe('statusbar extension', () => {
     await executeFile('git', ['add', 'tracked'], { cwd: directory });
     await executeFile(
       'git',
-      ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-qm', 'base'],
+      [
+        '-c',
+        'user.name=Test',
+        '-c',
+        'user.email=test@example.com',
+        '-c',
+        'commit.gpgsign=false',
+        'commit',
+        '-qm',
+        'base',
+      ],
       { cwd: directory },
     );
     const index = await readFile(join(directory, '.git/index'));
