@@ -47,6 +47,12 @@ For web answers, a nonblank per-call `answerModel` wins over the shared setting,
 default. Tau continues to override `fetch.answerProvider` and `fetch.answerModel` in the web
 package's configuration. Other web modes are unchanged.
 
+Per-call overrides also require the exact provider and model reference. Unlike the web package's
+standalone behavior, Tau does not infer a router from a native-provider reference. If a model is
+available only through OpenRouter, use its full reference, such as `openrouter/anthropic/model-id`,
+rather than `anthropic/model-id`. Check the provider and model ID columns in `pi --list-models` for
+the exact values.
+
 Invalid references, missing models, and authentication or provider failures return errors rather
 than switch to another model or provider. Failed comment review blocks the commit. Bulk-read hard
 failures stop read clamping for the session, so ordinary reads remain available. Cancellation,
