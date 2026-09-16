@@ -86,7 +86,7 @@ describe('parent-scoped timeout', () => {
 
     expect(result.cleanup).toBe('confirmed');
     expect(client).toHaveBeenCalledWith(
-      ['agent', 'send-keys', owned.paneId, 'ctrl+c', 'ctrl+d'],
+      ['agent', 'send-keys', owned.paneId, 'escape', 'ctrl+c', 'ctrl+d'],
       expect.any(Number),
       expect.any(AbortSignal),
     );
