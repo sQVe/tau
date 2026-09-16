@@ -913,6 +913,29 @@ describe('commitTool.execute', () => {
 });
 
 describe('commits without approvals', () => {
+  it('invalidates cached review when the shared delegate changes', async ({ onTestFinished }) => {
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+    const { exec, context, input } = fakeCommit();
+    const review = vi.fn<typeof reviewComments>().mockResolvedValue({
+      findings: [{ path: 'README.md', line: 1, kind: 'inaccurate', message: 'Incorrect claim.' }],
+    });
+    const tool = createReviewedCommitTool({ exec }, review);
+
+    vi.stubEnv('TAU_DELEGATE_MODEL', 'first/model');
+    await expect(
+      tool.execute('first', input, undefined, undefined, context as never),
+    ).rejects.toThrow('needs corrections');
+    vi.stubEnv('TAU_DELEGATE_MODEL', 'second/model');
+    await expect(
+      tool.execute('second', input, undefined, undefined, context as never),
+    ).rejects.toThrow('needs corrections');
+
+    expect(review).toHaveBeenCalledTimes(2);
+    expect(exec.mock.calls.some((call) => call[1][0] === 'commit')).toBe(false);
+  });
+
   it('reviews and commits every group without opening the overlay', async () => {
     const { exec, context, custom } = fakeCommit();
     const review = vi.fn<typeof reviewComments>().mockResolvedValue({ findings: [] });

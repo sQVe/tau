@@ -11,6 +11,7 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
+import { delegateReference } from '../../delegateModel/index.js';
 import {
   reviewComments,
   formatCommentReview,
@@ -418,8 +419,7 @@ const executeGroup = async (
     const reviewKey = JSON.stringify([
       reviewedTree,
       commentPolicyHash,
-      context.model?.provider,
-      context.model?.id,
+      delegateReference(),
       parameters.commentDispute,
     ]);
     let commentReview: CommentReview | undefined;

@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 
-import type { Api, Model } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
+
+import { resolveDelegate } from '../../delegateModel/index.js';
 
 export const commentPolicy = `Review code comments in the staged changes. Do not review unrelated code quality.
 Check changed comments and existing comments whose meaning is affected by changed behavior.
@@ -132,10 +133,6 @@ export const reviewComments = async (
   signal: AbortSignal | undefined,
   snapshot: { tree: string; head: string | null; dispute?: string },
 ): Promise<CommentReview> => {
-  if (!context.model) {
-    throw new Error('Comment review needs a session model.');
-  }
-
   let base = snapshot.head;
 
   if (base == null) {
@@ -218,13 +215,13 @@ export const reviewComments = async (
     throw new Error('Comment review input is too large. Split the commit and retry.');
   }
 
-  const modelApi: unknown = context.model.api;
+  const model = resolveDelegate(context);
+  const modelApi: unknown = model.api;
 
   if (typeof modelApi !== 'string') {
     throw new TypeError('Comment review needs a valid model API.');
   }
 
-  const model: Model<Api> = { ...context.model, api: modelApi };
   const authentication = await context.modelRegistry.getApiKeyAndHeaders(model);
 
   if (!authentication.ok) {

@@ -1,8 +1,102 @@
+import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository, runCommand } from '../../../tests/commitTool.js';
 import { reviewComments, reviewGit } from './commentReview.js';
+
+afterEach(() => vi.unstubAllEnvs());
+
+const reviewFixture = () => {
+  const delegate = fauxProvider({ provider: 'delegate' }).getModel();
+  const sessionModel = fauxProvider({ provider: 'session' }).getModel();
+  const find = vi.fn<ExtensionContext['modelRegistry']['find']>().mockReturnValue(delegate);
+  const getApiKeyAndHeaders = vi
+    .fn<ExtensionContext['modelRegistry']['getApiKeyAndHeaders']>()
+    .mockResolvedValue({ ok: true, apiKey: 'test' });
+  const complete = vi
+    .fn<ExtensionContext['modelRegistry']['complete']>()
+    .mockResolvedValue(fauxAssistantMessage('{"findings":[]}'));
+  const exec = vi.fn<ExtensionAPI['exec']>(async (_command, arguments_) => {
+    let stdout = '';
+
+    if (arguments_.includes('--name-only')) {
+      stdout = 'file.ts\0';
+    } else if (arguments_.includes('ls-tree') && arguments_.at(-1) === 'file.ts') {
+      stdout = '100644 blob hash 20\tfile.ts\0';
+    } else if (arguments_[0] === 'cat-file') {
+      stdout = '// Existing comment.\nexport const value = 1;\n';
+    }
+
+    return { stdout, stderr: '', code: 0, killed: false };
+  });
+  const context = {
+    cwd: '/repo',
+    model: sessionModel,
+    modelRegistry: { find, getApiKeyAndHeaders, complete },
+  } as unknown as ExtensionContext;
+  const execute = (signal?: AbortSignal) =>
+    reviewComments({ exec }, context, signal, { tree: 'candidate', head: 'base' });
+
+  return { delegate, sessionModel, context, find, getApiKeyAndHeaders, complete, execute };
+};
+
+it('reviews with the shared delegate without changing the session model', async () => {
+  vi.stubEnv('TAU_DELEGATE_MODEL', 'delegate/vendor/model');
+  const app = reviewFixture();
+
+  await app.execute();
+
+  expect(app.find).toHaveBeenCalledWith('delegate', 'vendor/model');
+  expect(app.getApiKeyAndHeaders).toHaveBeenCalledWith(app.delegate);
+  expect(app.complete).toHaveBeenCalledWith(app.delegate, expect.anything(), expect.anything());
+  expect(app.context.model).toBe(app.sessionModel);
+});
+
+it.each(['invalid', 'missing', 'authentication', 'provider'] as const)(
+  'rejects delegate %s failures without using the session model',
+  async (failure) => {
+    vi.stubEnv('TAU_DELEGATE_MODEL', failure === 'invalid' ? 'invalid' : 'delegate/model');
+    const app = reviewFixture();
+
+    if (failure === 'missing') {
+      app.find.mockReturnValue(undefined);
+    } else if (failure === 'authentication') {
+      app.getApiKeyAndHeaders.mockResolvedValue({ ok: false, error: 'credentials expired' });
+    } else if (failure === 'provider') {
+      app.complete.mockRejectedValue(new Error('provider unavailable'));
+    }
+
+    const diagnostic = {
+      invalid: 'Invalid delegate model',
+      missing: 'model not found',
+      authentication: 'credentials expired',
+      provider: 'provider unavailable',
+    }[failure];
+
+    await expect(app.execute()).rejects.toThrow(diagnostic);
+
+    expect(app.complete.mock.calls.every(([model]) => model === app.delegate)).toBe(true);
+    expect(app.complete).toHaveBeenCalledTimes(failure === 'provider' ? 1 : 0);
+  },
+);
+
+it('retries malformed delegate findings once and preserves finding kinds', async () => {
+  const app = reviewFixture();
+  const findings = [
+    { path: 'file.ts', line: 1, kind: 'inaccurate', message: 'Wrong behavior.' },
+    { path: 'file.ts', line: 1, kind: 'policy', message: 'Obvious narration.' },
+    { path: 'file.ts', line: 2, kind: 'missing', message: 'Explain the constraint.' },
+  ];
+  app.complete
+    .mockResolvedValueOnce(fauxAssistantMessage('{"findings":[{"path":"outside.ts"}]}'))
+    .mockResolvedValueOnce(fauxAssistantMessage(JSON.stringify({ findings })));
+
+  await expect(app.execute()).resolves.toEqual({ findings });
+
+  expect(app.complete).toHaveBeenCalledTimes(2);
+  expect(app.complete.mock.calls.every(([model]) => model === app.delegate)).toBe(true);
+});
 
 describe('reviewGit', () => {
   it('identifies the failing command after global Git options', async () => {
