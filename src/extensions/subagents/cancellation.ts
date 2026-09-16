@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 
 export interface OwnedWorker {
   readonly kind: 'process' | 'pi';
@@ -7,6 +8,7 @@ export interface OwnedWorker {
   readonly processId: number;
   // A unique launch argument, such as the explicitly selected Pi session path.
   readonly token: string;
+  readonly startedAt?: string;
 }
 
 interface CleanupResult {
@@ -14,27 +16,7 @@ interface CleanupResult {
   detail: string;
 }
 
-interface DeadlineResult extends CleanupResult {
-  reason: 'timeout' | 'parent-stopped';
-  output: 'incomplete';
-}
-
 type Client = (arguments_: string[], budget: number, signal: AbortSignal) => Promise<string>;
-
-const delay = (milliseconds: number, signal: AbortSignal): Promise<void> =>
-  new Promise((resolve, reject) => {
-    signal.throwIfAborted();
-    const finish = () => {
-      signal.removeEventListener('abort', abort);
-      resolve();
-    };
-    const abort = () => {
-      clearTimeout(timer);
-      reject(new Error('Parent or cancellation budget ended.'));
-    };
-    const timer = setTimeout(finish, milliseconds);
-    signal.addEventListener('abort', abort, { once: true });
-  });
 
 const validateBudget = (budget: number) => {
   if (!Number.isSafeInteger(budget) || budget <= 0 || budget > 2_147_483_647) {
@@ -104,7 +86,7 @@ const processInfo = (response: string) => {
   return object(object(object(parsed).result).process_info);
 };
 
-const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker) =>
+export const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker) =>
   info.pane_id === owned.paneId &&
   info.shell_pid === owned.shellPid &&
   info.foreground_process_group_id === owned.processId &&
@@ -115,7 +97,8 @@ const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker) =>
     return (
       process.pid === owned.processId &&
       Array.isArray(process.argv) &&
-      process.argv.includes(owned.token)
+      // Pi rewrites argv through process.title. The caller also checks its herdr session token and ps start time before using this fallback.
+      (process.argv.includes(owned.token) || (owned.kind === 'pi' && !!owned.startedAt))
     );
   });
 
@@ -192,6 +175,22 @@ export const cancelOwnedWorker = async (
       }
     }
 
+    if (owned.startedAt) {
+      const processStart = await runClient(
+        'ps',
+        ['-p', String(owned.processId), '-o', 'lstart='],
+        Math.max(1, Math.ceil(expires - performance.now())),
+        signal,
+      );
+      const startedAt = processStart.trim();
+      if (startedAt !== owned.startedAt) {
+        return {
+          cleanup: 'refused',
+          detail: `Process start identity changed; no input sent. ${manual}`,
+        };
+      }
+    }
+
     const before = processInfo(await call(['pane', 'process-info', '--pane', owned.paneId]));
 
     if (!matchesWorker(before, owned)) {
@@ -201,10 +200,10 @@ export const cancelOwnedWorker = async (
       };
     }
 
-    // Pi's Ctrl+C clears the editor. Ctrl+D then requests shutdown from the empty editor.
+    // Escape requests active-run abort; shutdown keys remain best-effort while tools unwind.
     const keys =
       owned.kind === 'pi'
-        ? ['agent', 'send-keys', owned.paneId, 'ctrl+c', 'ctrl+d']
+        ? ['agent', 'send-keys', owned.paneId, 'escape', 'ctrl+c', 'ctrl+d']
         : ['pane', 'send-keys', owned.paneId, 'ctrl+c'];
     await call(keys);
 
@@ -225,56 +224,11 @@ export const cancelOwnedWorker = async (
       }
 
       // oxlint-disable-next-line eslint/no-await-in-loop -- Polling is bounded by the shared cancellation signal.
-      await delay(25, signal);
+      await delay(25, undefined, { signal });
     }
   } catch (error) {
     return { cleanup: 'unconfirmed', detail: `${String(error)} ${manual}` };
   } finally {
     clearTimeout(timer);
   }
-};
-
-// Keep this handle in the active parent. Reconnect observes it; it never launches or resubmits work.
-export const createParentDeadline = (
-  worker: OwnedWorker,
-  timeout: number,
-  cancellationBudget: number,
-  client: Client,
-  parent: AbortSignal,
-) => {
-  validateBudget(timeout);
-  validateBudget(cancellationBudget);
-  const owned = { ...worker };
-  validateWorker(owned);
-  if (cancellationBudget >= timeout) {
-    throw new Error('Reserve a cancellation budget smaller than the total task timeout.');
-  }
-
-  const deadline = performance.now() + timeout;
-  const result: Promise<DeadlineResult> = (async () => {
-    try {
-      await delay(timeout - cancellationBudget, parent);
-      const remaining = Math.ceil(deadline - performance.now());
-      if (remaining <= 0) {
-        throw new Error('The fixed deadline expired before cancellation could start.');
-      }
-
-      const cleanup = await cancelOwnedWorker(owned, remaining, client, parent);
-
-      return {
-        ...cleanup,
-        reason: parent.aborted ? 'parent-stopped' : 'timeout',
-        output: 'incomplete',
-      };
-    } catch (error) {
-      return {
-        reason: parent.aborted ? 'parent-stopped' : 'timeout',
-        output: 'incomplete',
-        cleanup: 'unconfirmed',
-        detail: `${String(error)} No continuing enforcement is promised. Check ${owned.paneId} for manual cleanup.`,
-      };
-    }
-  })();
-
-  return { deadline, watch: () => result };
 };

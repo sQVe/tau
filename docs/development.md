@@ -32,6 +32,7 @@ To try Tau in an interactive Pi session from this checkout:
 ```sh
 pnpm exec pi --no-extensions --no-skills -e ./src/extensions/index.ts \
   -e ./node_modules/@juicesharp/rpiv-ask-user-question/index.ts \
+  -e ./node_modules/cc-safety-net/dist/pi/index.js \
   -e ./node_modules/pi-web-access/index.ts --skill ./skills/commit
 ```
 
@@ -59,9 +60,9 @@ failures stop read clamping for the session, so ordinary reads remain available.
 timeouts, input limits, and length stops do not disable clamping. The
 [shared-delegate decision](adr/0027-share-one-delegate-model.md) records the default's comparison.
 
-Pass all three extension entries. `package.json` declares the same set, so a checkout that loads
-only `./src/extensions/index.ts` is missing the bundled question and web tools and reports it at
-session start.
+Pass all four extension entries. `package.json` declares the same set. Loading only
+`./src/extensions/index.ts` omits the bundled question and web tools, which Tau reports at session
+start. It also omits CC Safety Net, so worker launch refuses.
 
 For use in another project, run `pi install -l /absolute/path/to/tau` there, then start Pi. This
 records the local package in that project's `.pi/settings.json`.

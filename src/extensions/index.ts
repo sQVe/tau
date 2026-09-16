@@ -6,6 +6,7 @@ import codingExtension from './coding/index.js';
 import commitExtension from './commit/index.js';
 import snippetsExtension from './snippets/index.js';
 import statusbarExtension from './statusbar/index.js';
+import subagentsExtension from './subagents/index.js';
 import tddExtension from './tdd/index.js';
 import webAccessExtension from './webAccess/index.js';
 import writingExtension from './writing/index.js';
@@ -21,4 +22,5 @@ export default async function tauExtension(extensionApi: ExtensionAPI) {
   webAccessExtension(extensionApi);
   snippetsExtension(extensionApi);
   statusbarExtension(extensionApi);
+  subagentsExtension(extensionApi);
 }

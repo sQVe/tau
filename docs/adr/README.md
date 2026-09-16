@@ -46,3 +46,4 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0025: Use Git hooks without preparation](./0025-use-git-hooks-without-preparation.md)
 - [0026: Let Git hooks own commit checks](./0026-let-git-hooks-own-commit-checks.md)
 - [0027: Share one delegate model across bounded tool tasks](./0027-share-one-delegate-model.md)
+- [0028: Keep worker control in the parent](./0028-keep-worker-control-in-the-parent.md)
