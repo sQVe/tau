@@ -18,8 +18,15 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
+import manifest from '../package.json' with { type: 'json' };
 import { webAccessTools } from '../src/extensions/webAccess/index.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
+
+it('ships Safety Net as a runtime dependency and explicit extension', () => {
+  expect(manifest.dependencies).toHaveProperty('cc-safety-net', '2.4.1');
+  expect(manifest.devDependencies).not.toHaveProperty('cc-safety-net');
+  expect(manifest.pi.extensions).toContain('./node_modules/cc-safety-net/dist/pi/index.js');
+});
 
 it('loads Tau through Pi with commit features, bundled question and web tools, and writing and coding rules on every run', async ({
   onTestFinished,
@@ -47,7 +54,10 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     const { extensions, errors } = loader.getExtensions();
 
     expect(errors).toEqual([]);
-    expect(extensions).toHaveLength(3);
+    expect(extensions).toHaveLength(4);
+    const safetyExtension = extensions.find((extension) => extension.commands.has('cc-safety-net'));
+    expect(safetyExtension).toBeDefined();
+    expect(safetyExtension?.handlers.has('tool_call')).toBe(true);
 
     const tauExtension = extensions.find((extension) => extension.tools.has('commit'));
 

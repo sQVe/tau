@@ -118,6 +118,9 @@ importers:
       '@juicesharp/rpiv-ask-user-question':
         specifier: 2.9.0
         version: 2.9.0(@earendil-works/pi-coding-agent@0.85.1(ws@8.21.3))(@earendil-works/pi-tui@0.85.1)
+      cc-safety-net:
+        specifier: 2.4.1
+        version: 2.4.1
       pi-web-access:
         specifier: 0.28.0
         version: 0.28.0(@earendil-works/pi-ai@0.85.1(ws@8.21.3))(@earendil-works/pi-coding-agent@0.85.1(ws@8.21.3))(@earendil-works/pi-tui@0.85.1)
@@ -140,9 +143,6 @@ importers:
       '@types/node':
         specifier: 24.13.3
         version: 24.13.3
-      cc-safety-net:
-        specifier: 2.4.1
-        version: 2.4.1
       typescript:
         specifier: 7.0.2
         version: 7.0.2
