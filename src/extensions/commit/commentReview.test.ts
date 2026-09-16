@@ -38,7 +38,7 @@ const reviewFixture = () => {
   const execute = (signal?: AbortSignal) =>
     reviewComments({ exec }, context, signal, { tree: 'candidate', head: 'base' });
 
-  return { delegate, sessionModel, context, find, getApiKeyAndHeaders, complete, execute };
+  return { delegate, sessionModel, context, find, getApiKeyAndHeaders, complete, exec, execute };
 };
 
 it('reviews with the shared delegate without changing the session model', async () => {
@@ -78,6 +78,25 @@ it.each(['invalid', 'missing', 'authentication', 'provider'] as const)(
 
     expect(app.complete.mock.calls.every(([model]) => model === app.delegate)).toBe(true);
     expect(app.complete).toHaveBeenCalledTimes(failure === 'provider' ? 1 : 0);
+  },
+);
+
+it.each(['invalid', 'missing'] as const)(
+  'rejects %s delegates before collecting Git evidence',
+  async (failure) => {
+    vi.stubEnv('TAU_DELEGATE_MODEL', failure === 'invalid' ? 'invalid' : 'missing/model');
+    const app = reviewFixture();
+    if (failure === 'missing') {
+      app.find.mockReturnValue(undefined);
+    }
+
+    await expect(app.execute()).rejects.toThrow(
+      failure === 'invalid' ? 'Invalid delegate model' : 'model not found',
+    );
+
+    expect(app.exec).not.toHaveBeenCalled();
+    expect(app.getApiKeyAndHeaders).not.toHaveBeenCalled();
+    expect(app.complete).not.toHaveBeenCalled();
   },
 );
 
@@ -142,7 +161,10 @@ it.each([
   const context = {
     cwd: '/repo',
     model: { api: 'openai-completions' },
-    modelRegistry: { getApiKeyAndHeaders },
+    modelRegistry: {
+      find: () => fauxProvider().getModel(),
+      getApiKeyAndHeaders,
+    },
   } as unknown as ExtensionContext;
 
   await expect(

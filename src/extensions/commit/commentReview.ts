@@ -133,6 +133,13 @@ export const reviewComments = async (
   signal: AbortSignal | undefined,
   snapshot: { tree: string; head: string | null; dispute?: string },
 ): Promise<CommentReview> => {
+  const model = resolveDelegate(context);
+  const modelApi: unknown = model.api;
+
+  if (typeof modelApi !== 'string') {
+    throw new TypeError('Comment review needs a valid model API.');
+  }
+
   let base = snapshot.head;
 
   if (base == null) {
@@ -213,13 +220,6 @@ export const reviewComments = async (
 
   if (input.length > 1_000_000) {
     throw new Error('Comment review input is too large. Split the commit and retry.');
-  }
-
-  const model = resolveDelegate(context);
-  const modelApi: unknown = model.api;
-
-  if (typeof modelApi !== 'string') {
-    throw new TypeError('Comment review needs a valid model API.');
   }
 
   const authentication = await context.modelRegistry.getApiKeyAndHeaders(model);
