@@ -187,6 +187,24 @@ describe('the shipped snippets', () => {
     }
   });
 
+  it('loads Check the agreed plan after the existing prepend snippets', async () => {
+    const snippets = await loadSnippets(shippedDirectory);
+    const prepends = snippets.filter((snippet) => snippet.placement === 'prepend');
+
+    expect(prepends.map((snippet) => snippet.name)).toEqual([
+      'Interview me',
+      'Read other panes',
+      'Push back',
+      "Verify, don't assume",
+      'Check the agreed plan',
+    ]);
+    expect(prepends.at(-1)).toMatchObject({
+      id: 'check-agreed-plan.md',
+      order: 50,
+      body: "Read the relevant ticket, its parent, and linked prerequisites before proposing work. Compare the current plan with the implementation and recent decisions. State this task's scope, exclusions, and blockers. Flag conflicting or outdated requirements rather than silently choosing one. Do not update tickets unless asked.",
+    });
+  });
+
   it('gives every snippet a unique order within its placement group', async () => {
     const snippets = await loadSnippets(shippedDirectory);
     const keys = snippets.map((snippet) => `${snippet.placement}:${snippet.order}`);
