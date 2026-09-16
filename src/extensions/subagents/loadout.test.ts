@@ -47,6 +47,28 @@ it('defaults bundled roles to medium effort without model or effort settings in 
   }
 });
 
+it('accepts blank and comment frontmatter lines without relaxing selected profile validation', () => {
+  const content = profile('Custom instructions.').replace(
+    'role: editing',
+    '\n  # Role selection\nrole: editing\n \t\n# thinking follows',
+  );
+
+  expect(parseProfile(content, 'fallback', 'fixture')).toMatchObject({
+    name: 'worker',
+    role: 'editing',
+    thinking: 'off',
+  });
+  for (const setting of ['name: replacement', 'unknown: value', 'thinking: invalid']) {
+    expect(() =>
+      parseProfile(
+        content.replace('---\nCustom', `${setting}\n---\nCustom`),
+        'fallback',
+        'fixture',
+      ),
+    ).toThrow(/Unsupported or duplicate|Invalid profile thinking/);
+  }
+});
+
 it('preserves custom thinking profiles and rejects invalid settings without normalization', () => {
   expect(parseProfile(profile('Custom instructions.'), 'worker', 'fixture').thinking).toBe('off');
   for (const thinking of ['invalid', 'Medium', 'maximum']) {
@@ -75,7 +97,7 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
     'index.js',
   );
   const provider = fileURLToPath(new URL('./fixtures/controlledProvider.ts', import.meta.url));
-  process.argv = [process.execPath, 'pi', '-e', safety, '-e', provider];
+  process.argv = [process.execPath, 'pi', '--no-extensions', '-e', safety, '-e', provider];
   const loader = new DefaultResourceLoader({
     cwd: directory,
     agentDir: directory,
@@ -98,7 +120,22 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
     permissions: 'trusted-full-tools',
     model: 'tau-worker-fixture/faux-1',
   };
+  const disabled = join(directory, 'disabled-package');
+  mkdirSync(disabled);
+  writeFileSync(
+    join(disabled, 'package.json'),
+    JSON.stringify({ pi: { extensions: ['index.js'] } }),
+  );
+  writeFileSync(
+    join(disabled, 'index.js'),
+    'throw new Error("Disabled package was rediscovered");',
+  );
+  writeFileSync(join(directory, 'settings.json'), JSON.stringify({ packages: [disabled] }));
+
   const resolved = await resolveLoadout(request, context, pi);
+  expect(resolved).toMatchObject({ noExtensions: true });
+  expect(resolved.integrations).toEqual([safety, provider]);
+  rmSync(join(directory, 'settings.json'));
   const withoutModel = { profile: 'worker', permissions: 'trusted-full-tools' };
   await expect(resolveLoadout(withoutModel, context, pi)).rejects.toThrow('no fallback');
   vi.stubEnv('TAU_SUBAGENT_MODEL', request.model);

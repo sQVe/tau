@@ -2,11 +2,13 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { expect, it, vi } from 'vitest';
+import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
+import * as cancellationModule from './cancellation.js';
 import { WorkerController, taskStatus, workerArguments } from './controller.js';
 import type { HerdrClient } from './controller.js';
 import { acceptReport, readTask, recordEvent } from './records.js';
+import * as records from './records.js';
 import type { Loadout } from './types.js';
 
 export const fixtureLoadout = (directory: string): Loadout => {
@@ -21,6 +23,7 @@ export const fixtureLoadout = (directory: string): Loadout => {
     agentDirectory: directory,
     permissions: 'trusted-full-tools',
     tools: ['read', 'bash', 'edit', 'write', 'subagent_report'],
+    noExtensions: false,
     integrations: [join(directory, 'safety.js')],
     integrationFingerprint: '0'.repeat(64),
     safetyExtension: join(directory, 'safety.js'),
@@ -36,6 +39,7 @@ const setup = (
   const directory = mkdtempSync(join(tmpdir(), 'tau-controller-'));
   onTestFinished(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     rmSync(directory, { recursive: true, force: true });
   });
   let token = '';
@@ -57,9 +61,9 @@ const setup = (
       const ready = () => {
         recordEvent(dirname(token), task.taskId, 'ready', 'Ready.', false, process.pid);
       };
-      if (readyDelay) {
+      if (readyDelay > 0) {
         setTimeout(ready, readyDelay);
-      } else {
+      } else if (readyDelay === 0) {
         ready();
       }
 
@@ -142,7 +146,7 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
     '--thinking',
     'off',
   ]);
-  expect(workerArguments(task)).not.toContain('--no-extensions');
+  expect(workerArguments(task)).toContain('--no-extensions');
   expect(workerArguments(task)).toContain(input.loadout.safetyExtension);
   expect(launched.accepted).toBe(false);
   recordEvent(launched.directory, task.taskId, 'accepted', 'Accepted.');
@@ -171,6 +175,86 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
   expect(recovered.status(task.taskId, 'parent-id').report?.summary).toBe('Edited fixture.');
   expect(() => recovered.status(task.taskId, 'wrong-parent')).toThrow('another parent');
   await expect(recovered.cancel(task.taskId, 'parent-id')).rejects.toThrow('manual cleanup');
+});
+
+it('recovers version 1 reports and native references without extension discovery metadata', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, directory } = setup(onTestFinished);
+  const launched = await controller.launch(input);
+  const task = readTask(launched.directory);
+  const { noExtensions: _metadata, ...legacyLoadout } = task.loadout;
+  writeFileSync(
+    join(launched.directory, 'task.json'),
+    JSON.stringify({ ...task, loadout: legacyLoadout }),
+  );
+  acceptReport(launched.directory, task.taskId, {
+    taskId: task.taskId,
+    outcome: 'success',
+    summary: 'Saved HEAD handover.',
+    evidence: ['existing evidence'],
+  });
+  controller.close();
+  const recovered = new WorkerController(directory);
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  expect(recovered.status(task.taskId, 'parent-id')).toMatchObject({
+    outcome: 'success',
+    reportAccepted: true,
+    nativeSessionId: task.nativeSessionId,
+    nativeSessionFile: task.nativeSessionFile,
+    report: { summary: 'Saved HEAD handover.' },
+  });
+  expect(workerArguments(readTask(launched.directory))).toContain('--no-extensions');
+  expect(workerArguments(readTask(launched.directory))).toContain(task.loadout.safetyExtension);
+});
+
+it('stops dispatched work when the launch status finds corrupt report evidence', async ({
+  onTestFinished,
+}) => {
+  let recordDirectory = '';
+  const { controller, input, calls, notifications } = setup(
+    onTestFinished,
+    0,
+    async (arguments_) => {
+      if (arguments_[1] === 'start') {
+        recordDirectory = dirname(arguments_[arguments_.indexOf('--session') + 1] ?? '');
+        writeFileSync(join(recordDirectory, 'report.json'), '{');
+      }
+      return '';
+    },
+  );
+
+  await expect(controller.launch(input)).rejects.toThrow('saved evidence is unavailable');
+  expect(readdirSync(recordDirectory)).toContain('dispatch.json');
+  await vi.waitFor(() => {
+    expect(notifications).toHaveLength(1);
+  });
+  expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
+  expect(notifications[0]).toContain('owned-pane');
+  expect(readFileSync(join(recordDirectory, 'report.json'), 'utf8')).toBe('{');
+});
+
+it('only lets the owning parent stop work after a status evidence failure', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, calls, notifications } = setup(onTestFinished);
+  const launched = await controller.launch(input);
+  writeFileSync(join(launched.directory, 'report.json'), '{');
+
+  const callCount = calls.length;
+  expect(() => controller.status(launched.taskId, 'another-parent')).toThrow(
+    'another parent session',
+  );
+  expect(calls).toHaveLength(callCount);
+  expect(() => controller.status(launched.taskId, 'parent-id')).toThrow(launched.nativeSessionFile);
+  await vi.waitFor(() => {
+    expect(notifications).toHaveLength(1);
+  });
+  expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
+  expect(notifications[0]).toContain(launched.nativeSessionId);
 });
 
 it('keeps the original deadline and reports active-work cancellation failure honestly', async ({
@@ -345,6 +429,226 @@ it('rejects invalid model and thinking in saved loadouts without replacing the t
   }
   writeFileSync(path, JSON.stringify(task));
   expect(readTask(launched.directory).loadout).toEqual(input.loadout);
+});
+
+it('detects an owned worker exiting before readiness without waiting for the task deadline', async ({
+  onTestFinished,
+}) => {
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+  });
+  let inspections = 0;
+  const { controller, input, calls } = setup(onTestFinished, -1, async (arguments_) => {
+    if (arguments_[1] === 'process-info' && ++inspections > 1) {
+      return JSON.stringify({
+        result: {
+          process_info: {
+            pane_id: 'owned-pane',
+            shell_pid: 100,
+            foreground_process_group_id: 100,
+            foreground_processes: [{ pid: 100, argv: ['sh'] }],
+          },
+        },
+      });
+    }
+    return arguments_[1] === 'close' ? '{}' : '';
+  });
+  const started = performance.now();
+  const status = await controller.launch({ ...input, timeout: 60_000 });
+
+  expect(performance.now() - started).toBeLessThan(1500);
+  expect(status).toMatchObject({ outcome: 'failure', ready: false, stopped: true });
+  expect(status.failure).toContain('exited before readiness');
+  expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
+  expect(calls.some((call) => call[1] === 'send-keys')).toBe(false);
+});
+
+it('cleans up an owned live pane even when startup failure evidence is corrupt', async ({
+  onTestFinished,
+}) => {
+  let recordDirectory = '';
+  const { controller, input, calls, notifications } = setup(
+    onTestFinished,
+    0,
+    async (arguments_) => {
+      if (arguments_[1] === 'start') {
+        recordDirectory = dirname(arguments_[arguments_.indexOf('--session') + 1] ?? '');
+        writeFileSync(join(recordDirectory, 'startupFailure.json'), '{');
+      }
+      return '';
+    },
+  );
+
+  const launch = controller.launch(input);
+  await expect(launch).rejects.toThrow(/records|evidence/i);
+  const task = readTask(recordDirectory);
+  await expect(launch).rejects.toThrow(task.nativeSessionFile);
+  expect(notifications.join('\n')).toContain(task.nativeSessionId);
+  expect(notifications.join('\n')).toContain(task.nativeSessionFile);
+  expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
+  expect(calls.some((call) => call[1] === 'close')).toBe(false);
+  expect(readFileSync(join(recordDirectory, 'startupFailure.json'), 'utf8')).toBe('{');
+  expect(notifications.join('\n')).toContain('owned-pane');
+  expect(notifications.join('\n')).toMatch(/records|evidence/i);
+});
+
+it('reports both startup and receipt failures after attempting owned pane cleanup', async ({
+  onTestFinished,
+}) => {
+  let inspections = 0;
+  const { controller, input, calls, notifications } = setup(
+    onTestFinished,
+    -1,
+    async (arguments_) => {
+      if (arguments_[1] === 'process-info' && ++inspections === 2) {
+        throw new Error('Injected worker identity probe failure');
+      }
+      return '';
+    },
+  );
+  const original = records.recordEvent;
+  vi.spyOn(records, 'recordEvent').mockImplementation((...arguments_) => {
+    if (arguments_[2] === 'startupFailure') {
+      throw new Error('Injected startup receipt write failure');
+    }
+    original(...arguments_);
+  });
+  const launch = controller.launch(input);
+
+  await expect(launch).rejects.toThrow('Injected startup receipt write failure');
+  await expect(launch).rejects.toThrow('Injected worker identity probe failure');
+  expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
+  expect(notifications.join('\n')).toContain('Injected startup receipt write failure');
+  expect(notifications.join('\n')).toContain('Injected worker identity probe failure');
+  expect(notifications.join('\n')).toContain('owned-pane');
+});
+
+it.each(['cancelled', 'timeout'] as const)(
+  'stops an owned live pane before reporting a failed %s receipt write',
+  async (reason) => {
+    vi.useFakeTimers();
+    const { controller, input, calls, notifications } = setup(afterTest);
+    const launched = await controller.launch(input);
+    writeFileSync(join(launched.directory, 'report.json'), '{');
+    const original = records.recordEvent;
+    vi.spyOn(records, 'recordEvent').mockImplementation((...arguments_) => {
+      if (arguments_[2] === reason) {
+        throw new Error('Injected receipt write failure');
+      }
+      original(...arguments_);
+    });
+
+    if (reason === 'timeout') {
+      await vi.advanceTimersByTimeAsync(7600);
+    }
+    await expect(controller.cancel(launched.taskId, 'parent-id')).rejects.toThrow(
+      /records|evidence/i,
+    );
+    expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
+    expect(calls.some((call) => call[1] === 'close')).toBe(false);
+    expect(notifications.join('\n')).toContain('Injected receipt write failure');
+    expect(notifications.join('\n')).toContain('owned-pane');
+    expect(readFileSync(join(launched.directory, 'report.json'), 'utf8')).toBe('{');
+  },
+);
+
+it('uses in-memory ownership to cancel even when the saved task is corrupt', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, calls, notifications } = setup(onTestFinished);
+  const launched = await controller.launch(input);
+  writeFileSync(join(launched.directory, 'task.json'), '{');
+
+  const cancelled = controller.cancel(launched.taskId, 'parent-id');
+  await expect(cancelled).rejects.toThrow(/evidence/);
+  await expect(cancelled).rejects.toThrow(launched.nativeSessionFile);
+  expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
+  expect(notifications.join('\n')).toContain('owned-pane');
+  expect(readFileSync(join(launched.directory, 'task.json'), 'utf8')).toBe('{');
+});
+
+it('distinguishes missing readiness timeout from startup failure inside the original deadline', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers();
+  const monitoring = Promise.withResolvers<undefined>();
+  let inspections = 0;
+  const { controller, input, calls } = setup(
+    onTestFinished,
+    -1,
+    async (arguments_, budget, signal) => {
+      expect(budget).toBeGreaterThan(0);
+      expect(budget).toBeLessThanOrEqual(7500);
+      if (arguments_[1] === 'process-info' && ++inspections === 2) {
+        monitoring.resolve(undefined);
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener(
+            'abort',
+            () => {
+              reject(new Error('Client aborted'));
+            },
+            { once: true },
+          );
+        });
+      }
+      return '';
+    },
+  );
+  const launch = controller.launch(input);
+  await monitoring.promise;
+  await vi.advanceTimersByTimeAsync(7600);
+  const status = await launch;
+
+  expect(status).toMatchObject({
+    outcome: 'timeout',
+    ready: false,
+    stopped: false,
+    failure: undefined,
+  });
+  expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
+  expect(readdirSync(status.directory)).not.toContain('dispatch.json');
+});
+
+it('polls slow worker readiness at 250 ms intervals', async ({ onTestFinished }) => {
+  vi.spyOn(cancellationModule, 'runClient').mockResolvedValue('fixture start');
+  const polled = Promise.withResolvers<undefined>();
+  const inspections: number[] = [];
+  const { controller, input } = setup(onTestFinished, -1, async (arguments_) => {
+    if (arguments_[1] === 'process-info') {
+      inspections.push(performance.now());
+      if (inspections.length === 3) {
+        polled.resolve(undefined);
+      }
+    }
+    return '';
+  });
+  const launch = controller.launch(input);
+  await polled.promise;
+  controller.close();
+  await launch;
+
+  expect(inspections).toHaveLength(3);
+  expect(inspections[2]! - inspections[1]!).toBeGreaterThanOrEqual(200);
+  expect(inspections[2]! - inspections[1]!).toBeLessThan(1500);
+});
+
+it('reports recovered corrupt task evidence with its task directory and unknown native identity', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, directory } = setup(onTestFinished);
+  const launched = await controller.launch(input);
+  controller.close();
+  writeFileSync(join(launched.directory, 'task.json'), '{');
+  const recovered = new WorkerController(directory);
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  expect(() => recovered.status(launched.taskId, 'parent-id')).toThrow(launched.directory);
+  expect(() => recovered.status(launched.taskId, 'parent-id')).toThrow(
+    'Native session unavailable',
+  );
+  expect(() => recovered.status(launched.taskId, 'parent-id')).toThrow('manually');
 });
 
 it('waits for worker readiness after herdr readiness without a new startup budget', async ({

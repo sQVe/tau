@@ -21,7 +21,9 @@ import { resolveLoadout } from '../src/extensions/subagents/loadout.js';
 const hasHerdr = spawnSync('herdr', ['--version'], { timeout: 2000, stdio: 'ignore' }).status === 0;
 const hasPi = spawnSync('pi', ['--version'], { timeout: 2000, stdio: 'ignore' }).status === 0;
 
-it.runIf(hasHerdr && hasPi).each(['completion', 'active cancellation', 'active timeout'])(
+it
+  .runIf(hasHerdr && hasPi)
+  .each(['completion', 'active cancellation', 'active timeout', 'early exit'])(
   'runs real canonical Pi %s with Safety Net in isolated herdr',
   async (scenario) => {
     const root = mkdtempSync(join(tmpdir(), 'tau-herdr-worker-'));
@@ -40,9 +42,19 @@ it.runIf(hasHerdr && hasPi).each(['completion', 'active cancellation', 'active t
       environment.HERDR_CONFIG_PATH,
       'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\n',
     );
+    const disabledExtension = join(root, 'disabled-package.js');
+    const rediscovered = join(root, 'rediscovered');
+    writeFileSync(
+      disabledExtension,
+      `import { writeFileSync } from 'node:fs';\nexport default function () { writeFileSync(${JSON.stringify(rediscovered)}, 'unexpected discovery'); }`,
+    );
     writeFileSync(
       join(environment.PI_CODING_AGENT_DIR, 'settings.json'),
-      JSON.stringify({ defaultProjectTrust: 'trusted', retry: { enabled: false } }),
+      JSON.stringify({
+        defaultProjectTrust: 'trusted',
+        retry: { enabled: false },
+        packages: [disabledExtension],
+      }),
     );
     writeFileSync(join(root, 'source.txt'), 'before\n');
     mkdirSync(join(root, 'delete-fixture', '.git'), { recursive: true });
@@ -67,8 +79,25 @@ it.runIf(hasHerdr && hasPi).each(['completion', 'active cancellation', 'active t
       // oxlint-disable-next-line eslint/no-await-in-loop -- Real socket readiness is bounded by the test deadline.
       await delay(25);
     }
+    const exitSignal = join(root, 'exit-before-ready');
+    const earlyExitExtension = join(root, 'early-exit.js');
+    writeFileSync(
+      earlyExitExtension,
+      `import { existsSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
+export default function (pi) {
+  pi.on('session_start', async () => {
+    while (!existsSync(${JSON.stringify(exitSignal)})) { await delay(25); }
+    process.exit(23);
+  });
+}`,
+    );
+    let taskDirectory = '';
     const observations: string[] = [];
     const client = async (arguments_: string[], budget = 5000, signal?: AbortSignal) => {
+      if (arguments_[1] === 'start') {
+        taskDirectory = dirname(arguments_[arguments_.indexOf('--session') + 1] ?? '');
+      }
       const response = await runClient(
         'herdr',
         ['--session', 'tau-worker-test', ...arguments_],
@@ -77,6 +106,13 @@ it.runIf(hasHerdr && hasPi).each(['completion', 'active cancellation', 'active t
         environment,
       );
       observations.push(response);
+      if (
+        scenario === 'early exit' &&
+        arguments_[1] === 'process-info' &&
+        existsSync(join(taskDirectory, 'owned.json'))
+      ) {
+        writeFileSync(exitSignal, 'exit');
+      }
 
       return response;
     };
@@ -110,10 +146,17 @@ it.runIf(hasHerdr && hasPi).each(['completion', 'active cancellation', 'active t
       modelsPath: null,
       refreshOnCreate: false,
     });
+    const extensions = [
+      provider,
+      safety,
+      integration,
+      ...(scenario === 'early exit' ? [earlyExitExtension] : []),
+    ];
     const parentLoader = new DefaultResourceLoader({
       cwd: root,
       agentDir: environment.PI_CODING_AGENT_DIR,
-      additionalExtensionPaths: [provider, safety, integration],
+      noExtensions: true,
+      additionalExtensionPaths: extensions,
     });
     await parentLoader.reload();
     for (const registration of parentLoader.getExtensions().runtime
@@ -122,7 +165,12 @@ it.runIf(hasHerdr && hasPi).each(['completion', 'active cancellation', 'active t
     }
     await runtime.getAvailable();
     const originalArguments = process.argv;
-    process.argv = [process.execPath, 'pi', '-e', safety, '-e', provider, '-e', integration];
+    process.argv = [
+      process.execPath,
+      'pi',
+      '--no-extensions',
+      ...extensions.flatMap((path) => ['-e', path]),
+    ];
     vi.stubEnv('PI_CODING_AGENT_DIR', environment.PI_CODING_AGENT_DIR);
     onTestFinished(() => {
       process.argv = originalArguments;
@@ -164,18 +212,22 @@ it.runIf(hasHerdr && hasPi).each(['completion', 'active cancellation', 'active t
     onTestFinished(() => {
       controller.close();
     });
+    const launchedAt = performance.now();
     const launched = await controller.launch({
       task:
         scenario === 'completion'
           ? 'Edit and check only the fixture.'
           : 'Test active cancellation.',
-      timeout: 10_000,
+      timeout: scenario === 'early exit' ? 60_000 : 10_000,
       parentSession: join(root, 'parent.jsonl'),
       parentSessionId: 'parent',
       parentPane: paneId,
       loadout,
     });
-    expect(launched.failure).toBeUndefined();
+    const failure = scenario === 'early exit' ? /exited before readiness/ : /^$/;
+    expect(performance.now() - launchedAt).toBeLessThan(10_000);
+    expect(launched.failure ?? '').toMatch(failure);
+    expect(existsSync(join(launched.directory, 'dispatch.json'))).toBe(scenario !== 'early exit');
     if (scenario === 'active cancellation') {
       const streamingDeadline = performance.now() + 10_000;
       while (!existsSync(join(root, 'streaming'))) {
@@ -190,16 +242,19 @@ it.runIf(hasHerdr && hasPi).each(['completion', 'active cancellation', 'active t
     await done.promise;
     const status = controller.status(launched.taskId, 'parent');
 
-    expect(status.failure).toBeUndefined();
+    expect(status.failure ?? '').toMatch(failure);
+    expect(existsSync(rediscovered)).toBe(false);
+    expect(loadout.noExtensions).toBe(true);
     expect({ status, observations }).toMatchObject({
       status: {
         outcome: {
           completion: 'success',
           'active cancellation': 'cancelled',
           'active timeout': 'timeout',
+          'early exit': 'failure',
         }[scenario],
-        ready: true,
-        accepted: true,
+        ready: scenario !== 'early exit',
+        accepted: scenario !== 'early exit',
         reportAccepted: scenario === 'completion',
         stopped: true,
       },

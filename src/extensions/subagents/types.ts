@@ -25,6 +25,8 @@ export const loadoutSchema = Type.Object(
     agentDirectory: text,
     permissions: Type.Literal('trusted-full-tools'),
     tools: strings,
+    // Older version 1 tasks lack this audit field; startup still replays the saved integrations.
+    noExtensions: Type.Optional(Type.Boolean()),
     integrations: strings,
     integrationFingerprint: Type.String({ minLength: 64, maxLength: 64 }),
     safetyExtension: text,

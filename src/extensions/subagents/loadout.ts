@@ -74,14 +74,17 @@ const parentExtensionPaths = (pi: Pick<ExtensionAPI, 'getAllTools' | 'getCommand
     throw new Error('Worker launch cannot reproduce inline SDK integrations.');
   }
 
-  return [
-    ...new Set([
-      ...(cliArguments.extensions ?? []),
-      ...provenance
-        .filter((source) => source.source !== 'builtin' && !source.path.startsWith('<'))
-        .map((source) => source.path),
-    ]),
-  ];
+  return {
+    noExtensions: cliArguments.noExtensions ?? false,
+    additionalExtensionPaths: [
+      ...new Set([
+        ...(cliArguments.extensions ?? []),
+        ...provenance
+          .filter((source) => source.source !== 'builtin' && !source.path.startsWith('<'))
+          .map((source) => source.path),
+      ]),
+    ],
+  };
 };
 
 const waitForResolution = async <Result>(
@@ -199,11 +202,11 @@ export const resolveLoadout = async (
   const model = resolveModel(input.model, profile.model, context.modelRegistry);
   const separator = model.indexOf('/');
 
-  const additionalExtensionPaths = parentExtensionPaths(pi);
+  const selection = parentExtensionPaths(pi);
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir: agentDirectory,
-    additionalExtensionPaths,
+    ...selection,
   });
   await waitForResolution(loader.reload(), signal);
   const loaded = loader.getExtensions();
@@ -276,6 +279,7 @@ export const resolveLoadout = async (
     agentDirectory,
     permissions: 'trusted-full-tools',
     tools,
+    noExtensions: selection.noExtensions,
     integrations,
     integrationFingerprint: integrationFingerprint(integrations),
     safetyExtension: realpathSync(safety.path),

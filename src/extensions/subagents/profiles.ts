@@ -14,6 +14,10 @@ const matchField = (line: string) => line.match(/^([a-z-]+):\s*(.+)$/);
 const parseFields = (frontmatter: string) => {
   const fields = new Map<string, string>();
   for (const line of frontmatter.split('\n')) {
+    if (!line.trim() || line.trimStart().startsWith('#')) {
+      continue;
+    }
+
     const [, key = '', value = ''] = matchField(line) ?? [];
     if (
       !key ||

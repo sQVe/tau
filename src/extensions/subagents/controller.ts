@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { cancelOwnedWorker, runClient } from './cancellation.js';
+import { cancelOwnedWorker, matchesWorker, runClient } from './cancellation.js';
 import type { OwnedWorker } from './cancellation.js';
 import { nativeIdentity, seedSession } from './profiles.js';
 import { publish, readEvent, readReport, readTask, recordEvent, validateTask } from './records.js';
@@ -68,6 +68,8 @@ export const workerArguments = (task: Task): string[] => {
     task.loadout.model.slice(separator + 1),
     '--thinking',
     task.loadout.thinking,
+    // Pi keeps explicit -e entries with --no-extensions. Replay the validated set without rediscovering packages or another Tau checkout.
+    '--no-extensions',
     ...task.loadout.integrations.flatMap((path) => ['-e', path]),
     '-e',
     fileURLToPath(new URL('./worker.ts', import.meta.url)),
@@ -87,7 +89,7 @@ const taskOutcome = (
   return report?.outcome ?? (incomplete ? 'incomplete' : 'running');
 };
 
-export const taskStatus = (directory: string, activeOwner?: string) => {
+export const taskStatus = (directory: string, activeOwner?: string, enforcing = true) => {
   const task = readTask(directory);
   const report = readReport(directory, task.taskId);
   const event = (kind: TaskEvent['kind']) => readEvent(directory, task.taskId, kind);
@@ -96,7 +98,7 @@ export const taskStatus = (directory: string, activeOwner?: string) => {
   const failure = event('startupFailure');
   const settled = event('settled');
   const cleanup = event('cleanup');
-  const active = activeOwner === task.ownerId && !cleanup && !timeout && !cancelled;
+  const active = enforcing && activeOwner === task.ownerId && !cleanup && !timeout && !cancelled;
   const outcome = taskOutcome([timeout, cancelled, failure], report, Boolean(settled) || !active);
 
   return {
@@ -131,9 +133,76 @@ interface Handle {
   abort: AbortController;
   expires: number;
   removeLaunchAbort?: () => void;
+  recordErrors: string[];
+  cleanupDetail?: string;
 }
 
-const waitForWorkerReadiness = async (handle: Handle): Promise<TaskEvent> => {
+const workBudget = (handle: Handle, maximum = 30_000): number => {
+  handle.abort.signal.throwIfAborted();
+  const remaining = Math.floor(handle.expires - handle.task.cancellationBudget - performance.now());
+  if (remaining <= 0) {
+    throw new Error('The original worker startup budget expired.');
+  }
+
+  return Math.min(maximum, remaining);
+};
+
+const inspectWorker = async (
+  handle: Handle,
+  call: (arguments_: string[]) => Promise<string>,
+): Promise<OwnedWorker> => {
+  const paneId = text(handle.paneId);
+  const information = object(
+    result(await call(['pane', 'process-info', '--pane', paneId])).process_info,
+  );
+  const previous = handle.owned;
+  if (
+    information.pane_id === paneId &&
+    information.foreground_process_group_id === information.shell_pid &&
+    (!previous ||
+      (information.shell_pid === previous.shellPid && processAbsent(previous.processId)))
+  ) {
+    throw new Error('Worker exited before readiness. No task dispatch or retry.');
+  }
+
+  const agent = object(result(await call(['agent', 'get', paneId])).agent);
+  const processId = integer(information.foreground_process_group_id);
+  const shellPid = integer(information.shell_pid);
+  if (
+    agent.pane_id !== paneId ||
+    agent.agent !== 'pi' ||
+    object(agent.agent_session).value !== handle.task.nativeSessionFile ||
+    shellPid === processId
+  ) {
+    throw new Error('Started worker identity could not be established.');
+  }
+
+  const processStart = await runClient(
+    'ps',
+    ['-p', String(processId), '-o', 'lstart='],
+    workBudget(handle, 1000),
+    handle.abort.signal,
+  );
+  const startedAt = processStart.trim();
+  const owned: OwnedWorker = previous ?? {
+    kind: 'pi',
+    paneId,
+    shellPid,
+    processId,
+    token: handle.task.nativeSessionFile,
+    startedAt,
+  };
+  if (!startedAt || startedAt !== owned.startedAt || !matchesWorker(information, owned)) {
+    throw new Error('Worker process start or pane identity changed or is unavailable.');
+  }
+
+  return owned;
+};
+
+const waitForWorkerReadiness = async (
+  handle: Handle,
+  call: (arguments_: string[]) => Promise<string>,
+): Promise<TaskEvent> => {
   for (;;) {
     handle.abort.signal.throwIfAborted();
     const failure = readEvent(handle.directory, handle.task.taskId, 'startupFailure');
@@ -144,12 +213,11 @@ const waitForWorkerReadiness = async (handle: Handle): Promise<TaskEvent> => {
     if (ready) {
       return ready;
     }
-    if (performance.now() >= handle.expires - handle.task.cancellationBudget) {
-      throw new Error('Worker readiness exceeded the original startup budget.');
-    }
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Detect death and changed identity before readiness within the same startup budget.
+    await inspectWorker(handle, call);
 
     // oxlint-disable-next-line eslint/no-await-in-loop -- Readiness remains inside the original deadline and cancellation signal.
-    await delay(25, undefined, { signal: handle.abort.signal });
+    await delay(Math.min(250, workBudget(handle)), undefined, { signal: handle.abort.signal });
   }
 };
 
@@ -226,6 +294,7 @@ export class WorkerController {
       task,
       abort: new AbortController(),
       expires,
+      recordErrors: [],
     };
     this.handles.set(taskId, handle);
 
@@ -245,16 +314,7 @@ export class WorkerController {
 
     try {
       const call = (arguments_: string[]) =>
-        this.client(
-          arguments_,
-          Math.max(
-            1,
-            Math.floor(
-              Math.min(30_000, handle.expires - task.cancellationBudget - performance.now()),
-            ),
-          ),
-          handle.abort.signal,
-        );
+        this.client(arguments_, workBudget(handle), handle.abort.signal);
       const split = result(
         await call([
           'pane',
@@ -283,75 +343,25 @@ export class WorkerController {
         '--pane',
         handle.paneId,
         '--timeout',
-        String(
-          Math.max(
-            1,
-            Math.floor(
-              Math.min(30_000, handle.expires - task.cancellationBudget - performance.now()),
-            ),
-          ),
-        ),
+        String(workBudget(handle)),
         '--',
         ...workerArguments(task),
       ]);
-      const ready = await waitForWorkerReadiness(handle);
-      const information = object(
-        result(await call(['pane', 'process-info', '--pane', handle.paneId])).process_info,
-      );
-      const agent = object(result(await call(['agent', 'get', handle.paneId])).agent);
-      if (
-        agent.pane_id !== handle.paneId ||
-        agent.agent !== 'pi' ||
-        object(agent.agent_session).value !== task.nativeSessionFile ||
-        ready.processId !== information.foreground_process_group_id
-      ) {
+      handle.owned = await inspectWorker(handle, call);
+      publish(directory, 'owned.json', handle.owned);
+      const ready = await waitForWorkerReadiness(handle, call);
+      const current = await inspectWorker(handle, call);
+      if (ready.processId !== current.processId) {
         throw new Error('Native session and worker readiness identities did not match.');
       }
-      const processStart = await runClient(
-        'ps',
-        ['-p', String(ready.processId), '-o', 'lstart='],
-        1000,
-        handle.abort.signal,
-      );
-      const startedAt = processStart.trim();
-      if (!startedAt) {
-        throw new Error('Worker process start identity is unavailable.');
-      }
-      const owned: OwnedWorker = {
-        kind: 'pi',
-        paneId: handle.paneId,
-        shellPid: integer(information.shell_pid),
-        processId: integer(information.foreground_process_group_id),
-        token: task.nativeSessionFile,
-        startedAt,
-      };
-      if (
-        information.pane_id !== owned.paneId ||
-        owned.shellPid === owned.processId ||
-        !Array.isArray(information.foreground_processes) ||
-        !information.foreground_processes.some((entry) => {
-          const process = object(entry);
-          return process.pid === owned.processId;
-        })
-      ) {
-        throw new Error('Started worker identity could not be established.');
-      }
-      handle.owned = owned;
-      publish(directory, 'owned.json', owned);
       handle.abort.signal.throwIfAborted();
       publish(directory, 'dispatch.json', { taskId });
       this.poll(handle);
       handle.removeLaunchAbort();
     } catch (error) {
-      if (!readEvent(directory, taskId, 'startupFailure')) {
-        recordEvent(
-          directory,
-          taskId,
-          'startupFailure',
-          `Startup delivery is uncertain; no retry. ${String(error)}`,
-        );
-      }
-      await this.stop(handle, 'failure');
+      const reason =
+        performance.now() >= handle.expires - task.cancellationBudget ? 'timeout' : 'failure';
+      await this.stop(handle, reason, `Startup delivery is uncertain; no retry. ${String(error)}`);
     }
 
     return this.status(taskId, input.parentSessionId);
@@ -381,10 +391,11 @@ export class WorkerController {
           }
           this.poll(handle);
         } catch (error) {
-          this.notify(
-            `Worker ${handle.task.taskId}: ${String(error)}. Records retained; manual cleanup may be needed.`,
+          void this.stop(
+            handle,
+            'failure',
+            `Worker evidence unavailable: ${String(error)}. No retry.`,
           );
-          void this.stop(handle, 'failure');
         }
       },
       Math.max(
@@ -397,6 +408,7 @@ export class WorkerController {
   private stop(
     handle: Handle,
     reason: 'timeout' | 'cancelled' | 'completion' | 'failure',
+    failureDetail = 'Worker lifecycle failed; saved evidence may be incomplete. No retry.',
   ): Promise<void> {
     if (handle.stopping) {
       return handle.stopping;
@@ -406,12 +418,13 @@ export class WorkerController {
     }
     handle.removeLaunchAbort?.();
     handle.abort.abort();
-    handle.stopping = this.cleanup(handle, reason).catch((error: unknown) => {
+    handle.stopping = this.cleanup(handle, reason, failureDetail).catch((error: unknown) => {
+      handle.recordErrors.push(String(error));
       if (this.closed) {
         return;
       }
       this.notify(
-        `Worker ${handle.task.taskId}: cleanup unconfirmed. ${String(error)}. Check pane ${handle.paneId ?? 'unknown'} manually.`,
+        `Worker ${handle.task.taskId}: cleanup unconfirmed. ${String(error)}. Check pane ${handle.paneId ?? 'unknown'} manually. Records: ${handle.directory}. Native session: ${handle.task.nativeSessionId} (${handle.task.nativeSessionFile}).`,
       );
     });
 
@@ -421,26 +434,34 @@ export class WorkerController {
   private async cleanup(
     handle: Handle,
     reason: 'timeout' | 'cancelled' | 'completion' | 'failure',
+    failureDetail: string,
   ): Promise<void> {
     const { directory, task, owned } = handle;
-    if (reason === 'timeout' || reason === 'cancelled') {
-      recordEvent(
-        directory,
-        task.taskId,
-        reason,
-        `Parent requested ${reason}; stopping is not yet confirmed.`,
-      );
-    }
+    // Receipt failures must never prevent the bounded stop attempt or hide later recording errors.
+    const record = (operation: () => void) => {
+      try {
+        operation();
+      } catch (error) {
+        handle.recordErrors.push(String(error));
+      }
+    };
+
     const budget = Math.max(
       1,
       Math.floor(Math.min(task.cancellationBudget, handle.expires - performance.now())),
     );
+    const expires = Math.min(handle.expires, performance.now() + budget);
     const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(budget)]);
-    const call = (arguments_: string[]) => {
+    const remainingBudget = () => {
       signal.throwIfAborted();
+      const remaining = Math.floor(expires - performance.now());
+      if (remaining <= 0) {
+        throw new Error('Original cleanup budget expired.');
+      }
 
-      return this.client(arguments_, budget, signal);
+      return remaining;
     };
+    const call = (arguments_: string[]) => this.client(arguments_, remainingBudget(), signal);
     let stopped = false;
     let detail = `Cleanup unconfirmed. Check pane ${handle.paneId ?? 'unknown'} manually. No automatic retry.`;
 
@@ -463,7 +484,7 @@ export class WorkerController {
         if (!stopped) {
           const cancellation = await cancelOwnedWorker(
             owned,
-            budget,
+            remainingBudget(),
             (arguments_, remaining, attempt) => this.client(arguments_, remaining, attempt),
             signal,
           );
@@ -479,22 +500,75 @@ export class WorkerController {
         detail = `${String(error)} Check pane ${owned.paneId} manually. Detached descendants are not covered.`;
       }
     }
-    recordEvent(directory, task.taskId, 'cleanup', detail, stopped);
-    if (!this.closed && !readEvent(directory, task.taskId, 'notified')) {
-      recordEvent(directory, task.taskId, 'notified', 'Parent notification attempted once.');
+    handle.cleanupDetail = reason === 'failure' ? `${detail} ${failureDetail}` : detail;
+    record(() => {
+      if (reason === 'timeout' || reason === 'cancelled') {
+        recordEvent(
+          directory,
+          task.taskId,
+          reason,
+          `Parent requested ${reason}. ${detail}`,
+          stopped,
+        );
+      } else if (reason === 'failure' && !readEvent(directory, task.taskId, 'startupFailure')) {
+        recordEvent(directory, task.taskId, 'startupFailure', failureDetail);
+      }
+    });
+    record(() => {
+      recordEvent(directory, task.taskId, 'cleanup', detail, stopped);
+    });
+    let outcome: string = reason;
+    record(() => {
+      outcome = taskStatus(directory, this.ownerId, false).outcome;
+    });
+    if (!this.closed) {
+      record(() => {
+        recordEvent(directory, task.taskId, 'notified', 'Parent notification attempted once.');
+      });
+      const errors = handle.recordErrors.length
+        ? ` Evidence errors: ${handle.recordErrors.join('; ')}. Check pane ${handle.paneId ?? 'unknown'} manually.`
+        : '';
       this.notify(
-        `Worker ${task.taskId}: ${taskStatus(directory, this.ownerId).outcome}. ${detail} Records: ${directory}`,
+        `Worker ${task.taskId}: ${outcome}. ${handle.cleanupDetail}${errors} Records: ${directory}. Native session: ${task.nativeSessionId} (${task.nativeSessionFile}).`,
       );
     }
   }
 
   status(taskId: string, parentSessionId: string) {
-    const directory = this.directory(taskId, parentSessionId);
+    let handle: Handle | undefined;
+    let task: Task | undefined;
+    let directory = join(this.root, taskId);
+    try {
+      directory = this.directory(taskId, parentSessionId);
+      handle = this.handles.get(taskId);
+      task = handle ? handle.task : readTask(directory);
+      if (handle?.recordErrors.length) {
+        throw new Error(handle.recordErrors.join('; '));
+      }
 
-    return taskStatus(
-      directory,
-      this.closed || !this.handles.has(taskId) ? undefined : this.ownerId,
-    );
+      return taskStatus(
+        directory,
+        this.closed || !handle ? undefined : this.ownerId,
+        !handle?.stopping,
+      );
+    } catch (error) {
+      // The handle is assigned only after the parent-session check; rejected callers cannot stop work.
+      if (handle && !this.closed) {
+        void this.stop(
+          handle,
+          'failure',
+          `Worker evidence unavailable: ${String(error)}. No retry.`,
+        );
+      }
+      const native = task
+        ? `Native session: ${task.nativeSessionId} (${task.nativeSessionFile}).`
+        : 'Native session unavailable; inspect the saved directory.';
+
+      throw new Error(
+        `Worker ${taskId}: saved evidence is unavailable: ${String(error)}. ${handle?.cleanupDetail ?? 'Cleanup unconfirmed.'} Check pane ${handle?.paneId ?? 'unknown'} manually. Records: ${directory}. ${native}`,
+        { cause: error },
+      );
+    }
   }
 
   async cancel(taskId: string, parentSessionId: string) {
@@ -515,7 +589,8 @@ export class WorkerController {
       throw new Error('Invalid task identity.');
     }
     const directory = join(this.root, taskId);
-    if (readTask(directory).parentSessionId !== parentSessionId) {
+    const task = this.handles.get(taskId)?.task ?? readTask(directory);
+    if (task.parentSessionId !== parentSessionId) {
       throw new Error('Task belongs to another parent session.');
     }
 

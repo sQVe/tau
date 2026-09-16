@@ -63,6 +63,95 @@ describe('owned worker cancellation', () => {
     );
   });
 
+  it.each([
+    'rewritten argv',
+    'wrong session',
+    'changed start',
+    'wrong pane',
+    'wrong shell',
+    'wrong foreground',
+    'wrong process entry',
+  ])('checks alternative Pi identity with %s', async (scenario) => {
+    const startedAt = (
+      await timeout.runClient('ps', ['-p', String(process.pid), '-o', 'lstart='], 1000)
+    ).trim();
+    const piOwned = {
+      ...owned,
+      kind: 'pi' as const,
+      processId: process.pid,
+      startedAt: scenario === 'changed start' ? 'previous process' : startedAt,
+    };
+    const client = vi.fn<Client>(async (arguments_) => {
+      if (arguments_[1] === 'get') {
+        return JSON.stringify({
+          result: {
+            agent: {
+              pane_id: owned.paneId,
+              agent: 'pi',
+              agent_session: {
+                value: scenario === 'wrong session' ? '/tmp/another-session' : owned.token,
+              },
+            },
+          },
+        });
+      }
+      if (arguments_[1] === 'send-keys') {
+        return '{}';
+      }
+      if (client.mock.calls.some(([call]) => call[1] === 'send-keys')) {
+        return shell();
+      }
+      return JSON.stringify({
+        result: {
+          process_info: {
+            pane_id: scenario === 'wrong pane' ? 'another-pane' : owned.paneId,
+            shell_pid: scenario === 'wrong shell' ? 999 : owned.shellPid,
+            foreground_process_group_id: scenario === 'wrong foreground' ? 999 : process.pid,
+            foreground_processes: [
+              {
+                pid: scenario === 'wrong process entry' ? 999 : process.pid,
+                argv: ['pi rewritten title'],
+              },
+            ],
+          },
+        },
+      });
+    });
+
+    const result = await timeout.cancelOwnedWorker(
+      piOwned,
+      1000,
+      client,
+      new AbortController().signal,
+    );
+    const sent = client.mock.calls.filter(([arguments_]) => arguments_[1] === 'send-keys');
+
+    expect(result.cleanup).toBe(scenario === 'rewritten argv' ? 'confirmed' : 'refused');
+    expect(sent).toHaveLength(scenario === 'rewritten argv' ? 1 : 0);
+  });
+
+  it('never counts EPERM as an absent worker', async () => {
+    vi.mocked(process.kill).mockImplementation(() => {
+      throw Object.assign(new Error('Permission denied'), { code: 'EPERM' });
+    });
+    const client = vi
+      .fn<Client>()
+      .mockResolvedValueOnce(snapshot())
+      .mockResolvedValueOnce('{}')
+      .mockResolvedValue(shell());
+
+    const result = await timeout.cancelOwnedWorker(
+      owned,
+      200,
+      client,
+      new AbortController().signal,
+    );
+
+    expect(result).toMatchObject({ cleanup: 'unconfirmed' });
+    expect(result.detail).toContain('Permission denied');
+    expect(result.detail).toContain('manual cleanup');
+  });
+
   it.each([snapshot(102), snapshot(101, '/tmp/replacement'), '{}'])(
     'refuses a mismatched or missing worker identity: %s',
     async (response) => {

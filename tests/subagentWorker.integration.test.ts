@@ -88,6 +88,7 @@ it.each(['editing', 'investigation'] as const)(
         agentDirectory: directory,
         permissions: 'trusted-full-tools',
         tools: ['read', 'bash', 'edit', 'write', 'subagent_report'],
+        noExtensions: true,
         integrations: [safety],
         integrationFingerprint: integrationFingerprint([safety]),
         safetyExtension: safety,

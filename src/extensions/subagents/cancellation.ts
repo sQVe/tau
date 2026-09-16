@@ -86,7 +86,7 @@ const processInfo = (response: string) => {
   return object(object(object(parsed).result).process_info);
 };
 
-const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker) =>
+export const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker) =>
   info.pane_id === owned.paneId &&
   info.shell_pid === owned.shellPid &&
   info.foreground_process_group_id === owned.processId &&
@@ -97,6 +97,7 @@ const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker) =>
     return (
       process.pid === owned.processId &&
       Array.isArray(process.argv) &&
+      // Pi rewrites argv through process.title. The caller also checks its herdr session token and ps start time before using this fallback.
       (process.argv.includes(owned.token) || (owned.kind === 'pi' && !!owned.startedAt))
     );
   });
