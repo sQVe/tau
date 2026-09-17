@@ -271,6 +271,16 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
   expect(resolved.tools).not.toContain('subagent_follow_up');
   expect(resolved.tools).toContain('subagent_question');
   expect(resolved.tools).not.toContain('ask_user_question');
+  await expect(
+    loadoutModule.validateSavedLoadout(
+      { ...resolved, tools: [...resolved.tools, 'subagent_history'] },
+      context,
+    ),
+  ).rejects.toThrow('parent-only');
+  const legacyQuestionnaire = { ...resolved, tools: [...resolved.tools, 'ask_user_question'] };
+  expect(await loadoutModule.validateSavedLoadout(legacyQuestionnaire, context)).toEqual(
+    legacyQuestionnaire,
+  );
   rmSync(join(directory, 'settings.json'));
   const withoutModel = { profile: 'worker', permissions: 'trusted-full-tools' };
   await expect(resolveLoadout(withoutModel, context, pi)).rejects.toThrow('no fallback');

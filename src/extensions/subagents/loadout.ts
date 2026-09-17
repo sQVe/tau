@@ -17,6 +17,15 @@ import { resolveProfile } from './profiles.js';
 import { loadoutSchema } from './types.js';
 import type { Loadout } from './types.js';
 
+const parentOnlyTools = [
+  'subagent',
+  'subagent_status',
+  'subagent_history',
+  'subagent_follow_up',
+  'subagent_cancel',
+  'subagent_reply',
+];
+
 const isObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object';
 
@@ -314,18 +323,7 @@ export const resolveLoadout = async (
       'subagent_report',
       'subagent_question',
     ]),
-  ].filter(
-    (tool) =>
-      ![
-        'subagent',
-        'subagent_status',
-        'subagent_history',
-        'subagent_follow_up',
-        'subagent_cancel',
-        'subagent_reply',
-        'ask_user_question',
-      ].includes(tool),
-  );
+  ].filter((tool) => ![...parentOnlyTools, 'ask_user_question'].includes(tool));
 
   return {
     profile: profile.name,
@@ -412,6 +410,10 @@ export const validateSavedLoadout = async (
     )
   ) {
     throw new Error('Saved worker tools are unavailable.');
+  }
+  // Loadouts saved before this check may include ask_user_question; the worker blocks it at call time.
+  if (loadout.tools.some((tool) => parentOnlyTools.includes(tool))) {
+    throw new Error('Saved worker tools include parent-only tools.');
   }
 
   const separator = loadout.model.indexOf('/');
