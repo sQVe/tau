@@ -102,7 +102,7 @@ export const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker)
     );
   });
 
-const processExists = (processId: number) => {
+export const processExists = (processId: number) => {
   try {
     process.kill(processId, 0);
 

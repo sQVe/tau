@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 
 import { clampThinkingLevel } from '@earendil-works/pi-ai';
 import {
@@ -11,9 +11,20 @@ import {
   getAgentDir,
 } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { Value } from 'typebox/value';
 
 import { resolveProfile } from './profiles.js';
+import { loadoutSchema } from './types.js';
 import type { Loadout } from './types.js';
+
+const parentOnlyTools = [
+  'subagent',
+  'subagent_status',
+  'subagent_history',
+  'subagent_follow_up',
+  'subagent_cancel',
+  'subagent_reply',
+];
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object';
@@ -122,6 +133,7 @@ export const providerConfiguration = async (
   }
   // Pi's compatibility auth API has no signal parameter. Bound our wait; a provider may finish its own auth request later.
   const auth = await waitForResolution(registry.getApiKeyAndHeaders(selectedModel), signal);
+  signal.throwIfAborted();
   if (!auth.ok) {
     throw new Error('Selected worker provider authentication is unavailable.');
   }
@@ -131,14 +143,38 @@ export const providerConfiguration = async (
   return { baseUrl: provider.baseUrl, headers: provider.headers, auth, registration, native };
 };
 
+const providerFingerprintValue = (
+  configuration: Awaited<ReturnType<typeof providerConfiguration>>,
+  version: 1 | 2,
+): string => {
+  if (version === 1) {
+    return modelFingerprint(configuration);
+  }
+  const { apiKey: _resolvedKey, ...auth } = configuration.auth;
+  let modelsConfiguration: string | null = null;
+  try {
+    modelsConfiguration = createHash('sha256')
+      .update(readFileSync(join(getAgentDir(), 'models.json')))
+      .digest('hex');
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
+      throw error;
+    }
+  }
+
+  // This binds the saved file, not registry provenance. Live settings must also match a fresh reconstruction.
+  return modelFingerprint({ ...configuration, auth, modelsConfiguration });
+};
+
 export const providerFingerprint = async (
   registry: ModelRegistry,
   model: { provider: string; id: string },
   signal: AbortSignal = AbortSignal.timeout(10_000),
+  version: 1 | 2 = 1,
 ): Promise<string> => {
   const configuration = await providerConfiguration(registry, model, signal);
   // Pi distributions can minify SDK wrappers differently. Compare implementations in the parent process, not across processes.
-  return modelFingerprint(configuration);
+  return providerFingerprintValue(configuration, version);
 };
 
 const resolveModel = (
@@ -160,16 +196,60 @@ const resolveModel = (
   return model;
 };
 
-const checkProviderConfiguration = (parent: unknown, reconstructed: unknown): void => {
+const checkProviderConfiguration = (
+  parent: Awaited<ReturnType<typeof providerConfiguration>>,
+  reconstructed: Awaited<ReturnType<typeof providerConfiguration>>,
+): void => {
   // Matching source text cannot establish equality of captured settings. Only replayable callback identities are accepted.
+  // A disk hash cannot establish what a live registry loaded. Key differences within this check are not evidence of rotation.
   if (
     !providerCallbacksMatch(parent, reconstructed) ||
     modelFingerprint(parent) !== modelFingerprint(reconstructed)
   ) {
     throw new Error(
-      'Worker cannot reproduce parent provider authentication, headers, or streaming integration.',
+      'Worker cannot reproduce current provider authentication, headers, or streaming integration. Differing resolved credentials during validation are unsupported.',
     );
   }
+};
+
+const reconstructIntegrations = async (
+  cwd: string,
+  agentDirectory: string,
+  selection: { noExtensions: boolean; additionalExtensionPaths: string[] },
+  signal: AbortSignal,
+) => {
+  const loader = new DefaultResourceLoader({ cwd, agentDir: agentDirectory, ...selection });
+  await waitForResolution(loader.reload(), signal);
+  const loaded = loader.getExtensions();
+  if (loaded.errors.length) {
+    throw new Error(`Worker integration load failed: ${JSON.stringify(loaded.errors)}`);
+  }
+  const safety = loaded.extensions.find(
+    (extension) => extension.commands.has('cc-safety-net') && extension.handlers.has('tool_call'),
+  );
+  if (!safety) {
+    throw new Error('CC Safety Net must be loaded, with its tool_call handler active.');
+  }
+
+  const reconstructed = await ModelRuntime.create({
+    authPath: join(agentDirectory, 'auth.json'),
+    modelsPath: join(agentDirectory, 'models.json'),
+    refreshOnCreate: false,
+    signal,
+  });
+  const registry = new ModelRegistry(reconstructed);
+  for (const registration of loaded.runtime.pendingProviderRegistrations) {
+    registry.registerProvider(registration.name, registration.config);
+  }
+  for (const registration of loaded.runtime.pendingNativeProviderRegistrations) {
+    registry.registerProvider(registration.provider);
+  }
+
+  if (registry.getError()) {
+    throw new Error('Worker model configuration could not be reconstructed.');
+  }
+
+  return { loaded, registry, safety };
 };
 
 export const resolveLoadout = async (
@@ -203,36 +283,12 @@ export const resolveLoadout = async (
   const separator = model.indexOf('/');
 
   const selection = parentExtensionPaths(pi);
-  const loader = new DefaultResourceLoader({
+  const { loaded, registry, safety } = await reconstructIntegrations(
     cwd,
-    agentDir: agentDirectory,
-    ...selection,
-  });
-  await waitForResolution(loader.reload(), signal);
-  const loaded = loader.getExtensions();
-  if (loaded.errors.length) {
-    throw new Error(`Worker integration load failed: ${JSON.stringify(loaded.errors)}`);
-  }
-  const safety = loaded.extensions.find(
-    (extension) => extension.commands.has('cc-safety-net') && extension.handlers.has('tool_call'),
-  );
-  if (!safety) {
-    throw new Error('CC Safety Net must be loaded, with its tool_call handler active.');
-  }
-
-  const reconstructed = await ModelRuntime.create({
-    authPath: join(agentDirectory, 'auth.json'),
-    modelsPath: join(agentDirectory, 'models.json'),
-    refreshOnCreate: false,
+    agentDirectory,
+    selection,
     signal,
-  });
-  const registry = new ModelRegistry(reconstructed);
-  for (const registration of loaded.runtime.pendingProviderRegistrations) {
-    registry.registerProvider(registration.name, registration.config);
-  }
-  for (const registration of loaded.runtime.pendingNativeProviderRegistrations) {
-    registry.registerProvider(registration.provider);
-  }
+  );
   const resolvedModel = registry.find(model.slice(0, separator), model.slice(separator + 1));
   const parentModel = context.modelRegistry.find(
     model.slice(0, separator),
@@ -265,15 +321,17 @@ export const resolveLoadout = async (
       'write',
       ...loaded.extensions.flatMap((extension) => Array.from(extension.tools.keys())),
       'subagent_report',
+      'subagent_question',
     ]),
-  ].filter((tool) => !['subagent', 'subagent_status', 'subagent_cancel'].includes(tool));
+  ].filter((tool) => ![...parentOnlyTools, 'ask_user_question'].includes(tool));
 
   return {
     profile: profile.name,
     role: profile.role,
     model,
     modelFingerprint: modelFingerprint(resolvedModel),
-    providerFingerprint: modelFingerprint(reconstructedConfiguration),
+    providerFingerprint: providerFingerprintValue(reconstructedConfiguration, 2),
+    providerFingerprintVersion: 2,
     thinking: clampThinkingLevel(resolvedModel, profile.thinking),
     cwd,
     agentDirectory,
@@ -285,6 +343,150 @@ export const resolveLoadout = async (
     safetyExtension: realpathSync(safety.path),
     instructions: profile.instructions,
   };
+};
+
+const validateSavedLoadoutShape = (
+  value: unknown,
+  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>,
+): Loadout => {
+  if (!Value.Check(loadoutSchema, value)) {
+    throw new Error('Invalid saved worker loadout.');
+  }
+  const loadout = value;
+  if (!context.isProjectTrusted()) {
+    throw new Error('Saved worker replay requires a currently trusted project.');
+  }
+  if (
+    realpathSync(context.cwd) !== loadout.cwd ||
+    realpathSync(getAgentDir()) !== loadout.agentDirectory
+  ) {
+    throw new Error('Worker cwd or configuration directory changed.');
+  }
+  if (
+    !loadout.integrations.every(isAbsolute) ||
+    !loadout.integrations.includes(loadout.safetyExtension) ||
+    integrationFingerprint(loadout.integrations) !== loadout.integrationFingerprint
+  ) {
+    throw new Error('Saved worker integration source changed or safety integration is missing.');
+  }
+
+  return loadout;
+};
+
+export const validateSavedLoadout = async (
+  value: unknown,
+  context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'isProjectTrusted'>,
+  signal: AbortSignal = AbortSignal.timeout(10_000),
+): Promise<Loadout> => {
+  signal.throwIfAborted();
+  const loadout = validateSavedLoadoutShape(value, context);
+
+  const { loaded, registry, safety } = await reconstructIntegrations(
+    loadout.cwd,
+    loadout.agentDirectory,
+    { noExtensions: true, additionalExtensionPaths: loadout.integrations },
+    signal,
+  );
+  const integrations = loaded.extensions.map((extension) => realpathSync(extension.path));
+  if (
+    modelFingerprint(integrations) !== modelFingerprint(loadout.integrations) ||
+    realpathSync(safety.path) !== loadout.safetyExtension
+  ) {
+    throw new Error('Saved worker integrations could not be replayed exactly.');
+  }
+  const tools = new Set([
+    'read',
+    'bash',
+    'edit',
+    'write',
+    'subagent_report',
+    'subagent_question',
+    ...loaded.extensions.flatMap((extension) => Array.from(extension.tools.keys())),
+  ]);
+  if (
+    loadout.tools.some((tool) => !tools.has(tool)) ||
+    !['read', 'bash', 'edit', 'write', 'subagent_report'].every((tool) =>
+      loadout.tools.includes(tool),
+    )
+  ) {
+    throw new Error('Saved worker tools are unavailable.');
+  }
+  // Loadouts saved before this check may include ask_user_question; the worker blocks it at call time.
+  if (loadout.tools.some((tool) => parentOnlyTools.includes(tool))) {
+    throw new Error('Saved worker tools include parent-only tools.');
+  }
+
+  const separator = loadout.model.indexOf('/');
+  const provider = loadout.model.slice(0, separator);
+  const modelId = loadout.model.slice(separator + 1);
+  // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model IDs, not an array predicate.
+  const model = registry.find(provider, modelId);
+  // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model IDs, not an array predicate.
+  const currentModel = context.modelRegistry.find(provider, modelId);
+  if (
+    !model ||
+    !currentModel ||
+    modelFingerprint(model) !== loadout.modelFingerprint ||
+    modelFingerprint(currentModel) !== loadout.modelFingerprint ||
+    clampThinkingLevel(model, loadout.thinking) !== loadout.thinking
+  ) {
+    throw new Error('Saved worker model or thinking cannot be reproduced; no fallback allowed.');
+  }
+
+  const configuration = await providerConfiguration(registry, model, signal);
+  const currentConfiguration = await providerConfiguration(
+    context.modelRegistry,
+    currentModel,
+    signal,
+  );
+  const version = loadout.providerFingerprintVersion ?? 1;
+  checkProviderConfiguration(currentConfiguration, configuration);
+  if (providerFingerprintValue(configuration, version) !== loadout.providerFingerprint) {
+    throw new Error(
+      'Worker provider configuration differs from the saved loadout. Legacy credential changes and changed auth headers require a fresh task.',
+    );
+  }
+  signal.throwIfAborted();
+
+  return loadout;
+};
+
+const checkLiveProviderConfiguration = async (
+  registry: ModelRegistry,
+  model: NonNullable<ExtensionContext['model']>,
+  signal: AbortSignal,
+) => {
+  const runtime = await ModelRuntime.create({
+    authPath: join(getAgentDir(), 'auth.json'),
+    modelsPath: join(getAgentDir(), 'models.json'),
+    refreshOnCreate: false,
+    signal,
+  });
+  const reconstructed = new ModelRegistry(runtime);
+  // Replay public provider declarations without running extension factories again inside an active worker.
+  const registration = registry.getRegisteredProviderConfig(model.provider);
+  const native = registry.getRegisteredNativeProvider(model.provider);
+  if (registration) {
+    reconstructed.registerProvider(model.provider, registration);
+  }
+  if (native) {
+    reconstructed.registerProvider(native);
+  }
+
+  // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model IDs, not an array predicate.
+  const reconstructedModel = reconstructed.find(model.provider, model.id);
+  if (
+    reconstructed.getError() ||
+    !reconstructedModel ||
+    modelFingerprint(reconstructedModel) !== modelFingerprint(model)
+  ) {
+    throw new Error('Worker cannot reproduce its current model configuration.');
+  }
+  const current = await providerConfiguration(registry, model, signal);
+  const expected = await providerConfiguration(reconstructed, reconstructedModel, signal);
+  checkProviderConfiguration(current, expected);
+
+  return current;
 };
 
 export const checkWorkerRuntime = async (
@@ -310,11 +512,14 @@ export const checkWorkerRuntime = async (
       'Worker model or thinking differs from the saved loadout; no fallback allowed.',
     );
   }
+  const configuration = await checkLiveProviderConfiguration(context.modelRegistry, model, signal);
   if (
-    (await providerFingerprint(context.modelRegistry, model, signal)) !==
+    providerFingerprintValue(configuration, loadout.providerFingerprintVersion ?? 1) !==
     loadout.providerFingerprint
   ) {
-    throw new Error('Worker provider configuration differs from the saved loadout.');
+    throw new Error(
+      'Worker provider configuration differs from the saved loadout. Legacy credential changes and changed auth headers require a fresh task.',
+    );
   }
   if (
     realpathSync(context.cwd) !== loadout.cwd ||

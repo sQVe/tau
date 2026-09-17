@@ -121,6 +121,9 @@ importers:
       cc-safety-net:
         specifier: 2.4.1
         version: 2.4.1
+      nanoid:
+        specifier: 3.3.18
+        version: 3.3.18
       pi-web-access:
         specifier: 0.28.0
         version: 0.28.0(@earendil-works/pi-ai@0.85.1(ws@8.21.3))(@earendil-works/pi-coding-agent@0.85.1(ws@8.21.3))(@earendil-works/pi-tui@0.85.1)
@@ -143,6 +146,9 @@ importers:
       '@types/node':
         specifier: 24.13.3
         version: 24.13.3
+      jiti:
+        specifier: 2.7.0
+        version: 2.7.0
       typescript:
         specifier: 7.0.2
         version: 7.0.2

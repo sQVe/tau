@@ -154,5 +154,5 @@ export const nativeIdentity = (directory: string) => {
 };
 
 export const workerPrompt = (task: Task): string => {
-  return `${task.loadout.instructions}\n\nTask ${task.taskId} (${task.loadout.role}):\n${task.task}\n\nDeadline: ${new Date(task.deadline).toISOString()}. Work only within this task. Full tools and CC Safety Net are not a sandbox. Do not commit, merge, reset, delegate, or run extra model trials. Preserve unrelated edits. Do not continue or resume another conversation. Finish by calling subagent_report once with outcome, summary, and evidence. Missing or uncertain handover is not success; do not retry it automatically.`;
+  return `${task.loadout.instructions}\n\nTask ${task.taskId} (${task.loadout.role}):\n${task.task}\n\nDeadline: ${new Date(task.deadline).toISOString()}. Work only within this task. Full tools and CC Safety Net are not a sandbox. Do not commit, merge, reset, delegate, or run extra model trials. Preserve unrelated edits. Do not continue or resume another conversation. Ask the parent for clarification with subagent_question, never ask_user_question. Waiting does not extend the original deadline or authorize increased scope. Finish by calling subagent_report once with outcome, summary, and evidence. Missing or uncertain handover is not success; do not retry it automatically.`;
 };
