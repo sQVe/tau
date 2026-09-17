@@ -1,9 +1,12 @@
 import { execFile } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { resolveTerminal, TerminalIdentityError } from './terminal.js';
+
 export interface OwnedWorker {
   readonly kind: 'process' | 'pi';
   readonly paneId: string;
+  readonly terminalId: string;
   readonly shellPid: number;
   readonly processId: number;
   // A unique launch argument, such as the explicitly selected Pi session path.
@@ -116,10 +119,17 @@ export const processExists = (processId: number) => {
   }
 };
 
+export const workerStopped = (information: Record<string, unknown>, owned: OwnedWorker): boolean =>
+  information.pane_id === owned.paneId &&
+  information.shell_pid === owned.shellPid &&
+  information.foreground_process_group_id === owned.shellPid &&
+  !processExists(owned.processId);
+
 const validateWorker = (owned: OwnedWorker) => {
   if (
     !['process', 'pi'].includes(owned.kind) ||
     !owned.paneId ||
+    !owned.terminalId ||
     !owned.token ||
     !Number.isSafeInteger(owned.shellPid) ||
     !Number.isSafeInteger(owned.processId) ||
@@ -157,9 +167,14 @@ export const cancelOwnedWorker = async (
 
     return client(arguments_, remaining, signal);
   };
-  const manual = `Check ${owned.paneId} and worker ${owned.processId} (${owned.token}) for manual cleanup.`;
+  const manual = `Check terminal ${owned.terminalId} (last pane ${owned.paneId}) and worker ${owned.processId} (${owned.token}) for manual cleanup.`;
+  const refresh = async () => {
+    const location = await resolveTerminal(owned.terminalId, call);
+    owned.paneId = location.paneId;
+  };
 
   try {
+    await refresh();
     if (owned.kind === 'pi') {
       const response: unknown = JSON.parse(await call(['agent', 'get', owned.paneId]));
       const agent = object(object(object(response).result).agent);
@@ -200,6 +215,12 @@ export const cancelOwnedWorker = async (
       };
     }
 
+    const checkedPane = owned.paneId;
+    await refresh();
+    if (owned.paneId !== checkedPane) {
+      throw new TerminalIdentityError('Worker moved during identity checks; no input sent.');
+    }
+
     // Escape requests active-run abort; shutdown keys remain best-effort while tools unwind.
     const keys =
       owned.kind === 'pi'
@@ -208,14 +229,11 @@ export const cancelOwnedWorker = async (
     await call(keys);
 
     for (;;) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Follow the same terminal if it moves while shutdown is pending.
+      await refresh();
       // oxlint-disable-next-line eslint/no-await-in-loop -- Confirm the foreground job ended within the same cancellation budget.
       const after = processInfo(await call(['pane', 'process-info', '--pane', owned.paneId]));
-      if (
-        after.pane_id === owned.paneId &&
-        after.shell_pid === owned.shellPid &&
-        after.foreground_process_group_id === owned.shellPid &&
-        !processExists(owned.processId)
-      ) {
+      if (workerStopped(after, owned)) {
         return {
           cleanup: 'confirmed',
           detail:
@@ -227,7 +245,10 @@ export const cancelOwnedWorker = async (
       await delay(25, undefined, { signal });
     }
   } catch (error) {
-    return { cleanup: 'unconfirmed', detail: `${String(error)} ${manual}` };
+    return {
+      cleanup: error instanceof TerminalIdentityError ? 'refused' : 'unconfirmed',
+      detail: `${String(error)} ${manual}`,
+    };
   } finally {
     clearTimeout(timer);
   }

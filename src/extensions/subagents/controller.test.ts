@@ -20,6 +20,8 @@ import { fixtureLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import * as loadoutModule from './loadout.js';
 import * as names from './names.js';
+import { WorkerPlacement } from './placement.js';
+import { placementFixture } from './placementFixture.js';
 import { acceptReport, readEvent, readTask, recordEvent } from './records.js';
 import * as records from './records.js';
 
@@ -51,15 +53,46 @@ const setup = (
         return response;
       }
     }
-    if (arguments_[1] === 'list') {
+    if (arguments_[0] === 'agent' && arguments_[1] === 'list') {
       return JSON.stringify({ result: { type: 'agent_list', agents: [] } });
+    }
+    const parent = {
+      pane_id: 'parent-pane',
+      terminal_id: 'parent-terminal',
+      workspace_id: 'workspace',
+      tab_id: 'tab',
+    };
+    const owned = {
+      pane_id: 'owned-pane',
+      terminal_id: 'owned-terminal',
+      workspace_id: 'workspace',
+      tab_id: 'tab',
+    };
+    if (arguments_[1] === 'current') {
+      return JSON.stringify({ result: { pane: parent } });
+    }
+    if (arguments_[1] === 'list') {
+      return JSON.stringify({ result: { panes: [parent, owned] } });
+    }
+    if (arguments_[1] === 'layout') {
+      return JSON.stringify({
+        result: {
+          layout: {
+            workspace_id: 'workspace',
+            tab_id: 'tab',
+            zoomed: false,
+            area: { width: 200, height: 60 },
+            panes: [{ pane_id: parent.pane_id, rect: { width: 200, height: 60 } }],
+          },
+        },
+      });
     }
     if (arguments_[1] === 'split') {
       recordDirectory =
         arguments_
           .find((argument) => argument.startsWith('TAU_WORKER_RECORD='))
           ?.slice('TAU_WORKER_RECORD='.length) ?? '';
-      return JSON.stringify({ result: { pane: { pane_id: 'owned-pane' } } });
+      return JSON.stringify({ result: { pane: owned } });
     }
     if (arguments_[1] === 'start') {
       token = arguments_[arguments_.indexOf('--session') + 1] ?? '';
@@ -457,7 +490,7 @@ it.each(['cancelled', 'missing after claim', 'failed startup', 'sync uncertain']
 it('refuses known live native writers and preserves validation time in the original follow-up budget', async () => {
   let live: unknown[] = [];
   const fixture = await completed(async (arguments_) =>
-    arguments_[1] === 'list'
+    arguments_[0] === 'agent' && arguments_[1] === 'list'
       ? JSON.stringify({ result: { type: 'agent_list', agents: live } })
       : '',
   );
@@ -519,7 +552,7 @@ it('retains friendly names and avoids retained and live collisions', async ({ on
   const suffix = vi.spyOn(names, 'nameSuffix').mockReturnValue('aa');
   let live: unknown[] = [];
   const { controller, input, directory, calls } = setup(onTestFinished, 0, async (arguments_) =>
-    arguments_[1] === 'list'
+    arguments_[0] === 'agent' && arguments_[1] === 'list'
       ? JSON.stringify({ result: { type: 'agent_list', agents: live } })
       : '',
   );
@@ -758,6 +791,93 @@ it('delivers a clarification once without treating herdr delivery as acknowledge
   recovered.close();
 });
 
+it.each(['before', 'during'] as const)(
+  'checks terminal movement %s reply identity checks',
+  async (movement) => {
+    let replying = false;
+    let moved = false;
+    let token = '';
+    const movedPane = 'other-workspace:worker';
+    const { controller, input, calls } = setup(afterTest, 0, async (arguments_) => {
+      if (arguments_[1] === 'start') {
+        token = arguments_[arguments_.indexOf('--session') + 1]!;
+      }
+      if (!replying) {
+        return '';
+      }
+      if (arguments_[0] === 'pane' && arguments_[1] === 'list' && moved) {
+        return JSON.stringify({
+          result: {
+            panes: [
+              {
+                pane_id: movedPane,
+                terminal_id: 'owned-terminal',
+                workspace_id: 'other-workspace',
+                tab_id: 'other-tab',
+              },
+            ],
+          },
+        });
+      }
+      if (arguments_[1] === 'process-info' && moved) {
+        return JSON.stringify({
+          result: {
+            process_info: {
+              pane_id: movedPane,
+              shell_pid: 100,
+              foreground_process_group_id: process.pid,
+              foreground_processes: [{ pid: process.pid, argv: ['pi', token] }],
+            },
+          },
+        });
+      }
+      if (arguments_[1] === 'get') {
+        const paneId = moved ? movedPane : 'owned-pane';
+        moved = true;
+
+        return JSON.stringify({
+          result: { agent: { pane_id: paneId, agent: 'pi', agent_session: { value: token } } },
+        });
+      }
+      if (arguments_[1] === 'prompt') {
+        return '{}';
+      }
+
+      return '';
+    });
+    const launched = await controller.launch(input);
+    recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
+    records.acceptQuestion(launched.directory, launched.taskId, {
+      version: 1,
+      taskId: launched.taskId,
+      questionId: 'question-one',
+      question: 'Which file?',
+    });
+    replying = true;
+    moved = movement === 'before';
+    const reply = controller.reply(launched.taskId, 'parent-id', {
+      questionId: 'question-one',
+      replyId: 'reply-one',
+      reply: 'source.txt',
+      scopeUnchanged: true,
+    });
+
+    const outcome = await reply.catch((error: unknown) => String(error));
+
+    const expected: Record<typeof movement, unknown> = {
+      before: expect.objectContaining({ replyAccepted: true, workerAcknowledged: false }),
+      during: expect.stringContaining('moved'),
+    };
+    expect(outcome).toEqual(expected[movement]);
+    expect(calls.filter((call) => call[1] === 'prompt').map((call) => call[2])).toEqual(
+      movement === 'before' ? [movedPane] : [],
+    );
+    expect(records.readReply(launched.directory, launched.taskId, 'question-one')?.replyId).toBe(
+      movement === 'before' ? 'reply-one' : undefined,
+    );
+  },
+);
+
 it('retains uncertain reply delivery without resending or acknowledging it', async ({
   onTestFinished,
 }) => {
@@ -857,6 +977,250 @@ it('refuses reply delivery when the original native worker identity changes', as
   ).rejects.toThrow('identity');
   expect(calls.some((call) => call[1] === 'prompt')).toBe(false);
   expect(records.readReply(launched.directory, launched.taskId, 'question-one')).toBeUndefined();
+});
+
+it.each(['confirmed', 'unconfirmed'] as const)(
+  'preserves foreground sharing during %s cleanup and releases ownership afterward',
+  async (outcome) => {
+    const terminal = placementFixture(250, 30);
+    const tokens = new Map<string, string>();
+    const entered = Promise.withResolvers<undefined>();
+    const resume = Promise.withResolvers<undefined>();
+    const release = vi.spyOn(WorkerPlacement.prototype, 'release');
+    let cleaning = false;
+    let held = false;
+    const { controller, input } = setup(afterTest, 0, async (arguments_) => {
+      if (cleaning && !held && arguments_[1] === 'list') {
+        held = true;
+        entered.resolve(undefined);
+        await resume.promise;
+        if (outcome === 'unconfirmed') {
+          throw new Error('Cleanup identity unavailable.');
+        }
+      }
+      const paneId = arguments_[arguments_.indexOf('--pane') + 1]!;
+      if (arguments_[1] === 'start') {
+        const token = arguments_[arguments_.indexOf('--session') + 1]!;
+        tokens.set(paneId, token);
+        const task = readTask(dirname(token));
+        recordEvent(dirname(token), task.taskId, 'ready', 'Ready.', false, process.pid);
+
+        return '{}';
+      }
+      if (arguments_[1] === 'process-info') {
+        return JSON.stringify({
+          result: {
+            process_info: {
+              pane_id: paneId,
+              shell_pid: 100,
+              foreground_process_group_id: cleaning && paneId === 'worker-1' ? 100 : process.pid,
+              foreground_processes: [{ pid: process.pid, argv: ['pi', tokens.get(paneId)] }],
+            },
+          },
+        });
+      }
+      if (arguments_[1] === 'get') {
+        return JSON.stringify({
+          result: {
+            agent: {
+              pane_id: arguments_[2],
+              agent: 'pi',
+              agent_session: { value: tokens.get(arguments_[2]!) },
+            },
+          },
+        });
+      }
+
+      if (arguments_[0] === 'agent' && arguments_[1] === 'list') {
+        return '';
+      }
+      return terminal.client(arguments_);
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const first = await controller.launch(input);
+    expect(first.ready).toBe(true);
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+    });
+    cleaning = true;
+    const cancellation = controller.cancel(first.taskId, input.parentSessionId);
+    await entered.promise;
+
+    try {
+      const second = await controller.launch(input);
+      expect(second.ready).toBe(true);
+      expect(terminal.panes.map((pane) => pane.tab_id)).toEqual(['working', 'working', 'working']);
+      expect(terminal.calls.some((call) => call[1] === 'create')).toBe(false);
+      expect(release).not.toHaveBeenCalledWith('terminal-1');
+    } finally {
+      resume.resolve(undefined);
+      await cancellation;
+    }
+
+    expect(release).toHaveBeenCalledWith('terminal-1');
+    expect(terminal.panes.some((pane) => pane.pane_id === 'worker-1')).toBe(
+      outcome === 'unconfirmed',
+    );
+  },
+);
+
+it('chooses a down split for a narrow tall parent without changing focus', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, calls } = setup(onTestFinished, 0, async (arguments_) => {
+    if (arguments_[1] === 'current') {
+      return JSON.stringify({
+        result: {
+          pane: {
+            pane_id: 'parent-pane',
+            terminal_id: 'parent-terminal',
+            workspace_id: 'workspace',
+            tab_id: 'tab',
+          },
+        },
+      });
+    }
+    if (arguments_[0] === 'pane' && arguments_[1] === 'list') {
+      return JSON.stringify({
+        result: {
+          panes: [
+            {
+              pane_id: 'parent-pane',
+              terminal_id: 'parent-terminal',
+              workspace_id: 'workspace',
+              tab_id: 'tab',
+            },
+            {
+              pane_id: 'owned-pane',
+              terminal_id: 'owned-terminal',
+              workspace_id: 'workspace',
+              tab_id: 'tab',
+            },
+          ],
+        },
+      });
+    }
+    if (arguments_[1] === 'layout') {
+      return JSON.stringify({
+        result: {
+          layout: {
+            workspace_id: 'workspace',
+            tab_id: 'tab',
+            zoomed: false,
+            area: { width: 100, height: 90 },
+            panes: [{ pane_id: 'parent-pane', rect: { width: 100, height: 90 } }],
+          },
+        },
+      });
+    }
+    return '';
+  });
+  const launched = await controller.launch(input);
+
+  expect(launched.failure).toBeUndefined();
+  expect(calls.find((call) => call[1] === 'split')).toEqual(
+    expect.arrayContaining(['--direction', 'down', '--no-focus']),
+  );
+  expect(calls.some((call) => call[1] === 'resize' || call[1] === 'focus')).toBe(false);
+});
+
+it.each(['moved', 'duplicate', 'missing', 'replacement job'] as const)(
+  'protects terminal ownership during %s cleanup',
+  async (scenario) => {
+    let cleaning = false;
+    const { controller, input, calls } = setup(afterTest, 0, async (arguments_) => {
+      if (!cleaning) {
+        return '';
+      }
+      if (arguments_[1] === 'list') {
+        const pane = {
+          pane_id: 'other-workspace:pane',
+          terminal_id: 'owned-terminal',
+          workspace_id: 'other-workspace',
+          tab_id: 'other-workspace:tab',
+        };
+        const panes = scenario === 'missing' ? [] : [pane];
+        if (scenario === 'duplicate') {
+          panes.push({ ...pane, pane_id: 'ambiguous' });
+        }
+
+        return JSON.stringify({ result: { panes } });
+      }
+      if (arguments_[1] === 'process-info') {
+        return JSON.stringify({
+          result: {
+            process_info: {
+              pane_id: 'other-workspace:pane',
+              shell_pid: 100,
+              foreground_process_group_id: scenario === 'replacement job' ? 987 : 100,
+              foreground_processes: [],
+            },
+          },
+        });
+      }
+      if (arguments_[1] === 'close') {
+        return '{}';
+      }
+      return '';
+    });
+    const launched = await controller.launch(input);
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+    });
+    cleaning = true;
+    const previousCalls = calls.length;
+    const cancelled = await controller.cancel(launched.taskId, 'parent-id');
+    const cleanupCalls = calls.slice(previousCalls);
+
+    expect(cleanupCalls.filter((call) => call[1] === 'close')).toEqual(
+      scenario === 'moved' ? [['pane', 'close', 'other-workspace:pane']] : [],
+    );
+    expect(cleanupCalls.some((call) => call[1] === 'send-keys')).toBe(false);
+    expect(cleanupCalls.flat()).not.toContain('owned-pane');
+    expect(cancelled.stopped).toBe(scenario === 'moved');
+    expect(cancelled.deadline).toBe(launched.deadline);
+  },
+);
+
+it('retains confirmed terminal evidence when cancelled during the cosmetic placement snapshot', async ({
+  onTestFinished,
+}) => {
+  const abort = new AbortController();
+  const snapshot = Promise.withResolvers<undefined>();
+  let created = false;
+  let recordDirectory = '';
+  const release = vi.spyOn(WorkerPlacement.prototype, 'release');
+  const { controller, input, calls } = setup(onTestFinished, 0, async (arguments_) => {
+    if (arguments_[1] === 'split') {
+      created = true;
+      recordDirectory = arguments_
+        .find((argument) => argument.startsWith('TAU_WORKER_RECORD='))!
+        .slice('TAU_WORKER_RECORD='.length);
+    } else if (created && arguments_[1] === 'layout') {
+      abort.abort();
+      await snapshot.promise;
+    }
+
+    return '';
+  });
+  const status = await controller.launch(input, abort.signal);
+  const evidence = readdirSync(recordDirectory);
+  snapshot.resolve(undefined);
+
+  expect(evidence).toContain('pane.json');
+  expect(JSON.parse(readFileSync(join(recordDirectory, 'pane.json'), 'utf8'))).toMatchObject({
+    paneId: 'owned-pane',
+    terminalId: 'owned-terminal',
+  });
+  expect(status).toMatchObject({
+    outcome: 'cancelled',
+    stopped: false,
+    accepted: false,
+    ready: false,
+  });
+  expect(status.cleanup).toContain('owned-pane');
+  expect(release).toHaveBeenCalledWith('owned-terminal');
+  expect(calls.some((call) => ['start', 'close', 'send-keys'].includes(call[1]!))).toBe(false);
 });
 
 it('rejects aggregate Unicode tasks before publishing records or creating a pane', async ({
@@ -1056,7 +1420,7 @@ it('preserves incomplete output and malformed evidence without retrying startup'
     reportAccepted: false,
     stopped: false,
   });
-  expect(calls.map((call) => call[1])).toEqual(['list', 'split']);
+  expect(calls.map((call) => call[1])).toEqual(['list', 'current']);
   expect(readdirSync(status.directory)).toContain('task.json');
   writeFileSync(join(status.directory, 'report.json'), '{');
   expect(() => taskStatus(status.directory)).toThrow(/JSON|property/);

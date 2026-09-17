@@ -29,6 +29,22 @@ Keep its [MIT notice](../../src/extensions/subagents/LICENSE). Replace tmux orch
 transient completion signals with herdr identity checks and validated, non-replacing records. Do not
 port native continuation or restricted extension startup.
 
+Replace upstream's window-wide `even-horizontal` rebalance with size-aware herdr placement. Track
+only Tau-created foreground splits and adjust their unchanged ratios for roughly equal parent and
+worker areas. Use native relative pane resizing, not layout replacement or cached split paths.
+Discard a group's ratio ownership after unexplained layout changes. Retain surviving splits only
+when a confirmed owned close matches the expected sibling collapse in live geometry. Preserve manual
+ratios and unrelated topology, and use owned background tabs when useful space runs out.
+
+Record confirmed terminal identity before cosmetic layout inspection. Cancellation during that
+inspection releases placement ownership without claiming that an unverified worker stopped.
+
+Reserve room for pane chrome, and refuse areas too small for a useful tab. Track terminal identity
+separately from its changing workspace-qualified pane ID. Recheck layout before each placement or
+resize, and identity before input or closure. Herdr does not provide atomic compare-and-mutate
+operations, so concurrent changes can still require manual cleanup. Never retry uncertain mutations
+or restore a saved layout.
+
 Worker roles describe assigned work, not security boundaries. Retain CC Safety Net and required
 provider integrations. Refuse settings that cannot be reproduced rather than silently choosing a
 model, provider, or unrestricted configuration.

@@ -1,6 +1,7 @@
 /* oxlint-disable node/no-process-env -- Worker ownership and herdr connection come from the active Pi process. */
 import { join } from 'node:path';
 
+import { StringEnum } from '@earendil-works/pi-ai';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
@@ -44,6 +45,12 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       cwd: Type.Optional(Type.String()),
       model: Type.Optional(Type.String()),
       harness: Type.Optional(Type.String()),
+      visibility: Type.Optional(
+        StringEnum(['foreground', 'background'] as const, {
+          description:
+            'Foreground shares useful space with the parent. Background uses inspectable worker tabs. Neither changes focus. Default: foreground; overflow uses a tab.',
+        }),
+      ),
       permissions: Type.Literal('trusted-full-tools'),
       timeoutSeconds: Type.Integer({ minimum: 10, maximum: 86_400 }),
     }),
@@ -72,7 +79,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
           startedAt,
           parentSession,
           parentSessionId: context.sessionManager.getSessionId(),
-          parentPane,
+          visibility: parameters.visibility ?? 'foreground',
         },
         signal,
       );
@@ -91,6 +98,12 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
         task: Type.String({ minLength: 1, maxLength: 32000 }),
         timeoutSeconds: Type.Integer({ minimum: 10, maximum: 86400 }),
         settingsUnchanged: Type.Literal(true),
+        visibility: Type.Optional(
+          StringEnum(['foreground', 'background'] as const, {
+            description:
+              'Foreground shares useful space with the parent. Background uses inspectable worker tabs. Neither changes focus. Default: foreground; overflow uses a tab.',
+          }),
+        ),
       },
       { additionalProperties: false },
     ),
@@ -106,7 +119,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
           timeout: parameters.timeoutSeconds * 1000,
           parentSession,
           parentSessionId: context.sessionManager.getSessionId(),
-          parentPane,
+          visibility: parameters.visibility ?? 'foreground',
         },
         context,
         signal,

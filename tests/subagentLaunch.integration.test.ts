@@ -1,7 +1,5 @@
-import { spawn, spawnSync } from 'node:child_process';
-import { once } from 'node:events';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +17,8 @@ import { fixtureModel } from '../src/extensions/subagents/fixtures/controlledPro
 import { searchHistory } from '../src/extensions/subagents/history.js';
 import { resolveLoadout, validateSavedLoadout } from '../src/extensions/subagents/loadout.js';
 import { readAcknowledgement, readReply, readTask } from '../src/extensions/subagents/records.js';
+import { object, result, terminalLocation } from '../src/extensions/subagents/terminal.js';
+import { isolatedHerdr } from './isolatedHerdr.js';
 
 const hasHerdr = spawnSync('herdr', ['--version'], { timeout: 2000, stdio: 'ignore' }).status === 0;
 const hasPi = spawnSync('pi', ['--version'], { timeout: 2000, stdio: 'ignore' }).status === 0;
@@ -29,6 +29,7 @@ it
     'completion',
     'follow-up',
     'active cancellation',
+    'moved cancellation',
     'active timeout',
     'early exit',
     'question completion',
@@ -37,26 +38,11 @@ it
   ])(
   'runs real canonical Pi %s with Safety Net in isolated herdr',
   async (scenario) => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-herdr-worker-'));
+    const { root, environment, client: isolatedClient } = await isolatedHerdr();
     const completes = ['completion', 'question completion', 'follow-up'].includes(scenario);
     writeFileSync(
       join(root, 'parent.jsonl'),
       JSON.stringify({ type: 'session', version: 3, id: 'parent', cwd: root }) + '\n',
-    );
-    const environment = {
-      // oxlint-disable-next-line node/no-process-env -- Only executable lookup is inherited; the active herdr socket and user resources are excluded.
-      PATH: process.env.PATH,
-      HOME: root,
-      XDG_CONFIG_HOME: join(root, 'config'),
-      HERDR_CONFIG_PATH: join(root, 'herdr.toml'),
-      PI_CODING_AGENT_DIR: join(root, 'agent'),
-      SHELL: '/bin/sh',
-      TERM: 'xterm-256color',
-    };
-    mkdirSync(environment.PI_CODING_AGENT_DIR);
-    writeFileSync(
-      environment.HERDR_CONFIG_PATH,
-      'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\n',
     );
     const disabledExtension = join(root, 'disabled-package.js');
     const rediscovered = join(root, 'rediscovered');
@@ -75,26 +61,6 @@ it
     writeFileSync(join(root, 'source.txt'), 'before\n');
     mkdirSync(join(root, 'delete-fixture', '.git'), { recursive: true });
     writeFileSync(join(root, 'delete-fixture', '.git', 'keep'), 'preserve');
-    const server = spawn('herdr', ['--session', 'tau-worker-test', 'server'], {
-      env: environment,
-      stdio: 'ignore',
-    });
-    const exited = once(server, 'exit');
-    onTestFinished(async () => {
-      server.kill('SIGTERM');
-      await exited;
-      rmSync(root, { recursive: true, force: true });
-    });
-    const readyDeadline = performance.now() + 10_000;
-    while (
-      !existsSync(join(root, 'config', 'herdr', 'sessions', 'tau-worker-test', 'herdr.sock'))
-    ) {
-      if (performance.now() > readyDeadline) {
-        throw new Error('Isolated herdr did not start.');
-      }
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Real socket readiness is bounded by the test deadline.
-      await delay(25);
-    }
     const exitSignal = join(root, 'exit-before-ready');
     const earlyExitExtension = join(root, 'early-exit.js');
     writeFileSync(
@@ -122,13 +88,7 @@ export default function (pi) {
         deliveryEntered.resolve(undefined);
         await releaseDelivery.promise;
       }
-      const response = await runClient(
-        'herdr',
-        ['--session', 'tau-worker-test', ...arguments_],
-        budget,
-        signal,
-        environment,
-      );
+      const response = await isolatedClient(arguments_, budget, signal);
       observations.push(response);
       if (
         scenario === 'early exit' &&
@@ -148,6 +108,9 @@ export default function (pi) {
     const paneId = workspaceText.match(/"root_pane":\{[^}]*"pane_id":"([^"]+)"/)?.[1];
     if (!paneId) {
       throw new Error(`Missing parent pane: ${workspaceText}`);
+    }
+    if (scenario === 'moved cancellation') {
+      await client(['pane', 'move', paneId, '--new-workspace', '--no-focus']);
     }
     const safety = join(
       dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
@@ -261,7 +224,8 @@ export default function (pi) {
     expect(performance.now() - launchedAt).toBeLessThan(10_000);
     expect(launched.failure ?? '').toMatch(failure);
     expect(existsSync(join(launched.directory, 'dispatch.json'))).toBe(scenario !== 'early exit');
-    if (scenario === 'active cancellation') {
+    let movement: { sameTerminal: boolean; newPane: boolean } | undefined;
+    if (scenario === 'active cancellation' || scenario === 'moved cancellation') {
       const streamingDeadline = performance.now() + 10_000;
       while (!existsSync(join(root, 'streaming'))) {
         if (performance.now() > streamingDeadline) {
@@ -269,6 +233,22 @@ export default function (pi) {
         }
         // oxlint-disable-next-line eslint/no-await-in-loop -- Wait for a real child streaming signal, not an assumed startup delay.
         await delay(25);
+      }
+      if (scenario === 'moved cancellation') {
+        const owned = object(
+          JSON.parse(readFileSync(join(launched.directory, 'owned.json'), 'utf8')),
+        );
+        const moved = object(
+          result(
+            await client(['pane', 'move', String(owned.paneId), '--new-workspace', '--no-focus']),
+          ).move_result,
+        );
+        const location = terminalLocation(moved.pane);
+
+        movement = {
+          sameTerminal: location.terminalId === owned.terminalId,
+          newPane: location.paneId !== owned.paneId,
+        };
       }
       await controller.cancel(launched.taskId, 'parent');
     }
@@ -312,6 +292,9 @@ export default function (pi) {
         await controller.cancel(task.taskId, 'parent');
       }
     }
+    expect(movement).toEqual(
+      scenario === 'moved cancellation' ? { sameTerminal: true, newPane: true } : undefined,
+    );
     await done.promise;
     const status = controller.status(launched.taskId, 'parent');
 
@@ -337,6 +320,7 @@ export default function (pi) {
           completion: 'success',
           'follow-up': 'success',
           'active cancellation': 'cancelled',
+          'moved cancellation': 'cancelled',
           'active timeout': 'timeout',
           'early exit': 'failure',
           'question completion': 'success',

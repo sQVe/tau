@@ -7,6 +7,7 @@ type Client = Parameters<typeof timeout.cancelOwnedWorker>[2];
 const owned = {
   kind: 'process' as const,
   paneId: 'w1:p2',
+  terminalId: 'owned-terminal',
   shellPid: 100,
   processId: 101,
   token: '/tmp/owned-session.jsonl',
@@ -24,6 +25,26 @@ const snapshot = (processId = owned.processId, token = owned.token) =>
   });
 
 const shell = () => snapshot(owned.shellPid);
+const withInventory =
+  (client: Client): Client =>
+  async (arguments_, budget, signal) => {
+    if (arguments_[1] === 'list') {
+      return JSON.stringify({
+        result: {
+          panes: [
+            {
+              pane_id: owned.paneId,
+              terminal_id: owned.terminalId,
+              workspace_id: 'w1',
+              tab_id: 'w1:t1',
+            },
+          ],
+        },
+      });
+    }
+
+    return client(arguments_, budget, signal);
+  };
 
 describe('owned worker cancellation', () => {
   beforeEach(() => {
@@ -51,7 +72,7 @@ describe('owned worker cancellation', () => {
     const result = await timeout.cancelOwnedWorker(
       { ...owned, kind: 'pi' },
       200,
-      client,
+      withInventory(client),
       new AbortController().signal,
     );
 
@@ -121,7 +142,7 @@ describe('owned worker cancellation', () => {
     const result = await timeout.cancelOwnedWorker(
       piOwned,
       1000,
-      client,
+      withInventory(client),
       new AbortController().signal,
     );
     const sent = client.mock.calls.filter(([arguments_]) => arguments_[1] === 'send-keys');
@@ -143,7 +164,7 @@ describe('owned worker cancellation', () => {
     const result = await timeout.cancelOwnedWorker(
       owned,
       200,
-      client,
+      withInventory(client),
       new AbortController().signal,
     );
 
@@ -159,7 +180,7 @@ describe('owned worker cancellation', () => {
       const result = await timeout.cancelOwnedWorker(
         owned,
         200,
-        client,
+        withInventory(client),
         new AbortController().signal,
       );
 
@@ -173,7 +194,7 @@ describe('owned worker cancellation', () => {
     const result = await timeout.cancelOwnedWorker(
       owned,
       200,
-      client,
+      withInventory(client),
       new AbortController().signal,
     );
 
@@ -186,7 +207,12 @@ describe('owned worker cancellation', () => {
   it('does not count input delivery as stopped work', async () => {
     vi.useFakeTimers();
     const client = vi.fn<Client>().mockResolvedValue(snapshot());
-    const result = timeout.cancelOwnedWorker(owned, 200, client, new AbortController().signal);
+    const result = timeout.cancelOwnedWorker(
+      owned,
+      200,
+      withInventory(client),
+      new AbortController().signal,
+    );
 
     await vi.advanceTimersByTimeAsync(200);
     await expect(result).resolves.toMatchObject({ cleanup: 'unconfirmed' });
@@ -203,7 +229,12 @@ describe('owned worker cancellation', () => {
       .mockResolvedValueOnce(snapshot())
       .mockResolvedValueOnce('{}')
       .mockResolvedValue(shell());
-    const result = timeout.cancelOwnedWorker(owned, 200, client, new AbortController().signal);
+    const result = timeout.cancelOwnedWorker(
+      owned,
+      200,
+      withInventory(client),
+      new AbortController().signal,
+    );
 
     await vi.advanceTimersByTimeAsync(200);
     await expect(result).resolves.toMatchObject({ cleanup: 'unconfirmed' });
