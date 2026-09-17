@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { glob, readFile, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import { classifyPath, configurationPaths, tddConfig } from './config.js';
+import { classifyPath, configurationGlobs, tddConfig } from './config.js';
 import { runTests } from './runner/index.js';
 import { finishDiagnostics } from './runner/retention.js';
 import type { RunDiagnostics, RunnerResult } from './runner/types.js';
@@ -52,11 +52,16 @@ const compareInputs = (before: string | null, after: string | null): Freshness =
 // Content is checked at bounded checkpoints, not as an atomic snapshot.
 const fingerprint = async (cwd: string, files: string[]): Promise<string | null> => {
   try {
-    const paths = [...files, ...configurationPaths];
+    const paths = [...files];
 
     for await (const file of glob(
-      [...tddConfig.productionGlobs, ...tddConfig.testGlobs, ...tddConfig.testSupportGlobs],
-      { cwd, exclude: ['**/node_modules/**', '**/.git/**'] },
+      [
+        ...tddConfig.productionGlobs,
+        ...tddConfig.testGlobs,
+        ...tddConfig.testSupportGlobs,
+        ...configurationGlobs,
+      ],
+      { cwd, exclude: [...tddConfig.excludedGlobs] },
     )) {
       paths.push(file);
     }
@@ -230,7 +235,7 @@ export const createTestObservation = (cwd: string) => {
       observedRed = false;
       shownHints.clear();
     } else if (scope === 'focused' && report.kind === 'pass') {
-      return observedRed ? 'full' : 'red';
+      return 'full';
     }
 
     return undefined;

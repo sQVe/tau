@@ -6,7 +6,9 @@ import { classifyPath, tddConfig } from './config.js';
 
 describe('TDD config', () => {
   it('defines production globs, test globs, and JSON verification arguments', () => {
-    expect(tddConfig.productionGlobs).toEqual(['src/**/*.{ts,tsx,js,jsx,mjs,cjs}']);
+    expect(tddConfig.productionGlobs).toEqual([
+      '{src,apps,packages,functions,infra}/**/*.{ts,tsx,js,jsx,mjs,cjs}',
+    ]);
     expect(tddConfig.testGlobs).toEqual([
       '**/*.test.{ts,tsx,js,jsx,mjs,cjs}',
       '**/*.spec.{ts,tsx,js,jsx,mjs,cjs}',
@@ -41,6 +43,47 @@ describe('TDD config', () => {
     expect(classifyPath('README.md')).toBe('other');
     expect(classifyPath('docs/example.md')).toBe('other');
     expect(classifyPath('src/example.css')).toBe('other');
+  });
+
+  it('classifies the supported production layouts without treating every script as production', () => {
+    for (const path of [
+      'apps/web/src/page.tsx',
+      'apps/web/routes/api.js',
+      'packages/core/index.ts',
+      'functions/notify/handler.mjs',
+      'infra/stacks/main.ts',
+      'packages\\core\\index.ts',
+    ]) {
+      expect(classifyPath(path)).toBe('production');
+    }
+
+    expect(classifyPath('apps/web/src/page.test.tsx')).toBe('test');
+    expect(classifyPath('packages/core/index.spec.ts')).toBe('test');
+    expect(classifyPath('scripts/release.ts')).toBe('other');
+    expect(classifyPath('docs/example.ts')).toBe('other');
+  });
+
+  it('excludes dependencies and generated directories before classifying source or tests', () => {
+    for (const directory of [
+      'node_modules',
+      '.git',
+      'dist',
+      'build',
+      'coverage',
+      '.next',
+      '.nuxt',
+      '.output',
+      '.turbo',
+      '.cache',
+      'generated',
+      '__generated__',
+    ]) {
+      for (const file of ['value.ts', 'value.test.ts']) {
+        expect(classifyPath(`apps/web/${directory}/${file}`)).toBe('other');
+        expect(classifyPath(`${directory}/src/${file}`)).toBe('other');
+        expect(classifyPath(`packages\\core\\${directory}\\${file}`)).toBe('other');
+      }
+    }
   });
 
   it('classifies backslash-separated paths like their forward-slash form', () => {

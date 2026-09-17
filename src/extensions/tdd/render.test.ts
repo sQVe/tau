@@ -76,6 +76,13 @@ it('distinguishes an execution that did not start from a completed run', () => {
   const report: RunnerResult = {
     kind: 'runner-missing',
     message: 'vitest not found',
+    resolution: {
+      cwd: '/repo',
+      request: 'vitest/package.json',
+      stage: 'lookup',
+      errorType: 'Error',
+      errorCode: 'MODULE_NOT_FOUND',
+    },
     diagnostics: { directory: '/tmp/run', durationMs: 0, timeoutMs: 30_000, exitCode: null },
   };
   const text = runContext(behavior, observation(report));

@@ -210,6 +210,47 @@ it('shows the selected tests before completion and saves full-suite input eviden
   expect(JSON.stringify(updates)).not.toContain('Full suite passed');
 });
 
+it.for(['tui', 'rpc'] as const)(
+  'notifies once for an edit hint through Pi in %s mode without changing tool results',
+  async (mode, { onTestFinished }) => {
+    const { cwd, session, call } = await createHarness(onTestFinished);
+    const notify = vi.fn<ExtensionUIContext['notify']>();
+    await session.bindExtensions({
+      mode,
+      uiContext: { ...session.extensionRunner.getUIContext(), notify },
+    });
+    await mkdir(join(cwd, 'src'));
+    await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
+    const failed = await call('edit', {
+      path: 'src/value.ts',
+      edits: [{ oldText: 'missing', newText: '2' }],
+    });
+
+    expect(failed.isError).toBe(true);
+    expect(notify).not.toHaveBeenCalled();
+    const edited = await call('edit', {
+      path: 'src/value.ts',
+      edits: [{ oldText: 'value = 1', newText: 'value = 2' }],
+    });
+    const hint =
+      'Hint: No RED observed for this behavior; start the next behavior with a failing focused test.';
+
+    expect(edited.isError).toBe(false);
+    expect(edited.result).toHaveProperty('details.diff', expect.stringContaining('value = 2'));
+    expect(JSON.stringify(edited.result)).toContain(hint);
+    expect(notify).toHaveBeenCalledExactlyOnceWith(hint, 'info');
+    const written = await call('write', {
+      path: 'src/value.ts',
+      content: 'export const value = 3;',
+    });
+
+    expect(written.isError).toBe(false);
+    expect(JSON.stringify(written.result)).not.toContain('Hint:');
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(await readFile(join(cwd, 'src/value.ts'), 'utf8')).toBe('export const value = 3;');
+  },
+);
+
 it('allows production edits with one advisory hint and no persisted permission state', async ({
   onTestFinished,
 }) => {
@@ -252,7 +293,7 @@ it('observes RED and focused passes, then accepts full verification after format
   const green = await run();
 
   expect(green.details.kind).toBe('pass');
-  expect(green.content.at(-1)?.text).toContain('scope "full"');
+  expect(green.content[0]?.text).toContain('scope "full"');
   expect((await run()).content).toHaveLength(2);
 
   await call('bash', { command: "printf '\n' >> behavior.test.ts" });
@@ -266,6 +307,59 @@ it('observes RED and focused passes, then accepts full verification after format
 
   expect(JSON.stringify(edited.result)).toContain('stale');
   expect(JSON.stringify(edited.result)).not.toContain('RED');
+});
+
+it('keeps generated output quiet and hints stale after a layout edit through Pi', async ({
+  onTestFinished,
+}) => {
+  const { cwd, run, call } = await createHarness(onTestFinished);
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    "import { it } from 'vitest'; it('required behavior', () => {});",
+  );
+  const verified = await run({ scope: 'full' });
+
+  expect(verified.details).toMatchObject({ kind: 'pass', freshness: 'fresh' });
+  const generated = await call('write', {
+    path: 'apps/web/dist/page.ts',
+    content: 'generated output',
+  });
+
+  expect(generated.isError).toBe(false);
+  expect(JSON.stringify(generated.result)).not.toContain('Hint:');
+  const afterGenerated = await run({ scope: 'full' });
+
+  expect(afterGenerated.details.inputs).toEqual(verified.details.inputs);
+  const edited = await call('write', {
+    path: 'apps/web/src/page.ts',
+    content: 'export const page = 1;',
+  });
+
+  expect(edited.isError).toBe(false);
+  expect(JSON.stringify(edited.result)).toContain('stale');
+  expect(await readFile(join(cwd, 'apps/web/src/page.ts'), 'utf8')).toBe('export const page = 1;');
+});
+
+it('recommends full verification for regression checks across Pi session handoffs', async ({
+  onTestFinished,
+}) => {
+  const first = await createHarness(onTestFinished);
+  await writeFile(
+    join(first.cwd, 'behavior.test.ts'),
+    "import { it } from 'vitest'; it('required behavior', () => {});",
+  );
+  const regression = await first.run();
+
+  expect(regression.details).toMatchObject({ kind: 'pass', freshness: 'fresh' });
+  expect(regression.content[0]?.text).toContain('scope "full"');
+  expect(JSON.stringify(regression.content)).not.toContain('RED');
+  const second = await createHarness(onTestFinished, [], first.cwd);
+  const handoff = await second.run();
+
+  expect(handoff.details).toMatchObject({ kind: 'pass', freshness: 'fresh' });
+  expect(handoff.content[0]?.text).toContain('scope "full"');
+  expect(JSON.stringify(handoff.content)).not.toContain('RED');
+  expect((await second.run()).content).toHaveLength(2);
 });
 
 it('counts a full pass without RED and resets observations in another Pi session', async ({

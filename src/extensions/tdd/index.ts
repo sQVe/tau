@@ -49,6 +49,10 @@ export default function tddExtension(pi: ExtensionAPI) {
       return undefined;
     }
 
+    if (context.hasUI) {
+      context.ui.notify(hint, 'info');
+    }
+
     return { content: [...event.content, { type: 'text' as const, text: hint }] };
   });
 
@@ -57,17 +61,23 @@ export default function tddExtension(pi: ExtensionAPI) {
       name: 'run_tests',
       label: 'Run tests',
       description:
-        'Run focused tests for a behavior, then the full suite. Use exact Vitest full names: join describe names and the it name with spaces, for example "outer inner works". ' +
+        'Run focused tests for a behavior, then the full suite. Use exact names for the installed Vitest version: join describe names and the it name with spaces in Vitest 4 ("outer inner works") or " > " in Vitest 5 ("outer > inner > works"). ' +
+        'Names are literal, not regexes. On no match, use the reported collected names; do not restructure tests or broaden selection. ' +
         'Start with a failing focused test (RED), implement the behavior, then rerun focused (GREEN) and scope "full". These are observations, never edit permissions. ' +
         'Returns kind, scope, freshness (fresh, stale, or unknown), and the actual runner report, even when inputs changed during the run. ' +
         'A full pass counts without prior RED or focused renewal after formatting. Duplicate, skipped, and missing tests cannot establish RED. ' +
         'Short session-local hints suggest missing RED, full verification, or rerunning stale results. Hints never block or require acknowledgment. ' +
-        'Freshness covers source, test, and configuration content at bounded checkpoints, not an atomic snapshot or reusable verification. ' +
+        'Freshness covers .ts/.tsx/.js/.jsx/.mjs/.cjs under root src/, apps/, packages/, functions/, and infra/, plus test/spec files and root tests/ helpers. ' +
+        'It also covers default-named package/Vite/Vitest/TypeScript configs, npm/pnpm/Yarn/Bun lockfiles, and pnpm/Vitest workspace files throughout the worktree. ' +
+        'Dependencies and common generated/cache directories are excluded. Other source layouts, assets, and custom config filenames are not covered. ' +
+        'Checks run at bounded checkpoints, not an atomic snapshot or reusable verification. ' +
         'Shows focused files and exact names, or full-suite scope. The summary is capped at 2000 characters, with up to 4000 characters of run context and at most one hint. ' +
         'Read the saved run.json for command, selection, and before/after input fingerprints. Diagnostics retain up to 8 MiB stdout, 32 KiB stderr, and 8 MiB raw JSON, including passes. ' +
         'Console output beyond the capture limit is discarded without stopping tests. Truncation distinguishes process bytes from decoded text bytes. ' +
         'Files live in the Pi agent test-runs directory. After each run, cleanup keeps up to 32 completed runs for seven days; recent unfinished runs are protected. ' +
-        'Runner output is diagnostic text, never the source of test verdicts.',
+        'Runner output is diagnostic text, never the source of test verdicts. ' +
+        'Resolution failures include safe error codes/types and available lookup paths. Inspect once, then fix resolution or use the repository runner. ' +
+        'Bash tests do not update Tau observations.',
       parameters: Type.Object({
         behavior: Type.String({
           minLength: 1,
@@ -80,7 +90,7 @@ export default function tddExtension(pi: ExtensionAPI) {
           ],
           {
             description:
-              'Exact Vitest full name, or names that prove one behavior together. Keep names stable between focused runs.',
+              'Exact Vitest test name: nested names use spaces in Vitest 4 and " > " in Vitest 5. An array selects names that prove one behavior together. Keep names stable between focused runs.',
           },
         ),
         files: Type.Array(Type.String({ minLength: 1 }), {
@@ -125,7 +135,7 @@ export default function tddExtension(pi: ExtensionAPI) {
         ];
 
         if (hint !== undefined) {
-          content.push({ type: 'text', text: hint });
+          content.unshift({ type: 'text', text: hint });
         }
 
         return { content, details };

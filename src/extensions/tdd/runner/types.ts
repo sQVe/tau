@@ -29,6 +29,22 @@ export interface DiagnosticFile {
   truncated: boolean;
 }
 
+export interface VitestResolutionDiagnostic {
+  cwd: string;
+  request: 'vitest/package.json';
+  stage: 'lookup' | 'manifest' | 'binary' | 'resolver';
+  manifestPath?: string;
+  binaryPath?: string;
+  errorCode?: string;
+  errorType: string;
+}
+
+export interface VitestResolutionFailure {
+  kind: 'runner-missing' | 'runner-resolution-error';
+  message: string;
+  resolution: VitestResolutionDiagnostic;
+}
+
 export interface RunDiagnostics {
   directory: string;
   durationMs: number;
@@ -41,6 +57,7 @@ export interface RunDiagnostics {
   report?: DiagnosticFile | undefined;
   excerpt?: string;
   error?: string;
+  resolution?: VitestResolutionDiagnostic;
 }
 
 export type RunnerResult = { diagnostics?: RunDiagnostics } & (
@@ -52,10 +69,10 @@ export type RunnerResult = { diagnostics?: RunDiagnostics } & (
       truncated: boolean;
     }
   | { kind: 'compile-error'; message: string; stdout: string; stderr: string; tests: TestResult[] }
-  | { kind: 'no-tests-collected'; tests: TestResult[] }
+  | { kind: 'no-tests-collected'; tests: TestResult[]; message?: string }
   | { kind: 'timeout' }
   | { kind: 'cancelled' }
-  | { kind: 'runner-missing'; message: string }
+  | VitestResolutionFailure
 );
 
 export interface SpawnResult {
@@ -82,7 +99,12 @@ export type SpawnFn = (
   options: SpawnOptions,
 ) => Promise<SpawnResult>;
 
-export type ResolveVitestFn = (cwd: string) => string | null;
+export interface ResolvedVitest {
+  path: string;
+  version: string;
+}
+
+export type ResolveVitestFn = (cwd: string) => ResolvedVitest | VitestResolutionFailure;
 
 export interface RunnerDeps {
   resolveVitest: ResolveVitestFn;
