@@ -186,7 +186,9 @@ it('bounds and sanitizes resolution paths without copying error messages', async
   );
 
   expect(result).toHaveProperty('resolution.cwd', expect.stringContaining('[cut]'));
-  expect(JSON.stringify(result)).not.toMatch(/private-message|\\\\u001b|\\\\nxxx/);
+  expect(JSON.stringify(result)).not.toContain('private-message');
+  expect(JSON.stringify(result)).not.toContain('\\u001b');
+  expect(JSON.stringify(result)).not.toContain('\\nxxx');
   expect('message' in result && result.message.length).toBeLessThan(1000);
 });
 
