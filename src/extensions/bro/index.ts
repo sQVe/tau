@@ -14,6 +14,7 @@ export default function broExtension(pi: ExtensionAPI) {
     handler: (argumentsText, context) => {
       pi.sendUserMessage(buildBroSkillMessage(argumentsText), {
         deliverAs: context.isIdle() ? 'followUp' : 'steer',
+        expandPromptTemplates: true,
       });
 
       return Promise.resolve();

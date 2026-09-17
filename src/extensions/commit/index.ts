@@ -21,6 +21,7 @@ export default function commitExtension(pi: ExtensionAPI) {
     handler: (argumentsText, context) => {
       pi.sendUserMessage(buildCommitSkillMessage(argumentsText), {
         deliverAs: context.isIdle() ? 'followUp' : 'steer',
+        expandPromptTemplates: true,
       });
 
       return Promise.resolve();

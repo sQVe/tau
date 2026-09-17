@@ -28,9 +28,12 @@ describe('broExtension', () => {
     await broCommand.handler('', { isIdle: () => false } as never);
 
     expect(sentUserMessages).toEqual([
-      { content: '/skill:bro the test failure', options: { deliverAs: 'followUp' } },
-      { content: '/skill:bro', options: { deliverAs: 'followUp' } },
-      { content: '/skill:bro', options: { deliverAs: 'steer' } },
+      {
+        content: '/skill:bro the test failure',
+        options: { deliverAs: 'followUp', expandPromptTemplates: true },
+      },
+      { content: '/skill:bro', options: { deliverAs: 'followUp', expandPromptTemplates: true } },
+      { content: '/skill:bro', options: { deliverAs: 'steer', expandPromptTemplates: true } },
     ]);
   });
 });

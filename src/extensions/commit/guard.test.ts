@@ -318,15 +318,15 @@ describe('commitExtension', () => {
     expect(sentUserMessages).toEqual([
       {
         content: '/skill:commit --scope auth',
-        options: { deliverAs: 'followUp' },
+        options: { deliverAs: 'followUp', expandPromptTemplates: true },
       },
       {
         content: '/skill:commit',
-        options: { deliverAs: 'followUp' },
+        options: { deliverAs: 'followUp', expandPromptTemplates: true },
       },
       {
         content: '/skill:commit --scope auth',
-        options: { deliverAs: 'steer' },
+        options: { deliverAs: 'steer', expandPromptTemplates: true },
       },
     ]);
   });
