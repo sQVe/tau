@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import askUserQuestionExtension from './askUserQuestion/index.js';
+import broExtension from './bro/index.js';
 import bulkReadExtension from './bulkRead/index.js';
 import codingExtension from './coding/index.js';
 import commitExtension from './commit/index.js';
@@ -15,6 +16,7 @@ export default async function tauExtension(extensionApi: ExtensionAPI) {
   await writingExtension(extensionApi);
   await codingExtension(extensionApi);
 
+  broExtension(extensionApi);
   commitExtension(extensionApi);
   tddExtension(extensionApi);
   bulkReadExtension(extensionApi);

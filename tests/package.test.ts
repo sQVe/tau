@@ -61,6 +61,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
 
     const tauExtension = extensions.find((extension) => extension.tools.has('commit'));
 
+    expect(tauExtension?.commands.has('bro')).toBe(true);
     expect(tauExtension?.commands.has('commit')).toBe(true);
     expect(tauExtension?.tools.has('bulk_read')).toBe(true);
     expect(tauExtension?.commands.has('tdd')).toBe(false);
