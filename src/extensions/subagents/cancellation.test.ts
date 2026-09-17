@@ -166,6 +166,46 @@ it.each(['missing', 'duplicate', 'changed before input'] as const)(
   },
 );
 
+it('reports identity loss after cancellation input as unconfirmed', async () => {
+  let sent = false;
+  const owned = {
+    kind: 'process' as const,
+    paneId: 'pane',
+    terminalId: 'terminal',
+    shellPid: 100,
+    processId: 101,
+    token: '/tmp/worker',
+  };
+  const client = async (arguments_: string[]) => {
+    if (arguments_[1] === 'list') {
+      const pane = { pane_id: 'pane', terminal_id: 'terminal', workspace_id: 'w', tab_id: 't' };
+
+      return JSON.stringify({ result: { panes: sent ? [] : [pane] } });
+    }
+    if (arguments_[1] === 'send-keys') {
+      sent = true;
+
+      return '{}';
+    }
+
+    return JSON.stringify({
+      result: {
+        process_info: {
+          pane_id: 'pane',
+          shell_pid: owned.shellPid,
+          foreground_process_group_id: owned.processId,
+          foreground_processes: [{ pid: owned.processId, argv: [owned.token] }],
+        },
+      },
+    });
+  };
+
+  const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);
+
+  expect(sent).toBe(true);
+  expect(result.cleanup).toBe('unconfirmed');
+});
+
 it('requests active Pi abort before attempting editor shutdown without claiming it stopped', async () => {
   const calls: string[][] = [];
   const owned = {

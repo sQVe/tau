@@ -172,6 +172,7 @@ export const cancelOwnedWorker = async (
     const location = await resolveTerminal(owned.terminalId, call);
     owned.paneId = location.paneId;
   };
+  let inputAttempted = false;
 
   try {
     await refresh();
@@ -226,6 +227,7 @@ export const cancelOwnedWorker = async (
       owned.kind === 'pi'
         ? ['agent', 'send-keys', owned.paneId, 'escape', 'ctrl+c', 'ctrl+d']
         : ['pane', 'send-keys', owned.paneId, 'ctrl+c'];
+    inputAttempted = true;
     await call(keys);
 
     for (;;) {
@@ -246,7 +248,8 @@ export const cancelOwnedWorker = async (
     }
   } catch (error) {
     return {
-      cleanup: error instanceof TerminalIdentityError ? 'refused' : 'unconfirmed',
+      cleanup:
+        !inputAttempted && error instanceof TerminalIdentityError ? 'refused' : 'unconfirmed',
       detail: `${String(error)} ${manual}`,
     };
   } finally {
