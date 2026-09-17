@@ -36,7 +36,9 @@ tool stages each group, reviews comments, and commits with installed Git hooks w
      groups. Assign each path to only one group.
    - Keep each commit coherent enough to pass hooks and checks on its own. Keep a manifest with its
      lockfile, and tests with the code they cover.
-   - Commit dependency changes as their own `build(deps)` group before the code that uses them.
+   - Commit dependency additions as their own `build(deps)` group before the code that uses them.
+     Keep upgrades with breaking changes and dependency removals in the group with the code they
+     affect.
    - Commit refactors that a change relies on before the change itself.
    - Commit documentation as its own `docs` group unless it describes only the change in the same
      group.
