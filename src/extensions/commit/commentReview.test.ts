@@ -1,3 +1,6 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -172,4 +175,56 @@ it.each([
   ).rejects.toThrow(new Error(diagnostic));
 
   expect(getApiKeyAndHeaders).not.toHaveBeenCalled();
+});
+
+describe('lockfile exclusion', () => {
+  const reviewRepository = async (files: Record<string, string>) => {
+    const repositoryDirectory = await createTemporaryRepository();
+    const git = (commandArguments: string[]) =>
+      runCommand('git', commandArguments, repositoryDirectory);
+
+    await git(['commit', '--allow-empty', '-m', 'init']);
+    await mkdir(join(repositoryDirectory, 'packages/app'), { recursive: true });
+    await Promise.all(
+      Object.entries(files).map(([path, content]) =>
+        writeFile(join(repositoryDirectory, path), content),
+      ),
+    );
+    await git(['add', '--', ...Object.keys(files)]);
+
+    const tree = (await git(['write-tree'])).stdout.trim();
+    const head = (await git(['rev-parse', 'HEAD'])).stdout.trim();
+    const app = reviewFixture();
+    const pi = {
+      exec: (command: string, commandArguments: string[], options?: { cwd?: string }) =>
+        runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
+    };
+    const context = { ...app.context, cwd: join(repositoryDirectory, 'packages/app') };
+
+    const review = await reviewComments(pi, context, undefined, { tree, head });
+
+    return { review, complete: app.complete };
+  };
+
+  it('omits lockfiles from the review input', async () => {
+    const { complete } = await reviewRepository({
+      'packages/app/file.ts': '// Explains the value.\nexport const value = 1;\n',
+      'pnpm-lock.yaml': 'lockfileVersion: 9.0\n',
+      'packages/app/Cargo.lock': 'version = 4\n',
+    });
+
+    const input = JSON.stringify(complete.mock.calls[0]?.[1].messages);
+
+    expect(input).toContain('packages/app/file.ts');
+    expect(input).not.toContain('lock');
+  });
+
+  it('skips review when only lockfiles changed, whatever their size', async () => {
+    const { review, complete } = await reviewRepository({
+      'pnpm-lock.yaml': 'x'.repeat(400_001),
+    });
+
+    expect(review).toEqual({ findings: [] });
+    expect(complete).not.toHaveBeenCalled();
+  });
 });

@@ -304,11 +304,9 @@ describe('commit flow', () => {
     expect(faux.state.callCount).toBe(3);
   });
 
-  it('reviews a routine lockfile update with complete before-and-after context', async ({
-    onTestFinished,
-  }) => {
+  it('commits an oversized lockfile update without comment review', async ({ onTestFinished }) => {
     const { session, faux, repositoryDirectory, events } = await createHarness(onTestFinished);
-    const before = 'dependency: version-1\n'.repeat(10_000);
+    const before = 'dependency: version-1\n'.repeat(20_000);
     const after = before.replace('version-1', 'version-2');
 
     await writeFile(join(repositoryDirectory, 'pnpm-lock.yaml'), before);
@@ -322,26 +320,13 @@ describe('commit flow', () => {
           groups: [{ files: ['pnpm-lock.yaml'], subject: 'chore: update dependency' }],
         }),
       ]),
-      (context) => {
-        const user = context.messages[0];
-        const payload: unknown = JSON.parse(
-          user?.role === 'user' && typeof user.content === 'string' ? user.content : '{}',
-        );
-
-        expect((payload as { files: unknown }).files).toContainEqual({
-          path: 'pnpm-lock.yaml',
-          before,
-          after,
-        });
-        return fauxAssistantMessage('{"findings":[]}');
-      },
       fauxAssistantMessage('Committed.'),
     ]);
 
     await session.prompt('Commit the dependency update.');
 
     expect(toolResultOf(events, 'commit').isError).toBe(false);
-    expect(faux.state.callCount).toBe(3);
+    expect(faux.state.callCount).toBe(2);
   });
 
   it.for([

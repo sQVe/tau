@@ -24,6 +24,15 @@ Return only JSON: {"findings":[{"path":"repo-relative file","line":1,
 "kind":"inaccurate|policy|missing","message":"Concrete problem and correction"}]}.
 Use actual file paths and line numbers from the supplied files. Return {"findings":[]} when clean.`;
 
+// Generated lockfiles have no comments to review and can exceed the review input limits.
+const lockfilePatterns = [
+  '*.lock',
+  'pnpm-lock.yaml',
+  'package-lock.json',
+  'npm-shrinkwrap.json',
+  'go.sum',
+];
+
 export const commentPolicyHash = createHash('sha256').update(commentPolicy).digest('hex');
 
 const reviewSchema = Type.Object(
@@ -156,8 +165,10 @@ export const reviewComments = async (
     '--no-relative',
     base,
     snapshot.tree,
+    '--',
+    ':(top)',
+    ...lockfilePatterns.map((pattern) => `:(top,exclude,glob)**/${pattern}`),
   ];
-  const diff = await reviewGit(pi, context.cwd, ['diff', ...diffArguments], signal);
   const pathsOutput = await reviewGit(
     pi,
     context.cwd,
@@ -166,11 +177,17 @@ export const reviewComments = async (
   );
   const paths = pathsOutput.split('\0').filter(Boolean);
 
+  if (paths.length === 0) {
+    return { findings: [] };
+  }
+
   if (paths.length > 300) {
     throw new Error(
       `Comment review input is too large: ${paths.length} files. Split the commit and retry.`,
     );
   }
+
+  const diff = await reviewGit(pi, context.cwd, ['diff', ...diffArguments], signal);
 
   const numstat = await reviewGit(
     pi,
