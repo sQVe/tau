@@ -3,12 +3,35 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
+
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { cancelOwnedWorker, matchesWorker, runClient } from './cancellation.js';
 import type { OwnedWorker } from './cancellation.js';
+import { requireHandover, refuseLiveNativeWriter } from './continuations.js';
+import { authorizeHistoryTask } from './history.js';
+import { validateSavedLoadout } from './loadout.js';
+import { allocateName, nameSuffix } from './names.js';
+import { validateNative } from './native.js';
 import { nativeIdentity, seedSession } from './profiles.js';
-import { publish, readEvent, readReport, readTask, recordEvent, validateTask } from './records.js';
-import type { Loadout, Report, Task, TaskEvent } from './types.js';
+import {
+  acceptReply,
+  claimSuccessor,
+  publish,
+  readAcknowledgement,
+  readEvent,
+  readPendingQuestion,
+  readQuestion,
+  readReply,
+  readReport,
+  readTask,
+  readTasks,
+  readSuccessor,
+  recordEvent,
+  validateTask,
+} from './records.js';
+import type { Loadout, Question, Report, Task, TaskEvent } from './types.js';
 
 export type HerdrClient = (
   arguments_: string[],
@@ -103,6 +126,9 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
 
   return {
     taskId: task.taskId,
+    name: task.name,
+    predecessorTaskId: task.predecessorTaskId,
+    successorTaskId: readSuccessor(directory)?.successorTaskId,
     outcome,
     ready: !!event('ready'),
     accepted: !!event('accepted'),
@@ -115,6 +141,7 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
     nativeSessionFile: task.nativeSessionFile,
     directory,
     report,
+    pendingQuestion: readPendingQuestion(directory, task.taskId),
     failure: failure?.detail,
     cleanup: cleanup?.detail,
     enforcement: active
@@ -135,6 +162,7 @@ interface Handle {
   removeLaunchAbort?: () => void;
   recordErrors: string[];
   cleanupDetail?: string;
+  notifiedQuestions: Set<string>;
 }
 
 const workBudget = (handle: Handle, maximum = 30_000): number => {
@@ -145,6 +173,20 @@ const workBudget = (handle: Handle, maximum = 30_000): number => {
   }
 
   return Math.min(maximum, remaining);
+};
+
+const ensureReplyActive = (handle: Handle): void => {
+  workBudget(handle);
+  const { directory, task } = handle;
+  if (
+    !readEvent(directory, task.taskId, 'accepted') ||
+    (['settled', 'startupFailure', 'cleanup', 'cancelled', 'timeout'] as const).some((kind) =>
+      readEvent(directory, task.taskId, kind),
+    ) ||
+    readReport(directory, task.taskId)
+  ) {
+    throw new Error('Worker task is inactive.');
+  }
 };
 
 const inspectWorker = async (
@@ -237,6 +279,61 @@ const launchTiming = (timeout: number, startedAt?: { wall: number; monotonic: nu
   };
 };
 
+interface LaunchInput {
+  task: string;
+  loadout: Loadout;
+  timeout: number;
+  parentSession: string;
+  parentSessionId: string;
+  parentPane: string;
+  startedAt?: { wall: number; monotonic: number };
+}
+
+interface FollowUpPreparation {
+  directory: string;
+  task: Task;
+  origin: Task;
+  native: ReturnType<typeof validateNative>;
+}
+
+const requireUnclaimed = (root: string, source: { directory: string; task: Task }): void => {
+  const claim = readSuccessor(source.directory);
+  const pending = readTasks(root).find(({ task }) => task.predecessorTaskId === source.task.taskId);
+  const successor = claim?.successorTaskId ?? pending?.task.taskId;
+  if (successor) {
+    throw new Error(
+      `Task ${source.task.taskId} already has successor attempt ${successor}. No retry or age-based reclaim.`,
+    );
+  }
+  requireHandover(source.directory, source.task);
+};
+
+const checkHandoff = (root: string, source: FollowUpPreparation, successor: Task): void => {
+  authorizeHistoryTask(
+    root,
+    { file: successor.parentSession, id: successor.parentSessionId },
+    source.task.taskId,
+  );
+  if (
+    !isDeepStrictEqual(readTask(source.directory), source.task) ||
+    readSuccessor(source.directory)?.successorTaskId !== successor.taskId
+  ) {
+    throw new Error(`Successor ${successor.taskId} no longer owns its predecessor claim.`);
+  }
+  requireHandover(source.directory, source.task);
+  if (!isDeepStrictEqual(validateNative(source.task, source.origin), source.native)) {
+    throw new Error('Native file changed during follow-up validation. Claim retained; no retry.');
+  }
+};
+
+const checkNativeWriterListing = (response: string, task: Task): void => {
+  const live = result(response);
+  if (live.type !== 'agent_list') {
+    throw new Error('Malformed live native writer listing.');
+  }
+  refuseLiveNativeWriter(live.agents, task);
+};
+
 export class WorkerController {
   readonly ownerId = randomUUID();
   private readonly handles = new Map<string, Handle>();
@@ -246,20 +343,53 @@ export class WorkerController {
   constructor(
     private readonly root: string,
     private readonly client: HerdrClient = herdrClient,
-    private readonly notify: (message: string) => void = () => undefined,
+    private readonly notify: (message: string, question?: Question) => void = () => undefined,
   ) {}
 
-  async launch(
-    input: {
-      task: string;
-      loadout: Loadout;
-      timeout: number;
-      parentSession: string;
-      parentSessionId: string;
-      parentPane: string;
-      startedAt?: { wall: number; monotonic: number };
+  launch(input: LaunchInput, signal: AbortSignal = new AbortController().signal) {
+    return this.launchTask(input, signal);
+  }
+
+  async followUp(
+    input: Omit<LaunchInput, 'loadout' | 'startedAt'> & {
+      sourceTaskId: string;
+      settingsUnchanged: boolean;
     },
-    launchSignal: AbortSignal = new AbortController().signal,
+    context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'isProjectTrusted'>,
+    signal: AbortSignal = new AbortController().signal,
+  ) {
+    const startedAt = { wall: Date.now(), monotonic: performance.now() };
+    const timing = launchTiming(input.timeout, startedAt);
+    const validationSignal = AbortSignal.any([
+      signal,
+      this.lifetime.signal,
+      AbortSignal.timeout(
+        Math.max(1, Math.floor(timing.expires - timing.cancellationBudget - performance.now())),
+      ),
+    ]);
+    validationSignal.throwIfAborted();
+    if (this.closed || !input.settingsUnchanged) {
+      throw new Error('Follow-up requires an active parent and explicit unchanged saved settings.');
+    }
+    const source = authorizeHistoryTask(
+      this.root,
+      { file: input.parentSession, id: input.parentSessionId },
+      input.sourceTaskId,
+    );
+    requireUnclaimed(this.root, source);
+    const native = validateNative(source.task, source.origin);
+    const loadout = await validateSavedLoadout(source.task.loadout, context, validationSignal);
+    validationSignal.throwIfAborted();
+    requireUnclaimed(this.root, source);
+
+    // Validation expiry must not masquerade as caller cancellation during launch/readiness.
+    return this.launchTask({ ...input, loadout, startedAt }, signal, { ...source, native });
+  }
+
+  private async launchTask(
+    input: LaunchInput,
+    launchSignal: AbortSignal,
+    source?: FollowUpPreparation,
   ): Promise<ReturnType<typeof taskStatus>> {
     if (this.closed) {
       throw new Error('Parent controller stopped.');
@@ -273,21 +403,68 @@ export class WorkerController {
     );
     const task = validateTask({
       version: 1,
+      name: `${input.loadout.role === 'editing' ? 'worker' : 'investigator'}-00`,
       taskId,
       task: input.task,
       parentSession: input.parentSession,
       parentSessionId: input.parentSessionId,
       ownerId: this.ownerId,
-      ...nativeIdentity(directory),
+      ...(source
+        ? {
+            predecessorTaskId: source.task.taskId,
+            nativeSessionId: source.task.nativeSessionId,
+            nativeSessionFile: source.task.nativeSessionFile,
+          }
+        : nativeIdentity(directory)),
       createdAt,
       deadline,
       cancellationBudget,
       loadout: input.loadout,
     });
+    const remaining = Math.floor(expires - cancellationBudget - performance.now());
+    const listingSignal = AbortSignal.any([
+      launchSignal,
+      this.lifetime.signal,
+      AbortSignal.timeout(Math.max(1, remaining)),
+    ]);
+    const listing = result(
+      await this.client(['agent', 'list'], Math.min(30_000, remaining), listingSignal),
+    );
+    listingSignal.throwIfAborted();
+    if (listing.type !== 'agent_list' || performance.now() >= expires - cancellationBudget) {
+      throw new Error('Invalid live agent listing or original startup budget expired.');
+    }
+    if (source) {
+      requireUnclaimed(this.root, source);
+      refuseLiveNativeWriter(listing.agents, source.task);
+      if (!isDeepStrictEqual(input.loadout, source.task.loadout)) {
+        throw new Error('Follow-up cannot change saved worker settings.');
+      }
+    }
+    // Synchronous allocation and publication after listing coordinate launches in this process's event loop,
+    // not launches in independent processes.
+    const name = allocateName(
+      this.root,
+      input.parentSessionId,
+      input.loadout.role,
+      listing.agents,
+      nameSuffix,
+    );
+    task.name = name;
+    validateTask(task);
 
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-    publish(directory, 'task.json', task);
-    seedSession(task);
+    try {
+      publish(directory, 'task.json', task);
+      if (!source) {
+        seedSession(task);
+      }
+    } catch (error) {
+      throw new Error(
+        `Task preparation ${taskId} is uncertain at ${directory}. No automatic retry.`,
+        { cause: error },
+      );
+    }
 
     const handle: Handle = {
       directory,
@@ -295,6 +472,7 @@ export class WorkerController {
       abort: new AbortController(),
       expires,
       recordErrors: [],
+      notifiedQuestions: new Set(),
     };
     this.handles.set(taskId, handle);
 
@@ -313,6 +491,12 @@ export class WorkerController {
     );
 
     try {
+      launchSignal.throwIfAborted();
+      workBudget(handle);
+      if (source) {
+        claimSuccessor(source.directory, task);
+        checkHandoff(this.root, source, task);
+      }
       const call = (arguments_: string[]) =>
         this.client(arguments_, workBudget(handle), handle.abort.signal);
       const split = result(
@@ -334,10 +518,14 @@ export class WorkerController {
       );
       handle.paneId = text(object(split.pane).pane_id);
       publish(directory, 'pane.json', { paneId: handle.paneId });
+      if (source) {
+        checkNativeWriterListing(await call(['agent', 'list']), task);
+        checkHandoff(this.root, source, task);
+      }
       await call([
         'agent',
         'start',
-        `tau-${taskId.replaceAll('-', '').slice(0, 24)}`,
+        name,
         '--kind',
         'pi',
         '--pane',
@@ -390,6 +578,14 @@ export class WorkerController {
             void this.stop(handle, 'completion');
             return;
           }
+          const question = readPendingQuestion(handle.directory, handle.task.taskId);
+          if (question && !handle.notifiedQuestions.has(question.questionId)) {
+            handle.notifiedQuestions.add(question.questionId);
+            this.notify(
+              `Worker ${handle.task.name ?? 'unnamed'} (${handle.task.taskId}) asks: ${question.question}\nReply with subagent_reply using questionId ${question.questionId}. The original deadline still applies.`,
+              question,
+            );
+          }
           this.poll(handle);
         } catch (error) {
           void this.stop(
@@ -425,7 +621,7 @@ export class WorkerController {
         return;
       }
       this.notify(
-        `Worker ${handle.task.taskId}: cleanup unconfirmed. ${String(error)}. Check pane ${handle.paneId ?? 'unknown'} manually. Records: ${handle.directory}. Native session: ${handle.task.nativeSessionId} (${handle.task.nativeSessionFile}).`,
+        `Worker ${handle.task.name ?? 'unnamed'} (${handle.task.taskId}): cleanup unconfirmed. ${String(error)}. Check pane ${handle.paneId ?? 'unknown'} manually. Records: ${handle.directory}. Native session: ${handle.task.nativeSessionId} (${handle.task.nativeSessionFile}).`,
       );
     });
 
@@ -530,7 +726,7 @@ export class WorkerController {
         ? ` Evidence errors: ${handle.recordErrors.join('; ')}. Check pane ${handle.paneId ?? 'unknown'} manually.`
         : '';
       this.notify(
-        `Worker ${task.taskId}: ${outcome}. ${handle.cleanupDetail}${errors} Records: ${directory}. Native session: ${task.nativeSessionId} (${task.nativeSessionFile}).`,
+        `Worker ${task.name ?? 'unnamed'} (${task.taskId}): ${outcome}. ${handle.cleanupDetail}${errors} Records: ${directory}. Native session: ${task.nativeSessionId} (${task.nativeSessionFile}).`,
       );
     }
   }
@@ -570,6 +766,100 @@ export class WorkerController {
         { cause: error },
       );
     }
+  }
+
+  questionReceipt(taskId: string, parentSessionId: string, questionId: string) {
+    const directory = this.directory(taskId, parentSessionId);
+    const question = readQuestion(directory, taskId, questionId);
+    if (!question) {
+      throw new Error('Unknown worker question.');
+    }
+
+    return {
+      question,
+      reply: readReply(directory, taskId, questionId),
+      acknowledgement: readAcknowledgement(directory, taskId, questionId),
+    };
+  }
+
+  async reply(
+    taskId: string,
+    parentSessionId: string,
+    answer: { questionId: string; replyId: string; reply: string; scopeUnchanged: unknown },
+  ) {
+    const directory = this.directory(taskId, parentSessionId);
+    const handle = this.handles.get(taskId);
+    if (!handle || this.closed || handle.stopping) {
+      throw new Error('No active owned worker for this reply.');
+    }
+    if (answer.scopeUnchanged !== true) {
+      throw new Error('Replies cannot increase scope or change saved worker settings.');
+    }
+
+    ensureReplyActive(handle);
+    const value = {
+      version: 1,
+      taskId,
+      questionId: answer.questionId,
+      replyId: answer.replyId,
+      reply: answer.reply,
+    };
+
+    const saved = readReply(directory, taskId, answer.questionId);
+    if (saved) {
+      acceptReply(directory, taskId, value);
+
+      return {
+        replyAccepted: true,
+        workerAcknowledged: !!readAcknowledgement(directory, taskId, answer.questionId),
+        delivery: 'Not retried. Prior delivery may be uncertain.',
+      };
+    }
+    if (readPendingQuestion(directory, taskId)?.questionId !== answer.questionId) {
+      throw new Error('Reply does not match the pending question.');
+    }
+    const call = (arguments_: string[]) =>
+      this.client(arguments_, workBudget(handle), handle.abort.signal);
+    await inspectWorker(handle, call);
+    ensureReplyActive(handle);
+    // Another caller may have accepted this reply during the identity check. Never send it twice.
+    if (readReply(directory, taskId, answer.questionId)) {
+      acceptReply(directory, taskId, value);
+
+      return {
+        replyAccepted: true,
+        workerAcknowledged: !!readAcknowledgement(directory, taskId, answer.questionId),
+        delivery: 'Not retried. Prior delivery may be uncertain.',
+      };
+    }
+
+    acceptReply(directory, taskId, value);
+    const reference = {
+      version: 1,
+      taskId,
+      questionId: answer.questionId,
+      replyId: answer.replyId,
+    };
+    try {
+      await call([
+        'agent',
+        'prompt',
+        text(handle.paneId),
+        `TAU_REPLY ${JSON.stringify(reference)}`,
+      ]);
+    } catch (error) {
+      throw new Error(
+        'Reply accepted durably, but delivery is uncertain. Do not retry delivery; inspect acknowledgement.',
+        { cause: error },
+      );
+    }
+
+    return {
+      replyAccepted: true,
+      workerAcknowledged: !!readAcknowledgement(directory, taskId, answer.questionId),
+      delivery:
+        'Herdr accepted text. This does not prove worker acknowledgement or applied effects.',
+    };
   }
 
   async cancel(taskId: string, parentSessionId: string) {

@@ -20,6 +20,8 @@ export const loadoutSchema = Type.Object(
     model: Type.String({ pattern: '^[^/\\s]+/[^\\s]+$' }),
     modelFingerprint: Type.String({ minLength: 64, maxLength: 64 }),
     providerFingerprint: Type.String({ minLength: 64, maxLength: 64 }),
+    // Missing versions retain the original credential-sensitive fingerprint semantics.
+    providerFingerprintVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2)])),
     thinking: thinkingSchema,
     cwd: text,
     agentDirectory: text,
@@ -38,6 +40,8 @@ export const taskSchema = Type.Object(
   {
     version: Type.Literal(1),
     taskId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
+    name: Type.Optional(Type.String({ pattern: '^(worker|investigator)-[a-z0-9]{2}$' })),
+    predecessorTaskId: Type.Optional(Type.String({ pattern: '^[a-zA-Z0-9-]+$' })),
     task: text,
     parentSession: text,
     parentSessionId: text,
@@ -51,6 +55,18 @@ export const taskSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+export const successorSchema = Type.Object(
+  {
+    version: Type.Literal(1),
+    predecessorTaskId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
+    successorTaskId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
+    nativeSessionId: text,
+    nativeSessionFile: text,
+  },
+  { additionalProperties: false },
+);
+export type Successor = Static<typeof successorSchema>;
+
 export const reportSchema = Type.Object(
   {
     taskId: text,
@@ -85,6 +101,28 @@ export const eventSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+export const questionIdentitySchema = Type.String({ pattern: '^[a-zA-Z0-9-]{1,128}$' });
+const questionIdentity = {
+  version: Type.Literal(1),
+  taskId: text,
+  questionId: questionIdentitySchema,
+};
+export const questionSchema = Type.Object(
+  { ...questionIdentity, question: text },
+  { additionalProperties: false },
+);
+export const replySchema = Type.Object(
+  { ...questionIdentity, replyId: questionIdentitySchema, reply: text },
+  { additionalProperties: false },
+);
+// Acknowledgement records worker receipt, not successful application of arbitrary side effects.
+export const acknowledgementSchema = Type.Object(
+  { ...questionIdentity, replyId: questionIdentitySchema },
+  { additionalProperties: false },
+);
+export type Question = Static<typeof questionSchema>;
+export type Reply = Static<typeof replySchema>;
+export type Acknowledgement = Static<typeof acknowledgementSchema>;
 export type Loadout = Static<typeof loadoutSchema>;
 export type Task = Static<typeof taskSchema>;
 export type Report = Static<typeof reportSchema>;

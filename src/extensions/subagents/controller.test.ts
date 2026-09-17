@@ -1,4 +1,13 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import type * as fileSystem from 'node:fs';
+import {
+  fsyncSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -7,29 +16,18 @@ import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 import * as cancellationModule from './cancellation.js';
 import { WorkerController, taskStatus, workerArguments } from './controller.js';
 import type { HerdrClient } from './controller.js';
+import { fixtureLoadout } from './fixtures/loadout.js';
+import { searchHistory } from './history.js';
+import * as loadoutModule from './loadout.js';
+import * as names from './names.js';
 import { acceptReport, readTask, recordEvent } from './records.js';
 import * as records from './records.js';
-import type { Loadout } from './types.js';
 
-export const fixtureLoadout = (directory: string): Loadout => {
-  return {
-    profile: 'worker',
-    role: 'editing',
-    model: 'faux/test',
-    modelFingerprint: '0'.repeat(64),
-    providerFingerprint: '0'.repeat(64),
-    thinking: 'off',
-    cwd: directory,
-    agentDirectory: directory,
-    permissions: 'trusted-full-tools',
-    tools: ['read', 'bash', 'edit', 'write', 'subagent_report'],
-    noExtensions: false,
-    integrations: [join(directory, 'safety.js')],
-    integrationFingerprint: '0'.repeat(64),
-    safetyExtension: join(directory, 'safety.js'),
-    instructions: 'Work on the assigned task.',
-  };
-};
+vi.mock('node:fs', async (importOriginal) => {
+  const original = await importOriginal<typeof fileSystem>();
+
+  return { ...original, fsyncSync: vi.fn<typeof fsyncSync>(original.fsyncSync) };
+});
 
 const setup = (
   onTestFinished: (callback: () => void) => void,
@@ -43,6 +41,7 @@ const setup = (
     rmSync(directory, { recursive: true, force: true });
   });
   let token = '';
+  let recordDirectory = '';
   const calls: string[][] = [];
   const client: HerdrClient = async (arguments_, budget, signal) => {
     calls.push(arguments_);
@@ -52,14 +51,21 @@ const setup = (
         return response;
       }
     }
+    if (arguments_[1] === 'list') {
+      return JSON.stringify({ result: { type: 'agent_list', agents: [] } });
+    }
     if (arguments_[1] === 'split') {
+      recordDirectory =
+        arguments_
+          .find((argument) => argument.startsWith('TAU_WORKER_RECORD='))
+          ?.slice('TAU_WORKER_RECORD='.length) ?? '';
       return JSON.stringify({ result: { pane: { pane_id: 'owned-pane' } } });
     }
     if (arguments_[1] === 'start') {
       token = arguments_[arguments_.indexOf('--session') + 1] ?? '';
-      const task = readTask(dirname(token));
+      const task = readTask(recordDirectory);
       const ready = () => {
-        recordEvent(dirname(token), task.taskId, 'ready', 'Ready.', false, process.pid);
+        recordEvent(recordDirectory, task.taskId, 'ready', 'Ready.', false, process.pid);
       };
       if (readyDelay > 0) {
         setTimeout(ready, readyDelay);
@@ -104,8 +110,703 @@ const setup = (
     parentPane: 'parent-pane',
   };
 
-  return { directory, controller, calls, notifications, input };
+  return { directory, controller, client, calls, notifications, input };
 };
+
+it('skips unpublished preparation debris while published attempts and claims remain exclusive', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  writeFileSync(
+    fixture.input.parentSession,
+    JSON.stringify({
+      type: 'session',
+      version: 3,
+      id: fixture.input.parentSessionId,
+      cwd: fixture.directory,
+    }) + '\n',
+  );
+  vi.mocked(fsyncSync).mockImplementationOnce(() => {
+    throw new Error('Initial task file sync failed.');
+  });
+  await expect(fixture.controller.launch(fixture.input)).rejects.toThrow('Task preparation');
+  const abandoned = readdirSync(fixture.directory, { withFileTypes: true }).find((entry) =>
+    entry.isDirectory(),
+  );
+  if (!abandoned) {
+    throw new Error('Missing preparation evidence.');
+  }
+  const abandonedDirectory = join(fixture.directory, abandoned.name);
+  const receiptFiles = readdirSync(abandonedDirectory);
+  expect(receiptFiles).toHaveLength(1);
+  expect(receiptFiles[0]).toMatch(/^\.receipt-/);
+  const receipt = readFileSync(join(abandonedDirectory, receiptFiles[0] ?? ''));
+
+  const launched = await fixture.controller.launch(fixture.input);
+  expect(launched.ready).toBe(true);
+  const current = {
+    file: fixture.input.parentSession,
+    id: fixture.input.parentSessionId,
+    sessionDirectory: fixture.directory,
+  };
+  const history = await searchHistory(fixture.directory, current);
+  expect(history.candidates.some((candidate) => candidate.taskId === launched.taskId)).toBe(true);
+  expect(history.diagnostics.join(' ')).toContain(abandoned.name);
+  expect(readFileSync(join(abandonedDirectory, receiptFiles[0] ?? ''))).toEqual(receipt);
+  records.acceptReport(launched.directory, launched.taskId, {
+    taskId: launched.taskId,
+    outcome: 'success',
+    summary: 'Finished.',
+    evidence: [],
+  });
+  recordEvent(launched.directory, launched.taskId, 'cleanup', 'Parent confirmed.', true);
+  fixture.controller.close();
+  const controller = new WorkerController(fixture.directory, fixture.client);
+  onTestFinished(() => {
+    controller.close();
+  });
+  const attemptDirectory = join(fixture.directory, 'published-attempt');
+  mkdirSync(attemptDirectory);
+  const attempt = records.validateTask({
+    ...readTask(launched.directory),
+    taskId: 'published-attempt',
+    predecessorTaskId: launched.taskId,
+  });
+  records.publish(attemptDirectory, 'task.json', attempt);
+  recordEvent(attemptDirectory, attempt.taskId, 'accepted', 'Accepted attempt.');
+  const input = {
+    task: 'Follow up.',
+    sourceTaskId: launched.taskId,
+    settingsUnchanged: true,
+    timeout: 10000,
+    parentSession: current.file,
+    parentSessionId: current.id,
+    parentPane: 'parent-pane',
+  };
+  const context = { cwd: fixture.directory, isProjectTrusted: () => true } as Parameters<
+    WorkerController['followUp']
+  >[1];
+
+  await expect(controller.followUp(input, context)).rejects.toThrow('published-attempt');
+  records.claimSuccessor(launched.directory, attempt);
+  await expect(controller.followUp(input, context)).rejects.toThrow('published-attempt');
+  expect(records.readSuccessor(launched.directory)?.successorTaskId).toBe(attempt.taskId);
+  expect(readdirSync(abandonedDirectory)).toEqual(receiptFiles);
+});
+
+const completed = async (intercept?: HerdrClient) => {
+  const fixture = setup(afterTest, 0, intercept);
+  writeFileSync(
+    fixture.input.parentSession,
+    JSON.stringify({
+      type: 'session',
+      version: 3,
+      id: fixture.input.parentSessionId,
+      cwd: fixture.directory,
+    }) + '\n',
+  );
+  const status = await fixture.controller.launch(fixture.input);
+  records.acceptReport(status.directory, status.taskId, {
+    taskId: status.taskId,
+    outcome: 'success',
+    summary: 'Finished.',
+    evidence: ['Checked.'],
+  });
+  recordEvent(status.directory, status.taskId, 'settled', 'Worker settled.', true);
+  recordEvent(status.directory, status.taskId, 'cleanup', 'Parent confirmed exit.', true);
+  fixture.controller.close();
+  const controller = new WorkerController(fixture.directory, fixture.client);
+  afterTest(() => {
+    controller.close();
+  });
+  const validation = vi
+    .spyOn(loadoutModule, 'validateSavedLoadout')
+    .mockImplementation(async (value) => value as ReturnType<typeof readTask>['loadout']);
+  const context = { cwd: fixture.directory, isProjectTrusted: () => true } as Parameters<
+    typeof loadoutModule.validateSavedLoadout
+  >[1];
+  const input = {
+    task: 'Follow up within saved settings.',
+    sourceTaskId: status.taskId,
+    timeout: 12000,
+    settingsUnchanged: true,
+    parentSession: fixture.input.parentSession,
+    parentSessionId: fixture.input.parentSessionId,
+    parentPane: fixture.input.parentPane,
+  };
+
+  return {
+    ...fixture,
+    controller,
+    validation,
+    context,
+    input,
+    source: readTask(status.directory),
+    sourceDirectory: status.directory,
+  };
+};
+
+it('follows up a completed native task with new identity and unchanged saved evidence', async () => {
+  const fixture = await completed();
+  const taskBytes = readFileSync(join(fixture.sourceDirectory, 'task.json'));
+  const reportBytes = readFileSync(join(fixture.sourceDirectory, 'report.json'));
+  const nativeBytes = readFileSync(fixture.source.nativeSessionFile);
+  expect(fixture.controller).toHaveProperty('followUp');
+  const next = await fixture.controller.followUp(fixture.input, fixture.context);
+  const task = readTask(next.directory);
+
+  expect(task.taskId).not.toBe(fixture.source.taskId);
+  expect(task.deadline).not.toBe(fixture.source.deadline);
+  expect(task).toMatchObject({
+    predecessorTaskId: fixture.source.taskId,
+    nativeSessionId: fixture.source.nativeSessionId,
+    nativeSessionFile: fixture.source.nativeSessionFile,
+    loadout: fixture.source.loadout,
+  });
+  expect(task.name).not.toBe(fixture.source.name);
+  expect(fixture.validation).toHaveBeenCalledOnce();
+  expect(readFileSync(join(fixture.sourceDirectory, 'task.json'))).toEqual(taskBytes);
+  expect(readFileSync(join(fixture.sourceDirectory, 'report.json'))).toEqual(reportBytes);
+  expect(readFileSync(fixture.source.nativeSessionFile)).toEqual(nativeBytes);
+  await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+    task.taskId,
+  );
+});
+
+it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'out of tree'] as const)(
+  'refuses native follow-up with %s',
+  async (failure) => {
+    const fixture = await completed();
+    if (failure === 'cleanup' || failure === 'uncertain cleanup') {
+      rmSync(join(fixture.sourceDirectory, 'cleanup.json'));
+      if (failure === 'uncertain cleanup') {
+        recordEvent(
+          fixture.sourceDirectory,
+          fixture.source.taskId,
+          'cleanup',
+          'Unknown stop.',
+          false,
+        );
+      }
+    } else if (failure === 'handover') {
+      rmSync(join(fixture.sourceDirectory, 'report.json'));
+    } else if (failure === 'missing native') {
+      rmSync(fixture.source.nativeSessionFile);
+    } else {
+      fixture.input.parentSession = join(fixture.directory, 'unrelated.jsonl');
+      fixture.input.parentSessionId = 'unrelated';
+      writeFileSync(
+        fixture.input.parentSession,
+        JSON.stringify({ type: 'session', version: 3, id: 'unrelated', cwd: fixture.directory }) +
+          '\n',
+      );
+    }
+    fixture.calls.length = 0;
+    expect(fixture.controller).toHaveProperty('followUp');
+
+    await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+      /cleanup|handover|native|tree/i,
+    );
+    expect(fixture.calls).toEqual([]);
+  },
+);
+
+it('classifies follow-up readiness deadline expiry as timeout rather than caller cancellation', async () => {
+  let following = false;
+  const started = Promise.withResolvers<undefined>();
+  const fixture = await completed(async (arguments_) => {
+    if (following && arguments_[1] === 'start') {
+      started.resolve(undefined);
+      return JSON.stringify({ result: {} });
+    }
+
+    return '';
+  });
+  following = true;
+  const validationDeadline = new AbortController();
+  vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(validationDeadline.signal);
+  const beginning = performance.now();
+  const pending = fixture.controller.followUp({ ...fixture.input, timeout: 400 }, fixture.context);
+  await started.promise;
+  validationDeadline.abort(new DOMException('Validation deadline expired.', 'TimeoutError'));
+  const status = await pending;
+
+  expect(status.outcome).toBe('timeout');
+  expect(performance.now() - beginning).toBeGreaterThanOrEqual(250);
+  expect(records.readEvent(status.directory, status.taskId, 'cancelled')).toBeUndefined();
+  expect(records.readEvent(status.directory, status.taskId, 'timeout')).toBeDefined();
+  const task = readTask(status.directory);
+  expect(task.deadline - task.createdAt).toBe(400);
+});
+
+it('allows only one competing follow-up and preserves lineage across parents and successive tasks', async () => {
+  const fixture = await completed();
+  const sibling = join(fixture.directory, 'sibling.jsonl');
+  writeFileSync(
+    sibling,
+    JSON.stringify({
+      type: 'session',
+      version: 3,
+      id: 'sibling',
+      cwd: fixture.directory,
+      parentSession: fixture.input.parentSession,
+    }) + '\n',
+  );
+  const parallel = new WorkerController(fixture.directory, fixture.client);
+  afterTest(() => {
+    parallel.close();
+  });
+  fixture.calls.length = 0;
+  const request = { ...fixture.input, parentSession: sibling, parentSessionId: 'sibling' };
+  const attempts = await Promise.allSettled([
+    fixture.controller.followUp(request, fixture.context),
+    parallel.followUp(request, fixture.context),
+  ]);
+  const successes = attempts.filter((entry) => entry.status === 'fulfilled');
+  expect(successes).toHaveLength(1);
+  const next = successes[0]?.value;
+  if (!next) {
+    throw new Error('Missing winner.');
+  }
+  expect(fixture.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
+  expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(next.taskId);
+  await expect(
+    parallel.followUp({ ...request, sourceTaskId: next.taskId }, fixture.context),
+  ).rejects.toThrow('handover');
+  records.acceptReport(next.directory, next.taskId, {
+    taskId: next.taskId,
+    outcome: 'success',
+    summary: 'Second done.',
+    evidence: [],
+  });
+  recordEvent(next.directory, next.taskId, 'cleanup', 'Parent confirmed.', true);
+  fixture.controller.close();
+  parallel.close();
+  const latestController = new WorkerController(fixture.directory, fixture.client);
+  afterTest(() => {
+    latestController.close();
+  });
+  const latest = await latestController.followUp(
+    { ...fixture.input, sourceTaskId: next.taskId },
+    fixture.context,
+  );
+  const history = await searchHistory(
+    fixture.directory,
+    { file: sibling, id: 'sibling', sessionDirectory: fixture.directory },
+    fixture.source.nativeSessionId,
+  );
+
+  expect(history.outcome).toBe('clarification');
+  expect(history.candidates.map((candidate) => candidate.taskId)).toEqual(
+    expect.arrayContaining([fixture.source.taskId, next.taskId, latest.taskId]),
+  );
+  expect(history.candidates).toHaveLength(3);
+  expect(readTask(latest.directory).nativeSessionFile).toBe(fixture.source.nativeSessionFile);
+  expect(JSON.parse(readFileSync(fixture.source.nativeSessionFile, 'utf8'))).toMatchObject({
+    parentSession: fixture.source.parentSession,
+  });
+  await expect(latestController.followUp(fixture.input, fixture.context)).rejects.toThrow(
+    next.taskId,
+  );
+  await expect(
+    latestController.followUp({ ...fixture.input, sourceTaskId: next.taskId }, fixture.context),
+  ).rejects.toThrow(latest.taskId);
+});
+
+it.each(['cancelled', 'missing after claim', 'failed startup', 'sync uncertain'] as const)(
+  'retains a consumed native claim after %s without replay',
+  async (failure) => {
+    let following = false;
+    const abort = new AbortController();
+    let nativeFile = '';
+    const fixture = await completed(async (arguments_) => {
+      if (following && arguments_[1] === 'split' && failure === 'missing after claim') {
+        rmSync(nativeFile);
+      }
+      if (following && arguments_[1] === 'split' && failure === 'cancelled') {
+        abort.abort(new Error('Caller cancelled.'));
+      }
+      if (following && arguments_[1] === 'start' && failure === 'failed startup') {
+        throw new Error('Uncertain start.');
+      }
+
+      return '';
+    });
+    nativeFile = fixture.source.nativeSessionFile;
+    following = true;
+    if (failure === 'sync uncertain') {
+      const claim = records.claimSuccessor;
+      vi.spyOn(records, 'claimSuccessor').mockImplementation((directory, successor) => {
+        claim(directory, successor);
+        throw new Error('Directory sync uncertain.');
+      });
+    }
+    const next = await fixture.controller.followUp(fixture.input, fixture.context, abort.signal);
+    const calls = fixture.calls.length;
+
+    expect(next.outcome).toBe(failure === 'cancelled' ? 'cancelled' : 'failure');
+    expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(next.taskId);
+    await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+      next.taskId,
+    );
+    expect(fixture.calls).toHaveLength(calls);
+    expect(records.readReport(next.directory, next.taskId)).toBeUndefined();
+  },
+);
+
+it('refuses known live native writers and preserves validation time in the original follow-up budget', async () => {
+  let live: unknown[] = [];
+  const fixture = await completed(async (arguments_) =>
+    arguments_[1] === 'list'
+      ? JSON.stringify({ result: { type: 'agent_list', agents: live } })
+      : '',
+  );
+  live = [
+    {
+      pane_id: 'manual',
+      name: 'manual-pi',
+      agent_session: { kind: 'path', value: fixture.source.nativeSessionFile },
+    },
+  ];
+  await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+    'already live',
+  );
+  expect(records.readSuccessor(fixture.sourceDirectory)).toBeUndefined();
+  live = [];
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+  fixture.validation.mockImplementation(async (value) => {
+    clock.mockReturnValue(20000);
+    return value as ReturnType<typeof readTask>['loadout'];
+  });
+  fixture.calls.length = 0;
+
+  await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+    'budget expired',
+  );
+  expect(fixture.calls).toEqual([]);
+  expect(records.readSuccessor(fixture.sourceDirectory)).toBeUndefined();
+});
+
+it('cancels follow-up validation without claiming or launching native work', async () => {
+  const fixture = await completed();
+  const entered = Promise.withResolvers<undefined>();
+  const abort = new AbortController();
+  fixture.validation.mockImplementation(
+    (_value, _context, signal) =>
+      new Promise((_resolve, reject) => {
+        signal?.addEventListener(
+          'abort',
+          () => {
+            reject(new Error('Cancelled validation.', { cause: signal.reason }));
+          },
+          { once: true },
+        );
+        entered.resolve(undefined);
+      }),
+  );
+  fixture.calls.length = 0;
+  const pending = fixture.controller.followUp(fixture.input, fixture.context, abort.signal);
+  await entered.promise;
+  abort.abort(new Error('Cancelled validation.'));
+
+  await expect(pending).rejects.toThrow('Cancelled validation.');
+  expect(fixture.calls).toEqual([]);
+  expect(records.readSuccessor(fixture.sourceDirectory)).toBeUndefined();
+  expect(records.readTasks(fixture.directory)).toHaveLength(1);
+});
+
+it('retains friendly names and avoids retained and live collisions', async ({ onTestFinished }) => {
+  const suffix = vi.spyOn(names, 'nameSuffix').mockReturnValue('aa');
+  let live: unknown[] = [];
+  const { controller, input, directory, calls } = setup(onTestFinished, 0, async (arguments_) =>
+    arguments_[1] === 'list'
+      ? JSON.stringify({ result: { type: 'agent_list', agents: live } })
+      : '',
+  );
+  const first = await controller.launch(input);
+  expect(readTask(first.directory)).toMatchObject({ name: 'worker-aa' });
+  recordEvent(first.directory, first.taskId, 'cleanup', 'Pane removed.', true);
+  live = [
+    { pane_id: 'elsewhere', name: 'worker-bb' },
+    { pane_id: 'unnamed', name: null },
+  ];
+  suffix.mockReturnValueOnce('aa').mockReturnValueOnce('bb').mockReturnValue('cc');
+  const second = await controller.launch(input);
+
+  expect(readTask(second.directory)).toMatchObject({ name: 'worker-cc' });
+  expect(calls.filter((call) => call[1] === 'start').map((call) => call[2])).toEqual([
+    'worker-aa',
+    'worker-cc',
+  ]);
+  controller.close();
+  const recovered = new WorkerController(directory);
+  expect(recovered.status(first.taskId, input.parentSessionId)).toMatchObject({
+    name: 'worker-aa',
+  });
+  recovered.close();
+});
+
+it('allocates distinct names for parallel launches and refuses bounded exhaustion', async ({
+  onTestFinished,
+}) => {
+  const suffix = vi
+    .spyOn(names, 'nameSuffix')
+    .mockReturnValueOnce('aa')
+    .mockReturnValueOnce('aa')
+    .mockReturnValue('bb');
+  const { controller, client, directory, input, calls } = setup(onTestFinished);
+  const parallel = new WorkerController(directory, client);
+  onTestFinished(() => {
+    parallel.close();
+  });
+  const launched = await Promise.all([controller.launch(input), parallel.launch(input)]);
+  expect(
+    launched
+      .map((status) => readTask(status.directory).name)
+      .toSorted((left, right) => String(left).localeCompare(String(right))),
+  ).toEqual(['worker-aa', 'worker-bb']);
+  suffix.mockClear().mockReturnValue('aa');
+  const starts = calls.filter((call) => call[1] === 'start').length;
+
+  await expect(controller.launch(input)).rejects.toThrow('32');
+  expect(suffix).toHaveBeenCalledTimes(32);
+  expect(calls.filter((call) => call[1] === 'start')).toHaveLength(starts);
+});
+
+it.each(['failure', 'malformed'] as const)(
+  'refuses naming when live listing is %s',
+  async (kind) => {
+    const { controller, input, calls } = setup(afterTest, 0, async (arguments_) => {
+      if (arguments_[1] !== 'list') {
+        return '';
+      }
+      if (kind === 'failure') {
+        throw new Error('Listing failed.');
+      }
+
+      return JSON.stringify({
+        result: { type: 'agent_list', agents: [{ pane_id: 'other', name: 42 }] },
+      });
+    });
+
+    await expect(controller.launch(input)).rejects.toThrow(/listing|Listing/);
+    expect(calls.some((call) => call[1] === 'split')).toBe(false);
+  },
+);
+
+it.each(['cancelled', 'expired', 'closed'] as const)(
+  'keeps naming inside the original launch budget when %s',
+  async (kind) => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const listed = Promise.withResolvers<number>();
+    const release = Promise.withResolvers<string>();
+    const abort = new AbortController();
+    const { controller, input, calls, directory } = setup(
+      afterTest,
+      0,
+      async (arguments_, budget) => {
+        if (arguments_[1] === 'list') {
+          listed.resolve(budget);
+          return release.promise;
+        }
+
+        return '';
+      },
+    );
+    const pending = controller.launch(input, abort.signal);
+    expect(await listed.promise).toBeLessThanOrEqual(7500);
+    if (kind === 'cancelled') {
+      abort.abort(new Error('Name listing cancelled.'));
+    } else if (kind === 'closed') {
+      controller.close();
+    } else {
+      clock.mockReturnValue(10000);
+    }
+    release.resolve(JSON.stringify({ result: { type: 'agent_list', agents: [] } }));
+
+    await expect(pending).rejects.toThrow(/cancelled|aborted|budget expired/);
+    expect(calls.map((call) => call[1])).toEqual(['list']);
+    expect(readdirSync(directory)).toEqual([]);
+  },
+);
+
+it('retains the chosen name but never retries a late live collision', async ({
+  onTestFinished,
+}) => {
+  vi.spyOn(names, 'nameSuffix').mockReturnValue('xy');
+  const { controller, input, calls } = setup(onTestFinished, 0, async (arguments_) => {
+    if (arguments_[1] === 'start') {
+      throw new Error('agent_name_taken');
+    }
+
+    return '';
+  });
+  const status = await controller.launch({
+    ...input,
+    loadout: { ...input.loadout, role: 'investigation' },
+  });
+
+  expect(status).toMatchObject({ name: 'investigator-xy', outcome: 'failure' });
+  expect(readTask(status.directory).name).toBe('investigator-xy');
+  expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
+  expect(calls.some((call) => ['prompt', 'send-keys'].includes(call[1] ?? ''))).toBe(false);
+});
+
+it('delivers a clarification once without treating herdr delivery as acknowledgement', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, calls, notifications, directory } = setup(
+    onTestFinished,
+    0,
+    async (arguments_) => (arguments_[1] === 'prompt' ? JSON.stringify({ result: {} }) : ''),
+  );
+  const launched = await controller.launch(input);
+  const task = readTask(launched.directory);
+  recordEvent(launched.directory, task.taskId, 'accepted', 'Accepted.');
+  const question = {
+    version: 1,
+    taskId: task.taskId,
+    questionId: 'question-one',
+    question: 'Which file?',
+  };
+  records.acceptQuestion(launched.directory, task.taskId, question);
+
+  expect(controller).toHaveProperty('reply');
+  expect(controller.status(task.taskId, 'parent-id').pendingQuestion).toEqual(question);
+  const answer = {
+    questionId: question.questionId,
+    replyId: 'reply-one',
+    reply: 'source.txt',
+    scopeUnchanged: true,
+  };
+  await expect(controller.reply(task.taskId, 'wrong-parent', answer)).rejects.toThrow(
+    'another parent',
+  );
+  await expect(
+    controller.reply(task.taskId, 'parent-id', { ...answer, scopeUnchanged: false }),
+  ).rejects.toThrow('scope');
+  await expect(
+    controller.reply(task.taskId, 'parent-id', { ...answer, questionId: 'wrong' }),
+  ).rejects.toThrow('pending question');
+  const result = await controller.reply(task.taskId, 'parent-id', answer);
+  expect(result.replyAccepted).toBe(true);
+  expect(result.workerAcknowledged).toBe(false);
+  await controller.reply(task.taskId, 'parent-id', answer);
+  expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
+  expect(calls.find((call) => call[1] === 'prompt')?.[2]).toBe('owned-pane');
+  expect(records.readTask(launched.directory)).toEqual(task);
+  expect(
+    records.readAcknowledgement(launched.directory, task.taskId, question.questionId),
+  ).toBeUndefined();
+  expect(notifications).toEqual([]);
+
+  controller.close();
+  const recovered = new WorkerController(directory);
+  expect(recovered.status(task.taskId, 'parent-id').pendingQuestion).toEqual(question);
+  await expect(recovered.reply(task.taskId, 'parent-id', answer)).rejects.toThrow('active');
+  recovered.close();
+});
+
+it('retains uncertain reply delivery without resending or acknowledging it', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, calls } = setup(onTestFinished);
+  const launched = await controller.launch(input);
+  recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
+  records.acceptQuestion(launched.directory, launched.taskId, {
+    version: 1,
+    taskId: launched.taskId,
+    questionId: 'question-one',
+    question: 'Which file?',
+  });
+  const answer = {
+    questionId: 'question-one',
+    replyId: 'reply-one',
+    reply: 'source.txt',
+    scopeUnchanged: true,
+  };
+
+  await expect(controller.reply(launched.taskId, 'parent-id', answer)).rejects.toThrow(
+    'delivery is uncertain',
+  );
+  expect((await controller.reply(launched.taskId, 'parent-id', answer)).workerAcknowledged).toBe(
+    false,
+  );
+  expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
+  expect(controller.questionReceipt(launched.taskId, 'parent-id', 'question-one')).toMatchObject({
+    reply: { replyId: 'reply-one' },
+    acknowledgement: undefined,
+  });
+  await expect(
+    controller.reply(launched.taskId, 'parent-id', { ...answer, reply: 'changed' }),
+  ).rejects.toThrow('Conflicting');
+});
+
+it('notifies the parent once while waiting and refuses replies after the original deadline', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers();
+  const { controller, input, notifications, calls } = setup(onTestFinished);
+  const launched = await controller.launch(input);
+  recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
+  records.acceptQuestion(launched.directory, launched.taskId, {
+    version: 1,
+    taskId: launched.taskId,
+    questionId: 'question-one',
+    question: 'Which file?',
+  });
+
+  await vi.advanceTimersByTimeAsync(500);
+  expect(notifications).toHaveLength(1);
+  expect(notifications[0]).toContain('Which file?');
+  expect(controller.status(launched.taskId, 'parent-id').deadline).toBe(launched.deadline);
+  await vi.advanceTimersByTimeAsync(7500);
+  await expect(
+    controller.reply(launched.taskId, 'parent-id', {
+      questionId: 'question-one',
+      replyId: 'reply-one',
+      reply: 'source.txt',
+      scopeUnchanged: true,
+    }),
+  ).rejects.toThrow('active');
+  expect(calls.some((call) => call[1] === 'prompt')).toBe(false);
+  expect(records.readReply(launched.directory, launched.taskId, 'question-one')).toBeUndefined();
+});
+
+it('refuses reply delivery when the original native worker identity changes', async ({
+  onTestFinished,
+}) => {
+  let changed = false;
+  const { controller, input, calls } = setup(onTestFinished, 0, async (arguments_) =>
+    changed && arguments_[1] === 'get'
+      ? JSON.stringify({
+          result: {
+            agent: { pane_id: 'owned-pane', agent: 'pi', agent_session: { value: '/wrong.jsonl' } },
+          },
+        })
+      : '',
+  );
+  const launched = await controller.launch(input);
+  recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
+  records.acceptQuestion(launched.directory, launched.taskId, {
+    version: 1,
+    taskId: launched.taskId,
+    questionId: 'question-one',
+    question: 'Which file?',
+  });
+  changed = true;
+
+  await expect(
+    controller.reply(launched.taskId, 'parent-id', {
+      questionId: 'question-one',
+      replyId: 'reply-one',
+      reply: 'source.txt',
+      scopeUnchanged: true,
+    }),
+  ).rejects.toThrow('identity');
+  expect(calls.some((call) => call[1] === 'prompt')).toBe(false);
+  expect(records.readReply(launched.directory, launched.taskId, 'question-one')).toBeUndefined();
+});
 
 it('rejects aggregate Unicode tasks before publishing records or creating a pane', async ({
   onTestFinished,
@@ -119,8 +820,8 @@ it('rejects aggregate Unicode tasks before publishing records or creating a pane
   );
   expect(calls).toEqual([]);
   const directories = readdirSync(directory);
-  expect(directories).toHaveLength(1);
-  expect(directories.map((name) => readdirSync(join(directory, name)))).toEqual([[]]);
+  expect(directories).toHaveLength(0);
+  expect(directories.map((name) => readdirSync(join(directory, name)))).toEqual([]);
 });
 
 it('launches a fresh worker with saved full-tool settings and recovers without resubmission', async ({
@@ -288,6 +989,9 @@ it('preserves incomplete output and malformed evidence without retrying startup'
   const calls: string[][] = [];
   const controller = new WorkerController(directory, async (arguments_) => {
     calls.push(arguments_);
+    if (arguments_[1] === 'list') {
+      return JSON.stringify({ result: { type: 'agent_list', agents: [] } });
+    }
     throw new Error('Startup unavailable');
   });
   onTestFinished(() => {
@@ -301,7 +1005,7 @@ it('preserves incomplete output and malformed evidence without retrying startup'
     reportAccepted: false,
     stopped: false,
   });
-  expect(calls).toHaveLength(1);
+  expect(calls.map((call) => call[1])).toEqual(['list', 'split']);
   expect(readdirSync(status.directory)).toContain('task.json');
   writeFileSync(join(status.directory, 'report.json'), '{');
   expect(() => taskStatus(status.directory)).toThrow(/JSON|property/);

@@ -47,3 +47,5 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0026: Let Git hooks own commit checks](./0026-let-git-hooks-own-commit-checks.md)
 - [0027: Share one delegate model across bounded tool tasks](./0027-share-one-delegate-model.md)
 - [0028: Keep worker control in the parent](./0028-keep-worker-control-in-the-parent.md)
+- [0029: Version worker provider fingerprints](./0029-version-worker-provider-fingerprints.md)
+- [0030: Claim native follow-ups before opening](./0030-claim-native-follow-ups-before-opening.md)
