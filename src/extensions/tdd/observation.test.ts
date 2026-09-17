@@ -508,32 +508,31 @@ it.each([
   expect(await observation.checkpoint(true)).toContain('stale');
 });
 
-it('fingerprints additions edits and deletions across supported layouts and configuration', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-  let previous = await observation.run(behavior, 'full');
+it.for([
+  'apps/web/src/page.tsx',
+  'packages/core/index.ts',
+  'functions/notify/handler.js',
+  'infra/stacks/main.ts',
+  'apps/web/package.json',
+  'packages/core/vite.config.mts',
+  'functions/notify/vitest.config.cts',
+  'infra/vitest.workspace.ts',
+  'tsconfig.json',
+  'packages/core/tsconfig.build.json',
+  'pnpm-lock.yaml',
+  'packages/core/package-lock.json',
+  'functions/notify/npm-shrinkwrap.json',
+  'apps/web/yarn.lock',
+  'apps/web/bun.lock',
+  'apps/web/bun.lockb',
+  'pnpm-workspace.yaml',
+  'packages/core/pnpm-workspace.yaml',
+])(
+  'fingerprints additions edits and deletions across supported layouts and configuration: %s',
+  async (path, { onTestFinished }) => {
+    const { cwd, observation } = await setup(onTestFinished);
+    let previous = await observation.run(behavior, 'full');
 
-  for (const path of [
-    'apps/web/src/page.tsx',
-    'packages/core/index.ts',
-    'functions/notify/handler.js',
-    'infra/stacks/main.ts',
-    'apps/web/package.json',
-    'packages/core/vite.config.mts',
-    'functions/notify/vitest.config.cts',
-    'infra/vitest.workspace.ts',
-    'tsconfig.json',
-    'packages/core/tsconfig.build.json',
-    'pnpm-lock.yaml',
-    'packages/core/package-lock.json',
-    'functions/notify/npm-shrinkwrap.json',
-    'apps/web/yarn.lock',
-    'apps/web/bun.lock',
-    'apps/web/bun.lockb',
-    'pnpm-workspace.yaml',
-    'packages/core/pnpm-workspace.yaml',
-  ]) {
     const file = join(cwd, path);
     await mkdir(dirname(file), { recursive: true });
 
@@ -551,8 +550,8 @@ it('fingerprints additions edits and deletions across supported layouts and conf
       expect(current.inputs.before).not.toBe(previous.inputs.after);
       previous = current;
     }
-  }
-});
+  },
+);
 
 it('keeps actual reports when layout code and nested configuration change during runs', async ({
   onTestFinished,
