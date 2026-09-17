@@ -195,6 +195,36 @@ const readScannedTask = (directory: string): Task | undefined => {
   return undefined;
 };
 
+// A published claim or predecessor must never point at a skipped directory.
+const addReferencedTasks = (
+  root: string,
+  tasks: { directory: string; task: Task }[],
+  unpublished: Map<string, string>,
+): void => {
+  // Tasks published late are appended here and checked by this same loop.
+  for (const { directory, task } of tasks) {
+    if (!unpublished.size) {
+      return;
+    }
+    const referenced = [task.predecessorTaskId, readSuccessor(directory)?.successorTaskId].find(
+      (id) => id !== undefined && unpublished.has(id),
+    );
+    if (referenced === undefined) {
+      continue;
+    }
+    // A claimed successor may have been published after the scan read its directory.
+    const referencedDirectory = join(root, referenced);
+    const late = readScannedTask(referencedDirectory);
+    if (late?.taskId !== referenced) {
+      throw new Error(
+        `Missing task.json for referenced continuation ${referenced}. Saved attempt or claim requires inspection.`,
+      );
+    }
+    unpublished.delete(referenced);
+    tasks.push({ directory: referencedDirectory, task: late });
+  }
+};
+
 export const readTasks = (
   root: string,
   diagnostics: string[] = [],
@@ -223,18 +253,7 @@ export const readTasks = (
     tasks.push({ directory, task });
   }
 
-  if (unpublished.size) {
-    for (const { directory, task } of tasks) {
-      const referenced = [task.predecessorTaskId, readSuccessor(directory)?.successorTaskId].find(
-        (id) => id !== undefined && unpublished.has(id),
-      );
-      if (referenced) {
-        throw new Error(
-          `Missing task.json for referenced continuation ${referenced}. Saved attempt or claim requires inspection.`,
-        );
-      }
-    }
-  }
+  addReferencedTasks(root, tasks, unpublished);
   for (const [id, directory] of unpublished) {
     diagnostics.push(
       `Skipped unpublished task ${id}; preparation evidence remains at ${directory}.`,

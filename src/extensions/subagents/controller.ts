@@ -898,6 +898,20 @@ export class WorkerController {
       clearTimeout(handle.timer);
       handle.removeLaunchAbort?.();
       handle.abort.abort();
+      if (handle.stopping) {
+        continue;
+      }
+      // A waiting worker cannot receive a reply from a later controller, so it must stop waiting.
+      try {
+        recordEvent(
+          handle.directory,
+          handle.task.taskId,
+          'parentClosed',
+          'Parent controller closed. Replies are no longer possible.',
+        );
+      } catch (error) {
+        handle.recordErrors.push(String(error));
+      }
     }
   }
 }

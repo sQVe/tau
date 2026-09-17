@@ -76,11 +76,16 @@ export default function workerExtension(pi: ExtensionAPI): void {
 
       // Keep waiting after uncertain publication rather than generate another question identity.
       pendingQuestion = question;
-      acceptQuestion(directory, task.taskId, question);
-      // A restarted parent cannot reply, so waiting past parent exit would keep this worker open forever.
+      // A closed or exited parent cannot reply, so waiting would keep this worker open forever.
+      // Start watching before publication so an uncertain save still ends the wait.
       // ponytail: PID reuse can hide parent exit; compare process start times if that shows up.
       parentWatch = setInterval(() => {
-        if (!task || !pendingQuestion || settled || parentRunning(parentProcess)) {
+        if (
+          !task ||
+          !pendingQuestion ||
+          settled ||
+          (parentRunning(parentProcess) && !readEvent(directory, task.taskId, 'parentClosed'))
+        ) {
           return;
         }
         clearInterval(parentWatch);
@@ -90,13 +95,14 @@ export default function workerExtension(pi: ExtensionAPI): void {
             directory,
             task.taskId,
             'settled',
-            'Parent process exited while this worker waited for a reply. No reply can arrive.',
+            'Parent closed or exited while this worker waited for a reply. No reply can arrive.',
             true,
           );
         } finally {
           context.shutdown();
         }
       }, 1000);
+      acceptQuestion(directory, task.taskId, question);
 
       return Promise.resolve({
         content: [

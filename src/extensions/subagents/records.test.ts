@@ -28,6 +28,8 @@ vi.mock('node:fs', async (importOriginal) => {
     openSync: vi.fn<typeof original.openSync>(original.openSync),
     closeSync: vi.fn<typeof original.closeSync>(original.closeSync),
     statSync: vi.fn<typeof original.statSync>(original.statSync),
+    lstatSync: vi.fn<typeof original.lstatSync>(original.lstatSync),
+    readdirSync: vi.fn<typeof original.readdirSync>(original.readdirSync),
   };
 });
 
@@ -137,6 +139,51 @@ it('reads a task published by another process during the scan', () => {
   });
 
   expect(records.readTasks(root)).toEqual([{ directory: child, task }]);
+});
+
+it('reads a claimed successor published after its directory was scanned', async () => {
+  const { directory, task } = questionFixture();
+  const root = join(directory, 'registry');
+  const source = join(root, task.taskId);
+  const successorDirectory = join(root, 'successor');
+  const successorTask = join(successorDirectory, 'task.json');
+  mkdirSync(source, { recursive: true });
+  mkdirSync(successorDirectory);
+  records.publish(source, 'task.json', task);
+  const successor = records.validateTask({
+    ...task,
+    taskId: 'successor',
+    predecessorTaskId: task.taskId,
+  });
+  records.publish(successorDirectory, 'task.json', successor);
+  records.claimSuccessor(source, successor);
+  const original = await vi.importActual<typeof fileSystem>('node:fs');
+  // The successor looks unpublished until the scan lists its directory, then another process publishes it.
+  let hidden = true;
+  vi.mocked(fileSystem.openSync).mockImplementation((path, ...rest) => {
+    if (hidden && path === successorTask) {
+      throw Object.assign(new Error('Not yet published.'), { code: 'ENOENT' });
+    }
+
+    return original.openSync(path, ...rest);
+  });
+  vi.mocked(fileSystem.lstatSync).mockImplementation(((path: string, options: object) =>
+    hidden && path === successorTask
+      ? undefined
+      : original.lstatSync(path, options)) as typeof fileSystem.lstatSync);
+  vi.mocked(fileSystem.readdirSync).mockImplementation(((path: string, options: object) => {
+    if (hidden && path === successorDirectory) {
+      hidden = false;
+
+      return [];
+    }
+
+    return original.readdirSync(path, options);
+  }) as typeof fileSystem.readdirSync);
+
+  const scanned = records.readTasks(root).map((entry) => entry.task.taskId);
+
+  expect(scanned.toSorted()).toEqual(['successor', task.taskId]);
 });
 
 it('reads the saved task once while finding the pending question', () => {

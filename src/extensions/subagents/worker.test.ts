@@ -11,7 +11,8 @@ import type {
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { checkWorkerRuntime } from './loadout.js';
-import { publish, readEvent, readPendingQuestion } from './records.js';
+import { publish, readEvent, readPendingQuestion, recordEvent } from './records.js';
+import * as records from './records.js';
 import workerExtension from './worker.js';
 
 vi.mock('./loadout.js', () => ({
@@ -119,22 +120,29 @@ it.each(['before readiness', 'before dispatch', 'before tool call'])(
   },
 );
 
+const waitingWorker = async () => {
+  const worker = setup();
+  await worker.emit('session_start');
+  publish(worker.directory, 'dispatch.json', { taskId: 'task' });
+  await vi.advanceTimersByTimeAsync(50);
+  await worker.emit('agent_start');
+
+  return worker;
+};
+
 it.each([
-  { parent: 'exited', stopped: true, shutdowns: 1 },
-  { parent: 'running', stopped: undefined, shutdowns: 0 },
+  { parent: 'exited', running: false, closed: false, stopped: true, shutdowns: 1 },
+  { parent: 'closed its controller', running: true, closed: true, stopped: true, shutdowns: 1 },
+  { parent: 'kept running', running: true, closed: false, stopped: undefined, shutdowns: 0 },
 ])(
-  'stops waiting for a reply only when the parent process has $parent',
-  async ({ parent, stopped, shutdowns }) => {
-    const { directory, emit, ask, shutdown } = setup();
-    await emit('session_start');
-    publish(directory, 'dispatch.json', { taskId: 'task' });
-    await vi.advanceTimersByTimeAsync(50);
-    await emit('agent_start');
+  'stops waiting for a reply only when the parent $parent',
+  async ({ running, closed, stopped, shutdowns }) => {
+    const { directory, emit, ask, shutdown } = await waitingWorker();
     expect(ask).toThrow('parent process');
     expect(readPendingQuestion(directory, 'task')).toBeUndefined();
     vi.stubEnv('TAU_PARENT_PROCESS', '4242');
     const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
-      if (parent === 'exited') {
+      if (!running) {
         throw Object.assign(new Error('No such process.'), { code: 'ESRCH' });
       }
 
@@ -142,6 +150,9 @@ it.each([
     });
 
     await ask();
+    if (closed) {
+      recordEvent(directory, 'task', 'parentClosed', 'Parent controller closed.');
+    }
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(kill).toHaveBeenCalledWith(4242, 0);
@@ -151,3 +162,21 @@ it.each([
     expect(vi.getTimerCount()).toBe(0);
   },
 );
+
+it('stops waiting after uncertain question publication once the parent exits', async () => {
+  const { emit, ask, shutdown } = await waitingWorker();
+  vi.stubEnv('TAU_PARENT_PROCESS', '4242');
+  vi.spyOn(records, 'acceptQuestion').mockImplementation(() => {
+    throw new Error('Directory sync failed.');
+  });
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    throw Object.assign(new Error('No such process.'), { code: 'ESRCH' });
+  });
+
+  expect(ask).toThrow('Directory sync failed.');
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(shutdown).toHaveBeenCalledOnce();
+  await emit('session_shutdown');
+  expect(vi.getTimerCount()).toBe(0);
+});

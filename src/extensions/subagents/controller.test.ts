@@ -20,7 +20,7 @@ import { fixtureLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import * as loadoutModule from './loadout.js';
 import * as names from './names.js';
-import { acceptReport, readTask, recordEvent } from './records.js';
+import { acceptReport, readEvent, readTask, recordEvent } from './records.js';
 import * as records from './records.js';
 
 vi.mock('node:fs', async (importOriginal) => {
@@ -566,6 +566,15 @@ it('gives the worker pane its parent process identity', async ({ onTestFinished 
   await controller.launch(input);
 
   expect(calls.find((call) => call[1] === 'split')).toContain(`TAU_PARENT_PROCESS=${process.pid}`);
+});
+
+it('tells active workers when the parent controller closes', async ({ onTestFinished }) => {
+  const { controller, input } = setup(onTestFinished);
+  const status = await controller.launch(input);
+
+  controller.close();
+
+  expect(readEvent(status.directory, status.taskId, 'parentClosed')).toBeDefined();
 });
 
 it('allocates distinct names for parallel launches and refuses bounded exhaustion', async ({

@@ -93,6 +93,7 @@ export const eventSchema = Type.Object(
       'timeout',
       'cleanup',
       'notified',
+      'parentClosed',
     ]),
     detail: text,
     at: Type.Integer({ minimum: 1 }),
