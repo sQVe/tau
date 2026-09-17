@@ -187,7 +187,6 @@ export class WorkerPlacement {
       throw new Error('Layout changed during placement; no layout changes.');
     }
 
-    // Split only after useful space is available. User ratios and unrelated topology remain untouched.
     const created = await call([
       'pane',
       'split',
@@ -291,7 +290,6 @@ export class WorkerPlacement {
       );
     }
 
-    // Foreground overflow stays inspectable without shrinking the parent below the useful minimum.
     const location = terminalLocation(
       result(
         await call([

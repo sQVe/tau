@@ -10,6 +10,13 @@ import { WorkerController } from './controller.js';
 import { historyPage, searchHistory } from './history.js';
 import { resolveLoadout } from './loadout.js';
 
+const visibility = Type.Optional(
+  StringEnum(['foreground', 'background'] as const, {
+    description:
+      'Foreground shares useful space with the parent. Background uses inspectable worker tabs. Neither changes focus. Default: foreground; overflow uses a tab.',
+  }),
+);
+
 export default function subagentsExtension(pi: ExtensionAPI): void {
   let controller: WorkerController | undefined;
   const getController = () => {
@@ -45,12 +52,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       cwd: Type.Optional(Type.String()),
       model: Type.Optional(Type.String()),
       harness: Type.Optional(Type.String()),
-      visibility: Type.Optional(
-        StringEnum(['foreground', 'background'] as const, {
-          description:
-            'Foreground shares useful space with the parent. Background uses inspectable worker tabs. Neither changes focus. Default: foreground; overflow uses a tab.',
-        }),
-      ),
+      visibility,
       permissions: Type.Literal('trusted-full-tools'),
       timeoutSeconds: Type.Integer({ minimum: 10, maximum: 86_400 }),
     }),
@@ -79,7 +81,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
           startedAt,
           parentSession,
           parentSessionId: context.sessionManager.getSessionId(),
-          visibility: parameters.visibility ?? 'foreground',
+          ...(parameters.visibility ? { visibility: parameters.visibility } : {}),
         },
         signal,
       );
@@ -98,12 +100,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
         task: Type.String({ minLength: 1, maxLength: 32000 }),
         timeoutSeconds: Type.Integer({ minimum: 10, maximum: 86400 }),
         settingsUnchanged: Type.Literal(true),
-        visibility: Type.Optional(
-          StringEnum(['foreground', 'background'] as const, {
-            description:
-              'Foreground shares useful space with the parent. Background uses inspectable worker tabs. Neither changes focus. Default: foreground; overflow uses a tab.',
-          }),
-        ),
+        visibility,
       },
       { additionalProperties: false },
     ),
@@ -119,7 +116,6 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
           timeout: parameters.timeoutSeconds * 1000,
           parentSession,
           parentSessionId: context.sessionManager.getSessionId(),
-          visibility: parameters.visibility ?? 'foreground',
         },
         context,
         signal,

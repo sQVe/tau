@@ -717,12 +717,9 @@ export class WorkerController {
           stopped = cancellation.cleanup === 'confirmed';
           detail = cancellation.detail;
         }
-        // Close only an unchanged shell after the owned process has exited. Never close a reused pane.
-        if (stopped && (await shellIsOwned())) {
-          const location = await resolveTerminal(text(owned.terminalId), call);
-          if (location.paneId !== owned.paneId) {
-            throw new Error('Worker moved after the stopped-shell check; pane closure refused.');
-          }
+        // closeShell rechecks the stopped shell inside the placement queue. Never close a reused pane.
+        if (stopped) {
+          const location = await resolveTerminal(worker.terminalId, call);
           await this.placement.close(location, call, () => closeShell(location.paneId), signal);
         }
       } catch (error) {
