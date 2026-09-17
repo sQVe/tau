@@ -27,6 +27,8 @@ Use actual file paths and line numbers from the supplied files. Return {"finding
 // Generated lockfiles have no comments to review and can exceed the review input limits.
 const lockfilePatterns = [
   '*.lock',
+  '*.lockfile',
+  'packages.lock.json',
   'pnpm-lock.yaml',
   'package-lock.json',
   'npm-shrinkwrap.json',
