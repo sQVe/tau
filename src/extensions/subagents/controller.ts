@@ -112,6 +112,18 @@ const taskOutcome = (
   return report?.outcome ?? (incomplete ? 'incomplete' : 'running');
 };
 
+// Confirmed cleanup needs no warning. Only an active deadline or uncertain stop is worth stating.
+const enforcementNote = (active: boolean, cleanup: TaskEvent | undefined) => {
+  if (active) {
+    return 'Original parent deadline remains active.';
+  }
+  if (cleanup?.stopped === true) {
+    return undefined;
+  }
+
+  return 'No active owner in this parent. Saved evidence only; work may still be running. Check the saved pane manually. No retry or continuing enforcement is promised.';
+};
+
 export const taskStatus = (directory: string, activeOwner?: string, enforcing = true) => {
   const task = readTask(directory);
   const report = readReport(directory, task.taskId);
@@ -144,9 +156,7 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
     pendingQuestion: readPendingQuestion(directory, task.taskId),
     failure: failure?.detail,
     cleanup: cleanup?.detail,
-    enforcement: active
-      ? 'Original parent deadline remains active.'
-      : 'No active owner in this parent. Saved evidence only; work may still be running. Check the saved pane manually. No retry or continuing enforcement is promised.',
+    enforcement: enforcementNote(active, cleanup),
   };
 };
 

@@ -568,6 +568,24 @@ it('gives the worker pane its parent process identity', async ({ onTestFinished 
   expect(calls.find((call) => call[1] === 'split')).toContain(`TAU_PARENT_PROCESS=${process.pid}`);
 });
 
+it('omits the saved-evidence warning once the parent confirmed the worker stopped', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, directory } = setup(onTestFinished);
+  const status = await controller.launch(input);
+  recordEvent(status.directory, status.taskId, 'cleanup', 'Owned process stopped.', true);
+  controller.close();
+  const recovered = new WorkerController(directory);
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  const recoveredStatus = recovered.status(status.taskId, input.parentSessionId);
+
+  expect(recoveredStatus.stopped).toBe(true);
+  expect(recoveredStatus.enforcement).toBeUndefined();
+});
+
 it('tells active workers when the parent controller closes', async ({ onTestFinished }) => {
   const { controller, input } = setup(onTestFinished);
   const status = await controller.launch(input);
