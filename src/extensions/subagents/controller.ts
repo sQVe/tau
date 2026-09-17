@@ -7,13 +7,15 @@ import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { cancelOwnedWorker, matchesWorker, runClient } from './cancellation.js';
+import { cancelOwnedWorker, matchesWorker, runClient, workerStopped } from './cancellation.js';
 import type { OwnedWorker } from './cancellation.js';
 import { requireHandover, refuseLiveNativeWriter } from './continuations.js';
 import { authorizeHistoryTask } from './history.js';
 import { validateSavedLoadout } from './loadout.js';
 import { allocateName, nameSuffix } from './names.js';
 import { validateNative } from './native.js';
+import { WorkerPlacement } from './placement.js';
+import type { Visibility } from './placement.js';
 import { nativeIdentity, seedSession } from './profiles.js';
 import {
   acceptReply,
@@ -31,6 +33,7 @@ import {
   recordEvent,
   validateTask,
 } from './records.js';
+import { object, resolveTerminal, result, text } from './terminal.js';
 import type { Loadout, Question, Report, Task, TaskEvent } from './types.js';
 
 export type HerdrClient = (
@@ -41,26 +44,6 @@ export type HerdrClient = (
 export const herdrClient: HerdrClient = (arguments_, budget, signal) =>
   runClient('herdr', arguments_, budget, signal);
 
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const object = (value: unknown): Record<string, unknown> => {
-  if (!isObject(value)) {
-    throw new Error('Malformed herdr response.');
-  }
-
-  return value;
-};
-const result = (response: string): Record<string, unknown> => {
-  return object(object(JSON.parse(response)).result);
-};
-const text = (value: unknown): string => {
-  if (typeof value !== 'string' || !value) {
-    throw new Error('Missing herdr identity.');
-  }
-
-  return value;
-};
 const integer = (value: unknown): number => {
   if (!Number.isSafeInteger(value) || Number(value) <= 0) {
     throw new Error('Invalid herdr process identity.');
@@ -165,6 +148,7 @@ interface Handle {
   task: Task;
   owned?: OwnedWorker;
   paneId?: string;
+  terminalId?: string;
   timer?: ReturnType<typeof setTimeout>;
   stopping?: Promise<void>;
   abort: AbortController;
@@ -203,11 +187,13 @@ const inspectWorker = async (
   handle: Handle,
   call: (arguments_: string[]) => Promise<string>,
 ): Promise<OwnedWorker> => {
-  const paneId = text(handle.paneId);
+  const location = await resolveTerminal(text(handle.terminalId), call);
+  const paneId = location.paneId;
+  handle.paneId = paneId;
   const information = object(
     result(await call(['pane', 'process-info', '--pane', paneId])).process_info,
   );
-  const previous = handle.owned;
+  const previous = handle.owned ? { ...handle.owned, paneId } : undefined;
   if (
     information.pane_id === paneId &&
     information.foreground_process_group_id === information.shell_pid &&
@@ -239,6 +225,7 @@ const inspectWorker = async (
   const owned: OwnedWorker = previous ?? {
     kind: 'pi',
     paneId,
+    terminalId: location.terminalId,
     shellPid,
     processId,
     token: handle.task.nativeSessionFile,
@@ -295,7 +282,8 @@ interface LaunchInput {
   timeout: number;
   parentSession: string;
   parentSessionId: string;
-  parentPane: string;
+  parentPane?: string;
+  visibility?: Visibility;
   startedAt?: { wall: number; monotonic: number };
 }
 
@@ -348,6 +336,7 @@ export class WorkerController {
   readonly ownerId = randomUUID();
   private readonly handles = new Map<string, Handle>();
   private readonly lifetime = new AbortController();
+  private readonly placement = new WorkerPlacement();
   private closed = false;
 
   constructor(
@@ -394,6 +383,32 @@ export class WorkerController {
 
     // Validation expiry must not masquerade as caller cancellation during launch/readiness.
     return this.launchTask({ ...input, loadout, startedAt }, signal, { ...source, native });
+  }
+
+  private placeWorker(
+    input: LaunchInput,
+    handle: Handle,
+    call: (arguments_: string[]) => Promise<string>,
+  ) {
+    return this.placement.place(
+      {
+        ...(input.parentPane ? { parentPane: input.parentPane } : {}),
+        visibility: input.visibility ?? 'foreground',
+        onCreated: (created) => {
+          handle.paneId = created.paneId;
+          handle.terminalId = created.terminalId;
+          publish(handle.directory, 'pane.json', created);
+        },
+        cwd: handle.task.loadout.cwd,
+        environment: [
+          `TAU_WORKER_RECORD=${handle.directory}`,
+          `TAU_PARENT_PROCESS=${process.pid}`,
+          `PI_CODING_AGENT_DIR=${handle.task.loadout.agentDirectory}`,
+        ],
+      },
+      call,
+      handle.abort.signal,
+    );
   }
 
   private async launchTask(
@@ -509,27 +524,7 @@ export class WorkerController {
       }
       const call = (arguments_: string[]) =>
         this.client(arguments_, workBudget(handle), handle.abort.signal);
-      const split = result(
-        await call([
-          'pane',
-          'split',
-          '--pane',
-          input.parentPane,
-          '--direction',
-          'right',
-          '--cwd',
-          task.loadout.cwd,
-          '--no-focus',
-          '--env',
-          `TAU_WORKER_RECORD=${directory}`,
-          '--env',
-          `TAU_PARENT_PROCESS=${process.pid}`,
-          '--env',
-          `PI_CODING_AGENT_DIR=${task.loadout.agentDirectory}`,
-        ]),
-      );
-      handle.paneId = text(object(split.pane).pane_id);
-      publish(directory, 'pane.json', { paneId: handle.paneId });
+      const location = await this.placeWorker(input, handle, call);
       if (source) {
         checkNativeWriterListing(await call(['agent', 'list']), task);
         checkHandoff(this.root, source, task);
@@ -541,7 +536,7 @@ export class WorkerController {
         '--kind',
         'pi',
         '--pane',
-        handle.paneId,
+        location.paneId,
         '--timeout',
         String(workBudget(handle)),
         '--',
@@ -627,15 +622,23 @@ export class WorkerController {
     }
     handle.removeLaunchAbort?.();
     handle.abort.abort();
-    handle.stopping = this.cleanup(handle, reason, failureDetail).catch((error: unknown) => {
-      handle.recordErrors.push(String(error));
-      if (this.closed) {
-        return;
-      }
-      this.notify(
-        `Worker ${handle.task.name ?? 'unnamed'} (${handle.task.taskId}): cleanup unconfirmed. ${String(error)}. Check pane ${handle.paneId ?? 'unknown'} manually. Records: ${handle.directory}. Native session: ${handle.task.nativeSessionId} (${handle.task.nativeSessionFile}).`,
-      );
-    });
+    handle.stopping = this.cleanup(handle, reason, failureDetail)
+      .finally(() => {
+        // Keep sharing intact until cleanup finishes, including its queued topology change.
+        // Unconfirmed cleanup must still stop contributing placement candidates.
+        if (handle.terminalId) {
+          this.placement.release(handle.terminalId);
+        }
+      })
+      .catch((error: unknown) => {
+        handle.recordErrors.push(String(error));
+        if (this.closed) {
+          return;
+        }
+        this.notify(
+          `Worker ${handle.task.name ?? 'unnamed'} (${handle.task.taskId}): cleanup unconfirmed. ${String(error)}. Check pane ${handle.paneId ?? 'unknown'} manually. Records: ${handle.directory}. Native session: ${handle.task.nativeSessionId} (${handle.task.nativeSessionFile}).`,
+        );
+      });
 
     return handle.stopping;
   }
@@ -645,7 +648,8 @@ export class WorkerController {
     reason: 'timeout' | 'cancelled' | 'completion' | 'failure',
     failureDetail: string,
   ): Promise<void> {
-    const { directory, task, owned } = handle;
+    const { directory, task } = handle;
+    let owned = handle.owned;
     // Receipt failures must never prevent the bounded stop attempt or hide later recording errors.
     const record = (operation: () => void) => {
       try {
@@ -672,20 +676,33 @@ export class WorkerController {
     };
     const call = (arguments_: string[]) => this.client(arguments_, remainingBudget(), signal);
     let stopped = false;
+    const paneClosure = { confirmed: false };
     let detail = `Cleanup unconfirmed. Check pane ${handle.paneId ?? 'unknown'} manually. No automatic retry.`;
 
     if (owned) {
+      const worker = owned;
       const shellIsOwned = async () => {
+        const location = await resolveTerminal(text(worker.terminalId), call);
+        owned = { ...worker, paneId: location.paneId };
+        handle.paneId = location.paneId;
+        handle.owned = owned;
         const information = object(
           result(await call(['pane', 'process-info', '--pane', owned.paneId])).process_info,
         );
 
-        return (
-          information.pane_id === owned.paneId &&
-          information.shell_pid === owned.shellPid &&
-          information.foreground_process_group_id === owned.shellPid &&
-          processAbsent(owned.processId)
-        );
+        return workerStopped(information, owned);
+      };
+      const closeShell = async (expectedPaneId: string) => {
+        if (!(await shellIsOwned())) {
+          throw new Error('Stopped shell identity changed; pane closure refused.');
+        }
+        const location = await resolveTerminal(worker.terminalId, call);
+        if (location.paneId !== handle.paneId || location.paneId !== expectedPaneId) {
+          throw new Error('Worker moved after the stopped-shell check; pane closure refused.');
+        }
+        await call(['pane', 'close', location.paneId]);
+        paneClosure.confirmed = true;
+        detail = 'Owned process stopped and pane closed. Detached descendants are not covered.';
       };
       try {
         stopped = await shellIsOwned();
@@ -700,13 +717,15 @@ export class WorkerController {
           stopped = cancellation.cleanup === 'confirmed';
           detail = cancellation.detail;
         }
-        // Close only an unchanged shell after the owned process has exited. Never close a reused pane.
-        if (stopped && (await shellIsOwned())) {
-          await call(['pane', 'close', owned.paneId]);
-          detail = 'Owned process stopped and pane closed. Detached descendants are not covered.';
+        // closeShell rechecks the stopped shell inside the placement queue. Never close a reused pane.
+        if (stopped) {
+          const location = await resolveTerminal(worker.terminalId, call);
+          await this.placement.close(location, call, () => closeShell(location.paneId), signal);
         }
       } catch (error) {
-        detail = `${String(error)} Check pane ${owned.paneId} manually. Detached descendants are not covered.`;
+        if (!paneClosure.confirmed) {
+          detail = `${String(error)} Check pane ${owned.paneId} manually. Detached descendants are not covered.`;
+        }
       }
     }
     handle.cleanupDetail = reason === 'failure' ? `${detail} ${failureDetail}` : detail;
@@ -832,7 +851,11 @@ export class WorkerController {
     }
     const call = (arguments_: string[]) =>
       this.client(arguments_, workBudget(handle), handle.abort.signal);
-    await inspectWorker(handle, call);
+    const worker = await inspectWorker(handle, call);
+    const location = await resolveTerminal(worker.terminalId, call);
+    if (location.paneId !== worker.paneId) {
+      throw new Error('Worker moved during identity checks; no input sent.');
+    }
     ensureReplyActive(handle);
     // Another caller may have accepted this reply during the identity check. Never send it twice.
     if (readReply(directory, taskId, answer.questionId)) {
