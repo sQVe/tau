@@ -901,6 +901,9 @@ export class WorkerController {
   }
 
   close(): void {
+    if (this.closed) {
+      return;
+    }
     this.closed = true;
     this.lifetime.abort();
 

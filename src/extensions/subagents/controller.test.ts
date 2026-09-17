@@ -591,8 +591,10 @@ it('tells active workers when the parent controller closes', async ({ onTestFini
   const status = await controller.launch(input);
 
   controller.close();
+  controller.close();
 
   expect(readEvent(status.directory, status.taskId, 'parentClosed')).toBeDefined();
+  expect(() => controller.status(status.taskId, input.parentSessionId)).not.toThrow();
 });
 
 it('allocates distinct names for parallel launches and refuses bounded exhaustion', async ({
