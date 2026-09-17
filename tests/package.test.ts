@@ -153,7 +153,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
   }
 });
 
-it('reports an extension error for each bundled package that is not loaded', async ({
+it('reports extension errors for missing bundled question and web extensions', async ({
   onTestFinished,
 }) => {
   const workingDirectory = await mkdtemp(join(tmpdir(), 'tau-package-missing-'));
