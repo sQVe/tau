@@ -126,6 +126,35 @@ it.each([
   expect(() => records.readTasks(root)).toThrow(/JSON|property|Permission|identity|task.json/);
 });
 
+it('reads a task published by another process during the scan', () => {
+  const { directory, task } = questionFixture();
+  const root = join(directory, 'registry');
+  const child = join(root, task.taskId);
+  mkdirSync(child, { recursive: true });
+  records.publish(child, 'task.json', task);
+  vi.mocked(fileSystem.openSync).mockImplementationOnce(() => {
+    throw Object.assign(new Error('Not yet published.'), { code: 'ENOENT' });
+  });
+
+  expect(records.readTasks(root)).toEqual([{ directory: child, task }]);
+});
+
+it('reads the saved task once while finding the pending question', () => {
+  const { directory, task, question, reply, acknowledgement } = questionFixture();
+  const pending = { ...question, questionId: 'question-two' };
+  records.acceptQuestion(directory, task.taskId, question);
+  records.acceptReply(directory, task.taskId, reply);
+  records.acceptAcknowledgement(directory, task.taskId, acknowledgement);
+  records.acceptQuestion(directory, task.taskId, pending);
+  vi.mocked(fileSystem.openSync).mockClear();
+
+  expect(records.readPendingQuestion(directory, task.taskId)).toEqual(pending);
+  const taskReads = vi
+    .mocked(fileSystem.openSync)
+    .mock.calls.filter(([path]) => String(path).endsWith('task.json'));
+  expect(taskReads).toHaveLength(1);
+});
+
 it.each(['claim', 'predecessor'] as const)(
   'does not skip an unpublished directory referenced by a published %s',
   (reference) => {

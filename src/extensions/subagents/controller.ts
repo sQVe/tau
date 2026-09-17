@@ -513,6 +513,8 @@ export class WorkerController {
           '--env',
           `TAU_WORKER_RECORD=${directory}`,
           '--env',
+          `TAU_PARENT_PROCESS=${process.pid}`,
+          '--env',
           `PI_CODING_AGENT_DIR=${task.loadout.agentDirectory}`,
         ]),
       );

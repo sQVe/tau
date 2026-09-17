@@ -6,77 +6,90 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   ToolCallEventResult,
+  ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { checkWorkerRuntime } from './loadout.js';
-import { publish, readEvent } from './records.js';
+import { publish, readEvent, readPendingQuestion } from './records.js';
 import workerExtension from './worker.js';
 
 vi.mock('./loadout.js', () => ({
   checkWorkerRuntime: vi.fn<typeof checkWorkerRuntime>().mockResolvedValue(undefined),
 }));
 
+const setup = () => {
+  vi.useFakeTimers();
+  const directory = mkdtempSync(join(tmpdir(), 'tau-worker-clock-'));
+  onTestFinished(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  vi.stubEnv('TAU_WORKER_RECORD', directory);
+  const createdAt = Date.now();
+  publish(directory, 'task.json', {
+    version: 1,
+    taskId: 'task',
+    task: 'Read the assigned file.',
+    parentSession: join(directory, 'parent.jsonl'),
+    parentSessionId: 'parent',
+    ownerId: 'owner',
+    nativeSessionId: 'native',
+    nativeSessionFile: join(directory, 'native.jsonl'),
+    createdAt,
+    deadline: createdAt + 30_000,
+    cancellationBudget: 2000,
+    loadout: {
+      profile: 'investigator',
+      role: 'investigation',
+      model: 'faux/test',
+      modelFingerprint: '0'.repeat(64),
+      providerFingerprint: '0'.repeat(64),
+      thinking: 'off',
+      cwd: directory,
+      agentDirectory: directory,
+      permissions: 'trusted-full-tools',
+      tools: ['read', 'bash', 'edit', 'write', 'subagent_report'],
+      integrations: [join(directory, 'safety.js')],
+      integrationFingerprint: '0'.repeat(64),
+      safetyExtension: join(directory, 'safety.js'),
+      instructions: 'Read only.',
+    },
+  });
+  const handlers = new Map<string, (event: unknown, context: ExtensionContext) => unknown>();
+  const tools = new Map<string, ToolDefinition>();
+  const sendUserMessage = vi.fn<ExtensionAPI['sendUserMessage']>();
+  const shutdown = vi.fn<ExtensionContext['shutdown']>();
+  const context = {
+    sessionManager: {
+      getSessionId: () => 'native',
+      getSessionFile: () => join(directory, 'native.jsonl'),
+    },
+    shutdown,
+    ui: { notify: vi.fn<ExtensionContext['ui']['notify']>() },
+  } as unknown as ExtensionContext;
+  workerExtension({
+    on: (name: string, handler: (event: unknown, context: ExtensionContext) => unknown) =>
+      handlers.set(name, handler),
+    registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
+    sendUserMessage,
+  } as unknown as ExtensionAPI);
+  const emit = (name: string, event: unknown = {}) => handlers.get(name)?.(event, context);
+  const ask = () =>
+    tools
+      .get('subagent_question')
+      ?.execute('call', { question: 'Which file?' }, undefined, undefined, context);
+
+  return { directory, createdAt, emit, ask, sendUserMessage, shutdown };
+};
+
 it.each(['before readiness', 'before dispatch', 'before tool call'])(
   'leaves expiry to the parent when the wall clock jumps %s',
   async (phase) => {
-    vi.useFakeTimers();
-    const directory = mkdtempSync(join(tmpdir(), 'tau-worker-clock-'));
-    onTestFinished(() => {
-      vi.useRealTimers();
-      vi.unstubAllEnvs();
-      vi.clearAllMocks();
-      rmSync(directory, { recursive: true, force: true });
-    });
-    vi.stubEnv('TAU_WORKER_RECORD', directory);
-    const createdAt = Date.now();
-    publish(directory, 'task.json', {
-      version: 1,
-      taskId: 'task',
-      task: 'Read the assigned file.',
-      parentSession: join(directory, 'parent.jsonl'),
-      parentSessionId: 'parent',
-      ownerId: 'owner',
-      nativeSessionId: 'native',
-      nativeSessionFile: join(directory, 'native.jsonl'),
-      createdAt,
-      deadline: createdAt + 30_000,
-      cancellationBudget: 2000,
-      loadout: {
-        profile: 'investigator',
-        role: 'investigation',
-        model: 'faux/test',
-        modelFingerprint: '0'.repeat(64),
-        providerFingerprint: '0'.repeat(64),
-        thinking: 'off',
-        cwd: directory,
-        agentDirectory: directory,
-        permissions: 'trusted-full-tools',
-        tools: ['read', 'bash', 'edit', 'write', 'subagent_report'],
-        integrations: [join(directory, 'safety.js')],
-        integrationFingerprint: '0'.repeat(64),
-        safetyExtension: join(directory, 'safety.js'),
-        instructions: 'Read only.',
-      },
-    });
-    const handlers = new Map<string, (event: unknown, context: ExtensionContext) => unknown>();
-    const sendUserMessage = vi.fn<ExtensionAPI['sendUserMessage']>();
-    const shutdown = vi.fn<ExtensionContext['shutdown']>();
-    const context = {
-      sessionManager: {
-        getSessionId: () => 'native',
-        getSessionFile: () => join(directory, 'native.jsonl'),
-      },
-      shutdown,
-      ui: { notify: vi.fn<ExtensionContext['ui']['notify']>() },
-    } as unknown as ExtensionContext;
-    workerExtension({
-      on: (name: string, handler: (event: unknown, context: ExtensionContext) => unknown) =>
-        handlers.set(name, handler),
-      registerTool: vi.fn<ExtensionAPI['registerTool']>(),
-      sendUserMessage,
-    } as unknown as ExtensionAPI);
-    const emit = (name: string, event: unknown = {}) => handlers.get(name)?.(event, context);
+    const { directory, createdAt, emit, sendUserMessage, shutdown } = setup();
     const jump = () => vi.setSystemTime(createdAt + 3_600_000);
 
     if (phase === 'before readiness') {
@@ -101,6 +114,39 @@ it.each(['before readiness', 'before dispatch', 'before tool call'])(
 
     expect(result).toBeUndefined();
     expect(shutdown).not.toHaveBeenCalled();
+    await emit('session_shutdown');
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
+
+it.each([
+  { parent: 'exited', stopped: true, shutdowns: 1 },
+  { parent: 'running', stopped: undefined, shutdowns: 0 },
+])(
+  'stops waiting for a reply only when the parent process has $parent',
+  async ({ parent, stopped, shutdowns }) => {
+    const { directory, emit, ask, shutdown } = setup();
+    await emit('session_start');
+    publish(directory, 'dispatch.json', { taskId: 'task' });
+    await vi.advanceTimersByTimeAsync(50);
+    await emit('agent_start');
+    expect(ask).toThrow('parent process');
+    expect(readPendingQuestion(directory, 'task')).toBeUndefined();
+    vi.stubEnv('TAU_PARENT_PROCESS', '4242');
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
+      if (parent === 'exited') {
+        throw Object.assign(new Error('No such process.'), { code: 'ESRCH' });
+      }
+
+      return true;
+    });
+
+    await ask();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(kill).toHaveBeenCalledWith(4242, 0);
+    expect(shutdown).toHaveBeenCalledTimes(shutdowns);
+    expect(readEvent(directory, 'task', 'settled')?.stopped).toBe(stopped);
     await emit('session_shutdown');
     expect(vi.getTimerCount()).toBe(0);
   },

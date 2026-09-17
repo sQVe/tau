@@ -171,18 +171,28 @@ export const readSuccessor = (directory: string): Successor | undefined => {
   return value;
 };
 
-const isUnpublishedDirectory = (directory: string, error: unknown): boolean => {
-  if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
-    return false;
-  }
-  // A dangling task link is published evidence, not an unpublished directory.
-  if (lstatSync(join(directory, 'task.json'), { throwIfNoEntry: false })) {
-    return false;
-  }
-
-  return readdirSync(directory, { withFileTypes: true }).every(
+const isUnpublishedDirectory = (directory: string): boolean =>
+  readdirSync(directory, { withFileTypes: true }).every(
     (entry) => entry.isFile() && /^\.receipt-[a-f0-9-]+$/.test(entry.name),
   );
+
+const readScannedTask = (directory: string): Task | undefined => {
+  try {
+    return readTask(directory);
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
+      throw error;
+    }
+  }
+  // Another process may publish the task after the failed read. A dangling link still fails.
+  if (
+    lstatSync(join(directory, 'task.json'), { throwIfNoEntry: false }) ||
+    !isUnpublishedDirectory(directory)
+  ) {
+    return readTask(directory);
+  }
+
+  return undefined;
 };
 
 export const readTasks = (
@@ -202,13 +212,8 @@ export const readTasks = (
   const unpublished = new Map<string, string>();
   for (const entry of entries.filter((candidate) => candidate.isDirectory())) {
     const directory = join(root, entry.name);
-    let task: Task;
-    try {
-      task = readTask(directory);
-    } catch (error) {
-      if (!isUnpublishedDirectory(directory, error)) {
-        throw error;
-      }
+    const task = readScannedTask(directory);
+    if (!task) {
       unpublished.set(entry.name, directory);
       continue;
     }
@@ -273,16 +278,21 @@ export const claimSuccessor = (directory: string, successor: Task): void => {
 };
 
 const questionRecordName = (
-  directory: string,
-  taskId: string,
   questionId: string,
   kind: 'question' | 'reply' | 'acknowledgement',
 ): string => {
-  if (!Value.Check(questionIdentitySchema, questionId) || readTask(directory).taskId !== taskId) {
+  if (!Value.Check(questionIdentitySchema, questionId)) {
     throw new Error('Invalid question identity or wrong saved task.');
   }
 
   return `${kind}-${questionId}.json`;
+};
+
+// Check the saved task once per public call. Nested record reads would otherwise re-read task.json.
+const requireSavedTask = (directory: string, taskId: string): void => {
+  if (readTask(directory).taskId !== taskId) {
+    throw new Error('Invalid question identity or wrong saved task.');
+  }
 };
 
 const readOptionalRecord = (directory: string, name: string): unknown => {
@@ -326,13 +336,12 @@ const publishQuestionRecord = (
   }
 };
 
-export const readQuestion = (
+const savedQuestion = (
   directory: string,
   taskId: string,
   questionId: string,
 ): Question | undefined => {
-  const name = questionRecordName(directory, taskId, questionId, 'question');
-  const value = readOptionalRecord(directory, name);
+  const value = readOptionalRecord(directory, questionRecordName(questionId, 'question'));
   if (value === undefined) {
     return undefined;
   }
@@ -348,6 +357,17 @@ export const readQuestion = (
   return value;
 };
 
+export const readQuestion = (
+  directory: string,
+  taskId: string,
+  questionId: string,
+): Question | undefined => {
+  questionRecordName(questionId, 'question');
+  requireSavedTask(directory, taskId);
+
+  return savedQuestion(directory, taskId, questionId);
+};
+
 export const validateQuestion = (value: unknown, taskId: string): Question => {
   if (!Value.Check(questionSchema, value) || value.taskId !== taskId) {
     throw new Error('Invalid or wrong-task question.');
@@ -361,20 +381,17 @@ export const validateQuestion = (value: unknown, taskId: string): Question => {
 
 export const acceptQuestion = (directory: string, taskId: string, value: unknown): Question => {
   const question = validateQuestion(value, taskId);
-  const name = questionRecordName(directory, taskId, question.questionId, 'question');
+  const name = questionRecordName(question.questionId, 'question');
+  requireSavedTask(directory, taskId);
 
   publishQuestionRecord(directory, name, question);
 
   return question;
 };
 
-export const readReply = (
-  directory: string,
-  taskId: string,
-  questionId: string,
-): Reply | undefined => {
-  const name = questionRecordName(directory, taskId, questionId, 'reply');
-  const question = readQuestion(directory, taskId, questionId);
+const savedReply = (directory: string, taskId: string, questionId: string): Reply | undefined => {
+  const name = questionRecordName(questionId, 'reply');
+  const question = savedQuestion(directory, taskId, questionId);
   const value = readOptionalRecord(directory, name);
   if (value === undefined) {
     return undefined;
@@ -392,13 +409,25 @@ export const readReply = (
   return value;
 };
 
+export const readReply = (
+  directory: string,
+  taskId: string,
+  questionId: string,
+): Reply | undefined => {
+  questionRecordName(questionId, 'reply');
+  requireSavedTask(directory, taskId);
+
+  return savedReply(directory, taskId, questionId);
+};
+
 export const acceptReply = (directory: string, taskId: string, value: unknown): Reply => {
   if (!Value.Check(replySchema, value) || value.taskId !== taskId) {
     throw new Error('Invalid or wrong-task reply.');
   }
 
-  const name = questionRecordName(directory, taskId, value.questionId, 'reply');
-  if (!readQuestion(directory, taskId, value.questionId)) {
+  const name = questionRecordName(value.questionId, 'reply');
+  requireSavedTask(directory, taskId);
+  if (!savedQuestion(directory, taskId, value.questionId)) {
     throw new Error('Reply has no accepted question.');
   }
 
@@ -407,13 +436,13 @@ export const acceptReply = (directory: string, taskId: string, value: unknown): 
   return value;
 };
 
-export const readAcknowledgement = (
+const savedAcknowledgement = (
   directory: string,
   taskId: string,
   questionId: string,
 ): Acknowledgement | undefined => {
-  const name = questionRecordName(directory, taskId, questionId, 'acknowledgement');
-  const reply = readReply(directory, taskId, questionId);
+  const name = questionRecordName(questionId, 'acknowledgement');
+  const reply = savedReply(directory, taskId, questionId);
   const value = readOptionalRecord(directory, name);
   if (value === undefined) {
     return undefined;
@@ -431,6 +460,17 @@ export const readAcknowledgement = (
   return value;
 };
 
+export const readAcknowledgement = (
+  directory: string,
+  taskId: string,
+  questionId: string,
+): Acknowledgement | undefined => {
+  questionRecordName(questionId, 'acknowledgement');
+  requireSavedTask(directory, taskId);
+
+  return savedAcknowledgement(directory, taskId, questionId);
+};
+
 export const acceptAcknowledgement = (
   directory: string,
   taskId: string,
@@ -440,8 +480,9 @@ export const acceptAcknowledgement = (
     throw new Error('Invalid or wrong-task acknowledgement.');
   }
 
-  const name = questionRecordName(directory, taskId, value.questionId, 'acknowledgement');
-  const reply = readReply(directory, taskId, value.questionId);
+  const name = questionRecordName(value.questionId, 'acknowledgement');
+  requireSavedTask(directory, taskId);
+  const reply = savedReply(directory, taskId, value.questionId);
   if (!reply || value.replyId !== reply.replyId) {
     throw new Error('Acknowledgement does not match the accepted reply.');
   }
@@ -452,6 +493,7 @@ export const acceptAcknowledgement = (
 };
 
 export const readPendingQuestion = (directory: string, taskId: string): Question | undefined => {
+  requireSavedTask(directory, taskId);
   let pending: Question | undefined;
   for (const name of readdirSync(directory)) {
     if (!name.startsWith('question-') || !name.endsWith('.json')) {
@@ -459,8 +501,8 @@ export const readPendingQuestion = (directory: string, taskId: string): Question
     }
 
     const questionId = name.slice('question-'.length, -'.json'.length);
-    const question = readQuestion(directory, taskId, questionId);
-    if (!readAcknowledgement(directory, taskId, questionId)) {
+    const question = savedQuestion(directory, taskId, questionId);
+    if (!savedAcknowledgement(directory, taskId, questionId)) {
       if (pending) {
         throw new Error('Multiple pending worker questions.');
       }

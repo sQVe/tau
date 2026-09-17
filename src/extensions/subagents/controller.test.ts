@@ -546,6 +546,28 @@ it('retains friendly names and avoids retained and live collisions', async ({ on
   recovered.close();
 });
 
+it('names a new worker when another saved task directory is unreadable', async ({
+  onTestFinished,
+}) => {
+  vi.spyOn(names, 'nameSuffix').mockReturnValue('aa');
+  const { controller, input, directory, calls } = setup(onTestFinished);
+  mkdirSync(join(directory, 'corrupt'));
+  writeFileSync(join(directory, 'corrupt', 'task.json'), '{');
+
+  const status = await controller.launch(input);
+
+  expect(readTask(status.directory)).toMatchObject({ name: 'worker-aa' });
+  expect(calls.filter((call) => call[1] === 'start').map((call) => call[2])).toEqual(['worker-aa']);
+});
+
+it('gives the worker pane its parent process identity', async ({ onTestFinished }) => {
+  const { controller, input, calls } = setup(onTestFinished);
+
+  await controller.launch(input);
+
+  expect(calls.find((call) => call[1] === 'split')).toContain(`TAU_PARENT_PROCESS=${process.pid}`);
+});
+
 it('allocates distinct names for parallel launches and refuses bounded exhaustion', async ({
   onTestFinished,
 }) => {

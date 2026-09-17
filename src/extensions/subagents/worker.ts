@@ -6,6 +6,7 @@ import { StringEnum } from '@earendil-works/pi-ai';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
+import { processExists } from './cancellation.js';
 import { checkWorkerRuntime } from './loadout.js';
 import { workerPrompt } from './profiles.js';
 import {
@@ -21,6 +22,15 @@ import {
 } from './records.js';
 import type { Question, Task } from './types.js';
 
+const parentRunning = (processId: number): boolean => {
+  try {
+    return processExists(processId);
+  } catch {
+    // Errors such as EPERM do not prove that the parent exited.
+    return true;
+  }
+};
+
 export default function workerExtension(pi: ExtensionAPI): void {
   // oxlint-disable-next-line node/no-process-env -- The parent binds this process to its saved task through the pane environment.
   const directory = process.env.TAU_WORKER_RECORD;
@@ -33,6 +43,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
   let settled = false;
   let kickoff: ReturnType<typeof setInterval> | undefined;
   let pendingQuestion: Question | undefined;
+  let parentWatch: ReturnType<typeof setInterval> | undefined;
 
   pi.registerTool({
     name: 'subagent_question',
@@ -43,9 +54,14 @@ export default function workerExtension(pi: ExtensionAPI): void {
       { question: Type.String({ minLength: 1, maxLength: 32000 }) },
       { additionalProperties: false },
     ),
-    execute(_id, parameters) {
+    execute(_id, parameters, _signal, _update, context) {
       if (!task || !accepted || settled || reported || pendingQuestion) {
         throw new Error('This worker has no active task available for a question.');
+      }
+      // oxlint-disable-next-line node/no-process-env -- The parent binds its process identity through the pane environment.
+      const parentProcess = Number(process.env.TAU_PARENT_PROCESS);
+      if (!Number.isSafeInteger(parentProcess) || parentProcess <= 0) {
+        throw new Error('This worker has no parent process to ask.');
       }
 
       const question = validateQuestion(
@@ -61,6 +77,26 @@ export default function workerExtension(pi: ExtensionAPI): void {
       // Keep waiting after uncertain publication rather than generate another question identity.
       pendingQuestion = question;
       acceptQuestion(directory, task.taskId, question);
+      // A restarted parent cannot reply, so waiting past parent exit would keep this worker open forever.
+      // ponytail: PID reuse can hide parent exit; compare process start times if that shows up.
+      parentWatch = setInterval(() => {
+        if (!task || !pendingQuestion || settled || parentRunning(parentProcess)) {
+          return;
+        }
+        clearInterval(parentWatch);
+        settled = true;
+        try {
+          recordEvent(
+            directory,
+            task.taskId,
+            'settled',
+            'Parent process exited while this worker waited for a reply. No reply can arrive.',
+            true,
+          );
+        } finally {
+          context.shutdown();
+        }
+      }, 1000);
 
       return Promise.resolve({
         content: [
@@ -110,6 +146,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
 
       acceptAcknowledgement(directory, task.taskId, reference);
       pendingQuestion = undefined;
+      clearInterval(parentWatch);
 
       return {
         action: 'transform',
@@ -213,6 +250,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
 
   pi.on('session_shutdown', () => {
     clearInterval(kickoff);
+    clearInterval(parentWatch);
   });
 
   pi.on('agent_start', () => {

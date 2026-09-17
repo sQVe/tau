@@ -163,6 +163,7 @@ it.each(['editing', 'investigation'] as const)(
     const taskDirectory = join(directory, 'task');
     mkdirSync(taskDirectory);
     vi.stubEnv('TAU_WORKER_RECORD', taskDirectory);
+    vi.stubEnv('TAU_PARENT_PROCESS', String(process.pid));
     const task = validateTask({
       version: 1,
       taskId: 'fixture-task',

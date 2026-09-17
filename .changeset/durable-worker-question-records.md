@@ -5,7 +5,8 @@
 Let active Pi workers ask their parent for clarification without exiting. Save validated questions,
 replies, and worker acknowledgements separately. Deliver replies once through herdr after checking
 the original worker identity. Preserve the assigned scope, saved settings, and original parent-owned
-deadline while waiting.
+deadline while waiting. A waiting worker stops when its parent process exits, since no reply can
+arrive.
 
 Recover pending questions and reply receipts with `subagent_status`. Repeated recovery preserves
 accepted content and does not resend uncertain deliveries. Acknowledgement records worker receipt,

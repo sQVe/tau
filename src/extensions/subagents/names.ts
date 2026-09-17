@@ -1,8 +1,11 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { customAlphabet } from 'nanoid';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { readTasks } from './records.js';
+import { readTask } from './records.js';
 import type { Loadout } from './types.js';
 
 export const nameSuffix = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 2);
@@ -13,6 +16,32 @@ const liveAgentsSchema = Type.Array(
     name: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()])),
   }),
 );
+
+// Names only label tasks, so an unreadable record must not block launches. History and follow-up still fail closed.
+const retainedNames = (root: string, parentSessionId: string): string[] => {
+  let entries;
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+
+  return entries.flatMap((entry) => {
+    if (!entry.isDirectory()) {
+      return [];
+    }
+    try {
+      const task = readTask(join(root, entry.name));
+
+      return task.parentSessionId === parentSessionId && task.name ? [task.name] : [];
+    } catch {
+      return [];
+    }
+  });
+};
 
 export const allocateName = (
   root: string,
@@ -25,10 +54,8 @@ export const allocateName = (
     throw new Error('Malformed live agent listing.');
   }
   const taken = new Set(live.flatMap((agent) => (agent.name ? [agent.name] : [])));
-  for (const { task } of readTasks(root)) {
-    if (task.parentSessionId === parentSessionId && task.name) {
-      taken.add(task.name);
-    }
+  for (const name of retainedNames(root, parentSessionId)) {
+    taken.add(name);
   }
 
   const prefix = role === 'editing' ? 'worker' : 'investigator';
