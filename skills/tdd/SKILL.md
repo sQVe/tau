@@ -28,9 +28,8 @@ make it pass, then run the whole suite.
 
 1. Write a failing test next to the code. Import the production module normally. If it does not
    exist, create an empty module so an unresolved import is not mistaken for RED.
-2. Call `run_tests` with `scope: "focused"`, a `behavior` label, literal worktree-relative `files`,
-   and `testFullName`. Use the exact Vitest full name: describe names and the test name joined with
-   spaces, such as `outer inner works`. An array selects several names for one behavior.
+2. Call `run_tests` with `scope: "focused"`. Follow the tool description for the exact selection
+   format. Do not restructure tests or broaden selection to make the tool run.
 3. Read the failure summary and the runner report in `details`. Implement the change, then rerun
    focused with the same files and names. The label can change without changing test selection.
 4. Refactor and format as needed. Call `run_tests` with `scope: "full"` before handing off. A full

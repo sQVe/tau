@@ -13,7 +13,13 @@ import {
   maximumStdoutBytes,
   maximumTotalBytes,
 } from './types.js';
-import { defaultDeps, defaultSpawn, extractBinPath, nodeExecutable } from './vitest.js';
+import {
+  defaultDeps,
+  defaultResolveVitest,
+  defaultSpawn,
+  extractBinPath,
+  nodeExecutable,
+} from './vitest.js';
 
 const runTests = async (...arguments_: Parameters<typeof runTestsWithDiagnostics>) => {
   const result = await runTestsWithDiagnostics(...arguments_);
@@ -56,7 +62,7 @@ const fakeSpawn =
   };
 
 const makeDeps = (overrides: Partial<RunnerDeps>): RunnerDeps => ({
-  resolveVitest: () => '/fake/vitest.js',
+  resolveVitest: () => ({ path: '/fake/vitest.js', version: '4.1.11' }),
   spawn: fakeSpawn({}),
   timeoutMs: 30_000,
   ...overrides,
@@ -71,6 +77,269 @@ describe('runTests', () => {
 
       await rm(agentDirectory, { recursive: true, force: true });
     });
+  });
+
+  it.for(['4.1.11', '5.0.1'])(
+    'uses Vitest %s native nested names for exact selection and failure identities',
+    async (version) => {
+      const separator = version.startsWith('5.') ? ' > ' : ' ';
+      const fullname = ['outer suite', 'inner [group]', 'works (exact)'].join(separator);
+      const filter = `^(?:${fullname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})$`;
+      // Vitest 5.0.1 still joins JSON fullName with spaces; CLI filtering uses " > ".
+      // https://github.com/vitest-dev/vitest/blob/v5.0.1/packages/vitest/src/node/reporters/json.ts
+      const assertion = {
+        ancestorTitles: ['outer suite', 'inner [group]'],
+        title: 'works (exact)',
+        fullName: 'outer suite inner [group] works (exact)',
+        status: 'failed',
+        failureMessages: ['expected 1 to be 2'],
+      };
+      const spawn = vi.fn<SpawnFn>(
+        fakeSpawn({
+          code: 1,
+          report: {
+            numTotalTests: 3,
+            numFailedTests: 1,
+            numPassedTests: 0,
+            testResults: [
+              {
+                name: '/repo/value.test.ts',
+                status: 'failed',
+                assertionResults: [
+                  assertion,
+                  {
+                    ...assertion,
+                    title: 'works (exact) suffix',
+                    fullName: `${assertion.fullName} suffix`,
+                    status: 'pending',
+                    failureMessages: [],
+                  },
+                  {
+                    ...assertion,
+                    ancestorTitles: [],
+                    title: assertion.fullName,
+                    status: 'pending',
+                    failureMessages: [],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      );
+      const result = await runTests(
+        { scope: 'changed', cwd: '/repo', files: ['value.test.ts'], filter },
+        makeDeps({ resolveVitest: () => ({ path: '/fake/vitest.js', version }), spawn }),
+      );
+
+      expect(spawn).toHaveBeenCalledExactlyOnceWith(
+        '/fake/vitest.js',
+        expect.arrayContaining(['-t', filter]),
+        expect.objectContaining({ cwd: '/repo' }),
+      );
+      expect(result).toMatchObject({
+        kind: 'fail',
+        failures: [{ fullname, message: 'expected 1 to be 2' }],
+      });
+      // V4 cannot distinguish a top-level name containing spaces from the same nested name.
+      expect('tests' in result && result.tests).toEqual([
+        { file: '/repo/value.test.ts', fullname, status: 'failed' },
+        ...(version.startsWith('4.')
+          ? [{ file: '/repo/value.test.ts', fullname, status: 'skipped' }]
+          : []),
+      ]);
+    },
+  );
+
+  it.for(['4.1.11', '5.0.1'])(
+    'explains unmatched Vitest %s names without retrying or broadening selection',
+    async (version) => {
+      const filter = '^wrong nested name$';
+      const spawn = vi.fn<SpawnFn>(
+        fakeSpawn({
+          report: {
+            numTotalTests: 1,
+            numPassedTests: 0,
+            testResults: [
+              {
+                name: '/repo/value.test.ts',
+                status: 'passed',
+                assertionResults: [
+                  {
+                    ancestorTitles: ['outer', 'inner'],
+                    title: 'works',
+                    fullName: 'outer inner works',
+                    status: 'pending',
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      );
+      const result = await runTests(
+        { scope: 'changed', cwd: '/repo', files: ['value.test.ts'], filter },
+        makeDeps({ resolveVitest: () => ({ path: '/fake/vitest.js', version }), spawn }),
+      );
+
+      expect(result).toMatchObject({ kind: 'no-tests-collected', tests: [] });
+      expect(result).toHaveProperty('message', expect.stringContaining(`Vitest ${version}`));
+      expect(result).toHaveProperty(
+        'message',
+        expect.stringContaining(
+          version.startsWith('5.') ? 'outer > inner > works' : 'outer inner works',
+        ),
+      );
+      expect(result).toHaveProperty('message', expect.stringContaining('Do not restructure tests'));
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(spawn.mock.calls[0]?.[1]).toContain(filter);
+    },
+  );
+
+  it('resolves the name format version from the same package as the Vitest binary', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-vitest-version-'));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const directory = join(cwd, 'node_modules/vitest');
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      join(directory, 'package.json'),
+      JSON.stringify({
+        name: 'vitest',
+        version: '5.0.0-beta.1',
+        bin: { vitest: './bin/vitest.mjs' },
+      }),
+    );
+
+    await mkdir(join(directory, 'bin'));
+    await writeFile(join(directory, 'bin/vitest.mjs'), '');
+
+    expect(defaultResolveVitest(cwd)).toEqual({
+      path: join(directory, 'bin/vitest.mjs'),
+      version: '5.0.0-beta.1',
+    });
+  });
+
+  it('reads the current Vitest version after a same-path package upgrade', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-vitest-upgrade-'));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const directory = join(cwd, 'node_modules/vitest');
+    await mkdir(directory, { recursive: true });
+
+    await writeFile(join(directory, 'vitest.mjs'), '');
+
+    for (const version of ['4.1.11', '5.0.1']) {
+      await writeFile(
+        join(directory, 'package.json'),
+        JSON.stringify({ name: 'vitest', version, bin: './vitest.mjs' }),
+      );
+
+      expect(defaultResolveVitest(cwd)).toEqual({
+        path: join(directory, 'vitest.mjs'),
+        version,
+      });
+    }
+  });
+
+  it('preserves Vitest 5 literal separators, empty titles, duplicates, and skipped statuses', async () => {
+    const assertions = [
+      {
+        ancestorTitles: [],
+        title: 'literal > title',
+        fullName: 'literal > title',
+        status: 'failed',
+      },
+      { ancestorTitles: ['outer', ''], title: '', fullName: 'outer ', status: 'failed' },
+      {
+        ancestorTitles: ['outer'],
+        title: 'duplicate',
+        fullName: 'outer duplicate',
+        status: 'failed',
+      },
+      {
+        ancestorTitles: ['outer'],
+        title: 'duplicate',
+        fullName: 'outer duplicate',
+        status: 'failed',
+      },
+      { ancestorTitles: ['outer'], title: 'skipped', fullName: 'outer skipped', status: 'pending' },
+      { ancestorTitles: ['outer'], title: 'todo', fullName: 'outer todo', status: 'todo' },
+    ];
+    const result = await runTests(
+      { scope: 'all', cwd: '/repo' },
+      makeDeps({
+        resolveVitest: () => ({ path: '/fake/vitest.js', version: '5.0.1' }),
+        spawn: fakeSpawn({
+          code: 1,
+          report: {
+            numTotalTests: 6,
+            numFailedTests: 4,
+            testResults: [
+              { name: '/repo/value.test.ts', status: 'failed', assertionResults: assertions },
+            ],
+          },
+        }),
+      }),
+    );
+
+    expect(result).toMatchObject({
+      kind: 'fail',
+      tests: [
+        { fullname: 'literal > title', status: 'failed' },
+        { fullname: 'outer >  > ', status: 'failed' },
+        { fullname: 'outer > duplicate', status: 'failed' },
+        { fullname: 'outer > duplicate', status: 'failed' },
+        { fullname: 'outer > skipped', status: 'skipped' },
+        { fullname: 'outer > todo', status: 'todo' },
+      ],
+    });
+  });
+
+  it('selects only an exact nested test with the installed Vitest runner', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-nested-selection-'));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
+    await writeFile(
+      join(cwd, 'nested.test.ts'),
+      `
+      import { describe, it, expect } from 'vitest';
+      describe('outer suite', () => describe('inner [group]', () => {
+        it('works (exact)', () => expect(1).toBe(2));
+        it('works (exact) suffix', () => { throw new Error('must not run'); });
+      }));
+      it('works (exact)', () => { throw new Error('must not run'); });
+    `,
+    );
+    const result = await runTests({
+      scope: 'changed',
+      cwd,
+      files: ['nested.test.ts'],
+      filter: '^outer suite inner \\[group\\] works \\(exact\\)$',
+    });
+
+    expect(result).toMatchObject({
+      kind: 'fail',
+      tests: [
+        {
+          file: join(cwd, 'nested.test.ts'),
+          fullname: 'outer suite inner [group] works (exact)',
+          status: 'failed',
+        },
+      ],
+    });
+    expect('failures' in result && result.failures).toHaveLength(1);
+
+    const unmatched = await runTests({
+      scope: 'changed',
+      cwd,
+      files: ['nested.test.ts'],
+      filter: '^outer suite > inner \\[group\\] > works \\(exact\\)$',
+    });
+
+    expect(unmatched).toMatchObject({ kind: 'no-tests-collected', tests: [] });
+    expect(unmatched).toHaveProperty(
+      'message',
+      expect.stringContaining('outer suite inner [group] works (exact)'),
+    );
   });
 
   it('retains diagnostics for successful failed skipped and interrupted runs', async () => {
@@ -370,7 +639,10 @@ describe('runTests', () => {
           )});\n`,
       );
 
-      const deps = makeDeps({ resolveVitest: () => script, spawn: defaultSpawn });
+      const deps = makeDeps({
+        resolveVitest: () => ({ path: script, version: '4.1.11' }),
+        spawn: defaultSpawn,
+      });
 
       expect(await runTests({ scope: 'all', cwd }, deps)).toMatchObject({
         kind: 'pass',
@@ -415,7 +687,11 @@ describe('runTests', () => {
           'setTimeout(() => {}, 60000);\n',
       );
 
-      const deps = makeDeps({ resolveVitest: () => script, spawn: defaultSpawn, timeoutMs: 200 });
+      const deps = makeDeps({
+        resolveVitest: () => ({ path: script, version: '4.1.11' }),
+        spawn: defaultSpawn,
+        timeoutMs: 200,
+      });
 
       const started = Date.now();
 
@@ -451,7 +727,19 @@ describe('runTests', () => {
   });
 
   it('returns runner-missing when vitest cannot be resolved', async () => {
-    const deps = makeDeps({ resolveVitest: () => null });
+    const deps = makeDeps({
+      resolveVitest: () => ({
+        kind: 'runner-missing',
+        message: 'Vitest not found',
+        resolution: {
+          cwd: '/repo',
+          request: 'vitest/package.json',
+          stage: 'lookup',
+          errorType: 'Error',
+          errorCode: 'MODULE_NOT_FOUND',
+        },
+      }),
+    });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
@@ -634,7 +922,10 @@ describe('runTests', () => {
 
       const controller = new AbortController();
 
-      const deps = makeDeps({ resolveVitest: () => script, spawn: defaultSpawn });
+      const deps = makeDeps({
+        resolveVitest: () => ({ path: script, version: '4.1.11' }),
+        spawn: defaultSpawn,
+      });
 
       const started = Date.now();
       const pending = runTests({ scope: 'all', cwd, signal: controller.signal }, deps);

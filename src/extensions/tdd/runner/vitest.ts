@@ -1,9 +1,19 @@
 import { spawn as nodeSpawn } from 'node:child_process';
-import { accessSync, constants, statSync } from 'node:fs';
+import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { basename, delimiter, dirname, isAbsolute, join, relative } from 'node:path';
+import {
+  basename,
+  delimiter,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve as resolvePath,
+  sep,
+} from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
+import { stripVTControlCharacters } from 'node:util';
 
 import { tddConfig } from '../config.js';
 import { saveDiagnostics } from './diagnostics.js';
@@ -17,6 +27,8 @@ import type {
   SpawnResult,
   TestFailure,
   TestResult,
+  VitestResolutionDiagnostic,
+  VitestResolutionFailure,
 } from './types.js';
 import {
   defaultTimeoutMilliseconds,
@@ -74,19 +86,175 @@ export const extractBinPath = (manifest: unknown): string | null => {
   return typeof entry === 'string' ? entry : null;
 };
 
-export const defaultResolveVitest: ResolveVitestFn = (cwd) => {
-  try {
-    const manifestPath = nodeRequire.resolve('vitest/package.json', { paths: [cwd] });
-    const manifest: unknown = nodeRequire(manifestPath);
-    const binaryPath = extractBinPath(manifest);
+const resolutionMessages: Record<string, string> = {
+  MODULE_NOT_FOUND: 'The vitest/package.json request was not found from the lookup directory.',
+  ERR_PACKAGE_PATH_NOT_EXPORTED: 'Package exports do not expose vitest/package.json.',
+  ERR_INVALID_PACKAGE_CONFIG: 'Node could not parse a package manifest during Vitest resolution.',
+  ERR_INVALID_PACKAGE_TARGET: 'A package export target is invalid.',
+  EACCES: 'Permission denied while resolving the Vitest runner.',
+  EPERM: 'The filesystem denied access while resolving the Vitest runner.',
+  ENOENT: 'A resolved manifest or binary file is missing.',
+  ENOTDIR: 'A resolution path contains a component that is not a directory.',
+  EISDIR: 'A manifest path is a directory, not a file.',
+  ELOOP: 'A resolution path contains a symbolic-link loop.',
+  INVALID_BIN: 'Vitest manifest has no usable local bin entry or the binary is not a file.',
+  INVALID_VERSION: 'Vitest manifest has no valid version for test-name decoding.',
+};
 
-    if (binaryPath == null) {
-      return null;
+const diagnosticPath = (path: string) => {
+  const printable = stripVTControlCharacters(path).replace(/\p{Cc}/gu, ' ');
+
+  return printable.length > 400 ? `${printable.slice(0, 394)} [cut]` : printable;
+};
+
+const resolutionErrorDetails = (error: unknown) => {
+  const code =
+    error !== null && typeof error === 'object' && 'code' in error ? error.code : undefined;
+  const errorCode =
+    typeof code === 'string' && Object.hasOwn(resolutionMessages, code) ? code : undefined;
+  let errorType = 'UnknownError';
+
+  // Never copy error.message, stack, or custom names: JSON parse errors can quote credentials.
+  if (error instanceof Error) {
+    errorType = ['SyntaxError', 'TypeError', 'RangeError'].includes(error.name)
+      ? error.name
+      : 'Error';
+  }
+
+  return { errorType, ...(errorCode === undefined ? {} : { errorCode }) };
+};
+
+const validVersion = (version: unknown): version is string =>
+  typeof version === 'string' &&
+  version.length <= 128 &&
+  /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version);
+
+const resolutionExplanation = (
+  stage: VitestResolutionDiagnostic['stage'],
+  errorType: string,
+  errorCode: string | undefined,
+  missing: boolean,
+): string => {
+  if (errorCode === 'MODULE_NOT_FOUND' && !missing) {
+    return 'A dependency lookup failed inside the resolver; this does not establish that Vitest is absent.';
+  }
+
+  if (errorCode !== undefined) {
+    return resolutionMessages[errorCode] ?? 'Vitest runner resolution failed.';
+  }
+
+  if (errorType === 'SyntaxError' && stage === 'manifest') {
+    return 'Vitest manifest is not valid JSON.';
+  }
+
+  return 'Vitest runner resolution failed.';
+};
+
+const resolutionFailure = (
+  cwd: string,
+  stage: VitestResolutionDiagnostic['stage'],
+  error: unknown,
+  paths: { manifestPath?: string; binaryPath?: string } = {},
+): VitestResolutionFailure => {
+  const { errorCode, errorType } = resolutionErrorDetails(error);
+  const resolution: VitestResolutionDiagnostic = {
+    cwd: diagnosticPath(cwd),
+    request: 'vitest/package.json',
+    stage,
+    errorType,
+    ...(errorCode === undefined ? {} : { errorCode }),
+    ...(paths.manifestPath === undefined
+      ? {}
+      : { manifestPath: diagnosticPath(paths.manifestPath) }),
+    ...(paths.binaryPath === undefined ? {} : { binaryPath: diagnosticPath(paths.binaryPath) }),
+  };
+  // MODULE_NOT_FOUND can also refer to a broken export target inside an installed package.
+  const missing =
+    stage === 'lookup' &&
+    errorCode === 'MODULE_NOT_FOUND' &&
+    error instanceof Error &&
+    error.message.startsWith("Cannot find module 'vitest/package.json'");
+  const explanation = resolutionExplanation(stage, errorType, errorCode, missing);
+
+  const message = [
+    `${explanation} Stage: ${stage}; ${errorType}${errorCode === undefined ? '' : ` (${errorCode})`}.`,
+    'Inspect this once, then fix resolution or use the repository runner. Bash tests do not update Tau observations.',
+    `Lookup directory: ${resolution.cwd}; request: ${resolution.request}`,
+    ...(resolution.manifestPath === undefined ? [] : [`Manifest: ${resolution.manifestPath}`]),
+    ...(resolution.binaryPath === undefined ? [] : [`Binary: ${resolution.binaryPath}`]),
+  ].join('\n');
+
+  return { kind: missing ? 'runner-missing' : 'runner-resolution-error', message, resolution };
+};
+
+export const defaultResolveVitest: ResolveVitestFn = (cwd) => {
+  let stage: VitestResolutionDiagnostic['stage'] = 'lookup';
+  const paths: { manifestPath?: string; binaryPath?: string } = {};
+
+  try {
+    paths.manifestPath = nodeRequire.resolve('vitest/package.json', { paths: [cwd] });
+    stage = 'manifest';
+    const manifest: unknown = JSON.parse(readFileSync(paths.manifestPath, 'utf8'));
+    const version =
+      manifest !== null && typeof manifest === 'object' && 'version' in manifest
+        ? manifest.version
+        : undefined;
+
+    if (!validVersion(version)) {
+      return resolutionFailure(
+        cwd,
+        stage,
+        Object.assign(new TypeError('Invalid Vitest manifest version'), {
+          code: 'INVALID_VERSION',
+        }),
+        paths,
+      );
     }
 
-    return join(dirname(manifestPath), binaryPath);
-  } catch {
-    return null;
+    stage = 'binary';
+    const binary = extractBinPath(manifest);
+
+    if (
+      binary === null ||
+      binary.trim().length === 0 ||
+      isAbsolute(binary) ||
+      /[\p{Cc}:?#]/u.test(binary)
+    ) {
+      return resolutionFailure(
+        cwd,
+        stage,
+        Object.assign(new TypeError('Invalid Vitest bin entry'), { code: 'INVALID_BIN' }),
+        paths,
+      );
+    }
+
+    const directory = dirname(paths.manifestPath);
+    const binaryPath = resolvePath(directory, binary);
+    const localPath = relative(directory, binaryPath);
+
+    if (localPath === '..' || localPath.startsWith(`..${sep}`)) {
+      return resolutionFailure(
+        cwd,
+        stage,
+        Object.assign(new TypeError('Vitest bin leaves its package'), { code: 'INVALID_BIN' }),
+        paths,
+      );
+    }
+
+    paths.binaryPath = binaryPath;
+
+    if (!statSync(binaryPath).isFile()) {
+      return resolutionFailure(
+        cwd,
+        stage,
+        Object.assign(new TypeError('Vitest bin is not a file'), { code: 'INVALID_BIN' }),
+        paths,
+      );
+    }
+
+    return { path: binaryPath, version };
+  } catch (error) {
+    return resolutionFailure(cwd, stage, error, paths);
   }
 };
 
@@ -252,9 +420,24 @@ const readReport = async (path: string): Promise<VitestReport | null> => {
   }
 };
 
-const assertionFullName = (assertion: VitestAssertionResult) =>
-  assertion.fullName ??
-  [...(assertion.ancestorTitles ?? []), assertion.title ?? ''].filter(Boolean).join(' ');
+const nameSeparator = (version: string) => (Number.parseInt(version, 10) >= 5 ? ' > ' : ' ');
+
+const assertionFullName = (assertion: VitestAssertionResult, version: string): string => {
+  // Vitest 5 filters with " > " but its Jest-compatible JSON fullName still uses spaces.
+  // Rebuild from title parts; replacing spaces would change literal names and merge identities.
+  if (
+    nameSeparator(version) === ' > ' &&
+    assertion.ancestorTitles !== undefined &&
+    assertion.title !== undefined
+  ) {
+    return [...assertion.ancestorTitles, assertion.title].join(' > ');
+  }
+
+  return (
+    assertion.fullName ??
+    [...(assertion.ancestorTitles ?? []), assertion.title ?? ''].filter(Boolean).join(' ')
+  );
+};
 
 // A focused run reports every unselected test as skipped, which says nothing about it.
 const selects = (filter: string | undefined) => {
@@ -276,13 +459,14 @@ const selects = (filter: string | undefined) => {
 const collectTests = (
   report: VitestReport,
   selected: (fullname: string) => boolean,
+  version: string,
 ): TestResult[] =>
   (report.testResults ?? []).flatMap((file) =>
     (file.assertionResults ?? [])
-      .filter((assertion) => selected(assertionFullName(assertion)))
+      .filter((assertion) => selected(assertionFullName(assertion, version)))
       .map((assertion) => ({
         file: file.name ?? '<unknown>',
-        fullname: assertionFullName(assertion),
+        fullname: assertionFullName(assertion, version),
         status:
           assertion.status === 'pending' || assertion.status === 'disabled'
             ? 'skipped'
@@ -336,6 +520,7 @@ const assertionMessage = (messages: string[], cwd: string): string => {
 const collectFailures = (
   report: VitestReport,
   cwd: string,
+  version: string,
 ): { failures: TestFailure[]; truncated: boolean } => {
   const failures: TestFailure[] = [];
   let truncated = false;
@@ -372,7 +557,7 @@ const collectFailures = (
 
       failures.push({
         file: file.name ?? '<unknown>',
-        fullname: assertionFullName(assertion),
+        fullname: assertionFullName(assertion, version),
         message: assertionMessage(assertion.failureMessages ?? [], cwd),
       });
     }
@@ -425,6 +610,7 @@ const classifyResult = async (
   input: RunTestsInput,
   result: SpawnResult,
   outputFile: string,
+  version: string,
 ): Promise<RunnerResult> => {
   if (input.signal?.aborted === true) {
     return { kind: 'cancelled' };
@@ -466,13 +652,13 @@ const classifyResult = async (
     };
   }
 
-  const tests = collectTests(report, selects(input.filter));
+  const tests = collectTests(report, selects(input.filter), version);
   const total = report.numTotalTests ?? 0;
   const failed = report.numFailedTests ?? 0;
   const files = report.testResults ?? [];
 
   if (failed > 0 || files.some((file) => file.status === 'failed')) {
-    const { failures, truncated } = collectFailures(report, input.cwd);
+    const { failures, truncated } = collectFailures(report, input.cwd, version);
 
     return {
       kind: 'fail',
@@ -490,6 +676,21 @@ const classifyResult = async (
       stdout: result.stdout,
       stderr: result.stderr,
     };
+  }
+
+  if (input.filter !== undefined && tests.length === 0) {
+    const candidates = collectTests(report, () => true, version)
+      .slice(0, 5)
+      .map((test) => `${relative(input.cwd, test.file)}: ${capMessage(test.fullname)}`);
+    const message = [
+      `No tests matched the exact name filter. Vitest ${version} joins nested names with ${JSON.stringify(nameSeparator(version))}.`,
+      'Use the complete describe and test names. Do not restructure tests or broaden the filter.',
+      candidates.length > 0
+        ? `Collected names (up to 5):\n${candidates.join('\n')}`
+        : 'No names were reported; check the selected files and runner diagnostics.',
+    ].join('\n');
+
+    return { kind: 'no-tests-collected', tests, message };
   }
 
   if (total === 0 || report.numPassedTests === 0) {
@@ -510,21 +711,25 @@ const runInDirectory = async (
     return { report: { kind: 'no-tests-collected', tests: [] } };
   }
 
-  const binary = dependencies.resolveVitest(input.cwd);
+  let runner: ReturnType<ResolveVitestFn>;
 
-  if (binary == null) {
-    return {
-      report: { kind: 'runner-missing', message: 'vitest not resolvable from this worktree' },
-    };
+  try {
+    runner = dependencies.resolveVitest(input.cwd);
+  } catch (error) {
+    return { report: resolutionFailure(input.cwd, 'resolver', error) };
   }
 
-  const result = await dependencies.spawn(binary, runnerArguments, {
+  if ('kind' in runner) {
+    return { report: runner };
+  }
+
+  const result = await dependencies.spawn(runner.path, runnerArguments, {
     cwd: input.cwd,
     timeoutMs: dependencies.timeoutMs,
     signal: input.signal,
   });
 
-  return { report: await classifyResult(input, result, outputFile), result };
+  return { report: await classifyResult(input, result, outputFile, runner.version), result };
 };
 
 export const runVitest = async (
@@ -548,6 +753,7 @@ export const runVitest = async (
         command: result?.command,
         started: result?.started ?? result !== undefined,
         exitCode: result?.code ?? null,
+        ...('resolution' in report ? { resolution: report.resolution } : {}),
       },
       result,
     );
