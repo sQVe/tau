@@ -24,6 +24,17 @@ Return only JSON: {"findings":[{"path":"repo-relative file","line":1,
 "kind":"inaccurate|policy|missing","message":"Concrete problem and correction"}]}.
 Use actual file paths and line numbers from the supplied files. Return {"findings":[]} when clean.`;
 
+// Generated lockfiles have no comments to review and can exceed the review input limits.
+const lockfilePatterns = [
+  '*.lock',
+  '*.lockfile',
+  'packages.lock.json',
+  'pnpm-lock.yaml',
+  'package-lock.json',
+  'npm-shrinkwrap.json',
+  'go.sum',
+];
+
 export const commentPolicyHash = createHash('sha256').update(commentPolicy).digest('hex');
 
 const reviewSchema = Type.Object(
@@ -156,15 +167,23 @@ export const reviewComments = async (
     '--no-relative',
     base,
     snapshot.tree,
+    '--',
+    // Callers run diff with --no-literal-pathspecs so an inherited GIT_LITERAL_PATHSPECS cannot
+    // turn these into literal names and silently empty the review.
+    ':(top)',
+    ...lockfilePatterns.map((pattern) => `:(top,exclude,glob)**/${pattern}`),
   ];
-  const diff = await reviewGit(pi, context.cwd, ['diff', ...diffArguments], signal);
   const pathsOutput = await reviewGit(
     pi,
     context.cwd,
-    ['diff', '--name-only', '-z', ...diffArguments],
+    ['--no-literal-pathspecs', 'diff', '--name-only', '-z', ...diffArguments],
     signal,
   );
   const paths = pathsOutput.split('\0').filter(Boolean);
+
+  if (paths.length === 0) {
+    return { findings: [] };
+  }
 
   if (paths.length > 300) {
     throw new Error(
@@ -172,10 +191,17 @@ export const reviewComments = async (
     );
   }
 
+  const diff = await reviewGit(
+    pi,
+    context.cwd,
+    ['--no-literal-pathspecs', 'diff', ...diffArguments],
+    signal,
+  );
+
   const numstat = await reviewGit(
     pi,
     context.cwd,
-    ['diff', '--numstat', '-z', ...diffArguments],
+    ['--no-literal-pathspecs', 'diff', '--numstat', '-z', ...diffArguments],
     signal,
   );
   const binaryPaths = numstat
