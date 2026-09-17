@@ -166,13 +166,15 @@ export const reviewComments = async (
     base,
     snapshot.tree,
     '--',
+    // Callers run diff with --no-literal-pathspecs so an inherited GIT_LITERAL_PATHSPECS cannot
+    // turn these into literal names and silently empty the review.
     ':(top)',
     ...lockfilePatterns.map((pattern) => `:(top,exclude,glob)**/${pattern}`),
   ];
   const pathsOutput = await reviewGit(
     pi,
     context.cwd,
-    ['diff', '--name-only', '-z', ...diffArguments],
+    ['--no-literal-pathspecs', 'diff', '--name-only', '-z', ...diffArguments],
     signal,
   );
   const paths = pathsOutput.split('\0').filter(Boolean);
@@ -187,12 +189,17 @@ export const reviewComments = async (
     );
   }
 
-  const diff = await reviewGit(pi, context.cwd, ['diff', ...diffArguments], signal);
+  const diff = await reviewGit(
+    pi,
+    context.cwd,
+    ['--no-literal-pathspecs', 'diff', ...diffArguments],
+    signal,
+  );
 
   const numstat = await reviewGit(
     pi,
     context.cwd,
-    ['diff', '--numstat', '-z', ...diffArguments],
+    ['--no-literal-pathspecs', 'diff', '--numstat', '-z', ...diffArguments],
     signal,
   );
   const binaryPaths = numstat

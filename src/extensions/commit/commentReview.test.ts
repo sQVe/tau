@@ -152,7 +152,7 @@ it.each([
           : 'file.ts\0';
     } else if (arguments_.includes('ls-tree') && arguments_.at(-1) === 'file.ts') {
       stdout = `100644 blob hash ${limit === 'file' ? 400_001 : 0}\tfile.ts\0`;
-    } else if (arguments_[0] === 'diff' && !arguments_.includes('--numstat')) {
+    } else if (arguments_.includes('diff') && !arguments_.includes('--numstat')) {
       stdout = limit === 'payload' ? 'x'.repeat(1_000_001) : '';
     }
 
@@ -217,6 +217,16 @@ describe('lockfile exclusion', () => {
 
     expect(input).toContain('packages/app/file.ts');
     expect(input).not.toContain('lock');
+  });
+
+  it('reviews staged files when Git treats pathspecs literally', async () => {
+    vi.stubEnv('GIT_LITERAL_PATHSPECS', '1');
+
+    const { complete } = await reviewRepository({
+      'packages/app/file.ts': '// Explains the value.\nexport const value = 1;\n',
+    });
+
+    expect(complete).toHaveBeenCalledOnce();
   });
 
   it('skips review when only lockfiles changed, whatever their size', async () => {
