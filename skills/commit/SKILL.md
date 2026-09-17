@@ -32,7 +32,16 @@ tool stages each group, reviews comments, and commits with installed Git hooks w
      known staging with `git reset HEAD -- <file>`. Leave concurrent staging untouched.
 
 2. Plan exact, ordered groups.
-   - Split unrelated changes into separate groups. Assign each path to only one group.
+   - Prefer small commits that each make one isolated change. Split unrelated changes into separate
+     groups. Assign each path to only one group.
+   - Keep each commit coherent enough to pass hooks and checks on its own. Keep a manifest with its
+     lockfile, and tests with the code they cover.
+   - Commit dependency changes as their own `build(deps)` group before the code that uses them.
+   - Commit refactors that a change relies on before the change itself.
+   - Commit documentation as its own `docs` group unless it describes only the change in the same
+     group.
+   - Treat a group of more than about 10 files, or one that spans several concerns, as a sign to
+     look for a further split. Keep it together only when the parts cannot stand alone.
    - The tool stages whole files on the real index. It does not hide unrelated working edits from
      hooks. For mixed-purpose files, choose the best-fitting group and report that choice rather
      than splitting hunks.
