@@ -151,6 +151,17 @@ interface Candidate {
   report?: Report;
 }
 
+// One unreadable record must not hide the rest of history. Follow-up authorization still fails closed.
+const readOrDiagnose = <T>(read: () => T, label: string, diagnostics: string[]): T | undefined => {
+  try {
+    return read();
+  } catch (error) {
+    diagnostics.push(`${label}: ${String(error)}`);
+
+    return undefined;
+  }
+};
+
 const taskCandidate = (
   { directory, task }: { directory: string; task: Task },
   tasks: Map<string, Task>,
@@ -178,8 +189,16 @@ const taskCandidate = (
     nativeEvidence = 'invalid';
     diagnostics.push(`Task ${task.taskId}: ${String(error)}`);
   }
-  const report = readReport(directory, task.taskId);
-  const successor = readSuccessor(directory);
+  const report = readOrDiagnose(
+    () => readReport(directory, task.taskId),
+    `Task ${task.taskId} report`,
+    diagnostics,
+  );
+  const successor = readOrDiagnose(
+    () => readSuccessor(directory),
+    `Task ${task.taskId} successor claim`,
+    diagnostics,
+  );
 
   return {
     sourceFile: join(directory, 'task.json'),

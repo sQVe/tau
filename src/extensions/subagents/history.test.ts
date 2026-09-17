@@ -257,6 +257,32 @@ it('merges discovered native metadata into seeded history without duplicate cand
   });
 });
 
+it('reports corrupt saved reports and claims as diagnostics without hiding other tasks', async () => {
+  const fixture = setup();
+  const corruptReport = fixture.task('corrupt-report', fixture.child, 'child');
+  const corruptClaim = fixture.task('corrupt-claim', fixture.child, 'child');
+  fixture.task('intact', fixture.child, 'child');
+  writeFileSync(join(corruptReport.taskDirectory, 'report.json'), '{}');
+  writeFileSync(join(corruptClaim.taskDirectory, 'successor.json'), '{}');
+
+  const history = await searchHistory(fixture.workers, {
+    file: fixture.child,
+    id: 'child',
+    sessionDirectory: fixture.sessions,
+  });
+
+  expect(
+    history.candidates
+      .flatMap((candidate) => (candidate.taskId ? [candidate.taskId] : []))
+      .toSorted(),
+  ).toEqual(['corrupt-claim', 'corrupt-report', 'intact']);
+  expect(
+    history.candidates.find((candidate) => candidate.taskId === 'corrupt-report'),
+  ).not.toHaveProperty('report');
+  expect(history.diagnostics.join(' ')).toContain('Task corrupt-report');
+  expect(history.diagnostics.join(' ')).toContain('Task corrupt-claim');
+});
+
 it('scopes history to the validated root and descendants including siblings and missing native refs', async () => {
   const fixture = setup();
   const first = fixture.task('first', fixture.child, 'child', 'worker-aa');
