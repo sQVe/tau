@@ -146,6 +146,9 @@ importers:
       '@types/node':
         specifier: 24.13.3
         version: 24.13.3
+      jiti:
+        specifier: 2.7.0
+        version: 2.7.0
       typescript:
         specifier: 7.0.2
         version: 7.0.2
