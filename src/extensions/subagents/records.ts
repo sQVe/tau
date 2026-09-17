@@ -206,22 +206,22 @@ const addReferencedTasks = (
     if (!unpublished.size) {
       return;
     }
-    const referenced = [task.predecessorTaskId, readSuccessor(directory)?.successorTaskId].find(
-      (id) => id !== undefined && unpublished.has(id),
-    );
-    if (referenced === undefined) {
-      continue;
+    const references = [task.predecessorTaskId, readSuccessor(directory)?.successorTaskId];
+    for (const referenced of references) {
+      if (referenced === undefined || !unpublished.has(referenced)) {
+        continue;
+      }
+      // A continuation may have been published after the scan read its directory.
+      const referencedDirectory = join(root, referenced);
+      const late = readScannedTask(referencedDirectory);
+      if (late?.taskId !== referenced) {
+        throw new Error(
+          `Missing task.json for referenced continuation ${referenced}. Saved attempt or claim requires inspection.`,
+        );
+      }
+      unpublished.delete(referenced);
+      tasks.push({ directory: referencedDirectory, task: late });
     }
-    // A claimed successor may have been published after the scan read its directory.
-    const referencedDirectory = join(root, referenced);
-    const late = readScannedTask(referencedDirectory);
-    if (late?.taskId !== referenced) {
-      throw new Error(
-        `Missing task.json for referenced continuation ${referenced}. Saved attempt or claim requires inspection.`,
-      );
-    }
-    unpublished.delete(referenced);
-    tasks.push({ directory: referencedDirectory, task: late });
   }
 };
 

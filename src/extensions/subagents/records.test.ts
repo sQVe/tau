@@ -141,50 +141,76 @@ it('reads a task published by another process during the scan', () => {
   expect(records.readTasks(root)).toEqual([{ directory: child, task }]);
 });
 
-it('reads a claimed successor published after its directory was scanned', async () => {
-  const { directory, task } = questionFixture();
-  const root = join(directory, 'registry');
-  const source = join(root, task.taskId);
-  const successorDirectory = join(root, 'successor');
-  const successorTask = join(successorDirectory, 'task.json');
-  mkdirSync(source, { recursive: true });
-  mkdirSync(successorDirectory);
-  records.publish(source, 'task.json', task);
-  const successor = records.validateTask({
-    ...task,
-    taskId: 'successor',
-    predecessorTaskId: task.taskId,
-  });
-  records.publish(successorDirectory, 'task.json', successor);
-  records.claimSuccessor(source, successor);
-  const original = await vi.importActual<typeof fileSystem>('node:fs');
-  // The successor looks unpublished until the scan lists its directory, then another process publishes it.
-  let hidden = true;
-  vi.mocked(fileSystem.openSync).mockImplementation((path, ...rest) => {
-    if (hidden && path === successorTask) {
-      throw Object.assign(new Error('Not yet published.'), { code: 'ENOENT' });
+it.each([
+  { successor: 'published late', result: ['predecessor', 'successor', 'task-one'] },
+  {
+    successor: 'still unpublished',
+    result:
+      'Error: Missing task.json for referenced continuation successor. Saved attempt or claim requires inspection.',
+  },
+])(
+  'checks every late continuation reference when the successor is $successor',
+  async ({ successor: state, result }) => {
+    const { directory, task } = questionFixture();
+    const root = join(directory, 'registry');
+    const directories = {
+      middle: join(root, task.taskId),
+      predecessor: join(root, 'predecessor'),
+      successor: join(root, 'successor'),
+    };
+    for (const path of Object.values(directories)) {
+      mkdirSync(path, { recursive: true });
     }
-
-    return original.openSync(path, ...rest);
-  });
-  vi.mocked(fileSystem.lstatSync).mockImplementation(((path: string, options: object) =>
-    hidden && path === successorTask
-      ? undefined
-      : original.lstatSync(path, options)) as typeof fileSystem.lstatSync);
-  vi.mocked(fileSystem.readdirSync).mockImplementation(((path: string, options: object) => {
-    if (hidden && path === successorDirectory) {
-      hidden = false;
-
-      return [];
+    const middle = records.validateTask({ ...task, predecessorTaskId: 'predecessor' });
+    const successor = records.validateTask({
+      ...task,
+      taskId: 'successor',
+      predecessorTaskId: task.taskId,
+    });
+    records.publish(directories.middle, 'task.json', middle);
+    records.publish(directories.predecessor, 'task.json', { ...task, taskId: 'predecessor' });
+    if (state === 'published late') {
+      records.publish(directories.successor, 'task.json', successor);
     }
+    records.claimSuccessor(directories.middle, successor);
+    const original = await vi.importActual<typeof fileSystem>('node:fs');
+    // Each continuation looks unpublished until the scan lists its directory, then another process publishes it.
+    const hidden = new Set([directories.predecessor, directories.successor]);
+    const isHidden = (path: unknown) =>
+      [...hidden].some((hiddenDirectory) => path === join(hiddenDirectory, 'task.json'));
+    vi.mocked(fileSystem.openSync).mockImplementation((path, ...rest) => {
+      if (isHidden(path)) {
+        throw Object.assign(new Error('Not yet published.'), { code: 'ENOENT' });
+      }
 
-    return original.readdirSync(path, options);
-  }) as typeof fileSystem.readdirSync);
+      return original.openSync(path, ...rest);
+    });
+    vi.mocked(fileSystem.lstatSync).mockImplementation(((path: string, options: object) =>
+      isHidden(path)
+        ? undefined
+        : original.lstatSync(path, options)) as typeof fileSystem.lstatSync);
+    vi.mocked(fileSystem.readdirSync).mockImplementation(((path: string, options: object) => {
+      if (typeof path === 'string' && hidden.delete(path)) {
+        return [];
+      }
 
-  const scanned = records.readTasks(root).map((entry) => entry.task.taskId);
+      return original.readdirSync(path, options);
+    }) as typeof fileSystem.readdirSync);
 
-  expect(scanned.toSorted()).toEqual(['successor', task.taskId]);
-});
+    const scan = () => {
+      try {
+        return records
+          .readTasks(root)
+          .map((entry) => entry.task.taskId)
+          .toSorted();
+      } catch (error) {
+        return String(error);
+      }
+    };
+
+    expect(scan()).toEqual(result);
+  },
+);
 
 it('reads the saved task once while finding the pending question', () => {
   const { directory, task, question, reply, acknowledgement } = questionFixture();
