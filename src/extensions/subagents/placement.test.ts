@@ -7,7 +7,8 @@ it.each([
   [100, 100, 'down'],
   [400, 30, 'right'],
   [400, 100, 'right'],
-  [164, 48, undefined],
+  [164, 48, 'right'],
+  [163, 47, undefined],
   [165, 24, 'right'],
   [82, 49, 'down'],
   [81, 100, undefined],
@@ -70,6 +71,27 @@ it('fits two foreground workers beside the parent in 250 columns and 30 rows', a
     expect(bounds.height).toBe(30);
   }
 });
+
+it.each([
+  [407, 60, 4],
+  [488, 100, 5],
+])(
+  'keeps every foreground pane useful at %s x %s with %s workers under herdr rounding',
+  async (width, height, workers) => {
+    const { placement, client, input, panes, dimensions } = fixture(width, height);
+
+    for (let index = 0; index < workers; index++) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Each placement plans from the previous layout.
+      await placement.place(input('foreground'), client);
+    }
+
+    for (const pane of panes.filter((entry) => entry.tab_id === 'working')) {
+      const bounds = dimensions.get(pane.pane_id)!;
+      expect(bounds.width).toBeGreaterThanOrEqual(minimumPane.width);
+      expect(bounds.height).toBeGreaterThanOrEqual(minimumPane.height);
+    }
+  },
+);
 
 it('shares foreground space with the parent instead of repeatedly halving it', async () => {
   const { placement, client, input, panes, dimensions } = fixture(340, 100);

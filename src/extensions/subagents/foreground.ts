@@ -24,9 +24,16 @@ export const rectangle = (value: unknown): Rectangle => {
 export const isUseful = (bounds: Rectangle): boolean =>
   bounds.width >= minimumPane.width && bounds.height >= minimumPane.height;
 
+// Herdr gives the first child the rounded share and the second the rest, with no divider cell.
+const splitLengths = (length: number, ratio: number) => {
+  const first = Math.round(length * ratio);
+
+  return { first, second: length - first };
+};
+
 export const splitDirection = (bounds: Rectangle): 'right' | 'down' | undefined => {
-  const right = isUseful({ width: Math.floor((bounds.width - 1) / 2), height: bounds.height });
-  const down = isUseful({ width: bounds.width, height: Math.floor((bounds.height - 1) / 2) });
+  const right = isUseful({ width: splitLengths(bounds.width, 0.5).second, height: bounds.height });
+  const down = isUseful({ width: bounds.width, height: splitLengths(bounds.height, 0.5).second });
   if (right && (!down || bounds.width / minimumPane.width >= bounds.height / minimumPane.height)) {
     return 'right';
   }
@@ -163,12 +170,11 @@ const distribute = (
   }
   adjustments.push({ branch: tree, ratio });
   const axis = tree.direction === 'right' ? 'width' : 'height';
-  const length = bounds[axis] - 1;
-  const firstLength = Math.floor(length * ratio);
+  const { first: firstLength, second: secondLength } = splitLengths(bounds[axis], ratio);
 
   return (
     distribute(tree.first, { ...bounds, [axis]: firstLength }, target, adjustments) &&
-    distribute(tree.second, { ...bounds, [axis]: length - firstLength }, target, adjustments)
+    distribute(tree.second, { ...bounds, [axis]: secondLength }, target, adjustments)
   );
 };
 const splitShape = (split: Record<string, unknown>) =>

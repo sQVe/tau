@@ -54,12 +54,13 @@ export const placementFixture = (width: number, height: number) => {
     node.rect = bounds;
     const axis = node.direction === 'right' ? 'width' : 'height';
     const position = node.direction === 'right' ? 'x' : 'y';
-    const firstLength = Math.floor((bounds[axis] - 1) * node.ratio);
+    // Measured against herdr 0.9.1: the first child rounds, the second takes the rest, no divider cell.
+    const firstLength = Math.round(bounds[axis] * node.ratio);
     update(node.first, { ...bounds, [axis]: firstLength });
     update(node.second, {
       ...bounds,
-      [axis]: bounds[axis] - 1 - firstLength,
-      [position]: bounds[position] + firstLength + 1,
+      [axis]: bounds[axis] - firstLength,
+      [position]: bounds[position] + firstLength,
     });
   };
   const collapse = (node: LayoutNode, target: string): LayoutNode => {
