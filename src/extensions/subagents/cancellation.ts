@@ -101,7 +101,7 @@ export const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker)
       process.pid === owned.processId &&
       Array.isArray(process.argv) &&
       // Pi rewrites argv through process.title. The caller also checks its herdr session token and ps start time before using this fallback.
-      (process.argv.includes(owned.token) || (owned.kind === 'pi' && !!owned.startedAt))
+      (process.argv.includes(owned.token) || (owned.kind === 'pi' && Boolean(owned.startedAt)))
     );
   });
 

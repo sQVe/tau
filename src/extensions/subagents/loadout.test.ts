@@ -267,16 +267,18 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
   expect(
     loader.getExtensions().extensions.some((extension) => extension.tools.has('subagent_history')),
   ).toBe(true);
-  expect(resolved.tools).not.toContain('subagent_history');
-  expect(resolved.tools).not.toContain('subagent_follow_up');
+  expect(resolved.tools).toContain('subagent_history');
+  expect(resolved.tools).toContain('subagent_follow_up');
   expect(resolved.tools).toContain('subagent_question');
   expect(resolved.tools).not.toContain('ask_user_question');
-  await expect(
-    loadoutModule.validateSavedLoadout(
-      { ...resolved, tools: [...resolved.tools, 'subagent_history'] },
-      context,
+  const legacyTools = {
+    ...resolved,
+    tools: resolved.tools.filter(
+      (tool) =>
+        !tool.startsWith('subagent_') || ['subagent_report', 'subagent_question'].includes(tool),
     ),
-  ).rejects.toThrow('parent-only');
+  };
+  expect(await loadoutModule.validateSavedLoadout(legacyTools, context)).toEqual(legacyTools);
   const legacyQuestionnaire = { ...resolved, tools: [...resolved.tools, 'ask_user_question'] };
   expect(await loadoutModule.validateSavedLoadout(legacyQuestionnaire, context)).toEqual(
     legacyQuestionnaire,

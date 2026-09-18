@@ -13,18 +13,10 @@ import {
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Value } from 'typebox/value';
 
+import { inheritedInstructions } from './admission.js';
 import { resolveProfile } from './profiles.js';
 import { loadoutSchema } from './types.js';
-import type { Loadout } from './types.js';
-
-const parentOnlyTools = [
-  'subagent',
-  'subagent_status',
-  'subagent_history',
-  'subagent_follow_up',
-  'subagent_cancel',
-  'subagent_reply',
-];
+import type { Loadout, Task } from './types.js';
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object';
@@ -323,7 +315,7 @@ export const resolveLoadout = async (
       'subagent_report',
       'subagent_question',
     ]),
-  ].filter((tool) => ![...parentOnlyTools, 'ask_user_question'].includes(tool));
+  ].filter((tool) => tool !== 'ask_user_question');
 
   return {
     profile: profile.name,
@@ -410,10 +402,6 @@ export const validateSavedLoadout = async (
     )
   ) {
     throw new Error('Saved worker tools are unavailable.');
-  }
-  // Loadouts saved before this check may include ask_user_question; the worker blocks it at call time.
-  if (loadout.tools.some((tool) => parentOnlyTools.includes(tool))) {
-    throw new Error('Saved worker tools include parent-only tools.');
   }
 
   const separator = loadout.model.indexOf('/');
@@ -537,4 +525,44 @@ export const checkWorkerRuntime = async (
   }
 
   pi.setActiveTools(loadout.tools);
+};
+
+export const resolveInheritedLoadout = async (
+  parent: Task,
+  input: { profile: string; cwd?: string; model?: string; harness?: string; permissions: string },
+  context: ExtensionContext,
+  pi: ExtensionAPI,
+  signal: AbortSignal,
+): Promise<Loadout> => {
+  if (
+    input.permissions !== parent.loadout.permissions ||
+    (input.harness !== undefined && input.harness !== 'pi') ||
+    (input.model !== undefined && input.model !== parent.loadout.model) ||
+    realpathSync(resolve(context.cwd, input.cwd ?? '.')) !== parent.loadout.cwd
+  ) {
+    throw new Error(
+      'Nested workers require the exact inherited model, permissions, harness, and cwd.',
+    );
+  }
+  const profile = resolveProfile(
+    parent.loadout.cwd,
+    parent.loadout.agentDirectory,
+    context.isProjectTrusted(),
+    input.profile,
+  );
+  if (
+    !profile ||
+    (profile.model !== undefined && profile.model !== parent.loadout.model) ||
+    (profile.thinkingSpecified && profile.thinking !== parent.loadout.thinking)
+  ) {
+    throw new Error('Nested profile is unavailable or conflicts with inherited model settings.');
+  }
+  await checkWorkerRuntime(parent.loadout, pi, context, signal);
+
+  return {
+    ...parent.loadout,
+    profile: profile.name,
+    role: profile.role,
+    instructions: `${inheritedInstructions(parent)}${profile.instructions}`,
+  };
 };

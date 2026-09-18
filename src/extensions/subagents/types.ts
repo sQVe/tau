@@ -36,6 +36,15 @@ export const loadoutSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+export const treeSchema = Type.Object(
+  {
+    rootSession: text,
+    rootSessionId: text,
+    parentTaskId: Type.Optional(Type.String({ pattern: '^[a-zA-Z0-9-]+$' })),
+    monotonicDeadline: Type.Number({ minimum: 1 }),
+  },
+  { additionalProperties: false },
+);
 export const taskSchema = Type.Object(
   {
     version: Type.Literal(1),
@@ -51,6 +60,7 @@ export const taskSchema = Type.Object(
     createdAt: Type.Integer({ minimum: 1 }),
     deadline: Type.Integer({ minimum: 1 }),
     cancellationBudget: Type.Integer({ minimum: 1, maximum: 30_000 }),
+    tree: Type.Optional(treeSchema),
     loadout: loadoutSchema,
   },
   { additionalProperties: false },
@@ -94,6 +104,7 @@ export const eventSchema = Type.Object(
       'cleanup',
       'notified',
       'parentClosed',
+      'stopping',
     ]),
     detail: text,
     at: Type.Integer({ minimum: 1 }),
@@ -133,6 +144,7 @@ export interface Profile {
   role: 'investigation' | 'editing';
   model: string | undefined;
   thinking: Loadout['thinking'];
+  thinkingSpecified?: boolean;
   instructions: string;
   source: string;
 }

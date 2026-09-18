@@ -8,7 +8,7 @@ import { Type } from 'typebox';
 
 import { WorkerController } from './controller.js';
 import { historyPage, searchHistory } from './history.js';
-import { resolveLoadout } from './loadout.js';
+import { resolveInheritedLoadout, resolveLoadout } from './loadout.js';
 
 const visibility = Type.Optional(
   StringEnum(['foreground', 'background'] as const, {
@@ -19,14 +19,21 @@ const visibility = Type.Optional(
 
 export default function subagentsExtension(pi: ExtensionAPI): void {
   let controller: WorkerController | undefined;
-  const getController = () => {
-    if (process.env.TAU_WORKER_RECORD) {
-      throw new Error('Nested workers are not supported.');
+  let nested = false;
+  const removeChildrenListener = pi.events.on('tau:worker-children', (value: unknown) => {
+    if (value && typeof value === 'object') {
+      Object.assign(value, controller?.children() ?? { active: 0, uncertain: [] });
     }
+  });
+  const getController = () => {
     controller ??= new WorkerController(
       join(getAgentDir(), 'tau', 'workers'),
       undefined,
       (message, question) => {
+        if (nested) {
+          pi.events.emit('tau:child-notification', { message, question });
+          return;
+        }
         pi.sendMessage(
           { customType: 'tau-worker', content: message, display: true, details: question },
           question ? { deliverAs: 'steer', triggerTurn: true } : { deliverAs: 'nextTurn' },
@@ -37,6 +44,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     return controller;
   };
   pi.on('session_shutdown', () => {
+    removeChildrenListener();
     controller?.close();
     controller = undefined;
   });
@@ -45,7 +53,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     name: 'subagent',
     label: 'Launch Pi worker',
     description:
-      'Launch a trusted full-tool Pi investigator or editing worker in herdr. Requires user authorization and CC Safety Net. Fresh context, fixed parent-owned timeout, no automatic retry. Built-in profiles: investigator and worker. Set model explicitly or TAU_SUBAGENT_MODEL. Other harnesses and nested workers refuse.',
+      'Launch a trusted full-tool Pi investigator or editing worker in herdr. Requires user authorization and CC Safety Net. Fresh context, fixed parent-owned timeout, no automatic retry. Built-in profiles: investigator and worker. Set model explicitly or TAU_SUBAGENT_MODEL. Other harnesses refuse. Nested workers inherit exact model/settings and share one root cap (TAU_SUBAGENT_CAP, default 4, saved at first admission). Waiting workers consume slots. Full or busy admission refuses promptly without a queue.',
     parameters: Type.Object({
       task: Type.String({ minLength: 1, maxLength: 32_000 }),
       profile: Type.String({ minLength: 1 }),
@@ -71,7 +79,15 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
         throw new Error('Worker launch requires a saved parent Pi session inside local herdr.');
       }
       const active = getController();
-      const loadout = await resolveLoadout(parameters, context, pi, resolutionSignal);
+      const authority = await active.parentAuthority(
+        parentSession,
+        context.sessionManager.getSessionId(),
+        resolutionSignal,
+      );
+      nested = Boolean(authority.parent);
+      const loadout = authority.parent
+        ? await resolveInheritedLoadout(authority.parent, parameters, context, pi, resolutionSignal)
+        : await resolveLoadout(parameters, context, pi, resolutionSignal);
       signal?.throwIfAborted();
       const status = await active.launch(
         {
@@ -110,7 +126,14 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       if (!parentSession || !parentPane || !process.env.HERDR_SOCKET_PATH) {
         throw new Error('Follow-up requires a saved parent session inside local herdr.');
       }
-      const status = await getController().followUp(
+      const active = getController();
+      const authority = await active.parentAuthority(
+        parentSession,
+        context.sessionManager.getSessionId(),
+        signal,
+      );
+      nested = Boolean(authority.parent);
+      const status = await active.followUp(
         {
           ...parameters,
           timeout: parameters.timeoutSeconds * 1000,
@@ -135,9 +158,6 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
     }),
     async execute(_id, parameters, signal, _update, context) {
-      if (process.env.TAU_WORKER_RECORD) {
-        throw new Error('History is a parent-only tool.');
-      }
       signal?.throwIfAborted();
       const file = context.sessionManager.getSessionFile();
       if (!file) {

@@ -119,6 +119,7 @@ export const validateTask = (value: unknown): Task => {
       value.loadout.agentDirectory,
       value.loadout.safetyExtension,
       ...value.loadout.integrations,
+      ...(value.tree ? [value.tree.rootSession] : []),
     ].every(isAbsolute)
   ) {
     throw new Error('Worker paths must be absolute.');
@@ -240,7 +241,9 @@ export const readTasks = (
   }
   const tasks: { directory: string; task: Task }[] = [];
   const unpublished = new Map<string, string>();
-  for (const entry of entries.filter((candidate) => candidate.isDirectory())) {
+  for (const entry of entries.filter(
+    (candidate) => candidate.isDirectory() && candidate.name !== '.admission',
+  )) {
     const directory = join(root, entry.name);
     const task = readScannedTask(directory);
     if (!task) {

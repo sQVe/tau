@@ -1,3 +1,4 @@
+// Running-child settlement adapted from pi-interactive-subagents c3e8b53, subagent-done.ts. See LICENSE.
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -44,6 +45,31 @@ export default function workerExtension(pi: ExtensionAPI): void {
   let kickoff: ReturnType<typeof setInterval> | undefined;
   let pendingQuestion: Question | undefined;
   let parentWatch: ReturnType<typeof setInterval> | undefined;
+  const children = () => {
+    const state = { active: 0, uncertain: [] as string[] };
+    pi.events.emit('tau:worker-children', state);
+
+    return state;
+  };
+  const removeNotificationListener = pi.events.on('tau:child-notification', (value: unknown) => {
+    if (
+      !task ||
+      !accepted ||
+      reported ||
+      settled ||
+      !value ||
+      typeof value !== 'object' ||
+      !('message' in value) ||
+      typeof value.message !== 'string'
+    ) {
+      return;
+    }
+    // A child result is evidence, never a reply to this worker's pending parent question.
+    pi.sendMessage(
+      { customType: 'tau-worker-child', content: value.message, display: true },
+      pendingQuestion ? { deliverAs: 'nextTurn' } : { deliverAs: 'followUp', triggerTurn: true },
+    );
+  });
 
   pi.registerTool({
     name: 'subagent_question',
@@ -179,7 +205,17 @@ export default function workerExtension(pi: ExtensionAPI): void {
       if (!task || !accepted || settled || reported) {
         throw new Error('This worker has no accepted active task.');
       }
-      const report = acceptReport(directory, task.taskId, { ...parameters, taskId: task.taskId });
+      const descendants = children();
+      if (descendants.active) {
+        throw new Error(
+          'Active children remain. Wait for completion or request bounded cancellation before reporting.',
+        );
+      }
+      const report = acceptReport(directory, task.taskId, {
+        ...parameters,
+        summary: [parameters.summary, ...descendants.uncertain].join('\n'),
+        taskId: task.taskId,
+      });
       reported = true;
 
       return Promise.resolve({
@@ -255,6 +291,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
   });
 
   pi.on('session_shutdown', () => {
+    removeNotificationListener();
     clearInterval(kickoff);
     clearInterval(parentWatch);
   });
@@ -299,7 +336,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
     return undefined;
   });
   pi.on('agent_settled', (_event, context) => {
-    if (!task || !accepted || settled || pendingQuestion) {
+    if (!task || !accepted || settled || pendingQuestion || children().active > 0) {
       return;
     }
     settled = true;
