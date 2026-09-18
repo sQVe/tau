@@ -2,7 +2,8 @@ import { StringEnum } from '@earendil-works/pi-ai';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-const text = Type.String({ minLength: 1, maxLength: 32_000 });
+export const textLimit = 32_000;
+const text = Type.String({ minLength: 1, maxLength: textLimit });
 const strings = Type.Array(text, { maxItems: 200, uniqueItems: true });
 export const thinkingSchema = StringEnum([
   'off',

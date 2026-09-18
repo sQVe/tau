@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,11 +9,15 @@ import {
   ModelRegistry,
   ModelRuntime,
 } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
-import { resolveLoadout } from './loadout.js';
+import { fixtureLoadout } from './fixtures/loadout.js';
+import { resolveInheritedLoadout, resolveLoadout } from './loadout.js';
 import * as loadoutModule from './loadout.js';
 import { resolveProfile, parseProfile } from './profiles.js';
+import { textLimit } from './types.js';
+import type { Task } from './types.js';
 
 const closure = (setting: string) => () => setting;
 
@@ -540,4 +544,47 @@ it('resolves profile precedence and refuses discarded isolation and transcript s
   expect(() =>
     parseProfile('---\nrole: editing\ntools: read\n---\nTask', 'worker', 'fixture'),
   ).toThrow('Unsupported');
+});
+
+it('refuses nested delegation once inherited instructions and scope exceed the saved limit', async ({
+  onTestFinished,
+}) => {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'tau-nested-instructions-')));
+  onTestFinished(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+  mkdirSync(join(directory, 'agents'));
+  writeFileSync(join(directory, 'agents', 'worker.md'), profile('Child role guidance.'));
+  const loadout = fixtureLoadout(directory);
+  loadout.instructions = 'Parent instructions.'.padEnd(textLimit - 1000, '.');
+  const parent = {
+    version: 1,
+    taskId: 'parent',
+    task: 'Read the assigned file.'.padEnd(2000, '.'),
+    ownerId: 'controller',
+    parentSession: join(directory, 'root.jsonl'),
+    parentSessionId: 'root',
+    nativeSessionId: 'native',
+    nativeSessionFile: join(directory, 'native.jsonl'),
+    createdAt: Date.now(),
+    deadline: Date.now() + 60_000,
+    cancellationBudget: 5000,
+    loadout,
+  } satisfies Task;
+  const context = {
+    cwd: directory,
+    isProjectTrusted: () => true,
+  } as unknown as ExtensionContext;
+  const nested = () =>
+    resolveInheritedLoadout(
+      parent,
+      { profile: 'worker', permissions: loadout.permissions },
+      context,
+      {} as ExtensionAPI,
+      new AbortController().signal,
+    );
+
+  await expect(nested()).rejects.toThrow(`over the ${textLimit} limit`);
+  loadout.instructions = 'Parent instructions.';
+  await expect(nested()).rejects.not.toThrow(`over the ${textLimit} limit`);
 });

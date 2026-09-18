@@ -15,7 +15,7 @@ import { Value } from 'typebox/value';
 
 import { inheritedInstructions } from './admission.js';
 import { resolveProfile } from './profiles.js';
-import { loadoutSchema } from './types.js';
+import { loadoutSchema, textLimit } from './types.js';
 import type { Loadout, Task } from './types.js';
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -557,12 +557,18 @@ export const resolveInheritedLoadout = async (
   ) {
     throw new Error('Nested profile is unavailable or conflicts with inherited model settings.');
   }
+  const instructions = `${inheritedInstructions(parent)}${profile.instructions}`;
+  if (instructions.length > textLimit) {
+    throw new Error(
+      `Inherited instructions and parent-assigned scope reached ${instructions.length} characters, over the ${textLimit} limit. Delegate a shorter task or choose a shorter profile.`,
+    );
+  }
   await checkWorkerRuntime(parent.loadout, pi, context, signal);
 
   return {
     ...parent.loadout,
     profile: profile.name,
     role: profile.role,
-    instructions: `${inheritedInstructions(parent)}${profile.instructions}`,
+    instructions,
   };
 };

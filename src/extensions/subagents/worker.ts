@@ -21,6 +21,7 @@ import {
   recordEvent,
   validateQuestion,
 } from './records.js';
+import { textLimit } from './types.js';
 import type { Question, Task } from './types.js';
 
 const parentRunning = (processId: number): boolean => {
@@ -211,9 +212,13 @@ export default function workerExtension(pi: ExtensionAPI): void {
           'Active children remain. Wait for completion or request bounded cancellation before reporting.',
         );
       }
+      // A full summary must never cost the worker its handover.
+      const uncertain = descendants.uncertain.length
+        ? [descendants.uncertain.join('\n').slice(0, textLimit)]
+        : [];
       const report = acceptReport(directory, task.taskId, {
         ...parameters,
-        summary: [parameters.summary, ...descendants.uncertain].join('\n'),
+        evidence: [...parameters.evidence.slice(0, 100 - uncertain.length), ...uncertain],
         taskId: task.taskId,
       });
       reported = true;

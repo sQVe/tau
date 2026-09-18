@@ -14,6 +14,7 @@ import { expect, it, vi, onTestFinished } from 'vitest';
 import { checkWorkerRuntime } from './loadout.js';
 import { publish, readEvent, readPendingQuestion, readReport, recordEvent } from './records.js';
 import * as records from './records.js';
+import { textLimit } from './types.js';
 import workerExtension from './worker.js';
 
 vi.mock('./loadout.js', () => ({
@@ -179,7 +180,7 @@ it('refuses reports for active children but includes uncertain cleanup in the fi
   const handover = () =>
     report.execute(
       'report',
-      { outcome: 'incomplete', summary: 'Task ended.', evidence: [] },
+      { outcome: 'incomplete', summary: 'Task ended.'.padEnd(textLimit, '.'), evidence: [] },
       undefined,
       undefined,
       worker.context,
@@ -195,7 +196,8 @@ it('refuses reports for active children but includes uncertain cleanup in the fi
   await handover();
   await worker.emit('agent_settled');
 
-  expect(readReport(worker.directory, 'task')?.summary).toContain('/saved/child-task');
+  expect(readReport(worker.directory, 'task')?.summary).toHaveLength(textLimit);
+  expect(readReport(worker.directory, 'task')?.evidence.at(-1)).toContain('/saved/child-task');
   expect(worker.shutdown).toHaveBeenCalledOnce();
   await worker.emit('session_shutdown');
 });
