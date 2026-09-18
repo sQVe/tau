@@ -3,6 +3,7 @@ import type {
   ExtensionContext,
   ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
+import { createEventBus } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
 import { WorkerController } from './controller.js';
@@ -13,6 +14,7 @@ it('places follow-ups with explicit visibility and the current parent terminal',
 }) => {
   const tools = new Map<string, ToolDefinition>();
   subagentsExtension({
+    events: createEventBus(),
     on: () => undefined,
     registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
   } as unknown as ExtensionAPI);
@@ -23,6 +25,13 @@ it('places follow-ups with explicit visibility and the current parent terminal',
   vi.stubEnv('TAU_WORKER_RECORD', '');
   vi.stubEnv('HERDR_PANE_ID', 'stale-pane-before-movement');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
+  vi.spyOn(WorkerController.prototype, 'parentAuthority').mockResolvedValue({
+    tree: {
+      rootSession: '/fixture/parent.jsonl',
+      rootSessionId: 'parent',
+      monotonicDeadline: Number.MAX_SAFE_INTEGER,
+    },
+  });
   const followUp = vi
     .spyOn(WorkerController.prototype, 'followUp')
     .mockResolvedValue({} as Awaited<ReturnType<WorkerController['followUp']>>);

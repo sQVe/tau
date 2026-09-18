@@ -13,11 +13,13 @@ import { dirname, join } from 'node:path';
 
 import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
+import { inheritedInstructions } from './admission.js';
 import * as cancellationModule from './cancellation.js';
 import { WorkerController, taskStatus, workerArguments } from './controller.js';
 import type { HerdrClient } from './controller.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
+import * as identity from './identity.js';
 import * as loadoutModule from './loadout.js';
 import * as names from './names.js';
 import { WorkerPlacement } from './placement.js';
@@ -42,6 +44,15 @@ const setup = (
     vi.restoreAllMocks();
     rmSync(directory, { recursive: true, force: true });
   });
+  // The fake worker uses this test process; the parent must have a distinct identity.
+  vi.spyOn(identity, 'currentProcessIdentity').mockResolvedValue({
+    processId: process.pid + 1,
+    startedAt: 'fixture parent',
+  });
+  writeFileSync(
+    join(directory, 'parent.jsonl'),
+    `${JSON.stringify({ type: 'session', version: 3, id: 'parent-id', cwd: directory })}\n`,
+  );
   let token = '';
   let recordDirectory = '';
   const calls: string[][] = [];
@@ -159,12 +170,19 @@ it('skips unpublished preparation debris while published attempts and claims rem
       cwd: fixture.directory,
     }) + '\n',
   );
-  vi.mocked(fsyncSync).mockImplementationOnce(() => {
-    throw new Error('Initial task file sync failed.');
+  const originalPublish = records.publish;
+  const preparation = vi.spyOn(records, 'publish').mockImplementation((directory, name, value) => {
+    if (name === 'task.json') {
+      vi.mocked(fsyncSync).mockImplementationOnce(() => {
+        throw new Error('Initial task file sync failed.');
+      });
+      preparation.mockRestore();
+    }
+    originalPublish(directory, name, value);
   });
   await expect(fixture.controller.launch(fixture.input)).rejects.toThrow('Task preparation');
-  const abandoned = readdirSync(fixture.directory, { withFileTypes: true }).find((entry) =>
-    entry.isDirectory(),
+  const abandoned = readdirSync(fixture.directory, { withFileTypes: true }).find(
+    (entry) => entry.isDirectory() && entry.name !== '.admission',
   );
   if (!abandoned) {
     throw new Error('Missing preparation evidence.');
@@ -175,6 +193,10 @@ it('skips unpublished preparation debris while published attempts and claims rem
   expect(receiptFiles[0]).toMatch(/^\.receipt-/);
   const receipt = readFileSync(join(abandonedDirectory, receiptFiles[0] ?? ''));
 
+  expect(fixture.controller.children()).toEqual({
+    active: 0,
+    uncertain: [expect.stringContaining(abandonedDirectory)],
+  });
   const launched = await fixture.controller.launch(fixture.input);
   expect(launched.ready).toBe(true);
   const current = {
@@ -579,7 +601,7 @@ it('retains friendly names and avoids retained and live collisions', async ({ on
   recovered.close();
 });
 
-it('names a new worker when another saved task directory is unreadable', async ({
+it('refuses admission when unreadable saved work makes tree capacity uncertain', async ({
   onTestFinished,
 }) => {
   vi.spyOn(names, 'nameSuffix').mockReturnValue('aa');
@@ -587,10 +609,84 @@ it('names a new worker when another saved task directory is unreadable', async (
   mkdirSync(join(directory, 'corrupt'));
   writeFileSync(join(directory, 'corrupt', 'task.json'), '{');
 
-  const status = await controller.launch(input);
+  await expect(controller.launch(input)).rejects.toThrow(/JSON/);
 
-  expect(readTask(status.directory)).toMatchObject({ name: 'worker-aa' });
-  expect(calls.filter((call) => call[1] === 'start').map((call) => call[2])).toEqual(['worker-aa']);
+  expect(calls.filter((call) => call[1] === 'start')).toEqual([]);
+});
+
+it('bounds nested launches by the shared cap and original ancestor deadline', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  vi.stubEnv('TAU_SUBAGENT_CAP', '2');
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  fixture.input.loadout.tools.push('subagent');
+  const parentStatus = await fixture.controller.launch(fixture.input);
+  const parent = readTask(parentStatus.directory);
+  recordEvent(parentStatus.directory, parent.taskId, 'accepted', 'Started.');
+  const owned = records.readRecord(parentStatus.directory, 'owned.json') as {
+    processId: number;
+    startedAt: string;
+  };
+  vi.mocked(identity.currentProcessIdentity).mockResolvedValue(owned);
+  vi.stubEnv('TAU_SUBAGENT_CAP', '256');
+  const nested = new WorkerController(fixture.directory, fixture.client);
+  onTestFinished(() => {
+    nested.close();
+  });
+  const input = {
+    ...fixture.input,
+    timeout: 60000,
+    parentSession: parent.nativeSessionFile,
+    parentSessionId: parent.nativeSessionId,
+    loadout: {
+      ...parent.loadout,
+      instructions: `${inheritedInstructions(parent)}Inspect the fixture.`,
+    },
+  };
+
+  vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 3600000);
+  const childStatus = await nested.launch(input);
+  const child = readTask(childStatus.directory);
+  expect(child.tree?.parentTaskId).toBe(parent.taskId);
+  expect(child.tree?.rootSessionId).toBe(parent.parentSessionId);
+  expect(child.tree!.monotonicDeadline).toBeLessThanOrEqual(
+    parent.tree!.monotonicDeadline - parent.cancellationBudget,
+  );
+  expect(child.deadline).toBeLessThanOrEqual(parent.deadline - parent.cancellationBudget);
+  expect(child.loadout.model).toBe(parent.loadout.model);
+  await expect(nested.launch(input)).rejects.toThrow('capacity full');
+  expect(nested.children().active).toBe(1);
+  const cancelled = await nested.cancel(child.taskId, parent.nativeSessionId);
+  expect(cancelled.capacityHeld).toBe(true);
+  expect(nested.children()).toMatchObject({
+    active: 0,
+    uncertain: [expect.stringContaining(child.taskId)],
+  });
+  await expect(nested.launch(input)).rejects.toThrow('capacity full');
+  expect(
+    fixture.controller.status(parent.taskId, fixture.input.parentSessionId).unconfirmedChildren,
+  ).toEqual([{ taskId: child.taskId, directory: childStatus.directory }]);
+});
+
+it('refuses full-cap native follow-up before consuming its successor claim', async () => {
+  const fixture = await completed();
+  for (let index = 0; index < 4; index++) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Fill the shared cap before attempting native follow-up.
+    await fixture.controller.launch({ ...fixture.input, loadout: fixture.source.loadout });
+  }
+
+  await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+    'capacity full',
+  );
+  expect(records.readSuccessor(fixture.sourceDirectory)).toBeUndefined();
+  expect(
+    records
+      .readTasks(fixture.directory)
+      .some(({ task }) => task.predecessorTaskId === fixture.source.taskId),
+  ).toBe(false);
 });
 
 it('gives the worker pane its parent process identity', async ({ onTestFinished }) => {
@@ -710,7 +806,7 @@ it.each(['cancelled', 'expired', 'closed'] as const)(
 
     await expect(pending).rejects.toThrow(/cancelled|aborted|budget expired/);
     expect(calls.map((call) => call[1])).toEqual(['list']);
-    expect(readdirSync(directory)).toEqual([]);
+    expect(readdirSync(directory)).toEqual(['parent.jsonl']);
   },
 );
 
@@ -730,7 +826,11 @@ it('retains the chosen name but never retries a late live collision', async ({
     loadout: { ...input.loadout, role: 'investigation' },
   });
 
-  expect(status).toMatchObject({ name: 'investigator-xy', outcome: 'failure' });
+  expect(status).toMatchObject({ name: 'investigator-xy', outcome: 'failure', capacityHeld: true });
+  expect(controller.children()).toEqual({
+    active: 0,
+    uncertain: [expect.stringContaining(status.directory)],
+  });
   expect(readTask(status.directory).name).toBe('investigator-xy');
   expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(calls.some((call) => ['prompt', 'send-keys'].includes(call[1] ?? ''))).toBe(false);
@@ -1214,7 +1314,8 @@ it('retains confirmed terminal evidence when cancelled during the cosmetic place
   });
   expect(status).toMatchObject({
     outcome: 'cancelled',
-    stopped: false,
+    stopped: true,
+    capacityHeld: false,
     accepted: false,
     ready: false,
   });
@@ -1234,7 +1335,9 @@ it('rejects aggregate Unicode tasks before publishing records or creating a pane
     'Worker record exceeds 128 KB.',
   );
   expect(calls).toEqual([]);
-  const directories = readdirSync(directory);
+  const directories = readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
   expect(directories).toHaveLength(0);
   expect(directories.map((name) => readdirSync(join(directory, name)))).toEqual([]);
 });
@@ -1418,7 +1521,8 @@ it('preserves incomplete output and malformed evidence without retrying startup'
     outcome: 'failure',
     accepted: false,
     reportAccepted: false,
-    stopped: false,
+    stopped: true,
+    capacityHeld: false,
   });
   expect(calls.map((call) => call[1])).toEqual(['list', 'current']);
   expect(readdirSync(status.directory)).toContain('task.json');
@@ -1549,6 +1653,42 @@ it('rejects invalid model and thinking in saved loadouts without replacing the t
   writeFileSync(path, JSON.stringify(task));
   expect(readTask(launched.directory).loadout).toEqual(input.loadout);
 });
+
+it.each([true, false])(
+  'preserves uncertain launch ownership when process inspection fails with absent process %s',
+  async (absent) => {
+    const { controller, input, calls } = setup(afterTest, -1);
+    vi.spyOn(cancellationModule, 'runClient').mockRejectedValue(
+      new Error('Process inspection failed.'),
+    );
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      if (absent) {
+        throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+      }
+
+      return true;
+    });
+
+    const status = await controller.launch(input);
+
+    expect(status).toMatchObject({
+      outcome: 'failure',
+      ready: false,
+      stopped: false,
+      capacityHeld: true,
+    });
+    expect(status.failure).toContain(
+      absent ? 'exited before readiness' : 'Process inspection failed.',
+    );
+    expect(controller.children()).toEqual({
+      active: 0,
+      uncertain: [expect.stringContaining(status.directory)],
+    });
+    expect(readEvent(status.directory, status.taskId, 'cleanup')?.stopped).toBe(false);
+    expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
+    expect(calls.some((call) => ['send-keys', 'close'].includes(call[1] ?? ''))).toBe(false);
+  },
+);
 
 it('detects an owned worker exiting before readiness without waiting for the task deadline', async ({
   onTestFinished,
@@ -1834,4 +1974,21 @@ it('waits for worker readiness after herdr readiness without a new startup budge
   expect(status.ready).toBe(true);
   expect(status.outcome).toBe('running');
   expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
+});
+
+it('reports unreadable descendant evidence instead of breaking status', async ({
+  onTestFinished,
+}) => {
+  const { controller, input } = setup(onTestFinished, 0);
+  const status = await controller.launch(input);
+  const reservations = status.reservationDirectory;
+  if (!reservations) {
+    throw new Error('Missing reservation directory.');
+  }
+  writeFileSync(join(reservations, 'broken.json'), '{');
+
+  const degraded = taskStatus(status.directory);
+
+  expect(degraded.unconfirmedChildren).toEqual([]);
+  expect(degraded.descendantEvidence).toContain('capacity may still be held');
 });

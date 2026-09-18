@@ -1,16 +1,24 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
+import {
+  admissionDirectory,
+  descendantReservations,
+  monotonicNow,
+  requireActiveAncestry,
+  reserveTask,
+} from './admission.js';
 import { cancelOwnedWorker, matchesWorker, runClient, workerStopped } from './cancellation.js';
 import type { OwnedWorker } from './cancellation.js';
 import { requireHandover, refuseLiveNativeWriter } from './continuations.js';
-import { authorizeHistoryTask } from './history.js';
+import { authorizeHistoryTask, sessionRoot } from './history.js';
+import { authenticateParent, currentProcessIdentity } from './identity.js';
 import { validateSavedLoadout } from './loadout.js';
 import { allocateName, nameSuffix } from './names.js';
 import { validateNative } from './native.js';
@@ -107,6 +115,23 @@ const enforcementNote = (active: boolean, cleanup: TaskEvent | undefined) => {
   return 'No active owner in this parent. Saved evidence only; work may still be running. Check the saved pane manually. No retry or continuing enforcement is promised.';
 };
 
+const unconfirmedDescendants = (root: string, task: Task) => {
+  try {
+    const children = descendantReservations(root, task)
+      .filter(
+        (child) => readEvent(join(root, child.taskId), child.taskId, 'cleanup')?.stopped !== true,
+      )
+      .map((child) => ({ taskId: child.taskId, directory: join(root, child.taskId) }));
+
+    return { children, evidence: undefined };
+  } catch (error) {
+    return {
+      children: [],
+      evidence: `Descendant reservation evidence unavailable; capacity may still be held. ${String(error)}`,
+    };
+  }
+};
+
 export const taskStatus = (directory: string, activeOwner?: string, enforcing = true) => {
   const task = readTask(directory);
   const report = readReport(directory, task.taskId);
@@ -116,6 +141,7 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
   const failure = event('startupFailure');
   const settled = event('settled');
   const cleanup = event('cleanup');
+  const descendants = unconfirmedDescendants(dirname(directory), task);
   const active = enforcing && activeOwner === task.ownerId && !cleanup && !timeout && !cancelled;
   const outcome = taskOutcome([timeout, cancelled, failure], report, Boolean(settled) || !active);
 
@@ -125,13 +151,17 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
     predecessorTaskId: task.predecessorTaskId,
     successorTaskId: readSuccessor(directory)?.successorTaskId,
     outcome,
-    ready: !!event('ready'),
-    accepted: !!event('accepted'),
-    reportAccepted: !!report,
+    ready: Boolean(event('ready')),
+    accepted: Boolean(event('accepted')),
+    reportAccepted: Boolean(report),
     ownedByThisParent: activeOwner === task.ownerId,
     deadlineActive: active,
-    stopped: !!settled?.stopped || !!cleanup?.stopped,
+    stopped: Boolean(settled?.stopped) || Boolean(cleanup?.stopped),
     deadline: task.deadline,
+    capacityHeld: cleanup?.stopped !== true,
+    reservationDirectory: task.tree ? admissionDirectory(dirname(directory), task.tree) : undefined,
+    unconfirmedChildren: descendants.children,
+    descendantEvidence: descendants.evidence,
     nativeSessionId: task.nativeSessionId,
     nativeSessionFile: task.nativeSessionFile,
     directory,
@@ -154,14 +184,20 @@ interface Handle {
   abort: AbortController;
   expires: number;
   removeLaunchAbort?: () => void;
+  workerNeverStarted: boolean;
   recordErrors: string[];
   cleanupDetail?: string;
+  cleanupFinished?: boolean;
   notifiedQuestions: Set<string>;
 }
 
+// One remainder for every budget question; two clocks disagree within a millisecond.
+const remainingWorkBudget = (handle: Handle): number =>
+  Math.floor(handle.expires - handle.task.cancellationBudget - performance.now());
+
 const workBudget = (handle: Handle, maximum = 30_000): number => {
   handle.abort.signal.throwIfAborted();
-  const remaining = Math.floor(handle.expires - handle.task.cancellationBudget - performance.now());
+  const remaining = remainingWorkBudget(handle);
   if (remaining <= 0) {
     throw new Error('The original worker startup budget expired.');
   }
@@ -220,7 +256,15 @@ const inspectWorker = async (
     ['-p', String(processId), '-o', 'lstart='],
     workBudget(handle, 1000),
     handle.abort.signal,
-  );
+  ).catch((error: unknown) => {
+    if (processAbsent(processId)) {
+      throw new Error('Worker exited before readiness. No task dispatch or retry.', {
+        cause: error,
+      });
+    }
+
+    throw error;
+  });
   const startedAt = processStart.trim();
   const owned: OwnedWorker = previous ?? {
     kind: 'pi',
@@ -273,6 +317,35 @@ const launchTiming = (timeout: number, startedAt?: { wall: number; monotonic: nu
     deadline: createdAt + timeout,
     expires,
     cancellationBudget,
+  };
+};
+
+const boundedTiming = (timing: ReturnType<typeof launchTiming>, parent?: Task) => {
+  const elapsedNow = performance.now();
+  const monotonic = monotonicNow();
+  if (!parent?.tree) {
+    return { ...timing, monotonicDeadline: monotonic + timing.expires - elapsedNow };
+  }
+  const parentWorkEnd = parent.tree.monotonicDeadline - parent.cancellationBudget;
+  const expires = Math.min(timing.expires, elapsedNow + parentWorkEnd - monotonic);
+  const monotonicDeadline = Math.min(parentWorkEnd, monotonic + expires - elapsedNow);
+  const cancellationBudget = Math.min(
+    timing.cancellationBudget,
+    Math.floor((expires - elapsedNow) / 4),
+  );
+  if (cancellationBudget < 1 || elapsedNow >= expires - cancellationBudget) {
+    throw new Error('Original parent deadline has no child work budget remaining.');
+  }
+  // Keep display timestamps on the parent's original clock mapping; later wall-clock jumps do not change the budget.
+  const parentClockOffset = parent.deadline - parent.tree.monotonicDeadline;
+  const requestedStart = timing.expires - (timing.deadline - timing.createdAt);
+
+  return {
+    createdAt: Math.floor(parentClockOffset + monotonic + requestedStart - elapsedNow),
+    deadline: Math.floor(parentClockOffset + monotonicDeadline),
+    expires,
+    cancellationBudget,
+    monotonicDeadline,
   };
 };
 
@@ -332,9 +405,14 @@ const checkNativeWriterListing = (response: string, task: Task): void => {
   refuseLiveNativeWriter(live.agents, task);
 };
 
+const treeCapacity = (): number =>
+  // oxlint-disable-next-line node/no-process-env -- Only the first admission in a root session uses this; later launches read the saved policy.
+  Number(process.env.TAU_SUBAGENT_CAP ?? 4);
+
 export class WorkerController {
   readonly ownerId = randomUUID();
   private readonly handles = new Map<string, Handle>();
+  private readonly admitted = new Map<string, Task>();
   private readonly lifetime = new AbortController();
   private readonly placement = new WorkerPlacement();
   private closed = false;
@@ -344,6 +422,54 @@ export class WorkerController {
     private readonly client: HerdrClient = herdrClient,
     private readonly notify: (message: string, question?: Question) => void = () => undefined,
   ) {}
+
+  async parentAuthority(parentSession: string, parentSessionId: string, signal?: AbortSignal) {
+    const identity = await currentProcessIdentity(signal);
+    // oxlint-disable-next-line node/no-process-env -- The locator is checked against session and parent-owned process evidence.
+    const locator = process.env.TAU_WORKER_RECORD;
+
+    return authenticateParent(
+      this.root,
+      { file: parentSession, id: parentSessionId },
+      identity,
+      locator,
+    );
+  }
+
+  children() {
+    const active = [...this.handles.values()].filter((handle) => !handle.cleanupFinished);
+    const reservations = new Map(this.admitted);
+    const uncertain: string[] = [];
+    for (const task of this.admitted.values()) {
+      try {
+        for (const descendant of descendantReservations(this.root, task)) {
+          reservations.set(descendant.taskId, descendant);
+        }
+      } catch (error) {
+        uncertain.push(
+          `Child ${task.taskId}: descendant evidence unavailable. Inspect ${join(this.root, task.taskId)} manually. ${String(error)}`,
+        );
+      }
+    }
+    for (const task of reservations.values()) {
+      if (active.some((handle) => handle.task.taskId === task.taskId)) {
+        continue;
+      }
+      const directory = join(this.root, task.taskId);
+      try {
+        if (readEvent(directory, task.taskId, 'cleanup')?.stopped === true) {
+          continue;
+        }
+      } catch {
+        // Missing or corrupt cleanup evidence cannot free a reservation or imply stopped work.
+      }
+      uncertain.push(
+        `Child ${task.taskId}: cleanup unconfirmed; reservation retained. Inspect ${directory} manually.`,
+      );
+    }
+
+    return { active: active.length, uncertain };
+  }
 
   launch(input: LaunchInput, signal: AbortSignal = new AbortController().signal) {
     return this.launchTask(input, signal);
@@ -422,9 +548,15 @@ export class WorkerController {
     launchSignal.throwIfAborted();
     const taskId = randomUUID();
     const directory = join(this.root, taskId);
-    const { createdAt, deadline, expires, cancellationBudget } = launchTiming(
-      input.timeout,
-      input.startedAt,
+    const timing = launchTiming(input.timeout, input.startedAt);
+    const authority = await this.parentAuthority(
+      input.parentSession,
+      input.parentSessionId,
+      launchSignal,
+    );
+    const { createdAt, deadline, expires, cancellationBudget, monotonicDeadline } = boundedTiming(
+      timing,
+      authority.parent,
     );
     const task = validateTask({
       version: 1,
@@ -444,6 +576,7 @@ export class WorkerController {
       createdAt,
       deadline,
       cancellationBudget,
+      tree: { ...authority.tree, monotonicDeadline },
       loadout: input.loadout,
     });
     const remaining = Math.floor(expires - cancellationBudget - performance.now());
@@ -478,15 +611,22 @@ export class WorkerController {
     task.name = name;
     validateTask(task);
 
-    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    // The reservation precedes task publication, native opening, and successor claims.
+    const capacity = treeCapacity();
+    // ponytail: Each live legacy task rebuilds ancestry; share a registry if large upgraded histories make admission slow.
+    reserveTask(this.root, task, capacity, (legacy) =>
+      sessionRoot(this.root, { file: legacy.parentSession, id: legacy.parentSessionId }),
+    );
+    this.admitted.set(task.taskId, task);
     try {
+      mkdirSync(directory, { recursive: true, mode: 0o700 });
       publish(directory, 'task.json', task);
       if (!source) {
         seedSession(task);
       }
     } catch (error) {
       throw new Error(
-        `Task preparation ${taskId} is uncertain at ${directory}. No automatic retry.`,
+        `Task preparation ${taskId} is uncertain at ${directory}. Capacity remains reserved at ${admissionDirectory(this.root, authority.tree)}. No automatic retry.`,
         { cause: error },
       );
     }
@@ -496,6 +636,7 @@ export class WorkerController {
       task,
       abort: new AbortController(),
       expires,
+      workerNeverStarted: true,
       recordErrors: [],
       notifiedQuestions: new Set(),
     };
@@ -529,6 +670,8 @@ export class WorkerController {
         checkNativeWriterListing(await call(['agent', 'list']), task);
         checkHandoff(this.root, source, task);
       }
+      // A failing start call can still leave a process behind.
+      handle.workerNeverStarted = false;
       await call([
         'agent',
         'start',
@@ -554,8 +697,7 @@ export class WorkerController {
       this.poll(handle);
       handle.removeLaunchAbort();
     } catch (error) {
-      const reason =
-        performance.now() >= handle.expires - task.cancellationBudget ? 'timeout' : 'failure';
+      const reason = remainingWorkBudget(handle) <= 0 ? 'timeout' : 'failure';
       await this.stop(handle, reason, `Startup delivery is uncertain; no retry. ${String(error)}`);
     }
 
@@ -573,7 +715,7 @@ export class WorkerController {
     handle.timer = setTimeout(
       () => {
         try {
-          if (performance.now() >= handle.expires - handle.task.cancellationBudget) {
+          if (remainingWorkBudget(handle) <= 0) {
             void this.stop(handle, 'timeout');
             return;
           }
@@ -584,6 +726,17 @@ export class WorkerController {
           ) {
             void this.stop(handle, 'completion');
             return;
+          }
+          if (handle.task.tree?.parentTaskId) {
+            try {
+              requireActiveAncestry(
+                this.root,
+                readTask(join(this.root, handle.task.tree.parentTaskId)),
+              );
+            } catch {
+              void this.stop(handle, 'cancelled');
+              return;
+            }
           }
           const question = readPendingQuestion(handle.directory, handle.task.taskId);
           if (question && !handle.notifiedQuestions.has(question.questionId)) {
@@ -622,6 +775,16 @@ export class WorkerController {
     }
     handle.removeLaunchAbort?.();
     handle.abort.abort();
+    try {
+      recordEvent(
+        handle.directory,
+        handle.task.taskId,
+        'stopping',
+        'Parent started bounded cleanup; no further delegation is authorized.',
+      );
+    } catch (error) {
+      handle.recordErrors.push(String(error));
+    }
     handle.stopping = this.cleanup(handle, reason, failureDetail)
       .finally(() => {
         // Keep sharing intact until cleanup finishes, including its queued topology change.
@@ -631,6 +794,7 @@ export class WorkerController {
         }
       })
       .catch((error: unknown) => {
+        handle.cleanupFinished = true;
         handle.recordErrors.push(String(error));
         if (this.closed) {
           return;
@@ -675,9 +839,11 @@ export class WorkerController {
       return remaining;
     };
     const call = (arguments_: string[]) => this.client(arguments_, remainingBudget(), signal);
-    let stopped = false;
+    let stopped = handle.workerNeverStarted;
     const paneClosure = { confirmed: false };
-    let detail = `Cleanup unconfirmed. Check pane ${handle.paneId ?? 'unknown'} manually. No automatic retry.`;
+    let detail = stopped
+      ? `No worker process was ever started for this task. Pane ${handle.paneId ?? 'none'} is left as placed.`
+      : `Cleanup unconfirmed. Check pane ${handle.paneId ?? 'unknown'} manually. No automatic retry.`;
 
     if (owned) {
       const worker = owned;
@@ -749,6 +915,7 @@ export class WorkerController {
     record(() => {
       outcome = taskStatus(directory, this.ownerId, false).outcome;
     });
+    handle.cleanupFinished = true;
     if (!this.closed) {
       record(() => {
         recordEvent(directory, task.taskId, 'notified', 'Parent notification attempted once.');
@@ -842,7 +1009,7 @@ export class WorkerController {
 
       return {
         replyAccepted: true,
-        workerAcknowledged: !!readAcknowledgement(directory, taskId, answer.questionId),
+        workerAcknowledged: Boolean(readAcknowledgement(directory, taskId, answer.questionId)),
         delivery: 'Not retried. Prior delivery may be uncertain.',
       };
     }
@@ -863,7 +1030,7 @@ export class WorkerController {
 
       return {
         replyAccepted: true,
-        workerAcknowledged: !!readAcknowledgement(directory, taskId, answer.questionId),
+        workerAcknowledged: Boolean(readAcknowledgement(directory, taskId, answer.questionId)),
         delivery: 'Not retried. Prior delivery may be uncertain.',
       };
     }
@@ -891,7 +1058,7 @@ export class WorkerController {
 
     return {
       replyAccepted: true,
-      workerAcknowledged: !!readAcknowledgement(directory, taskId, answer.questionId),
+      workerAcknowledged: Boolean(readAcknowledgement(directory, taskId, answer.questionId)),
       delivery:
         'Herdr accepted text. This does not prove worker acknowledgement or applied effects.',
     };

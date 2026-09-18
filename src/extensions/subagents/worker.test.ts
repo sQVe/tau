@@ -8,11 +8,13 @@ import type {
   ToolCallEventResult,
   ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
+import { createEventBus } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { checkWorkerRuntime } from './loadout.js';
-import { publish, readEvent, readPendingQuestion, recordEvent } from './records.js';
+import { publish, readEvent, readPendingQuestion, readReport, recordEvent } from './records.js';
 import * as records from './records.js';
+import { textLimit } from './types.js';
 import workerExtension from './worker.js';
 
 vi.mock('./loadout.js', () => ({
@@ -72,7 +74,9 @@ const setup = () => {
     shutdown,
     ui: { notify: vi.fn<ExtensionContext['ui']['notify']>() },
   } as unknown as ExtensionContext;
+  const events = createEventBus();
   workerExtension({
+    events,
     on: (name: string, handler: (event: unknown, context: ExtensionContext) => unknown) =>
       handlers.set(name, handler),
     registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
@@ -84,7 +88,7 @@ const setup = () => {
       .get('subagent_question')
       ?.execute('call', { question: 'Which file?' }, undefined, undefined, context);
 
-  return { directory, createdAt, emit, ask, sendUserMessage, shutdown };
+  return { directory, createdAt, emit, ask, sendUserMessage, shutdown, events, tools, context };
 };
 
 it.each(['before readiness', 'before dispatch', 'before tool call'])(
@@ -162,6 +166,47 @@ it.each([
     expect(vi.getTimerCount()).toBe(0);
   },
 );
+
+it('refuses reports for active children but includes uncertain cleanup in the final handover', async () => {
+  const worker = await waitingWorker();
+  const children = { active: 1, uncertain: [] as string[] };
+  worker.events.on('tau:worker-children', (state: unknown) => {
+    Object.assign(state as object, children);
+  });
+  const report = worker.tools.get('subagent_report');
+  if (!report) {
+    throw new Error('Missing report tool.');
+  }
+  const handover = () =>
+    report.execute(
+      'report',
+      {
+        outcome: 'incomplete',
+        summary: 'Task ended.'.padEnd(textLimit, '.'),
+        evidence: Array.from({ length: 100 }, (_value, index) => `Checked ${index}.`),
+      },
+      undefined,
+      undefined,
+      worker.context,
+    );
+
+  expect(handover).toThrow('Active children remain');
+  await worker.emit('agent_settled');
+  expect(worker.shutdown).not.toHaveBeenCalled();
+  children.active = 0;
+  children.uncertain.push(
+    'Child child-task: cleanup unconfirmed; inspect /saved/child-task manually.',
+  );
+  await handover();
+  await worker.emit('agent_settled');
+
+  expect(readReport(worker.directory, 'task')?.summary).toHaveLength(textLimit);
+  expect(readReport(worker.directory, 'task')?.evidence).toHaveLength(100);
+  expect(readReport(worker.directory, 'task')?.evidence.at(-1)).toContain('/saved/child-task');
+  expect(readReport(worker.directory, 'task')?.evidence.at(-1)).toContain('Dropped 1 evidence');
+  expect(worker.shutdown).toHaveBeenCalledOnce();
+  await worker.emit('session_shutdown');
+});
 
 it('stops waiting after uncertain question publication once the parent exits', async () => {
   const { emit, ask, shutdown } = await waitingWorker();

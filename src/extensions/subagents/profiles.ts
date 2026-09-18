@@ -87,6 +87,7 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
     role,
     model: fields.get('model'),
     thinking,
+    thinkingSpecified: fields.has('thinking'),
     instructions: body.trim(),
     source,
   };
@@ -154,5 +155,5 @@ export const nativeIdentity = (directory: string) => {
 };
 
 export const workerPrompt = (task: Task): string => {
-  return `${task.loadout.instructions}\n\nTask ${task.taskId} (${task.loadout.role}):\n${task.task}\n\nDeadline: ${new Date(task.deadline).toISOString()}. Work only within this task. Full tools and CC Safety Net are not a sandbox. Do not commit, merge, reset, delegate, or run extra model trials. Preserve unrelated edits. Do not continue or resume another conversation. Ask the parent for clarification with subagent_question, never ask_user_question. Waiting does not extend the original deadline or authorize increased scope. Finish by calling subagent_report once with outcome, summary, and evidence. Missing or uncertain handover is not success; do not retry it automatically.`;
+  return `${task.loadout.instructions}\n\nTask ${task.taskId} (${task.loadout.role}):\n${task.task}\n\nDeadline: ${new Date(task.deadline).toISOString()}. Work only within this task. Full tools and CC Safety Net are not a sandbox. Do not commit, merge, reset, or run extra model trials. Delegation through subagent stays within this assigned scope and inherits exact settings. Capacity refusal is final for that request: do the work yourself or report the limit; never wait in a retry loop. End your turn to wait for child results; the controller wakes you. Finish or cancel active children before reporting. Preserve unrelated edits. Do not resume arbitrary conversations. Use subagent_follow_up only for an assigned follow-up within this scope. Ask the parent for clarification with subagent_question, never ask_user_question. Waiting does not extend the original deadline or authorize increased scope. Finish by calling subagent_report once with outcome, summary, and evidence. Missing or uncertain handover is not success; do not retry it automatically.`;
 };
