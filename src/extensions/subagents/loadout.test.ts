@@ -586,5 +586,5 @@ it('refuses nested delegation once inherited instructions and scope exceed the s
 
   await expect(nested()).rejects.toThrow(`over the ${textLimit} limit`);
   loadout.instructions = 'Parent instructions.';
-  await expect(nested()).rejects.not.toThrow(`over the ${textLimit} limit`);
+  await expect(nested()).rejects.toThrow(join(directory, 'safety.js'));
 });
