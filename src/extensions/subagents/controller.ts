@@ -115,6 +115,23 @@ const enforcementNote = (active: boolean, cleanup: TaskEvent | undefined) => {
   return 'No active owner in this parent. Saved evidence only; work may still be running. Check the saved pane manually. No retry or continuing enforcement is promised.';
 };
 
+const unconfirmedDescendants = (root: string, task: Task) => {
+  try {
+    const children = descendantReservations(root, task)
+      .filter(
+        (child) => readEvent(join(root, child.taskId), child.taskId, 'cleanup')?.stopped !== true,
+      )
+      .map((child) => ({ taskId: child.taskId, directory: join(root, child.taskId) }));
+
+    return { children, evidence: undefined };
+  } catch (error) {
+    return {
+      children: [],
+      evidence: `Descendant reservation evidence unavailable; capacity may still be held. ${String(error)}`,
+    };
+  }
+};
+
 export const taskStatus = (directory: string, activeOwner?: string, enforcing = true) => {
   const task = readTask(directory);
   const report = readReport(directory, task.taskId);
@@ -124,6 +141,7 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
   const failure = event('startupFailure');
   const settled = event('settled');
   const cleanup = event('cleanup');
+  const descendants = unconfirmedDescendants(dirname(directory), task);
   const active = enforcing && activeOwner === task.ownerId && !cleanup && !timeout && !cancelled;
   const outcome = taskOutcome([timeout, cancelled, failure], report, Boolean(settled) || !active);
 
@@ -142,16 +160,8 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
     deadline: task.deadline,
     capacityHeld: cleanup?.stopped !== true,
     reservationDirectory: task.tree ? admissionDirectory(dirname(directory), task.tree) : undefined,
-    unconfirmedChildren: descendantReservations(dirname(directory), task)
-      .filter(
-        (child) =>
-          readEvent(join(dirname(directory), child.taskId), child.taskId, 'cleanup')?.stopped !==
-          true,
-      )
-      .map((child) => ({
-        taskId: child.taskId,
-        directory: join(dirname(directory), child.taskId),
-      })),
+    unconfirmedChildren: descendants.children,
+    descendantEvidence: descendants.evidence,
     nativeSessionId: task.nativeSessionId,
     nativeSessionFile: task.nativeSessionFile,
     directory,
@@ -174,14 +184,14 @@ interface Handle {
   abort: AbortController;
   expires: number;
   removeLaunchAbort?: () => void;
+  workerNeverStarted: boolean;
   recordErrors: string[];
   cleanupDetail?: string;
   cleanupFinished?: boolean;
   notifiedQuestions: Set<string>;
 }
 
-// Every budget question uses this one whole-millisecond remainder, so a sub-millisecond
-// difference cannot expire the budget in one place and leave it live in another.
+// One remainder for every budget question; two clocks disagree within a millisecond.
 const remainingWorkBudget = (handle: Handle): number =>
   Math.floor(handle.expires - handle.task.cancellationBudget - performance.now());
 
@@ -395,13 +405,9 @@ const checkNativeWriterListing = (response: string, task: Task): void => {
   refuseLiveNativeWriter(live.agents, task);
 };
 
-const treeCapacity = (parent: Task | undefined): number => {
-  if (parent) {
-    return 4;
-  }
-  // oxlint-disable-next-line node/no-process-env -- Only initial root admission may set the saved tree cap.
-  return Number(process.env.TAU_SUBAGENT_CAP ?? 4);
-};
+const treeCapacity = (): number =>
+  // oxlint-disable-next-line node/no-process-env -- Only the first admission in a root session uses this; later launches read the saved policy.
+  Number(process.env.TAU_SUBAGENT_CAP ?? 4);
 
 export class WorkerController {
   readonly ownerId = randomUUID();
@@ -606,7 +612,7 @@ export class WorkerController {
     validateTask(task);
 
     // The reservation precedes task publication, native opening, and successor claims.
-    const capacity = treeCapacity(authority.parent);
+    const capacity = treeCapacity();
     // ponytail: Each live legacy task rebuilds ancestry; share a registry if large upgraded histories make admission slow.
     reserveTask(this.root, task, capacity, (legacy) =>
       sessionRoot(this.root, { file: legacy.parentSession, id: legacy.parentSessionId }),
@@ -630,6 +636,7 @@ export class WorkerController {
       task,
       abort: new AbortController(),
       expires,
+      workerNeverStarted: true,
       recordErrors: [],
       notifiedQuestions: new Set(),
     };
@@ -663,6 +670,8 @@ export class WorkerController {
         checkNativeWriterListing(await call(['agent', 'list']), task);
         checkHandoff(this.root, source, task);
       }
+      // A failing start call can still leave a process behind.
+      handle.workerNeverStarted = false;
       await call([
         'agent',
         'start',
@@ -830,9 +839,11 @@ export class WorkerController {
       return remaining;
     };
     const call = (arguments_: string[]) => this.client(arguments_, remainingBudget(), signal);
-    let stopped = false;
+    let stopped = handle.workerNeverStarted;
     const paneClosure = { confirmed: false };
-    let detail = `Cleanup unconfirmed. Check pane ${handle.paneId ?? 'unknown'} manually. No automatic retry.`;
+    let detail = stopped
+      ? `No worker process runs for this task; it never started or exited before readiness. Pane ${handle.paneId ?? 'none'} is left as placed.`
+      : `Cleanup unconfirmed. Check pane ${handle.paneId ?? 'unknown'} manually. No automatic retry.`;
 
     if (owned) {
       const worker = owned;

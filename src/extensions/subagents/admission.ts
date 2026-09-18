@@ -272,6 +272,9 @@ export const reserveTask = (
     throw error;
   }
 
+  let released = false;
+  let releaseFailure: unknown;
+
   // No awaits or harness calls inside this transaction. Crashed locks require manual inspection, never age-based reclaim.
   try {
     const configured = admissionPolicy(directory, tree, capacity);
@@ -304,6 +307,18 @@ export const reserveTask = (
       );
     }
   } finally {
-    rmdirSync(lock);
+    // A failed release must not replace the refusal that caused it.
+    try {
+      rmdirSync(lock);
+      released = true;
+    } catch (error) {
+      releaseFailure = error;
+    }
+  }
+  if (!released) {
+    throw new Error(
+      `Admission lock ${lock} was not released. The reservation stands; remove the lock manually before the next launch.`,
+      { cause: releaseFailure },
+    );
   }
 };

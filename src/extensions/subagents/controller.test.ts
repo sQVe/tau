@@ -1314,7 +1314,8 @@ it('retains confirmed terminal evidence when cancelled during the cosmetic place
   });
   expect(status).toMatchObject({
     outcome: 'cancelled',
-    stopped: false,
+    stopped: true,
+    capacityHeld: false,
     accepted: false,
     ready: false,
   });
@@ -1520,7 +1521,8 @@ it('preserves incomplete output and malformed evidence without retrying startup'
     outcome: 'failure',
     accepted: false,
     reportAccepted: false,
-    stopped: false,
+    stopped: true,
+    capacityHeld: false,
   });
   expect(calls.map((call) => call[1])).toEqual(['list', 'current']);
   expect(readdirSync(status.directory)).toContain('task.json');
@@ -1972,4 +1974,21 @@ it('waits for worker readiness after herdr readiness without a new startup budge
   expect(status.ready).toBe(true);
   expect(status.outcome).toBe('running');
   expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
+});
+
+it('reports unreadable descendant evidence instead of breaking status', async ({
+  onTestFinished,
+}) => {
+  const { controller, input } = setup(onTestFinished, 0);
+  const status = await controller.launch(input);
+  const reservations = status.reservationDirectory;
+  if (!reservations) {
+    throw new Error('Missing reservation directory.');
+  }
+  writeFileSync(join(reservations, 'broken.json'), '{');
+
+  const degraded = taskStatus(status.directory);
+
+  expect(degraded.unconfirmedChildren).toEqual([]);
+  expect(degraded.descendantEvidence).toContain('capacity may still be held');
 });

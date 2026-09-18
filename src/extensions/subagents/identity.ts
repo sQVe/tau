@@ -35,7 +35,16 @@ const refuseWorkerProcessAsRoot = (
     if (!existsSync(join(directory, 'owned.json'))) {
       continue;
     }
-    const owned = readRecord(directory, 'owned.json');
+    let owned: unknown;
+    try {
+      owned = readRecord(directory, 'owned.json');
+    } catch (error) {
+      // An unreadable record may belong to this very process.
+      throw new Error(
+        `Worker ownership record at ${directory} is unreadable, so root identity cannot be granted. Inspect it manually.`,
+        { cause: error },
+      );
+    }
     if (
       Value.Check(ownedSchema, owned) &&
       owned.processId === processIdentity.processId &&
@@ -62,7 +71,12 @@ export const authenticateParent = (
     if (taskEnded(directory, task) || !existsSync(join(directory, 'owned.json'))) {
       return false;
     }
-    const owned = readRecord(directory, 'owned.json');
+    let owned: unknown;
+    try {
+      owned = readRecord(directory, 'owned.json');
+    } catch {
+      return false;
+    }
 
     return (
       Value.Check(ownedSchema, owned) &&

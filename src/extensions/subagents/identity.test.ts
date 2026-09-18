@@ -174,3 +174,12 @@ it('authenticates only the active successor while preserving original native anc
     authenticateParent(root, current, { ...processIdentity, startedAt: 'new start' }),
   ).toThrow('identity');
 });
+
+it('disqualifies a candidate with an unreadable ownership record without granting root identity', () => {
+  const { root, session, current, processIdentity, directory } = setup();
+
+  expect(authenticateParent(root, current, processIdentity).tree.parentTaskId).toBe('worker');
+  writeFileSync(join(directory, 'owned.json'), '{');
+  expect(() => authenticateParent(root, current, processIdentity)).toThrow('identity');
+  expect(() => authenticateParent(root, session, processIdentity)).toThrow('unreadable');
+});
