@@ -213,12 +213,20 @@ export default function workerExtension(pi: ExtensionAPI): void {
         );
       }
       // A full summary must never cost the worker its handover.
-      const uncertain = descendants.uncertain.length
-        ? [descendants.uncertain.join('\n').slice(0, textLimit)]
-        : [];
+      const note = descendants.uncertain.join('\n');
+      const kept = note ? parameters.evidence.slice(0, 99) : parameters.evidence;
+      const dropped = parameters.evidence.length - kept.length;
       const report = acceptReport(directory, task.taskId, {
         ...parameters,
-        evidence: [...parameters.evidence.slice(0, 100 - uncertain.length), ...uncertain],
+        evidence: note
+          ? [
+              ...kept,
+              `${dropped ? `Dropped ${dropped} evidence entries for this note.\n` : ''}${note}`.slice(
+                0,
+                textLimit,
+              ),
+            ]
+          : kept,
         taskId: task.taskId,
       });
       reported = true;

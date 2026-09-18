@@ -842,7 +842,7 @@ export class WorkerController {
     let stopped = handle.workerNeverStarted;
     const paneClosure = { confirmed: false };
     let detail = stopped
-      ? `No worker process runs for this task; it never started or exited before readiness. Pane ${handle.paneId ?? 'none'} is left as placed.`
+      ? `No worker process was ever started for this task. Pane ${handle.paneId ?? 'none'} is left as placed.`
       : `Cleanup unconfirmed. Check pane ${handle.paneId ?? 'unknown'} manually. No automatic retry.`;
 
     if (owned) {

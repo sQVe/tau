@@ -180,7 +180,11 @@ it('refuses reports for active children but includes uncertain cleanup in the fi
   const handover = () =>
     report.execute(
       'report',
-      { outcome: 'incomplete', summary: 'Task ended.'.padEnd(textLimit, '.'), evidence: [] },
+      {
+        outcome: 'incomplete',
+        summary: 'Task ended.'.padEnd(textLimit, '.'),
+        evidence: Array.from({ length: 100 }, (_value, index) => `Checked ${index}.`),
+      },
       undefined,
       undefined,
       worker.context,
@@ -197,7 +201,9 @@ it('refuses reports for active children but includes uncertain cleanup in the fi
   await worker.emit('agent_settled');
 
   expect(readReport(worker.directory, 'task')?.summary).toHaveLength(textLimit);
+  expect(readReport(worker.directory, 'task')?.evidence).toHaveLength(100);
   expect(readReport(worker.directory, 'task')?.evidence.at(-1)).toContain('/saved/child-task');
+  expect(readReport(worker.directory, 'task')?.evidence.at(-1)).toContain('Dropped 1 evidence');
   expect(worker.shutdown).toHaveBeenCalledOnce();
   await worker.emit('session_shutdown');
 });
