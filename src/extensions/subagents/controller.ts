@@ -180,9 +180,14 @@ interface Handle {
   notifiedQuestions: Set<string>;
 }
 
+// Every budget question uses this one whole-millisecond remainder, so a sub-millisecond
+// difference cannot expire the budget in one place and leave it live in another.
+const remainingWorkBudget = (handle: Handle): number =>
+  Math.floor(handle.expires - handle.task.cancellationBudget - performance.now());
+
 const workBudget = (handle: Handle, maximum = 30_000): number => {
   handle.abort.signal.throwIfAborted();
-  const remaining = Math.floor(handle.expires - handle.task.cancellationBudget - performance.now());
+  const remaining = remainingWorkBudget(handle);
   if (remaining <= 0) {
     throw new Error('The original worker startup budget expired.');
   }
@@ -683,8 +688,7 @@ export class WorkerController {
       this.poll(handle);
       handle.removeLaunchAbort();
     } catch (error) {
-      const reason =
-        performance.now() >= handle.expires - task.cancellationBudget ? 'timeout' : 'failure';
+      const reason = remainingWorkBudget(handle) <= 0 ? 'timeout' : 'failure';
       await this.stop(handle, reason, `Startup delivery is uncertain; no retry. ${String(error)}`);
     }
 
@@ -702,7 +706,7 @@ export class WorkerController {
     handle.timer = setTimeout(
       () => {
         try {
-          if (performance.now() >= handle.expires - handle.task.cancellationBudget) {
+          if (remainingWorkBudget(handle) <= 0) {
             void this.stop(handle, 'timeout');
             return;
           }
