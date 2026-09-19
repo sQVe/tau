@@ -55,13 +55,10 @@ export const channelCall = (
       buffered += chunk.toString();
 
       // A chunk can end mid-frame; keep the remainder for the next one.
-      for (let newline = buffered.indexOf('\n'); newline !== -1; newline = buffered.indexOf('\n')) {
-        const line = buffered.slice(0, newline).trim();
-        buffered = buffered.slice(newline + 1);
-        if (!line) {
-          continue;
-        }
+      const frames = buffered.split('\n');
+      buffered = frames.pop() ?? '';
 
+      for (const line of frames.filter((entry) => entry.trim())) {
         const message: unknown = JSON.parse(line);
         if (message && typeof message === 'object' && 'id' in message && message.id === 2) {
           child.kill();
