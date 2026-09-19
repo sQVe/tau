@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, realpathSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { accessSync, constants, existsSync, readFileSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { delimiter, isAbsolute, join, resolve } from 'node:path';
 
 import { clampThinkingLevel } from '@earendil-works/pi-ai';
 import {
@@ -11,12 +12,23 @@ import {
   getAgentDir,
 } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { inheritedInstructions } from './admission.js';
+import {
+  channelScriptPath,
+  claudeBuiltinTools,
+  claudeChannelTools,
+  claudeEffort,
+  claudeToolName,
+  claudeVersion,
+  probeSafetyIntegration,
+  resolveClaudeSafetyPlugin,
+} from './claude.js';
 import { resolveProfile } from './profiles.js';
-import { loadoutSchema, textLimit } from './types.js';
-import type { Loadout, Task } from './types.js';
+import { harnessOf, isClaudeLoadout, loadoutSchema, textLimit } from './types.js';
+import type { ClaudeLoadout, Loadout, PiLoadout, Task } from './types.js';
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object';
@@ -244,6 +256,218 @@ const reconstructIntegrations = async (
   return { loaded, registry, safety };
 };
 
+const claudeConfigDirectory = (): string =>
+  // oxlint-disable-next-line node/no-process-env -- Claude Code reads this same variable to find its configuration.
+  realpathSync(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'));
+
+const managedSettingsPath = (): string =>
+  process.platform === 'darwin'
+    ? '/Library/Application Support/ClaudeCode/managed-settings.json'
+    : '/etc/claude-code/managed-settings.json';
+
+// Claude merges user, project, and local settings, and managed settings win over all of them.
+const claudeSettingsSources = (agentDirectory: string, cwd: string): string[] =>
+  [
+    join(agentDirectory, 'settings.json'),
+    join(cwd, '.claude', 'settings.json'),
+    join(cwd, '.claude', 'settings.local.json'),
+    managedSettingsPath(),
+  ].filter((path) => existsSync(path));
+
+const claudeSettingsSchema = Type.Object({
+  permissions: Type.Optional(Type.Object({ defaultMode: Type.Optional(Type.String()) })),
+  skipDangerousModePermissionPrompt: Type.Optional(Type.Boolean()),
+  enabledPlugins: Type.Optional(Type.Record(Type.String(), Type.Boolean())),
+});
+
+const claudeSettings = (sources: string[]) => {
+  const merged = { mode: undefined as string | undefined, skipPrompt: false };
+  // A later source turns a plugin off as well as on, so track the last value rather than the union.
+  const enabled = new Map<string, boolean>();
+
+  for (const path of sources) {
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    if (!Value.Check(claudeSettingsSchema, parsed)) {
+      throw new Error(`Claude settings at ${path} are unusable for a worker launch.`);
+    }
+
+    merged.mode = parsed.permissions?.defaultMode ?? merged.mode;
+    merged.skipPrompt = parsed.skipDangerousModePermissionPrompt ?? merged.skipPrompt;
+
+    for (const [name, active] of Object.entries(parsed.enabledPlugins ?? {})) {
+      enabled.set(name, active);
+    }
+  }
+
+  return {
+    ...merged,
+    plugins: [...enabled].filter(([, active]) => active).map(([name]) => name),
+  };
+};
+
+const resolveExecutable = (name: string): string => {
+  // oxlint-disable-next-line node/no-process-env -- The canonical executable comes from this process's PATH, not the worker pane's interactive shell.
+  for (const entry of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
+    const candidate = join(entry, name);
+    try {
+      accessSync(candidate, constants.X_OK);
+
+      return realpathSync(candidate);
+    } catch {
+      // Keep searching; an unreadable or missing entry is not the executable.
+    }
+  }
+
+  throw new Error(`Claude workers need ${name} on PATH.`);
+};
+
+// Require saved permissions instead of granting them through a launch flag.
+const requireClaudePermissions = (settings: ReturnType<typeof claudeSettings>): void => {
+  if (settings.mode !== 'bypassPermissions') {
+    throw new Error(
+      `Claude workers need saved permission mode bypassPermissions for trusted-full-tools; this configuration resolves to ${settings.mode ?? 'default'}. Tau refuses rather than pass a permission flag.`,
+    );
+  }
+  if (!settings.skipPrompt) {
+    throw new Error(
+      'Claude would open its bypass-permissions confirmation at startup, which no worker can answer. Set skipDangerousModePermissionPrompt in your Claude settings first.',
+    );
+  }
+};
+
+const claudeIntegrations = (
+  sources: string[],
+  plugin: ReturnType<typeof resolveClaudeSafetyPlugin>,
+  channelScript: string,
+): string[] => [
+  ...new Set(
+    [...sources, plugin.hooksPath, plugin.entry, channelScript].map((path) => realpathSync(path)),
+  ),
+];
+
+const claudeProfile = (cwd: string, trusted: boolean, name: string) => {
+  const profile = resolveProfile(cwd, realpathSync(getAgentDir()), trusted, name);
+  if (!profile) {
+    throw new Error(`Worker profile not found: ${name}`);
+  }
+  if (profile.harnessSpecified && profile.harness !== 'claude') {
+    throw new Error(`Profile ${profile.name} is a ${profile.harness} profile, not a Claude one.`);
+  }
+
+  return profile;
+};
+
+export const resolveClaudeLoadout = async (
+  input: { profile: string; cwd?: string; model?: string; permissions: string },
+  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>,
+  signal: AbortSignal = AbortSignal.timeout(10_000),
+): Promise<ClaudeLoadout> => {
+  signal.throwIfAborted();
+
+  if (input.permissions !== 'trusted-full-tools') {
+    throw new Error('Workers require explicit trusted-full-tools permission.');
+  }
+  if (!context.isProjectTrusted()) {
+    throw new Error('Worker launch requires a trusted project.');
+  }
+
+  const cwd = realpathSync(resolve(context.cwd, input.cwd ?? '.'));
+  // A different project needs its own trust decision, not the parent's inherited approval.
+  if (cwd !== realpathSync(context.cwd)) {
+    throw new Error('Launch from the target cwd after trusting that project.');
+  }
+
+  const agentDirectory = claudeConfigDirectory();
+  const profile = claudeProfile(cwd, true, input.profile);
+  const model = input.model ?? profile.model;
+  if (!model || /\s/.test(model)) {
+    throw new Error(
+      'Set an exact Claude model for this worker, such as claude-sonnet-5. There is no fallback.',
+    );
+  }
+
+  const sources = claudeSettingsSources(agentDirectory, cwd);
+  const settings = claudeSettings(sources);
+  requireClaudePermissions(settings);
+
+  const plugin = resolveClaudeSafetyPlugin(agentDirectory, settings.plugins);
+  const executable = resolveExecutable('claude');
+  const channelScript = realpathSync(channelScriptPath());
+
+  const loadout: ClaudeLoadout = {
+    harness: 'claude',
+    profile: profile.name,
+    role: profile.role,
+    model,
+    executable,
+    executableVersion: await claudeVersion(executable),
+    thinking: profile.thinking,
+    cwd,
+    agentDirectory,
+    permissions: 'trusted-full-tools',
+    permissionMode: 'bypassPermissions',
+    channelExecutable: process.execPath,
+    channelScript,
+    tools: [...claudeBuiltinTools, ...claudeChannelTools.map((tool) => claudeToolName(tool))],
+    integrations: claudeIntegrations(sources, plugin, channelScript),
+    integrationFingerprint: '',
+    safetyExtension: plugin.entry,
+    safetyArguments: plugin.arguments,
+    instructions: profile.instructions,
+  };
+
+  claudeEffort(loadout.thinking);
+  await probeSafetyIntegration(loadout);
+  signal.throwIfAborted();
+
+  return { ...loadout, integrationFingerprint: integrationFingerprint(loadout.integrations) };
+};
+
+export const validateSavedClaudeLoadout = async (
+  loadout: ClaudeLoadout,
+  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>,
+): Promise<ClaudeLoadout> => {
+  if (!context.isProjectTrusted()) {
+    throw new Error('Saved worker replay requires a currently trusted project.');
+  }
+  if (
+    realpathSync(context.cwd) !== loadout.cwd ||
+    claudeConfigDirectory() !== loadout.agentDirectory
+  ) {
+    throw new Error('Worker cwd or configuration directory changed.');
+  }
+
+  const sources = claudeSettingsSources(loadout.agentDirectory, loadout.cwd);
+  const settings = claudeSettings(sources);
+  requireClaudePermissions(settings);
+
+  const plugin = resolveClaudeSafetyPlugin(loadout.agentDirectory, settings.plugins);
+  const integrations = claudeIntegrations(sources, plugin, loadout.channelScript);
+  if (
+    modelFingerprint(integrations) !== modelFingerprint(loadout.integrations) ||
+    plugin.entry !== loadout.safetyExtension ||
+    modelFingerprint(plugin.arguments) !== modelFingerprint(loadout.safetyArguments) ||
+    integrationFingerprint(loadout.integrations) !== loadout.integrationFingerprint
+  ) {
+    throw new Error(
+      'Saved Claude settings, safety plugin, or channel changed. A changed configuration requires a fresh task.',
+    );
+  }
+
+  const executable = resolveExecutable('claude');
+  if (executable !== loadout.executable) {
+    throw new Error('The saved Claude executable is no longer the one on PATH.');
+  }
+  const executableVersion = await claudeVersion(executable);
+  if (executableVersion !== loadout.executableVersion) {
+    throw new Error('Claude Code was updated after this task was saved; start a fresh task.');
+  }
+
+  await probeSafetyIntegration(loadout);
+
+  return loadout;
+};
+
 export const resolveLoadout = async (
   input: { profile: string; cwd?: string; model?: string; harness?: string; permissions: string },
   context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'isProjectTrusted'>,
@@ -251,8 +475,9 @@ export const resolveLoadout = async (
   signal: AbortSignal = AbortSignal.timeout(10_000),
 ): Promise<Loadout> => {
   signal.throwIfAborted();
-  if (!['pi', undefined].includes(input.harness)) {
-    throw new Error('Only Pi workers are supported.');
+
+  if (!['pi', 'claude', undefined].includes(input.harness)) {
+    throw new Error('Only Pi and Claude Code workers are supported.');
   }
   if (input.permissions !== 'trusted-full-tools') {
     throw new Error('Workers require explicit trusted-full-tools permission.');
@@ -266,14 +491,21 @@ export const resolveLoadout = async (
   if (cwd !== realpathSync(context.cwd)) {
     throw new Error('Launch from the target cwd after trusting that project.');
   }
+
   const agentDirectory = realpathSync(getAgentDir());
   const profile = resolveProfile(cwd, agentDirectory, true, input.profile);
   if (!profile) {
     throw new Error(`Worker profile not found: ${input.profile}`);
   }
+  if ((input.harness ?? profile.harness) === 'claude') {
+    return resolveClaudeLoadout(input, context, signal);
+  }
+  if (profile.harnessSpecified && profile.harness !== 'pi') {
+    throw new Error(`Profile ${profile.name} is a ${profile.harness} profile, not a Pi one.`);
+  }
+
   const model = resolveModel(input.model, profile.model, context.modelRegistry);
   const separator = model.indexOf('/');
-
   const selection = parentExtensionPaths(pi);
   const { loaded, registry, safety } = await reconstructIntegrations(
     cwd,
@@ -350,7 +582,7 @@ const validateSavedLoadoutShape = (
   }
   if (
     realpathSync(context.cwd) !== loadout.cwd ||
-    realpathSync(getAgentDir()) !== loadout.agentDirectory
+    (!isClaudeLoadout(loadout) && realpathSync(getAgentDir()) !== loadout.agentDirectory)
   ) {
     throw new Error('Worker cwd or configuration directory changed.');
   }
@@ -372,6 +604,9 @@ export const validateSavedLoadout = async (
 ): Promise<Loadout> => {
   signal.throwIfAborted();
   const loadout = validateSavedLoadoutShape(value, context);
+  if (isClaudeLoadout(loadout)) {
+    return validateSavedClaudeLoadout(loadout, context);
+  }
 
   const { loaded, registry, safety } = await reconstructIntegrations(
     loadout.cwd,
@@ -478,7 +713,7 @@ const checkLiveProviderConfiguration = async (
 };
 
 export const checkWorkerRuntime = async (
-  loadout: Loadout,
+  loadout: PiLoadout,
   pi: Pick<ExtensionAPI, 'getThinkingLevel' | 'getCommands' | 'getAllTools' | 'setActiveTools'>,
   context: Pick<ExtensionContext, 'model' | 'cwd' | 'modelRegistry' | 'isProjectTrusted'>,
   signal: AbortSignal = AbortSignal.timeout(10_000),
@@ -527,31 +762,16 @@ export const checkWorkerRuntime = async (
   pi.setActiveTools(loadout.tools);
 };
 
-export const resolveInheritedLoadout = async (
-  parent: Task,
-  input: { profile: string; cwd?: string; model?: string; harness?: string; permissions: string },
-  context: ExtensionContext,
-  pi: ExtensionAPI,
-  signal: AbortSignal,
-): Promise<Loadout> => {
-  if (
-    input.permissions !== parent.loadout.permissions ||
-    (input.harness !== undefined && input.harness !== 'pi') ||
-    (input.model !== undefined && input.model !== parent.loadout.model) ||
-    realpathSync(resolve(context.cwd, input.cwd ?? '.')) !== parent.loadout.cwd
-  ) {
-    throw new Error(
-      'Nested workers require the exact inherited model, permissions, harness, and cwd.',
-    );
-  }
+const inheritedProfile = (parent: Task, input: { profile: string }, trusted: boolean) => {
   const profile = resolveProfile(
     parent.loadout.cwd,
-    parent.loadout.agentDirectory,
-    context.isProjectTrusted(),
+    isClaudeLoadout(parent.loadout) ? realpathSync(getAgentDir()) : parent.loadout.agentDirectory,
+    trusted,
     input.profile,
   );
   if (
     !profile ||
+    (profile.harnessSpecified && profile.harness !== harnessOf(parent.loadout)) ||
     (profile.model !== undefined && profile.model !== parent.loadout.model) ||
     (profile.thinkingSpecified && profile.thinking !== parent.loadout.thinking)
   ) {
@@ -563,10 +783,59 @@ export const resolveInheritedLoadout = async (
       `Inherited instructions and parent-assigned scope reached ${instructions.length} characters, over the ${textLimit} limit. Delegate a shorter task or choose a shorter profile.`,
     );
   }
-  await checkWorkerRuntime(parent.loadout, pi, context, signal);
+
+  return { profile, instructions };
+};
+
+export const resolveInheritedClaudeLoadout = async (
+  parent: Task,
+  inherited: ClaudeLoadout,
+  input: { profile: string; cwd?: string; model?: string; harness?: string; permissions: string },
+  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>,
+): Promise<ClaudeLoadout> => {
+  if (
+    input.permissions !== inherited.permissions ||
+    (input.harness !== undefined && input.harness !== 'claude') ||
+    (input.model !== undefined && input.model !== inherited.model) ||
+    realpathSync(resolve(context.cwd, input.cwd ?? '.')) !== inherited.cwd
+  ) {
+    throw new Error(
+      'Nested workers require the exact inherited model, permissions, harness, and cwd.',
+    );
+  }
+
+  const { profile, instructions } = inheritedProfile(parent, input, context.isProjectTrusted());
+  await validateSavedClaudeLoadout(inherited, context);
+
+  return { ...inherited, profile: profile.name, role: profile.role, instructions };
+};
+
+export const resolveInheritedLoadout = async (
+  parent: Task,
+  input: { profile: string; cwd?: string; model?: string; harness?: string; permissions: string },
+  context: ExtensionContext,
+  pi: ExtensionAPI,
+  signal: AbortSignal,
+): Promise<Loadout> => {
+  const inherited = parent.loadout;
+  if (isClaudeLoadout(inherited)) {
+    return resolveInheritedClaudeLoadout(parent, inherited, input, context);
+  }
+  if (
+    input.permissions !== inherited.permissions ||
+    (input.harness !== undefined && input.harness !== 'pi') ||
+    (input.model !== undefined && input.model !== inherited.model) ||
+    realpathSync(resolve(context.cwd, input.cwd ?? '.')) !== inherited.cwd
+  ) {
+    throw new Error(
+      'Nested workers require the exact inherited model, permissions, harness, and cwd.',
+    );
+  }
+  const { profile, instructions } = inheritedProfile(parent, input, context.isProjectTrusted());
+  await checkWorkerRuntime(inherited, pi, context, signal);
 
   return {
-    ...parent.loadout,
+    ...inherited,
     profile: profile.name,
     role: profile.role,
     instructions,

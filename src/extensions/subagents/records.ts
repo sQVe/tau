@@ -15,6 +15,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { Value } from 'typebox/value';
 
+import { claudeRequiredTools } from './claude.js';
 import {
   acknowledgementSchema,
   eventSchema,
@@ -24,6 +25,7 @@ import {
   reportSchema,
   taskSchema,
   successorSchema,
+  isClaudeLoadout,
 } from './types.js';
 import type {
   Acknowledgement,
@@ -133,11 +135,11 @@ export const validateTask = (value: unknown): Task => {
   ) {
     throw new Error('Invalid worker identity or missing safety integration.');
   }
-  if (
-    !['read', 'bash', 'edit', 'write', 'subagent_report'].every((tool) =>
-      value.loadout.tools.includes(tool),
-    )
-  ) {
+
+  const required = isClaudeLoadout(value.loadout)
+    ? claudeRequiredTools
+    : ['read', 'bash', 'edit', 'write', 'subagent_report'];
+  if (!required.every((tool) => value.loadout.tools.includes(tool))) {
     throw new Error('A trusted worker requires the coding and report tools.');
   }
 

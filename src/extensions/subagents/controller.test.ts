@@ -17,7 +17,7 @@ import { inheritedInstructions } from './admission.js';
 import * as cancellationModule from './cancellation.js';
 import { WorkerController, taskStatus, workerArguments } from './controller.js';
 import type { HerdrClient } from './controller.js';
-import { fixtureLoadout } from './fixtures/loadout.js';
+import { asPiLoadout, fixtureLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import * as identity from './identity.js';
 import * as loadoutModule from './loadout.js';
@@ -1402,7 +1402,7 @@ it('recovers version 1 reports and native references without extension discovery
   const { controller, input, directory } = setup(onTestFinished);
   const launched = await controller.launch(input);
   const task = readTask(launched.directory);
-  const { noExtensions: _metadata, ...legacyLoadout } = task.loadout;
+  const { noExtensions: _metadata, ...legacyLoadout } = asPiLoadout(task.loadout);
   writeFileSync(
     join(launched.directory, 'task.json'),
     JSON.stringify({ ...task, loadout: legacyLoadout }),

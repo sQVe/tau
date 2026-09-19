@@ -5,7 +5,7 @@ import { SessionManager, truncateLine } from '@earendil-works/pi-coding-agent';
 import type { SessionInfo } from '@earendil-works/pi-coding-agent';
 
 import { continuationOrigins } from './continuations.js';
-import { readNative } from './native.js';
+import { nativeHeader } from './native.js';
 import { readReport, readSuccessor, readTasks } from './records.js';
 import type { Report, Task } from './types.js';
 
@@ -32,7 +32,7 @@ const readNode = (file: string, tasks: Map<string, Task>) => {
   let header;
   let unavailable = false;
   try {
-    header = readNative(file).header;
+    header = nativeHeader(file, task);
   } catch (error) {
     if (!missing(error) || !task) {
       throw new Error(`Session ancestry is unavailable: ${String(error)}`, { cause: error });

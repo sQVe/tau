@@ -14,29 +14,51 @@ export const thinkingSchema = StringEnum([
   'xhigh',
   'max',
 ] as const);
-export const loadoutSchema = Type.Object(
+const sharedLoadout = {
+  profile: text,
+  role: Type.Union([Type.Literal('investigation'), Type.Literal('editing')]),
+  thinking: thinkingSchema,
+  cwd: text,
+  agentDirectory: text,
+  permissions: Type.Literal('trusted-full-tools'),
+  tools: strings,
+  integrations: strings,
+  integrationFingerprint: Type.String({ minLength: 64, maxLength: 64 }),
+  safetyExtension: text,
+  instructions: text,
+};
+export const piLoadoutSchema = Type.Object(
   {
-    profile: text,
-    role: Type.Union([Type.Literal('investigation'), Type.Literal('editing')]),
+    ...sharedLoadout,
+    // Records saved before Claude support carry no harness and remain Pi tasks.
+    harness: Type.Optional(Type.Literal('pi')),
     model: Type.String({ pattern: '^[^/\\s]+/[^\\s]+$' }),
     modelFingerprint: Type.String({ minLength: 64, maxLength: 64 }),
     providerFingerprint: Type.String({ minLength: 64, maxLength: 64 }),
     // Missing versions retain the original credential-sensitive fingerprint semantics.
     providerFingerprintVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2)])),
-    thinking: thinkingSchema,
-    cwd: text,
-    agentDirectory: text,
-    permissions: Type.Literal('trusted-full-tools'),
-    tools: strings,
     // Older version 1 tasks lack this audit field; startup still replays the saved integrations.
     noExtensions: Type.Optional(Type.Boolean()),
-    integrations: strings,
-    integrationFingerprint: Type.String({ minLength: 64, maxLength: 64 }),
-    safetyExtension: text,
-    instructions: text,
   },
   { additionalProperties: false },
 );
+export const claudeLoadoutSchema = Type.Object(
+  {
+    ...sharedLoadout,
+    harness: Type.Literal('claude'),
+    model: Type.String({ pattern: '^[^\\s]+$' }),
+    // Claude resolves its own credentials; Tau records the launched binary instead of a provider fingerprint.
+    executable: text,
+    executableVersion: text,
+    // Tau never passes a permission flag. This records the mode the worker must report at runtime.
+    permissionMode: Type.Literal('bypassPermissions'),
+    safetyArguments: Type.Array(Type.String({ minLength: 1 }), { maxItems: 20 }),
+    channelExecutable: text,
+    channelScript: text,
+  },
+  { additionalProperties: false },
+);
+export const loadoutSchema = Type.Union([piLoadoutSchema, claudeLoadoutSchema]);
 export const treeSchema = Type.Object(
   {
     rootSession: text,
@@ -137,12 +159,20 @@ export type Question = Static<typeof questionSchema>;
 export type Reply = Static<typeof replySchema>;
 export type Acknowledgement = Static<typeof acknowledgementSchema>;
 export type Loadout = Static<typeof loadoutSchema>;
+export type PiLoadout = Static<typeof piLoadoutSchema>;
+export type ClaudeLoadout = Static<typeof claudeLoadoutSchema>;
+export type Harness = 'pi' | 'claude';
+export const harnessOf = (loadout: Loadout): Harness => loadout.harness ?? 'pi';
+export const isClaudeLoadout = (loadout: Loadout): loadout is ClaudeLoadout =>
+  loadout.harness === 'claude';
 export type Task = Static<typeof taskSchema>;
 export type Report = Static<typeof reportSchema>;
 export type TaskEvent = Static<typeof eventSchema>;
 export interface Profile {
   name: string;
   role: 'investigation' | 'editing';
+  harness: Harness;
+  harnessSpecified?: boolean;
   model: string | undefined;
   thinking: Loadout['thinking'];
   thinkingSpecified?: boolean;

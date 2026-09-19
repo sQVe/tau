@@ -151,6 +151,50 @@ describe('owned worker cancellation', () => {
     expect(sent).toHaveLength(scenario === 'rewritten argv' ? 1 : 0);
   });
 
+  it.each(['foreground', 'session'] as const)(
+    'stops repeated Claude interrupts after %s identity changes',
+    async (changed) => {
+      const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+      const client = vi.fn<Client>(async (arguments_): Promise<string> => {
+        const sent = client.mock.calls.filter(([call]) => call[1] === 'send-keys').length;
+        if (arguments_[1] === 'get') {
+          return JSON.stringify({
+            result: {
+              agent: {
+                pane_id: owned.paneId,
+                agent: 'claude',
+                agent_session: {
+                  value: sent && changed === 'session' ? 'replacement' : owned.token,
+                },
+              },
+            },
+          });
+        }
+        if (arguments_[1] === 'send-keys') {
+          if (sent > 1) {
+            throw new Error('Interrupted a replacement worker.');
+          }
+
+          return '{}';
+        }
+        if (sent) {
+          clock.mockReturnValue(600);
+        }
+
+        return snapshot(sent && changed === 'foreground' ? 102 : owned.processId);
+      });
+      const result = timeout.cancelOwnedWorker(
+        { ...owned, kind: 'claude' },
+        1200,
+        withInventory(client),
+        new AbortController().signal,
+      );
+
+      await expect(result).resolves.toMatchObject({ cleanup: 'unconfirmed' });
+      expect(client.mock.calls.filter(([call]) => call[1] === 'send-keys')).toHaveLength(1);
+    },
+  );
+
   it('never counts EPERM as an absent worker', async () => {
     vi.mocked(process.kill).mockImplementation(() => {
       throw Object.assign(new Error('Permission denied'), { code: 'EPERM' });

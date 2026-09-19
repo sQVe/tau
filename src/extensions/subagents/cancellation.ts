@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { resolveTerminal, TerminalIdentityError } from './terminal.js';
 
 export interface OwnedWorker {
-  readonly kind: 'process' | 'pi';
+  readonly kind: 'process' | 'pi' | 'claude';
   readonly paneId: string;
   readonly terminalId: string;
   readonly shellPid: number;
@@ -127,7 +127,7 @@ export const workerStopped = (information: Record<string, unknown>, owned: Owned
 
 const validateWorker = (owned: OwnedWorker) => {
   if (
-    !['process', 'pi'].includes(owned.kind) ||
+    !['process', 'pi', 'claude'].includes(owned.kind) ||
     !owned.paneId ||
     !owned.terminalId ||
     !owned.token ||
@@ -140,6 +140,54 @@ const validateWorker = (owned: OwnedWorker) => {
     throw new Error(
       'Cancellation requires a known owned foreground worker and unique launch argument.',
     );
+  }
+};
+
+// Escape requests active-run abort; shutdown keys remain best-effort while tools unwind.
+// Claude reads terminal interrupts rather than agent keys, and cancels a run before it will exit.
+const shutdownKeys = (owned: OwnedWorker): string[] =>
+  owned.kind === 'pi'
+    ? ['agent', 'send-keys', owned.paneId, 'escape', 'ctrl+c', 'ctrl+d']
+    : ['pane', 'send-keys', owned.paneId, 'ctrl+c'];
+
+const waitForStop = async (
+  owned: OwnedWorker,
+  call: (arguments_: string[]) => Promise<string>,
+  signal: AbortSignal,
+  interrupt: () => Promise<CleanupResult | undefined>,
+): Promise<CleanupResult> => {
+  const worker = { ...owned };
+  let pressedAt = performance.now();
+
+  for (;;) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Follow the same terminal if it moves while shutdown is pending.
+    const location = await resolveTerminal(worker.terminalId, call);
+    worker.paneId = location.paneId;
+
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Confirm the foreground job ended within the same cancellation budget.
+    const after = processInfo(await call(['pane', 'process-info', '--pane', worker.paneId]));
+    if (workerStopped(after, worker)) {
+      return {
+        cleanup: 'confirmed',
+        detail:
+          'The owned process is absent and its shell is foreground; detached or background descendants are not covered.',
+      };
+    }
+
+    if (worker.kind === 'claude' && performance.now() - pressedAt >= 500) {
+      pressedAt = performance.now();
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Each interrupt repeats ownership checks within the original budget.
+      const refused = await interrupt();
+      if (refused) {
+        return {
+          cleanup: 'unconfirmed',
+          detail: `Further interrupt refused after an earlier attempt. ${refused.detail}`,
+        };
+      }
+    }
+
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Polling is bounded by the shared cancellation signal.
+    await delay(25, undefined, { signal });
   }
 };
 
@@ -170,23 +218,25 @@ export const cancelOwnedWorker = async (
   const manual = `Check terminal ${owned.terminalId} (last pane ${owned.paneId}) and worker ${owned.processId} (${owned.token}) for manual cleanup.`;
   const refresh = async () => {
     const location = await resolveTerminal(owned.terminalId, call);
+
     owned.paneId = location.paneId;
   };
-  let inputAttempted = false;
+  const shutdown = { inputAttempted: false };
 
-  try {
+  const interrupt = async (): Promise<CleanupResult | undefined> => {
     await refresh();
-    if (owned.kind === 'pi') {
+
+    if (owned.kind !== 'process') {
       const response: unknown = JSON.parse(await call(['agent', 'get', owned.paneId]));
       const agent = object(object(object(response).result).agent);
       if (
         agent.pane_id !== owned.paneId ||
-        agent.agent !== 'pi' ||
+        agent.agent !== owned.kind ||
         object(agent.agent_session).value !== owned.token
       ) {
         return {
           cleanup: 'refused',
-          detail: `Pi session identity did not match; no input sent. ${manual}`,
+          detail: `${owned.kind} session identity did not match; no input sent. ${manual}`,
         };
       }
     }
@@ -222,34 +272,25 @@ export const cancelOwnedWorker = async (
       throw new TerminalIdentityError('Worker moved during identity checks; no input sent.');
     }
 
-    // Escape requests active-run abort; shutdown keys remain best-effort while tools unwind.
-    const keys =
-      owned.kind === 'pi'
-        ? ['agent', 'send-keys', owned.paneId, 'escape', 'ctrl+c', 'ctrl+d']
-        : ['pane', 'send-keys', owned.paneId, 'ctrl+c'];
-    inputAttempted = true;
-    await call(keys);
+    shutdown.inputAttempted = true;
+    await call(shutdownKeys(owned));
 
-    for (;;) {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Follow the same terminal if it moves while shutdown is pending.
-      await refresh();
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Confirm the foreground job ended within the same cancellation budget.
-      const after = processInfo(await call(['pane', 'process-info', '--pane', owned.paneId]));
-      if (workerStopped(after, owned)) {
-        return {
-          cleanup: 'confirmed',
-          detail:
-            'The owned process is absent and its shell is foreground; detached or background descendants are not covered.',
-        };
-      }
+    return undefined;
+  };
 
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Polling is bounded by the shared cancellation signal.
-      await delay(25, undefined, { signal });
+  try {
+    const refused = await interrupt();
+    if (refused) {
+      return refused;
     }
+
+    return await waitForStop(owned, call, signal, interrupt);
   } catch (error) {
     return {
       cleanup:
-        !inputAttempted && error instanceof TerminalIdentityError ? 'refused' : 'unconfirmed',
+        !shutdown.inputAttempted && error instanceof TerminalIdentityError
+          ? 'refused'
+          : 'unconfirmed',
       detail: `${String(error)} ${manual}`,
     };
   } finally {

@@ -55,6 +55,25 @@ const refuseWorkerProcessAsRoot = (
   }
 };
 
+// The caller must bind this task to its parent-owned channel before checking delegation authority.
+export const channelAuthority = (
+  root: string,
+  task: Task,
+  delegationTool: string,
+): { tree: NonNullable<Task['tree']>; parent: Task } => {
+  if (
+    !task.tree ||
+    !task.loadout.tools.includes(delegationTool) ||
+    monotonicNow() >= task.tree.monotonicDeadline - task.cancellationBudget
+  ) {
+    throw new Error('Nested parent authority or the original deadline is invalid.');
+  }
+
+  requireActiveAncestry(root, task);
+
+  return { tree: { ...task.tree, parentTaskId: task.taskId }, parent: task };
+};
+
 // Pi supplies session and process evidence. Tool arguments and environment identity strings cannot replace it.
 export const authenticateParent = (
   root: string,
