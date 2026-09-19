@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { accessSync, constants, existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import { clampThinkingLevel } from '@earendil-works/pi-ai';
 import {
@@ -456,9 +457,9 @@ export const validateSavedClaudeLoadout = async (
   const plugin = resolveClaudeSafetyPlugin(loadout.agentDirectory, settings.plugins);
   const integrations = claudeIntegrations(sources, plugin, loadout.channelScript);
   if (
-    modelFingerprint(integrations) !== modelFingerprint(loadout.integrations) ||
+    !isDeepStrictEqual(integrations, loadout.integrations) ||
     plugin.entry !== loadout.safetyExtension ||
-    modelFingerprint(plugin.arguments) !== modelFingerprint(loadout.safetyArguments) ||
+    !isDeepStrictEqual(plugin.arguments, loadout.safetyArguments) ||
     claudeIntegrationFingerprint(loadout.integrations) !== loadout.integrationFingerprint
   ) {
     throw new Error(
