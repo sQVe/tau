@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
+import * as cancellation from './cancellation.js';
 import { claudeChannelSocket, claudeToolName } from './claude.js';
 import { WorkerController } from './controller.js';
 import type { HerdrClient } from './controller.js';
@@ -20,6 +21,7 @@ const setup = (options: { ready?: boolean } = {}) => {
   afterTest(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+    vi.useRealTimers();
     rmSync(directory, { recursive: true, force: true });
   });
   // The fake worker uses this test process; the parent must have a distinct identity.
@@ -175,14 +177,18 @@ it('starts a Claude worker with the canonical command and dispatches its task', 
 
 it('never dispatches work to a Claude worker that does not reach readiness', async () => {
   const fixture = setup({ ready: false });
+  vi.useFakeTimers();
+  vi.spyOn(cancellation, 'runClient').mockResolvedValue('fixture process start');
 
-  const launched = await fixture.controller.launch(fixture.input);
+  const launching = fixture.controller.launch(fixture.input);
+  await vi.advanceTimersByTimeAsync(fixture.input.timeout);
+  const launched = await launching;
 
   expect(launched.ready).toBe(false);
   expect(launched.outcome).toBe('timeout');
   expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
   expect(readEvent(launched.directory, launched.taskId, 'accepted')).toBeUndefined();
-}, 20_000);
+});
 
 it('interrupts a Claude worker through its terminal when cancelled', async () => {
   const fixture = setup();
