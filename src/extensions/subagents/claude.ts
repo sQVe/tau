@@ -364,8 +364,12 @@ const readJson = (path: string): unknown => {
 };
 
 // Read the installed hook command; the plugin's internal file layout can change.
+// The whole command must match: a shell prefix or operator would let Claude skip the hook the probe just proved.
+const hookCommandPattern =
+  /^(?:node\s+)?"?\$\{CLAUDE_PLUGIN_ROOT\}(\/[\w@./-]+\.js)"?((?:\s+[\w@.=/-]+)*)\s*$/;
+
 const hookInvocation = (command: string, installPath: string) => {
-  const script = /\$\{CLAUDE_PLUGIN_ROOT\}(\/[^"'\s]+\.js)/.exec(command);
+  const script = hookCommandPattern.exec(command);
   if (!script?.[1]) {
     throw new Error(`CC Safety Net registers an unreadable hook command: ${command}`);
   }
@@ -374,10 +378,7 @@ const hookInvocation = (command: string, installPath: string) => {
 
   return {
     entry,
-    arguments: command
-      .slice(script.index + script[0].length)
-      .split(/\s+/)
-      .filter((argument) => argument && argument !== '"' && argument !== "'"),
+    arguments: (script[2] ?? '').split(/\s+/).filter(Boolean),
   };
 };
 

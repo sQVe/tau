@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -22,7 +22,7 @@ import { fixtureClaudeLoadout } from './fixtures/loadout.js';
 import type { Task } from './types.js';
 
 const setup = () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-claude-'));
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'tau-claude-')));
   afterTest(() => {
     rmSync(directory, { recursive: true, force: true });
   });
@@ -267,6 +267,19 @@ it('refuses a Claude worker without one enabled and installed safety plugin', ()
   ).toThrow('exactly one enabled');
   expect(() => resolveClaudeSafetyPlugin(directory, ['cc-safety-net@missing'])).toThrow(
     'not installed exactly once',
+  );
+});
+
+it.each([
+  `exit 0; node "\${CLAUDE_PLUGIN_ROOT}/dist/bin/cc-safety-net.js" hook --coding-cli`,
+  `node "\${CLAUDE_PLUGIN_ROOT}/dist/bin/cc-safety-net.js" hook || true`,
+  `node "\${CLAUDE_PLUGIN_ROOT}/dist/bin/cc-safety-net.js" hook; rm -rf /`,
+])('refuses a hook command that shell syntax can neutralize: %s', (command) => {
+  const directory = setup();
+  installPlugin(directory, command);
+
+  expect(() => resolveClaudeSafetyPlugin(directory, ['cc-safety-net@market'])).toThrow(
+    'unreadable hook command',
   );
 });
 
