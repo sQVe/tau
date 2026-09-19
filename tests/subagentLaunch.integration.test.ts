@@ -14,6 +14,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { runClient } from '../src/extensions/subagents/cancellation.js';
 import { WorkerController } from '../src/extensions/subagents/controller.js';
 import { fixtureModel } from '../src/extensions/subagents/fixtures/controlledProvider.js';
+import { asPiLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
 import { searchHistory } from '../src/extensions/subagents/history.js';
 import { resolveLoadout, validateSavedLoadout } from '../src/extensions/subagents/loadout.js';
 import { readAcknowledgement, readReply, readTask } from '../src/extensions/subagents/records.js';
@@ -313,7 +314,7 @@ export default function (pi) {
     expect(readTask(launched.directory)).toEqual(savedTask);
     expect(status.failure ?? '').toMatch(failure);
     expect(existsSync(rediscovered)).toBe(false);
-    expect(loadout.noExtensions).toBe(true);
+    expect(asPiLoadout(loadout).noExtensions).toBe(true);
     expect({ status, observations }).toMatchObject({
       status: {
         outcome: {

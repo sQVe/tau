@@ -22,18 +22,18 @@ type TreeIdentity = Pick<NonNullable<Task['tree']>, 'rootSession' | 'rootSession
 
 export const monotonicNow = (): number => Number(process.hrtime.bigint()) / 1_000_000;
 
+export const endedKinds = [
+  'cleanup',
+  'cancelled',
+  'timeout',
+  'startupFailure',
+  'parentClosed',
+  'settled',
+  'stopping',
+] as const;
+
 export const taskEnded = (directory: string, task: Task): boolean =>
-  (
-    [
-      'cleanup',
-      'cancelled',
-      'timeout',
-      'startupFailure',
-      'parentClosed',
-      'settled',
-      'stopping',
-    ] as const
-  ).some((kind) => readEvent(directory, task.taskId, kind)) ||
+  endedKinds.some((kind) => readEvent(directory, task.taskId, kind)) ||
   Boolean(readReport(directory, task.taskId));
 
 export const inheritedInstructions = (parent: Task): string =>

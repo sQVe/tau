@@ -50,3 +50,4 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0029: Version worker provider fingerprints](./0029-version-worker-provider-fingerprints.md)
 - [0030: Claim native follow-ups before opening](./0030-claim-native-follow-ups-before-opening.md)
 - [0031: Reserve worker capacity under one tree lock](./0031-reserve-worker-capacity-under-one-tree-lock.md)
+- [0032: Run Claude workers through a parent-owned channel](./0032-run-claude-workers-through-a-parent-owned-channel.md)

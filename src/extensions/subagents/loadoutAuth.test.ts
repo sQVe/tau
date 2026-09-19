@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { asPiLoadout } from './fixtures/loadout.js';
 import {
   checkWorkerRuntime,
   providerFingerprint,
@@ -95,7 +96,7 @@ it.each(['fresh launch', 'saved replay', 'worker runtime'] as const)(
     const setup = fixture();
     setup.configure('literal-A');
     const original = await setup.createContext();
-    const saved = await resolveLoadout(setup.request, original, setup.parent);
+    const saved = asPiLoadout(await resolveLoadout(setup.request, original, setup.parent));
     setup.configure('literal-B');
     const stale = await setup.createContext();
     expect(await stale.modelRegistry.getApiKeyAndHeaders(stale.model)).toMatchObject({
@@ -132,7 +133,7 @@ it('allows Pi credential rotation between saved resolution and startup with unch
     ok: true,
     apiKey: 'credential-A',
   });
-  const saved = await resolveLoadout(setup.request, original, setup.parent);
+  const saved = asPiLoadout(await resolveLoadout(setup.request, original, setup.parent));
   const { providerFingerprintVersion: _version, ...legacy } = saved;
   legacy.providerFingerprint = await providerFingerprint(original.modelRegistry, original.model);
   writeFileSync(authPath, JSON.stringify({ openai: { type: 'api_key', key: 'credential-B' } }));

@@ -21,7 +21,7 @@ import {
   recordEvent,
   validateQuestion,
 } from './records.js';
-import { textLimit } from './types.js';
+import { isClaudeLoadout, textLimit } from './types.js';
 import type { Question, Task } from './types.js';
 
 const parentRunning = (processId: number): boolean => {
@@ -260,6 +260,10 @@ export default function workerExtension(pi: ExtensionAPI): void {
         context.shutdown();
         return;
       }
+      if (isClaudeLoadout(task.loadout)) {
+        throw new Error('This worker record belongs to a Claude task, not a Pi worker.');
+      }
+
       // Only the parent enforces the task deadline; wall-clock records are for display and recovery.
       await checkWorkerRuntime(task.loadout, pi, context);
       recordEvent(

@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 import { Value } from 'typebox/value';
 
-import { thinkingSchema } from './types.js';
+import { claudeToolName, claudeTranscriptPath } from './claude.js';
+import { isClaudeLoadout, thinkingSchema } from './types.js';
 import type { Profile, Task } from './types.js';
 
 const matchField = (line: string) => line.match(/^([a-z-]+):\s*(.+)$/);
@@ -67,8 +68,9 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
   if (role !== 'investigation' && role !== 'editing') {
     throw new Error('Profile requires an investigation or editing role.');
   }
-  if ((fields.get('cli') ?? 'pi') !== 'pi') {
-    throw new Error('Only Pi workers are supported.');
+  const harness = fields.get('cli') ?? 'pi';
+  if (harness !== 'pi' && harness !== 'claude') {
+    throw new Error('Only Pi and Claude Code workers are supported.');
   }
   if ((fields.get('session-mode') ?? 'lineage-only') !== 'lineage-only') {
     throw new Error('Workers require fresh lineage-only sessions.');
@@ -85,6 +87,8 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
   return {
     name: fields.get('name') ?? fallbackName,
     role,
+    harness,
+    harnessSpecified: fields.has('cli'),
     model: fields.get('model'),
     thinking,
     thinkingSpecified: fields.has('thinking'),
@@ -135,6 +139,15 @@ export const resolveProfile = (
   return winner ? parseProfile(winner.content, winner.fallbackName, winner.source) : undefined;
 };
 
+export const claudeNativeIdentity = (agentDirectory: string, cwd: string) => {
+  const nativeSessionId = randomUUID();
+
+  return {
+    nativeSessionId,
+    nativeSessionFile: claudeTranscriptPath(agentDirectory, cwd, nativeSessionId),
+  };
+};
+
 export const seedSession = (task: Task): void => {
   const header = {
     type: 'session',
@@ -155,5 +168,9 @@ export const nativeIdentity = (directory: string) => {
 };
 
 export const workerPrompt = (task: Task): string => {
+  if (isClaudeLoadout(task.loadout)) {
+    return `${task.loadout.instructions}\n\nTask ${task.taskId} (${task.loadout.role}):\n${task.task}\n\nDeadline: ${new Date(task.deadline).toISOString()}. Work only within this task. Full tools and CC Safety Net are not a sandbox. Do not commit, merge, reset, or run extra model trials. Delegation through ${claudeToolName('subagent')} stays within this assigned scope and inherits exact settings. Capacity refusal is final for that request: do the work yourself or report the limit; never wait in a retry loop. End your turn to wait for child results; the parent sends them to you. Finish or cancel active children before reporting. Preserve unrelated edits. Do not resume arbitrary conversations. Ask the parent for clarification with ${claudeToolName('subagent_question')}, then end your turn; the Agent and AskUserQuestion tools are unavailable. Waiting does not extend the original deadline or authorize increased scope. Finish by calling ${claudeToolName('subagent_report')} once with outcome, summary, and evidence. Missing or uncertain handover is not success; do not retry it automatically.`;
+  }
+
   return `${task.loadout.instructions}\n\nTask ${task.taskId} (${task.loadout.role}):\n${task.task}\n\nDeadline: ${new Date(task.deadline).toISOString()}. Work only within this task. Full tools and CC Safety Net are not a sandbox. Do not commit, merge, reset, or run extra model trials. Delegation through subagent stays within this assigned scope and inherits exact settings. Capacity refusal is final for that request: do the work yourself or report the limit; never wait in a retry loop. End your turn to wait for child results; the controller wakes you. Finish or cancel active children before reporting. Preserve unrelated edits. Do not resume arbitrary conversations. Use subagent_follow_up only for an assigned follow-up within this scope. Ask the parent for clarification with subagent_question, never ask_user_question. Waiting does not extend the original deadline or authorize increased scope. Finish by calling subagent_report once with outcome, summary, and evidence. Missing or uncertain handover is not success; do not retry it automatically.`;
 };

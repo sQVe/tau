@@ -51,9 +51,9 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
 
   pi.registerTool({
     name: 'subagent',
-    label: 'Launch Pi worker',
+    label: 'Launch worker',
     description:
-      'Launch a trusted full-tool Pi investigator or editing worker in herdr. Requires user authorization and CC Safety Net. Fresh context, fixed parent-owned timeout, no automatic retry. Built-in profiles: investigator and worker. Set model explicitly or TAU_SUBAGENT_MODEL. Other harnesses refuse. Nested workers inherit exact model/settings and share one root cap (TAU_SUBAGENT_CAP, default 4, saved at first admission). Waiting workers consume slots. Full or busy admission refuses promptly without a queue.',
+      'Launch a trusted full-tool Pi or Claude Code investigator or editing worker in herdr. Requires user authorization and CC Safety Net. Fresh context, fixed parent-owned timeout, no automatic retry. Built-in profiles: investigator and worker. Set harness to pi (default) or claude; a profile may pin its own. Set model explicitly or TAU_SUBAGENT_MODEL for Pi; Claude needs an exact model and saved bypassPermissions settings. Other harnesses refuse. Nested workers inherit exact model/settings and share one root cap (TAU_SUBAGENT_CAP, default 4, saved at first admission). Waiting workers consume slots. Full or busy admission refuses promptly without a queue.',
     parameters: Type.Object({
       task: Type.String({ minLength: 1, maxLength: 32_000 }),
       profile: Type.String({ minLength: 1 }),
@@ -79,6 +79,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
         throw new Error('Worker launch requires a saved parent Pi session inside local herdr.');
       }
       const active = getController();
+      active.project = { cwd: context.cwd, isProjectTrusted: () => context.isProjectTrusted() };
       const authority = await active.parentAuthority(
         parentSession,
         context.sessionManager.getSessionId(),
@@ -127,6 +128,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
         throw new Error('Follow-up requires a saved parent session inside local herdr.');
       }
       const active = getController();
+      active.project = { cwd: context.cwd, isProjectTrusted: () => context.isProjectTrusted() };
       const authority = await active.parentAuthority(
         parentSession,
         context.sessionManager.getSessionId(),
@@ -183,7 +185,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     name: 'subagent_status',
     label: 'Worker status',
     description:
-      'Recover validated task results, pending questions and native references by task ID. Supply questionId to inspect its accepted reply and separate worker acknowledgement. Reconnect never resubmits work or resets deadlines. Recovery after parent exit is evidence only, not continuing enforcement. Same-task restart is refused; completed-task follow-up uses subagent_follow_up.',
+      'Recover validated task results, pending questions, native references, and available native usage by task ID. Supply questionId to inspect its accepted reply and separate worker acknowledgement. Reconnect never resubmits work or resets deadlines. Recovery after parent exit is evidence only, not continuing enforcement. Same-task restart is refused; completed-task follow-up uses subagent_follow_up.',
     parameters: Type.Object({ taskId: Type.String(), questionId: Type.Optional(Type.String()) }),
     execute(_id, parameters, _signal, _update, context) {
       const parentSessionId = context.sessionManager.getSessionId();
