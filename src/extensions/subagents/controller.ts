@@ -777,13 +777,6 @@ export class WorkerController {
 
   private delegationTools(handle: Handle): ChannelTool[] {
     const owner = () => handle.task.nativeSessionId;
-    const authorize = () => {
-      if (!this.project) {
-        throw new Error('Nested delegation needs an active parent project context.');
-      }
-
-      return channelAuthority(this.root, readTask(handle.directory), claudeToolName('subagent'));
-    };
 
     return [
       {
@@ -797,12 +790,16 @@ export class WorkerController {
           }
 
           const project = this.project;
-          const authority = authorize();
           const inherited = handle.task.loadout;
           if (!isClaudeLoadout(inherited) || !project) {
             throw new Error('Nested delegation needs an active Claude parent task.');
           }
 
+          const authority = channelAuthority(
+            this.root,
+            readTask(handle.directory),
+            claudeToolName('subagent'),
+          );
           const loadout = await resolveInheritedClaudeLoadout(
             handle.task,
             inherited,
