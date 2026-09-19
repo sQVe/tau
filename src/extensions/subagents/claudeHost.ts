@@ -10,7 +10,7 @@ import { Value } from 'typebox/value';
 import { endedKinds } from './admission.js';
 import { processExists } from './cancellation.js';
 import { claudeToolName, claudeDeniedTools, probeSafetyIntegration } from './claude.js';
-import { integrationFingerprint } from './loadout.js';
+import { claudeIntegrationFingerprint } from './loadout.js';
 import {
   acceptAcknowledgement,
   acceptQuestion,
@@ -132,7 +132,7 @@ const startupMismatch = (
   if (!claudePid || !Number.isSafeInteger(claudePid) || !processRunning(claudePid)) {
     return 'Claude did not report a running process identity.';
   }
-  if (integrationFingerprint(loadout.integrations) !== loadout.integrationFingerprint) {
+  if (claudeIntegrationFingerprint(loadout.integrations) !== loadout.integrationFingerprint) {
     return 'Claude worker integration source changed after resolution.';
   }
 
@@ -252,7 +252,8 @@ export class ClaudeChannel {
 
         if (message.kind === 'mcp') {
           // Claude connects its channel before the session start hook records readiness, so the
-          // identity this connection claims is checked again when it asks to run a tool.
+          // identity this connection claims is matched against that record before it runs a tool.
+          // A self-reported identity is evidence a local caller must fake, not proof of ownership.
           const claude = message.claude;
           relay = (frame) => {
             void this.handleRpc(frame, socket, claude);
@@ -295,6 +296,16 @@ export class ClaudeChannel {
     if (message.event === 'SessionStart') {
       return this.sessionStart(payload, message.claudePid ?? undefined);
     }
+
+    // These events settle turns and end tasks, so once readiness names a worker process they need
+    // the same identity evidence a tool call needs. Any local process can reach this socket.
+    const { directory, task } = this.options;
+    if (readEvent(directory, task.taskId, 'ready') && !this.ownsConnection(message.claudePid)) {
+      const refusal = 'This channel belongs to another worker process.';
+
+      return Promise.resolve(message.event === 'PreToolUse' ? deny(refusal) : block(refusal));
+    }
+
     if (message.event === 'UserPromptSubmit') {
       return Promise.resolve(this.userPrompt(payload));
     }
@@ -492,6 +503,10 @@ export class ClaudeChannel {
       return deny(
         `${payload.tool_name} is unavailable to workers. Delegate with ${claudeToolName('subagent')} and ask the parent with ${claudeToolName('subagent_question')}.`,
       );
+    }
+    // The launch flags deny named tools; this is what makes the recorded loadout the whole list.
+    if (payload.tool_name && !task.loadout.tools.includes(payload.tool_name)) {
+      return deny(`${payload.tool_name} is not one of this worker's tools.`);
     }
     const ended = this.ended();
     if (ended) {

@@ -10,7 +10,7 @@ import { ClaudeChannel } from './claudeHost.js';
 import type { ChannelTool } from './claudeHost.js';
 import { channelCall, channelHook } from './fixtures/channelClient.js';
 import { fixtureClaudeLoadout } from './fixtures/loadout.js';
-import { integrationFingerprint } from './loadout.js';
+import { claudeIntegrationFingerprint } from './loadout.js';
 import { publish, readEvent, readPendingQuestion, readReport, validateTask } from './records.js';
 import type { Task } from './types.js';
 
@@ -20,6 +20,7 @@ const setup = async (
   options: {
     delegation?: () => ChannelTool[];
     children?: () => { active: number; uncertain: string[] };
+    integrations?: string[];
   } = {},
 ) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-channel-'));
@@ -27,12 +28,13 @@ const setup = async (
   writeFileSync(safety, denyingSafety);
   chmodSync(safety, 0o700);
   const base = fixtureClaudeLoadout(directory);
+  const integrations = [safety, ...(options.integrations ?? [])];
   const loadout = {
     ...base,
     cwd: directory,
     safetyExtension: safety,
-    integrations: [safety],
-    integrationFingerprint: integrationFingerprint([safety]),
+    integrations,
+    integrationFingerprint: claudeIntegrationFingerprint(integrations),
   };
   const task: Task = validateTask({
     version: 1,
@@ -232,6 +234,55 @@ it('denies native delegation, questionnaires, and work after a durable handover'
 
   const afterReport = await fixture.hook('PreToolUse', { tool_name: 'Edit', tool_input: {} });
   expect(afterReport.stdout).toContain('durable handover');
+});
+
+it('refuses a settings source that appears after the loadout resolved', async () => {
+  const sources = mkdtempSync(join(tmpdir(), 'tau-settings-'));
+  const local = join(sources, 'settings.local.json');
+  const fixture = await setup({ integrations: [local] });
+  afterTest(() => {
+    rmSync(sources, { recursive: true, force: true });
+  });
+
+  writeFileSync(local, JSON.stringify({ enabledPlugins: { 'cc-safety-net@fixture': false } }));
+  const started = await fixture.started();
+
+  expect(started.stderr).toContain('integration source changed');
+  expect(readEvent(fixture.directory, fixture.task.taskId, 'ready')).toBeUndefined();
+});
+
+it('refuses hook events from a process that is not the recorded worker', async () => {
+  const fixture = await setup();
+  await fixture.dispatched();
+  const impostor = process.pid + 1;
+
+  const settling = await fixture.hook('Stop', { stop_hook_active: false }, impostor);
+  expect(settling.stderr).toContain('another worker process');
+  expect(readEvent(fixture.directory, fixture.task.taskId, 'settled')).toBeUndefined();
+
+  const acting = await fixture.hook('PreToolUse', { tool_name: 'Edit', tool_input: {} }, impostor);
+  expect(acting.stdout).toContain('another worker process');
+
+  const prompting = await fixture.hook(
+    'UserPromptSubmit',
+    { prompt: 'Work on something else.', permission_mode: 'bypassPermissions' },
+    impostor,
+  );
+  expect(prompting.stderr).toContain('another worker process');
+
+  const settled = await fixture.hook('Stop', { stop_hook_active: false });
+  expect(settled.code).toBe(0);
+  expect(readEvent(fixture.directory, fixture.task.taskId, 'settled')).toBeDefined();
+});
+
+it('denies a tool the recorded loadout does not list', async () => {
+  const fixture = await setup();
+  await fixture.dispatched();
+
+  const fetching = await fixture.hook('PreToolUse', { tool_name: 'WebFetch', tool_input: {} });
+
+  expect(fetching.stdout).toContain('"permissionDecision":"deny"');
+  expect(fetching.stdout).toContain("not one of this worker's tools");
 });
 
 it('keeps a waiting worker from acting and from settling its turn', async () => {

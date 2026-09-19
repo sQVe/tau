@@ -63,12 +63,18 @@ export const modelFingerprint = (model: unknown): string => {
   return createHash('sha256').update(serialized).digest('hex');
 };
 
+const fileDigest = (path: string): string =>
+  createHash('sha256').update(readFileSync(path)).digest('hex');
+
+// A missing integration is an error worth naming, so Pi reads every recorded path.
 export const integrationFingerprint = (paths: string[]): string =>
+  modelFingerprint(paths.map((path) => ({ path, digest: fileDigest(path) })));
+
+// Claude's settings candidates are fingerprinted whether they exist or not: creating one changes
+// what the worker loads just as editing one does.
+export const claudeIntegrationFingerprint = (paths: string[]): string =>
   modelFingerprint(
-    paths.map((path) => ({
-      path,
-      digest: createHash('sha256').update(readFileSync(path)).digest('hex'),
-    })),
+    paths.map((path) => ({ path, digest: existsSync(path) ? fileDigest(path) : 'absent' })),
   );
 
 const parentExtensionPaths = (pi: Pick<ExtensionAPI, 'getAllTools' | 'getCommands'>) => {
@@ -266,13 +272,14 @@ const managedSettingsPath = (): string =>
     : '/etc/claude-code/managed-settings.json';
 
 // Claude merges user, project, and local settings, and managed settings win over all of them.
-const claudeSettingsSources = (agentDirectory: string, cwd: string): string[] =>
-  [
-    join(agentDirectory, 'settings.json'),
-    join(cwd, '.claude', 'settings.json'),
-    join(cwd, '.claude', 'settings.local.json'),
-    managedSettingsPath(),
-  ].filter((path) => existsSync(path));
+// Every candidate is recorded, present or not. Claude reads whichever exist when it starts, so a
+// file that appears after resolution must change the fingerprint rather than escape it.
+const claudeSettingsSources = (agentDirectory: string, cwd: string): string[] => [
+  join(agentDirectory, 'settings.json'),
+  join(cwd, '.claude', 'settings.json'),
+  join(cwd, '.claude', 'settings.local.json'),
+  managedSettingsPath(),
+];
 
 const claudeSettingsSchema = Type.Object({
   permissions: Type.Optional(Type.Object({ defaultMode: Type.Optional(Type.String()) })),
@@ -285,7 +292,7 @@ const claudeSettings = (sources: string[]) => {
   // A later source turns a plugin off as well as on, so track the last value rather than the union.
   const enabled = new Map<string, boolean>();
 
-  for (const path of sources) {
+  for (const path of sources.filter((candidate) => existsSync(candidate))) {
     const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
     if (!Value.Check(claudeSettingsSchema, parsed)) {
       throw new Error(`Claude settings at ${path} are unusable for a worker launch.`);
@@ -341,7 +348,9 @@ const claudeIntegrations = (
   channelScript: string,
 ): string[] => [
   ...new Set(
-    [...sources, plugin.hooksPath, plugin.entry, channelScript].map((path) => realpathSync(path)),
+    [...sources, plugin.hooksPath, plugin.entry, channelScript].map((path) =>
+      existsSync(path) ? realpathSync(path) : path,
+    ),
   ),
 ];
 
@@ -420,7 +429,10 @@ export const resolveClaudeLoadout = async (
   await probeSafetyIntegration(loadout);
   signal.throwIfAborted();
 
-  return { ...loadout, integrationFingerprint: integrationFingerprint(loadout.integrations) };
+  return {
+    ...loadout,
+    integrationFingerprint: claudeIntegrationFingerprint(loadout.integrations),
+  };
 };
 
 export const validateSavedClaudeLoadout = async (
@@ -447,7 +459,7 @@ export const validateSavedClaudeLoadout = async (
     modelFingerprint(integrations) !== modelFingerprint(loadout.integrations) ||
     plugin.entry !== loadout.safetyExtension ||
     modelFingerprint(plugin.arguments) !== modelFingerprint(loadout.safetyArguments) ||
-    integrationFingerprint(loadout.integrations) !== loadout.integrationFingerprint
+    claudeIntegrationFingerprint(loadout.integrations) !== loadout.integrationFingerprint
   ) {
     throw new Error(
       'Saved Claude settings, safety plugin, or channel changed. A changed configuration requires a fresh task.',
@@ -586,10 +598,13 @@ const validateSavedLoadoutShape = (
   ) {
     throw new Error('Worker cwd or configuration directory changed.');
   }
+  const fingerprint = isClaudeLoadout(loadout)
+    ? claudeIntegrationFingerprint
+    : integrationFingerprint;
   if (
     !loadout.integrations.every(isAbsolute) ||
     !loadout.integrations.includes(loadout.safetyExtension) ||
-    integrationFingerprint(loadout.integrations) !== loadout.integrationFingerprint
+    fingerprint(loadout.integrations) !== loadout.integrationFingerprint
   ) {
     throw new Error('Saved worker integration source changed or safety integration is missing.');
   }

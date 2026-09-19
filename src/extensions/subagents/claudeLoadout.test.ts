@@ -80,6 +80,8 @@ it('resolves a Claude worker from saved configuration without changing it', asyn
   expect(loadout.tools).toContain(claudeToolName('subagent_report'));
   expect(loadout.integrations).toContain(join(setup.configuration, 'settings.json'));
   expect(loadout.safetyExtension).toBe(join(setup.install, 'dist', 'bin', 'cc-safety-net.js'));
+  // Claude reads a local settings file the moment it exists, so an absent one is still recorded.
+  expect(loadout.integrations).toContain(join(setup.context.cwd, '.claude', 'settings.local.json'));
 });
 
 it('selects the profile harness when the request omits it', async () => {
