@@ -127,7 +127,6 @@ export class ClaudeChannel {
   private readonly server: Server;
   private readonly sockets = new Set<Socket>();
   private readonly notices = new Map<string, string>();
-  private accepted = false;
   private closed = false;
   private failed: string | undefined;
 
@@ -438,7 +437,6 @@ export class ClaudeChannel {
     }
 
     recordEvent(directory, task.taskId, 'accepted', 'Claude submitted the dispatched task.');
-    this.accepted = true;
 
     return allow();
   }
@@ -516,7 +514,7 @@ export class ClaudeChannel {
 
   private stop(): HookDecision {
     const { directory, task } = this.options;
-    if (!this.accepted && !readEvent(directory, task.taskId, 'accepted')) {
+    if (!readEvent(directory, task.taskId, 'accepted')) {
       return allow();
     }
     if (this.ended()) {
