@@ -354,8 +354,8 @@ const claudeIntegrations = (
   ),
 ];
 
-const claudeProfile = (cwd: string, trusted: boolean, name: string) => {
-  const profile = resolveProfile(cwd, realpathSync(getAgentDir()), trusted, name);
+const claudeProfile = (cwd: string, name: string) => {
+  const profile = resolveProfile(cwd, realpathSync(getAgentDir()), true, name);
   if (!profile) {
     throw new Error(`Worker profile not found: ${name}`);
   }
@@ -387,7 +387,7 @@ export const resolveClaudeLoadout = async (
   }
 
   const agentDirectory = claudeConfigDirectory();
-  const profile = claudeProfile(cwd, true, input.profile);
+  const profile = claudeProfile(cwd, input.profile);
   const model = input.model ?? profile.model;
   if (!model || /\s/.test(model)) {
     throw new Error(
@@ -518,6 +518,7 @@ export const resolveLoadout = async (
 
   const model = resolveModel(input.model, profile.model, context.modelRegistry);
   const separator = model.indexOf('/');
+
   const selection = parentExtensionPaths(pi);
   const { loaded, registry, safety } = await reconstructIntegrations(
     cwd,
