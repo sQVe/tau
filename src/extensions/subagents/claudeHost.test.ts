@@ -260,6 +260,18 @@ it('refuses hook events from a process that is not the recorded worker', async (
   expect(settling.stderr).toContain('another worker process');
   expect(readEvent(fixture.directory, fixture.task.taskId, 'settled')).toBeUndefined();
 
+  const restarting = await fixture.hook(
+    'SessionStart',
+    {
+      transcript_path: fixture.task.nativeSessionFile,
+      cwd: fixture.task.loadout.cwd,
+      source: 'startup',
+    },
+    impostor,
+  );
+  expect(restarting.stderr).toContain('another worker process');
+  expect(readEvent(fixture.directory, fixture.task.taskId, 'continuationRefused')).toBeUndefined();
+
   const acting = await fixture.hook('PreToolUse', { tool_name: 'Edit', tool_input: {} }, impostor);
   expect(acting.stdout).toContain('another worker process');
 
@@ -283,6 +295,11 @@ it('denies a tool the recorded loadout does not list', async () => {
 
   expect(fetching.stdout).toContain('"permissionDecision":"deny"');
   expect(fetching.stdout).toContain("not one of this worker's tools");
+
+  // Background Bash is unusable without the tools that read and stop the shell it starts.
+  const reading = await fixture.hook('PreToolUse', { tool_name: 'BashOutput', tool_input: {} });
+  expect(reading.stdout).toBe('');
+  expect(reading.code).toBe(0);
 });
 
 it('keeps a waiting worker from acting and from settling its turn', async () => {

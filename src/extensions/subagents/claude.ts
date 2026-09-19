@@ -27,7 +27,19 @@ export const claudeChannelTools = [
   'subagent_reply',
   'subagent_cancel',
 ];
-export const claudeBuiltinTools = ['Read', 'Bash', 'Edit', 'Write', 'Glob', 'Grep'];
+// The channel denies every tool outside this list, so it carries what the granted tools need to
+// work: Bash offers background execution, which is unusable without reading and stopping the shell.
+export const claudeBuiltinTools = [
+  'Read',
+  'Bash',
+  'BashOutput',
+  'KillShell',
+  'Edit',
+  'Write',
+  'Glob',
+  'Grep',
+  'TodoWrite',
+];
 export const claudeRequiredTools = [
   'Read',
   'Bash',

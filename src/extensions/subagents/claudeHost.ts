@@ -293,12 +293,10 @@ export class ClaudeChannel {
   }): Promise<HookDecision> {
     const payload = message.payload ?? {};
 
-    if (message.event === 'SessionStart') {
-      return this.sessionStart(payload, message.claudePid ?? undefined);
-    }
-
-    // These events settle turns and end tasks, so once readiness names a worker process they need
-    // the same identity evidence a tool call needs. Any local process can reach this socket.
+    // Hook events settle turns and end tasks, and any local process can reach this socket, so once
+    // readiness names the worker process every event needs the evidence tool calls need. Before
+    // that record exists there is nothing to compare against, and each handler fails closed on the
+    // saved session, transcript, and working directory instead.
     const { directory, task } = this.options;
     if (readEvent(directory, task.taskId, 'ready') && !this.ownsConnection(message.claudePid)) {
       const refusal = 'This channel belongs to another worker process.';
@@ -306,6 +304,9 @@ export class ClaudeChannel {
       return Promise.resolve(message.event === 'PreToolUse' ? deny(refusal) : block(refusal));
     }
 
+    if (message.event === 'SessionStart') {
+      return this.sessionStart(payload, message.claudePid ?? undefined);
+    }
     if (message.event === 'UserPromptSubmit') {
       return Promise.resolve(this.userPrompt(payload));
     }
