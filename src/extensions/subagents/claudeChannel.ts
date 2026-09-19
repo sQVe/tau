@@ -150,7 +150,8 @@ const runMcp = (socketPath: string): void => {
     const timer = setTimeout(() => {
       finish(0);
     }, 2000);
-    process.stdout.once('drain', () => {
+    // A small answer never trips backpressure, so only a write callback reports the flush.
+    process.stdout.write('', () => {
       clearTimeout(timer);
       finish(0);
     });
