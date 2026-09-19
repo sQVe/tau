@@ -7,12 +7,11 @@ import { expect, it, onTestFinished as afterTest } from 'vitest';
 
 import { claudeChannelSocket, claudeToolName } from './claude.js';
 import { ClaudeChannel } from './claudeHost.js';
-import type { ChannelTool } from './claudeHost.js';
 import { channelCall, channelHook } from './fixtures/channelClient.js';
 import { fixtureClaudeLoadout } from './fixtures/loadout.js';
 import { claudeIntegrationFingerprint } from './loadout.js';
 import { publish, readEvent, readPendingQuestion, readReport, validateTask } from './records.js';
-import type { Task } from './types.js';
+import type { ChannelTool, Task } from './types.js';
 
 const denyingSafety = `process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'blocked' } }));`;
 
@@ -285,6 +284,19 @@ it('refuses hook events from a process that is not the recorded worker', async (
   const settled = await fixture.hook('Stop', { stop_hook_active: false });
   expect(settled.code).toBe(0);
   expect(readEvent(fixture.directory, fixture.task.taskId, 'settled')).toBeDefined();
+});
+
+it.each([undefined, ''])('denies a tool hook without a usable tool name: %s', async (toolName) => {
+  const fixture = await setup();
+  await fixture.dispatched();
+
+  const refused = await fixture.hook('PreToolUse', {
+    ...(toolName === undefined ? {} : { tool_name: toolName }),
+    tool_input: {},
+  });
+
+  expect(refused.stdout).toContain('"permissionDecision":"deny"');
+  expect(refused.stdout).toContain('could not bind this tool call');
 });
 
 it('denies a tool the recorded loadout does not list', async () => {

@@ -168,6 +168,23 @@ export const isClaudeLoadout = (loadout: Loadout): loadout is ClaudeLoadout =>
 export type Task = Static<typeof taskSchema>;
 export type Report = Static<typeof reportSchema>;
 export type TaskEvent = Static<typeof eventSchema>;
+
+export interface ChannelTool {
+  name: string;
+  description: string;
+  parameters: unknown;
+  execute: (input: Record<string, unknown>) => Promise<unknown>;
+}
+
+export interface ClaudeChannelOptions {
+  directory: string;
+  task: Task;
+  socketPath: string;
+  // Nested delegation tools stay with the controller that owns admission, placement, and cancellation.
+  delegation?: () => ChannelTool[];
+  children?: () => { active: number; uncertain: string[] };
+}
+
 export interface Profile {
   name: string;
   role: 'investigation' | 'editing';

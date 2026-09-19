@@ -24,23 +24,7 @@ import {
   validateQuestion,
 } from './records.js';
 import { isClaudeLoadout, textLimit } from './types.js';
-import type { Task } from './types.js';
-
-export interface ChannelTool {
-  name: string;
-  description: string;
-  parameters: unknown;
-  execute: (input: Record<string, unknown>) => Promise<unknown>;
-}
-
-export interface ClaudeChannelOptions {
-  directory: string;
-  task: Task;
-  socketPath: string;
-  // Nested delegation tools stay with the controller that owns admission, placement, and cancellation.
-  delegation?: () => ChannelTool[];
-  children?: () => { active: number; uncertain: string[] };
-}
+import type { ChannelTool, ClaudeChannelOptions, Task } from './types.js';
 
 interface HookDecision {
   stdout?: string;
@@ -69,7 +53,7 @@ const promptSchema = Type.Object({
 });
 const toolSchema = Type.Object({
   session_id: Type.String({ minLength: 1 }),
-  tool_name: Type.Optional(Type.String()),
+  tool_name: Type.String({ minLength: 1 }),
 });
 const requestSchema = Type.Object({
   method: Type.Optional(Type.String()),
@@ -187,6 +171,7 @@ export class ClaudeChannel {
     }
 
     this.closed = true;
+
     for (const socket of this.sockets) {
       socket.destroy();
     }
@@ -500,15 +485,16 @@ export class ClaudeChannel {
     if (!Value.Check(toolSchema, payload) || payload.session_id !== task.nativeSessionId) {
       return deny('Tau could not bind this tool call to the saved worker task.');
     }
-    if (payload.tool_name && claudeDeniedTools.includes(payload.tool_name)) {
+    if (claudeDeniedTools.includes(payload.tool_name)) {
       return deny(
         `${payload.tool_name} is unavailable to workers. Delegate with ${claudeToolName('subagent')} and ask the parent with ${claudeToolName('subagent_question')}.`,
       );
     }
     // The launch flags deny named tools; this is what makes the recorded loadout the whole list.
-    if (payload.tool_name && !task.loadout.tools.includes(payload.tool_name)) {
+    if (!task.loadout.tools.includes(payload.tool_name)) {
       return deny(`${payload.tool_name} is not one of this worker's tools.`);
     }
+
     const ended = this.ended();
     if (ended) {
       return deny(`${ended} No further tool use is authorized.`);

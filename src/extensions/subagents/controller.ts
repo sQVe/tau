@@ -28,7 +28,6 @@ import {
   claudeUsage,
 } from './claude.js';
 import { ClaudeChannel } from './claudeHost.js';
-import type { ChannelTool } from './claudeHost.js';
 import { requireHandover, refuseLiveNativeWriter } from './continuations.js';
 import { authorizeHistoryTask, sessionRoot } from './history.js';
 import { authenticateParent, channelAuthority, currentProcessIdentity } from './identity.js';
@@ -56,7 +55,15 @@ import {
 } from './records.js';
 import { object, resolveTerminal, result, text } from './terminal.js';
 import { harnessOf, isClaudeLoadout } from './types.js';
-import type { ClaudeLoadout, Loadout, Question, Report, Task, TaskEvent } from './types.js';
+import type {
+  ChannelTool,
+  ClaudeLoadout,
+  Loadout,
+  Question,
+  Report,
+  Task,
+  TaskEvent,
+} from './types.js';
 
 const visibilitySchema = Type.Optional(
   Type.Union([Type.Literal('foreground'), Type.Literal('background')]),
@@ -400,6 +407,7 @@ const inspectWorker = async (
   const claude = isClaudeLoadout(handle.task.loadout);
   const location = await resolveTerminal(text(handle.terminalId), call);
   const paneId = location.paneId;
+
   handle.paneId = paneId;
 
   const information = object(
@@ -409,6 +417,7 @@ const inspectWorker = async (
   // Ownership is unestablished until a started process reports the expected session to herdr.
   const starting = claude && !previous;
   checkForeground(information, paneId, previous, starting && !handle.workerObserved);
+
   handle.workerObserved = true;
 
   const agent = await readAgent(call, paneId, starting);
@@ -884,6 +893,7 @@ export class WorkerController {
 
       return;
     }
+
     await call([
       'agent',
       'start',
