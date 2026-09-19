@@ -150,6 +150,12 @@ const shutdownKeys = (owned: OwnedWorker): string[] =>
     ? ['agent', 'send-keys', owned.paneId, 'escape', 'ctrl+c', 'ctrl+d']
     : ['pane', 'send-keys', owned.paneId, 'ctrl+c'];
 
+const stopConfirmed: CleanupResult = {
+  cleanup: 'confirmed',
+  detail:
+    'The owned process is absent and its shell is foreground; detached or background descendants are not covered.',
+};
+
 const waitForStop = async (
   owned: OwnedWorker,
   call: (arguments_: string[]) => Promise<string>,
@@ -158,20 +164,19 @@ const waitForStop = async (
 ): Promise<CleanupResult> => {
   const worker = { ...owned };
   let pressedAt = performance.now();
-
-  for (;;) {
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Follow the same terminal if it moves while shutdown is pending.
+  // Follow the same terminal if it moves while shutdown is pending.
+  const stopped = async () => {
     const location = await resolveTerminal(worker.terminalId, call);
     worker.paneId = location.paneId;
-
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Confirm the foreground job ended within the same cancellation budget.
     const after = processInfo(await call(['pane', 'process-info', '--pane', worker.paneId]));
-    if (workerStopped(after, worker)) {
-      return {
-        cleanup: 'confirmed',
-        detail:
-          'The owned process is absent and its shell is foreground; detached or background descendants are not covered.',
-      };
+
+    return workerStopped(after, worker);
+  };
+
+  for (;;) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Confirm the foreground job ended within the same cancellation budget.
+    if (await stopped()) {
+      return stopConfirmed;
     }
 
     if (worker.kind === 'claude' && performance.now() - pressedAt >= 500) {
@@ -179,6 +184,12 @@ const waitForStop = async (
       // oxlint-disable-next-line eslint/no-await-in-loop -- Each interrupt repeats ownership checks within the original budget.
       const refused = await interrupt();
       if (refused) {
+        // Claude drops its agent session before its process exits, so a refusal here can trail a clean stop.
+        // oxlint-disable-next-line eslint/no-await-in-loop -- One confirmation attempt within the remaining budget.
+        if (await stopped()) {
+          return stopConfirmed;
+        }
+
         return {
           cleanup: 'unconfirmed',
           detail: `Further interrupt refused after an earlier attempt. ${refused.detail}`,

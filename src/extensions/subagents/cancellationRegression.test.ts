@@ -195,6 +195,47 @@ describe('owned worker cancellation', () => {
     },
   );
 
+  it('confirms a Claude stop when the agent session ends before the process does', async () => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    let polls = 0;
+    const client = vi.fn<Client>(async (arguments_): Promise<string> => {
+      const sent = client.mock.calls.filter(([call]) => call[1] === 'send-keys').length;
+      if (arguments_[1] === 'get') {
+        return sent
+          ? '{}'
+          : JSON.stringify({
+              result: {
+                agent: {
+                  pane_id: owned.paneId,
+                  agent: 'claude',
+                  agent_session: { value: owned.token },
+                },
+              },
+            });
+      }
+      if (arguments_[1] === 'send-keys') {
+        return '{}';
+      }
+      if (!sent) {
+        return snapshot();
+      }
+      polls += 1;
+      clock.mockReturnValue(600);
+
+      return polls > 1 ? shell() : snapshot();
+    });
+
+    const result = await timeout.cancelOwnedWorker(
+      { ...owned, kind: 'claude' },
+      1200,
+      withInventory(client),
+      new AbortController().signal,
+    );
+
+    expect(result.cleanup).toBe('confirmed');
+    expect(client.mock.calls.filter(([call]) => call[1] === 'send-keys')).toHaveLength(1);
+  });
+
   it('never counts EPERM as an absent worker', async () => {
     vi.mocked(process.kill).mockImplementation(() => {
       throw Object.assign(new Error('Permission denied'), { code: 'EPERM' });
