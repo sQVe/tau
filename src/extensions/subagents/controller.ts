@@ -1169,8 +1169,12 @@ export class WorkerController {
     } catch (error) {
       handle.recordErrors.push(String(error));
     }
-    handle.stopping = this.cleanup(handle, reason, failureDetail)
-      .finally(() => {
+    // Nested workers keep running and holding capacity unless this stop reaches them first.
+    const nested = handle.nested?.stopAll() ?? Promise.resolve();
+    const cleaned = this.cleanup(handle, reason, failureDetail);
+
+    handle.stopping = Promise.allSettled([nested, cleaned])
+      .then(() => {
         handle.channel?.close();
         handle.nested?.close();
         // Keep sharing intact until cleanup finishes, including its queued topology change.
@@ -1178,6 +1182,9 @@ export class WorkerController {
         if (handle.terminalId) {
           this.placement.release(handle.terminalId);
         }
+
+        // Report the cleanup failure only once the whole subtree has settled.
+        return cleaned;
       })
       .catch((error: unknown) => {
         handle.cleanupFinished = true;
@@ -1473,6 +1480,14 @@ export class WorkerController {
     }
 
     return directory;
+  }
+
+  // Cleanup for every worker this controller still owns, so a stopping ancestor does not strand its tree.
+  async stopAll(): Promise<void> {
+    await Promise.allSettled(
+      [...this.handles.values()].map((handle) => this.stop(handle, 'cancelled')),
+    );
+    this.close();
   }
 
   close(): void {

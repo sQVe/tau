@@ -254,6 +254,23 @@ it('delegates a nested Claude worker through the worker channel', async () => {
   expect(child?.task.name?.startsWith('investigator-')).toBe(true);
 }, 30_000);
 
+it('cleans up a nested worker when its parent stops', async () => {
+  const fixture = await nestedSetup();
+  await channelCall(fixture.socket, 'subagent', {
+    task: 'Check one file inside the assigned scope.',
+    profile: 'claude-scout',
+    timeoutSeconds: 60,
+  });
+  const child = readTasks(fixture.records).find(
+    (entry) => entry.task.taskId !== fixture.launched.taskId,
+  );
+
+  await fixture.controller.cancel(fixture.launched.taskId, 'parent-id');
+
+  expect(readEvent(child!.directory, child!.task.taskId, 'cancelled')).toBeDefined();
+  expect(readEvent(child!.directory, child!.task.taskId, 'cleanup')).toBeDefined();
+}, 30_000);
+
 it('refuses nested delegation when the tree has no capacity left', async () => {
   vi.stubEnv('TAU_SUBAGENT_CAP', '1');
   const fixture = await nestedSetup();
