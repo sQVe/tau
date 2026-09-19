@@ -54,15 +54,27 @@ export const channelCall = (
     child.stdout.on('data', (chunk: Buffer) => {
       buffered += chunk.toString();
 
-      for (const line of buffered.split('\n').filter((entry) => entry.trim())) {
+      // A chunk can end mid-frame; keep the remainder for the next one.
+      for (let newline = buffered.indexOf('\n'); newline !== -1; newline = buffered.indexOf('\n')) {
+        const line = buffered.slice(0, newline).trim();
+        buffered = buffered.slice(newline + 1);
+        if (!line) {
+          continue;
+        }
+
         const message: unknown = JSON.parse(line);
         if (message && typeof message === 'object' && 'id' in message && message.id === 2) {
           child.kill();
           resolve(message);
+
+          return;
         }
       }
     });
     child.once('error', reject);
+    child.once('close', (code) => {
+      reject(new Error(`Channel process closed before its response, with code ${String(code)}.`));
+    });
 
     child.stdin.write(
       `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } })}\n`,
