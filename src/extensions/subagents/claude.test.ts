@@ -206,6 +206,12 @@ it('requires runtime evidence that CC Safety Net denies a destructive command', 
   );
   const allowing = safetyScript(directory, 'allow.js', `process.stdout.write('{}');`);
   const silent = safetyScript(directory, 'silent.js', ``);
+  const failing = safetyScript(
+    directory,
+    'fail.js',
+    `process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'blocked' } }));
+process.exit(1);`,
+  );
   const loadout = {
     channelExecutable: process.execPath,
     cwd: directory,
@@ -220,6 +226,9 @@ it('requires runtime evidence that CC Safety Net denies a destructive command', 
   );
   await expect(probeSafetyIntegration({ ...loadout, safetyExtension: silent })).rejects.toThrow(
     'did not answer',
+  );
+  await expect(probeSafetyIntegration({ ...loadout, safetyExtension: failing })).rejects.toThrow(
+    'exited with 1',
   );
 });
 

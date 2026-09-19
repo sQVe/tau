@@ -318,6 +318,13 @@ export const probeSafetyIntegration = async (
     budget,
   );
 
+  // Claude honors a hook decision only from a clean exit, so a failed probe is no evidence of denial.
+  if (probe.code !== 0) {
+    throw new Error(
+      `CC Safety Net answered the representative check but exited with ${String(probe.code)}. Worker launch refuses rather than trust an unusable hook.`,
+    );
+  }
+
   let decision: unknown;
   try {
     decision = JSON.parse(probe.stdout);
