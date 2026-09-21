@@ -68,7 +68,13 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
     layout.panes.find((pane) => pane.pane_id === paneId)?.terminal_id;
   const hasAgent = (paneId: string | undefined) => agentTerminals.has(terminalOf(paneId) ?? '');
   const addAgent = (argumentsList: string[]) => {
-    agentTerminals.add(terminalOf(paneArgument(argumentsList)) ?? '');
+    const terminal = terminalOf(paneArgument(argumentsList));
+
+    if (terminal === undefined) {
+      throw herdrError('pane not found', 'pane_not_found');
+    }
+
+    agentTerminals.add(terminal);
   };
 
   const processInfo = (argumentsList: string[]) => {
@@ -97,8 +103,8 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
         throw new Error(state.startError);
       }
 
-      state.started = true;
       addAgent(argumentsList);
+      state.started = true;
 
       return JSON.stringify({ result: {} });
     },
