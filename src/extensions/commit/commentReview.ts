@@ -61,6 +61,11 @@ const reviewSchema = Type.Object(
 
 export type CommentReview = Static<typeof reviewSchema>;
 
+interface ReviewFile {
+  path: string;
+  content: string;
+}
+
 export const reviewGit = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
@@ -81,10 +86,7 @@ export const reviewGit = async (
   return result.stdout;
 };
 
-const parseReview = (
-  text: string,
-  files: { path: string; before: string | null; after: string | null }[],
-): CommentReview => {
+const parseReview = (text: string, files: ReviewFile[]): CommentReview => {
   const result: unknown = JSON.parse(
     text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i, '$1'),
   );
@@ -92,8 +94,7 @@ const parseReview = (
   if (
     !Value.Check(reviewSchema, result) ||
     result.findings.some((finding) => {
-      const file = files.find((candidate) => candidate.path === finding.path);
-      const content = file?.after ?? file?.before;
+      const content = files.find((candidate) => candidate.path === finding.path)?.content;
 
       return !content || finding.line > content.split('\n').length || !finding.message.trim();
     })
@@ -185,12 +186,6 @@ export const reviewComments = async (
     return { findings: [] };
   }
 
-  if (paths.length > 300) {
-    throw new Error(
-      `Comment review input is too large: ${paths.length} files. Split the commit and retry.`,
-    );
-  }
-
   const diff = await reviewGit(
     pi,
     context.cwd,
@@ -209,14 +204,24 @@ export const reviewComments = async (
     .filter((row) => row.startsWith('-\t-\t'))
     .map((row) => row.slice(4));
 
-  const files = await Promise.all(
-    paths
-      .filter((path) => !binaryPaths.includes(path))
-      .map(async (path) => ({
+  const diffSections = diff.split(/^(?=diff --git )/m);
+
+  if (diff && diffSections.length !== paths.length) {
+    throw new Error('Comment review could not match the diff to its files.');
+  }
+
+  const entries = await Promise.all(
+    paths.map(async (path, index) => {
+      const content = binaryPaths.includes(path)
+        ? null
+        : await readBlob(pi, context.cwd, snapshot.tree, path, signal);
+
+      return {
         path,
-        before: await readBlob(pi, context.cwd, base, path, signal),
-        after: await readBlob(pi, context.cwd, snapshot.tree, path, signal),
-      })),
+        diff: diffSections[index] ?? '',
+        file: content === null ? null : { path, content },
+      };
+    }),
   );
 
   const policyPaths = new Set<string>();
@@ -242,11 +247,8 @@ export const reviewComments = async (
     })),
   );
   const policies = policyFiles.filter((policy) => policy.content !== null);
-  const input = JSON.stringify({ diff, files, policies, binaryPaths, dispute: snapshot.dispute });
-
-  if (input.length > 1_000_000) {
-    throw new Error('Comment review input is too large. Split the commit and retry.');
-  }
+  const shared = { policies, binaryPaths, dispute: snapshot.dispute };
+  const batches = batchEntries(entries, JSON.stringify({ diff: '', files: [], ...shared }).length);
 
   const authentication = await context.modelRegistry.getApiKeyAndHeaders(model);
 
@@ -255,7 +257,67 @@ export const reviewComments = async (
   }
 
   const reviewSignal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(120_000)]);
+  const reviews = await Promise.all(
+    batches.map((batch) => {
+      const files = batch.flatMap((entry) => (entry.file ? [entry.file] : []));
+      const input = JSON.stringify({
+        diff: batch.map((entry) => entry.diff).join(''),
+        files,
+        ...shared,
+      });
 
+      return reviewBatch(context, model, input, files, reviewSignal);
+    }),
+  );
+
+  return { findings: reviews.flatMap((review) => review.findings) };
+};
+
+interface ReviewEntry {
+  path: string;
+  diff: string;
+  file: ReviewFile | null;
+}
+
+const inputBudget = 1_000_000;
+
+const batchEntries = (entries: ReviewEntry[], sharedSize: number) => {
+  const batches: ReviewEntry[][] = [];
+  let batch: ReviewEntry[] = [];
+  let batchSize = sharedSize;
+
+  for (const entry of entries) {
+    // Overestimates the JSON size of the entry's share of the batch input, so batches stay in budget.
+    const size = JSON.stringify(entry.diff).length + JSON.stringify(entry.file ?? '').length + 1;
+
+    if (sharedSize + size > inputBudget) {
+      throw new Error(
+        `Comment review input is too large: ${entry.path}. Reduce the file and retry.`,
+      );
+    }
+
+    if (batch.length > 0 && batchSize + size > inputBudget) {
+      batches.push(batch);
+      batch = [];
+      batchSize = sharedSize;
+    }
+
+    batch.push(entry);
+    batchSize += size;
+  }
+
+  batches.push(batch);
+
+  return batches;
+};
+
+const reviewBatch = async (
+  context: ExtensionContext,
+  model: ReturnType<typeof resolveDelegate>,
+  input: string,
+  files: ReviewFile[],
+  reviewSignal: AbortSignal,
+) => {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- Retry only after parsing the previous response fails.
     const response = await context.modelRegistry.complete(

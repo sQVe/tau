@@ -10,6 +10,12 @@ import { reviewComments, reviewGit } from './commentReview.js';
 
 afterEach(() => vi.unstubAllEnvs());
 
+const reviewInput = (request?: Parameters<ExtensionContext['modelRegistry']['complete']>[1]) => {
+  const content = request?.messages[0]?.content;
+
+  return typeof content === 'string' ? content : '';
+};
+
 const reviewFixture = () => {
   const delegate = fauxProvider({ provider: 'delegate' }).getModel();
   const sessionModel = fauxProvider({ provider: 'session' }).getModel();
@@ -139,21 +145,17 @@ describe('reviewGit', () => {
 
 it.each([
   ['file', 'Comment review input is too large: file.ts. Reduce the file and retry.'],
-  ['count', 'Comment review input is too large: 301 files. Split the commit and retry.'],
-  ['payload', 'Comment review input is too large. Split the commit and retry.'],
+  ['diff', 'Comment review input is too large: file.ts. Reduce the file and retry.'],
 ])('rejects oversized %s input without offering a waiver', async (limit, diagnostic) => {
   const exec = vi.fn<ExtensionAPI['exec']>(async (_command, arguments_) => {
     let stdout = '';
 
     if (arguments_.includes('--name-only')) {
-      stdout =
-        limit === 'count'
-          ? Array.from({ length: 301 }, (_, index) => `${index}.ts\0`).join('')
-          : 'file.ts\0';
+      stdout = 'file.ts\0';
     } else if (arguments_.includes('ls-tree') && arguments_.at(-1) === 'file.ts') {
       stdout = `100644 blob hash ${limit === 'file' ? 400_001 : 0}\tfile.ts\0`;
     } else if (arguments_.includes('diff') && !arguments_.includes('--numstat')) {
-      stdout = limit === 'payload' ? 'x'.repeat(1_000_001) : '';
+      stdout = limit === 'diff' ? 'x'.repeat(1_000_001) : '';
     }
 
     return { stdout, stderr: '', code: 0, killed: false };
@@ -236,5 +238,80 @@ describe('lockfile exclusion', () => {
 
     expect(review).toEqual({ findings: [] });
     expect(complete).not.toHaveBeenCalled();
+  });
+});
+
+it('sends removed lines only through the diff', async () => {
+  const repositoryDirectory = await createTemporaryRepository();
+  const git = (commandArguments: string[]) =>
+    runCommand('git', commandArguments, repositoryDirectory);
+
+  await writeFile(
+    join(repositoryDirectory, 'file.ts'),
+    '// Removed comment.\nexport const a = 1;\n',
+  );
+  await git(['add', 'file.ts']);
+  await git(['commit', '-m', 'init']);
+  const head = (await git(['rev-parse', 'HEAD'])).stdout.trim();
+  await writeFile(join(repositoryDirectory, 'file.ts'), 'export const a = 1;\n');
+  await git(['add', 'file.ts']);
+  const tree = (await git(['write-tree'])).stdout.trim();
+  const app = reviewFixture();
+  const pi = {
+    exec: (command: string, commandArguments: string[], options?: { cwd?: string }) =>
+      runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
+  };
+
+  await reviewComments(pi, { ...app.context, cwd: repositoryDirectory }, undefined, { tree, head });
+
+  const input = reviewInput(app.complete.mock.calls[0]?.[1]);
+  expect(input.split('Removed comment.')).toHaveLength(2);
+});
+
+describe('large commits', () => {
+  it('reviews input over the payload limit in bounded batches and merges their findings', async () => {
+    const repositoryDirectory = await createTemporaryRepository();
+    const git = (commandArguments: string[]) =>
+      runCommand('git', commandArguments, repositoryDirectory);
+    const paths = ['a.ts', 'b.ts', 'c.ts', 'd.ts'];
+
+    await git(['commit', '--allow-empty', '-m', 'init']);
+    await Promise.all(
+      paths.map((path) =>
+        writeFile(join(repositoryDirectory, path), `// ${path}\n${'x'.repeat(200_000)}\n`),
+      ),
+    );
+    await git(['add', '--', ...paths]);
+
+    const tree = (await git(['write-tree'])).stdout.trim();
+    const head = (await git(['rev-parse', 'HEAD'])).stdout.trim();
+    const app = reviewFixture();
+    app.complete.mockImplementation(async (_model, request) => {
+      const input = reviewInput(request);
+      const findings = paths
+        .filter((path) => input.includes(`// ${path}`))
+        .map((path) => ({ path, line: 1, kind: 'policy', message: `Narrates ${path}.` }));
+
+      return fauxAssistantMessage(JSON.stringify({ findings }));
+    });
+    const pi = {
+      exec: (command: string, commandArguments: string[], options?: { cwd?: string }) =>
+        runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
+    };
+
+    const review = await reviewComments(
+      pi,
+      { ...app.context, cwd: repositoryDirectory },
+      undefined,
+      {
+        tree,
+        head,
+      },
+    );
+
+    const inputs = app.complete.mock.calls.map(([, request]) => reviewInput(request));
+    expect(inputs.length).toBeGreaterThan(1);
+    expect(inputs.every((input) => input.length <= 1_000_000)).toBe(true);
+    expect(review.findings.map((finding) => finding.path).toSorted()).toEqual(paths);
   });
 });

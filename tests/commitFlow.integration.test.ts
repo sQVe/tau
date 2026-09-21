@@ -505,7 +505,7 @@ describe('commit flow', () => {
           user?.role === 'user' && typeof user.content === 'string' ? user.content : '{}',
         ) as { files: unknown; policies: unknown };
 
-        expect(payload.files).toContainEqual({ path: 'retry.ts', before, after });
+        expect(payload.files).toContainEqual({ path: 'retry.ts', content: after });
         expect(payload.policies).toContainEqual({
           path: 'AGENTS.md',
           content: 'Document public retry settings.\n',
