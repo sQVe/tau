@@ -73,5 +73,5 @@ export const createPiSession = async (
     session.dispose();
   });
 
-  return { session, extensionsResult, loader, modelRuntime, settingsManager };
+  return { session, extensionsResult };
 };

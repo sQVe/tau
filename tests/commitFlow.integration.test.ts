@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { appendFile, chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -14,6 +14,7 @@ import type {
 import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
+import { createTemporaryRepository } from './gitRepository.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createPiSession } from './piSession.js';
 
@@ -42,17 +43,9 @@ interface Harness {
   overlays: string[];
 }
 
-// Isolate fixture commits from user and system Git settings, including hooks.
-const gitEnvironment = {
-  ...process.env,
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_SYSTEM: '/dev/null',
-};
-
 const git = async (repositoryDirectory: string, commandArguments: string[]): Promise<string> => {
   const { stdout } = await execFileAsync('git', commandArguments, {
     cwd: repositoryDirectory,
-    env: gitEnvironment,
   });
 
   return stdout;
@@ -69,16 +62,8 @@ const createTemporaryDirectory = async (
   return directory;
 };
 
-const createTemporaryRepository = async (registerCleanup: RegisterCleanup): Promise<string> => {
-  const repositoryDirectory = await createTemporaryDirectory(registerCleanup, 'tau-flow-repo-');
-
-  await git(repositoryDirectory, ['init', '--initial-branch=main']);
-  // Pi's Git calls do not use gitEnvironment, so disable hooks in the repository too.
-  await appendFile(
-    join(repositoryDirectory, '.git/config'),
-    '\n[user]\n\temail = tau@example.com\n\tname = Tau Test\n[commit]\n\tgpgsign = false\n' +
-      `\n[core]\n\thooksPath = ${JSON.stringify(join(repositoryDirectory, '.no-hooks'))}\n`,
-  );
+const createCommittedRepository = async (registerCleanup: RegisterCleanup): Promise<string> => {
+  const repositoryDirectory = await createTemporaryRepository(registerCleanup, 'tau-flow-repo-');
 
   await writeFile(join(repositoryDirectory, 'README.md'), '# fixture\n', 'utf8');
   await git(repositoryDirectory, ['add', 'README.md']);
@@ -100,7 +85,7 @@ const createHarness = async (
   registerCleanup: RegisterCleanup,
   options: { hasUI?: boolean; delegate?: FauxProviderHandle } = {},
 ): Promise<Harness> => {
-  const repositoryDirectory = await createTemporaryRepository(registerCleanup);
+  const repositoryDirectory = await createCommittedRepository(registerCleanup);
   const agentDirectory = await createTemporaryDirectory(registerCleanup, 'tau-flow-agent-');
 
   isolateWebAccessConfig(agentDirectory, registerCleanup);
