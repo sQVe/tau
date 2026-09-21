@@ -124,25 +124,35 @@ const pushDurations = (lines: string[], { header, entries, limit }: DurationList
   }
 };
 
+const messageLines = (report: RunnerResult): string[] =>
+  'message' in report ? [report.message] : [];
+
+const fileFailureLines = (report: RunnerResult): string[] => {
+  if (!('failures' in report)) {
+    return [];
+  }
+
+  const fileFailures = report.failures.filter((failure) => failure.fullname === '<file>').length;
+
+  if (fileFailures === 0) {
+    return [];
+  }
+
+  const qualifier = 'truncated' in report && report.truncated ? 'At least ' : '';
+
+  return [`${qualifier}${fileFailures} file/setup failures (separate from failed tests).`];
+};
+
 export const summarize = (cwd: string, observation: Observation): string => {
   const { report, scope, freshness } = observation;
-  const lines = [`${report.kind} · ${scope === 'full' ? 'full suite' : 'focused'} · ${freshness}`];
-
-  if ('message' in report) {
-    lines.push(report.message);
-  }
-
-  lines.push(...testSummary(report));
+  const lines = [
+    `${report.kind} · ${scope === 'full' ? 'full suite' : 'focused'} · ${freshness}`,
+    ...messageLines(report),
+    ...testSummary(report),
+    ...fileFailureLines(report),
+  ];
 
   const failures = 'failures' in report ? report.failures : [];
-  const fileFailures = failures.filter((failure) => failure.fullname === '<file>').length;
-
-  if (fileFailures > 0) {
-    const qualifier = 'truncated' in report && report.truncated ? 'At least ' : '';
-
-    lines.push(`${qualifier}${fileFailures} file/setup failures (separate from failed tests).`);
-  }
-
   let shown = 0;
 
   for (const failure of failures.slice(0, maximumFailures)) {
@@ -185,6 +195,43 @@ const diagnosticFileLine = (label: string, file: DiagnosticFile): string => {
   return `${label}: ${file.path} (${size}${file.truncated ? ', truncated' : ''})`;
 };
 
+const executionLines = (
+  report: RunnerResult,
+  diagnostics: NonNullable<RunnerResult['diagnostics']>,
+): string[] => {
+  if (diagnostics.started === false || report.kind === 'runner-missing') {
+    return ['Execution did not start.'];
+  }
+
+  return [
+    `Elapsed: ${diagnostics.durationMs} ms; timeout: ${diagnostics.timeoutMs} ms; exit: ${diagnostics.exitCode ?? 'unavailable'}.`,
+  ];
+};
+
+const savedFileLines = (diagnostics: NonNullable<RunnerResult['diagnostics']>): string[] => {
+  const lines: string[] = [];
+
+  for (const [label, file] of [
+    ['stdout', diagnostics.stdout],
+    ['stderr', diagnostics.stderr],
+    ['JSON report', diagnostics.report],
+  ] as const) {
+    if (file !== undefined) {
+      lines.push(diagnosticFileLine(label, file));
+    }
+  }
+
+  if (diagnostics.report === undefined) {
+    lines.push('No JSON report was saved.');
+  }
+
+  if (diagnostics.error !== undefined) {
+    lines.push(cap(printable(diagnostics.error), 400));
+  }
+
+  return lines;
+};
+
 export const runContext = (behavior: Behavior, observation: Observation): string => {
   const { scope, freshness, report, runPath } = observation;
   const lines = [selectionSummary(behavior, scope)];
@@ -206,36 +253,13 @@ export const runContext = (behavior: Behavior, observation: Observation): string
     return lines.join('\n');
   }
 
-  if (diagnostics.started === false || report.kind === 'runner-missing') {
-    lines.push('Execution did not start.');
-  } else {
-    lines.push(
-      `Elapsed: ${diagnostics.durationMs} ms; timeout: ${diagnostics.timeoutMs} ms; exit: ${diagnostics.exitCode ?? 'unavailable'}.`,
-    );
-  }
+  lines.push(...executionLines(report, diagnostics));
 
   if (runPath !== undefined) {
     lines.push(`Run record (command, selection, input fingerprints): ${runPath}`);
   }
 
-  for (const [label, file] of [
-    ['stdout', diagnostics.stdout],
-    ['stderr', diagnostics.stderr],
-    ['JSON report', diagnostics.report],
-  ] as const) {
-    if (file !== undefined) {
-      lines.push(diagnosticFileLine(label, file));
-    }
-  }
-
-  if (diagnostics.report === undefined) {
-    lines.push('No JSON report was saved.');
-  }
-
-  if (diagnostics.error !== undefined) {
-    lines.push(cap(printable(diagnostics.error), 400));
-  }
-
+  lines.push(...savedFileLines(diagnostics));
   lines.push(
     `Saved diagnostics are not reusable verification. Cleanup keeps up to ${maximumRetainedRuns} completed runs for seven days.`,
   );

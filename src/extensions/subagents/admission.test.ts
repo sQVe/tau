@@ -63,11 +63,14 @@ it('reserves one shared tree cap and retains uncertain work without double relea
   expect(() => {
     reserveTask(root, task('overflow'), 99);
   }).toThrow('capacity full');
-  recordEvent(childDirectory, child.taskId, 'settled', 'Turn ended.', true);
+  recordEvent(childDirectory, child.taskId, 'settled', { detail: 'Turn ended.', stopped: true });
   expect(() => {
     reserveTask(root, task('still-full'));
   }).toThrow('capacity full');
-  recordEvent(childDirectory, child.taskId, 'cleanup', 'Confirmed stopped.', true);
+  recordEvent(childDirectory, child.taskId, 'cleanup', {
+    detail: 'Confirmed stopped.',
+    stopped: true,
+  });
   reserveTask(root, task('replacement'));
   expect(() => {
     reserveTask(root, task('overflow-again'));
@@ -75,7 +78,10 @@ it('reserves one shared tree cap and retains uncertain work without double relea
   expect(() => {
     reserveTask(root, child);
   }).toThrow('already reserved');
-  recordEvent(parentDirectory, parent.taskId, 'cleanup', 'Unconfirmed.', false);
+  recordEvent(parentDirectory, parent.taskId, 'cleanup', {
+    detail: 'Unconfirmed.',
+    stopped: false,
+  });
   expect(() => {
     reserveTask(root, task('uncertain'));
   }).toThrow('capacity full');
@@ -101,12 +107,18 @@ it('ignores retired reservations only after their cleanup was confirmed', () => 
   expect(() => {
     reserveTask(root, task('blocked'));
   }).toThrow('retired format');
-  recordEvent(retiredDirectory, retired.taskId, 'cleanup', 'Unconfirmed.', false);
+  recordEvent(retiredDirectory, retired.taskId, 'cleanup', {
+    detail: 'Unconfirmed.',
+    stopped: false,
+  });
   expect(() => {
     reserveTask(root, task('still-blocked'));
   }).toThrow('retired format');
   rmSync(join(retiredDirectory, 'cleanup.json'));
-  recordEvent(retiredDirectory, retired.taskId, 'cleanup', 'Confirmed stopped.', true);
+  recordEvent(retiredDirectory, retired.taskId, 'cleanup', {
+    detail: 'Confirmed stopped.',
+    stopped: true,
+  });
   reserveTask(root, task('fresh'));
   expect(existsSync(join(directory, 'fresh.json'))).toBe(true);
 });

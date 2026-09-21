@@ -210,26 +210,26 @@ it.each(['submitted', 'not-delivered', 'uncertain'] as const)(
       return '{}';
     });
 
-    const first = await submitGenericText(
-      setup.records,
-      setup.task,
-      'reply-one',
-      'Scoped answer.',
+    const first = await submitGenericText(setup.records, setup.task, {
+      id: 'reply-one',
+      text: 'Scoped answer.',
       send,
-    );
-    const repeated = await submitGenericText(
-      setup.records,
-      setup.task,
-      'reply-one',
-      'Scoped answer.',
+    });
+    const repeated = await submitGenericText(setup.records, setup.task, {
+      id: 'reply-one',
+      text: 'Scoped answer.',
       send,
-    );
+    });
 
     expect(first?.observation?.state).toBe(state);
     expect(repeated).toEqual(first);
     expect(send).toHaveBeenCalledTimes(1);
     await expect(
-      submitGenericText(setup.records, setup.task, 'reply-one', 'Changed answer.', send),
+      submitGenericText(setup.records, setup.task, {
+        id: 'reply-one',
+        text: 'Changed answer.',
+        send,
+      }),
     ).rejects.toThrow('Conflicting');
   },
 );
@@ -243,13 +243,11 @@ it('retains a crash between intent and observation as uncertain without a retry'
   });
   const send = vi.fn<() => Promise<string>>(async () => '{}');
 
-  const receipt = await submitGenericText(
-    setup.records,
-    setup.task,
-    'crash',
-    'Scoped answer.',
+  const receipt = await submitGenericText(setup.records, setup.task, {
+    id: 'crash',
+    text: 'Scoped answer.',
     send,
-  );
+  });
 
   expect(receipt?.observation).toBeUndefined();
   expect(receipt?.retry).toContain('uncertain delivery');

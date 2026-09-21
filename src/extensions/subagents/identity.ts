@@ -6,13 +6,15 @@ import { Value } from 'typebox/value';
 
 import { monotonicNow, requireActiveAncestry, taskEnded } from './admission.js';
 import { runClient } from './cancellation.js';
-import { sessionLineage } from './history.js';
 import { readEvent, readRecord, readTasks } from './records.js';
+import { sessionLineage } from './sessionLineage.js';
 import { isPiLoadout } from './types.js';
 import type { Task } from './types.js';
 
 export const currentProcessIdentity = async (signal?: AbortSignal) => {
-  const output = await runClient('ps', ['-p', String(process.pid), '-o', 'lstart='], 1000, signal);
+  const output = await runClient('ps', ['-p', String(process.pid), '-o', 'lstart='], 1000, {
+    signal,
+  });
   const startedAt = output.trim();
 
   if (!startedAt) {
@@ -28,9 +30,104 @@ const ownedSchema = Type.Object({
   token: Type.Optional(Type.String({ minLength: 1 })),
 });
 
+interface OwnedRecord {
+  processId: number;
+  startedAt: string;
+  token?: string;
+}
+
+interface ProcessIdentity {
+  processId: number;
+  startedAt: string;
+}
+
+const ownedRecord = (value: unknown): OwnedRecord | undefined => {
+  if (!Value.Check(ownedSchema, value)) {
+    return undefined;
+  }
+
+  return value;
+};
+
+const matchesOwnedProcess = (owned: OwnedRecord, processIdentity: ProcessIdentity): boolean =>
+  owned.processId === processIdentity.processId && owned.startedAt === processIdentity.startedAt;
+
+const matchesOwnedWorker = (
+  owned: OwnedRecord,
+  current: { file: string; id: string },
+  processIdentity: ProcessIdentity,
+): boolean => matchesOwnedProcess(owned, processIdentity) && owned.token === current.file;
+
+const readOwnedRecord = (directory: string): unknown => {
+  try {
+    return readRecord(directory, 'owned.json');
+  } catch {
+    return undefined;
+  }
+};
+
+const matchesOwnedSession = (
+  directory: string,
+  task: Task,
+  current: { file: string; id: string },
+  processIdentity: ProcessIdentity,
+): boolean => {
+  if (taskEnded(directory, task) || !existsSync(join(directory, 'owned.json'))) {
+    return false;
+  }
+
+  const owned = ownedRecord(readOwnedRecord(directory));
+
+  if (!owned || !matchesOwnedWorker(owned, current, processIdentity)) {
+    return false;
+  }
+
+  const ready = readEvent(directory, task.taskId, 'ready');
+  const accepted = Boolean(readEvent(directory, task.taskId, 'accepted'));
+  const matchesNativeSession =
+    task.nativeSessionId === current.id && task.nativeSessionFile === current.file;
+
+  return matchesNativeSession && ready?.processId === processIdentity.processId && accepted;
+};
+
+const locatorMatches = (locator: string | undefined, directory: string): boolean => {
+  if (!locator) {
+    return true;
+  }
+
+  return existsSync(locator) && realpathSync(locator) === realpathSync(directory);
+};
+
+const matchesRootSession = (task: Task, ancestry: ReturnType<typeof sessionLineage>): boolean =>
+  task.tree.rootSession === ancestry.root.rootSession &&
+  task.tree.rootSessionId === ancestry.root.rootSessionId;
+
+const hasDelegationAuthority = (task: Task): boolean =>
+  isPiLoadout(task.loadout) && task.loadout.tools.includes('subagent');
+
+const deadlineHasBudgetLeft = (task: Task): boolean =>
+  monotonicNow() < task.tree.monotonicDeadline - task.cancellationBudget;
+
+const parentAuthorityIsValid = (
+  task: Task,
+  ancestry: ReturnType<typeof sessionLineage>,
+  locator: string | undefined,
+  directory: string,
+): boolean => {
+  if (!locatorMatches(locator, directory)) {
+    return false;
+  }
+
+  if (!matchesRootSession(task, ancestry)) {
+    return false;
+  }
+
+  return hasDelegationAuthority(task) && deadlineHasBudgetLeft(task);
+};
+
 const refuseWorkerProcessAsRoot = (
   directories: string[],
-  processIdentity: { processId: number; startedAt: string },
+  processIdentity: ProcessIdentity,
 ): void => {
   // Removing the locator or switching native sessions cannot turn an owned worker into a root caller.
   // Retired records are included because a worker launched before an upgrade may still be running.
@@ -51,11 +148,9 @@ const refuseWorkerProcessAsRoot = (
       );
     }
 
-    if (
-      Value.Check(ownedSchema, owned) &&
-      owned.processId === processIdentity.processId &&
-      owned.startedAt === processIdentity.startedAt
-    ) {
+    const record = ownedRecord(owned);
+
+    if (record && matchesOwnedProcess(record, processIdentity)) {
       throw new Error('Owned worker process cannot claim a different root identity.');
     }
   }
@@ -65,7 +160,7 @@ const refuseWorkerProcessAsRoot = (
 export const authenticateParent = (
   root: string,
   current: { file: string; id: string },
-  processIdentity: { processId: number; startedAt: string },
+  processIdentity: ProcessIdentity,
   locator?: string,
 ): { tree: NonNullable<Task['tree']>; parent?: Task } => {
   const ancestry = sessionLineage(root, current);
@@ -74,43 +169,15 @@ export const authenticateParent = (
   const candidates = entries.filter(
     ({ task }) => task.nativeSessionId === current.id || task.nativeSessionFile === current.file,
   );
-  const matches = candidates.filter(({ directory, task }) => {
-    if (taskEnded(directory, task) || !existsSync(join(directory, 'owned.json'))) {
-      return false;
-    }
-
-    let owned: unknown;
-
-    try {
-      owned = readRecord(directory, 'owned.json');
-    } catch {
-      return false;
-    }
-
-    return (
-      Value.Check(ownedSchema, owned) &&
-      owned.processId === processIdentity.processId &&
-      owned.startedAt === processIdentity.startedAt &&
-      owned.token === current.file &&
-      task.nativeSessionId === current.id &&
-      task.nativeSessionFile === current.file &&
-      readEvent(directory, task.taskId, 'ready')?.processId === processIdentity.processId &&
-      Boolean(readEvent(directory, task.taskId, 'accepted'))
-    );
-  });
+  const matches = candidates.filter(({ directory, task }) =>
+    matchesOwnedSession(directory, task, current, processIdentity),
+  );
   const selected = matches.length === 1 ? matches[0] : undefined;
 
   if (selected) {
     const { task, directory } = selected;
 
-    if (
-      (locator && (!existsSync(locator) || realpathSync(locator) !== realpathSync(directory))) ||
-      task.tree.rootSession !== ancestry.root.rootSession ||
-      task.tree.rootSessionId !== ancestry.root.rootSessionId ||
-      !isPiLoadout(task.loadout) ||
-      !task.loadout.tools.includes('subagent') ||
-      monotonicNow() >= task.tree.monotonicDeadline - task.cancellationBudget
-    ) {
+    if (!parentAuthorityIsValid(task, ancestry, locator, directory)) {
       throw new Error(
         'Nested parent authority, locator, or original deadline is invalid. Saved workers cannot acquire new delegation authority.',
       );

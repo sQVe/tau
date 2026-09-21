@@ -16,6 +16,7 @@ import { join } from 'node:path';
 
 import { afterEach, expect, it, onTestFinished as afterTest, vi } from 'vitest';
 
+import * as questions from './questionRecords.js';
 import * as records from './records.js';
 
 vi.mock('node:fs', async (importOriginal) => {
@@ -290,13 +291,13 @@ it.each([
 it('reads the saved task once while finding the pending question', () => {
   const { directory, task, question, reply, acknowledgement } = questionFixture();
   const pending = { ...question, questionId: 'question-two' };
-  records.acceptQuestion(directory, task.taskId, question);
-  records.acceptReply(directory, task.taskId, reply);
-  records.acceptAcknowledgement(directory, task.taskId, acknowledgement);
-  records.acceptQuestion(directory, task.taskId, pending);
+  questions.acceptQuestion(directory, task.taskId, question);
+  questions.acceptReply(directory, task.taskId, reply);
+  questions.acceptAcknowledgement(directory, task.taskId, acknowledgement);
+  questions.acceptQuestion(directory, task.taskId, pending);
   vi.mocked(fileSystem.openSync).mockClear();
 
-  expect(records.readPendingQuestion(directory, task.taskId)).toEqual(pending);
+  expect(questions.readPendingQuestion(directory, task.taskId)).toEqual(pending);
   const taskReads = vi
     .mocked(fileSystem.openSync)
     .mock.calls.filter(([path]) => String(path).endsWith('task.json'));
@@ -378,12 +379,12 @@ it('requires directory sync on identical question reply and acknowledgement reco
     vi.mocked(fsyncSync).mockImplementation(original.fsyncSync);
   });
   const submissions = [
-    ['question', question, () => records.acceptQuestion(directory, task.taskId, question)],
-    ['reply', reply, () => records.acceptReply(directory, task.taskId, reply)],
+    ['question', question, () => questions.acceptQuestion(directory, task.taskId, question)],
+    ['reply', reply, () => questions.acceptReply(directory, task.taskId, reply)],
     [
       'acknowledgement',
       acknowledgement,
-      () => records.acceptAcknowledgement(directory, task.taskId, acknowledgement),
+      () => questions.acceptAcknowledgement(directory, task.taskId, acknowledgement),
     ],
   ] as const;
 
@@ -414,47 +415,49 @@ it('recovers immutable questions and replies separately from worker acknowledgem
   const { directory, task, question, reply, acknowledgement } = questionFixture();
   const originalTask = readFileSync(join(directory, 'task.json'), 'utf8');
 
-  expect(records).toHaveProperty('acceptQuestion');
-  expect(records.readQuestion(directory, task.taskId, question.questionId)).toBeUndefined();
-  expect(records.acceptQuestion(directory, task.taskId, question)).toEqual(question);
-  expect(records.acceptQuestion(directory, task.taskId, { ...question })).toEqual(question);
-  expect(records.readReply(directory, task.taskId, question.questionId)).toBeUndefined();
-  expect(records.acceptReply(directory, task.taskId, reply)).toEqual(reply);
-  expect(records.acceptReply(directory, task.taskId, { ...reply })).toEqual(reply);
-  expect(records.readAcknowledgement(directory, task.taskId, question.questionId)).toBeUndefined();
-  expect(records.acceptAcknowledgement(directory, task.taskId, acknowledgement)).toEqual(
+  expect(questions).toHaveProperty('acceptQuestion');
+  expect(questions.readQuestion(directory, task.taskId, question.questionId)).toBeUndefined();
+  expect(questions.acceptQuestion(directory, task.taskId, question)).toEqual(question);
+  expect(questions.acceptQuestion(directory, task.taskId, { ...question })).toEqual(question);
+  expect(questions.readReply(directory, task.taskId, question.questionId)).toBeUndefined();
+  expect(questions.acceptReply(directory, task.taskId, reply)).toEqual(reply);
+  expect(questions.acceptReply(directory, task.taskId, { ...reply })).toEqual(reply);
+  expect(
+    questions.readAcknowledgement(directory, task.taskId, question.questionId),
+  ).toBeUndefined();
+  expect(questions.acceptAcknowledgement(directory, task.taskId, acknowledgement)).toEqual(
     acknowledgement,
   );
-  expect(records.acceptAcknowledgement(directory, task.taskId, { ...acknowledgement })).toEqual(
+  expect(questions.acceptAcknowledgement(directory, task.taskId, { ...acknowledgement })).toEqual(
     acknowledgement,
   );
 
-  expect(records.readQuestion(directory, task.taskId, question.questionId)).toEqual(question);
-  expect(records.readReply(directory, task.taskId, question.questionId)).toEqual(reply);
-  expect(records.readAcknowledgement(directory, task.taskId, question.questionId)).toEqual(
+  expect(questions.readQuestion(directory, task.taskId, question.questionId)).toEqual(question);
+  expect(questions.readReply(directory, task.taskId, question.questionId)).toEqual(reply);
+  expect(questions.readAcknowledgement(directory, task.taskId, question.questionId)).toEqual(
     acknowledgement,
   );
   const saved = readdirSync(directory).map(
     (name) => [name, readFileSync(join(directory, name), 'utf8')] as const,
   );
-  records.acceptQuestion(directory, task.taskId, {
+  questions.acceptQuestion(directory, task.taskId, {
     question: question.question,
     questionId: question.questionId,
     taskId: task.taskId,
     version: 1,
   });
-  records.acceptReply(directory, task.taskId, reply);
-  records.acceptAcknowledgement(directory, task.taskId, acknowledgement);
+  questions.acceptReply(directory, task.taskId, reply);
+  questions.acceptAcknowledgement(directory, task.taskId, acknowledgement);
 
   for (const [name, content] of saved) {
     expect(readFileSync(join(directory, name), 'utf8')).toBe(content);
   }
 
   const secondQuestion = { ...question, questionId: 'question-two' };
-  records.acceptQuestion(directory, task.taskId, secondQuestion);
-  expect(records.readReply(directory, task.taskId, secondQuestion.questionId)).toBeUndefined();
+  questions.acceptQuestion(directory, task.taskId, secondQuestion);
+  expect(questions.readReply(directory, task.taskId, secondQuestion.questionId)).toBeUndefined();
   expect(
-    records.readAcknowledgement(directory, task.taskId, secondQuestion.questionId),
+    questions.readAcknowledgement(directory, task.taskId, secondQuestion.questionId),
   ).toBeUndefined();
   expect(readFileSync(join(directory, 'task.json'), 'utf8')).toBe(originalTask);
   expect(records.readTask(directory)).toEqual(task);
@@ -463,11 +466,11 @@ it('recovers immutable questions and replies separately from worker acknowledgem
 it('rejects wrong-task malformed mismatched and conflicting question records', () => {
   const { directory, task, question, reply, acknowledgement } = questionFixture();
 
-  expect(records).toHaveProperty('acceptQuestion');
-  expect(() => records.acceptReply(directory, task.taskId, reply)).toThrow(
+  expect(questions).toHaveProperty('acceptQuestion');
+  expect(() => questions.acceptReply(directory, task.taskId, reply)).toThrow(
     'Reply has no accepted question.',
   );
-  expect(() => records.acceptAcknowledgement(directory, task.taskId, acknowledgement)).toThrow(
+  expect(() => questions.acceptAcknowledgement(directory, task.taskId, acknowledgement)).toThrow(
     'Acknowledgement does not match the accepted reply.',
   );
 
@@ -479,19 +482,19 @@ it('rejects wrong-task malformed mismatched and conflicting question records', (
     { ...question, deadline: 999999 },
     { ...question, question: '界'.repeat(32000) },
   ]) {
-    expect(() => records.acceptQuestion(directory, task.taskId, invalid)).toThrow(
+    expect(() => questions.acceptQuestion(directory, task.taskId, invalid)).toThrow(
       /Invalid|exceeds/,
     );
   }
 
   expect(() =>
-    records.acceptQuestion(directory, 'wrong', { ...question, taskId: 'wrong' }),
+    questions.acceptQuestion(directory, 'wrong', { ...question, taskId: 'wrong' }),
   ).toThrow('wrong saved task');
-  records.acceptQuestion(directory, task.taskId, question);
+  questions.acceptQuestion(directory, task.taskId, question);
   expect(() =>
-    records.acceptQuestion(directory, task.taskId, { ...question, question: 'Changed?' }),
+    questions.acceptQuestion(directory, task.taskId, { ...question, question: 'Changed?' }),
   ).toThrow('Conflicting saved question record.');
-  expect(() => records.acceptAcknowledgement(directory, task.taskId, acknowledgement)).toThrow(
+  expect(() => questions.acceptAcknowledgement(directory, task.taskId, acknowledgement)).toThrow(
     'Acknowledgement does not match the accepted reply.',
   );
 
@@ -503,17 +506,17 @@ it('rejects wrong-task malformed mismatched and conflicting question records', (
     { ...reply, extra: true },
     { ...reply, reply: '界'.repeat(32000) },
   ]) {
-    expect(() => records.acceptReply(directory, task.taskId, invalid)).toThrow(
+    expect(() => questions.acceptReply(directory, task.taskId, invalid)).toThrow(
       /Invalid|exceeds|no accepted question/,
     );
   }
 
-  records.acceptReply(directory, task.taskId, reply);
+  questions.acceptReply(directory, task.taskId, reply);
   expect(() =>
-    records.acceptReply(directory, task.taskId, { ...reply, replyId: 'reply-two' }),
+    questions.acceptReply(directory, task.taskId, { ...reply, replyId: 'reply-two' }),
   ).toThrow('Conflicting saved question record.');
   expect(() =>
-    records.acceptReply(directory, task.taskId, { ...reply, reply: 'Changed.' }),
+    questions.acceptReply(directory, task.taskId, { ...reply, reply: 'Changed.' }),
   ).toThrow('Conflicting saved question record.');
 
   for (const invalid of [
@@ -522,30 +525,36 @@ it('rejects wrong-task malformed mismatched and conflicting question records', (
     { ...acknowledgement, taskId: 'wrong' },
     { ...acknowledgement, applied: true },
   ]) {
-    expect(() => records.acceptAcknowledgement(directory, task.taskId, invalid)).toThrow(
+    expect(() => questions.acceptAcknowledgement(directory, task.taskId, invalid)).toThrow(
       /Invalid|does not match/,
     );
   }
 
-  expect(records.readQuestion(directory, task.taskId, question.questionId)).toEqual(question);
-  expect(records.readReply(directory, task.taskId, question.questionId)).toEqual(reply);
-  expect(records.readAcknowledgement(directory, task.taskId, question.questionId)).toBeUndefined();
+  expect(questions.readQuestion(directory, task.taskId, question.questionId)).toEqual(question);
+  expect(questions.readReply(directory, task.taskId, question.questionId)).toEqual(reply);
+  expect(
+    questions.readAcknowledgement(directory, task.taskId, question.questionId),
+  ).toBeUndefined();
 });
 
 it('validates saved question reply and acknowledgement chains during recovery', () => {
   const { directory, task, question, reply, acknowledgement } = questionFixture();
 
-  expect(records).toHaveProperty('acceptQuestion');
-  records.acceptQuestion(directory, task.taskId, question);
-  records.acceptReply(directory, task.taskId, reply);
-  records.acceptAcknowledgement(directory, task.taskId, acknowledgement);
+  expect(questions).toHaveProperty('acceptQuestion');
+  questions.acceptQuestion(directory, task.taskId, question);
+  questions.acceptReply(directory, task.taskId, reply);
+  questions.acceptAcknowledgement(directory, task.taskId, acknowledgement);
   const files = [
-    ['question', question, () => records.readQuestion(directory, task.taskId, question.questionId)],
-    ['reply', reply, () => records.readReply(directory, task.taskId, question.questionId)],
+    [
+      'question',
+      question,
+      () => questions.readQuestion(directory, task.taskId, question.questionId),
+    ],
+    ['reply', reply, () => questions.readReply(directory, task.taskId, question.questionId)],
     [
       'acknowledgement',
       acknowledgement,
-      () => records.readAcknowledgement(directory, task.taskId, question.questionId),
+      () => questions.readAcknowledgement(directory, task.taskId, question.questionId),
     ],
   ] as const;
 
@@ -560,7 +569,7 @@ it('validates saved question reply and acknowledgement chains during recovery', 
       writeFileSync(path, JSON.stringify(invalid));
       expect(recover).toThrow('Invalid saved worker');
       expect(() =>
-        records.readAcknowledgement(directory, task.taskId, question.questionId),
+        questions.readAcknowledgement(directory, task.taskId, question.questionId),
       ).toThrow('Invalid saved worker');
     }
 
@@ -574,9 +583,9 @@ it('validates saved question reply and acknowledgement chains during recovery', 
     writeFileSync(path, JSON.stringify({ ...value, [kind]: '界'.repeat(32000) }));
     expect(recover).toThrow('Invalid saved worker');
     rmSync(path);
-    expect(() => records.readAcknowledgement(directory, task.taskId, question.questionId)).toThrow(
-      'Invalid saved worker',
-    );
+    expect(() =>
+      questions.readAcknowledgement(directory, task.taskId, question.questionId),
+    ).toThrow('Invalid saved worker');
     writeFileSync(path, JSON.stringify(value));
   }
 
@@ -584,13 +593,13 @@ it('validates saved question reply and acknowledgement chains during recovery', 
     join(directory, `acknowledgement-${question.questionId}.json`),
     JSON.stringify({ ...acknowledgement, replyId: 'wrong' }),
   );
-  expect(() => records.readAcknowledgement(directory, task.taskId, question.questionId)).toThrow(
+  expect(() => questions.readAcknowledgement(directory, task.taskId, question.questionId)).toThrow(
     'Invalid saved worker acknowledgement.',
   );
-  expect(() => records.readQuestion(directory, task.taskId, '../escape')).toThrow(
+  expect(() => questions.readQuestion(directory, task.taskId, '../escape')).toThrow(
     'Invalid question identity',
   );
-  expect(() => records.readQuestion(directory, 'wrong', question.questionId)).toThrow(
+  expect(() => questions.readQuestion(directory, 'wrong', question.questionId)).toThrow(
     'wrong saved task',
   );
 });

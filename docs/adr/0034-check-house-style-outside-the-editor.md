@@ -29,6 +29,11 @@ instructions still cover judgments that lint cannot make, including where logica
 Prefer native Oxlint rules, then compatible plugins, then local rules. Local rules are needed for
 naming because the typescript-eslint naming rule requires parser services this integration lacks.
 
+Limit size and density with the same checks: 60 lines and 4 parameters per function, 500 lines per
+file, and 3 checks per condition with no mixed `&&` and `||`. Complexity 12 and nesting depth 3 stay
+ordinary diagnostics. The limits sit in the middle of what ESLint, XO, golangci-lint, RuboCop, and
+Biome use. Test files are exempt from the size limits.
+
 Keep renames and helper movement manual. Allow narrow, explained suppressions for external contracts
 and callback cycles.
 

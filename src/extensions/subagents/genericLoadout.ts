@@ -14,22 +14,37 @@ export interface NativeLaunchInput {
   permissions: string;
 }
 
+export interface GenericLoadoutRequest {
+  input: NativeLaunchInput;
+  profile: Profile;
+  kind: string;
+  cwd: string;
+  context: Partial<Pick<ExtensionContext, 'hasUI' | 'ui'>>;
+  signal: AbortSignal;
+}
+
+const escapesCwd = (relativeDirectory: string): boolean =>
+  isAbsolute(relativeDirectory) ||
+  relativeDirectory === '..' ||
+  relativeDirectory.startsWith('../');
+
 const reportArea = (cwd: string, requested: string | undefined): string => {
   const directory = realpathSync(resolve(cwd, requested ?? '.'));
   const relativeDirectory = relative(cwd, directory);
 
-  if (
-    isAbsolute(relativeDirectory) ||
-    relativeDirectory === '..' ||
-    relativeDirectory.startsWith('../') ||
-    !statSync(directory).isDirectory()
-  ) {
+  if (escapesCwd(relativeDirectory) || !statSync(directory).isDirectory()) {
     throw new Error(
       'The report directory must already exist inside the authorized cwd. Tau will not widen a native sandbox.',
     );
   }
 
   return directory;
+};
+
+const requireSupportedKind = (kind: string): void => {
+  if (kind === 'pi' || kind === 'generic' || !/^[a-z][a-z0-9-]{0,63}$/.test(kind)) {
+    throw new Error('Select a non-Pi herdr kind. Herdr decides which kinds are supported.');
+  }
 };
 
 const captureConfiguration = (
@@ -44,9 +59,7 @@ const captureConfiguration = (
     );
   }
 
-  if (kind === 'pi' || kind === 'generic' || !/^[a-z][a-z0-9-]{0,63}$/.test(kind)) {
-    throw new Error('Select a non-Pi herdr kind. Herdr decides which kinds are supported.');
-  }
+  requireSupportedKind(kind);
 
   if (profile.thinkingSpecified) {
     throw new Error(
@@ -85,13 +98,10 @@ const captureConfiguration = (
 };
 
 export const resolveGenericLoadout = async (
-  input: NativeLaunchInput,
-  profile: Profile,
-  kind: string,
-  cwd: string,
-  context: Partial<Pick<ExtensionContext, 'hasUI' | 'ui'>>,
-  signal: AbortSignal,
+  request: GenericLoadoutRequest,
 ): Promise<GenericLoadout> => {
+  const { input, profile, kind, cwd, context, signal } = request;
+
   signal.throwIfAborted();
   const loadout = captureConfiguration(input, profile, kind, cwd);
 

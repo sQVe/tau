@@ -49,14 +49,10 @@ const setup = () => {
   seedSession(task);
   const processIdentity = { processId: 4242, startedAt: 'original start' };
   publish(directory, 'owned.json', { ...processIdentity, token: task.nativeSessionFile });
-  recordEvent(
-    directory,
-    task.taskId,
-    'ready',
-    'Runtime checked.',
-    false,
-    processIdentity.processId,
-  );
+  recordEvent(directory, task.taskId, 'ready', {
+    detail: 'Runtime checked.',
+    processId: processIdentity.processId,
+  });
   recordEvent(directory, task.taskId, 'accepted', 'Task started.');
   const current = { file: task.nativeSessionFile, id: task.nativeSessionId };
 
@@ -143,7 +139,10 @@ it('authenticates only the active successor while preserving original native anc
     summary: 'Finished.',
     evidence: [],
   });
-  recordEvent(directory, task.taskId, 'cleanup', 'Confirmed stopped.', true);
+  recordEvent(directory, task.taskId, 'cleanup', {
+    detail: 'Confirmed stopped.',
+    stopped: true,
+  });
   const successorDirectory = join(root, 'successor');
   mkdirSync(successorDirectory);
   const successor: Task = {
@@ -160,14 +159,10 @@ it('authenticates only the active successor while preserving original native anc
     startedAt: 'new start',
     token: task.nativeSessionFile,
   });
-  recordEvent(
-    successorDirectory,
-    successor.taskId,
-    'ready',
-    'Runtime checked.',
-    false,
-    processIdentity.processId,
-  );
+  recordEvent(successorDirectory, successor.taskId, 'ready', {
+    detail: 'Runtime checked.',
+    processId: processIdentity.processId,
+  });
   recordEvent(successorDirectory, successor.taskId, 'accepted', 'Started.');
 
   expect(() => authenticateParent(root, current, processIdentity)).toThrow('identity');

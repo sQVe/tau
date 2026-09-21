@@ -1,5 +1,6 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
+import type { Component, TUI } from '@earendil-works/pi-tui';
 
 import { isBottom, isDown, isTop, isUp } from '../../keys/index.js';
 import type { Snippet } from './types.js';
@@ -9,6 +10,8 @@ const chromeHeight = 6;
 // Chrome plus room for the editor below, when the terminal is tall enough.
 const frameHeight = 10;
 const minimumViewHeight = 5;
+
+type MenuTheme = Parameters<Parameters<ExtensionContext['ui']['custom']>[0]>[1];
 
 interface ListRow {
   text: string;
@@ -20,24 +23,35 @@ interface Viewport {
   scroll: number;
 }
 
+interface ViewportRequest {
+  lines: string[];
+  scroll: number;
+  maximumHeight: number;
+  indicator: (text: string) => string;
+  focusRow?: number;
+}
+
+interface MenuModel {
+  prepends: Snippet[];
+  appends: Snippet[];
+  items: Snippet[];
+  working: Set<string>;
+}
+
 /**
  * Clips `lines` to at most `maximumHeight` lines and scrolls `focusRow` into view.
  * Indicators use two rows when there is room for at least one content row.
  */
-const clipToViewport = (
-  lines: string[],
-  scroll: number,
-  maximumHeight: number,
-  indicator: (text: string) => string,
-  focusRow?: number,
-): Viewport => {
+const clipToViewport = (request: ViewportRequest): Viewport => {
+  const { lines, maximumHeight, indicator, focusRow } = request;
+
   if (lines.length <= maximumHeight) {
     return { lines, scroll: 0 };
   }
 
   const showIndicators = maximumHeight >= 3;
   const height = showIndicators ? maximumHeight - 2 : maximumHeight;
-  let position = Math.min(Math.max(0, scroll), lines.length - height);
+  let position = Math.min(Math.max(0, request.scroll), lines.length - height);
 
   if (focusRow !== undefined) {
     if (focusRow < position) {
@@ -63,6 +77,222 @@ const clipToViewport = (
   };
 };
 
+class SnippetMenuComponent implements Component {
+  private mode: 'list' | 'preview' = 'list';
+  private cursor = 0;
+  private listScroll = 0;
+  private previewScroll = 0;
+
+  private readonly model: MenuModel;
+  private readonly theme: MenuTheme;
+  private readonly terminal: TUI;
+  private readonly done: (result: boolean) => void;
+
+  constructor(model: MenuModel, theme: MenuTheme, terminal: TUI, done: (result: boolean) => void) {
+    this.model = model;
+    this.theme = theme;
+    this.terminal = terminal;
+    this.done = done;
+  }
+
+  private dim(text: string): string {
+    return this.theme.fg('dim', text);
+  }
+
+  private itemAt(index: number): Snippet {
+    const snippet = this.model.items[index];
+
+    if (snippet === undefined) {
+      throw new Error(`No snippet at index ${index} of ${this.model.items.length}`);
+    }
+
+    return snippet;
+  }
+
+  private itemRow(snippet: Snippet, index: number, width: number): string {
+    const pointer = index === this.cursor ? this.theme.fg('accent', '> ') : '  ';
+    const checkbox = this.model.working.has(snippet.id)
+      ? this.theme.fg('success', '[x]')
+      : this.dim('[ ]');
+    const description = snippet.description === '' ? '' : this.dim(` - ${snippet.description}`);
+
+    return truncateToWidth(
+      `${pointer}${checkbox} ${this.theme.bold(snippet.name)}${description}`,
+      width,
+    );
+  }
+
+  // Every row must be truncated, or a narrow terminal wraps it and the frame
+  // grows a line past the height render() reported.
+  private header(text: string, width: number): string {
+    return truncateToWidth(this.dim(text), width);
+  }
+
+  private buildListRows(width: number): ListRow[] {
+    return [
+      {
+        text: this.header('↑ PREPEND - added before your message', width),
+        itemIndex: null,
+      },
+      ...this.model.prepends.map((snippet, index) => ({
+        text: this.itemRow(snippet, index, width),
+        itemIndex: index,
+      })),
+      { text: '', itemIndex: null },
+      {
+        text: this.header('↓ APPEND - added after your message', width),
+        itemIndex: null,
+      },
+      ...this.model.appends.map((snippet, index) => ({
+        text: this.itemRow(snippet, this.model.prepends.length + index, width),
+        itemIndex: this.model.prepends.length + index,
+      })),
+    ];
+  }
+
+  private buildPreviewRows(snippet: Snippet, width: number): string[] {
+    return [
+      truncateToWidth(this.theme.bold(snippet.name), width),
+      truncateToWidth(
+        this.dim(`${snippet.placement} - order ${snippet.order} - ${snippet.id}`),
+        width,
+      ),
+      this.dim('─'.repeat(Math.min(width, 40))),
+      ...snippet.body
+        .split('\n')
+        .flatMap((line) => wrapTextWithAnsi(line, width))
+        .map((line) => truncateToWidth(line, width)),
+    ];
+  }
+
+  private renderList(width: number, maximumHeight: number) {
+    const rows = this.buildListRows(width);
+    const view = clipToViewport({
+      lines: rows.map((row) => row.text),
+      scroll: this.listScroll,
+      maximumHeight,
+      indicator: (text) => this.header(text, width),
+      focusRow: rows.findIndex((row) => row.itemIndex === this.cursor),
+    });
+    this.listScroll = view.scroll;
+
+    return {
+      content: view.lines,
+      title: 'Prompt snippets',
+      hints: 'j/k move • g/G ends • Space toggle • Tab preview • Enter apply • Esc cancel',
+    };
+  }
+
+  private renderPreview(width: number, maximumHeight: number) {
+    const snippet = this.itemAt(this.cursor);
+    const view = clipToViewport({
+      lines: this.buildPreviewRows(snippet, width),
+      scroll: this.previewScroll,
+      maximumHeight,
+      indicator: (text) => this.header(text, width),
+    });
+    this.previewScroll = view.scroll;
+
+    return {
+      content: view.lines,
+      title: `Preview: ${snippet.name}`,
+      hints: 'j/k or ↑↓ scroll • g/G or Home/End • Tab/Esc back',
+    };
+  }
+
+  private handleListInput(data: string): void {
+    if (isUp(data)) {
+      this.cursor = (this.cursor - 1 + this.model.items.length) % this.model.items.length;
+    } else if (isDown(data)) {
+      this.cursor = (this.cursor + 1) % this.model.items.length;
+    } else if (isTop(data)) {
+      this.cursor = 0;
+    } else if (isBottom(data)) {
+      this.cursor = this.model.items.length - 1;
+    } else if (matchesKey(data, Key.space)) {
+      this.toggle(this.itemAt(this.cursor).id);
+    } else if (matchesKey(data, Key.tab)) {
+      this.mode = 'preview';
+      this.previewScroll = 0;
+    } else if (matchesKey(data, Key.enter)) {
+      this.done(true);
+
+      return;
+    } else if (matchesKey(data, Key.escape)) {
+      this.done(false);
+
+      return;
+    }
+
+    this.terminal.requestRender();
+  }
+
+  private toggle(id: string): void {
+    if (this.model.working.has(id)) {
+      this.model.working.delete(id);
+    } else {
+      this.model.working.add(id);
+    }
+  }
+
+  private handlePreviewInput(data: string): void {
+    if (isUp(data)) {
+      this.previewScroll -= 1;
+    } else if (isDown(data)) {
+      this.previewScroll += 1;
+    } else if (isTop(data)) {
+      this.previewScroll = 0;
+    } else if (isBottom(data)) {
+      this.previewScroll = Number.MAX_SAFE_INTEGER;
+    } else if (matchesKey(data, Key.tab) || matchesKey(data, Key.escape)) {
+      this.mode = 'list';
+    }
+
+    this.terminal.requestRender();
+  }
+
+  private maximumHeight(): number {
+    // Keep at least one content row, even when the terminal cannot fit the frame.
+    return Math.max(
+      1,
+      Math.min(
+        this.terminal.terminal.rows - chromeHeight,
+        Math.max(minimumViewHeight, this.terminal.terminal.rows - frameHeight),
+      ),
+    );
+  }
+
+  render(width: number): string[] {
+    const maximumHeight = this.maximumHeight();
+    const { content, title, hints } =
+      this.mode === 'list'
+        ? this.renderList(width, maximumHeight)
+        : this.renderPreview(width, maximumHeight);
+
+    return [
+      this.theme.fg('accent', '─'.repeat(width)),
+      truncateToWidth(` ${this.theme.fg('accent', this.theme.bold(title))}`, width),
+      '',
+      ...content,
+      '',
+      truncateToWidth(this.dim(` ${hints}`), width),
+      this.theme.fg('accent', '─'.repeat(width)),
+    ];
+  }
+
+  invalidate(): void {
+    // Rendering reads current state directly, so there is nothing to reset.
+  }
+
+  handleInput(data: string): void {
+    if (this.mode === 'list') {
+      this.handleListInput(data);
+    } else {
+      this.handlePreviewInput(data);
+    }
+  }
+}
+
 /**
  * Shows the snippet toggle menu. Resolves to the selected ids, or to null when
  * the user cancels.
@@ -76,190 +306,11 @@ export const openSnippetMenu = async (
   const prepends = snippets.filter((snippet) => snippet.placement === 'prepend');
   const appends = snippets.filter((snippet) => snippet.placement === 'append');
   const items = [...prepends, ...appends];
-
-  const itemAt = (index: number): Snippet => {
-    const snippet = items[index];
-
-    if (snippet === undefined) {
-      throw new Error(`No snippet at index ${index} of ${items.length}`);
-    }
-
-    return snippet;
-  };
+  const model: MenuModel = { prepends, appends, items, working };
 
   // Pi resolves this to undefined when no component ran, which counts as a cancel.
   const confirmed = await context.ui.custom<boolean | undefined>(
-    (terminal, theme, _keybindings, done) => {
-      let mode: 'list' | 'preview' = 'list';
-      let cursor = 0;
-      let listScroll = 0;
-      let previewScroll = 0;
-
-      const dim = (text: string) => theme.fg('dim', text);
-
-      const itemRow = (snippet: Snippet, index: number, width: number) => {
-        const pointer = index === cursor ? theme.fg('accent', '> ') : '  ';
-        const checkbox = working.has(snippet.id) ? theme.fg('success', '[x]') : dim('[ ]');
-        const description = snippet.description === '' ? '' : dim(` - ${snippet.description}`);
-
-        return truncateToWidth(
-          `${pointer}${checkbox} ${theme.bold(snippet.name)}${description}`,
-          width,
-        );
-      };
-
-      // Every row must be truncated, or a narrow terminal wraps it and the frame
-      // grows a line past the height render() reported.
-      const header = (text: string, width: number) => truncateToWidth(dim(text), width);
-
-      const buildListRows = (width: number): ListRow[] => [
-        { text: header('↑ PREPEND - added before your message', width), itemIndex: null },
-        ...prepends.map((snippet, index) => ({
-          text: itemRow(snippet, index, width),
-          itemIndex: index,
-        })),
-        { text: '', itemIndex: null },
-        { text: header('↓ APPEND - added after your message', width), itemIndex: null },
-        ...appends.map((snippet, index) => ({
-          text: itemRow(snippet, prepends.length + index, width),
-          itemIndex: prepends.length + index,
-        })),
-      ];
-
-      const buildPreviewRows = (snippet: Snippet, width: number) => [
-        truncateToWidth(theme.bold(snippet.name), width),
-        truncateToWidth(
-          dim(`${snippet.placement} - order ${snippet.order} - ${snippet.id}`),
-          width,
-        ),
-        dim('─'.repeat(Math.min(width, 40))),
-        ...snippet.body
-          .split('\n')
-          .flatMap((line) => wrapTextWithAnsi(line, width))
-          .map((line) => truncateToWidth(line, width)),
-      ];
-
-      const renderList = (width: number, maximumHeight: number) => {
-        const rows = buildListRows(width);
-        const view = clipToViewport(
-          rows.map((row) => row.text),
-          listScroll,
-          maximumHeight,
-          (text) => header(text, width),
-          rows.findIndex((row) => row.itemIndex === cursor),
-        );
-        listScroll = view.scroll;
-
-        return {
-          content: view.lines,
-          title: 'Prompt snippets',
-          hints: 'j/k move • g/G ends • Space toggle • Tab preview • Enter apply • Esc cancel',
-        };
-      };
-
-      const renderPreview = (width: number, maximumHeight: number) => {
-        const snippet = itemAt(cursor);
-        const view = clipToViewport(
-          buildPreviewRows(snippet, width),
-          previewScroll,
-          maximumHeight,
-          (text) => header(text, width),
-        );
-        previewScroll = view.scroll;
-
-        return {
-          content: view.lines,
-          title: `Preview: ${snippet.name}`,
-          hints: 'j/k or ↑↓ scroll • g/G or Home/End • Tab/Esc back',
-        };
-      };
-
-      const handleListInput = (data: string) => {
-        if (isUp(data)) {
-          cursor = (cursor - 1 + items.length) % items.length;
-        } else if (isDown(data)) {
-          cursor = (cursor + 1) % items.length;
-        } else if (isTop(data)) {
-          cursor = 0;
-        } else if (isBottom(data)) {
-          cursor = items.length - 1;
-        } else if (matchesKey(data, Key.space)) {
-          const { id } = itemAt(cursor);
-
-          if (working.has(id)) {
-            working.delete(id);
-          } else {
-            working.add(id);
-          }
-        } else if (matchesKey(data, Key.tab)) {
-          mode = 'preview';
-          previewScroll = 0;
-        } else if (matchesKey(data, Key.enter)) {
-          done(true);
-
-          return;
-        } else if (matchesKey(data, Key.escape)) {
-          done(false);
-
-          return;
-        }
-
-        terminal.requestRender();
-      };
-
-      const handlePreviewInput = (data: string) => {
-        if (isUp(data)) {
-          previewScroll -= 1;
-        } else if (isDown(data)) {
-          previewScroll += 1;
-        } else if (isTop(data)) {
-          previewScroll = 0;
-        } else if (isBottom(data)) {
-          previewScroll = Number.MAX_SAFE_INTEGER;
-        } else if (matchesKey(data, Key.tab) || matchesKey(data, Key.escape)) {
-          mode = 'list';
-        }
-
-        terminal.requestRender();
-      };
-
-      return {
-        render(width: number) {
-          // Keep at least one content row, even when the terminal cannot fit the frame.
-          const maximumHeight = Math.max(
-            1,
-            Math.min(
-              terminal.terminal.rows - chromeHeight,
-              Math.max(minimumViewHeight, terminal.terminal.rows - frameHeight),
-            ),
-          );
-          const { content, title, hints } =
-            mode === 'list'
-              ? renderList(width, maximumHeight)
-              : renderPreview(width, maximumHeight);
-
-          return [
-            theme.fg('accent', '─'.repeat(width)),
-            truncateToWidth(` ${theme.fg('accent', theme.bold(title))}`, width),
-            '',
-            ...content,
-            '',
-            truncateToWidth(dim(` ${hints}`), width),
-            theme.fg('accent', '─'.repeat(width)),
-          ];
-        },
-        invalidate() {
-          // Rendering reads current state directly, so there is nothing to reset.
-        },
-        handleInput(data: string) {
-          if (mode === 'list') {
-            handleListInput(data);
-          } else {
-            handlePreviewInput(data);
-          }
-        },
-      };
-    },
+    (terminal, theme, _keybindings, done) => new SnippetMenuComponent(model, theme, terminal, done),
   );
 
   return confirmed === true ? working : null;

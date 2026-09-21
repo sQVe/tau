@@ -8,9 +8,11 @@ import {
   readSync,
   realpathSync,
 } from 'node:fs';
+import type { BigIntStats } from 'node:fs';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
+import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { acceptReport, publish, readOptionalRecord, readReport } from './records.js';
@@ -47,6 +49,25 @@ export const genericPrompt = (task: Task): string => {
 
 const reportMetadataFields = ['size', 'mtimeNs', 'ctimeNs'] as const;
 
+const metadataChanged = (before: BigIntStats, after: BigIntStats, current: BigIntStats): boolean =>
+  reportMetadataFields.some(
+    (field) => before[field] !== after[field] || after[field] !== current[field],
+  );
+
+const reportIdentityChanged = (
+  length: number,
+  before: BigIntStats,
+  after: BigIntStats,
+  current: BigIntStats,
+): boolean => {
+  const limit = BigInt(reportByteLimit);
+  const oversized = length > reportByteLimit || after.size > limit || current.size > limit;
+  const replaced =
+    current.isSymbolicLink() || current.dev !== before.dev || current.ino !== before.ino;
+
+  return oversized || replaced;
+};
+
 const readReportContent = (descriptor: number, path: string): string | undefined => {
   const before = fstatSync(descriptor, { bigint: true });
 
@@ -74,24 +95,12 @@ const readReportContent = (descriptor: number, path: string): string | undefined
   const after = fstatSync(descriptor, { bigint: true });
   const current = lstatSync(path, { bigint: true });
 
-  if (
-    length > reportByteLimit ||
-    after.size > BigInt(reportByteLimit) ||
-    current.size > BigInt(reportByteLimit) ||
-    current.isSymbolicLink() ||
-    current.dev !== before.dev ||
-    current.ino !== before.ino
-  ) {
+  if (reportIdentityChanged(length, before, after, current)) {
     throw new Error('Report file identity changed or is oversized.');
   }
 
   // An in-progress native write is not a completed report or a reason to terminate the task.
-  if (
-    BigInt(length) !== before.size ||
-    reportMetadataFields.some(
-      (field) => before[field] !== after[field] || after[field] !== current[field],
-    )
-  ) {
+  if (BigInt(length) !== before.size || metadataChanged(before, after, current)) {
     return undefined;
   }
 
@@ -240,6 +249,18 @@ const submissionName = (id: string, suffix: string): string => {
   return `submission-${id}-${suffix}.json`;
 };
 
+const isMatchingSubmission = (
+  value: unknown,
+  taskId: string,
+  id: string,
+): value is Static<typeof submissionSchema> => {
+  if (!Value.Check(submissionSchema, value)) {
+    return false;
+  }
+
+  return value.taskId === taskId && value.id === id;
+};
+
 export const readGenericSubmission = (directory: string, taskId: string, id: string) => {
   const intent = readOptionalRecord(directory, submissionName(id, 'intent'));
 
@@ -257,12 +278,7 @@ export const readGenericSubmission = (directory: string, taskId: string, id: str
 
   const observation = readOptionalRecord(directory, submissionName(id, 'observation'));
 
-  if (
-    observation !== undefined &&
-    (!Value.Check(submissionSchema, observation) ||
-      observation.taskId !== taskId ||
-      observation.id !== id)
-  ) {
+  if (observation !== undefined && !isMatchingSubmission(observation, taskId, id)) {
     throw new Error('Invalid native submission observation.');
   }
 
@@ -290,13 +306,18 @@ const blockedSubmission = (error: unknown): boolean => {
   }
 };
 
+export interface GenericSubmission {
+  id: string;
+  text: string;
+  send: () => Promise<string>;
+}
+
 export const submitGenericText = async (
   directory: string,
   task: Task,
-  id: string,
-  text: string,
-  send: () => Promise<string>,
+  submission: GenericSubmission,
 ) => {
+  const { id, text, send } = submission;
   const previous = readGenericSubmission(directory, task.taskId, id);
 
   if (previous) {

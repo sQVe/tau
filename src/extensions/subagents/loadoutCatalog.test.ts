@@ -12,14 +12,12 @@ import { ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { fixtureLoadout } from './fixtures/loadout.js';
+import { checkWorkerRuntime, resolveLoadout, validateSavedLoadout } from './loadout.js';
 import {
-  checkWorkerRuntime,
   integrationFingerprint,
   modelFingerprint,
   providerFingerprint,
-  resolveLoadout,
-  validateSavedLoadout,
-} from './loadout.js';
+} from './loadoutFingerprint.js';
 
 const fixture = async () => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'tau-cached-catalog-')));

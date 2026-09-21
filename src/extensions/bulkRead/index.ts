@@ -1,5 +1,9 @@
 import { isToolCallEventType } from '@earendil-works/pi-coding-agent';
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ToolResultEvent,
+} from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
 import { resolveDelegate } from '../../delegateModel/index.js';
@@ -11,27 +15,32 @@ export const bulkReadLineThreshold = 400;
 // Recoverable failures say nothing about whether the delegate is reachable, so trimming stays on.
 const recoverableErrors = new Set(['AbortError', 'TimeoutError', bulkReadInputError]);
 
+const bulkReadDescription =
+  'Ask a cheaper model for focused summaries, test inventories, and line-cited evidence from supplied files, not correctness or branch review judgments.';
+
+interface BulkReadState {
+  trimming: boolean;
+  clamped: Set<string>;
+}
+
+const buildContinuationNotice = (_match: string, ...groups: (string | undefined)[]): string => {
+  const [remainingCount, nextOffset, shownEnd, totalLines] = groups;
+  const start = remainingCount === undefined ? Number(shownEnd) + 1 : Number(nextOffset);
+  const end =
+    remainingCount === undefined ? Number(totalLines) : start + Number(remainingCount) - 1;
+  const remaining = end - start + 1;
+  const guidance =
+    remaining > bulkReadLineThreshold
+      ? 'For questions, call bulk_read with paths and question. To edit, use a bounded read with offset and limit.'
+      : `Read with offset=${start} and limit=${remaining} to continue.`;
+
+  return `\n\nLines ${start}-${end} remain. ${guidance}`;
+};
+
 export const rewriteContinuationNotice = (text: string): string =>
   text.replace(
     /\n\n\[(?:(\d+) more lines in file\. Use offset=(\d+)|Showing lines \d+-(\d+) of (\d+)(?: \([^)]*limit\))?\. Use offset=\d+) to continue\.\]$/,
-    (
-      _notice,
-      remainingCount: string | undefined,
-      nextOffset: string | undefined,
-      shownEnd: string | undefined,
-      totalLines: string | undefined,
-    ) => {
-      const start = remainingCount === undefined ? Number(shownEnd) + 1 : Number(nextOffset);
-      const end =
-        remainingCount === undefined ? Number(totalLines) : start + Number(remainingCount) - 1;
-      const remaining = end - start + 1;
-      const guidance =
-        remaining > bulkReadLineThreshold
-          ? 'For questions, call bulk_read with paths and question. To edit, use a bounded read with offset and limit.'
-          : `Read with offset=${start} and limit=${remaining} to continue.`;
-
-      return `\n\nLines ${start}-${end} remain. ${guidance}`;
-    },
+    buildContinuationNotice,
   );
 
 // A throwing registry would escape the hook and block the read itself, so clamping falls back to
@@ -44,17 +53,12 @@ const clampDelegate = (ctx: ExtensionContext) => {
   }
 };
 
-export default function bulkReadExtension(pi: ExtensionAPI): void {
-  let trimming = true;
-  const clamped = new Set<string>();
-  const description =
-    'Ask a cheaper model for focused summaries, test inventories, and line-cited evidence from supplied files, not correctness or branch review judgments.';
-
+const registerBulkRead = (pi: ExtensionAPI, state: BulkReadState): void => {
   pi.registerTool({
     name: bulkReadTool,
     label: 'Bulk read',
-    description,
-    promptSnippet: description,
+    description: bulkReadDescription,
+    promptSnippet: bulkReadDescription,
     promptGuidelines: [
       'Use bulk_read summaries for navigation without rereading files. Verify only consequential claims before edits or reports using bounded reads. Integration claims need production callers.',
       'For bulk_read-based branch judgments, including alleged regressions, inspect the actual diff and applicable project rules. Distinguish inherited code from changes.',
@@ -63,41 +67,66 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
       paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
       question: Type.String({ minLength: 1 }),
     }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
+    async execute(_toolCallId, params, signal, _onUpdate, context) {
       try {
-        const model = resolveDelegate(ctx);
+        const model = resolveDelegate(context);
 
-        return await bulkRead(ctx, model, params, signal);
+        return await bulkRead(context, model, params, signal);
       } catch (error) {
         if (!(error instanceof Error) || !recoverableErrors.has(error.name)) {
-          trimming = false;
+          state.trimming = false;
         }
 
         throw error;
       }
     },
   });
+};
 
+const registerTrimHook = (pi: ExtensionAPI, state: BulkReadState): void => {
   pi.on('tool_call', (event, ctx) => {
-    if (!trimming || !isToolCallEventType('read', event) || event.input.limit !== undefined) {
+    if (!state.trimming || !isToolCallEventType('read', event) || event.input.limit !== undefined) {
       return;
     }
 
     if (!clampDelegate(ctx)) {
-      trimming = false;
+      state.trimming = false;
 
       return;
     }
 
     event.input.limit = bulkReadLineThreshold;
-    clamped.add(event.toolCallId);
+    state.clamped.add(event.toolCallId);
   });
+};
+
+const rewriteToolResult = (
+  state: BulkReadState,
+  event: Pick<ToolResultEvent, 'toolCallId' | 'content'>,
+) => {
+  if (!state.clamped.delete(event.toolCallId)) {
+    return undefined;
+  }
+
+  return {
+    content: event.content.map((part) =>
+      part.type === 'text' ? { ...part, text: rewriteContinuationNotice(part.text) } : part,
+    ),
+  };
+};
+
+export default function bulkReadExtension(pi: ExtensionAPI): void {
+  const state: BulkReadState = { trimming: true, clamped: new Set() };
+
+  registerBulkRead(pi, state);
+  registerTrimHook(pi, state);
 
   // The extension outlives a session, but ADR 0014 scopes a stopped trim to the session that
   // stopped it.
   const resetSession = () => {
-    trimming = true;
-    clamped.clear();
+    state.trimming = true;
+    state.clamped.clear();
   };
 
   pi.on('session_start', resetSession);
@@ -112,15 +141,5 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
     return undefined;
   });
 
-  pi.on('tool_result', (event) => {
-    if (!clamped.delete(event.toolCallId)) {
-      return undefined;
-    }
-
-    return {
-      content: event.content.map((part) =>
-        part.type === 'text' ? { ...part, text: rewriteContinuationNotice(part.text) } : part,
-      ),
-    };
-  });
+  pi.on('tool_result', (event) => rewriteToolResult(state, event));
 }

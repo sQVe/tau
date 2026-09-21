@@ -40,6 +40,7 @@ export default defineConfig({
             'eslint/id-denylist': ['error', 'btn', 'cb', 'errMsg'],
             'eslint/one-var': ['error', 'never'],
             'tau/helper-before-use': 'error',
+            'tau/max-condition-checks': 'error',
             '@stylistic/padding-line-between-statements': [
               'error',
               { blankLine: 'always', prev: '*', next: 'return' },
@@ -165,13 +166,13 @@ export default defineConfig({
       'eslint/complexity': [
         'warn',
         {
-          max: 15,
+          max: 12,
         },
       ],
       'eslint/max-depth': [
         'warn',
         {
-          max: 4,
+          max: 3,
         },
       ],
       'eslint/max-nested-callbacks': [

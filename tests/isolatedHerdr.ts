@@ -53,13 +53,10 @@ export const isolatedHerdr = async (
   }
 
   const client = (argumentsList: string[], budget = 5000, signal?: AbortSignal) =>
-    runClient(
-      'herdr',
-      ['--session', 'tau-worker-test', ...argumentsList],
-      budget,
+    runClient('herdr', ['--session', 'tau-worker-test', ...argumentsList], budget, {
       signal,
       environment,
-    );
+    });
 
   return { root, environment, client };
 };

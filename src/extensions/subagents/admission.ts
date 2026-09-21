@@ -183,12 +183,11 @@ export const requireActiveAncestry = (root: string, task: Task): void => {
   let current: Task | undefined = task;
 
   while (current) {
-    if (
-      !sameTree(tree, current.tree) ||
-      seen.has(current.taskId) ||
-      seen.size >= 1024 ||
-      taskEnded(join(root, current.taskId), current)
-    ) {
+    const inactive =
+      !sameTree(tree, current.tree) || taskEnded(join(root, current.taskId), current);
+    const repeated = seen.has(current.taskId) || seen.size >= 1024;
+
+    if (inactive || repeated) {
       throw new Error('Nested work has inactive or invalid parent ancestry.');
     }
 
@@ -234,6 +233,17 @@ const admissionPolicy = (directory: string, tree: NonNullable<Task['tree']>, cap
   return configured;
 };
 
+const hasInheritedPiLoadouts = (parent: Task, task: Task): boolean =>
+  isPiLoadout(parent.loadout) && isPiLoadout(task.loadout);
+
+const hasMatchingLineage = (tree: NonNullable<Task['tree']>, parent: Task, task: Task): boolean =>
+  sameTree(tree, parent.tree) &&
+  task.parentSession === parent.nativeSessionFile &&
+  task.parentSessionId === parent.nativeSessionId;
+
+const exceedsParentDeadline = (tree: NonNullable<Task['tree']>, parent: Task): boolean =>
+  tree.monotonicDeadline > parent.tree.monotonicDeadline - parent.cancellationBudget;
+
 const validateChildReservation = (
   root: string,
   task: Task,
@@ -246,12 +256,9 @@ const validateChildReservation = (
   const parent = readTask(join(root, tree.parentTaskId));
 
   if (
-    !isPiLoadout(parent.loadout) ||
-    !isPiLoadout(task.loadout) ||
-    !sameTree(tree, parent.tree) ||
-    task.parentSession !== parent.nativeSessionFile ||
-    task.parentSessionId !== parent.nativeSessionId ||
-    tree.monotonicDeadline > parent.tree.monotonicDeadline - parent.cancellationBudget
+    !hasInheritedPiLoadouts(parent, task) ||
+    !hasMatchingLineage(tree, parent, task) ||
+    exceedsParentDeadline(tree, parent)
   ) {
     throw new Error(
       'Nested reservation has invalid active lineage or exceeds its parent deadline.',
@@ -262,12 +269,7 @@ const validateChildReservation = (
   assertInheritedLoadout(parent, task.loadout);
 };
 
-// Immutable reservations are never recycled. Only a matching parent cleanup receipt makes a slot free.
-export const reserveTask = (root: string, value: Task, capacity = 4): void => {
-  const task = validateTask(value);
-  const tree = task.tree;
-  const directory = admissionDirectory(root, tree);
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
+const acquireAdmissionLock = (directory: string): string => {
   const lock = join(directory, 'lock');
 
   try {
@@ -283,45 +285,69 @@ export const reserveTask = (root: string, value: Task, capacity = 4): void => {
     throw error;
   }
 
+  return lock;
+};
+
+const publishReservation = (directory: string, task: Task): void => {
+  try {
+    publish(directory, `${task.taskId}.json`, task);
+  } catch (error) {
+    throw new Error(
+      `Reservation ${task.taskId} publication is uncertain at ${directory}. Capacity may remain held. Inspect manually; no automatic retry.`,
+      { cause: error },
+    );
+  }
+};
+
+const requireFreeCapacity = (
+  root: string,
+  directory: string,
+  task: Task,
+  capacity: number,
+): void => {
+  if (
+    existsSync(join(directory, `${task.taskId}.json`)) ||
+    existsSync(join(root, task.taskId, 'task.json'))
+  ) {
+    throw new Error(`Task ${task.taskId} is already reserved or saved. No duplicate admission.`);
+  }
+
+  const retained = retainedReservations(root, directory, task.tree);
+  const live = retained.filter(
+    (saved) => readEvent(join(root, saved.taskId), saved.taskId, 'cleanup')?.stopped !== true,
+  );
+
+  if (live.length >= capacity) {
+    const evidence = live
+      .slice(0, 10)
+      .map((saved) => `${saved.taskId}: ${join(root, saved.taskId)}`)
+      .join('; ');
+    throw new Error(
+      `Worker capacity full (${live.length}/${capacity}). No queue. Waiting and uncertain work retain slots. Reservations: ${directory}. Inspect task/cleanup evidence before manual cleanup: ${evidence}.`,
+    );
+  }
+};
+
+const admitReservation = (root: string, directory: string, task: Task, capacity: number): void => {
+  const configured = admissionPolicy(directory, task.tree, capacity);
+
+  requireFreeCapacity(root, directory, task, configured.capacity);
+  validateChildReservation(root, task, task.tree);
+  publishReservation(directory, task);
+};
+
+// Immutable reservations are never recycled. Only a matching parent cleanup receipt makes a slot free.
+export const reserveTask = (root: string, value: Task, capacity = 4): void => {
+  const task = validateTask(value);
+  const directory = admissionDirectory(root, task.tree);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const lock = acquireAdmissionLock(directory);
   let released = false;
   let releaseFailure: unknown;
 
   // No awaits or harness calls inside this transaction. Crashed locks require manual inspection, never age-based reclaim.
   try {
-    const configured = admissionPolicy(directory, tree, capacity);
-
-    if (
-      existsSync(join(directory, `${task.taskId}.json`)) ||
-      existsSync(join(root, task.taskId, 'task.json'))
-    ) {
-      throw new Error(`Task ${task.taskId} is already reserved or saved. No duplicate admission.`);
-    }
-
-    const retained = retainedReservations(root, directory, tree);
-    const live = retained.filter(
-      (saved) => readEvent(join(root, saved.taskId), saved.taskId, 'cleanup')?.stopped !== true,
-    );
-
-    if (live.length >= configured.capacity) {
-      const evidence = live
-        .slice(0, 10)
-        .map((saved) => `${saved.taskId}: ${join(root, saved.taskId)}`)
-        .join('; ');
-      throw new Error(
-        `Worker capacity full (${live.length}/${configured.capacity}). No queue. Waiting and uncertain work retain slots. Reservations: ${directory}. Inspect task/cleanup evidence before manual cleanup: ${evidence}.`,
-      );
-    }
-
-    validateChildReservation(root, task, tree);
-
-    try {
-      publish(directory, `${task.taskId}.json`, task);
-    } catch (error) {
-      throw new Error(
-        `Reservation ${task.taskId} publication is uncertain at ${directory}. Capacity may remain held. Inspect manually; no automatic retry.`,
-        { cause: error },
-      );
-    }
+    admitReservation(root, directory, task, capacity);
   } finally {
     // A failed release must not replace the refusal that caused it.
     try {

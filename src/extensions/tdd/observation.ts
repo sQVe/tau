@@ -13,28 +13,27 @@ export type Freshness = 'fresh' | 'stale' | 'unknown';
 const testNames = (behavior: Behavior) =>
   Array.isArray(behavior.testFullName) ? behavior.testFullName : [behavior.testFullName];
 
+const normalizeTestFile = (cwd: string, file: string): string => {
+  const literalPath = file.replaceAll(sep, '/');
+  const path = relative(cwd, resolve(cwd, file)).replaceAll(sep, '/');
+
+  if (isAbsolute(file) || isAbsolute(path)) {
+    throw new Error(`Expected a test file inside the worktree: ${file}`);
+  }
+
+  if (/[*?[\]{}\\\0]/.test(literalPath) || file.startsWith('@')) {
+    throw new Error(`Expected a test file inside the worktree: ${file}`);
+  }
+
+  if (path.startsWith('../') || classifyPath(path) !== 'test') {
+    throw new Error(`Expected a test file inside the worktree: ${file}`);
+  }
+
+  return path;
+};
+
 const normalizeBehavior = (cwd: string, behavior: Behavior): Behavior => {
-  const files = [
-    ...new Set(
-      behavior.files.map((file) => {
-        const literalPath = file.replaceAll(sep, '/');
-        const path = relative(cwd, resolve(cwd, file)).replaceAll(sep, '/');
-
-        if (
-          isAbsolute(file) ||
-          isAbsolute(path) ||
-          /[*?[\]{}\\\0]/.test(literalPath) ||
-          file.startsWith('@') ||
-          path.startsWith('../') ||
-          classifyPath(path) !== 'test'
-        ) {
-          throw new Error(`Expected a test file inside the worktree: ${file}`);
-        }
-
-        return path;
-      }),
-    ),
-  ].toSorted();
+  const files = [...new Set(behavior.files.map((file) => normalizeTestFile(cwd, file)))].toSorted();
 
   return { ...behavior, files, testFullName: [...new Set(testNames(behavior))].toSorted() };
 };
@@ -151,6 +150,115 @@ const hints = {
     'RED came from a thrown {errorType}, not a failed assertion; make the test fail on the expected behavior before implementing.',
 };
 
+interface ObservationState {
+  cwd: string;
+  active: string | null;
+  observedRed: boolean;
+  latest: LatestRun | null;
+  shownHints: Set<keyof typeof hints>;
+  staleHintInput: string | null;
+  pending: Promise<unknown>;
+}
+
+interface RunRequest {
+  requested: Behavior;
+  scope: 'focused' | 'full';
+  signal?: AbortSignal | undefined;
+  onStart?: ((behavior: Behavior) => void) | undefined;
+}
+
+const enqueue = <Result>(state: ObservationState, work: () => Promise<Result>): Promise<Result> => {
+  const result = state.pending.then(work);
+
+  state.pending = result.catch(() => undefined);
+
+  return result;
+};
+
+const hint = (
+  state: ObservationState,
+  condition: keyof typeof hints | undefined,
+  input: string | null = null,
+  errorType = 'error',
+): string | undefined => {
+  if (condition === undefined || state.shownHints.has(condition)) {
+    return undefined;
+  }
+
+  state.shownHints.add(condition);
+
+  if (condition === 'stale' || condition === 'unknown') {
+    state.staleHintInput = input;
+  }
+
+  return `Hint: ${hints[condition].replace('{errorType}', errorType)}`;
+};
+
+const sameAsLatest = (state: ObservationState, key: string): boolean =>
+  state.active === null && state.latest !== null && identity(state.latest.behavior) === key;
+
+const isExpectedImplementationEdit = (state: ObservationState, latest: LatestRun): boolean =>
+  state.observedRed && latest.scope === 'focused' && latest.freshness === 'stale';
+
+const suggestsMissingRed = (
+  state: ObservationState,
+  freshness: 'stale' | 'unknown',
+  current: string | null,
+): boolean => {
+  if (state.observedRed || !state.shownHints.has(freshness)) {
+    return false;
+  }
+
+  return current !== null && current !== state.staleHintInput;
+};
+
+const editHint = (state: ObservationState, current: string | null): string | undefined => {
+  const latest = state.latest;
+
+  if (latest !== null && latest.freshness !== 'fresh') {
+    const freshness = latest.freshness;
+
+    // Changing production is expected while implementing an observed focused failure.
+    if (isExpectedImplementationEdit(state, latest)) {
+      return undefined;
+    }
+
+    // Keep stale-first after verification. Only a later input change can suggest missing RED.
+    if (suggestsMissingRed(state, freshness, current)) {
+      return hint(state, 'red');
+    }
+
+    return hint(state, freshness, current);
+  }
+
+  if (latest?.scope === 'full' && latest.kind === 'pass') {
+    return undefined;
+  }
+
+  return hint(state, state.observedRed ? undefined : 'red');
+};
+
+const runHint = (
+  state: ObservationState,
+  scope: 'focused' | 'full',
+  report: RunnerResult,
+  freshness: Freshness,
+): 'stale' | 'unknown' | 'full' | undefined => {
+  if (freshness !== 'fresh') {
+    return freshness;
+  }
+
+  if (scope === 'full' && report.kind === 'pass') {
+    state.active = null;
+    state.observedRed = false;
+    state.shownHints.clear();
+  } else if (scope === 'focused' && report.kind === 'pass') {
+    return 'full';
+  }
+
+  return undefined;
+};
+
 const saveRunRecord = async (diagnostics: RunDiagnostics | undefined, record: unknown) => {
   if (diagnostics === undefined) {
     return undefined;
@@ -171,197 +279,154 @@ const saveRunRecord = async (diagnostics: RunDiagnostics | undefined, record: un
   }
 };
 
-export const createTestObservation = (cwd: string) => {
-  let active: string | null = null;
-  let observedRed = false;
-  let latest: LatestRun | null = null;
-  const shownHints = new Set<keyof typeof hints>();
-  let staleHintInput: string | null = null;
-  let pending: Promise<unknown> = Promise.resolve();
+const checkpointWork = async (
+  state: ObservationState,
+  productionEdit: boolean,
+): Promise<string | undefined> => {
+  const latest = state.latest;
+  const canSuggestRed = !state.observedRed && !state.shownHints.has('red');
+  let current: string | null = null;
 
-  const enqueue = <Result>(work: () => Promise<Result>): Promise<Result> => {
-    const result = pending.then(work);
+  if (latest !== null && latest.fingerprint !== null) {
+    if (latest.freshness !== 'stale' || canSuggestRed) {
+      current = await fingerprint(state.cwd, latest.behavior.files);
 
-    pending = result.catch(() => undefined);
-
-    return result;
-  };
-
-  const hint = (
-    condition: keyof typeof hints | undefined,
-    input: string | null = null,
-    errorType = 'error',
-  ) => {
-    if (condition === undefined || shownHints.has(condition)) {
-      return undefined;
-    }
-
-    shownHints.add(condition);
-
-    if (condition === 'stale' || condition === 'unknown') {
-      staleHintInput = input;
-    }
-
-    return `Hint: ${hints[condition].replace('{errorType}', errorType)}`;
-  };
-
-  const editHint = (current: string | null) => {
-    if (latest !== null && latest.freshness !== 'fresh') {
-      // Changing production is expected while implementing an observed focused failure.
-      if (observedRed && latest.scope === 'focused' && latest.freshness === 'stale') {
-        return undefined;
+      if (current === null) {
+        latest.freshness = 'unknown';
+      } else if (current !== latest.fingerprint) {
+        latest.freshness = 'stale';
+      } else if (latest.freshness === 'unknown') {
+        latest.freshness = 'fresh';
       }
-
-      // Keep stale-first after verification. Only a later input change can suggest missing RED.
-      if (
-        !observedRed &&
-        shownHints.has(latest.freshness) &&
-        current !== null &&
-        current !== staleHintInput
-      ) {
-        return hint('red');
-      }
-
-      return hint(latest.freshness, current);
     }
+  }
 
-    if (latest?.scope === 'full' && latest.kind === 'pass') {
-      return undefined;
-    }
-
-    return hint(observedRed ? undefined : 'red');
-  };
-
-  const checkpoint = (productionEdit: boolean) =>
-    enqueue(async () => {
-      let current: string | null = null;
-      const canSuggestRed = !observedRed && !shownHints.has('red');
-
-      if (
-        latest !== null &&
-        latest.fingerprint !== null &&
-        (latest.freshness !== 'stale' || canSuggestRed)
-      ) {
-        current = await fingerprint(cwd, latest.behavior.files);
-
-        if (current === null) {
-          latest.freshness = 'unknown';
-        } else if (current !== latest.fingerprint) {
-          latest.freshness = 'stale';
-        } else if (latest.freshness === 'unknown') {
-          latest.freshness = 'fresh';
-        }
-      }
-
-      if (!productionEdit) {
-        return undefined;
-      }
-
-      return editHint(current);
-    });
-
-  const runHint = (scope: 'focused' | 'full', report: RunnerResult, freshness: Freshness) => {
-    if (freshness !== 'fresh') {
-      return freshness;
-    }
-
-    if (scope === 'full' && report.kind === 'pass') {
-      active = null;
-      observedRed = false;
-      shownHints.clear();
-    } else if (scope === 'focused' && report.kind === 'pass') {
-      return 'full';
-    }
-
+  if (!productionEdit) {
     return undefined;
+  }
+
+  return editHint(state, current);
+};
+
+const checkpoint = (state: ObservationState, productionEdit: boolean) =>
+  enqueue(state, () => checkpointWork(state, productionEdit));
+
+const runTestsFor = (
+  state: ObservationState,
+  behavior: Behavior,
+  request: RunRequest,
+): ReturnType<typeof runTests> =>
+  runTests(
+    request.scope === 'full'
+      ? { cwd: state.cwd, scope: 'all', signal: request.signal }
+      : {
+          cwd: state.cwd,
+          scope: 'changed',
+          files: behavior.files,
+          filter: `^(?:${testNames(behavior)
+            .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+            .join('|')})$`,
+          signal: request.signal,
+        },
+  );
+
+const performRun = async (state: ObservationState, request: RunRequest) => {
+  const behavior = normalizeBehavior(state.cwd, request.requested);
+  const key = identity(behavior);
+
+  if (state.active !== key && !sameAsLatest(state, key)) {
+    state.observedRed = false;
+    state.shownHints.clear();
+  }
+
+  state.active = key;
+
+  const before = await fingerprint(state.cwd, behavior.files);
+
+  request.onStart?.(behavior);
+
+  const report = await runTestsFor(state, behavior, request);
+  const after = await fingerprint(state.cwd, behavior.files);
+  const freshness = compareInputs(before, after);
+  const previous = state.latest;
+
+  state.latest = {
+    behavior,
+    scope: request.scope,
+    kind: report.kind,
+    fingerprint: after,
+    freshness,
   };
 
-  const run = (
-    requested: Behavior,
-    scope: 'focused' | 'full',
-    signal?: AbortSignal,
-    onStart?: (behavior: Behavior) => void,
-  ) =>
-    enqueue(async () => {
-      const behavior = normalizeBehavior(cwd, requested);
-      const key = identity(behavior);
+  let thrownType: string | null = null;
 
-      if (
-        active !== key &&
-        !(active === null && latest !== null && identity(latest.behavior) === key)
-      ) {
-        observedRed = false;
-        shownHints.clear();
-      }
+  if (
+    freshness === 'fresh' &&
+    request.scope === 'focused' &&
+    selectedFailed(state.cwd, behavior, report)
+  ) {
+    if (!state.observedRed) {
+      state.shownHints.clear();
+    }
 
-      active = key;
+    state.observedRed = true;
+    thrownType = selectedThrownErrorType(state.cwd, behavior, report);
+  }
 
-      const before = await fingerprint(cwd, behavior.files);
+  if (previous?.freshness !== freshness && freshness === 'fresh') {
+    state.shownHints.clear();
+  }
 
-      onStart?.(behavior);
+  const inputs = { before, after };
+  const runPath = await saveRunRecord(report.diagnostics, {
+    cwd: state.cwd,
+    ...behavior,
+    scope: request.scope,
+    kind: report.kind,
+    freshness,
+    inputs,
+    diagnostics: report.diagnostics,
+  });
 
-      const report = await runTests(
-        scope === 'full'
-          ? { cwd, scope: 'all', signal }
-          : {
-              cwd,
-              scope: 'changed',
-              files: behavior.files,
-              filter: `^(?:${testNames(behavior)
-                .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-                .join('|')})$`,
-              signal,
-            },
-      );
-      const after = await fingerprint(cwd, behavior.files);
-      const freshness = compareInputs(before, after);
-      const previous = latest;
+  await finishDiagnostics(report.diagnostics);
 
-      latest = { behavior, scope, kind: report.kind, fingerprint: after, freshness };
+  return {
+    kind: report.kind,
+    scope: request.scope,
+    freshness,
+    inputs,
+    runPath,
+    report,
+    hint:
+      thrownType === null
+        ? hint(state, runHint(state, request.scope, report, freshness), after)
+        : hint(state, 'thrown', after, thrownType),
+  };
+};
 
-      let thrownType: string | null = null;
+const runObservation = (state: ObservationState, request: RunRequest) =>
+  enqueue(state, () => performRun(state, request));
 
-      if (freshness === 'fresh' && scope === 'focused' && selectedFailed(cwd, behavior, report)) {
-        if (!observedRed) {
-          shownHints.clear();
-        }
+export const createTestObservation = (cwd: string) => {
+  const state: ObservationState = {
+    cwd,
+    active: null,
+    observedRed: false,
+    latest: null,
+    shownHints: new Set(),
+    staleHintInput: null,
+    pending: Promise.resolve(),
+  };
 
-        observedRed = true;
-        thrownType = selectedThrownErrorType(cwd, behavior, report);
-      }
-
-      if (previous?.freshness !== freshness && freshness === 'fresh') {
-        shownHints.clear();
-      }
-
-      const inputs = { before, after };
-      const runPath = await saveRunRecord(report.diagnostics, {
-        cwd,
-        ...behavior,
-        scope,
-        kind: report.kind,
-        freshness,
-        inputs,
-        diagnostics: report.diagnostics,
-      });
-
-      await finishDiagnostics(report.diagnostics);
-
-      return {
-        kind: report.kind,
-        scope,
-        freshness,
-        inputs,
-        runPath,
-        report,
-        hint:
-          thrownType === null
-            ? hint(runHint(scope, report, freshness), after)
-            : hint('thrown', after, thrownType),
-      };
-    });
-
-  return { run, checkpoint };
+  return {
+    run: (
+      requested: Behavior,
+      scope: 'focused' | 'full',
+      signal?: AbortSignal,
+      onStart?: (behavior: Behavior) => void,
+    ) => runObservation(state, { requested, scope, signal, onStart }),
+    checkpoint: (productionEdit: boolean) => checkpoint(state, productionEdit),
+  };
 };
 
 export const observationDirectory = async (directory: string) =>

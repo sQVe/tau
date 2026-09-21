@@ -10,32 +10,19 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
+import type { Dirent } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
 
 import { Value } from 'typebox/value';
 
 import {
-  acknowledgementSchema,
   eventSchema,
-  questionIdentitySchema,
-  questionSchema,
-  replySchema,
   reportSchema,
   taskSchema,
   successorSchema,
   isGenericLoadout,
 } from './types.js';
-import type {
-  Acknowledgement,
-  GenericLoadout,
-  Question,
-  Reply,
-  Report,
-  Successor,
-  Task,
-  TaskEvent,
-} from './types.js';
+import type { GenericLoadout, Report, Successor, Task, TaskEvent } from './types.js';
 
 const recordByteLimit = 128_000;
 
@@ -107,29 +94,58 @@ export const readRecord = (directory: string, name: string): unknown => {
   }
 };
 
+export const readOptionalRecord = (directory: string, name: string): unknown => {
+  try {
+    return readRecord(directory, name);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return undefined;
+    }
+
+    throw error;
+  }
+};
+
 const nameMatchesRole = (task: Task): boolean =>
   task.name === undefined ||
   task.name.startsWith(task.loadout.role === 'editing' ? 'worker-' : 'investigator-');
 
-const validateGenericTask = (task: Task, loadout: GenericLoadout): void => {
+const modelArgumentsAreConsistent = (loadout: GenericLoadout): boolean =>
+  loadout.requestedModel === undefined || Boolean(loadout.arguments.length);
+
+const genericOptionsAreConsistent = (task: Task, loadout: GenericLoadout): boolean =>
+  nameMatchesRole(task) && modelArgumentsAreConsistent(loadout);
+
+const isOutsideDirectory = (path: string): boolean => path === '..' || path.startsWith('../');
+
+const reportAreaIsValid = (loadout: GenericLoadout): boolean => {
   const reportRelative = relative(loadout.cwd, loadout.reportDirectory);
 
-  if (
-    task.version !== 2 ||
-    task.predecessorTaskId !== undefined ||
-    ['pi', 'generic'].includes(loadout.kind) ||
-    ![task.parentSession, loadout.cwd, loadout.reportDirectory, task.tree.rootSession].every(
-      isAbsolute,
-    ) ||
-    isAbsolute(reportRelative) ||
-    reportRelative === '..' ||
-    reportRelative.startsWith('../') ||
-    !nameMatchesRole(task) ||
-    (loadout.requestedModel !== undefined && !loadout.arguments.length)
-  ) {
+  return !isAbsolute(reportRelative) && !isOutsideDirectory(reportRelative);
+};
+
+const hasAbsoluteGenericPaths = (task: Task, loadout: GenericLoadout): boolean =>
+  [task.parentSession, loadout.cwd, loadout.reportDirectory, task.tree.rootSession].every(
+    isAbsolute,
+  );
+
+const hasGenericTaskIdentity = (task: Task, loadout: GenericLoadout): boolean =>
+  task.version === 2 &&
+  task.predecessorTaskId === undefined &&
+  !['pi', 'generic'].includes(loadout.kind);
+
+const validateGenericTask = (task: Task, loadout: GenericLoadout): void => {
+  const identityIsValid =
+    hasGenericTaskIdentity(task, loadout) && hasAbsoluteGenericPaths(task, loadout);
+  const optionsAreValid = reportAreaIsValid(loadout) && genericOptionsAreConsistent(task, loadout);
+
+  if (!identityIsValid || !optionsAreValid) {
     throw new Error('Invalid generic worker identity, report area, or native configuration.');
   }
 };
+
+const identityIsSelfConsistent = (task: Task): boolean =>
+  task.predecessorTaskId !== task.taskId && task.taskId !== task.nativeSessionId;
 
 export const validateTask = (value: unknown): Task => {
   if (!Value.Check(taskSchema, value)) {
@@ -171,8 +187,7 @@ export const validateTask = (value: unknown): Task => {
 
   if (
     !nameMatchesRole(value) ||
-    value.predecessorTaskId === value.taskId ||
-    value.taskId === value.nativeSessionId ||
+    !identityIsSelfConsistent(value) ||
     !value.loadout.integrations.includes(value.loadout.safetyExtension)
   ) {
     throw new Error('Invalid worker identity or missing safety integration.');
@@ -192,6 +207,14 @@ export const readTask = (directory: string): Task => {
   return validateTask(readRecord(directory, 'task.json'));
 };
 
+const claimSessionMatchesTask = (claim: Successor, task: Task): boolean =>
+  claim.successorTaskId !== task.taskId &&
+  claim.nativeSessionId === task.nativeSessionId &&
+  claim.nativeSessionFile === task.nativeSessionFile;
+
+const claimMatchesTask = (claim: Successor, task: Task): boolean =>
+  claim.predecessorTaskId === task.taskId && claimSessionMatchesTask(claim, task);
+
 export const readSuccessor = (directory: string): Successor | undefined => {
   let value: unknown;
 
@@ -207,13 +230,7 @@ export const readSuccessor = (directory: string): Successor | undefined => {
 
   const task = readTask(directory);
 
-  if (
-    !Value.Check(successorSchema, value) ||
-    value.predecessorTaskId !== task.taskId ||
-    value.successorTaskId === task.taskId ||
-    value.nativeSessionId !== task.nativeSessionId ||
-    value.nativeSessionFile !== task.nativeSessionFile
-  ) {
+  if (!Value.Check(successorSchema, value) || !claimMatchesTask(value, task)) {
     throw new Error('Invalid saved successor claim.');
   }
 
@@ -225,29 +242,59 @@ const isUnpublishedDirectory = (directory: string): boolean =>
     (entry) => entry.isFile() && /^\.receipt-[a-f0-9-]+$/.test(entry.name),
   );
 
-// Records from before the current saved format are never read, but they must not block unrelated tasks.
-export const isRetiredTask = (value: unknown): boolean => {
-  if (typeof value !== 'object' || value === null || !('loadout' in value)) {
+const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const isRetiredPiTask = (
+  value: Record<string, unknown>,
+  loadout: Record<string, unknown>,
+): boolean => {
+  if (!('tree' in value)) {
+    return true;
+  }
+
+  if (!('providerFingerprintVersion' in loadout)) {
+    return true;
+  }
+
+  if (loadout.providerFingerprintVersion !== 2) {
+    return true;
+  }
+
+  return !('noExtensions' in loadout);
+};
+
+const isRetiredHarness = (
+  harness: unknown,
+  value: Record<string, unknown>,
+  loadout: Record<string, unknown>,
+): boolean => {
+  if (harness === undefined || harness === 'claude') {
+    return true;
+  }
+
+  if (harness !== 'pi') {
     return false;
   }
 
-  const loadout: unknown = value.loadout;
+  return isRetiredPiTask(value, loadout);
+};
 
-  if (typeof loadout !== 'object' || loadout === null) {
+// Records from before the current saved format are never read, but they must not block unrelated tasks.
+export const isRetiredTask = (value: unknown): boolean => {
+  if (!isObjectRecord(value) || !('loadout' in value)) {
+    return false;
+  }
+
+  const loadout = value.loadout;
+
+  if (!isObjectRecord(loadout)) {
     return false;
   }
 
   const harness = 'harness' in loadout ? loadout.harness : undefined;
 
-  return (
-    harness === undefined ||
-    harness === 'claude' ||
-    (harness === 'pi' &&
-      (!('tree' in value) ||
-        !('providerFingerprintVersion' in loadout) ||
-        loadout.providerFingerprintVersion !== 2 ||
-        !('noExtensions' in loadout)))
-  );
+  return isRetiredHarness(harness, value, loadout);
 };
 
 const isRetiredRecord = (directory: string): boolean => {
@@ -313,21 +360,72 @@ const addReferencedTasks = (
   }
 };
 
+const readTaskEntries = (root: string): Dirent[] | undefined => {
+  try {
+    return readdirSync(root, { withFileTypes: true });
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return undefined;
+    }
+
+    throw error;
+  }
+};
+
+interface FoundTaskEntry {
+  directory: string;
+  task: Task;
+}
+
+interface UnpublishedTaskEntry {
+  name: string;
+  directory: string;
+}
+
+const scanTaskEntry = (
+  root: string,
+  entry: Dirent,
+  diagnostics: string[],
+  retired: string[],
+): FoundTaskEntry | UnpublishedTaskEntry | undefined => {
+  const directory = join(root, entry.name);
+  let task: Task | undefined;
+
+  try {
+    task = readScannedTask(directory);
+  } catch (error) {
+    if (!isRetiredRecord(directory)) {
+      throw error;
+    }
+
+    diagnostics.push(
+      `Skipped task ${entry.name} saved in a retired format; start a fresh task instead.`,
+    );
+    retired.push(directory);
+
+    return undefined;
+  }
+
+  if (!task) {
+    return { name: entry.name, directory };
+  }
+
+  if (task.taskId !== entry.name) {
+    throw new Error('Saved task directory and identity do not match.');
+  }
+
+  return { directory, task };
+};
+
 export const readTasks = (
   root: string,
   diagnostics: string[] = [],
   retired: string[] = [],
 ): { directory: string; task: Task }[] => {
-  let entries;
+  const entries = readTaskEntries(root);
 
-  try {
-    entries = readdirSync(root, { withFileTypes: true });
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-      return [];
-    }
-
-    throw error;
+  if (!entries) {
+    return [];
   }
 
   const tasks: { directory: string; task: Task }[] = [];
@@ -336,33 +434,18 @@ export const readTasks = (
   for (const entry of entries.filter(
     (candidate) => candidate.isDirectory() && candidate.name !== '.admission',
   )) {
-    const directory = join(root, entry.name);
-    let task: Task | undefined;
+    const outcome = scanTaskEntry(root, entry, diagnostics, retired);
 
-    try {
-      task = readScannedTask(directory);
-    } catch (error) {
-      if (!isRetiredRecord(directory)) {
-        throw error;
-      }
-
-      diagnostics.push(
-        `Skipped task ${entry.name} saved in a retired format; start a fresh task instead.`,
-      );
-      retired.push(directory);
+    if (!outcome) {
       continue;
     }
 
-    if (!task) {
-      unpublished.set(entry.name, directory);
+    if ('name' in outcome) {
+      unpublished.set(outcome.name, outcome.directory);
       continue;
     }
 
-    if (task.taskId !== entry.name) {
-      throw new Error('Saved task directory and identity do not match.');
-    }
-
-    tasks.push({ directory, task });
+    tasks.push({ directory: outcome.directory, task: outcome.task });
   }
 
   addReferencedTasks(root, tasks, unpublished);
@@ -376,6 +459,11 @@ export const readTasks = (
   return tasks;
 };
 
+const successorMatchesPredecessor = (successor: Task, predecessor: Task): boolean =>
+  successor.taskId !== predecessor.taskId &&
+  successor.nativeSessionId === predecessor.nativeSessionId &&
+  successor.nativeSessionFile === predecessor.nativeSessionFile;
+
 export const claimSuccessor = (directory: string, successor: Task): void => {
   const predecessor = readTask(directory);
   const existing = readSuccessor(directory);
@@ -388,9 +476,7 @@ export const claimSuccessor = (directory: string, successor: Task): void => {
 
   if (
     successor.predecessorTaskId !== predecessor.taskId ||
-    successor.taskId === predecessor.taskId ||
-    successor.nativeSessionId !== predecessor.nativeSessionId ||
-    successor.nativeSessionFile !== predecessor.nativeSessionFile
+    !successorMatchesPredecessor(successor, predecessor)
   ) {
     throw new Error('Successor identity does not match its predecessor.');
   }
@@ -409,257 +495,6 @@ export const claimSuccessor = (directory: string, successor: Task): void => {
       { cause: error },
     );
   }
-};
-
-const questionRecordName = (
-  questionId: string,
-  kind: 'question' | 'reply' | 'acknowledgement',
-): string => {
-  if (!Value.Check(questionIdentitySchema, questionId)) {
-    throw new Error('Invalid question identity or wrong saved task.');
-  }
-
-  return `${kind}-${questionId}.json`;
-};
-
-// Check the saved task once per public call. Nested record reads would otherwise re-read task.json.
-const requireSavedTask = (directory: string, taskId: string): void => {
-  if (readTask(directory).taskId !== taskId) {
-    throw new Error('Invalid question identity or wrong saved task.');
-  }
-};
-
-export const readOptionalRecord = (directory: string, name: string): unknown => {
-  try {
-    return readRecord(directory, name);
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-      return undefined;
-    }
-
-    throw error;
-  }
-};
-
-const publishQuestionRecord = (
-  directory: string,
-  name: string,
-  value: Question | Reply | Acknowledgement,
-): void => {
-  if (Buffer.byteLength(JSON.stringify(value)) > 64_000) {
-    throw new Error('Question record exceeds 64 KB.');
-  }
-
-  try {
-    publish(directory, name, value);
-  } catch (error) {
-    if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) {
-      throw error;
-    }
-
-    // Recovery may repeat the same identity, but cannot replace any accepted content.
-    if (!isDeepStrictEqual(readRecord(directory, name), value)) {
-      throw new Error('Conflicting saved question record.', { cause: error });
-    }
-
-    // A prior publication may have linked the record but failed to sync the directory.
-    const directoryDescriptor = openSync(directory, 'r');
-
-    try {
-      fsyncSync(directoryDescriptor);
-    } finally {
-      closeSync(directoryDescriptor);
-    }
-  }
-};
-
-const savedQuestion = (
-  directory: string,
-  taskId: string,
-  questionId: string,
-): Question | undefined => {
-  const value = readOptionalRecord(directory, questionRecordName(questionId, 'question'));
-
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (
-    !Value.Check(questionSchema, value) ||
-    value.taskId !== taskId ||
-    value.questionId !== questionId ||
-    Buffer.byteLength(JSON.stringify(value)) > 64_000
-  ) {
-    throw new Error('Invalid saved worker question.');
-  }
-
-  return value;
-};
-
-export const readQuestion = (
-  directory: string,
-  taskId: string,
-  questionId: string,
-): Question | undefined => {
-  questionRecordName(questionId, 'question');
-  requireSavedTask(directory, taskId);
-
-  return savedQuestion(directory, taskId, questionId);
-};
-
-export const validateQuestion = (value: unknown, taskId: string): Question => {
-  if (!Value.Check(questionSchema, value) || value.taskId !== taskId) {
-    throw new Error('Invalid or wrong-task question.');
-  }
-
-  if (Buffer.byteLength(JSON.stringify(value)) > 64_000) {
-    throw new Error('Question record exceeds 64 KB.');
-  }
-
-  return value;
-};
-
-export const acceptQuestion = (directory: string, taskId: string, value: unknown): Question => {
-  const question = validateQuestion(value, taskId);
-  const name = questionRecordName(question.questionId, 'question');
-  requireSavedTask(directory, taskId);
-
-  publishQuestionRecord(directory, name, question);
-
-  return question;
-};
-
-const savedReply = (directory: string, taskId: string, questionId: string): Reply | undefined => {
-  const name = questionRecordName(questionId, 'reply');
-  const question = savedQuestion(directory, taskId, questionId);
-  const value = readOptionalRecord(directory, name);
-
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (
-    !question ||
-    !Value.Check(replySchema, value) ||
-    value.taskId !== taskId ||
-    value.questionId !== questionId ||
-    Buffer.byteLength(JSON.stringify(value)) > 64_000
-  ) {
-    throw new Error('Invalid saved worker reply.');
-  }
-
-  return value;
-};
-
-export const readReply = (
-  directory: string,
-  taskId: string,
-  questionId: string,
-): Reply | undefined => {
-  questionRecordName(questionId, 'reply');
-  requireSavedTask(directory, taskId);
-
-  return savedReply(directory, taskId, questionId);
-};
-
-export const acceptReply = (directory: string, taskId: string, value: unknown): Reply => {
-  if (!Value.Check(replySchema, value) || value.taskId !== taskId) {
-    throw new Error('Invalid or wrong-task reply.');
-  }
-
-  const name = questionRecordName(value.questionId, 'reply');
-  requireSavedTask(directory, taskId);
-
-  if (!savedQuestion(directory, taskId, value.questionId)) {
-    throw new Error('Reply has no accepted question.');
-  }
-
-  publishQuestionRecord(directory, name, value);
-
-  return value;
-};
-
-const savedAcknowledgement = (
-  directory: string,
-  taskId: string,
-  questionId: string,
-): Acknowledgement | undefined => {
-  const name = questionRecordName(questionId, 'acknowledgement');
-  const reply = savedReply(directory, taskId, questionId);
-  const value = readOptionalRecord(directory, name);
-
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (
-    !reply ||
-    !Value.Check(acknowledgementSchema, value) ||
-    value.taskId !== taskId ||
-    value.questionId !== questionId ||
-    value.replyId !== reply.replyId
-  ) {
-    throw new Error('Invalid saved worker acknowledgement.');
-  }
-
-  return value;
-};
-
-export const readAcknowledgement = (
-  directory: string,
-  taskId: string,
-  questionId: string,
-): Acknowledgement | undefined => {
-  questionRecordName(questionId, 'acknowledgement');
-  requireSavedTask(directory, taskId);
-
-  return savedAcknowledgement(directory, taskId, questionId);
-};
-
-export const acceptAcknowledgement = (
-  directory: string,
-  taskId: string,
-  value: unknown,
-): Acknowledgement => {
-  if (!Value.Check(acknowledgementSchema, value) || value.taskId !== taskId) {
-    throw new Error('Invalid or wrong-task acknowledgement.');
-  }
-
-  const name = questionRecordName(value.questionId, 'acknowledgement');
-  requireSavedTask(directory, taskId);
-  const reply = savedReply(directory, taskId, value.questionId);
-
-  if (!reply || value.replyId !== reply.replyId) {
-    throw new Error('Acknowledgement does not match the accepted reply.');
-  }
-
-  publishQuestionRecord(directory, name, value);
-
-  return value;
-};
-
-export const readPendingQuestion = (directory: string, taskId: string): Question | undefined => {
-  requireSavedTask(directory, taskId);
-  let pending: Question | undefined;
-
-  for (const name of readdirSync(directory)) {
-    if (!name.startsWith('question-') || !name.endsWith('.json')) {
-      continue;
-    }
-
-    const questionId = name.slice('question-'.length, -'.json'.length);
-    const question = savedQuestion(directory, taskId, questionId);
-
-    if (!savedAcknowledgement(directory, taskId, questionId)) {
-      if (pending) {
-        throw new Error('Multiple pending worker questions.');
-      }
-
-      pending = question;
-    }
-  }
-
-  return pending;
 };
 
 const validReport = (value: unknown, taskId: string): value is Report =>
@@ -695,21 +530,27 @@ export const readReport = (directory: string, taskId: string): Report | undefine
   }
 };
 
+export interface EventDetails {
+  detail: string;
+  stopped?: boolean;
+  processId?: number;
+}
+
 export const recordEvent = (
   directory: string,
   taskId: string,
   kind: TaskEvent['kind'],
-  detail: string,
-  stopped = false,
-  processId?: number,
+  value: string | EventDetails,
 ): void => {
+  const details: EventDetails = typeof value === 'string' ? { detail: value } : value;
+
   publish(directory, `${kind}.json`, {
     taskId,
     kind,
-    detail,
-    stopped,
+    detail: details.detail,
+    stopped: details.stopped ?? false,
     at: Date.now(),
-    ...(processId === undefined ? {} : { processId }),
+    ...(details.processId === undefined ? {} : { processId: details.processId }),
   });
 };
 

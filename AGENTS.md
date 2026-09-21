@@ -11,6 +11,8 @@ verification.
   feature works; see [ADR 0010](docs/adr/0010-documentation-scope.md).
 - Name values in camelCase and types in PascalCase. Never SCREAMING_CASE, not even for module
   constants.
+- Follow the [coding instructions](src/extensions/coding/instructions.md) for all code. Pi loads
+  them through Tau; other agents must read the file.
 - Follow the [writing instructions](src/extensions/writing/instructions.md) for every document.
 - Before finishing a document, check its local links and verify the commands it gives against the
   repository.

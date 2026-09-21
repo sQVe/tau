@@ -25,6 +25,7 @@ import * as loadoutModule from './loadout.js';
 import * as names from './names.js';
 import { WorkerPlacement } from './placement.js';
 import { placementFixture } from './placementFixture.js';
+import * as questions from './questionRecords.js';
 import { acceptReport, readEvent, recordEvent } from './records.js';
 import * as records from './records.js';
 
@@ -85,7 +86,10 @@ const setup = (
       fake.state.processArguments = ['pi', token];
       const task = readTask(recordDirectory);
       const ready = () => {
-        recordEvent(recordDirectory, task.taskId, 'ready', 'Ready.', false, process.pid);
+        recordEvent(recordDirectory, task.taskId, 'ready', {
+          detail: 'Ready.',
+          processId: process.pid,
+        });
       };
 
       if (readyDelay > 0) {
@@ -176,7 +180,10 @@ it('skips unpublished preparation debris while published attempts and claims rem
     summary: 'Finished.',
     evidence: [],
   });
-  recordEvent(launched.directory, launched.taskId, 'cleanup', 'Parent confirmed.', true);
+  recordEvent(launched.directory, launched.taskId, 'cleanup', {
+    detail: 'Parent confirmed.',
+    stopped: true,
+  });
   fixture.controller.close();
   const controller = new WorkerController(fixture.directory, fixture.client);
   onTestFinished(() => {
@@ -229,8 +236,14 @@ const completed = async (intercept?: HerdrClient) => {
     summary: 'Finished.',
     evidence: ['Checked.'],
   });
-  recordEvent(status.directory, status.taskId, 'settled', 'Worker settled.', true);
-  recordEvent(status.directory, status.taskId, 'cleanup', 'Parent confirmed exit.', true);
+  recordEvent(status.directory, status.taskId, 'settled', {
+    detail: 'Worker settled.',
+    stopped: true,
+  });
+  recordEvent(status.directory, status.taskId, 'cleanup', {
+    detail: 'Parent confirmed exit.',
+    stopped: true,
+  });
   fixture.controller.close();
   const controller = new WorkerController(fixture.directory, fixture.client);
   afterTest(() => {
@@ -299,13 +312,10 @@ it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'out of t
       rmSync(join(fixture.sourceDirectory, 'cleanup.json'));
 
       if (failure === 'uncertain cleanup') {
-        recordEvent(
-          fixture.sourceDirectory,
-          fixture.source.taskId,
-          'cleanup',
-          'Unknown stop.',
-          false,
-        );
+        recordEvent(fixture.sourceDirectory, fixture.source.taskId, 'cleanup', {
+          detail: 'Unknown stop.',
+          stopped: false,
+        });
       }
     } else if (failure === 'handover') {
       rmSync(join(fixture.sourceDirectory, 'report.json'));
@@ -403,7 +413,10 @@ it('allows only one competing follow-up and preserves lineage across parents and
     summary: 'Second done.',
     evidence: [],
   });
-  recordEvent(next.directory, next.taskId, 'cleanup', 'Parent confirmed.', true);
+  recordEvent(next.directory, next.taskId, 'cleanup', {
+    detail: 'Parent confirmed.',
+    stopped: true,
+  });
   fixture.controller.close();
   parallel.close();
   const latestController = new WorkerController(fixture.directory, fixture.client);
@@ -554,7 +567,10 @@ it('retains friendly names and avoids retained and live collisions', async ({ on
   );
   const first = await controller.launch(input);
   expect(readTask(first.directory)).toMatchObject({ name: 'worker-aa' });
-  recordEvent(first.directory, first.taskId, 'cleanup', 'Pane removed.', true);
+  recordEvent(first.directory, first.taskId, 'cleanup', {
+    detail: 'Pane removed.',
+    stopped: true,
+  });
   live = [
     { pane_id: 'elsewhere', name: 'worker-bb' },
     { pane_id: 'unnamed', name: null },
@@ -677,7 +693,10 @@ it('omits the saved-evidence warning once the parent confirmed the worker stoppe
 }) => {
   const { controller, input, directory } = setup(onTestFinished);
   const status = await controller.launch(input);
-  recordEvent(status.directory, status.taskId, 'cleanup', 'Owned process stopped.', true);
+  recordEvent(status.directory, status.taskId, 'cleanup', {
+    detail: 'Owned process stopped.',
+    stopped: true,
+  });
   controller.close();
   const recovered = new WorkerController(directory);
   onTestFinished(() => {
@@ -832,7 +851,7 @@ it('delivers a clarification once without treating herdr delivery as acknowledge
     questionId: 'question-one',
     question: 'Which file?',
   };
-  records.acceptQuestion(launched.directory, task.taskId, question);
+  questions.acceptQuestion(launched.directory, task.taskId, question);
 
   expect(controller).toHaveProperty('reply');
   expect(controller.status(task.taskId, 'parent-id').pendingQuestion).toEqual(question);
@@ -859,7 +878,7 @@ it('delivers a clarification once without treating herdr delivery as acknowledge
   expect(calls.find((call) => call[1] === 'prompt')?.[2]).toBe('worker-1');
   expect(records.readTask(launched.directory)).toEqual(task);
   expect(
-    records.readAcknowledgement(launched.directory, task.taskId, question.questionId),
+    questions.readAcknowledgement(launched.directory, task.taskId, question.questionId),
   ).toBeUndefined();
   expect(notifications).toEqual([]);
 
@@ -931,7 +950,7 @@ it.each(['before', 'during'] as const)(
     });
     const launched = await controller.launch(input);
     recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
-    records.acceptQuestion(launched.directory, launched.taskId, {
+    questions.acceptQuestion(launched.directory, launched.taskId, {
       version: 1,
       taskId: launched.taskId,
       questionId: 'question-one',
@@ -956,7 +975,7 @@ it.each(['before', 'during'] as const)(
     expect(calls.filter((call) => call[1] === 'prompt').map((call) => call[2])).toEqual(
       movement === 'before' ? [movedPane] : [],
     );
-    expect(records.readReply(launched.directory, launched.taskId, 'question-one')?.replyId).toBe(
+    expect(questions.readReply(launched.directory, launched.taskId, 'question-one')?.replyId).toBe(
       movement === 'before' ? 'reply-one' : undefined,
     );
   },
@@ -968,7 +987,7 @@ it('retains uncertain reply delivery without resending or acknowledging it', asy
   const { controller, input, calls } = setup(onTestFinished);
   const launched = await controller.launch(input);
   recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
-  records.acceptQuestion(launched.directory, launched.taskId, {
+  questions.acceptQuestion(launched.directory, launched.taskId, {
     version: 1,
     taskId: launched.taskId,
     questionId: 'question-one',
@@ -1004,7 +1023,7 @@ it('notifies the parent once while waiting and refuses replies after the origina
   const { controller, input, notifications, calls } = setup(onTestFinished);
   const launched = await controller.launch(input);
   recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
-  records.acceptQuestion(launched.directory, launched.taskId, {
+  questions.acceptQuestion(launched.directory, launched.taskId, {
     version: 1,
     taskId: launched.taskId,
     questionId: 'question-one',
@@ -1025,7 +1044,7 @@ it('notifies the parent once while waiting and refuses replies after the origina
     }),
   ).rejects.toThrow('active');
   expect(calls.some((call) => call[1] === 'prompt')).toBe(false);
-  expect(records.readReply(launched.directory, launched.taskId, 'question-one')).toBeUndefined();
+  expect(questions.readReply(launched.directory, launched.taskId, 'question-one')).toBeUndefined();
 });
 
 it('refuses reply delivery when the original native worker identity changes', async ({
@@ -1043,7 +1062,7 @@ it('refuses reply delivery when the original native worker identity changes', as
   );
   const launched = await controller.launch(input);
   recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
-  records.acceptQuestion(launched.directory, launched.taskId, {
+  questions.acceptQuestion(launched.directory, launched.taskId, {
     version: 1,
     taskId: launched.taskId,
     questionId: 'question-one',
@@ -1060,7 +1079,7 @@ it('refuses reply delivery when the original native worker identity changes', as
     }),
   ).rejects.toThrow('identity');
   expect(calls.some((call) => call[1] === 'prompt')).toBe(false);
-  expect(records.readReply(launched.directory, launched.taskId, 'question-one')).toBeUndefined();
+  expect(questions.readReply(launched.directory, launched.taskId, 'question-one')).toBeUndefined();
 });
 
 it.each(['confirmed', 'unconfirmed'] as const)(
@@ -1090,7 +1109,10 @@ it.each(['confirmed', 'unconfirmed'] as const)(
         const token = argumentsList[argumentsList.indexOf('--session') + 1]!;
         tokens.set(paneId, token);
         const task = readTask(dirname(token));
-        recordEvent(dirname(token), task.taskId, 'ready', 'Ready.', false, process.pid);
+        recordEvent(dirname(token), task.taskId, 'ready', {
+          detail: 'Ready.',
+          processId: process.pid,
+        });
 
         return '{}';
       }
@@ -1531,7 +1553,10 @@ it('distinguishes settled missing handover and cancellation from success', async
 }) => {
   const { controller, input } = setup(onTestFinished);
   const launched = await controller.launch(input);
-  recordEvent(launched.directory, launched.taskId, 'settled', 'Stopped without report.', true);
+  recordEvent(launched.directory, launched.taskId, 'settled', {
+    detail: 'Stopped without report.',
+    stopped: true,
+  });
 
   expect(taskStatus(launched.directory)).toMatchObject({
     outcome: 'incomplete',

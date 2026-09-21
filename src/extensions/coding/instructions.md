@@ -3,28 +3,50 @@
 Apply these rules to every file you write or edit, tests included. Follow explicit user instructions
 and repository conventions when they differ from these defaults.
 
-## Write boring code
+## Write straightforward code
 
-- Boring code wins. Clever code is bad code.
+- Prefer straightforward code over clever shortcuts.
+- Use descriptive names. No abbreviations, even idiomatic ones: `getUserByIdentifier` not `getUsr`,
+  and no `btn`, `cb`, or `errMsg`.
+- Search for an existing helper before you write one. Reuse or extend it when it serves the same
+  purpose.
+- Reject invalid states where they enter the system. Report the error at that point.
+- Check each reason to reject in its own guard, with its own error message.
+
+## Keep functions small
+
 - One function, one job. Split anything that does two.
-- Use descriptive names. No abbreviations, even idiomatic ones: `getUserById` not `getUsr`, and no
-  `btn`, `cb`, or `errMsg`.
-- Reject invalid states where they enter. Fail loudly at the violation, not further down.
+- Review functions longer than 60 lines, files longer than 500 lines, and functions with more than 4
+  parameters. These are review thresholds, not required splits.
+- Keep related control flow and state together when splitting would make a behavior harder to trace.
+  Do not introduce inheritance or parameter objects only to meet a size threshold.
+- Extract a phase or callback when its name and boundary make the caller easier to understand. Group
+  parameters only when they describe one concept.
+- Declare a helper function before the function that uses it. Do not define one in the middle of
+  unrelated steps.
+- Prefer simpler control flow when a complexity rule fails. Allow a narrow, explained suppression
+  when keeping the code together makes its behavior easier to understand.
 
-## Let code breathe
+## Separate logical steps
 
-- Separate the logical steps inside a function with a blank line. A function body that runs as an
-  unbroken block of statements is a defect, even when it is short.
-- Group the lines that do one thing, then leave a blank line before the next thing. Setup, the work,
-  the result.
-- Use one blank line between steps, never two.
+- Separate the logical steps inside a function with a blank line. Use one blank line, never two.
+- A function body that runs as an unbroken block of statements is a defect, even when it is short.
+
+## Keep conditions short
+
+- Join at most 3 checks in one condition. Move the rest into named booleans or predicate functions,
+  one per idea: `escapesRepository(file)` not `file === '..' || file.startsWith('../')`.
+- Do not mix "and" with "or" in one condition. Name the inner group first.
+- When the same condition appears twice, replace both with one named predicate.
 
 ## Keep statements readable
 
 - Give each statement one job. Split a line that computes a value and also decides what to do with
   it.
-- Declare a helper function before the function that uses it. Do not define one in the middle of
-  unrelated steps.
+- Assign call chains and ternary expressions to named variables before using them inside arguments,
+  conditions, string templates, or literals.
+- Build a value with optional parts in steps. Add each optional part in its own `if`. Do not spread
+  a ternary into a literal.
 
 ## Comment only what the code cannot say
 

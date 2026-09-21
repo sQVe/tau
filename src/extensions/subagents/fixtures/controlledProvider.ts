@@ -24,56 +24,51 @@ export const fixtureAuth = {
   },
 };
 
-export default function controlledProvider(pi: ExtensionAPI) {
-  if (savedTask?.predecessorTaskId) {
-    provider.setResponses([
-      fauxAssistantMessage([
-        fauxToolCall('bash', { command: 'find ./delete-fixture/.git -delete' }),
-      ]),
-      (context) => {
-        const prior = context.messages.some(
-          (message) =>
-            message.role === 'user' &&
-            JSON.stringify(message.content).includes(savedTask.predecessorTaskId ?? 'missing'),
-        );
-        const blocked = JSON.stringify(
-          context.messages.findLast(
-            (message) => message.role === 'toolResult' && message.toolName === 'bash',
-          ),
-        ).includes('BLOCKED by CC Safety Net');
-        const instructions = JSON.stringify(
-          context.messages.findLast((message) => message.role === 'user'),
-        ).includes(savedTask.loadout.instructions);
+const registerFollowUpProvider = (pi: ExtensionAPI): void => {
+  provider.setResponses([
+    fauxAssistantMessage([fauxToolCall('bash', { command: 'find ./delete-fixture/.git -delete' })]),
+    (context) => {
+      const prior = context.messages.some(
+        (message) =>
+          message.role === 'user' &&
+          JSON.stringify(message.content).includes(savedTask?.predecessorTaskId ?? 'missing'),
+      );
+      const blocked = JSON.stringify(
+        context.messages.findLast(
+          (message) => message.role === 'toolResult' && message.toolName === 'bash',
+        ),
+      ).includes('BLOCKED by CC Safety Net');
+      const instructions = JSON.stringify(
+        context.messages.findLast((message) => message.role === 'user'),
+      ).includes(savedTask?.loadout.instructions ?? '');
 
-        return fauxAssistantMessage([
-          fauxToolCall('subagent_report', {
-            outcome: prior && blocked && instructions ? 'success' : 'failure',
-            summary: 'Native follow-up checked.',
-            evidence: [
-              `prior context: ${prior}`,
-              `Safety Net block: ${blocked}`,
-              `saved instructions: ${instructions}`,
-            ],
-          }),
-        ]);
-      },
-    ]);
-    pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
+      return fauxAssistantMessage([
+        fauxToolCall('subagent_report', {
+          outcome: prior && blocked && instructions ? 'success' : 'failure',
+          summary: 'Native follow-up checked.',
+          evidence: [
+            `prior context: ${prior}`,
+            `Safety Net block: ${blocked}`,
+            `saved instructions: ${instructions}`,
+          ],
+        }),
+      ]);
+    },
+  ]);
+  pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
+};
 
-    return;
-  }
+const registerCancellationProvider = (pi: ExtensionAPI): void => {
+  provider.setResponses([fauxAssistantMessage('Active streaming fixture. '.repeat(1000))]);
+  pi.on('message_update', () => {
+    writeFileSync(join(process.cwd(), 'streaming'), 'active');
+  });
+  pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
+};
 
-  if (activeCancellation) {
-    provider.setResponses([fauxAssistantMessage('Active streaming fixture. '.repeat(1000))]);
-    pi.on('message_update', () => {
-      writeFileSync(join(process.cwd(), 'streaming'), 'active');
-    });
-    pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
+const registerDefaultProvider = (pi: ExtensionAPI): void => {
+  const asking = directory ? readTask(directory).task.includes('question') : false;
 
-    return;
-  }
-
-  const asking = directory && readTask(directory).task.includes('question');
   provider.setResponses([
     ...(asking
       ? [
@@ -112,4 +107,20 @@ export default function controlledProvider(pi: ExtensionAPI) {
     },
   ]);
   pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
+};
+
+export default function controlledProvider(pi: ExtensionAPI) {
+  if (savedTask?.predecessorTaskId) {
+    registerFollowUpProvider(pi);
+
+    return;
+  }
+
+  if (activeCancellation) {
+    registerCancellationProvider(pi);
+
+    return;
+  }
+
+  registerDefaultProvider(pi);
 }

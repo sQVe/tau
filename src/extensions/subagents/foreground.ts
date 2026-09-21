@@ -1,3 +1,19 @@
+import {
+  append,
+  contains,
+  edgeLeaf,
+  frame,
+  framesAreEqual,
+  isPositiveInteger,
+  leaves,
+  matchesOwnClose,
+  panes,
+  removePane,
+  splitLengths,
+  splitShape,
+  splits,
+} from './foregroundLayout.js';
+import type { Branch, Tree } from './foregroundLayout.js';
 import { listTerminals, object, result, text } from './terminal.js';
 import type { TerminalCall, TerminalLocation } from './terminal.js';
 
@@ -8,15 +24,11 @@ export interface Rectangle {
 
 // Leave room for pane borders and status rows around 80 columns and 20 useful rows.
 export const minimumPane = { width: 82, height: 24 };
+
 export const rectangle = (value: unknown): Rectangle => {
   const bounds = object(value);
 
-  if (
-    !Number.isSafeInteger(bounds.width) ||
-    Number(bounds.width) <= 0 ||
-    !Number.isSafeInteger(bounds.height) ||
-    Number(bounds.height) <= 0
-  ) {
+  if (!isPositiveInteger(bounds.width) || !isPositiveInteger(bounds.height)) {
     throw new Error('Invalid herdr pane dimensions.');
   }
 
@@ -25,44 +37,20 @@ export const rectangle = (value: unknown): Rectangle => {
 export const isUseful = (bounds: Rectangle): boolean =>
   bounds.width >= minimumPane.width && bounds.height >= minimumPane.height;
 
-// Herdr gives the first child the rounded share and the second the rest, with no divider cell.
-const splitLengths = (length: number, ratio: number) => {
-  const first = Math.round(length * ratio);
-
-  return { first, second: length - first };
-};
+const preferRight = (bounds: Rectangle, down: boolean): boolean =>
+  !down || bounds.width / minimumPane.width >= bounds.height / minimumPane.height;
 
 export const splitDirection = (bounds: Rectangle): 'right' | 'down' | undefined => {
   const right = isUseful({ width: splitLengths(bounds.width, 0.5).second, height: bounds.height });
   const down = isUseful({ width: bounds.width, height: splitLengths(bounds.height, 0.5).second });
 
-  if (right && (!down || bounds.width / minimumPane.width >= bounds.height / minimumPane.height)) {
+  if (right && preferRight(bounds, down)) {
     return 'right';
   }
 
   return down ? 'down' : undefined;
 };
 
-const panes = (layout: Record<string, unknown>) => {
-  if (!Array.isArray(layout.panes)) {
-    throw new TypeError('Missing herdr layout panes.');
-  }
-
-  return layout.panes.map(object);
-};
-const splits = (layout: Record<string, unknown>) => {
-  if (!Array.isArray(layout.splits)) {
-    throw new TypeError('Missing herdr layout splits.');
-  }
-
-  return layout.splits.map(object);
-};
-const frame = (layout: Record<string, unknown>) => ({
-  workspace: layout.workspace_id,
-  tab: layout.tab_id,
-  area: layout.area,
-  zoomed: layout.zoomed,
-});
 export const layoutShape = (layout: Record<string, unknown>): string => {
   if (typeof layout.zoomed !== 'boolean') {
     throw new TypeError('Missing herdr zoom state.');
@@ -74,53 +62,6 @@ export const layoutShape = (layout: Record<string, unknown>): string => {
     panes: panes(layout).map((pane) => ({ paneId: text(pane.pane_id), rectangle: pane.rect })),
   });
 };
-
-type Tree = string | { direction: 'right' | 'down'; first: Tree; second: Tree };
-type Branch = Exclude<Tree, string>;
-const leaves = (tree: Tree): string[] =>
-  typeof tree === 'string' ? [tree] : [...leaves(tree.first), ...leaves(tree.second)];
-const append = (tree: Tree, target: string, added: string, direction: 'right' | 'down'): Tree => {
-  if (typeof tree === 'string') {
-    return tree === target ? { direction, first: target, second: added } : tree;
-  }
-
-  return {
-    ...tree,
-    first: append(tree.first, target, added, direction),
-    second: append(tree.second, target, added, direction),
-  };
-};
-const removePane = (tree: Tree, paneId: string): Tree | undefined => {
-  if (typeof tree === 'string') {
-    return tree === paneId ? undefined : tree;
-  }
-
-  const first = removePane(tree.first, paneId);
-  const second = removePane(tree.second, paneId);
-
-  if (first === undefined) {
-    return second;
-  }
-
-  if (second === undefined) {
-    return first;
-  }
-
-  return { ...tree, first, second };
-};
-
-const edgeLeaf = (tree: Tree, direction: 'right' | 'down', last: boolean): string => {
-  if (typeof tree === 'string') {
-    return tree;
-  }
-
-  return edgeLeaf(tree.direction === direction && last ? tree.second : tree.first, direction, last);
-};
-const contains = (outer: Record<string, unknown>, inner: Record<string, unknown>) =>
-  Number(inner.x) >= Number(outer.x) &&
-  Number(inner.y) >= Number(outer.y) &&
-  Number(inner.x) + Number(inner.width) <= Number(outer.x) + Number(outer.width) &&
-  Number(inner.y) + Number(inner.height) <= Number(outer.y) + Number(outer.height);
 
 // Find only the split enclosing the recorded Tau children. Never address a cached split path.
 const branchSplit = (tree: Branch, layout: Record<string, unknown>) => {
@@ -186,64 +127,325 @@ const distribute = (
     distribute(tree.second, { ...bounds, [axis]: secondLength }, target, adjustments)
   );
 };
-const splitShape = (split: Record<string, unknown>) =>
-  JSON.stringify({ direction: split.direction, ratio: split.ratio, rect: split.rect });
 
-// Compare ordered child membership and ratios, not split paths or rectangles that change on sibling collapse.
-const topologyAfterRemoval = (layout: Record<string, unknown>, removed?: string): string[] =>
-  splits(layout)
-    .flatMap((split) => {
-      const bounds = object(split.rect);
-      const position = split.direction === 'right' ? 'x' : 'y';
-      const dimension = split.direction === 'right' ? 'width' : 'height';
-      const boundary = Number(bounds[position]) + Number(bounds[dimension]) * Number(split.ratio);
-      const children = panes(layout).filter(
-        (pane) => pane.pane_id !== removed && contains(bounds, object(pane.rect)),
-      );
-      const first: string[] = [];
-      const second: string[] = [];
+interface BalanceContext {
+  plan: ForegroundPlan;
+  eligible: TerminalLocation[];
+  call: TerminalCall;
+}
 
-      for (const pane of children) {
-        const paneBounds = object(pane.rect);
-        const center = Number(paneBounds[position]) + Number(paneBounds[dimension]) / 2;
-        const side = center < boundary ? first : second;
-        side.push(text(pane.pane_id));
-      }
+interface ResizeSnapshot {
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  split: Record<string, unknown>;
+  members: string[];
+}
 
-      if (!first.length || !second.length) {
-        return [];
-      }
+const isOwnedTerminal = (
+  pane: TerminalLocation,
+  paneId: string,
+  eligible: TerminalLocation[],
+): boolean =>
+  pane.paneId === paneId &&
+  eligible.some((owned) => owned.paneId === paneId && owned.terminalId === pane.terminalId);
 
-      return [
-        JSON.stringify({
-          direction: split.direction,
-          ratio: split.ratio,
-          first: first.toSorted(),
-          second: second.toSorted(),
-        }),
-      ];
-    })
-    .toSorted();
+const ownsEveryTerminal = (
+  plan: ForegroundPlan,
+  live: TerminalLocation[],
+  eligible: TerminalLocation[],
+): boolean =>
+  leaves(plan.tree).every((paneId) => live.some((pane) => isOwnedTerminal(pane, paneId, eligible)));
 
-const matchesOwnClose = (
+const ensureOwnedLayout = async (
+  context: BalanceContext,
+  anchor: string,
+  current: Record<string, unknown>,
+): Promise<void> => {
+  const live = await listTerminals(context.call);
+
+  if (!ownsEveryTerminal(context.plan, live, context.eligible)) {
+    throw new Error('Owned foreground terminal moved; resizing refused.');
+  }
+
+  const checked = object(result(await context.call(['pane', 'layout', '--pane', anchor])).layout);
+
+  if (layoutShape(checked) !== layoutShape(current)) {
+    throw new Error('Layout changed during foreground placement; resizing refused.');
+  }
+};
+
+const resizeDirection = (
+  adjustment: Adjustment,
+  difference: number,
+): 'right' | 'down' | 'left' | 'up' => {
+  if (difference > 0) {
+    return adjustment.branch.direction;
+  }
+
+  return adjustment.branch.direction === 'right' ? 'left' : 'up';
+};
+
+const paneRectangleIsAllowed = (
   before: Record<string, unknown>,
   after: Record<string, unknown>,
-  paneId: string,
+  members: string[],
+): boolean =>
+  members.includes(text(before.pane_id)) ||
+  JSON.stringify(after.rect) === JSON.stringify(before.rect);
+
+const layoutPanesMatch = (
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  members: string[],
+): boolean => after.pane_id === before.pane_id && paneRectangleIsAllowed(before, after, members);
+
+const layoutsPreservePanes = (
+  beforePanes: Record<string, unknown>[],
+  afterPanes: Record<string, unknown>[],
+  members: string[],
+): boolean =>
+  afterPanes.length === beforePanes.length &&
+  beforePanes.every((before) =>
+    afterPanes.some((after) => layoutPanesMatch(before, after, members)),
+  );
+
+const splitAfterResizeMatches = (
+  before: Record<string, unknown>,
+  afterSplits: Record<string, unknown>[],
+  splitId: unknown,
+  ratio: number,
 ): boolean => {
-  const expected = panes(before)
-    .map((pane) => text(pane.pane_id))
-    .filter((id) => id !== paneId)
-    .toSorted();
-  const actual = panes(after)
-    .map((pane) => text(pane.pane_id))
-    .toSorted();
+  const after = afterSplits.find((entry) => entry.id === before.id);
+  const expected = before.id === splitId ? ratio : Number(before.ratio);
 
   return (
-    JSON.stringify(frame(before)) === JSON.stringify(frame(after)) &&
-    JSON.stringify(expected) === JSON.stringify(actual) &&
-    splits(after).length === splits(before).length - 1 &&
-    JSON.stringify(topologyAfterRemoval(before, paneId)) ===
-      JSON.stringify(topologyAfterRemoval(after))
+    Boolean(after) &&
+    after?.direction === before.direction &&
+    Math.abs(Number(after?.ratio) - expected) < 0.00001
+  );
+};
+
+const splitsAfterResizeMatch = (
+  beforeSplits: Record<string, unknown>[],
+  afterSplits: Record<string, unknown>[],
+  splitId: unknown,
+  ratio: number,
+): boolean => {
+  if (afterSplits.length !== beforeSplits.length) {
+    return false;
+  }
+
+  return beforeSplits.every((before) =>
+    splitAfterResizeMatches(before, afterSplits, splitId, ratio),
+  );
+};
+
+const resizeResultIsExpected = (snapshot: ResizeSnapshot, ratio: number): boolean => {
+  const frameIsUnchanged = framesAreEqual(snapshot.before, snapshot.after);
+  const panesArePreserved = layoutsPreservePanes(
+    panes(snapshot.before),
+    panes(snapshot.after),
+    snapshot.members,
+  );
+  const splitsAreExpected = splitsAfterResizeMatch(
+    splits(snapshot.before),
+    splits(snapshot.after),
+    snapshot.split.id,
+    ratio,
+  );
+
+  return frameIsUnchanged && panesArePreserved && splitsAreExpected;
+};
+
+const applyAdjustment = async (
+  context: BalanceContext,
+  adjustment: Adjustment,
+  current: Record<string, unknown>,
+): Promise<Record<string, unknown>> => {
+  const split = branchSplit(adjustment.branch, current);
+  const difference = adjustment.ratio - Number(split.ratio);
+
+  // Herdr stores ratios as f32, so comparisons allow its rounding error.
+  if (Math.abs(difference) < 0.00001) {
+    return current;
+  }
+
+  const anchor = edgeLeaf(
+    difference > 0 ? adjustment.branch.first : adjustment.branch.second,
+    adjustment.branch.direction,
+    difference > 0,
+  );
+  await ensureOwnedLayout(context, anchor, current);
+  const direction = resizeDirection(adjustment, difference);
+  const response = await context.call([
+    'pane',
+    'resize',
+    '--pane',
+    anchor,
+    '--direction',
+    direction,
+    '--amount',
+    String(Math.abs(difference)),
+  ]);
+  const resized = object(object(result(response).resize).layout);
+  const snapshot: ResizeSnapshot = {
+    before: current,
+    after: resized,
+    split,
+    members: leaves(context.plan.tree),
+  };
+
+  if (!resizeResultIsExpected(snapshot, adjustment.ratio)) {
+    throw new Error('Foreground resize result changed unexpectedly; no retry or layout restore.');
+  }
+
+  return resized;
+};
+
+interface CloseCapture {
+  layout: Record<string, unknown>;
+  terminals: TerminalLocation[];
+  tree: Tree;
+}
+
+const captureCloseSnapshot = async (
+  group: { tree: Tree; shape: string } | undefined,
+  location: TerminalLocation,
+  call: TerminalCall,
+): Promise<CloseCapture | undefined> => {
+  if (!group) {
+    return undefined;
+  }
+
+  try {
+    const layout = object(result(await call(['pane', 'layout', '--pane', location.paneId])).layout);
+    const terminals = await listTerminals(call);
+    const stillOwned = terminals.some(
+      (pane) => pane.paneId === location.paneId && pane.terminalId === location.terminalId,
+    );
+
+    if (layoutShape(layout) !== group.shape || !stillOwned) {
+      return undefined;
+    }
+
+    return {
+      layout,
+      terminals: terminals.filter((pane) => pane.tabId === location.tabId),
+      tree: group.tree,
+    };
+  } catch {
+    // Layout bookkeeping must not prevent identity-checked worker cleanup.
+    return undefined;
+  }
+};
+
+const terminalStillExists = (live: TerminalLocation[], location: TerminalLocation): boolean =>
+  live.some((pane) => pane.terminalId === location.terminalId);
+
+const survivorsRemainInPlace = (live: TerminalLocation[], survivors: TerminalLocation[]): boolean =>
+  survivors.every((pane) =>
+    live.some(
+      (current) =>
+        current.terminalId === pane.terminalId &&
+        current.paneId === pane.paneId &&
+        current.tabId === pane.tabId,
+    ),
+  );
+
+const restoreGroupsAfterClose = async (
+  shares: Map<string, { tree: Tree; shape: string }>,
+  captured: CloseCapture,
+  location: TerminalLocation,
+  call: TerminalCall,
+): Promise<void> => {
+  const tree = removePane(captured.tree, location.paneId);
+
+  if (tree === undefined) {
+    return;
+  }
+
+  try {
+    const live = await listTerminals(call);
+    const survivors = captured.terminals.filter((pane) => pane.paneId !== location.paneId);
+
+    if (terminalStillExists(live, location) || !survivorsRemainInPlace(live, survivors)) {
+      return;
+    }
+
+    const survivor = leaves(tree)[0];
+
+    if (!survivor) {
+      return;
+    }
+
+    const layout = object(result(await call(['pane', 'layout', '--pane', survivor])).layout);
+
+    if (matchesOwnClose(captured.layout, layout, location.paneId)) {
+      shares.set(location.tabId, { tree, shape: layoutShape(layout) });
+    }
+  } catch {
+    // A confirmed close stays confirmed even when its cosmetic snapshot is unavailable.
+  }
+};
+
+interface RememberRequest {
+  before: Record<string, unknown>;
+  target: string;
+  added: TerminalLocation;
+  direction: 'right' | 'down';
+  call: TerminalCall;
+  tree: Tree | undefined;
+  isOwned: () => boolean;
+}
+
+const createdSplitIsExpected = (
+  created: Record<string, unknown> | undefined,
+  direction: 'right' | 'down',
+): boolean => created?.direction === direction && Number(created.ratio) === 0.5;
+
+const rememberedPaneRectangleIsAllowed = (
+  pane: Record<string, unknown>,
+  next: Record<string, unknown>,
+  target: string,
+): boolean => pane.pane_id === target || JSON.stringify(next.rect) === JSON.stringify(pane.rect);
+
+const rememberedPaneIsPreserved = (
+  pane: Record<string, unknown>,
+  nextPanes: Record<string, unknown>[],
+  target: string,
+): boolean =>
+  nextPanes.some(
+    (next) => next.pane_id === pane.pane_id && rememberedPaneRectangleIsAllowed(pane, next, target),
+  );
+
+const previousPanesArePreserved = (
+  previousPanes: Record<string, unknown>[],
+  nextPanes: Record<string, unknown>[],
+  target: string,
+): boolean => previousPanes.every((pane) => rememberedPaneIsPreserved(pane, nextPanes, target));
+
+const layoutRemembersPane = (
+  request: RememberRequest,
+  after: Record<string, unknown>,
+  created: Record<string, unknown>[],
+): boolean => {
+  const previousPanes = panes(request.before);
+  const nextPanes = panes(after);
+  const previousSplits = splits(request.before);
+  const nextSplits = splits(after);
+  const layoutShapeIncreased =
+    framesAreEqual(request.before, after) &&
+    nextPanes.length === previousPanes.length + 1 &&
+    nextSplits.length === previousSplits.length + 1;
+  const paneSetIsExpected =
+    created.length === 1 &&
+    createdSplitIsExpected(created[0], request.direction) &&
+    previousPanesArePreserved(previousPanes, nextPanes, request.target);
+
+  return (
+    layoutShapeIncreased &&
+    paneSetIsExpected &&
+    nextPanes.some((pane) => pane.pane_id === request.added.paneId)
   );
 };
 
@@ -290,97 +492,12 @@ export class ForegroundShares {
     eligible: TerminalLocation[],
     call: TerminalCall,
   ): Promise<Record<string, unknown>> {
+    const context: BalanceContext = { plan, eligible, call };
     let current = layout;
 
     for (const adjustment of plan.adjustments) {
-      const split = branchSplit(adjustment.branch, current);
-      const difference = adjustment.ratio - Number(split.ratio);
-
-      // Herdr stores ratios as f32, so comparisons allow its rounding error.
-      if (Math.abs(difference) < 0.00001) {
-        continue;
-      }
-
-      const anchor = edgeLeaf(
-        difference > 0 ? adjustment.branch.first : adjustment.branch.second,
-        adjustment.branch.direction,
-        difference > 0,
-      );
       // oxlint-disable-next-line eslint/no-await-in-loop -- Recheck identities and geometry before each owned ratio change.
-      const live = await listTerminals(call);
-
-      if (
-        !leaves(plan.tree).every((paneId) =>
-          live.some(
-            (pane) =>
-              pane.paneId === paneId &&
-              eligible.some(
-                (owned) => owned.paneId === paneId && owned.terminalId === pane.terminalId,
-              ),
-          ),
-        )
-      ) {
-        throw new Error('Owned foreground terminal moved; resizing refused.');
-      }
-
-      // oxlint-disable-next-line eslint/no-await-in-loop -- External changes must not be overwritten by a later step.
-      const checked = object(result(await call(['pane', 'layout', '--pane', anchor])).layout);
-
-      if (layoutShape(checked) !== layoutShape(current)) {
-        throw new Error('Layout changed during foreground placement; resizing refused.');
-      }
-
-      const opposite = adjustment.branch.direction === 'right' ? 'left' : 'up';
-      const direction = difference > 0 ? adjustment.branch.direction : opposite;
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Resize preserves focus natively and only adjusts the verified adjacent split.
-      const response = await call([
-        'pane',
-        'resize',
-        '--pane',
-        anchor,
-        '--direction',
-        direction,
-        '--amount',
-        String(Math.abs(difference)),
-      ]);
-      const next = object(object(result(response).resize).layout);
-      const beforeSplits = splits(current);
-      const afterSplits = splits(next);
-      const members = leaves(plan.tree);
-      const beforePanes = panes(current);
-      const afterPanes = panes(next);
-      const samePanes =
-        afterPanes.length === beforePanes.length &&
-        beforePanes.every((before) =>
-          afterPanes.some(
-            (after) =>
-              after.pane_id === before.pane_id &&
-              (members.includes(text(before.pane_id)) ||
-                JSON.stringify(after.rect) === JSON.stringify(before.rect)),
-          ),
-        );
-
-      if (
-        !samePanes ||
-        JSON.stringify(frame(current)) !== JSON.stringify(frame(next)) ||
-        afterSplits.length !== beforeSplits.length ||
-        !beforeSplits.every((before) => {
-          const after = afterSplits.find((entry) => entry.id === before.id);
-          const expected = before.id === split.id ? adjustment.ratio : Number(before.ratio);
-
-          return (
-            after &&
-            after.direction === before.direction &&
-            Math.abs(Number(after.ratio) - expected) < 0.00001
-          );
-        })
-      ) {
-        throw new Error(
-          'Foreground resize result changed unexpectedly; no retry or layout restore.',
-        );
-      }
-
-      current = next;
+      current = await applyAdjustment(context, adjustment, current);
     }
 
     return current;
@@ -393,33 +510,7 @@ export class ForegroundShares {
   ): Promise<void> {
     const group = this.groups.get(location.tabId);
     this.groups.delete(location.tabId);
-    let captured:
-      | { layout: Record<string, unknown>; terminals: TerminalLocation[]; tree: Tree }
-      | undefined;
-
-    try {
-      if (group) {
-        const layout = object(
-          result(await call(['pane', 'layout', '--pane', location.paneId])).layout,
-        );
-        const terminals = await listTerminals(call);
-
-        if (
-          layoutShape(layout) === group.shape &&
-          terminals.some(
-            (pane) => pane.paneId === location.paneId && pane.terminalId === location.terminalId,
-          )
-        ) {
-          captured = {
-            layout,
-            terminals: terminals.filter((pane) => pane.tabId === location.tabId),
-            tree: group.tree,
-          };
-        }
-      }
-    } catch {
-      // Layout bookkeeping must not prevent identity-checked worker cleanup.
-    }
+    const captured = await captureCloseSnapshot(group, location, call);
 
     await close();
 
@@ -427,89 +518,30 @@ export class ForegroundShares {
       return;
     }
 
-    const tree = removePane(captured.tree, location.paneId);
-
-    if (tree === undefined) {
-      return;
-    }
-
-    try {
-      const live = await listTerminals(call);
-      const survivors = captured.terminals.filter((pane) => pane.paneId !== location.paneId);
-
-      if (
-        live.some((pane) => pane.terminalId === location.terminalId) ||
-        !survivors.every((pane) =>
-          live.some(
-            (current) =>
-              current.terminalId === pane.terminalId &&
-              current.paneId === pane.paneId &&
-              current.tabId === pane.tabId,
-          ),
-        )
-      ) {
-        return;
-      }
-
-      const survivor = leaves(tree)[0];
-
-      if (!survivor) {
-        return;
-      }
-
-      const layout = object(result(await call(['pane', 'layout', '--pane', survivor])).layout);
-
-      if (matchesOwnClose(captured.layout, layout, location.paneId)) {
-        this.groups.set(location.tabId, { tree, shape: layoutShape(layout) });
-      }
-    } catch {
-      // A confirmed close stays confirmed even when its cosmetic snapshot is unavailable.
-    }
+    await restoreGroupsAfterClose(this.groups, captured, location, call);
   }
 
-  async remember(
-    before: Record<string, unknown>,
-    target: string,
-    added: TerminalLocation,
-    direction: 'right' | 'down',
-    call: TerminalCall,
-    tree: Tree | undefined,
-    isOwned: () => boolean,
-  ): Promise<void> {
-    this.groups.delete(added.tabId);
+  async remember(request: RememberRequest): Promise<void> {
+    this.groups.delete(request.added.tabId);
 
     try {
-      const after = object(result(await call(['pane', 'layout', '--pane', added.paneId])).layout);
-      const previousPanes = panes(before);
-      const nextPanes = panes(after);
-      const previousSplits = splits(before);
+      const after = object(
+        result(await request.call(['pane', 'layout', '--pane', request.added.paneId])).layout,
+      );
+      const previousSplits = splits(request.before);
       const nextSplits = splits(after);
       const created = nextSplits.filter(
         (split) => !previousSplits.some((previous) => splitShape(previous) === splitShape(split)),
       );
 
-      if (
-        JSON.stringify(frame(before)) !== JSON.stringify(frame(after)) ||
-        nextPanes.length !== previousPanes.length + 1 ||
-        created.length !== 1 ||
-        nextSplits.length !== previousSplits.length + 1 ||
-        created[0]?.direction !== direction ||
-        Number(created[0].ratio) !== 0.5 ||
-        !previousPanes.every((pane) =>
-          nextPanes.some(
-            (next) =>
-              next.pane_id === pane.pane_id &&
-              (pane.pane_id === target || JSON.stringify(next.rect) === JSON.stringify(pane.rect)),
+      if (layoutRemembersPane(request, after, created) && request.isOwned()) {
+        this.groups.set(request.added.tabId, {
+          tree: append(
+            request.tree ?? request.target,
+            request.target,
+            request.added.paneId,
+            request.direction,
           ),
-        ) ||
-        !nextPanes.some((pane) => pane.pane_id === added.paneId)
-      ) {
-        return;
-      }
-
-      if (isOwned()) {
-        this.groups.set(added.tabId, {
-          tree: append(tree ?? target, target, added.paneId, direction),
           shape: layoutShape(after),
         });
       }

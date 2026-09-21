@@ -7,6 +7,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import * as cancellation from './cancellation.js';
 import { WorkerController } from './controller.js';
+import type { HerdrClient } from './controller.js';
 import { herdrFake } from './fixtures/herdrFake.js';
 import { fixtureGenericLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
@@ -25,8 +26,10 @@ const fixture = (kind = 'codex') => {
     parentSession,
     `${JSON.stringify({ type: 'session', version: 3, id: 'parent', cwd: directory })}\n`,
   );
-  const { client, state: herdrState, calls, layout } = herdrFake(kind);
+  const { client: fakeClient, state: herdrState, calls, layout } = herdrFake(kind);
+  const budgets: number[] = [];
   const state = Object.assign(herdrState, {
+    shellExitsOnStart: false,
     processStart: execFileSync('ps', ['-p', String(process.pid), '-o', 'lstart='], {
       encoding: 'utf8',
     }).trim(),
@@ -34,6 +37,18 @@ const fixture = (kind = 'codex') => {
       encoding: 'utf8',
     }).trim(),
   });
+  const client: HerdrClient = async (argumentsList, budget, signal) => {
+    budgets.push(budget);
+
+    // herdr reports no foreground group while the replacement shell starts.
+    if (state.shellExitsOnStart && state.started && argumentsList[1] === 'process-info') {
+      return JSON.stringify({
+        result: { process_info: { pane_id: argumentsList[3], shell_pid: state.shell + 1 } },
+      });
+    }
+
+    return fakeClient(argumentsList, budget, signal);
+  };
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   vi.spyOn(identity, 'currentProcessIdentity').mockResolvedValue({
     processId: 300,
@@ -91,6 +106,7 @@ const fixture = (kind = 'codex') => {
     controller,
     state,
     calls,
+    budgets,
     notices,
     input,
     layout,
@@ -145,6 +161,17 @@ it.each(['claude', 'codex', 'gemini'])(
   },
 );
 
+it('caps each herdr call while polling a long-running generic worker', async () => {
+  const setup = fixture();
+  await setup.controller.launch({ ...setup.input, timeout: 120_000 });
+  setup.budgets.length = 0;
+
+  await vi.advanceTimersByTimeAsync(1500);
+
+  expect(setup.budgets.length).toBeGreaterThan(0);
+  expect(Math.max(...setup.budgets)).toBeLessThanOrEqual(30_000);
+});
+
 it('retains ownership through transient inspection and partial reports without unsafe input', async () => {
   const setup = fixture();
   const started = await setup.controller.launch(setup.input);
@@ -174,6 +201,18 @@ it('retains ownership through transient inspection and partial reports without u
     stopped: true,
     deadline: started.deadline,
   });
+});
+
+it('cancels an identity-checked generic worker before a native reference is available', async () => {
+  const setup = fixture();
+  setup.state.session = '';
+  const started = await setup.controller.launch(setup.input);
+
+  const status = await setup.controller.cancel(started.taskId, 'parent');
+
+  expect(status).toMatchObject({ outcome: 'cancelled', stopped: true, capacityHeld: false });
+  expect(setup.calls).toContainEqual(['agent', 'send-keys', 'worker-1', 'ctrl+c']);
+  expect(setup.calls).toContainEqual(['pane', 'close', 'worker-1']);
 });
 
 it('persists a late native reference and refuses input after that reference changes', async () => {
@@ -411,6 +450,16 @@ it.each([
 
   expect(setup.notices.filter((notice) => notice.includes(`assignment ${state}`))).toHaveLength(1);
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
+});
+
+it('keeps an uncertain start pending when herdr reports a replaced shell', async () => {
+  const setup = fixture();
+  setup.state.startError = 'Startup response lost';
+  setup.state.shellExitsOnStart = true;
+
+  await setup.controller.launch(setup.input);
+
+  expect(setup.calls).toContainEqual(['agent', 'get', 'worker-1']);
 });
 
 it('keeps uncertain startup and text delivery visible without repeating either operation', async () => {

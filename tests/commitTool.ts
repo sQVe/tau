@@ -9,8 +9,8 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, vi } from 'vitest';
 
 import type { reviewComments } from '../src/extensions/commit/commentReview.js';
-import type { CommitInput } from '../src/extensions/commit/tool.js';
 import { createCommitTool as createReviewedCommitTool } from '../src/extensions/commit/tool.js';
+import type { CommitInput } from '../src/extensions/commit/validation.js';
 import { initializeRepository } from './gitRepository.js';
 
 // Git tests use a clean reviewer.
