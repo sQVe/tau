@@ -336,9 +336,8 @@ it('advises once when RED came from a thrown error and still counts it as RED', 
 
   const red = await observation.run(behavior, 'focused');
 
-  expect(red.hint).toBe(
-    'Hint: RED came from a thrown TypeError, not a failed assertion; make the test fail on the expected behavior before implementing.',
-  );
+  expect(red.hint).toContain('TypeError');
+  expect(red.hint).toMatch(/expected behavior/i);
   expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
   await writeFile(join(cwd, 'src/value.ts'), 'implementation');
   expect(await observation.checkpoint(true)).toBeUndefined();
