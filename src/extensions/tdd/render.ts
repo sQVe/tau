@@ -108,6 +108,16 @@ const slowTests = (cwd: string, report: RunnerResult): string[] => {
   ];
 };
 
+const pushWithinSummaryLimit = (lines: string[], extra: string[]) => {
+  for (const line of extra) {
+    if ([...lines, line].join('\n').length > maximumSummaryCharacters) {
+      return;
+    }
+
+    lines.push(line);
+  }
+};
+
 export const summarize = (cwd: string, observation: Observation): string => {
   const { report, scope, freshness } = observation;
   const lines = [`${report.kind} · ${scope === 'full' ? 'full suite' : 'focused'} · ${freshness}`];
@@ -117,7 +127,6 @@ export const summarize = (cwd: string, observation: Observation): string => {
   }
 
   lines.push(...testSummary(report));
-  lines.push(...(scope === 'full' ? slowTests(cwd, report) : focusedDurations(report)));
 
   const failures = 'failures' in report ? report.failures : [];
   const fileFailures = failures.filter((failure) => failure.fullname === '<file>').length;
@@ -149,6 +158,12 @@ export const summarize = (cwd: string, observation: Observation): string => {
   if ('truncated' in report && report.truncated) {
     lines.push('further failures were not collected');
   }
+
+  // Durations take only the space failures leave.
+  pushWithinSummaryLimit(
+    lines,
+    scope === 'full' ? slowTests(cwd, report) : focusedDurations(report),
+  );
 
   return cap(printable(lines.join('\n')), maximumSummaryCharacters);
 };

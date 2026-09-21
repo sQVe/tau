@@ -194,3 +194,23 @@ it('keeps the summary within its limit when many selected tests report durations
 
   expect(summarize('/repo', observation({ kind: 'pass', tests })).length).toBeLessThanOrEqual(2000);
 });
+
+it('shows failure messages before durations when both do not fit', () => {
+  const tests = Array.from({ length: 10 }, (_, index) => ({
+    ...timed('/repo/value.test.ts', `value fails ${'x'.repeat(200)} ${index}`, index),
+    status: 'failed' as const,
+  }));
+  const failures = tests.map((test, index) => ({
+    file: test.file,
+    fullname: test.fullname,
+    message: `expected ${index} to be 1`,
+  }));
+
+  const summary = summarize(
+    '/repo',
+    observation({ kind: 'fail', tests, failures, truncated: false }),
+  );
+
+  expect(summary).toContain('expected 0 to be 1');
+  expect(summary.length).toBeLessThanOrEqual(2000);
+});
