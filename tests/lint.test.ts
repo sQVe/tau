@@ -267,3 +267,50 @@ it('fixes house spacing without changing comments or names', async ({ onTestFini
     'export const MAX_RETRIES = 3;\nexport const caller = () => helper();\nconst helper = () => 1;\n',
   );
 }, 60_000);
+
+it('limits the checks joined in one condition and rejects mixed operators', async ({
+  onTestFinished,
+}) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-style-conditions-'));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+  const fixtures = [
+    [
+      'valid.ts',
+      `
+      export const three = (a: boolean, b: boolean, c: boolean) => a || b || c;
+      export const fallback = (a?: string, b?: string, c?: string, d?: string) => a ?? b ?? c ?? d;
+      export const named = (a: boolean, b: boolean, c: boolean) => {
+        const either = b || c;
+
+        return a && either;
+      };
+    `,
+    ],
+    [
+      'invalid.ts',
+      `
+      export const four = (a: boolean, b: boolean, c: boolean, d: boolean) => a || b || c || d;
+      export const mixed = (a: boolean, b: boolean, c: boolean) => a && (b || c);
+    `,
+    ],
+  ];
+
+  for (const [name, source] of fixtures) {
+    await writeFile(join(directory, name!), source!);
+  }
+
+  const result = spawnSync('pnpm', ['style:check', directory], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+  const diagnostics = result.stdout
+    .split('\n')
+    .filter((line) => line.includes('max-condition-checks'));
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(diagnostics.filter((line) => line.includes('/valid.ts:'))).toEqual([]);
+  expect(diagnostics.filter((line) => line.includes('/invalid.ts:'))).toHaveLength(2);
+}, 30_000);

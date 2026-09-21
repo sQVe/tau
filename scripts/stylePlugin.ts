@@ -1,4 +1,53 @@
-import type { ESTree, Plugin } from '@oxlint/plugins';
+import type { Definition, ESTree, Plugin, Variable } from '@oxlint/plugins';
+
+type WrappedExpression =
+  | ESTree.TSAsExpression
+  | ESTree.TSSatisfiesExpression
+  | ESTree.TSTypeAssertion
+  | ESTree.TSNonNullExpression
+  | ESTree.ParenthesizedExpression;
+
+const wrappedExpressionTypes = new Set<string>([
+  'TSAsExpression',
+  'TSSatisfiesExpression',
+  'TSTypeAssertion',
+  'TSNonNullExpression',
+  'ParenthesizedExpression',
+]);
+
+const isWrappedExpression = (node: ESTree.Expression): node is WrappedExpression =>
+  wrappedExpressionTypes.has(node.type);
+
+const isCondition = (node: ESTree.Node): node is ESTree.LogicalExpression =>
+  node.type === 'LogicalExpression' && node.operator !== '??';
+
+const collectOperators = (node: ESTree.Node, operators: string[]) => {
+  if (!isCondition(node)) {
+    return operators;
+  }
+
+  operators.push(node.operator);
+  collectOperators(node.left, operators);
+  collectOperators(node.right, operators);
+
+  return operators;
+};
+
+const isUnusedMarker = (definition: Definition, variable: Variable): boolean => {
+  if (!definition.name.name.startsWith('_')) {
+    return false;
+  }
+
+  if (variable.references.some((reference) => reference.isRead())) {
+    return false;
+  }
+
+  if (definition.type === 'Parameter') {
+    return true;
+  }
+
+  return definition.node.type === 'VariableDeclarator' && definition.node.id.type !== 'Identifier';
+};
 
 const stylePlugin: Plugin = {
   meta: { name: 'tau' },
@@ -44,22 +93,46 @@ const stylePlugin: Plugin = {
               return;
             }
 
-            while (
-              initializer.type === 'TSAsExpression' ||
-              initializer.type === 'TSSatisfiesExpression' ||
-              initializer.type === 'TSTypeAssertion' ||
-              initializer.type === 'TSNonNullExpression' ||
-              initializer.type === 'ParenthesizedExpression'
-            ) {
+            while (isWrappedExpression(initializer)) {
               initializer = initializer.expression;
             }
 
-            if (
-              node.id.type === 'Identifier' &&
-              (initializer.type === 'ArrowFunctionExpression' ||
-                initializer.type === 'FunctionExpression')
-            ) {
+            const definesFunction =
+              initializer.type === 'ArrowFunctionExpression' ||
+              initializer.type === 'FunctionExpression';
+
+            if (node.id.type === 'Identifier' && definesFunction) {
               checkReferences(node);
+            }
+          },
+        };
+      },
+    },
+    'max-condition-checks': {
+      meta: {
+        type: 'suggestion',
+        schema: [],
+        messages: {
+          tooMany: 'This condition joins {{count}} checks. Join at most 3 and name the rest.',
+          mixed: 'This condition mixes && and ||. Name the inner group first.',
+        },
+      },
+      create(context) {
+        return {
+          LogicalExpression(node) {
+            if (!isCondition(node) || isCondition(node.parent)) {
+              return;
+            }
+
+            const operators = collectOperators(node, []);
+            const count = operators.length + 1;
+
+            if (new Set(operators).size > 1) {
+              context.report({ node, messageId: 'mixed' });
+            }
+
+            if (count > 3) {
+              context.report({ node, messageId: 'tooMany', data: { count: String(count) } });
             }
           },
         };
@@ -84,6 +157,35 @@ const stylePlugin: Plugin = {
           }
         };
 
+        const checkDefinition = (
+          definition: Definition,
+          variable: Variable,
+          checked: Set<ESTree.Node>,
+        ) => {
+          if (
+            definition.type === 'ImportBinding' ||
+            definition.node.type.startsWith('TS') ||
+            checked.has(definition.name)
+          ) {
+            return;
+          }
+
+          checked.add(definition.name);
+
+          const unusedMarker = isUnusedMarker(definition, variable);
+          const name = unusedMarker ? definition.name.name.slice(1) : definition.name.name;
+
+          if (unusedMarker && !name) {
+            return;
+          }
+
+          checkName(
+            definition.name,
+            definition.type === 'ClassName' ? 'PascalCase' : 'camelCase',
+            name,
+          );
+        };
+
         return {
           'Program:exit'() {
             const checked = new Set<ESTree.Node>();
@@ -91,33 +193,7 @@ const stylePlugin: Plugin = {
             for (const scope of context.sourceCode.scopeManager.scopes) {
               for (const variable of scope.variables) {
                 for (const definition of variable.defs) {
-                  if (
-                    definition.type === 'ImportBinding' ||
-                    definition.node.type.startsWith('TS') ||
-                    checked.has(definition.name)
-                  ) {
-                    continue;
-                  }
-
-                  checked.add(definition.name);
-
-                  const unusedMarker =
-                    definition.name.name.startsWith('_') &&
-                    !variable.references.some((reference) => reference.isRead()) &&
-                    (definition.type === 'Parameter' ||
-                      (definition.node.type === 'VariableDeclarator' &&
-                        definition.node.id.type !== 'Identifier'));
-                  const name = unusedMarker ? definition.name.name.slice(1) : definition.name.name;
-
-                  if (unusedMarker && !name) {
-                    continue;
-                  }
-
-                  checkName(
-                    definition.name,
-                    definition.type === 'ClassName' ? 'PascalCase' : 'camelCase',
-                    name,
-                  );
+                  checkDefinition(definition, variable, checked);
                 }
               }
             }

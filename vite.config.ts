@@ -40,6 +40,13 @@ export default defineConfig({
             'eslint/id-denylist': ['error', 'btn', 'cb', 'errMsg'],
             'eslint/one-var': ['error', 'never'],
             'tau/helper-before-use': 'error',
+            'tau/max-condition-checks': 'error',
+            'eslint/max-params': ['error', { max: 4 }],
+            'eslint/max-lines': ['error', { max: 500, skipBlankLines: true, skipComments: true }],
+            'eslint/max-lines-per-function': [
+              'error',
+              { max: 60, skipBlankLines: true, skipComments: true },
+            ],
             '@stylistic/padding-line-between-statements': [
               'error',
               { blankLine: 'always', prev: '*', next: 'return' },
@@ -165,13 +172,13 @@ export default defineConfig({
       'eslint/complexity': [
         'warn',
         {
-          max: 15,
+          max: 12,
         },
       ],
       'eslint/max-depth': [
         'warn',
         {
-          max: 4,
+          max: 3,
         },
       ],
       'eslint/max-nested-callbacks': [
@@ -279,6 +286,9 @@ export default defineConfig({
           'unicorn/no-await-expression-member': 'off',
           'eslint/complexity': 'off',
           'eslint/max-depth': 'off',
+          'eslint/max-params': 'off',
+          'eslint/max-lines': 'off',
+          'eslint/max-lines-per-function': 'off',
           // Tests isolate the real process environment.
           'node/no-process-env': 'off',
         },
