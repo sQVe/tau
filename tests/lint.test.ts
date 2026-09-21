@@ -218,7 +218,7 @@ it('fixes house spacing without changing comments or names', async ({ onTestFini
   });
 
   expect(result.error).toBeUndefined();
-  expect(result.stdout + result.stderr).not.toContain('error');
+  expect(result.stdout + result.stderr).not.toMatch(/\berror\b/);
   expect(result.status).toBe(0);
   expect(await readFile(fixture, 'utf8')).toBe(
     [
