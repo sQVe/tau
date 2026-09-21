@@ -72,18 +72,24 @@ const maximumFocusedDurations = 10;
 
 const moreLine = (hidden: number) => (hidden > 0 ? [`  +${hidden} more`] : []);
 
-const focusedDurations = (report: RunnerResult): string[] => {
-  const timed = 'tests' in report ? report.tests.filter((test) => test.durationMs != null) : [];
-  const shown = timed.slice(0, maximumFocusedDurations);
+interface DurationList {
+  header: string | null;
+  entries: string[];
+  limit: number;
+}
 
-  return [
-    ...shown.map((test) => `  ${cap(printable(test.fullname), 200)}: ${test.durationMs} ms`),
-    ...moreLine(timed.length - shown.length),
-  ];
+const focusedDurations = (report: RunnerResult): DurationList => {
+  const timed = 'tests' in report ? report.tests.filter((test) => test.durationMs != null) : [];
+
+  return {
+    header: null,
+    entries: timed.map((test) => `  ${cap(printable(test.fullname), 200)}: ${test.durationMs} ms`),
+    limit: maximumFocusedDurations,
+  };
 };
 
 // Integration files start real processes, so they would fill this list on every run.
-const slowTests = (cwd: string, report: RunnerResult): string[] => {
+const slowTests = (cwd: string, report: RunnerResult): DurationList => {
   const slow = ('tests' in report ? report.tests : [])
     .filter(
       (test) =>
@@ -91,30 +97,30 @@ const slowTests = (cwd: string, report: RunnerResult): string[] => {
     )
     .toSorted((first, second) => (second.durationMs ?? 0) - (first.durationMs ?? 0));
 
-  if (slow.length === 0) {
-    return [];
-  }
-
-  const shown = slow.slice(0, maximumSlowTests);
-
-  return [
-    `Slow tests (over ${slowTestMilliseconds} ms):`,
-    ...shown.map((test) => {
+  return {
+    header: `Slow tests (over ${slowTestMilliseconds} ms):`,
+    entries: slow.map((test) => {
       const file = isAbsolute(test.file) ? relative(cwd, test.file) : test.file;
 
       return `  ${cap(printable(`${file} › ${test.fullname}`), 200)}: ${test.durationMs} ms`;
     }),
-    ...moreLine(slow.length - shown.length),
-  ];
+    limit: maximumSlowTests,
+  };
 };
 
-const pushWithinSummaryLimit = (lines: string[], extra: string[]) => {
-  for (const line of extra) {
-    if ([...lines, line].join('\n').length > maximumSummaryCharacters) {
+const pushDurations = (lines: string[], { header, entries, limit }: DurationList) => {
+  for (let shown = Math.min(entries.length, limit); shown > 0; shown -= 1) {
+    const block = [
+      ...(header == null ? [] : [header]),
+      ...entries.slice(0, shown),
+      ...moreLine(entries.length - shown),
+    ];
+
+    if ([...lines, ...block].join('\n').length <= maximumSummaryCharacters) {
+      lines.push(...block);
+
       return;
     }
-
-    lines.push(line);
   }
 };
 
@@ -159,11 +165,7 @@ export const summarize = (cwd: string, observation: Observation): string => {
     lines.push('further failures were not collected');
   }
 
-  // Durations take only the space failures leave.
-  pushWithinSummaryLimit(
-    lines,
-    scope === 'full' ? slowTests(cwd, report) : focusedDurations(report),
-  );
+  pushDurations(lines, scope === 'full' ? slowTests(cwd, report) : focusedDurations(report));
 
   return cap(printable(lines.join('\n')), maximumSummaryCharacters);
 };

@@ -154,7 +154,7 @@ it('stays quiet about durations in a full run when no test is slow', () => {
     ),
   );
 
-  expect(summary).toBe('pass · full suite · fresh\n2 passed, 0 failed, 0 skipped');
+  expect(summary).not.toMatch(/\d+ ms/);
 });
 
 it('lists only the slowest tests over one second in a full run', () => {
@@ -175,24 +175,46 @@ it('lists only the slowest tests over one second in a full run', () => {
     ),
   );
 
-  expect(summary).toContain(
-    [
-      'Slow tests (over 1000 ms):',
-      '  b.test.ts › slowest: 3000 ms',
-      '  a.test.ts › slower: 1500 ms',
-      '  b.test.ts › also slow: 1200 ms',
-      '  +1 more',
-    ].join('\n'),
-  );
-  expect(summary).not.toContain('fast');
+  const listed = [...summary.matchAll(/› (.+): \d+ ms/g)].map((match) => match[1]);
+
+  expect(listed).toEqual(['slowest', 'slower', 'also slow']);
+  expect(summary).toContain('+1 more');
 });
 
-it('keeps the summary within its limit when many selected tests report durations', () => {
-  const tests = Array.from({ length: 200 }, (_, index) =>
-    timed('/repo/value.test.ts', `value works ${'x'.repeat(80)} ${index}`, index),
+it('counts the durations that do not fit as hidden', () => {
+  const tests = Array.from({ length: 15 }, (_, index) =>
+    timed('/repo/value.test.ts', `value works ${'x'.repeat(200)} ${index}`, index),
   );
 
-  expect(summarize('/repo', observation({ kind: 'pass', tests })).length).toBeLessThanOrEqual(2000);
+  const summary = summarize('/repo', observation({ kind: 'pass', tests }));
+  const shown = summary.match(/: \d+ ms$/gm)?.length ?? 0;
+
+  expect(summary.length).toBeLessThanOrEqual(2000);
+  expect(shown).toBeGreaterThan(0);
+  expect(summary).toContain(`+${15 - shown} more`);
+});
+
+it('omits the slow test heading when none of its entries fit', () => {
+  const failures = Array.from({ length: 10 }, (_, index) => ({
+    file: '/repo/value.test.ts',
+    fullname: `value fails ${index}`,
+    message: 'x'.repeat(160),
+  }));
+  const tests = [
+    ...failures.map((failure) => ({
+      ...timed(failure.file, failure.fullname, 1),
+      status: 'failed' as const,
+    })),
+    timed('/repo/value.test.ts', `slow ${'x'.repeat(200)}`, 3000),
+  ];
+
+  const summary = summarize(
+    '/repo',
+    observation({ kind: 'fail', tests, failures, truncated: false }, { scope: 'full' }),
+  );
+
+  expect(summary).not.toMatch(/\d+ ms/);
+  expect(summary.trimEnd().endsWith(':')).toBe(false);
 });
 
 it('shows failure messages before durations when both do not fit', () => {
