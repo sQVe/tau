@@ -3,6 +3,9 @@
 - Status: Accepted
 - Date: 2026-09-09
 
+[ADR 0034](./0034-check-house-style-outside-the-editor.md) replaces the decision against mechanical
+layout checks. The remaining decisions below still apply.
+
 ## Context
 
 - ADR 0006 loads one writing policy into every ordinary agent run. It covers replies, commit and PR

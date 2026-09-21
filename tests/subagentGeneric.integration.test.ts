@@ -23,6 +23,7 @@ it.runIf(hasHerdr)(
       JSON.parse(await client(['workspace', 'create', '--cwd', root, '--no-focus'])),
     );
     const paneId = workspace.match(/"root_pane":\{[^}]*"pane_id":"([^"]+)"/)?.[1];
+
     if (!paneId) {
       throw new Error(`Missing isolated herdr root pane: ${workspace}`);
     }

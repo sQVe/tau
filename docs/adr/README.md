@@ -52,3 +52,4 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0031: Reserve worker capacity under one tree lock](./0031-reserve-worker-capacity-under-one-tree-lock.md)
 - [0032: Run Claude workers through a parent-owned channel](./0032-run-claude-workers-through-a-parent-owned-channel.md)
 - [0033: Use one generic native worker workflow](./0033-use-one-generic-native-worker-workflow.md)
+- [0034: Check house style outside the editor](./0034-check-house-style-outside-the-editor.md)

@@ -149,6 +149,7 @@ const createHarness = async (
   });
 
   modelRuntime.registerNativeProvider(faux.provider);
+
   if (delegate !== faux) {
     modelRuntime.registerNativeProvider(delegate.provider);
   }
@@ -231,6 +232,7 @@ describe('commit flow', () => {
         delegate,
       });
       await writeFile(join(repositoryDirectory, 'feature.txt'), 'hello\n');
+
       if (failure === 'invalid' || failure === 'missing') {
         vi.stubEnv('TAU_DELEGATE_MODEL', failure === 'invalid' ? 'invalid' : 'missing/model');
       } else if (failure === 'authentication') {
@@ -241,6 +243,7 @@ describe('commit flow', () => {
           authentication.mockRestore();
         });
       }
+
       delegate.setResponses([
         fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'provider unavailable' }),
       ]);

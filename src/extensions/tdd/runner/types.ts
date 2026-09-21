@@ -95,7 +95,7 @@ export interface SpawnOptions {
 
 export type SpawnFn = (
   command: string,
-  arguments_: string[],
+  argumentsList: string[],
   options: SpawnOptions,
 ) => Promise<SpawnResult>;
 

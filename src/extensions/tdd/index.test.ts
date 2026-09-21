@@ -98,6 +98,7 @@ it.for(['edit', 'write'] as const)(
     ]) {
       expect(await application.emit('tool_result', cwd, ignored)).toBeUndefined();
     }
+
     expect(application.notify).not.toHaveBeenCalled();
 
     const patch = await application.emit('tool_result', cwd, event);
@@ -296,6 +297,7 @@ it.for(['ordinary', 'long'] as const)(
     for (const line of contentLines) {
       expect(expanded).toContain(line.trim());
     }
+
     expect(expanded).toContain(join(directory, 'run.json'));
     expect(expanded).toContain(diagnostics.stdout.path);
     expect(expanded).not.toContain('more lines,');

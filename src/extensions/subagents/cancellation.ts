@@ -22,7 +22,7 @@ interface CleanupResult {
   detail: string;
 }
 
-type Client = (arguments_: string[], budget: number, signal: AbortSignal) => Promise<string>;
+type Client = (argumentsList: string[], budget: number, signal: AbortSignal) => Promise<string>;
 
 const validateBudget = (budget: number) => {
   if (!Number.isSafeInteger(budget) || budget <= 0 || budget > 2_147_483_647) {
@@ -33,7 +33,7 @@ const validateBudget = (budget: number) => {
 // Bound the wait as well as the child. Do not wait for inherited pipes after a client failure.
 export const runClient = (
   executable: string,
-  arguments_: string[],
+  argumentsList: string[],
   budget: number,
   signal?: AbortSignal,
   environment?: NodeJS.ProcessEnv,
@@ -44,10 +44,11 @@ export const runClient = (
     signal?.throwIfAborted();
     const child = execFile(
       executable,
-      arguments_,
+      argumentsList,
       { env: environment, maxBuffer: 1024 * 1024 },
       (error, stdout, stderr) => {
         clearTimeout(timer);
+        // eslint-disable-next-line tau/helper-before-use -- Child completion and abort cleanup share callbacks.
         signal?.removeEventListener('abort', abort);
 
         if (error) {
@@ -65,6 +66,7 @@ export const runClient = (
       child.stdout?.destroy();
       child.stderr?.destroy();
       clearTimeout(timer);
+      // eslint-disable-next-line tau/helper-before-use -- stop and abort need each other for listener cleanup.
       signal?.removeEventListener('abort', abort);
     };
     const abort = () => {
@@ -104,9 +106,10 @@ export const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker)
 
     return (
       process.pid === owned.processId &&
-      Array.isArray(process.argv) &&
-      // Pi rewrites argv through process.title. The caller also checks its herdr session token and ps start time before using this fallback.
-      ((owned.token !== undefined && process.argv.includes(owned.token)) ||
+      // Pi rewrites argv through process.title, and herdr can omit argv entirely. The caller also checks its herdr session token and ps start time before using this fallback.
+      ((owned.token !== undefined &&
+        Array.isArray(process.argv) &&
+        process.argv.includes(owned.token)) ||
         (['pi', 'generic'].includes(owned.kind) && Boolean(owned.startedAt)))
     );
   });
@@ -163,36 +166,43 @@ const stopConfirmed: CleanupResult = {
     'The owned process is absent and its shell is foreground; detached or background descendants are not covered.',
 };
 
+// Follows the same terminal if it moves while shutdown is pending.
+const hasStopped = async (
+  worker: Omit<OwnedWorker, 'paneId'> & { paneId: string },
+  call: (argumentsList: string[]) => Promise<string>,
+  signal: AbortSignal,
+) => {
+  const location = await resolveTerminal(worker.terminalId, call);
+  worker.paneId = location.paneId;
+  const after = processInfo(await call(['pane', 'process-info', '--pane', worker.paneId]));
+
+  if (!workerStopped(after, worker)) {
+    return false;
+  }
+
+  if (worker.kind === 'generic') {
+    const shellStart = await runClient(
+      'ps',
+      ['-p', String(worker.shellPid), '-o', 'lstart='],
+      1000,
+      signal,
+    );
+
+    return shellStart.trim() === worker.shellStartedAt;
+  }
+
+  return true;
+};
+
 const waitForStop = async (
   owned: OwnedWorker,
-  call: (arguments_: string[]) => Promise<string>,
+  call: (argumentsList: string[]) => Promise<string>,
   signal: AbortSignal,
   interrupt: () => Promise<CleanupResult | undefined>,
 ): Promise<CleanupResult> => {
   const worker = { ...owned };
   let pressedAt = performance.now();
-  // Follow the same terminal if it moves while shutdown is pending.
-  const stopped = async () => {
-    const location = await resolveTerminal(worker.terminalId, call);
-    worker.paneId = location.paneId;
-    const after = processInfo(await call(['pane', 'process-info', '--pane', worker.paneId]));
-
-    if (!workerStopped(after, worker)) {
-      return false;
-    }
-    if (worker.kind === 'generic') {
-      const shellStart = await runClient(
-        'ps',
-        ['-p', String(worker.shellPid), '-o', 'lstart='],
-        1000,
-        signal,
-      );
-
-      return shellStart.trim() === worker.shellStartedAt;
-    }
-
-    return true;
-  };
+  const stopped = () => hasStopped(worker, call, signal);
 
   for (;;) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- Confirm the foreground job ended within the same cancellation budget.
@@ -204,6 +214,7 @@ const waitForStop = async (
       pressedAt = performance.now();
       // oxlint-disable-next-line eslint/no-await-in-loop -- Each interrupt repeats ownership checks within the original budget.
       const refused = await interrupt();
+
       if (refused) {
         // A native agent may end its session before its process exits, so a refusal here can trail a clean stop.
         // oxlint-disable-next-line eslint/no-await-in-loop -- One confirmation attempt within the remaining budget.
@@ -240,12 +251,12 @@ export const cancelOwnedWorker = async (
   const timer = setTimeout(() => {
     controller.abort();
   }, budget);
-  const call = (arguments_: string[]) => {
+  const call = (argumentsList: string[]) => {
     signal.throwIfAborted();
     const remaining = Math.ceil(expires - performance.now());
     validateBudget(remaining);
 
-    return client(arguments_, remaining, signal);
+    return client(argumentsList, remaining, signal);
   };
   const manual = `Check terminal ${owned.terminalId} (last pane ${owned.paneId}) and worker ${owned.processId} (${owned.token ?? owned.agentKind}) for manual cleanup.`;
   const refresh = async () => {
@@ -261,6 +272,7 @@ export const cancelOwnedWorker = async (
     if (owned.kind !== 'process') {
       const response: unknown = JSON.parse(await call(['agent', 'get', owned.paneId]));
       const agent = object(object(object(response).result).agent);
+
       if (
         agent.pane_id !== owned.paneId ||
         agent.agent !== (owned.kind === 'generic' ? owned.agentKind : owned.kind) ||
@@ -285,6 +297,7 @@ export const cancelOwnedWorker = async (
         signal,
       );
       const startedAt = processStart.trim();
+
       if (startedAt !== owned.startedAt) {
         return {
           cleanup: 'refused',
@@ -300,6 +313,7 @@ export const cancelOwnedWorker = async (
         Math.max(1, Math.ceil(expires - performance.now())),
         signal,
       );
+
       if (shellStart.trim() !== owned.shellStartedAt) {
         return {
           cleanup: 'refused',
@@ -307,6 +321,7 @@ export const cancelOwnedWorker = async (
         };
       }
     }
+
     const before = processInfo(await call(['pane', 'process-info', '--pane', owned.paneId]));
 
     if (!matchesWorker(before, owned)) {
@@ -318,6 +333,7 @@ export const cancelOwnedWorker = async (
 
     const checkedPane = owned.paneId;
     await refresh();
+
     if (owned.paneId !== checkedPane) {
       throw new TerminalIdentityError('Worker moved during identity checks; no input sent.');
     }
@@ -328,14 +344,22 @@ export const cancelOwnedWorker = async (
     return undefined;
   };
 
+  // The worker can exit on its own during checks or input, which fails them.
+  const stoppedAnyway = () => hasStopped({ ...owned }, call, signal).catch(() => false);
+
   try {
     const refused = await interrupt();
+
     if (refused) {
-      return refused;
+      return (await stoppedAnyway()) ? stopConfirmed : refused;
     }
 
     return await waitForStop(owned, call, signal, interrupt);
   } catch (error) {
+    if (await stoppedAnyway()) {
+      return stopConfirmed;
+    }
+
     return {
       cleanup:
         !shutdown.inputAttempted && error instanceof TerminalIdentityError

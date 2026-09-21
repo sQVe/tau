@@ -27,12 +27,15 @@ const splitCandidate = (
   if (layout.tab_id !== tabId || layout.workspace_id !== workspaceId) {
     throw new Error('Placement target moved; no layout changes.');
   }
+
   if (!Array.isArray(layout.panes)) {
     throw new TypeError('Missing herdr layout panes.');
   }
+
   if (layout.zoomed === true) {
     return undefined;
   }
+
   const candidates = layout.panes
     .flatMap((value) => {
       const pane = object(value);
@@ -98,9 +101,9 @@ export class WorkerPlacement {
     close: () => Promise<void>,
     signal: AbortSignal = new AbortController().signal,
   ): Promise<void> {
-    const readLayout: TerminalCall = async (arguments_) => {
+    const readLayout: TerminalCall = async (argumentsList) => {
       signal.throwIfAborted();
-      const response = await call(arguments_);
+      const response = await call(argumentsList);
       signal.throwIfAborted();
 
       return response;
@@ -126,15 +129,16 @@ export class WorkerPlacement {
       location = created;
       // Deliver confirmed identity synchronously, before any cosmetic snapshot can yield or abort.
       input.onCreated?.(created);
+
       if (signal.aborted) {
         this.release(created.terminalId);
         signal.throwIfAborted();
       }
     };
-    const checkedCall: TerminalCall = (arguments_) => {
+    const checkedCall: TerminalCall = (argumentsList) => {
       signal.throwIfAborted();
 
-      return call(arguments_);
+      return call(argumentsList);
     };
 
     try {
@@ -154,17 +158,22 @@ export class WorkerPlacement {
     onCreated: PlacementInput['onCreated'],
   ): Promise<TerminalLocation | undefined> {
     const first = eligible[0];
+
     if (!first) {
       return undefined;
     }
+
     let layout = object(result(await call(['pane', 'layout', '--pane', first.paneId])).layout);
     const plan = visibility === 'foreground' ? this.foreground.plan(layout, eligible) : undefined;
+
     if (plan) {
       layout = await this.foreground.balance(plan, layout, eligible, call);
     }
+
     const shape = layoutShape(layout);
     const candidates = plan ? eligible.filter((pane) => pane.paneId === plan.target) : eligible;
     const candidate = splitCandidate(layout, candidates, first.workspaceId, first.tabId);
+
     if (!candidate) {
       return undefined;
     }
@@ -172,6 +181,7 @@ export class WorkerPlacement {
     // External moves, closes, and resizing do not share our queue. Abandon changed plans; never replay a saved layout.
     const current = await listTerminals(call);
     const target = candidate.location;
+
     if (
       !current.some(
         (pane) =>
@@ -182,7 +192,9 @@ export class WorkerPlacement {
     ) {
       throw new Error('Placement target moved or closed; no layout changes.');
     }
+
     const latest = object(result(await call(['pane', 'layout', '--pane', target.paneId])).layout);
+
     if (layoutShape(latest) !== shape) {
       throw new Error('Layout changed during placement; no layout changes.');
     }
@@ -201,6 +213,7 @@ export class WorkerPlacement {
     const location = terminalLocation(result(created).pane);
     this.owned.set(location.terminalId, { tabId: location.tabId, visibility });
     onCreated?.(location);
+
     if (visibility === 'foreground') {
       await this.foreground.remember(
         layout,
@@ -227,6 +240,7 @@ export class WorkerPlacement {
       ).pane,
     );
     const locations = await listTerminals(call);
+
     if (
       !locations.some(
         (pane) => pane.paneId === parent.paneId && pane.terminalId === parent.terminalId,
@@ -234,6 +248,7 @@ export class WorkerPlacement {
     ) {
       throw new Error('Parent terminal moved during placement; no layout changes.');
     }
+
     const backgroundTabs = locations
       .filter((pane) => {
         const owned = this.owned.get(pane.terminalId);
@@ -263,27 +278,33 @@ export class WorkerPlacement {
           (owned?.tabId === tabId && owned.visibility === visibility)
         );
       });
+
       if (visibility === 'background' && eligible.length !== panes.length) {
         continue;
       }
+
       // oxlint-disable-next-line eslint/no-await-in-loop -- Search owned tabs until a single placement succeeds.
       const location = await this.split(eligible, visibility, options, call, input.onCreated);
+
       if (location) {
         return location;
       }
     }
 
     const currentParent = await resolveTerminal(parent.terminalId, call);
+
     if (
       currentParent.paneId !== parent.paneId ||
       currentParent.workspaceId !== parent.workspaceId
     ) {
       throw new Error('Parent moved during placement; no layout changes.');
     }
+
     const parentLayout = object(
       result(await call(['pane', 'layout', '--pane', currentParent.paneId])).layout,
     );
     const area = rectangle(parentLayout.area);
+
     if (!isUseful(area)) {
       throw new Error(
         'Terminal area is too small for a useful worker tab. Enlarge it before launching.',

@@ -99,6 +99,7 @@ const toolResult = (session: AgentSession, name: string) => {
         candidate.message.role === 'toolResult' &&
         candidate.message.toolName === name,
     );
+
   if (entry?.type !== 'message' || entry.message.role !== 'toolResult') {
     throw new Error(`Missing result for ${name}`);
   }

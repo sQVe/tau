@@ -257,8 +257,10 @@ it.each(['error', 'aborted', 'length', 'throw', 'abort', 'timeout', 'file', 'loo
     const app = setup();
     let signal: AbortSignal | undefined;
     let paths: string[] | undefined;
+
     if (reason === 'throw' || reason === 'lookup') {
       const error = new Error('denied');
+
       if (reason === 'lookup') {
         app.find.mockImplementationOnce(() => {
           throw error;

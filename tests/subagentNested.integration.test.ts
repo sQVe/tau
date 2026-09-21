@@ -56,11 +56,13 @@ const nestedScenario = async (waitForParentReply: boolean) => {
   const releaseChild = Promise.withResolvers<undefined>();
   onTestFinished(async () => {
     releaseChild.resolve(undefined);
+
     for (const session of sessions) {
       await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' });
       await session.abort();
       session.dispose();
     }
+
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
     rmSync(directory, { recursive: true, force: true });
@@ -203,9 +205,11 @@ const nestedScenario = async (waitForParentReply: boolean) => {
           text: JSON.stringify(event.result),
         });
       }
+
       if (event.type === 'agent_settled') {
         if (parentSession) {
           parentWaiting.resolve(undefined);
+
           if (readReport(parentDirectory, parent.taskId)) {
             parentFinished.resolve(undefined);
           }
@@ -225,24 +229,29 @@ const nestedScenario = async (waitForParentReply: boolean) => {
   const placement = placementFixture(200, 60);
   const runClient = cancellation.runClient;
   vi.spyOn(cancellation, 'runClient').mockImplementation(
-    async (executable, arguments_, budget, signal, environment) => {
+    async (executable, argumentsList, budget, signal, environment) => {
       if (executable !== 'herdr') {
-        return runClient(executable, arguments_, budget, signal, environment);
+        return runClient(executable, argumentsList, budget, signal, environment);
       }
-      if (arguments_[0] === 'agent' && arguments_[1] === 'list') {
+
+      if (argumentsList[0] === 'agent' && argumentsList[1] === 'list') {
         return JSON.stringify({ result: { type: 'agent_list', agents: [] } });
       }
-      if (arguments_[0] === 'agent' && arguments_[1] === 'start') {
-        const native = arguments_[arguments_.indexOf('--session') + 1];
+
+      if (argumentsList[0] === 'agent' && argumentsList[1] === 'start') {
+        const native = argumentsList[argumentsList.indexOf('--session') + 1];
+
         if (!native) {
           throw new Error('Missing native child session.');
         }
+
         child = readTask(dirname(native));
         await startSession(child, false);
 
         return '{}';
       }
-      if (arguments_[1] === 'get') {
+
+      if (argumentsList[1] === 'get') {
         return JSON.stringify({
           result: {
             agent: {
@@ -253,7 +262,8 @@ const nestedScenario = async (waitForParentReply: boolean) => {
           },
         });
       }
-      if (arguments_[1] === 'process-info') {
+
+      if (argumentsList[1] === 'process-info') {
         return JSON.stringify({
           result: {
             process_info: {
@@ -266,7 +276,7 @@ const nestedScenario = async (waitForParentReply: boolean) => {
         });
       }
 
-      return placement.client(arguments_);
+      return placement.client(argumentsList);
     },
   );
   vi.spyOn(cancellation, 'workerStopped').mockImplementation(
@@ -308,11 +318,15 @@ const nestedScenario = async (waitForParentReply: boolean) => {
     Array.from({ length: 9 }, () => async (_context, options) => {
       if (options?.sessionId === parent.nativeSessionId) {
         parentCalls++;
+
         return parentResponses.shift() ?? fauxAssistantMessage('Unexpected parent continuation.');
       }
+
       childCalls++;
+
       if (childCalls === 1) {
         await releaseChild.promise;
+
         return fauxAssistantMessage([
           fauxToolCall('bash', { command: 'find ./protected-fixture/.git -delete' }),
         ]);
@@ -354,27 +368,34 @@ const nestedScenario = async (waitForParentReply: boolean) => {
   expect(readEvent(parentDirectory, parent.taskId, 'settled')).toBeUndefined();
   releaseChild.resolve(undefined);
   await notices.promise;
+
   if (waitForParentReply) {
     expect(parentCalls).toBe(6);
     expect(readReport(parentDirectory, parent.taskId)).toBeUndefined();
   }
+
   expect(
     results.some((result) => result.isError && result.text.includes('BLOCKED by CC Safety Net')),
   ).toBe(true);
   expect(readFileSync(join(directory, 'protected-fixture', '.git', 'keep'), 'utf8')).toBe(
     'preserve',
   );
+
   if (!child) {
     throw new Error('Missing nested task.');
   }
+
   expect(readReport(join(root, child.taskId), child.taskId)?.summary).toBe(
     'Safety integration preserved.',
   );
+
   if (waitForParentReply) {
     const question = readPendingQuestion(parentDirectory, parent.taskId);
+
     if (!question) {
       throw new Error('Missing parent question.');
     }
+
     const reference = {
       version: 1,
       taskId: parent.taskId,
@@ -395,6 +416,7 @@ const nestedScenario = async (waitForParentReply: boolean) => {
       reference,
     );
   }
+
   await parentFinished.promise;
 
   expect(parentCalls).toBe(7);

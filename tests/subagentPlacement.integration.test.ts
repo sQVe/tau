@@ -46,6 +46,7 @@ it.runIf(hasHerdr).each([
     expect(entries).toHaveLength(count + 1);
     expect(Math.max(...areas) / Math.min(...areas)).toBeLessThan(1.1);
     expect(layout.focused_pane_id).toBe(parent.paneId);
+
     for (const bounds of entries) {
       expect(Number(bounds.width)).toBeGreaterThanOrEqual(minimumPane.width);
       expect(Number(bounds.height)).toBeGreaterThanOrEqual(minimumPane.height);
@@ -158,6 +159,7 @@ it.runIf(hasHerdr)(
         }),
       );
     }
+
     expect(afterPanes.find((pane) => pane.pane_id === unrelated.paneId)).toEqual(
       beforePanes.find((pane) => pane.pane_id === unrelated.paneId),
     );
@@ -239,6 +241,7 @@ it.runIf(hasHerdr)(
       expect(bounds.width).toBeGreaterThanOrEqual(minimumPane.width);
       expect(bounds.height).toBeGreaterThanOrEqual(minimumPane.height);
     }
+
     const moved = object(
       result(await client(['pane', 'move', workers[0]!.paneId, '--new-workspace', '--no-focus']))
         .move_result,

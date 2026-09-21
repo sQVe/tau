@@ -54,32 +54,40 @@ const fixture = (kind = 'codex') => {
     processId: 300,
     startedAt: 'parent-start',
   });
-  vi.spyOn(cancellation, 'runClient').mockImplementation(async (_executable, arguments_) =>
-    arguments_[1] === String(state.shell) ? state.shellStart : state.processStart,
+  vi.spyOn(cancellation, 'runClient').mockImplementation(async (_executable, argumentsList) =>
+    argumentsList[1] === String(state.shell) ? state.shellStart : state.processStart,
   );
   vi.spyOn(process, 'kill').mockImplementation((processId) => {
     if (processId === state.process && state.stopped) {
       throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
     }
+
     return true;
   });
-  const client: HerdrClient = async (arguments_) => {
-    calls.push(arguments_);
-    const [surface, action] = arguments_;
+  const client: HerdrClient = async (argumentsList) => {
+    calls.push(argumentsList);
+    const [surface, action] = argumentsList;
+
     if (surface === 'agent' && action === 'list') {
       return JSON.stringify({ result: { type: 'agent_list', agents: [] } });
     }
+
     const pane = layout.panes[1];
+
     if (surface === 'agent' && action === 'start') {
       if (state.startError) {
         state.started = !state.rejectStart;
         throw new Error(state.startError);
       }
+
       state.started = true;
+
       return JSON.stringify({ result: {} });
     }
+
     if (action === 'process-info') {
       const processId = state.started && !state.stopped ? state.process : state.shell;
+
       return JSON.stringify({
         result: {
           process_info: {
@@ -91,10 +99,12 @@ const fixture = (kind = 'codex') => {
         },
       });
     }
+
     if (surface === 'agent' && action === 'get') {
       if (state.inspectionError) {
         throw new Error(state.inspectionError);
       }
+
       if (state.rejectStart) {
         const error = new Error('agent target not found');
         Object.assign(error, {
@@ -102,6 +112,7 @@ const fixture = (kind = 'codex') => {
         });
         throw error;
       }
+
       return JSON.stringify({
         result: {
           agent: {
@@ -113,33 +124,41 @@ const fixture = (kind = 'codex') => {
         },
       });
     }
+
     if (surface === 'agent' && action === 'read') {
       return JSON.stringify({ result: { text: 'A bounded native question or approval.' } });
     }
+
     if (surface === 'agent' && action === 'prompt') {
       // Real herdr rejects '--' as text; a separator here would fail delivery.
-      if (arguments_[3] === '--') {
+      if (argumentsList[3] === '--') {
         throw new Error('unknown option: text');
       }
+
       if (state.promptError) {
         throw Object.assign(new Error(state.promptError), {
           stderr: state.promptBlocked ? JSON.stringify({ error: { code: 'agent_blocked' } }) : '',
         });
       }
+
       return JSON.stringify({ result: {} });
     }
+
     if (surface === 'agent' && action === 'send-keys') {
       if (!state.ignoreInterrupt) {
         state.stopped = true;
       }
+
       return JSON.stringify({ result: {} });
     }
-    return layout.client(arguments_);
+
+    return layout.client(argumentsList);
   };
   const notices: string[] = [];
   const finished = Promise.withResolvers<undefined>();
   const controller = new WorkerController(root, client, (message) => {
     notices.push(message);
+
     if (message.includes('Records:')) {
       finished.resolve(undefined);
     }
@@ -469,6 +488,7 @@ it('does not claim nondelivery when only the submission receipt write fails', as
     if (name === 'submission-assignment-observation.json') {
       throw new Error('Receipt write failed.');
     }
+
     publish(directory, name, value);
   });
 
@@ -549,9 +569,11 @@ it('follows the owned terminal after a pane move without touching the old pane',
   const setup = fixture();
   const started = await setup.controller.launch(setup.input);
   const pane = setup.layout.panes[1];
+
   if (!pane) {
     throw new Error('Fixture worker pane missing.');
   }
+
   pane.pane_id = 'moved-pane';
 
   await setup.controller.reply(started.taskId, 'parent', {
@@ -569,9 +591,11 @@ it.each(['terminal', 'kind', 'process', 'shell'] as const)(
     const setup = fixture();
     const started = await setup.controller.launch(setup.input);
     const pane = setup.layout.panes[1];
+
     if (!pane) {
       throw new Error('Fixture worker pane missing.');
     }
+
     if (changed === 'terminal') {
       pane.terminal_id = 'replacement-terminal';
     } else if (changed === 'kind') {

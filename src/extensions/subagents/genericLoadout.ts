@@ -17,6 +17,7 @@ export interface NativeLaunchInput {
 const reportArea = (cwd: string, requested: string | undefined): string => {
   const directory = realpathSync(resolve(cwd, requested ?? '.'));
   const relativeDirectory = relative(cwd, directory);
+
   if (
     isAbsolute(relativeDirectory) ||
     relativeDirectory === '..' ||
@@ -42,16 +43,20 @@ const captureConfiguration = (
       'Non-Pi workers require native-controls. Tau cannot certify their safety integration or runtime permissions.',
     );
   }
+
   if (kind === 'pi' || kind === 'generic' || !/^[a-z][a-z0-9-]{0,63}$/.test(kind)) {
     throw new Error('Select a non-Pi herdr kind. Herdr decides which kinds are supported.');
   }
+
   if (profile.thinkingSpecified) {
     throw new Error(
       'Native thinking settings require user-approved native arguments, not a profile setting.',
     );
   }
+
   const nativeArguments = [...(input.nativeArguments ?? [])];
   const requestedModel = input.model ?? profile.model;
+
   if (requestedModel && !nativeArguments.length) {
     throw new Error(
       'An exact model request requires corresponding user-approved native arguments. Tau does not translate or verify native model selection.',
@@ -71,6 +76,7 @@ const captureConfiguration = (
     configurationApproved: true as const,
     instructions: profile.instructions,
   };
+
   if (!Value.Check(genericLoadoutSchema, loadout) || JSON.stringify(loadout).length > 32_000) {
     throw new Error('Invalid or oversized native worker configuration.');
   }
@@ -88,6 +94,7 @@ export const resolveGenericLoadout = async (
 ): Promise<GenericLoadout> => {
   signal.throwIfAborted();
   const loadout = captureConfiguration(input, profile, kind, cwd);
+
   if (!context.hasUI || !context.ui) {
     throw new Error(
       'Native configuration needs explicit user confirmation in the parent UI. No unattended approval is inferred from tool calls.',
@@ -100,6 +107,7 @@ export const resolveGenericLoadout = async (
     { signal },
   );
   signal.throwIfAborted();
+
   if (!approved) {
     throw new Error('Native worker configuration was not approved.');
   }

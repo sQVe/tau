@@ -79,9 +79,11 @@ it.each([
     cwd: { cwd: '/' },
     lineage: { parentSession: join(directory, 'wrong.jsonl') },
   };
+
   if (failure === 'missing' || failure === 'directory' || failure === 'symlink') {
     rmSync(task.nativeSessionFile);
   }
+
   if (failure === 'directory') {
     mkdirSync(task.nativeSessionFile);
   } else if (failure === 'symlink') {

@@ -78,9 +78,11 @@ const fixture = async () => {
   const modelRegistry = new ModelRegistry(runtime);
   // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model IDs, not an array predicate.
   const model = modelRegistry.find(cached.provider, cached.id);
+
   if (!model) {
     throw new Error('Cached fixture model missing.');
   }
+
   expect(model).toEqual(cached);
   expect(modelFingerprint(model)).not.toBe(modelFingerprint(bundled));
   const context = { cwd: directory, modelRegistry, model, isProjectTrusted: () => true };

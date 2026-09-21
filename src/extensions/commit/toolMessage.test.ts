@@ -99,16 +99,17 @@ describe('message policy', () => {
       await writeRepositoryFile(directory, 'requested', 'value');
       const original = await vi.importActual<typeof fileSystem>('node:fs/promises');
       let messagePath = '';
-      vi.mocked(writeFile).mockImplementation(async (path, ...arguments_) => {
-        await original.writeFile(path, ...arguments_);
+      vi.mocked(writeFile).mockImplementation(async (path, ...argumentsList) => {
+        await original.writeFile(path, ...argumentsList);
+
         if (typeof path === 'string') {
           messagePath = path;
         }
       });
       const tool = createReviewedCommitTool(
         {
-          exec: (command, arguments_, options) =>
-            runCommand(command, arguments_, options?.cwd ?? directory),
+          exec: (command, argumentsList, options) =>
+            runCommand(command, argumentsList, options?.cwd ?? directory),
         },
         async () => {
           if (mutation === 'change') {
@@ -167,8 +168,8 @@ describe('message policy', () => {
       });
       const tool = createReviewedCommitTool(
         {
-          exec: (command, arguments_, options) =>
-            runCommand(command, arguments_, options?.cwd ?? directory),
+          exec: (command, argumentsList, options) =>
+            runCommand(command, argumentsList, options?.cwd ?? directory),
         },
         async () => {
           reviews += 1;

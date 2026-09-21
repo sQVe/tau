@@ -32,8 +32,10 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       (message, question) => {
         if (nested) {
           pi.events.emit('tau:child-notification', { message, question });
+
           return;
         }
+
         pi.sendMessage(
           { customType: 'tau-worker', content: message, display: true, details: question },
           question ? { deliverAs: 'steer', triggerTurn: true } : { deliverAs: 'nextTurn' },
@@ -79,6 +81,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       ]);
       const parentPane = process.env.HERDR_PANE_ID;
       const parentSession = context.sessionManager.getSessionFile();
+
       if (
         process.env.HERDR_ENV !== '1' ||
         !parentPane ||
@@ -87,18 +90,21 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       ) {
         throw new Error('Worker launch requires a saved parent Pi session inside local herdr.');
       }
+
       const active = getController();
       const authority = await active.parentAuthority(
         parentSession,
         context.sessionManager.getSessionId(),
         resolutionSignal,
       );
+
       if (
         authority.parent &&
         (parameters.nativeArguments !== undefined || parameters.reportDirectory !== undefined)
       ) {
         throw new Error('Nested workers cannot supply native launch configuration.');
       }
+
       nested = Boolean(authority.parent);
       const loadout = authority.parent
         ? await resolveInheritedLoadout(authority.parent, parameters, context, pi, resolutionSignal)
@@ -138,6 +144,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     async execute(_id, parameters, signal, _update, context) {
       const parentSession = context.sessionManager.getSessionFile();
       const parentPane = process.env.HERDR_PANE_ID;
+
       if (
         process.env.HERDR_ENV !== '1' ||
         !parentSession ||
@@ -146,6 +153,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       ) {
         throw new Error('Follow-up requires a saved parent session inside local herdr.');
       }
+
       const active = getController();
       const authority = await active.parentAuthority(
         parentSession,
@@ -180,9 +188,11 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     async execute(_id, parameters, signal, _update, context) {
       signal?.throwIfAborted();
       const file = context.sessionManager.getSessionFile();
+
       if (!file) {
         throw new Error('History requires a saved current session.');
       }
+
       const history = await searchHistory(
         join(getAgentDir(), 'tau', 'workers'),
         {

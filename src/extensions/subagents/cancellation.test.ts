@@ -1,6 +1,6 @@
 import { expect, it, vi, onTestFinished } from 'vitest';
 
-import { cancelOwnedWorker } from './cancellation.js';
+import { cancelOwnedWorker, matchesWorker } from './cancellation.js';
 
 it('resolves moved terminal identity before sending cancellation keys', async () => {
   const calls: string[][] = [];
@@ -12,9 +12,10 @@ it('resolves moved terminal identity before sending cancellation keys', async ()
     processId: process.pid,
     token: '/tmp/moved-session',
   };
-  const client = async (arguments_: string[]) => {
-    calls.push(arguments_);
-    if (arguments_[1] === 'list') {
+  const client = async (argumentsList: string[]) => {
+    calls.push(argumentsList);
+
+    if (argumentsList[1] === 'list') {
       return JSON.stringify({
         result: {
           panes: [
@@ -28,14 +29,16 @@ it('resolves moved terminal identity before sending cancellation keys', async ()
         },
       });
     }
-    if (arguments_[1] === 'get') {
+
+    if (argumentsList[1] === 'get') {
       return JSON.stringify({
         result: {
           agent: { pane_id: 'new:pane', agent: 'pi', agent_session: { value: owned.token } },
         },
       });
     }
-    if (arguments_[1] === 'process-info') {
+
+    if (argumentsList[1] === 'process-info') {
       return JSON.stringify({
         result: {
           process_info: {
@@ -47,11 +50,14 @@ it('resolves moved terminal identity before sending cancellation keys', async ()
         },
       });
     }
+
     throw new Error('Input delivery uncertain');
   };
   const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);
 
-  expect(calls.at(-1)).toEqual(['agent', 'send-keys', 'new:pane', 'escape', 'ctrl+c', 'ctrl+d']);
+  expect(calls.filter((call) => call[1] === 'send-keys')).toEqual([
+    ['agent', 'send-keys', 'new:pane', 'escape', 'ctrl+c', 'ctrl+d'],
+  ]);
   expect(result.cleanup).toBe('unconfirmed');
   expect(calls.flat()).not.toContain('old:pane');
 });
@@ -74,9 +80,10 @@ it('follows a second move while confirming cancellation without sending input tw
   onTestFinished(() => {
     vi.restoreAllMocks();
   });
-  const client = async (arguments_: string[]) => {
-    calls.push(arguments_);
-    if (arguments_[1] === 'list') {
+  const client = async (argumentsList: string[]) => {
+    calls.push(argumentsList);
+
+    if (argumentsList[1] === 'list') {
       return JSON.stringify({
         result: {
           panes: [
@@ -90,12 +97,14 @@ it('follows a second move while confirming cancellation without sending input tw
         },
       });
     }
-    if (arguments_[1] === 'send-keys') {
+
+    if (argumentsList[1] === 'send-keys') {
       paneId = 'second:pane';
       stopped = true;
 
       return '{}';
     }
+
     const processId = stopped ? owned.shellPid : owned.processId;
 
     return JSON.stringify({
@@ -131,9 +140,10 @@ it.each(['missing', 'duplicate', 'changed before input'] as const)(
       processId: 101,
       token: '/tmp/worker',
     };
-    const client = async (arguments_: string[]) => {
-      calls.push(arguments_);
-      if (arguments_[1] === 'list') {
+    const client = async (argumentsList: string[]) => {
+      calls.push(argumentsList);
+
+      if (argumentsList[1] === 'list') {
         const pane = {
           pane_id: ++inventories === 1 ? 'first:pane' : 'second:pane',
           terminal_id: owned.terminalId,
@@ -141,6 +151,7 @@ it.each(['missing', 'duplicate', 'changed before input'] as const)(
           tab_id: 'tab',
         };
         const panes = scenario === 'missing' ? [] : [pane];
+
         if (scenario === 'duplicate') {
           panes.push({ ...pane, pane_id: 'duplicate' });
         }
@@ -176,13 +187,14 @@ it('reports identity loss after cancellation input as unconfirmed', async () => 
     processId: 101,
     token: '/tmp/worker',
   };
-  const client = async (arguments_: string[]) => {
-    if (arguments_[1] === 'list') {
+  const client = async (argumentsList: string[]) => {
+    if (argumentsList[1] === 'list') {
       const pane = { pane_id: 'pane', terminal_id: 'terminal', workspace_id: 'w', tab_id: 't' };
 
       return JSON.stringify({ result: { panes: sent ? [] : [pane] } });
     }
-    if (arguments_[1] === 'send-keys') {
+
+    if (argumentsList[1] === 'send-keys') {
       sent = true;
 
       return '{}';
@@ -216,9 +228,10 @@ it('requests active Pi abort before attempting editor shutdown without claiming 
     processId: process.pid,
     token: '/tmp/unique-session.jsonl',
   };
-  const client = async (arguments_: string[]) => {
-    calls.push(arguments_);
-    if (arguments_[1] === 'list') {
+  const client = async (argumentsList: string[]) => {
+    calls.push(argumentsList);
+
+    if (argumentsList[1] === 'list') {
       return JSON.stringify({
         result: {
           panes: [
@@ -232,12 +245,14 @@ it('requests active Pi abort before attempting editor shutdown without claiming 
         },
       });
     }
-    if (arguments_[1] === 'get') {
+
+    if (argumentsList[1] === 'get') {
       return JSON.stringify({
         result: { agent: { pane_id: 'owned', agent: 'pi', agent_session: { value: owned.token } } },
       });
     }
-    if (arguments_[1] === 'process-info') {
+
+    if (argumentsList[1] === 'process-info') {
       return JSON.stringify({
         result: {
           process_info: {
@@ -249,11 +264,82 @@ it('requests active Pi abort before attempting editor shutdown without claiming 
         },
       });
     }
+
     throw new Error('Injected unavailable terminal input.');
   };
   const result = await cancelOwnedWorker(owned, 100, client, new AbortController().signal);
 
-  expect(calls.at(-1)).toEqual(['agent', 'send-keys', 'owned', 'escape', 'ctrl+c', 'ctrl+d']);
+  expect(calls.filter((call) => call[1] === 'send-keys')).toEqual([
+    ['agent', 'send-keys', 'owned', 'escape', 'ctrl+c', 'ctrl+d'],
+  ]);
   expect(result.cleanup).toBe('unconfirmed');
   expect(result.detail).toContain('manual cleanup');
+});
+
+it('matches a Pi worker by start time when herdr omits its argv', () => {
+  const information = {
+    pane_id: 'pane',
+    shell_pid: 100,
+    foreground_process_group_id: 101,
+    foreground_processes: [{ name: 'pi', pid: 101 }],
+  };
+  const worker = { paneId: 'pane', terminalId: 'terminal', shellPid: 100, processId: 101 };
+
+  expect(
+    matchesWorker(information, {
+      ...worker,
+      kind: 'pi',
+      token: '/tmp/session',
+      startedAt: 'Mon Sep 21 10:43:04 2026',
+    }),
+  ).toBe(true);
+  expect(matchesWorker(information, { ...worker, kind: 'process', token: '/tmp/worker' })).toBe(
+    false,
+  );
+});
+
+it('confirms a worker that exits during identity checks without sending input', async () => {
+  const calls: string[][] = [];
+  const owned = {
+    kind: 'process' as const,
+    paneId: 'pane',
+    terminalId: 'terminal',
+    shellPid: 100,
+    processId: 101,
+    token: '/tmp/worker',
+  };
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+  });
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
+  const client = async (argumentsList: string[]) => {
+    calls.push(argumentsList);
+
+    if (argumentsList[1] === 'list') {
+      return JSON.stringify({
+        result: {
+          panes: [
+            { pane_id: 'pane', terminal_id: 'terminal', workspace_id: 'workspace', tab_id: 'tab' },
+          ],
+        },
+      });
+    }
+
+    return JSON.stringify({
+      result: {
+        process_info: {
+          pane_id: 'pane',
+          shell_pid: owned.shellPid,
+          foreground_process_group_id: owned.shellPid,
+          foreground_processes: [{ pid: owned.shellPid, argv: ['zsh'] }],
+        },
+      },
+    });
+  };
+  const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);
+
+  expect(result.cleanup).toBe('confirmed');
+  expect(calls.some((call) => call[1] === 'send-keys')).toBe(false);
 });

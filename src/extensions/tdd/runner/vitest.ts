@@ -296,13 +296,13 @@ const appendChunk = (
   return current + decoder.write(chunk.subarray(0, remaining));
 };
 
-export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
+export const defaultSpawn: SpawnFn = (command, argumentsList, options) =>
   new Promise<SpawnResult>((resolve) => {
     // detached lets the timeout path signal the whole process group on POSIX.
     // Windows has no equivalent; we fall back to child.kill there.
     const useProcessGroup = process.platform !== 'win32';
     const executable = nodeExecutable();
-    const child = nodeSpawn(executable, [command, ...arguments_], {
+    const child = nodeSpawn(executable, [command, ...argumentsList], {
       cwd: options.cwd,
       detached: useProcessGroup,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -337,7 +337,7 @@ export const defaultSpawn: SpawnFn = (command, arguments_, options) =>
         stdoutBytes,
         stderrBytes,
         stdoutTruncated: stdoutBytes > maximumStdoutBytes,
-        command: [executable, command, ...arguments_],
+        command: [executable, command, ...argumentsList],
         started: child.pid !== undefined,
       });
     };

@@ -82,6 +82,7 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
     if (!trimming || !isToolCallEventType('read', event) || event.input.limit !== undefined) {
       return;
     }
+
     if (!clampDelegate(ctx)) {
       trimming = false;
 

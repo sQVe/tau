@@ -59,16 +59,20 @@ export default function controlledProvider(pi: ExtensionAPI) {
       },
     ]);
     pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
+
     return;
   }
+
   if (activeCancellation) {
     provider.setResponses([fauxAssistantMessage('Active streaming fixture. '.repeat(1000))]);
     pi.on('message_update', () => {
       writeFileSync(join(process.cwd(), 'streaming'), 'active');
     });
     pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
+
     return;
   }
+
   const asking = directory && readTask(directory).task.includes('question');
   provider.setResponses([
     ...(asking

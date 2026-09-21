@@ -13,17 +13,21 @@ const matchField = (line: string) => line.match(/^([a-z-]+):\s*(.+)$/);
 
 const parseFields = (frontmatter: string) => {
   const fields = new Map<string, string>();
+
   for (const line of frontmatter.split('\n')) {
     if (!line.trim() || line.trimStart().startsWith('#')) {
       continue;
     }
 
     const match = matchField(line);
+
     if (!match) {
       throw new Error(`Malformed profile setting: ${line}`);
     }
+
     const key = match[1];
     const value = match[2];
+
     if (
       !key ||
       !value ||
@@ -41,6 +45,7 @@ const parseFields = (frontmatter: string) => {
     ) {
       throw new Error(`Unsupported or duplicate profile setting: ${line}`);
     }
+
     fields.set(key, value.trim());
   }
 
@@ -57,26 +62,34 @@ const parseThinking = (thinking = 'medium') => {
 
 export const parseProfile = (content: string, fallbackName: string, source: string): Profile => {
   const match = content.replaceAll('\r\n', '\n').match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+
   if (!match) {
     throw new Error(`Invalid profile: ${source}`);
   }
+
   const [, frontmatter = '', body = ''] = match;
   const fields = parseFields(frontmatter);
 
   const role = fields.get('role');
+
   if (role !== 'investigation' && role !== 'editing') {
     throw new Error('Profile requires an investigation or editing role.');
   }
+
   const harness = fields.get('cli') ?? 'pi';
+
   if (!/^[a-z][a-z0-9-]{0,63}$/.test(harness) || harness === 'generic') {
     throw new Error('Invalid herdr kind in profile.');
   }
+
   if ((fields.get('session-mode') ?? 'lineage-only') !== 'lineage-only') {
     throw new Error('Workers require fresh lineage-only sessions.');
   }
+
   if ((fields.get('permissions') ?? 'trusted-full-tools') !== 'trusted-full-tools') {
     throw new Error('Only trusted full-tool workers are supported; roles are not sandboxes.');
   }
+
   if (!body.trim()) {
     throw new Error('Profile instructions are empty.');
   }
@@ -113,6 +126,7 @@ export const resolveProfile = (
     if (!existsSync(directory)) {
       continue;
     }
+
     for (const file of readdirSync(directory)
       .filter((name) => name.endsWith('.md'))
       .toSorted()) {
@@ -129,6 +143,7 @@ export const resolveProfile = (
           .map(matchField)
           .find((field) => field?.[1] === 'name')?.[2]
           ?.trim() ?? fallbackName;
+
       if (name === requestedName) {
         winner = { content, fallbackName, source };
       }

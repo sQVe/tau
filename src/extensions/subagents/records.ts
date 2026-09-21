@@ -41,6 +41,7 @@ const recordByteLimit = 128_000;
 
 const serializeRecord = (value: unknown): string => {
   const serialized = `${JSON.stringify(value)}\n`;
+
   if (Buffer.byteLength(serialized, 'utf8') > recordByteLimit) {
     throw new Error('Worker record exceeds 128 KB.');
   }
@@ -64,6 +65,7 @@ export const publish = (directory: string, name: string, value: unknown): void =
   try {
     linkSync(temporary, join(directory, name));
     const directoryDescriptor = openSync(directory, 'r');
+
     try {
       fsyncSync(directoryDescriptor);
     } finally {
@@ -76,18 +78,22 @@ export const publish = (directory: string, name: string, value: unknown): void =
 
 export const readRecord = (directory: string, name: string): unknown => {
   const descriptor = openSync(join(directory, name), 'r');
+
   try {
     const buffer = Buffer.alloc(recordByteLimit + 1);
     let bytesRead = 0;
+
     while (bytesRead < buffer.length) {
       const read = readSync(descriptor, buffer, {
         offset: bytesRead,
         length: buffer.length - bytesRead,
         position: bytesRead,
       });
+
       if (read === 0) {
         break;
       }
+
       bytesRead += read;
     }
 
@@ -107,6 +113,7 @@ const nameMatchesRole = (task: Task): boolean =>
 
 const validateGenericTask = (task: Task, loadout: GenericLoadout): void => {
   const reportRelative = relative(loadout.cwd, loadout.reportDirectory);
+
   if (
     task.version !== 2 ||
     task.predecessorTaskId !== undefined ||
@@ -128,6 +135,7 @@ export const validateTask = (value: unknown): Task => {
   if (!Value.Check(taskSchema, value)) {
     throw new Error('Invalid saved worker task or loadout.');
   }
+
   serializeRecord(value);
 
   if (
@@ -136,14 +144,17 @@ export const validateTask = (value: unknown): Task => {
   ) {
     throw new Error('Invalid fixed worker deadline.');
   }
+
   if (isGenericLoadout(value.loadout)) {
     validateGenericTask(value, value.loadout);
 
     return value;
   }
+
   if (value.version !== 1) {
     throw new Error('Native worker session identity is required.');
   }
+
   if (
     ![
       value.nativeSessionFile,
@@ -157,6 +168,7 @@ export const validateTask = (value: unknown): Task => {
   ) {
     throw new Error('Worker paths must be absolute.');
   }
+
   if (
     !nameMatchesRole(value) ||
     value.predecessorTaskId === value.taskId ||
@@ -168,6 +180,7 @@ export const validateTask = (value: unknown): Task => {
 
   const required = ['read', 'bash', 'edit', 'write', 'subagent_report'];
   const tools = value.loadout.tools;
+
   if (!required.every((tool) => tools.includes(tool))) {
     throw new Error('A trusted worker requires the coding and report tools.');
   }
@@ -181,15 +194,19 @@ export const readTask = (directory: string): Task => {
 
 export const readSuccessor = (directory: string): Successor | undefined => {
   let value: unknown;
+
   try {
     value = readRecord(directory, 'successor.json');
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       return undefined;
     }
+
     throw error;
   }
+
   const task = readTask(directory);
+
   if (
     !Value.Check(successorSchema, value) ||
     value.predecessorTaskId !== task.taskId ||
@@ -213,10 +230,13 @@ export const isRetiredTask = (value: unknown): boolean => {
   if (typeof value !== 'object' || value === null || !('loadout' in value)) {
     return false;
   }
+
   const loadout: unknown = value.loadout;
+
   if (typeof loadout !== 'object' || loadout === null) {
     return false;
   }
+
   const harness = 'harness' in loadout ? loadout.harness : undefined;
 
   return (
@@ -246,6 +266,7 @@ const readScannedTask = (directory: string): Task | undefined => {
       throw error;
     }
   }
+
   // Another process may publish the task after the failed read. A dangling link still fails.
   if (
     lstatSync(join(directory, 'task.json'), { throwIfNoEntry: false }) ||
@@ -268,19 +289,24 @@ const addReferencedTasks = (
     if (!unpublished.size) {
       return;
     }
+
     const references = [task.predecessorTaskId, readSuccessor(directory)?.successorTaskId];
+
     for (const referenced of references) {
       if (referenced === undefined || !unpublished.has(referenced)) {
         continue;
       }
+
       // A continuation may have been published after the scan read its directory.
       const referencedDirectory = join(root, referenced);
       const late = readScannedTask(referencedDirectory);
+
       if (late?.taskId !== referenced) {
         throw new Error(
           `Missing task.json for referenced continuation ${referenced}. Saved attempt or claim requires inspection.`,
         );
       }
+
       unpublished.delete(referenced);
       tasks.push({ directory: referencedDirectory, task: late });
     }
@@ -293,44 +319,54 @@ export const readTasks = (
   retired: string[] = [],
 ): { directory: string; task: Task }[] => {
   let entries;
+
   try {
     entries = readdirSync(root, { withFileTypes: true });
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       return [];
     }
+
     throw error;
   }
+
   const tasks: { directory: string; task: Task }[] = [];
   const unpublished = new Map<string, string>();
+
   for (const entry of entries.filter(
     (candidate) => candidate.isDirectory() && candidate.name !== '.admission',
   )) {
     const directory = join(root, entry.name);
     let task: Task | undefined;
+
     try {
       task = readScannedTask(directory);
     } catch (error) {
       if (!isRetiredRecord(directory)) {
         throw error;
       }
+
       diagnostics.push(
         `Skipped task ${entry.name} saved in a retired format; start a fresh task instead.`,
       );
       retired.push(directory);
       continue;
     }
+
     if (!task) {
       unpublished.set(entry.name, directory);
       continue;
     }
+
     if (task.taskId !== entry.name) {
       throw new Error('Saved task directory and identity do not match.');
     }
+
     tasks.push({ directory, task });
   }
 
   addReferencedTasks(root, tasks, unpublished);
+
   for (const [id, directory] of unpublished) {
     diagnostics.push(
       `Skipped unpublished task ${id}; preparation evidence remains at ${directory}.`,
@@ -343,11 +379,13 @@ export const readTasks = (
 export const claimSuccessor = (directory: string, successor: Task): void => {
   const predecessor = readTask(directory);
   const existing = readSuccessor(directory);
+
   if (existing) {
     throw new Error(
       `Task ${predecessor.taskId} already claimed by successor ${existing.successorTaskId}. No retry.`,
     );
   }
+
   if (
     successor.predecessorTaskId !== predecessor.taskId ||
     successor.taskId === predecessor.taskId ||
@@ -398,6 +436,7 @@ export const readOptionalRecord = (directory: string, name: string): unknown => 
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       return undefined;
     }
+
     throw error;
   }
 };
@@ -417,6 +456,7 @@ const publishQuestionRecord = (
     if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) {
       throw error;
     }
+
     // Recovery may repeat the same identity, but cannot replace any accepted content.
     if (!isDeepStrictEqual(readRecord(directory, name), value)) {
       throw new Error('Conflicting saved question record.', { cause: error });
@@ -424,6 +464,7 @@ const publishQuestionRecord = (
 
     // A prior publication may have linked the record but failed to sync the directory.
     const directoryDescriptor = openSync(directory, 'r');
+
     try {
       fsyncSync(directoryDescriptor);
     } finally {
@@ -438,9 +479,11 @@ const savedQuestion = (
   questionId: string,
 ): Question | undefined => {
   const value = readOptionalRecord(directory, questionRecordName(questionId, 'question'));
+
   if (value === undefined) {
     return undefined;
   }
+
   if (
     !Value.Check(questionSchema, value) ||
     value.taskId !== taskId ||
@@ -468,6 +511,7 @@ export const validateQuestion = (value: unknown, taskId: string): Question => {
   if (!Value.Check(questionSchema, value) || value.taskId !== taskId) {
     throw new Error('Invalid or wrong-task question.');
   }
+
   if (Buffer.byteLength(JSON.stringify(value)) > 64_000) {
     throw new Error('Question record exceeds 64 KB.');
   }
@@ -489,9 +533,11 @@ const savedReply = (directory: string, taskId: string, questionId: string): Repl
   const name = questionRecordName(questionId, 'reply');
   const question = savedQuestion(directory, taskId, questionId);
   const value = readOptionalRecord(directory, name);
+
   if (value === undefined) {
     return undefined;
   }
+
   if (
     !question ||
     !Value.Check(replySchema, value) ||
@@ -523,6 +569,7 @@ export const acceptReply = (directory: string, taskId: string, value: unknown): 
 
   const name = questionRecordName(value.questionId, 'reply');
   requireSavedTask(directory, taskId);
+
   if (!savedQuestion(directory, taskId, value.questionId)) {
     throw new Error('Reply has no accepted question.');
   }
@@ -540,9 +587,11 @@ const savedAcknowledgement = (
   const name = questionRecordName(questionId, 'acknowledgement');
   const reply = savedReply(directory, taskId, questionId);
   const value = readOptionalRecord(directory, name);
+
   if (value === undefined) {
     return undefined;
   }
+
   if (
     !reply ||
     !Value.Check(acknowledgementSchema, value) ||
@@ -579,6 +628,7 @@ export const acceptAcknowledgement = (
   const name = questionRecordName(value.questionId, 'acknowledgement');
   requireSavedTask(directory, taskId);
   const reply = savedReply(directory, taskId, value.questionId);
+
   if (!reply || value.replyId !== reply.replyId) {
     throw new Error('Acknowledgement does not match the accepted reply.');
   }
@@ -591,6 +641,7 @@ export const acceptAcknowledgement = (
 export const readPendingQuestion = (directory: string, taskId: string): Question | undefined => {
   requireSavedTask(directory, taskId);
   let pending: Question | undefined;
+
   for (const name of readdirSync(directory)) {
     if (!name.startsWith('question-') || !name.endsWith('.json')) {
       continue;
@@ -598,6 +649,7 @@ export const readPendingQuestion = (directory: string, taskId: string): Question
 
     const questionId = name.slice('question-'.length, -'.json'.length);
     const question = savedQuestion(directory, taskId, questionId);
+
     if (!savedAcknowledgement(directory, taskId, questionId)) {
       if (pending) {
         throw new Error('Multiple pending worker questions.');
@@ -628,6 +680,7 @@ export const acceptReport = (directory: string, taskId: string, value: unknown):
 export const readReport = (directory: string, taskId: string): Report | undefined => {
   try {
     const value = readRecord(directory, 'report.json');
+
     if (!validReport(value, taskId)) {
       throw new Error('Invalid saved worker report.');
     }
@@ -637,6 +690,7 @@ export const readReport = (directory: string, taskId: string): Report | undefine
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       return undefined;
     }
+
     throw error;
   }
 };
@@ -666,6 +720,7 @@ export const readEvent = (
 ): TaskEvent | undefined => {
   try {
     const value = readRecord(directory, `${kind}.json`);
+
     if (!Value.Check(eventSchema, value) || value.taskId !== taskId || value.kind !== kind) {
       throw new Error('Invalid worker lifecycle record.');
     }
@@ -675,6 +730,7 @@ export const readEvent = (
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       return undefined;
     }
+
     throw error;
   }
 };

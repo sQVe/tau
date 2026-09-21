@@ -145,6 +145,92 @@ const readBlob = async (
 };
 
 // oxlint-disable-next-line eslint/complexity -- Review input limits, authentication and bounded retries are checked before accepting findings.
+interface ReviewEntry {
+  path: string;
+  diff: string;
+  file: ReviewFile | null;
+  deleted: boolean;
+}
+
+const inputBudget = 1_000_000;
+
+const batchEntries = (entries: ReviewEntry[], sharedSize: number) => {
+  const batches: ReviewEntry[][] = [];
+  let batch: ReviewEntry[] = [];
+  let batchSize = sharedSize;
+
+  if (sharedSize > inputBudget) {
+    throw new Error('Comment review context is too large. Shorten the dispute and retry.');
+  }
+
+  for (const entry of entries) {
+    // Overestimates the JSON size of the entry's share of the batch input, so batches stay in budget.
+    const size = JSON.stringify(entry.diff).length + JSON.stringify(entry.file ?? '').length + 1;
+
+    if (sharedSize + size > inputBudget) {
+      throw new Error(
+        `Comment review input is too large: ${entry.path}. Reduce the file and retry.`,
+      );
+    }
+
+    if (batch.length > 0 && batchSize + size > inputBudget) {
+      batches.push(batch);
+      batch = [];
+      batchSize = sharedSize;
+    }
+
+    batch.push(entry);
+    batchSize += size;
+  }
+
+  batches.push(batch);
+
+  return batches;
+};
+
+const reviewBatch = async (
+  context: ExtensionContext,
+  model: ReturnType<typeof resolveDelegate>,
+  input: string,
+  source: { files: ReviewFile[]; deletedPaths: string[] },
+  reviewSignal: AbortSignal,
+) => {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Retry only after parsing the previous response fails.
+    const response = await context.modelRegistry.complete(
+      model,
+      {
+        systemPrompt:
+          commentPolicy +
+          (attempt
+            ? '\nYour previous response was invalid. Return valid JSON and cite only supplied source files and lines, not policy-only files.'
+            : ''),
+        messages: [{ role: 'user', content: input, timestamp: Date.now() }],
+      },
+      { signal: reviewSignal, maxTokens: 4096 },
+    );
+
+    if (['error', 'aborted', 'length'].includes(response.stopReason)) {
+      throw new Error(`Comment review failed: ${response.errorMessage ?? response.stopReason}`);
+    }
+
+    const text = response.content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('');
+
+    try {
+      return parseReview(text, source.files, source.deletedPaths);
+    } catch (error) {
+      if (attempt === 1 || reviewSignal.aborted) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error('Comment review returned invalid findings.');
+};
+
 export const reviewComments = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   context: ExtensionContext,
@@ -292,92 +378,6 @@ export const reviewComments = async (
   }
 
   return { findings };
-};
-
-interface ReviewEntry {
-  path: string;
-  diff: string;
-  file: ReviewFile | null;
-  deleted: boolean;
-}
-
-const inputBudget = 1_000_000;
-
-const batchEntries = (entries: ReviewEntry[], sharedSize: number) => {
-  const batches: ReviewEntry[][] = [];
-  let batch: ReviewEntry[] = [];
-  let batchSize = sharedSize;
-
-  if (sharedSize > inputBudget) {
-    throw new Error('Comment review context is too large. Shorten the dispute and retry.');
-  }
-
-  for (const entry of entries) {
-    // Overestimates the JSON size of the entry's share of the batch input, so batches stay in budget.
-    const size = JSON.stringify(entry.diff).length + JSON.stringify(entry.file ?? '').length + 1;
-
-    if (sharedSize + size > inputBudget) {
-      throw new Error(
-        `Comment review input is too large: ${entry.path}. Reduce the file and retry.`,
-      );
-    }
-
-    if (batch.length > 0 && batchSize + size > inputBudget) {
-      batches.push(batch);
-      batch = [];
-      batchSize = sharedSize;
-    }
-
-    batch.push(entry);
-    batchSize += size;
-  }
-
-  batches.push(batch);
-
-  return batches;
-};
-
-const reviewBatch = async (
-  context: ExtensionContext,
-  model: ReturnType<typeof resolveDelegate>,
-  input: string,
-  source: { files: ReviewFile[]; deletedPaths: string[] },
-  reviewSignal: AbortSignal,
-) => {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Retry only after parsing the previous response fails.
-    const response = await context.modelRegistry.complete(
-      model,
-      {
-        systemPrompt:
-          commentPolicy +
-          (attempt
-            ? '\nYour previous response was invalid. Return valid JSON and cite only supplied source files and lines, not policy-only files.'
-            : ''),
-        messages: [{ role: 'user', content: input, timestamp: Date.now() }],
-      },
-      { signal: reviewSignal, maxTokens: 4096 },
-    );
-
-    if (['error', 'aborted', 'length'].includes(response.stopReason)) {
-      throw new Error(`Comment review failed: ${response.errorMessage ?? response.stopReason}`);
-    }
-
-    const text = response.content
-      .filter((part) => part.type === 'text')
-      .map((part) => part.text)
-      .join('');
-
-    try {
-      return parseReview(text, source.files, source.deletedPaths);
-    } catch (error) {
-      if (attempt === 1 || reviewSignal.aborted) {
-        throw error;
-      }
-    }
-  }
-
-  throw new Error('Comment review returned invalid findings.');
 };
 
 export const formatCommentReview = (review: CommentReview) =>
