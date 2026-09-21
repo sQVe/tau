@@ -9,6 +9,7 @@ import {
   fauxProvider,
 } from '@earendil-works/pi-ai';
 import {
+  CustomEditor,
   DefaultResourceLoader,
   ModelRuntime,
   SessionManager,
@@ -16,6 +17,8 @@ import {
   createAgentSession,
 } from '@earendil-works/pi-coding-agent';
 import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
+import { KeybindingsManager, TUI_KEYBINDINGS } from '@earendil-works/pi-tui';
+import type { EditorComponent, TUI } from '@earendil-works/pi-tui';
 import type { TestContext } from 'vitest';
 import { expect, it, vi } from 'vitest';
 
@@ -23,6 +26,7 @@ import { expect, it, vi } from 'vitest';
 vi.setConfig({ testTimeout: 60_000 });
 
 type RegisterCleanup = TestContext['onTestFinished'];
+type EditorFactory = NonNullable<ReturnType<ExtensionUIContext['getEditorComponent']>>;
 
 const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
 
@@ -30,7 +34,22 @@ const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
  * A custom UI context makes Pi report hasUI=true. Render the menu once before
  * sending the scripted keys so the test follows the terminal input order.
  */
-const createScriptedUI = (overlays: string[], keys: string[]): ExtensionUIContext => {
+const createScriptedUI = (overlays: string[], keys: string[], submit: (text: string) => void) => {
+  const keybindings = new KeybindingsManager(
+    TUI_KEYBINDINGS,
+  ) as unknown as Parameters<EditorFactory>[2];
+  const terminalUI = {
+    requestRender: () => {},
+    getKeybindings: () => keybindings,
+  } as unknown as TUI;
+  const editorTheme = {
+    borderColor: (text: string) => text,
+    selectList: {},
+  } as Parameters<EditorFactory>[1];
+  let editor: EditorComponent = new CustomEditor(terminalUI, editorTheme, keybindings);
+  let editorFactory: EditorFactory | undefined;
+  editor.onSubmit = submit;
+
   const widgets = new Map<string, string[] | undefined>();
   const target: Record<string | symbol, unknown> = {
     theme: { fg: (_color: string, text: string) => text, bold: (text: string) => text },
@@ -38,6 +57,16 @@ const createScriptedUI = (overlays: string[], keys: string[]): ExtensionUIContex
       widgets.set(key, content);
     },
     notify: () => {},
+    getEditorText: () => editor.getText(),
+    setEditorText: (text: string) => {
+      editor.setText(text);
+    },
+    getEditorComponent: () => editorFactory,
+    setEditorComponent: (factory: EditorFactory) => {
+      editorFactory = factory;
+      editor = factory(terminalUI, editorTheme, keybindings);
+      editor.onSubmit = submit;
+    },
     custom: async (factory: Parameters<ExtensionUIContext['custom']>[0]) => {
       let result: boolean | undefined;
       const component = await factory(
@@ -69,7 +98,12 @@ const createScriptedUI = (overlays: string[], keys: string[]): ExtensionUIContex
     },
   });
 
-  return scriptedUI as unknown as ExtensionUIContext;
+  return {
+    uiContext: scriptedUI as unknown as ExtensionUIContext,
+    press: (key: string) => {
+      editor.handleInput(key);
+    },
+  };
 };
 
 const createHarness = async (registerCleanup: RegisterCleanup, keys: string[]) => {
@@ -121,14 +155,20 @@ const createHarness = async (registerCleanup: RegisterCleanup, keys: string[]) =
 
   const overlays: string[] = [];
 
-  // The menu is a terminal component, so it only runs when the mode is "tui".
-  await session.bindExtensions({ uiContext: createScriptedUI(overlays, keys), mode: 'tui' });
+  const submissions: Promise<void>[] = [];
+  const { uiContext, press } = createScriptedUI(overlays, keys, (text) => {
+    // Mirror Pi's blank-input guard so the harness does not send text the terminal would drop.
+    if (text.trim() !== '') {
+      submissions.push(session.prompt(text, { streamingBehavior: 'steer' }));
+    }
+  });
+  await session.bindExtensions({ uiContext, mode: 'tui' });
 
   const commandNames = extensionsResult.extensions.flatMap((extension) =>
     Array.from(extension.commands.keys()),
   );
 
-  return { session, faux, overlays, commandNames };
+  return { session, faux, overlays, commandNames, uiContext, press, submissions };
 };
 
 /** Text of the newest user message, which is what the snippet extension transforms. */
@@ -180,6 +220,53 @@ it('prepends a toggled snippet to the next message and then resets', async ({ on
   expect(sent[0]).toMatch(/^Interview me before you start\./);
   expect(sent[0]).toMatch(/until I approve the agreed scope\.\n\nAdd the retry policy\.$/);
   expect(sent[1]).toBe('Now ship it.');
+});
+
+it('sends selected snippets on empty Enter and resets the toggles', async ({ onTestFinished }) => {
+  const { session, faux, uiContext, press, submissions } = await createHarness(onTestFinished, [
+    ' ',
+    '\r',
+  ]);
+
+  await session.prompt('/snippets');
+
+  expect(uiContext.getEditorComponent()).toBeTypeOf('function');
+
+  const sent: string[] = [];
+  const finished = new Promise<void>((complete) => {
+    session.subscribe((event) => {
+      if (event.type === 'agent_settled') {
+        complete();
+      }
+    });
+  });
+  faux.setResponses([
+    (context) => {
+      sent.push(promptTextOf(context));
+
+      return fauxAssistantMessage('Done.');
+    },
+  ]);
+
+  press('\r');
+  await finished;
+
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatch(/^Interview me before you start\./);
+  expect(uiContext.getEditorText()).toBe('');
+
+  press('\r');
+  expect(submissions).toHaveLength(0);
+
+  uiContext.setEditorText('Now ship it.');
+  press('\r');
+
+  expect(submissions).toHaveLength(1);
+  await submissions[0];
+
+  const lastUser = session.messages.findLast((message) => message.role === 'user');
+
+  expect(lastUser?.content).toEqual([{ type: 'text', text: 'Now ship it.' }]);
 });
 
 it('keeps a slash command at the start of the text and keeps the toggle on', async ({

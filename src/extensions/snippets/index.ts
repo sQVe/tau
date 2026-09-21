@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 
+import { CustomEditor } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { openSnippetMenu } from './menu.js';
@@ -84,6 +85,40 @@ export default function snippetsExtension(pi: ExtensionAPI) {
 
   pi.on('session_start', (_event, context) => {
     resetToggles(context);
+
+    if (context.mode !== 'tui') {
+      return;
+    }
+
+    const previous = context.ui.getEditorComponent();
+
+    context.ui.setEditorComponent((terminalUI, theme, keybindings) => {
+      const editor =
+        previous?.(terminalUI, theme, keybindings) ??
+        new CustomEditor(terminalUI, theme, keybindings, { embedWorkingStatus: true });
+      let onSubmit = editor.onSubmit;
+      const submit = (text: string) => {
+        if (text.trim() === '' && enabled.size > 0) {
+          pi.sendUserMessage('', { deliverAs: 'steer' });
+
+          return;
+        }
+
+        onSubmit?.(text);
+      };
+
+      // Pi assigns onSubmit after the factory returns. Intercept submissions,
+      // not keys, so paste, autocomplete, and disabled submission still work.
+      Object.defineProperty(editor, 'onSubmit', {
+        configurable: true,
+        get: () => submit,
+        set: (handler: typeof onSubmit) => {
+          onSubmit = handler;
+        },
+      });
+
+      return editor;
+    });
   });
 
   pi.on('session_before_switch', (_event, context) => {
