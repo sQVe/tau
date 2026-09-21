@@ -1,6 +1,6 @@
 import { expect, it, vi, onTestFinished } from 'vitest';
 
-import { cancelOwnedWorker } from './cancellation.js';
+import { cancelOwnedWorker, matchesWorker } from './cancellation.js';
 
 it('resolves moved terminal identity before sending cancellation keys', async () => {
   const calls: string[][] = [];
@@ -270,4 +270,26 @@ it('requests active Pi abort before attempting editor shutdown without claiming 
   expect(calls.at(-1)).toEqual(['agent', 'send-keys', 'owned', 'escape', 'ctrl+c', 'ctrl+d']);
   expect(result.cleanup).toBe('unconfirmed');
   expect(result.detail).toContain('manual cleanup');
+});
+
+it('matches a Pi worker by start time when herdr omits its argv', () => {
+  const information = {
+    pane_id: 'pane',
+    shell_pid: 100,
+    foreground_process_group_id: 101,
+    foreground_processes: [{ name: 'pi', pid: 101 }],
+  };
+  const worker = { paneId: 'pane', terminalId: 'terminal', shellPid: 100, processId: 101 };
+
+  expect(
+    matchesWorker(information, {
+      ...worker,
+      kind: 'pi',
+      token: '/tmp/session',
+      startedAt: 'Mon Sep 21 10:43:04 2026',
+    }),
+  ).toBe(true);
+  expect(matchesWorker(information, { ...worker, kind: 'process', token: '/tmp/worker' })).toBe(
+    false,
+  );
 });
