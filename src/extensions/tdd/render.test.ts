@@ -118,3 +118,79 @@ it('shows bounded process diagnostics and readable artifact paths', () => {
   expect(text).not.toContain('\u0007');
   expect(text.length).toBeLessThanOrEqual(4000);
 });
+
+const timed = (file: string, fullname: string, durationMs?: number) => ({
+  file,
+  fullname,
+  status: 'passed' as const,
+  ...(durationMs === undefined ? {} : { durationMs }),
+});
+
+it('shows the duration of each selected test in a focused run', () => {
+  const summary = summarize(
+    '/repo',
+    observation({
+      kind: 'pass',
+      tests: [timed('/repo/value.test.ts', 'value works', 42), timed('/repo/value.test.ts', 'old')],
+    }),
+  );
+
+  expect(summary).toContain('value works: 42 ms');
+  expect(summary).not.toContain('old:');
+});
+
+it('stays quiet about durations in a full run when no test is slow', () => {
+  const summary = summarize(
+    '/repo',
+    observation(
+      {
+        kind: 'pass',
+        tests: [
+          timed('/repo/value.test.ts', 'fast', 1000),
+          timed('/repo/tests/flow.integration.test.ts', 'real process', 9000),
+        ],
+      },
+      { scope: 'full' },
+    ),
+  );
+
+  expect(summary).toBe('pass · full suite · fresh\n2 passed, 0 failed, 0 skipped');
+});
+
+it('lists only the slowest tests over one second in a full run', () => {
+  const summary = summarize(
+    '/repo',
+    observation(
+      {
+        kind: 'pass',
+        tests: [
+          timed('/repo/a.test.ts', 'slow', 1001),
+          timed('/repo/a.test.ts', 'slower', 1500),
+          timed('/repo/b.test.ts', 'slowest', 3000),
+          timed('/repo/b.test.ts', 'also slow', 1200),
+          timed('/repo/b.test.ts', 'fast', 5),
+        ],
+      },
+      { scope: 'full' },
+    ),
+  );
+
+  expect(summary).toContain(
+    [
+      'Slow tests (over 1000 ms):',
+      '  b.test.ts › slowest: 3000 ms',
+      '  a.test.ts › slower: 1500 ms',
+      '  b.test.ts › also slow: 1200 ms',
+      '  +1 more',
+    ].join('\n'),
+  );
+  expect(summary).not.toContain('fast');
+});
+
+it('keeps the summary within its limit when many selected tests report durations', () => {
+  const tests = Array.from({ length: 200 }, (_, index) =>
+    timed('/repo/value.test.ts', `value works ${'x'.repeat(80)} ${index}`, index),
+  );
+
+  expect(summarize('/repo', observation({ kind: 'pass', tests })).length).toBeLessThanOrEqual(2000);
+});

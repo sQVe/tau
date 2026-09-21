@@ -19,6 +19,7 @@ export interface TestResult {
   file: string;
   fullname: string;
   status: 'passed' | 'failed' | 'skipped' | 'todo';
+  durationMs?: number;
 }
 
 export interface DiagnosticFile {

@@ -65,6 +65,49 @@ const testSummary = (report: RunnerResult): string[] => {
   return lines;
 };
 
+// Measured on Tau's suite: the median test takes 3 ms and 90% finish within 210 ms.
+const slowTestMilliseconds = 1000;
+const maximumSlowTests = 3;
+const maximumFocusedDurations = 10;
+
+const moreLine = (hidden: number) => (hidden > 0 ? [`  +${hidden} more`] : []);
+
+const focusedDurations = (report: RunnerResult): string[] => {
+  const timed = 'tests' in report ? report.tests.filter((test) => test.durationMs != null) : [];
+  const shown = timed.slice(0, maximumFocusedDurations);
+
+  return [
+    ...shown.map((test) => `  ${cap(printable(test.fullname), 200)}: ${test.durationMs} ms`),
+    ...moreLine(timed.length - shown.length),
+  ];
+};
+
+// Integration files start real processes, so they would fill this list on every run.
+const slowTests = (cwd: string, report: RunnerResult): string[] => {
+  const slow = ('tests' in report ? report.tests : [])
+    .filter(
+      (test) =>
+        (test.durationMs ?? 0) > slowTestMilliseconds && !test.file.includes('.integration.'),
+    )
+    .toSorted((first, second) => (second.durationMs ?? 0) - (first.durationMs ?? 0));
+
+  if (slow.length === 0) {
+    return [];
+  }
+
+  const shown = slow.slice(0, maximumSlowTests);
+
+  return [
+    `Slow tests (over ${slowTestMilliseconds} ms):`,
+    ...shown.map((test) => {
+      const file = isAbsolute(test.file) ? relative(cwd, test.file) : test.file;
+
+      return `  ${cap(printable(`${file} › ${test.fullname}`), 200)}: ${test.durationMs} ms`;
+    }),
+    ...moreLine(slow.length - shown.length),
+  ];
+};
+
 export const summarize = (cwd: string, observation: Observation): string => {
   const { report, scope, freshness } = observation;
   const lines = [`${report.kind} · ${scope === 'full' ? 'full suite' : 'focused'} · ${freshness}`];
@@ -74,6 +117,7 @@ export const summarize = (cwd: string, observation: Observation): string => {
   }
 
   lines.push(...testSummary(report));
+  lines.push(...(scope === 'full' ? slowTests(cwd, report) : focusedDurations(report)));
 
   const failures = 'failures' in report ? report.failures : [];
   const fileFailures = failures.filter((failure) => failure.fullname === '<file>').length;

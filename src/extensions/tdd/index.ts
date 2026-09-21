@@ -71,7 +71,7 @@ export default function tddExtension(pi: ExtensionAPI) {
         'It also covers default-named package/Vite/Vitest/TypeScript configs, npm/pnpm/Yarn/Bun lockfiles, and pnpm/Vitest workspace files throughout the worktree. ' +
         'Dependencies and common generated/cache directories are excluded. Other source layouts, assets, and custom config filenames are not covered. ' +
         'Checks run at bounded checkpoints, not an atomic snapshot or reusable verification. ' +
-        'Shows focused files and exact names, or full-suite scope. The summary is capped at 2000 characters, with up to 4000 characters of run context and at most one hint. ' +
+        'Shows focused files and exact names, or full-suite scope. Focused summaries show each selected test duration; full summaries list only tests over 1000 ms outside .integration. files. The summary is capped at 2000 characters, with up to 4000 characters of run context and at most one hint. ' +
         'Read the saved run.json for command, selection, and before/after input fingerprints. Diagnostics retain up to 8 MiB stdout, 32 KiB stderr, and 8 MiB raw JSON, including passes. ' +
         'Console output beyond the capture limit is discarded without stopping tests. Truncation distinguishes process bytes from decoded text bytes. ' +
         'Files live in the Pi agent test-runs directory. After each run, cleanup keeps up to 32 completed runs for seven days; recent unfinished runs are protected. ' +

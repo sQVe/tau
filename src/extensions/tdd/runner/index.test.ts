@@ -432,6 +432,36 @@ describe('runTests', () => {
     expect(directories.size).toBe(cases.length);
   });
 
+  it('reports each test duration in whole milliseconds when Vitest gives one', async () => {
+    const result = await runTests(
+      { scope: 'all', cwd: '/repo' },
+      makeDeps({
+        spawn: fakeSpawn({
+          report: {
+            numTotalTests: 2,
+            numPassedTests: 2,
+            testResults: [
+              {
+                name: '/repo/value.test.ts',
+                status: 'passed',
+                assertionResults: [
+                  { fullName: 'timed', status: 'passed', duration: 12.6 },
+                  { fullName: 'untimed', status: 'passed', duration: null },
+                ],
+              },
+            ],
+          },
+        }),
+      }),
+    );
+
+    expect(result).toMatchObject({ kind: 'pass' });
+    expect(result).toHaveProperty('tests', [
+      { file: '/repo/value.test.ts', fullname: 'timed', status: 'passed', durationMs: 13 },
+      { file: '/repo/value.test.ts', fullname: 'untimed', status: 'passed' },
+    ]);
+  });
+
   it('bounds saved logs and raw reports without truncating test evidence', async () => {
     const rawReport = {
       numTotalTests: 1,
@@ -521,7 +551,9 @@ describe('runTests', () => {
       const result = await runTests({ scope: 'all', cwd });
 
       expect(result.kind).toBe('fail');
-      expect(result).toHaveProperty('tests', [
+      const tests = 'tests' in result ? result.tests : [];
+
+      expect(tests.map(({ durationMs: _durationMs, ...identity }) => identity)).toEqual([
         { file, fullname: 'suite passes', status: 'passed' },
         { file, fullname: 'suite fails', status: 'failed' },
         { file, fullname: 'suite skips', status: 'skipped' },
