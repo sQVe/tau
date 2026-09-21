@@ -24,6 +24,10 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { monotonicNow, reserveTask } from '../src/extensions/subagents/admission.js';
 import * as cancellation from '../src/extensions/subagents/cancellation.js';
+import {
+  asPiLoadout,
+  readPiTask as readTask,
+} from '../src/extensions/subagents/fixtures/loadout.js';
 import { currentProcessIdentity } from '../src/extensions/subagents/identity.js';
 import subagentsExtension from '../src/extensions/subagents/index.js';
 import {
@@ -40,8 +44,8 @@ import {
   readEvent,
   readPendingQuestion,
   readReport,
-  readTask,
 } from '../src/extensions/subagents/records.js';
+import { requireNativeTask } from '../src/extensions/subagents/types.js';
 import type { Task } from '../src/extensions/subagents/types.js';
 import workerExtension from '../src/extensions/subagents/worker.js';
 
@@ -62,6 +66,7 @@ const nestedScenario = async (waitForParentReply: boolean) => {
     rmSync(directory, { recursive: true, force: true });
   });
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+  vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
   vi.stubEnv('TAU_PARENT_PROCESS', String(process.pid));
@@ -108,11 +113,13 @@ const nestedScenario = async (waitForParentReply: boolean) => {
     cancellationBudget: 5000,
     tree: { rootSession, rootSessionId: 'root', monotonicDeadline: monotonicNow() + 30000 },
     loadout: {
+      harness: 'pi',
       profile: 'worker',
       role: 'editing',
       model: `${model.provider}/${model.id}`,
       modelFingerprint: modelFingerprint(model),
       providerFingerprint: await providerFingerprint(new ModelRegistry(runtime), model),
+      providerFingerprintVersion: 2,
       thinking: 'off',
       cwd: directory,
       agentDirectory: directory,
@@ -155,7 +162,7 @@ const nestedScenario = async (waitForParentReply: boolean) => {
     notices.resolve(undefined);
   });
   const results: { toolName: string; isError: boolean; text: string }[] = [];
-  let child: Task | undefined;
+  let child: ReturnType<typeof readTask> | undefined;
   let childStopped = false;
   const startSession = async (task: Task, parentSession: boolean) => {
     vi.stubEnv('TAU_WORKER_RECORD', join(root, task.taskId));
@@ -185,7 +192,7 @@ const nestedScenario = async (waitForParentReply: boolean) => {
       thinkingLevel: 'off',
       settingsManager,
       resourceLoader: loader,
-      sessionManager: SessionManager.open(task.nativeSessionFile),
+      sessionManager: SessionManager.open(requireNativeTask(task).nativeSessionFile),
     });
     sessions.push(session);
     session.subscribe((event) => {
@@ -325,9 +332,10 @@ const nestedScenario = async (waitForParentReply: boolean) => {
   await parentWaiting.promise;
   expect(parentCalls).toBe(6);
   expect(child).toBeDefined();
-  expect(child?.loadout.model).toBe(parent.loadout.model);
-  expect(child?.loadout.tools).toEqual(parent.loadout.tools);
-  expect(child?.loadout.integrations).toEqual(parent.loadout.integrations);
+  const childPi = child ? asPiLoadout(child.loadout) : undefined;
+  expect(childPi?.model).toBe(asPiLoadout(parent.loadout).model);
+  expect(childPi?.tools).toEqual(asPiLoadout(parent.loadout).tools);
+  expect(childPi?.integrations).toEqual(asPiLoadout(parent.loadout).integrations);
   expect(child?.loadout.instructions).toContain(parent.task);
   expect(
     results.some(

@@ -12,14 +12,16 @@ import {
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
-import { fixtureLoadout } from './fixtures/loadout.js';
-import { resolveInheritedLoadout, resolveLoadout } from './loadout.js';
+import { asPiLoadout, fixtureLoadout } from './fixtures/loadout.js';
+import { resolveInheritedLoadout } from './loadout.js';
 import * as loadoutModule from './loadout.js';
 import { resolveProfile, parseProfile } from './profiles.js';
 import { textLimit } from './types.js';
 import type { Task } from './types.js';
 
 const closure = (setting: string) => () => setting;
+const resolveLoadout = async (...arguments_: Parameters<typeof loadoutModule.resolveLoadout>) =>
+  asPiLoadout(await loadoutModule.resolveLoadout(...arguments_));
 
 it('allows only resolved API key rotation under explicitly versioned provider fingerprints', async ({
   onTestFinished,
@@ -49,12 +51,10 @@ it('allows only resolved API key rotation under explicitly versioned provider fi
   const registry = new ModelRegistry(runtime);
   const model = provider.getModel();
   const signal = new AbortController().signal;
-  const legacy = await loadoutModule.providerFingerprint(registry, model, signal);
-  const current = await loadoutModule.providerFingerprint(registry, model, signal, 2);
+  const current = await loadoutModule.providerFingerprint(registry, model, signal);
   resolution = { ...resolution, auth: { ...resolution.auth, apiKey: 'rotated' } };
 
-  expect(await loadoutModule.providerFingerprint(registry, model, signal, 2)).toBe(current);
-  expect(await loadoutModule.providerFingerprint(registry, model, signal)).not.toBe(legacy);
+  expect(await loadoutModule.providerFingerprint(registry, model, signal)).toBe(current);
   const rotated = resolution;
   for (const changed of [
     { ...rotated, auth: { ...rotated.auth, baseUrl: 'https://changed.invalid' } },
@@ -63,42 +63,42 @@ it('allows only resolved API key rotation under explicitly versioned provider fi
   ]) {
     resolution = changed;
     // oxlint-disable-next-line eslint/no-await-in-loop -- Compare each independent auth mutation against the same saved fingerprint.
-    expect(await loadoutModule.providerFingerprint(registry, model, signal, 2)).not.toBe(current);
+    expect(await loadoutModule.providerFingerprint(registry, model, signal)).not.toBe(current);
   }
   resolution = rotated;
   const registration = vi
     .spyOn(registry, 'getRegisteredProviderConfig')
     .mockReturnValue({ apiKey: 'literal-one' });
-  const literal = await loadoutModule.providerFingerprint(registry, model, signal, 2);
+  const literal = await loadoutModule.providerFingerprint(registry, model, signal);
   registration.mockReturnValue({ apiKey: 'literal-two' });
-  expect(await loadoutModule.providerFingerprint(registry, model, signal, 2)).not.toBe(literal);
+  expect(await loadoutModule.providerFingerprint(registry, model, signal)).not.toBe(literal);
   registration.mockRestore();
   const modelsPath = join(directory, 'models.json');
   writeFileSync(
     modelsPath,
     JSON.stringify({ providers: { unrelated: { apiKey: 'literal-one' } } }),
   );
-  const fileConfiguration = await loadoutModule.providerFingerprint(registry, model, signal, 2);
+  const fileConfiguration = await loadoutModule.providerFingerprint(registry, model, signal);
   expect(fileConfiguration).not.toBe(current);
   writeFileSync(
     modelsPath,
     JSON.stringify({ providers: { unrelated: { apiKey: 'literal-two' } } }),
   );
-  expect(await loadoutModule.providerFingerprint(registry, model, signal, 2)).not.toBe(
+  expect(await loadoutModule.providerFingerprint(registry, model, signal)).not.toBe(
     fileConfiguration,
   );
   rmSync(modelsPath);
 
   const auth = vi.spyOn(registry, 'getApiKeyAndHeaders');
   auth.mockResolvedValueOnce({ ok: false, error: 'Refresh failed' });
-  await expect(loadoutModule.providerFingerprint(registry, model, signal, 2)).rejects.toThrow(
+  await expect(loadoutModule.providerFingerprint(registry, model, signal)).rejects.toThrow(
     'authentication is unavailable',
   );
   const deferred =
     Promise.withResolvers<Awaited<ReturnType<ModelRegistry['getApiKeyAndHeaders']>>>();
   auth.mockReturnValueOnce(deferred.promise);
   const cancellation = new AbortController();
-  const pending = loadoutModule.providerFingerprint(registry, model, cancellation.signal, 2);
+  const pending = loadoutModule.providerFingerprint(registry, model, cancellation.signal);
   cancellation.abort();
   await expect(pending).rejects.toThrow('cancelled');
   expect(auth).toHaveBeenCalledTimes(2);
@@ -246,12 +246,11 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
   if (!selectedModel) {
     throw new Error('Missing fixture model.');
   }
-  const legacy = {
+  const recomputed = {
     ...resolved,
-    providerFingerprintVersion: undefined,
     providerFingerprint: await loadoutModule.providerFingerprint(registry, selectedModel),
   };
-  expect(await loadoutModule.validateSavedLoadout(legacy, context)).toEqual(legacy);
+  expect(await loadoutModule.validateSavedLoadout(recomputed, context)).toEqual(recomputed);
   const originalAuth = registry.getApiKeyAndHeaders.bind(registry);
   const rotatingAuth = vi
     .spyOn(registry, 'getApiKeyAndHeaders')
@@ -263,7 +262,7 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
   await expect(loadoutModule.validateSavedLoadout(resolved, context)).rejects.toThrow(
     'cannot reproduce',
   );
-  await expect(loadoutModule.validateSavedLoadout(legacy, context)).rejects.toThrow(
+  await expect(loadoutModule.validateSavedLoadout(recomputed, context)).rejects.toThrow(
     'cannot reproduce',
   );
   rotatingAuth.mockRestore();
@@ -275,17 +274,19 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
   expect(resolved.tools).toContain('subagent_follow_up');
   expect(resolved.tools).toContain('subagent_question');
   expect(resolved.tools).not.toContain('ask_user_question');
-  const legacyTools = {
+  const incompleteTools = {
     ...resolved,
     tools: resolved.tools.filter(
       (tool) =>
         !tool.startsWith('subagent_') || ['subagent_report', 'subagent_question'].includes(tool),
     ),
   };
-  expect(await loadoutModule.validateSavedLoadout(legacyTools, context)).toEqual(legacyTools);
-  const legacyQuestionnaire = { ...resolved, tools: [...resolved.tools, 'ask_user_question'] };
-  expect(await loadoutModule.validateSavedLoadout(legacyQuestionnaire, context)).toEqual(
-    legacyQuestionnaire,
+  await expect(loadoutModule.validateSavedLoadout(incompleteTools, context)).rejects.toThrow(
+    'Saved worker tools',
+  );
+  const directQuestionnaire = { ...resolved, tools: [...resolved.tools, 'ask_user_question'] };
+  await expect(loadoutModule.validateSavedLoadout(directQuestionnaire, context)).rejects.toThrow(
+    'Saved worker tools',
   );
   rmSync(join(directory, 'settings.json'));
   const withoutModel = { profile: 'worker', permissions: 'trusted-full-tools' };
@@ -388,7 +389,7 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
   expect(resolved.permissions).toBe('trusted-full-tools');
   expect(resolved.thinking).toBe('off');
   await expect(resolveLoadout({ ...request, harness: 'codex' }, context, pi)).rejects.toThrow(
-    'Only Pi',
+    'native-controls',
   );
   await expect(
     resolveLoadout({ ...request, permissions: 'read-only' }, context, pi),
@@ -569,6 +570,11 @@ it('refuses nested delegation once inherited instructions and scope exceed the s
     createdAt: Date.now(),
     deadline: Date.now() + 60_000,
     cancellationBudget: 5000,
+    tree: {
+      rootSession: join(directory, 'root.jsonl'),
+      rootSessionId: 'root',
+      monotonicDeadline: Date.now() + 60_000,
+    },
     loadout,
   } satisfies Task;
   const context = {

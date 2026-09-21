@@ -7,12 +7,7 @@ import { ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { asPiLoadout } from './fixtures/loadout.js';
-import {
-  checkWorkerRuntime,
-  providerFingerprint,
-  resolveLoadout,
-  validateSavedLoadout,
-} from './loadout.js';
+import { checkWorkerRuntime, resolveLoadout, validateSavedLoadout } from './loadout.js';
 import type { Loadout } from './types.js';
 
 const fixture = () => {
@@ -79,13 +74,16 @@ const fixture = () => {
     model: 'openai/fixture-model',
   };
   const parent = { getAllTools: () => [], getCommands: () => [] };
-  const worker = (loadout: Loadout) =>
-    ({
+  const worker = (value: Loadout) => {
+    const loadout = asPiLoadout(value);
+
+    return {
       getThinkingLevel: () => loadout.thinking,
       getCommands: () => [{ name: 'cc-safety-net', sourceInfo: { path: safety } }],
       getAllTools: () => loadout.tools.map((name) => ({ name })),
       setActiveTools: vi.fn<(tools: string[]) => void>(),
-    }) as unknown as Parameters<typeof checkWorkerRuntime>[1];
+    } as unknown as Parameters<typeof checkWorkerRuntime>[1];
+  };
 
   return { directory, configure, createContext, request, parent, worker };
 };
@@ -134,8 +132,6 @@ it('allows Pi credential rotation between saved resolution and startup with unch
     apiKey: 'credential-A',
   });
   const saved = asPiLoadout(await resolveLoadout(setup.request, original, setup.parent));
-  const { providerFingerprintVersion: _version, ...legacy } = saved;
-  legacy.providerFingerprint = await providerFingerprint(original.modelRegistry, original.model);
   writeFileSync(authPath, JSON.stringify({ openai: { type: 'api_key', key: 'credential-B' } }));
   await original.modelRegistry.refresh({ allowNetwork: false });
   const refreshed = original;
@@ -148,12 +144,4 @@ it('allows Pi credential rotation between saved resolution and startup with unch
   const worker = setup.worker(saved);
   await checkWorkerRuntime(saved, worker, refreshed);
   expect(worker.setActiveTools).toHaveBeenCalledWith(saved.tools);
-  await expect(validateSavedLoadout(legacy, refreshed)).rejects.toThrow(
-    'Legacy credential changes',
-  );
-  const legacyWorker = setup.worker(legacy);
-  await expect(checkWorkerRuntime(legacy, legacyWorker, refreshed)).rejects.toThrow(
-    'Legacy credential changes',
-  );
-  expect(legacyWorker.setActiveTools).not.toHaveBeenCalled();
 });

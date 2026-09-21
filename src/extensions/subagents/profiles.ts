@@ -6,8 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { Value } from 'typebox/value';
 
-import { claudeToolName, claudeTranscriptPath } from './claude.js';
-import { isClaudeLoadout, thinkingSchema } from './types.js';
+import { isPiLoadout, requireNativeTask, thinkingSchema } from './types.js';
 import type { Profile, Task } from './types.js';
 
 const matchField = (line: string) => line.match(/^([a-z-]+):\s*(.+)$/);
@@ -69,8 +68,8 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
     throw new Error('Profile requires an investigation or editing role.');
   }
   const harness = fields.get('cli') ?? 'pi';
-  if (harness !== 'pi' && harness !== 'claude') {
-    throw new Error('Only Pi and Claude Code workers are supported.');
+  if (!/^[a-z][a-z0-9-]{0,63}$/.test(harness) || harness === 'generic') {
+    throw new Error('Invalid herdr kind in profile.');
   }
   if ((fields.get('session-mode') ?? 'lineage-only') !== 'lineage-only') {
     throw new Error('Workers require fresh lineage-only sessions.');
@@ -139,15 +138,6 @@ export const resolveProfile = (
   return winner ? parseProfile(winner.content, winner.fallbackName, winner.source) : undefined;
 };
 
-export const claudeNativeIdentity = (agentDirectory: string, cwd: string) => {
-  const nativeSessionId = randomUUID();
-
-  return {
-    nativeSessionId,
-    nativeSessionFile: claudeTranscriptPath(agentDirectory, cwd, nativeSessionId),
-  };
-};
-
 export const seedSession = (task: Task): void => {
   const header = {
     type: 'session',
@@ -158,7 +148,10 @@ export const seedSession = (task: Task): void => {
     parentSession: task.parentSession,
   };
 
-  writeFileSync(task.nativeSessionFile, `${JSON.stringify(header)}\n`, { flag: 'wx', mode: 0o600 });
+  writeFileSync(requireNativeTask(task).nativeSessionFile, `${JSON.stringify(header)}\n`, {
+    flag: 'wx',
+    mode: 0o600,
+  });
 };
 
 export const nativeIdentity = (directory: string) => {
@@ -168,8 +161,8 @@ export const nativeIdentity = (directory: string) => {
 };
 
 export const workerPrompt = (task: Task): string => {
-  if (isClaudeLoadout(task.loadout)) {
-    return `${task.loadout.instructions}\n\nTask ${task.taskId} (${task.loadout.role}):\n${task.task}\n\nDeadline: ${new Date(task.deadline).toISOString()}. Work only within this task. Full tools and CC Safety Net are not a sandbox. Do not commit, merge, reset, or run extra model trials. Delegation through ${claudeToolName('subagent')} stays within this assigned scope and inherits exact settings. Capacity refusal is final for that request: do the work yourself or report the limit; never wait in a retry loop. End your turn to wait for child results; the parent sends them to you. Finish or cancel active children before reporting. Preserve unrelated edits. Do not resume arbitrary conversations. Ask the parent for clarification with ${claudeToolName('subagent_question')}, then end your turn; the Agent and AskUserQuestion tools are unavailable. Waiting does not extend the original deadline or authorize increased scope. Finish by calling ${claudeToolName('subagent_report')} once with outcome, summary, and evidence. Missing or uncertain handover is not success; do not retry it automatically.`;
+  if (!isPiLoadout(task.loadout)) {
+    throw new Error('Only Pi workers use the structured worker prompt.');
   }
 
   return `${task.loadout.instructions}\n\nTask ${task.taskId} (${task.loadout.role}):\n${task.task}\n\nDeadline: ${new Date(task.deadline).toISOString()}. Work only within this task. Full tools and CC Safety Net are not a sandbox. Do not commit, merge, reset, or run extra model trials. Delegation through subagent stays within this assigned scope and inherits exact settings. Capacity refusal is final for that request: do the work yourself or report the limit; never wait in a retry loop. End your turn to wait for child results; the controller wakes you. Finish or cancel active children before reporting. Preserve unrelated edits. Do not resume arbitrary conversations. Use subagent_follow_up only for an assigned follow-up within this scope. Ask the parent for clarification with subagent_question, never ask_user_question. Waiting does not extend the original deadline or authorize increased scope. Finish by calling subagent_report once with outcome, summary, and evidence. Missing or uncertain handover is not success; do not retry it automatically.`;

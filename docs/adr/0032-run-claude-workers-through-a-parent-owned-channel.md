@@ -1,6 +1,6 @@
 # ADR 0032: Run Claude workers through a parent-owned channel
 
-- Status: Proposed
+- Status: Superseded by [ADR 0033](./0033-use-one-generic-native-worker-workflow.md)
 - Date: 2026-09-18
 
 ## Context

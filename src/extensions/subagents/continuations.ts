@@ -6,6 +6,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { readEvent, readReport, readSuccessor } from './records.js';
+import { requireNativeTask } from './types.js';
 import type { Task } from './types.js';
 
 export const requireHandover = (directory: string, task: Task): void => {
@@ -96,7 +97,7 @@ export const refuseLiveNativeWriter = (agents: unknown, task: Task): void => {
         }
         throw error;
       }
-      if (path === realpathSync(task.nativeSessionFile)) {
+      if (path === realpathSync(requireNativeTask(task).nativeSessionFile)) {
         throw new Error(
           `Native session is already live in pane ${agent.pane_id}. No follow-up start.`,
         );

@@ -10,12 +10,11 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import { Value } from 'typebox/value';
 
-import { claudeRequiredTools } from './claude.js';
 import {
   acknowledgementSchema,
   eventSchema,
@@ -25,10 +24,11 @@ import {
   reportSchema,
   taskSchema,
   successorSchema,
-  isClaudeLoadout,
+  isGenericLoadout,
 } from './types.js';
 import type {
   Acknowledgement,
+  GenericLoadout,
   Question,
   Reply,
   Report,
@@ -101,6 +101,29 @@ export const readRecord = (directory: string, name: string): unknown => {
   }
 };
 
+const nameMatchesRole = (task: Task): boolean =>
+  task.name === undefined ||
+  task.name.startsWith(task.loadout.role === 'editing' ? 'worker-' : 'investigator-');
+
+const validateGenericTask = (task: Task, loadout: GenericLoadout): void => {
+  const reportRelative = relative(loadout.cwd, loadout.reportDirectory);
+  if (
+    task.version !== 2 ||
+    task.predecessorTaskId !== undefined ||
+    ['pi', 'generic'].includes(loadout.kind) ||
+    ![task.parentSession, loadout.cwd, loadout.reportDirectory, task.tree.rootSession].every(
+      isAbsolute,
+    ) ||
+    isAbsolute(reportRelative) ||
+    reportRelative === '..' ||
+    reportRelative.startsWith('../') ||
+    !nameMatchesRole(task) ||
+    (loadout.requestedModel !== undefined && !loadout.arguments.length)
+  ) {
+    throw new Error('Invalid generic worker identity, report area, or native configuration.');
+  }
+};
+
 export const validateTask = (value: unknown): Task => {
   if (!Value.Check(taskSchema, value)) {
     throw new Error('Invalid saved worker task or loadout.');
@@ -113,6 +136,14 @@ export const validateTask = (value: unknown): Task => {
   ) {
     throw new Error('Invalid fixed worker deadline.');
   }
+  if (isGenericLoadout(value.loadout)) {
+    validateGenericTask(value, value.loadout);
+
+    return value;
+  }
+  if (value.version !== 1) {
+    throw new Error('Native worker session identity is required.');
+  }
   if (
     ![
       value.nativeSessionFile,
@@ -121,14 +152,13 @@ export const validateTask = (value: unknown): Task => {
       value.loadout.agentDirectory,
       value.loadout.safetyExtension,
       ...value.loadout.integrations,
-      ...(value.tree ? [value.tree.rootSession] : []),
+      value.tree.rootSession,
     ].every(isAbsolute)
   ) {
     throw new Error('Worker paths must be absolute.');
   }
   if (
-    (value.name !== undefined &&
-      !value.name.startsWith(value.loadout.role === 'editing' ? 'worker-' : 'investigator-')) ||
+    !nameMatchesRole(value) ||
     value.predecessorTaskId === value.taskId ||
     value.taskId === value.nativeSessionId ||
     !value.loadout.integrations.includes(value.loadout.safetyExtension)
@@ -136,10 +166,9 @@ export const validateTask = (value: unknown): Task => {
     throw new Error('Invalid worker identity or missing safety integration.');
   }
 
-  const required = isClaudeLoadout(value.loadout)
-    ? claudeRequiredTools
-    : ['read', 'bash', 'edit', 'write', 'subagent_report'];
-  if (!required.every((tool) => value.loadout.tools.includes(tool))) {
+  const required = ['read', 'bash', 'edit', 'write', 'subagent_report'];
+  const tools = value.loadout.tools;
+  if (!required.every((tool) => tools.includes(tool))) {
     throw new Error('A trusted worker requires the coding and report tools.');
   }
 
@@ -319,7 +348,7 @@ const requireSavedTask = (directory: string, taskId: string): void => {
   }
 };
 
-const readOptionalRecord = (directory: string, name: string): unknown => {
+export const readOptionalRecord = (directory: string, name: string): unknown => {
   try {
     return readRecord(directory, name);
   } catch (error) {

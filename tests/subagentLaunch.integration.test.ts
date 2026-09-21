@@ -14,10 +14,13 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { runClient } from '../src/extensions/subagents/cancellation.js';
 import { WorkerController } from '../src/extensions/subagents/controller.js';
 import { fixtureModel } from '../src/extensions/subagents/fixtures/controlledProvider.js';
-import { asPiLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
+import {
+  asPiLoadout,
+  readPiTask as readTask,
+} from '../src/extensions/subagents/fixtures/loadout.js';
 import { searchHistory } from '../src/extensions/subagents/history.js';
 import { resolveLoadout, validateSavedLoadout } from '../src/extensions/subagents/loadout.js';
-import { readAcknowledgement, readReply, readTask } from '../src/extensions/subagents/records.js';
+import { readAcknowledgement, readReply } from '../src/extensions/subagents/records.js';
 import { object, result, terminalLocation } from '../src/extensions/subagents/terminal.js';
 import { isolatedHerdr } from './isolatedHerdr.js';
 
@@ -281,10 +284,14 @@ export default function (pi) {
       if (scenario === 'question completion') {
         const delivering = controller.reply(task.taskId, 'parent', answer);
         await deliveryEntered.promise;
+        const repeated = await controller.reply(task.taskId, 'parent', answer);
+        if (!repeated || !('workerAcknowledged' in repeated)) {
+          throw new Error('Expected a Pi reply receipt.');
+        }
         replyObservations.push(
           readReply(launched.directory, task.taskId, question.questionId)?.replyId,
           readAcknowledgement(launched.directory, task.taskId, question.questionId),
-          (await controller.reply(task.taskId, 'parent', answer)).workerAcknowledged,
+          repeated.workerAcknowledged,
           promptCount,
         );
         releaseDelivery.resolve(undefined);

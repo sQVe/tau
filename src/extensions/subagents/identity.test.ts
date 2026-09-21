@@ -104,7 +104,7 @@ it('authenticates a nested parent without trusting its environment locator', () 
   expect(() => authenticateParent(root, current, processIdentity)).toThrow('deadline');
 });
 
-it('refuses native forks and legacy workers rather than treating them as new root authority', () => {
+it('refuses native forks and tree-less saved workers rather than treating them as new root authority', () => {
   const { root, current, processIdentity, directory, task } = setup();
   const fork = { file: join(root, 'fork.jsonl'), id: 'fork' };
   writeFileSync(
@@ -115,10 +115,10 @@ it('refuses native forks and legacy workers rather than treating them as new roo
   expect(() => authenticateParent(root, fork, { processId: 9000, startedAt: 'new' })).toThrow(
     'identity',
   );
-  const { tree: _tree, ...legacy } = task;
-  writeFileSync(join(directory, 'task.json'), JSON.stringify(legacy));
+  const { tree: _tree, ...treeLess } = task;
+  writeFileSync(join(directory, 'task.json'), JSON.stringify(treeLess));
   expect(() => authenticateParent(root, current, processIdentity, directory)).toThrow(
-    'Legacy workers',
+    'Invalid saved worker task or loadout',
   );
 });
 

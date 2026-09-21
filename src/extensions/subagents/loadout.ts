@@ -1,8 +1,6 @@
 import { createHash } from 'node:crypto';
-import { accessSync, constants, existsSync, readFileSync, realpathSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { delimiter, isAbsolute, join, resolve } from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
+import { readFileSync, realpathSync } from 'node:fs';
+import { isAbsolute, join, resolve } from 'node:path';
 
 import { clampThinkingLevel } from '@earendil-works/pi-ai';
 import {
@@ -13,23 +11,14 @@ import {
   getAgentDir,
 } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { inheritedInstructions } from './admission.js';
-import {
-  channelScriptPath,
-  claudeBuiltinTools,
-  claudeChannelTools,
-  claudeEffort,
-  claudeToolName,
-  claudeVersion,
-  probeSafetyIntegration,
-  resolveClaudeSafetyPlugin,
-} from './claude.js';
+import { resolveGenericLoadout } from './genericLoadout.js';
+import type { NativeLaunchInput } from './genericLoadout.js';
 import { resolveProfile } from './profiles.js';
-import { harnessOf, isClaudeLoadout, loadoutSchema, textLimit } from './types.js';
-import type { ClaudeLoadout, Loadout, PiLoadout, Task } from './types.js';
+import { harnessOf, isPiLoadout, loadoutSchema, textLimit } from './types.js';
+import type { Loadout, PiLoadout, Task } from './types.js';
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object';
@@ -70,13 +59,6 @@ const fileDigest = (path: string): string =>
 // A missing integration is an error worth naming, so Pi reads every recorded path.
 export const integrationFingerprint = (paths: string[]): string =>
   modelFingerprint(paths.map((path) => ({ path, digest: fileDigest(path) })));
-
-// Claude's settings candidates are fingerprinted whether they exist or not: creating one changes
-// what the worker loads just as editing one does.
-export const claudeIntegrationFingerprint = (paths: string[]): string =>
-  modelFingerprint(
-    paths.map((path) => ({ path, digest: existsSync(path) ? fileDigest(path) : 'absent' })),
-  );
 
 const parentExtensionPaths = (pi: Pick<ExtensionAPI, 'getAllTools' | 'getCommands'>) => {
   const cliArguments = parseArgs(process.argv.slice(2));
@@ -156,11 +138,7 @@ export const providerConfiguration = async (
 
 const providerFingerprintValue = (
   configuration: Awaited<ReturnType<typeof providerConfiguration>>,
-  version: 1 | 2,
 ): string => {
-  if (version === 1) {
-    return modelFingerprint(configuration);
-  }
   const { apiKey: _resolvedKey, ...auth } = configuration.auth;
   let modelsConfiguration: string | null = null;
   try {
@@ -181,11 +159,10 @@ export const providerFingerprint = async (
   registry: ModelRegistry,
   model: { provider: string; id: string },
   signal: AbortSignal = AbortSignal.timeout(10_000),
-  version: 1 | 2 = 1,
 ): Promise<string> => {
   const configuration = await providerConfiguration(registry, model, signal);
   // Pi distributions can minify SDK wrappers differently. Compare implementations in the parent process, not across processes.
-  return providerFingerprintValue(configuration, version);
+  return providerFingerprintValue(configuration);
 };
 
 const resolveModel = (
@@ -245,9 +222,10 @@ const reconstructIntegrations = async (
   const reconstructed = await ModelRuntime.create({
     authPath: join(agentDirectory, 'auth.json'),
     modelsPath: join(agentDirectory, 'models.json'),
-    refreshOnCreate: false,
     signal,
   });
+  signal.throwIfAborted();
+
   const registry = new ModelRegistry(reconstructed);
   for (const registration of loaded.runtime.pendingProviderRegistrations) {
     registry.registerProvider(registration.name, registration.config);
@@ -263,238 +241,37 @@ const reconstructIntegrations = async (
   return { loaded, registry, safety };
 };
 
-const claudeConfigDirectory = (): string =>
-  // oxlint-disable-next-line node/no-process-env -- Claude Code reads this same variable to find its configuration.
-  realpathSync(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'));
+const piWorkerTools = (extensionTools: Iterable<string>): string[] =>
+  [
+    ...new Set([
+      'read',
+      'bash',
+      'edit',
+      'write',
+      ...extensionTools,
+      'subagent_report',
+      'subagent_question',
+    ]),
+  ].filter((tool) => tool !== 'ask_user_question');
 
-const managedSettingsPath = (): string =>
-  process.platform === 'darwin'
-    ? '/Library/Application Support/ClaudeCode/managed-settings.json'
-    : '/etc/claude-code/managed-settings.json';
-
-// Claude merges user, project, and local settings, and managed settings win over all of them.
-// Every candidate is recorded, present or not. Claude reads whichever exist when it starts, so a
-// file that appears after resolution must change the fingerprint rather than escape it.
-const claudeSettingsSources = (agentDirectory: string, cwd: string): string[] => [
-  join(agentDirectory, 'settings.json'),
-  join(cwd, '.claude', 'settings.json'),
-  join(cwd, '.claude', 'settings.local.json'),
-  managedSettingsPath(),
-];
-
-const claudeSettingsSchema = Type.Object({
-  permissions: Type.Optional(Type.Object({ defaultMode: Type.Optional(Type.String()) })),
-  skipDangerousModePermissionPrompt: Type.Optional(Type.Boolean()),
-  enabledPlugins: Type.Optional(Type.Record(Type.String(), Type.Boolean())),
-});
-
-const claudeSettings = (sources: string[]) => {
-  const merged = { mode: undefined as string | undefined, skipPrompt: false };
-  // A later source turns a plugin off as well as on, so track the last value rather than the union.
-  const enabled = new Map<string, boolean>();
-
-  for (const path of sources.filter((candidate) => existsSync(candidate))) {
-    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
-    if (!Value.Check(claudeSettingsSchema, parsed)) {
-      throw new Error(`Claude settings at ${path} are unusable for a worker launch.`);
-    }
-
-    merged.mode = parsed.permissions?.defaultMode ?? merged.mode;
-    merged.skipPrompt = parsed.skipDangerousModePermissionPrompt ?? merged.skipPrompt;
-
-    for (const [name, active] of Object.entries(parsed.enabledPlugins ?? {})) {
-      enabled.set(name, active);
-    }
-  }
-
-  return {
-    ...merged,
-    plugins: [...enabled].filter(([, active]) => active).map(([name]) => name),
-  };
-};
-
-const resolveExecutable = (name: string): string => {
-  // oxlint-disable-next-line node/no-process-env -- The canonical executable comes from this process's PATH, not the worker pane's interactive shell.
-  for (const entry of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
-    const candidate = join(entry, name);
-    try {
-      accessSync(candidate, constants.X_OK);
-
-      return realpathSync(candidate);
-    } catch {
-      // Keep searching; an unreadable or missing entry is not the executable.
-    }
-  }
-
-  throw new Error(`Claude workers need ${name} on PATH.`);
-};
-
-// Require saved permissions instead of granting them through a launch flag.
-const requireClaudePermissions = (settings: ReturnType<typeof claudeSettings>): void => {
-  if (settings.mode !== 'bypassPermissions') {
-    throw new Error(
-      `Claude workers need saved permission mode bypassPermissions for trusted-full-tools; this configuration resolves to ${settings.mode ?? 'default'}. Tau refuses rather than pass a permission flag.`,
-    );
-  }
-  if (!settings.skipPrompt) {
-    throw new Error(
-      'Claude would open its bypass-permissions confirmation at startup, which no worker can answer. Set skipDangerousModePermissionPrompt in your Claude settings first.',
-    );
-  }
-};
-
-const claudeIntegrations = (
-  sources: string[],
-  plugin: ReturnType<typeof resolveClaudeSafetyPlugin>,
-  channelScript: string,
-): string[] => [
-  ...new Set(
-    [...sources, plugin.hooksPath, plugin.entry, channelScript].map((path) =>
-      existsSync(path) ? realpathSync(path) : path,
-    ),
-  ),
-];
-
-const claudeProfile = (cwd: string, name: string) => {
-  const profile = resolveProfile(cwd, realpathSync(getAgentDir()), true, name);
-  if (!profile) {
-    throw new Error(`Worker profile not found: ${name}`);
-  }
-  if (profile.harnessSpecified && profile.harness !== 'claude') {
-    throw new Error(`Profile ${profile.name} is a ${profile.harness} profile, not a Claude one.`);
-  }
-
-  return profile;
-};
-
-export const resolveClaudeLoadout = async (
-  input: { profile: string; cwd?: string; model?: string; permissions: string },
-  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>,
-  signal: AbortSignal = AbortSignal.timeout(10_000),
-): Promise<ClaudeLoadout> => {
-  signal.throwIfAborted();
-
+const requirePiPermissions = (input: NativeLaunchInput): void => {
   if (input.permissions !== 'trusted-full-tools') {
     throw new Error('Workers require explicit trusted-full-tools permission.');
   }
-  if (!context.isProjectTrusted()) {
-    throw new Error('Worker launch requires a trusted project.');
+  if (input.nativeArguments !== undefined || input.reportDirectory !== undefined) {
+    throw new Error('Pi workers do not accept native launch arguments or report directories.');
   }
-
-  const cwd = realpathSync(resolve(context.cwd, input.cwd ?? '.'));
-  // A different project needs its own trust decision, not the parent's inherited approval.
-  if (cwd !== realpathSync(context.cwd)) {
-    throw new Error('Launch from the target cwd after trusting that project.');
-  }
-
-  const agentDirectory = claudeConfigDirectory();
-  const profile = claudeProfile(cwd, input.profile);
-  const model = input.model ?? profile.model;
-  if (!model || /\s/.test(model)) {
-    throw new Error(
-      'Set an exact Claude model for this worker, such as claude-sonnet-5. There is no fallback.',
-    );
-  }
-
-  const sources = claudeSettingsSources(agentDirectory, cwd);
-  const settings = claudeSettings(sources);
-  requireClaudePermissions(settings);
-
-  const plugin = resolveClaudeSafetyPlugin(agentDirectory, settings.plugins);
-  const executable = resolveExecutable('claude');
-  const channelScript = realpathSync(channelScriptPath());
-
-  const loadout: ClaudeLoadout = {
-    harness: 'claude',
-    profile: profile.name,
-    role: profile.role,
-    model,
-    executable,
-    executableVersion: await claudeVersion(executable),
-    thinking: profile.thinking,
-    cwd,
-    agentDirectory,
-    permissions: 'trusted-full-tools',
-    permissionMode: 'bypassPermissions',
-    channelExecutable: process.execPath,
-    channelScript,
-    tools: [...claudeBuiltinTools, ...claudeChannelTools.map((tool) => claudeToolName(tool))],
-    integrations: claudeIntegrations(sources, plugin, channelScript),
-    integrationFingerprint: '',
-    safetyExtension: plugin.entry,
-    safetyArguments: plugin.arguments,
-    instructions: profile.instructions,
-  };
-
-  claudeEffort(loadout.thinking);
-  await probeSafetyIntegration(loadout);
-  signal.throwIfAborted();
-
-  return {
-    ...loadout,
-    integrationFingerprint: claudeIntegrationFingerprint(loadout.integrations),
-  };
-};
-
-export const validateSavedClaudeLoadout = async (
-  loadout: ClaudeLoadout,
-  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>,
-): Promise<ClaudeLoadout> => {
-  if (!context.isProjectTrusted()) {
-    throw new Error('Saved worker replay requires a currently trusted project.');
-  }
-  if (
-    realpathSync(context.cwd) !== loadout.cwd ||
-    claudeConfigDirectory() !== loadout.agentDirectory
-  ) {
-    throw new Error('Worker cwd or configuration directory changed.');
-  }
-
-  const sources = claudeSettingsSources(loadout.agentDirectory, loadout.cwd);
-  const settings = claudeSettings(sources);
-  requireClaudePermissions(settings);
-
-  const plugin = resolveClaudeSafetyPlugin(loadout.agentDirectory, settings.plugins);
-  const integrations = claudeIntegrations(sources, plugin, loadout.channelScript);
-  if (
-    !isDeepStrictEqual(integrations, loadout.integrations) ||
-    plugin.entry !== loadout.safetyExtension ||
-    !isDeepStrictEqual(plugin.arguments, loadout.safetyArguments) ||
-    claudeIntegrationFingerprint(loadout.integrations) !== loadout.integrationFingerprint
-  ) {
-    throw new Error(
-      'Saved Claude settings, safety plugin, or channel changed. A changed configuration requires a fresh task.',
-    );
-  }
-
-  const executable = resolveExecutable('claude');
-  if (executable !== loadout.executable) {
-    throw new Error('The saved Claude executable is no longer the one on PATH.');
-  }
-  const executableVersion = await claudeVersion(executable);
-  if (executableVersion !== loadout.executableVersion) {
-    throw new Error('Claude Code was updated after this task was saved; start a fresh task.');
-  }
-
-  await probeSafetyIntegration(loadout);
-
-  return loadout;
 };
 
 export const resolveLoadout = async (
-  input: { profile: string; cwd?: string; model?: string; harness?: string; permissions: string },
-  context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'isProjectTrusted'>,
+  input: NativeLaunchInput & { profile: string; cwd?: string; harness?: string },
+  context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'isProjectTrusted'> &
+    Partial<Pick<ExtensionContext, 'hasUI' | 'ui'>>,
   pi: Pick<ExtensionAPI, 'getAllTools' | 'getCommands'>,
   signal: AbortSignal = AbortSignal.timeout(10_000),
 ): Promise<Loadout> => {
   signal.throwIfAborted();
 
-  if (!['pi', 'claude', undefined].includes(input.harness)) {
-    throw new Error('Only Pi and Claude Code workers are supported.');
-  }
-  if (input.permissions !== 'trusted-full-tools') {
-    throw new Error('Workers require explicit trusted-full-tools permission.');
-  }
   if (!context.isProjectTrusted()) {
     throw new Error('Worker launch requires a trusted project.');
   }
@@ -510,12 +287,14 @@ export const resolveLoadout = async (
   if (!profile) {
     throw new Error(`Worker profile not found: ${input.profile}`);
   }
-  if ((input.harness ?? profile.harness) === 'claude') {
-    return resolveClaudeLoadout(input, context, signal);
+  const kind = input.harness ?? profile.harness;
+  if (profile.harnessSpecified && profile.harness !== kind) {
+    throw new Error(`Profile ${profile.name} is a ${profile.harness} profile, not a ${kind} one.`);
   }
-  if (profile.harnessSpecified && profile.harness !== 'pi') {
-    throw new Error(`Profile ${profile.name} is a ${profile.harness} profile, not a Pi one.`);
+  if (kind !== 'pi') {
+    return resolveGenericLoadout(input, profile, kind, cwd, context, signal);
   }
+  requirePiPermissions(input);
 
   const model = resolveModel(input.model, profile.model, context.modelRegistry);
   const separator = model.indexOf('/');
@@ -551,24 +330,17 @@ export const resolveLoadout = async (
   checkProviderConfiguration(parentConfiguration, reconstructedConfiguration);
 
   const integrations = loaded.extensions.map((extension) => realpathSync(extension.path));
-  const tools = [
-    ...new Set([
-      'read',
-      'bash',
-      'edit',
-      'write',
-      ...loaded.extensions.flatMap((extension) => Array.from(extension.tools.keys())),
-      'subagent_report',
-      'subagent_question',
-    ]),
-  ].filter((tool) => tool !== 'ask_user_question');
+  const tools = piWorkerTools(
+    loaded.extensions.flatMap((extension) => Array.from(extension.tools.keys())),
+  );
 
   return {
+    harness: 'pi',
     profile: profile.name,
     role: profile.role,
     model,
     modelFingerprint: modelFingerprint(resolvedModel),
-    providerFingerprint: providerFingerprintValue(reconstructedConfiguration, 2),
+    providerFingerprint: providerFingerprintValue(reconstructedConfiguration),
     providerFingerprintVersion: 2,
     thinking: clampThinkingLevel(resolvedModel, profile.thinking),
     cwd,
@@ -586,23 +358,24 @@ export const resolveLoadout = async (
 const validateSavedLoadoutShape = (
   value: unknown,
   context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>,
-): Loadout => {
+): PiLoadout => {
   if (!Value.Check(loadoutSchema, value)) {
     throw new Error('Invalid saved worker loadout.');
   }
   const loadout = value;
+  if (!isPiLoadout(loadout)) {
+    throw new Error('Non-Pi continuation is unsupported; start a fresh task.');
+  }
   if (!context.isProjectTrusted()) {
     throw new Error('Saved worker replay requires a currently trusted project.');
   }
   if (
     realpathSync(context.cwd) !== loadout.cwd ||
-    (!isClaudeLoadout(loadout) && realpathSync(getAgentDir()) !== loadout.agentDirectory)
+    realpathSync(getAgentDir()) !== loadout.agentDirectory
   ) {
     throw new Error('Worker cwd or configuration directory changed.');
   }
-  const fingerprint = isClaudeLoadout(loadout)
-    ? claudeIntegrationFingerprint
-    : integrationFingerprint;
+  const fingerprint = integrationFingerprint;
   if (
     !loadout.integrations.every(isAbsolute) ||
     !loadout.integrations.includes(loadout.safetyExtension) ||
@@ -618,13 +391,9 @@ export const validateSavedLoadout = async (
   value: unknown,
   context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'isProjectTrusted'>,
   signal: AbortSignal = AbortSignal.timeout(10_000),
-): Promise<Loadout> => {
+): Promise<PiLoadout> => {
   signal.throwIfAborted();
   const loadout = validateSavedLoadoutShape(value, context);
-  if (isClaudeLoadout(loadout)) {
-    return validateSavedClaudeLoadout(loadout, context);
-  }
-
   const { loaded, registry, safety } = await reconstructIntegrations(
     loadout.cwd,
     loadout.agentDirectory,
@@ -638,22 +407,11 @@ export const validateSavedLoadout = async (
   ) {
     throw new Error('Saved worker integrations could not be replayed exactly.');
   }
-  const tools = new Set([
-    'read',
-    'bash',
-    'edit',
-    'write',
-    'subagent_report',
-    'subagent_question',
-    ...loaded.extensions.flatMap((extension) => Array.from(extension.tools.keys())),
-  ]);
-  if (
-    loadout.tools.some((tool) => !tools.has(tool)) ||
-    !['read', 'bash', 'edit', 'write', 'subagent_report'].every((tool) =>
-      loadout.tools.includes(tool),
-    )
-  ) {
-    throw new Error('Saved worker tools are unavailable.');
+  const tools = new Set(
+    piWorkerTools(loaded.extensions.flatMap((extension) => Array.from(extension.tools.keys()))),
+  );
+  if (loadout.tools.length !== tools.size || loadout.tools.some((tool) => !tools.has(tool))) {
+    throw new Error('Saved worker tools do not match the current worker runtime.');
   }
 
   const separator = loadout.model.indexOf('/');
@@ -679,11 +437,10 @@ export const validateSavedLoadout = async (
     currentModel,
     signal,
   );
-  const version = loadout.providerFingerprintVersion ?? 1;
   checkProviderConfiguration(currentConfiguration, configuration);
-  if (providerFingerprintValue(configuration, version) !== loadout.providerFingerprint) {
+  if (providerFingerprintValue(configuration) !== loadout.providerFingerprint) {
     throw new Error(
-      'Worker provider configuration differs from the saved loadout. Legacy credential changes and changed auth headers require a fresh task.',
+      'Worker provider configuration differs from the saved loadout. Changed credentials or auth headers require a fresh task.',
     );
   }
   signal.throwIfAborted();
@@ -699,9 +456,10 @@ const checkLiveProviderConfiguration = async (
   const runtime = await ModelRuntime.create({
     authPath: join(getAgentDir(), 'auth.json'),
     modelsPath: join(getAgentDir(), 'models.json'),
-    refreshOnCreate: false,
     signal,
   });
+  signal.throwIfAborted();
+
   const reconstructed = new ModelRegistry(runtime);
   // Replay public provider declarations without running extension factories again inside an active worker.
   const registration = registry.getRegisteredProviderConfig(model.provider);
@@ -753,12 +511,9 @@ export const checkWorkerRuntime = async (
     );
   }
   const configuration = await checkLiveProviderConfiguration(context.modelRegistry, model, signal);
-  if (
-    providerFingerprintValue(configuration, loadout.providerFingerprintVersion ?? 1) !==
-    loadout.providerFingerprint
-  ) {
+  if (providerFingerprintValue(configuration) !== loadout.providerFingerprint) {
     throw new Error(
-      'Worker provider configuration differs from the saved loadout. Legacy credential changes and changed auth headers require a fresh task.',
+      'Worker provider configuration differs from the saved loadout. Changed credentials or auth headers require a fresh task.',
     );
   }
   if (
@@ -771,18 +526,33 @@ export const checkWorkerRuntime = async (
   if (!safety || realpathSync(safety.sourceInfo.path) !== loadout.safetyExtension) {
     throw new Error('The saved CC Safety Net integration is not active.');
   }
-  const available = new Set(pi.getAllTools().map((tool) => tool.name));
-  if (loadout.tools.some((tool) => !available.has(tool))) {
-    throw new Error('Saved worker tools are unavailable.');
+  const available = new Set(
+    piWorkerTools(
+      pi
+        .getAllTools()
+        .filter(
+          (tool: { sourceInfo?: { source?: string } }) => tool.sourceInfo?.source !== 'builtin',
+        )
+        .map((tool) => tool.name),
+    ),
+  );
+  if (
+    loadout.tools.length !== available.size ||
+    loadout.tools.some((tool) => !available.has(tool))
+  ) {
+    throw new Error('Saved worker tools do not match the current worker runtime.');
   }
 
   pi.setActiveTools(loadout.tools);
 };
 
 const inheritedProfile = (parent: Task, input: { profile: string }, trusted: boolean) => {
+  if (!isPiLoadout(parent.loadout)) {
+    throw new Error('Non-Pi workers have no Tau nesting channel.');
+  }
   const profile = resolveProfile(
     parent.loadout.cwd,
-    isClaudeLoadout(parent.loadout) ? realpathSync(getAgentDir()) : parent.loadout.agentDirectory,
+    parent.loadout.agentDirectory,
     trusted,
     input.profile,
   );
@@ -804,39 +574,16 @@ const inheritedProfile = (parent: Task, input: { profile: string }, trusted: boo
   return { profile, instructions };
 };
 
-export const resolveInheritedClaudeLoadout = async (
-  parent: Task,
-  inherited: ClaudeLoadout,
-  input: { profile: string; cwd?: string; model?: string; harness?: string; permissions: string },
-  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>,
-): Promise<ClaudeLoadout> => {
-  if (
-    input.permissions !== inherited.permissions ||
-    (input.harness !== undefined && input.harness !== 'claude') ||
-    (input.model !== undefined && input.model !== inherited.model) ||
-    realpathSync(resolve(context.cwd, input.cwd ?? '.')) !== inherited.cwd
-  ) {
-    throw new Error(
-      'Nested workers require the exact inherited model, permissions, harness, and cwd.',
-    );
-  }
-
-  const { profile, instructions } = inheritedProfile(parent, input, context.isProjectTrusted());
-  await validateSavedClaudeLoadout(inherited, context);
-
-  return { ...inherited, profile: profile.name, role: profile.role, instructions };
-};
-
 export const resolveInheritedLoadout = async (
   parent: Task,
   input: { profile: string; cwd?: string; model?: string; harness?: string; permissions: string },
   context: ExtensionContext,
   pi: ExtensionAPI,
   signal: AbortSignal,
-): Promise<Loadout> => {
+): Promise<PiLoadout> => {
   const inherited = parent.loadout;
-  if (isClaudeLoadout(inherited)) {
-    return resolveInheritedClaudeLoadout(parent, inherited, input, context);
+  if (!isPiLoadout(inherited)) {
+    throw new Error('Non-Pi workers have no Tau nesting channel.');
   }
   if (
     input.permissions !== inherited.permissions ||

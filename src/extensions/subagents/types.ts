@@ -30,35 +30,34 @@ const sharedLoadout = {
 export const piLoadoutSchema = Type.Object(
   {
     ...sharedLoadout,
-    // Records saved before Claude support carry no harness and remain Pi tasks.
-    harness: Type.Optional(Type.Literal('pi')),
+    harness: Type.Literal('pi'),
     model: Type.String({ pattern: '^[^/\\s]+/[^\\s]+$' }),
     modelFingerprint: Type.String({ minLength: 64, maxLength: 64 }),
     providerFingerprint: Type.String({ minLength: 64, maxLength: 64 }),
-    // Missing versions retain the original credential-sensitive fingerprint semantics.
-    providerFingerprintVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2)])),
-    // Older version 1 tasks lack this audit field; startup still replays the saved integrations.
-    noExtensions: Type.Optional(Type.Boolean()),
+    providerFingerprintVersion: Type.Literal(2),
+    noExtensions: Type.Boolean(),
   },
   { additionalProperties: false },
 );
-export const claudeLoadoutSchema = Type.Object(
+export const genericLoadoutSchema = Type.Object(
   {
-    ...sharedLoadout,
-    harness: Type.Literal('claude'),
-    model: Type.String({ pattern: '^[^\\s]+$' }),
-    // Claude resolves its own credentials; Tau records the launched binary instead of a provider fingerprint.
-    executable: text,
-    executableVersion: text,
-    // Tau never passes a permission flag. This records the mode the worker must report at runtime.
-    permissionMode: Type.Literal('bypassPermissions'),
-    safetyArguments: Type.Array(Type.String({ minLength: 1 }), { maxItems: 20 }),
-    channelExecutable: text,
-    channelScript: text,
+    harness: Type.Literal('generic'),
+    kind: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 64 }),
+    profile: text,
+    role: Type.Union([Type.Literal('investigation'), Type.Literal('editing')]),
+    cwd: text,
+    permissions: Type.Literal('native-controls'),
+    arguments: Type.Array(Type.String({ maxLength: 8000, pattern: '^[^\\u0000]*$' }), {
+      maxItems: 100,
+    }),
+    requestedModel: Type.Optional(text),
+    reportDirectory: text,
+    configurationApproved: Type.Literal(true),
+    instructions: text,
   },
   { additionalProperties: false },
 );
-export const loadoutSchema = Type.Union([piLoadoutSchema, claudeLoadoutSchema]);
+export const loadoutSchema = Type.Union([piLoadoutSchema, genericLoadoutSchema]);
 export const treeSchema = Type.Object(
   {
     rootSession: text,
@@ -68,26 +67,42 @@ export const treeSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export const taskSchema = Type.Object(
-  {
-    version: Type.Literal(1),
-    taskId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
-    name: Type.Optional(Type.String({ pattern: '^(worker|investigator)-[a-z0-9]{2}$' })),
-    predecessorTaskId: Type.Optional(Type.String({ pattern: '^[a-zA-Z0-9-]+$' })),
-    task: text,
-    parentSession: text,
-    parentSessionId: text,
-    ownerId: text,
-    nativeSessionId: text,
-    nativeSessionFile: text,
-    createdAt: Type.Integer({ minimum: 1 }),
-    deadline: Type.Integer({ minimum: 1 }),
-    cancellationBudget: Type.Integer({ minimum: 1, maximum: 30_000 }),
-    tree: Type.Optional(treeSchema),
-    loadout: loadoutSchema,
-  },
-  { additionalProperties: false },
-);
+const taskProperties = {
+  taskId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
+  name: Type.Optional(Type.String({ pattern: '^(worker|investigator)-[a-z0-9]{2}$' })),
+  predecessorTaskId: Type.Optional(Type.String({ pattern: '^[a-zA-Z0-9-]+$' })),
+  task: text,
+  parentSession: text,
+  parentSessionId: text,
+  ownerId: text,
+
+  createdAt: Type.Integer({ minimum: 1 }),
+  deadline: Type.Integer({ minimum: 1 }),
+  cancellationBudget: Type.Integer({ minimum: 1, maximum: 30_000 }),
+  tree: treeSchema,
+};
+export const taskSchema = Type.Union([
+  Type.Object(
+    {
+      ...taskProperties,
+      version: Type.Literal(1),
+      nativeSessionId: text,
+      nativeSessionFile: text,
+      loadout: piLoadoutSchema,
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...taskProperties,
+      version: Type.Literal(2),
+      nativeSessionId: Type.Optional(Type.Never()),
+      nativeSessionFile: Type.Optional(Type.Never()),
+      loadout: genericLoadoutSchema,
+    },
+    { additionalProperties: false },
+  ),
+]);
 export const successorSchema = Type.Object(
   {
     version: Type.Literal(1),
@@ -160,30 +175,24 @@ export type Reply = Static<typeof replySchema>;
 export type Acknowledgement = Static<typeof acknowledgementSchema>;
 export type Loadout = Static<typeof loadoutSchema>;
 export type PiLoadout = Static<typeof piLoadoutSchema>;
-export type ClaudeLoadout = Static<typeof claudeLoadoutSchema>;
-export type Harness = 'pi' | 'claude';
-export const harnessOf = (loadout: Loadout): Harness => loadout.harness ?? 'pi';
-export const isClaudeLoadout = (loadout: Loadout): loadout is ClaudeLoadout =>
-  loadout.harness === 'claude';
+export type GenericLoadout = Static<typeof genericLoadoutSchema>;
+export type Harness = string;
+export const isGenericLoadout = (loadout: Loadout): loadout is GenericLoadout =>
+  loadout.harness === 'generic';
+export const isPiLoadout = (loadout: Loadout): loadout is PiLoadout => loadout.harness === 'pi';
+export const harnessOf = (loadout: Loadout): Harness =>
+  isGenericLoadout(loadout) ? loadout.kind : loadout.harness;
 export type Task = Static<typeof taskSchema>;
+export type NativeTask = Extract<Task, { version: 1 }>;
+export const requireNativeTask = (task: Task): NativeTask => {
+  if (task.version !== 1) {
+    throw new Error('This task has no reproducible Pi native session.');
+  }
+
+  return task;
+};
 export type Report = Static<typeof reportSchema>;
 export type TaskEvent = Static<typeof eventSchema>;
-
-export interface ChannelTool {
-  name: string;
-  description: string;
-  parameters: unknown;
-  execute: (input: Record<string, unknown>) => Promise<unknown>;
-}
-
-export interface ClaudeChannelOptions {
-  directory: string;
-  task: Task;
-  socketPath: string;
-  // Nested delegation tools stay with the controller that owns admission, placement, and cancellation.
-  delegation?: () => ChannelTool[];
-  children?: () => { active: number; uncertain: string[] };
-}
 
 export interface Profile {
   name: string;
@@ -191,7 +200,7 @@ export interface Profile {
   harness: Harness;
   harnessSpecified?: boolean;
   model: string | undefined;
-  thinking: Loadout['thinking'];
+  thinking: PiLoadout['thinking'];
   thinkingSpecified?: boolean;
   instructions: string;
   source: string;

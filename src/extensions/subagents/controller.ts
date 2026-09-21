@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -18,25 +18,24 @@ import {
 } from './admission.js';
 import { cancelOwnedWorker, matchesWorker, runClient, workerStopped } from './cancellation.js';
 import type { OwnedWorker } from './cancellation.js';
-import {
-  claudeArguments,
-  claudeChannelSocket,
-  claudeEnvironment,
-  claudeMcpDocument,
-  claudeSettingsDocument,
-  claudeToolName,
-  claudeUsage,
-} from './claude.js';
-import { ClaudeChannel } from './claudeHost.js';
 import { requireHandover, refuseLiveNativeWriter } from './continuations.js';
-import { authorizeHistoryTask, sessionRoot } from './history.js';
-import { authenticateParent, channelAuthority, currentProcessIdentity } from './identity.js';
-import { resolveInheritedClaudeLoadout, validateSavedLoadout } from './loadout.js';
+import {
+  acceptGenericReport,
+  genericPrompt,
+  genericReportPath,
+  prepareGenericReport,
+  readGenericReference,
+  readGenericSubmission,
+  submitGenericText,
+} from './generic.js';
+import { authorizeHistoryTask } from './history.js';
+import { authenticateParent, currentProcessIdentity } from './identity.js';
+import { validateSavedLoadout } from './loadout.js';
 import { allocateName, nameSuffix } from './names.js';
 import { validateNative } from './native.js';
 import { WorkerPlacement } from './placement.js';
 import type { Visibility } from './placement.js';
-import { claudeNativeIdentity, nativeIdentity, seedSession, workerPrompt } from './profiles.js';
+import { nativeIdentity, seedSession } from './profiles.js';
 import {
   acceptReply,
   claimSuccessor,
@@ -54,47 +53,9 @@ import {
   validateTask,
 } from './records.js';
 import { object, resolveTerminal, result, text } from './terminal.js';
-import { harnessOf, isClaudeLoadout } from './types.js';
-import type {
-  ChannelTool,
-  ClaudeLoadout,
-  Loadout,
-  Question,
-  Report,
-  Task,
-  TaskEvent,
-} from './types.js';
+import { harnessOf, isGenericLoadout, isPiLoadout, requireNativeTask } from './types.js';
+import type { Loadout, Question, Report, Task, TaskEvent } from './types.js';
 
-const visibilitySchema = Type.Optional(
-  Type.Union([Type.Literal('foreground'), Type.Literal('background')]),
-);
-const nestedLaunchSchema = Type.Object(
-  {
-    task: Type.String({ minLength: 1, maxLength: 32_000 }),
-    profile: Type.String({ minLength: 1 }),
-    timeoutSeconds: Type.Integer({ minimum: 10, maximum: 86_400 }),
-    cwd: Type.Optional(Type.String()),
-    model: Type.Optional(Type.String()),
-    harness: Type.Optional(Type.String()),
-    visibility: visibilitySchema,
-  },
-  { additionalProperties: false },
-);
-const statusSchema = Type.Object(
-  { taskId: Type.String(), questionId: Type.Optional(Type.String()) },
-  { additionalProperties: false },
-);
-const replyToolSchema = Type.Object(
-  {
-    taskId: Type.String(),
-    questionId: Type.String(),
-    replyId: Type.String({ pattern: '^[a-zA-Z0-9-]{1,128}$' }),
-    reply: Type.String({ minLength: 1, maxLength: 32_000 }),
-    scopeUnchanged: Type.Boolean(),
-  },
-  { additionalProperties: false },
-);
-const cancelSchema = Type.Object({ taskId: Type.String() }, { additionalProperties: false });
 const agentSessionSchema = Type.Object({ value: Type.String({ minLength: 1 }) });
 
 export type HerdrClient = (
@@ -123,15 +84,15 @@ const processAbsent = (processId: number): boolean => {
 };
 
 export const workerArguments = (task: Task): string[] => {
-  if (isClaudeLoadout(task.loadout)) {
-    throw new Error('Claude workers launch through their own canonical command.');
+  if (!isPiLoadout(task.loadout)) {
+    throw new Error('Only Pi workers use Pi launch arguments.');
   }
   const separator = task.loadout.model.indexOf('/');
 
   return [
     '--approve',
     '--session',
-    task.nativeSessionFile,
+    requireNativeTask(task).nativeSessionFile,
     '--provider',
     task.loadout.model.slice(0, separator),
     '--model',
@@ -188,20 +149,17 @@ const unconfirmedDescendants = (root: string, task: Task) => {
   }
 };
 
-const nativeUsage = (task: Task) => {
-  if (!isClaudeLoadout(task.loadout)) {
-    return {
-      available: false as const,
-      reason: 'Pi reports worker usage in its own session totals.',
-    };
-  }
+const nativeDescription = (task: Task, directory: string): string =>
+  isGenericLoadout(task.loadout)
+    ? `Native reference, when observed: ${join(directory, 'nativeReference.json')}.`
+    : `Native session: ${task.nativeSessionId} (${task.nativeSessionFile}).`;
 
-  try {
-    return { available: true as const, ...claudeUsage(task.nativeSessionFile) };
-  } catch (error) {
-    return { available: false as const, reason: String(error) };
-  }
-};
+const nativeUsage = (task: Task) => ({
+  available: false as const,
+  reason: isPiLoadout(task.loadout)
+    ? 'Pi reports worker usage in its own session totals.'
+    : 'Native usage and model verification are unavailable through this generic interface.',
+});
 
 export const taskStatus = (directory: string, activeOwner?: string, enforcing = true) => {
   const task = readTask(directory);
@@ -230,7 +188,7 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
     stopped: Boolean(settled?.stopped) || Boolean(cleanup?.stopped),
     deadline: task.deadline,
     capacityHeld: cleanup?.stopped !== true,
-    reservationDirectory: task.tree ? admissionDirectory(dirname(directory), task.tree) : undefined,
+    reservationDirectory: admissionDirectory(dirname(directory), task.tree),
     unconfirmedChildren: descendants.children,
     descendantEvidence: descendants.evidence,
     harness: harnessOf(task.loadout),
@@ -258,15 +216,52 @@ interface Handle {
   expires: number;
   removeLaunchAbort?: () => void;
   workerNeverStarted: boolean;
-  // A Claude worker reaches its own process after the pane shell runs the command.
   workerObserved?: boolean;
-  channel?: ClaudeChannel;
-  nested?: WorkerController;
+  shell?: { processId: number; startedAt: string };
+  startError?: string;
+  nativeState?: string;
+  observationIssue?: string;
   recordErrors: string[];
   cleanupDetail?: string;
   cleanupFinished?: boolean;
   notifiedQuestions: Set<string>;
 }
+
+const genericStatus = (directory: string, task: Task, handle?: Handle) => {
+  if (!isGenericLoadout(task.loadout)) {
+    return {};
+  }
+
+  return {
+    // Keep the generic harness separate from the native kind name in status.
+    harness: 'generic' as const,
+    nativeKind: task.loadout.kind,
+    nativeState: handle?.nativeState ?? 'unknown',
+    observationIssue: handle?.observationIssue,
+    nativeReference: readGenericReference(directory, task.taskId),
+    nativeConfiguration: task.loadout,
+    requestedModel: task.loadout.requestedModel,
+    observedModel: null,
+    modelVerification:
+      'Unavailable. Native arguments record a request, not proof of the model used.',
+    reportPath: genericReportPath(task),
+    assignment: readGenericSubmission(directory, task.taskId, 'assignment'),
+    safety:
+      'Native controls; Tau does not certify runtime enforcement. Approval dialogs require user action.',
+  };
+};
+
+const recordNativeIssue = (handle: Handle, filename: string, error: unknown): void => {
+  const detail = String(error).slice(0, 4000);
+  handle.observationIssue = detail;
+  try {
+    if (!existsSync(join(handle.directory, filename))) {
+      publish(handle.directory, filename, { taskId: handle.task.taskId, detail });
+    }
+  } catch (recordError) {
+    handle.recordErrors.push(String(recordError));
+  }
+};
 
 // One remainder for every budget question; two clocks disagree within a millisecond.
 const remainingWorkBudget = (handle: Handle): number =>
@@ -286,7 +281,7 @@ const ensureReplyActive = (handle: Handle): void => {
   workBudget(handle);
   const { directory, task } = handle;
   if (
-    !readEvent(directory, task.taskId, 'accepted') ||
+    (!isGenericLoadout(task.loadout) && !readEvent(directory, task.taskId, 'accepted')) ||
     (['settled', 'startupFailure', 'cleanup', 'cancelled', 'timeout'] as const).some((kind) =>
       readEvent(directory, task.taskId, kind),
     ) ||
@@ -295,11 +290,6 @@ const ensureReplyActive = (handle: Handle): void => {
     throw new Error('Worker task is inactive.');
   }
 };
-
-// A Claude worker is typed into the pane shell, so its process and agent identity appear a moment later.
-class PendingStartError extends Error {
-  override name = 'PendingStartError';
-}
 
 const checkForeground = (
   information: Record<string, unknown>,
@@ -317,7 +307,7 @@ const checkForeground = (
   }
 
   if (starting) {
-    throw new PendingStartError('Claude has not reached its own process yet.');
+    throw new Error('Native worker has not reached its own process yet.');
   }
 
   throw new Error('Worker exited before readiness. No task dispatch or retry.');
@@ -333,7 +323,7 @@ const readAgent = async (
     return object(result(await call(['agent', 'get', paneId])).agent);
   } catch (error) {
     if (starting) {
-      throw new PendingStartError('Claude has not reported its session to herdr yet.');
+      throw new Error('Native worker has not been detected by herdr yet.', { cause: error });
     }
 
     throw error;
@@ -350,8 +340,10 @@ const prepareTaskDirectory = (
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     publish(directory, 'task.json', task);
 
-    // Claude opens and owns its own transcript; only Pi sessions are seeded with Tau lineage.
-    if (!continued && !isClaudeLoadout(task.loadout)) {
+    // Native harnesses own their conversations; only Pi sessions are seeded with Tau lineage.
+    if (isGenericLoadout(task.loadout)) {
+      prepareGenericReport(task);
+    } else if (!continued) {
       seedSession(task);
     }
   } catch (error) {
@@ -383,28 +375,139 @@ const readProcessStart = async (handle: Handle, processId: number): Promise<stri
 
 const checkAgentIdentity = (
   agent: Record<string, unknown>,
-  expected: { paneId: string; expectedSession: string; claude: boolean; starting: boolean },
+  expected: { paneId: string; expectedSession: string },
   unchangedShell: boolean,
 ): void => {
   // herdr reports a detected agent before its integration reports which session that agent opened.
   const identified =
-    agent.agent === (expected.claude ? 'claude' : 'pi') &&
+    agent.agent === 'pi' &&
     Value.Check(agentSessionSchema, agent.agent_session) &&
     agent.agent_session.value === expected.expectedSession;
 
-  if (expected.starting && !identified) {
-    throw new PendingStartError('Claude has not reported this task session to herdr yet.');
-  }
   if (agent.pane_id !== expected.paneId || !identified || unchangedShell) {
     throw new Error('Started worker identity could not be established.');
   }
 };
 
+const checkGenericAgent = async (
+  handle: Handle,
+  agent: Record<string, unknown>,
+  expected: { kind: string; paneId: string; shellPid: number; processId: number },
+) => {
+  if (
+    agent.pane_id !== expected.paneId ||
+    agent.agent !== expected.kind ||
+    expected.shellPid === expected.processId ||
+    expected.shellPid !== handle.shell?.processId ||
+    (await readProcessStart(handle, expected.shellPid)) !== handle.shell.startedAt
+  ) {
+    throw new Error('Native kind, terminal, or shell identity changed.');
+  }
+  let reference: { kind: string; value: string } | undefined;
+  if (agent.agent_session !== undefined && agent.agent_session !== null) {
+    if (
+      !Value.Check(
+        Type.Object({
+          kind: Type.String({ minLength: 1, maxLength: 100 }),
+          value: Type.String({ minLength: 1, maxLength: 8000 }),
+        }),
+        agent.agent_session,
+      )
+    ) {
+      throw new Error('Malformed opaque native reference.');
+    }
+    reference = { kind: agent.agent_session.kind, value: agent.agent_session.value };
+  }
+  const savedReference =
+    handle.owned?.nativeReference ?? readGenericReference(handle.directory, handle.task.taskId);
+  if (savedReference && !isDeepStrictEqual(savedReference, reference)) {
+    throw new Error('Opaque native reference changed.');
+  }
+
+  return reference;
+};
+
+const isAgentNotFoundError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  if ('stderr' in error && typeof error.stderr === 'string') {
+    try {
+      const parsed = object(JSON.parse(error.stderr));
+      if (object(parsed.error).code === 'agent_not_found') {
+        return true;
+      }
+    } catch {
+      // The transport error is not absence evidence unless its structured code is known.
+    }
+  }
+
+  return 'cause' in error && isAgentNotFoundError(error.cause);
+};
+
+// A rejected start plus an unchanged shell and a known agent_not_found response is definite rejection evidence.
+const verifyRejectedStart = async (
+  handle: Handle,
+  call: (arguments_: string[]) => Promise<string>,
+): Promise<boolean> => {
+  const shell = handle.shell;
+  if (!shell || !handle.terminalId) {
+    return false;
+  }
+  const location = await resolveTerminal(text(handle.terminalId), call);
+  handle.paneId = location.paneId;
+  const information = object(
+    result(await call(['pane', 'process-info', '--pane', location.paneId])).process_info,
+  );
+  if (
+    information.pane_id !== location.paneId ||
+    integer(information.shell_pid) !== shell.processId ||
+    integer(information.foreground_process_group_id) !== shell.processId ||
+    (await readProcessStart(handle, shell.processId)) !== shell.startedAt
+  ) {
+    return false;
+  }
+  try {
+    if (Object.keys(await readAgent(call, location.paneId, true)).length > 0) {
+      return false;
+    }
+  } catch (error) {
+    return isAgentNotFoundError(error);
+  }
+
+  return false;
+};
+
+export const agentPromptArguments = (paneId: string, message: string): string[] => [
+  'agent',
+  'prompt',
+  paneId,
+  message,
+];
+
+const saveGenericOwnership = (handle: Handle, owned: OwnedWorker): void => {
+  if (owned.nativeReference && !readGenericReference(handle.directory, handle.task.taskId)) {
+    publish(handle.directory, 'nativeReference.json', {
+      taskId: handle.task.taskId,
+      reference: owned.nativeReference,
+    });
+  }
+  if (!existsSync(join(handle.directory, 'owned.json'))) {
+    publish(handle.directory, 'owned.json', owned);
+  }
+};
+
+const observedNativeState = (agent: Record<string, unknown>): string =>
+  typeof agent.agent_status === 'string' &&
+  ['idle', 'done', 'working', 'blocked', 'unknown'].includes(agent.agent_status)
+    ? agent.agent_status
+    : 'unknown';
+
 const inspectWorker = async (
   handle: Handle,
   call: (arguments_: string[]) => Promise<string>,
 ): Promise<OwnedWorker> => {
-  const claude = isClaudeLoadout(handle.task.loadout);
+  const generic = isGenericLoadout(handle.task.loadout) ? handle.task.loadout : undefined;
   const location = await resolveTerminal(text(handle.terminalId), call);
   const paneId = location.paneId;
 
@@ -415,7 +518,7 @@ const inspectWorker = async (
   );
   const previous = handle.owned ? { ...handle.owned, paneId } : undefined;
   // Ownership is unestablished until a started process reports the expected session to herdr.
-  const starting = claude && !previous;
+  const starting = Boolean(generic) && !previous;
   checkForeground(information, paneId, previous, starting && !handle.workerObserved);
 
   handle.workerObserved = true;
@@ -423,45 +526,49 @@ const inspectWorker = async (
   const agent = await readAgent(call, paneId, starting);
   const processId = integer(information.foreground_process_group_id);
   const shellPid = integer(information.shell_pid);
-  const expectedSession = claude ? handle.task.nativeSessionId : handle.task.nativeSessionFile;
-  checkAgentIdentity(agent, { paneId, expectedSession, claude, starting }, shellPid === processId);
+  const expectedSession = handle.task.nativeSessionFile;
+  let nativeReference: { kind: string; value: string } | undefined;
+  if (generic) {
+    nativeReference = await checkGenericAgent(handle, agent, {
+      kind: generic.kind,
+      paneId,
+      shellPid,
+      processId,
+    });
+  } else {
+    checkAgentIdentity(
+      agent,
+      { paneId, expectedSession: text(expectedSession) },
+      shellPid === processId,
+    );
+  }
 
   const startedAt = await readProcessStart(handle, processId);
   const owned: OwnedWorker = previous ?? {
-    kind: claude ? 'claude' : 'pi',
+    kind: generic ? 'generic' : 'pi',
     paneId,
     terminalId: location.terminalId,
     shellPid,
     processId,
-    token: expectedSession,
+    ...(generic
+      ? {
+          agentKind: generic.kind,
+          shellStartedAt: text(handle.shell?.startedAt),
+        }
+      : { token: text(expectedSession) }),
     startedAt,
   };
   if (!startedAt || startedAt !== owned.startedAt || !matchesWorker(information, owned)) {
     throw new Error('Worker process start or pane identity changed or is unavailable.');
   }
 
-  return owned;
-};
-
-const awaitStartedWorker = async (
-  handle: Handle,
-  call: (arguments_: string[]) => Promise<string>,
-): Promise<OwnedWorker> => {
-  for (;;) {
-    handle.abort.signal.throwIfAborted();
-
-    try {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Each attempt checks live identity within the same startup budget.
-      return await inspectWorker(handle, call);
-    } catch (error) {
-      if (!(error instanceof PendingStartError)) {
-        throw error;
-      }
-    }
-
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Startup polling remains bounded by the deadline and cancellation signal.
-    await delay(Math.min(250, workBudget(handle)), undefined, { signal: handle.abort.signal });
+  const verified = nativeReference ? { ...owned, nativeReference } : owned;
+  if (generic) {
+    saveGenericOwnership(handle, verified);
+    handle.nativeState = observedNativeState(agent);
   }
+
+  return verified;
 };
 
 const waitForWorkerReadiness = async (
@@ -558,9 +665,7 @@ const nativeReference = (loadout: Loadout, directory: string, source?: FollowUpP
     };
   }
 
-  return isClaudeLoadout(loadout)
-    ? claudeNativeIdentity(loadout.agentDirectory, loadout.cwd)
-    : nativeIdentity(directory);
+  return isGenericLoadout(loadout) ? {} : nativeIdentity(directory);
 };
 
 const requireUnclaimed = (root: string, source: { directory: string; task: Task }): void => {
@@ -605,10 +710,20 @@ const treeCapacity = (): number =>
   // oxlint-disable-next-line node/no-process-env -- Only the first admission in a root session uses this; later launches read the saved policy.
   Number(process.env.TAU_SUBAGENT_CAP ?? 4);
 
+// Absence evidence proves no live process remains; it does not prove the start never ran.
+const cleanupDetail = (handle: Handle, stopped: boolean): string => {
+  const pane = handle.paneId ?? 'none';
+  if (handle.startError !== undefined && handle.workerNeverStarted) {
+    return `Native startup was rejected by herdr absence evidence; a worker may have started briefly and exited. Pane ${pane} is left as placed.`;
+  }
+
+  return stopped
+    ? `No worker process was ever started for this task. Pane ${pane} is left as placed.`
+    : `Cleanup unconfirmed. Check pane ${handle.paneId ?? 'unknown'} manually. No automatic retry.`;
+};
+
 export class WorkerController {
   readonly ownerId = randomUUID();
-  // Nested Claude delegation resolves profiles and trust against the parent session's current project.
-  project?: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'> | undefined;
   private readonly handles = new Map<string, Handle>();
   private readonly admitted = new Map<string, Task>();
   private readonly lifetime = new AbortController();
@@ -699,6 +814,9 @@ export class WorkerController {
       { file: input.parentSession, id: input.parentSessionId },
       input.sourceTaskId,
     );
+    if (!isPiLoadout(source.task.loadout)) {
+      throw new Error('Non-Pi native continuation is unsupported. Start a fresh task.');
+    }
     requireUnclaimed(this.root, source);
     const native = validateNative(source.task, source.origin);
     const loadout = await validateSavedLoadout(source.task.loadout, context, validationSignal);
@@ -724,151 +842,17 @@ export class WorkerController {
           publish(handle.directory, 'pane.json', created);
         },
         cwd: handle.task.loadout.cwd,
-        environment: [
-          `TAU_WORKER_RECORD=${handle.directory}`,
-          `TAU_PARENT_PROCESS=${process.pid}`,
-          ...(isClaudeLoadout(handle.task.loadout)
-            ? claudeEnvironment(handle.task.loadout)
-            : [`PI_CODING_AGENT_DIR=${handle.task.loadout.agentDirectory}`]),
-        ],
+        environment: isPiLoadout(handle.task.loadout)
+          ? [
+              `TAU_WORKER_RECORD=${handle.directory}`,
+              `TAU_PARENT_PROCESS=${process.pid}`,
+              `PI_CODING_AGENT_DIR=${handle.task.loadout.agentDirectory}`,
+            ]
+          : [],
       },
       call,
       handle.abort.signal,
     );
-  }
-
-  // The channel caller must validate the parent task before supplying delegated authority.
-  delegate(
-    input: LaunchInput,
-    authority: { tree: NonNullable<Task['tree']>; parent: Task },
-    signal: AbortSignal = new AbortController().signal,
-  ) {
-    return this.launchTask(input, signal, undefined, authority);
-  }
-
-  private nestedController(handle: Handle): WorkerController {
-    handle.nested ??= new WorkerController(this.root, this.client, (message) => {
-      void this.deliverNotice(handle, message);
-    });
-    handle.nested.project = this.project;
-
-    return handle.nested;
-  }
-
-  private async deliverNotice(handle: Handle, message: string): Promise<void> {
-    const channel = handle.channel;
-    const paneId = handle.paneId;
-    if (this.closed || handle.stopping || !channel || !paneId) {
-      return;
-    }
-
-    try {
-      await this.client(
-        ['agent', 'prompt', paneId, channel.notice(message)],
-        Math.max(1, Math.min(30_000, remainingWorkBudget(handle))),
-        handle.abort.signal,
-      );
-    } catch (error) {
-      this.notify(
-        `Worker ${handle.task.name ?? 'unnamed'} (${handle.task.taskId}) could not receive a child notice: ${String(error)} Notice: ${message}`,
-      );
-    }
-  }
-
-  private delegationTools(handle: Handle): ChannelTool[] {
-    const owner = () => handle.task.nativeSessionId;
-
-    return [
-      {
-        name: 'subagent',
-        description:
-          'Delegate a bounded nested task inside your assigned scope. It inherits your exact model, permissions, harness, cwd, and safety integration, and shares one root capacity cap. A full or busy tree refuses promptly without a queue; never retry in a loop.',
-        parameters: nestedLaunchSchema,
-        execute: async (input) => {
-          if (!Value.Check(nestedLaunchSchema, input)) {
-            throw new Error('Invalid nested worker request.');
-          }
-
-          const project = this.project;
-          const inherited = handle.task.loadout;
-          if (!isClaudeLoadout(inherited) || !project) {
-            throw new Error('Nested delegation needs an active Claude parent task.');
-          }
-
-          const authority = channelAuthority(
-            this.root,
-            readTask(handle.directory),
-            claudeToolName('subagent'),
-          );
-          const loadout = await resolveInheritedClaudeLoadout(
-            handle.task,
-            inherited,
-            { ...input, permissions: inherited.permissions },
-            project,
-          );
-
-          return this.nestedController(handle).delegate(
-            {
-              task: input.task,
-              loadout,
-              timeout: input.timeoutSeconds * 1000,
-              parentSession: handle.task.nativeSessionFile,
-              parentSessionId: handle.task.nativeSessionId,
-              ...(handle.paneId ? { parentPane: handle.paneId } : {}),
-              ...(input.visibility ? { visibility: input.visibility } : {}),
-            },
-            authority,
-          );
-        },
-      },
-      {
-        name: 'subagent_status',
-        description:
-          'Recover validated results, pending questions, and native references for a task you delegated. Reconnect never resubmits work or resets deadlines.',
-        parameters: statusSchema,
-        execute: (input) => {
-          if (!Value.Check(statusSchema, input)) {
-            throw new Error('Invalid status request.');
-          }
-
-          const nested = this.nestedController(handle);
-          const receipt = input.questionId
-            ? nested.questionReceipt(input.taskId, owner(), input.questionId)
-            : undefined;
-
-          return Promise.resolve({
-            ...nested.status(input.taskId, owner()),
-            questionReceipt: receipt,
-          });
-        },
-      },
-      {
-        name: 'subagent_reply',
-        description:
-          'Answer one pending clarification from a task you delegated. Scope increases are refused, and delivery is never retried.',
-        parameters: replyToolSchema,
-        execute: (input) => {
-          if (!Value.Check(replyToolSchema, input)) {
-            throw new Error('Invalid reply request.');
-          }
-
-          return this.nestedController(handle).reply(input.taskId, owner(), input);
-        },
-      },
-      {
-        name: 'subagent_cancel',
-        description:
-          'Attempt bounded identity-checked cancellation of a task you delegated. Failed cleanup may require manual action.',
-        parameters: cancelSchema,
-        execute: (input) => {
-          if (!Value.Check(cancelSchema, input)) {
-            throw new Error('Invalid cancellation request.');
-          }
-
-          return this.nestedController(handle).cancel(input.taskId, owner());
-        },
-      },
-    ];
   }
 
   private async startWorker(
@@ -877,33 +861,53 @@ export class WorkerController {
     name: string,
     call: (arguments_: string[]) => Promise<string>,
   ): Promise<void> {
-    const { directory, task } = handle;
-    const claude = isClaudeLoadout(task.loadout) ? task.loadout : undefined;
-    if (claude) {
-      await this.openClaudeChannel(handle, claude);
+    const { task } = handle;
+    const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
+    if (generic) {
+      const information = object(
+        result(await call(['pane', 'process-info', '--pane', paneId])).process_info,
+      );
+      const shellPid = integer(information.shell_pid);
+      if (information.pane_id !== paneId || information.foreground_process_group_id !== shellPid) {
+        throw new Error('Native start requires an unchanged foreground shell.');
+      }
+      handle.shell = { processId: shellPid, startedAt: await readProcessStart(handle, shellPid) };
+      if (!handle.shell.startedAt) {
+        throw new Error('Shell start identity is unavailable.');
+      }
+      publish(handle.directory, 'shell.json', handle.shell);
+      publish(handle.directory, 'nativeStart-intent.json', {
+        taskId: task.taskId,
+        kind: generic.kind,
+        arguments: generic.arguments,
+        terminalId: handle.terminalId,
+      });
     }
 
     // A failing start call can still leave a process behind.
     handle.workerNeverStarted = false;
-    if (claude) {
-      await call(['pane', 'run', paneId, ...claudeArguments(task, claude, directory)]);
-
-      return;
-    }
-
     await call([
       'agent',
       'start',
       name,
       '--kind',
-      'pi',
+      generic?.kind ?? 'pi',
       '--pane',
       paneId,
       '--timeout',
       String(workBudget(handle)),
       '--',
-      ...workerArguments(task),
-    ]);
+      ...(generic?.arguments ?? workerArguments(task)),
+    ]).catch((error: unknown) => {
+      if (!generic) {
+        throw error;
+      }
+      handle.startError = String(error).slice(0, 4000);
+      publish(handle.directory, 'nativeStart-error.json', { detail: handle.startError });
+      this.notify(
+        `Worker ${task.taskId}: native startup is blocked or uncertain. No start retry. ${handle.startError}`,
+      );
+    });
   }
 
   private checkFollowUpSource(
@@ -922,44 +926,42 @@ export class WorkerController {
     }
   }
 
-  // Pi reads its dispatch record itself; Claude starts from a prompt its hook matches to that record.
   private async dispatch(
     handle: Handle,
     call: (arguments_: string[]) => Promise<string>,
   ): Promise<void> {
     const { directory, task } = handle;
-    if (!isClaudeLoadout(task.loadout)) {
+    if (isPiLoadout(task.loadout)) {
       publish(directory, 'dispatch.json', { taskId: task.taskId });
 
       return;
     }
-
-    const prompt = workerPrompt(task);
-    publish(directory, 'dispatch.json', { taskId: task.taskId, prompt });
-    await call(['agent', 'prompt', text(handle.paneId), prompt]);
+    if (
+      readGenericSubmission(directory, task.taskId, 'assignment') ||
+      !['idle', 'done'].includes(handle.nativeState ?? 'unknown')
+    ) {
+      return;
+    }
+    const worker = await inspectWorker(handle, call);
+    const location = await resolveTerminal(worker.terminalId, call);
+    if (
+      location.paneId !== worker.paneId ||
+      !['idle', 'done'].includes(handle.nativeState ?? 'unknown')
+    ) {
+      throw new Error('Native worker moved or is not ready for the assignment.');
+    }
+    workBudget(handle);
+    const prompt = genericPrompt(task);
+    await submitGenericText(directory, task, 'assignment', prompt, () =>
+      call(agentPromptArguments(location.paneId, prompt)),
+    );
   }
 
-  private async openClaudeChannel(handle: Handle, loadout: ClaudeLoadout): Promise<void> {
-    const socketPath = claudeChannelSocket(handle.directory);
-    const channel = new ClaudeChannel({
-      directory: handle.directory,
-      task: handle.task,
-      socketPath,
-      children: () => this.nestedController(handle).children(),
-      delegation: () => this.delegationTools(handle),
-    });
-    handle.channel = channel;
-    await channel.listen();
-
-    publish(handle.directory, 'claudeSettings.json', claudeSettingsDocument(loadout, socketPath));
-    publish(handle.directory, 'claudeMcp.json', claudeMcpDocument(loadout, socketPath));
-  }
-
+  // oxlint-disable-next-line eslint/complexity -- Launch validates authority, reserves capacity, starts the worker, and classifies startup evidence.
   private async launchTask(
     input: LaunchInput,
     launchSignal: AbortSignal,
     source?: FollowUpPreparation,
-    delegated?: Awaited<ReturnType<WorkerController['parentAuthority']>>,
   ): Promise<ReturnType<typeof taskStatus>> {
     if (this.closed) {
       throw new Error('Parent controller stopped.');
@@ -968,16 +970,22 @@ export class WorkerController {
     const taskId = randomUUID();
     const directory = join(this.root, taskId);
     const timing = launchTiming(input.timeout, input.startedAt);
-    // Channel callers supply checked authority instead of Pi session evidence.
-    const authority =
-      delegated ??
-      (await this.parentAuthority(input.parentSession, input.parentSessionId, launchSignal));
+    const authority = await this.parentAuthority(
+      input.parentSession,
+      input.parentSessionId,
+      launchSignal,
+    );
     const { createdAt, deadline, expires, cancellationBudget, monotonicDeadline } = boundedTiming(
       timing,
       authority.parent,
     );
+    if (authority.parent && isGenericLoadout(input.loadout)) {
+      throw new Error(
+        'Generic workers require root-parent approval and have no Tau nesting channel.',
+      );
+    }
     const task = validateTask({
-      version: 1,
+      version: isGenericLoadout(input.loadout) ? 2 : 1,
       name: `${input.loadout.role === 'editing' ? 'worker' : 'investigator'}-00`,
       taskId,
       task: input.task,
@@ -1019,10 +1027,7 @@ export class WorkerController {
 
     // The reservation precedes task publication, native opening, and successor claims.
     const capacity = treeCapacity();
-    // ponytail: Each live legacy task rebuilds ancestry; share a registry if large upgraded histories make admission slow.
-    reserveTask(this.root, task, capacity, (legacy) =>
-      sessionRoot(this.root, { file: legacy.parentSession, id: legacy.parentSessionId }),
-    );
+    reserveTask(this.root, task, capacity);
     this.admitted.set(task.taskId, task);
     prepareTaskDirectory(directory, task, Boolean(source), () =>
       admissionDirectory(this.root, authority.tree),
@@ -1069,22 +1074,34 @@ export class WorkerController {
       }
 
       await this.startWorker(handle, location.paneId, name, call);
-      handle.owned = await awaitStartedWorker(handle, call);
-      publish(directory, 'owned.json', handle.owned);
-
-      const ready = await waitForWorkerReadiness(handle, call);
-      const current = await inspectWorker(handle, call);
-      if (ready.processId !== current.processId) {
-        throw new Error('Native session and worker readiness identities did not match.');
+      if (isPiLoadout(task.loadout)) {
+        handle.owned = await inspectWorker(handle, call);
+        publish(directory, 'owned.json', handle.owned);
+        const ready = await waitForWorkerReadiness(handle, call);
+        const current = await inspectWorker(handle, call);
+        if (ready.processId !== current.processId) {
+          throw new Error('Native session and worker readiness identities did not match.');
+        }
+        handle.abort.signal.throwIfAborted();
+        await this.dispatch(handle, call);
+        this.poll(handle);
+      } else {
+        if (handle.startError !== undefined && (await verifyRejectedStart(handle, call))) {
+          handle.workerNeverStarted = true;
+          throw new Error(
+            `Native startup was rejected by herdr absence evidence. No retry. ${handle.startError}`,
+          );
+        }
+        await this.pollGeneric(handle);
       }
-
-      handle.abort.signal.throwIfAborted();
-      await this.dispatch(handle, call);
-      this.poll(handle);
       handle.removeLaunchAbort();
     } catch (error) {
       const reason = remainingWorkBudget(handle) <= 0 ? 'timeout' : 'failure';
-      await this.stop(handle, reason, `Startup delivery is uncertain; no retry. ${String(error)}`);
+      const detail =
+        handle.startError !== undefined && handle.workerNeverStarted
+          ? `Native startup was rejected by herdr absence evidence; no retry. ${String(error)}`
+          : `Startup delivery is uncertain; no retry. ${String(error)}`;
+      await this.stop(handle, reason, detail);
     }
 
     return this.status(taskId, input.parentSessionId);
@@ -1100,6 +1117,10 @@ export class WorkerController {
 
     handle.timer = setTimeout(
       () => {
+        if (isGenericLoadout(handle.task.loadout)) {
+          void this.pollGeneric(handle);
+          return;
+        }
         try {
           if (remainingWorkBudget(handle) <= 0) {
             void this.stop(handle, 'timeout');
@@ -1113,12 +1134,7 @@ export class WorkerController {
             void this.stop(handle, 'completion');
             return;
           }
-          const channelFailure = handle.channel?.failure();
-          if (channelFailure) {
-            void this.stop(handle, 'failure', `${channelFailure} No retry.`);
-            return;
-          }
-          if (handle.task.tree?.parentTaskId) {
+          if (handle.task.tree.parentTaskId) {
             try {
               requireActiveAncestry(
                 this.root,
@@ -1148,9 +1164,67 @@ export class WorkerController {
       },
       Math.max(
         1,
-        Math.min(250, handle.expires - handle.task.cancellationBudget - performance.now()),
+        Math.min(
+          isGenericLoadout(handle.task.loadout) ? 1500 : 250,
+          handle.expires - handle.task.cancellationBudget - performance.now(),
+        ),
       ),
     );
+  }
+
+  private async pollGeneric(handle: Handle): Promise<void> {
+    if (this.closed || handle.stopping) {
+      return;
+    }
+    try {
+      if (remainingWorkBudget(handle) <= 0) {
+        await this.stop(handle, 'timeout');
+        return;
+      }
+      try {
+        if (acceptGenericReport(handle.directory, handle.task)) {
+          await this.stop(handle, 'completion');
+          return;
+        }
+      } catch (error) {
+        recordNativeIssue(handle, 'nativeFailure.json', error);
+        await this.stop(handle, 'completion');
+        return;
+      }
+      if (handle.owned && processAbsent(handle.owned.processId)) {
+        await this.stop(handle, 'completion');
+        return;
+      }
+      const call = (arguments_: string[]) =>
+        this.client(arguments_, workBudget(handle), handle.abort.signal);
+      const previousState = handle.nativeState;
+      handle.owned = await inspectWorker(handle, call);
+      delete handle.observationIssue;
+      if (
+        handle.nativeState !== previousState &&
+        ['blocked', 'unknown'].includes(handle.nativeState ?? 'unknown')
+      ) {
+        this.notify(
+          `Worker ${handle.task.taskId}: ${handle.nativeState}. Inspect the native dialog; no approval is automatic. The original deadline remains active.`,
+        );
+      }
+      await this.dispatch(handle, call);
+      this.poll(handle);
+    } catch (error) {
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- Awaited calls can stop the handle or controller before this catch runs.
+      if (handle.stopping || this.closed) {
+        return;
+      }
+      const previousIssue = handle.observationIssue;
+      recordNativeIssue(handle, 'nativeObservation-error.json', error);
+      handle.nativeState = 'unknown';
+      if (previousIssue !== handle.observationIssue) {
+        this.notify(
+          `Worker ${handle.task.taskId}: native observation or delivery is uncertain. ${handle.observationIssue} Inspect saved submission intent; no automatic retry. The original deadline remains active.`,
+        );
+      }
+      this.poll(handle);
+    }
   }
 
   private stop(
@@ -1176,14 +1250,10 @@ export class WorkerController {
     } catch (error) {
       handle.recordErrors.push(String(error));
     }
-    // Nested workers keep running and holding capacity unless this stop reaches them first.
-    const nested = handle.nested?.stopAll() ?? Promise.resolve();
     const cleaned = this.cleanup(handle, reason, failureDetail);
 
-    handle.stopping = Promise.allSettled([nested, cleaned])
+    handle.stopping = Promise.allSettled([cleaned])
       .then(() => {
-        handle.channel?.close();
-        handle.nested?.close();
         // Keep sharing intact until cleanup finishes, including its queued topology change.
         // Unconfirmed cleanup must still stop contributing placement candidates.
         if (handle.terminalId) {
@@ -1200,7 +1270,7 @@ export class WorkerController {
           return;
         }
         this.notify(
-          `Worker ${handle.task.name ?? 'unnamed'} (${handle.task.taskId}): cleanup unconfirmed. ${String(error)}. Check pane ${handle.paneId ?? 'unknown'} manually. Records: ${handle.directory}. Native session: ${handle.task.nativeSessionId} (${handle.task.nativeSessionFile}).`,
+          `Worker ${handle.task.name ?? 'unnamed'} (${handle.task.taskId}): cleanup unconfirmed. ${String(error)}. Check pane ${handle.paneId ?? 'unknown'} manually. Records: ${handle.directory}. ${nativeDescription(handle.task, handle.directory)}`,
         );
       });
 
@@ -1241,9 +1311,7 @@ export class WorkerController {
     const call = (arguments_: string[]) => this.client(arguments_, remainingBudget(), signal);
     let stopped = handle.workerNeverStarted;
     const paneClosure = { confirmed: false };
-    let detail = stopped
-      ? `No worker process was ever started for this task. Pane ${handle.paneId ?? 'none'} is left as placed.`
-      : `Cleanup unconfirmed. Check pane ${handle.paneId ?? 'unknown'} manually. No automatic retry.`;
+    let detail = cleanupDetail(handle, stopped);
 
     if (owned) {
       const worker = owned;
@@ -1256,7 +1324,21 @@ export class WorkerController {
           result(await call(['pane', 'process-info', '--pane', owned.paneId])).process_info,
         );
 
-        return workerStopped(information, owned);
+        if (!workerStopped(information, owned)) {
+          return false;
+        }
+        if (owned.kind === 'generic') {
+          const shellStart = await runClient(
+            'ps',
+            ['-p', String(owned.shellPid), '-o', 'lstart='],
+            remainingBudget(),
+            signal,
+          );
+
+          return shellStart.trim() === owned.shellStartedAt;
+        }
+
+        return true;
       };
       const closeShell = async (expectedPaneId: string) => {
         if (!(await shellIsOwned())) {
@@ -1324,7 +1406,7 @@ export class WorkerController {
         ? ` Evidence errors: ${handle.recordErrors.join('; ')}. Check pane ${handle.paneId ?? 'unknown'} manually.`
         : '';
       this.notify(
-        `Worker ${task.name ?? 'unnamed'} (${task.taskId}): ${outcome}. ${handle.cleanupDetail}${errors} Records: ${directory}. Native session: ${task.nativeSessionId} (${task.nativeSessionFile}).`,
+        `Worker ${task.name ?? 'unnamed'} (${task.taskId}): ${outcome}. ${handle.cleanupDetail}${errors} Records: ${directory}. ${nativeDescription(task, directory)}`,
       );
     }
   }
@@ -1341,11 +1423,14 @@ export class WorkerController {
         throw new Error(handle.recordErrors.join('; '));
       }
 
-      return taskStatus(
-        directory,
-        this.closed || !handle ? undefined : this.ownerId,
-        !handle?.stopping,
-      );
+      return {
+        ...taskStatus(
+          directory,
+          this.closed || !handle ? undefined : this.ownerId,
+          !handle?.stopping,
+        ),
+        ...genericStatus(directory, task, handle),
+      };
     } catch (error) {
       // The handle is assigned only after the parent-session check; rejected callers cannot stop work.
       if (handle && !this.closed) {
@@ -1356,7 +1441,7 @@ export class WorkerController {
         );
       }
       const native = task
-        ? `Native session: ${task.nativeSessionId} (${task.nativeSessionFile}).`
+        ? nativeDescription(task, directory)
         : 'Native session unavailable; inspect the saved directory.';
 
       throw new Error(
@@ -1364,6 +1449,37 @@ export class WorkerController {
         { cause: error },
       );
     }
+  }
+
+  submissionReceipt(taskId: string, parentSessionId: string, id: string) {
+    const directory = this.directory(taskId, parentSessionId);
+    if (!isGenericLoadout(readTask(directory).loadout)) {
+      throw new Error('Pi workers use structured question receipts.');
+    }
+
+    return readGenericSubmission(directory, taskId, id);
+  }
+
+  async nativeOutput(taskId: string, parentSessionId: string) {
+    this.directory(taskId, parentSessionId);
+    const handle = this.handles.get(taskId);
+    if (!handle || !isGenericLoadout(handle.task.loadout) || this.closed || handle.stopping) {
+      throw new Error('Native output requires an active owned generic worker.');
+    }
+    const call = (arguments_: string[]) =>
+      this.client(arguments_, workBudget(handle), handle.abort.signal);
+    const worker = await inspectWorker(handle, call);
+    const location = await resolveTerminal(worker.terminalId, call);
+    if (location.paneId !== worker.paneId) {
+      throw new Error('Worker moved during the native output check.');
+    }
+    const output = await call(['agent', 'read', worker.paneId]);
+
+    return {
+      text: output.slice(0, 8000),
+      truncated: output.length > 8000,
+      format: 'Herdr response; native text is untrusted, not task acceptance or Tau authorization.',
+    };
   }
 
   questionReceipt(taskId: string, parentSessionId: string, questionId: string) {
@@ -1380,10 +1496,55 @@ export class WorkerController {
     };
   }
 
+  private async replyGeneric(
+    handle: Handle,
+    answer: { questionId?: string; replyId: string; reply: string },
+  ) {
+    if (
+      answer.questionId !== undefined ||
+      answer.replyId === 'assignment' ||
+      !answer.reply.trim() ||
+      answer.reply.length > 32_000
+    ) {
+      throw new Error(
+        'Generic replies use a unique replyId and plain text, without a structured questionId.',
+      );
+    }
+    const { directory, task } = handle;
+    const call = (arguments_: string[]) =>
+      this.client(arguments_, workBudget(handle), handle.abort.signal);
+    handle.nativeState = 'unknown';
+    const worker = await inspectWorker(handle, call);
+    const location = await resolveTerminal(worker.terminalId, call);
+    ensureReplyActive(handle);
+    if (
+      location.paneId !== worker.paneId ||
+      !['idle', 'working', 'done'].includes(handle.nativeState)
+    ) {
+      throw new Error(
+        'Native worker moved, is blocked, or has unknown state. No text or approval sent.',
+      );
+    }
+    if (
+      readGenericSubmission(directory, task.taskId, 'assignment')?.observation?.state !==
+      'submitted'
+    ) {
+      throw new Error(
+        'Assignment delivery is not confirmed. Replies cannot bypass native startup approvals or uncertain delivery.',
+      );
+    }
+
+    return submitGenericText(directory, task, answer.replyId, answer.reply, () => {
+      ensureReplyActive(handle);
+
+      return call(agentPromptArguments(location.paneId, answer.reply));
+    });
+  }
+
   async reply(
     taskId: string,
     parentSessionId: string,
-    answer: { questionId: string; replyId: string; reply: string; scopeUnchanged: unknown },
+    answer: { questionId?: string; replyId: string; reply: string; scopeUnchanged: unknown },
   ) {
     const directory = this.directory(taskId, parentSessionId);
     const handle = this.handles.get(taskId);
@@ -1395,6 +1556,12 @@ export class WorkerController {
     }
 
     ensureReplyActive(handle);
+    if (isGenericLoadout(handle.task.loadout)) {
+      return this.replyGeneric(handle, answer);
+    }
+    if (!answer.questionId) {
+      throw new Error('Pi replies require a structured questionId.');
+    }
     const value = {
       version: 1,
       taskId,
@@ -1442,10 +1609,7 @@ export class WorkerController {
       questionId: answer.questionId,
       replyId: answer.replyId,
     };
-    // Claude cannot transform its own input, so it receives the accepted reply text with its reference.
-    const delivery = isClaudeLoadout(handle.task.loadout)
-      ? `TAU_REPLY ${answer.questionId} ${answer.replyId}\n${answer.reply}`
-      : `TAU_REPLY ${JSON.stringify(reference)}`;
+    const delivery = `TAU_REPLY ${JSON.stringify(reference)}`;
     try {
       await call(['agent', 'prompt', text(handle.paneId), delivery]);
     } catch (error) {
@@ -1508,8 +1672,6 @@ export class WorkerController {
       clearTimeout(handle.timer);
       handle.removeLaunchAbort?.();
       handle.abort.abort();
-      handle.channel?.close();
-      handle.nested?.close();
       if (handle.stopping) {
         continue;
       }

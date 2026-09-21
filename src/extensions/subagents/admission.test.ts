@@ -94,39 +94,6 @@ it('refuses a held or abandoned admission lock without waiting or reclaiming it'
   expect(existsSync(join(directory, 'blocked.json'))).toBe(false);
 });
 
-it('counts unreserved legacy work and only frees confirmed stopped cleanup', () => {
-  const { root, task, save } = setup();
-  const { tree, ...legacy } = task('legacy');
-  const directory = save(legacy);
-  const legacyTree = () => tree;
-
-  expect(() => {
-    reserveTask(root, task('blocked'), 1, legacyTree);
-  }).toThrow('capacity full');
-  recordEvent(directory, legacy.taskId, 'settled', 'No active turn.', true);
-  expect(() => {
-    reserveTask(root, task('still-blocked'), 1, legacyTree);
-  }).toThrow('capacity full');
-  recordEvent(directory, legacy.taskId, 'cleanup', 'Stopped process confirmed.', true);
-  reserveTask(root, task('allowed'), 1, legacyTree);
-  expect(() => {
-    reserveTask(root, task('reconnected'), 1, legacyTree);
-  }).toThrow('capacity full');
-});
-
-it('does not resolve deleted ancestry for confirmed stopped legacy work', () => {
-  const { root, task, save } = setup();
-  const { tree: _tree, ...legacy } = task('legacy');
-  const directory = save(legacy);
-  recordEvent(directory, legacy.taskId, 'cleanup', 'Parent confirmed stopped.', true);
-
-  expect(() => {
-    reserveTask(root, task('new-root'), 1, () => {
-      throw new Error('Deleted session.');
-    });
-  }).not.toThrow();
-});
-
 it('reports actionable orphan reservations and distinguishes initial capacity errors', () => {
   const { root, task } = setup();
   const orphan = task('orphan');
