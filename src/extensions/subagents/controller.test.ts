@@ -1894,13 +1894,13 @@ it('distinguishes missing readiness timeout from startup failure inside the orig
 }) => {
   vi.useFakeTimers();
   const monitoring = Promise.withResolvers<undefined>();
+  const budgets: number[] = [];
   let inspections = 0;
   const { controller, input, calls } = setup(
     onTestFinished,
     -1,
     async (argumentsList, budget, signal) => {
-      expect(budget).toBeGreaterThan(0);
-      expect(budget).toBeLessThanOrEqual(7500);
+      budgets.push(budget);
 
       if (argumentsList[1] === 'process-info' && ++inspections === 2) {
         monitoring.resolve(undefined);
@@ -1923,6 +1923,13 @@ it('distinguishes missing readiness timeout from startup failure inside the orig
   await monitoring.promise;
   await vi.advanceTimersByTimeAsync(7600);
   const status = await launch;
+
+  expect(budgets.length).toBeGreaterThan(0);
+
+  for (const budget of budgets) {
+    expect(budget).toBeGreaterThan(0);
+    expect(budget).toBeLessThanOrEqual(7500);
+  }
 
   expect(status).toMatchObject({
     outcome: 'timeout',
