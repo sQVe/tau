@@ -48,12 +48,7 @@ import {
 } from './controllerRecord.js';
 import { stopOwnedWorker } from './controllerStop.js';
 import type { Handle } from './controllerTypes.js';
-import {
-  readGenericSubmission,
-  submitGenericText,
-  genericPrompt,
-  acceptGenericReport,
-} from './generic.js';
+import { submitGenericText, genericPrompt, acceptGenericReport } from './generic.js';
 import { authorizeHistoryTask } from './history.js';
 import { authenticateParent, currentProcessIdentity } from './identity.js';
 import { validateSavedLoadout } from './loadout.js';
@@ -69,6 +64,7 @@ import {
 } from './questionRecords.js';
 import {
   readEvent,
+  readGenericSubmission,
   readTask,
   claimSuccessor,
   publish,
@@ -86,8 +82,22 @@ export { taskStatus } from './controllerRecord.js';
 const acceptedReply = (directory: string, taskId: string, questionId: string) => ({
   replyAccepted: true,
   workerAcknowledged: Boolean(readAcknowledgement(directory, taskId, questionId)),
-  delivery: 'Not retried. Prior delivery may be uncertain.',
+  delivery: 'notResent' as const,
 });
+
+const deliveryFromSubmission = (
+  state: 'submitted' | 'not-delivered' | 'uncertain' | undefined,
+): 'sent' | 'notDelivered' | 'uncertain' => {
+  if (state === 'submitted') {
+    return 'sent';
+  }
+
+  if (state === 'not-delivered') {
+    return 'notDelivered';
+  }
+
+  return 'uncertain';
+};
 
 interface PiReplyRequest {
   directory: string;
@@ -207,13 +217,11 @@ export class WorkerController {
         throw new Error(handle.recordErrors.join('; '));
       }
 
+      const { activeOwner, enforcing } = this.ownership(taskId);
+
       return {
-        ...taskStatus(
-          directory,
-          this.closed || !handle ? undefined : this.ownerId,
-          !handle?.stopping,
-        ),
-        ...genericStatus(directory, task, handle),
+        ...taskStatus(directory, activeOwner, enforcing),
+        ...genericStatus(directory, task, handle, !this.closed),
       };
     } catch (error) {
       return this.statusFailure({ taskId, directory, handle, task, error });
@@ -278,6 +286,15 @@ export class WorkerController {
     };
   }
 
+  ownership(taskId: string) {
+    const handle = this.handles.get(taskId);
+
+    return {
+      activeOwner: this.closed || !handle ? undefined : this.ownerId,
+      enforcing: !handle?.stopping,
+    };
+  }
+
   questionReceipt(taskId: string, parentSessionId: string, questionId: string) {
     const directory = this.directory(taskId, parentSessionId);
     const question = readQuestion(directory, taskId, questionId);
@@ -333,7 +350,17 @@ export class WorkerController {
       );
     }
 
-    return submitGenericText(directory, task, {
+    const savedReply = readGenericSubmission(directory, task.taskId, answer.replyId);
+
+    if (savedReply) {
+      if (savedReply.intent.text !== answer.reply) {
+        throw new Error('Conflicting native submission identity.');
+      }
+
+      return { replyAccepted: true as const, delivery: 'notResent' as const };
+    }
+
+    const submission = await submitGenericText(directory, task, {
       id: answer.replyId,
       text: answer.reply,
       send: () => {
@@ -342,6 +369,11 @@ export class WorkerController {
         return call(agentPromptArguments(location.paneId, answer.reply));
       },
     });
+
+    return {
+      replyAccepted: true as const,
+      delivery: deliveryFromSubmission(submission?.observation?.state),
+    };
   }
 
   async reply(
@@ -423,26 +455,25 @@ export class WorkerController {
     const { directory, handle, questionId, answer, value } = request;
     const { taskId } = handle.task;
     const reference = { version: 1, taskId, questionId, replyId: answer.replyId };
-    const delivery = `TAU_REPLY ${JSON.stringify(reference)}`;
+    const prompt = `TAU_REPLY ${JSON.stringify(reference)}`;
     const call = (argumentsList: string[]) =>
       this.client(argumentsList, workBudget(handle), handle.abort.signal);
 
     acceptReply(directory, taskId, value);
 
+    // The reply is saved; a throw here would read as a failed reply and invite a resend.
+    let delivery: 'sent' | 'uncertain' = 'sent';
+
     try {
-      await call(['agent', 'prompt', text(handle.paneId), delivery]);
-    } catch (error) {
-      throw new Error(
-        'Reply accepted durably, but delivery is uncertain. Do not retry delivery; inspect acknowledgement.',
-        { cause: error },
-      );
+      await call(['agent', 'prompt', text(handle.paneId), prompt]);
+    } catch {
+      delivery = 'uncertain';
     }
 
     return {
       replyAccepted: true,
       workerAcknowledged: Boolean(readAcknowledgement(directory, taskId, questionId)),
-      delivery:
-        'Herdr accepted text. This does not prove worker acknowledgement or applied effects.',
+      delivery,
     };
   }
 
@@ -1231,7 +1262,7 @@ export class WorkerController {
       recordEvent(directory, task.taskId, 'cleanup', { detail, stopped });
     });
     record(() => {
-      outcome = taskStatus(directory, this.ownerId, false).outcome;
+      outcome = taskStatus(directory, this.ownerId, false).outcome ?? reason;
     });
 
     return outcome;

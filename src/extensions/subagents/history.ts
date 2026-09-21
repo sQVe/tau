@@ -8,7 +8,8 @@ import { readReport, readSuccessor } from './records.js';
 import { canonical, historyRegistry, lineage, readNode, sameRoot } from './sessionLineage.js';
 import type { LineageNode } from './sessionLineage.js';
 import { isGenericLoadout, requireNativeTask } from './types.js';
-import type { Report, Task } from './types.js';
+import type { Report, Task, WorkerState } from './types.js';
+import { workerState } from './workerState.js';
 
 export const authorizeHistoryTask = (
   root: string,
@@ -53,8 +54,14 @@ interface Candidate {
   nativeSessionFile?: string;
   nativeReference?: { kind: string; value: string };
   nativeEvidence: 'available' | 'missing' | 'invalid' | 'opaque';
+  state?: WorkerState;
   report?: Report;
 }
+
+type Ownership = (taskId: string) => { activeOwner: string | undefined; enforcing: boolean };
+
+// Internal display budget for one history page.
+const historyByteBudget = 48_000;
 
 // One unreadable record must not hide the rest of history. Follow-up authorization still fails closed.
 const readOrDiagnose = <T>(read: () => T, label: string, diagnostics: string[]): T | undefined => {
@@ -67,10 +74,26 @@ const readOrDiagnose = <T>(read: () => T, label: string, diagnostics: string[]):
   }
 };
 
+const candidateState = (
+  directory: string,
+  task: Task,
+  ownership: Ownership,
+  diagnostics: string[],
+): WorkerState | undefined => {
+  const { activeOwner, enforcing } = ownership(task.taskId);
+
+  return readOrDiagnose(
+    () => workerState(directory, task, activeOwner, enforcing),
+    `Task ${task.taskId} state`,
+    diagnostics,
+  );
+};
+
 const genericTaskCandidate = (
   directory: string,
   task: Task,
   inScope: (file: string, id?: string) => boolean,
+  ownership: Ownership,
   diagnostics: string[],
 ): Candidate | undefined => {
   const scoped = readOrDiagnose(
@@ -93,6 +116,7 @@ const genericTaskCandidate = (
     `Task ${task.taskId} native reference`,
     diagnostics,
   );
+  const state = candidateState(directory, task, ownership, diagnostics);
 
   return {
     sourceFile: join(directory, 'task.json'),
@@ -100,6 +124,7 @@ const genericTaskCandidate = (
     ...(task.name ? { name: task.name } : {}),
     description: task.task,
     nativeEvidence: 'opaque',
+    ...(state ? { state } : {}),
     ...(report ? { report } : {}),
     ...(reference ? { nativeReference: reference } : {}),
   };
@@ -109,10 +134,11 @@ const taskCandidate = (
   { directory, task }: { directory: string; task: Task },
   tasks: Map<string, Task>,
   inScope: (file: string, id?: string) => boolean,
+  ownership: Ownership,
   diagnostics: string[],
 ): Candidate | undefined => {
   if (isGenericLoadout(task.loadout)) {
-    return genericTaskCandidate(directory, task, inScope, diagnostics);
+    return genericTaskCandidate(directory, task, inScope, ownership, diagnostics);
   }
 
   const native = requireNativeTask(task);
@@ -153,6 +179,7 @@ const taskCandidate = (
     `Task ${task.taskId} successor claim`,
     diagnostics,
   );
+  const state = candidateState(directory, task, ownership, diagnostics);
 
   return {
     sourceFile: join(directory, 'task.json'),
@@ -164,6 +191,7 @@ const taskCandidate = (
     nativeSessionId: native.nativeSessionId,
     nativeSessionFile: native.nativeSessionFile,
     nativeEvidence,
+    ...(state ? { state } : {}),
     ...(report ? { report } : {}),
   };
 };
@@ -195,12 +223,13 @@ const taskCandidates = (
   saved: { directory: string; task: Task }[],
   tasks: Map<string, Task>,
   inScope: InScope,
+  ownership: Ownership,
   diagnostics: string[],
 ): Candidate[] => {
   const candidates: Candidate[] = [];
 
   for (const entry of saved) {
-    const candidate = taskCandidate(entry, tasks, inScope, diagnostics);
+    const candidate = taskCandidate(entry, tasks, inScope, ownership, diagnostics);
 
     if (candidate) {
       candidates.push(candidate);
@@ -265,13 +294,14 @@ const mergeDiscoveredSessions = (
 const nativeSessionCandidates = (
   sessions: Map<string, Pick<SessionInfo, 'id' | 'name' | 'firstMessage'>>,
   tasks: Map<string, Task>,
+  ancestorFiles: Set<string>,
   inScope: InScope,
   diagnostics: string[],
 ): Candidate[] => {
   const candidates: Candidate[] = [];
 
   for (const [path, session] of sessions) {
-    if (tasks.has(path)) {
+    if (tasks.has(path) || ancestorFiles.has(path)) {
       continue;
     }
 
@@ -320,6 +350,7 @@ export const searchHistory = async (
   root: string,
   current: { file: string; id: string; sessionDirectory: string },
   query = '',
+  ownership: Ownership = () => ({ activeOwner: undefined, enforcing: true }),
 ) => {
   const { saved, tasks, diagnostics } = historyRegistry(root);
   const ancestors = lineage(current.file, tasks, current.id);
@@ -337,20 +368,19 @@ export const searchHistory = async (
 
   mergeDiscoveredSessions(sessions, discovered, diagnostics);
 
+  // Ancestors stay seeded above so discovered metadata is still checked, but they are never candidates.
+  const ancestorFiles = new Set(ancestors.map((node) => node.file));
   const candidates = [
-    ...taskCandidates(saved, tasks, inScope, diagnostics),
-    ...nativeSessionCandidates(sessions, tasks, inScope, diagnostics),
+    ...taskCandidates(saved, tasks, inScope, ownership, diagnostics),
+    ...nativeSessionCandidates(sessions, tasks, ancestorFiles, inScope, diagnostics),
   ];
   const needle = query.trim().toLowerCase();
   const matches = matchCandidates(candidates, needle);
 
   return {
-    rootSessionId: origin.header.id,
-    rootSessionFile: origin.file,
     outcome: searchOutcome(needle, matches.length),
     candidates: matches,
     diagnostics,
-    readOnly: true,
   };
 };
 
@@ -397,7 +427,6 @@ const candidateReport = (
   return {
     report: { outcome: report.outcome, summary, evidence },
     reportEvidenceCount: report.evidence.length,
-    reportFileRelativeToSource: 'report.json',
   };
 };
 
@@ -413,20 +442,28 @@ const candidatePreview = (candidate: Candidate) => {
     truncatedFields.push('report.evidence');
   }
 
-  return {
-    sourceFile: candidate.sourceFile,
+  const reportTruncated = truncatedFields.length > 0;
+  const nativeOnly = candidate.taskId === undefined || candidate.nativeEvidence !== 'available';
+  const result = {
     ...previewOptionalText(candidate.taskId, 'taskId', truncatedFields),
     ...previewOptionalText(candidate.predecessorTaskId, 'predecessorTaskId', truncatedFields),
     ...previewOptionalText(candidate.successorTaskId, 'successorTaskId', truncatedFields),
     ...previewOptionalText(candidate.name, 'name', truncatedFields),
     description: preview(candidate.description, 'description', truncatedFields),
+    ...(candidate.state ? { state: candidate.state } : {}),
     ...previewOptionalText(candidate.nativeSessionId, 'nativeSessionId', truncatedFields),
-    ...previewOptionalText(candidate.nativeSessionFile, 'nativeSessionFile', truncatedFields),
     ...candidateNativeReference(candidate, truncatedFields),
     nativeEvidence: candidate.nativeEvidence,
     ...candidateReport(report, summary, evidence),
-    truncatedFields: [...new Set(truncatedFields)],
+    ...(reportTruncated ? { reportFile: join(dirname(candidate.sourceFile), 'report.json') } : {}),
+    ...(nativeOnly
+      ? previewOptionalText(candidate.nativeSessionFile, 'nativeSessionFile', truncatedFields)
+      : {}),
   };
+
+  return truncatedFields.length
+    ? { ...result, truncatedFields: [...new Set(truncatedFields)] }
+    : result;
 };
 
 const isHistoryOffsetValid = (offset: number): boolean =>
@@ -444,38 +481,27 @@ export const historyPage = (
     throw new Error('History offset must be nonnegative and limit must be between 1 and 10.');
   }
 
-  const truncatedFields: string[] = [];
-  const page = {
-    rootSessionId: preview(history.rootSessionId, 'rootSessionId', truncatedFields),
-    rootSessionFile: preview(history.rootSessionFile, 'rootSessionFile', truncatedFields),
+  const diagnosticFields: string[] = [];
+  const diagnostics = history.diagnostics
+    .slice(0, 5)
+    .map((entry) => preview(entry, 'diagnostics', diagnosticFields));
+  const candidates: ReturnType<typeof candidatePreview>[] = [];
+  const page = (nextOffset?: number) => ({
     outcome: history.outcome,
     totalMatches: history.candidates.length,
-    offset,
-    limit,
-    nextOffset: null as number | null,
-    candidates: [] as ReturnType<typeof candidatePreview>[],
-    diagnostics: history.diagnostics
-      .slice(0, 5)
-      .map((entry) => preview(entry, 'diagnostics', truncatedFields)),
-    totalDiagnostics: history.diagnostics.length,
-    diagnosticsTruncated: history.diagnostics.length > 5 || truncatedFields.includes('diagnostics'),
-    truncatedFields,
-    maxBytes: 48000,
-    readOnly: true,
-    retrieval:
-      'Read sourceFile for the complete task record or native transcript. reportFileRelativeToSource is a sibling of sourceFile. Task records contain full native references. Truncated fields are previews, not exact identifiers or paths. subagent_status remains direct-parent-only.',
-    paging:
-      'Repeat the same query with nextOffset. History is recomputed; concurrent additions can change pages.',
-  };
+    ...(nextOffset === undefined ? {} : { nextOffset }),
+    candidates,
+    ...(diagnostics.length ? { diagnostics } : {}),
+  });
 
   for (const candidate of history.candidates.slice(offset, offset + limit)) {
-    page.candidates.push(candidatePreview(candidate));
-    page.nextOffset = offset + page.candidates.length;
+    candidates.push(candidatePreview(candidate));
+    const size = Buffer.byteLength(JSON.stringify(page(offset + candidates.length)), 'utf8');
 
-    if (Buffer.byteLength(JSON.stringify(page), 'utf8') > page.maxBytes) {
-      page.candidates.pop();
+    if (size > historyByteBudget) {
+      candidates.pop();
 
-      if (!page.candidates.length) {
+      if (!candidates.length) {
         throw new Error(
           'A history reference exceeds the display budget. Inspect saved session/task files directly.',
         );
@@ -485,8 +511,7 @@ export const historyPage = (
     }
   }
 
-  const next = offset + page.candidates.length;
-  page.nextOffset = next < history.candidates.length ? next : null;
+  const next = offset + candidates.length;
 
-  return page;
+  return page(next < history.candidates.length ? next : undefined);
 };

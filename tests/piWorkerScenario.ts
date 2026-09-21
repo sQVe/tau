@@ -287,8 +287,7 @@ export default function (pi) {
 
     askedQuestionId = question.questionId;
     questionObservations.push(
-      waiting.stopped,
-      waiting.reportAccepted,
+      waiting.state,
       readFileSync(join(root, 'source.txt'), 'utf8'),
       waiting.deadline,
     );
@@ -304,7 +303,7 @@ export default function (pi) {
       await deliveryEntered.promise;
       const repeated = await controller.reply(task.taskId, 'parent', answer);
 
-      if (!repeated || !('workerAcknowledged' in repeated)) {
+      if (!('workerAcknowledged' in repeated)) {
         throw new Error('Expected a Pi reply receipt.');
       }
 
@@ -328,7 +327,7 @@ export default function (pi) {
   const status = controller.status(launched.taskId, 'parent');
 
   expect(questionObservations).toEqual(
-    scenario.startsWith('question') ? [false, false, 'before\n', launched.deadline] : [],
+    scenario.startsWith('question') ? ['awaitingReply', 'before\n', launched.deadline] : [],
   );
   expect(replyObservations).toEqual(
     scenario === 'question completion' ? ['reply-one', undefined, false, 1] : [],
@@ -356,10 +355,7 @@ export default function (pi) {
         'question cancellation': 'cancelled',
         'question timeout': 'timeout',
       }[scenario],
-      ready: scenario !== 'early exit',
-      accepted: scenario !== 'early exit',
-      reportAccepted: completes,
-      stopped: true,
+      state: 'stopped',
     },
   });
   expect(status.cleanup).toContain('pane closed');
@@ -414,7 +410,7 @@ export default function (pi) {
         loadout: nextTask.loadout,
       },
       final.outcome,
-      final.stopped,
+      final.state,
       final.report?.evidence,
       readFileSync(join(launched.directory, 'task.json')).equals(taskBytes),
       readFileSync(join(launched.directory, 'report.json')).equals(reportBytes),
@@ -439,7 +435,7 @@ export default function (pi) {
             loadout: savedTask.loadout,
           },
           'success',
-          true,
+          'stopped',
           ['prior context: true', 'Safety Net block: true', 'saved instructions: true'],
           true,
           true,

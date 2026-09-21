@@ -170,6 +170,15 @@ export const acknowledgementSchema = Type.Object(
   { ...questionIdentity, replyId: questionIdentitySchema },
   { additionalProperties: false },
 );
+export type WorkerState =
+  | 'starting'
+  | 'running'
+  | 'awaitingReply'
+  | 'reported'
+  | 'stopping'
+  | 'stopped'
+  | 'cleanupUnconfirmed'
+  | 'notOwned';
 export type Question = Static<typeof questionSchema>;
 export type Reply = Static<typeof replySchema>;
 export type Acknowledgement = Static<typeof acknowledgementSchema>;

@@ -16,8 +16,10 @@ import { join } from 'node:path';
 
 import { afterEach, expect, it, onTestFinished as afterTest, vi } from 'vitest';
 
+import { fixtureGenericLoadout } from './fixtures/loadout.js';
 import * as questions from './questionRecords.js';
 import * as records from './records.js';
+import { workerState } from './workerState.js';
 
 vi.mock('node:fs', async (importOriginal) => {
   const original = await importOriginal<typeof fileSystem>();
@@ -788,4 +790,303 @@ it('accepts one validated report without replacing durable evidence', ({ onTestF
     records.acceptReport(directory, 'task-one', { ...report, summary: 'x'.repeat(40_000) }),
   ).toThrow('Invalid');
   expect(readFileSync(join(directory, 'report.json'), 'utf8')).toBe(accepted);
+});
+
+const genericWorkerFixture = () => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-worker-generic-'));
+  afterTest(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const task = {
+    version: 2,
+    taskId: 'task-two',
+    task: 'Inspect source.',
+    parentSession: join(directory, 'parent.jsonl'),
+    parentSessionId: 'parent-two',
+    ownerId: 'owner-one',
+    createdAt: 1000,
+    deadline: 20000,
+    cancellationBudget: 1000,
+    tree: {
+      rootSession: join(directory, 'root.jsonl'),
+      rootSessionId: 'root-two',
+      monotonicDeadline: 20000,
+    },
+    loadout: fixtureGenericLoadout(directory),
+  };
+  records.publish(directory, 'task.json', task);
+
+  return { directory, task };
+};
+
+it.each([
+  { harness: 'pi', records: ['ready'], owner: 'owner-one', enforcing: true, state: 'starting' },
+  {
+    harness: 'pi',
+    records: ['ready', 'accepted'],
+    owner: 'owner-one',
+    enforcing: true,
+    state: 'running',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'question'],
+    owner: 'owner-one',
+    enforcing: true,
+    state: 'awaitingReply',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'question', 'reply'],
+    owner: 'owner-one',
+    enforcing: true,
+    state: 'running',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'report'],
+    owner: 'owner-one',
+    enforcing: true,
+    state: 'reported',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'report'],
+    owner: 'owner-one',
+    enforcing: false,
+    state: 'stopping',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'report', 'stopping'],
+    owner: 'owner-one',
+    enforcing: true,
+    state: 'stopping',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'stopping'],
+    owner: undefined,
+    enforcing: true,
+    state: 'cleanupUnconfirmed',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'report'],
+    owner: undefined,
+    enforcing: true,
+    state: 'notOwned',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'report', 'cleanupStopped'],
+    owner: 'owner-one',
+    enforcing: true,
+    state: 'stopped',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'settledStopped'],
+    owner: undefined,
+    enforcing: true,
+    state: 'cleanupUnconfirmed',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'settled'],
+    owner: 'owner-one',
+    enforcing: true,
+    state: 'running',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'startupFailure'],
+    owner: 'other-owner',
+    enforcing: true,
+    state: 'cleanupUnconfirmed',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'timeoutStopped'],
+    owner: undefined,
+    enforcing: true,
+    state: 'cleanupUnconfirmed',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'timeout'],
+    owner: 'owner-one',
+    enforcing: true,
+    state: 'cleanupUnconfirmed',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'cancelled'],
+    owner: 'owner-one',
+    enforcing: false,
+    state: 'cleanupUnconfirmed',
+  },
+  {
+    harness: 'pi',
+    records: ['accepted', 'cleanup'],
+    owner: 'owner-one',
+    enforcing: false,
+    state: 'cleanupUnconfirmed',
+  },
+  {
+    harness: 'generic',
+    records: ['ready'],
+    owner: 'owner-one',
+    enforcing: true,
+    state: 'starting',
+  },
+  {
+    harness: 'generic',
+    records: ['assignment'],
+    owner: 'owner-one',
+    enforcing: true,
+    state: 'running',
+  },
+  {
+    harness: 'generic',
+    records: ['assignmentUncertain'],
+    owner: 'owner-one',
+    enforcing: true,
+    state: 'starting',
+  },
+  {
+    harness: 'generic',
+    records: ['assignment', 'report'],
+    owner: 'owner-one',
+    enforcing: true,
+    state: 'reported',
+  },
+  {
+    harness: 'generic',
+    records: ['assignment', 'report'],
+    owner: 'owner-one',
+    enforcing: false,
+    state: 'stopping',
+  },
+  {
+    harness: 'generic',
+    records: ['assignment', 'report'],
+    owner: undefined,
+    enforcing: true,
+    state: 'notOwned',
+  },
+  {
+    harness: 'generic',
+    records: ['assignment', 'settledStopped'],
+    owner: undefined,
+    enforcing: true,
+    state: 'cleanupUnconfirmed',
+  },
+  {
+    harness: 'generic',
+    records: ['assignment', 'timeoutStopped'],
+    owner: undefined,
+    enforcing: true,
+    state: 'cleanupUnconfirmed',
+  },
+  {
+    harness: 'generic',
+    records: ['assignment', 'stopping'],
+    owner: 'owner-one',
+    enforcing: true,
+    state: 'stopping',
+  },
+  {
+    harness: 'generic',
+    records: ['assignment', 'cleanupStopped'],
+    owner: undefined,
+    enforcing: true,
+    state: 'stopped',
+  },
+])(
+  'derives $state from $records for $harness owner $owner',
+  ({ harness, records: saved, owner, enforcing, state }) => {
+    const { directory, task } = harness === 'pi' ? questionFixture() : genericWorkerFixture();
+    const publishAssignment = (observationState: string) => {
+      records.publish(directory, records.submissionName('assignment', 'intent'), {
+        taskId: task.taskId,
+        id: 'assignment',
+        text: 'Work.',
+      });
+      records.publish(directory, records.submissionName('assignment', 'observation'), {
+        taskId: task.taskId,
+        id: 'assignment',
+        state: observationState,
+        detail: 'Saved.',
+      });
+    };
+    const write: Record<string, () => void> = {
+      question: () =>
+        questions.acceptQuestion(directory, task.taskId, {
+          version: 1,
+          taskId: task.taskId,
+          questionId: 'question-one',
+          question: 'Which source file?',
+        }),
+      reply: () =>
+        questions.acceptReply(directory, task.taskId, {
+          version: 1,
+          taskId: task.taskId,
+          questionId: 'question-one',
+          replyId: 'reply-one',
+          reply: 'Inspect source.ts.',
+        }),
+      report: () =>
+        records.acceptReport(directory, task.taskId, {
+          taskId: task.taskId,
+          outcome: 'success',
+          summary: 'Done.',
+          evidence: [],
+        }),
+      assignment: () => {
+        publishAssignment('submitted');
+      },
+      assignmentUncertain: () => {
+        publishAssignment('uncertain');
+      },
+      timeoutStopped: () => {
+        records.recordEvent(directory, task.taskId, 'timeout', {
+          detail: 'Timed out.',
+          stopped: true,
+        });
+      },
+      settledStopped: () => {
+        records.recordEvent(directory, task.taskId, 'settled', {
+          detail: 'Settled.',
+          stopped: true,
+        });
+      },
+      cleanupStopped: () => {
+        records.recordEvent(directory, task.taskId, 'cleanup', {
+          detail: 'Stopped.',
+          stopped: true,
+        });
+      },
+    };
+    for (const name of saved) {
+      const recordWrite = write[name];
+      if (recordWrite) {
+        recordWrite();
+      } else {
+        records.recordEvent(directory, task.taskId, name, name);
+      }
+    }
+
+    expect(workerState(directory, records.readTask(directory), owner, enforcing)).toBe(state);
+  },
+);
+
+it('reads a saved pane identity and fails closed on invalid pane evidence', () => {
+  const { directory } = questionFixture();
+
+  expect(records.readPane(directory)).toBeUndefined();
+  records.publish(directory, 'pane.json', { paneId: 'pane-one', terminalId: 'terminal-one' });
+  expect(records.readPane(directory)).toBe('pane-one');
+  writeFileSync(join(directory, 'pane.json'), JSON.stringify({ paneId: '' }));
+  expect(() => records.readPane(directory)).toThrow('Invalid saved worker pane');
 });

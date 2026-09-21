@@ -81,6 +81,7 @@ type CancelParameters = Static<typeof cancelParameters>;
 interface SubagentRuntime {
   pi: ExtensionAPI;
   getController: () => WorkerController;
+  peekController: () => WorkerController | undefined;
   setNested: (value: boolean) => void;
 }
 
@@ -227,6 +228,7 @@ const searchWorkerHistory = async (
   parameters: HistoryParameters,
   signal: AbortSignal | undefined,
   context: ExtensionContext,
+  controller: WorkerController | undefined,
 ) => {
   signal?.throwIfAborted();
   const file = context.sessionManager.getSessionFile();
@@ -243,6 +245,7 @@ const searchWorkerHistory = async (
       sessionDirectory: context.sessionManager.getSessionDir(),
     },
     parameters.query,
+    (taskId) => controller?.ownership(taskId) ?? { activeOwner: undefined, enforcing: true },
   );
   signal?.throwIfAborted();
 
@@ -335,11 +338,11 @@ const registerHistoryTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_history',
     label: 'Search session history',
     description:
-      'Read-only name, task ID, native session ID, or description search within the current root session and its descendants. Includes bounded previews of saved reports and native references after pane cleanup. Use nextOffset with the same query to page. Read sourceFile for complete records. Match counts include all matches, not just the page. Multiple matches require clarification using full IDs; never choose the newest. Does not grant reply/cancel ownership, resume work, or copy transcripts.',
+      'Read-only name, task ID, native session ID, or description search over earlier work in the current root session tree. The current conversation and its ancestor sessions are never listed as sessions. Task candidates carry their derived state. Reports are bounded previews; truncatedFields lists preview fields, which are not exact identifiers or paths, and reportFile points at the full report when it was truncated. nativeSessionFile appears only for native-only sessions or unavailable native evidence. Repeat the same query with nextOffset to page; history is recomputed per call, so concurrent additions can shift pages. totalMatches counts all matches, not just the page. Multiple matches require clarification using full IDs; never choose the newest. Does not grant reply/cancel ownership, resume work, or copy transcripts; subagent_status stays direct-parent-only.',
     parameters: historyParameters,
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
-      return searchWorkerHistory(parameters, signal, context);
+      return searchWorkerHistory(parameters, signal, context, runtime.peekController());
     },
   });
 };
@@ -410,6 +413,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
 
       return controller;
     },
+    peekController: () => controller,
     setNested: (value: boolean) => {
       nested = value;
     },

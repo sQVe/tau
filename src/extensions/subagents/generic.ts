@@ -12,10 +12,16 @@ import type { BigIntStats } from 'node:fs';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
-import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { acceptReport, publish, readOptionalRecord, readReport } from './records.js';
+import {
+  acceptReport,
+  publish,
+  readGenericSubmission,
+  readOptionalRecord,
+  readReport,
+  submissionName,
+} from './records.js';
 import { isGenericLoadout } from './types.js';
 import type { Task } from './types.js';
 
@@ -219,74 +225,6 @@ export const readGenericReference = (directory: string, taskId: string) => {
   }
 
   return value.reference;
-};
-
-const submissionIntentSchema = Type.Object(
-  {
-    taskId: Type.String({ minLength: 1 }),
-    id: Type.String({ pattern: '^[a-zA-Z0-9-]{1,128}$' }),
-    text: Type.String({ minLength: 1 }),
-  },
-  { additionalProperties: false },
-);
-
-const submissionSchema = Type.Object({
-  taskId: Type.String(),
-  id: Type.String(),
-  state: Type.Union([
-    Type.Literal('submitted'),
-    Type.Literal('not-delivered'),
-    Type.Literal('uncertain'),
-  ]),
-  detail: Type.String(),
-});
-
-const submissionName = (id: string, suffix: string): string => {
-  if (!/^[a-zA-Z0-9-]{1,128}$/.test(id)) {
-    throw new Error('Invalid native submission identity.');
-  }
-
-  return `submission-${id}-${suffix}.json`;
-};
-
-const isMatchingSubmission = (
-  value: unknown,
-  taskId: string,
-  id: string,
-): value is Static<typeof submissionSchema> => {
-  if (!Value.Check(submissionSchema, value)) {
-    return false;
-  }
-
-  return value.taskId === taskId && value.id === id;
-};
-
-export const readGenericSubmission = (directory: string, taskId: string, id: string) => {
-  const intent = readOptionalRecord(directory, submissionName(id, 'intent'));
-
-  if (intent === undefined) {
-    return undefined;
-  }
-
-  if (
-    !Value.Check(submissionIntentSchema, intent) ||
-    intent.taskId !== taskId ||
-    intent.id !== id
-  ) {
-    throw new Error('Invalid native submission intent.');
-  }
-
-  const observation = readOptionalRecord(directory, submissionName(id, 'observation'));
-
-  if (observation !== undefined && !isMatchingSubmission(observation, taskId, id)) {
-    throw new Error('Invalid native submission observation.');
-  }
-
-  return {
-    intent,
-    observation,
-    retry: 'Never resubmit this identity; missing observation means uncertain delivery.',
-  };
 };
 
 const blockedSubmission = (error: unknown): boolean => {

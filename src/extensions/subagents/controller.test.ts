@@ -164,7 +164,8 @@ it('skips unpublished preparation debris while published attempts and claims rem
     uncertain: [expect.stringContaining(abandonedDirectory)],
   });
   const launched = await fixture.controller.launch(fixture.input);
-  expect(launched.ready).toBe(true);
+  expect(launched.state).toBe('starting');
+  expect(launched).not.toHaveProperty('outcome');
   const current = {
     file: fixture.input.parentSession,
     id: fixture.input.parentSessionId,
@@ -688,7 +689,7 @@ it('gives the worker pane its parent process identity', async ({ onTestFinished 
   expect(calls.find((call) => call[1] === 'split')).toContain(`TAU_PARENT_PROCESS=${process.pid}`);
 });
 
-it('omits the saved-evidence warning once the parent confirmed the worker stopped', async ({
+it('reports stopped without recovery once the parent confirmed the worker stopped', async ({
   onTestFinished,
 }) => {
   const { controller, input, directory } = setup(onTestFinished);
@@ -705,8 +706,9 @@ it('omits the saved-evidence warning once the parent confirmed the worker stoppe
 
   const recoveredStatus = recovered.status(status.taskId, input.parentSessionId);
 
-  expect(recoveredStatus.stopped).toBe(true);
-  expect(recoveredStatus.enforcement).toBeUndefined();
+  expect(recoveredStatus.state).toBe('stopped');
+  expect(recoveredStatus.outcome).toBe('incomplete');
+  expect(recoveredStatus).not.toHaveProperty('recovery');
 });
 
 it('tells active workers when the parent controller closes', async ({ onTestFinished }) => {
@@ -1000,11 +1002,13 @@ it('retains uncertain reply delivery without resending or acknowledging it', asy
     scopeUnchanged: true,
   };
 
-  await expect(controller.reply(launched.taskId, 'parent-id', answer)).rejects.toThrow(
-    'delivery is uncertain',
-  );
-  expect(await controller.reply(launched.taskId, 'parent-id', answer)).toMatchObject({
+  await expect(controller.reply(launched.taskId, 'parent-id', answer)).resolves.toMatchObject({
+    replyAccepted: true,
+    delivery: 'uncertain',
+  });
+  await expect(controller.reply(launched.taskId, 'parent-id', answer)).resolves.toMatchObject({
     workerAcknowledged: false,
+    delivery: 'notResent',
   });
   expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
   expect(controller.questionReceipt(launched.taskId, 'parent-id', 'question-one')).toMatchObject({
@@ -1150,7 +1154,7 @@ it.each(['confirmed', 'unconfirmed'] as const)(
     });
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const first = await controller.launch(input);
-    expect(first.ready).toBe(true);
+    expect(first.state).toBe('starting');
     vi.spyOn(process, 'kill').mockImplementation(() => {
       throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
     });
@@ -1160,7 +1164,7 @@ it.each(['confirmed', 'unconfirmed'] as const)(
 
     try {
       const second = await controller.launch(input);
-      expect(second.ready).toBe(true);
+      expect(second.state).toBe('starting');
       expect(terminal.panes.map((pane) => pane.tab_id)).toEqual(['working', 'working', 'working']);
       expect(terminal.calls.some((call) => call[1] === 'create')).toBe(false);
       expect(release).not.toHaveBeenCalledWith('terminal-1');
@@ -1297,7 +1301,7 @@ it.each(['moved', 'duplicate', 'missing', 'replacement job'] as const)(
     );
     expect(cleanupCalls.some((call) => call[1] === 'send-keys')).toBe(false);
     expect(cleanupCalls.flat()).not.toContain('worker-1');
-    expect(cancelled.stopped).toBe(scenario === 'moved');
+    expect(cancelled.state).toBe(scenario === 'moved' ? 'stopped' : 'cleanupUnconfirmed');
     expect(cancelled.deadline).toBe(launched.deadline);
   },
 );
@@ -1334,10 +1338,8 @@ it('retains confirmed terminal evidence when cancelled during the cosmetic place
   });
   expect(status).toMatchObject({
     outcome: 'cancelled',
-    stopped: true,
+    state: 'stopped',
     capacityHeld: false,
-    accepted: false,
-    ready: false,
   });
   expect(status.cleanup).toContain('worker-1');
   expect(release).toHaveBeenCalledWith('terminal-1');
@@ -1387,7 +1389,7 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
   ]);
   expect(workerArguments(task)).toContain('--no-extensions');
   expect(workerArguments(task)).toContain(input.loadout.safetyExtension);
-  expect(launched.accepted).toBe(false);
+  expect(launched.state).toBe('starting');
   recordEvent(launched.directory, task.taskId, 'accepted', 'Accepted.');
   acceptReport(launched.directory, task.taskId, {
     taskId: task.taskId,
@@ -1397,9 +1399,7 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
   });
 
   expect(controller.status(task.taskId, 'parent-id')).toMatchObject({
-    accepted: true,
-    reportAccepted: true,
-    stopped: false,
+    state: 'reported',
     outcome: 'success',
     deadline: task.deadline,
   });
@@ -1410,7 +1410,14 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
   onTestFinished(() => {
     recovered.close();
   });
-  expect(recovered.status(task.taskId, 'parent-id').enforcement).toContain('Saved evidence only');
+  expect(recovered.status(task.taskId, 'parent-id')).toMatchObject({
+    state: 'notOwned',
+    recovery: {
+      paneId: 'worker-1',
+      directory: launched.directory,
+      nativeSessionFile: task.nativeSessionFile,
+    },
+  });
   expect(recovered.status(task.taskId, 'parent-id').report?.summary).toBe('Edited fixture.');
   expect(() => recovered.status(task.taskId, 'wrong-parent')).toThrow('another parent');
   await expect(recovered.cancel(task.taskId, 'parent-id')).rejects.toThrow('manual cleanup');
@@ -1436,7 +1443,7 @@ it('recovers reports and native references without extension discovery metadata'
 
   expect(recovered.status(task.taskId, 'parent-id')).toMatchObject({
     outcome: 'success',
-    reportAccepted: true,
+    state: 'notOwned',
     nativeSessionId: task.nativeSessionId,
     nativeSessionFile: task.nativeSessionFile,
     report: { summary: 'Saved HEAD handover.' },
@@ -1506,9 +1513,9 @@ it('keeps the original deadline and reports active-work cancellation failure hon
   const status = controller.status(launched.taskId, 'parent-id');
 
   expect(status.outcome).toBe('timeout');
-  expect(status.stopped).toBe(false);
+  expect(status.state).toBe('cleanupUnconfirmed');
+  expect(status.recovery?.paneId).toBe('worker-1');
   expect(status.cleanup).toContain('manual cleanup');
-  expect(status.enforcement).not.toContain('remains active');
   expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
   expect(calls.some((call) => call[1] === 'close')).toBe(false);
   expect(notifications).toHaveLength(1);
@@ -1537,9 +1544,7 @@ it('preserves incomplete output and malformed evidence without retrying startup'
 
   expect(status).toMatchObject({
     outcome: 'failure',
-    accepted: false,
-    reportAccepted: false,
-    stopped: true,
+    state: 'stopped',
     capacityHeld: false,
   });
   expect(calls.map((call) => call[1])).toEqual(['list', 'current']);
@@ -1560,8 +1565,7 @@ it('distinguishes settled missing handover and cancellation from success', async
 
   expect(taskStatus(launched.directory)).toMatchObject({
     outcome: 'incomplete',
-    reportAccepted: false,
-    stopped: true,
+    state: 'cleanupUnconfirmed',
   });
   const cancelled = await controller.cancel(launched.taskId, 'parent-id');
   expect(cancelled.outcome).toBe('cancelled');
@@ -1590,11 +1594,9 @@ it('ends enforcement on parent shutdown without claiming cleanup', async ({ onTe
   controller.close();
   await vi.advanceTimersByTimeAsync(20_000);
 
-  expect(controller.status(launched.taskId, 'parent-id')).toMatchObject({
-    outcome: 'incomplete',
-    stopped: false,
-    deadlineActive: false,
-  });
+  const status = controller.status(launched.taskId, 'parent-id');
+  expect(status.state).toBe('notOwned');
+  expect(status).not.toHaveProperty('outcome');
   expect(calls).toHaveLength(callCount);
   expect(notifications).toEqual([]);
   expect(vi.getTimerCount()).toBe(0);
@@ -1636,8 +1638,7 @@ it('ends in-flight cleanup on parent shutdown without further calls or notificat
   expect(readdirSync(launched.directory)).not.toContain('notified.json');
   expect(controller.status(launched.taskId, 'parent-id')).toMatchObject({
     outcome: 'cancelled',
-    stopped: false,
-    deadlineActive: false,
+    state: 'cleanupUnconfirmed',
   });
   expect(controller.status(launched.taskId, 'parent-id').cleanup).toContain('manually');
 });
@@ -1698,8 +1699,7 @@ it.each([true, false])(
 
     expect(status).toMatchObject({
       outcome: 'failure',
-      ready: false,
-      stopped: false,
+      state: 'cleanupUnconfirmed',
       capacityHeld: true,
     });
     expect(status.failure).toContain(
@@ -1742,7 +1742,7 @@ it('detects an owned worker exiting before readiness without waiting for the tas
   const status = await controller.launch({ ...input, timeout: 60_000 });
 
   expect(performance.now() - started).toBeLessThan(1500);
-  expect(status).toMatchObject({ outcome: 'failure', ready: false, stopped: true });
+  expect(status).toMatchObject({ outcome: 'failure', state: 'stopped' });
   expect(status.failure).toContain('exited before readiness');
   expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(calls.some((call) => call[1] === 'send-keys')).toBe(false);
@@ -1794,8 +1794,7 @@ it.each(['missing report', 'accepted report'])(
 
     expect(controller.status(launched.taskId, 'parent-id')).toMatchObject({
       outcome: reportState === 'accepted report' ? 'success' : 'incomplete',
-      deadlineActive: false,
-      stopped: true,
+      state: 'stopped',
       report: reportState === 'accepted report' ? report : undefined,
     });
     expect(notifications).toHaveLength(1);
@@ -1958,8 +1957,7 @@ it('distinguishes missing readiness timeout from startup failure inside the orig
 
   expect(status).toMatchObject({
     outcome: 'timeout',
-    ready: false,
-    stopped: false,
+    state: 'cleanupUnconfirmed',
     failure: undefined,
   });
   expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
@@ -2020,8 +2018,8 @@ it('waits for worker readiness after herdr readiness without a new startup budge
   const status = await launch;
 
   expect(status.failure).toBeUndefined();
-  expect(status.ready).toBe(true);
-  expect(status.outcome).toBe('running');
+  expect(status.state).toBe('starting');
+  expect(status).not.toHaveProperty('outcome');
   expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
 });
 
@@ -2042,4 +2040,39 @@ it('reports unreadable descendant evidence instead of breaking status', async ({
 
   expect(degraded.unconfirmedChildren).toEqual([]);
   expect(degraded.descendantEvidence).toContain('capacity may still be held');
+});
+
+it('keeps a confirmed stop when the shell changes before the pane closes', async ({
+  onTestFinished,
+}) => {
+  let checks = 0;
+  let exited = false;
+  const { controller, input, calls } = setup(onTestFinished, 0, async (arguments_) => {
+    if (!exited || arguments_[1] !== 'process-info') {
+      return '';
+    }
+    checks += 1;
+
+    return JSON.stringify({
+      result: {
+        process_info: {
+          pane_id: 'worker-1',
+          shell_pid: checks === 1 ? 100 : 200,
+          foreground_process_group_id: checks === 1 ? 100 : 200,
+        },
+      },
+    });
+  });
+  const launched = await controller.launch(input);
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+  });
+  exited = true;
+
+  const status = await controller.cancel(launched.taskId, 'parent-id');
+
+  expect(status.state).toBe('stopped');
+  expect(status.cleanup).not.toContain('Cleanup unconfirmed');
+  expect(status.cleanup).toContain('pane closure refused');
+  expect(calls.some((call) => call[1] === 'close')).toBe(false);
 });

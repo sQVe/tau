@@ -109,7 +109,10 @@ export const stopOwnedWorker = async (
     stopped = checked.shellOwned;
     signal.throwIfAborted();
 
-    if (!stopped) {
+    if (stopped) {
+      detail =
+        'The owned process is absent and its shell is foreground; detached or background descendants are not covered.';
+    } else {
       const cancellation = await cancelOwnedWorker(
         owned,
         remainingBudget(),
@@ -135,7 +138,9 @@ export const stopOwnedWorker = async (
     }
   } catch (error) {
     if (!paneConfirmed.confirmed) {
-      detail = `${String(error)} Check pane ${handle.paneId} manually. Detached descendants are not covered.`;
+      detail = stopped
+        ? `${detail} Pane ${handle.paneId} left open: ${String(error)}`
+        : `${String(error)} Check pane ${handle.paneId} manually. Detached descendants are not covered.`;
     }
   }
 

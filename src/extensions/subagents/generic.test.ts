@@ -19,10 +19,9 @@ import {
   genericPrompt,
   genericReportPath,
   prepareGenericReport,
-  readGenericSubmission,
   submitGenericText,
 } from './generic.js';
-import { publish, readReport } from './records.js';
+import { publish, readGenericSubmission, readReport } from './records.js';
 import type { Task } from './types.js';
 
 vi.mock('node:fs', async (importOriginal) => {
