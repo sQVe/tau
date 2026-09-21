@@ -19,6 +19,7 @@ import {
   renderNotice,
   renderReplyResult,
   renderStatusResult,
+  shortId,
 } from './render.js';
 
 const visibility = Type.Optional(
@@ -338,7 +339,10 @@ const replyToWorker = async (
     parameters.questionId === undefined ? {} : { questionId: parameters.questionId };
   const content = modelReply(parameters.taskId, { ...receipt, ...questionId });
 
-  return { content: [{ type: 'text' as const, text: JSON.stringify(content) }], details: receipt };
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(content) }],
+    details: { taskId: parameters.taskId, ...receipt },
+  };
 };
 
 const cancelWorker = async (
@@ -390,7 +394,7 @@ const registerFollowUpTool = (runtime: SubagentRuntime): void => {
     renderCall(parameters, theme) {
       return callText(
         'Follow up worker',
-        `${parameters.sourceTaskId} · ${firstLine(parameters.task)}`,
+        `${shortId(parameters.sourceTaskId)} · ${firstLine(parameters.task)}`,
         theme,
       );
     },
@@ -432,7 +436,7 @@ const registerStatusTool = (runtime: SubagentRuntime): void => {
       'Recover task results and saved native references. For Pi, questionId shows its reply and acknowledgement. For generic workers, submissionId shows plain-text intent and delivery without claiming acceptance. A missing observation means uncertain delivery; never resubmit that identity. readOutput reads bounded terminal text once from an active identity-checked generic worker; approval dialogs need user action. Reconnect never resubmits work or resets deadlines. Recovery after parent exit is saved evidence only. Only Pi supports completed-task follow-up. When saved records are unreadable, the result has no state; inspect its recovery for manual cleanup.',
     parameters: statusParameters,
     renderCall(parameters, theme) {
-      return callText('Worker status', parameters.taskId, theme);
+      return callText('Worker status', shortId(parameters.taskId), theme);
     },
     renderResult(result, options, theme) {
       return renderStatusResult(result.details, options.expanded, theme);
@@ -452,7 +456,7 @@ const registerReplyTool = (runtime: SubagentRuntime): void => {
       'Send an in-scope reply to an active owned worker within its original deadline. Pi requires questionId and preserves structured acknowledgement. Generic workers omit questionId and receive plain text; delivery is not task acceptance or acknowledgement. Delivery values: sent (herdr accepted the text); notResent (this exact reply was already accepted; do not retry); uncertain (delivery could not be confirmed; do not retry); notDelivered (a blocked native dialog refused input; user action is needed). Use a unique replyId and inspect subagent_status with submissionId after uncertainty. Native blocked or unknown state refuses input; never use this tool to approve native dialogs automatically.',
     parameters: replyParameters,
     renderCall(parameters, theme) {
-      return callText('Reply to worker', parameters.taskId, theme);
+      return callText('Reply to worker', shortId(parameters.taskId), theme);
     },
     renderResult(result, options, theme) {
       return renderReplyResult(result.details, options.expanded, theme);
@@ -472,7 +476,7 @@ const registerCancelTool = (runtime: SubagentRuntime): void => {
       'Attempt bounded identity-checked cancellation of an owned worker. Failed herdr calls and active-work shutdown may require manual cleanup. Detached descendants are not contained.',
     parameters: cancelParameters,
     renderCall(parameters, theme) {
-      return callText('Cancel worker', parameters.taskId, theme);
+      return callText('Cancel worker', shortId(parameters.taskId), theme);
     },
     renderResult(result, options, theme) {
       return renderStatusResult(result.details, options.expanded, theme);

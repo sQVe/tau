@@ -251,7 +251,7 @@ const historyView = (details: unknown): HistoryView | undefined => {
   };
 };
 
-const shortId = (taskId: string | undefined): string => (taskId ?? '').slice(0, 8);
+export const shortId = (taskId: string | undefined): string => (taskId ?? '').slice(0, 8);
 
 const displayName = (details: { taskId?: string | undefined; name?: string | undefined }): string =>
   details.name ?? (details.taskId ? shortId(details.taskId) : 'worker');

@@ -564,3 +564,23 @@ it('shortens the home directory in the expanded records and session rows', () =>
   const output = expandedStatusLines(statusFixture('stopped', false), subject).join('\n');
   expect(output).toContain(`~/records/${taskId}`);
 });
+
+it('shows only a short task ID on task call lines', () => {
+  const subject = theme();
+  const { tools } = renderers();
+  const calls: [string, Record<string, unknown>][] = [
+    ['subagent_status', { taskId }],
+    ['subagent_reply', { taskId, replyId: 'reply', reply: 'Scoped text.', scopeUnchanged: true }],
+    ['subagent_cancel', { taskId }],
+    [
+      'subagent_follow_up',
+      { sourceTaskId: taskId, task: 'Continue.', timeoutSeconds: 60, settingsUnchanged: true },
+    ],
+  ];
+
+  for (const [name, parameters] of calls) {
+    const text = plain(tools.get(name)?.renderCall?.(parameters, subject, context) as Component);
+    expect(text, `${name} call line`).toContain(taskId.slice(0, 8));
+    expect(text, `${name} call line`).not.toContain(taskId);
+  }
+});
