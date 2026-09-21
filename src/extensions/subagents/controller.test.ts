@@ -113,7 +113,7 @@ const setup = (
     parentPane: 'parent',
   };
 
-  return { directory, controller, client, calls, notifications, input };
+  return { directory, controller, client, fake, calls, notifications, input };
 };
 
 it('skips unpublished preparation debris while published attempts and claims remain exclusive', async ({
@@ -334,11 +334,11 @@ it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'out of t
 it('classifies follow-up readiness deadline expiry as timeout rather than caller cancellation', async () => {
   let following = false;
   const started = Promise.withResolvers<undefined>();
-  const fixture = await completed(async (argumentsList) => {
+  const fixture = await completed(async (argumentsList, budget, signal) => {
     if (following && argumentsList[1] === 'start') {
       started.resolve(undefined);
 
-      return JSON.stringify({ result: {} });
+      return fixture.fake.client(argumentsList, budget, signal);
     }
 
     return '';

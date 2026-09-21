@@ -28,6 +28,9 @@ export const agentResponse = (agent: Record<string, unknown>) =>
 export const paneListResponse = (panes: Record<string, string>[]) =>
   JSON.stringify({ result: { panes } });
 
+const paneArgument = (argumentsList: string[]) =>
+  argumentsList[argumentsList.indexOf('--pane') + 1];
+
 const herdrError = (message: string, code?: string) =>
   Object.assign(new Error(message), {
     stderr: code === undefined ? '' : JSON.stringify({ error: { code } }),
@@ -59,12 +62,21 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
     process: process.pid,
   };
   const calls: string[][] = [];
+  // Agents follow their terminal when herdr moves it to another pane.
+  const agentTerminals = new Set<string>();
+  const terminalOf = (paneId: string | undefined) =>
+    layout.panes.find((pane) => pane.pane_id === paneId)?.terminal_id;
+  const hasAgent = (paneId: string | undefined) => agentTerminals.has(terminalOf(paneId) ?? '');
+  const addAgent = (argumentsList: string[]) => {
+    agentTerminals.add(terminalOf(paneArgument(argumentsList)) ?? '');
+  };
 
   const processInfo = (argumentsList: string[]) => {
-    const running = state.started && !state.stopped;
+    const paneId = paneArgument(argumentsList);
+    const running = hasAgent(paneId) && state.started && !state.stopped;
 
     return processInfoResponse({
-      paneId: argumentsList[argumentsList.indexOf('--pane') + 1],
+      paneId,
       shellPid: state.shell,
       processId: running ? state.process : state.shell,
       argv: state.processArguments,
@@ -74,13 +86,19 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
   const agentActions: Record<string, (argumentsList: string[]) => string> = {
     list: () => JSON.stringify({ result: { type: 'agent_list', agents: [] } }),
     read: () => JSON.stringify({ result: { text: 'A bounded native question or approval.' } }),
-    start: () => {
+    start: (argumentsList) => {
       if (state.startError) {
         state.started = !state.rejectStart;
+
+        if (state.started) {
+          addAgent(argumentsList);
+        }
+
         throw new Error(state.startError);
       }
 
       state.started = true;
+      addAgent(argumentsList);
 
       return JSON.stringify({ result: {} });
     },
@@ -89,7 +107,7 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
         throw new Error(state.inspectionError);
       }
 
-      if (state.rejectStart) {
+      if (state.rejectStart || !hasAgent(argumentsList[2])) {
         throw herdrError('agent target not found', 'agent_not_found');
       }
 
