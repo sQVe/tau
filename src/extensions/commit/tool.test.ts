@@ -17,12 +17,8 @@ import {
 } from '../../../tests/commitTool.js';
 import { commentPolicyHash } from './commentReview.js';
 import type { CommentReview, reviewComments } from './commentReview.js';
-import {
-  commitFailedError,
-  createCommitTool as createReviewedCommitTool,
-  validatePaths,
-  validateSubject,
-} from './tool.js';
+import { createCommitTool as createReviewedCommitTool } from './tool.js';
+import { commitFailedError, validatePaths, validateSubject } from './validation.js';
 
 describe('validateSubject', () => {
   it('throws a validation error naming the subject when it is not a conventional commit', () => {

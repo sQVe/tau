@@ -21,13 +21,13 @@ describe('direct commit staging', () => {
 
     await execute(signal);
 
-    const untimedCalls = exec.mock.calls.filter(
-      ([, argumentsList]) =>
-        argumentsList.includes('--show-prefix') ||
-        argumentsList.includes('--cached') ||
-        argumentsList.includes('add') ||
-        argumentsList[0] === 'diff-tree',
-    );
+    const untimedCalls = exec.mock.calls.filter(([, argumentsList]) => {
+      const queryFlags =
+        argumentsList.includes('--show-prefix') || argumentsList.includes('--cached');
+      const commands = argumentsList.includes('add') || argumentsList[0] === 'diff-tree';
+
+      return queryFlags || commands;
+    });
 
     expect(untimedCalls).toHaveLength(5);
 

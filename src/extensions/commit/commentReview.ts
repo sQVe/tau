@@ -66,17 +66,59 @@ interface ReviewFile {
   content: string;
 }
 
+interface ReviewEntry {
+  path: string;
+  diff: string;
+  file: ReviewFile | null;
+  deleted: boolean;
+}
+
+interface ReviewGitOptions {
+  signal?: AbortSignal | undefined;
+  timeout?: number | null;
+}
+
+interface BlobRequest {
+  workingDirectory: string;
+  tree: string;
+  path: string;
+  signal?: AbortSignal | undefined;
+}
+
+interface BatchRequest {
+  context: ExtensionContext;
+  model: ReturnType<typeof resolveDelegate>;
+  input: string;
+  source: { files: ReviewFile[]; deletedPaths: string[] };
+  signal: AbortSignal;
+}
+
+interface SharedReview {
+  policies: ReviewFile[];
+  binaryPaths: string[];
+  deletedPaths: string[];
+  dispute: string | undefined;
+}
+
+interface BatchRunRequest {
+  context: ExtensionContext;
+  model: ReturnType<typeof resolveDelegate>;
+  batches: ReviewEntry[][];
+  shared: SharedReview;
+  deletedPaths: string[];
+  signal: AbortSignal | undefined;
+}
+
 export const reviewGit = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
   commandArguments: string[],
-  signal?: AbortSignal,
-  timeout: number | null = 30_000,
+  options: ReviewGitOptions = {},
 ) => {
   const result = await pi.exec('git', commandArguments, {
     cwd: workingDirectory,
-    ...(signal ? { signal } : {}),
-    ...(timeout === null ? {} : { timeout }),
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.timeout === null ? {} : { timeout: options.timeout ?? 30_000 }),
   });
 
   if (result.code !== 0 || result.killed) {
@@ -113,16 +155,13 @@ const parseReview = (text: string, files: ReviewFile[], deletedPaths: string[]):
 
 const readBlob = async (
   pi: Pick<ExtensionAPI, 'exec'>,
-  workingDirectory: string,
-  tree: string,
-  path: string,
-  signal?: AbortSignal,
+  request: BlobRequest,
 ): Promise<string | null> => {
   const entry = await reviewGit(
     pi,
-    workingDirectory,
-    ['--literal-pathspecs', 'ls-tree', '--full-tree', '-l', '-z', tree, '--', path],
-    signal,
+    request.workingDirectory,
+    ['--literal-pathspecs', 'ls-tree', '--full-tree', '-l', '-z', request.tree, '--', request.path],
+    { signal: request.signal },
   );
 
   if (!entry) {
@@ -136,21 +175,17 @@ const readBlob = async (
   }
 
   if (Number(size) > 400_000) {
-    throw new Error(`Comment review input is too large: ${path}. Reduce the file and retry.`);
+    throw new Error(
+      `Comment review input is too large: ${request.path}. Reduce the file and retry.`,
+    );
   }
 
-  const content = await reviewGit(pi, workingDirectory, ['cat-file', 'blob', hash], signal);
+  const content = await reviewGit(pi, request.workingDirectory, ['cat-file', 'blob', hash], {
+    signal: request.signal,
+  });
 
   return content.includes('\0') ? null : content;
 };
-
-// oxlint-disable-next-line eslint/complexity -- Review input limits, authentication and bounded retries are checked before accepting findings.
-interface ReviewEntry {
-  path: string;
-  diff: string;
-  file: ReviewFile | null;
-  deleted: boolean;
-}
 
 const inputBudget = 1_000_000;
 
@@ -188,13 +223,10 @@ const batchEntries = (entries: ReviewEntry[], sharedSize: number) => {
   return batches;
 };
 
-const reviewBatch = async (
-  context: ExtensionContext,
-  model: ReturnType<typeof resolveDelegate>,
-  input: string,
-  source: { files: ReviewFile[]; deletedPaths: string[] },
-  reviewSignal: AbortSignal,
-) => {
+// Review input limits, authentication and bounded retries are checked before accepting findings.
+const reviewBatch = async (request: BatchRequest) => {
+  const { context, model, input, source, signal } = request;
+
   for (let attempt = 0; attempt < 2; attempt += 1) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- Retry only after parsing the previous response fails.
     const response = await context.modelRegistry.complete(
@@ -207,7 +239,7 @@ const reviewBatch = async (
             : ''),
         messages: [{ role: 'user', content: input, timestamp: Date.now() }],
       },
-      { signal: reviewSignal, maxTokens: 4096 },
+      { signal, maxTokens: 4096 },
     );
 
     if (['error', 'aborted', 'length'].includes(response.stopReason)) {
@@ -222,7 +254,7 @@ const reviewBatch = async (
     try {
       return parseReview(text, source.files, source.deletedPaths);
     } catch (error) {
-      if (attempt === 1 || reviewSignal.aborted) {
+      if (attempt === 1 || signal.aborted) {
         throw error;
       }
     }
@@ -231,12 +263,7 @@ const reviewBatch = async (
   throw new Error('Comment review returned invalid findings.');
 };
 
-export const reviewComments = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
-  context: ExtensionContext,
-  signal: AbortSignal | undefined,
-  snapshot: { tree: string; head: string | null; dispute?: string },
-): Promise<CommentReview> => {
+const resolveReviewModel = (context: ExtensionContext) => {
   const model = resolveDelegate(context);
   const modelApi: unknown = model.api;
 
@@ -244,71 +271,42 @@ export const reviewComments = async (
     throw new TypeError('Comment review needs a valid model API.');
   }
 
-  let base = snapshot.head;
+  return model;
+};
 
-  if (base == null) {
-    const emptyTree = await reviewGit(pi, context.cwd, ['mktree'], signal);
+const buildDiffArguments = (base: string, tree: string): string[] => [
+  '--no-ext-diff',
+  '--no-textconv',
+  '--no-renames',
+  '--no-color',
+  // Keeps one diff --git section per submodule path whatever diff.submodule says.
+  '--submodule=short',
+  '--no-relative',
+  base,
+  tree,
+  '--',
+  // Callers run diff with --no-literal-pathspecs so an inherited GIT_LITERAL_PATHSPECS cannot
+  // turn these into literal names and silently empty the review.
+  ':(top)',
+  ...lockfilePatterns.map((pattern) => `:(top,exclude,glob)**/${pattern}`),
+];
 
-    base = emptyTree.trim();
-  }
+const collectReviewEntries = async (request: {
+  pi: Pick<ExtensionAPI, 'exec'>;
+  cwd: string;
+  tree: string;
+  paths: string[];
+  diffSections: string[];
+  binaryPaths: string[];
+  signal: AbortSignal | undefined;
+}): Promise<ReviewEntry[]> => {
+  const { pi, cwd, tree, paths, diffSections, binaryPaths, signal } = request;
 
-  const diffArguments = [
-    '--no-ext-diff',
-    '--no-textconv',
-    '--no-renames',
-    '--no-color',
-    // Keeps one diff --git section per submodule path whatever diff.submodule says.
-    '--submodule=short',
-    '--no-relative',
-    base,
-    snapshot.tree,
-    '--',
-    // Callers run diff with --no-literal-pathspecs so an inherited GIT_LITERAL_PATHSPECS cannot
-    // turn these into literal names and silently empty the review.
-    ':(top)',
-    ...lockfilePatterns.map((pattern) => `:(top,exclude,glob)**/${pattern}`),
-  ];
-  const pathsOutput = await reviewGit(
-    pi,
-    context.cwd,
-    ['--no-literal-pathspecs', 'diff', '--name-only', '-z', ...diffArguments],
-    signal,
-  );
-  const paths = pathsOutput.split('\0').filter(Boolean);
-
-  if (paths.length === 0) {
-    return { findings: [] };
-  }
-
-  const diff = await reviewGit(
-    pi,
-    context.cwd,
-    ['--no-literal-pathspecs', 'diff', ...diffArguments],
-    signal,
-  );
-
-  const numstat = await reviewGit(
-    pi,
-    context.cwd,
-    ['--no-literal-pathspecs', 'diff', '--numstat', '-z', ...diffArguments],
-    signal,
-  );
-  const binaryPaths = numstat
-    .split('\0')
-    .filter((row) => row.startsWith('-\t-\t'))
-    .map((row) => row.slice(4));
-
-  const diffSections = diff.split(/^(?=diff --git )/m);
-
-  if (diff && diffSections.length !== paths.length) {
-    throw new Error('Comment review could not match the diff to its files.');
-  }
-
-  const entries = await Promise.all(
+  return Promise.all(
     paths.map(async (path, index) => {
       const content = binaryPaths.includes(path)
         ? null
-        : await readBlob(pi, context.cwd, snapshot.tree, path, signal);
+        : await readBlob(pi, { workingDirectory: cwd, tree, path, signal });
 
       return {
         path,
@@ -318,10 +316,18 @@ export const reviewComments = async (
       };
     }),
   );
+};
 
+const hasBlobContent = (policy: { path: string; content: string | null }): policy is ReviewFile =>
+  policy.content !== null;
+
+const collectPolicyFiles = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  request: { cwd: string; tree: string; paths: string[]; signal: AbortSignal | undefined },
+): Promise<ReviewFile[]> => {
   const policyPaths = new Set<string>();
 
-  for (const path of paths) {
+  for (const path of request.paths) {
     let directory = posix.dirname(path);
 
     for (;;) {
@@ -338,24 +344,20 @@ export const reviewComments = async (
   const policyFiles = await Promise.all(
     [...policyPaths].map(async (path) => ({
       path,
-      content: await readBlob(pi, context.cwd, snapshot.tree, path, signal),
+      content: await readBlob(pi, {
+        workingDirectory: request.cwd,
+        tree: request.tree,
+        path,
+        signal: request.signal,
+      }),
     })),
   );
-  const policies = policyFiles.filter((policy) => policy.content !== null);
-  // Deleted files go by name only: their diffs can exceed the budget and their comments are gone.
-  const deletedPaths = entries.filter((entry) => entry.deleted).map((entry) => entry.path);
-  const shared = { policies, binaryPaths, deletedPaths, dispute: snapshot.dispute };
-  const batches = batchEntries(
-    entries.filter((entry) => !entry.deleted),
-    JSON.stringify({ diff: '', files: [], ...shared }).length,
-  );
 
-  const authentication = await context.modelRegistry.getApiKeyAndHeaders(model);
+  return policyFiles.filter(hasBlobContent);
+};
 
-  if (!authentication.ok) {
-    throw new Error(`Comment review authentication failed: ${authentication.error}`);
-  }
-
+const runReviewBatches = async (request: BatchRunRequest): Promise<CommentReview['findings']> => {
+  const { context, model, batches, shared, deletedPaths, signal } = request;
   const findings: CommentReview['findings'] = [];
 
   // Sequential batches keep large commits from bursting past provider rate limits.
@@ -372,10 +374,133 @@ export const reviewComments = async (
     ]);
 
     // oxlint-disable-next-line eslint/no-await-in-loop -- Batches run one at a time on purpose.
-    const review = await reviewBatch(context, model, input, { files, deletedPaths }, reviewSignal);
+    const review = await reviewBatch({
+      context,
+      model,
+      input,
+      source: { files, deletedPaths },
+      signal: reviewSignal,
+    });
 
     findings.push(...review.findings);
   }
+
+  return findings;
+};
+
+const resolveReviewBase = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  cwd: string,
+  snapshot: { tree: string; head: string | null },
+  signal: AbortSignal | undefined,
+): Promise<string> => {
+  if (snapshot.head != null) {
+    return snapshot.head;
+  }
+
+  const emptyTree = await reviewGit(pi, cwd, ['mktree'], { signal });
+
+  return emptyTree.trim();
+};
+
+const collectDiff = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  request: { cwd: string; base: string; tree: string; signal: AbortSignal | undefined },
+): Promise<{ paths: string[]; diffSections: string[]; binaryPaths: string[] }> => {
+  const diffArguments = buildDiffArguments(request.base, request.tree);
+  const pathsOutput = await reviewGit(
+    pi,
+    request.cwd,
+    ['--no-literal-pathspecs', 'diff', '--name-only', '-z', ...diffArguments],
+    { signal: request.signal },
+  );
+  const paths = pathsOutput.split('\0').filter(Boolean);
+
+  if (paths.length === 0) {
+    return { paths, diffSections: [], binaryPaths: [] };
+  }
+
+  const diff = await reviewGit(
+    pi,
+    request.cwd,
+    ['--no-literal-pathspecs', 'diff', ...diffArguments],
+    { signal: request.signal },
+  );
+  const numstat = await reviewGit(
+    pi,
+    request.cwd,
+    ['--no-literal-pathspecs', 'diff', '--numstat', '-z', ...diffArguments],
+    { signal: request.signal },
+  );
+  const binaryPaths = numstat
+    .split('\0')
+    .filter((row) => row.startsWith('-\t-\t'))
+    .map((row) => row.slice(4));
+  const diffSections = diff.split(/^(?=diff --git )/m);
+
+  if (diff && diffSections.length !== paths.length) {
+    throw new Error('Comment review could not match the diff to its files.');
+  }
+
+  return { paths, diffSections, binaryPaths };
+};
+
+export const reviewComments = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  context: ExtensionContext,
+  signal: AbortSignal | undefined,
+  snapshot: { tree: string; head: string | null; dispute?: string },
+): Promise<CommentReview> => {
+  const model = resolveReviewModel(context);
+  const base = await resolveReviewBase(pi, context.cwd, snapshot, signal);
+  const { paths, diffSections, binaryPaths } = await collectDiff(pi, {
+    cwd: context.cwd,
+    base,
+    tree: snapshot.tree,
+    signal,
+  });
+
+  if (paths.length === 0) {
+    return { findings: [] };
+  }
+
+  const entries = await collectReviewEntries({
+    pi,
+    cwd: context.cwd,
+    tree: snapshot.tree,
+    paths,
+    diffSections,
+    binaryPaths,
+    signal,
+  });
+  const policies = await collectPolicyFiles(pi, {
+    cwd: context.cwd,
+    tree: snapshot.tree,
+    paths,
+    signal,
+  });
+  // Deleted files go by name only: their diffs can exceed the budget and their comments are gone.
+  const deletedPaths = entries.filter((entry) => entry.deleted).map((entry) => entry.path);
+  const shared = { policies, binaryPaths, deletedPaths, dispute: snapshot.dispute };
+  const batches = batchEntries(
+    entries.filter((entry) => !entry.deleted),
+    JSON.stringify({ diff: '', files: [], ...shared }).length,
+  );
+
+  const authentication = await context.modelRegistry.getApiKeyAndHeaders(model);
+
+  if (!authentication.ok) {
+    throw new Error(`Comment review authentication failed: ${authentication.error}`);
+  }
+
+  const findings = await runReviewBatches({
+    context,
+    model,
+    batches,
+    shared,
+    deletedPaths,
+    signal,
+  });
 
   return { findings };
 };
