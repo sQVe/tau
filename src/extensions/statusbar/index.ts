@@ -13,15 +13,22 @@ const executeFile = promisify(execFile);
 const gitTimeoutMilliseconds = 5000;
 const gitMaximumBufferBytes = 10 * 1024 * 1024;
 
+type FooterFactory = NonNullable<Parameters<ExtensionContext['ui']['setFooter']>[0]>;
+
+interface StatusbarState {
+  dirty: boolean;
+  requestRender: (() => void) | undefined;
+  refreshId: number;
+}
+
 const getSessionCost = (context: ExtensionContext): number => {
   let cost = 0;
 
   for (const entry of context.sessionManager.getEntries()) {
-    if (
-      entry.type === 'message' &&
-      (entry.message.role === 'assistant' || entry.message.role === 'toolResult')
-    ) {
-      cost += entry.message.usage?.cost.total ?? 0;
+    if (entry.type === 'message') {
+      if (entry.message.role === 'assistant' || entry.message.role === 'toolResult') {
+        cost += entry.message.usage?.cost.total ?? 0;
+      }
     } else if (entry.type === 'compaction' || entry.type === 'branch_summary') {
       cost += entry.usage?.cost.total ?? 0;
     }
@@ -30,101 +37,107 @@ const getSessionCost = (context: ExtensionContext): number => {
   return cost;
 };
 
-export default function statusbarExtension(pi: ExtensionAPI) {
-  let dirty = false;
-  let requestRender: (() => void) | undefined;
-  let refreshId = 0;
+const refreshDirty = async (state: StatusbarState, context: ExtensionContext): Promise<void> => {
+  state.refreshId += 1;
+  const currentRefreshId = state.refreshId;
 
-  const refresh = async (context: ExtensionContext) => {
-    refreshId += 1;
-    const currentRefreshId = refreshId;
+  let nextDirty = false;
 
-    let nextDirty = false;
+  try {
+    // Override status.showUntrackedFiles so new files always count as dirty.
+    const { stdout } = await executeFile(
+      'git',
+      ['status', '--porcelain', '--untracked-files=normal'],
+      {
+        cwd: context.cwd,
+        // oxlint-disable-next-line node/no-process-env -- Status inherits Git configuration but must not lock the index.
+        env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+        timeout: gitTimeoutMilliseconds,
+        maxBuffer: gitMaximumBufferBytes,
+      },
+    );
+    nextDirty = stdout.length > 0;
+  } catch {
+    // Outside a repository, or when git fails, show no dirty marker.
+  }
 
-    try {
-      // Override status.showUntrackedFiles so new files always count as dirty.
-      const { stdout } = await executeFile(
-        'git',
-        ['status', '--porcelain', '--untracked-files=normal'],
-        {
-          cwd: context.cwd,
-          // oxlint-disable-next-line node/no-process-env -- Status inherits Git configuration but must not lock the index.
-          env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
-          timeout: gitTimeoutMilliseconds,
-          maxBuffer: gitMaximumBufferBytes,
-        },
-      );
-      nextDirty = stdout.length > 0;
-    } catch {
-      // Outside a repository, or when git fails, show no dirty marker.
-    }
+  // Ignore results from older requests and disposed footers.
+  if (currentRefreshId !== state.refreshId) {
+    return;
+  }
 
-    // Ignore results from older requests and disposed footers.
-    if (currentRefreshId !== refreshId) {
-      return;
-    }
+  state.dirty = nextDirty;
+  state.requestRender?.();
+};
 
-    dirty = nextDirty;
-    requestRender?.();
+const createFooter = (
+  pi: ExtensionAPI,
+  state: StatusbarState,
+  context: ExtensionContext,
+): FooterFactory => {
+  return (terminal, _theme, footerData) => {
+    state.dirty = false;
+
+    state.requestRender = () => {
+      terminal.requestRender();
+    };
+
+    const unsubscribe = footerData.onBranchChange(() => {
+      void refreshDirty(state, context);
+    });
+
+    // Pi disposes the old footer before calling this factory. Start after that disposal.
+    void refreshDirty(state, context);
+
+    return {
+      dispose() {
+        unsubscribe();
+
+        state.requestRender = undefined;
+        state.refreshId += 1;
+      },
+      invalidate() {
+        // No render cache: session values are read on every render.
+      },
+      render(width) {
+        const usage = context.getContextUsage();
+
+        return [
+          renderFooterLine(
+            {
+              directory: context.cwd.split(sep).filter(Boolean).slice(-2).join(sep) || sep,
+              branch: footerData.getGitBranch(),
+              dirty: state.dirty,
+              cost: getSessionCost(context),
+              contextPercent: usage?.percent ?? null,
+              contextWindow: usage?.contextWindow ?? context.model?.contextWindow ?? 0,
+              modelId: context.model?.id ?? 'no-model',
+              thinkingLevel: context.model?.reasoning ? pi.getThinkingLevel() : undefined,
+            },
+            width,
+            footerTheme,
+          ),
+        ];
+      },
+    };
   };
+};
+
+export default function statusbarExtension(pi: ExtensionAPI) {
+  const state: StatusbarState = { dirty: false, requestRender: undefined, refreshId: 0 };
 
   pi.on('session_start', (_event, context) => {
     if (context.mode !== 'tui') {
       return;
     }
 
-    context.ui.setFooter((terminal, _theme, footerData) => {
-      dirty = false;
-
-      requestRender = () => {
-        terminal.requestRender();
-      };
-
-      const unsubscribe = footerData.onBranchChange(() => {
-        void refresh(context);
-      });
-
-      // Pi disposes the old footer before calling this factory. Start after that disposal.
-      void refresh(context);
-
-      return {
-        dispose() {
-          unsubscribe();
-
-          requestRender = undefined;
-          refreshId += 1;
-        },
-        invalidate() {
-          // No render cache: session values are read on every render.
-        },
-        render(width) {
-          const usage = context.getContextUsage();
-
-          return [
-            renderFooterLine(
-              {
-                directory: context.cwd.split(sep).filter(Boolean).slice(-2).join(sep) || sep,
-                branch: footerData.getGitBranch(),
-                dirty,
-                cost: getSessionCost(context),
-                contextPercent: usage?.percent ?? null,
-                contextWindow: usage?.contextWindow ?? context.model?.contextWindow ?? 0,
-                modelId: context.model?.id ?? 'no-model',
-                thinkingLevel: context.model?.reasoning ? pi.getThinkingLevel() : undefined,
-              },
-              width,
-              footerTheme,
-            ),
-          ];
-        },
-      };
-    });
+    context.ui.setFooter(createFooter(pi, state, context));
   });
 
   // Pi awaits tool_result handlers, so footer reads must run in the background.
   pi.on('tool_result', (_event, context) => {
-    if (context.mode === 'tui' && requestRender !== undefined) {
-      void refresh(context);
+    if (context.mode === 'tui' && state.requestRender !== undefined) {
+      void refreshDirty(state, context);
     }
   });
 }
