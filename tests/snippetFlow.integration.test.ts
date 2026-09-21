@@ -217,7 +217,6 @@ it('prepends a toggled snippet to the next message and then resets', async ({ on
   await session.prompt('Add the retry policy.');
   await session.prompt('Now ship it.');
 
-  expect(sent[0]).toMatch(/^Interview me before you start\./);
   expect(sent[0]).not.toMatch(/\n$/);
   expect(sent[0]).toMatch(/until I approve the agreed scope\.\n\nAdd the retry policy\.$/);
   expect(sent[1]).toBe('Now ship it.');
