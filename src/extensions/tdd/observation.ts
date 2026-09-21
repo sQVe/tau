@@ -105,6 +105,35 @@ const selectedFailed = (cwd: string, behavior: Behavior, report: RunnerResult) =
     return matches.length === 1 && matches[0]?.status === 'failed';
   });
 
+const missingSymbolTypes = new Set(['TypeError', 'ReferenceError', 'SyntaxError']);
+
+// A plain Error stays unclassified: production code may throw one as the expected behavior.
+export const thrownErrorType = (message: string): string | null => {
+  const errorType = /^([A-Za-z]*Error)\b/.exec(message)?.[1];
+
+  if (errorType == null || errorType === 'AssertionError') {
+    return null;
+  }
+
+  const missingModule = /Cannot find (?:module|package)|does not provide an export/.test(message);
+
+  return missingSymbolTypes.has(errorType) || missingModule ? errorType : null;
+};
+
+const selectedThrownErrorType = (cwd: string, behavior: Behavior, report: RunnerResult) => {
+  if (report.kind !== 'fail') {
+    return null;
+  }
+
+  const selectedFailures = report.failures.filter(
+    (failure) =>
+      testNames(behavior).includes(failure.fullname) &&
+      behavior.files.some((file) => resolve(cwd, failure.file) === resolve(cwd, file)),
+  );
+
+  return selectedFailures.map((failure) => thrownErrorType(failure.message)).find(Boolean) ?? null;
+};
+
 interface LatestRun {
   behavior: Behavior;
   scope: 'focused' | 'full';
@@ -118,6 +147,8 @@ const hints = {
   full: 'Focused tests passed; run_tests with scope "full" to verify the suite.',
   stale: 'Test results are stale; rerun run_tests on the current inputs.',
   unknown: 'Test freshness is unknown; rerun run_tests when inputs can be read.',
+  thrown:
+    'RED came from a thrown {errorType}, not a failed assertion; make the test fail on the expected behavior before implementing.',
 };
 
 const saveRunRecord = async (diagnostics: RunDiagnostics | undefined, record: unknown) => {
@@ -156,7 +187,11 @@ export const createTestObservation = (cwd: string) => {
     return result;
   };
 
-  const hint = (condition: keyof typeof hints | undefined, input: string | null = null) => {
+  const hint = (
+    condition: keyof typeof hints | undefined,
+    input: string | null = null,
+    errorType = 'error',
+  ) => {
     if (condition === undefined || shownHints.has(condition)) {
       return undefined;
     }
@@ -167,7 +202,7 @@ export const createTestObservation = (cwd: string) => {
       staleHintInput = input;
     }
 
-    return `Hint: ${hints[condition]}`;
+    return `Hint: ${hints[condition].replace('{errorType}', errorType)}`;
   };
 
   const editHint = (current: string | null) => {
@@ -284,12 +319,15 @@ export const createTestObservation = (cwd: string) => {
 
       latest = { behavior, scope, kind: report.kind, fingerprint: after, freshness };
 
+      let thrownType: string | null = null;
+
       if (freshness === 'fresh' && scope === 'focused' && selectedFailed(cwd, behavior, report)) {
         if (!observedRed) {
           shownHints.clear();
         }
 
         observedRed = true;
+        thrownType = selectedThrownErrorType(cwd, behavior, report);
       }
 
       if (previous?.freshness !== freshness && freshness === 'fresh') {
@@ -316,7 +354,10 @@ export const createTestObservation = (cwd: string) => {
         inputs,
         runPath,
         report,
-        hint: hint(runHint(scope, report, freshness), after),
+        hint:
+          thrownType === null
+            ? hint(runHint(scope, report, freshness), after)
+            : hint('thrown', after, thrownType),
       };
     });
 

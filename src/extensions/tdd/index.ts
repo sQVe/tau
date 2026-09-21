@@ -66,7 +66,7 @@ export default function tddExtension(pi: ExtensionAPI) {
         'Start with a failing focused test (RED), implement the behavior, then rerun focused (GREEN) and scope "full". These are observations, never edit permissions. ' +
         'Returns kind, scope, freshness (fresh, stale, or unknown), and the actual runner report, even when inputs changed during the run. ' +
         'A full pass counts without prior RED or focused renewal after formatting. Duplicate, skipped, and missing tests cannot establish RED. ' +
-        'Short session-local hints suggest missing RED, full verification, or rerunning stale results. Hints never block or require acknowledgment. ' +
+        'Short session-local hints suggest missing RED, RED from a thrown error instead of a failed assertion, full verification, or rerunning stale results. Hints never block or require acknowledgment. ' +
         'Freshness covers .ts/.tsx/.js/.jsx/.mjs/.cjs under root src/, apps/, packages/, functions/, and infra/, plus test/spec files and root tests/ helpers. ' +
         'It also covers default-named package/Vite/Vitest/TypeScript configs, npm/pnpm/Yarn/Bun lockfiles, and pnpm/Vitest workspace files throughout the worktree. ' +
         'Dependencies and common generated/cache directories are excluded. Other source layouts, assets, and custom config filenames are not covered. ' +

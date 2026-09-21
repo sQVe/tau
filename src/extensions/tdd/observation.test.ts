@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { beforeEach, expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 
-import { createTestObservation } from './observation.js';
+import { createTestObservation, thrownErrorType } from './observation.js';
 import { runTests } from './runner/index.js';
 import type { RunnerResult } from './runner/types.js';
 
@@ -298,6 +298,75 @@ it.for(['duplicate', 'skipped', 'missing', 'load error'])(
     expect(await observation.checkpoint(true)).toContain('RED');
   },
 );
+
+const failedWith = (message: string): RunnerResult => ({
+  kind: 'fail',
+  tests: [{ file: 'value.test.ts', fullname: 'value works', status: 'failed' }],
+  failures: [{ file: 'value.test.ts', fullname: 'value works', message }],
+  truncated: false,
+});
+
+it.for([
+  ['TypeError: thing.run is not a function (value.test.ts:5)', 'TypeError'],
+  ['ReferenceError: missingName is not defined', 'ReferenceError'],
+  [
+    "SyntaxError: The requested module './value.js' does not provide an export named 'run'",
+    'SyntaxError',
+  ],
+  ["Error: Cannot find module './value.js' imported from value.test.ts", 'Error'],
+  ['AssertionError: expected 1 to be 2 // Object.is equality', null],
+  ['AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:', null],
+  [
+    "AssertionError: expected [Function] to throw error including 'invalid' but got 'run is not a function'",
+    null,
+  ],
+  ['Error: promise resolved "1" instead of rejecting', null],
+  ['Error: not implemented', null],
+  ['value.test.ts:5', null],
+  ['', null],
+] as const)('classifies "%s" as thrown error type %s', ([message, errorType]) => {
+  expect(thrownErrorType(message)).toBe(errorType);
+});
+
+it('advises once when RED came from a thrown error and still counts it as RED', async ({
+  onTestFinished,
+}) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  vi.mocked(runTests).mockResolvedValue(failedWith('TypeError: value.run is not a function'));
+
+  const red = await observation.run(behavior, 'focused');
+
+  expect(red.hint).toBe(
+    'Hint: RED came from a thrown TypeError, not a failed assertion; make the test fail on the expected behavior before implementing.',
+  );
+  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
+  await writeFile(join(cwd, 'src/value.ts'), 'implementation');
+  expect(await observation.checkpoint(true)).toBeUndefined();
+});
+
+it('stays quiet when RED came from a failed assertion', async ({ onTestFinished }) => {
+  const { observation } = await setup(onTestFinished);
+  vi.mocked(runTests).mockResolvedValue(failedWith('AssertionError: expected 1 to be 2'));
+
+  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
+});
+
+it('does not blame a thrown error from a test outside the selection', async ({
+  onTestFinished,
+}) => {
+  const { observation } = await setup(onTestFinished);
+  vi.mocked(runTests).mockResolvedValue({
+    kind: 'fail',
+    tests: [{ file: 'value.test.ts', fullname: 'value works', status: 'failed' }],
+    failures: [
+      { file: 'value.test.ts', fullname: 'value works', message: 'AssertionError: expected 1' },
+      { file: 'other.test.ts', fullname: 'value works', message: 'TypeError: x is not a function' },
+    ],
+    truncated: false,
+  });
+
+  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
+});
 
 it('keeps implementation edits quiet after observed focused RED', async ({ onTestFinished }) => {
   const { cwd, observation } = await setup(onTestFinished);
