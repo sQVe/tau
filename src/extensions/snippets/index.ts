@@ -96,6 +96,8 @@ export default function snippetsExtension(pi: ExtensionAPI) {
       const editor =
         previous?.(terminalUI, theme, keybindings) ??
         new CustomEditor(terminalUI, theme, keybindings, { embedWorkingStatus: true });
+      const earlier = Object.getOwnPropertyDescriptor(editor, 'onSubmit');
+      const readEarlier: (() => typeof onSubmit) | undefined = earlier?.get?.bind(editor);
       let onSubmit = editor.onSubmit;
       const submit = (text: string) => {
         if (text.trim() === '' && enabled.size > 0) {
@@ -104,7 +106,9 @@ export default function snippetsExtension(pi: ExtensionAPI) {
           return;
         }
 
-        onSubmit?.(text);
+        const next = readEarlier?.() ?? onSubmit;
+
+        next?.(text);
       };
 
       // Pi assigns onSubmit after the factory returns. Intercept submissions,
@@ -113,6 +117,7 @@ export default function snippetsExtension(pi: ExtensionAPI) {
         configurable: true,
         get: () => submit,
         set: (handler: typeof onSubmit) => {
+          earlier?.set?.call(editor, handler);
           onSubmit = handler;
         },
       });

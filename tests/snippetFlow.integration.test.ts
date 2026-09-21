@@ -34,7 +34,12 @@ const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
  * A custom UI context makes Pi report hasUI=true. Render the menu once before
  * sending the scripted keys so the test follows the terminal input order.
  */
-const createScriptedUI = (overlays: string[], keys: string[], submit: (text: string) => void) => {
+const createScriptedUI = (
+  overlays: string[],
+  keys: string[],
+  submit: (text: string) => void,
+  previousFactory: EditorFactory | undefined,
+) => {
   const keybindings = new KeybindingsManager(
     TUI_KEYBINDINGS,
   ) as unknown as Parameters<EditorFactory>[2];
@@ -47,7 +52,7 @@ const createScriptedUI = (overlays: string[], keys: string[], submit: (text: str
     selectList: {},
   } as Parameters<EditorFactory>[1];
   let editor: EditorComponent = new CustomEditor(terminalUI, editorTheme, keybindings);
-  let editorFactory: EditorFactory | undefined;
+  let editorFactory = previousFactory;
   editor.onSubmit = submit;
 
   const widgets = new Map<string, string[] | undefined>();
@@ -106,7 +111,11 @@ const createScriptedUI = (overlays: string[], keys: string[], submit: (text: str
   };
 };
 
-const createHarness = async (registerCleanup: RegisterCleanup, keys: string[]) => {
+const createHarness = async (
+  registerCleanup: RegisterCleanup,
+  keys: string[],
+  previousFactory?: EditorFactory,
+) => {
   const directory = await mkdtemp(join(tmpdir(), 'tau-snippet-flow-'));
   const agentDirectory = await mkdtemp(join(tmpdir(), 'tau-snippet-agent-'));
   registerCleanup(() => rm(directory, { recursive: true, force: true }));
@@ -156,12 +165,17 @@ const createHarness = async (registerCleanup: RegisterCleanup, keys: string[]) =
   const overlays: string[] = [];
 
   const submissions: Promise<void>[] = [];
-  const { uiContext, press } = createScriptedUI(overlays, keys, (text) => {
-    // Mirror Pi's blank-input guard so the harness does not send text the terminal would drop.
-    if (text.trim() !== '') {
-      submissions.push(session.prompt(text, { streamingBehavior: 'steer' }));
-    }
-  });
+  const { uiContext, press } = createScriptedUI(
+    overlays,
+    keys,
+    (text) => {
+      // Mirror Pi's blank-input guard so the harness does not send text the terminal would drop.
+      if (text.trim() !== '') {
+        submissions.push(session.prompt(text, { streamingBehavior: 'steer' }));
+      }
+    },
+    previousFactory,
+  );
   await session.bindExtensions({ uiContext, mode: 'tui' });
 
   const commandNames = extensionsResult.extensions.flatMap((extension) =>
@@ -269,6 +283,37 @@ it('sends selected snippets on empty Enter and resets the toggles', async ({ onT
 
   expect(userMessages).toHaveLength(2);
   expect(userMessages[1]?.content).toEqual([{ type: 'text', text: 'Now ship it.' }]);
+});
+
+it('passes submissions through an earlier editor that wraps onSubmit', async ({
+  onTestFinished,
+}) => {
+  const seenByEarlierEditor: string[] = [];
+  const earlierFactory: EditorFactory = (terminalUI, theme, keybindings) => {
+    const editor = new CustomEditor(terminalUI, theme, keybindings);
+    let onSubmit = editor.onSubmit;
+
+    Object.defineProperty(editor, 'onSubmit', {
+      configurable: true,
+      get: () => (text: string) => {
+        seenByEarlierEditor.push(text);
+        onSubmit?.(text);
+      },
+      set: (handler: typeof onSubmit) => {
+        onSubmit = handler;
+      },
+    });
+
+    return editor;
+  };
+  const { uiContext, press, submissions } = await createHarness(onTestFinished, [], earlierFactory);
+
+  uiContext.setEditorText('Ship it.');
+  press('\r');
+
+  expect(seenByEarlierEditor).toEqual(['Ship it.']);
+  expect(submissions).toHaveLength(1);
+  await submissions[0];
 });
 
 it('keeps a slash command at the start of the text and keeps the toggle on', async ({
