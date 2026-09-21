@@ -12,9 +12,16 @@ pnpm install --frozen-lockfile
 pnpm check
 ```
 
-`pnpm check` runs TypeScript, lint, formatting, and all tests, including package loading through Pi.
-Use `pnpm format` to format files. Pi loads the TypeScript source directly; there is no build step.
-Tests use temporary directories and need no model API.
+`pnpm check` runs TypeScript, lint with house-style rules, formatting, and all tests, including
+package loading through Pi. Tests use temporary directories and need no model API.
+
+Use `pnpm style:check` to check all lint rules and `pnpm style:fix` to apply safe lint fixes
+followed by formatting. Both accept file paths, for example `pnpm style:fix tests/lint.test.ts`.
+Rename bindings and move helpers manually. Staged-file hooks require the same rules.
+
+Use `pnpm lint` for ordinary diagnostics and `pnpm format` for formatting alone. Editors keep the
+ordinary diagnostics. Do not set `TAU_LINT_STYLE` globally; the style commands set it only for their
+child linter. Pi loads the TypeScript source directly; there is no build step.
 
 To run one test file, pass its path to `pnpm test`:
 

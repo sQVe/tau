@@ -1,5 +1,9 @@
 import { defineConfig } from 'vite-plus';
 
+// Explicit commands opt in; language servers keep the ordinary diagnostics.
+// eslint-disable-next-line node/no-process-env -- Scoped to the style command's child process.
+const styleEnabled = process.env.TAU_LINT_STYLE === '1';
+
 export default defineConfig({
   test: {
     // Integration tests launch Git, Node, and nested Vitest processes. Limit competing workers.
@@ -15,7 +19,31 @@ export default defineConfig({
     options: {
       typeAware: true,
     },
+    jsPlugins: styleEnabled ? ['@stylistic/eslint-plugin', './scripts/stylePlugin.ts'] : [],
     rules: {
+      ...(styleEnabled
+        ? {
+            'tau/naming-convention': 'error',
+            'eslint/no-cond-assign': ['error', 'always'],
+            'eslint/id-denylist': ['error', 'btn', 'cb', 'errMsg'],
+            'eslint/one-var': ['error', 'never'],
+            'tau/helper-before-use': 'error',
+            '@stylistic/padding-line-between-statements': [
+              'error',
+              { blankLine: 'always', prev: '*', next: 'return' },
+              {
+                blankLine: 'always',
+                prev: '*',
+                next: ['if', 'for', 'while', 'do', 'switch', 'try'],
+              },
+              {
+                blankLine: 'always',
+                prev: ['if', 'for', 'while', 'do', 'switch', 'try'],
+                next: '*',
+              },
+            ],
+          }
+        : {}),
       'typescript/unbound-method': 'off',
       'typescript/no-extraneous-class': 'off',
       'typescript/no-unsafe-enum-comparison': 'off',
@@ -271,7 +299,7 @@ export default defineConfig({
     },
   },
   staged: {
-    '*.{ts,tsx}': ['vp lint --deny-warnings', 'vp fmt --check'],
+    '*.{ts,tsx,js,jsx,mjs,cjs}': ['node scripts/runStyle.ts', 'vp fmt --check'],
     '!(pnpm-lock).{json,md,yaml,yml,css}': 'vp fmt --check',
   },
 });
