@@ -61,6 +61,11 @@ const reviewSchema = Type.Object(
 
 export type CommentReview = Static<typeof reviewSchema>;
 
+interface ReviewFile {
+  path: string;
+  content: string;
+}
+
 export const reviewGit = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
@@ -81,19 +86,21 @@ export const reviewGit = async (
   return result.stdout;
 };
 
-const parseReview = (
-  text: string,
-  files: { path: string; before: string | null; after: string | null }[],
-): CommentReview => {
+const parseReview = (text: string, files: ReviewFile[], deletedPaths: string[]): CommentReview => {
   const result: unknown = JSON.parse(
     text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i, '$1'),
   );
 
+  if (!Value.Check(reviewSchema, result)) {
+    throw new Error('Comment review returned invalid findings.');
+  }
+
+  // Comments in deleted files leave the codebase with this commit, so findings on them are moot.
+  const findings = result.findings.filter((finding) => !deletedPaths.includes(finding.path));
+
   if (
-    !Value.Check(reviewSchema, result) ||
-    result.findings.some((finding) => {
-      const file = files.find((candidate) => candidate.path === finding.path);
-      const content = file?.after ?? file?.before;
+    findings.some((finding) => {
+      const content = files.find((candidate) => candidate.path === finding.path)?.content;
 
       return !content || finding.line > content.split('\n').length || !finding.message.trim();
     })
@@ -101,7 +108,7 @@ const parseReview = (
     throw new Error('Comment review returned invalid findings.');
   }
 
-  return result;
+  return { findings };
 };
 
 const readBlob = async (
@@ -164,6 +171,8 @@ export const reviewComments = async (
     '--no-textconv',
     '--no-renames',
     '--no-color',
+    // Keeps one diff --git section per submodule path whatever diff.submodule says.
+    '--submodule=short',
     '--no-relative',
     base,
     snapshot.tree,
@@ -185,12 +194,6 @@ export const reviewComments = async (
     return { findings: [] };
   }
 
-  if (paths.length > 300) {
-    throw new Error(
-      `Comment review input is too large: ${paths.length} files. Split the commit and retry.`,
-    );
-  }
-
   const diff = await reviewGit(
     pi,
     context.cwd,
@@ -209,14 +212,25 @@ export const reviewComments = async (
     .filter((row) => row.startsWith('-\t-\t'))
     .map((row) => row.slice(4));
 
-  const files = await Promise.all(
-    paths
-      .filter((path) => !binaryPaths.includes(path))
-      .map(async (path) => ({
+  const diffSections = diff.split(/^(?=diff --git )/m);
+
+  if (diff && diffSections.length !== paths.length) {
+    throw new Error('Comment review could not match the diff to its files.');
+  }
+
+  const entries = await Promise.all(
+    paths.map(async (path, index) => {
+      const content = binaryPaths.includes(path)
+        ? null
+        : await readBlob(pi, context.cwd, snapshot.tree, path, signal);
+
+      return {
         path,
-        before: await readBlob(pi, context.cwd, base, path, signal),
-        after: await readBlob(pi, context.cwd, snapshot.tree, path, signal),
-      })),
+        diff: diffSections[index] ?? '',
+        file: content === null ? null : { path, content },
+        deleted: content === null && !binaryPaths.includes(path),
+      };
+    }),
   );
 
   const policyPaths = new Set<string>();
@@ -242,11 +256,13 @@ export const reviewComments = async (
     })),
   );
   const policies = policyFiles.filter((policy) => policy.content !== null);
-  const input = JSON.stringify({ diff, files, policies, binaryPaths, dispute: snapshot.dispute });
-
-  if (input.length > 1_000_000) {
-    throw new Error('Comment review input is too large. Split the commit and retry.');
-  }
+  // Deleted files go by name only: their diffs can exceed the budget and their comments are gone.
+  const deletedPaths = entries.filter((entry) => entry.deleted).map((entry) => entry.path);
+  const shared = { policies, binaryPaths, deletedPaths, dispute: snapshot.dispute };
+  const batches = batchEntries(
+    entries.filter((entry) => !entry.deleted),
+    JSON.stringify({ diff: '', files: [], ...shared }).length,
+  );
 
   const authentication = await context.modelRegistry.getApiKeyAndHeaders(model);
 
@@ -254,8 +270,80 @@ export const reviewComments = async (
     throw new Error(`Comment review authentication failed: ${authentication.error}`);
   }
 
-  const reviewSignal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(120_000)]);
+  const findings: CommentReview['findings'] = [];
 
+  // Sequential batches keep large commits from bursting past provider rate limits.
+  for (const batch of batches) {
+    const files = batch.flatMap((entry) => (entry.file ? [entry.file] : []));
+    const input = JSON.stringify({
+      diff: batch.map((entry) => entry.diff).join(''),
+      files,
+      ...shared,
+    });
+    const reviewSignal = AbortSignal.any([
+      ...(signal ? [signal] : []),
+      AbortSignal.timeout(120_000),
+    ]);
+
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Batches run one at a time on purpose.
+    const review = await reviewBatch(context, model, input, { files, deletedPaths }, reviewSignal);
+
+    findings.push(...review.findings);
+  }
+
+  return { findings };
+};
+
+interface ReviewEntry {
+  path: string;
+  diff: string;
+  file: ReviewFile | null;
+  deleted: boolean;
+}
+
+const inputBudget = 1_000_000;
+
+const batchEntries = (entries: ReviewEntry[], sharedSize: number) => {
+  const batches: ReviewEntry[][] = [];
+  let batch: ReviewEntry[] = [];
+  let batchSize = sharedSize;
+
+  if (sharedSize > inputBudget) {
+    throw new Error('Comment review context is too large. Shorten the dispute and retry.');
+  }
+
+  for (const entry of entries) {
+    // Overestimates the JSON size of the entry's share of the batch input, so batches stay in budget.
+    const size = JSON.stringify(entry.diff).length + JSON.stringify(entry.file ?? '').length + 1;
+
+    if (sharedSize + size > inputBudget) {
+      throw new Error(
+        `Comment review input is too large: ${entry.path}. Reduce the file and retry.`,
+      );
+    }
+
+    if (batch.length > 0 && batchSize + size > inputBudget) {
+      batches.push(batch);
+      batch = [];
+      batchSize = sharedSize;
+    }
+
+    batch.push(entry);
+    batchSize += size;
+  }
+
+  batches.push(batch);
+
+  return batches;
+};
+
+const reviewBatch = async (
+  context: ExtensionContext,
+  model: ReturnType<typeof resolveDelegate>,
+  input: string,
+  source: { files: ReviewFile[]; deletedPaths: string[] },
+  reviewSignal: AbortSignal,
+) => {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- Retry only after parsing the previous response fails.
     const response = await context.modelRegistry.complete(
@@ -281,7 +369,7 @@ export const reviewComments = async (
       .join('');
 
     try {
-      return parseReview(text, files);
+      return parseReview(text, source.files, source.deletedPaths);
     } catch (error) {
       if (attempt === 1 || reviewSignal.aborted) {
         throw error;
