@@ -12,40 +12,28 @@ pnpm install --frozen-lockfile
 pnpm check
 ```
 
-`pnpm check` runs TypeScript, lint with house-style rules, formatting, and all tests, including
-package loading through Pi. Tests use temporary directories and need no model API.
+Pi loads the TypeScript source directly; there is no build step.
 
-Use `pnpm style:check` to check all lint rules and `pnpm style:fix` to apply safe lint fixes
-followed by formatting. Both accept file paths, for example `pnpm style:fix tests/lint.test.ts`.
-Rename bindings and move helpers manually. Staged-file hooks require the same rules.
+## Check changes
 
-Use `pnpm lint` for ordinary diagnostics and `pnpm format` for formatting alone. Editors keep the
-ordinary diagnostics. Do not set `TAU_LINT_STYLE` globally; the style commands set it only for their
-child linter. Pi loads the TypeScript source directly; there is no build step.
+| Command                                        | Use                                                                                          |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `pnpm check`                                   | Run typechecking, all lint rules, formatting checks, and the full test suite before pushing. |
+| `pnpm test:changed`                            | Run tests affected by uncommitted changes. Add `origin/main` to include branch commits.      |
+| `pnpm test src/extensions/commit/tool.test.ts` | Run one test file.                                                                           |
+| `pnpm test:unit`                               | Skip `*.integration.test.ts` files.                                                          |
+| `pnpm test`                                    | Run the full test suite, including package loading through Pi.                               |
+| `pnpm style:check`                             | Check all lint rules, including house style.                                                 |
+| `pnpm style:fix`                               | Apply safe lint fixes, then format.                                                          |
+| `pnpm lint`                                    | Run ordinary lint diagnostics, as editors do.                                                |
+| `pnpm format`                                  | Format files.                                                                                |
 
-To run one test file, pass its path to `pnpm test`:
+Tests use temporary directories and need no model API. Changed-test selection follows imports;
+changes to `vite.config.ts` or `package.json` run the full suite.
 
-```sh
-pnpm test src/extensions/commit/tool.test.ts
-```
-
-While you work, run only the tests your changes can reach:
-
-```sh
-pnpm test:changed
-```
-
-Vitest follows imports from each uncommitted file. A change to a leaf module runs a few test files.
-A change to a shared module such as `src/extensions/subagents/records.ts` runs most subagent tests.
-A change to `vite.config.ts` or `package.json` runs everything. To include commits on your branch,
-pass the base: `pnpm test:changed origin/main`.
-
-`pnpm test:unit` skips the `*.integration.test.ts` files. Those start real Git, Pi, and herdr
-processes and take most of the suite's time. Run the full `pnpm test` before you push. `pnpm check`
-runs it too.
-
-Vitest does not reuse results from earlier runs. `vp run --cache test` replays a passing run, but a
-change to any file the suite reads reruns the whole suite, so it rarely saves time here.
+Style commands accept file paths, for example `pnpm style:fix tests/lint.test.ts`. Rename bindings
+and move helpers manually. Staged-file hooks enforce the same rules. Do not set `TAU_LINT_STYLE`
+globally; the style commands set it for their child linter.
 
 Configure linting and formatting in [vite.config.ts](../vite.config.ts). Keep the installed Vitest
 version the same as the version bundled with Vite+.
@@ -60,10 +48,9 @@ To try this checkout in Pi without changing global settings:
    pnpm exec pi install -l "$PWD" --approve
    ```
 
-2. Open project package settings and set every resource from the previously installed Tau package to
-   `-` (unload): its Tau extension, question tool, CC Safety Net, web tools, and skills. Leave
-   resources from other inherited packages enabled. If no other inherited Tau package is present,
-   there is nothing to unload:
+2. Open project package settings and set every resource from any previously installed Tau package to
+   `-` (unload): its Tau extension, question tool, CC Safety Net, web tools, and skills. Leave this
+   checkout and other packages enabled. Skip this step if no inherited Tau package is present.
 
    ```sh
    pnpm exec pi config -l --approve
@@ -75,57 +62,36 @@ To try this checkout in Pi without changing global settings:
    pnpm exec pi --approve
    ```
 
-The checkout package manifest loads Tau, the question tool, CC Safety Net, the web tools, and the
-checkout skills. Unloading every resource from the inherited Tau package prevents duplicate Tau
-resources. This checkout and other configured packages stay enabled. Pi writes this project-local
-`.pi/settings.json`; keep that file out of commits, and do not add it to global settings.
-`--approve` trusts this project's local settings for the run.
+Keep the generated `.pi/settings.json` out of commits. `--approve` trusts project-local settings for
+the run.
 
-Set `TAU_DELEGATE_MODEL=provider/id` before launching Pi to choose the delegate for `bulk_read`,
-answer-mode `fetch_content`, and commit comment review. This does not change Pi's session model.
-Unset or empty settings use `openai-codex/gpt-5.6-luna`. Tau uses Pi's model registry and
-credentials; the reference must match `pi --list-models` exactly, with no whitespace. Model IDs may
-contain slashes. For example, prefix the launch command with
-`TAU_DELEGATE_MODEL=openrouter/vendor/model` for a model your account can access.
-`TAU_BULK_READ_MODEL` has been removed and is ignored.
-
-For web answers, a nonblank per-call `answerModel` wins over the shared setting, then the built-in
-default. Tau continues to override `fetch.answerProvider` and `fetch.answerModel` in the web
-package's configuration. Other web modes are unchanged.
-
-Per-call overrides also require the exact provider and model reference. Unlike the web package's
-standalone behavior, Tau does not infer a router from a native-provider reference. If a model is
-available only through OpenRouter, use its full reference, such as `openrouter/anthropic/model-id`,
-rather than `anthropic/model-id`. Check the provider and model ID columns in `pi --list-models` for
-the exact values.
-
-Invalid references, missing models, and authentication or provider failures return errors rather
-than switch to another model or provider. Failed comment review blocks the commit. Bulk-read hard
-failures stop read clamping for the session, so ordinary reads remain available. Cancellation,
-timeouts, input limits, and length stops do not disable clamping. The
-[shared-delegate decision](adr/0027-share-one-delegate-model.md) records the default's comparison.
-
-The package manifest declares all four Tau extension entries. Do not replace it with only
-`./src/extensions/index.ts`: that omits the bundled question and web tools, and it omits CC Safety
-Net, so worker launch refuses. Do not use `--no-extensions` or `--no-skills` for this checkout
-workflow. Those flags suppress configured defaults such as installed skills and herdr integrations.
+Use the full package manifest, not only `./src/extensions/index.ts`: the latter omits the bundled
+question and web tools and CC Safety Net, causing worker launch to refuse. Do not use
+`--no-extensions` or `--no-skills`; they suppress configured resources, including skills and herdr
+integrations.
 
 For use in another project, run `pi install -l /absolute/path/to/tau` there, then start Pi. This
 records the local package in that project's `.pi/settings.json`.
 
-Web search needs a provider, configured per user in `~/.pi/web-search.json` and not in this
-repository. Most providers need an API key. DuckDuckGo is keyless, but the package never picks it
-automatically, so name it as the default to search without a key:
+### Delegate model
+
+Set `TAU_DELEGATE_MODEL=provider/model-id` before launching Pi to choose the delegate for
+`bulk_read`, answer-mode `fetch_content`, and commit comment review. It uses Pi's credentials and
+does not change the session model. Use the exact provider and model ID from `pi --list-models`,
+including router prefixes such as `openrouter/anthropic/model-id`. The model needs working
+credentials. See the [shared-delegate decision](adr/0027-share-one-delegate-model.md) for the
+default and its comparison.
+
+### Web provider
+
+Configure a search provider in `~/.pi/web-search.json`, not in this repository. Most providers need
+an API key. To search without a key, select DuckDuckGo explicitly:
 
 ```json
 {
   "searchProvider": "duckduckgo"
 }
 ```
-
-`PI_CODING_AGENT_DIR` overrides that directory and is used verbatim, with no `pi` segment. Otherwise
-`XDG_CONFIG_HOME` selects `$XDG_CONFIG_HOME/pi/web-search.json`, except that an existing
-`~/.pi/web-search.json` still wins when the XDG copy is absent.
 
 ## Manual check
 
@@ -163,19 +129,38 @@ credentials.
 2. Submit a change with an inaccurate comment. Check that a blocking finding returns a tool error
    without a prompt or a new commit. Correct the comment and call `commit` again.
 
-**Bulk read.** With a working delegate, read a file longer than 400 lines without a limit. Check
-that the result ends with a `bulk_read` hint instead of `Use offset=`. Ask `bulk_read` a question
-using `paths` and `question`, then read a bounded range before editing. Check that the delegate's
-usage appears in the session totals. Restart with a missing model reference and check that reads are
-not clamped.
+### Bulk read
+
+With a working delegate, read a file longer than 400 lines without a limit. Check that the result
+ends with a `bulk_read` hint instead of `Use offset=`. Ask `bulk_read` a question using `paths` and
+`question`, then read a bounded range before editing. Check that the delegate's usage appears in the
+session totals. Restart with a missing model reference and check that reads are not clamped.
+
+## Versioning
+
+Add a changeset for user-facing changes:
+
+```sh
+pnpm changeset
+```
+
+Describe the behavior change for users. Commit the generated file under `.changeset/` with the
+change it describes.
+
+The [changeset check](../.github/workflows/changeset.yml) requires a changeset when a PR touches
+`src/` or `skills/`, but not for changes only to docs, tooling, or dependencies.
+
+The [release workflow](../.github/workflows/release.yml) opens version PRs and creates Git tags and
+GitHub releases; Tau is private and is not published to npm.
 
 ## Measuring bulk reads
 
-Repeat this when the delegate or the session model changes; ADR 0014 records what the last run
-found. Measure with real providers on a session too small to compact, using one semantic question
-spanning three files above the threshold. Compare a local build with trimming off and `bulk_read`
-present against the shipped setup, since there is no shipped trimming flag. Run each twice with the
-same prompt and files and keep the medians.
+Repeat this when the delegate or the session model changes;
+[ADR 0014](adr/0014-delegate-model-for-bulk-reads.md) records what the last run found. Measure with
+real providers on a session too small to compact, using one semantic question spanning three files
+above the threshold. Compare a local build with trimming off and `bulk_read` present against the
+shipped setup, since there is no shipped trimming flag. Run each twice with the same prompt and
+files and keep the medians.
 
 Sum usage by role from the session JSONL. Pi's `/session` can hide per-model rows when catalog cost
 is zero or only one model was used:
@@ -197,22 +182,3 @@ unbounded reads, truncated-or-hinted results, offset pages, `bulk_read` calls, a
 Record configuration, session input, cache read, cache write, output, delegate input, delegate
 output, assistant turns, `offset` pages after a clamped read, wall clock, and catalog cost as a
 ratio, not an invoice. Offline faux tests prove usage plumbing and result size, not savings.
-
-## Versioning
-
-Add a changeset for user-facing changes:
-
-```sh
-pnpm changeset
-```
-
-Describe the behavior change for users. Commit the generated file under `.changeset/` with the
-change it describes.
-
-The [changeset check](../.github/workflows/changeset.yml) requires a changeset when a PR touches
-`src/` or `skills/`. Changes only to docs, tooling, or dependencies do not trigger that check.
-
-The [release workflow](../.github/workflows/release.yml) opens version PRs and is configured to
-create Git tags and GitHub releases after versioning. Tau is private and is not published to npm.
-See [package scripts](../package.json) and [Changesets configuration](../.changeset/config.json) for
-the release commands and settings.
