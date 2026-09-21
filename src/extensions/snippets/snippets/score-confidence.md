@@ -5,7 +5,7 @@ placement: append
 order: 70
 ---
 
-Before we wrap up, score this session's work. Change nothing yet.
+Before we wrap up, score this session's work. Change no files yet.
 
 List each decision, claim, or change the result depends on, least confident first. For each one, give:
 
@@ -15,4 +15,4 @@ List each decision, claim, or change the result depends on, least confident firs
 
 - The command, test, or source that would settle it.
 
-Include anything you skipped, punted, or assumed without saying so. Base the scores on what you saw in the code and conversation. Do not pad the list.
+Include anything you skipped, postponed, or assumed without saying so. Base the scores on what you saw in the code and conversation. Do not pad the list.
