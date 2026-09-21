@@ -81,6 +81,36 @@ it('reserves one shared tree cap and retains uncertain work without double relea
   }).toThrow('capacity full');
 });
 
+it('ignores retired reservations only after their cleanup was confirmed', () => {
+  const { root, task } = setup();
+  const retired = task('retired');
+  const { harness: _harness, ...unversioned } = retired.loadout;
+  const directory = admissionDirectory(root, retired.tree);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(
+    join(directory, 'retired.json'),
+    JSON.stringify({ ...retired, loadout: unversioned }),
+  );
+  const retiredDirectory = join(root, 'retired');
+  mkdirSync(retiredDirectory);
+  writeFileSync(
+    join(retiredDirectory, 'task.json'),
+    JSON.stringify({ ...retired, loadout: unversioned }),
+  );
+
+  expect(() => {
+    reserveTask(root, task('blocked'));
+  }).toThrow('retired format');
+  recordEvent(retiredDirectory, retired.taskId, 'cleanup', 'Unconfirmed.', false);
+  expect(() => {
+    reserveTask(root, task('still-blocked'));
+  }).toThrow('retired format');
+  rmSync(join(retiredDirectory, 'cleanup.json'));
+  recordEvent(retiredDirectory, retired.taskId, 'cleanup', 'Confirmed stopped.', true);
+  reserveTask(root, task('fresh'));
+  expect(existsSync(join(directory, 'fresh.json'))).toBe(true);
+});
+
 it('refuses a held or abandoned admission lock without waiting or reclaiming it', () => {
   const { root, task } = setup();
   const request = task('blocked');
@@ -92,39 +122,6 @@ it('refuses a held or abandoned admission lock without waiting or reclaiming it'
   }).toThrow('Admission busy');
   expect(existsSync(join(directory, 'lock'))).toBe(true);
   expect(existsSync(join(directory, 'blocked.json'))).toBe(false);
-});
-
-it('counts unreserved legacy work and only frees confirmed stopped cleanup', () => {
-  const { root, task, save } = setup();
-  const { tree, ...legacy } = task('legacy');
-  const directory = save(legacy);
-  const legacyTree = () => tree;
-
-  expect(() => {
-    reserveTask(root, task('blocked'), 1, legacyTree);
-  }).toThrow('capacity full');
-  recordEvent(directory, legacy.taskId, 'settled', 'No active turn.', true);
-  expect(() => {
-    reserveTask(root, task('still-blocked'), 1, legacyTree);
-  }).toThrow('capacity full');
-  recordEvent(directory, legacy.taskId, 'cleanup', 'Stopped process confirmed.', true);
-  reserveTask(root, task('allowed'), 1, legacyTree);
-  expect(() => {
-    reserveTask(root, task('reconnected'), 1, legacyTree);
-  }).toThrow('capacity full');
-});
-
-it('does not resolve deleted ancestry for confirmed stopped legacy work', () => {
-  const { root, task, save } = setup();
-  const { tree: _tree, ...legacy } = task('legacy');
-  const directory = save(legacy);
-  recordEvent(directory, legacy.taskId, 'cleanup', 'Parent confirmed stopped.', true);
-
-  expect(() => {
-    reserveTask(root, task('new-root'), 1, () => {
-      throw new Error('Deleted session.');
-    });
-  }).not.toThrow();
 });
 
 it('reports actionable orphan reservations and distinguishes initial capacity errors', () => {

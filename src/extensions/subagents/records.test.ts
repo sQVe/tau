@@ -52,17 +52,25 @@ const questionFixture = () => {
     createdAt: 1000,
     deadline: 20000,
     cancellationBudget: 1000,
+    tree: {
+      rootSession: join(directory, 'parent.jsonl'),
+      rootSessionId: 'parent-one',
+      monotonicDeadline: 20000,
+    },
     loadout: {
+      harness: 'pi',
       profile: 'investigator',
       role: 'investigation',
       model: 'faux/test',
       modelFingerprint: '0'.repeat(64),
       providerFingerprint: '0'.repeat(64),
+      providerFingerprintVersion: 2,
       thinking: 'off',
       cwd: directory,
       agentDirectory: directory,
       permissions: 'trusted-full-tools',
-      tools: ['read', 'bash', 'edit', 'write', 'subagent_report'],
+      tools: ['read', 'bash', 'edit', 'write', 'subagent_report', 'subagent_question'],
+      noExtensions: false,
       integrations: [join(directory, 'safety.js')],
       integrationFingerprint: '0'.repeat(64),
       safetyExtension: join(directory, 'safety.js'),
@@ -126,6 +134,65 @@ it.each([
   }
 
   expect(() => records.readTasks(root)).toThrow(/JSON|property|Permission|identity|task.json/);
+});
+
+it('skips tasks saved in a retired format without blocking current tasks', () => {
+  const { directory, task } = questionFixture();
+  const root = join(directory, 'registry');
+  const current = join(root, task.taskId);
+  mkdirSync(current, { recursive: true });
+  records.publish(current, 'task.json', task);
+  const { harness: _harness, ...unversioned } = task.loadout;
+  const retired = {
+    unversioned: { ...task, taskId: 'unversioned', loadout: unversioned },
+    claude: { ...task, taskId: 'claude', loadout: { ...task.loadout, harness: 'claude' } },
+    'fingerprint-one': {
+      ...task,
+      taskId: 'fingerprint-one',
+      loadout: { ...task.loadout, providerFingerprintVersion: 1 },
+    },
+  };
+  for (const [taskId, saved] of Object.entries(retired)) {
+    mkdirSync(join(root, taskId));
+    writeFileSync(join(root, taskId, 'task.json'), JSON.stringify(saved));
+  }
+  const diagnostics: string[] = [];
+
+  const scanned = records.readTasks(root, diagnostics);
+
+  expect(scanned).toEqual([{ directory: current, task }]);
+  expect(diagnostics.toSorted()).toEqual(
+    ['claude', 'fingerprint-one', 'unversioned'].map(
+      (taskId) => `Skipped task ${taskId} saved in a retired format; start a fresh task instead.`,
+    ),
+  );
+});
+
+it('fails a scan for an invalid task saved in the current format', () => {
+  const { directory, task } = questionFixture();
+  const root = join(directory, 'registry');
+  const child = join(root, task.taskId);
+  mkdirSync(child, { recursive: true });
+  writeFileSync(
+    join(child, 'task.json'),
+    JSON.stringify({ ...task, loadout: { ...task.loadout, tools: ['read'] } }),
+  );
+
+  expect(() => records.readTasks(root)).toThrow('coding and report tools');
+});
+
+it('fails a scan for a generic task saved without its tree', () => {
+  const { directory, task } = questionFixture();
+  const root = join(directory, 'registry');
+  const child = join(root, task.taskId);
+  mkdirSync(child, { recursive: true });
+  const { tree: _tree, ...treeLess } = task;
+  writeFileSync(
+    join(child, 'task.json'),
+    JSON.stringify({ ...treeLess, loadout: { harness: 'generic', kind: 'codex' } }),
+  );
+
+  expect(() => records.readTasks(root)).toThrow('Invalid saved worker task or loadout');
 });
 
 it('reads a task published by another process during the scan', () => {

@@ -3,8 +3,7 @@ import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { readClaudeNative } from './claude.js';
-import { isClaudeLoadout } from './types.js';
+import { requireNativeTask } from './types.js';
 import type { Task } from './types.js';
 
 const headerSchema = Type.Object({
@@ -59,46 +58,13 @@ export const readNative = (path: string) => {
   }
 };
 
-// Claude writes its own transcript without Tau's lineage header, so the saved task carries that lineage.
-export const nativeHeader = (file: string, task?: Task) => {
-  if (task && isClaudeLoadout(task.loadout)) {
-    return {
-      type: 'session' as const,
-      version: 3 as const,
-      id: readClaudeNative(file).sessionId,
-      cwd: task.loadout.cwd,
-      parentSession: task.parentSession,
-    };
-  }
-
-  return readNative(file).header;
-};
+export const nativeHeader = (file: string) => readNative(file).header;
 
 export const validateNative = (task: Task, origin: Task) => {
-  if (isClaudeLoadout(task.loadout)) {
-    try {
-      const native = readClaudeNative(task.nativeSessionFile);
-      if (native.sessionId !== task.nativeSessionId) {
-        throw new Error('Native identity changed.');
-      }
-
-      return {
-        header: {
-          type: 'session' as const,
-          version: 3 as const,
-          id: native.sessionId,
-          cwd: task.loadout.cwd,
-          parentSession: origin.parentSession,
-        },
-        identity: native.identity,
-      };
-    } catch (error) {
-      throw new Error(`Native follow-up prevalidation refused: ${String(error)}`, { cause: error });
-    }
-  }
+  const saved = requireNativeTask(task);
 
   try {
-    const native = readNative(task.nativeSessionFile);
+    const native = readNative(saved.nativeSessionFile);
     if (
       native.header.id !== task.nativeSessionId ||
       native.header.cwd !== task.loadout.cwd ||

@@ -19,6 +19,7 @@ import { fixtureLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import subagentsExtension from './index.js';
 import { acceptReport, publish, readTask, recordEvent, validateTask } from './records.js';
+import { requireNativeTask } from './types.js';
 
 const setup = () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-history-'));
@@ -72,6 +73,11 @@ const setup = () => {
       createdAt: 1000,
       deadline: 20000,
       cancellationBudget: 1000,
+      tree: {
+        rootSession: parentSession,
+        rootSessionId: parentSessionId,
+        monotonicDeadline: 20000,
+      },
       loadout: fixtureLoadout(directory),
     });
     publish(taskDirectory, 'task.json', record);
@@ -83,7 +89,7 @@ const setup = () => {
       evidence: large ? ['界'.repeat(5000), '\u0000'.repeat(1000)] : ['Checked source.'],
     });
 
-    return { taskDirectory, record };
+    return { taskDirectory, record: requireNativeTask(record) };
   };
 
   return { directory, sessions, workers, root, child, sibling, unrelated, session, task };
@@ -403,7 +409,7 @@ it('excludes broken and cyclic discovered sessions and mismatched saved parent i
   expect(
     history.candidates
       .map((candidate) => candidate.nativeSessionId)
-      .toSorted((left, right) => left.localeCompare(right)),
+      .toSorted((left, right) => String(left).localeCompare(String(right))),
   ).toEqual(['child', 'root', 'sibling']);
   expect(history.diagnostics.length).toBeGreaterThanOrEqual(3);
 });

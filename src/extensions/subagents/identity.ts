@@ -8,6 +8,7 @@ import { monotonicNow, requireActiveAncestry, taskEnded } from './admission.js';
 import { runClient } from './cancellation.js';
 import { sessionLineage } from './history.js';
 import { readEvent, readRecord, readTasks } from './records.js';
+import { isPiLoadout } from './types.js';
 import type { Task } from './types.js';
 
 export const currentProcessIdentity = async (signal?: AbortSignal) => {
@@ -23,15 +24,16 @@ export const currentProcessIdentity = async (signal?: AbortSignal) => {
 const ownedSchema = Type.Object({
   processId: Type.Integer({ minimum: 1 }),
   startedAt: Type.String({ minLength: 1 }),
-  token: Type.String({ minLength: 1 }),
+  token: Type.Optional(Type.String({ minLength: 1 })),
 });
 
 const refuseWorkerProcessAsRoot = (
-  entries: ReturnType<typeof readTasks>,
+  directories: string[],
   processIdentity: { processId: number; startedAt: string },
 ): void => {
   // Removing the locator or switching native sessions cannot turn an owned worker into a root caller.
-  for (const { directory } of entries) {
+  // Retired records are included because a worker launched before an upgrade may still be running.
+  for (const directory of directories) {
     if (!existsSync(join(directory, 'owned.json'))) {
       continue;
     }
@@ -55,25 +57,6 @@ const refuseWorkerProcessAsRoot = (
   }
 };
 
-// The caller must bind this task to its parent-owned channel before checking delegation authority.
-export const channelAuthority = (
-  root: string,
-  task: Task,
-  delegationTool: string,
-): { tree: NonNullable<Task['tree']>; parent: Task } => {
-  if (
-    !task.tree ||
-    !task.loadout.tools.includes(delegationTool) ||
-    monotonicNow() >= task.tree.monotonicDeadline - task.cancellationBudget
-  ) {
-    throw new Error('Nested parent authority or the original deadline is invalid.');
-  }
-
-  requireActiveAncestry(root, task);
-
-  return { tree: { ...task.tree, parentTaskId: task.taskId }, parent: task };
-};
-
 // Pi supplies session and process evidence. Tool arguments and environment identity strings cannot replace it.
 export const authenticateParent = (
   root: string,
@@ -82,7 +65,8 @@ export const authenticateParent = (
   locator?: string,
 ): { tree: NonNullable<Task['tree']>; parent?: Task } => {
   const ancestry = sessionLineage(root, current);
-  const entries = readTasks(root);
+  const retired: string[] = [];
+  const entries = readTasks(root, [], retired);
   const candidates = entries.filter(
     ({ task }) => task.nativeSessionId === current.id || task.nativeSessionFile === current.file,
   );
@@ -113,14 +97,14 @@ export const authenticateParent = (
     const { task, directory } = selected;
     if (
       (locator && (!existsSync(locator) || realpathSync(locator) !== realpathSync(directory))) ||
-      !task.tree ||
       task.tree.rootSession !== ancestry.root.rootSession ||
       task.tree.rootSessionId !== ancestry.root.rootSessionId ||
+      !isPiLoadout(task.loadout) ||
       !task.loadout.tools.includes('subagent') ||
       monotonicNow() >= task.tree.monotonicDeadline - task.cancellationBudget
     ) {
       throw new Error(
-        'Nested parent authority, locator, or original deadline is invalid. Legacy workers cannot acquire new delegation authority.',
+        'Nested parent authority, locator, or original deadline is invalid. Saved workers cannot acquire new delegation authority.',
       );
     }
 
@@ -131,7 +115,10 @@ export const authenticateParent = (
   if (locator || candidates.length || ancestry.hasWorkerAncestor) {
     throw new Error('Worker native session or parent-owned process identity does not match.');
   }
-  refuseWorkerProcessAsRoot(entries, processIdentity);
+  refuseWorkerProcessAsRoot(
+    [...entries.map(({ directory }) => directory), ...retired],
+    processIdentity,
+  );
 
   return { tree: { ...ancestry.root, monotonicDeadline: Number.MAX_SAFE_INTEGER } };
 };

@@ -37,6 +37,7 @@ import {
   readReport,
   validateTask,
 } from '../src/extensions/subagents/records.js';
+import { requireNativeTask } from '../src/extensions/subagents/types.js';
 import workerExtension from '../src/extensions/subagents/worker.js';
 
 it('keeps the real bundled questionnaire available to the parent', async () => {
@@ -175,7 +176,13 @@ it.each(['editing', 'investigation'] as const)(
       createdAt: Date.now(),
       deadline: Date.now() + 30_000,
       cancellationBudget: 2000,
+      tree: {
+        rootSession: join(directory, 'parent.jsonl'),
+        rootSessionId: 'parent',
+        monotonicDeadline: Date.now() + 30_000,
+      },
       loadout: {
+        harness: 'pi',
         profile: 'worker',
         role,
         model: `${model.provider}/${model.id}`,
@@ -184,9 +191,8 @@ it.each(['editing', 'investigation'] as const)(
           new ModelRegistry(runtime),
           model,
           new AbortController().signal,
-          role === 'editing' ? 2 : 1,
         ),
-        providerFingerprintVersion: role === 'editing' ? 2 : 1,
+        providerFingerprintVersion: 2,
         thinking: 'off',
         cwd: directory,
         agentDirectory: directory,
@@ -223,7 +229,7 @@ it.each(['editing', 'investigation'] as const)(
       modelRuntime: runtime,
       model,
       thinkingLevel: 'off',
-      sessionManager: SessionManager.open(task.nativeSessionFile),
+      sessionManager: SessionManager.open(requireNativeTask(task).nativeSessionFile),
       settingsManager,
       resourceLoader: loader,
     });

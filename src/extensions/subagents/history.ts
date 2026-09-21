@@ -5,8 +5,10 @@ import { SessionManager, truncateLine } from '@earendil-works/pi-coding-agent';
 import type { SessionInfo } from '@earendil-works/pi-coding-agent';
 
 import { continuationOrigins } from './continuations.js';
+import { readGenericReference } from './generic.js';
 import { nativeHeader } from './native.js';
 import { readReport, readSuccessor, readTasks } from './records.js';
+import { isGenericLoadout, requireNativeTask } from './types.js';
 import type { Report, Task } from './types.js';
 
 const missing = (error: unknown): boolean =>
@@ -32,7 +34,7 @@ const readNode = (file: string, tasks: Map<string, Task>) => {
   let header;
   let unavailable = false;
   try {
-    header = nativeHeader(file, task);
+    header = nativeHeader(file);
   } catch (error) {
     if (!missing(error) || !task) {
       throw new Error(`Session ancestry is unavailable: ${String(error)}`, { cause: error });
@@ -41,7 +43,7 @@ const readNode = (file: string, tasks: Map<string, Task>) => {
     header = {
       type: 'session' as const,
       version: 3 as const,
-      id: task.nativeSessionId,
+      id: requireNativeTask(task).nativeSessionId,
       cwd: task.loadout.cwd,
       parentSession: task.parentSession,
     };
@@ -89,7 +91,10 @@ const historyRegistry = (root: string) => {
   diagnostics.push(...scanDiagnostics);
   const tasks = new Map<string, Task>();
   for (const origin of origins.values()) {
-    const path = canonical(origin.nativeSessionFile);
+    if (isGenericLoadout(origin.loadout)) {
+      continue;
+    }
+    const path = canonical(requireNativeTask(origin).nativeSessionFile);
     if (tasks.has(path) && tasks.get(path)?.taskId !== origin.taskId) {
       throw new Error('Conflicting saved native session identities.');
     }
@@ -117,9 +122,6 @@ export const sessionLineage = (root: string, current: { file: string; id: string
     hasWorkerAncestor: ancestors.some((node) => node.task !== undefined),
   };
 };
-
-export const sessionRoot = (root: string, current: { file: string; id: string }) =>
-  sessionLineage(root, current).root;
 
 export const authorizeHistoryTask = (
   root: string,
@@ -162,9 +164,10 @@ interface Candidate {
   successorTaskId?: string;
   name?: string;
   description: string;
-  nativeSessionId: string;
-  nativeSessionFile: string;
-  nativeEvidence: 'available' | 'missing' | 'invalid';
+  nativeSessionId?: string;
+  nativeSessionFile?: string;
+  nativeReference?: { kind: string; value: string };
+  nativeEvidence: 'available' | 'missing' | 'invalid' | 'opaque';
   report?: Report;
 }
 
@@ -179,14 +182,54 @@ const readOrDiagnose = <T>(read: () => T, label: string, diagnostics: string[]):
   }
 };
 
+const genericTaskCandidate = (
+  directory: string,
+  task: Task,
+  inScope: (file: string, id?: string) => boolean,
+  diagnostics: string[],
+): Candidate | undefined => {
+  const scoped = readOrDiagnose(
+    () => inScope(task.parentSession, task.parentSessionId),
+    `Task ${task.taskId} parent ancestry`,
+    diagnostics,
+  );
+  if (!scoped) {
+    return undefined;
+  }
+  const report = readOrDiagnose(
+    () => readReport(directory, task.taskId),
+    `Task ${task.taskId} report`,
+    diagnostics,
+  );
+  const reference = readOrDiagnose(
+    () => readGenericReference(directory, task.taskId),
+    `Task ${task.taskId} native reference`,
+    diagnostics,
+  );
+
+  return {
+    sourceFile: join(directory, 'task.json'),
+    taskId: task.taskId,
+    ...(task.name ? { name: task.name } : {}),
+    description: task.task,
+    nativeEvidence: 'opaque',
+    ...(report ? { report } : {}),
+    ...(reference ? { nativeReference: reference } : {}),
+  };
+};
+
 const taskCandidate = (
   { directory, task }: { directory: string; task: Task },
   tasks: Map<string, Task>,
   inScope: (file: string, id?: string) => boolean,
   diagnostics: string[],
 ): Candidate | undefined => {
+  if (isGenericLoadout(task.loadout)) {
+    return genericTaskCandidate(directory, task, inScope, diagnostics);
+  }
+  const native = requireNativeTask(task);
   try {
-    const origin = tasks.get(canonical(task.nativeSessionFile));
+    const origin = tasks.get(canonical(native.nativeSessionFile));
     if (
       !origin ||
       !inScope(origin.parentSession, origin.parentSessionId) ||
@@ -200,7 +243,7 @@ const taskCandidate = (
   }
   let nativeEvidence: Candidate['nativeEvidence'] = 'available';
   try {
-    const node = readNode(canonical(task.nativeSessionFile), tasks);
+    const node = readNode(canonical(native.nativeSessionFile), tasks);
     nativeEvidence = node.unavailable ? 'missing' : 'available';
   } catch (error) {
     nativeEvidence = 'invalid';
@@ -224,8 +267,8 @@ const taskCandidate = (
     ...(successor ? { successorTaskId: successor.successorTaskId } : {}),
     ...(task.name ? { name: task.name } : {}),
     description: task.task,
-    nativeSessionId: task.nativeSessionId,
-    nativeSessionFile: task.nativeSessionFile,
+    nativeSessionId: native.nativeSessionId,
+    nativeSessionFile: native.nativeSessionFile,
     nativeEvidence,
     ...(report ? { report } : {}),
   };
@@ -271,7 +314,11 @@ export const searchHistory = async (
   const directories = new Set([
     current.sessionDirectory,
     ...ancestors.map((node) => dirname(node.file)),
-    ...saved.flatMap(({ task }) => [dirname(task.parentSession), dirname(task.nativeSessionFile)]),
+    ...saved.flatMap(({ task }) =>
+      task.nativeSessionFile
+        ? [dirname(task.parentSession), dirname(task.nativeSessionFile)]
+        : [dirname(task.parentSession)],
+    ),
   ]);
   const discovered = await Promise.all([
     SessionManager.listAll(),
@@ -316,12 +363,18 @@ export const searchHistory = async (
     .filter(
       (candidate) =>
         !needle ||
-        [candidate.taskId, candidate.name, candidate.description, candidate.nativeSessionId].some(
-          (value) => value?.toLowerCase().includes(needle),
-        ),
+        [
+          candidate.taskId,
+          candidate.name,
+          candidate.description,
+          candidate.nativeSessionId,
+          candidate.nativeReference?.value,
+        ].some((value) => value?.toLowerCase().includes(needle)),
     )
     .toSorted((left, right) =>
-      (left.taskId ?? left.nativeSessionId).localeCompare(right.taskId ?? right.nativeSessionId),
+      (left.taskId ?? left.nativeSessionId ?? '').localeCompare(
+        right.taskId ?? right.nativeSessionId ?? '',
+      ),
     );
 
   return {
@@ -371,8 +424,30 @@ const candidatePreview = (candidate: Candidate) => {
       : {}),
     ...(candidate.name ? { name: preview(candidate.name, 'name', truncatedFields) } : {}),
     description: preview(candidate.description, 'description', truncatedFields),
-    nativeSessionId: preview(candidate.nativeSessionId, 'nativeSessionId', truncatedFields),
-    nativeSessionFile: preview(candidate.nativeSessionFile, 'nativeSessionFile', truncatedFields),
+    ...(candidate.nativeSessionId
+      ? { nativeSessionId: preview(candidate.nativeSessionId, 'nativeSessionId', truncatedFields) }
+      : {}),
+    ...(candidate.nativeSessionFile
+      ? {
+          nativeSessionFile: preview(
+            candidate.nativeSessionFile,
+            'nativeSessionFile',
+            truncatedFields,
+          ),
+        }
+      : {}),
+    ...(candidate.nativeReference
+      ? {
+          nativeReference: {
+            kind: candidate.nativeReference.kind,
+            value: preview(
+              candidate.nativeReference.value,
+              'nativeReference.value',
+              truncatedFields,
+            ),
+          },
+        }
+      : {}),
     nativeEvidence: candidate.nativeEvidence,
     ...(report
       ? {

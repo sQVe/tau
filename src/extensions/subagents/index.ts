@@ -53,15 +53,19 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     name: 'subagent',
     label: 'Launch worker',
     description:
-      'Launch a trusted full-tool Pi or Claude Code investigator or editing worker in herdr. Requires user authorization and CC Safety Net. Fresh context, fixed parent-owned timeout, no automatic retry. Built-in profiles: investigator and worker. Set harness to pi (default) or claude; a profile may pin its own. Set model explicitly or TAU_SUBAGENT_MODEL for Pi; Claude needs an exact model and saved bypassPermissions settings. Other harnesses refuse. Nested workers inherit exact model/settings and share one root cap (TAU_SUBAGENT_CAP, default 4, saved at first admission). Waiting workers consume slots. Full or busy admission refuses promptly without a queue.',
+      'Launch a bounded worker in herdr. Pi (default) requires trusted-full-tools and verified CC Safety Net; its model must be explicit or configured. Other herdr kinds use native-controls, which Tau does not certify. Their nativeArguments list and existing writable reportDirectory need explicit parent-user confirmation before launch. No native arguments by default; the harness selects its configured model. An exact native model request requires corresponding user-approved arguments, but Tau cannot verify the model used. Native approval dialogs remain in force and need user action. Tau adds no bypass flags and never approves dialogs. Model translation, native resume, and a Tau nesting channel are unavailable for non-Pi workers. Reports are required from the start. All workers share root capacity and one original deadline, including waits and cleanup. No uncertain retries or fallback. Built-in profiles: investigator and worker.',
     parameters: Type.Object({
       task: Type.String({ minLength: 1, maxLength: 32_000 }),
       profile: Type.String({ minLength: 1 }),
       cwd: Type.Optional(Type.String()),
       model: Type.Optional(Type.String()),
       harness: Type.Optional(Type.String()),
+      nativeArguments: Type.Optional(
+        Type.Array(Type.String({ maxLength: 8000, pattern: '^[^\\u0000]*$' }), { maxItems: 100 }),
+      ),
+      reportDirectory: Type.Optional(Type.String()),
       visibility,
-      permissions: Type.Literal('trusted-full-tools'),
+      permissions: StringEnum(['trusted-full-tools', 'native-controls'] as const),
       timeoutSeconds: Type.Integer({ minimum: 10, maximum: 86_400 }),
     }),
     async execute(_id, parameters, signal, _update, context) {
@@ -75,16 +79,26 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       ]);
       const parentPane = process.env.HERDR_PANE_ID;
       const parentSession = context.sessionManager.getSessionFile();
-      if (!parentPane || !process.env.HERDR_SOCKET_PATH || !parentSession) {
+      if (
+        process.env.HERDR_ENV !== '1' ||
+        !parentPane ||
+        !process.env.HERDR_SOCKET_PATH ||
+        !parentSession
+      ) {
         throw new Error('Worker launch requires a saved parent Pi session inside local herdr.');
       }
       const active = getController();
-      active.project = { cwd: context.cwd, isProjectTrusted: () => context.isProjectTrusted() };
       const authority = await active.parentAuthority(
         parentSession,
         context.sessionManager.getSessionId(),
         resolutionSignal,
       );
+      if (
+        authority.parent &&
+        (parameters.nativeArguments !== undefined || parameters.reportDirectory !== undefined)
+      ) {
+        throw new Error('Nested workers cannot supply native launch configuration.');
+      }
       nested = Boolean(authority.parent);
       const loadout = authority.parent
         ? await resolveInheritedLoadout(authority.parent, parameters, context, pi, resolutionSignal)
@@ -110,7 +124,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     name: 'subagent_follow_up',
     label: 'Follow up completed worker',
     description:
-      'Explicitly assign a new bounded task to an exact saved task ID in the current root-session tree. Requires a valid final report and confirmed parent cleanup. Reuses its exact native session and unchanged saved settings, not current profiles. One successor claim per task; uncertain attempts are never retried or reclaimed by age. Refuses known live native writers. Claims coordinate Tau only, not arbitrary manual Pi writers. Searching alone grants no active reply/cancel ownership.',
+      'Assign a new bounded Pi task to an exact saved task ID in the current root-session tree. Requires a final report and confirmed cleanup. Reuses the exact Pi session and unchanged settings. Non-Pi continuation refuses; start a fresh task. One successor claim per task; no uncertain retry or age-based reclaim. Searching grants no live ownership.',
     parameters: Type.Object(
       {
         sourceTaskId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
@@ -124,11 +138,15 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     async execute(_id, parameters, signal, _update, context) {
       const parentSession = context.sessionManager.getSessionFile();
       const parentPane = process.env.HERDR_PANE_ID;
-      if (!parentSession || !parentPane || !process.env.HERDR_SOCKET_PATH) {
+      if (
+        process.env.HERDR_ENV !== '1' ||
+        !parentSession ||
+        !parentPane ||
+        !process.env.HERDR_SOCKET_PATH
+      ) {
         throw new Error('Follow-up requires a saved parent session inside local herdr.');
       }
       const active = getController();
-      active.project = { cwd: context.cwd, isProjectTrusted: () => context.isProjectTrusted() };
       const authority = await active.parentAuthority(
         parentSession,
         context.sessionManager.getSessionId(),
@@ -185,9 +203,14 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     name: 'subagent_status',
     label: 'Worker status',
     description:
-      'Recover validated task results, pending questions, native references, and available native usage by task ID. Supply questionId to inspect its accepted reply and separate worker acknowledgement. Reconnect never resubmits work or resets deadlines. Recovery after parent exit is evidence only, not continuing enforcement. Same-task restart is refused; completed-task follow-up uses subagent_follow_up.',
-    parameters: Type.Object({ taskId: Type.String(), questionId: Type.Optional(Type.String()) }),
-    execute(_id, parameters, _signal, _update, context) {
+      'Recover task results and saved native references. For Pi, questionId shows its reply and acknowledgement. For generic workers, submissionId shows plain-text intent and delivery without claiming acceptance. readOutput reads bounded terminal text once from an active identity-checked generic worker; approval dialogs need user action. Reconnect never resubmits work or resets deadlines. Recovery after parent exit is saved evidence only. Only Pi supports completed-task follow-up.',
+    parameters: Type.Object({
+      taskId: Type.String(),
+      questionId: Type.Optional(Type.String()),
+      submissionId: Type.Optional(Type.String()),
+      readOutput: Type.Optional(Type.Boolean()),
+    }),
+    async execute(_id, parameters, _signal, _update, context) {
       const parentSessionId = context.sessionManager.getSessionId();
       const active = getController();
       const receipt = parameters.questionId
@@ -196,23 +219,29 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       const status = {
         ...active.status(parameters.taskId, parentSessionId),
         questionReceipt: receipt,
+        submissionReceipt: parameters.submissionId
+          ? active.submissionReceipt(parameters.taskId, parentSessionId, parameters.submissionId)
+          : undefined,
+        nativeOutput: parameters.readOutput
+          ? await active.nativeOutput(parameters.taskId, parentSessionId)
+          : undefined,
       };
 
-      return Promise.resolve({
+      return {
         content: [{ type: 'text' as const, text: JSON.stringify(status) }],
         details: status,
-      });
+      };
     },
   });
   pi.registerTool({
     name: 'subagent_reply',
     label: 'Reply to worker',
     description:
-      'Answer one pending clarification for an active owned worker. Confirm the reply stays within its assigned scope. Scope increases are refused. Acceptance and herdr text delivery are not worker acknowledgement or applied effects. Repeated calls never resend an accepted reply; inspect status after uncertain delivery.',
+      'Send an in-scope reply to an active owned worker within its original deadline. Pi requires questionId and preserves structured acknowledgement. Generic workers omit questionId and receive plain text; delivery is not task acceptance or acknowledgement. Use a unique replyId and inspect subagent_status with submissionId after uncertainty. Repeated identities never resend. Native blocked or unknown state refuses input; never use this tool to approve native dialogs automatically.',
     parameters: Type.Object(
       {
         taskId: Type.String(),
-        questionId: Type.String(),
+        questionId: Type.Optional(Type.String()),
         replyId: Type.String({ pattern: '^[a-zA-Z0-9-]{1,128}$' }),
         reply: Type.String({ minLength: 1, maxLength: 32000 }),
         scopeUnchanged: Type.Boolean(),

@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { spawn } from 'node:child_process';
+
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import * as timeout from './cancellation.js';
 
@@ -25,6 +27,53 @@ const snapshot = (processId = owned.processId, token = owned.token) =>
   });
 
 const shell = () => snapshot(owned.shellPid);
+
+const spawnShell = () =>
+  spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+
+const processStart = async (pid: number) =>
+  (await timeout.runClient('ps', ['-p', String(pid), '-o', 'lstart='], 1000)).trim();
+
+const genericOwned = async (shellPid: number) => {
+  return {
+    kind: 'generic' as const,
+    paneId: owned.paneId,
+    terminalId: owned.terminalId,
+    shellPid,
+    processId: process.pid,
+    agentKind: 'codex',
+    startedAt: await processStart(process.pid),
+    shellStartedAt: await processStart(shellPid),
+    nativeReference: { kind: 'codex-session', value: 'session-value' },
+  };
+};
+
+const genericSnapshot = (
+  worker: { paneId: string; shellPid: number; processId: number },
+  processId = worker.processId,
+) =>
+  JSON.stringify({
+    result: {
+      process_info: {
+        pane_id: worker.paneId,
+        shell_pid: worker.shellPid,
+        foreground_process_group_id: processId,
+        foreground_processes: [{ pid: processId, argv: ['codex'] }],
+      },
+    },
+  });
+
+const shellSnapshot = (worker: { paneId: string; shellPid: number }) =>
+  JSON.stringify({
+    result: {
+      process_info: {
+        pane_id: worker.paneId,
+        shell_pid: worker.shellPid,
+        foreground_process_group_id: worker.shellPid,
+        foreground_processes: [],
+      },
+    },
+  });
 const withInventory =
   (client: Client): Client =>
   async (arguments_, budget, signal) => {
@@ -152,8 +201,13 @@ describe('owned worker cancellation', () => {
   });
 
   it.each(['foreground', 'session'] as const)(
-    'stops repeated Claude interrupts after %s identity changes',
+    'stops repeated generic interrupts after %s identity changes',
     async (changed) => {
+      const shellProcess = spawnShell();
+      onTestFinished(() => {
+        shellProcess.kill('SIGKILL');
+      });
+      const generic = await genericOwned(shellProcess.pid as number);
       const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
       const client = vi.fn<Client>(async (arguments_): Promise<string> => {
         const sent = client.mock.calls.filter(([call]) => call[1] === 'send-keys').length;
@@ -161,10 +215,12 @@ describe('owned worker cancellation', () => {
           return JSON.stringify({
             result: {
               agent: {
-                pane_id: owned.paneId,
-                agent: 'claude',
+                pane_id: generic.paneId,
+                agent: generic.agentKind,
                 agent_session: {
-                  value: sent && changed === 'session' ? 'replacement' : owned.token,
+                  kind: generic.nativeReference.kind,
+                  value:
+                    sent && changed === 'session' ? 'replacement' : generic.nativeReference.value,
                 },
               },
             },
@@ -181,10 +237,10 @@ describe('owned worker cancellation', () => {
           clock.mockReturnValue(600);
         }
 
-        return snapshot(sent && changed === 'foreground' ? 102 : owned.processId);
+        return genericSnapshot(generic, sent && changed === 'foreground' ? 102 : generic.processId);
       });
       const result = timeout.cancelOwnedWorker(
-        { ...owned, kind: 'claude' },
+        generic,
         1200,
         withInventory(client),
         new AbortController().signal,
@@ -195,7 +251,12 @@ describe('owned worker cancellation', () => {
     },
   );
 
-  it('confirms a Claude stop when the agent session ends before the process does', async () => {
+  it('confirms a generic stop when the agent session ends before the process does', async () => {
+    const shellProcess = spawnShell();
+    onTestFinished(() => {
+      shellProcess.kill('SIGKILL');
+    });
+    const generic = await genericOwned(shellProcess.pid as number);
     const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
     let polls = 0;
     const client = vi.fn<Client>(async (arguments_): Promise<string> => {
@@ -206,9 +267,12 @@ describe('owned worker cancellation', () => {
           : JSON.stringify({
               result: {
                 agent: {
-                  pane_id: owned.paneId,
-                  agent: 'claude',
-                  agent_session: { value: owned.token },
+                  pane_id: generic.paneId,
+                  agent: generic.agentKind,
+                  agent_session: {
+                    kind: generic.nativeReference.kind,
+                    value: generic.nativeReference.value,
+                  },
                 },
               },
             });
@@ -217,16 +281,16 @@ describe('owned worker cancellation', () => {
         return '{}';
       }
       if (!sent) {
-        return snapshot();
+        return genericSnapshot(generic);
       }
       polls += 1;
       clock.mockReturnValue(600);
 
-      return polls > 1 ? shell() : snapshot();
+      return polls > 1 ? shellSnapshot(generic) : genericSnapshot(generic);
     });
 
     const result = await timeout.cancelOwnedWorker(
-      { ...owned, kind: 'claude' },
+      generic,
       1200,
       withInventory(client),
       new AbortController().signal,

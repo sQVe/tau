@@ -27,14 +27,34 @@ version the same as the version bundled with Vite+.
 
 ## Try Tau
 
-To try Tau in an interactive Pi session from this checkout:
+To try this checkout in Pi without changing global settings:
 
-```sh
-pnpm exec pi --no-extensions --no-skills -e ./src/extensions/index.ts \
-  -e ./node_modules/@juicesharp/rpiv-ask-user-question/index.ts \
-  -e ./node_modules/cc-safety-net/dist/pi/index.js \
-  -e ./node_modules/pi-web-access/index.ts --skill ./skills/commit
-```
+1. Add the checkout as a project package:
+
+   ```sh
+   pnpm exec pi install -l "$PWD" --approve
+   ```
+
+2. Open project package settings and set every resource from the previously installed Tau package to
+   `-` (unload): its Tau extension, question tool, CC Safety Net, web tools, and skills. Leave
+   resources from other inherited packages enabled. If no other inherited Tau package is present,
+   there is nothing to unload:
+
+   ```sh
+   pnpm exec pi config -l --approve
+   ```
+
+3. Start Pi with project resources enabled:
+
+   ```sh
+   pnpm exec pi --approve
+   ```
+
+The checkout package manifest loads Tau, the question tool, CC Safety Net, the web tools, and the
+checkout skills. Unloading every resource from the inherited Tau package prevents duplicate Tau
+resources. This checkout and other configured packages stay enabled. Pi writes this project-local
+`.pi/settings.json`; keep that file out of commits, and do not add it to global settings.
+`--approve` trusts this project's local settings for the run.
 
 Set `TAU_DELEGATE_MODEL=provider/id` before launching Pi to choose the delegate for `bulk_read`,
 answer-mode `fetch_content`, and commit comment review. This does not change Pi's session model.
@@ -60,9 +80,10 @@ failures stop read clamping for the session, so ordinary reads remain available.
 timeouts, input limits, and length stops do not disable clamping. The
 [shared-delegate decision](adr/0027-share-one-delegate-model.md) records the default's comparison.
 
-Pass all four extension entries. `package.json` declares the same set. Loading only
-`./src/extensions/index.ts` omits the bundled question and web tools, which Tau reports at session
-start. It also omits CC Safety Net, so worker launch refuses.
+The package manifest declares all four Tau extension entries. Do not replace it with only
+`./src/extensions/index.ts`: that omits the bundled question and web tools, and it omits CC Safety
+Net, so worker launch refuses. Do not use `--no-extensions` or `--no-skills` for this checkout
+workflow. Those flags suppress configured defaults such as installed skills and herdr integrations.
 
 For use in another project, run `pi install -l /absolute/path/to/tau` there, then start Pi. This
 records the local package in that project's `.pi/settings.json`.

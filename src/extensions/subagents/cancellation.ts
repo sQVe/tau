@@ -4,14 +4,17 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { resolveTerminal, TerminalIdentityError } from './terminal.js';
 
 export interface OwnedWorker {
-  readonly kind: 'process' | 'pi' | 'claude';
+  readonly kind: 'process' | 'pi' | 'generic';
   readonly paneId: string;
   readonly terminalId: string;
   readonly shellPid: number;
   readonly processId: number;
   // A unique launch argument, such as the explicitly selected Pi session path.
-  readonly token: string;
+  readonly token?: string;
   readonly startedAt?: string;
+  readonly agentKind?: string;
+  readonly shellStartedAt?: string;
+  readonly nativeReference?: { kind: string; value: string };
 }
 
 interface CleanupResult {
@@ -43,12 +46,14 @@ export const runClient = (
       executable,
       arguments_,
       { env: environment, maxBuffer: 1024 * 1024 },
-      (error, stdout) => {
+      (error, stdout, stderr) => {
         clearTimeout(timer);
         signal?.removeEventListener('abort', abort);
 
         if (error) {
-          reject(new Error(error.message));
+          const failure = new Error(error.message, { cause: error });
+          Object.assign(failure, { stderr });
+          reject(failure);
         } else {
           resolve(stdout);
         }
@@ -101,7 +106,8 @@ export const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker)
       process.pid === owned.processId &&
       Array.isArray(process.argv) &&
       // Pi rewrites argv through process.title. The caller also checks its herdr session token and ps start time before using this fallback.
-      (process.argv.includes(owned.token) || (owned.kind === 'pi' && Boolean(owned.startedAt)))
+      ((owned.token !== undefined && process.argv.includes(owned.token)) ||
+        (['pi', 'generic'].includes(owned.kind) && Boolean(owned.startedAt)))
     );
   });
 
@@ -127,10 +133,12 @@ export const workerStopped = (information: Record<string, unknown>, owned: Owned
 
 const validateWorker = (owned: OwnedWorker) => {
   if (
-    !['process', 'pi', 'claude'].includes(owned.kind) ||
+    !['process', 'pi', 'generic'].includes(owned.kind) ||
     !owned.paneId ||
     !owned.terminalId ||
-    !owned.token ||
+    (owned.kind === 'generic'
+      ? !owned.agentKind || !owned.startedAt || !owned.shellStartedAt
+      : !owned.token) ||
     !Number.isSafeInteger(owned.shellPid) ||
     !Number.isSafeInteger(owned.processId) ||
     owned.shellPid <= 0 ||
@@ -144,11 +152,10 @@ const validateWorker = (owned: OwnedWorker) => {
 };
 
 // Escape requests active-run abort; shutdown keys remain best-effort while tools unwind.
-// Claude reads terminal interrupts rather than agent keys, and cancels a run before it will exit.
 const shutdownKeys = (owned: OwnedWorker): string[] =>
   owned.kind === 'pi'
     ? ['agent', 'send-keys', owned.paneId, 'escape', 'ctrl+c', 'ctrl+d']
-    : ['pane', 'send-keys', owned.paneId, 'ctrl+c'];
+    : [owned.kind === 'generic' ? 'agent' : 'pane', 'send-keys', owned.paneId, 'ctrl+c'];
 
 const stopConfirmed: CleanupResult = {
   cleanup: 'confirmed',
@@ -170,7 +177,21 @@ const waitForStop = async (
     worker.paneId = location.paneId;
     const after = processInfo(await call(['pane', 'process-info', '--pane', worker.paneId]));
 
-    return workerStopped(after, worker);
+    if (!workerStopped(after, worker)) {
+      return false;
+    }
+    if (worker.kind === 'generic') {
+      const shellStart = await runClient(
+        'ps',
+        ['-p', String(worker.shellPid), '-o', 'lstart='],
+        1000,
+        signal,
+      );
+
+      return shellStart.trim() === worker.shellStartedAt;
+    }
+
+    return true;
   };
 
   for (;;) {
@@ -179,12 +200,12 @@ const waitForStop = async (
       return stopConfirmed;
     }
 
-    if (worker.kind === 'claude' && performance.now() - pressedAt >= 500) {
+    if (worker.kind === 'generic' && performance.now() - pressedAt >= 500) {
       pressedAt = performance.now();
       // oxlint-disable-next-line eslint/no-await-in-loop -- Each interrupt repeats ownership checks within the original budget.
       const refused = await interrupt();
       if (refused) {
-        // Claude drops its agent session before its process exits, so a refusal here can trail a clean stop.
+        // A native agent may end its session before its process exits, so a refusal here can trail a clean stop.
         // oxlint-disable-next-line eslint/no-await-in-loop -- One confirmation attempt within the remaining budget.
         if (await stopped()) {
           return stopConfirmed;
@@ -226,7 +247,7 @@ export const cancelOwnedWorker = async (
 
     return client(arguments_, remaining, signal);
   };
-  const manual = `Check terminal ${owned.terminalId} (last pane ${owned.paneId}) and worker ${owned.processId} (${owned.token}) for manual cleanup.`;
+  const manual = `Check terminal ${owned.terminalId} (last pane ${owned.paneId}) and worker ${owned.processId} (${owned.token ?? owned.agentKind}) for manual cleanup.`;
   const refresh = async () => {
     const location = await resolveTerminal(owned.terminalId, call);
 
@@ -242,8 +263,12 @@ export const cancelOwnedWorker = async (
       const agent = object(object(object(response).result).agent);
       if (
         agent.pane_id !== owned.paneId ||
-        agent.agent !== owned.kind ||
-        object(agent.agent_session).value !== owned.token
+        agent.agent !== (owned.kind === 'generic' ? owned.agentKind : owned.kind) ||
+        (owned.kind === 'generic'
+          ? owned.nativeReference !== undefined &&
+            (object(agent.agent_session).value !== owned.nativeReference.value ||
+              object(agent.agent_session).kind !== owned.nativeReference.kind)
+          : object(agent.agent_session).value !== owned.token)
       ) {
         return {
           cleanup: 'refused',
@@ -268,6 +293,20 @@ export const cancelOwnedWorker = async (
       }
     }
 
+    if (owned.kind === 'generic') {
+      const shellStart = await runClient(
+        'ps',
+        ['-p', String(owned.shellPid), '-o', 'lstart='],
+        Math.max(1, Math.ceil(expires - performance.now())),
+        signal,
+      );
+      if (shellStart.trim() !== owned.shellStartedAt) {
+        return {
+          cleanup: 'refused',
+          detail: `Shell start identity changed; no input sent. ${manual}`,
+        };
+      }
+    }
     const before = processInfo(await call(['pane', 'process-info', '--pane', owned.paneId]));
 
     if (!matchesWorker(before, owned)) {

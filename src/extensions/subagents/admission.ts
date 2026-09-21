@@ -8,6 +8,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import {
+  isRetiredTask,
   publish,
   readEvent,
   readRecord,
@@ -16,6 +17,7 @@ import {
   readTasks,
   validateTask,
 } from './records.js';
+import { isPiLoadout } from './types.js';
 import type { Loadout, Task } from './types.js';
 
 type TreeIdentity = Pick<NonNullable<Task['tree']>, 'rootSession' | 'rootSessionId'>;
@@ -78,17 +80,32 @@ const policySchema = Type.Object(
 const sameTree = (left: TreeIdentity, right: TreeIdentity) =>
   left.rootSession === right.rootSession && left.rootSessionId === right.rootSessionId;
 
-const readReservations = (directory: string, tree: TreeIdentity): Map<string, Task> => {
+// A retired reservation cannot be validated, so only confirmed cleanup releases its slot.
+const requireRetiredStopped = (root: string, name: string): void => {
+  const taskId = name.slice(0, -'.json'.length);
+  if (readEvent(join(root, taskId), taskId, 'cleanup')?.stopped !== true) {
+    throw new Error(
+      `Reservation ${name} uses a retired format and its cleanup is unconfirmed. Inspect ${join(root, taskId)} manually; the slot stays held.`,
+    );
+  }
+};
+
+const readReservations = (
+  root: string,
+  directory: string,
+  tree: TreeIdentity,
+): Map<string, Task> => {
   const retained = new Map<string, Task>();
   for (const name of readdirSync(directory).filter(
     (candidate) => candidate.endsWith('.json') && candidate !== 'policy.json',
   )) {
-    const reservation = validateTask(readRecord(directory, name));
-    if (
-      !reservation.tree ||
-      !sameTree(tree, reservation.tree) ||
-      name !== `${reservation.taskId}.json`
-    ) {
+    const value = readRecord(directory, name);
+    if (isRetiredTask(value)) {
+      requireRetiredStopped(root, name);
+      continue;
+    }
+    const reservation = validateTask(value);
+    if (!sameTree(tree, reservation.tree) || name !== `${reservation.taskId}.json`) {
       throw new Error('Invalid saved capacity reservation. Manual inspection required.');
     }
     retained.set(reservation.taskId, reservation);
@@ -98,13 +115,10 @@ const readReservations = (directory: string, tree: TreeIdentity): Map<string, Ta
 };
 
 export const descendantReservations = (root: string, task: Task): Task[] => {
-  if (!task.tree) {
-    return [];
-  }
-  const reservations = readReservations(admissionDirectory(root, task.tree), task.tree);
+  const reservations = readReservations(root, admissionDirectory(root, task.tree), task.tree);
   const byParent = new Map<string, Task[]>();
   for (const reservation of reservations.values()) {
-    const parentTaskId = reservation.tree?.parentTaskId;
+    const parentTaskId = reservation.tree.parentTaskId;
     if (parentTaskId) {
       byParent.set(parentTaskId, [...(byParent.get(parentTaskId) ?? []), reservation]);
     }
@@ -129,29 +143,10 @@ export const descendantReservations = (root: string, task: Task): Task[] => {
   return descendants;
 };
 
-const retainedReservations = (
-  root: string,
-  directory: string,
-  tree: TreeIdentity,
-  legacyTree: (task: Task) => TreeIdentity,
-): Task[] => {
-  const retained = readReservations(directory, tree);
+const retainedReservations = (root: string, directory: string, tree: TreeIdentity): Task[] => {
+  const retained = readReservations(root, directory, tree);
   for (const saved of readTasks(root)) {
-    if (
-      !saved.task.tree &&
-      readEvent(saved.directory, saved.task.taskId, 'cleanup')?.stopped === true
-    ) {
-      continue;
-    }
-    let savedTree: TreeIdentity;
-    try {
-      savedTree = saved.task.tree ?? legacyTree(saved.task);
-    } catch (error) {
-      throw new Error(
-        `Capacity uncertain for legacy task ${saved.task.taskId} at ${saved.directory}. Its ancestry is unavailable and cleanup is not confirmed. Inspect manually.`,
-        { cause: error },
-      );
-    }
+    const savedTree = saved.task.tree;
     if (sameTree(tree, savedTree)) {
       const reservation = retained.get(saved.task.taskId);
       if (reservation && !isDeepStrictEqual(reservation, saved.task)) {
@@ -170,8 +165,6 @@ export const requireActiveAncestry = (root: string, task: Task): void => {
   let current: Task | undefined = task;
   while (current) {
     if (
-      !tree ||
-      !current.tree ||
       !sameTree(tree, current.tree) ||
       seen.has(current.taskId) ||
       seen.size >= 1024 ||
@@ -184,10 +177,6 @@ export const requireActiveAncestry = (root: string, task: Task): void => {
       ? readTask(join(root, current.tree.parentTaskId))
       : undefined;
   }
-};
-
-const unknownLegacyTree = (): never => {
-  throw new Error('Legacy task ancestry needs its harness adapter. Capacity remains uncertain.');
 };
 
 const admissionPolicy = (directory: string, tree: NonNullable<Task['tree']>, capacity: number) => {
@@ -231,7 +220,8 @@ const validateChildReservation = (
   }
   const parent = readTask(join(root, tree.parentTaskId));
   if (
-    !parent.tree ||
+    !isPiLoadout(parent.loadout) ||
+    !isPiLoadout(task.loadout) ||
     !sameTree(tree, parent.tree) ||
     task.parentSession !== parent.nativeSessionFile ||
     task.parentSessionId !== parent.nativeSessionId ||
@@ -246,17 +236,9 @@ const validateChildReservation = (
 };
 
 // Immutable reservations are never recycled. Only a matching parent cleanup receipt makes a slot free.
-export const reserveTask = (
-  root: string,
-  value: Task,
-  capacity = 4,
-  legacyTree: (task: Task) => TreeIdentity = unknownLegacyTree,
-): void => {
+export const reserveTask = (root: string, value: Task, capacity = 4): void => {
   const task = validateTask(value);
   const tree = task.tree;
-  if (!tree) {
-    throw new Error('New admission requires validated root lineage.');
-  }
   const directory = admissionDirectory(root, tree);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const lock = join(directory, 'lock');
@@ -284,7 +266,7 @@ export const reserveTask = (
     ) {
       throw new Error(`Task ${task.taskId} is already reserved or saved. No duplicate admission.`);
     }
-    const retained = retainedReservations(root, directory, tree, legacyTree);
+    const retained = retainedReservations(root, directory, tree);
     const live = retained.filter(
       (saved) => readEvent(join(root, saved.taskId), saved.taskId, 'cleanup')?.stopped !== true,
     );

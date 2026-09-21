@@ -14,14 +14,14 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { validateNative } from './native.js';
-import type { Task } from './types.js';
+import type { NativeTask } from './types.js';
 
 const fixture = () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-native-'));
   onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });
-  const task: Task = {
+  const task: NativeTask = {
     version: 1,
     taskId: 'task',
     task: 'Inspect.',
@@ -33,6 +33,11 @@ const fixture = () => {
     createdAt: 1000,
     deadline: 20000,
     cancellationBudget: 1000,
+    tree: {
+      rootSession: join(directory, 'parent.jsonl'),
+      rootSessionId: 'parent',
+      monotonicDeadline: 20000,
+    },
     loadout: fixtureLoadout(directory),
   };
   const header = {

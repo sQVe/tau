@@ -17,14 +17,14 @@ import { inheritedInstructions } from './admission.js';
 import * as cancellationModule from './cancellation.js';
 import { WorkerController, taskStatus, workerArguments } from './controller.js';
 import type { HerdrClient } from './controller.js';
-import { asPiLoadout, fixtureLoadout } from './fixtures/loadout.js';
+import { fixtureLoadout, readPiTask as readTask } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import * as identity from './identity.js';
 import * as loadoutModule from './loadout.js';
 import * as names from './names.js';
 import { WorkerPlacement } from './placement.js';
 import { placementFixture } from './placementFixture.js';
-import { acceptReport, readEvent, readTask, recordEvent } from './records.js';
+import { acceptReport, readEvent, recordEvent } from './records.js';
 import * as records from './records.js';
 
 vi.mock('node:fs', async (importOriginal) => {
@@ -650,10 +650,10 @@ it('bounds nested launches by the shared cap and original ancestor deadline', as
   vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 3600000);
   const childStatus = await nested.launch(input);
   const child = readTask(childStatus.directory);
-  expect(child.tree?.parentTaskId).toBe(parent.taskId);
-  expect(child.tree?.rootSessionId).toBe(parent.parentSessionId);
-  expect(child.tree!.monotonicDeadline).toBeLessThanOrEqual(
-    parent.tree!.monotonicDeadline - parent.cancellationBudget,
+  expect(child.tree.parentTaskId).toBe(parent.taskId);
+  expect(child.tree.rootSessionId).toBe(parent.parentSessionId);
+  expect(child.tree.monotonicDeadline).toBeLessThanOrEqual(
+    parent.tree.monotonicDeadline - parent.cancellationBudget,
   );
   expect(child.deadline).toBeLessThanOrEqual(parent.deadline - parent.cancellationBudget);
   expect(child.loadout.model).toBe(parent.loadout.model);
@@ -873,8 +873,8 @@ it('delivers a clarification once without treating herdr delivery as acknowledge
     controller.reply(task.taskId, 'parent-id', { ...answer, questionId: 'wrong' }),
   ).rejects.toThrow('pending question');
   const result = await controller.reply(task.taskId, 'parent-id', answer);
-  expect(result.replyAccepted).toBe(true);
-  expect(result.workerAcknowledged).toBe(false);
+  expect(result).toMatchObject({ replyAccepted: true });
+  expect(result).toMatchObject({ workerAcknowledged: false });
   await controller.reply(task.taskId, 'parent-id', answer);
   expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
   expect(calls.find((call) => call[1] === 'prompt')?.[2]).toBe('owned-pane');
@@ -1000,9 +1000,9 @@ it('retains uncertain reply delivery without resending or acknowledging it', asy
   await expect(controller.reply(launched.taskId, 'parent-id', answer)).rejects.toThrow(
     'delivery is uncertain',
   );
-  expect((await controller.reply(launched.taskId, 'parent-id', answer)).workerAcknowledged).toBe(
-    false,
-  );
+  expect(await controller.reply(launched.taskId, 'parent-id', answer)).toMatchObject({
+    workerAcknowledged: false,
+  });
   expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
   expect(controller.questionReceipt(launched.taskId, 'parent-id', 'question-one')).toMatchObject({
     reply: { replyId: 'reply-one' },
@@ -1396,17 +1396,12 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
   await expect(recovered.cancel(task.taskId, 'parent-id')).rejects.toThrow('manual cleanup');
 });
 
-it('recovers version 1 reports and native references without extension discovery metadata', async ({
+it('recovers reports and native references without extension discovery metadata', async ({
   onTestFinished,
 }) => {
   const { controller, input, directory } = setup(onTestFinished);
   const launched = await controller.launch(input);
   const task = readTask(launched.directory);
-  const { noExtensions: _metadata, ...legacyLoadout } = asPiLoadout(task.loadout);
-  writeFileSync(
-    join(launched.directory, 'task.json'),
-    JSON.stringify({ ...task, loadout: legacyLoadout }),
-  );
   acceptReport(launched.directory, task.taskId, {
     taskId: task.taskId,
     outcome: 'success',
