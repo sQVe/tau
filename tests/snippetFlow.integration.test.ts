@@ -2,25 +2,15 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import {
-  InMemoryCredentialStore,
-  InMemoryModelsStore,
-  fauxAssistantMessage,
-  fauxProvider,
-} from '@earendil-works/pi-ai';
-import {
-  CustomEditor,
-  DefaultResourceLoader,
-  ModelRuntime,
-  SessionManager,
-  SettingsManager,
-  createAgentSession,
-} from '@earendil-works/pi-coding-agent';
+import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
+import { CustomEditor } from '@earendil-works/pi-coding-agent';
 import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { KeybindingsManager, TUI_KEYBINDINGS } from '@earendil-works/pi-tui';
 import type { EditorComponent, TUI } from '@earendil-works/pi-tui';
 import type { TestContext } from 'vitest';
 import { expect, it, vi } from 'vitest';
+
+import { createPiSession } from './piSession.js';
 
 // Real Pi sessions need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
@@ -123,41 +113,13 @@ const createHarness = async (
 
   const faux = fauxProvider({ provider: 'tau-snippet-test' });
 
-  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
-  const loader = new DefaultResourceLoader({
+  const { session, extensionsResult } = await createPiSession(registerCleanup, {
     cwd: directory,
-    agentDir: agentDirectory,
-    settingsManager,
-    additionalExtensionPaths: [tauExtensionsPath],
-    noExtensions: true,
-    noSkills: true,
-    noPromptTemplates: true,
-    noThemes: true,
-  });
-
-  await loader.reload();
-
-  const modelRuntime = await ModelRuntime.create({
-    credentials: new InMemoryCredentialStore(),
-    modelsStore: new InMemoryModelsStore(),
-    modelsPath: null,
-    refreshOnCreate: false,
-  });
-  modelRuntime.registerNativeProvider(faux.provider);
-
-  const { session, extensionsResult } = await createAgentSession({
-    cwd: directory,
-    agentDir: agentDirectory,
-    modelRuntime,
-    model: faux.getModel(),
-    resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(directory),
-    settingsManager,
+    agentDirectory,
+    providers: [faux],
     // These tests send no tool calls; the list only has to be valid.
     tools: ['read'],
-  });
-  registerCleanup(() => {
-    session.dispose();
+    extensionPaths: [tauExtensionsPath],
   });
 
   expect(extensionsResult.errors).toEqual([]);

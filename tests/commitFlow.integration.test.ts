@@ -4,21 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
-import {
-  InMemoryCredentialStore,
-  InMemoryModelsStore,
-  fauxAssistantMessage,
-  fauxToolCall,
-  fauxProvider,
-} from '@earendil-works/pi-ai';
+import { fauxAssistantMessage, fauxToolCall, fauxProvider } from '@earendil-works/pi-ai';
 import type { FauxProviderHandle } from '@earendil-works/pi-ai';
-import {
-  DefaultResourceLoader,
-  ModelRuntime,
-  SessionManager,
-  SettingsManager,
-  createAgentSession,
-} from '@earendil-works/pi-coding-agent';
 import type {
   AgentSession,
   AgentSessionEvent,
@@ -28,6 +15,7 @@ import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
+import { createPiSession } from './piSession.js';
 
 // Real Pi sessions and Git commands need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
@@ -123,50 +111,16 @@ const createHarness = async (
   registerCleanup(() => {
     vi.unstubAllEnvs();
   });
-  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
-  const loader = new DefaultResourceLoader({
+  const { session, extensionsResult } = await createPiSession(registerCleanup, {
     cwd: repositoryDirectory,
-    agentDir: agentDirectory,
-    settingsManager,
-    additionalExtensionPaths: [
+    agentDirectory,
+    providers: delegate === faux ? [faux] : [faux, delegate],
+    tools: ['read', 'bash', 'edit', 'write', 'commit'],
+    extensionPaths: [
       tauExtensionsPath,
       bundledQuestionExtensionPath,
       bundledWebAccessExtensionPath,
     ],
-    noExtensions: true,
-    noSkills: true,
-    noPromptTemplates: true,
-    noThemes: true,
-  });
-
-  await loader.reload();
-
-  const modelRuntime = await ModelRuntime.create({
-    credentials: new InMemoryCredentialStore(),
-    modelsStore: new InMemoryModelsStore(),
-    modelsPath: null,
-    refreshOnCreate: false,
-  });
-
-  modelRuntime.registerNativeProvider(faux.provider);
-
-  if (delegate !== faux) {
-    modelRuntime.registerNativeProvider(delegate.provider);
-  }
-
-  const { session, extensionsResult } = await createAgentSession({
-    cwd: repositoryDirectory,
-    agentDir: agentDirectory,
-    modelRuntime,
-    model: faux.getModel(),
-    resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(repositoryDirectory),
-    settingsManager,
-    tools: ['read', 'bash', 'edit', 'write', 'commit'],
-  });
-
-  registerCleanup(() => {
-    session.dispose();
   });
 
   expect(extensionsResult.errors).toEqual([]);

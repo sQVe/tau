@@ -4,21 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
-import {
-  InMemoryCredentialStore,
-  InMemoryModelsStore,
-  fauxAssistantMessage,
-  fauxProvider,
-  fauxToolCall,
-} from '@earendil-works/pi-ai';
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
 import type { FauxResponseStep } from '@earendil-works/pi-ai';
-import {
-  DefaultResourceLoader,
-  ModelRuntime,
-  SessionManager,
-  SettingsManager,
-  createAgentSession,
-} from '@earendil-works/pi-coding-agent';
 import type {
   AgentSessionEvent,
   ExtensionFactory,
@@ -29,6 +16,7 @@ import { expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
 
 import { initializeRepository } from '../../../tests/gitRepository.js';
 import { isolateWebAccessConfig } from '../../../tests/isolateWebAccessConfig.js';
+import { createPiSession } from '../../../tests/piSession.js';
 import type { createTestObservation } from './observation.js';
 
 interface ToolResult {
@@ -68,12 +56,12 @@ const createHarness = async (
   counter += 1;
 
   const faux = fauxProvider({ provider: `tau-tdd-${counter}` });
-  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
-  const loader = new DefaultResourceLoader({
+  const { session, extensionsResult } = await createPiSession(cleanup, {
     cwd,
-    agentDir: agentDirectory,
-    settingsManager,
-    additionalExtensionPaths: [
+    agentDirectory,
+    providers: [faux],
+    tools: ['read', 'bash', 'edit', 'write', 'run_tests', 'commit'],
+    extensionPaths: [
       resolve(import.meta.dirname, '..'),
       resolve(
         import.meta.dirname,
@@ -82,35 +70,6 @@ const createHarness = async (
       resolve(import.meta.dirname, '../../../node_modules/pi-web-access/index.ts'),
     ],
     extensionFactories,
-    noExtensions: true,
-    noSkills: true,
-    noPromptTemplates: true,
-    noThemes: true,
-  });
-
-  await loader.reload();
-
-  const modelRuntime = await ModelRuntime.create({
-    credentials: new InMemoryCredentialStore(),
-    modelsStore: new InMemoryModelsStore(),
-    modelsPath: null,
-    refreshOnCreate: false,
-  });
-
-  modelRuntime.registerNativeProvider(faux.provider);
-
-  const { session, extensionsResult } = await createAgentSession({
-    cwd,
-    agentDir: agentDirectory,
-    modelRuntime,
-    model: faux.getModel(),
-    resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(cwd),
-    settingsManager,
-    tools: ['read', 'bash', 'edit', 'write', 'run_tests', 'commit'],
-  });
-  cleanup(() => {
-    session.dispose();
   });
 
   expect(extensionsResult.errors).toEqual([]);

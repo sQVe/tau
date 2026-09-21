@@ -3,23 +3,11 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import {
-  InMemoryCredentialStore,
-  InMemoryModelsStore,
-  fauxAssistantMessage,
-  fauxProvider,
-  fauxToolCall,
-} from '@earendil-works/pi-ai';
-import {
-  DefaultResourceLoader,
-  ModelRuntime,
-  SessionManager,
-  SettingsManager,
-  createAgentSession,
-} from '@earendil-works/pi-coding-agent';
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
 import { expect, it, vi } from 'vitest';
 
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
+import { createPiSession } from './piSession.js';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -80,52 +68,22 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
     const sessionModel = fauxProvider({ provider: 'web-session' });
     const delegate = fauxProvider({ provider: 'web-delegate', models: [{ id: 'reader' }] });
     const override = fauxProvider({ provider: 'web-override', models: [{ id: 'reader' }] });
-    const modelRuntime = await ModelRuntime.create({
-      credentials: new InMemoryCredentialStore(),
-      modelsStore: new InMemoryModelsStore(),
-      modelsPath: null,
-      refreshOnCreate: false,
-    });
-
-    for (const provider of [sessionModel, delegate, override]) {
-      modelRuntime.registerNativeProvider(provider.provider);
-    }
 
     // Faux completions need no credentials, but the web package requires an API key.
     for (const provider of [delegate, override]) {
       provider.provider.auth.apiKey!.resolve = async () => ({ auth: { apiKey: 'test' } });
     }
 
-    const settingsManager = SettingsManager.inMemory({
-      compaction: { enabled: false },
-      retry: { enabled: false },
-    });
-    const loader = new DefaultResourceLoader({
+    const { session, extensionsResult } = await createPiSession(onTestFinished, {
       cwd: directory,
-      agentDir: agentDirectory,
-      settingsManager,
-      additionalExtensionPaths: [
+      agentDirectory,
+      providers: [sessionModel, delegate, override],
+      tools: ['fetch_content', 'get_search_content', 'web_search'],
+      extensionPaths: [
         resolve(import.meta.dirname, '../src/extensions/webAccess/index.ts'),
         resolve(import.meta.dirname, '../node_modules/pi-web-access/index.ts'),
       ],
-      noExtensions: true,
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
-    });
-    await loader.reload();
-    const { session, extensionsResult } = await createAgentSession({
-      cwd: directory,
-      agentDir: agentDirectory,
-      modelRuntime,
-      model: sessionModel.getModel(),
-      resourceLoader: loader,
-      sessionManager: SessionManager.inMemory(directory),
-      settingsManager,
-      tools: ['fetch_content', 'get_search_content', 'web_search'],
-    });
-    onTestFinished(() => {
-      session.dispose();
+      settings: { compaction: { enabled: false }, retry: { enabled: false } },
     });
     expect(extensionsResult.errors).toEqual([]);
     await session.bindExtensions({});
