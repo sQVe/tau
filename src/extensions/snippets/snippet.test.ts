@@ -251,6 +251,15 @@ describe('buildSnippetMessage', () => {
     expect(buildSnippetMessage('First.', active)).toBe('First.\n\nSecond.\n\nThird.');
   });
 
+  it('omits empty text between the snippet bodies', () => {
+    const active = [
+      createSnippet({ placement: 'prepend', body: 'Before.' }),
+      createSnippet({ placement: 'append', body: 'After.' }),
+    ];
+
+    expect(buildSnippetMessage('', active)).toBe('Before.\n\nAfter.');
+  });
+
   it('returns the text unchanged when nothing is active', () => {
     expect(buildSnippetMessage('My message.', [])).toBe('My message.');
   });
