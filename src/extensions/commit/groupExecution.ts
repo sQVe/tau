@@ -144,7 +144,7 @@ const prepareReviewState = (run: GroupRun): void => {
   }
 };
 
-const snapshotStagedTree = async (run: GroupRun): Promise<void> => {
+const snapshotStagedTree = async (run: GroupRun): Promise<boolean> => {
   const treeOutput = await reviewGit(run.pi, run.context.cwd, ['write-tree'], {
     signal: run.signal,
   });
@@ -159,9 +159,15 @@ const snapshotStagedTree = async (run: GroupRun): Promise<void> => {
   ]);
   run.snapshot.reviewedHead = await currentHead(run.pi, run.context.cwd);
 
+  if (run.signal?.aborted) {
+    return false;
+  }
+
   await writeFile(run.messagePath, buildCommitMessage(run.subject, run.body), { mode: 0o600 });
 
   prepareReviewState(run);
+
+  return true;
 };
 
 const recordDispute = (run: GroupRun): void => {
@@ -333,9 +339,7 @@ const runGroupPipeline = async (run: GroupRun): Promise<boolean> => {
     return false;
   }
 
-  await snapshotStagedTree(run);
-
-  if (run.signal?.aborted) {
+  if (!(await snapshotStagedTree(run))) {
     return false;
   }
 
@@ -343,11 +347,11 @@ const runGroupPipeline = async (run: GroupRun): Promise<boolean> => {
     return false;
   }
 
-  enforceReviewGate(run);
-
   if (run.signal?.aborted) {
     return false;
   }
+
+  enforceReviewGate(run);
 
   await verifyUnchanged(run);
 
