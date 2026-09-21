@@ -339,7 +339,7 @@ it('names the dispute when the shared review context exceeds the limit', async (
 });
 
 describe('large commits', () => {
-  it('reviews input over the payload limit in bounded batches and merges their findings', async () => {
+  it('reviews input over the payload limit in sequential bounded batches and merges their findings', async () => {
     const repositoryDirectory = await createTemporaryRepository();
     const git = (commandArguments: string[]) =>
       runCommand('git', commandArguments, repositoryDirectory);
@@ -356,7 +356,13 @@ describe('large commits', () => {
     const tree = (await git(['write-tree'])).stdout.trim();
     const head = (await git(['rev-parse', 'HEAD'])).stdout.trim();
     const app = reviewFixture();
+    let running = 0;
+    let mostRunning = 0;
     app.complete.mockImplementation(async (_model, request) => {
+      running += 1;
+      mostRunning = Math.max(mostRunning, running);
+      await new Promise((resolve) => setImmediate(resolve));
+      running -= 1;
       const input = reviewInput(request);
       const findings = paths
         .filter((path) => input.includes(`// ${path}`))
@@ -382,6 +388,36 @@ describe('large commits', () => {
     const inputs = app.complete.mock.calls.map(([, request]) => reviewInput(request));
     expect(inputs.length).toBeGreaterThan(1);
     expect(inputs.every((input) => input.length <= 1_000_000)).toBe(true);
+    expect(mostRunning).toBe(1);
     expect(review.findings.map((finding) => finding.path).toSorted()).toEqual(paths);
+  });
+
+  it('reviews commits that delete files larger than the input budget', async () => {
+    const repositoryDirectory = await createTemporaryRepository();
+    const git = (commandArguments: string[]) =>
+      runCommand('git', commandArguments, repositoryDirectory);
+
+    await writeFile(join(repositoryDirectory, 'gone.ts'), 'x\n'.repeat(300_000));
+    await git(['add', 'gone.ts']);
+    await git(['commit', '-m', 'init']);
+    const head = (await git(['rev-parse', 'HEAD'])).stdout.trim();
+    await git(['rm', '-q', 'gone.ts']);
+    await writeFile(join(repositoryDirectory, 'file.ts'), 'export const a = 1;\n');
+    await git(['add', 'file.ts']);
+    const tree = (await git(['write-tree'])).stdout.trim();
+    const app = reviewFixture();
+    const pi = {
+      exec: (command: string, commandArguments: string[], options?: { cwd?: string }) =>
+        runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
+    };
+
+    await reviewComments(pi, { ...app.context, cwd: repositoryDirectory }, undefined, {
+      tree,
+      head,
+    });
+
+    const input = reviewInput(app.complete.mock.calls[0]?.[1]);
+    expect(input).toContain('gone.ts');
+    expect(input.length).toBeLessThan(10_000);
   });
 });

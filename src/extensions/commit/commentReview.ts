@@ -256,8 +256,13 @@ export const reviewComments = async (
     })),
   );
   const policies = policyFiles.filter((policy) => policy.content !== null);
-  const shared = { policies, binaryPaths, dispute: snapshot.dispute };
-  const batches = batchEntries(entries, JSON.stringify({ diff: '', files: [], ...shared }).length);
+  // Deleted files go by name only: their diffs can exceed the budget and their comments are gone.
+  const deletedPaths = entries.filter((entry) => entry.deleted).map((entry) => entry.path);
+  const shared = { policies, binaryPaths, deletedPaths, dispute: snapshot.dispute };
+  const batches = batchEntries(
+    entries.filter((entry) => !entry.deleted),
+    JSON.stringify({ diff: '', files: [], ...shared }).length,
+  );
 
   const authentication = await context.modelRegistry.getApiKeyAndHeaders(model);
 
@@ -265,22 +270,28 @@ export const reviewComments = async (
     throw new Error(`Comment review authentication failed: ${authentication.error}`);
   }
 
-  const reviewSignal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(120_000)]);
-  const reviews = await Promise.all(
-    batches.map((batch) => {
-      const files = batch.flatMap((entry) => (entry.file ? [entry.file] : []));
-      const deletedPaths = batch.filter((entry) => entry.deleted).map((entry) => entry.path);
-      const input = JSON.stringify({
-        diff: batch.map((entry) => entry.diff).join(''),
-        files,
-        ...shared,
-      });
+  const findings: CommentReview['findings'] = [];
 
-      return reviewBatch(context, model, input, { files, deletedPaths }, reviewSignal);
-    }),
-  );
+  // Sequential batches keep large commits from bursting past provider rate limits.
+  for (const batch of batches) {
+    const files = batch.flatMap((entry) => (entry.file ? [entry.file] : []));
+    const input = JSON.stringify({
+      diff: batch.map((entry) => entry.diff).join(''),
+      files,
+      ...shared,
+    });
+    const reviewSignal = AbortSignal.any([
+      ...(signal ? [signal] : []),
+      AbortSignal.timeout(120_000),
+    ]);
 
-  return { findings: reviews.flatMap((review) => review.findings) };
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Batches run one at a time on purpose.
+    const review = await reviewBatch(context, model, input, { files, deletedPaths }, reviewSignal);
+
+    findings.push(...review.findings);
+  }
+
+  return { findings };
 };
 
 interface ReviewEntry {
