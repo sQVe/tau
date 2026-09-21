@@ -11,6 +11,17 @@ import type { Profile, Task } from './types.js';
 
 const matchField = (line: string) => line.match(/^([a-z-]+):\s*(.+)$/);
 
+const supportedProfileKeys = new Set([
+  'name',
+  'description',
+  'role',
+  'model',
+  'thinking',
+  'cli',
+  'session-mode',
+  'permissions',
+]);
+
 const parseFields = (frontmatter: string) => {
   const fields = new Map<string, string>();
 
@@ -28,21 +39,11 @@ const parseFields = (frontmatter: string) => {
     const key = match[1];
     const value = match[2];
 
-    if (
-      !key ||
-      !value ||
-      fields.has(key) ||
-      ![
-        'name',
-        'description',
-        'role',
-        'model',
-        'thinking',
-        'cli',
-        'session-mode',
-        'permissions',
-      ].includes(key)
-    ) {
+    if (!key || !value) {
+      throw new Error(`Unsupported or duplicate profile setting: ${line}`);
+    }
+
+    if (fields.has(key) || !supportedProfileKeys.has(key)) {
       throw new Error(`Unsupported or duplicate profile setting: ${line}`);
     }
 
@@ -60,6 +61,38 @@ const parseThinking = (thinking = 'medium') => {
   return thinking;
 };
 
+const parseRole = (fields: Map<string, string>): Profile['role'] => {
+  const role = fields.get('role');
+
+  if (role !== 'investigation' && role !== 'editing') {
+    throw new Error('Profile requires an investigation or editing role.');
+  }
+
+  return role;
+};
+
+const parseHarness = (fields: Map<string, string>): string => {
+  const harness = fields.get('cli') ?? 'pi';
+
+  if (!/^[a-z][a-z0-9-]{0,63}$/.test(harness) || harness === 'generic') {
+    throw new Error('Invalid herdr kind in profile.');
+  }
+
+  return harness;
+};
+
+const requireLineageOnly = (fields: Map<string, string>): void => {
+  if ((fields.get('session-mode') ?? 'lineage-only') !== 'lineage-only') {
+    throw new Error('Workers require fresh lineage-only sessions.');
+  }
+};
+
+const requireTrustedPermissions = (fields: Map<string, string>): void => {
+  if ((fields.get('permissions') ?? 'trusted-full-tools') !== 'trusted-full-tools') {
+    throw new Error('Only trusted full-tool workers are supported; roles are not sandboxes.');
+  }
+};
+
 export const parseProfile = (content: string, fallbackName: string, source: string): Profile => {
   const match = content.replaceAll('\r\n', '\n').match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
 
@@ -69,26 +102,11 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
 
   const [, frontmatter = '', body = ''] = match;
   const fields = parseFields(frontmatter);
+  const role = parseRole(fields);
+  const harness = parseHarness(fields);
 
-  const role = fields.get('role');
-
-  if (role !== 'investigation' && role !== 'editing') {
-    throw new Error('Profile requires an investigation or editing role.');
-  }
-
-  const harness = fields.get('cli') ?? 'pi';
-
-  if (!/^[a-z][a-z0-9-]{0,63}$/.test(harness) || harness === 'generic') {
-    throw new Error('Invalid herdr kind in profile.');
-  }
-
-  if ((fields.get('session-mode') ?? 'lineage-only') !== 'lineage-only') {
-    throw new Error('Workers require fresh lineage-only sessions.');
-  }
-
-  if ((fields.get('permissions') ?? 'trusted-full-tools') !== 'trusted-full-tools') {
-    throw new Error('Only trusted full-tool workers are supported; roles are not sandboxes.');
-  }
+  requireLineageOnly(fields);
+  requireTrustedPermissions(fields);
 
   if (!body.trim()) {
     throw new Error('Profile instructions are empty.');

@@ -15,6 +15,7 @@ import { expect, it, vi } from 'vitest';
 import { asPiLoadout, fixtureLoadout } from './fixtures/loadout.js';
 import { resolveInheritedLoadout } from './loadout.js';
 import * as loadoutModule from './loadout.js';
+import * as loadoutFingerprintModule from './loadoutFingerprint.js';
 import { resolveProfile, parseProfile } from './profiles.js';
 import { textLimit } from './types.js';
 import type { Task } from './types.js';
@@ -51,10 +52,10 @@ it('allows only resolved API key rotation under explicitly versioned provider fi
   const registry = new ModelRegistry(runtime);
   const model = provider.getModel();
   const signal = new AbortController().signal;
-  const current = await loadoutModule.providerFingerprint(registry, model, signal);
+  const current = await loadoutFingerprintModule.providerFingerprint(registry, model, signal);
   resolution = { ...resolution, auth: { ...resolution.auth, apiKey: 'rotated' } };
 
-  expect(await loadoutModule.providerFingerprint(registry, model, signal)).toBe(current);
+  expect(await loadoutFingerprintModule.providerFingerprint(registry, model, signal)).toBe(current);
   const rotated = resolution;
 
   for (const changed of [
@@ -64,43 +65,55 @@ it('allows only resolved API key rotation under explicitly versioned provider fi
   ]) {
     resolution = changed;
     // oxlint-disable-next-line eslint/no-await-in-loop -- Compare each independent auth mutation against the same saved fingerprint.
-    expect(await loadoutModule.providerFingerprint(registry, model, signal)).not.toBe(current);
+    expect(await loadoutFingerprintModule.providerFingerprint(registry, model, signal)).not.toBe(
+      current,
+    );
   }
 
   resolution = rotated;
   const registration = vi
     .spyOn(registry, 'getRegisteredProviderConfig')
     .mockReturnValue({ apiKey: 'literal-one' });
-  const literal = await loadoutModule.providerFingerprint(registry, model, signal);
+  const literal = await loadoutFingerprintModule.providerFingerprint(registry, model, signal);
   registration.mockReturnValue({ apiKey: 'literal-two' });
-  expect(await loadoutModule.providerFingerprint(registry, model, signal)).not.toBe(literal);
+  expect(await loadoutFingerprintModule.providerFingerprint(registry, model, signal)).not.toBe(
+    literal,
+  );
   registration.mockRestore();
   const modelsPath = join(directory, 'models.json');
   writeFileSync(
     modelsPath,
     JSON.stringify({ providers: { unrelated: { apiKey: 'literal-one' } } }),
   );
-  const fileConfiguration = await loadoutModule.providerFingerprint(registry, model, signal);
+  const fileConfiguration = await loadoutFingerprintModule.providerFingerprint(
+    registry,
+    model,
+    signal,
+  );
   expect(fileConfiguration).not.toBe(current);
   writeFileSync(
     modelsPath,
     JSON.stringify({ providers: { unrelated: { apiKey: 'literal-two' } } }),
   );
-  expect(await loadoutModule.providerFingerprint(registry, model, signal)).not.toBe(
+  expect(await loadoutFingerprintModule.providerFingerprint(registry, model, signal)).not.toBe(
     fileConfiguration,
   );
   rmSync(modelsPath);
 
   const auth = vi.spyOn(registry, 'getApiKeyAndHeaders');
   auth.mockResolvedValueOnce({ ok: false, error: 'Refresh failed' });
-  await expect(loadoutModule.providerFingerprint(registry, model, signal)).rejects.toThrow(
-    'authentication is unavailable',
-  );
+  await expect(
+    loadoutFingerprintModule.providerFingerprint(registry, model, signal),
+  ).rejects.toThrow('authentication is unavailable');
   const deferred =
     Promise.withResolvers<Awaited<ReturnType<ModelRegistry['getApiKeyAndHeaders']>>>();
   auth.mockReturnValueOnce(deferred.promise);
   const cancellation = new AbortController();
-  const pending = loadoutModule.providerFingerprint(registry, model, cancellation.signal);
+  const pending = loadoutFingerprintModule.providerFingerprint(
+    registry,
+    model,
+    cancellation.signal,
+  );
   cancellation.abort();
   await expect(pending).rejects.toThrow('cancelled');
   expect(auth).toHaveBeenCalledTimes(2);
@@ -113,13 +126,13 @@ it('refuses distinct provider closures even when their source text matches', () 
   const replacement = closure('replacement');
 
   expect(original.toString()).toBe(replacement.toString());
-  expect(loadoutModule).toHaveProperty('providerCallbacksMatch');
-  expect(loadoutModule.providerCallbacksMatch({ stream: original }, { stream: replacement })).toBe(
-    false,
-  );
-  expect(loadoutModule.providerCallbacksMatch({ stream: original }, { stream: original })).toBe(
-    true,
-  );
+  expect(loadoutFingerprintModule).toHaveProperty('providerCallbacksMatch');
+  expect(
+    loadoutFingerprintModule.providerCallbacksMatch({ stream: original }, { stream: replacement }),
+  ).toBe(false);
+  expect(
+    loadoutFingerprintModule.providerCallbacksMatch({ stream: original }, { stream: original }),
+  ).toBe(true);
 });
 
 const profile = (body: string) => `---\nname: worker\nrole: editing\nthinking: off\n---\n${body}`;
@@ -257,7 +270,10 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
 
   const recomputed = {
     ...resolved,
-    providerFingerprint: await loadoutModule.providerFingerprint(registry, selectedModel),
+    providerFingerprint: await loadoutFingerprintModule.providerFingerprint(
+      registry,
+      selectedModel,
+    ),
   };
   expect(await loadoutModule.validateSavedLoadout(recomputed, context)).toEqual(recomputed);
   const originalAuth = registry.getApiKeyAndHeaders.bind(registry);
@@ -598,13 +614,13 @@ it('refuses nested delegation once inherited instructions and scope exceed the s
     isProjectTrusted: () => true,
   } as unknown as ExtensionContext;
   const nested = () =>
-    resolveInheritedLoadout(
+    resolveInheritedLoadout({
       parent,
-      { profile: 'worker', permissions: loadout.permissions },
+      input: { profile: 'worker', permissions: loadout.permissions },
       context,
-      {} as ExtensionAPI,
-      new AbortController().signal,
-    );
+      pi: {} as ExtensionAPI,
+      signal: new AbortController().signal,
+    });
 
   await expect(nested()).rejects.toThrow(`over the ${textLimit} limit`);
   loadout.instructions = 'Parent instructions.';

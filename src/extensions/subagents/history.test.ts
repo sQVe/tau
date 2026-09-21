@@ -81,7 +81,7 @@ const setup = () => {
       loadout: fixtureLoadout(directory),
     });
     publish(taskDirectory, 'task.json', record);
-    recordEvent(taskDirectory, id, 'cleanup', 'Pane removed.', true);
+    recordEvent(taskDirectory, id, 'cleanup', { detail: 'Pane removed.', stopped: true });
     acceptReport(taskDirectory, id, {
       taskId: id,
       outcome: 'success',

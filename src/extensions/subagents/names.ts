@@ -46,27 +46,29 @@ const retainedNames = (root: string, parentSessionId: string): string[] => {
   });
 };
 
-export const allocateName = (
-  root: string,
-  parentSessionId: string,
-  role: Loadout['role'],
-  live: unknown,
-  suffix: () => string,
-): string => {
-  if (!Value.Check(liveAgentsSchema, live)) {
+export interface NameAllocation {
+  root: string;
+  parentSessionId: string;
+  role: Loadout['role'];
+  live: unknown;
+  suffix: () => string;
+}
+
+export const allocateName = (allocation: NameAllocation): string => {
+  if (!Value.Check(liveAgentsSchema, allocation.live)) {
     throw new Error('Malformed live agent listing.');
   }
 
-  const taken = new Set(live.flatMap((agent) => (agent.name ? [agent.name] : [])));
+  const taken = new Set(allocation.live.flatMap((agent) => (agent.name ? [agent.name] : [])));
 
-  for (const name of retainedNames(root, parentSessionId)) {
+  for (const name of retainedNames(allocation.root, allocation.parentSessionId)) {
     taken.add(name);
   }
 
-  const prefix = role === 'editing' ? 'worker' : 'investigator';
+  const prefix = allocation.role === 'editing' ? 'worker' : 'investigator';
 
   for (let attempt = 0; attempt < 32; attempt++) {
-    const name = `${prefix}-${suffix()}`;
+    const name = `${prefix}-${allocation.suffix()}`;
 
     if (!taken.has(name)) {
       return name;

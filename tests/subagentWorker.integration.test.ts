@@ -23,16 +23,18 @@ import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import {
+  integrationFingerprint,
   modelFingerprint,
   providerFingerprint,
-  integrationFingerprint,
-} from '../src/extensions/subagents/loadout.js';
+} from '../src/extensions/subagents/loadoutFingerprint.js';
 import { nativeIdentity, seedSession, workerPrompt } from '../src/extensions/subagents/profiles.js';
 import {
   acceptReply,
-  publish,
   readAcknowledgement,
   readPendingQuestion,
+} from '../src/extensions/subagents/questionRecords.js';
+import {
+  publish,
   readEvent,
   readReport,
   validateTask,

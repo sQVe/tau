@@ -19,7 +19,7 @@ import {
 } from '../src/extensions/subagents/fixtures/loadout.js';
 import { searchHistory } from '../src/extensions/subagents/history.js';
 import { resolveLoadout, validateSavedLoadout } from '../src/extensions/subagents/loadout.js';
-import { readAcknowledgement, readReply } from '../src/extensions/subagents/records.js';
+import { readAcknowledgement, readReply } from '../src/extensions/subagents/questionRecords.js';
 import { object, result, terminalLocation } from '../src/extensions/subagents/terminal.js';
 import { isolatedHerdr } from './isolatedHerdr.js';
 import { toolAvailable } from './toolAvailable.js';
@@ -107,7 +107,7 @@ export default function (pi) {
 
       return response;
     };
-    await runClient('herdr', ['integration', 'install', 'pi'], 5000, undefined, environment);
+    await runClient('herdr', ['integration', 'install', 'pi'], 5000, { environment });
     const workspace: unknown = JSON.parse(
       await client(['workspace', 'create', '--cwd', root, '--no-focus']),
     );

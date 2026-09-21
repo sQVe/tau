@@ -34,17 +34,15 @@ import {
   integrationFingerprint,
   modelFingerprint,
   providerFingerprint,
-} from '../src/extensions/subagents/loadout.js';
+} from '../src/extensions/subagents/loadoutFingerprint.js';
 import { placementFixture } from '../src/extensions/subagents/placementFixture.js';
 import { nativeIdentity, seedSession } from '../src/extensions/subagents/profiles.js';
 import {
   acceptReply,
-  publish,
   readAcknowledgement,
-  readEvent,
   readPendingQuestion,
-  readReport,
-} from '../src/extensions/subagents/records.js';
+} from '../src/extensions/subagents/questionRecords.js';
+import { publish, readEvent, readReport } from '../src/extensions/subagents/records.js';
 import { requireNativeTask } from '../src/extensions/subagents/types.js';
 import type { Task } from '../src/extensions/subagents/types.js';
 import workerExtension from '../src/extensions/subagents/worker.js';
@@ -229,9 +227,9 @@ const nestedScenario = async (waitForParentReply: boolean) => {
   const placement = placementFixture(200, 60);
   const runClient = cancellation.runClient;
   vi.spyOn(cancellation, 'runClient').mockImplementation(
-    async (executable, argumentsList, budget, signal, environment) => {
+    async (executable, argumentsList, budget, options) => {
       if (executable !== 'herdr') {
-        return runClient(executable, argumentsList, budget, signal, environment);
+        return runClient(executable, argumentsList, budget, options);
       }
 
       if (argumentsList[0] === 'agent' && argumentsList[1] === 'list') {

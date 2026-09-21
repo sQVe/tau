@@ -61,6 +61,23 @@ interface PlacementInput {
   onCreated?: (location: TerminalLocation) => void;
 }
 
+interface SplitRequest {
+  eligible: TerminalLocation[];
+  visibility: Visibility;
+  options: string[];
+  call: TerminalCall;
+  onCreated: PlacementInput['onCreated'];
+}
+
+interface TabSearch {
+  tabs: string[];
+  parent: TerminalLocation;
+  locations: TerminalLocation[];
+  options: string[];
+  call: TerminalCall;
+  onCreated: PlacementInput['onCreated'];
+}
+
 export class WorkerPlacement {
   private readonly owned = new Map<string, { tabId: string; visibility: Visibility }>();
   private pending: Promise<unknown> = Promise.resolve();
@@ -150,13 +167,56 @@ export class WorkerPlacement {
     }
   }
 
-  private async split(
-    eligible: TerminalLocation[],
+  private ownsBackgroundTab(pane: TerminalLocation, parent: TerminalLocation): boolean {
+    const owned = this.owned.get(pane.terminalId);
+    const ownedBackground = owned?.visibility === 'background' && owned.tabId === pane.tabId;
+
+    return (
+      pane.workspaceId === parent.workspaceId && pane.tabId !== parent.tabId && ownedBackground
+    );
+  }
+
+  private isEligiblePane(
+    pane: TerminalLocation,
+    parent: TerminalLocation,
+    tabId: string,
     visibility: Visibility,
-    options: string[],
+  ): boolean {
+    if (pane.terminalId === parent.terminalId) {
+      return true;
+    }
+
+    const owned = this.owned.get(pane.terminalId);
+
+    return owned?.tabId === tabId && owned.visibility === visibility;
+  }
+
+  private async confirmTarget(
+    target: TerminalLocation,
+    shape: ReturnType<typeof layoutShape>,
     call: TerminalCall,
-    onCreated: PlacementInput['onCreated'],
-  ): Promise<TerminalLocation | undefined> {
+  ): Promise<void> {
+    const current = await listTerminals(call);
+    const present = current.some(
+      (pane) =>
+        pane.terminalId === target.terminalId &&
+        pane.paneId === target.paneId &&
+        pane.tabId === target.tabId,
+    );
+
+    if (!present) {
+      throw new Error('Placement target moved or closed; no layout changes.');
+    }
+
+    const latest = object(result(await call(['pane', 'layout', '--pane', target.paneId])).layout);
+
+    if (layoutShape(latest) !== shape) {
+      throw new Error('Layout changed during placement; no layout changes.');
+    }
+  }
+
+  private async split(request: SplitRequest): Promise<TerminalLocation | undefined> {
+    const { eligible, visibility, options, call, onCreated } = request;
     const first = eligible[0];
 
     if (!first) {
@@ -179,25 +239,9 @@ export class WorkerPlacement {
     }
 
     // External moves, closes, and resizing do not share our queue. Abandon changed plans; never replay a saved layout.
-    const current = await listTerminals(call);
     const target = candidate.location;
 
-    if (
-      !current.some(
-        (pane) =>
-          pane.terminalId === target.terminalId &&
-          pane.paneId === target.paneId &&
-          pane.tabId === target.tabId,
-      )
-    ) {
-      throw new Error('Placement target moved or closed; no layout changes.');
-    }
-
-    const latest = object(result(await call(['pane', 'layout', '--pane', target.paneId])).layout);
-
-    if (layoutShape(latest) !== shape) {
-      throw new Error('Layout changed during placement; no layout changes.');
-    }
+    await this.confirmTarget(target, shape, call);
 
     const created = await call([
       'pane',
@@ -211,86 +255,53 @@ export class WorkerPlacement {
       ...options,
     ]);
     const location = terminalLocation(result(created).pane);
+
     this.owned.set(location.terminalId, { tabId: location.tabId, visibility });
     onCreated?.(location);
 
     if (visibility === 'foreground') {
-      await this.foreground.remember(
-        layout,
-        target.paneId,
-        location,
-        candidate.direction,
+      await this.foreground.remember({
+        before: layout,
+        target: target.paneId,
+        added: location,
+        direction: candidate.direction,
         call,
-        plan?.tree,
-        () => this.owned.has(location.terminalId),
-      );
+        tree: plan?.tree,
+        isOwned: () => this.owned.has(location.terminalId),
+      });
     }
 
     return location;
   }
 
-  private async create(input: PlacementInput, call: TerminalCall): Promise<TerminalLocation> {
-    const parent = terminalLocation(
-      result(
-        await call([
-          'pane',
-          'current',
-          ...(input.parentPane ? ['--pane', input.parentPane] : ['--current']),
-        ]),
-      ).pane,
-    );
-    const locations = await listTerminals(call);
-
-    if (
-      !locations.some(
-        (pane) => pane.paneId === parent.paneId && pane.terminalId === parent.terminalId,
-      )
-    ) {
-      throw new Error('Parent terminal moved during placement; no layout changes.');
-    }
-
-    const backgroundTabs = locations
-      .filter((pane) => {
-        const owned = this.owned.get(pane.terminalId);
-
-        return (
-          pane.workspaceId === parent.workspaceId &&
-          pane.tabId !== parent.tabId &&
-          owned?.visibility === 'background' &&
-          owned.tabId === pane.tabId
-        );
-      })
-      .map((pane) => pane.tabId);
-    const tabs = [
-      ...new Set([...(input.visibility === 'foreground' ? [parent.tabId] : []), ...backgroundTabs]),
-    ];
-    const environment = input.environment.flatMap((value) => ['--env', value]);
-    const options = ['--cwd', input.cwd, '--no-focus', ...environment];
+  private async placeInTabs(search: TabSearch): Promise<TerminalLocation | undefined> {
+    const { tabs, parent, locations, options, call, onCreated } = search;
 
     for (const tabId of tabs) {
       const visibility = tabId === parent.tabId ? 'foreground' : 'background';
       const panes = locations.filter((pane) => pane.tabId === tabId);
-      const eligible = panes.filter((pane) => {
-        const owned = this.owned.get(pane.terminalId);
-
-        return (
-          pane.terminalId === parent.terminalId ||
-          (owned?.tabId === tabId && owned.visibility === visibility)
-        );
-      });
+      const eligible = panes.filter((pane) => this.isEligiblePane(pane, parent, tabId, visibility));
 
       if (visibility === 'background' && eligible.length !== panes.length) {
         continue;
       }
 
       // oxlint-disable-next-line eslint/no-await-in-loop -- Search owned tabs until a single placement succeeds.
-      const location = await this.split(eligible, visibility, options, call, input.onCreated);
+      const location = await this.split({ eligible, visibility, options, call, onCreated });
 
       if (location) {
         return location;
       }
     }
 
+    return undefined;
+  }
+
+  private async createBackgroundTab(
+    parent: TerminalLocation,
+    options: string[],
+    call: TerminalCall,
+  ): Promise<TerminalLocation> {
     const currentParent = await resolveTerminal(parent.terminalId, call);
 
     if (
@@ -325,6 +336,53 @@ export class WorkerPlacement {
       ).root_pane,
     );
     this.owned.set(location.terminalId, { tabId: location.tabId, visibility: 'background' });
+
+    return location;
+  }
+
+  private async create(input: PlacementInput, call: TerminalCall): Promise<TerminalLocation> {
+    const parent = terminalLocation(
+      result(
+        await call([
+          'pane',
+          'current',
+          ...(input.parentPane ? ['--pane', input.parentPane] : ['--current']),
+        ]),
+      ).pane,
+    );
+    const locations = await listTerminals(call);
+
+    if (
+      !locations.some(
+        (pane) => pane.paneId === parent.paneId && pane.terminalId === parent.terminalId,
+      )
+    ) {
+      throw new Error('Parent terminal moved during placement; no layout changes.');
+    }
+
+    const backgroundTabs = locations
+      .filter((pane) => this.ownsBackgroundTab(pane, parent))
+      .map((pane) => pane.tabId);
+    const tabs = [
+      ...new Set([...(input.visibility === 'foreground' ? [parent.tabId] : []), ...backgroundTabs]),
+    ];
+    const environment = input.environment.flatMap((value) => ['--env', value]);
+    const options = ['--cwd', input.cwd, '--no-focus', ...environment];
+    const placed = await this.placeInTabs({
+      tabs,
+      parent,
+      locations,
+      options,
+      call,
+      onCreated: input.onCreated,
+    });
+
+    if (placed) {
+      return placed;
+    }
+
+    const location = await this.createBackgroundTab(parent, options, call);
+
     input.onCreated?.(location);
 
     return location;

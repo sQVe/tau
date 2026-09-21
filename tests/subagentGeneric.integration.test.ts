@@ -45,14 +45,13 @@ it.runIf(hasHerdr)(
 
     const promptFailure = await client(
       agentPromptArguments('no-such-agent', '-x leading text\nsecond line'),
-    ).catch((error: unknown) =>
-      typeof error === 'object' &&
-      error !== null &&
-      'stderr' in error &&
-      typeof error.stderr === 'string'
-        ? error.stderr
-        : '',
-    );
+    ).catch((error: unknown) => {
+      if (typeof error !== 'object' || error === null || !('stderr' in error)) {
+        return '';
+      }
+
+      return typeof error.stderr === 'string' ? error.stderr : '';
+    });
     expect(promptFailure).toContain('agent_not_found');
     expect(promptFailure).not.toContain('unknown option');
   },

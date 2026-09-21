@@ -22,6 +22,11 @@ interface CleanupResult {
   detail: string;
 }
 
+interface ClientOptions {
+  signal?: AbortSignal | undefined;
+  environment?: NodeJS.ProcessEnv | undefined;
+}
+
 type Client = (argumentsList: string[], budget: number, signal: AbortSignal) => Promise<string>;
 
 const validateBudget = (budget: number) => {
@@ -35,9 +40,10 @@ export const runClient = (
   executable: string,
   argumentsList: string[],
   budget: number,
-  signal?: AbortSignal,
-  environment?: NodeJS.ProcessEnv,
+  options: ClientOptions = {},
 ): Promise<string> => {
+  const { signal, environment } = options;
+
   validateBudget(budget);
 
   return new Promise((resolve, reject) => {
@@ -96,23 +102,30 @@ const processInfo = (response: string) => {
   return object(object(object(parsed).result).process_info);
 };
 
-export const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker) =>
+const sameWorkerOwner = (info: Record<string, unknown>, owned: OwnedWorker): boolean =>
   info.pane_id === owned.paneId &&
   info.shell_pid === owned.shellPid &&
-  info.foreground_process_group_id === owned.processId &&
-  Array.isArray(info.foreground_processes) &&
-  info.foreground_processes.some((value: unknown) => {
-    const process = object(value);
+  info.foreground_process_group_id === owned.processId;
 
-    return (
-      process.pid === owned.processId &&
-      // Pi rewrites argv through process.title, and herdr can omit argv entirely. The caller also checks its herdr session token and ps start time before using this fallback.
-      ((owned.token !== undefined &&
-        Array.isArray(process.argv) &&
-        process.argv.includes(owned.token)) ||
-        (['pi', 'generic'].includes(owned.kind) && Boolean(owned.startedAt)))
-    );
-  });
+const argvHasLaunchToken = (process: Record<string, unknown>, owned: OwnedWorker): boolean =>
+  owned.token !== undefined && Array.isArray(process.argv) && process.argv.includes(owned.token);
+
+const kindUsesStartTime = (owned: OwnedWorker): boolean =>
+  ['pi', 'generic'].includes(owned.kind) && Boolean(owned.startedAt);
+
+const processIdentityMatches = (process: Record<string, unknown>, owned: OwnedWorker): boolean =>
+  argvHasLaunchToken(process, owned) || kindUsesStartTime(owned);
+
+const foregroundProcessMatches = (value: unknown, owned: OwnedWorker): boolean => {
+  const process = object(value);
+
+  return process.pid === owned.processId && processIdentityMatches(process, owned);
+};
+
+export const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker) =>
+  sameWorkerOwner(info, owned) &&
+  Array.isArray(info.foreground_processes) &&
+  info.foreground_processes.some((value) => foregroundProcessMatches(value, owned));
 
 export const processExists = (processId: number) => {
   try {
@@ -128,26 +141,36 @@ export const processExists = (processId: number) => {
   }
 };
 
-export const workerStopped = (information: Record<string, unknown>, owned: OwnedWorker): boolean =>
+const sameStoppedShell = (information: Record<string, unknown>, owned: OwnedWorker): boolean =>
   information.pane_id === owned.paneId &&
   information.shell_pid === owned.shellPid &&
-  information.foreground_process_group_id === owned.shellPid &&
-  !processExists(owned.processId);
+  information.foreground_process_group_id === owned.shellPid;
 
-const validateWorker = (owned: OwnedWorker) => {
-  if (
-    !['process', 'pi', 'generic'].includes(owned.kind) ||
-    !owned.paneId ||
-    !owned.terminalId ||
-    (owned.kind === 'generic'
-      ? !owned.agentKind || !owned.startedAt || !owned.shellStartedAt
-      : !owned.token) ||
-    !Number.isSafeInteger(owned.shellPid) ||
-    !Number.isSafeInteger(owned.processId) ||
-    owned.shellPid <= 0 ||
-    owned.processId <= 0 ||
-    owned.shellPid === owned.processId
-  ) {
+export const workerStopped = (information: Record<string, unknown>, owned: OwnedWorker): boolean =>
+  sameStoppedShell(information, owned) && !processExists(owned.processId);
+
+const isPositiveInteger = (value: number): boolean => Number.isSafeInteger(value) && value > 0;
+
+const hasWorkerIdentity = (owned: OwnedWorker): boolean =>
+  ['process', 'pi', 'generic'].includes(owned.kind) &&
+  Boolean(owned.paneId) &&
+  Boolean(owned.terminalId);
+
+const hasCompleteGenericIdentity = (owned: OwnedWorker): boolean =>
+  Boolean(owned.agentKind) && Boolean(owned.startedAt) && Boolean(owned.shellStartedAt);
+
+const hasLaunchIdentity = (owned: OwnedWorker): boolean =>
+  owned.kind === 'generic' ? hasCompleteGenericIdentity(owned) : Boolean(owned.token);
+
+const hasValidProcessIds = (owned: OwnedWorker): boolean =>
+  isPositiveInteger(owned.shellPid) &&
+  isPositiveInteger(owned.processId) &&
+  owned.shellPid !== owned.processId;
+
+const validateWorker = (owned: OwnedWorker): void => {
+  const identityIsComplete = hasWorkerIdentity(owned) && hasLaunchIdentity(owned);
+
+  if (!identityIsComplete || !hasValidProcessIds(owned)) {
     throw new Error(
       'Cancellation requires a known owned foreground worker and unique launch argument.',
     );
@@ -164,6 +187,20 @@ const stopConfirmed: CleanupResult = {
   cleanup: 'confirmed',
   detail:
     'The owned process is absent and its shell is foreground; detached or background descendants are not covered.',
+};
+
+const confirmRefusal = async (
+  stopped: () => Promise<boolean>,
+  refused: CleanupResult,
+): Promise<CleanupResult> => {
+  if (await stopped()) {
+    return stopConfirmed;
+  }
+
+  return {
+    cleanup: 'unconfirmed',
+    detail: `Further interrupt refused after an earlier attempt. ${refused.detail}`,
+  };
 };
 
 // Follows the same terminal if it moves while shutdown is pending.
@@ -185,7 +222,7 @@ const hasStopped = async (
       'ps',
       ['-p', String(worker.shellPid), '-o', 'lstart='],
       1000,
-      signal,
+      { signal },
     );
 
     return shellStart.trim() === worker.shellStartedAt;
@@ -217,15 +254,7 @@ const waitForStop = async (
 
       if (refused) {
         // A native agent may end its session before its process exits, so a refusal here can trail a clean stop.
-        // oxlint-disable-next-line eslint/no-await-in-loop -- One confirmation attempt within the remaining budget.
-        if (await stopped()) {
-          return stopConfirmed;
-        }
-
-        return {
-          cleanup: 'unconfirmed',
-          detail: `Further interrupt refused after an earlier attempt. ${refused.detail}`,
-        };
+        return confirmRefusal(stopped, refused);
       }
     }
 
@@ -234,17 +263,150 @@ const waitForStop = async (
   }
 };
 
-// Local herdr only. This is identity-checked terminal input, not containment or atomic compare-and-stop.
-export const cancelOwnedWorker = async (
-  worker: OwnedWorker,
+type MutableOwnedWorker = Omit<OwnedWorker, 'paneId'> & { paneId: string };
+
+interface CancellationRun {
+  owned: MutableOwnedWorker;
+  call: (argumentsList: string[]) => Promise<string>;
+  signal: AbortSignal;
+  expires: number;
+  manual: string;
+  shutdown: { inputAttempted: boolean };
+  timer: ReturnType<typeof setTimeout>;
+}
+
+const refreshTerminal = async (run: CancellationRun): Promise<void> => {
+  const location = await resolveTerminal(run.owned.terminalId, run.call);
+
+  run.owned.paneId = location.paneId;
+};
+
+const refuseInput = (run: CancellationRun, reason: string): CleanupResult => ({
+  cleanup: 'refused',
+  detail: `${reason}; no input sent. ${run.manual}`,
+});
+
+const agentSessionMatches = (agent: Record<string, unknown>, owned: OwnedWorker): boolean => {
+  const session = object(agent.agent_session);
+
+  if (owned.kind !== 'generic') {
+    return session.value === owned.token;
+  }
+
+  if (owned.nativeReference === undefined) {
+    return false;
+  }
+
+  return (
+    session.value === owned.nativeReference.value && session.kind === owned.nativeReference.kind
+  );
+};
+
+const agentIdentityMatches = (agent: Record<string, unknown>, owned: OwnedWorker): boolean => {
+  const expectedAgent = owned.kind === 'generic' ? owned.agentKind : owned.kind;
+
+  return (
+    agent.pane_id === owned.paneId &&
+    agent.agent === expectedAgent &&
+    agentSessionMatches(agent, owned)
+  );
+};
+
+const verifyAgentSession = async (run: CancellationRun): Promise<CleanupResult | undefined> => {
+  if (run.owned.kind === 'process') {
+    return undefined;
+  }
+
+  const response: unknown = JSON.parse(await run.call(['agent', 'get', run.owned.paneId]));
+  const agent = object(object(object(response).result).agent);
+
+  if (!agentIdentityMatches(agent, run.owned)) {
+    return refuseInput(run, `${run.owned.kind} session identity did not match`);
+  }
+
+  return undefined;
+};
+
+const verifyProcessStart = async (run: CancellationRun): Promise<CleanupResult | undefined> => {
+  if (!run.owned.startedAt) {
+    return undefined;
+  }
+
+  const processStart = await runClient(
+    'ps',
+    ['-p', String(run.owned.processId), '-o', 'lstart='],
+    Math.max(1, Math.ceil(run.expires - performance.now())),
+    { signal: run.signal },
+  );
+  const startedAt = processStart.trim();
+
+  if (startedAt !== run.owned.startedAt) {
+    return refuseInput(run, 'Process start identity changed');
+  }
+
+  return undefined;
+};
+
+const verifyShellStart = async (run: CancellationRun): Promise<CleanupResult | undefined> => {
+  if (run.owned.kind !== 'generic') {
+    return undefined;
+  }
+
+  const shellStart = await runClient(
+    'ps',
+    ['-p', String(run.owned.shellPid), '-o', 'lstart='],
+    Math.max(1, Math.ceil(run.expires - performance.now())),
+    { signal: run.signal },
+  );
+
+  if (shellStart.trim() !== run.owned.shellStartedAt) {
+    return refuseInput(run, 'Shell start identity changed');
+  }
+
+  return undefined;
+};
+
+const verifyWorkerState = async (run: CancellationRun): Promise<CleanupResult | undefined> => {
+  const before = processInfo(await run.call(['pane', 'process-info', '--pane', run.owned.paneId]));
+
+  if (!matchesWorker(before, run.owned)) {
+    return refuseInput(run, 'Worker identity did not match');
+  }
+
+  const checkedPane = run.owned.paneId;
+  await refreshTerminal(run);
+
+  if (run.owned.paneId !== checkedPane) {
+    throw new TerminalIdentityError('Worker moved during identity checks; no input sent.');
+  }
+
+  return undefined;
+};
+
+const interruptWorker = async (run: CancellationRun): Promise<CleanupResult | undefined> => {
+  await refreshTerminal(run);
+  const refusal =
+    (await verifyAgentSession(run)) ??
+    (await verifyProcessStart(run)) ??
+    (await verifyShellStart(run)) ??
+    (await verifyWorkerState(run));
+
+  if (refusal) {
+    return refusal;
+  }
+
+  run.shutdown.inputAttempted = true;
+  await run.call(shutdownKeys(run.owned));
+
+  return undefined;
+};
+
+const createCancellationRun = (
+  owned: MutableOwnedWorker,
   budget: number,
   client: Client,
   parent: AbortSignal,
-): Promise<CleanupResult> => {
-  validateBudget(budget);
-  const owned = { ...worker };
-  validateWorker(owned);
-
+): CancellationRun => {
   const expires = performance.now() + budget;
   const controller = new AbortController();
   const signal = AbortSignal.any([parent, controller.signal]);
@@ -259,115 +421,49 @@ export const cancelOwnedWorker = async (
     return client(argumentsList, remaining, signal);
   };
   const manual = `Check terminal ${owned.terminalId} (last pane ${owned.paneId}) and worker ${owned.processId} (${owned.token ?? owned.agentKind}) for manual cleanup.`;
-  const refresh = async () => {
-    const location = await resolveTerminal(owned.terminalId, call);
 
-    owned.paneId = location.paneId;
-  };
-  const shutdown = { inputAttempted: false };
+  return { owned, call, signal, expires, manual, shutdown: { inputAttempted: false }, timer };
+};
 
-  const interrupt = async (): Promise<CleanupResult | undefined> => {
-    await refresh();
+const failedCleanup = (error: unknown, run: CancellationRun): CleanupResult => {
+  const cleanup =
+    !run.shutdown.inputAttempted && error instanceof TerminalIdentityError
+      ? 'refused'
+      : 'unconfirmed';
 
-    if (owned.kind !== 'process') {
-      const response: unknown = JSON.parse(await call(['agent', 'get', owned.paneId]));
-      const agent = object(object(object(response).result).agent);
+  return { cleanup, detail: `${String(error)} ${run.manual}` };
+};
 
-      if (
-        agent.pane_id !== owned.paneId ||
-        agent.agent !== (owned.kind === 'generic' ? owned.agentKind : owned.kind) ||
-        (owned.kind === 'generic'
-          ? owned.nativeReference !== undefined &&
-            (object(agent.agent_session).value !== owned.nativeReference.value ||
-              object(agent.agent_session).kind !== owned.nativeReference.kind)
-          : object(agent.agent_session).value !== owned.token)
-      ) {
-        return {
-          cleanup: 'refused',
-          detail: `${owned.kind} session identity did not match; no input sent. ${manual}`,
-        };
-      }
-    }
+// Local herdr only. This is identity-checked terminal input, not containment or atomic compare-and-stop.
+export const cancelOwnedWorker = async (
+  worker: OwnedWorker,
+  budget: number,
+  client: Client,
+  parent: AbortSignal,
+): Promise<CleanupResult> => {
+  validateBudget(budget);
+  const owned = { ...worker };
+  validateWorker(owned);
 
-    if (owned.startedAt) {
-      const processStart = await runClient(
-        'ps',
-        ['-p', String(owned.processId), '-o', 'lstart='],
-        Math.max(1, Math.ceil(expires - performance.now())),
-        signal,
-      );
-      const startedAt = processStart.trim();
-
-      if (startedAt !== owned.startedAt) {
-        return {
-          cleanup: 'refused',
-          detail: `Process start identity changed; no input sent. ${manual}`,
-        };
-      }
-    }
-
-    if (owned.kind === 'generic') {
-      const shellStart = await runClient(
-        'ps',
-        ['-p', String(owned.shellPid), '-o', 'lstart='],
-        Math.max(1, Math.ceil(expires - performance.now())),
-        signal,
-      );
-
-      if (shellStart.trim() !== owned.shellStartedAt) {
-        return {
-          cleanup: 'refused',
-          detail: `Shell start identity changed; no input sent. ${manual}`,
-        };
-      }
-    }
-
-    const before = processInfo(await call(['pane', 'process-info', '--pane', owned.paneId]));
-
-    if (!matchesWorker(before, owned)) {
-      return {
-        cleanup: 'refused',
-        detail: `Worker identity did not match; no input sent. ${manual}`,
-      };
-    }
-
-    const checkedPane = owned.paneId;
-    await refresh();
-
-    if (owned.paneId !== checkedPane) {
-      throw new TerminalIdentityError('Worker moved during identity checks; no input sent.');
-    }
-
-    shutdown.inputAttempted = true;
-    await call(shutdownKeys(owned));
-
-    return undefined;
-  };
-
+  const run = createCancellationRun(owned, budget, client, parent);
   // The worker can exit on its own during checks or input, which fails them.
-  const stoppedAnyway = () => hasStopped({ ...owned }, call, signal).catch(() => false);
+  const stoppedAnyway = () => hasStopped({ ...owned }, run.call, run.signal).catch(() => false);
 
   try {
-    const refused = await interrupt();
+    const refused = await interruptWorker(run);
 
     if (refused) {
       return (await stoppedAnyway()) ? stopConfirmed : refused;
     }
 
-    return await waitForStop(owned, call, signal, interrupt);
+    return await waitForStop(owned, run.call, run.signal, () => interruptWorker(run));
   } catch (error) {
     if (await stoppedAnyway()) {
       return stopConfirmed;
     }
 
-    return {
-      cleanup:
-        !shutdown.inputAttempted && error instanceof TerminalIdentityError
-          ? 'refused'
-          : 'unconfirmed',
-      detail: `${String(error)} ${manual}`,
-    };
+    return failedCleanup(error, run);
   } finally {
-    clearTimeout(timer);
+    clearTimeout(run.timer);
   }
 };

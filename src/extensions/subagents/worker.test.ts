@@ -12,8 +12,8 @@ import { createEventBus } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { checkWorkerRuntime } from './loadout.js';
-import { publish, readEvent, readPendingQuestion, readReport, recordEvent } from './records.js';
-import * as records from './records.js';
+import * as questions from './questionRecords.js';
+import { publish, readEvent, readReport, recordEvent } from './records.js';
 import { textLimit } from './types.js';
 import workerExtension from './worker.js';
 
@@ -156,7 +156,7 @@ it.each([
   async ({ running, closed, stopped, shutdowns }) => {
     const { directory, emit, ask, shutdown } = await waitingWorker();
     expect(ask).toThrow('parent process');
-    expect(readPendingQuestion(directory, 'task')).toBeUndefined();
+    expect(questions.readPendingQuestion(directory, 'task')).toBeUndefined();
     vi.stubEnv('TAU_PARENT_PROCESS', '4242');
     const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
       if (!running) {
@@ -228,7 +228,7 @@ it('refuses reports for active children but includes uncertain cleanup in the fi
 it('stops waiting after uncertain question publication once the parent exits', async () => {
   const { emit, ask, shutdown } = await waitingWorker();
   vi.stubEnv('TAU_PARENT_PROCESS', '4242');
-  vi.spyOn(records, 'acceptQuestion').mockImplementation(() => {
+  vi.spyOn(questions, 'acceptQuestion').mockImplementation(() => {
     throw new Error('Directory sync failed.');
   });
   vi.spyOn(process, 'kill').mockImplementation(() => {
