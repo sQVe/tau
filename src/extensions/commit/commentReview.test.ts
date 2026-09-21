@@ -268,6 +268,76 @@ it('sends removed lines only through the diff', async () => {
   expect(input.split('Removed comment.')).toHaveLength(2);
 });
 
+it('drops findings on deleted files instead of rejecting the review', async () => {
+  const repositoryDirectory = await createTemporaryRepository();
+  const git = (commandArguments: string[]) =>
+    runCommand('git', commandArguments, repositoryDirectory);
+
+  await writeFile(join(repositoryDirectory, 'gone.ts'), '// Old comment.\nexport const a = 1;\n');
+  await git(['add', 'gone.ts']);
+  await git(['commit', '-m', 'init']);
+  const head = (await git(['rev-parse', 'HEAD'])).stdout.trim();
+  await git(['rm', '-q', 'gone.ts']);
+  const tree = (await git(['write-tree'])).stdout.trim();
+  const app = reviewFixture();
+  app.complete.mockResolvedValue(
+    fauxAssistantMessage(
+      '{"findings":[{"path":"gone.ts","line":1,"kind":"policy","message":"Narration."}]}',
+    ),
+  );
+  const pi = {
+    exec: (command: string, commandArguments: string[], options?: { cwd?: string }) =>
+      runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
+  };
+
+  const review = await reviewComments(pi, { ...app.context, cwd: repositoryDirectory }, undefined, {
+    tree,
+    head,
+  });
+
+  expect(review).toEqual({ findings: [] });
+  expect(app.complete).toHaveBeenCalledOnce();
+});
+
+it('reviews submodule changes when Git summarizes submodules as logs', async () => {
+  vi.stubEnv('GIT_CONFIG_COUNT', '1');
+  vi.stubEnv('GIT_CONFIG_KEY_0', 'diff.submodule');
+  vi.stubEnv('GIT_CONFIG_VALUE_0', 'log');
+  const repositoryDirectory = await createTemporaryRepository();
+  const git = (commandArguments: string[]) =>
+    runCommand('git', commandArguments, repositoryDirectory);
+
+  await git(['commit', '--allow-empty', '-m', 'init']);
+  const head = (await git(['rev-parse', 'HEAD'])).stdout.trim();
+  await writeFile(join(repositoryDirectory, 'file.ts'), 'export const a = 1;\n');
+  await git(['add', 'file.ts']);
+  await git(['update-index', '--add', '--cacheinfo', `160000,${head},vendor`]);
+  const tree = (await git(['write-tree'])).stdout.trim();
+  const app = reviewFixture();
+  const pi = {
+    exec: (command: string, commandArguments: string[], options?: { cwd?: string }) =>
+      runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
+  };
+
+  await reviewComments(pi, { ...app.context, cwd: repositoryDirectory }, undefined, { tree, head });
+
+  expect(app.complete).toHaveBeenCalledOnce();
+});
+
+it('names the dispute when the shared review context exceeds the limit', async () => {
+  const app = reviewFixture();
+
+  await expect(
+    reviewComments({ exec: app.exec }, app.context, undefined, {
+      tree: 'candidate',
+      head: 'base',
+      dispute: 'x'.repeat(1_000_001),
+    }),
+  ).rejects.toThrow(
+    new Error('Comment review context is too large. Shorten the dispute and retry.'),
+  );
+});
+
 describe('large commits', () => {
   it('reviews input over the payload limit in bounded batches and merges their findings', async () => {
     const repositoryDirectory = await createTemporaryRepository();

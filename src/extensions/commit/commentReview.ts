@@ -86,14 +86,20 @@ export const reviewGit = async (
   return result.stdout;
 };
 
-const parseReview = (text: string, files: ReviewFile[]): CommentReview => {
+const parseReview = (text: string, files: ReviewFile[], deletedPaths: string[]): CommentReview => {
   const result: unknown = JSON.parse(
     text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i, '$1'),
   );
 
+  if (!Value.Check(reviewSchema, result)) {
+    throw new Error('Comment review returned invalid findings.');
+  }
+
+  // Comments in deleted files leave the codebase with this commit, so findings on them are moot.
+  const findings = result.findings.filter((finding) => !deletedPaths.includes(finding.path));
+
   if (
-    !Value.Check(reviewSchema, result) ||
-    result.findings.some((finding) => {
+    findings.some((finding) => {
       const content = files.find((candidate) => candidate.path === finding.path)?.content;
 
       return !content || finding.line > content.split('\n').length || !finding.message.trim();
@@ -102,7 +108,7 @@ const parseReview = (text: string, files: ReviewFile[]): CommentReview => {
     throw new Error('Comment review returned invalid findings.');
   }
 
-  return result;
+  return { findings };
 };
 
 const readBlob = async (
@@ -165,6 +171,8 @@ export const reviewComments = async (
     '--no-textconv',
     '--no-renames',
     '--no-color',
+    // Keeps one diff --git section per submodule path whatever diff.submodule says.
+    '--submodule=short',
     '--no-relative',
     base,
     snapshot.tree,
@@ -220,6 +228,7 @@ export const reviewComments = async (
         path,
         diff: diffSections[index] ?? '',
         file: content === null ? null : { path, content },
+        deleted: content === null && !binaryPaths.includes(path),
       };
     }),
   );
@@ -260,13 +269,14 @@ export const reviewComments = async (
   const reviews = await Promise.all(
     batches.map((batch) => {
       const files = batch.flatMap((entry) => (entry.file ? [entry.file] : []));
+      const deletedPaths = batch.filter((entry) => entry.deleted).map((entry) => entry.path);
       const input = JSON.stringify({
         diff: batch.map((entry) => entry.diff).join(''),
         files,
         ...shared,
       });
 
-      return reviewBatch(context, model, input, files, reviewSignal);
+      return reviewBatch(context, model, input, { files, deletedPaths }, reviewSignal);
     }),
   );
 
@@ -277,6 +287,7 @@ interface ReviewEntry {
   path: string;
   diff: string;
   file: ReviewFile | null;
+  deleted: boolean;
 }
 
 const inputBudget = 1_000_000;
@@ -285,6 +296,10 @@ const batchEntries = (entries: ReviewEntry[], sharedSize: number) => {
   const batches: ReviewEntry[][] = [];
   let batch: ReviewEntry[] = [];
   let batchSize = sharedSize;
+
+  if (sharedSize > inputBudget) {
+    throw new Error('Comment review context is too large. Shorten the dispute and retry.');
+  }
 
   for (const entry of entries) {
     // Overestimates the JSON size of the entry's share of the batch input, so batches stay in budget.
@@ -315,7 +330,7 @@ const reviewBatch = async (
   context: ExtensionContext,
   model: ReturnType<typeof resolveDelegate>,
   input: string,
-  files: ReviewFile[],
+  source: { files: ReviewFile[]; deletedPaths: string[] },
   reviewSignal: AbortSignal,
 ) => {
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -343,7 +358,7 @@ const reviewBatch = async (
       .join('');
 
     try {
-      return parseReview(text, files);
+      return parseReview(text, source.files, source.deletedPaths);
     } catch (error) {
       if (attempt === 1 || reviewSignal.aborted) {
         throw error;
