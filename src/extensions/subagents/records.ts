@@ -209,13 +209,7 @@ const isUnpublishedDirectory = (directory: string): boolean =>
   );
 
 // Records from before the current saved format are never read, but they must not block unrelated tasks.
-const isRetiredRecord = (directory: string): boolean => {
-  let value: unknown;
-  try {
-    value = readRecord(directory, 'task.json');
-  } catch {
-    return false;
-  }
+export const isRetiredTask = (value: unknown): boolean => {
   if (typeof value !== 'object' || value === null || !('loadout' in value)) {
     return false;
   }
@@ -234,6 +228,14 @@ const isRetiredRecord = (directory: string): boolean => {
         loadout.providerFingerprintVersion !== 2 ||
         !('noExtensions' in loadout)))
   );
+};
+
+const isRetiredRecord = (directory: string): boolean => {
+  try {
+    return isRetiredTask(readRecord(directory, 'task.json'));
+  } catch {
+    return false;
+  }
 };
 
 const readScannedTask = (directory: string): Task | undefined => {

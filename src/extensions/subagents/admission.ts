@@ -8,6 +8,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import {
+  isRetiredTask,
   publish,
   readEvent,
   readRecord,
@@ -79,12 +80,31 @@ const policySchema = Type.Object(
 const sameTree = (left: TreeIdentity, right: TreeIdentity) =>
   left.rootSession === right.rootSession && left.rootSessionId === right.rootSessionId;
 
-const readReservations = (directory: string, tree: TreeIdentity): Map<string, Task> => {
+// A retired reservation cannot be validated, so only confirmed cleanup releases its slot.
+const requireRetiredStopped = (root: string, name: string): void => {
+  const taskId = name.slice(0, -'.json'.length);
+  if (readEvent(join(root, taskId), taskId, 'cleanup')?.stopped !== true) {
+    throw new Error(
+      `Reservation ${name} uses a retired format and its cleanup is unconfirmed. Inspect ${join(root, taskId)} manually; the slot stays held.`,
+    );
+  }
+};
+
+const readReservations = (
+  root: string,
+  directory: string,
+  tree: TreeIdentity,
+): Map<string, Task> => {
   const retained = new Map<string, Task>();
   for (const name of readdirSync(directory).filter(
     (candidate) => candidate.endsWith('.json') && candidate !== 'policy.json',
   )) {
-    const reservation = validateTask(readRecord(directory, name));
+    const value = readRecord(directory, name);
+    if (isRetiredTask(value)) {
+      requireRetiredStopped(root, name);
+      continue;
+    }
+    const reservation = validateTask(value);
     if (!sameTree(tree, reservation.tree) || name !== `${reservation.taskId}.json`) {
       throw new Error('Invalid saved capacity reservation. Manual inspection required.');
     }
@@ -95,7 +115,7 @@ const readReservations = (directory: string, tree: TreeIdentity): Map<string, Ta
 };
 
 export const descendantReservations = (root: string, task: Task): Task[] => {
-  const reservations = readReservations(admissionDirectory(root, task.tree), task.tree);
+  const reservations = readReservations(root, admissionDirectory(root, task.tree), task.tree);
   const byParent = new Map<string, Task[]>();
   for (const reservation of reservations.values()) {
     const parentTaskId = reservation.tree.parentTaskId;
@@ -124,7 +144,7 @@ export const descendantReservations = (root: string, task: Task): Task[] => {
 };
 
 const retainedReservations = (root: string, directory: string, tree: TreeIdentity): Task[] => {
-  const retained = readReservations(directory, tree);
+  const retained = readReservations(root, directory, tree);
   for (const saved of readTasks(root)) {
     const savedTree = saved.task.tree;
     if (sameTree(tree, savedTree)) {
