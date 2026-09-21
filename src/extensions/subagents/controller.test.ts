@@ -402,8 +402,9 @@ it('classifies follow-up readiness deadline expiry as timeout rather than caller
   const validationDeadline = new AbortController();
   vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(validationDeadline.signal);
   const beginning = performance.now();
-  const pending = fixture.controller.followUp({ ...fixture.input, timeout: 400 }, fixture.context);
-  await started.promise;
+  // Leave slow runners room to reach start; an early rejection fails here instead of hanging.
+  const pending = fixture.controller.followUp({ ...fixture.input, timeout: 1200 }, fixture.context);
+  await Promise.race([started.promise, pending]);
   validationDeadline.abort(new DOMException('Validation deadline expired.', 'TimeoutError'));
   const status = await pending;
 
@@ -412,7 +413,7 @@ it('classifies follow-up readiness deadline expiry as timeout rather than caller
   expect(records.readEvent(status.directory, status.taskId, 'cancelled')).toBeUndefined();
   expect(records.readEvent(status.directory, status.taskId, 'timeout')).toBeDefined();
   const task = readTask(status.directory);
-  expect(task.deadline - task.createdAt).toBe(400);
+  expect(task.deadline - task.createdAt).toBe(1200);
 });
 
 it('allows only one competing follow-up and preserves lineage across parents and successive tasks', async () => {
