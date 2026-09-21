@@ -2,7 +2,9 @@ import { it } from 'vitest';
 
 import { canRunPiWorker, piWorkerTimeout, runPiWorkerScenario } from './piWorkerScenario.js';
 
-it.runIf(canRunPiWorker).each(['completion', 'follow-up', 'early exit'] as const)(
+it
+  .runIf(canRunPiWorker)
+  .each(['active cancellation', 'moved cancellation', 'active timeout'] as const)(
   'runs real canonical Pi %s with Safety Net in isolated herdr',
   async (scenario) => {
     await runPiWorkerScenario(scenario);

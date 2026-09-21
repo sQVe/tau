@@ -266,7 +266,7 @@ export default defineConfig({
     },
     overrides: [
       {
-        files: ['**/*.test.{ts,tsx}', 'tests/commitTool.ts'],
+        files: ['**/*.test.{ts,tsx}', 'tests/commitTool.ts', 'tests/piWorkerScenario.ts'],
         rules: {
           'typescript/no-explicit-any': 'off',
           'typescript/no-non-null-assertion': 'off',
@@ -282,6 +282,11 @@ export default defineConfig({
           'eslint/max-depth': 'off',
           // Tests isolate the real process environment.
           'node/no-process-env': 'off',
+          // Shared scenario runners assert inside the helper.
+          'vitest/expect-expect': [
+            'error',
+            { assertFunctionNames: ['expect', 'runPiWorkerScenario'] },
+          ],
         },
       },
       {
