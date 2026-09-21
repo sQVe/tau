@@ -34,5 +34,3 @@ Keep tests fast so the full suite stays practical as coverage grows.
 - Keep mutable fixtures isolated. Never drop assertions or failure cases to save time.
 - Measure slow tests before optimizing. Split a slow test file by behavior when it prevents workers
   from sharing the work. Compare repeated full-suite runs before changing worker limits.
-
-`CLAUDE.md` links to this file. Edit `AGENTS.md` to update instructions for both agents.
