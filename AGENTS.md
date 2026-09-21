@@ -19,28 +19,19 @@ verification.
 
 Keep tests fast so the full suite stays practical as coverage grows.
 
-- Make each test defend one behavior a user, agent, Pi, or Git can observe. If you cannot say what
-  breaks for them when the test fails, do not write it.
-- Do not test prompt or instruction wording, constants, types the compiler checks, removed features,
-  or internal call counts and argument order. Assert exact bytes only where another program parses
-  them.
-- For every refusal, assert the error and that nothing else changed: no new files, no changed bytes,
-  no herdr or Git mutations.
-- Do not put `expect` inside a fake or callback whose errors production code may catch. Record the
-  value and assert after the call.
-- Keep tests next to source; package and cross-module checks belong in `tests/`.
-- Test logic without subprocesses when the process itself is not part of the behavior. Reuse
-  existing fakes rather than building a second implementation in mocks. For herdr, use
-  `src/extensions/subagents/fixtures/herdrFake.ts`.
-- Keep real Git, filesystem, and Pi integration tests where those boundaries matter. Do not remove
-  assertions or skip failure cases to save time.
-- Create Git repositories with `tests/gitRepository.ts`. `vite.config.ts` sets the Git environment
-  for every test process, so Git ignores user and system configuration, also in the code under test.
-- Use fake timers for time-based logic, faking `Date` and `performance` together, and explicit
-  signals for async coordination. Keep real timers where elapsed time or process termination is the
-  behavior under test.
-- Keep mutable fixtures isolated. Reduce repeated setup work without sharing repositories that tests
-  can change.
+- Test behavior a user, agent, Pi, or Git can observe. If a failure would break nothing for them, do
+  not write the test.
+- Do not test wording, constants, types, removed features, or internal calls. Assert exact bytes
+  only where another program parses them.
+- For a refusal, assert the error and that nothing changed.
+- Assert after the call, never inside a fake that production code may catch.
+- Keep tests next to source. Cross-module and package checks go in `tests/`.
+- Use real Git, filesystem, and Pi where those boundaries matter. Otherwise avoid subprocesses and
+  reuse existing fakes, such as `src/extensions/subagents/fixtures/herdrFake.ts`.
+- Create Git repositories with `tests/gitRepository.ts`.
+- Fake timers, `Date`, and `performance` together, and use explicit signals for async work. Use real
+  time only when elapsed time is the behavior.
+- Keep mutable fixtures isolated. Never drop assertions or failure cases to save time.
 - Measure slow tests before optimizing. Split a slow test file by behavior when it prevents workers
   from sharing the work. Compare repeated full-suite runs before changing worker limits.
 
