@@ -40,8 +40,10 @@ import {
 } from './controllerLaunchSupport.js';
 import type { FollowUpPreparation, LaunchInput } from './controllerLaunchSupport.js';
 import {
+  EvidenceUnavailableError,
   genericStatus,
-  nativeDescription,
+  handleRecovery,
+  savedRecovery,
   taskStatus,
   cleanupDetail,
   recordNativeIssue,
@@ -55,6 +57,8 @@ import { validateSavedLoadout } from './loadout.js';
 import { allocateName, nameSuffix } from './names.js';
 import { validateNative } from './native.js';
 import { WorkerPlacement } from './placement.js';
+import { modelEvidenceNotice, modelStatus } from './presentation.js';
+import type { WorkerNotice } from './presentation.js';
 import {
   acceptReply,
   readAcknowledgement,
@@ -77,7 +81,7 @@ import type { Question, Task, GenericLoadout } from './types.js';
 
 export { agentPromptArguments, workerArguments } from './controllerInspect.js';
 export type { HerdrClient } from './controllerInspect.js';
-export { taskStatus } from './controllerRecord.js';
+export { EvidenceUnavailableError, taskStatus } from './controllerRecord.js';
 
 const acceptedReply = (directory: string, taskId: string, questionId: string) => ({
   replyAccepted: true,
@@ -147,7 +151,7 @@ export class WorkerController {
   constructor(
     private readonly root: string,
     private readonly client: HerdrClient = herdrClient,
-    private readonly notify: (message: string, question?: Question) => void = () => undefined,
+    private readonly notify: (notice: WorkerNotice) => void = () => undefined,
   ) {}
 
   async parentAuthority(parentSession: string, parentSessionId: string, signal?: AbortSignal) {
@@ -236,14 +240,17 @@ export class WorkerController {
       void this.stop(handle, 'failure', `Worker evidence unavailable: ${String(error)}. No retry.`);
     }
 
-    const native = task
-      ? nativeDescription(task, directory)
-      : 'Native session unavailable; inspect the saved directory.';
+    const recovery = handle ? handleRecovery(handle) : savedRecovery(task, directory);
 
-    throw new Error(
-      `Worker ${taskId}: saved evidence is unavailable: ${String(error)}. ${handle?.cleanupDetail ?? 'Cleanup unconfirmed.'} Check pane ${handle?.paneId ?? 'unknown'} manually. Records: ${directory}. ${native}`,
-      { cause: error },
-    );
+    throw new EvidenceUnavailableError({
+      taskId,
+      ...(task?.name === undefined ? {} : { name: task.name }),
+      evidenceError: String(error),
+      recovery,
+      ...(handle?.cleanupDetail === undefined ? {} : { cleanupDetail: handle.cleanupDetail }),
+      ...(handle?.paneId === undefined ? {} : { paneId: handle.paneId }),
+      cause: error,
+    });
   }
 
   submissionReceipt(taskId: string, parentSessionId: string, id: string) {
@@ -507,6 +514,53 @@ export class WorkerController {
     return directory;
   }
 
+  private noticeStatus(handle: Handle) {
+    if (handle.recordErrors.length) {
+      throw new Error(handle.recordErrors.join('; '));
+    }
+
+    const { activeOwner, enforcing } = this.ownership(handle.task.taskId);
+    const status = {
+      ...taskStatus(handle.directory, activeOwner, enforcing),
+      ...genericStatus(handle.directory, handle.task, handle, !this.closed),
+    };
+
+    if (handle.cleanupDetail !== undefined) {
+      status.cleanup = handle.cleanupDetail;
+    }
+
+    return status;
+  }
+
+  private notifySnapshot(
+    handle: Handle,
+    options: { question?: boolean; failure?: string; delivery?: string } = {},
+  ): void {
+    const question = options.question ?? false;
+
+    try {
+      const status = {
+        ...this.noticeStatus(handle),
+        ...(options.failure === undefined ? {} : { failure: options.failure }),
+        ...(options.delivery === undefined ? {} : { delivery: options.delivery }),
+      };
+
+      this.notify({ content: modelStatus(status), details: status, question });
+    } catch (error) {
+      const evidenceError = [String(error), handle.cleanupDetail]
+        .filter((value): value is string => value !== undefined && value !== '')
+        .join(' ');
+      const details = {
+        taskId: handle.task.taskId,
+        ...(handle.task.name === undefined ? {} : { name: handle.task.name }),
+        evidenceError,
+        recovery: handleRecovery(handle),
+      };
+
+      this.notify({ content: modelEvidenceNotice(details), details, question });
+    }
+  }
+
   launch(input: LaunchInput, signal: AbortSignal = new AbortController().signal) {
     return this.launchTask(input, signal);
   }
@@ -619,9 +673,7 @@ export class WorkerController {
 
       handle.startError = String(error).slice(0, 4000);
       publish(handle.directory, 'nativeStart-error.json', { detail: handle.startError });
-      this.notify(
-        `Worker ${task.taskId}: native startup is blocked or uncertain. No start retry. ${handle.startError}`,
-      );
+      this.notifySnapshot(handle, { failure: handle.startError });
     });
   }
 
@@ -727,9 +779,9 @@ export class WorkerController {
       observation?.state === 'not-delivered' || observation?.state === 'uncertain';
 
     if (!handle.stopping && !this.closed && undelivered) {
-      this.notify(
-        `Worker ${handle.task.taskId}: assignment ${observation.state}. ${observation.detail} Inspect the native pane; no automatic retry. The original deadline remains active.`,
-      );
+      const delivery = observation?.state === 'not-delivered' ? 'notDelivered' : 'uncertain';
+
+      this.notifySnapshot(handle, { delivery });
     }
   }
 
@@ -1022,10 +1074,7 @@ export class WorkerController {
 
     if (question && !handle.notifiedQuestions.has(question.questionId)) {
       handle.notifiedQuestions.add(question.questionId);
-      this.notify(
-        `Worker ${handle.task.name ?? 'unnamed'} (${handle.task.taskId}) asks: ${question.question}\nReply with subagent_reply using questionId ${question.questionId}. The original deadline still applies.`,
-        question,
-      );
+      this.notifySnapshot(handle, { question: true });
     }
   }
 
@@ -1097,9 +1146,7 @@ export class WorkerController {
     const blocked = ['blocked', 'unknown'].includes(handle.nativeState ?? 'unknown');
 
     if (handle.nativeState !== previousState && blocked) {
-      this.notify(
-        `Worker ${handle.task.taskId}: ${handle.nativeState}. Inspect the native dialog; no approval is automatic. The original deadline remains active.`,
-      );
+      this.notifySnapshot(handle);
     }
   }
 
@@ -1110,9 +1157,7 @@ export class WorkerController {
     handle.nativeState = 'unknown';
 
     if (previousIssue !== handle.observationIssue) {
-      this.notify(
-        `Worker ${handle.task.taskId}: native observation or delivery is uncertain. ${handle.observationIssue} Inspect saved submission intent; no automatic retry. The original deadline remains active.`,
-      );
+      this.notifySnapshot(handle);
     }
   }
 
@@ -1173,9 +1218,7 @@ export class WorkerController {
           return;
         }
 
-        this.notify(
-          `Worker ${handle.task.name ?? 'unnamed'} (${handle.task.taskId}): cleanup unconfirmed. ${String(error)}. Check pane ${handle.paneId ?? 'unknown'} manually. Records: ${handle.directory}. ${nativeDescription(handle.task, handle.directory)}`,
-        );
+        this.notifySnapshot(handle);
       });
 
     return handle.stopping;
@@ -1230,23 +1273,14 @@ export class WorkerController {
     }
 
     handle.cleanupDetail = reason === 'failure' ? `${detail} ${failureDetail}` : detail;
-    const outcome = this.recordCleanupOutcome({
-      handle,
-      reason,
-      failureDetail,
-      detail,
-      stopped,
-      record,
-    });
-
+    this.recordCleanupEvents({ handle, reason, failureDetail, detail, stopped, record });
     handle.cleanupFinished = true;
-    this.notifyCleanup(handle, outcome, record);
+    this.notifyCleanup(handle, record);
   }
 
-  private recordCleanupOutcome(request: CleanupOutcomeRequest): string {
+  private recordCleanupEvents(request: CleanupOutcomeRequest): void {
     const { handle, reason, failureDetail, detail, stopped, record } = request;
     const { directory, task } = handle;
-    let outcome: string = reason;
 
     record(() => {
       if (reason === 'timeout' || reason === 'cancelled') {
@@ -1261,18 +1295,9 @@ export class WorkerController {
     record(() => {
       recordEvent(directory, task.taskId, 'cleanup', { detail, stopped });
     });
-    record(() => {
-      outcome = taskStatus(directory, this.ownerId, false).outcome ?? reason;
-    });
-
-    return outcome;
   }
 
-  private notifyCleanup(
-    handle: Handle,
-    outcome: string,
-    record: (operation: () => void) => void,
-  ): void {
+  private notifyCleanup(handle: Handle, record: (operation: () => void) => void): void {
     if (this.closed) {
       return;
     }
@@ -1282,13 +1307,7 @@ export class WorkerController {
     record(() => {
       recordEvent(directory, task.taskId, 'notified', 'Parent notification attempted once.');
     });
-    const errors = handle.recordErrors.length
-      ? ` Evidence errors: ${handle.recordErrors.join('; ')}. Check pane ${handle.paneId ?? 'unknown'} manually.`
-      : '';
-
-    this.notify(
-      `Worker ${task.name ?? 'unnamed'} (${task.taskId}): ${outcome}. ${handle.cleanupDetail}${errors} Records: ${directory}. ${nativeDescription(task, directory)}`,
-    );
+    this.notifySnapshot(handle);
   }
 
   // Cleanup for every worker this controller still owns, so a stopping ancestor does not strand its tree.

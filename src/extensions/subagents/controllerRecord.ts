@@ -63,10 +63,60 @@ const unconfirmedDescendants = (root: string, task: Task) => {
   }
 };
 
-export const nativeDescription = (task: Task, directory: string): string =>
-  isGenericLoadout(task.loadout)
-    ? `Native reference, when observed: ${join(directory, 'nativeReference.json')}.`
-    : `Native session: ${task.nativeSessionId} (${task.nativeSessionFile}).`;
+// Evidence notices read only handle memory; a corrupt record cannot build this recovery hint.
+export const handleRecovery = (handle: Handle) => {
+  const base = {
+    ...(handle.paneId === undefined ? {} : { paneId: handle.paneId }),
+    directory: handle.directory,
+  };
+
+  if (isPiLoadout(handle.task.loadout)) {
+    return { ...base, nativeSessionFile: requireNativeTask(handle.task).nativeSessionFile };
+  }
+
+  const reference = handle.owned?.nativeReference;
+
+  return { ...base, ...(reference === undefined ? {} : { nativeReference: reference }) };
+};
+
+// Without a handle, recovery falls back to the task directory and the saved Pi session path.
+export const savedRecovery = (task: Task | undefined, directory: string) => {
+  if (task && isPiLoadout(task.loadout)) {
+    return { directory, nativeSessionFile: requireNativeTask(task).nativeSessionFile };
+  }
+
+  return { directory };
+};
+
+export interface EvidenceUnavailableInput {
+  taskId: string;
+  name?: string | undefined;
+  evidenceError: string;
+  recovery: unknown;
+  cleanupDetail?: string | undefined;
+  paneId?: string | undefined;
+  cause?: unknown;
+}
+
+// The message stays free of record paths; recovery carries them for manual cleanup.
+export class EvidenceUnavailableError extends Error {
+  readonly taskId: string;
+  readonly taskName: string | undefined;
+  readonly evidenceError: string;
+  readonly recovery: unknown;
+
+  constructor(input: EvidenceUnavailableInput) {
+    super(
+      `Worker ${input.taskId}: saved evidence is unavailable: ${input.evidenceError}. ${input.cleanupDetail ?? 'Cleanup unconfirmed.'} Check pane ${input.paneId ?? 'unknown'} manually.`,
+      { cause: input.cause },
+    );
+    this.name = 'EvidenceUnavailableError';
+    this.taskId = input.taskId;
+    this.taskName = input.name;
+    this.evidenceError = input.evidenceError;
+    this.recovery = input.recovery;
+  }
+}
 
 const nativeUsage = (task: Task) => ({
   available: false as const,

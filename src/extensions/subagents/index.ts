@@ -7,10 +7,11 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { WorkerController } from './controller.js';
+import { EvidenceUnavailableError, WorkerController } from './controller.js';
 import { historyPage, searchHistory } from './history.js';
 import { resolveInheritedLoadout, resolveLoadout } from './loadout.js';
-import type { Question } from './types.js';
+import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
+import type { WorkerNotice } from './presentation.js';
 
 const visibility = Type.Optional(
   StringEnum(['foreground', 'background'] as const, {
@@ -85,27 +86,32 @@ interface SubagentRuntime {
   setNested: (value: boolean) => void;
 }
 
-const notifyParent = (
+export const deliverWorkerNotice = (
   pi: ExtensionAPI,
-  isNested: () => boolean,
-  message: string,
-  question: Question | undefined,
+  notice: WorkerNotice,
+  nested: boolean,
 ): void => {
-  if (isNested()) {
-    pi.events.emit('tau:child-notification', { message, question });
+  const message = JSON.stringify(notice.content);
+
+  if (nested) {
+    pi.events.emit('tau:child-notification', {
+      message,
+      details: notice.details,
+      question: notice.question,
+    });
 
     return;
   }
 
   pi.sendMessage(
-    { customType: 'tau-worker', content: message, display: true, details: question },
-    question ? { deliverAs: 'steer', triggerTurn: true } : { deliverAs: 'nextTurn' },
+    { customType: 'tau-worker', content: message, display: true, details: notice.details },
+    notice.question ? { deliverAs: 'steer', triggerTurn: true } : { deliverAs: 'nextTurn' },
   );
 };
 
 const createController = (pi: ExtensionAPI, isNested: () => boolean): WorkerController =>
-  new WorkerController(join(getAgentDir(), 'tau', 'workers'), undefined, (message, question) => {
-    notifyParent(pi, isNested, message, question);
+  new WorkerController(join(getAgentDir(), 'tau', 'workers'), undefined, (notice) => {
+    deliverWorkerNotice(pi, notice, isNested());
   });
 
 const hasHerdrEnvironment = (): boolean =>
@@ -185,7 +191,10 @@ const launchWorker = async (
     signal,
   );
 
-  return { content: [{ type: 'text' as const, text: JSON.stringify(status) }], details: status };
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(modelStatus(status)) }],
+    details: status,
+  };
 };
 
 const followUpWorker = async (
@@ -221,7 +230,10 @@ const followUpWorker = async (
     signal,
   );
 
-  return { content: [{ type: 'text' as const, text: JSON.stringify(status) }], details: status };
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(modelStatus(status)) }],
+    details: status,
+  };
 };
 
 const searchWorkerHistory = async (
@@ -261,23 +273,47 @@ const readWorkerStatus = async (
 ) => {
   const parentSessionId = context.sessionManager.getSessionId();
   const active = runtime.getController();
-  const receipt = parameters.questionId
-    ? active.questionReceipt(parameters.taskId, parentSessionId, parameters.questionId)
-    : undefined;
-  const status = {
-    ...active.status(parameters.taskId, parentSessionId),
-    questionReceipt: receipt,
-    submissionReceipt: parameters.submissionId
-      ? active.submissionReceipt(parameters.taskId, parentSessionId, parameters.submissionId)
-      : undefined,
-    nativeOutput: parameters.readOutput
-      ? await active.nativeOutput(parameters.taskId, parentSessionId)
-      : undefined,
+
+  try {
+    const receipt = parameters.questionId
+      ? active.questionReceipt(parameters.taskId, parentSessionId, parameters.questionId)
+      : undefined;
+    const status = {
+      ...active.status(parameters.taskId, parentSessionId),
+      questionReceipt: receipt,
+      submissionReceipt: parameters.submissionId
+        ? active.submissionReceipt(parameters.taskId, parentSessionId, parameters.submissionId)
+        : undefined,
+      nativeOutput: parameters.readOutput
+        ? await active.nativeOutput(parameters.taskId, parentSessionId)
+        : undefined,
+    };
+
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(modelStatus(status)) }],
+      details: status,
+    };
+  } catch (error) {
+    return evidenceResult(error);
+  }
+};
+
+// The model reads the same unreadable-evidence shape here as in notices.
+const evidenceResult = (error: unknown) => {
+  if (!(error instanceof EvidenceUnavailableError)) {
+    throw error;
+  }
+
+  const details = {
+    taskId: error.taskId,
+    ...(error.taskName === undefined ? {} : { name: error.taskName }),
+    evidenceError: error.evidenceError,
+    recovery: error.recovery,
   };
 
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify(status) }],
-    details: status,
+    content: [{ type: 'text' as const, text: JSON.stringify(modelEvidenceNotice(details)) }],
+    details,
   };
 };
 
@@ -290,7 +326,11 @@ const replyToWorker = async (
     .getController()
     .reply(parameters.taskId, context.sessionManager.getSessionId(), parameters);
 
-  return { content: [{ type: 'text' as const, text: JSON.stringify(receipt) }], details: receipt };
+  const questionId =
+    parameters.questionId === undefined ? {} : { questionId: parameters.questionId };
+  const content = modelReply(parameters.taskId, { ...receipt, ...questionId });
+
+  return { content: [{ type: 'text' as const, text: JSON.stringify(content) }], details: receipt };
 };
 
 const cancelWorker = async (
@@ -302,7 +342,10 @@ const cancelWorker = async (
     .getController()
     .cancel(parameters.taskId, context.sessionManager.getSessionId());
 
-  return { content: [{ type: 'text' as const, text: JSON.stringify(status) }], details: status };
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(modelStatus(status)) }],
+    details: status,
+  };
 };
 
 const registerLaunchTool = (runtime: SubagentRuntime): void => {
@@ -310,7 +353,7 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
     name: 'subagent',
     label: 'Launch worker',
     description:
-      'Launch a bounded worker in herdr. Pi (default) requires trusted-full-tools and verified CC Safety Net; its model must be explicit or configured. Other herdr kinds use native-controls, which Tau does not certify. Their nativeArguments list and existing writable reportDirectory need explicit parent-user confirmation before launch. No native arguments by default; the harness selects its configured model. An exact native model request requires corresponding user-approved arguments, but Tau cannot verify the model used. Native approval dialogs remain in force and need user action. Tau adds no bypass flags and never approves dialogs. Model translation, native resume, and a Tau nesting channel are unavailable for non-Pi workers. Reports are required from the start. All workers share root capacity and one original deadline, including waits and cleanup. No uncertain retries or fallback. Built-in profiles: investigator and worker.',
+      'Launch a bounded worker in herdr. Pi (default) requires trusted-full-tools and verified CC Safety Net; its model must be explicit or configured. Other herdr kinds use native-controls, which Tau does not certify. Their nativeArguments list and existing writable reportDirectory need explicit parent-user confirmation before launch. No native arguments by default; the harness selects its configured model. An exact native model request requires corresponding user-approved arguments, but Tau cannot verify the model used. Native approval dialogs remain in force and need user action. Tau adds no bypass flags and never approves dialogs. Model translation, native resume, and a Tau nesting channel are unavailable for non-Pi workers. Reports are required from the start. All workers share root capacity and one original deadline, including waits and cleanup. No uncertain retries or fallback. Built-in profiles: investigator and worker. States: starting (launched, not accepted yet); running (accepted and working); awaitingReply (waiting for a parent reply); reported (final report saved, cleanup pending); stopping (bounded cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (cleanup unconfirmed, capacity stays held); notOwned (no live parent controller, saved evidence only). Notices are status snapshots taken when sent. A notice without a state means the parent could not read the task records; inspect recovery.',
     parameters: launchParameters,
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
@@ -324,7 +367,7 @@ const registerFollowUpTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_follow_up',
     label: 'Follow up completed worker',
     description:
-      'Assign a new bounded Pi task to an exact saved task ID in the current root-session tree. Requires a final report and confirmed cleanup. Reuses the exact Pi session and unchanged settings. Non-Pi continuation refuses; start a fresh task. One successor claim per task; no uncertain retry or age-based reclaim. Searching grants no live ownership.',
+      'Assign a new bounded Pi task to an exact saved task ID in the current root-session tree. Eligible only when state is stopped, a report exists, and no successorTaskId. Reuses the exact Pi session and unchanged settings. Non-Pi continuation refuses; start a fresh task. One successor claim per task; no uncertain retry or age-based reclaim. Searching grants no live ownership.',
     parameters: followUpParameters,
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
@@ -352,7 +395,7 @@ const registerStatusTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_status',
     label: 'Worker status',
     description:
-      'Recover task results and saved native references. For Pi, questionId shows its reply and acknowledgement. For generic workers, submissionId shows plain-text intent and delivery without claiming acceptance. readOutput reads bounded terminal text once from an active identity-checked generic worker; approval dialogs need user action. Reconnect never resubmits work or resets deadlines. Recovery after parent exit is saved evidence only. Only Pi supports completed-task follow-up.',
+      'Recover task results and saved native references. For Pi, questionId shows its reply and acknowledgement. For generic workers, submissionId shows plain-text intent and delivery without claiming acceptance. A missing observation means uncertain delivery; never resubmit that identity. readOutput reads bounded terminal text once from an active identity-checked generic worker; approval dialogs need user action. Reconnect never resubmits work or resets deadlines. Recovery after parent exit is saved evidence only. Only Pi supports completed-task follow-up. When saved records are unreadable, the result has no state; inspect its recovery for manual cleanup.',
     parameters: statusParameters,
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, _signal, _onUpdate, context) {
@@ -366,7 +409,7 @@ const registerReplyTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_reply',
     label: 'Reply to worker',
     description:
-      'Send an in-scope reply to an active owned worker within its original deadline. Pi requires questionId and preserves structured acknowledgement. Generic workers omit questionId and receive plain text; delivery is not task acceptance or acknowledgement. Use a unique replyId and inspect subagent_status with submissionId after uncertainty. Repeated identities never resend. Native blocked or unknown state refuses input; never use this tool to approve native dialogs automatically.',
+      'Send an in-scope reply to an active owned worker within its original deadline. Pi requires questionId and preserves structured acknowledgement. Generic workers omit questionId and receive plain text; delivery is not task acceptance or acknowledgement. Delivery values: sent (herdr accepted the text); notResent (this exact reply was already accepted; do not retry); uncertain (delivery could not be confirmed; do not retry); notDelivered (a blocked native dialog refused input; user action is needed). Use a unique replyId and inspect subagent_status with submissionId after uncertainty. Native blocked or unknown state refuses input; never use this tool to approve native dialogs automatically.',
     parameters: replyParameters,
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, _signal, _onUpdate, context) {

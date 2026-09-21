@@ -204,11 +204,11 @@ export default function (pi) {
   );
   let done = Promise.withResolvers<string>();
   const questionAsked = Promise.withResolvers<undefined>();
-  const controller = new WorkerController(join(root, 'records'), client, (message, question) => {
-    if (question) {
+  const controller = new WorkerController(join(root, 'records'), client, (notice) => {
+    if (notice.question) {
       questionAsked.resolve(undefined);
     } else {
-      done.resolve(message);
+      done.resolve(JSON.stringify(notice.content));
     }
   });
   onTestFinished(() => {

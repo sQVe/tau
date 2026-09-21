@@ -12,6 +12,7 @@ import { herdrFake } from './fixtures/herdrFake.js';
 import { fixtureGenericLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import * as identity from './identity.js';
+import type { WorkerNotice } from './presentation.js';
 import { readEvent, readReport, readTask } from './records.js';
 import * as records from './records.js';
 
@@ -64,12 +65,12 @@ const fixture = (kind = 'codex') => {
 
     return true;
   });
-  const notices: string[] = [];
+  const notices: WorkerNotice[] = [];
   const finished = Promise.withResolvers<undefined>();
-  const controller = new WorkerController(root, client, (message) => {
-    notices.push(message);
+  const controller = new WorkerController(root, client, (notice) => {
+    notices.push(notice);
 
-    if (message.includes('Records:')) {
+    if (!notice.question && notice.content.cleanup !== undefined) {
       finished.resolve(undefined);
     }
   });
@@ -291,7 +292,7 @@ it('keeps blocked startup visible and inside the original deadline without submi
 
   expect(started).toMatchObject({ state: 'starting', capacityHeld: true });
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
-  expect(setup.notices.join('\n')).toContain('blocked');
+  expect(JSON.stringify(setup.notices)).toContain('blocked');
   setup.state.status = 'idle';
   await vi.advanceTimersByTimeAsync(1500);
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
@@ -460,8 +461,8 @@ it('does not claim nondelivery when only the submission receipt write fails', as
     setup.controller.submissionReceipt(started.taskId, 'parent', 'assignment')?.observation,
   ).toBeUndefined();
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
-  expect(setup.notices.join(' ')).toContain('delivery is uncertain');
-  expect(setup.notices.join(' ')).not.toContain('no input sent');
+  expect(setup.notices.at(-1)?.content).toMatchObject({ nativeState: 'unknown' });
+  expect(JSON.stringify(setup.notices)).not.toContain('no input sent');
 });
 
 it.each([
@@ -475,7 +476,10 @@ it.each([
   await setup.controller.launch(setup.input);
   await vi.advanceTimersByTimeAsync(4500);
 
-  expect(setup.notices.filter((notice) => notice.includes(`assignment ${state}`))).toHaveLength(1);
+  const expectedDelivery = state === 'not-delivered' ? 'notDelivered' : 'uncertain';
+  expect(
+    setup.notices.filter((notice) => notice.content.delivery === expectedDelivery),
+  ).toHaveLength(1);
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
 });
 

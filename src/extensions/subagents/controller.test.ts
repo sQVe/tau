@@ -15,7 +15,12 @@ import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
 import { inheritedInstructions } from './admission.js';
 import * as cancellationModule from './cancellation.js';
-import { WorkerController, taskStatus, workerArguments } from './controller.js';
+import {
+  WorkerController,
+  EvidenceUnavailableError,
+  taskStatus,
+  workerArguments,
+} from './controller.js';
 import type { HerdrClient } from './controller.js';
 import { herdrFake } from './fixtures/herdrFake.js';
 import { fixtureLoadout, readPiTask as readTask } from './fixtures/loadout.js';
@@ -25,6 +30,7 @@ import * as loadoutModule from './loadout.js';
 import * as names from './names.js';
 import { WorkerPlacement } from './placement.js';
 import { placementFixture } from './placementFixture.js';
+import type { WorkerNotice } from './presentation.js';
 import * as questions from './questionRecords.js';
 import { acceptReport, readEvent, recordEvent } from './records.js';
 import * as records from './records.js';
@@ -101,9 +107,9 @@ const setup = (
 
     return fake.client(argumentsList, budget, signal);
   };
-  const notifications: string[] = [];
-  const controller = new WorkerController(directory, client, (message) =>
-    notifications.push(message),
+  const notifications: WorkerNotice[] = [];
+  const controller = new WorkerController(directory, client, (notice) =>
+    notifications.push(notice),
   );
   onTestFinished(() => {
     controller.close();
@@ -1036,7 +1042,11 @@ it('notifies the parent once while waiting and refuses replies after the origina
 
   await vi.advanceTimersByTimeAsync(500);
   expect(notifications).toHaveLength(1);
-  expect(notifications[0]).toContain('Which file?');
+  expect(notifications[0]?.content).toMatchObject({
+    state: 'awaitingReply',
+    pendingQuestion: { questionId: 'question-one', question: 'Which file?' },
+  });
+  expect(notifications[0]?.question).toBe(true);
   expect(controller.status(launched.taskId, 'parent-id').deadline).toBe(launched.deadline);
   await vi.advanceTimersByTimeAsync(7500);
   await expect(
@@ -1103,8 +1113,8 @@ it("names herdr's Pi integration when a started Pi worker reports no agent sessi
   expect(launched.outcome).toBe('failure');
   expect(launched.failure).toContain("herdr's Pi integration");
   expect(launched.failure).toContain('herdr integration install pi');
-  expect(notifications.join('\n')).toContain("herdr's Pi integration");
-  expect(notifications.join('\n')).toContain('herdr integration install pi');
+  expect(JSON.stringify(notifications)).toContain("herdr's Pi integration");
+  expect(JSON.stringify(notifications)).toContain('herdr integration install pi');
   expect(calls.some((call) => call[1] === 'prompt')).toBe(false);
 });
 
@@ -1497,7 +1507,7 @@ it('stops dispatched work when the launch status finds corrupt report evidence',
     expect(notifications).toHaveLength(1);
   });
   expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
-  expect(notifications[0]).toContain('worker-1');
+  expect(JSON.stringify(notifications[0]?.content)).toContain('worker-1');
   expect(readFileSync(join(recordDirectory, 'report.json'), 'utf8')).toBe('{');
 });
 
@@ -1513,12 +1523,33 @@ it('only lets the owning parent stop work after a status evidence failure', asyn
     'another parent session',
   );
   expect(calls).toHaveLength(callCount);
-  expect(() => controller.status(launched.taskId, 'parent-id')).toThrow(launched.nativeSessionFile);
+  expect(() => controller.status(launched.taskId, 'parent-id')).toThrow(
+    'saved evidence is unavailable',
+  );
+  let evidenceError = '';
+  try {
+    controller.status(launched.taskId, 'parent-id');
+  } catch (error) {
+    evidenceError = String(error);
+  }
+  expect(evidenceError).not.toContain(launched.nativeSessionFile);
+  let evidenceFailure: unknown;
+  try {
+    controller.status(launched.taskId, 'parent-id');
+  } catch (error) {
+    evidenceFailure = error;
+  }
+  expect(evidenceFailure).toBeInstanceOf(EvidenceUnavailableError);
+  expect((evidenceFailure as EvidenceUnavailableError).recovery).toMatchObject({
+    directory: launched.directory,
+    nativeSessionFile: launched.nativeSessionFile,
+  });
+  expect((evidenceFailure as Error).message).not.toContain(launched.directory);
   await vi.waitFor(() => {
     expect(notifications).toHaveLength(1);
   });
   expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
-  expect(notifications[0]).toContain(launched.nativeSessionId);
+  expect(JSON.stringify(notifications[0]?.content)).toContain(launched.nativeSessionId);
 });
 
 it('keeps the original deadline and reports active-work cancellation failure honestly', async ({
@@ -1847,13 +1878,20 @@ it('cleans up an owned live pane even when startup failure evidence is corrupt',
   await expect(launch).rejects.toThrow(/records|evidence/i);
   const task = readTask(recordDirectory);
   await expect(launch).rejects.toThrow(task.nativeSessionFile);
-  expect(notifications.join('\n')).toContain(task.nativeSessionId);
-  expect(notifications.join('\n')).toContain(task.nativeSessionFile);
+  expect(JSON.stringify(notifications)).toContain(task.nativeSessionId);
+  expect(JSON.stringify(notifications)).toContain(task.nativeSessionFile);
   expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
   expect(calls.some((call) => call[1] === 'close')).toBe(false);
   expect(readFileSync(join(recordDirectory, 'startupFailure.json'), 'utf8')).toBe('{');
-  expect(notifications.join('\n')).toContain('worker-1');
-  expect(notifications.join('\n')).toMatch(/records|evidence/i);
+  expect(JSON.stringify(notifications)).toContain('worker-1');
+  expect(JSON.stringify(notifications)).toMatch(/records|evidence/i);
+  const evidence = notifications.find((notice) => 'evidenceError' in notice.content);
+  expect(evidence).toBeDefined();
+  expect(Object.keys(evidence?.content ?? {}).toSorted()).toEqual(
+    ['taskId', 'name', 'evidenceError', 'recovery'].toSorted(),
+  );
+  expect(evidence?.content).not.toHaveProperty('state');
+  expect(evidence?.content).not.toHaveProperty('outcome');
 });
 
 it('reports both startup and receipt failures after attempting owned pane cleanup', async ({
@@ -1884,9 +1922,9 @@ it('reports both startup and receipt failures after attempting owned pane cleanu
   await expect(launch).rejects.toThrow('Injected startup receipt write failure');
   await expect(launch).rejects.toThrow('Injected worker identity probe failure');
   expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
-  expect(notifications.join('\n')).toContain('Injected startup receipt write failure');
-  expect(notifications.join('\n')).toContain('Injected worker identity probe failure');
-  expect(notifications.join('\n')).toContain('worker-1');
+  expect(JSON.stringify(notifications)).toContain('Injected startup receipt write failure');
+  expect(JSON.stringify(notifications)).toContain('Injected worker identity probe failure');
+  expect(JSON.stringify(notifications)).toContain('worker-1');
 });
 
 it.each(['cancelled', 'timeout'] as const)(
@@ -1914,8 +1952,8 @@ it.each(['cancelled', 'timeout'] as const)(
     );
     expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
     expect(calls.some((call) => call[1] === 'close')).toBe(false);
-    expect(notifications.join('\n')).toContain('Injected receipt write failure');
-    expect(notifications.join('\n')).toContain('worker-1');
+    expect(JSON.stringify(notifications)).toContain('Injected receipt write failure');
+    expect(JSON.stringify(notifications)).toContain('worker-1');
     expect(readFileSync(join(launched.directory, 'report.json'), 'utf8')).toBe('{');
   },
 );
@@ -1931,7 +1969,7 @@ it('uses in-memory ownership to cancel even when the saved task is corrupt', asy
   await expect(cancelled).rejects.toThrow(/evidence/);
   await expect(cancelled).rejects.toThrow(launched.nativeSessionFile);
   expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
-  expect(notifications.join('\n')).toContain('worker-1');
+  expect(JSON.stringify(notifications)).toContain('worker-1');
   expect(readFileSync(join(launched.directory, 'task.json'), 'utf8')).toBe('{');
 });
 
@@ -2011,7 +2049,7 @@ it('polls slow worker readiness at 250 ms intervals', async ({ onTestFinished })
   expect(inspections[2]! - inspections[1]!).toBeLessThan(1500);
 });
 
-it('reports recovered corrupt task evidence with its task directory and unknown native identity', async ({
+it('reports recovered corrupt task evidence without its directory or native identity', async ({
   onTestFinished,
 }) => {
   const { controller, input, directory } = setup(onTestFinished);
@@ -2023,11 +2061,46 @@ it('reports recovered corrupt task evidence with its task directory and unknown 
     recovered.close();
   });
 
-  expect(() => recovered.status(launched.taskId, 'parent-id')).toThrow(launched.directory);
   expect(() => recovered.status(launched.taskId, 'parent-id')).toThrow(
-    'Native session unavailable',
+    'saved evidence is unavailable',
   );
   expect(() => recovered.status(launched.taskId, 'parent-id')).toThrow('manually');
+  let evidenceError = '';
+  try {
+    recovered.status(launched.taskId, 'parent-id');
+  } catch (error) {
+    evidenceError = String(error);
+  }
+  expect(evidenceError).not.toContain(launched.directory);
+  expect(evidenceError).not.toContain('Native session unavailable');
+});
+
+it('carries saved recovery when a handle-free status finds corrupt report evidence', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, directory } = setup(onTestFinished);
+  const launched = await controller.launch(input);
+  const task = readTask(launched.directory);
+  controller.close();
+  writeFileSync(join(launched.directory, 'report.json'), '{');
+  const recovered = new WorkerController(directory);
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  let evidenceFailure: unknown;
+  try {
+    recovered.status(launched.taskId, 'parent-id');
+  } catch (error) {
+    evidenceFailure = error;
+  }
+  expect(evidenceFailure).toBeInstanceOf(EvidenceUnavailableError);
+  expect((evidenceFailure as EvidenceUnavailableError).recovery).toEqual({
+    directory: launched.directory,
+    nativeSessionFile: task.nativeSessionFile,
+  });
+  expect((evidenceFailure as Error).message).not.toContain(launched.directory);
+  expect((evidenceFailure as Error).message).not.toContain(task.nativeSessionFile);
 });
 
 it('waits for worker readiness after herdr readiness without a new startup budget', async ({
