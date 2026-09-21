@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import * as cancellation from './cancellation.js';
-import { type HerdrClient, WorkerController } from './controller.js';
+import { WorkerController } from './controller.js';
+import type { HerdrClient } from './controller.js';
 import { herdrFake } from './fixtures/herdrFake.js';
 import { fixtureGenericLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
@@ -27,12 +28,8 @@ const fixture = (kind = 'codex') => {
   );
   const { client: fakeClient, state: herdrState, calls, layout } = herdrFake(kind);
   const budgets: number[] = [];
-  const client: HerdrClient = async (argumentsList, budget, signal) => {
-    budgets.push(budget);
-
-    return fakeClient(argumentsList, budget, signal);
-  };
   const state = Object.assign(herdrState, {
+    shellExitsOnStart: false,
     processStart: execFileSync('ps', ['-p', String(process.pid), '-o', 'lstart='], {
       encoding: 'utf8',
     }).trim(),
@@ -40,6 +37,18 @@ const fixture = (kind = 'codex') => {
       encoding: 'utf8',
     }).trim(),
   });
+  const client: HerdrClient = async (argumentsList, budget, signal) => {
+    budgets.push(budget);
+
+    // herdr reports no foreground group while the replacement shell starts.
+    if (state.shellExitsOnStart && state.started && argumentsList[1] === 'process-info') {
+      return JSON.stringify({
+        result: { process_info: { pane_id: argumentsList[3], shell_pid: state.shell + 1 } },
+      });
+    }
+
+    return fakeClient(argumentsList, budget, signal);
+  };
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   vi.spyOn(identity, 'currentProcessIdentity').mockResolvedValue({
     processId: 300,
@@ -441,6 +450,16 @@ it.each([
 
   expect(setup.notices.filter((notice) => notice.includes(`assignment ${state}`))).toHaveLength(1);
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
+});
+
+it('keeps an uncertain start pending when herdr reports a replaced shell', async () => {
+  const setup = fixture();
+  setup.state.startError = 'Startup response lost';
+  setup.state.shellExitsOnStart = true;
+
+  await setup.controller.launch(setup.input);
+
+  expect(setup.calls).toContainEqual(['agent', 'get', 'worker-1']);
 });
 
 it('keeps uncertain startup and text delivery visible without repeating either operation', async () => {

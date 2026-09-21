@@ -79,13 +79,13 @@ const checkForeground = (
   starting: boolean,
 ): void => {
   const paneMoved = information.pane_id !== paneId;
-  const shellMoved = information.foreground_process_group_id !== information.shell_pid;
+  const foregroundIsJob = information.foreground_process_group_id !== information.shell_pid;
   const shellReplaced = previous !== undefined && information.shell_pid !== previous.shellPid;
-  const processGone = previous !== undefined && !processAbsent(previous.processId);
-  const paneOrShellMoved = paneMoved || shellMoved;
-  const previousStillLive = shellReplaced || processGone;
+  const previousProcessAlive = previous !== undefined && !processAbsent(previous.processId);
+  const paneMovedOrJobRunning = paneMoved || foregroundIsJob;
+  const previousWorkerRemains = shellReplaced || previousProcessAlive;
 
-  if (paneOrShellMoved || previousStillLive) {
+  if (paneMovedOrJobRunning || previousWorkerRemains) {
     return;
   }
 
@@ -238,11 +238,16 @@ export const verifyRejectedStart = async (
   );
   const changedPane =
     information.pane_id !== location.paneId || integer(information.shell_pid) !== shell.processId;
+
+  if (changedPane) {
+    return false;
+  }
+
   const changedShell =
     integer(information.foreground_process_group_id) !== shell.processId ||
     (await readProcessStart(handle, shell.processId)) !== shell.startedAt;
 
-  if (changedPane || changedShell) {
+  if (changedShell) {
     return false;
   }
 

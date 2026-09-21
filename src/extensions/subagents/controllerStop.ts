@@ -135,7 +135,7 @@ export const stopOwnedWorker = async (
     }
   } catch (error) {
     if (!paneConfirmed.confirmed) {
-      detail = `${String(error)} Check pane ${owned.paneId} manually. Detached descendants are not covered.`;
+      detail = `${String(error)} Check pane ${handle.paneId} manually. Detached descendants are not covered.`;
     }
   }
 
