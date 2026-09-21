@@ -218,6 +218,7 @@ it('prepends a toggled snippet to the next message and then resets', async ({ on
   await session.prompt('Now ship it.');
 
   expect(sent[0]).toMatch(/^Interview me before you start\./);
+  expect(sent[0]).not.toMatch(/\n$/);
   expect(sent[0]).toMatch(/until I approve the agreed scope\.\n\nAdd the retry policy\.$/);
   expect(sent[1]).toBe('Now ship it.');
 });
@@ -253,6 +254,7 @@ it('sends selected snippets on empty Enter and resets the toggles', async ({ onT
 
   expect(sent).toHaveLength(1);
   expect(sent[0]).toMatch(/^Interview me before you start\./);
+  expect(sent[0]).not.toMatch(/\n$/);
   expect(uiContext.getEditorText()).toBe('');
 
   press('\r');
@@ -264,9 +266,10 @@ it('sends selected snippets on empty Enter and resets the toggles', async ({ onT
   expect(submissions).toHaveLength(1);
   await submissions[0];
 
-  const lastUser = session.messages.findLast((message) => message.role === 'user');
+  const userMessages = session.messages.filter((message) => message.role === 'user');
 
-  expect(lastUser?.content).toEqual([{ type: 'text', text: 'Now ship it.' }]);
+  expect(userMessages).toHaveLength(2);
+  expect(userMessages[1]?.content).toEqual([{ type: 'text', text: 'Now ship it.' }]);
 });
 
 it('keeps a slash command at the start of the text and keeps the toggle on', async ({

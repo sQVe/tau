@@ -110,5 +110,7 @@ export const buildSnippetMessage = (text: string, active: Snippet[]): string => 
   const bodiesFor = (placement: SnippetPlacement) =>
     active.filter((snippet) => snippet.placement === placement).map((snippet) => snippet.body);
 
-  return [...bodiesFor('prepend'), text, ...bodiesFor('append')].join('\n\n');
+  return [...bodiesFor('prepend'), text, ...bodiesFor('append')]
+    .filter((part) => part !== '')
+    .join('\n\n');
 };
