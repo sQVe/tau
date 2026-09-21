@@ -16,6 +16,14 @@ const reviewInput = (request?: Parameters<ExtensionContext['modelRegistry']['com
   return typeof content === 'string' ? content : '';
 };
 
+const reviewFiles = (request?: Parameters<ExtensionContext['modelRegistry']['complete']>[1]) => {
+  const input = JSON.parse(reviewInput(request)) as {
+    files: { path: string; content: string }[];
+  };
+
+  return input.files;
+};
+
 const reviewFixture = () => {
   const delegate = fauxProvider({ provider: 'delegate' }).getModel();
   const sessionModel = fauxProvider({ provider: 'session' }).getModel();
@@ -125,6 +133,86 @@ it('retries malformed delegate findings once and preserves finding kinds', async
 
   expect(app.complete).toHaveBeenCalledTimes(2);
   expect(app.complete.mock.calls.every(([model]) => model === app.delegate)).toBe(true);
+});
+
+it('numbers sent file content with 1-based lines including blank and trailing lines', async () => {
+  const content = '// First.\n\n// Third.\n';
+  const app = reviewFixture();
+  app.exec.mockImplementation(async (_command, argumentsList) => {
+    let stdout = '';
+
+    if (argumentsList.includes('--name-only')) {
+      stdout = 'file.ts\0';
+    } else if (argumentsList.includes('ls-tree') && argumentsList.at(-1) === 'file.ts') {
+      stdout = '100644 blob hash 20\tfile.ts\0';
+    } else if (argumentsList[0] === 'cat-file') {
+      stdout = content;
+    }
+
+    return { stdout, stderr: '', code: 0, killed: false };
+  });
+
+  await app.execute();
+
+  expect(reviewFiles(app.complete.mock.calls[0]?.[1])).toEqual([
+    { path: 'file.ts', content: '1\t// First.\n2\t\n3\t// Third.\n4\t' },
+  ]);
+});
+
+it('rejects findings beyond the raw source line count after numbering', async () => {
+  const app = reviewFixture();
+  app.complete.mockResolvedValue(
+    fauxAssistantMessage(
+      '{"findings":[{"path":"file.ts","line":4,"kind":"policy","message":"Narration."}]}',
+    ),
+  );
+
+  await expect(app.execute()).rejects.toThrow('Comment review returned invalid findings.');
+});
+
+it('rejects findings on an empty file after numbering', async () => {
+  const app = reviewFixture();
+  app.exec.mockImplementation(async (_command, argumentsList) => {
+    let stdout = '';
+
+    if (argumentsList.includes('--name-only')) {
+      stdout = 'empty.ts\0';
+    } else if (argumentsList.includes('ls-tree') && argumentsList.at(-1) === 'empty.ts') {
+      stdout = '100644 blob hash 0\tempty.ts\0';
+    }
+
+    return { stdout, stderr: '', code: 0, killed: false };
+  });
+  app.complete.mockResolvedValue(
+    fauxAssistantMessage(
+      '{"findings":[{"path":"empty.ts","line":1,"kind":"policy","message":"Narration."}]}',
+    ),
+  );
+
+  await expect(app.execute()).rejects.toThrow('Comment review returned invalid findings.');
+});
+
+it('counts numbering prefixes in the input budget', async () => {
+  // 130,000 short lines fit the raw budget but exceed it once every line is numbered.
+  const content = 'x\n'.repeat(130_000);
+  const app = reviewFixture();
+  app.exec.mockImplementation(async (_command, argumentsList) => {
+    let stdout = '';
+
+    if (argumentsList.includes('--name-only')) {
+      stdout = 'big.ts\0';
+    } else if (argumentsList.includes('ls-tree') && argumentsList.at(-1) === 'big.ts') {
+      stdout = `100644 blob hash ${content.length}\tbig.ts\0`;
+    } else if (argumentsList[0] === 'cat-file') {
+      stdout = content;
+    }
+
+    return { stdout, stderr: '', code: 0, killed: false };
+  });
+
+  await expect(app.execute()).rejects.toThrow(
+    'Comment review input is too large: big.ts. Reduce the file and retry.',
+  );
 });
 
 describe('reviewGit', () => {

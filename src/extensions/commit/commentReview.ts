@@ -263,6 +263,18 @@ const reviewBatch = async (request: BatchRequest) => {
   throw new Error('Comment review returned invalid findings.');
 };
 
+const numberedContent = (content: string) => {
+  // An empty file stays empty so line-bound validation still rejects every finding on it.
+  if (content === '') {
+    return content;
+  }
+
+  return content
+    .split('\n')
+    .map((line, index) => `${index + 1}\t${line}`)
+    .join('\n');
+};
+
 const resolveReviewModel = (context: ExtensionContext) => {
   const model = resolveDelegate(context);
   const modelApi: unknown = model.api;
@@ -311,7 +323,8 @@ const collectReviewEntries = async (request: {
       return {
         path,
         diff: diffSections[index] ?? '',
-        file: content === null ? null : { path, content },
+        // Numbering keeps the split length, so line-bound validation still uses raw line numbers.
+        file: content === null ? null : { path, content: numberedContent(content) },
         deleted: content === null && !binaryPaths.includes(path),
       };
     }),
