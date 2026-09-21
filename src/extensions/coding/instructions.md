@@ -1,7 +1,7 @@
 # Tau coding instructions
 
-Apply these rules to every file you write or edit. Follow explicit user instructions and repository
-conventions when they differ from these defaults.
+Apply these rules to every file you write or edit, tests included. Follow explicit user instructions
+and repository conventions when they differ from these defaults.
 
 ## Write boring code
 
@@ -34,3 +34,11 @@ conventions when they differ from these defaults.
 - Remove comments that only narrate obvious code. Delete commented-out code and temporary
   development notes.
 - Editing comments does not give permission to refactor code or expand the task.
+
+## Write tests that can fail
+
+- Make each test defend one behavior a caller can observe: an output, a state change, or an error.
+  If you cannot say what breaks for the caller when the test fails, do not write it.
+- When code must refuse an action, assert the error and that nothing else changed.
+- Do not assert inside a fake or callback whose errors the production code may catch. Record the
+  value and assert after the call.
