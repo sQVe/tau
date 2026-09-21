@@ -5,12 +5,16 @@ import { StringDecoder } from 'node:string_decoder';
 import type { DiagnosticFile, RunDiagnostics, SpawnResult } from './types.js';
 import { maximumReportBytes, maximumStdoutBytes, maximumTotalBytes } from './types.js';
 
+interface OutputCapture {
+  observedBytes: number;
+  truncated: boolean;
+}
+
 const saveOutput = async (
   path: string,
   text: string,
   limit: number,
-  observedBytes = Buffer.byteLength(text),
-  captureTruncated = false,
+  capture: OutputCapture,
 ): Promise<DiagnosticFile> => {
   const decoded = Buffer.from(text);
   // Do not flush the decoder: a partial UTF-8 character at the boundary must be omitted.
@@ -21,10 +25,11 @@ const saveOutput = async (
 
   return {
     path,
-    bytes: observedBytes,
+    bytes: capture.observedBytes,
     decodedBytes: decoded.length,
     savedBytes,
-    truncated: captureTruncated || decoded.length > savedBytes || observedBytes > decoded.length,
+    truncated:
+      capture.truncated || decoded.length > savedBytes || capture.observedBytes > decoded.length,
   };
 };
 
@@ -84,21 +89,16 @@ export const saveDiagnostics = async (
   if (result !== undefined) {
     diagnostics.excerpt = (result.stderr || result.stdout).slice(0, 800);
     diagnostics.stdout = await retain(() =>
-      saveOutput(
-        join(diagnostics.directory, 'stdout.txt'),
-        result.stdout,
-        maximumStdoutBytes,
-        result.stdoutBytes,
-        result.stdoutTruncated,
-      ),
+      saveOutput(join(diagnostics.directory, 'stdout.txt'), result.stdout, maximumStdoutBytes, {
+        observedBytes: result.stdoutBytes ?? Buffer.byteLength(result.stdout),
+        truncated: result.stdoutTruncated ?? false,
+      }),
     );
     diagnostics.stderr = await retain(() =>
-      saveOutput(
-        join(diagnostics.directory, 'stderr.txt'),
-        result.stderr,
-        maximumTotalBytes,
-        result.stderrBytes,
-      ),
+      saveOutput(join(diagnostics.directory, 'stderr.txt'), result.stderr, maximumTotalBytes, {
+        observedBytes: result.stderrBytes ?? Buffer.byteLength(result.stderr),
+        truncated: false,
+      }),
     );
   }
 

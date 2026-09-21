@@ -1,3 +1,4 @@
+import type { Stats } from 'node:fs';
 import { lstat, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -23,17 +24,25 @@ const metadataIfPresent = async (path: string) => {
   }
 };
 
+const isPrivateDirectory = (metadata: Stats): boolean => {
+  if (!metadata.isDirectory()) {
+    return false;
+  }
+
+  if (process.getuid === undefined) {
+    return true;
+  }
+
+  return metadata.uid === process.getuid() && (metadata.mode & 0o077) === 0;
+};
+
 export const createDiagnosticsDirectory = async (): Promise<string> => {
   const root = diagnosticsRoot();
 
   await mkdir(root, { recursive: true, mode: 0o700 });
   const metadata = await lstat(root);
 
-  if (
-    !metadata.isDirectory() ||
-    (process.getuid !== undefined &&
-      (metadata.uid !== process.getuid() || (metadata.mode & 0o077) !== 0))
-  ) {
+  if (!isPrivateDirectory(metadata)) {
     throw new Error(`Expected a private diagnostic directory owned by the current user: ${root}`);
   }
 
@@ -79,7 +88,9 @@ export const pruneDiagnostics = async (
     }
 
     // Recent incomplete directories may belong to concurrent runs; old ones can remain after crashes.
-    if (expired || (candidate.finished && retained > maximumRetainedRuns)) {
+    const overRetentionLimit = candidate.finished && retained > maximumRetainedRuns;
+
+    if (expired || overRetentionLimit) {
       expiredDirectories.push(candidate.directory);
     }
   }

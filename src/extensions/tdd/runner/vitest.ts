@@ -1,42 +1,25 @@
-import { spawn as nodeSpawn } from 'node:child_process';
-import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import {
-  basename,
-  delimiter,
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve as resolvePath,
-  sep,
-} from 'node:path';
-import { StringDecoder } from 'node:string_decoder';
-import { stripVTControlCharacters } from 'node:util';
+import { isAbsolute, join, relative } from 'node:path';
 
 import { tddConfig } from '../config.js';
 import { saveDiagnostics } from './diagnostics.js';
+import { defaultSpawn } from './process.js';
+import { defaultResolveVitest, resolutionFailure } from './resolution.js';
 import { createDiagnosticsDirectory } from './retention.js';
 import type {
   ResolveVitestFn,
   RunTestsInput,
   RunnerDeps,
   RunnerResult,
-  SpawnFn,
   SpawnResult,
   TestFailure,
   TestResult,
-  VitestResolutionDiagnostic,
-  VitestResolutionFailure,
 } from './types.js';
 import {
   defaultTimeoutMilliseconds,
   fullTimeoutMilliseconds,
   maximumFailures,
   maximumMessageCharacters,
-  maximumStdoutBytes,
-  maximumTotalBytes,
 } from './types.js';
 
 interface VitestAssertionResult {
@@ -64,338 +47,6 @@ interface VitestReport {
   success?: boolean;
   testResults?: VitestTestFile[];
 }
-
-const nodeRequire = createRequire(import.meta.url);
-
-export const extractBinPath = (manifest: unknown): string | null => {
-  if (manifest == null || typeof manifest !== 'object') {
-    return null;
-  }
-
-  const binary: unknown = (manifest as { bin?: unknown }).bin;
-
-  if (typeof binary === 'string') {
-    return binary;
-  }
-
-  if (binary == null || typeof binary !== 'object') {
-    return null;
-  }
-
-  const entry: unknown = (binary as { vitest?: unknown }).vitest;
-
-  return typeof entry === 'string' ? entry : null;
-};
-
-const resolutionMessages: Record<string, string> = {
-  MODULE_NOT_FOUND: 'The vitest/package.json request was not found from the lookup directory.',
-  ERR_PACKAGE_PATH_NOT_EXPORTED: 'Package exports do not expose vitest/package.json.',
-  ERR_INVALID_PACKAGE_CONFIG: 'Node could not parse a package manifest during Vitest resolution.',
-  ERR_INVALID_PACKAGE_TARGET: 'A package export target is invalid.',
-  EACCES: 'Permission denied while resolving the Vitest runner.',
-  EPERM: 'The filesystem denied access while resolving the Vitest runner.',
-  ENOENT: 'A resolved manifest or binary file is missing.',
-  ENOTDIR: 'A resolution path contains a component that is not a directory.',
-  EISDIR: 'A manifest path is a directory, not a file.',
-  ELOOP: 'A resolution path contains a symbolic-link loop.',
-  INVALID_BIN: 'Vitest manifest has no usable local bin entry or the binary is not a file.',
-  INVALID_VERSION: 'Vitest manifest has no valid version for test-name decoding.',
-};
-
-const diagnosticPath = (path: string) => {
-  const printable = stripVTControlCharacters(path).replace(/\p{Cc}/gu, ' ');
-
-  return printable.length > 400 ? `${printable.slice(0, 394)} [cut]` : printable;
-};
-
-const resolutionErrorDetails = (error: unknown) => {
-  const code =
-    error !== null && typeof error === 'object' && 'code' in error ? error.code : undefined;
-  const errorCode =
-    typeof code === 'string' && Object.hasOwn(resolutionMessages, code) ? code : undefined;
-  let errorType = 'UnknownError';
-
-  // Never copy error.message, stack, or custom names: JSON parse errors can quote credentials.
-  if (error instanceof Error) {
-    errorType = ['SyntaxError', 'TypeError', 'RangeError'].includes(error.name)
-      ? error.name
-      : 'Error';
-  }
-
-  return { errorType, ...(errorCode === undefined ? {} : { errorCode }) };
-};
-
-const validVersion = (version: unknown): version is string =>
-  typeof version === 'string' &&
-  version.length <= 128 &&
-  /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version);
-
-const resolutionExplanation = (
-  stage: VitestResolutionDiagnostic['stage'],
-  errorType: string,
-  errorCode: string | undefined,
-  missing: boolean,
-): string => {
-  if (errorCode === 'MODULE_NOT_FOUND' && !missing) {
-    return 'A dependency lookup failed inside the resolver; this does not establish that Vitest is absent.';
-  }
-
-  if (errorCode !== undefined) {
-    return resolutionMessages[errorCode] ?? 'Vitest runner resolution failed.';
-  }
-
-  if (errorType === 'SyntaxError' && stage === 'manifest') {
-    return 'Vitest manifest is not valid JSON.';
-  }
-
-  return 'Vitest runner resolution failed.';
-};
-
-const resolutionFailure = (
-  cwd: string,
-  stage: VitestResolutionDiagnostic['stage'],
-  error: unknown,
-  paths: { manifestPath?: string; binaryPath?: string } = {},
-): VitestResolutionFailure => {
-  const { errorCode, errorType } = resolutionErrorDetails(error);
-  const resolution: VitestResolutionDiagnostic = {
-    cwd: diagnosticPath(cwd),
-    request: 'vitest/package.json',
-    stage,
-    errorType,
-    ...(errorCode === undefined ? {} : { errorCode }),
-    ...(paths.manifestPath === undefined
-      ? {}
-      : { manifestPath: diagnosticPath(paths.manifestPath) }),
-    ...(paths.binaryPath === undefined ? {} : { binaryPath: diagnosticPath(paths.binaryPath) }),
-  };
-  // MODULE_NOT_FOUND can also refer to a broken export target inside an installed package.
-  const missing =
-    stage === 'lookup' &&
-    errorCode === 'MODULE_NOT_FOUND' &&
-    error instanceof Error &&
-    error.message.startsWith("Cannot find module 'vitest/package.json'");
-  const explanation = resolutionExplanation(stage, errorType, errorCode, missing);
-
-  const message = [
-    `${explanation} Stage: ${stage}; ${errorType}${errorCode === undefined ? '' : ` (${errorCode})`}.`,
-    'Inspect this once, then fix resolution or use the repository runner. Bash tests do not update Tau observations.',
-    `Lookup directory: ${resolution.cwd}; request: ${resolution.request}`,
-    ...(resolution.manifestPath === undefined ? [] : [`Manifest: ${resolution.manifestPath}`]),
-    ...(resolution.binaryPath === undefined ? [] : [`Binary: ${resolution.binaryPath}`]),
-  ].join('\n');
-
-  return { kind: missing ? 'runner-missing' : 'runner-resolution-error', message, resolution };
-};
-
-export const defaultResolveVitest: ResolveVitestFn = (cwd) => {
-  let stage: VitestResolutionDiagnostic['stage'] = 'lookup';
-  const paths: { manifestPath?: string; binaryPath?: string } = {};
-
-  try {
-    paths.manifestPath = nodeRequire.resolve('vitest/package.json', { paths: [cwd] });
-    stage = 'manifest';
-    const manifest: unknown = JSON.parse(readFileSync(paths.manifestPath, 'utf8'));
-    const version =
-      manifest !== null && typeof manifest === 'object' && 'version' in manifest
-        ? manifest.version
-        : undefined;
-
-    if (!validVersion(version)) {
-      return resolutionFailure(
-        cwd,
-        stage,
-        Object.assign(new TypeError('Invalid Vitest manifest version'), {
-          code: 'INVALID_VERSION',
-        }),
-        paths,
-      );
-    }
-
-    stage = 'binary';
-    const binary = extractBinPath(manifest);
-
-    if (
-      binary === null ||
-      binary.trim().length === 0 ||
-      isAbsolute(binary) ||
-      /[\p{Cc}:?#]/u.test(binary)
-    ) {
-      return resolutionFailure(
-        cwd,
-        stage,
-        Object.assign(new TypeError('Invalid Vitest bin entry'), { code: 'INVALID_BIN' }),
-        paths,
-      );
-    }
-
-    const directory = dirname(paths.manifestPath);
-    const binaryPath = resolvePath(directory, binary);
-    const localPath = relative(directory, binaryPath);
-
-    if (localPath === '..' || localPath.startsWith(`..${sep}`)) {
-      return resolutionFailure(
-        cwd,
-        stage,
-        Object.assign(new TypeError('Vitest bin leaves its package'), { code: 'INVALID_BIN' }),
-        paths,
-      );
-    }
-
-    paths.binaryPath = binaryPath;
-
-    if (!statSync(binaryPath).isFile()) {
-      return resolutionFailure(
-        cwd,
-        stage,
-        Object.assign(new TypeError('Vitest bin is not a file'), { code: 'INVALID_BIN' }),
-        paths,
-      );
-    }
-
-    return { path: binaryPath, version };
-  } catch (error) {
-    return resolutionFailure(cwd, stage, error, paths);
-  }
-};
-
-// Debian-family systems name the runtime `nodejs`, so both spellings count as a Node command.
-const nodeNames = process.platform === 'win32' ? ['node.exe'] : ['node', 'nodejs'];
-
-// oxlint-disable-next-line node/no-process-env -- Compiled Pi needs a real Node executable from the caller's PATH.
-const nodeOnPath = (path = process.env.PATH ?? '') =>
-  path
-    .split(delimiter)
-    .flatMap((directory) => nodeNames.map((name) => join(directory, name)))
-    .find((executable) => {
-      try {
-        accessSync(executable, constants.X_OK);
-
-        return statSync(executable).isFile();
-      } catch {
-        return false;
-      }
-    });
-
-// In compiled Pi, process.execPath is the agent and cannot run Vitest. Prefer Node from PATH.
-// Keep the fallback for Node executables with other names, such as `nodejs`.
-export const nodeExecutable = (executablePath = process.execPath) =>
-  /^node(\.exe)?$/i.test(basename(executablePath.replaceAll('\\', '/')))
-    ? executablePath
-    : (nodeOnPath() ?? executablePath);
-
-const appendChunk = (
-  chunk: Buffer,
-  decoder: StringDecoder,
-  current: string,
-  remaining: number,
-): string => {
-  if (remaining <= 0) {
-    return current;
-  }
-
-  return current + decoder.write(chunk.subarray(0, remaining));
-};
-
-export const defaultSpawn: SpawnFn = (command, argumentsList, options) =>
-  new Promise<SpawnResult>((resolve) => {
-    // detached lets the timeout path signal the whole process group on POSIX.
-    // Windows has no equivalent; we fall back to child.kill there.
-    const useProcessGroup = process.platform !== 'win32';
-    const executable = nodeExecutable();
-    const child = nodeSpawn(executable, [command, ...argumentsList], {
-      cwd: options.cwd,
-      detached: useProcessGroup,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-    let timedOut = false;
-    let stdoutBytes = 0;
-    let stderrBytes = 0;
-
-    const stdoutDecoder = new StringDecoder('utf8');
-    const stderrDecoder = new StringDecoder('utf8');
-
-    let settled = false;
-
-    const settle = (code: number | null) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      clearTimeout(timer);
-      stdout += stdoutDecoder.end();
-      stderr += stderrDecoder.end();
-
-      resolve({
-        stdout,
-        stderr,
-        code,
-        timedOut,
-        stdoutBytes,
-        stderrBytes,
-        stdoutTruncated: stdoutBytes > maximumStdoutBytes,
-        command: [executable, command, ...argumentsList],
-        started: child.pid !== undefined,
-      });
-    };
-
-    const kill = () => {
-      try {
-        if (useProcessGroup && child.pid != null) {
-          process.kill(-child.pid, 'SIGKILL');
-        } else {
-          child.kill('SIGKILL');
-        }
-      } catch {
-        child.kill('SIGKILL');
-      }
-    };
-
-    const abort = () => {
-      kill();
-      settle(null);
-    };
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      // Continue draining after the capture limit; console noise cannot decide the test verdict.
-      stdout = appendChunk(chunk, stdoutDecoder, stdout, maximumStdoutBytes - stdoutBytes);
-      stdoutBytes += chunk.length;
-    });
-
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr = appendChunk(chunk, stderrDecoder, stderr, maximumTotalBytes - stderrBytes);
-      stderrBytes += chunk.length;
-    });
-
-    // Settle here rather than waiting for `close`: on Windows only the direct child dies,
-    // and a descendant holding the piped stdio would keep `close` pending forever.
-    const timer = setTimeout(() => {
-      timedOut = true;
-      kill();
-      settle(null);
-    }, options.timeoutMs);
-
-    timer.unref();
-
-    child.on('close', settle);
-    child.on('error', (error) => {
-      const message = Buffer.from(error.message);
-
-      stderr = appendChunk(message, stderrDecoder, stderr, maximumTotalBytes - stderrBytes);
-      stderrBytes += message.length;
-      settle(null);
-    });
-
-    if (options.signal?.aborted === true) {
-      abort();
-    } else {
-      options.signal?.addEventListener('abort', abort, { once: true });
-    }
-  });
 
 // Vitest reports always include at least one of these top-level keys.
 const isVitestReport = (value: unknown): value is VitestReport => {
@@ -531,54 +182,91 @@ const assertionMessage = (messages: string[], cwd: string): string => {
   return capMessage(frame == null ? headline : `${headline} (${frame})`);
 };
 
-// oxlint-disable-next-line eslint/complexity -- File errors and assertion failures share one truncation budget.
+const hasFailedAssertion = (file: VitestTestFile): boolean =>
+  file.assertionResults?.some((assertion) => assertion.status === 'failed') === true;
+
+const isFileFailure = (file: VitestTestFile, failedAssertion: boolean): boolean => {
+  if (file.status !== 'failed') {
+    return false;
+  }
+
+  return (file.message ?? '').length > 0 || !failedAssertion;
+};
+
+const fileFailure = (file: VitestTestFile, cwd: string): TestFailure => ({
+  file: file.name ?? '<unknown>',
+  fullname: '<file>',
+  message:
+    assertionMessage([file.message ?? ''], cwd) ||
+    'File setup or load failed; inspect the saved runner diagnostics.',
+});
+
+const assertionFailure = (
+  file: VitestTestFile,
+  assertion: VitestAssertionResult,
+  cwd: string,
+  version: string,
+): TestFailure => ({
+  file: file.name ?? '<unknown>',
+  fullname: assertionFullName(assertion, version),
+  message: assertionMessage(assertion.failureMessages ?? [], cwd),
+});
+
+const collectFileFailures = (
+  file: VitestTestFile,
+  cwd: string,
+  version: string,
+  remaining: number,
+): { failures: TestFailure[]; truncated: boolean } => {
+  const failures: TestFailure[] = [];
+  // Hook and load errors live only on the file entry, never on an assertion.
+  const failedAssertion = hasFailedAssertion(file);
+  let budget = remaining;
+
+  if (isFileFailure(file, failedAssertion)) {
+    if (budget <= 0) {
+      return { failures, truncated: true };
+    }
+
+    failures.push(fileFailure(file, cwd));
+    budget -= 1;
+  }
+
+  for (const assertion of file.assertionResults ?? []) {
+    if (assertion.status !== 'failed') {
+      continue;
+    }
+
+    if (budget <= 0) {
+      return { failures, truncated: true };
+    }
+
+    failures.push(assertionFailure(file, assertion, cwd, version));
+    budget -= 1;
+  }
+
+  return { failures, truncated: false };
+};
+
+// File errors and assertion failures share one truncation budget.
 const collectFailures = (
   report: VitestReport,
   cwd: string,
   version: string,
 ): { failures: TestFailure[]; truncated: boolean } => {
   const failures: TestFailure[] = [];
-  let truncated = false;
 
   for (const file of report.testResults ?? []) {
-    // Hook and load errors live only on the file entry, never on an assertion.
-    const hasFailedAssertion =
-      file.assertionResults?.some((assertion) => assertion.status === 'failed') === true;
+    const collected = collectFileFailures(file, cwd, version, maximumFailures - failures.length);
 
-    if (file.status === 'failed' && ((file.message ?? '').length > 0 || !hasFailedAssertion)) {
-      if (failures.length >= maximumFailures) {
-        return { failures, truncated: true };
-      }
+    failures.push(...collected.failures);
 
-      failures.push({
-        file: file.name ?? '<unknown>',
-        fullname: '<file>',
-        message:
-          assertionMessage([file.message ?? ''], cwd) ||
-          'File setup or load failed; inspect the saved runner diagnostics.',
-      });
-    }
-
-    for (const assertion of file.assertionResults ?? []) {
-      if (assertion.status !== 'failed') {
-        continue;
-      }
-
-      if (failures.length >= maximumFailures) {
-        truncated = true;
-
-        return { failures, truncated };
-      }
-
-      failures.push({
-        file: file.name ?? '<unknown>',
-        fullname: assertionFullName(assertion, version),
-        message: assertionMessage(assertion.failureMessages ?? [], cwd),
-      });
+    if (collected.truncated) {
+      return { failures, truncated: true };
     }
   }
 
-  return { failures, truncated };
+  return { failures, truncated: false };
 };
 
 // Vitest's CLI parses dash-leading positionals as options and treats an empty
@@ -620,53 +308,69 @@ export const defaultDeps = (scope: RunTestsInput['scope'] = 'changed'): RunnerDe
   timeoutMs: scope === 'all' ? fullTimeoutMilliseconds : defaultTimeoutMilliseconds,
 });
 
-// oxlint-disable-next-line eslint/complexity -- Process failures and report validity must be classified before accepting test evidence.
-const classifyResult = async (
+const compileErrorResult = (
+  result: SpawnResult,
+  tests: TestResult[],
+  message: string,
+): RunnerResult => ({
+  kind: 'compile-error',
+  message,
+  tests,
+  stdout: result.stdout,
+  stderr: result.stderr,
+});
+
+const unparseableReportResult = (input: RunTestsInput, result: SpawnResult): RunnerResult => {
+  if (result.code !== 0) {
+    return compileErrorResult(result, [], 'no parseable report from vitest');
+  }
+
+  return {
+    kind: 'fail',
+    failures: [
+      {
+        file: '<runner>',
+        fullname: '<parse>',
+        message: assertionMessage(
+          [
+            `unparseable vitest output: ${result.stderr.length > 0 ? result.stderr : result.stdout}`,
+          ],
+          input.cwd,
+        ),
+      },
+    ],
+    tests: [],
+    truncated: false,
+  };
+};
+
+const noFilterMatchResult = (
+  input: RunTestsInput,
+  report: VitestReport,
+  tests: TestResult[],
+  version: string,
+): RunnerResult => {
+  const candidates = collectTests(report, () => true, version)
+    .slice(0, 5)
+    .map((test) => `${relative(input.cwd, test.file)}: ${capMessage(test.fullname)}`);
+  const message = [
+    `No tests matched the exact name filter. Vitest ${version} joins nested names with ${JSON.stringify(nameSeparator(version))}.`,
+    'Use the complete describe and test names. Do not restructure tests or broaden the filter.',
+    candidates.length > 0
+      ? `Collected names (up to 5):\n${candidates.join('\n')}`
+      : 'No names were reported; check the selected files and runner diagnostics.',
+  ].join('\n');
+
+  return { kind: 'no-tests-collected', tests, message };
+};
+
+// Process failures and report validity must be classified before accepting test evidence.
+const classifyReport = (
   input: RunTestsInput,
   result: SpawnResult,
-  outputFile: string,
+  report: VitestReport,
   version: string,
-): Promise<RunnerResult> => {
-  if (input.signal?.aborted === true) {
-    return { kind: 'cancelled' };
-  }
-
-  if (result.timedOut) {
-    return { kind: 'timeout' };
-  }
-
-  const report = await readReport(outputFile);
-
-  if (report == null) {
-    if (result.code === 0) {
-      return {
-        kind: 'fail',
-        failures: [
-          {
-            file: '<runner>',
-            fullname: '<parse>',
-            message: assertionMessage(
-              [
-                `unparseable vitest output: ${result.stderr.length > 0 ? result.stderr : result.stdout}`,
-              ],
-              input.cwd,
-            ),
-          },
-        ],
-        tests: [],
-        truncated: false,
-      };
-    }
-
-    return {
-      kind: 'compile-error',
-      message: 'no parseable report from vitest',
-      tests: [],
-      stdout: result.stdout,
-      stderr: result.stderr,
-    };
-  }
-
+): RunnerResult => {
   const tests = collectTests(report, selects(input.filter), version);
   const total = report.numTotalTests ?? 0;
   const failed = report.numFailedTests ?? 0;
@@ -684,28 +388,11 @@ const classifyResult = async (
   }
 
   if (result.code !== 0) {
-    return {
-      kind: 'compile-error',
-      message: 'vitest did not complete successfully',
-      tests,
-      stdout: result.stdout,
-      stderr: result.stderr,
-    };
+    return compileErrorResult(result, tests, 'vitest did not complete successfully');
   }
 
   if (input.filter !== undefined && tests.length === 0) {
-    const candidates = collectTests(report, () => true, version)
-      .slice(0, 5)
-      .map((test) => `${relative(input.cwd, test.file)}: ${capMessage(test.fullname)}`);
-    const message = [
-      `No tests matched the exact name filter. Vitest ${version} joins nested names with ${JSON.stringify(nameSeparator(version))}.`,
-      'Use the complete describe and test names. Do not restructure tests or broaden the filter.',
-      candidates.length > 0
-        ? `Collected names (up to 5):\n${candidates.join('\n')}`
-        : 'No names were reported; check the selected files and runner diagnostics.',
-    ].join('\n');
-
-    return { kind: 'no-tests-collected', tests, message };
+    return noFilterMatchResult(input, report, tests, version);
   }
 
   if (total === 0 || report.numPassedTests === 0) {
@@ -713,6 +400,29 @@ const classifyResult = async (
   }
 
   return { kind: 'pass', tests };
+};
+
+const classifyResult = async (
+  input: RunTestsInput,
+  result: SpawnResult,
+  outputFile: string,
+  version: string,
+): Promise<RunnerResult> => {
+  if (input.signal?.aborted === true) {
+    return { kind: 'cancelled' };
+  }
+
+  if (result.timedOut) {
+    return { kind: 'timeout' };
+  }
+
+  const report = await readReport(outputFile);
+
+  if (report == null) {
+    return unparseableReportResult(input, result);
+  }
+
+  return classifyReport(input, result, report, version);
 };
 
 const runInDirectory = async (
