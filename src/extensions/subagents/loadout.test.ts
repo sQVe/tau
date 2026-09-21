@@ -24,6 +24,119 @@ const closure = (setting: string) => () => setting;
 const resolveLoadout = async (...argumentsList: Parameters<typeof loadoutModule.resolveLoadout>) =>
   asPiLoadout(await loadoutModule.resolveLoadout(...argumentsList));
 
+const safetyExtensionPath = () =>
+  join(
+    dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
+    'dist',
+    'pi',
+    'index.js',
+  );
+
+const herdrPiIntegrationPath = fileURLToPath(
+  new URL('./fixtures/herdrPiIntegration.ts', import.meta.url),
+);
+
+const piLoadoutFixture = async (
+  onTestFinished: (callback: () => void) => void,
+  options: { marker: boolean },
+) => {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'tau-pi-loadout-')));
+  const originalArguments = process.argv;
+  onTestFinished(() => {
+    process.argv = originalArguments;
+    vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+  vi.stubEnv('TAU_SUBAGENT_MODEL', '');
+  const safety = safetyExtensionPath();
+  const provider = fileURLToPath(new URL('./fixtures/controlledProvider.ts', import.meta.url));
+  const extensions = [safety, provider, ...(options.marker ? [herdrPiIntegrationPath] : [])];
+  process.argv = [
+    process.execPath,
+    'pi',
+    '--no-extensions',
+    ...extensions.flatMap((path) => ['-e', path]),
+  ];
+  const loader = new DefaultResourceLoader({
+    cwd: directory,
+    agentDir: directory,
+    noExtensions: true,
+    additionalExtensionPaths: extensions,
+  });
+  await loader.reload();
+  const runtime = await ModelRuntime.create({
+    authPath: join(directory, 'auth.json'),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  for (const registration of loader.getExtensions().runtime.pendingNativeProviderRegistrations) {
+    runtime.registerNativeProvider(registration.provider);
+  }
+  const registry = new ModelRegistry(runtime);
+  // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model IDs, not an array predicate.
+  const model = registry.find('tau-worker-fixture', 'faux-1');
+  if (!model) {
+    throw new Error('Missing fixture model.');
+  }
+
+  return {
+    directory,
+    safety,
+    provider,
+    extensions,
+    model,
+    context: { cwd: directory, modelRegistry: registry, isProjectTrusted: () => true },
+    pi: { getAllTools: () => [], getCommands: () => [] },
+    request: {
+      profile: 'worker',
+      permissions: 'trusted-full-tools',
+      model: 'tau-worker-fixture/faux-1',
+    },
+  };
+};
+
+it("refuses a Pi loadout whose loaded extensions omit herdr's Pi integration", async ({
+  onTestFinished,
+}) => {
+  const fixture = await piLoadoutFixture(onTestFinished, { marker: false });
+
+  await expect(resolveLoadout(fixture.request, fixture.context, fixture.pi)).rejects.toThrow(
+    'herdr integration install pi',
+  );
+  await expect(resolveLoadout(fixture.request, fixture.context, fixture.pi)).rejects.toThrow(
+    "herdr's Pi integration must be loaded in Pi",
+  );
+});
+
+it("resolves a Pi loadout when a loaded extension carries herdr's Pi marker", async ({
+  onTestFinished,
+}) => {
+  const fixture = await piLoadoutFixture(onTestFinished, { marker: true });
+
+  const resolved = await resolveLoadout(fixture.request, fixture.context, fixture.pi);
+
+  expect(resolved.integrations).toContain(herdrPiIntegrationPath);
+});
+
+it('applies the herdr Pi integration check to saved loadout replay', async ({ onTestFinished }) => {
+  const fixture = await piLoadoutFixture(onTestFinished, { marker: false });
+  const saved = {
+    ...fixtureLoadout(fixture.directory),
+    model: fixture.request.model,
+    modelFingerprint: loadoutFingerprintModule.modelFingerprint(fixture.model),
+    thinking: 'off' as const,
+    noExtensions: true,
+    integrations: fixture.extensions,
+    integrationFingerprint: loadoutFingerprintModule.integrationFingerprint(fixture.extensions),
+    safetyExtension: fixture.safety,
+  };
+
+  await expect(loadoutModule.validateSavedLoadout(saved, fixture.context)).rejects.toThrow(
+    'herdr integration install pi',
+  );
+});
+
 it('allows only resolved API key rotation under explicitly versioned provider fingerprints', async ({
   onTestFinished,
 }) => {
@@ -209,6 +322,9 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
   const provider = fileURLToPath(new URL('./fixtures/controlledProvider.ts', import.meta.url));
   const questionnaire = fileURLToPath(import.meta.resolve('@juicesharp/rpiv-ask-user-question'));
   const parentTools = fileURLToPath(new URL('./index.ts', import.meta.url));
+  const herdrPiIntegration = fileURLToPath(
+    new URL('./fixtures/herdrPiIntegration.ts', import.meta.url),
+  );
   process.argv = [
     process.execPath,
     'pi',
@@ -221,11 +337,13 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
     questionnaire,
     '-e',
     parentTools,
+    '-e',
+    herdrPiIntegration,
   ];
   const loader = new DefaultResourceLoader({
     cwd: directory,
     agentDir: directory,
-    additionalExtensionPaths: [safety, provider, questionnaire, parentTools],
+    additionalExtensionPaths: [safety, provider, questionnaire, parentTools, herdrPiIntegration],
   });
   await loader.reload();
   const runtime = await ModelRuntime.create({
@@ -291,7 +409,13 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
     'cannot reproduce',
   );
   rotatingAuth.mockRestore();
-  expect(resolved.integrations).toEqual([safety, provider, questionnaire, parentTools]);
+  expect(resolved.integrations).toEqual([
+    safety,
+    provider,
+    questionnaire,
+    parentTools,
+    herdrPiIntegration,
+  ]);
   expect(
     loader.getExtensions().extensions.some((extension) => extension.tools.has('subagent_history')),
   ).toBe(true);

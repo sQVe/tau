@@ -28,7 +28,18 @@ const fixture = () => {
       'index.js',
     ),
   );
-  process.argv = [process.execPath, 'pi', '--no-extensions', '-e', safety];
+  const herdrPiIntegration = fileURLToPath(
+    new URL('./fixtures/herdrPiIntegration.ts', import.meta.url),
+  );
+  process.argv = [
+    process.execPath,
+    'pi',
+    '--no-extensions',
+    '-e',
+    safety,
+    '-e',
+    herdrPiIntegration,
+  ];
   const configure = (apiKey?: string) => {
     writeFileSync(
       join(directory, 'models.json'),

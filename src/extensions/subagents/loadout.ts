@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs';
+import { closeSync, openSync, readSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 
 import { clampThinkingLevel } from '@earendil-works/pi-ai';
@@ -49,6 +49,41 @@ const resolveModel = (
   return model;
 };
 
+const herdrPiMarker = 'HERDR_INTEGRATION_ID=pi';
+// herdr writes the marker near the top of its generated integration. Read a bounded prefix and treat an unreadable file as missing.
+const integrationReadLimit = 65_536;
+
+const containsHerdrPiMarker = (path: string): boolean => {
+  let descriptor: number;
+
+  try {
+    descriptor = openSync(path, 'r');
+  } catch {
+    return false;
+  }
+
+  try {
+    const buffer = Buffer.alloc(integrationReadLimit);
+    const bytesRead = readSync(descriptor, buffer, 0, integrationReadLimit, 0);
+
+    return buffer.subarray(0, bytesRead).includes(herdrPiMarker);
+  } catch {
+    return false;
+  } finally {
+    closeSync(descriptor);
+  }
+};
+
+const requireHerdrPiIntegration = (extensions: readonly { resolvedPath: string }[]): void => {
+  if (extensions.some((extension) => containsHerdrPiMarker(extension.resolvedPath))) {
+    return;
+  }
+
+  throw new Error(
+    "herdr's Pi integration must be loaded in Pi for Pi workers. Install it with `herdr integration install pi`.",
+  );
+};
+
 const reconstructIntegrations = async (
   cwd: string,
   agentDirectory: string,
@@ -70,6 +105,8 @@ const reconstructIntegrations = async (
   if (!safety) {
     throw new Error('CC Safety Net must be loaded, with its tool_call handler active.');
   }
+
+  requireHerdrPiIntegration(loaded.extensions);
 
   const reconstructed = await ModelRuntime.create({
     authPath: join(agentDirectory, 'auth.json'),

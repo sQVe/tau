@@ -1086,6 +1086,28 @@ it('refuses reply delivery when the original native worker identity changes', as
   expect(questions.readReply(launched.directory, launched.taskId, 'question-one')).toBeUndefined();
 });
 
+it("names herdr's Pi integration when a started Pi worker reports no agent session", async ({
+  onTestFinished,
+}) => {
+  const { controller, input, calls, notifications } = setup(
+    onTestFinished,
+    0,
+    async (arguments_) =>
+      arguments_[0] === 'agent' && arguments_[1] === 'get'
+        ? JSON.stringify({ result: { agent: { pane_id: 'owned-pane', agent: 'pi' } } })
+        : '',
+  );
+
+  const launched = await controller.launch(input);
+
+  expect(launched.outcome).toBe('failure');
+  expect(launched.failure).toContain("herdr's Pi integration");
+  expect(launched.failure).toContain('herdr integration install pi');
+  expect(notifications.join('\n')).toContain("herdr's Pi integration");
+  expect(notifications.join('\n')).toContain('herdr integration install pi');
+  expect(calls.some((call) => call[1] === 'prompt')).toBe(false);
+});
+
 it.each(['confirmed', 'unconfirmed'] as const)(
   'preserves foreground sharing during %s cleanup and releases ownership afterward',
   async (outcome) => {

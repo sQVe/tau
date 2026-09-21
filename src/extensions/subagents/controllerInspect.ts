@@ -19,6 +19,8 @@ import { isGenericLoadout, isPiLoadout, requireNativeTask } from './types.js';
 import type { GenericLoadout, Task, TaskEvent } from './types.js';
 
 const agentSessionSchema = Type.Object({ value: Type.String({ minLength: 1 }) });
+const missingPiIntegrationMessage =
+  "herdr reported no Pi agent session. herdr's Pi integration must be loaded in Pi; install it with `herdr integration install pi`.";
 
 export type HerdrClient = (
   argumentsList: string[],
@@ -137,13 +139,21 @@ const checkAgentIdentity = (
   expected: { paneId: string; expectedSession: string },
   unchangedShell: boolean,
 ): void => {
-  // herdr reports a detected agent before its integration reports which session that agent opened.
-  const identified =
-    agent.agent === 'pi' &&
-    Value.Check(agentSessionSchema, agent.agent_session) &&
-    agent.agent_session.value === expected.expectedSession;
+  // herdr detects a Pi pane before its integration reports which session that agent opened.
+  const session = agent.agent_session;
 
-  if (agent.pane_id !== expected.paneId || !identified || unchangedShell) {
+  if (!Value.Check(agentSessionSchema, session)) {
+    const isPiPane = agent.agent === 'pi' || agent.agent === undefined;
+
+    throw new Error(
+      isPiPane ? missingPiIntegrationMessage : 'Started worker identity could not be established.',
+    );
+  }
+
+  const samePane = agent.pane_id === expected.paneId;
+  const sameSession = agent.agent === 'pi' && session.value === expected.expectedSession;
+
+  if (!samePane || !sameSession || unchangedShell) {
     throw new Error('Started worker identity could not be established.');
   }
 };
