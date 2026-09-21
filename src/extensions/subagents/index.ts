@@ -12,6 +12,14 @@ import { historyPage, searchHistory } from './history.js';
 import { resolveInheritedLoadout, resolveLoadout } from './loadout.js';
 import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
 import type { WorkerNotice } from './presentation.js';
+import {
+  callText,
+  firstLine,
+  renderHistoryResult,
+  renderNotice,
+  renderReplyResult,
+  renderStatusResult,
+} from './render.js';
 
 const visibility = Type.Optional(
   StringEnum(['foreground', 'background'] as const, {
@@ -355,6 +363,16 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
     description:
       'Launch a bounded worker in herdr. Pi (default) requires trusted-full-tools and verified CC Safety Net; its model must be explicit or configured. Other herdr kinds use native-controls, which Tau does not certify. Their nativeArguments list and existing writable reportDirectory need explicit parent-user confirmation before launch. No native arguments by default; the harness selects its configured model. An exact native model request requires corresponding user-approved arguments, but Tau cannot verify the model used. Native approval dialogs remain in force and need user action. Tau adds no bypass flags and never approves dialogs. Model translation, native resume, and a Tau nesting channel are unavailable for non-Pi workers. Reports are required from the start. All workers share root capacity and one original deadline, including waits and cleanup. No uncertain retries or fallback. Built-in profiles: investigator and worker. States: starting (launched, not accepted yet); running (accepted and working); awaitingReply (waiting for a parent reply); reported (final report saved, cleanup pending); stopping (bounded cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (cleanup unconfirmed, capacity stays held); notOwned (no live parent controller, saved evidence only). Notices are status snapshots taken when sent. A notice without a state means the parent could not read the task records; inspect recovery.',
     parameters: launchParameters,
+    renderCall(parameters, theme) {
+      return callText(
+        'Launch worker',
+        `${parameters.profile} · ${firstLine(parameters.task)}`,
+        theme,
+      );
+    },
+    renderResult(result, options, theme) {
+      return renderStatusResult(result.details, options.expanded, theme);
+    },
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       return launchWorker(runtime, parameters, signal, context);
@@ -369,6 +387,16 @@ const registerFollowUpTool = (runtime: SubagentRuntime): void => {
     description:
       'Assign a new bounded Pi task to an exact saved task ID in the current root-session tree. Eligible only when state is stopped, a report exists, and no successorTaskId. Reuses the exact Pi session and unchanged settings. Non-Pi continuation refuses; start a fresh task. One successor claim per task; no uncertain retry or age-based reclaim. Searching grants no live ownership.',
     parameters: followUpParameters,
+    renderCall(parameters, theme) {
+      return callText(
+        'Follow up worker',
+        `${parameters.sourceTaskId} · ${firstLine(parameters.task)}`,
+        theme,
+      );
+    },
+    renderResult(result, options, theme) {
+      return renderStatusResult(result.details, options.expanded, theme);
+    },
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       return followUpWorker(runtime, parameters, signal, context);
@@ -383,6 +411,12 @@ const registerHistoryTool = (runtime: SubagentRuntime): void => {
     description:
       'Read-only name, task ID, native session ID, or description search over earlier work in the current root session tree. The current conversation and its ancestor sessions are never listed as sessions. Task candidates carry their derived state. Reports are bounded previews; truncatedFields lists preview fields, which are not exact identifiers or paths, and reportFile points at the full report when it was truncated. nativeSessionFile appears only for native-only sessions or unavailable native evidence. Repeat the same query with nextOffset to page; history is recomputed per call, so concurrent additions can shift pages. totalMatches counts all matches, not just the page. Multiple matches require clarification using full IDs; never choose the newest. Does not grant reply/cancel ownership, resume work, or copy transcripts; subagent_status stays direct-parent-only.',
     parameters: historyParameters,
+    renderCall(parameters, theme) {
+      return callText('Search session history', parameters.query, theme);
+    },
+    renderResult(result, options, theme) {
+      return renderHistoryResult(result.details, options.expanded, theme);
+    },
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       return searchWorkerHistory(parameters, signal, context, runtime.peekController());
@@ -397,6 +431,12 @@ const registerStatusTool = (runtime: SubagentRuntime): void => {
     description:
       'Recover task results and saved native references. For Pi, questionId shows its reply and acknowledgement. For generic workers, submissionId shows plain-text intent and delivery without claiming acceptance. A missing observation means uncertain delivery; never resubmit that identity. readOutput reads bounded terminal text once from an active identity-checked generic worker; approval dialogs need user action. Reconnect never resubmits work or resets deadlines. Recovery after parent exit is saved evidence only. Only Pi supports completed-task follow-up. When saved records are unreadable, the result has no state; inspect its recovery for manual cleanup.',
     parameters: statusParameters,
+    renderCall(parameters, theme) {
+      return callText('Worker status', parameters.taskId, theme);
+    },
+    renderResult(result, options, theme) {
+      return renderStatusResult(result.details, options.expanded, theme);
+    },
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, _signal, _onUpdate, context) {
       return readWorkerStatus(runtime, parameters, context);
@@ -411,6 +451,12 @@ const registerReplyTool = (runtime: SubagentRuntime): void => {
     description:
       'Send an in-scope reply to an active owned worker within its original deadline. Pi requires questionId and preserves structured acknowledgement. Generic workers omit questionId and receive plain text; delivery is not task acceptance or acknowledgement. Delivery values: sent (herdr accepted the text); notResent (this exact reply was already accepted; do not retry); uncertain (delivery could not be confirmed; do not retry); notDelivered (a blocked native dialog refused input; user action is needed). Use a unique replyId and inspect subagent_status with submissionId after uncertainty. Native blocked or unknown state refuses input; never use this tool to approve native dialogs automatically.',
     parameters: replyParameters,
+    renderCall(parameters, theme) {
+      return callText('Reply to worker', parameters.taskId, theme);
+    },
+    renderResult(result, options, theme) {
+      return renderReplyResult(result.details, options.expanded, theme);
+    },
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, _signal, _onUpdate, context) {
       return replyToWorker(runtime, parameters, context);
@@ -425,6 +471,12 @@ const registerCancelTool = (runtime: SubagentRuntime): void => {
     description:
       'Attempt bounded identity-checked cancellation of an owned worker. Failed herdr calls and active-work shutdown may require manual cleanup. Detached descendants are not contained.',
     parameters: cancelParameters,
+    renderCall(parameters, theme) {
+      return callText('Cancel worker', parameters.taskId, theme);
+    },
+    renderResult(result, options, theme) {
+      return renderStatusResult(result.details, options.expanded, theme);
+    },
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, _signal, _onUpdate, context) {
       return cancelWorker(runtime, parameters, context);
@@ -463,6 +515,12 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   };
 
   registerSubagentTools(runtime);
+  pi.registerMessageRenderer('tau-worker', (message, options, theme) =>
+    renderNotice(message.details, options.expanded, theme),
+  );
+  pi.registerMessageRenderer('tau-worker-child', (message, options, theme) =>
+    renderNotice(message.details, options.expanded, theme),
+  );
 
   pi.on('session_shutdown', () => {
     removeChildrenListener();

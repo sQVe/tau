@@ -21,6 +21,7 @@ const registerTools = () => {
     events: createEventBus(),
     on: () => undefined,
     registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
+    registerMessageRenderer: () => undefined,
   } as unknown as ExtensionAPI);
 
   return tools;
@@ -57,6 +58,7 @@ it('places follow-ups with explicit visibility and the current parent terminal',
     events: createEventBus(),
     on: () => undefined,
     registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
+    registerMessageRenderer: () => undefined,
   } as unknown as ExtensionAPI);
   const tool = tools.get('subagent_follow_up');
 
@@ -128,6 +130,7 @@ it('routes approved native tool arguments through the generic resolver without P
     events: createEventBus(),
     on: () => undefined,
     registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
+    registerMessageRenderer: () => undefined,
   } as unknown as ExtensionAPI);
   const launch = vi
     .spyOn(WorkerController.prototype, 'launch')
@@ -249,6 +252,7 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
     events: createEventBus(),
     on: () => undefined,
     registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
+    registerMessageRenderer: () => undefined,
   } as unknown as ExtensionAPI);
   const tool = tools.get('subagent_follow_up');
   if (!tool) {
@@ -320,9 +324,12 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
   const status = vi
     .spyOn(WorkerController.prototype, 'status')
     .mockReturnValue(fullWorkerStatus as never);
-  const reply = vi
-    .spyOn(WorkerController.prototype, 'reply')
-    .mockResolvedValue({ replyAccepted: true, workerAcknowledged: false, delivery: 'sent' });
+  const reply = vi.spyOn(WorkerController.prototype, 'reply').mockResolvedValue({
+    replyAccepted: true,
+    name: 'worker-ab',
+    workerAcknowledged: false,
+    delivery: 'sent',
+  });
   const cancel = vi
     .spyOn(WorkerController.prototype, 'cancel')
     .mockResolvedValue(fullWorkerStatus as never);

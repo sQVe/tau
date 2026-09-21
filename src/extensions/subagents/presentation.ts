@@ -1,4 +1,41 @@
+import type { ThemeColor } from '@earendil-works/pi-coding-agent';
+
 import type { WorkerState } from './types.js';
+
+// The single label table for worker states. Wording credits the worker and never claims a stop
+// or an acknowledgement that the saved records do not prove.
+export interface StateLabel {
+  icon: string;
+  color: ThemeColor;
+  text: string;
+}
+
+export const stateLabels: Record<WorkerState, StateLabel> = {
+  starting: { icon: '○', color: 'muted', text: 'starting' },
+  running: { icon: '●', color: 'accent', text: 'running' },
+  awaitingReply: { icon: '?', color: 'accent', text: 'asks' },
+  reported: { icon: '◐', color: 'warning', text: 'reported' },
+  stopping: { icon: '◐', color: 'warning', text: 'stopping' },
+  stopped: { icon: '◐', color: 'warning', text: 'stopped' },
+  cleanupUnconfirmed: { icon: '!', color: 'error', text: 'cleanup unconfirmed' },
+  notOwned: { icon: '◇', color: 'muted', text: 'may still be running' },
+};
+
+// Only a saved report outcome tells a stopped worker apart. Only success earns the check mark.
+const stoppedOutcomeLabels: Record<string, StateLabel> = {
+  success: { icon: '✓', color: 'success', text: 'reported success · stopped' },
+  failure: { icon: '✗', color: 'error', text: 'stopped · failure' },
+  incomplete: { icon: '◐', color: 'warning', text: 'stopped · incomplete' },
+};
+const stoppedUnknownLabel: StateLabel = { icon: '◐', color: 'warning', text: 'stopped' };
+
+export const stateLabel = (state: WorkerState, outcome?: string): StateLabel => {
+  if (state !== 'stopped') {
+    return stateLabels[state];
+  }
+
+  return (outcome === undefined ? undefined : stoppedOutcomeLabels[outcome]) ?? stoppedUnknownLabel;
+};
 
 // Model content copies named fields. Never filter, delete, or infer fields from a full record.
 export interface StatusQuestion {

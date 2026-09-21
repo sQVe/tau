@@ -301,6 +301,14 @@ it('follows up a completed native task with new identity and unchanged saved evi
     loadout: fixture.source.loadout,
   });
   expect(task.name).not.toBe(fixture.source.name);
+  expect(next).toMatchObject({
+    predecessorTaskId: fixture.source.taskId,
+    predecessorName: fixture.source.name,
+  });
+  expect(taskStatus(next.directory)).toMatchObject({
+    predecessorTaskId: fixture.source.taskId,
+    predecessorName: fixture.source.name,
+  });
   expect(fixture.validation).toHaveBeenCalledOnce();
   expect(readFileSync(join(fixture.sourceDirectory, 'task.json'))).toEqual(taskBytes);
   expect(readFileSync(join(fixture.sourceDirectory, 'report.json'))).toEqual(reportBytes);
@@ -881,6 +889,7 @@ it('delivers a clarification once without treating herdr delivery as acknowledge
   const result = await controller.reply(task.taskId, 'parent-id', answer);
   expect(result).toMatchObject({ replyAccepted: true });
   expect(result).toMatchObject({ workerAcknowledged: false });
+  expect(result).toMatchObject({ name: task.name });
   await controller.reply(task.taskId, 'parent-id', answer);
   expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
   expect(calls.find((call) => call[1] === 'prompt')?.[2]).toBe('worker-1');

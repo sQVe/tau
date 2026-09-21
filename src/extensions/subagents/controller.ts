@@ -83,9 +83,10 @@ export { agentPromptArguments, workerArguments } from './controllerInspect.js';
 export type { HerdrClient } from './controllerInspect.js';
 export { EvidenceUnavailableError, taskStatus } from './controllerRecord.js';
 
-const acceptedReply = (directory: string, taskId: string, questionId: string) => ({
+const acceptedReply = (directory: string, task: Task, questionId: string) => ({
   replyAccepted: true,
-  workerAcknowledged: Boolean(readAcknowledgement(directory, taskId, questionId)),
+  name: task.name,
+  workerAcknowledged: Boolean(readAcknowledgement(directory, task.taskId, questionId)),
   delivery: 'notResent' as const,
 });
 
@@ -364,7 +365,7 @@ export class WorkerController {
         throw new Error('Conflicting native submission identity.');
       }
 
-      return { replyAccepted: true as const, delivery: 'notResent' as const };
+      return { replyAccepted: true as const, name: task.name, delivery: 'notResent' as const };
     }
 
     const submission = await submitGenericText(directory, task, {
@@ -379,6 +380,7 @@ export class WorkerController {
 
     return {
       replyAccepted: true as const,
+      name: task.name,
       delivery: deliveryFromSubmission(submission?.observation?.state),
     };
   }
@@ -430,7 +432,7 @@ export class WorkerController {
     if (readReply(directory, taskId, questionId)) {
       acceptReply(directory, taskId, value);
 
-      return acceptedReply(directory, taskId, questionId);
+      return acceptedReply(directory, handle.task, questionId);
     }
 
     if (readPendingQuestion(directory, taskId)?.questionId !== questionId) {
@@ -452,7 +454,7 @@ export class WorkerController {
     if (readReply(directory, taskId, questionId)) {
       acceptReply(directory, taskId, value);
 
-      return acceptedReply(directory, taskId, questionId);
+      return acceptedReply(directory, handle.task, questionId);
     }
 
     return this.sendPiReply({ directory, handle, questionId, answer, value });
@@ -479,6 +481,7 @@ export class WorkerController {
 
     return {
       replyAccepted: true,
+      name: handle.task.name,
       workerAcknowledged: Boolean(readAcknowledgement(directory, taskId, questionId)),
       delivery,
     };

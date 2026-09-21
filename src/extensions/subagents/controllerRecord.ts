@@ -125,6 +125,20 @@ const nativeUsage = (task: Task) => ({
     : 'Native usage and model verification are unavailable through this generic interface.',
 });
 
+// A missing or unreadable predecessor must not fail the status; the renderer falls back to the
+// short task ID when the name is absent.
+const predecessorName = (root: string, task: Task): string | undefined => {
+  if (!task.predecessorTaskId) {
+    return undefined;
+  }
+
+  try {
+    return readTask(join(root, task.predecessorTaskId)).name;
+  } catch {
+    return undefined;
+  }
+};
+
 export const taskStatus = (directory: string, activeOwner?: string, enforcing = true) => {
   const task = readTask(directory);
   const report = readReport(directory, task.taskId);
@@ -147,6 +161,7 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
     state,
     ...(outcome === undefined ? {} : { outcome }),
     predecessorTaskId: task.predecessorTaskId,
+    predecessorName: predecessorName(dirname(directory), task),
     successorTaskId: readSuccessor(directory)?.successorTaskId,
     deadline: task.deadline,
     capacityHeld: cleanup?.stopped !== true,

@@ -319,7 +319,7 @@ it('passes approved native arguments literally and keeps native submission separ
     'model with spaces; $HOME',
   ]);
   expect(receipt).toMatchObject({ replyAccepted: true, delivery: 'sent' });
-  expect(repeated).toEqual({ replyAccepted: true, delivery: 'notResent' });
+  expect(repeated).toEqual({ replyAccepted: true, name: started.name, delivery: 'notResent' });
   expect(
     setup.controller.submissionReceipt(started.taskId, 'parent', answer.replyId),
   ).toMatchObject({ observation: { state: 'submitted' } });
@@ -357,7 +357,7 @@ it('reports a blocked generic reply as notDelivered without claiming acknowledge
     scopeUnchanged: true,
   });
 
-  expect(receipt).toEqual({ replyAccepted: true, delivery: 'notDelivered' });
+  expect(receipt).toEqual({ replyAccepted: true, name: started.name, delivery: 'notDelivered' });
   expect(receipt).not.toHaveProperty('workerAcknowledged');
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     assignment: { observation: { state: 'submitted' } },
