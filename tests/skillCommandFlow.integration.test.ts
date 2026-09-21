@@ -2,21 +2,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import {
-  InMemoryCredentialStore,
-  InMemoryModelsStore,
-  fauxAssistantMessage,
-  fauxProvider,
-} from '@earendil-works/pi-ai';
-import {
-  DefaultResourceLoader,
-  ModelRuntime,
-  SessionManager,
-  SettingsManager,
-  createAgentSession,
-} from '@earendil-works/pi-coding-agent';
+import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
 import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
+
+import { createPiSession } from './piSession.js';
 
 // Real Pi sessions need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
@@ -30,41 +20,13 @@ const createSession = async (registerCleanup: TestContext['onTestFinished']) => 
   registerCleanup(() => rm(agentDirectory, { recursive: true, force: true }));
 
   const faux = fauxProvider({ provider: 'tau-skill-command-test' });
-  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
-  const loader = new DefaultResourceLoader({
+  const { session } = await createPiSession(registerCleanup, {
     cwd: directory,
-    agentDir: agentDirectory,
-    settingsManager,
-    additionalExtensionPaths: [join(packageRoot, 'src/extensions')],
-    additionalSkillPaths: [join(packageRoot, 'skills')],
-    noExtensions: true,
-    noSkills: true,
-    noPromptTemplates: true,
-    noThemes: true,
-  });
-
-  await loader.reload();
-
-  const modelRuntime = await ModelRuntime.create({
-    credentials: new InMemoryCredentialStore(),
-    modelsStore: new InMemoryModelsStore(),
-    modelsPath: null,
-    refreshOnCreate: false,
-  });
-  modelRuntime.registerNativeProvider(faux.provider);
-
-  const { session } = await createAgentSession({
-    cwd: directory,
-    agentDir: agentDirectory,
-    modelRuntime,
-    model: faux.getModel(),
-    resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(directory),
-    settingsManager,
+    agentDirectory,
+    providers: [faux],
     tools: ['read'],
-  });
-  registerCleanup(() => {
-    session.dispose();
+    extensionPaths: [join(packageRoot, 'src/extensions')],
+    skillPaths: [join(packageRoot, 'skills')],
   });
 
   await session.bindExtensions({});

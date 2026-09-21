@@ -4,21 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
-import {
-  InMemoryCredentialStore,
-  InMemoryModelsStore,
-  fauxAssistantMessage,
-  fauxProvider,
-  fauxToolCall,
-} from '@earendil-works/pi-ai';
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
 import type { FauxResponseStep } from '@earendil-works/pi-ai';
-import {
-  DefaultResourceLoader,
-  ModelRuntime,
-  SessionManager,
-  SettingsManager,
-  createAgentSession,
-} from '@earendil-works/pi-coding-agent';
 import type {
   AgentSessionEvent,
   ExtensionFactory,
@@ -27,7 +14,9 @@ import type {
 import type { TestContext } from 'vitest';
 import { expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
 
+import { initializeRepository } from '../../../tests/gitRepository.js';
 import { isolateWebAccessConfig } from '../../../tests/isolateWebAccessConfig.js';
+import { createPiSession } from '../../../tests/piSession.js';
 import type { createTestObservation } from './observation.js';
 
 interface ToolResult {
@@ -43,7 +32,7 @@ const createWorktree = async (cleanup: TestContext['onTestFinished']) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-tdd-'));
   cleanup(() => rm(cwd, { recursive: true, force: true }));
 
-  await promisify(execFile)('git', ['init', '--quiet', cwd]);
+  await initializeRepository(cwd);
   await symlink(resolve('node_modules'), join(cwd, 'node_modules'), 'dir');
   await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
   await writeFile(join(cwd, 'vite.config.ts'), 'export default {};');
@@ -67,12 +56,12 @@ const createHarness = async (
   counter += 1;
 
   const faux = fauxProvider({ provider: `tau-tdd-${counter}` });
-  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
-  const loader = new DefaultResourceLoader({
+  const { session, extensionsResult } = await createPiSession(cleanup, {
     cwd,
-    agentDir: agentDirectory,
-    settingsManager,
-    additionalExtensionPaths: [
+    agentDirectory,
+    providers: [faux],
+    tools: ['read', 'bash', 'edit', 'write', 'run_tests', 'commit'],
+    extensionPaths: [
       resolve(import.meta.dirname, '..'),
       resolve(
         import.meta.dirname,
@@ -81,35 +70,6 @@ const createHarness = async (
       resolve(import.meta.dirname, '../../../node_modules/pi-web-access/index.ts'),
     ],
     extensionFactories,
-    noExtensions: true,
-    noSkills: true,
-    noPromptTemplates: true,
-    noThemes: true,
-  });
-
-  await loader.reload();
-
-  const modelRuntime = await ModelRuntime.create({
-    credentials: new InMemoryCredentialStore(),
-    modelsStore: new InMemoryModelsStore(),
-    modelsPath: null,
-    refreshOnCreate: false,
-  });
-
-  modelRuntime.registerNativeProvider(faux.provider);
-
-  const { session, extensionsResult } = await createAgentSession({
-    cwd,
-    agentDir: agentDirectory,
-    modelRuntime,
-    model: faux.getModel(),
-    resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(cwd),
-    settingsManager,
-    tools: ['read', 'bash', 'edit', 'write', 'run_tests', 'commit'],
-  });
-  cleanup(() => {
-    session.dispose();
   });
 
   expect(extensionsResult.errors).toEqual([]);
@@ -308,6 +268,58 @@ it('observes RED and focused passes, then accepts full verification after format
   expect(JSON.stringify(edited.result)).toContain('stale');
   expect(JSON.stringify(edited.result)).not.toContain('RED');
 });
+
+it.for([
+  {
+    scenario: 'assertion failure',
+    body: 'expect(run()).toBe(2)',
+    implementation: 'return 1;',
+    expectedHint: /^$/,
+  },
+  {
+    scenario: 'production TypeError',
+    body: 'run()',
+    implementation: 'return null.value;',
+    expectedHint: /TypeError.*expected behavior/i,
+  },
+  {
+    scenario: 'missing dynamic import',
+    body: "await import('./missing.js')",
+    implementation: 'return 1;',
+    expectedHint: /Error.*expected behavior/i,
+  },
+])(
+  'keeps advice separate from real Vitest failure evidence for $scenario',
+  async ({ body, implementation, expectedHint }, { onTestFinished }) => {
+    const { cwd, run, call } = await createHarness(onTestFinished);
+    await mkdir(join(cwd, 'src'));
+    await writeFile(join(cwd, 'src/value.js'), `export function run() { ${implementation} }`);
+    await writeFile(
+      join(cwd, 'behavior.test.ts'),
+      `import { it, expect } from 'vitest'; import { run } from './src/value.js'; it('required behavior', async () => { ${body}; });`,
+    );
+
+    const result = await run();
+
+    expect(result.details).toMatchObject({
+      kind: 'fail',
+      freshness: 'fresh',
+      report: { kind: 'fail' },
+    });
+
+    const hint = result.content.find((block) => block.text.startsWith('Hint:'))?.text;
+
+    expect(hint ?? '').toMatch(expectedHint);
+
+    const edited = await call('write', {
+      path: 'src/value.js',
+      content: 'export function run() { return 2; }',
+    });
+
+    expect(edited.isError).toBe(false);
+    expect(await readFile(join(cwd, 'src/value.js'), 'utf8')).toContain('return 2;');
+  },
+);
 
 it('keeps generated output quiet and hints stale after a layout edit through Pi', async ({
   onTestFinished,

@@ -1,24 +1,11 @@
 import { execFile } from 'node:child_process';
-import { appendFile, chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
-import {
-  InMemoryCredentialStore,
-  InMemoryModelsStore,
-  fauxAssistantMessage,
-  fauxToolCall,
-  fauxProvider,
-} from '@earendil-works/pi-ai';
+import { fauxAssistantMessage, fauxToolCall, fauxProvider } from '@earendil-works/pi-ai';
 import type { FauxProviderHandle } from '@earendil-works/pi-ai';
-import {
-  DefaultResourceLoader,
-  ModelRuntime,
-  SessionManager,
-  SettingsManager,
-  createAgentSession,
-} from '@earendil-works/pi-coding-agent';
 import type {
   AgentSession,
   AgentSessionEvent,
@@ -27,7 +14,9 @@ import type {
 import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
+import { createTemporaryRepository } from './gitRepository.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
+import { createPiSession } from './piSession.js';
 
 // Real Pi sessions and Git commands need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
@@ -54,17 +43,9 @@ interface Harness {
   overlays: string[];
 }
 
-// Isolate fixture commits from user and system Git settings, including hooks.
-const gitEnvironment = {
-  ...process.env,
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_SYSTEM: '/dev/null',
-};
-
 const git = async (repositoryDirectory: string, commandArguments: string[]): Promise<string> => {
   const { stdout } = await execFileAsync('git', commandArguments, {
     cwd: repositoryDirectory,
-    env: gitEnvironment,
   });
 
   return stdout;
@@ -81,16 +62,8 @@ const createTemporaryDirectory = async (
   return directory;
 };
 
-const createTemporaryRepository = async (registerCleanup: RegisterCleanup): Promise<string> => {
-  const repositoryDirectory = await createTemporaryDirectory(registerCleanup, 'tau-flow-repo-');
-
-  await git(repositoryDirectory, ['init', '--initial-branch=main']);
-  // Pi's Git calls do not use gitEnvironment, so disable hooks in the repository too.
-  await appendFile(
-    join(repositoryDirectory, '.git/config'),
-    '\n[user]\n\temail = tau@example.com\n\tname = Tau Test\n[commit]\n\tgpgsign = false\n' +
-      `\n[core]\n\thooksPath = ${JSON.stringify(join(repositoryDirectory, '.no-hooks'))}\n`,
-  );
+const createCommittedRepository = async (registerCleanup: RegisterCleanup): Promise<string> => {
+  const repositoryDirectory = await createTemporaryRepository(registerCleanup, 'tau-flow-repo-');
 
   await writeFile(join(repositoryDirectory, 'README.md'), '# fixture\n', 'utf8');
   await git(repositoryDirectory, ['add', 'README.md']);
@@ -112,7 +85,7 @@ const createHarness = async (
   registerCleanup: RegisterCleanup,
   options: { hasUI?: boolean; delegate?: FauxProviderHandle } = {},
 ): Promise<Harness> => {
-  const repositoryDirectory = await createTemporaryRepository(registerCleanup);
+  const repositoryDirectory = await createCommittedRepository(registerCleanup);
   const agentDirectory = await createTemporaryDirectory(registerCleanup, 'tau-flow-agent-');
 
   isolateWebAccessConfig(agentDirectory, registerCleanup);
@@ -123,50 +96,16 @@ const createHarness = async (
   registerCleanup(() => {
     vi.unstubAllEnvs();
   });
-  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
-  const loader = new DefaultResourceLoader({
+  const { session, extensionsResult } = await createPiSession(registerCleanup, {
     cwd: repositoryDirectory,
-    agentDir: agentDirectory,
-    settingsManager,
-    additionalExtensionPaths: [
+    agentDirectory,
+    providers: delegate === faux ? [faux] : [faux, delegate],
+    tools: ['read', 'bash', 'edit', 'write', 'commit'],
+    extensionPaths: [
       tauExtensionsPath,
       bundledQuestionExtensionPath,
       bundledWebAccessExtensionPath,
     ],
-    noExtensions: true,
-    noSkills: true,
-    noPromptTemplates: true,
-    noThemes: true,
-  });
-
-  await loader.reload();
-
-  const modelRuntime = await ModelRuntime.create({
-    credentials: new InMemoryCredentialStore(),
-    modelsStore: new InMemoryModelsStore(),
-    modelsPath: null,
-    refreshOnCreate: false,
-  });
-
-  modelRuntime.registerNativeProvider(faux.provider);
-
-  if (delegate !== faux) {
-    modelRuntime.registerNativeProvider(delegate.provider);
-  }
-
-  const { session, extensionsResult } = await createAgentSession({
-    cwd: repositoryDirectory,
-    agentDir: agentDirectory,
-    modelRuntime,
-    model: faux.getModel(),
-    resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(repositoryDirectory),
-    settingsManager,
-    tools: ['read', 'bash', 'edit', 'write', 'commit'],
-  });
-
-  registerCleanup(() => {
-    session.dispose();
   });
 
   expect(extensionsResult.errors).toEqual([]);

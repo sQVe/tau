@@ -174,6 +174,7 @@ it('preserves custom thinking profiles and rejects invalid settings without norm
   }
 });
 
+// Loads real extensions from source, which can take several seconds on a busy CI runner.
 it('reproduces CLI provider integrations but refuses runtime headers and invalid authority', async ({
   onTestFinished,
 }) => {
@@ -439,7 +440,7 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
   );
   process.argv = [process.execPath, 'pi'];
   await expect(resolveLoadout(request, context, pi)).rejects.toThrow('CC Safety Net');
-});
+}, 20_000);
 
 it('selects a valid named winner using the strict parser whitespace syntax', ({
   onTestFinished,

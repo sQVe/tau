@@ -2,20 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import {
-  InMemoryCredentialStore,
-  InMemoryModelsStore,
-  fauxAssistantMessage,
-  fauxProvider,
-  fauxToolCall,
-} from '@earendil-works/pi-ai';
-import {
-  DefaultResourceLoader,
-  ModelRuntime,
-  SessionManager,
-  SettingsManager,
-  createAgentSession,
-} from '@earendil-works/pi-coding-agent';
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
 import type { AgentSession } from '@earendil-works/pi-coding-agent';
 import {
   afterEach,
@@ -26,6 +13,8 @@ import {
   vi,
 } from 'vitest';
 import type { TestContext } from 'vitest';
+
+import { createPiSession } from './piSession.js';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -44,45 +33,16 @@ const createHarness = async (registerCleanup: TestContext['onTestFinished']) => 
   const agentDir = join(cwd, 'agent');
   const content = Array.from({ length: 450 }, (_, index) => `line ${index + 1}`).join('\n');
   await writeFile(join(cwd, 'large.txt'), content);
-  const settingsManager = SettingsManager.inMemory({
-    compaction: { enabled: false },
-    retry: { enabled: false },
-  });
-  const loader = new DefaultResourceLoader({
-    cwd,
-    agentDir,
-    settingsManager,
-    additionalExtensionPaths: [resolve(import.meta.dirname, '../src/extensions/bulkRead/index.ts')],
-    noExtensions: true,
-    noSkills: true,
-    noPromptTemplates: true,
-    noThemes: true,
-  });
-  await loader.reload();
 
   const sessionModel = fauxProvider({ provider: 'tau-test' });
   const delegate = fauxProvider({ provider: 'tau-delegate', models: [{ id: 'reader' }] });
-  const modelRuntime = await ModelRuntime.create({
-    credentials: new InMemoryCredentialStore(),
-    modelsStore: new InMemoryModelsStore(),
-    modelsPath: null,
-    refreshOnCreate: false,
-  });
-  modelRuntime.registerNativeProvider(sessionModel.provider);
-  modelRuntime.registerNativeProvider(delegate.provider);
-
-  const { session, extensionsResult } = await createAgentSession({
+  const { session, extensionsResult } = await createPiSession(registerCleanup, {
     cwd,
-    agentDir,
-    modelRuntime,
-    model: sessionModel.getModel(),
-    resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(cwd),
-    settingsManager,
+    agentDirectory: agentDir,
+    providers: [sessionModel, delegate],
     tools: ['read', 'bulk_read'],
-  });
-  registerCleanup(() => {
-    session.dispose();
+    extensionPaths: [resolve(import.meta.dirname, '../src/extensions/bulkRead/index.ts')],
+    settings: { compaction: { enabled: false }, retry: { enabled: false } },
   });
   expect(extensionsResult.errors).toEqual([]);
   await session.bindExtensions({});

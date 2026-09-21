@@ -7,6 +7,7 @@ import { promisify, stripVTControlCharacters } from 'node:util';
 import type { ExtensionAPI, ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, vi } from 'vitest';
 
+import { initializeRepository } from '../../../tests/gitRepository.js';
 import statusbarExtension from './index.js';
 
 const executeFile = promisify(execFile);
@@ -79,7 +80,7 @@ describe('statusbar extension', () => {
   it('reads dirty state without refreshing the shared index', async ({ onTestFinished }) => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
-    await executeFile('git', ['init', '-q'], { cwd: directory });
+    await initializeRepository(directory);
     await writeFile(join(directory, 'tracked'), 'same bytes');
     await executeFile('git', ['add', 'tracked'], { cwd: directory });
     await executeFile(
@@ -118,7 +119,7 @@ describe('statusbar extension', () => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
-    await executeFile('git', ['init', '-q'], { cwd: directory });
+    await initializeRepository(directory);
     await mkdir(join(directory, '.tau'));
     await writeFile(
       join(directory, '.tau/state.json'),
@@ -143,7 +144,7 @@ describe('statusbar extension', () => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
-    await executeFile('git', ['init', '-q'], { cwd: directory });
+    await initializeRepository(directory);
 
     const application = setup(directory);
     await application.emit('session_start');
@@ -222,7 +223,7 @@ describe('statusbar extension', () => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
-    await executeFile('git', ['init', '-q'], { cwd: directory });
+    await initializeRepository(directory);
 
     const application = setup(directory);
     await application.emit('session_start');
@@ -266,7 +267,7 @@ describe('statusbar extension', () => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
-    await executeFile('git', ['init', '-q'], { cwd: directory });
+    await initializeRepository(directory);
     await executeFile('git', ['config', 'status.showUntrackedFiles', 'no'], { cwd: directory });
     await writeFile(join(directory, 'file'), 'untracked');
 

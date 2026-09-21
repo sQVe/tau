@@ -65,6 +65,65 @@ const testSummary = (report: RunnerResult): string[] => {
   return lines;
 };
 
+// Measured on Tau's suite: the median test takes 3 ms and 90% finish within 210 ms.
+const slowTestMilliseconds = 1000;
+const maximumSlowTests = 3;
+const maximumFocusedDurations = 10;
+
+const moreLine = (hidden: number) => (hidden > 0 ? [`  +${hidden} more`] : []);
+
+interface DurationList {
+  header: string | null;
+  entries: string[];
+  limit: number;
+}
+
+const focusedDurations = (report: RunnerResult): DurationList => {
+  const timed = 'tests' in report ? report.tests.filter((test) => test.durationMs != null) : [];
+
+  return {
+    header: null,
+    entries: timed.map((test) => `  ${cap(printable(test.fullname), 200)}: ${test.durationMs} ms`),
+    limit: maximumFocusedDurations,
+  };
+};
+
+// Integration files start real processes, so they would fill this list on every run.
+const slowTests = (cwd: string, report: RunnerResult): DurationList => {
+  const slow = ('tests' in report ? report.tests : [])
+    .filter(
+      (test) =>
+        (test.durationMs ?? 0) > slowTestMilliseconds && !test.file.includes('.integration.'),
+    )
+    .toSorted((first, second) => (second.durationMs ?? 0) - (first.durationMs ?? 0));
+
+  return {
+    header: `Slow tests (over ${slowTestMilliseconds} ms):`,
+    entries: slow.map((test) => {
+      const file = isAbsolute(test.file) ? relative(cwd, test.file) : test.file;
+
+      return `  ${cap(printable(`${file} › ${test.fullname}`), 200)}: ${test.durationMs} ms`;
+    }),
+    limit: maximumSlowTests,
+  };
+};
+
+const pushDurations = (lines: string[], { header, entries, limit }: DurationList) => {
+  for (let shown = Math.min(entries.length, limit); shown > 0; shown -= 1) {
+    const block = [
+      ...(header == null ? [] : [header]),
+      ...entries.slice(0, shown),
+      ...moreLine(entries.length - shown),
+    ];
+
+    if ([...lines, ...block].join('\n').length <= maximumSummaryCharacters) {
+      lines.push(...block);
+
+      return;
+    }
+  }
+};
+
 export const summarize = (cwd: string, observation: Observation): string => {
   const { report, scope, freshness } = observation;
   const lines = [`${report.kind} · ${scope === 'full' ? 'full suite' : 'focused'} · ${freshness}`];
@@ -105,6 +164,8 @@ export const summarize = (cwd: string, observation: Observation): string => {
   if ('truncated' in report && report.truncated) {
     lines.push('further failures were not collected');
   }
+
+  pushDurations(lines, scope === 'full' ? slowTests(cwd, report) : focusedDurations(report));
 
   return cap(printable(lines.join('\n')), maximumSummaryCharacters);
 };

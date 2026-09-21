@@ -40,4 +40,16 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Install herdr
+        env:
+          herdrVersion: 0.9.1
+          herdrSha256: 2a02fed16beb651ef006e1d43f048f652ca4dc58ad053cd2d44450563d5c54b7
+        run: |
+          mkdir -p "${RUNNER_TEMP}/herdr"
+          curl --fail --silent --show-error --location \
+            --output "${RUNNER_TEMP}/herdr/herdr" \
+            "https://github.com/herdrdev/herdr/releases/download/v${herdrVersion}/herdr-linux-x86_64"
+          echo "${herdrSha256}  ${RUNNER_TEMP}/herdr/herdr" | sha256sum --check
+          chmod +x "${RUNNER_TEMP}/herdr/herdr"
+          echo "${RUNNER_TEMP}/herdr" >> "${GITHUB_PATH}"
       - run: pnpm test

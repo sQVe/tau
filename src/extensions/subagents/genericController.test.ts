@@ -7,11 +7,10 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import * as cancellation from './cancellation.js';
 import { WorkerController } from './controller.js';
-import type { HerdrClient } from './controller.js';
+import { herdrFake } from './fixtures/herdrFake.js';
 import { fixtureGenericLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import * as identity from './identity.js';
-import { placementFixture } from './placementFixture.js';
 import { readEvent, readReport, readTask } from './records.js';
 import * as records from './records.js';
 
@@ -26,29 +25,15 @@ const fixture = (kind = 'codex') => {
     parentSession,
     `${JSON.stringify({ type: 'session', version: 3, id: 'parent', cwd: directory })}\n`,
   );
-  const layout = placementFixture(200, 60);
-  const state = {
-    started: false,
-    stopped: false,
-    status: 'idle',
-    kind,
-    startError: '',
-    rejectStart: false,
-    promptError: '',
-    promptBlocked: false,
-    inspectionError: '',
-    ignoreInterrupt: false,
-    session: 'opaque-reference',
-    shell: process.ppid,
-    process: process.pid,
+  const { client, state: herdrState, calls, layout } = herdrFake(kind);
+  const state = Object.assign(herdrState, {
     processStart: execFileSync('ps', ['-p', String(process.pid), '-o', 'lstart='], {
       encoding: 'utf8',
     }).trim(),
     shellStart: execFileSync('ps', ['-p', String(process.ppid), '-o', 'lstart='], {
       encoding: 'utf8',
     }).trim(),
-  };
-  const calls: string[][] = [];
+  });
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   vi.spyOn(identity, 'currentProcessIdentity').mockResolvedValue({
     processId: 300,
@@ -64,96 +49,6 @@ const fixture = (kind = 'codex') => {
 
     return true;
   });
-  const client: HerdrClient = async (argumentsList) => {
-    calls.push(argumentsList);
-    const [surface, action] = argumentsList;
-
-    if (surface === 'agent' && action === 'list') {
-      return JSON.stringify({ result: { type: 'agent_list', agents: [] } });
-    }
-
-    const pane = layout.panes[1];
-
-    if (surface === 'agent' && action === 'start') {
-      if (state.startError) {
-        state.started = !state.rejectStart;
-        throw new Error(state.startError);
-      }
-
-      state.started = true;
-
-      return JSON.stringify({ result: {} });
-    }
-
-    if (action === 'process-info') {
-      const processId = state.started && !state.stopped ? state.process : state.shell;
-
-      return JSON.stringify({
-        result: {
-          process_info: {
-            pane_id: pane?.pane_id,
-            shell_pid: state.shell,
-            foreground_process_group_id: processId,
-            foreground_processes: [{ pid: processId, argv: [state.kind] }],
-          },
-        },
-      });
-    }
-
-    if (surface === 'agent' && action === 'get') {
-      if (state.inspectionError) {
-        throw new Error(state.inspectionError);
-      }
-
-      if (state.rejectStart) {
-        const error = new Error('agent target not found');
-        Object.assign(error, {
-          stderr: JSON.stringify({ error: { code: 'agent_not_found' } }),
-        });
-        throw error;
-      }
-
-      return JSON.stringify({
-        result: {
-          agent: {
-            pane_id: pane?.pane_id,
-            agent: state.kind,
-            agent_status: state.status,
-            agent_session: state.session ? { kind: 'id', value: state.session } : null,
-          },
-        },
-      });
-    }
-
-    if (surface === 'agent' && action === 'read') {
-      return JSON.stringify({ result: { text: 'A bounded native question or approval.' } });
-    }
-
-    if (surface === 'agent' && action === 'prompt') {
-      // Real herdr rejects '--' as text; a separator here would fail delivery.
-      if (argumentsList[3] === '--') {
-        throw new Error('unknown option: text');
-      }
-
-      if (state.promptError) {
-        throw Object.assign(new Error(state.promptError), {
-          stderr: state.promptBlocked ? JSON.stringify({ error: { code: 'agent_blocked' } }) : '',
-        });
-      }
-
-      return JSON.stringify({ result: {} });
-    }
-
-    if (surface === 'agent' && action === 'send-keys') {
-      if (!state.ignoreInterrupt) {
-        state.stopped = true;
-      }
-
-      return JSON.stringify({ result: {} });
-    }
-
-    return layout.client(argumentsList);
-  };
   const notices: string[] = [];
   const finished = Promise.withResolvers<undefined>();
   const controller = new WorkerController(root, client, (message) => {

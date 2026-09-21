@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -7,8 +6,9 @@ import { expect, it, onTestFinished } from 'vitest';
 import { agentPromptArguments, WorkerController } from '../src/extensions/subagents/controller.js';
 import { fixtureGenericLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
 import { isolatedHerdr } from './isolatedHerdr.js';
+import { toolAvailable } from './toolAvailable.js';
 
-const hasHerdr = spawnSync('herdr', ['--version'], { timeout: 2000, stdio: 'ignore' }).status === 0;
+const hasHerdr = toolAvailable('herdr');
 
 it.runIf(hasHerdr)(
   'uses the real herdr transport for generic startup and positional prompts',

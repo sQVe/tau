@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -23,9 +22,10 @@ import { resolveLoadout, validateSavedLoadout } from '../src/extensions/subagent
 import { readAcknowledgement, readReply } from '../src/extensions/subagents/records.js';
 import { object, result, terminalLocation } from '../src/extensions/subagents/terminal.js';
 import { isolatedHerdr } from './isolatedHerdr.js';
+import { toolAvailable } from './toolAvailable.js';
 
-const hasHerdr = spawnSync('herdr', ['--version'], { timeout: 2000, stdio: 'ignore' }).status === 0;
-const hasPi = spawnSync('pi', ['--version'], { timeout: 2000, stdio: 'ignore' }).status === 0;
+const hasHerdr = toolAvailable('herdr');
+const hasPi = toolAvailable('pi');
 
 it
   .runIf(hasHerdr && hasPi)

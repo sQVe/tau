@@ -45,6 +45,7 @@ interface VitestAssertionResult {
   ancestorTitles?: string[];
   status: TestResult['status'] | 'pending' | 'disabled';
   failureMessages?: string[];
+  duration?: number | null;
 }
 
 interface VitestTestFile {
@@ -456,6 +457,27 @@ const selects = (filter: string | undefined) => {
   return (fullname: string) => pattern.test(fullname);
 };
 
+const toTestResult = (
+  file: VitestTestFile,
+  assertion: VitestAssertionResult,
+  version: string,
+): TestResult => {
+  const result: TestResult = {
+    file: file.name ?? '<unknown>',
+    fullname: assertionFullName(assertion, version),
+    status:
+      assertion.status === 'pending' || assertion.status === 'disabled'
+        ? 'skipped'
+        : assertion.status,
+  };
+
+  if (typeof assertion.duration === 'number') {
+    result.durationMs = Math.round(assertion.duration);
+  }
+
+  return result;
+};
+
 const collectTests = (
   report: VitestReport,
   selected: (fullname: string) => boolean,
@@ -464,14 +486,7 @@ const collectTests = (
   (report.testResults ?? []).flatMap((file) =>
     (file.assertionResults ?? [])
       .filter((assertion) => selected(assertionFullName(assertion, version)))
-      .map((assertion) => ({
-        file: file.name ?? '<unknown>',
-        fullname: assertionFullName(assertion, version),
-        status:
-          assertion.status === 'pending' || assertion.status === 'disabled'
-            ? 'skipped'
-            : assertion.status,
-      })),
+      .map((assertion) => toTestResult(file, assertion, version)),
   );
 
 const frameLocation = (line: string, cwd: string): string | null => {
