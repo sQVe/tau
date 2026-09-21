@@ -118,8 +118,21 @@ it('refuses native forks and tree-less saved workers rather than treating them a
   const { tree: _tree, ...treeLess } = task;
   writeFileSync(join(directory, 'task.json'), JSON.stringify(treeLess));
   expect(() => authenticateParent(root, current, processIdentity, directory)).toThrow(
-    'Invalid saved worker task or loadout',
+    'identity does not match',
   );
+});
+
+it('refuses root authority to a live worker whose record uses a retired format', () => {
+  const { root, session, directory, task, processIdentity } = setup();
+  const { harness: _harness, ...unversioned } = task.loadout;
+  writeFileSync(join(directory, 'task.json'), JSON.stringify({ ...task, loadout: unversioned }));
+
+  expect(() => authenticateParent(root, session, processIdentity)).toThrow(
+    'different root identity',
+  );
+  expect(
+    authenticateParent(root, session, { processId: 9000, startedAt: 'root' }).tree.rootSessionId,
+  ).toBe(session.id);
 });
 
 it('authenticates only the active successor while preserving original native ancestry', () => {

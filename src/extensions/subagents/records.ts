@@ -208,6 +208,34 @@ const isUnpublishedDirectory = (directory: string): boolean =>
     (entry) => entry.isFile() && /^\.receipt-[a-f0-9-]+$/.test(entry.name),
   );
 
+// Records from before the current saved format are never read, but they must not block unrelated tasks.
+const isRetiredRecord = (directory: string): boolean => {
+  let value: unknown;
+  try {
+    value = readRecord(directory, 'task.json');
+  } catch {
+    return false;
+  }
+  if (typeof value !== 'object' || value === null || !('loadout' in value)) {
+    return false;
+  }
+  const loadout: unknown = value.loadout;
+  if (typeof loadout !== 'object' || loadout === null) {
+    return false;
+  }
+  const harness = 'harness' in loadout ? loadout.harness : undefined;
+
+  return (
+    harness === undefined ||
+    harness === 'claude' ||
+    (harness === 'pi' &&
+      (!('tree' in value) ||
+        !('providerFingerprintVersion' in loadout) ||
+        loadout.providerFingerprintVersion !== 2 ||
+        !('noExtensions' in loadout)))
+  );
+};
+
 const readScannedTask = (directory: string): Task | undefined => {
   try {
     return readTask(directory);
@@ -260,6 +288,7 @@ const addReferencedTasks = (
 export const readTasks = (
   root: string,
   diagnostics: string[] = [],
+  retired: string[] = [],
 ): { directory: string; task: Task }[] => {
   let entries;
   try {
@@ -276,7 +305,19 @@ export const readTasks = (
     (candidate) => candidate.isDirectory() && candidate.name !== '.admission',
   )) {
     const directory = join(root, entry.name);
-    const task = readScannedTask(directory);
+    let task: Task | undefined;
+    try {
+      task = readScannedTask(directory);
+    } catch (error) {
+      if (!isRetiredRecord(directory)) {
+        throw error;
+      }
+      diagnostics.push(
+        `Skipped task ${entry.name} saved in a retired format; start a fresh task instead.`,
+      );
+      retired.push(directory);
+      continue;
+    }
     if (!task) {
       unpublished.set(entry.name, directory);
       continue;

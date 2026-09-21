@@ -28,11 +28,12 @@ const ownedSchema = Type.Object({
 });
 
 const refuseWorkerProcessAsRoot = (
-  entries: ReturnType<typeof readTasks>,
+  directories: string[],
   processIdentity: { processId: number; startedAt: string },
 ): void => {
   // Removing the locator or switching native sessions cannot turn an owned worker into a root caller.
-  for (const { directory } of entries) {
+  // Retired records are included because a worker launched before an upgrade may still be running.
+  for (const directory of directories) {
     if (!existsSync(join(directory, 'owned.json'))) {
       continue;
     }
@@ -64,7 +65,8 @@ export const authenticateParent = (
   locator?: string,
 ): { tree: NonNullable<Task['tree']>; parent?: Task } => {
   const ancestry = sessionLineage(root, current);
-  const entries = readTasks(root);
+  const retired: string[] = [];
+  const entries = readTasks(root, [], retired);
   const candidates = entries.filter(
     ({ task }) => task.nativeSessionId === current.id || task.nativeSessionFile === current.file,
   );
@@ -113,7 +115,10 @@ export const authenticateParent = (
   if (locator || candidates.length || ancestry.hasWorkerAncestor) {
     throw new Error('Worker native session or parent-owned process identity does not match.');
   }
-  refuseWorkerProcessAsRoot(entries, processIdentity);
+  refuseWorkerProcessAsRoot(
+    [...entries.map(({ directory }) => directory), ...retired],
+    processIdentity,
+  );
 
   return { tree: { ...ancestry.root, monotonicDeadline: Number.MAX_SAFE_INTEGER } };
 };
