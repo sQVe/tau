@@ -15,13 +15,24 @@ const wrappedExpressionTypes = new Set<string>([
   'ParenthesizedExpression',
 ]);
 
-const isWrappedExpression = (node: ESTree.Expression): node is WrappedExpression =>
+const isWrappedExpression = (node: ESTree.Node): node is WrappedExpression =>
   wrappedExpressionTypes.has(node.type);
 
 const isCondition = (node: ESTree.Node): node is ESTree.LogicalExpression =>
   node.type === 'LogicalExpression' && node.operator !== '??';
 
+const isNegation = (node: ESTree.Node): node is ESTree.UnaryExpression =>
+  node.type === 'UnaryExpression' && node.operator === '!';
+
 const collectOperators = (node: ESTree.Node, operators: string[]) => {
+  if (isWrappedExpression(node)) {
+    return collectOperators(node.expression, operators);
+  }
+
+  if (isNegation(node)) {
+    return collectOperators(node.argument, operators);
+  }
+
   if (!isCondition(node)) {
     return operators;
   }
@@ -120,7 +131,17 @@ const stylePlugin: Plugin = {
       create(context) {
         return {
           LogicalExpression(node) {
-            if (!isCondition(node) || isCondition(node.parent)) {
+            if (!isCondition(node)) {
+              return;
+            }
+
+            let parent = node.parent;
+
+            while (isWrappedExpression(parent) || isNegation(parent)) {
+              parent = parent.parent;
+            }
+
+            if (isCondition(parent)) {
               return;
             }
 

@@ -16,15 +16,16 @@ and repository conventions when they differ from these defaults.
 ## Keep functions small
 
 - One function, one job. Split anything that does two.
-- Split a function longer than 60 lines or nested more than 3 levels deep. Split a file longer than
-  500 lines by job.
-- Give a function at most 4 parameters. Group related parameters into one named object.
-- Split a long function by phase. Give each phase its own named function, so the body reads as the
-  list of phases.
-- Declare a callback longer than about 10 lines as its own named function.
+- Review functions longer than 60 lines, files longer than 500 lines, and functions with more than 4
+  parameters. These are review thresholds, not required splits.
+- Keep related control flow and state together when splitting would make a behavior harder to trace.
+  Do not introduce inheritance or parameter objects only to meet a size threshold.
+- Extract a phase or callback when its name and boundary make the caller easier to understand. Group
+  parameters only when they describe one concept.
 - Declare a helper function before the function that uses it. Do not define one in the middle of
   unrelated steps.
-- When a size or complexity lint rule fails, split the code. Do not disable the rule.
+- Prefer simpler control flow when a complexity rule fails. Allow a narrow, explained suppression
+  when keeping the code together makes its behavior easier to understand.
 
 ## Separate logical steps
 

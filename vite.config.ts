@@ -41,12 +41,6 @@ export default defineConfig({
             'eslint/one-var': ['error', 'never'],
             'tau/helper-before-use': 'error',
             'tau/max-condition-checks': 'error',
-            'eslint/max-params': ['error', { max: 4 }],
-            'eslint/max-lines': ['error', { max: 500, skipBlankLines: true, skipComments: true }],
-            'eslint/max-lines-per-function': [
-              'error',
-              { max: 60, skipBlankLines: true, skipComments: true },
-            ],
             '@stylistic/padding-line-between-statements': [
               'error',
               { blankLine: 'always', prev: '*', next: 'return' },
@@ -286,9 +280,6 @@ export default defineConfig({
           'unicorn/no-await-expression-member': 'off',
           'eslint/complexity': 'off',
           'eslint/max-depth': 'off',
-          'eslint/max-params': 'off',
-          'eslint/max-lines': 'off',
-          'eslint/max-lines-per-function': 'off',
           // Tests isolate the real process environment.
           'node/no-process-env': 'off',
         },
