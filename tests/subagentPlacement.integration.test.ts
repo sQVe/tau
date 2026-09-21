@@ -1,5 +1,3 @@
-import { spawnSync } from 'node:child_process';
-
 import { expect, it } from 'vitest';
 
 import { minimumPane } from '../src/extensions/subagents/foreground.js';
@@ -12,8 +10,9 @@ import {
   terminalLocation,
 } from '../src/extensions/subagents/terminal.js';
 import { isolatedHerdr } from './isolatedHerdr.js';
+import { toolAvailable } from './toolAvailable.js';
 
-const hasHerdr = spawnSync('herdr', ['--version'], { timeout: 2000, stdio: 'ignore' }).status === 0;
+const hasHerdr = toolAvailable('herdr');
 
 it.runIf(hasHerdr).each([
   [340, 100, 2],
