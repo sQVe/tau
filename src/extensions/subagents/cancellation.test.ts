@@ -55,7 +55,9 @@ it('resolves moved terminal identity before sending cancellation keys', async ()
   };
   const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);
 
-  expect(calls.at(-1)).toEqual(['agent', 'send-keys', 'new:pane', 'escape', 'ctrl+c', 'ctrl+d']);
+  expect(calls.filter((call) => call[1] === 'send-keys')).toEqual([
+    ['agent', 'send-keys', 'new:pane', 'escape', 'ctrl+c', 'ctrl+d'],
+  ]);
   expect(result.cleanup).toBe('unconfirmed');
   expect(calls.flat()).not.toContain('old:pane');
 });
@@ -267,7 +269,9 @@ it('requests active Pi abort before attempting editor shutdown without claiming 
   };
   const result = await cancelOwnedWorker(owned, 100, client, new AbortController().signal);
 
-  expect(calls.at(-1)).toEqual(['agent', 'send-keys', 'owned', 'escape', 'ctrl+c', 'ctrl+d']);
+  expect(calls.filter((call) => call[1] === 'send-keys')).toEqual([
+    ['agent', 'send-keys', 'owned', 'escape', 'ctrl+c', 'ctrl+d'],
+  ]);
   expect(result.cleanup).toBe('unconfirmed');
   expect(result.detail).toContain('manual cleanup');
 });
@@ -292,4 +296,50 @@ it('matches a Pi worker by start time when herdr omits its argv', () => {
   expect(matchesWorker(information, { ...worker, kind: 'process', token: '/tmp/worker' })).toBe(
     false,
   );
+});
+
+it('confirms a worker that exits during identity checks without sending input', async () => {
+  const calls: string[][] = [];
+  const owned = {
+    kind: 'process' as const,
+    paneId: 'pane',
+    terminalId: 'terminal',
+    shellPid: 100,
+    processId: 101,
+    token: '/tmp/worker',
+  };
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+  });
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
+  const client = async (argumentsList: string[]) => {
+    calls.push(argumentsList);
+
+    if (argumentsList[1] === 'list') {
+      return JSON.stringify({
+        result: {
+          panes: [
+            { pane_id: 'pane', terminal_id: 'terminal', workspace_id: 'workspace', tab_id: 'tab' },
+          ],
+        },
+      });
+    }
+
+    return JSON.stringify({
+      result: {
+        process_info: {
+          pane_id: 'pane',
+          shell_pid: owned.shellPid,
+          foreground_process_group_id: owned.shellPid,
+          foreground_processes: [{ pid: owned.shellPid, argv: ['zsh'] }],
+        },
+      },
+    });
+  };
+  const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);
+
+  expect(result.cleanup).toBe('confirmed');
+  expect(calls.some((call) => call[1] === 'send-keys')).toBe(false);
 });

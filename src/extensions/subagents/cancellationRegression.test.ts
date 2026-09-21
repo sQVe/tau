@@ -344,7 +344,10 @@ describe('owned worker cancellation', () => {
       );
 
       expect(result.cleanup).toBe('refused');
-      expect(client).toHaveBeenCalledTimes(1);
+      expect(client.mock.calls.map(([call]) => call.slice(0, 2))).toEqual([
+        ['pane', 'process-info'],
+        ['pane', 'process-info'],
+      ]);
     },
   );
 

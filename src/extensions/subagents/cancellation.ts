@@ -166,6 +166,34 @@ const stopConfirmed: CleanupResult = {
     'The owned process is absent and its shell is foreground; detached or background descendants are not covered.',
 };
 
+// Follows the same terminal if it moves while shutdown is pending.
+const hasStopped = async (
+  worker: Omit<OwnedWorker, 'paneId'> & { paneId: string },
+  call: (argumentsList: string[]) => Promise<string>,
+  signal: AbortSignal,
+) => {
+  const location = await resolveTerminal(worker.terminalId, call);
+  worker.paneId = location.paneId;
+  const after = processInfo(await call(['pane', 'process-info', '--pane', worker.paneId]));
+
+  if (!workerStopped(after, worker)) {
+    return false;
+  }
+
+  if (worker.kind === 'generic') {
+    const shellStart = await runClient(
+      'ps',
+      ['-p', String(worker.shellPid), '-o', 'lstart='],
+      1000,
+      signal,
+    );
+
+    return shellStart.trim() === worker.shellStartedAt;
+  }
+
+  return true;
+};
+
 const waitForStop = async (
   owned: OwnedWorker,
   call: (argumentsList: string[]) => Promise<string>,
@@ -174,29 +202,7 @@ const waitForStop = async (
 ): Promise<CleanupResult> => {
   const worker = { ...owned };
   let pressedAt = performance.now();
-  // Follow the same terminal if it moves while shutdown is pending.
-  const stopped = async () => {
-    const location = await resolveTerminal(worker.terminalId, call);
-    worker.paneId = location.paneId;
-    const after = processInfo(await call(['pane', 'process-info', '--pane', worker.paneId]));
-
-    if (!workerStopped(after, worker)) {
-      return false;
-    }
-
-    if (worker.kind === 'generic') {
-      const shellStart = await runClient(
-        'ps',
-        ['-p', String(worker.shellPid), '-o', 'lstart='],
-        1000,
-        signal,
-      );
-
-      return shellStart.trim() === worker.shellStartedAt;
-    }
-
-    return true;
-  };
+  const stopped = () => hasStopped(worker, call, signal);
 
   for (;;) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- Confirm the foreground job ended within the same cancellation budget.
@@ -338,15 +344,22 @@ export const cancelOwnedWorker = async (
     return undefined;
   };
 
+  // The worker can exit on its own during checks or input, which fails them.
+  const stoppedAnyway = () => hasStopped({ ...owned }, call, signal).catch(() => false);
+
   try {
     const refused = await interrupt();
 
     if (refused) {
-      return refused;
+      return (await stoppedAnyway()) ? stopConfirmed : refused;
     }
 
     return await waitForStop(owned, call, signal, interrupt);
   } catch (error) {
+    if (await stoppedAnyway()) {
+      return stopConfirmed;
+    }
+
     return {
       cleanup:
         !shutdown.inputAttempted && error instanceof TerminalIdentityError
