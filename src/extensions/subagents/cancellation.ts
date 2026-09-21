@@ -294,7 +294,9 @@ const agentSessionMatches = (agent: Record<string, unknown>, owned: OwnedWorker)
   }
 
   if (owned.nativeReference === undefined) {
-    return false;
+    // Allow cancellation before the optional native reference arrives; this does not establish ownership.
+    // interruptWorker must still verify process and shell start identities and the foreground worker before input.
+    return true;
   }
 
   return (
@@ -434,7 +436,8 @@ const failedCleanup = (error: unknown, run: CancellationRun): CleanupResult => {
   return { cleanup, detail: `${String(error)} ${run.manual}` };
 };
 
-// Local herdr only. This is identity-checked terminal input, not containment or atomic compare-and-stop.
+// Requires herdr and the worker on this machine because process identity checks use local ps.
+// Terminal input is identity-checked, not containment or atomic compare-and-stop.
 export const cancelOwnedWorker = async (
   worker: OwnedWorker,
   budget: number,

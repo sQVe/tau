@@ -194,6 +194,18 @@ it('retains ownership through transient inspection and partial reports without u
   });
 });
 
+it('cancels an identity-checked generic worker before a native reference is available', async () => {
+  const setup = fixture();
+  setup.state.session = '';
+  const started = await setup.controller.launch(setup.input);
+
+  const status = await setup.controller.cancel(started.taskId, 'parent');
+
+  expect(status).toMatchObject({ outcome: 'cancelled', stopped: true, capacityHeld: false });
+  expect(setup.calls).toContainEqual(['agent', 'send-keys', 'worker-1', 'ctrl+c']);
+  expect(setup.calls).toContainEqual(['pane', 'close', 'worker-1']);
+});
+
 it('persists a late native reference and refuses input after that reference changes', async () => {
   const setup = fixture();
   setup.state.session = '';
