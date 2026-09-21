@@ -33,6 +33,8 @@ Keep tests fast so the full suite stays practical as coverage grows.
   existing fakes rather than building a second implementation in mocks.
 - Keep real Git, filesystem, and Pi integration tests where those boundaries matter. Do not remove
   assertions or skip failure cases to save time.
+- Create Git repositories with `tests/gitRepository.ts`. `vite.config.ts` sets the Git environment
+  for every test process, so Git ignores user and system configuration, also in the code under test.
 - Use fake timers for time-based logic, faking `Date` and `performance` together, and explicit
   signals for async coordination. Keep real timers where elapsed time or process termination is the
   behavior under test.

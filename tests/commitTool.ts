@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
-import { appendFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -11,6 +11,7 @@ import { afterEach, vi } from 'vitest';
 import type { reviewComments } from '../src/extensions/commit/commentReview.js';
 import type { CommitInput } from '../src/extensions/commit/tool.js';
 import { createCommitTool as createReviewedCommitTool } from '../src/extensions/commit/tool.js';
+import { initializeRepository } from './gitRepository.js';
 
 // Git tests use a clean reviewer.
 // tests/commitFlow.integration.test.ts covers real Pi review.
@@ -79,11 +80,7 @@ export const createTemporaryRepository = async (): Promise<string> => {
   const repositoryDirectory = await mkdtemp(join(tmpdir(), 'tau-commit-'));
   temporaryDirectories.push(repositoryDirectory);
 
-  await git(repositoryDirectory, ['init']);
-  await appendFile(
-    join(repositoryDirectory, '.git/config'),
-    '\n[user]\n\tname = Tau Test\n\temail = tau@example.com\n[commit]\n\tgpgsign = false\n',
-  );
+  await initializeRepository(repositoryDirectory);
 
   return repositoryDirectory;
 };

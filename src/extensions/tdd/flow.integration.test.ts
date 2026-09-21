@@ -27,6 +27,7 @@ import type {
 import type { TestContext } from 'vitest';
 import { expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
 
+import { initializeRepository } from '../../../tests/gitRepository.js';
 import { isolateWebAccessConfig } from '../../../tests/isolateWebAccessConfig.js';
 import type { createTestObservation } from './observation.js';
 
@@ -43,7 +44,7 @@ const createWorktree = async (cleanup: TestContext['onTestFinished']) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-tdd-'));
   cleanup(() => rm(cwd, { recursive: true, force: true }));
 
-  await promisify(execFile)('git', ['init', '--quiet', cwd]);
+  await initializeRepository(cwd);
   await symlink(resolve('node_modules'), join(cwd, 'node_modules'), 'dir');
   await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
   await writeFile(join(cwd, 'vite.config.ts'), 'export default {};');

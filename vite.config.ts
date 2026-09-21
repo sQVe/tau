@@ -8,6 +8,18 @@ export default defineConfig({
   test: {
     // Integration tests launch Git, Node, and nested Vitest processes. Limit competing workers.
     maxWorkers: 6,
+    // Git in tests, and in the code under test, must ignore the developer's configuration.
+    env: {
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_AUTHOR_NAME: 'Tau Test',
+      GIT_AUTHOR_EMAIL: 'tau@example.com',
+      GIT_AUTHOR_DATE: '2005-04-07T22:13:13Z',
+      GIT_COMMITTER_NAME: 'Tau Test',
+      GIT_COMMITTER_EMAIL: 'tau@example.com',
+      GIT_COMMITTER_DATE: '2005-04-07T22:13:13Z',
+      TZ: 'UTC',
+    },
   },
   lint: {
     plugins: ['typescript', 'unicorn', 'oxc', 'import', 'vitest', 'node'],

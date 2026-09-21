@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { appendFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import type { ExtensionAPI, ToolCallEvent, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { initializeRepository } from '../../../tests/gitRepository.js';
 import * as commentReview from './commentReview.js';
 import { commitGuardReason, guardToolCall } from './guard.js';
 import commitExtension from './index.js';
@@ -78,11 +79,7 @@ const createTemporaryRepository = async (): Promise<string> => {
   const repositoryDirectory = await mkdtemp(join(tmpdir(), 'tau-commit-guard-'));
   temporaryDirectories.push(repositoryDirectory);
 
-  await git(repositoryDirectory, ['init']);
-  await appendFile(
-    join(repositoryDirectory, '.git/config'),
-    '\n[user]\n\tname = Tau Test\n\temail = tau@example.com\n[commit]\n\tgpgsign = false\n',
-  );
+  await initializeRepository(repositoryDirectory);
 
   return repositoryDirectory;
 };
