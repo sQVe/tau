@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import * as cancellation from './cancellation.js';
-import { WorkerController } from './controller.js';
+import { type HerdrClient, WorkerController } from './controller.js';
 import { herdrFake } from './fixtures/herdrFake.js';
 import { fixtureGenericLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
@@ -25,7 +25,13 @@ const fixture = (kind = 'codex') => {
     parentSession,
     `${JSON.stringify({ type: 'session', version: 3, id: 'parent', cwd: directory })}\n`,
   );
-  const { client, state: herdrState, calls, layout } = herdrFake(kind);
+  const { client: fakeClient, state: herdrState, calls, layout } = herdrFake(kind);
+  const budgets: number[] = [];
+  const client: HerdrClient = async (argumentsList, budget, signal) => {
+    budgets.push(budget);
+
+    return fakeClient(argumentsList, budget, signal);
+  };
   const state = Object.assign(herdrState, {
     processStart: execFileSync('ps', ['-p', String(process.pid), '-o', 'lstart='], {
       encoding: 'utf8',
@@ -91,6 +97,7 @@ const fixture = (kind = 'codex') => {
     controller,
     state,
     calls,
+    budgets,
     notices,
     input,
     layout,
@@ -144,6 +151,17 @@ it.each(['claude', 'codex', 'gemini'])(
     expect(setup.calls).toContainEqual(['pane', 'close', 'worker-1']);
   },
 );
+
+it('caps each herdr call while polling a long-running generic worker', async () => {
+  const setup = fixture();
+  await setup.controller.launch({ ...setup.input, timeout: 120_000 });
+  setup.budgets.length = 0;
+
+  await vi.advanceTimersByTimeAsync(1500);
+
+  expect(setup.budgets.length).toBeGreaterThan(0);
+  expect(Math.max(...setup.budgets)).toBeLessThanOrEqual(30_000);
+});
 
 it('retains ownership through transient inspection and partial reports without unsafe input', async () => {
   const setup = fixture();

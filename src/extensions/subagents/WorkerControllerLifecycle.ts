@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 
 import { requireActiveAncestry } from './admission.js';
-import { remainingWorkBudget } from './controllerBudget.js';
+import { remainingWorkBudget, workBudget } from './controllerBudget.js';
 import { inspectWorker, processAbsent } from './controllerInspect.js';
 import {
   cleanupDetail,
@@ -143,7 +143,7 @@ export class WorkerControllerLifecycle extends WorkerControllerLaunch {
     }
 
     const call = (argumentsList: string[]) =>
-      this.client(argumentsList, remainingWorkBudget(handle), handle.abort.signal);
+      this.client(argumentsList, workBudget(handle), handle.abort.signal);
     const previousState = handle.nativeState;
 
     handle.owned = await inspectWorker(handle, call);
