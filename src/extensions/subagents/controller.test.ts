@@ -17,6 +17,7 @@ import { inheritedInstructions } from './admission.js';
 import * as cancellationModule from './cancellation.js';
 import { WorkerController, taskStatus, workerArguments } from './controller.js';
 import type { HerdrClient } from './controller.js';
+import { herdrFake } from './fixtures/herdrFake.js';
 import { fixtureLoadout, readPiTask as readTask } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import * as identity from './identity.js';
@@ -53,7 +54,11 @@ const setup = (
     join(directory, 'parent.jsonl'),
     `${JSON.stringify({ type: 'session', version: 3, id: 'parent-id', cwd: directory })}\n`,
   );
-  let token = '';
+  const fake = herdrFake('pi');
+  fake.state.shell = 100;
+  // Input delivery fails in these tests, so the worker process stays alive after cancellation.
+  fake.state.sendKeysError = 'Injected herdr failure; active process remains alive.';
+  fake.state.promptError = 'Injected herdr failure; active process remains alive.';
   let recordDirectory = '';
   const calls: string[][] = [];
   const client: HerdrClient = async (argumentsList, budget, signal) => {
@@ -67,56 +72,17 @@ const setup = (
       }
     }
 
-    if (argumentsList[0] === 'agent' && argumentsList[1] === 'list') {
-      return JSON.stringify({ result: { type: 'agent_list', agents: [] } });
-    }
-
-    const parent = {
-      pane_id: 'parent-pane',
-      terminal_id: 'parent-terminal',
-      workspace_id: 'workspace',
-      tab_id: 'tab',
-    };
-    const owned = {
-      pane_id: 'owned-pane',
-      terminal_id: 'owned-terminal',
-      workspace_id: 'workspace',
-      tab_id: 'tab',
-    };
-
-    if (argumentsList[1] === 'current') {
-      return JSON.stringify({ result: { pane: parent } });
-    }
-
-    if (argumentsList[1] === 'list') {
-      return JSON.stringify({ result: { panes: [parent, owned] } });
-    }
-
-    if (argumentsList[1] === 'layout') {
-      return JSON.stringify({
-        result: {
-          layout: {
-            workspace_id: 'workspace',
-            tab_id: 'tab',
-            zoomed: false,
-            area: { width: 200, height: 60 },
-            panes: [{ pane_id: parent.pane_id, rect: { width: 200, height: 60 } }],
-          },
-        },
-      });
-    }
-
     if (argumentsList[1] === 'split') {
       recordDirectory =
         argumentsList
           .find((argument) => argument.startsWith('TAU_WORKER_RECORD='))
           ?.slice('TAU_WORKER_RECORD='.length) ?? '';
-
-      return JSON.stringify({ result: { pane: owned } });
     }
 
     if (argumentsList[1] === 'start') {
-      token = argumentsList[argumentsList.indexOf('--session') + 1] ?? '';
+      const token = argumentsList[argumentsList.indexOf('--session') + 1] ?? '';
+      fake.state.session = token;
+      fake.state.processArguments = ['pi', token];
       const task = readTask(recordDirectory);
       const ready = () => {
         recordEvent(recordDirectory, task.taskId, 'ready', 'Ready.', false, process.pid);
@@ -127,30 +93,9 @@ const setup = (
       } else if (readyDelay === 0) {
         ready();
       }
-
-      return JSON.stringify({ result: {} });
     }
 
-    if (argumentsList[1] === 'process-info') {
-      return JSON.stringify({
-        result: {
-          process_info: {
-            pane_id: 'owned-pane',
-            shell_pid: 100,
-            foreground_process_group_id: process.pid,
-            foreground_processes: [{ pid: process.pid, argv: ['pi', token] }],
-          },
-        },
-      });
-    }
-
-    if (argumentsList[1] === 'get') {
-      return JSON.stringify({
-        result: { agent: { pane_id: 'owned-pane', agent: 'pi', agent_session: { value: token } } },
-      });
-    }
-
-    throw new Error('Injected herdr failure; active process remains alive.');
+    return fake.client(argumentsList, budget, signal);
   };
   const notifications: string[] = [];
   const controller = new WorkerController(directory, client, (message) =>
@@ -165,7 +110,7 @@ const setup = (
     timeout: 10_000,
     parentSession: join(directory, 'parent.jsonl'),
     parentSessionId: 'parent-id',
-    parentPane: 'parent-pane',
+    parentPane: 'parent',
   };
 
   return { directory, controller, client, calls, notifications, input };
@@ -253,7 +198,7 @@ it('skips unpublished preparation debris while published attempts and claims rem
     timeout: 10000,
     parentSession: current.file,
     parentSessionId: current.id,
-    parentPane: 'parent-pane',
+    parentPane: 'parent',
   };
   const context = { cwd: fixture.directory, isProjectTrusted: () => true } as Parameters<
     WorkerController['followUp']
@@ -911,7 +856,7 @@ it('delivers a clarification once without treating herdr delivery as acknowledge
   expect(result).toMatchObject({ workerAcknowledged: false });
   await controller.reply(task.taskId, 'parent-id', answer);
   expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
-  expect(calls.find((call) => call[1] === 'prompt')?.[2]).toBe('owned-pane');
+  expect(calls.find((call) => call[1] === 'prompt')?.[2]).toBe('worker-1');
   expect(records.readTask(launched.directory)).toEqual(task);
   expect(
     records.readAcknowledgement(launched.directory, task.taskId, question.questionId),
@@ -947,7 +892,7 @@ it.each(['before', 'during'] as const)(
             panes: [
               {
                 pane_id: movedPane,
-                terminal_id: 'owned-terminal',
+                terminal_id: 'terminal-1',
                 workspace_id: 'other-workspace',
                 tab_id: 'other-tab',
               },
@@ -970,7 +915,7 @@ it.each(['before', 'during'] as const)(
       }
 
       if (argumentsList[1] === 'get') {
-        const paneId = moved ? movedPane : 'owned-pane';
+        const paneId = moved ? movedPane : 'worker-1';
         moved = true;
 
         return JSON.stringify({
@@ -1091,7 +1036,7 @@ it('refuses reply delivery when the original native worker identity changes', as
     changed && argumentsList[1] === 'get'
       ? JSON.stringify({
           result: {
-            agent: { pane_id: 'owned-pane', agent: 'pi', agent_session: { value: '/wrong.jsonl' } },
+            agent: { pane_id: 'worker-1', agent: 'pi', agent_session: { value: '/wrong.jsonl' } },
           },
         })
       : '',
@@ -1217,7 +1162,7 @@ it('chooses a down split for a narrow tall parent without changing focus', async
       return JSON.stringify({
         result: {
           pane: {
-            pane_id: 'parent-pane',
+            pane_id: 'parent',
             terminal_id: 'parent-terminal',
             workspace_id: 'workspace',
             tab_id: 'tab',
@@ -1231,14 +1176,14 @@ it('chooses a down split for a narrow tall parent without changing focus', async
         result: {
           panes: [
             {
-              pane_id: 'parent-pane',
+              pane_id: 'parent',
               terminal_id: 'parent-terminal',
               workspace_id: 'workspace',
               tab_id: 'tab',
             },
             {
-              pane_id: 'owned-pane',
-              terminal_id: 'owned-terminal',
+              pane_id: 'worker-1',
+              terminal_id: 'terminal-1',
               workspace_id: 'workspace',
               tab_id: 'tab',
             },
@@ -1255,7 +1200,7 @@ it('chooses a down split for a narrow tall parent without changing focus', async
             tab_id: 'tab',
             zoomed: false,
             area: { width: 100, height: 90 },
-            panes: [{ pane_id: 'parent-pane', rect: { width: 100, height: 90 } }],
+            panes: [{ pane_id: 'parent', rect: { width: 100, height: 90 } }],
           },
         },
       });
@@ -1284,7 +1229,7 @@ it.each(['moved', 'duplicate', 'missing', 'replacement job'] as const)(
       if (argumentsList[1] === 'list') {
         const pane = {
           pane_id: 'other-workspace:pane',
-          terminal_id: 'owned-terminal',
+          terminal_id: 'terminal-1',
           workspace_id: 'other-workspace',
           tab_id: 'other-workspace:tab',
         };
@@ -1329,7 +1274,7 @@ it.each(['moved', 'duplicate', 'missing', 'replacement job'] as const)(
       scenario === 'moved' ? [['pane', 'close', 'other-workspace:pane']] : [],
     );
     expect(cleanupCalls.some((call) => call[1] === 'send-keys')).toBe(false);
-    expect(cleanupCalls.flat()).not.toContain('owned-pane');
+    expect(cleanupCalls.flat()).not.toContain('worker-1');
     expect(cancelled.stopped).toBe(scenario === 'moved');
     expect(cancelled.deadline).toBe(launched.deadline);
   },
@@ -1362,8 +1307,8 @@ it('retains confirmed terminal evidence when cancelled during the cosmetic place
 
   expect(evidence).toContain('pane.json');
   expect(JSON.parse(readFileSync(join(recordDirectory, 'pane.json'), 'utf8'))).toMatchObject({
-    paneId: 'owned-pane',
-    terminalId: 'owned-terminal',
+    paneId: 'worker-1',
+    terminalId: 'terminal-1',
   });
   expect(status).toMatchObject({
     outcome: 'cancelled',
@@ -1372,8 +1317,8 @@ it('retains confirmed terminal evidence when cancelled during the cosmetic place
     accepted: false,
     ready: false,
   });
-  expect(status.cleanup).toContain('owned-pane');
-  expect(release).toHaveBeenCalledWith('owned-terminal');
+  expect(status.cleanup).toContain('worker-1');
+  expect(release).toHaveBeenCalledWith('terminal-1');
   expect(calls.some((call) => ['start', 'close', 'send-keys'].includes(call[1]!))).toBe(false);
 });
 
@@ -1501,7 +1446,7 @@ it('stops dispatched work when the launch status finds corrupt report evidence',
     expect(notifications).toHaveLength(1);
   });
   expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
-  expect(notifications[0]).toContain('owned-pane');
+  expect(notifications[0]).toContain('worker-1');
   expect(readFileSync(join(recordDirectory, 'report.json'), 'utf8')).toBe('{');
 });
 
@@ -1757,7 +1702,7 @@ it('detects an owned worker exiting before readiness without waiting for the tas
       return JSON.stringify({
         result: {
           process_info: {
-            pane_id: 'owned-pane',
+            pane_id: 'worker-1',
             shell_pid: 100,
             foreground_process_group_id: 100,
             foreground_processes: [{ pid: 100, argv: ['sh'] }],
@@ -1791,7 +1736,7 @@ it.each(['missing report', 'accepted report'])(
           return JSON.stringify({
             result: {
               process_info: {
-                pane_id: 'owned-pane',
+                pane_id: 'worker-1',
                 shell_pid: 100,
                 foreground_process_group_id: 100,
               },
@@ -1861,7 +1806,7 @@ it('cleans up an owned live pane even when startup failure evidence is corrupt',
   expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
   expect(calls.some((call) => call[1] === 'close')).toBe(false);
   expect(readFileSync(join(recordDirectory, 'startupFailure.json'), 'utf8')).toBe('{');
-  expect(notifications.join('\n')).toContain('owned-pane');
+  expect(notifications.join('\n')).toContain('worker-1');
   expect(notifications.join('\n')).toMatch(/records|evidence/i);
 });
 
@@ -1895,7 +1840,7 @@ it('reports both startup and receipt failures after attempting owned pane cleanu
   expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
   expect(notifications.join('\n')).toContain('Injected startup receipt write failure');
   expect(notifications.join('\n')).toContain('Injected worker identity probe failure');
-  expect(notifications.join('\n')).toContain('owned-pane');
+  expect(notifications.join('\n')).toContain('worker-1');
 });
 
 it.each(['cancelled', 'timeout'] as const)(
@@ -1924,7 +1869,7 @@ it.each(['cancelled', 'timeout'] as const)(
     expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
     expect(calls.some((call) => call[1] === 'close')).toBe(false);
     expect(notifications.join('\n')).toContain('Injected receipt write failure');
-    expect(notifications.join('\n')).toContain('owned-pane');
+    expect(notifications.join('\n')).toContain('worker-1');
     expect(readFileSync(join(launched.directory, 'report.json'), 'utf8')).toBe('{');
   },
 );
@@ -1940,7 +1885,7 @@ it('uses in-memory ownership to cancel even when the saved task is corrupt', asy
   await expect(cancelled).rejects.toThrow(/evidence/);
   await expect(cancelled).rejects.toThrow(launched.nativeSessionFile);
   expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
-  expect(notifications.join('\n')).toContain('owned-pane');
+  expect(notifications.join('\n')).toContain('worker-1');
   expect(readFileSync(join(launched.directory, 'task.json'), 'utf8')).toBe('{');
 });
 

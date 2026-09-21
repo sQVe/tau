@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import * as timeout from './cancellation.js';
+import { agentResponse, paneListResponse, processInfoResponse } from './fixtures/herdrFake.js';
 
 type Client = Parameters<typeof timeout.cancelOwnedWorker>[2];
 
@@ -15,15 +16,11 @@ const owned = {
   token: '/tmp/owned-session.jsonl',
 };
 const snapshot = (processId = owned.processId, token = owned.token) =>
-  JSON.stringify({
-    result: {
-      process_info: {
-        pane_id: owned.paneId,
-        shell_pid: owned.shellPid,
-        foreground_process_group_id: processId,
-        foreground_processes: [{ pid: processId, argv: ['pi', '--session', token] }],
-      },
-    },
+  processInfoResponse({
+    paneId: owned.paneId,
+    shellPid: owned.shellPid,
+    processId: processId,
+    argv: ['pi', '--session', token],
   });
 
 const shell = () => snapshot(owned.shellPid);
@@ -52,15 +49,11 @@ const genericSnapshot = (
   worker: { paneId: string; shellPid: number; processId: number },
   processId = worker.processId,
 ) =>
-  JSON.stringify({
-    result: {
-      process_info: {
-        pane_id: worker.paneId,
-        shell_pid: worker.shellPid,
-        foreground_process_group_id: processId,
-        foreground_processes: [{ pid: processId, argv: ['codex'] }],
-      },
-    },
+  processInfoResponse({
+    paneId: worker.paneId,
+    shellPid: worker.shellPid,
+    processId: processId,
+    argv: ['codex'],
   });
 
 const shellSnapshot = (worker: { paneId: string; shellPid: number }) =>
@@ -78,18 +71,14 @@ const withInventory =
   (client: Client): Client =>
   async (argumentsList, budget, signal) => {
     if (argumentsList[1] === 'list') {
-      return JSON.stringify({
-        result: {
-          panes: [
-            {
-              pane_id: owned.paneId,
-              terminal_id: owned.terminalId,
-              workspace_id: 'w1',
-              tab_id: 'w1:t1',
-            },
-          ],
+      return paneListResponse([
+        {
+          pane_id: owned.paneId,
+          terminal_id: owned.terminalId,
+          workspace_id: 'w1',
+          tab_id: 'w1:t1',
         },
-      });
+      ]);
     }
 
     return client(argumentsList, budget, signal);
@@ -107,10 +96,10 @@ describe('owned worker cancellation', () => {
   });
 
   it('uses Pi clear then exit keys instead of a terminal interrupt', async () => {
-    const recognized = JSON.stringify({
-      result: {
-        agent: { pane_id: owned.paneId, agent: 'pi', agent_session: { value: owned.token } },
-      },
+    const recognized = agentResponse({
+      pane_id: owned.paneId,
+      agent: 'pi',
+      agent_session: { value: owned.token },
     });
     const client = vi
       .fn<Client>()

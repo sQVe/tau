@@ -1,6 +1,7 @@
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { cancelOwnedWorker, matchesWorker } from './cancellation.js';
+import { agentResponse, paneListResponse, processInfoResponse } from './fixtures/herdrFake.js';
 
 it('resolves moved terminal identity before sending cancellation keys', async () => {
   const calls: string[][] = [];
@@ -16,38 +17,30 @@ it('resolves moved terminal identity before sending cancellation keys', async ()
     calls.push(argumentsList);
 
     if (argumentsList[1] === 'list') {
-      return JSON.stringify({
-        result: {
-          panes: [
-            {
-              pane_id: 'new:pane',
-              terminal_id: 'terminal',
-              workspace_id: 'new',
-              tab_id: 'new:tab',
-            },
-          ],
+      return paneListResponse([
+        {
+          pane_id: 'new:pane',
+          terminal_id: 'terminal',
+          workspace_id: 'new',
+          tab_id: 'new:tab',
         },
-      });
+      ]);
     }
 
     if (argumentsList[1] === 'get') {
-      return JSON.stringify({
-        result: {
-          agent: { pane_id: 'new:pane', agent: 'pi', agent_session: { value: owned.token } },
-        },
+      return agentResponse({
+        pane_id: 'new:pane',
+        agent: 'pi',
+        agent_session: { value: owned.token },
       });
     }
 
     if (argumentsList[1] === 'process-info') {
-      return JSON.stringify({
-        result: {
-          process_info: {
-            pane_id: 'new:pane',
-            shell_pid: 1,
-            foreground_process_group_id: process.pid,
-            foreground_processes: [{ pid: process.pid, argv: ['pi', owned.token] }],
-          },
-        },
+      return processInfoResponse({
+        paneId: 'new:pane',
+        shellPid: 1,
+        processId: process.pid,
+        argv: ['pi', owned.token],
       });
     }
 
@@ -84,18 +77,14 @@ it('follows a second move while confirming cancellation without sending input tw
     calls.push(argumentsList);
 
     if (argumentsList[1] === 'list') {
-      return JSON.stringify({
-        result: {
-          panes: [
-            {
-              pane_id: paneId,
-              terminal_id: owned.terminalId,
-              workspace_id: 'workspace',
-              tab_id: 'tab',
-            },
-          ],
+      return paneListResponse([
+        {
+          pane_id: paneId,
+          terminal_id: owned.terminalId,
+          workspace_id: 'workspace',
+          tab_id: 'tab',
         },
-      });
+      ]);
     }
 
     if (argumentsList[1] === 'send-keys') {
@@ -107,15 +96,11 @@ it('follows a second move while confirming cancellation without sending input tw
 
     const processId = stopped ? owned.shellPid : owned.processId;
 
-    return JSON.stringify({
-      result: {
-        process_info: {
-          pane_id: paneId,
-          shell_pid: owned.shellPid,
-          foreground_process_group_id: processId,
-          foreground_processes: [{ pid: processId, argv: [owned.token] }],
-        },
-      },
+    return processInfoResponse({
+      paneId: paneId,
+      shellPid: owned.shellPid,
+      processId: processId,
+      argv: [owned.token],
     });
   };
   const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);
@@ -159,15 +144,11 @@ it.each(['missing', 'duplicate', 'changed before input'] as const)(
         return JSON.stringify({ result: { panes } });
       }
 
-      return JSON.stringify({
-        result: {
-          process_info: {
-            pane_id: 'first:pane',
-            shell_pid: owned.shellPid,
-            foreground_process_group_id: owned.processId,
-            foreground_processes: [{ pid: owned.processId, argv: [owned.token] }],
-          },
-        },
+      return processInfoResponse({
+        paneId: 'first:pane',
+        shellPid: owned.shellPid,
+        processId: owned.processId,
+        argv: [owned.token],
       });
     };
     const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);
@@ -200,15 +181,11 @@ it('reports identity loss after cancellation input as unconfirmed', async () => 
       return '{}';
     }
 
-    return JSON.stringify({
-      result: {
-        process_info: {
-          pane_id: 'pane',
-          shell_pid: owned.shellPid,
-          foreground_process_group_id: owned.processId,
-          foreground_processes: [{ pid: owned.processId, argv: [owned.token] }],
-        },
-      },
+    return processInfoResponse({
+      paneId: 'pane',
+      shellPid: owned.shellPid,
+      processId: owned.processId,
+      argv: [owned.token],
     });
   };
 
@@ -232,36 +209,30 @@ it('requests active Pi abort before attempting editor shutdown without claiming 
     calls.push(argumentsList);
 
     if (argumentsList[1] === 'list') {
-      return JSON.stringify({
-        result: {
-          panes: [
-            {
-              pane_id: owned.paneId,
-              terminal_id: owned.terminalId,
-              workspace_id: 'workspace',
-              tab_id: 'tab',
-            },
-          ],
+      return paneListResponse([
+        {
+          pane_id: owned.paneId,
+          terminal_id: owned.terminalId,
+          workspace_id: 'workspace',
+          tab_id: 'tab',
         },
-      });
+      ]);
     }
 
     if (argumentsList[1] === 'get') {
-      return JSON.stringify({
-        result: { agent: { pane_id: 'owned', agent: 'pi', agent_session: { value: owned.token } } },
+      return agentResponse({
+        pane_id: 'owned',
+        agent: 'pi',
+        agent_session: { value: owned.token },
       });
     }
 
     if (argumentsList[1] === 'process-info') {
-      return JSON.stringify({
-        result: {
-          process_info: {
-            pane_id: 'owned',
-            shell_pid: 1,
-            foreground_process_group_id: process.pid,
-            foreground_processes: [{ pid: process.pid, argv: ['pi', owned.token] }],
-          },
-        },
+      return processInfoResponse({
+        paneId: 'owned',
+        shellPid: 1,
+        processId: process.pid,
+        argv: ['pi', owned.token],
       });
     }
 
@@ -318,24 +289,16 @@ it('confirms a worker that exits during identity checks without sending input', 
     calls.push(argumentsList);
 
     if (argumentsList[1] === 'list') {
-      return JSON.stringify({
-        result: {
-          panes: [
-            { pane_id: 'pane', terminal_id: 'terminal', workspace_id: 'workspace', tab_id: 'tab' },
-          ],
-        },
-      });
+      return paneListResponse([
+        { pane_id: 'pane', terminal_id: 'terminal', workspace_id: 'workspace', tab_id: 'tab' },
+      ]);
     }
 
-    return JSON.stringify({
-      result: {
-        process_info: {
-          pane_id: 'pane',
-          shell_pid: owned.shellPid,
-          foreground_process_group_id: owned.shellPid,
-          foreground_processes: [{ pid: owned.shellPid, argv: ['zsh'] }],
-        },
-      },
+    return processInfoResponse({
+      paneId: 'pane',
+      shellPid: owned.shellPid,
+      processId: owned.shellPid,
+      argv: ['zsh'],
     });
   };
   const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);

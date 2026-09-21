@@ -30,7 +30,8 @@ Keep tests fast so the full suite stays practical as coverage grows.
   value and assert after the call.
 - Keep tests next to source; package and cross-module checks belong in `tests/`.
 - Test logic without subprocesses when the process itself is not part of the behavior. Reuse
-  existing fakes rather than building a second implementation in mocks.
+  existing fakes rather than building a second implementation in mocks. For herdr, use
+  `src/extensions/subagents/fixtures/herdrFake.ts`.
 - Keep real Git, filesystem, and Pi integration tests where those boundaries matter. Do not remove
   assertions or skip failure cases to save time.
 - Create Git repositories with `tests/gitRepository.ts`. `vite.config.ts` sets the Git environment
