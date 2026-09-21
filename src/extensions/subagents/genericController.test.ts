@@ -35,6 +35,7 @@ const fixture = (kind = 'codex') => {
     startError: '',
     rejectStart: false,
     promptError: '',
+    promptBlocked: false,
     inspectionError: '',
     ignoreInterrupt: false,
     session: 'opaque-reference',
@@ -121,7 +122,9 @@ const fixture = (kind = 'codex') => {
         throw new Error('unknown option: text');
       }
       if (state.promptError) {
-        throw new Error(state.promptError);
+        throw Object.assign(new Error(state.promptError), {
+          stderr: state.promptBlocked ? JSON.stringify({ error: { code: 'agent_blocked' } }) : '',
+        });
       }
       return JSON.stringify({ result: {} });
     }
@@ -480,6 +483,21 @@ it('does not claim nondelivery when only the submission receipt write fails', as
   expect(setup.notices.join(' ')).not.toContain('no input sent');
 });
 
+it.each([
+  { blocked: true, state: 'not-delivered' },
+  { blocked: false, state: 'uncertain' },
+])('notifies the parent once when the assignment is $state', async ({ blocked, state }) => {
+  const setup = fixture();
+  setup.state.promptError = 'Prompt refused or lost';
+  setup.state.promptBlocked = blocked;
+
+  await setup.controller.launch(setup.input);
+  await vi.advanceTimersByTimeAsync(4500);
+
+  expect(setup.notices.filter((notice) => notice.includes(`assignment ${state}`))).toHaveLength(1);
+  expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
+});
+
 it('keeps uncertain startup and text delivery visible without repeating either operation', async () => {
   const setup = fixture();
   setup.state.startError = 'Startup response lost';
@@ -591,6 +609,50 @@ it('marks process exit without a report incomplete and releases capacity only af
     stopped: true,
     capacityHeld: false,
   });
+});
+
+it.each(['cancelled', 'timeout'] as const)(
+  'saves a report published between polls before %s cleanup closes the pane',
+  async (reason) => {
+    const setup = fixture();
+    const started = await setup.controller.launch(setup.input);
+
+    if (reason === 'cancelled') {
+      setup.report(started.taskId);
+      await setup.controller.cancel(started.taskId, 'parent');
+    } else {
+      await vi.advanceTimersByTimeAsync(7000);
+      setup.report(started.taskId);
+      await vi.advanceTimersByTimeAsync(501);
+      await setup.finished;
+    }
+
+    expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
+      outcome: reason,
+      reportAccepted: true,
+      stopped: true,
+    });
+    expect(readReport(join(setup.root, started.taskId), started.taskId)?.summary).toContain(
+      'Completed fixture evidence.',
+    );
+  },
+);
+
+it('keeps status readable after a report too large to accept', async () => {
+  const setup = fixture();
+  const started = await setup.controller.launch(setup.input);
+  setup.report(started.taskId, 'x'.repeat(12_000));
+
+  await vi.advanceTimersByTimeAsync(1500);
+  await setup.finished;
+
+  expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
+    reportAccepted: false,
+    stopped: true,
+  });
+  expect(readFileSync(join(setup.root, started.taskId, 'nativeFailure.json'), 'utf8')).toContain(
+    'at most 10000 bytes',
+  );
 });
 
 it('keeps an unknown worker inside its original deadline and does not infer success from idle or done', async () => {

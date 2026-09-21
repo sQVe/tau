@@ -952,9 +952,19 @@ export class WorkerController {
     }
     workBudget(handle);
     const prompt = genericPrompt(task);
-    await submitGenericText(directory, task, 'assignment', prompt, () =>
+    const submission = await submitGenericText(directory, task, 'assignment', prompt, () =>
       call(agentPromptArguments(location.paneId, prompt)),
     );
+    const observation = submission?.observation;
+    if (
+      !handle.stopping &&
+      !this.closed &&
+      (observation?.state === 'not-delivered' || observation?.state === 'uncertain')
+    ) {
+      this.notify(
+        `Worker ${task.taskId}: assignment ${observation.state}. ${observation.detail} Inspect the native pane; no automatic retry. The original deadline remains active.`,
+      );
+    }
   }
 
   // oxlint-disable-next-line eslint/complexity -- Launch validates authority, reserves capacity, starts the worker, and classifies startup evidence.
@@ -1240,6 +1250,14 @@ export class WorkerController {
     }
     handle.removeLaunchAbort?.();
     handle.abort.abort();
+    // A report published between polls must be saved before cleanup can close its pane.
+    if (isGenericLoadout(handle.task.loadout)) {
+      try {
+        acceptGenericReport(handle.directory, handle.task);
+      } catch (error) {
+        recordNativeIssue(handle, 'nativeFailure.json', error);
+      }
+    }
     try {
       recordEvent(
         handle.directory,
