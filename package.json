@@ -20,6 +20,8 @@
     "style:fix": "node scripts/runStyle.ts --fix",
     "prepare": "vp config",
     "test": "vp test",
+    "test:changed": "vp test --changed",
+    "test:unit": "vp test --exclude '**/*.integration.test.ts'",
     "typecheck": "pnpm exec tsc --noEmit",
     "release:github": "pnpm changeset tag"
   },

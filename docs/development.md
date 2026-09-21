@@ -29,6 +29,24 @@ To run one test file, pass its path to `pnpm test`:
 pnpm test src/extensions/commit/tool.test.ts
 ```
 
+While you work, run only the tests your changes can reach:
+
+```sh
+pnpm test:changed
+```
+
+Vitest follows imports from each uncommitted file. A change to a leaf module runs a few test files.
+A change to a shared module such as `src/extensions/subagents/records.ts` runs most subagent tests.
+A change to `vite.config.ts` or `package.json` runs everything. To include commits on your branch,
+pass the base: `pnpm test:changed origin/main`.
+
+`pnpm test:unit` skips the `*.integration.test.ts` files. Those start real Git, Pi, and herdr
+processes and take most of the suite's time. Run the full `pnpm test` before you push. `pnpm check`
+runs it too.
+
+Vitest does not reuse results from earlier runs. `vp run --cache test` replays a passing run, but a
+change to any file the suite reads reruns the whole suite, so it rarely saves time here.
+
 Configure linting and formatting in [vite.config.ts](../vite.config.ts). Keep the installed Vitest
 version the same as the version bundled with Vite+.
 
