@@ -62,6 +62,7 @@ const fixture = () => {
     });
     const modelRegistry = new ModelRegistry(runtime);
     const model = modelRegistry.find('openai', 'fixture-model');
+
     if (!model) {
       throw new Error('Fixture model missing.');
     }
@@ -105,6 +106,7 @@ it.each(['fresh launch', 'saved replay', 'worker runtime'] as const)(
     if (phase !== 'fresh launch') {
       setup.configure('literal-A');
     }
+
     expect(await stale.modelRegistry.getApiKeyAndHeaders(stale.model)).toMatchObject({
       ok: true,
       apiKey: 'literal-B',

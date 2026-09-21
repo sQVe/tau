@@ -36,9 +36,11 @@ const parentRunning = (processId: number): boolean => {
 export default function workerExtension(pi: ExtensionAPI): void {
   // oxlint-disable-next-line node/no-process-env -- The parent binds this process to its saved task through the pane environment.
   const directory = process.env.TAU_WORKER_RECORD;
+
   if (!directory) {
     return;
   }
+
   let task: Task | undefined;
   let accepted = false;
   let reported = false;
@@ -65,6 +67,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
     ) {
       return;
     }
+
     // A child result is evidence, never a reply to this worker's pending parent question.
     pi.sendMessage(
       { customType: 'tau-worker-child', content: value.message, display: true },
@@ -85,8 +88,10 @@ export default function workerExtension(pi: ExtensionAPI): void {
       if (!task || !accepted || settled || reported || pendingQuestion) {
         throw new Error('This worker has no active task available for a question.');
       }
+
       // oxlint-disable-next-line node/no-process-env -- The parent binds its process identity through the pane environment.
       const parentProcess = Number(process.env.TAU_PARENT_PROCESS);
+
       if (!Number.isSafeInteger(parentProcess) || parentProcess <= 0) {
         throw new Error('This worker has no parent process to ask.');
       }
@@ -115,8 +120,10 @@ export default function workerExtension(pi: ExtensionAPI): void {
         ) {
           return;
         }
+
         clearInterval(parentWatch);
         settled = true;
+
         try {
           recordEvent(
             directory,
@@ -163,6 +170,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
       }
 
       const reply = readReply(directory, task.taskId, pendingQuestion.questionId);
+
       if (!reply) {
         return { action: 'handled' };
       }
@@ -173,6 +181,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
         questionId: pendingQuestion.questionId,
         replyId: reply.replyId,
       };
+
       if (event.text !== `TAU_REPLY ${JSON.stringify(reference)}`) {
         return { action: 'handled' };
       }
@@ -206,12 +215,15 @@ export default function workerExtension(pi: ExtensionAPI): void {
       if (!task || !accepted || settled || reported) {
         throw new Error('This worker has no accepted active task.');
       }
+
       const descendants = children();
+
       if (descendants.active) {
         throw new Error(
           'Active children remain. Wait for completion or request bounded cancellation before reporting.',
         );
       }
+
       // A full summary must never cost the worker its handover.
       const note = descendants.uncertain.join('\n');
       const kept = note ? parameters.evidence.slice(0, 99) : parameters.evidence;
@@ -242,12 +254,14 @@ export default function workerExtension(pi: ExtensionAPI): void {
   pi.on('session_start', async (_event, context) => {
     try {
       task = readTask(directory);
+
       if (
         context.sessionManager.getSessionId() !== task.nativeSessionId ||
         context.sessionManager.getSessionFile() !== task.nativeSessionFile
       ) {
         throw new Error('Worker native session does not match its task.');
       }
+
       if (readEvent(directory, task.taskId, 'accepted')) {
         if (!readEvent(directory, task.taskId, 'continuationRefused')) {
           recordEvent(
@@ -257,9 +271,12 @@ export default function workerExtension(pi: ExtensionAPI): void {
             'Native continuation by restarting an accepted task is refused. A new follow-up requires final handover and confirmed parent cleanup.',
           );
         }
+
         context.shutdown();
+
         return;
       }
+
       // Only the parent enforces the task deadline; wall-clock records are for display and recovery.
       await checkWorkerRuntime(task.loadout, pi, context);
       recordEvent(
@@ -274,12 +291,16 @@ export default function workerExtension(pi: ExtensionAPI): void {
         if (!task) {
           return;
         }
+
         if (!existsSync(join(directory, 'dispatch.json'))) {
           return;
         }
+
         clearInterval(kickoff);
+
         try {
           const dispatch = readRecord(directory, 'dispatch.json');
+
           if (
             !dispatch ||
             typeof dispatch !== 'object' ||
@@ -288,6 +309,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
           ) {
             throw new Error('Invalid task dispatch.');
           }
+
           pi.sendUserMessage(workerPrompt(task));
         } catch (error) {
           recordEvent(directory, task.taskId, 'startupFailure', String(error));
@@ -298,6 +320,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
       if (task && !readEvent(directory, task.taskId, 'startupFailure')) {
         recordEvent(directory, task.taskId, 'startupFailure', String(error));
       }
+
       context.ui.notify(`Worker refused: ${String(error)}`, 'error');
       context.shutdown();
     }
@@ -313,6 +336,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
     if (!task || accepted) {
       return;
     }
+
     recordEvent(directory, task.taskId, 'accepted', 'Pi started the assigned task.');
     accepted = true;
   });
@@ -324,6 +348,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
         terminate: true,
       };
     }
+
     // The bundled questionnaire reconciler may restore this tool each turn. Workers must ask the parent instead.
     if (event.toolName === 'ask_user_question') {
       return {
@@ -332,12 +357,15 @@ export default function workerExtension(pi: ExtensionAPI): void {
           'Use subagent_question to ask the parent. Direct worker questionnaires are unavailable.',
       };
     }
+
     if (event.toolName !== 'subagent_report' && event.toolName !== 'subagent_question') {
       return undefined;
     }
+
     const assistant = context.sessionManager
       .getBranch()
       .findLast((entry) => entry.type === 'message' && entry.message.role === 'assistant');
+
     if (
       assistant?.type !== 'message' ||
       assistant.message.role !== 'assistant' ||
@@ -352,6 +380,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
     if (!task || !accepted || settled || pendingQuestion || children().active > 0) {
       return;
     }
+
     settled = true;
     recordEvent(
       directory,

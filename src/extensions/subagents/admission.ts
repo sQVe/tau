@@ -49,6 +49,7 @@ export const assertInheritedLoadout = (parent: Task, child: Loadout): void => {
     ...settings
   } = parent.loadout;
   const { profile: _childProfile, role: _childRole, instructions, ...childSettings } = child;
+
   if (
     !isDeepStrictEqual(settings, childSettings) ||
     !instructions.startsWith(inheritedInstructions(parent))
@@ -83,6 +84,7 @@ const sameTree = (left: TreeIdentity, right: TreeIdentity) =>
 // A retired reservation cannot be validated, so only confirmed cleanup releases its slot.
 const requireRetiredStopped = (root: string, name: string): void => {
   const taskId = name.slice(0, -'.json'.length);
+
   if (readEvent(join(root, taskId), taskId, 'cleanup')?.stopped !== true) {
     throw new Error(
       `Reservation ${name} uses a retired format and its cleanup is unconfirmed. Inspect ${join(root, taskId)} manually; the slot stays held.`,
@@ -96,18 +98,23 @@ const readReservations = (
   tree: TreeIdentity,
 ): Map<string, Task> => {
   const retained = new Map<string, Task>();
+
   for (const name of readdirSync(directory).filter(
     (candidate) => candidate.endsWith('.json') && candidate !== 'policy.json',
   )) {
     const value = readRecord(directory, name);
+
     if (isRetiredTask(value)) {
       requireRetiredStopped(root, name);
       continue;
     }
+
     const reservation = validateTask(value);
+
     if (!sameTree(tree, reservation.tree) || name !== `${reservation.taskId}.json`) {
       throw new Error('Invalid saved capacity reservation. Manual inspection required.');
     }
+
     retained.set(reservation.taskId, reservation);
   }
 
@@ -117,23 +124,30 @@ const readReservations = (
 export const descendantReservations = (root: string, task: Task): Task[] => {
   const reservations = readReservations(root, admissionDirectory(root, task.tree), task.tree);
   const byParent = new Map<string, Task[]>();
+
   for (const reservation of reservations.values()) {
     const parentTaskId = reservation.tree.parentTaskId;
+
     if (parentTaskId) {
       byParent.set(parentTaskId, [...(byParent.get(parentTaskId) ?? []), reservation]);
     }
   }
+
   const pending = [task.taskId];
   const descendants: Task[] = [];
   const seen = new Set<string>();
+
   while (pending.length) {
     const parent = pending.pop();
+
     if (parent === undefined) {
       break;
     }
+
     if (seen.has(parent)) {
       throw new Error('Cyclic reservation ancestry. Manual inspection required.');
     }
+
     seen.add(parent);
     const children = byParent.get(parent) ?? [];
     descendants.push(...children);
@@ -145,13 +159,17 @@ export const descendantReservations = (root: string, task: Task): Task[] => {
 
 const retainedReservations = (root: string, directory: string, tree: TreeIdentity): Task[] => {
   const retained = readReservations(root, directory, tree);
+
   for (const saved of readTasks(root)) {
     const savedTree = saved.task.tree;
+
     if (sameTree(tree, savedTree)) {
       const reservation = retained.get(saved.task.taskId);
+
       if (reservation && !isDeepStrictEqual(reservation, saved.task)) {
         throw new Error('Task differs from its reservation. Manual inspection required.');
       }
+
       retained.set(saved.task.taskId, saved.task);
     }
   }
@@ -163,6 +181,7 @@ export const requireActiveAncestry = (root: string, task: Task): void => {
   const tree = task.tree;
   const seen = new Set<string>();
   let current: Task | undefined = task;
+
   while (current) {
     if (
       !sameTree(tree, current.tree) ||
@@ -172,6 +191,7 @@ export const requireActiveAncestry = (root: string, task: Task): void => {
     ) {
       throw new Error('Nested work has inactive or invalid parent ancestry.');
     }
+
     seen.add(current.taskId);
     current = current.tree.parentTaskId
       ? readTask(join(root, current.tree.parentTaskId))
@@ -186,6 +206,7 @@ const admissionPolicy = (directory: string, tree: NonNullable<Task['tree']>, cap
     rootSessionId: tree.rootSessionId,
     capacity,
   };
+
   if (policySaved) {
     try {
       configured = readRecord(directory, 'policy.json');
@@ -193,6 +214,7 @@ const admissionPolicy = (directory: string, tree: NonNullable<Task['tree']>, cap
       throw new Error(`Invalid saved root admission policy at ${directory}.`, { cause: error });
     }
   }
+
   if (!Value.Check(policySchema, configured) || !sameTree(tree, configured)) {
     throw new Error(
       policySaved
@@ -200,10 +222,12 @@ const admissionPolicy = (directory: string, tree: NonNullable<Task['tree']>, cap
         : 'Invalid initial root capacity: TAU_SUBAGENT_CAP must be an integer from 1 to 256.',
     );
   }
+
   if (!policySaved) {
     if (tree.parentTaskId) {
       throw new Error('A descendant cannot configure root capacity.');
     }
+
     publish(directory, 'policy.json', configured);
   }
 
@@ -218,7 +242,9 @@ const validateChildReservation = (
   if (!tree.parentTaskId) {
     return;
   }
+
   const parent = readTask(join(root, tree.parentTaskId));
+
   if (
     !isPiLoadout(parent.loadout) ||
     !isPiLoadout(task.loadout) ||
@@ -231,6 +257,7 @@ const validateChildReservation = (
       'Nested reservation has invalid active lineage or exceeds its parent deadline.',
     );
   }
+
   requireActiveAncestry(root, parent);
   assertInheritedLoadout(parent, task.loadout);
 };
@@ -242,6 +269,7 @@ export const reserveTask = (root: string, value: Task, capacity = 4): void => {
   const directory = admissionDirectory(root, tree);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const lock = join(directory, 'lock');
+
   try {
     mkdirSync(lock, { mode: 0o700 });
   } catch (error) {
@@ -251,6 +279,7 @@ export const reserveTask = (root: string, value: Task, capacity = 4): void => {
         { cause: error },
       );
     }
+
     throw error;
   }
 
@@ -260,16 +289,19 @@ export const reserveTask = (root: string, value: Task, capacity = 4): void => {
   // No awaits or harness calls inside this transaction. Crashed locks require manual inspection, never age-based reclaim.
   try {
     const configured = admissionPolicy(directory, tree, capacity);
+
     if (
       existsSync(join(directory, `${task.taskId}.json`)) ||
       existsSync(join(root, task.taskId, 'task.json'))
     ) {
       throw new Error(`Task ${task.taskId} is already reserved or saved. No duplicate admission.`);
     }
+
     const retained = retainedReservations(root, directory, tree);
     const live = retained.filter(
       (saved) => readEvent(join(root, saved.taskId), saved.taskId, 'cleanup')?.stopped !== true,
     );
+
     if (live.length >= configured.capacity) {
       const evidence = live
         .slice(0, 10)
@@ -279,7 +311,9 @@ export const reserveTask = (root: string, value: Task, capacity = 4): void => {
         `Worker capacity full (${live.length}/${configured.capacity}). No queue. Waiting and uncertain work retain slots. Reservations: ${directory}. Inspect task/cleanup evidence before manual cleanup: ${evidence}.`,
       );
     }
+
     validateChildReservation(root, task, tree);
+
     try {
       publish(directory, `${task.taskId}.json`, task);
     } catch (error) {
@@ -297,6 +331,7 @@ export const reserveTask = (root: string, value: Task, capacity = 4): void => {
       releaseFailure = error;
     }
   }
+
   if (!released) {
     throw new Error(
       `Admission lock ${lock} was not released. The reservation stands; remove the lock manually before the next launch.`,

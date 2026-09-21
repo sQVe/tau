@@ -60,6 +60,7 @@ process.stdin.once('data', () => {
     let output = '';
     child.stdout.on('data', (data: Buffer) => {
       output += data.toString();
+
       if (output.includes('ready\n')) {
         ready.resolve(undefined);
       }
@@ -71,9 +72,11 @@ process.stdin.once('data', () => {
     return { child, ready: ready.promise, exited: once(child, 'exit') };
   });
   await Promise.all(contenders.map((contender) => contender.ready));
+
   for (const contender of contenders) {
     contender.child.stdin.end('claim');
   }
+
   const exits = await Promise.all(contenders.map((contender) => contender.exited));
 
   expect(

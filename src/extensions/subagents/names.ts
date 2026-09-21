@@ -20,12 +20,14 @@ const liveAgentsSchema = Type.Array(
 // Names only label tasks, so an unreadable record must not block launches. History and follow-up still fail closed.
 const retainedNames = (root: string, parentSessionId: string): string[] => {
   let entries;
+
   try {
     entries = readdirSync(root, { withFileTypes: true });
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       return [];
     }
+
     throw error;
   }
 
@@ -33,6 +35,7 @@ const retainedNames = (root: string, parentSessionId: string): string[] => {
     if (!entry.isDirectory()) {
       return [];
     }
+
     try {
       const task = readTask(join(root, entry.name));
 
@@ -53,14 +56,18 @@ export const allocateName = (
   if (!Value.Check(liveAgentsSchema, live)) {
     throw new Error('Malformed live agent listing.');
   }
+
   const taken = new Set(live.flatMap((agent) => (agent.name ? [agent.name] : [])));
+
   for (const name of retainedNames(root, parentSessionId)) {
     taken.add(name);
   }
 
   const prefix = role === 'editing' ? 'worker' : 'investigator';
+
   for (let attempt = 0; attempt < 32; attempt++) {
     const name = `${prefix}-${suffix()}`;
+
     if (!taken.has(name)) {
       return name;
     }

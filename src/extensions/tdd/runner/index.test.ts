@@ -21,8 +21,8 @@ import {
   nodeExecutable,
 } from './vitest.js';
 
-const runTests = async (...arguments_: Parameters<typeof runTestsWithDiagnostics>) => {
-  const result = await runTestsWithDiagnostics(...arguments_);
+const runTests = async (...argumentsList: Parameters<typeof runTestsWithDiagnostics>) => {
+  const result = await runTestsWithDiagnostics(...argumentsList);
 
   if (result.diagnostics !== undefined) {
     const directory = result.diagnostics.directory;
@@ -33,8 +33,8 @@ const runTests = async (...arguments_: Parameters<typeof runTestsWithDiagnostics
   return result;
 };
 
-const outputFileFrom = (arguments_: string[]) => {
-  const flag = arguments_.find((argument) => argument.startsWith('--outputFile='));
+const outputFileFrom = (argumentsList: string[]) => {
+  const flag = argumentsList.find((argument) => argument.startsWith('--outputFile='));
 
   if (flag == null) {
     throw new Error('vitest was spawned without an --outputFile flag');
@@ -45,9 +45,9 @@ const outputFileFrom = (arguments_: string[]) => {
 
 const fakeSpawn =
   ({ report, ...result }: Partial<SpawnResult> & { report?: unknown }): SpawnFn =>
-  async (command, arguments_) => {
+  async (command, argumentsList) => {
     if (report !== undefined) {
-      await writeFile(outputFileFrom(arguments_), JSON.stringify(report));
+      await writeFile(outputFileFrom(argumentsList), JSON.stringify(report));
     }
 
     return {
@@ -55,7 +55,7 @@ const fakeSpawn =
       stderr: '',
       code: 0,
       timedOut: false,
-      command: ['fake-runner', command, ...arguments_],
+      command: ['fake-runner', command, ...argumentsList],
       started: true,
       ...result,
     };
@@ -387,8 +387,8 @@ describe('runTests', () => {
       const result = await runTests(
         { scope: 'all', cwd: '/repo', signal: controller.signal },
         makeDeps({
-          spawn: async (...arguments_) => {
-            const spawned = await spawn(...arguments_);
+          spawn: async (...argumentsList) => {
+            const spawned = await spawn(...argumentsList);
 
             if (fixture.kind === 'cancelled') {
               controller.abort();
@@ -481,8 +481,8 @@ describe('runTests', () => {
     const result = await runTests(
       { scope: 'all', cwd: '/repo' },
       makeDeps({
-        spawn: async (_command, arguments_) => {
-          const reportPath = outputFileFrom(arguments_);
+        spawn: async (_command, argumentsList) => {
+          const reportPath = outputFileFrom(argumentsList);
 
           await writeFile(reportPath, JSON.stringify({ numTotalTests: 1, numPassedTests: 1 }));
           await writeFile(join(reportPath, '..', 'stdout.txt'), 'keep this content');

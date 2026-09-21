@@ -31,12 +31,14 @@ it.each([
       Array.from({ length: 10 }, () => placement.place(input('background'), client)),
     );
     const counts = new Map<string, number>();
+
     for (const pane of panes.slice(1)) {
       counts.set(pane.tab_id, (counts.get(pane.tab_id) ?? 0) + 1);
       const bounds = dimensions.get(pane.pane_id)!;
       expect(bounds.width).toBeGreaterThanOrEqual(minimumPane.width);
       expect(bounds.height).toBeGreaterThanOrEqual(minimumPane.height);
     }
+
     expect([...counts.values()]).toEqual(expected);
     expect(dimensions.get('parent')).toEqual({ width, height });
     expect(
@@ -66,6 +68,7 @@ it('fits two foreground workers beside the parent in 250 columns and 30 rows', a
 
   await Promise.all(Array.from({ length: 2 }, () => placement.place(input('foreground'), client)));
   expect(panes.map((pane) => pane.tab_id)).toEqual(['working', 'working', 'working']);
+
   for (const bounds of dimensions.values()) {
     expect(bounds.width).toBeGreaterThanOrEqual(82);
     expect(bounds.height).toBe(30);
@@ -129,9 +132,11 @@ it.each([
   placement.release(first.terminalId);
   const close = async () => {
     await client(['pane', 'close', first.paneId]);
+
     if (scenario === 'uncertain close') {
       throw new Error('Closure delivery uncertain');
     }
+
     if (scenario === 'manual resize after close') {
       await client([
         'pane',
@@ -145,6 +150,7 @@ it.each([
       ]);
     }
   };
+
   if (scenario === 'manual resize before close') {
     await client([
       'pane',
@@ -157,7 +163,9 @@ it.each([
       '0.1',
     ]);
   }
+
   let failure: unknown;
+
   try {
     if (scenario === 'external close') {
       await close();
@@ -167,6 +175,7 @@ it.each([
   } catch (error) {
     failure = error;
   }
+
   const previousCalls = calls.length;
   await placement.place(input('foreground'), client);
 
@@ -180,14 +189,14 @@ it('releases a confirmed terminal after abort even if its cosmetic snapshot comp
   const snapshot = Promise.withResolvers<undefined>();
   const snapshotReturned = Promise.withResolvers<undefined>();
   let created: { paneId: string; terminalId: string } | undefined;
-  const delayed = async (arguments_: string[]) => {
-    if (created && arguments_[1] === 'layout') {
+  const delayed = async (argumentsList: string[]) => {
+    if (created && argumentsList[1] === 'layout') {
       abort.abort();
       await snapshot.promise;
       snapshotReturned.resolve(undefined);
     }
 
-    return client(arguments_);
+    return client(argumentsList);
   };
   await expect(
     placement.place(
@@ -238,9 +247,10 @@ it.each(['resize', 'insert', 'move', 'close'] as const)(
   async (change) => {
     const { placement, client, input, panes, dimensions, calls } = fixture(340, 100);
     let layouts = 0;
-    const changedClient = async (arguments_: string[]) => {
-      const response = await client(arguments_);
-      if (arguments_[1] === 'layout' && ++layouts === 1) {
+    const changedClient = async (argumentsList: string[]) => {
+      const response = await client(argumentsList);
+
+      if (argumentsList[1] === 'layout' && ++layouts === 1) {
         if (change === 'resize') {
           dimensions.set('parent', { width: 200, height: 100 });
         } else if (change === 'insert') {
@@ -308,10 +318,12 @@ it.each(['resize', 'insert', 'move', 'close'] as const)(
     const first = await placement.place(input('foreground'), client);
     const previousCalls = calls.length;
     let checked = false;
-    const changedClient = async (arguments_: string[]) => {
-      const response = await client(arguments_);
-      if (arguments_[1] === 'layout' && !checked) {
+    const changedClient = async (argumentsList: string[]) => {
+      const response = await client(argumentsList);
+
+      if (argumentsList[1] === 'layout' && !checked) {
         checked = true;
+
         if (change === 'resize') {
           dimensions.set('parent', { width: 200, height: 100 });
         } else if (change === 'insert') {
@@ -343,9 +355,10 @@ it('does not retry or restore ratios after uncertain resize delivery', async () 
   const { placement, client, input, calls } = fixture(340, 100);
   await placement.place(input('foreground'), client);
   const previousCalls = calls.length;
-  const failedClient = async (arguments_: string[]) => {
-    const response = await client(arguments_);
-    if (arguments_[1] === 'resize') {
+  const failedClient = async (argumentsList: string[]) => {
+    const response = await client(argumentsList);
+
+    if (argumentsList[1] === 'resize') {
       throw new Error('Resize delivery uncertain');
     }
 
@@ -370,13 +383,13 @@ it('cancels queued placement within its own budget without waiting for another l
   const { placement, client, input, calls } = fixture(340, 100);
   const entered = Promise.withResolvers<undefined>();
   const release = Promise.withResolvers<undefined>();
-  const first = placement.place(input('background'), async (arguments_) => {
-    if (arguments_[1] === 'current') {
+  const first = placement.place(input('background'), async (argumentsList) => {
+    if (argumentsList[1] === 'current') {
       entered.resolve(undefined);
       await release.promise;
     }
 
-    return client(arguments_);
+    return client(argumentsList);
   });
   await entered.promise;
   const abort = new AbortController();
@@ -401,13 +414,13 @@ it('does not split a released terminal or retry uncertain creation', async () =>
   const second = await placement.place(input('background'), client);
 
   expect(second.tabId).not.toBe(first.tabId);
-  const failingClient = async (arguments_: string[]) => {
-    if (arguments_[1] === 'split') {
-      calls.push(arguments_);
+  const failingClient = async (argumentsList: string[]) => {
+    if (argumentsList[1] === 'split') {
+      calls.push(argumentsList);
       throw new Error('Delivery uncertain');
     }
 
-    return client(arguments_);
+    return client(argumentsList);
   };
   await expect(placement.place(input('background'), failingClient)).rejects.toThrow(
     'Delivery uncertain',

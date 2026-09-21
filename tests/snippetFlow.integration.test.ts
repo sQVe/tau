@@ -134,6 +134,7 @@ const createHarness = async (registerCleanup: RegisterCleanup, keys: string[]) =
 /** Text of the newest user message, which is what the snippet extension transforms. */
 const promptTextOf = (context: { messages: { role: string; content: unknown }[] }) => {
   const user = context.messages.findLast((message) => message.role === 'user');
+
   if (!Array.isArray(user?.content)) {
     throw new TypeError(`No user message with content blocks: ${JSON.stringify(context.messages)}`);
   }

@@ -26,14 +26,14 @@ const reviewFixture = () => {
   const complete = vi
     .fn<ExtensionContext['modelRegistry']['complete']>()
     .mockResolvedValue(fauxAssistantMessage('{"findings":[]}'));
-  const exec = vi.fn<ExtensionAPI['exec']>(async (_command, arguments_) => {
+  const exec = vi.fn<ExtensionAPI['exec']>(async (_command, argumentsList) => {
     let stdout = '';
 
-    if (arguments_.includes('--name-only')) {
+    if (argumentsList.includes('--name-only')) {
       stdout = 'file.ts\0';
-    } else if (arguments_.includes('ls-tree') && arguments_.at(-1) === 'file.ts') {
+    } else if (argumentsList.includes('ls-tree') && argumentsList.at(-1) === 'file.ts') {
       stdout = '100644 blob hash 20\tfile.ts\0';
-    } else if (arguments_[0] === 'cat-file') {
+    } else if (argumentsList[0] === 'cat-file') {
       stdout = '// Existing comment.\nexport const value = 1;\n';
     }
 
@@ -95,6 +95,7 @@ it.each(['invalid', 'missing'] as const)(
   async (failure) => {
     vi.stubEnv('TAU_DELEGATE_MODEL', failure === 'invalid' ? 'invalid' : 'missing/model');
     const app = reviewFixture();
+
     if (failure === 'missing') {
       app.find.mockReturnValue(undefined);
     }
@@ -147,14 +148,14 @@ it.each([
   ['file', 'Comment review input is too large: file.ts. Reduce the file and retry.'],
   ['diff', 'Comment review input is too large: file.ts. Reduce the file and retry.'],
 ])('rejects oversized %s input without offering a waiver', async (limit, diagnostic) => {
-  const exec = vi.fn<ExtensionAPI['exec']>(async (_command, arguments_) => {
+  const exec = vi.fn<ExtensionAPI['exec']>(async (_command, argumentsList) => {
     let stdout = '';
 
-    if (arguments_.includes('--name-only')) {
+    if (argumentsList.includes('--name-only')) {
       stdout = 'file.ts\0';
-    } else if (arguments_.includes('ls-tree') && arguments_.at(-1) === 'file.ts') {
+    } else if (argumentsList.includes('ls-tree') && argumentsList.at(-1) === 'file.ts') {
       stdout = `100644 blob hash ${limit === 'file' ? 400_001 : 0}\tfile.ts\0`;
-    } else if (arguments_.includes('diff') && !arguments_.includes('--numstat')) {
+    } else if (argumentsList.includes('diff') && !argumentsList.includes('--numstat')) {
       stdout = limit === 'diff' ? 'x'.repeat(1_000_001) : '';
     }
 

@@ -27,6 +27,7 @@ export const providerCallbacksMatch = (actual: unknown, reconstructed: unknown):
   if (typeof actual === 'function' || typeof reconstructed === 'function') {
     return actual === reconstructed;
   }
+
   if (!isObject(actual) || !isObject(reconstructed)) {
     return true;
   }
@@ -41,6 +42,7 @@ export const modelFingerprint = (model: unknown): string => {
     if (typeof value === 'function') {
       return undefined;
     }
+
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       return Object.fromEntries(
         Object.entries(value).toSorted(([left], [right]) => left.localeCompare(right)),
@@ -62,11 +64,13 @@ export const integrationFingerprint = (paths: string[]): string =>
 
 const parentExtensionPaths = (pi: Pick<ExtensionAPI, 'getAllTools' | 'getCommands'>) => {
   const cliArguments = parseArgs(process.argv.slice(2));
+
   if (cliArguments.apiKey || cliArguments.unknownFlags.size) {
     throw new Error(
       'Worker launch cannot reproduce parent API-key or extension-flag overrides. Use saved configuration.',
     );
   }
+
   const provenance = [
     ...pi.getAllTools().map((tool) => tool.sourceInfo),
     ...pi
@@ -74,6 +78,7 @@ const parentExtensionPaths = (pi: Pick<ExtensionAPI, 'getAllTools' | 'getCommand
       .filter((command) => command.source === 'extension')
       .map((command) => command.sourceInfo),
   ];
+
   if (provenance.some((source) => source.source === 'sdk')) {
     throw new Error('Worker launch cannot reproduce inline SDK integrations.');
   }
@@ -116,20 +121,26 @@ export const providerConfiguration = async (
 ) => {
   signal.throwIfAborted();
   const provider = registry.getProvider(model.provider);
+
   if (!provider) {
     throw new Error('Selected worker provider is unavailable.');
   }
+
   // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model IDs, not an array predicate.
   const selectedModel = registry.find(model.provider, model.id);
+
   if (!selectedModel) {
     throw new Error('Selected worker model is unavailable.');
   }
+
   // Pi's compatibility auth API has no signal parameter. Bound our wait; a provider may finish its own auth request later.
   const auth = await waitForResolution(registry.getApiKeyAndHeaders(selectedModel), signal);
   signal.throwIfAborted();
+
   if (!auth.ok) {
     throw new Error('Selected worker provider authentication is unavailable.');
   }
+
   const registration = registry.getRegisteredProviderConfig(model.provider);
   const native = registry.getRegisteredNativeProvider(model.provider);
 
@@ -141,6 +152,7 @@ const providerFingerprintValue = (
 ): string => {
   const { apiKey: _resolvedKey, ...auth } = configuration.auth;
   let modelsConfiguration: string | null = null;
+
   try {
     modelsConfiguration = createHash('sha256')
       .update(readFileSync(join(getAgentDir(), 'models.json')))
@@ -161,6 +173,7 @@ export const providerFingerprint = async (
   signal: AbortSignal = AbortSignal.timeout(10_000),
 ): Promise<string> => {
   const configuration = await providerConfiguration(registry, model, signal);
+
   // Pi distributions can minify SDK wrappers differently. Compare implementations in the parent process, not across processes.
   return providerFingerprintValue(configuration);
 };
@@ -172,11 +185,14 @@ const resolveModel = (
 ) => {
   // oxlint-disable-next-line node/no-process-env -- Explicit worker model configuration has no implicit parent-model fallback.
   const model = explicit ?? configured ?? process.env.TAU_SUBAGENT_MODEL;
+
   if (!model || !/^[^/\s]+\/[^\s]+$/.test(model)) {
     throw new Error('Set an exact worker model as provider/id; there is no fallback.');
   }
+
   const separator = model.indexOf('/');
   const selectedModel = registry.find(model.slice(0, separator), model.slice(separator + 1));
+
   if (!selectedModel) {
     throw new Error(`Worker model unavailable: ${model}`);
   }
@@ -209,12 +225,15 @@ const reconstructIntegrations = async (
   const loader = new DefaultResourceLoader({ cwd, agentDir: agentDirectory, ...selection });
   await waitForResolution(loader.reload(), signal);
   const loaded = loader.getExtensions();
+
   if (loaded.errors.length) {
     throw new Error(`Worker integration load failed: ${JSON.stringify(loaded.errors)}`);
   }
+
   const safety = loaded.extensions.find(
     (extension) => extension.commands.has('cc-safety-net') && extension.handlers.has('tool_call'),
   );
+
   if (!safety) {
     throw new Error('CC Safety Net must be loaded, with its tool_call handler active.');
   }
@@ -227,9 +246,11 @@ const reconstructIntegrations = async (
   signal.throwIfAborted();
 
   const registry = new ModelRegistry(reconstructed);
+
   for (const registration of loaded.runtime.pendingProviderRegistrations) {
     registry.registerProvider(registration.name, registration.config);
   }
+
   for (const registration of loaded.runtime.pendingNativeProviderRegistrations) {
     registry.registerProvider(registration.provider);
   }
@@ -258,6 +279,7 @@ const requirePiPermissions = (input: NativeLaunchInput): void => {
   if (input.permissions !== 'trusted-full-tools') {
     throw new Error('Workers require explicit trusted-full-tools permission.');
   }
+
   if (input.nativeArguments !== undefined || input.reportDirectory !== undefined) {
     throw new Error('Pi workers do not accept native launch arguments or report directories.');
   }
@@ -277,6 +299,7 @@ export const resolveLoadout = async (
   }
 
   const cwd = realpathSync(resolve(context.cwd, input.cwd ?? '.'));
+
   // A different project needs its own trust decision, not the parent's inherited approval.
   if (cwd !== realpathSync(context.cwd)) {
     throw new Error('Launch from the target cwd after trusting that project.');
@@ -284,16 +307,21 @@ export const resolveLoadout = async (
 
   const agentDirectory = realpathSync(getAgentDir());
   const profile = resolveProfile(cwd, agentDirectory, true, input.profile);
+
   if (!profile) {
     throw new Error(`Worker profile not found: ${input.profile}`);
   }
+
   const kind = input.harness ?? profile.harness;
+
   if (profile.harnessSpecified && profile.harness !== kind) {
     throw new Error(`Profile ${profile.name} is a ${profile.harness} profile, not a ${kind} one.`);
   }
+
   if (kind !== 'pi') {
     return resolveGenericLoadout(input, profile, kind, cwd, context, signal);
   }
+
   requirePiPermissions(input);
 
   const model = resolveModel(input.model, profile.model, context.modelRegistry);
@@ -311,6 +339,7 @@ export const resolveLoadout = async (
     model.slice(0, separator),
     model.slice(separator + 1),
   );
+
   if (
     !resolvedModel ||
     !parentModel ||
@@ -362,20 +391,26 @@ const validateSavedLoadoutShape = (
   if (!Value.Check(loadoutSchema, value)) {
     throw new Error('Invalid saved worker loadout.');
   }
+
   const loadout = value;
+
   if (!isPiLoadout(loadout)) {
     throw new Error('Non-Pi continuation is unsupported; start a fresh task.');
   }
+
   if (!context.isProjectTrusted()) {
     throw new Error('Saved worker replay requires a currently trusted project.');
   }
+
   if (
     realpathSync(context.cwd) !== loadout.cwd ||
     realpathSync(getAgentDir()) !== loadout.agentDirectory
   ) {
     throw new Error('Worker cwd or configuration directory changed.');
   }
+
   const fingerprint = integrationFingerprint;
+
   if (
     !loadout.integrations.every(isAbsolute) ||
     !loadout.integrations.includes(loadout.safetyExtension) ||
@@ -401,15 +436,18 @@ export const validateSavedLoadout = async (
     signal,
   );
   const integrations = loaded.extensions.map((extension) => realpathSync(extension.path));
+
   if (
     modelFingerprint(integrations) !== modelFingerprint(loadout.integrations) ||
     realpathSync(safety.path) !== loadout.safetyExtension
   ) {
     throw new Error('Saved worker integrations could not be replayed exactly.');
   }
+
   const tools = new Set(
     piWorkerTools(loaded.extensions.flatMap((extension) => Array.from(extension.tools.keys()))),
   );
+
   if (loadout.tools.length !== tools.size || loadout.tools.some((tool) => !tools.has(tool))) {
     throw new Error('Saved worker tools do not match the current worker runtime.');
   }
@@ -421,6 +459,7 @@ export const validateSavedLoadout = async (
   const model = registry.find(provider, modelId);
   // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model IDs, not an array predicate.
   const currentModel = context.modelRegistry.find(provider, modelId);
+
   if (
     !model ||
     !currentModel ||
@@ -438,11 +477,13 @@ export const validateSavedLoadout = async (
     signal,
   );
   checkProviderConfiguration(currentConfiguration, configuration);
+
   if (providerFingerprintValue(configuration) !== loadout.providerFingerprint) {
     throw new Error(
       'Worker provider configuration differs from the saved loadout. Changed credentials or auth headers require a fresh task.',
     );
   }
+
   signal.throwIfAborted();
 
   return loadout;
@@ -464,15 +505,18 @@ const checkLiveProviderConfiguration = async (
   // Replay public provider declarations without running extension factories again inside an active worker.
   const registration = registry.getRegisteredProviderConfig(model.provider);
   const native = registry.getRegisteredNativeProvider(model.provider);
+
   if (registration) {
     reconstructed.registerProvider(model.provider, registration);
   }
+
   if (native) {
     reconstructed.registerProvider(native);
   }
 
   // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model IDs, not an array predicate.
   const reconstructedModel = reconstructed.find(model.provider, model.id);
+
   if (
     reconstructed.getError() ||
     !reconstructedModel ||
@@ -480,6 +524,7 @@ const checkLiveProviderConfiguration = async (
   ) {
     throw new Error('Worker cannot reproduce its current model configuration.');
   }
+
   const current = await providerConfiguration(registry, model, signal);
   const expected = await providerConfiguration(reconstructed, reconstructedModel, signal);
   checkProviderConfiguration(current, expected);
@@ -496,10 +541,13 @@ export const checkWorkerRuntime = async (
   if (!context.isProjectTrusted()) {
     throw new Error('Worker project trust was refused.');
   }
+
   if (integrationFingerprint(loadout.integrations) !== loadout.integrationFingerprint) {
     throw new Error('Worker integration source changed after resolution.');
   }
+
   const model = context.model;
+
   if (
     !model ||
     `${model.provider}/${model.id}` !== loadout.model ||
@@ -510,22 +558,28 @@ export const checkWorkerRuntime = async (
       'Worker model or thinking differs from the saved loadout; no fallback allowed.',
     );
   }
+
   const configuration = await checkLiveProviderConfiguration(context.modelRegistry, model, signal);
+
   if (providerFingerprintValue(configuration) !== loadout.providerFingerprint) {
     throw new Error(
       'Worker provider configuration differs from the saved loadout. Changed credentials or auth headers require a fresh task.',
     );
   }
+
   if (
     realpathSync(context.cwd) !== loadout.cwd ||
     realpathSync(getAgentDir()) !== loadout.agentDirectory
   ) {
     throw new Error('Worker cwd or configuration directory changed.');
   }
+
   const safety = pi.getCommands().find((command) => command.name === 'cc-safety-net');
+
   if (!safety || realpathSync(safety.sourceInfo.path) !== loadout.safetyExtension) {
     throw new Error('The saved CC Safety Net integration is not active.');
   }
+
   const available = new Set(
     piWorkerTools(
       pi
@@ -536,6 +590,7 @@ export const checkWorkerRuntime = async (
         .map((tool) => tool.name),
     ),
   );
+
   if (
     loadout.tools.length !== available.size ||
     loadout.tools.some((tool) => !available.has(tool))
@@ -550,12 +605,14 @@ const inheritedProfile = (parent: Task, input: { profile: string }, trusted: boo
   if (!isPiLoadout(parent.loadout)) {
     throw new Error('Non-Pi workers have no Tau nesting channel.');
   }
+
   const profile = resolveProfile(
     parent.loadout.cwd,
     parent.loadout.agentDirectory,
     trusted,
     input.profile,
   );
+
   if (
     !profile ||
     (profile.harnessSpecified && profile.harness !== harnessOf(parent.loadout)) ||
@@ -564,7 +621,9 @@ const inheritedProfile = (parent: Task, input: { profile: string }, trusted: boo
   ) {
     throw new Error('Nested profile is unavailable or conflicts with inherited model settings.');
   }
+
   const instructions = `${inheritedInstructions(parent)}${profile.instructions}`;
+
   if (instructions.length > textLimit) {
     throw new Error(
       `Inherited instructions and parent-assigned scope reached ${instructions.length} characters, over the ${textLimit} limit. Delegate a shorter task or choose a shorter profile.`,
@@ -582,9 +641,11 @@ export const resolveInheritedLoadout = async (
   signal: AbortSignal,
 ): Promise<PiLoadout> => {
   const inherited = parent.loadout;
+
   if (!isPiLoadout(inherited)) {
     throw new Error('Non-Pi workers have no Tau nesting channel.');
   }
+
   if (
     input.permissions !== inherited.permissions ||
     (input.harness !== undefined && input.harness !== 'pi') ||
@@ -595,6 +656,7 @@ export const resolveInheritedLoadout = async (
       'Nested workers require the exact inherited model, permissions, harness, and cwd.',
     );
   }
+
   const { profile, instructions } = inheritedProfile(parent, input, context.isProjectTrusted());
   await checkWorkerRuntime(inherited, pi, context, signal);
 

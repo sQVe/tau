@@ -85,8 +85,8 @@ describe('hook outcomes', () => {
     let reviews = 0;
     const tool = createCommitTool(
       {
-        exec: (command, arguments_, options) =>
-          runCommand(command, arguments_, options?.cwd ?? directory),
+        exec: (command, argumentsList, options) =>
+          runCommand(command, argumentsList, options?.cwd ?? directory),
       },
       async () => {
         reviews += 1;
@@ -127,10 +127,10 @@ describe('hook outcomes', () => {
       let concurrentHead = '';
       const tool = createCommitTool(
         {
-          exec: async (command, arguments_, options) => {
-            const result = await runCommand(command, arguments_, options?.cwd ?? directory);
+          exec: async (command, argumentsList, options) => {
+            const result = await runCommand(command, argumentsList, options?.cwd ?? directory);
 
-            if (arguments_[0] === 'commit') {
+            if (argumentsList[0] === 'commit') {
               await writeRepositoryFile(directory, 'other', 'other');
               await git(directory, ['add', 'other']);
               await git(directory, ['commit', '-m', 'test: concurrent writer']);
@@ -175,10 +175,10 @@ describe('hook outcomes', () => {
     );
     const tool = createCommitTool(
       {
-        exec: (command, arguments_, options) =>
-          arguments_.includes('reset')
+        exec: (command, argumentsList, options) =>
+          argumentsList.includes('reset')
             ? Promise.resolve({ code: 1, killed: false, stdout: '', stderr: 'index locked\n' })
-            : runCommand(command, arguments_, options?.cwd ?? directory),
+            : runCommand(command, argumentsList, options?.cwd ?? directory),
       },
       async () => ({ findings: [] }),
     );
@@ -228,15 +228,15 @@ describe('hook outcomes', () => {
     await writeRepositoryFile(directory, 'other', 'other');
     const tool = createCommitTool(
       {
-        exec: async (command, arguments_, options) => {
-          if (arguments_[0] === 'commit') {
+        exec: async (command, argumentsList, options) => {
+          if (argumentsList[0] === 'commit') {
             await git(directory, ['commit', '-m', 'test: concurrent writer']);
             await git(directory, ['add', 'other']);
 
             return { code: 1, killed: false, stdout: 'raw output\n', stderr: 'raw error\n' };
           }
 
-          return runCommand(command, arguments_, options?.cwd ?? directory);
+          return runCommand(command, argumentsList, options?.cwd ?? directory);
         },
       },
       async () => ({ findings: [] }),
@@ -268,14 +268,14 @@ describe('hook outcomes', () => {
       let committed = false;
       const tool = createCommitTool(
         {
-          exec: async (command, arguments_, options) => {
-            if (committed && arguments_[0] === failingCommand) {
+          exec: async (command, argumentsList, options) => {
+            if (committed && argumentsList[0] === failingCommand) {
               return { code: 1, killed: false, stdout: '', stderr: 'report unavailable' };
             }
 
-            const result = await runCommand(command, arguments_, options?.cwd ?? directory);
+            const result = await runCommand(command, argumentsList, options?.cwd ?? directory);
 
-            if (arguments_[0] === 'commit') {
+            if (argumentsList[0] === 'commit') {
               committed = true;
             }
 
@@ -355,9 +355,9 @@ describe('hook outcomes', () => {
     let concurrentHead = '';
     const tool = createCommitTool(
       {
-        exec: async (command, arguments_, options) => {
-          if (arguments_[0] === 'diff-tree') {
-            commitHash = arguments_.at(-1)!;
+        exec: async (command, argumentsList, options) => {
+          if (argumentsList[0] === 'diff-tree') {
+            commitHash = argumentsList.at(-1)!;
             await git(directory, ['add', 'other']);
             await git(directory, ['commit', '-m', 'test: concurrent writer']);
             concurrentHead = (await git(directory, ['rev-parse', 'HEAD'])).trim();
@@ -365,7 +365,7 @@ describe('hook outcomes', () => {
             await git(directory, ['add', 'other']);
           }
 
-          return runCommand(command, arguments_, options?.cwd ?? directory);
+          return runCommand(command, argumentsList, options?.cwd ?? directory);
         },
       },
       async () => ({ findings: [] }),
@@ -404,8 +404,8 @@ describe('hook outcomes', () => {
     let reviews = 0;
     const tool = createCommitTool(
       {
-        exec: (command, arguments_, options) =>
-          runCommand(command, arguments_, options?.cwd ?? directory),
+        exec: (command, argumentsList, options) =>
+          runCommand(command, argumentsList, options?.cwd ?? directory),
       },
       async () => {
         reviews += 1;
@@ -492,8 +492,8 @@ describe('hook outcomes', () => {
       const reviewedTrees: string[] = [];
       const tool = createCommitTool(
         {
-          exec: (command, arguments_, options) =>
-            runCommand(command, arguments_, options?.cwd ?? directory),
+          exec: (command, argumentsList, options) =>
+            runCommand(command, argumentsList, options?.cwd ?? directory),
         },
         async (_pi, _context, _signal, snapshot) => {
           reviewedTrees.push(snapshot.tree);

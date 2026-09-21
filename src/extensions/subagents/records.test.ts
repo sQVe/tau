@@ -115,6 +115,7 @@ it.each([
   const child = join(root, task.taskId);
   mkdirSync(child, { recursive: true });
   records.publish(child, 'task.json', task);
+
   if (failure === 'malformed') {
     writeFileSync(join(child, 'task.json'), '{');
   } else if (failure === 'permission') {
@@ -125,6 +126,7 @@ it.each([
     writeFileSync(join(child, 'task.json'), JSON.stringify({ ...task, taskId: 'changed' }));
   } else {
     rmSync(join(child, 'task.json'));
+
     if (failure === 'dangling task link') {
       symlinkSync(join(child, 'missing'), join(child, 'task.json'));
     } else {
@@ -152,10 +154,12 @@ it('skips tasks saved in a retired format without blocking current tasks', () =>
       loadout: { ...task.loadout, providerFingerprintVersion: 1 },
     },
   };
+
   for (const [taskId, saved] of Object.entries(retired)) {
     mkdirSync(join(root, taskId));
     writeFileSync(join(root, taskId, 'task.json'), JSON.stringify(saved));
   }
+
   const diagnostics: string[] = [];
 
   const scanned = records.readTasks(root, diagnostics);
@@ -225,9 +229,11 @@ it.each([
       predecessor: join(root, 'predecessor'),
       successor: join(root, 'successor'),
     };
+
     for (const path of Object.values(directories)) {
       mkdirSync(path, { recursive: true });
     }
+
     const middle = records.validateTask({ ...task, predecessorTaskId: 'predecessor' });
     const successor = records.validateTask({
       ...task,
@@ -236,9 +242,11 @@ it.each([
     });
     records.publish(directories.middle, 'task.json', middle);
     records.publish(directories.predecessor, 'task.json', { ...task, taskId: 'predecessor' });
+
     if (state === 'published late') {
       records.publish(directories.successor, 'task.json', successor);
     }
+
     records.claimSuccessor(directories.middle, successor);
     const original = await vi.importActual<typeof fileSystem>('node:fs');
     // Each continuation looks unpublished until the scan lists its directory, then another process publishes it.
@@ -308,6 +316,7 @@ it.each(['claim', 'predecessor'] as const)(
       ...task,
       ...(reference === 'predecessor' ? { predecessorTaskId: 'unpublished' } : {}),
     });
+
     if (reference === 'claim') {
       records.claimSuccessor(
         source,
@@ -332,6 +341,7 @@ it('retains an exclusive successor claim after directory sync uncertainty and ne
     if (fstatSync(descriptor).isDirectory()) {
       throw new Error('Directory sync failed.');
     }
+
     original.fsyncSync(descriptor);
   });
   expect(() => {
@@ -356,6 +366,7 @@ it('requires directory sync on identical question reply and acknowledgement reco
   vi.mocked(fsyncSync).mockImplementation((descriptor) => {
     if (fstatSync(descriptor).isDirectory()) {
       directorySyncAttempts += 1;
+
       if (failDirectorySync) {
         throw syncFailure;
       }
@@ -434,6 +445,7 @@ it('recovers immutable questions and replies separately from worker acknowledgem
   });
   records.acceptReply(directory, task.taskId, reply);
   records.acceptAcknowledgement(directory, task.taskId, acknowledgement);
+
   for (const [name, content] of saved) {
     expect(readFileSync(join(directory, name), 'utf8')).toBe(content);
   }
@@ -458,6 +470,7 @@ it('rejects wrong-task malformed mismatched and conflicting question records', (
   expect(() => records.acceptAcknowledgement(directory, task.taskId, acknowledgement)).toThrow(
     'Acknowledgement does not match the accepted reply.',
   );
+
   for (const invalid of [
     { ...question, taskId: 'wrong' },
     { ...question, questionId: '../escape' },
@@ -470,6 +483,7 @@ it('rejects wrong-task malformed mismatched and conflicting question records', (
       /Invalid|exceeds/,
     );
   }
+
   expect(() =>
     records.acceptQuestion(directory, 'wrong', { ...question, taskId: 'wrong' }),
   ).toThrow('wrong saved task');
@@ -480,6 +494,7 @@ it('rejects wrong-task malformed mismatched and conflicting question records', (
   expect(() => records.acceptAcknowledgement(directory, task.taskId, acknowledgement)).toThrow(
     'Acknowledgement does not match the accepted reply.',
   );
+
   for (const invalid of [
     { ...reply, questionId: 'missing' },
     { ...reply, taskId: 'wrong' },
@@ -492,6 +507,7 @@ it('rejects wrong-task malformed mismatched and conflicting question records', (
       /Invalid|exceeds|no accepted question/,
     );
   }
+
   records.acceptReply(directory, task.taskId, reply);
   expect(() =>
     records.acceptReply(directory, task.taskId, { ...reply, replyId: 'reply-two' }),
@@ -499,6 +515,7 @@ it('rejects wrong-task malformed mismatched and conflicting question records', (
   expect(() =>
     records.acceptReply(directory, task.taskId, { ...reply, reply: 'Changed.' }),
   ).toThrow('Conflicting saved question record.');
+
   for (const invalid of [
     { ...acknowledgement, replyId: 'reply-two' },
     { ...acknowledgement, questionId: 'missing' },
@@ -509,6 +526,7 @@ it('rejects wrong-task malformed mismatched and conflicting question records', (
       /Invalid|does not match/,
     );
   }
+
   expect(records.readQuestion(directory, task.taskId, question.questionId)).toEqual(question);
   expect(records.readReply(directory, task.taskId, question.questionId)).toEqual(reply);
   expect(records.readAcknowledgement(directory, task.taskId, question.questionId)).toBeUndefined();
@@ -533,6 +551,7 @@ it('validates saved question reply and acknowledgement chains during recovery', 
 
   for (const [kind, value, recover] of files) {
     const path = join(directory, `${kind}-${question.questionId}.json`);
+
     for (const invalid of [
       { ...value, taskId: 'wrong' },
       { ...value, questionId: 'wrong' },
@@ -544,6 +563,7 @@ it('validates saved question reply and acknowledgement chains during recovery', 
         records.readAcknowledgement(directory, task.taskId, question.questionId),
       ).toThrow('Invalid saved worker');
     }
+
     writeFileSync(path, '{');
     expect(recover).toThrow(SyntaxError);
     writeFileSync(path, JSON.stringify(value));
@@ -559,6 +579,7 @@ it('validates saved question reply and acknowledgement chains during recovery', 
     );
     writeFileSync(path, JSON.stringify(value));
   }
+
   writeFileSync(
     join(directory, `acknowledgement-${question.questionId}.json`),
     JSON.stringify({ ...acknowledgement, replyId: 'wrong' }),
@@ -628,8 +649,8 @@ it('bounds descriptor reads when a record grows during reading', async ({ onTest
   const grow = () => {
     writeFileSync(path, JSON.stringify({ text: 'x'.repeat(256_000) }));
   };
-  vi.mocked(fileSystem.statSync).mockImplementationOnce((...arguments_) => {
-    const result = actual.statSync(...arguments_);
+  vi.mocked(fileSystem.statSync).mockImplementationOnce((...argumentsList) => {
+    const result = actual.statSync(...argumentsList);
     grow();
 
     return result;
@@ -640,9 +661,11 @@ it('bounds descriptor reads when a record grows during reading', async ({ onTest
       ...options,
       length: Math.min(64_000, options?.length ?? buffer.byteLength),
     });
+
     if (totalRead === 0) {
       grow();
     }
+
     totalRead += count;
 
     return count;
@@ -665,6 +688,7 @@ it.each(['invalid JSON', 'read failure'])('closes the record descriptor after %s
     rmSync(directory, { recursive: true, force: true });
   });
   writeFileSync(join(directory, 'record.json'), '{');
+
   if (failure === 'read failure') {
     vi.mocked(fileSystem.readSync).mockImplementationOnce(() => {
       throw new Error('Injected read failure');

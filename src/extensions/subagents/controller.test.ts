@@ -56,17 +56,21 @@ const setup = (
   let token = '';
   let recordDirectory = '';
   const calls: string[][] = [];
-  const client: HerdrClient = async (arguments_, budget, signal) => {
-    calls.push(arguments_);
+  const client: HerdrClient = async (argumentsList, budget, signal) => {
+    calls.push(argumentsList);
+
     if (intercept) {
-      const response = await intercept(arguments_, budget, signal);
+      const response = await intercept(argumentsList, budget, signal);
+
       if (response) {
         return response;
       }
     }
-    if (arguments_[0] === 'agent' && arguments_[1] === 'list') {
+
+    if (argumentsList[0] === 'agent' && argumentsList[1] === 'list') {
       return JSON.stringify({ result: { type: 'agent_list', agents: [] } });
     }
+
     const parent = {
       pane_id: 'parent-pane',
       terminal_id: 'parent-terminal',
@@ -79,13 +83,16 @@ const setup = (
       workspace_id: 'workspace',
       tab_id: 'tab',
     };
-    if (arguments_[1] === 'current') {
+
+    if (argumentsList[1] === 'current') {
       return JSON.stringify({ result: { pane: parent } });
     }
-    if (arguments_[1] === 'list') {
+
+    if (argumentsList[1] === 'list') {
       return JSON.stringify({ result: { panes: [parent, owned] } });
     }
-    if (arguments_[1] === 'layout') {
+
+    if (argumentsList[1] === 'layout') {
       return JSON.stringify({
         result: {
           layout: {
@@ -98,19 +105,23 @@ const setup = (
         },
       });
     }
-    if (arguments_[1] === 'split') {
+
+    if (argumentsList[1] === 'split') {
       recordDirectory =
-        arguments_
+        argumentsList
           .find((argument) => argument.startsWith('TAU_WORKER_RECORD='))
           ?.slice('TAU_WORKER_RECORD='.length) ?? '';
+
       return JSON.stringify({ result: { pane: owned } });
     }
-    if (arguments_[1] === 'start') {
-      token = arguments_[arguments_.indexOf('--session') + 1] ?? '';
+
+    if (argumentsList[1] === 'start') {
+      token = argumentsList[argumentsList.indexOf('--session') + 1] ?? '';
       const task = readTask(recordDirectory);
       const ready = () => {
         recordEvent(recordDirectory, task.taskId, 'ready', 'Ready.', false, process.pid);
       };
+
       if (readyDelay > 0) {
         setTimeout(ready, readyDelay);
       } else if (readyDelay === 0) {
@@ -119,7 +130,8 @@ const setup = (
 
       return JSON.stringify({ result: {} });
     }
-    if (arguments_[1] === 'process-info') {
+
+    if (argumentsList[1] === 'process-info') {
       return JSON.stringify({
         result: {
           process_info: {
@@ -131,11 +143,13 @@ const setup = (
         },
       });
     }
-    if (arguments_[1] === 'get') {
+
+    if (argumentsList[1] === 'get') {
       return JSON.stringify({
         result: { agent: { pane_id: 'owned-pane', agent: 'pi', agent_session: { value: token } } },
       });
     }
+
     throw new Error('Injected herdr failure; active process remains alive.');
   };
   const notifications: string[] = [];
@@ -178,15 +192,18 @@ it('skips unpublished preparation debris while published attempts and claims rem
       });
       preparation.mockRestore();
     }
+
     originalPublish(directory, name, value);
   });
   await expect(fixture.controller.launch(fixture.input)).rejects.toThrow('Task preparation');
   const abandoned = readdirSync(fixture.directory, { withFileTypes: true }).find(
     (entry) => entry.isDirectory() && entry.name !== '.admission',
   );
+
   if (!abandoned) {
     throw new Error('Missing preparation evidence.');
   }
+
   const abandonedDirectory = join(fixture.directory, abandoned.name);
   const receiptFiles = readdirSync(abandonedDirectory);
   expect(receiptFiles).toHaveLength(1);
@@ -332,8 +349,10 @@ it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'out of t
   'refuses native follow-up with %s',
   async (failure) => {
     const fixture = await completed();
+
     if (failure === 'cleanup' || failure === 'uncertain cleanup') {
       rmSync(join(fixture.sourceDirectory, 'cleanup.json'));
+
       if (failure === 'uncertain cleanup') {
         recordEvent(
           fixture.sourceDirectory,
@@ -356,6 +375,7 @@ it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'out of t
           '\n',
       );
     }
+
     fixture.calls.length = 0;
     expect(fixture.controller).toHaveProperty('followUp');
 
@@ -369,9 +389,10 @@ it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'out of t
 it('classifies follow-up readiness deadline expiry as timeout rather than caller cancellation', async () => {
   let following = false;
   const started = Promise.withResolvers<undefined>();
-  const fixture = await completed(async (arguments_) => {
-    if (following && arguments_[1] === 'start') {
+  const fixture = await completed(async (argumentsList) => {
+    if (following && argumentsList[1] === 'start') {
       started.resolve(undefined);
+
       return JSON.stringify({ result: {} });
     }
 
@@ -420,9 +441,11 @@ it('allows only one competing follow-up and preserves lineage across parents and
   const successes = attempts.filter((entry) => entry.status === 'fulfilled');
   expect(successes).toHaveLength(1);
   const next = successes[0]?.value;
+
   if (!next) {
     throw new Error('Missing winner.');
   }
+
   expect(fixture.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(next.taskId);
   await expect(
@@ -474,14 +497,16 @@ it.each(['cancelled', 'missing after claim', 'failed startup', 'sync uncertain']
     let following = false;
     const abort = new AbortController();
     let nativeFile = '';
-    const fixture = await completed(async (arguments_) => {
-      if (following && arguments_[1] === 'split' && failure === 'missing after claim') {
+    const fixture = await completed(async (argumentsList) => {
+      if (following && argumentsList[1] === 'split' && failure === 'missing after claim') {
         rmSync(nativeFile);
       }
-      if (following && arguments_[1] === 'split' && failure === 'cancelled') {
+
+      if (following && argumentsList[1] === 'split' && failure === 'cancelled') {
         abort.abort(new Error('Caller cancelled.'));
       }
-      if (following && arguments_[1] === 'start' && failure === 'failed startup') {
+
+      if (following && argumentsList[1] === 'start' && failure === 'failed startup') {
         throw new Error('Uncertain start.');
       }
 
@@ -489,6 +514,7 @@ it.each(['cancelled', 'missing after claim', 'failed startup', 'sync uncertain']
     });
     nativeFile = fixture.source.nativeSessionFile;
     following = true;
+
     if (failure === 'sync uncertain') {
       const claim = records.claimSuccessor;
       vi.spyOn(records, 'claimSuccessor').mockImplementation((directory, successor) => {
@@ -496,6 +522,7 @@ it.each(['cancelled', 'missing after claim', 'failed startup', 'sync uncertain']
         throw new Error('Directory sync uncertain.');
       });
     }
+
     const next = await fixture.controller.followUp(fixture.input, fixture.context, abort.signal);
     const calls = fixture.calls.length;
 
@@ -511,8 +538,8 @@ it.each(['cancelled', 'missing after claim', 'failed startup', 'sync uncertain']
 
 it('refuses known live native writers and preserves validation time in the original follow-up budget', async () => {
   let live: unknown[] = [];
-  const fixture = await completed(async (arguments_) =>
-    arguments_[0] === 'agent' && arguments_[1] === 'list'
+  const fixture = await completed(async (argumentsList) =>
+    argumentsList[0] === 'agent' && argumentsList[1] === 'list'
       ? JSON.stringify({ result: { type: 'agent_list', agents: live } })
       : '',
   );
@@ -531,6 +558,7 @@ it('refuses known live native writers and preserves validation time in the origi
   const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
   fixture.validation.mockImplementation(async (value) => {
     clock.mockReturnValue(20000);
+
     return value as ReturnType<typeof readTask>['loadout'];
   });
   fixture.calls.length = 0;
@@ -573,8 +601,8 @@ it('cancels follow-up validation without claiming or launching native work', asy
 it('retains friendly names and avoids retained and live collisions', async ({ onTestFinished }) => {
   const suffix = vi.spyOn(names, 'nameSuffix').mockReturnValue('aa');
   let live: unknown[] = [];
-  const { controller, input, directory, calls } = setup(onTestFinished, 0, async (arguments_) =>
-    arguments_[0] === 'agent' && arguments_[1] === 'list'
+  const { controller, input, directory, calls } = setup(onTestFinished, 0, async (argumentsList) =>
+    argumentsList[0] === 'agent' && argumentsList[1] === 'list'
       ? JSON.stringify({ result: { type: 'agent_list', agents: live } })
       : '',
   );
@@ -673,6 +701,7 @@ it('bounds nested launches by the shared cap and original ancestor deadline', as
 
 it('refuses full-cap native follow-up before consuming its successor claim', async () => {
   const fixture = await completed();
+
   for (let index = 0; index < 4; index++) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- Fill the shared cap before attempting native follow-up.
     await fixture.controller.launch({ ...fixture.input, loadout: fixture.source.loadout });
@@ -756,10 +785,11 @@ it('allocates distinct names for parallel launches and refuses bounded exhaustio
 it.each(['failure', 'malformed'] as const)(
   'refuses naming when live listing is %s',
   async (kind) => {
-    const { controller, input, calls } = setup(afterTest, 0, async (arguments_) => {
-      if (arguments_[1] !== 'list') {
+    const { controller, input, calls } = setup(afterTest, 0, async (argumentsList) => {
+      if (argumentsList[1] !== 'list') {
         return '';
       }
+
       if (kind === 'failure') {
         throw new Error('Listing failed.');
       }
@@ -784,9 +814,10 @@ it.each(['cancelled', 'expired', 'closed'] as const)(
     const { controller, input, calls, directory } = setup(
       afterTest,
       0,
-      async (arguments_, budget) => {
-        if (arguments_[1] === 'list') {
+      async (argumentsList, budget) => {
+        if (argumentsList[1] === 'list') {
           listed.resolve(budget);
+
           return release.promise;
         }
 
@@ -795,6 +826,7 @@ it.each(['cancelled', 'expired', 'closed'] as const)(
     );
     const pending = controller.launch(input, abort.signal);
     expect(await listed.promise).toBeLessThanOrEqual(7500);
+
     if (kind === 'cancelled') {
       abort.abort(new Error('Name listing cancelled.'));
     } else if (kind === 'closed') {
@@ -802,6 +834,7 @@ it.each(['cancelled', 'expired', 'closed'] as const)(
     } else {
       clock.mockReturnValue(10000);
     }
+
     release.resolve(JSON.stringify({ result: { type: 'agent_list', agents: [] } }));
 
     await expect(pending).rejects.toThrow(/cancelled|aborted|budget expired/);
@@ -814,8 +847,8 @@ it('retains the chosen name but never retries a late live collision', async ({
   onTestFinished,
 }) => {
   vi.spyOn(names, 'nameSuffix').mockReturnValue('xy');
-  const { controller, input, calls } = setup(onTestFinished, 0, async (arguments_) => {
-    if (arguments_[1] === 'start') {
+  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
       throw new Error('agent_name_taken');
     }
 
@@ -842,7 +875,7 @@ it('delivers a clarification once without treating herdr delivery as acknowledge
   const { controller, input, calls, notifications, directory } = setup(
     onTestFinished,
     0,
-    async (arguments_) => (arguments_[1] === 'prompt' ? JSON.stringify({ result: {} }) : ''),
+    async (argumentsList) => (argumentsList[1] === 'prompt' ? JSON.stringify({ result: {} }) : ''),
   );
   const launched = await controller.launch(input);
   const task = readTask(launched.directory);
@@ -898,14 +931,16 @@ it.each(['before', 'during'] as const)(
     let moved = false;
     let token = '';
     const movedPane = 'other-workspace:worker';
-    const { controller, input, calls } = setup(afterTest, 0, async (arguments_) => {
-      if (arguments_[1] === 'start') {
-        token = arguments_[arguments_.indexOf('--session') + 1]!;
+    const { controller, input, calls } = setup(afterTest, 0, async (argumentsList) => {
+      if (argumentsList[1] === 'start') {
+        token = argumentsList[argumentsList.indexOf('--session') + 1]!;
       }
+
       if (!replying) {
         return '';
       }
-      if (arguments_[0] === 'pane' && arguments_[1] === 'list' && moved) {
+
+      if (argumentsList[0] === 'pane' && argumentsList[1] === 'list' && moved) {
         return JSON.stringify({
           result: {
             panes: [
@@ -919,7 +954,8 @@ it.each(['before', 'during'] as const)(
           },
         });
       }
-      if (arguments_[1] === 'process-info' && moved) {
+
+      if (argumentsList[1] === 'process-info' && moved) {
         return JSON.stringify({
           result: {
             process_info: {
@@ -931,7 +967,8 @@ it.each(['before', 'during'] as const)(
           },
         });
       }
-      if (arguments_[1] === 'get') {
+
+      if (argumentsList[1] === 'get') {
         const paneId = moved ? movedPane : 'owned-pane';
         moved = true;
 
@@ -939,7 +976,8 @@ it.each(['before', 'during'] as const)(
           result: { agent: { pane_id: paneId, agent: 'pi', agent_session: { value: token } } },
         });
       }
-      if (arguments_[1] === 'prompt') {
+
+      if (argumentsList[1] === 'prompt') {
         return '{}';
       }
 
@@ -1048,8 +1086,8 @@ it('refuses reply delivery when the original native worker identity changes', as
   onTestFinished,
 }) => {
   let changed = false;
-  const { controller, input, calls } = setup(onTestFinished, 0, async (arguments_) =>
-    changed && arguments_[1] === 'get'
+  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) =>
+    changed && argumentsList[1] === 'get'
       ? JSON.stringify({
           result: {
             agent: { pane_id: 'owned-pane', agent: 'pi', agent_session: { value: '/wrong.jsonl' } },
@@ -1089,25 +1127,29 @@ it.each(['confirmed', 'unconfirmed'] as const)(
     const release = vi.spyOn(WorkerPlacement.prototype, 'release');
     let cleaning = false;
     let held = false;
-    const { controller, input } = setup(afterTest, 0, async (arguments_) => {
-      if (cleaning && !held && arguments_[1] === 'list') {
+    const { controller, input } = setup(afterTest, 0, async (argumentsList) => {
+      if (cleaning && !held && argumentsList[1] === 'list') {
         held = true;
         entered.resolve(undefined);
         await resume.promise;
+
         if (outcome === 'unconfirmed') {
           throw new Error('Cleanup identity unavailable.');
         }
       }
-      const paneId = arguments_[arguments_.indexOf('--pane') + 1]!;
-      if (arguments_[1] === 'start') {
-        const token = arguments_[arguments_.indexOf('--session') + 1]!;
+
+      const paneId = argumentsList[argumentsList.indexOf('--pane') + 1]!;
+
+      if (argumentsList[1] === 'start') {
+        const token = argumentsList[argumentsList.indexOf('--session') + 1]!;
         tokens.set(paneId, token);
         const task = readTask(dirname(token));
         recordEvent(dirname(token), task.taskId, 'ready', 'Ready.', false, process.pid);
 
         return '{}';
       }
-      if (arguments_[1] === 'process-info') {
+
+      if (argumentsList[1] === 'process-info') {
         return JSON.stringify({
           result: {
             process_info: {
@@ -1119,22 +1161,24 @@ it.each(['confirmed', 'unconfirmed'] as const)(
           },
         });
       }
-      if (arguments_[1] === 'get') {
+
+      if (argumentsList[1] === 'get') {
         return JSON.stringify({
           result: {
             agent: {
-              pane_id: arguments_[2],
+              pane_id: argumentsList[2],
               agent: 'pi',
-              agent_session: { value: tokens.get(arguments_[2]!) },
+              agent_session: { value: tokens.get(argumentsList[2]!) },
             },
           },
         });
       }
 
-      if (arguments_[0] === 'agent' && arguments_[1] === 'list') {
+      if (argumentsList[0] === 'agent' && argumentsList[1] === 'list') {
         return '';
       }
-      return terminal.client(arguments_);
+
+      return terminal.client(argumentsList);
     });
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const first = await controller.launch(input);
@@ -1167,8 +1211,8 @@ it.each(['confirmed', 'unconfirmed'] as const)(
 it('chooses a down split for a narrow tall parent without changing focus', async ({
   onTestFinished,
 }) => {
-  const { controller, input, calls } = setup(onTestFinished, 0, async (arguments_) => {
-    if (arguments_[1] === 'current') {
+  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'current') {
       return JSON.stringify({
         result: {
           pane: {
@@ -1180,7 +1224,8 @@ it('chooses a down split for a narrow tall parent without changing focus', async
         },
       });
     }
-    if (arguments_[0] === 'pane' && arguments_[1] === 'list') {
+
+    if (argumentsList[0] === 'pane' && argumentsList[1] === 'list') {
       return JSON.stringify({
         result: {
           panes: [
@@ -1200,7 +1245,8 @@ it('chooses a down split for a narrow tall parent without changing focus', async
         },
       });
     }
-    if (arguments_[1] === 'layout') {
+
+    if (argumentsList[1] === 'layout') {
       return JSON.stringify({
         result: {
           layout: {
@@ -1213,6 +1259,7 @@ it('chooses a down split for a narrow tall parent without changing focus', async
         },
       });
     }
+
     return '';
   });
   const launched = await controller.launch(input);
@@ -1228,11 +1275,12 @@ it.each(['moved', 'duplicate', 'missing', 'replacement job'] as const)(
   'protects terminal ownership during %s cleanup',
   async (scenario) => {
     let cleaning = false;
-    const { controller, input, calls } = setup(afterTest, 0, async (arguments_) => {
+    const { controller, input, calls } = setup(afterTest, 0, async (argumentsList) => {
       if (!cleaning) {
         return '';
       }
-      if (arguments_[1] === 'list') {
+
+      if (argumentsList[1] === 'list') {
         const pane = {
           pane_id: 'other-workspace:pane',
           terminal_id: 'owned-terminal',
@@ -1240,13 +1288,15 @@ it.each(['moved', 'duplicate', 'missing', 'replacement job'] as const)(
           tab_id: 'other-workspace:tab',
         };
         const panes = scenario === 'missing' ? [] : [pane];
+
         if (scenario === 'duplicate') {
           panes.push({ ...pane, pane_id: 'ambiguous' });
         }
 
         return JSON.stringify({ result: { panes } });
       }
-      if (arguments_[1] === 'process-info') {
+
+      if (argumentsList[1] === 'process-info') {
         return JSON.stringify({
           result: {
             process_info: {
@@ -1258,9 +1308,11 @@ it.each(['moved', 'duplicate', 'missing', 'replacement job'] as const)(
           },
         });
       }
-      if (arguments_[1] === 'close') {
+
+      if (argumentsList[1] === 'close') {
         return '{}';
       }
+
       return '';
     });
     const launched = await controller.launch(input);
@@ -1290,13 +1342,13 @@ it('retains confirmed terminal evidence when cancelled during the cosmetic place
   let created = false;
   let recordDirectory = '';
   const release = vi.spyOn(WorkerPlacement.prototype, 'release');
-  const { controller, input, calls } = setup(onTestFinished, 0, async (arguments_) => {
-    if (arguments_[1] === 'split') {
+  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'split') {
       created = true;
-      recordDirectory = arguments_
+      recordDirectory = argumentsList
         .find((argument) => argument.startsWith('TAU_WORKER_RECORD='))!
         .slice('TAU_WORKER_RECORD='.length);
-    } else if (created && arguments_[1] === 'layout') {
+    } else if (created && argumentsList[1] === 'layout') {
       abort.abort();
       await snapshot.promise;
     }
@@ -1432,11 +1484,12 @@ it('stops dispatched work when the launch status finds corrupt report evidence',
   const { controller, input, calls, notifications } = setup(
     onTestFinished,
     0,
-    async (arguments_) => {
-      if (arguments_[1] === 'start') {
-        recordDirectory = dirname(arguments_[arguments_.indexOf('--session') + 1] ?? '');
+    async (argumentsList) => {
+      if (argumentsList[1] === 'start') {
+        recordDirectory = dirname(argumentsList[argumentsList.indexOf('--session') + 1] ?? '');
         writeFileSync(join(recordDirectory, 'report.json'), '{');
       }
+
       return '';
     },
   );
@@ -1500,11 +1553,13 @@ it('preserves incomplete output and malformed evidence without retrying startup'
 }) => {
   const { directory, input } = setup(onTestFinished);
   const calls: string[][] = [];
-  const controller = new WorkerController(directory, async (arguments_) => {
-    calls.push(arguments_);
-    if (arguments_[1] === 'list') {
+  const controller = new WorkerController(directory, async (argumentsList) => {
+    calls.push(argumentsList);
+
+    if (argumentsList[1] === 'list') {
       return JSON.stringify({ result: { type: 'agent_list', agents: [] } });
     }
+
     throw new Error('Startup unavailable');
   });
   onTestFinished(() => {
@@ -1587,6 +1642,7 @@ it('ends in-flight cleanup on parent shutdown without further calls or notificat
       if (!cleaning || !signal) {
         return '';
       }
+
       entered.resolve(signal);
 
       return released.promise;
@@ -1625,11 +1681,13 @@ it('refuses expired work and invalid deadlines before creating a pane', async ({
   };
 
   await expect(controller.launch({ ...input, startedAt })).rejects.toThrow('work budget expired');
+
   for (const timeout of [0, -1, Number.NaN, 2_147_483_648]) {
     await expect(controller.launch({ ...input, timeout })).rejects.toThrow(
       /work budget expired|Invalid fixed worker deadline/,
     );
   }
+
   expect(calls).toEqual([]);
 });
 
@@ -1645,6 +1703,7 @@ it('rejects invalid model and thinking in saved loadouts without replacing the t
     writeFileSync(path, JSON.stringify({ ...task, loadout: { ...task.loadout, ...invalid } }));
     expect(() => readTask(launched.directory)).toThrow('Invalid saved worker task or loadout');
   }
+
   writeFileSync(path, JSON.stringify(task));
   expect(readTask(launched.directory).loadout).toEqual(input.loadout);
 });
@@ -1692,8 +1751,8 @@ it('detects an owned worker exiting before readiness without waiting for the tas
     throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
   });
   let inspections = 0;
-  const { controller, input, calls } = setup(onTestFinished, -1, async (arguments_) => {
-    if (arguments_[1] === 'process-info' && ++inspections > 1) {
+  const { controller, input, calls } = setup(onTestFinished, -1, async (argumentsList) => {
+    if (argumentsList[1] === 'process-info' && ++inspections > 1) {
       return JSON.stringify({
         result: {
           process_info: {
@@ -1705,7 +1764,8 @@ it('detects an owned worker exiting before readiness without waiting for the tas
         },
       });
     }
-    return arguments_[1] === 'close' ? '{}' : '';
+
+    return argumentsList[1] === 'close' ? '{}' : '';
   });
   const started = performance.now();
   const status = await controller.launch({ ...input, timeout: 60_000 });
@@ -1722,21 +1782,25 @@ it.each(['missing report', 'accepted report'])(
   async (reportState) => {
     vi.useFakeTimers();
     let exited = false;
-    const { controller, input, calls, notifications } = setup(afterTest, 0, async (arguments_) => {
-      if (exited && arguments_[1] === 'process-info') {
-        return JSON.stringify({
-          result: {
-            process_info: {
-              pane_id: 'owned-pane',
-              shell_pid: 100,
-              foreground_process_group_id: 100,
+    const { controller, input, calls, notifications } = setup(
+      afterTest,
+      0,
+      async (argumentsList) => {
+        if (exited && argumentsList[1] === 'process-info') {
+          return JSON.stringify({
+            result: {
+              process_info: {
+                pane_id: 'owned-pane',
+                shell_pid: 100,
+                foreground_process_group_id: 100,
+              },
             },
-          },
-        });
-      }
+          });
+        }
 
-      return arguments_[1] === 'close' ? '{}' : '';
-    });
+        return argumentsList[1] === 'close' ? '{}' : '';
+      },
+    );
     const launched = await controller.launch({ ...input, timeout: 60_000 });
     recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
     const report = {
@@ -1745,9 +1809,11 @@ it.each(['missing report', 'accepted report'])(
       summary: 'Saved handover.',
       evidence: ['source.ts:1'],
     };
+
     if (reportState === 'accepted report') {
       acceptReport(launched.directory, launched.taskId, report);
     }
+
     vi.spyOn(process, 'kill').mockImplementation(() => {
       throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
     });
@@ -1775,11 +1841,12 @@ it('cleans up an owned live pane even when startup failure evidence is corrupt',
   const { controller, input, calls, notifications } = setup(
     onTestFinished,
     0,
-    async (arguments_) => {
-      if (arguments_[1] === 'start') {
-        recordDirectory = dirname(arguments_[arguments_.indexOf('--session') + 1] ?? '');
+    async (argumentsList) => {
+      if (argumentsList[1] === 'start') {
+        recordDirectory = dirname(argumentsList[argumentsList.indexOf('--session') + 1] ?? '');
         writeFileSync(join(recordDirectory, 'startupFailure.json'), '{');
       }
+
       return '';
     },
   );
@@ -1804,19 +1871,21 @@ it('reports both startup and receipt failures after attempting owned pane cleanu
   const { controller, input, calls, notifications } = setup(
     onTestFinished,
     -1,
-    async (arguments_) => {
-      if (arguments_[1] === 'process-info' && ++inspections === 2) {
+    async (argumentsList) => {
+      if (argumentsList[1] === 'process-info' && ++inspections === 2) {
         throw new Error('Injected worker identity probe failure');
       }
+
       return '';
     },
   );
   const original = records.recordEvent;
-  vi.spyOn(records, 'recordEvent').mockImplementation((...arguments_) => {
-    if (arguments_[2] === 'startupFailure') {
+  vi.spyOn(records, 'recordEvent').mockImplementation((...argumentsList) => {
+    if (argumentsList[2] === 'startupFailure') {
       throw new Error('Injected startup receipt write failure');
     }
-    original(...arguments_);
+
+    original(...argumentsList);
   });
   const launch = controller.launch(input);
 
@@ -1836,16 +1905,18 @@ it.each(['cancelled', 'timeout'] as const)(
     const launched = await controller.launch(input);
     writeFileSync(join(launched.directory, 'report.json'), '{');
     const original = records.recordEvent;
-    vi.spyOn(records, 'recordEvent').mockImplementation((...arguments_) => {
-      if (arguments_[2] === reason) {
+    vi.spyOn(records, 'recordEvent').mockImplementation((...argumentsList) => {
+      if (argumentsList[2] === reason) {
         throw new Error('Injected receipt write failure');
       }
-      original(...arguments_);
+
+      original(...argumentsList);
     });
 
     if (reason === 'timeout') {
       await vi.advanceTimersByTimeAsync(7600);
     }
+
     await expect(controller.cancel(launched.taskId, 'parent-id')).rejects.toThrow(
       /records|evidence/i,
     );
@@ -1881,11 +1952,13 @@ it('distinguishes missing readiness timeout from startup failure inside the orig
   const { controller, input, calls } = setup(
     onTestFinished,
     -1,
-    async (arguments_, budget, signal) => {
+    async (argumentsList, budget, signal) => {
       expect(budget).toBeGreaterThan(0);
       expect(budget).toBeLessThanOrEqual(7500);
-      if (arguments_[1] === 'process-info' && ++inspections === 2) {
+
+      if (argumentsList[1] === 'process-info' && ++inspections === 2) {
         monitoring.resolve(undefined);
+
         return new Promise((_resolve, reject) => {
           signal?.addEventListener(
             'abort',
@@ -1896,6 +1969,7 @@ it('distinguishes missing readiness timeout from startup failure inside the orig
           );
         });
       }
+
       return '';
     },
   );
@@ -1918,13 +1992,15 @@ it('polls slow worker readiness at 250 ms intervals', async ({ onTestFinished })
   vi.spyOn(cancellationModule, 'runClient').mockResolvedValue('fixture start');
   const polled = Promise.withResolvers<undefined>();
   const inspections: number[] = [];
-  const { controller, input } = setup(onTestFinished, -1, async (arguments_) => {
-    if (arguments_[1] === 'process-info') {
+  const { controller, input } = setup(onTestFinished, -1, async (argumentsList) => {
+    if (argumentsList[1] === 'process-info') {
       inspections.push(performance.now());
+
       if (inspections.length === 3) {
         polled.resolve(undefined);
       }
     }
+
     return '';
   });
   const launch = controller.launch(input);
@@ -1977,9 +2053,11 @@ it('reports unreadable descendant evidence instead of breaking status', async ({
   const { controller, input } = setup(onTestFinished, 0);
   const status = await controller.launch(input);
   const reservations = status.reservationDirectory;
+
   if (!reservations) {
     throw new Error('Missing reservation directory.');
   }
+
   writeFileSync(join(reservations, 'broken.json'), '{');
 
   const degraded = taskStatus(status.directory);

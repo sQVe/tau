@@ -20,26 +20,36 @@ export const readNative = (path: string) => {
     path,
     constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
   );
+
   try {
     const stat = fstatSync(descriptor, { bigint: true });
+
     if (!stat.isFile()) {
       throw new Error('Native session must be an existing regular file.');
     }
+
     const buffer = Buffer.alloc(64_001);
     let length = 0;
+
     while (length < buffer.length && buffer.subarray(0, length).indexOf(10) === -1) {
       const count = readSync(descriptor, buffer, length, buffer.length - length, length);
+
       if (!count) {
         break;
       }
+
       length += count;
     }
+
     const newline = buffer.subarray(0, length).indexOf(10);
     const end = newline === -1 ? length : newline;
+
     if (end > 64_000) {
       throw new Error('Session lineage header exceeds 64 KB.');
     }
+
     const header: unknown = JSON.parse(buffer.subarray(0, end).toString('utf8'));
+
     if (!Value.Check(headerSchema, header)) {
       throw new Error('Invalid or unsupported native session lineage header.');
     }
@@ -65,6 +75,7 @@ export const validateNative = (task: Task, origin: Task) => {
 
   try {
     const native = readNative(saved.nativeSessionFile);
+
     if (
       native.header.id !== task.nativeSessionId ||
       native.header.cwd !== task.loadout.cwd ||

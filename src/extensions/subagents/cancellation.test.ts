@@ -12,9 +12,10 @@ it('resolves moved terminal identity before sending cancellation keys', async ()
     processId: process.pid,
     token: '/tmp/moved-session',
   };
-  const client = async (arguments_: string[]) => {
-    calls.push(arguments_);
-    if (arguments_[1] === 'list') {
+  const client = async (argumentsList: string[]) => {
+    calls.push(argumentsList);
+
+    if (argumentsList[1] === 'list') {
       return JSON.stringify({
         result: {
           panes: [
@@ -28,14 +29,16 @@ it('resolves moved terminal identity before sending cancellation keys', async ()
         },
       });
     }
-    if (arguments_[1] === 'get') {
+
+    if (argumentsList[1] === 'get') {
       return JSON.stringify({
         result: {
           agent: { pane_id: 'new:pane', agent: 'pi', agent_session: { value: owned.token } },
         },
       });
     }
-    if (arguments_[1] === 'process-info') {
+
+    if (argumentsList[1] === 'process-info') {
       return JSON.stringify({
         result: {
           process_info: {
@@ -47,6 +50,7 @@ it('resolves moved terminal identity before sending cancellation keys', async ()
         },
       });
     }
+
     throw new Error('Input delivery uncertain');
   };
   const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);
@@ -74,9 +78,10 @@ it('follows a second move while confirming cancellation without sending input tw
   onTestFinished(() => {
     vi.restoreAllMocks();
   });
-  const client = async (arguments_: string[]) => {
-    calls.push(arguments_);
-    if (arguments_[1] === 'list') {
+  const client = async (argumentsList: string[]) => {
+    calls.push(argumentsList);
+
+    if (argumentsList[1] === 'list') {
       return JSON.stringify({
         result: {
           panes: [
@@ -90,12 +95,14 @@ it('follows a second move while confirming cancellation without sending input tw
         },
       });
     }
-    if (arguments_[1] === 'send-keys') {
+
+    if (argumentsList[1] === 'send-keys') {
       paneId = 'second:pane';
       stopped = true;
 
       return '{}';
     }
+
     const processId = stopped ? owned.shellPid : owned.processId;
 
     return JSON.stringify({
@@ -131,9 +138,10 @@ it.each(['missing', 'duplicate', 'changed before input'] as const)(
       processId: 101,
       token: '/tmp/worker',
     };
-    const client = async (arguments_: string[]) => {
-      calls.push(arguments_);
-      if (arguments_[1] === 'list') {
+    const client = async (argumentsList: string[]) => {
+      calls.push(argumentsList);
+
+      if (argumentsList[1] === 'list') {
         const pane = {
           pane_id: ++inventories === 1 ? 'first:pane' : 'second:pane',
           terminal_id: owned.terminalId,
@@ -141,6 +149,7 @@ it.each(['missing', 'duplicate', 'changed before input'] as const)(
           tab_id: 'tab',
         };
         const panes = scenario === 'missing' ? [] : [pane];
+
         if (scenario === 'duplicate') {
           panes.push({ ...pane, pane_id: 'duplicate' });
         }
@@ -176,13 +185,14 @@ it('reports identity loss after cancellation input as unconfirmed', async () => 
     processId: 101,
     token: '/tmp/worker',
   };
-  const client = async (arguments_: string[]) => {
-    if (arguments_[1] === 'list') {
+  const client = async (argumentsList: string[]) => {
+    if (argumentsList[1] === 'list') {
       const pane = { pane_id: 'pane', terminal_id: 'terminal', workspace_id: 'w', tab_id: 't' };
 
       return JSON.stringify({ result: { panes: sent ? [] : [pane] } });
     }
-    if (arguments_[1] === 'send-keys') {
+
+    if (argumentsList[1] === 'send-keys') {
       sent = true;
 
       return '{}';
@@ -216,9 +226,10 @@ it('requests active Pi abort before attempting editor shutdown without claiming 
     processId: process.pid,
     token: '/tmp/unique-session.jsonl',
   };
-  const client = async (arguments_: string[]) => {
-    calls.push(arguments_);
-    if (arguments_[1] === 'list') {
+  const client = async (argumentsList: string[]) => {
+    calls.push(argumentsList);
+
+    if (argumentsList[1] === 'list') {
       return JSON.stringify({
         result: {
           panes: [
@@ -232,12 +243,14 @@ it('requests active Pi abort before attempting editor shutdown without claiming 
         },
       });
     }
-    if (arguments_[1] === 'get') {
+
+    if (argumentsList[1] === 'get') {
       return JSON.stringify({
         result: { agent: { pane_id: 'owned', agent: 'pi', agent_session: { value: owned.token } } },
       });
     }
-    if (arguments_[1] === 'process-info') {
+
+    if (argumentsList[1] === 'process-info') {
       return JSON.stringify({
         result: {
           process_info: {
@@ -249,6 +262,7 @@ it('requests active Pi abort before attempting editor shutdown without claiming 
         },
       });
     }
+
     throw new Error('Injected unavailable terminal input.');
   };
   const result = await cancelOwnedWorker(owned, 100, client, new AbortController().signal);

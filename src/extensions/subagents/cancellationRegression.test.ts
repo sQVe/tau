@@ -76,8 +76,8 @@ const shellSnapshot = (worker: { paneId: string; shellPid: number }) =>
   });
 const withInventory =
   (client: Client): Client =>
-  async (arguments_, budget, signal) => {
-    if (arguments_[1] === 'list') {
+  async (argumentsList, budget, signal) => {
+    if (argumentsList[1] === 'list') {
       return JSON.stringify({
         result: {
           panes: [
@@ -92,7 +92,7 @@ const withInventory =
       });
     }
 
-    return client(arguments_, budget, signal);
+    return client(argumentsList, budget, signal);
   };
 
 describe('owned worker cancellation', () => {
@@ -151,8 +151,8 @@ describe('owned worker cancellation', () => {
       processId: process.pid,
       startedAt: scenario === 'changed start' ? 'previous process' : startedAt,
     };
-    const client = vi.fn<Client>(async (arguments_) => {
-      if (arguments_[1] === 'get') {
+    const client = vi.fn<Client>(async (argumentsList) => {
+      if (argumentsList[1] === 'get') {
         return JSON.stringify({
           result: {
             agent: {
@@ -165,12 +165,15 @@ describe('owned worker cancellation', () => {
           },
         });
       }
-      if (arguments_[1] === 'send-keys') {
+
+      if (argumentsList[1] === 'send-keys') {
         return '{}';
       }
+
       if (client.mock.calls.some(([call]) => call[1] === 'send-keys')) {
         return shell();
       }
+
       return JSON.stringify({
         result: {
           process_info: {
@@ -194,7 +197,7 @@ describe('owned worker cancellation', () => {
       withInventory(client),
       new AbortController().signal,
     );
-    const sent = client.mock.calls.filter(([arguments_]) => arguments_[1] === 'send-keys');
+    const sent = client.mock.calls.filter(([argumentsList]) => argumentsList[1] === 'send-keys');
 
     expect(result.cleanup).toBe(scenario === 'rewritten argv' ? 'confirmed' : 'refused');
     expect(sent).toHaveLength(scenario === 'rewritten argv' ? 1 : 0);
@@ -209,9 +212,10 @@ describe('owned worker cancellation', () => {
       });
       const generic = await genericOwned(shellProcess.pid as number);
       const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
-      const client = vi.fn<Client>(async (arguments_): Promise<string> => {
+      const client = vi.fn<Client>(async (argumentsList): Promise<string> => {
         const sent = client.mock.calls.filter(([call]) => call[1] === 'send-keys').length;
-        if (arguments_[1] === 'get') {
+
+        if (argumentsList[1] === 'get') {
           return JSON.stringify({
             result: {
               agent: {
@@ -226,13 +230,15 @@ describe('owned worker cancellation', () => {
             },
           });
         }
-        if (arguments_[1] === 'send-keys') {
+
+        if (argumentsList[1] === 'send-keys') {
           if (sent > 1) {
             throw new Error('Interrupted a replacement worker.');
           }
 
           return '{}';
         }
+
         if (sent) {
           clock.mockReturnValue(600);
         }
@@ -259,9 +265,10 @@ describe('owned worker cancellation', () => {
     const generic = await genericOwned(shellProcess.pid as number);
     const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
     let polls = 0;
-    const client = vi.fn<Client>(async (arguments_): Promise<string> => {
+    const client = vi.fn<Client>(async (argumentsList): Promise<string> => {
       const sent = client.mock.calls.filter(([call]) => call[1] === 'send-keys').length;
-      if (arguments_[1] === 'get') {
+
+      if (argumentsList[1] === 'get') {
         return sent
           ? '{}'
           : JSON.stringify({
@@ -277,12 +284,15 @@ describe('owned worker cancellation', () => {
               },
             });
       }
-      if (arguments_[1] === 'send-keys') {
+
+      if (argumentsList[1] === 'send-keys') {
         return '{}';
       }
+
       if (!sent) {
         return genericSnapshot(generic);
       }
+
       polls += 1;
       clock.mockReturnValue(600);
 
@@ -365,9 +375,9 @@ describe('owned worker cancellation', () => {
 
     await vi.advanceTimersByTimeAsync(200);
     await expect(result).resolves.toMatchObject({ cleanup: 'unconfirmed' });
-    expect(client.mock.calls.filter(([arguments_]) => arguments_[1] === 'send-keys')).toHaveLength(
-      1,
-    );
+    expect(
+      client.mock.calls.filter(([argumentsList]) => argumentsList[1] === 'send-keys'),
+    ).toHaveLength(1);
   });
 
   it('does not call a surviving background process stopped when the shell returns', async () => {

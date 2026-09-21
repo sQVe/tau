@@ -22,11 +22,11 @@ describe('direct commit staging', () => {
     await execute(signal);
 
     const untimedCalls = exec.mock.calls.filter(
-      ([, arguments_]) =>
-        arguments_.includes('--show-prefix') ||
-        arguments_.includes('--cached') ||
-        arguments_.includes('add') ||
-        arguments_[0] === 'diff-tree',
+      ([, argumentsList]) =>
+        argumentsList.includes('--show-prefix') ||
+        argumentsList.includes('--cached') ||
+        argumentsList.includes('add') ||
+        argumentsList[0] === 'diff-tree',
     );
 
     expect(untimedCalls).toHaveLength(5);
@@ -36,7 +36,7 @@ describe('direct commit staging', () => {
     }
 
     for (const command of ['ls-files', 'write-tree', 'cat-file']) {
-      const calls = exec.mock.calls.filter(([, arguments_]) => arguments_[0] === command);
+      const calls = exec.mock.calls.filter(([, argumentsList]) => argumentsList[0] === command);
 
       expect(calls.length).toBeGreaterThan(0);
 
@@ -50,10 +50,10 @@ describe('direct commit staging', () => {
     }
 
     const headCalls = exec.mock.calls.filter(
-      ([, arguments_]) => arguments_[0] === 'rev-parse' && arguments_[1] === 'HEAD',
+      ([, argumentsList]) => argumentsList[0] === 'rev-parse' && argumentsList[1] === 'HEAD',
     );
     const hookDiff = exec.mock.calls.find(
-      ([, arguments_]) => arguments_[0] === 'diff' && !arguments_.includes('--cached'),
+      ([, argumentsList]) => argumentsList[0] === 'diff' && !argumentsList.includes('--cached'),
     );
 
     expect(headCalls.at(-1)?.[2]).toEqual({ cwd: '/repo', timeout: 30_000 });
@@ -64,10 +64,10 @@ describe('direct commit staging', () => {
     const { execute, exec, review } = fakeCommit();
     const executeGit = exec.getMockImplementation()!;
 
-    exec.mockImplementation(async (command, arguments_, options) => {
-      const result = await executeGit(command, arguments_, options);
+    exec.mockImplementation(async (command, argumentsList, options) => {
+      const result = await executeGit(command, argumentsList, options);
 
-      return arguments_.includes('add')
+      return argumentsList.includes('add')
         ? { ...result, killed: true, stderr: 'staging interrupted' }
         : result;
     });
@@ -109,10 +109,10 @@ describe('direct commit staging', () => {
     await writeRepositoryFile(directory, 'other', 'working bytes');
     const tool = createCommitTool(
       {
-        exec: async (command, arguments_, options) => {
-          const result = await runCommand(command, arguments_, options?.cwd ?? directory);
+        exec: async (command, argumentsList, options) => {
+          const result = await runCommand(command, argumentsList, options?.cwd ?? directory);
 
-          if (arguments_.includes('add')) {
+          if (argumentsList.includes('add')) {
             await writeRepositoryFile(directory, 'other', 'staged bytes');
             await git(directory, ['add', 'other']);
             await writeRepositoryFile(directory, 'other', 'working bytes');
@@ -161,8 +161,8 @@ describe('direct commit staging', () => {
     await chmod(join(directory, '.git/hooks/pre-commit'), 0o755);
     const tool = createCommitTool(
       {
-        exec: (command, arguments_, options) =>
-          runCommand(command, arguments_, options?.cwd ?? directory),
+        exec: (command, argumentsList, options) =>
+          runCommand(command, argumentsList, options?.cwd ?? directory),
       },
       async () => ({ findings: [] }),
     );
@@ -216,8 +216,8 @@ describe('direct commit staging', () => {
     let reviews = 0;
     const tool = createCommitTool(
       {
-        exec: (command, arguments_, options) =>
-          runCommand(command, arguments_, options?.cwd ?? directory),
+        exec: (command, argumentsList, options) =>
+          runCommand(command, argumentsList, options?.cwd ?? directory),
       },
       async () => {
         reviews += 1;

@@ -42,17 +42,20 @@ export const isolatedHerdr = async (
     rmSync(root, { recursive: true, force: true });
   });
   const readyDeadline = performance.now() + 10_000;
+
   while (!existsSync(join(root, 'config', 'herdr', 'sessions', 'tau-worker-test', 'herdr.sock'))) {
     if (performance.now() > readyDeadline) {
       throw new Error('Isolated herdr did not start.');
     }
+
     // oxlint-disable-next-line eslint/no-await-in-loop -- Real socket readiness is bounded by the test deadline.
     await delay(25);
   }
-  const client = (arguments_: string[], budget = 5000, signal?: AbortSignal) =>
+
+  const client = (argumentsList: string[], budget = 5000, signal?: AbortSignal) =>
     runClient(
       'herdr',
-      ['--session', 'tau-worker-test', ...arguments_],
+      ['--session', 'tau-worker-test', ...argumentsList],
       budget,
       signal,
       environment,

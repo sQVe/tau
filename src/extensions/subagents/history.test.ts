@@ -110,9 +110,11 @@ const historyTool = async (fixture: ReturnType<typeof setup>, file: string, id: 
     .getExtensions()
     .extensions.flatMap((extension) => Array.from(extension.tools.values()))
     .find((entry) => entry.definition.name === 'subagent_history')?.definition;
+
   if (!tool) {
     throw new Error('History tool missing.');
   }
+
   const context = {
     sessionManager: {
       getSessionFile: () => file,
@@ -127,16 +129,20 @@ const historyTool = async (fixture: ReturnType<typeof setup>, file: string, id: 
 
 it('bounds production history output while paging all matches and retaining record retrieval', async () => {
   const fixture = setup();
+
   for (let index = 0; index < 20; index++) {
     fixture.task(`task-${String(index).padStart(2, '0')}`, fixture.root, 'root', undefined, true);
   }
+
   const execute = await historyTool(fixture, fixture.root, 'root');
   const response = await execute({ query: 'needle-tail', limit: 1 });
   expect(Buffer.byteLength(JSON.stringify(response), 'utf8')).toBeLessThan(150000);
   const text = response.content.find((part) => part.type === 'text');
+
   if (!text) {
     throw new Error('History text missing.');
   }
+
   expect(Buffer.byteLength(text.text, 'utf8')).toBeLessThanOrEqual(48000);
   const page = JSON.parse(text.text) as {
     outcome: string;
@@ -381,9 +387,11 @@ it.each(['broken', 'cyclic', 'mismatched'] as const)(
       id: kind === 'mismatched' ? 'wrong-id' : 'child',
       sessionDirectory: fixture.sessions,
     };
+
     if (kind === 'broken') {
       rmSync(fixture.root);
     }
+
     if (kind === 'cyclic') {
       fixture.session('root', fixture.child, fixture.root);
     }

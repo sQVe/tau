@@ -163,6 +163,7 @@ it('rejects descendant authority changes and never lets descendants configure th
   }).toThrow('descendant cannot configure');
   reserveTask(root, parent);
   save(parent);
+
   for (const change of [
     { model: 'different/model' },
     { tools: [...child.loadout.tools, 'new-authority'] },
@@ -172,6 +173,7 @@ it('rejects descendant authority changes and never lets descendants configure th
       reserveTask(root, { ...child, loadout: { ...child.loadout, ...change } });
     }).toThrow('inherited settings');
   }
+
   expect(() => {
     reserveTask(root, { ...child, tree: { ...child.tree, monotonicDeadline: 56001 } });
   }).toThrow('deadline');
@@ -208,6 +210,7 @@ process.stdin.once('data', () => {
     let errors = '';
     contender.stdout.on('data', (data: Buffer) => {
       output += data.toString();
+
       if (output.includes('ready\n')) {
         ready.resolve(undefined);
       }
@@ -227,9 +230,11 @@ process.stdin.once('data', () => {
     };
   });
   await Promise.all(contenders.map((contender) => contender.ready));
+
   for (const contender of contenders) {
     contender.process.stdin.end('reserve');
   }
+
   const exits = await Promise.all(contenders.map((contender) => contender.exited));
 
   expect(

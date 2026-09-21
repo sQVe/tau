@@ -126,6 +126,7 @@ it.each([
     oversize: '界'.repeat(11000),
     encoding: Buffer.from([0xff]),
   };
+
   if (failure === 'directory') {
     mkdirSync(setup.path);
   } else if (failure === 'symlink') {
@@ -198,12 +199,14 @@ it.each(['submitted', 'not-delivered', 'uncertain'] as const)(
         id: 'reply-one',
         text: 'Scoped answer.',
       });
+
       if (state !== 'submitted') {
         throw Object.assign(new Error('Delivery failed'), {
           stderr:
             state === 'not-delivered' ? JSON.stringify({ error: { code: 'agent_blocked' } }) : '',
         });
       }
+
       return '{}';
     });
 

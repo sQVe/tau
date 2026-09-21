@@ -358,6 +358,7 @@ describe('commitTool.execute', () => {
         if (reviews === 3 && failure === 'cancel') {
           controller.abort();
         }
+
         if (reviews === 3 && failure === 'hook') {
           await writeRepositoryFile(
             repositoryDirectory,
@@ -522,6 +523,7 @@ describe('commitTool.execute', () => {
         undefined,
         commitContext(repositoryDirectory),
       );
+
     for (let index = 0; index < 33; index += 1) {
       const path = `retry${index}.ts`;
 
@@ -1023,8 +1025,8 @@ describe('commits without approvals', () => {
       .mockResolvedValue({ findings: [] });
     const tool = createReviewedCommitTool(
       {
-        exec: (command, arguments_, options) =>
-          runCommand(command, arguments_, options?.cwd ?? repositoryDirectory),
+        exec: (command, argumentsList, options) =>
+          runCommand(command, argumentsList, options?.cwd ?? repositoryDirectory),
       },
       review,
     );

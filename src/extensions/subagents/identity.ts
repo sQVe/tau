@@ -14,6 +14,7 @@ import type { Task } from './types.js';
 export const currentProcessIdentity = async (signal?: AbortSignal) => {
   const output = await runClient('ps', ['-p', String(process.pid), '-o', 'lstart='], 1000, signal);
   const startedAt = output.trim();
+
   if (!startedAt) {
     throw new Error('Current process start identity is unavailable.');
   }
@@ -37,7 +38,9 @@ const refuseWorkerProcessAsRoot = (
     if (!existsSync(join(directory, 'owned.json'))) {
       continue;
     }
+
     let owned: unknown;
+
     try {
       owned = readRecord(directory, 'owned.json');
     } catch (error) {
@@ -47,6 +50,7 @@ const refuseWorkerProcessAsRoot = (
         { cause: error },
       );
     }
+
     if (
       Value.Check(ownedSchema, owned) &&
       owned.processId === processIdentity.processId &&
@@ -74,7 +78,9 @@ export const authenticateParent = (
     if (taskEnded(directory, task) || !existsSync(join(directory, 'owned.json'))) {
       return false;
     }
+
     let owned: unknown;
+
     try {
       owned = readRecord(directory, 'owned.json');
     } catch {
@@ -93,8 +99,10 @@ export const authenticateParent = (
     );
   });
   const selected = matches.length === 1 ? matches[0] : undefined;
+
   if (selected) {
     const { task, directory } = selected;
+
     if (
       (locator && (!existsSync(locator) || realpathSync(locator) !== realpathSync(directory))) ||
       task.tree.rootSession !== ancestry.root.rootSession ||
@@ -112,9 +120,11 @@ export const authenticateParent = (
 
     return { tree: { ...task.tree, parentTaskId: task.taskId }, parent: task };
   }
+
   if (locator || candidates.length || ancestry.hasWorkerAncestor) {
     throw new Error('Worker native session or parent-owned process identity does not match.');
   }
+
   refuseWorkerProcessAsRoot(
     [...entries.map(({ directory }) => directory), ...retired],
     processIdentity,

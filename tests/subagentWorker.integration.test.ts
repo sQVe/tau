@@ -246,6 +246,7 @@ it.each(['editing', 'investigation'] as const)(
           text: JSON.stringify(event.result),
         });
       }
+
       if (event.type === 'agent_settled') {
         finished.resolve(undefined);
       }
@@ -304,6 +305,7 @@ it.each(['editing', 'investigation'] as const)(
       custom,
       notify: vi.fn<ExtensionUIContext['notify']>(),
     } as unknown as ExtensionUIContext;
+
     if (role === 'editing') {
       writeFileSync(
         authPath,
@@ -311,6 +313,7 @@ it.each(['editing', 'investigation'] as const)(
       );
       await runtime.refresh({ allowNetwork: false });
     }
+
     expect(await new ModelRegistry(runtime).getApiKeyAndHeaders(model)).toMatchObject({
       ok: true,
       apiKey: role === 'editing' ? 'rotated-worker-token' : 'initial-worker-token',
@@ -329,9 +332,11 @@ it.each(['editing', 'investigation'] as const)(
     expect(parentQuestions[0]?.text).toContain('64 KB');
     expect(workerPrompt(task)).toContain('subagent_question');
     const question = readPendingQuestion(taskDirectory, task.taskId);
+
     if (!question) {
       throw new Error('Worker did not save a question.');
     }
+
     expect(session.isStreaming).toBe(false);
     expect(readEvent(taskDirectory, task.taskId, 'settled')).toBeUndefined();
     expect(readReport(taskDirectory, task.taskId)).toBeUndefined();

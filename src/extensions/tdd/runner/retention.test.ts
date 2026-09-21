@@ -41,6 +41,7 @@ it('retains recent completed runs while pruning old and excess diagnostics witho
   for (const path of [expired, abandoned, active, unrelated]) {
     await mkdir(path);
   }
+
   await writeFile(join(expired, 'completed'), '');
   const old = new Date(now - retentionMilliseconds - 1);
   await utimes(join(expired, 'completed'), old, old);

@@ -18,6 +18,7 @@ const canonical = (path: string): string => {
   if (!isAbsolute(path)) {
     throw new Error('Session lineage requires absolute paths.');
   }
+
   try {
     return realpathSync(path);
   } catch (error) {
@@ -33,12 +34,14 @@ const readNode = (file: string, tasks: Map<string, Task>) => {
   const task = tasks.get(file);
   let header;
   let unavailable = false;
+
   try {
     header = nativeHeader(file);
   } catch (error) {
     if (!missing(error) || !task) {
       throw new Error(`Session ancestry is unavailable: ${String(error)}`, { cause: error });
     }
+
     unavailable = true;
     header = {
       type: 'session' as const,
@@ -48,6 +51,7 @@ const readNode = (file: string, tasks: Map<string, Task>) => {
       parentSession: task.parentSession,
     };
   }
+
   if (
     task &&
     (header.id !== task.nativeSessionId ||
@@ -66,16 +70,21 @@ const lineage = (file: string, tasks: Map<string, Task>, expectedId?: string) =>
   const seen = new Set<string>();
   let next: string | undefined = file;
   let expected = expectedId;
+
   while (next) {
     const path = canonical(next);
+
     if (seen.has(path) || seen.size >= 1024) {
       throw new Error('Cyclic or excessive session ancestry.');
     }
+
     seen.add(path);
     const node = readNode(path, tasks);
+
     if (expected !== undefined && node.header.id !== expected) {
       throw new Error('Session lineage identity mismatch.');
     }
+
     nodes.push(node);
     next = node.header.parentSession;
     expected = node.task?.parentSessionId;
@@ -90,14 +99,18 @@ const historyRegistry = (root: string) => {
   const { origins, diagnostics } = continuationOrigins(entries);
   diagnostics.push(...scanDiagnostics);
   const tasks = new Map<string, Task>();
+
   for (const origin of origins.values()) {
     if (isGenericLoadout(origin.loadout)) {
       continue;
     }
+
     const path = canonical(requireNativeTask(origin).nativeSessionFile);
+
     if (tasks.has(path) && tasks.get(path)?.taskId !== origin.taskId) {
       throw new Error('Conflicting saved native session identities.');
     }
+
     tasks.set(path, origin);
   }
 
@@ -113,6 +126,7 @@ export const sessionLineage = (root: string, current: { file: string; id: string
   const { tasks } = historyRegistry(root);
   const ancestors = lineage(current.file, tasks, current.id);
   const ancestor = ancestors.at(-1);
+
   if (!ancestor) {
     throw new Error('Current session ancestry is unavailable.');
   }
@@ -131,19 +145,23 @@ export const authorizeHistoryTask = (
   if (!/^[a-zA-Z0-9-]+$/.test(taskId)) {
     throw new Error('Follow-up requires an exact saved task ID.');
   }
+
   const { saved, origins, tasks } = historyRegistry(root);
   const selected = saved.find(({ task }) => task.taskId === taskId);
   const origin = origins.get(taskId);
+
   if (!selected || !origin) {
     throw new Error(
       'Unknown task or invalid continuation chain. Native-only sessions cannot be followed up.',
     );
   }
+
   const currentRoot = lineage(current.file, tasks, current.id).at(-1);
   const parentRoot = lineage(selected.task.parentSession, tasks, selected.task.parentSessionId).at(
     -1,
   );
   const nativeRoot = lineage(origin.parentSession, tasks, origin.parentSessionId).at(-1);
+
   if (
     !currentRoot ||
     parentRoot?.file !== currentRoot.file ||
@@ -193,9 +211,11 @@ const genericTaskCandidate = (
     `Task ${task.taskId} parent ancestry`,
     diagnostics,
   );
+
   if (!scoped) {
     return undefined;
   }
+
   const report = readOrDiagnose(
     () => readReport(directory, task.taskId),
     `Task ${task.taskId} report`,
@@ -227,9 +247,12 @@ const taskCandidate = (
   if (isGenericLoadout(task.loadout)) {
     return genericTaskCandidate(directory, task, inScope, diagnostics);
   }
+
   const native = requireNativeTask(task);
+
   try {
     const origin = tasks.get(canonical(native.nativeSessionFile));
+
     if (
       !origin ||
       !inScope(origin.parentSession, origin.parentSessionId) ||
@@ -239,9 +262,12 @@ const taskCandidate = (
     }
   } catch {
     diagnostics.push('Excluded a task with unverified parent ancestry.');
+
     return undefined;
   }
+
   let nativeEvidence: Candidate['nativeEvidence'] = 'available';
+
   try {
     const node = readNode(canonical(native.nativeSessionFile), tasks);
     nativeEvidence = node.unavailable ? 'missing' : 'available';
@@ -249,6 +275,7 @@ const taskCandidate = (
     nativeEvidence = 'invalid';
     diagnostics.push(`Task ${task.taskId}: ${String(error)}`);
   }
+
   const report = readOrDiagnose(
     () => readReport(directory, task.taskId),
     `Task ${task.taskId} report`,
@@ -278,6 +305,7 @@ const searchOutcome = (query: string, count: number): string => {
   if (!query) {
     return 'list';
   }
+
   if (!count) {
     return 'notFound';
   }
@@ -293,9 +321,11 @@ export const searchHistory = async (
   const { saved, tasks, diagnostics } = historyRegistry(root);
   const ancestors = lineage(current.file, tasks, current.id);
   const origin = ancestors.at(-1);
+
   if (!origin) {
     throw new Error('Current session ancestry is unavailable.');
   }
+
   const inScope = (file: string, id?: string) => {
     const chain = lineage(file, tasks, id);
     const ancestor = chain.at(-1);
@@ -303,8 +333,10 @@ export const searchHistory = async (
     return ancestor?.file === origin.file && ancestor.header.id === origin.header.id;
   };
   const candidates: Candidate[] = [];
+
   for (const entry of saved) {
     const candidate = taskCandidate(entry, tasks, inScope, diagnostics);
+
     if (candidate) {
       candidates.push(candidate);
     }
@@ -330,19 +362,24 @@ export const searchHistory = async (
       { id: node.header.id, firstMessage: '(Native session header; no discovered description.)' },
     ]),
   );
+
   for (const session of discovered.flat()) {
     const path = canonical(session.path);
     const seeded = sessions.get(path);
+
     if (seeded && seeded.id !== session.id) {
       diagnostics.push('Discovered metadata disagrees with a validated session identity.');
       continue;
     }
+
     sessions.set(path, session);
   }
+
   for (const [path, session] of sessions) {
     if (tasks.has(path)) {
       continue;
     }
+
     try {
       if (inScope(path, session.id)) {
         candidates.push({
@@ -358,6 +395,7 @@ export const searchHistory = async (
       diagnostics.push('Excluded a native session with unverified ancestry.');
     }
   }
+
   const needle = query.trim().toLowerCase();
   const matches = candidates
     .filter(
@@ -389,6 +427,7 @@ export const searchHistory = async (
 
 const preview = (value: string, field: string, truncatedFields: string[], length = 500): string => {
   const result = truncateLine(value, length);
+
   if (result.wasTruncated) {
     truncatedFields.push(field);
   }
@@ -403,6 +442,7 @@ const candidatePreview = (candidate: Candidate) => {
   const evidence = report?.evidence
     .slice(0, 3)
     .map((entry) => preview(entry, 'report.evidence', truncatedFields, 200));
+
   if (report && report.evidence.length > 3) {
     truncatedFields.push('report.evidence');
   }
@@ -474,6 +514,7 @@ export const historyPage = (
   ) {
     throw new Error('History offset must be nonnegative and limit must be between 1 and 10.');
   }
+
   const truncatedFields: string[] = [];
   const page = {
     rootSessionId: preview(history.rootSessionId, 'rootSessionId', truncatedFields),
@@ -497,19 +538,24 @@ export const historyPage = (
     paging:
       'Repeat the same query with nextOffset. History is recomputed; concurrent additions can change pages.',
   };
+
   for (const candidate of history.candidates.slice(offset, offset + limit)) {
     page.candidates.push(candidatePreview(candidate));
     page.nextOffset = offset + page.candidates.length;
+
     if (Buffer.byteLength(JSON.stringify(page), 'utf8') > page.maxBytes) {
       page.candidates.pop();
+
       if (!page.candidates.length) {
         throw new Error(
           'A history reference exceeds the display budget. Inspect saved session/task files directly.',
         );
       }
+
       break;
     }
   }
+
   const next = offset + page.candidates.length;
   page.nextOffset = next < history.candidates.length ? next : null;
 

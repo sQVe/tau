@@ -49,25 +49,31 @@ const reportMetadataFields = ['size', 'mtimeNs', 'ctimeNs'] as const;
 
 const readReportContent = (descriptor: number, path: string): string | undefined => {
   const before = fstatSync(descriptor, { bigint: true });
+
   if (!before.isFile() || before.size > BigInt(reportByteLimit)) {
     throw new Error(`Report must be a regular file of at most ${reportByteLimit} bytes.`);
   }
+
   const buffer = Buffer.alloc(reportByteLimit + 1);
   let length = 0;
+
   while (length < buffer.length) {
     const count = readSync(descriptor, buffer, {
       offset: length,
       length: buffer.length - length,
       position: length,
     });
+
     if (!count) {
       break;
     }
+
     length += count;
   }
 
   const after = fstatSync(descriptor, { bigint: true });
   const current = lstatSync(path, { bigint: true });
+
   if (
     length > reportByteLimit ||
     after.size > BigInt(reportByteLimit) ||
@@ -78,6 +84,7 @@ const readReportContent = (descriptor: number, path: string): string | undefined
   ) {
     throw new Error('Report file identity changed or is oversized.');
   }
+
   // An in-progress native write is not a completed report or a reason to terminate the task.
   if (
     BigInt(length) !== before.size ||
@@ -93,12 +100,14 @@ const readReportContent = (descriptor: number, path: string): string | undefined
 
 const readPublishedReport = (path: string): string | undefined => {
   let descriptor: number;
+
   try {
     descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       return undefined;
     }
+
     throw error;
   }
 
@@ -113,14 +122,17 @@ const reportOutcome = (content: string, taskId: string): string | undefined => {
   const prefix = `Task: ${taskId}\nOutcome: `;
   const suffix = `\nEnd task: ${taskId}\n`;
   const outcome = content.slice(prefix.length).split('\n', 1)[0];
+
   if (content.includes('\n') && content.split('\n', 1)[0] !== `Task: ${taskId}`) {
     throw new Error('Report has the wrong task identity.');
   }
+
   // Native write tools may publish incrementally despite the requested hard-link protocol.
   // Wait within the original deadline; never accept a missing completion trailer.
   if (!content.endsWith(suffix)) {
     return undefined;
   }
+
   if (
     !content.startsWith(prefix) ||
     !['success', 'failure', 'incomplete'].includes(outcome ?? '') ||
@@ -136,7 +148,9 @@ export const acceptGenericReport = (directory: string, task: Task): boolean => {
   if (readReport(directory, task.taskId)) {
     return true;
   }
+
   const path = genericReportPath(task);
+
   if (
     !isGenericLoadout(task.loadout) ||
     realpathSync(task.loadout.reportDirectory) !== task.loadout.reportDirectory ||
@@ -145,20 +159,26 @@ export const acceptGenericReport = (directory: string, task: Task): boolean => {
   ) {
     throw new Error('The report area changed.');
   }
+
   const content = readPublishedReport(path);
+
   if (content === undefined) {
     return false;
   }
+
   const outcome = reportOutcome(content, task.taskId);
+
   if (!outcome) {
     return false;
   }
+
   const value = {
     taskId: task.taskId,
     outcome,
     summary: content,
     evidence: [path],
   };
+
   if (Buffer.byteLength(JSON.stringify(value), 'utf8') > 64_000) {
     throw new Error(
       'Report content is too large once JSON-escaped; reduce control characters or size.',
@@ -180,9 +200,11 @@ const nativeReferenceSchema = Type.Object({
 
 export const readGenericReference = (directory: string, taskId: string) => {
   const value = readOptionalRecord(directory, 'nativeReference.json');
+
   if (value === undefined) {
     return undefined;
   }
+
   if (!Value.Check(nativeReferenceSchema, value) || value.taskId !== taskId) {
     throw new Error('Invalid saved opaque native reference.');
   }
@@ -220,9 +242,11 @@ const submissionName = (id: string, suffix: string): string => {
 
 export const readGenericSubmission = (directory: string, taskId: string, id: string) => {
   const intent = readOptionalRecord(directory, submissionName(id, 'intent'));
+
   if (intent === undefined) {
     return undefined;
   }
+
   if (
     !Value.Check(submissionIntentSchema, intent) ||
     intent.taskId !== taskId ||
@@ -230,7 +254,9 @@ export const readGenericSubmission = (directory: string, taskId: string, id: str
   ) {
     throw new Error('Invalid native submission intent.');
   }
+
   const observation = readOptionalRecord(directory, submissionName(id, 'observation'));
+
   if (
     observation !== undefined &&
     (!Value.Check(submissionSchema, observation) ||
@@ -251,6 +277,7 @@ const blockedSubmission = (error: unknown): boolean => {
   if (!(error instanceof Error) || !('stderr' in error) || typeof error.stderr !== 'string') {
     return false;
   }
+
   try {
     const parsed: unknown = JSON.parse(error.stderr);
 
@@ -271,24 +298,29 @@ export const submitGenericText = async (
   send: () => Promise<string>,
 ) => {
   const previous = readGenericSubmission(directory, task.taskId, id);
+
   if (previous) {
     const expected = { taskId: task.taskId, id, text };
+
     if (JSON.stringify(previous.intent) !== JSON.stringify(expected)) {
       throw new Error('Conflicting native submission identity.');
     }
 
     return previous;
   }
+
   publish(directory, submissionName(id, 'intent'), { taskId: task.taskId, id, text });
   let state: 'submitted' | 'not-delivered' | 'uncertain' = 'submitted';
   let detail =
     'Herdr submitted text. Task acceptance, acknowledgement, and model selection are not verified.';
+
   try {
     await send();
   } catch (error) {
     state = blockedSubmission(error) ? 'not-delivered' : 'uncertain';
     detail = `${String(error).slice(0, 4000)} No automatic retry.`;
   }
+
   publish(directory, submissionName(id, 'observation'), { taskId: task.taskId, id, state, detail });
 
   return readGenericSubmission(directory, task.taskId, id);

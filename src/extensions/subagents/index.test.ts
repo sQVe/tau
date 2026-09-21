@@ -24,9 +24,11 @@ it('places follow-ups with explicit visibility and the current parent terminal',
     registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
   } as unknown as ExtensionAPI);
   const tool = tools.get('subagent_follow_up');
+
   if (!tool) {
     throw new Error('Missing follow-up tool.');
   }
+
   vi.stubEnv('TAU_WORKER_RECORD', '');
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'stale-pane-before-movement');
@@ -124,6 +126,7 @@ it('routes approved native tool arguments through the generic resolver without P
   };
   const tool = tools.get('subagent');
   const reply = tools.get('subagent_reply');
+
   if (!tool || !reply) {
     throw new Error('Worker tools missing.');
   }

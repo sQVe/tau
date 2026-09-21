@@ -108,19 +108,24 @@ it.each(['before readiness', 'before dispatch', 'before tool call'])(
     if (phase === 'before readiness') {
       jump();
     }
+
     await emit('session_start');
     expect(checkWorkerRuntime).toHaveBeenCalledOnce();
     expect(readEvent(directory, 'task', 'ready')).toBeDefined();
+
     if (phase === 'before dispatch') {
       jump();
     }
+
     publish(directory, 'dispatch.json', { taskId: 'task' });
     await vi.advanceTimersByTimeAsync(50);
     expect(sendUserMessage).toHaveBeenCalledOnce();
     await emit('agent_start');
+
     if (phase === 'before tool call') {
       jump();
     }
+
     const result = (await emit('tool_call', { toolName: 'read' })) as
       | ToolCallEventResult
       | undefined;
@@ -162,9 +167,11 @@ it.each([
     });
 
     await ask();
+
     if (closed) {
       recordEvent(directory, 'task', 'parentClosed', 'Parent controller closed.');
     }
+
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(kill).toHaveBeenCalledWith(4242, 0);
@@ -182,9 +189,11 @@ it('refuses reports for active children but includes uncertain cleanup in the fi
     Object.assign(state as object, children);
   });
   const report = worker.tools.get('subagent_report');
+
   if (!report) {
     throw new Error('Missing report tool.');
   }
+
   const handover = () =>
     report.execute(
       'report',

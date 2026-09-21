@@ -10,6 +10,7 @@ export interface Rectangle {
 export const minimumPane = { width: 82, height: 24 };
 export const rectangle = (value: unknown): Rectangle => {
   const bounds = object(value);
+
   if (
     !Number.isSafeInteger(bounds.width) ||
     Number(bounds.width) <= 0 ||
@@ -34,6 +35,7 @@ const splitLengths = (length: number, ratio: number) => {
 export const splitDirection = (bounds: Rectangle): 'right' | 'down' | undefined => {
   const right = isUseful({ width: splitLengths(bounds.width, 0.5).second, height: bounds.height });
   const down = isUseful({ width: bounds.width, height: splitLengths(bounds.height, 0.5).second });
+
   if (right && (!down || bounds.width / minimumPane.width >= bounds.height / minimumPane.height)) {
     return 'right';
   }
@@ -92,11 +94,14 @@ const removePane = (tree: Tree, paneId: string): Tree | undefined => {
   if (typeof tree === 'string') {
     return tree === paneId ? undefined : tree;
   }
+
   const first = removePane(tree.first, paneId);
   const second = removePane(tree.second, paneId);
+
   if (first === undefined) {
     return second;
   }
+
   if (second === undefined) {
     return first;
   }
@@ -134,6 +139,7 @@ const branchSplit = (tree: Branch, layout: Record<string, unknown>) => {
         Number(object(right.rect).width) * Number(object(right.rect).height),
     );
   const split = candidates[0];
+
   if (!split) {
     throw new Error('Owned foreground split is unavailable.');
   }
@@ -159,15 +165,18 @@ const distribute = (
   if (typeof tree === 'string') {
     return tree === target ? splitDirection(bounds) !== undefined : isUseful(bounds);
   }
+
   const first = leaves(tree.first);
   const second = leaves(tree.second);
   const firstWeight = first.length + Number(first.includes(target));
   const secondWeight = second.length + Number(second.includes(target));
   const ratio = firstWeight / (firstWeight + secondWeight);
+
   // Herdr clamps ratios to this range. Do not plan dimensions it cannot reproduce.
   if (ratio < 0.1 || ratio > 0.9) {
     return false;
   }
+
   adjustments.push({ branch: tree, ratio });
   const axis = tree.direction === 'right' ? 'width' : 'height';
   const { first: firstLength, second: secondLength } = splitLengths(bounds[axis], ratio);
@@ -193,12 +202,14 @@ const topologyAfterRemoval = (layout: Record<string, unknown>, removed?: string)
       );
       const first: string[] = [];
       const second: string[] = [];
+
       for (const pane of children) {
         const paneBounds = object(pane.rect);
         const center = Number(paneBounds[position]) + Number(paneBounds[dimension]) / 2;
         const side = center < boundary ? first : second;
         side.push(text(pane.pane_id));
       }
+
       if (!first.length || !second.length) {
         return [];
       }
@@ -242,23 +253,29 @@ export class ForegroundShares {
   plan(layout: Record<string, unknown>, eligible: TerminalLocation[]): ForegroundPlan | undefined {
     const tabId = text(layout.tab_id);
     const group = this.groups.get(tabId);
+
     if (!group) {
       return undefined;
     }
+
     this.groups.delete(tabId);
     const members = leaves(group.tree);
+
     if (
       group.shape !== layoutShape(layout) ||
       !members.every((paneId) => eligible.some((pane) => pane.paneId === paneId))
     ) {
       return undefined;
     }
+
     const bounds =
       typeof group.tree === 'string'
         ? rectangle(panes(layout).find((pane) => pane.pane_id === group.tree)?.rect)
         : rectangle(branchSplit(group.tree, layout).rect);
+
     for (const target of members) {
       const adjustments: Adjustment[] = [];
+
       if (distribute(group.tree, bounds, target, adjustments)) {
         return { tree: group.tree, target, adjustments };
       }
@@ -274,13 +291,16 @@ export class ForegroundShares {
     call: TerminalCall,
   ): Promise<Record<string, unknown>> {
     let current = layout;
+
     for (const adjustment of plan.adjustments) {
       const split = branchSplit(adjustment.branch, current);
       const difference = adjustment.ratio - Number(split.ratio);
+
       // Herdr stores ratios as f32, so comparisons allow its rounding error.
       if (Math.abs(difference) < 0.00001) {
         continue;
       }
+
       const anchor = edgeLeaf(
         difference > 0 ? adjustment.branch.first : adjustment.branch.second,
         adjustment.branch.direction,
@@ -288,6 +308,7 @@ export class ForegroundShares {
       );
       // oxlint-disable-next-line eslint/no-await-in-loop -- Recheck identities and geometry before each owned ratio change.
       const live = await listTerminals(call);
+
       if (
         !leaves(plan.tree).every((paneId) =>
           live.some(
@@ -301,11 +322,14 @@ export class ForegroundShares {
       ) {
         throw new Error('Owned foreground terminal moved; resizing refused.');
       }
+
       // oxlint-disable-next-line eslint/no-await-in-loop -- External changes must not be overwritten by a later step.
       const checked = object(result(await call(['pane', 'layout', '--pane', anchor])).layout);
+
       if (layoutShape(checked) !== layoutShape(current)) {
         throw new Error('Layout changed during foreground placement; resizing refused.');
       }
+
       const opposite = adjustment.branch.direction === 'right' ? 'left' : 'up';
       const direction = difference > 0 ? adjustment.branch.direction : opposite;
       // oxlint-disable-next-line eslint/no-await-in-loop -- Resize preserves focus natively and only adjusts the verified adjacent split.
@@ -335,6 +359,7 @@ export class ForegroundShares {
                 JSON.stringify(after.rect) === JSON.stringify(before.rect)),
           ),
         );
+
       if (
         !samePanes ||
         JSON.stringify(frame(current)) !== JSON.stringify(frame(next)) ||
@@ -354,6 +379,7 @@ export class ForegroundShares {
           'Foreground resize result changed unexpectedly; no retry or layout restore.',
         );
       }
+
       current = next;
     }
 
@@ -370,12 +396,14 @@ export class ForegroundShares {
     let captured:
       | { layout: Record<string, unknown>; terminals: TerminalLocation[]; tree: Tree }
       | undefined;
+
     try {
       if (group) {
         const layout = object(
           result(await call(['pane', 'layout', '--pane', location.paneId])).layout,
         );
         const terminals = await listTerminals(call);
+
         if (
           layoutShape(layout) === group.shape &&
           terminals.some(
@@ -394,16 +422,21 @@ export class ForegroundShares {
     }
 
     await close();
+
     if (!captured) {
       return;
     }
+
     const tree = removePane(captured.tree, location.paneId);
+
     if (tree === undefined) {
       return;
     }
+
     try {
       const live = await listTerminals(call);
       const survivors = captured.terminals.filter((pane) => pane.paneId !== location.paneId);
+
       if (
         live.some((pane) => pane.terminalId === location.terminalId) ||
         !survivors.every((pane) =>
@@ -417,11 +450,15 @@ export class ForegroundShares {
       ) {
         return;
       }
+
       const survivor = leaves(tree)[0];
+
       if (!survivor) {
         return;
       }
+
       const layout = object(result(await call(['pane', 'layout', '--pane', survivor])).layout);
+
       if (matchesOwnClose(captured.layout, layout, location.paneId)) {
         this.groups.set(location.tabId, { tree, shape: layoutShape(layout) });
       }
@@ -440,6 +477,7 @@ export class ForegroundShares {
     isOwned: () => boolean,
   ): Promise<void> {
     this.groups.delete(added.tabId);
+
     try {
       const after = object(result(await call(['pane', 'layout', '--pane', added.paneId])).layout);
       const previousPanes = panes(before);
@@ -449,6 +487,7 @@ export class ForegroundShares {
       const created = nextSplits.filter(
         (split) => !previousSplits.some((previous) => splitShape(previous) === splitShape(split)),
       );
+
       if (
         JSON.stringify(frame(before)) !== JSON.stringify(frame(after)) ||
         nextPanes.length !== previousPanes.length + 1 ||
@@ -467,6 +506,7 @@ export class ForegroundShares {
       ) {
         return;
       }
+
       if (isOwned()) {
         this.groups.set(added.tabId, {
           tree: append(tree ?? target, target, added.paneId, direction),

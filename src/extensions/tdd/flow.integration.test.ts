@@ -570,7 +570,7 @@ it('rejects unformatted files in the real hook without rewriting them', async ({
   onTestFinished,
 }) => {
   const cwd = await createWorktree(onTestFinished);
-  const git = (arguments_: string[]) => promisify(execFile)('git', arguments_, { cwd });
+  const git = (argumentsList: string[]) => promisify(execFile)('git', argumentsList, { cwd });
 
   await git(['config', 'user.name', 'Tau Test']);
   await git(['config', 'user.email', 'tau@example.com']);
@@ -597,7 +597,7 @@ it('runs commit hooks through Pi without approval or TDD notices', async ({ onTe
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });
-  const git = (arguments_: string[]) => promisify(execFile)('git', arguments_, { cwd });
+  const git = (argumentsList: string[]) => promisify(execFile)('git', argumentsList, { cwd });
 
   await writeFile(join(cwd, '.git/info/exclude'), 'node_modules\n');
   await git(['config', 'user.name', 'Tau Test']);

@@ -86,6 +86,7 @@ it('captures native arguments before approval and never takes configuration auth
   const request = { ...setup.request, nativeArguments, model: 'requested' };
   setup.confirm.mockImplementation(async () => {
     nativeArguments.push('--unexpected');
+
     return true;
   });
 
@@ -140,6 +141,7 @@ it('preserves cancellation before and during native configuration approval', asy
   const cancellation = new AbortController();
   setup.confirm.mockImplementation(async () => {
     cancellation.abort(reason);
+
     return true;
   });
   await expect(

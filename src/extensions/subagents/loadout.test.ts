@@ -20,8 +20,8 @@ import { textLimit } from './types.js';
 import type { Task } from './types.js';
 
 const closure = (setting: string) => () => setting;
-const resolveLoadout = async (...arguments_: Parameters<typeof loadoutModule.resolveLoadout>) =>
-  asPiLoadout(await loadoutModule.resolveLoadout(...arguments_));
+const resolveLoadout = async (...argumentsList: Parameters<typeof loadoutModule.resolveLoadout>) =>
+  asPiLoadout(await loadoutModule.resolveLoadout(...argumentsList));
 
 it('allows only resolved API key rotation under explicitly versioned provider fingerprints', async ({
   onTestFinished,
@@ -56,6 +56,7 @@ it('allows only resolved API key rotation under explicitly versioned provider fi
 
   expect(await loadoutModule.providerFingerprint(registry, model, signal)).toBe(current);
   const rotated = resolution;
+
   for (const changed of [
     { ...rotated, auth: { ...rotated.auth, baseUrl: 'https://changed.invalid' } },
     { ...rotated, auth: { ...rotated.auth, headers: { account: 'two' } } },
@@ -65,6 +66,7 @@ it('allows only resolved API key rotation under explicitly versioned provider fi
     // oxlint-disable-next-line eslint/no-await-in-loop -- Compare each independent auth mutation against the same saved fingerprint.
     expect(await loadoutModule.providerFingerprint(registry, model, signal)).not.toBe(current);
   }
+
   resolution = rotated;
   const registration = vi
     .spyOn(registry, 'getRegisteredProviderConfig')
@@ -150,6 +152,7 @@ it('accepts blank and comment frontmatter lines without relaxing selected profil
   expect(() => parseProfile('---\nrole: editing\nname:\n---\nTask', 'worker', 'fixture')).toThrow(
     'Malformed profile setting',
   );
+
   for (const setting of ['name: replacement', 'unknown: value', 'thinking: invalid']) {
     expect(() =>
       parseProfile(
@@ -163,6 +166,7 @@ it('accepts blank and comment frontmatter lines without relaxing selected profil
 
 it('preserves custom thinking profiles and rejects invalid settings without normalization', () => {
   expect(parseProfile(profile('Custom instructions.'), 'worker', 'fixture').thinking).toBe('off');
+
   for (const thinking of ['invalid', 'Medium', 'maximum']) {
     expect(() =>
       parseProfile(`---\nrole: editing\nthinking: ${thinking}\n---\nTask`, 'worker', 'fixture'),
@@ -215,9 +219,11 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
     modelsPath: null,
     refreshOnCreate: false,
   });
+
   for (const registration of loader.getExtensions().runtime.pendingNativeProviderRegistrations) {
     runtime.registerNativeProvider(registration.provider);
   }
+
   const registry = new ModelRegistry(runtime);
   const context = { cwd: directory, modelRegistry: registry, isProjectTrusted: () => true };
   const pi = { getAllTools: () => [], getCommands: () => [] };
@@ -243,9 +249,11 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
   expect(loadoutModule).toHaveProperty('validateSavedLoadout');
   expect(await loadoutModule.validateSavedLoadout(resolved, context)).toEqual(resolved);
   const selectedModel = registry.find('tau-worker-fixture', 'faux-1');
+
   if (!selectedModel) {
     throw new Error('Missing fixture model.');
   }
+
   const recomputed = {
     ...resolved,
     providerFingerprint: await loadoutModule.providerFingerprint(registry, selectedModel),
@@ -360,6 +368,7 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
     Promise.withResolvers<Awaited<ReturnType<ModelRegistry['getApiKeyAndHeaders']>>>();
   const authSpy = vi.spyOn(registry, 'getApiKeyAndHeaders').mockImplementation(() => {
     authStarted.resolve(undefined);
+
     return stalledAuth.promise;
   });
   const cancellation = new AbortController();
@@ -404,9 +413,11 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
     'unavailable',
   );
   const originalProvider = registry.getRegisteredNativeProvider('tau-worker-fixture');
+
   if (!originalProvider) {
     throw new Error('Fixture provider missing.');
   }
+
   registry.registerProvider({ ...originalProvider, headers: { 'X-Worker-Test': 'runtime-only' } });
   await expect(loadoutModule.validateSavedLoadout(resolved, context)).rejects.toThrow(
     'cannot reproduce current provider',
@@ -492,6 +503,7 @@ it('validates only the requested winning profile and rejects malformed overrides
     source: winner,
     instructions: 'Chosen project instructions.',
   });
+
   for (const content of [
     profile('Task').replace('editing', 'bad'),
     profile('Task').replace('thinking: off', 'thinking: invalid'),
@@ -501,7 +513,9 @@ it('validates only the requested winning profile and rejects malformed overrides
     writeFileSync(winner, content);
     expect(selected).toThrow(/Profile requires|Invalid profile|Unsupported/);
   }
+
   rmSync(winner);
+
   for (const content of [
     'Malformed winning profile.',
     '---\nname:\nrole: editing\n---\nTask',
@@ -510,6 +524,7 @@ it('validates only the requested winning profile and rejects malformed overrides
     writeFileSync(join(project, 'worker.md'), content);
     expect(selected).toThrow(/Invalid profile|Unsupported|Malformed/);
   }
+
   writeFileSync(
     join(project, 'worker.md'),
     profile('Renamed instructions.').replace('name: worker', 'name: custom'),

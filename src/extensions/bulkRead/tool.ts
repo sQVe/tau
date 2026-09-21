@@ -54,6 +54,7 @@ const loadPayload = async (
     }
 
     const { size } = stats;
+
     if (size > 400_000) {
       throw inputError(`Input is too large: ${path}. Split the request`);
     }
@@ -69,6 +70,7 @@ const loadPayload = async (
     }
 
     remaining -= content.length;
+
     if (remaining < 0) {
       throw inputError('Input is too large. Split the request');
     }
@@ -96,6 +98,7 @@ export const bulkRead = async (
   const maxCharacters = Math.min(1_000_000, (model.contextWindow - model.maxTokens) * 3);
   const input = await loadPayload(ctx.cwd, params.paths, maxCharacters, signal);
   const content = `Question: ${params.question}\n\n${input.payload}`;
+
   if (content.length > maxCharacters) {
     throw inputError('Input is too large. Split the request');
   }
@@ -118,6 +121,7 @@ export const bulkRead = async (
     )
     .catch((error: unknown) => {
       delegateSignal.throwIfAborted();
+
       if (error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name)) {
         throw error;
       }
@@ -133,6 +137,7 @@ export const bulkRead = async (
   if (['error', 'aborted', 'length'].includes(response.stopReason)) {
     const cause = response.errorMessage ?? response.stopReason;
     const message = `Bulk read ${reference} failed: ${cause}`;
+
     if (response.stopReason === 'error') {
       throw new Error(`${message}. Check pi --list-models.`);
     }

@@ -83,20 +83,23 @@ export default function (pi) {
     const deliveryEntered = Promise.withResolvers<undefined>();
     const releaseDelivery = Promise.withResolvers<undefined>();
     let promptCount = 0;
-    const client = async (arguments_: string[], budget = 5000, signal?: AbortSignal) => {
-      if (arguments_[1] === 'start') {
-        taskDirectory = dirname(arguments_[arguments_.indexOf('--session') + 1] ?? '');
+    const client = async (argumentsList: string[], budget = 5000, signal?: AbortSignal) => {
+      if (argumentsList[1] === 'start') {
+        taskDirectory = dirname(argumentsList[argumentsList.indexOf('--session') + 1] ?? '');
       }
-      if (arguments_[1] === 'prompt') {
+
+      if (argumentsList[1] === 'prompt') {
         promptCount += 1;
         deliveryEntered.resolve(undefined);
         await releaseDelivery.promise;
       }
-      const response = await isolatedClient(arguments_, budget, signal);
+
+      const response = await isolatedClient(argumentsList, budget, signal);
       observations.push(response);
+
       if (
         scenario === 'early exit' &&
-        arguments_[1] === 'process-info' &&
+        argumentsList[1] === 'process-info' &&
         existsSync(join(taskDirectory, 'owned.json'))
       ) {
         writeFileSync(exitSignal, 'exit');
@@ -110,12 +113,15 @@ export default function (pi) {
     );
     const workspaceText = JSON.stringify(workspace);
     const paneId = workspaceText.match(/"root_pane":\{[^}]*"pane_id":"([^"]+)"/)?.[1];
+
     if (!paneId) {
       throw new Error(`Missing parent pane: ${workspaceText}`);
     }
+
     if (scenario === 'moved cancellation') {
       await client(['pane', 'move', paneId, '--new-workspace', '--no-focus']);
     }
+
     const safety = join(
       dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
       'dist',
@@ -150,10 +156,12 @@ export default function (pi) {
       additionalExtensionPaths: extensions,
     });
     await parentLoader.reload();
+
     for (const registration of parentLoader.getExtensions().runtime
       .pendingNativeProviderRegistrations) {
       runtime.registerNativeProvider(registration.provider);
     }
+
     await runtime.getAvailable();
     const originalArguments = process.argv;
     process.argv = [
@@ -212,9 +220,11 @@ export default function (pi) {
       scenario === 'completion' || scenario === 'follow-up'
         ? 'Edit and check only the fixture.'
         : 'Test active cancellation.';
+
     if (scenario.startsWith('question')) {
       taskText = 'Ask a question then edit and check only the fixture.';
     }
+
     const launchedAt = performance.now();
     const launched = await controller.launch({
       task: taskText,
@@ -229,15 +239,19 @@ export default function (pi) {
     expect(launched.failure ?? '').toMatch(failure);
     expect(existsSync(join(launched.directory, 'dispatch.json'))).toBe(scenario !== 'early exit');
     let movement: { sameTerminal: boolean; newPane: boolean } | undefined;
+
     if (scenario === 'active cancellation' || scenario === 'moved cancellation') {
       const streamingDeadline = performance.now() + 10_000;
+
       while (!existsSync(join(root, 'streaming'))) {
         if (performance.now() > streamingDeadline) {
           throw new Error('Worker never entered active streaming.');
         }
+
         // oxlint-disable-next-line eslint/no-await-in-loop -- Wait for a real child streaming signal, not an assumed startup delay.
         await delay(25);
       }
+
       if (scenario === 'moved cancellation') {
         const owned = object(
           JSON.parse(readFileSync(join(launched.directory, 'owned.json'), 'utf8')),
@@ -254,20 +268,25 @@ export default function (pi) {
           newPane: location.paneId !== owned.paneId,
         };
       }
+
       await controller.cancel(launched.taskId, 'parent');
     }
+
     const savedTask = readTask(launched.directory);
     const questionObservations: unknown[] = [];
     const replyObservations: unknown[] = [];
     let askedQuestionId: string | undefined;
+
     if (scenario.startsWith('question')) {
       await questionAsked.promise;
       const waiting = controller.status(launched.taskId, 'parent');
       const task = readTask(launched.directory);
       const question = waiting.pendingQuestion;
+
       if (!question) {
         throw new Error('No pending worker question.');
       }
+
       askedQuestionId = question.questionId;
       questionObservations.push(
         waiting.stopped,
@@ -281,13 +300,16 @@ export default function (pi) {
         reply: 'Yes. Edit only the fixture.',
         scopeUnchanged: true,
       };
+
       if (scenario === 'question completion') {
         const delivering = controller.reply(task.taskId, 'parent', answer);
         await deliveryEntered.promise;
         const repeated = await controller.reply(task.taskId, 'parent', answer);
+
         if (!repeated || !('workerAcknowledged' in repeated)) {
           throw new Error('Expected a Pi reply receipt.');
         }
+
         replyObservations.push(
           readReply(launched.directory, task.taskId, question.questionId)?.replyId,
           readAcknowledgement(launched.directory, task.taskId, question.questionId),
@@ -300,6 +322,7 @@ export default function (pi) {
         await controller.cancel(task.taskId, 'parent');
       }
     }
+
     expect(movement).toEqual(
       scenario === 'moved cancellation' ? { sameTerminal: true, newPane: true } : undefined,
     );
@@ -348,6 +371,7 @@ export default function (pi) {
     expect(readFileSync(join(root, 'source.txt'), 'utf8')).toBe(completes ? 'after\n' : 'before\n');
     expect(readFileSync(join(root, 'delete-fixture', '.git', 'keep'), 'utf8')).toBe('preserve');
     const followUpObservations: unknown[] = [];
+
     if (scenario === 'follow-up') {
       const taskBytes = readFileSync(join(launched.directory, 'task.json'));
       const reportBytes = readFileSync(join(launched.directory, 'report.json'));
@@ -404,6 +428,7 @@ export default function (pi) {
         replayed,
       );
     }
+
     expect(followUpObservations).toEqual(
       scenario === 'follow-up'
         ? [

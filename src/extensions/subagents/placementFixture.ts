@@ -23,6 +23,7 @@ const replace = (node: LayoutNode, target: string, replacement: LayoutNode): Lay
   if (typeof node === 'string') {
     return node === target ? replacement : node;
   }
+
   node.first = replace(node.first, target, replacement);
   node.second = replace(node.second, target, replacement);
 
@@ -49,8 +50,10 @@ export const placementFixture = (width: number, height: number) => {
     if (typeof node === 'string') {
       dimensions.set(node, { width: bounds.width, height: bounds.height });
       positions.set(node, { x: bounds.x, y: bounds.y });
+
       return;
     }
+
     node.rect = bounds;
     const axis = node.direction === 'right' ? 'width' : 'height';
     const position = node.direction === 'right' ? 'x' : 'y';
@@ -67,14 +70,19 @@ export const placementFixture = (width: number, height: number) => {
     if (typeof node === 'string') {
       return node;
     }
+
     if (node.first === target) {
       update(node.second, node.rect);
+
       return node.second;
     }
+
     if (node.second === target) {
       update(node.first, node.rect);
+
       return node.first;
     }
+
     node.first = collapse(node.first, target);
     node.second = collapse(node.second, target);
 
@@ -101,22 +109,26 @@ export const placementFixture = (width: number, height: number) => {
   const calls: string[][] = [];
   const placement = new WorkerPlacement();
   let created = 0;
-  const client = async (arguments_: string[]) => {
-    calls.push(arguments_);
-    const value = (flag: string) => arguments_[arguments_.indexOf(flag) + 1];
-    if (arguments_[1] === 'current') {
+  const client = async (argumentsList: string[]) => {
+    calls.push(argumentsList);
+    const value = (flag: string) => argumentsList[argumentsList.indexOf(flag) + 1];
+
+    if (argumentsList[1] === 'current') {
       return JSON.stringify({ result: { pane: parent } });
     }
-    if (arguments_[1] === 'list') {
+
+    if (argumentsList[1] === 'list') {
       return JSON.stringify({ result: { panes } });
     }
-    if (arguments_[1] === 'layout') {
+
+    if (argumentsList[1] === 'layout') {
       const tabId = panes.find((pane) => pane.pane_id === value('--pane'))!.tab_id;
 
       return JSON.stringify({ result: { layout: layout(tabId) } });
     }
-    if (arguments_[1] === 'close') {
-      const target = arguments_[2]!;
+
+    if (argumentsList[1] === 'close') {
+      const target = argumentsList[2]!;
       const pane = panes.find((entry) => entry.pane_id === target)!;
       trees.set(pane.tab_id, collapse(trees.get(pane.tab_id)!, target));
       panes.splice(panes.indexOf(pane), 1);
@@ -125,7 +137,8 @@ export const placementFixture = (width: number, height: number) => {
 
       return '{}';
     }
-    if (arguments_[1] === 'resize') {
+
+    if (argumentsList[1] === 'resize') {
       const target = value('--pane')!;
       const tabId = panes.find((pane) => pane.pane_id === target)!.tab_id;
       const direction = value('--direction');
@@ -140,7 +153,8 @@ export const placementFixture = (width: number, height: number) => {
 
       return JSON.stringify({ result: { resize: { changed: true, layout: layout(tabId) } } });
     }
-    if (arguments_[1] === 'create' || arguments_[1] === 'split') {
+
+    if (argumentsList[1] === 'create' || argumentsList[1] === 'split') {
       const source = panes.find((pane) => pane.pane_id === value('--pane'));
       const pane = {
         ...parent,
@@ -151,6 +165,7 @@ export const placementFixture = (width: number, height: number) => {
       const bounds = source
         ? { ...positions.get(source.pane_id)!, ...dimensions.get(source.pane_id)! }
         : { x: 0, y: 0, width, height };
+
       if (source) {
         const branch = {
           direction: value('--direction')!,
@@ -165,11 +180,14 @@ export const placementFixture = (width: number, height: number) => {
         trees.set(pane.tab_id, pane.pane_id);
         update(pane.pane_id, bounds);
       }
+
       panes.push(pane);
 
       return JSON.stringify({ result: { [source ? 'pane' : 'root_pane']: pane } });
     }
-    throw new Error(`Unexpected operation: ${arguments_.join(' ')}`);
+
+    throw new Error(`Unexpected operation: ${argumentsList.join(' ')}`);
   };
+
   return { placement, client, input: placementInput, calls, panes, dimensions, parent };
 };

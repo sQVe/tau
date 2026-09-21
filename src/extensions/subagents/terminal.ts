@@ -1,4 +1,4 @@
-export type TerminalCall = (arguments_: string[]) => Promise<string>;
+export type TerminalCall = (argumentsList: string[]) => Promise<string>;
 
 export interface TerminalLocation {
   paneId: string;
@@ -46,10 +46,13 @@ export class TerminalIdentityError extends Error {
 
 export const listTerminals = async (call: TerminalCall): Promise<TerminalLocation[]> => {
   const panes = result(await call(['pane', 'list'])).panes;
+
   if (!Array.isArray(panes)) {
     throw new TypeError('Missing herdr pane inventory.');
   }
+
   const locations = panes.map(terminalLocation);
+
   if (
     new Set(locations.map((pane) => pane.paneId)).size !== locations.length ||
     new Set(locations.map((pane) => pane.terminalId)).size !== locations.length
@@ -67,6 +70,7 @@ export const resolveTerminal = async (
 ): Promise<TerminalLocation> => {
   const locations = await listTerminals(call);
   const location = locations.find((pane) => pane.terminalId === terminalId);
+
   if (!location) {
     throw new TerminalIdentityError(
       `Owned terminal ${terminalId} is absent; no terminal action allowed.`,

@@ -72,6 +72,7 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
     );
     await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
     const address = server.address();
+
     if (!address || typeof address === 'string') {
       throw new Error('Missing fixture server address');
     }
@@ -85,9 +86,11 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
       modelsPath: null,
       refreshOnCreate: false,
     });
+
     for (const provider of [sessionModel, delegate, override]) {
       modelRuntime.registerNativeProvider(provider.provider);
     }
+
     // Faux completions need no credentials, but the web package requires an API key.
     for (const provider of [delegate, override]) {
       provider.provider.auth.apiKey!.resolve = async () => ({ auth: { apiKey: 'test' } });
@@ -139,6 +142,7 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
         authentication.mockRestore();
       });
     }
+
     const call = {
       url: `http://127.0.0.1:${address.port}/policy`,
       mode: 'answer',
@@ -166,9 +170,11 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
           candidate.message.role === 'toolResult' &&
           candidate.message.toolName === 'fetch_content',
       );
+
     if (entry?.type !== 'message' || entry.message.role !== 'toolResult') {
       throw new Error('Missing fetch result');
     }
+
     const text = JSON.stringify(entry.message.content);
     const success = scenario === 'shared' || scenario === 'override';
 
