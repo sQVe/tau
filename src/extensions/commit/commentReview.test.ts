@@ -273,11 +273,12 @@ describe('finding verification', () => {
       }),
     ],
     ['a rejected call', new Error('provider unavailable')],
-  ])('keeps a finding blocking after %s', async (_name, response) => {
+  ])('keeps every remaining finding blocking after %s', async (_name, response) => {
+    const later = { ...finding, line: 2, message: 'Another wrong claim.' };
     const app = reviewFixture();
 
     app.complete.mockResolvedValueOnce(
-      fauxAssistantMessage(JSON.stringify({ findings: [finding] })),
+      fauxAssistantMessage(JSON.stringify({ findings: [finding, later] })),
     );
 
     if (response instanceof Error) {
@@ -285,6 +286,19 @@ describe('finding verification', () => {
     } else {
       app.complete.mockResolvedValueOnce(response);
     }
+
+    const review = await app.execute();
+
+    expect(review.findings).toEqual([finding, later]);
+    // The commit cannot pass once one finding stays blocking, so later findings are not verified.
+    expect(app.complete).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['an empty reason', '{"verdict":"not_established","reason":"   "}'],
+    ['extra properties', '{"verdict":"not_established","reason":"x","approve":true}'],
+  ])('keeps a finding blocking on a verdict with %s', async (_name, verdict) => {
+    const app = reviewWithVerdict(finding, verdict);
 
     const review = await app.execute();
 
