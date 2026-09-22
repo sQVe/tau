@@ -20,9 +20,9 @@ interface ObservationTracker {
 const runTestsDescription =
   'Run focused tests for a behavior, then the full suite. Use exact names for the installed Vitest version: join describe names and the it name with spaces in Vitest 4 ("outer inner works") or " > " in Vitest 5 ("outer > inner > works"). ' +
   'Names are literal, not regexes. On no match, use the reported collected names; do not restructure tests or broaden selection. ' +
-  'Start with a failing focused test (RED), implement the behavior, then rerun focused (GREEN) and scope "full". These are observations, never edit permissions. ' +
+  'Start with a failing focused test (RED), implement the behavior, then rerun focused (GREEN) and verify the full suite through the repository full check or scope "full". These are observations, never edit permissions. ' +
   'Returns kind, scope, freshness (fresh, stale, or unknown), and the actual runner report, even when inputs changed during the run. ' +
-  'A full pass counts without prior RED or focused renewal after formatting. Duplicate, skipped, and missing tests cannot establish RED. ' +
+  'A full pass counts without prior RED or focused renewal after formatting. A repository full check that already ran the suite on the current inputs satisfies full verification; do not run a second full suite only for bookkeeping. Duplicate, skipped, and missing tests cannot establish RED. ' +
   'Short session-local hints suggest missing RED, RED from a thrown error instead of a failed assertion, full verification, or rerunning stale results. Hints never block or require acknowledgment. ' +
   'Freshness covers .ts/.tsx/.js/.jsx/.mjs/.cjs under root src/, apps/, packages/, functions/, and infra/, plus test/spec files and root tests/ helpers. ' +
   'It also covers default-named package/Vite/Vitest/TypeScript configs, npm/pnpm/Yarn/Bun lockfiles, and pnpm/Vitest workspace files throughout the worktree. ' +

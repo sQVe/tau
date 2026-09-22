@@ -143,7 +143,7 @@ interface LatestRun {
 
 const hints = {
   red: 'No RED observed for this behavior; start the next behavior with a failing focused test.',
-  full: 'Focused tests passed; run_tests with scope "full" to verify the suite.',
+  full: 'Focused tests passed; verify the full suite with the repository full check or run_tests scope "full".',
   stale: 'Test results are stale; rerun run_tests on the current inputs.',
   unknown: 'Test freshness is unknown; rerun run_tests when inputs can be read.',
   thrown:
