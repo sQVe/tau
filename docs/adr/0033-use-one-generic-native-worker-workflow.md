@@ -1,6 +1,7 @@
 # ADR 0033: Use one generic native worker workflow
 
-- Status: Proposed
+- Status: Proposed; parent-user approval rules superseded by
+  [ADR 0037](./0037-launch-native-workers-without-parent-approval.md)
 - Date: 2026-09-19
 - Supersedes: [ADR 0032](./0032-run-claude-workers-through-a-parent-owned-channel.md)
 
