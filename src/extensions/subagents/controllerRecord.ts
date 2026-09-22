@@ -3,37 +3,47 @@ import { dirname, join } from 'node:path';
 
 import { admissionDirectory, descendantReservations } from './admission.js';
 import type { Handle } from './controllerTypes.js';
-import { genericReportPath, readGenericReference, readGenericSubmission } from './generic.js';
-import { readPendingQuestion } from './questionRecords.js';
-import { publish, readEvent, readReport, readSuccessor, readTask } from './records.js';
-import { harnessOf, isGenericLoadout, isPiLoadout } from './types.js';
+import { genericReportPath, readGenericReference } from './generic.js';
+import { readPendingQuestion, readReply } from './questionRecords.js';
+import {
+  publish,
+  readEvent,
+  readGenericSubmission,
+  readPane,
+  readReport,
+  readSuccessor,
+  readTask,
+} from './records.js';
+import { harnessOf, isGenericLoadout, isPiLoadout, requireNativeTask } from './types.js';
 import type { Report, Task, TaskEvent } from './types.js';
+import { workerState } from './workerState.js';
 
+// Without a report, terminal event, or cleanup record there is no outcome to claim.
 const taskOutcome = (
   events: (TaskEvent | undefined)[],
   report: Report | undefined,
-  incomplete: boolean,
-): string => {
+  settledOrCleaned: boolean,
+): string | undefined => {
   const terminal = events.find((event) => event !== undefined);
 
   if (terminal) {
     return terminal.kind === 'startupFailure' ? 'failure' : terminal.kind;
   }
 
-  return report?.outcome ?? (incomplete ? 'incomplete' : 'running');
+  return report?.outcome ?? (settledOrCleaned ? 'incomplete' : undefined);
 };
 
-// Confirmed cleanup needs no warning. Only an active deadline or uncertain stop is worth stating.
-const enforcementNote = (active: boolean, cleanup: TaskEvent | undefined) => {
-  if (active) {
-    return 'Original parent deadline remains active.';
+const taskRecovery = (task: Task, directory: string) => {
+  const paneId = readPane(directory);
+  const base = { ...(paneId === undefined ? {} : { paneId }), directory };
+
+  if (isPiLoadout(task.loadout)) {
+    return { ...base, nativeSessionFile: requireNativeTask(task).nativeSessionFile };
   }
 
-  if (cleanup?.stopped === true) {
-    return undefined;
-  }
+  const reference = readGenericReference(directory, task.taskId);
 
-  return 'No active owner in this parent. Saved evidence only; work may still be running. Check the saved pane manually. No retry or continuing enforcement is promised.';
+  return { ...base, ...(reference ? { nativeReference: reference } : {}) };
 };
 
 const unconfirmedDescendants = (root: string, task: Task) => {
@@ -53,10 +63,60 @@ const unconfirmedDescendants = (root: string, task: Task) => {
   }
 };
 
-export const nativeDescription = (task: Task, directory: string): string =>
-  isGenericLoadout(task.loadout)
-    ? `Native reference, when observed: ${join(directory, 'nativeReference.json')}.`
-    : `Native session: ${task.nativeSessionId} (${task.nativeSessionFile}).`;
+// Evidence notices read only handle memory; a corrupt record cannot build this recovery hint.
+export const handleRecovery = (handle: Handle) => {
+  const base = {
+    ...(handle.paneId === undefined ? {} : { paneId: handle.paneId }),
+    directory: handle.directory,
+  };
+
+  if (isPiLoadout(handle.task.loadout)) {
+    return { ...base, nativeSessionFile: requireNativeTask(handle.task).nativeSessionFile };
+  }
+
+  const reference = handle.owned?.nativeReference;
+
+  return { ...base, ...(reference === undefined ? {} : { nativeReference: reference }) };
+};
+
+// Without a handle, recovery falls back to the task directory and the saved Pi session path.
+export const savedRecovery = (task: Task | undefined, directory: string) => {
+  if (task && isPiLoadout(task.loadout)) {
+    return { directory, nativeSessionFile: requireNativeTask(task).nativeSessionFile };
+  }
+
+  return { directory };
+};
+
+export interface EvidenceUnavailableInput {
+  taskId: string;
+  name?: string | undefined;
+  evidenceError: string;
+  recovery: unknown;
+  cleanupDetail?: string | undefined;
+  paneId?: string | undefined;
+  cause?: unknown;
+}
+
+// The message stays free of record paths; recovery carries them for manual cleanup.
+export class EvidenceUnavailableError extends Error {
+  readonly taskId: string;
+  readonly taskName: string | undefined;
+  readonly evidenceError: string;
+  readonly recovery: unknown;
+
+  constructor(input: EvidenceUnavailableInput) {
+    super(
+      `Worker ${input.taskId}: saved evidence is unavailable: ${input.evidenceError}. ${input.cleanupDetail ?? 'Cleanup unconfirmed.'} Check pane ${input.paneId ?? 'unknown'} manually.`,
+      { cause: input.cause },
+    );
+    this.name = 'EvidenceUnavailableError';
+    this.taskId = input.taskId;
+    this.taskName = input.name;
+    this.evidenceError = input.evidenceError;
+    this.recovery = input.recovery;
+  }
+}
 
 const nativeUsage = (task: Task) => ({
   available: false as const,
@@ -65,41 +125,60 @@ const nativeUsage = (task: Task) => ({
     : 'Native usage and model verification are unavailable through this generic interface.',
 });
 
-const stoppedStates = (settled: TaskEvent | undefined, cleanup: TaskEvent | undefined) => ({
-  stopped: Boolean(settled?.stopped) || Boolean(cleanup?.stopped),
-  capacityHeld: cleanup?.stopped !== true,
-});
+// A missing or unreadable predecessor must not fail the status; the renderer falls back to the
+// short task ID when the name is absent.
+const predecessorName = (root: string, task: Task): string | undefined => {
+  if (!task.predecessorTaskId) {
+    return undefined;
+  }
+
+  try {
+    return readTask(join(root, task.predecessorTaskId)).name;
+  } catch {
+    return undefined;
+  }
+};
+
+// A pending question keeps its identity; only a saved reply adds the delivery flag.
+const pendingQuestionStatus = (directory: string, taskId: string) => {
+  const question = readPendingQuestion(directory, taskId);
+
+  if (question === undefined) {
+    return undefined;
+  }
+
+  const replySaved = readReply(directory, taskId, question.questionId) !== undefined;
+
+  return replySaved ? { ...question, replySaved: true } : question;
+};
 
 export const taskStatus = (directory: string, activeOwner?: string, enforcing = true) => {
   const task = readTask(directory);
   const report = readReport(directory, task.taskId);
   const event = (kind: TaskEvent['kind']) => readEvent(directory, task.taskId, kind);
-  const timeout = event('timeout');
-  const cancelled = event('cancelled');
   const failure = event('startupFailure');
-  const settled = event('settled');
   const cleanup = event('cleanup');
   const descendants = unconfirmedDescendants(dirname(directory), task);
-  const owned = enforcing && activeOwner === task.ownerId;
-  const terminal = cleanup ?? timeout ?? cancelled;
-  const active = owned && !terminal;
-  const outcome = taskOutcome([timeout, cancelled, failure], report, Boolean(settled) || !active);
-  const states = stoppedStates(settled, cleanup);
+  const state = workerState(directory, task, activeOwner, enforcing);
+  const outcome = taskOutcome(
+    [event('timeout'), event('cancelled'), failure],
+    report,
+    Boolean(event('settled') ?? cleanup),
+  );
+  const needsRecovery = state === 'cleanupUnconfirmed' || state === 'notOwned';
+  const pendingQuestion = pendingQuestionStatus(directory, task.taskId);
+  const recovery = needsRecovery ? taskRecovery(task, directory) : undefined;
 
   return {
     taskId: task.taskId,
     name: task.name,
+    state,
+    ...(outcome === undefined ? {} : { outcome }),
     predecessorTaskId: task.predecessorTaskId,
+    predecessorName: predecessorName(dirname(directory), task),
     successorTaskId: readSuccessor(directory)?.successorTaskId,
-    outcome,
-    ready: Boolean(event('ready')),
-    accepted: Boolean(event('accepted')),
-    reportAccepted: Boolean(report),
-    ownedByThisParent: activeOwner === task.ownerId,
-    deadlineActive: active,
-    stopped: states.stopped,
     deadline: task.deadline,
-    capacityHeld: states.capacityHeld,
+    capacityHeld: cleanup?.stopped !== true,
     reservationDirectory: admissionDirectory(dirname(directory), task.tree),
     unconfirmedChildren: descendants.children,
     descendantEvidence: descendants.evidence,
@@ -109,14 +188,19 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
     usage: nativeUsage(task),
     directory,
     report,
-    pendingQuestion: readPendingQuestion(directory, task.taskId),
+    pendingQuestion,
     failure: failure?.detail,
     cleanup: cleanup?.detail,
-    enforcement: enforcementNote(active, cleanup),
+    ...(recovery ? { recovery } : {}),
   };
 };
 
-export const genericStatus = (directory: string, task: Task, handle?: Handle) => {
+export const genericStatus = (
+  directory: string,
+  task: Task,
+  handle?: Handle,
+  ownedLive = false,
+) => {
   if (!isGenericLoadout(task.loadout)) {
     return {};
   }
@@ -125,7 +209,7 @@ export const genericStatus = (directory: string, task: Task, handle?: Handle) =>
     // Keep the generic harness separate from the native kind name in status.
     harness: 'generic' as const,
     nativeKind: task.loadout.kind,
-    nativeState: handle?.nativeState ?? 'unknown',
+    ...(ownedLive && handle?.nativeState !== undefined ? { nativeState: handle.nativeState } : {}),
     observationIssue: handle?.observationIssue,
     nativeReference: readGenericReference(directory, task.taskId),
     nativeConfiguration: task.loadout,

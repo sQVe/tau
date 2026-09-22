@@ -88,7 +88,12 @@ const handleChildNotification = (pi: ExtensionAPI, state: WorkerState, value: un
 
   // A child result is evidence, never a reply to this worker's pending parent question.
   pi.sendMessage(
-    { customType: 'tau-worker-child', content: value.message, display: true },
+    {
+      customType: 'tau-worker-child',
+      content: value.message,
+      display: true,
+      ...('details' in value ? { details: value.details } : {}),
+    },
     state.pendingQuestion
       ? { deliverAs: 'nextTurn' }
       : { deliverAs: 'followUp', triggerTurn: true },

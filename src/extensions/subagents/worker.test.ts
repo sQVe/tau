@@ -73,6 +73,7 @@ const setup = () => {
   const handlers = new Map<string, (event: unknown, context: ExtensionContext) => unknown>();
   const tools = new Map<string, ToolDefinition>();
   const sendUserMessage = vi.fn<ExtensionAPI['sendUserMessage']>();
+  const sendMessage = vi.fn<ExtensionAPI['sendMessage']>();
   const shutdown = vi.fn<ExtensionContext['shutdown']>();
   const context = {
     sessionManager: {
@@ -89,6 +90,7 @@ const setup = () => {
       handlers.set(name, handler),
     registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
     sendUserMessage,
+    sendMessage,
   } as unknown as ExtensionAPI);
   const emit = (name: string, event: unknown = {}) => handlers.get(name)?.(event, context);
   const ask = () =>
@@ -96,7 +98,18 @@ const setup = () => {
       .get('subagent_question')
       ?.execute('call', { question: 'Which file?' }, undefined, undefined, context);
 
-  return { directory, createdAt, emit, ask, sendUserMessage, shutdown, events, tools, context };
+  return {
+    directory,
+    createdAt,
+    emit,
+    ask,
+    sendUserMessage,
+    sendMessage,
+    shutdown,
+    events,
+    tools,
+    context,
+  };
 };
 
 it.each(['before readiness', 'before dispatch', 'before tool call'])(
@@ -222,6 +235,26 @@ it('refuses reports for active children but includes uncertain cleanup in the fi
   expect(readReport(worker.directory, 'task')?.evidence.at(-1)).toContain('/saved/child-task');
   expect(readReport(worker.directory, 'task')?.evidence.at(-1)).toContain('Dropped 1 evidence');
   expect(worker.shutdown).toHaveBeenCalledOnce();
+  await worker.emit('session_shutdown');
+});
+
+it('forwards child notice details to the worker session', async () => {
+  const worker = await waitingWorker();
+
+  worker.events.emit('tau:child-notification', {
+    message: '{"taskId":"child"}',
+    details: { taskId: 'child' },
+    question: false,
+  });
+
+  expect(worker.sendMessage).toHaveBeenCalledWith(
+    expect.objectContaining({
+      customType: 'tau-worker-child',
+      content: '{"taskId":"child"}',
+      details: { taskId: 'child' },
+    }),
+    { deliverAs: 'followUp', triggerTurn: true },
+  );
   await worker.emit('session_shutdown');
 });
 

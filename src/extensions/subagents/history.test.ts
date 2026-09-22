@@ -10,12 +10,12 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { DefaultResourceLoader } from '@earendil-works/pi-coding-agent';
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { DefaultResourceLoader, SessionManager } from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext, SessionInfo } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { WorkerController } from './controller.js';
-import { fixtureLoadout } from './fixtures/loadout.js';
+import { fixtureGenericLoadout, fixtureLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import subagentsExtension from './index.js';
 import { acceptReport, publish, readTask, recordEvent, validateTask } from './records.js';
@@ -149,9 +149,10 @@ it('bounds production history output while paging all matches and retaining reco
     totalMatches: number;
     nextOffset: number;
     candidates: {
-      sourceFile: string;
       description: string;
+      state: string;
       truncatedFields: string[];
+      reportFile: string;
       report: { summary: string };
     }[];
   };
@@ -163,9 +164,28 @@ it('bounds production history output while paging all matches and retaining reco
   );
   expect(page.candidates[0]?.description.length).toBeLessThan(1000);
   expect(page.candidates[0]?.report.summary.length).toBeLessThan(1000);
-  const source = page.candidates[0]?.sourceFile ?? '';
-  expect(readFileSync(source, 'utf8')).toContain('needle-tail');
-  expect(readFileSync(join(dirname(source), 'report.json'), 'utf8')).toContain('界'.repeat(10000));
+  expect(page.candidates[0]?.state).toBe('stopped');
+  expect(page.candidates[0]).not.toHaveProperty('sourceFile');
+  expect(page.candidates[0]).not.toHaveProperty('nativeSessionFile');
+  const reportFile = page.candidates[0]?.reportFile ?? '';
+  expect(readFileSync(reportFile, 'utf8')).toContain('界'.repeat(10000));
+  expect(readFileSync(join(dirname(reportFile), 'task.json'), 'utf8')).toContain('needle-tail');
+
+  for (const removed of [
+    'rootSessionId',
+    'rootSessionFile',
+    'offset',
+    'limit',
+    'maxBytes',
+    'readOnly',
+    'retrieval',
+    'paging',
+    'diagnostics',
+  ]) {
+    expect(page).not.toHaveProperty(removed);
+  }
+
+  expect(text.text).not.toContain('reportFileRelativeToSource');
   const fullPage = await execute({ query: 'needle-tail' });
   const fullPageText = fullPage.content.find((part) => part.type === 'text')?.text ?? '';
   const bounded = JSON.parse(fullPageText) as {
@@ -178,9 +198,9 @@ it('bounds production history output while paging all matches and retaining reco
   expect(bounded.candidates.length).toBeLessThan(10);
   expect(bounded.nextOffset).toBe(bounded.candidates.length);
   const last = await execute({ query: 'needle-tail', offset: 18 });
+  expect(last.details).not.toHaveProperty('nextOffset');
   expect(last.details).toMatchObject({
     totalMatches: 20,
-    nextOffset: null,
     candidates: [
       expect.objectContaining({ taskId: 'task-18' }),
       expect.objectContaining({ taskId: 'task-19' }),
@@ -189,15 +209,10 @@ it('bounds production history output while paging all matches and retaining reco
   const second = await execute({ query: 'needle-tail', offset: page.nextOffset, limit: 1 });
   expect(JSON.stringify(second)).toContain('task-01');
   const empty = await execute({ query: 'needle-tail', offset: 20 });
-  expect(empty.details).toMatchObject({
-    outcome: 'clarification',
-    totalMatches: 20,
-    candidates: [],
-    nextOffset: null,
-  });
+  expect(empty.details).toEqual({ outcome: 'clarification', totalMatches: 20, candidates: [] });
 });
 
-it('includes explicit custom-extension current and root sessions in the production history tool', async () => {
+it('excludes explicit custom-extension current and root sessions from the production history tool', async () => {
   const fixture = setup();
   const root = fixture.session('explicit-root', undefined, join(fixture.sessions, 'root.session'));
   const current = fixture.session(
@@ -208,22 +223,10 @@ it('includes explicit custom-extension current and root sessions in the producti
   const execute = await historyTool(fixture, current, 'explicit-current');
   const result = await execute({ query: 'explicit-' });
 
-  expect(result.details).toMatchObject({
-    outcome: 'clarification',
-    candidates: [
-      expect.objectContaining({ nativeSessionId: 'explicit-current' }),
-      expect.objectContaining({ nativeSessionId: 'explicit-root' }),
-    ],
-  });
-  const fromRoot = await historyTool(fixture, root, 'explicit-root');
-  const rootResult = await fromRoot({ query: 'explicit-root' });
-  expect(rootResult.details).toMatchObject({
-    outcome: 'match',
-    candidates: [expect.objectContaining({ nativeSessionId: 'explicit-root' })],
-  });
+  expect(result.details).toEqual({ outcome: 'notFound', totalMatches: 0, candidates: [] });
 });
 
-it('merges discovered native metadata into seeded history without duplicate candidates', async () => {
+it('keeps the named current session out of history while checking its discovered metadata', async () => {
   const fixture = setup();
   writeFileSync(
     fixture.root,
@@ -255,18 +258,14 @@ it('merges discovered native metadata into seeded history without duplicate cand
   const execute = await historyTool(fixture, fixture.root, 'root');
   const result = await execute({ query: 'root' });
 
-  expect(result.details).toMatchObject({
-    outcome: 'match',
-    totalMatches: 1,
-    candidates: [
-      expect.objectContaining({
-        name: 'Named root',
-        description: 'Native description.',
-        nativeSessionId: 'root',
-        sourceFile: fixture.root,
-      }),
-    ],
+  expect(result.details).toEqual({ outcome: 'notFound', totalMatches: 0, candidates: [] });
+  const history = await searchHistory(fixture.workers, {
+    file: fixture.child,
+    id: 'child',
+    sessionDirectory: fixture.sessions,
   });
+  expect(history.candidates.some((candidate) => candidate.name === 'Named root')).toBe(false);
+  expect(history.diagnostics).toEqual([]);
 });
 
 it('reports corrupt saved reports and claims as diagnostics without hiding other tasks', async () => {
@@ -316,11 +315,13 @@ it('scopes history to the validated root and descendants including siblings and 
       .map((candidate) => candidate.taskId)
       .toSorted((left, right) => String(left).localeCompare(String(right))),
   ).toEqual(['first', 'nested', 'second']);
-  expect(history.candidates.map((candidate) => candidate.nativeSessionId)).toEqual(
-    expect.arrayContaining(['root', 'child', 'sibling', nested.record.nativeSessionId]),
-  );
+  const sessionIds = history.candidates.map((candidate) => candidate.nativeSessionId);
+  expect(sessionIds).toEqual(expect.arrayContaining(['sibling', nested.record.nativeSessionId]));
+  expect(sessionIds).not.toContain('root');
+  expect(sessionIds).not.toContain('child');
   expect(history.candidates.find((candidate) => candidate.taskId === 'first')).toMatchObject({
     name: 'worker-aa',
+    state: 'stopped',
     nativeEvidence: 'missing',
     report: { summary: 'Saved evidence.' },
   });
@@ -333,10 +334,35 @@ it('scopes history to the validated root and descendants including siblings and 
     file: fixture.root,
     id: 'root',
   });
-  expect(fromRoot.candidates).toEqual(history.candidates);
+  expect(fromRoot.candidates.map((candidate) => candidate.nativeSessionId)).toEqual(
+    expect.arrayContaining([...sessionIds, 'child']),
+  );
+  expect(fromRoot.candidates.some((candidate) => candidate.nativeSessionId === 'root')).toBe(false);
   expect(history.candidates.some((candidate) => candidate.nativeSessionId === 'unrelated')).toBe(
     false,
   );
+});
+
+it('excludes the calling task and its parent task from history', async () => {
+  const fixture = setup();
+  const parent = fixture.task('parent-task', fixture.child, 'child');
+  const nested = fixture.task(
+    'nested-task',
+    parent.record.nativeSessionFile,
+    parent.record.nativeSessionId,
+  );
+  const current = {
+    file: nested.record.nativeSessionFile,
+    id: nested.record.nativeSessionId,
+    sessionDirectory: fixture.sessions,
+  };
+  const history = await searchHistory(fixture.workers, current);
+  const taskIds = history.candidates.flatMap((candidate) =>
+    candidate.taskId ? [candidate.taskId] : [],
+  );
+
+  expect(taskIds).not.toContain('nested-task');
+  expect(taskIds).not.toContain('parent-task');
 });
 
 it('returns clarification for ambiguous names and descriptions without writing or granting ownership', async () => {
@@ -418,7 +444,7 @@ it('excludes broken and cyclic discovered sessions and mismatched saved parent i
     history.candidates
       .map((candidate) => candidate.nativeSessionId)
       .toSorted((left, right) => String(left).localeCompare(String(right))),
-  ).toEqual(['child', 'root', 'sibling']);
+  ).toEqual(['child', 'sibling']);
   expect(history.diagnostics.length).toBeGreaterThanOrEqual(3);
 });
 
@@ -432,4 +458,80 @@ it('flags mismatched saved native ancestry without searching an unrelated transc
   expect(history.candidates).toHaveLength(1);
   expect(history.candidates[0]).toMatchObject({ taskId: 'first', nativeEvidence: 'invalid' });
   expect(history.diagnostics.length).toBeGreaterThan(0);
+});
+
+it('carries derived state for generic task candidates without inventing native sessions', async () => {
+  const fixture = setup();
+  const taskDirectory = join(fixture.workers, 'generic-one');
+  mkdirSync(taskDirectory);
+  const record = validateTask({
+    version: 2,
+    taskId: 'generic-one',
+    task: 'Inspect shared source.',
+    parentSession: fixture.child,
+    parentSessionId: 'child',
+    ownerId: 'owner',
+    createdAt: 1000,
+    deadline: 20000,
+    cancellationBudget: 1000,
+    tree: {
+      rootSession: fixture.child,
+      rootSessionId: 'child',
+      monotonicDeadline: 20000,
+    },
+    loadout: fixtureGenericLoadout(fixture.directory),
+  });
+  publish(taskDirectory, 'task.json', record);
+  recordEvent(taskDirectory, 'generic-one', 'cleanup', { detail: 'Pane removed.', stopped: true });
+
+  const history = await searchHistory(fixture.workers, {
+    file: fixture.root,
+    id: 'root',
+    sessionDirectory: fixture.sessions,
+  });
+  const candidate = history.candidates.find((entry) => entry.taskId === 'generic-one');
+
+  expect(candidate).toMatchObject({ state: 'stopped', nativeEvidence: 'opaque' });
+  expect(candidate).not.toHaveProperty('nativeSessionId');
+  expect(candidate).not.toHaveProperty('nativeSessionFile');
+});
+
+it('derives candidate state with ownership from the live controller', async () => {
+  const fixture = setup();
+  const saved = fixture.task('owned', fixture.child, 'child', 'worker-aa');
+  rmSync(join(saved.taskDirectory, 'cleanup.json'));
+  const current = { file: fixture.root, id: 'root', sessionDirectory: fixture.sessions };
+
+  const untracked = await searchHistory(fixture.workers, current, 'worker-aa');
+  const owned = await searchHistory(fixture.workers, current, 'worker-aa', (taskId) => ({
+    activeOwner: taskId === 'owned' ? 'owner' : undefined,
+    enforcing: true,
+  }));
+
+  expect(untracked.candidates[0]?.state).toBe('notOwned');
+  expect(owned.candidates[0]?.state).toBe('reported');
+});
+
+it('diagnoses discovered metadata that disagrees with a seeded ancestor identity', async () => {
+  const fixture = setup();
+  const [discovered] = await SessionManager.listAll(fixture.sessions);
+  vi.spyOn(SessionManager, 'listAll').mockResolvedValue([
+    { ...discovered, path: fixture.root, id: 'impostor' } as SessionInfo,
+  ]);
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
+
+  const history = await searchHistory(fixture.workers, {
+    file: fixture.child,
+    id: 'child',
+    sessionDirectory: fixture.sessions,
+  });
+
+  expect(history.diagnostics).toContain(
+    'Discovered metadata disagrees with a validated session identity.',
+  );
+  expect(history.candidates.some((candidate) => candidate.nativeSessionId === 'impostor')).toBe(
+    false,
+  );
 });

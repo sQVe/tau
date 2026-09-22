@@ -158,7 +158,9 @@ const nestedScenario = async (waitForParentReply: boolean) => {
   const parentWaiting = Promise.withResolvers<undefined>();
   const parentFinished = Promise.withResolvers<undefined>();
   const parentBus = createEventBus();
-  parentBus.on('tau:child-notification', () => {
+  let childNotice: unknown;
+  parentBus.on('tau:child-notification', (value) => {
+    childNotice = value;
     notices.resolve(undefined);
   });
   const results: { toolName: string; isError: boolean; text: string }[] = [];
@@ -366,6 +368,10 @@ const nestedScenario = async (waitForParentReply: boolean) => {
   expect(readEvent(parentDirectory, parent.taskId, 'settled')).toBeUndefined();
   releaseChild.resolve(undefined);
   await notices.promise;
+  const noticeMessage = (childNotice as { message?: string } | undefined)?.message ?? '';
+  const parsedNotice: unknown = JSON.parse(noticeMessage);
+  expect(childNotice).toHaveProperty('details');
+  expect(parsedNotice as Record<string, unknown>).toMatchObject({ taskId: child?.taskId });
 
   if (waitForParentReply) {
     expect(parentCalls).toBe(6);

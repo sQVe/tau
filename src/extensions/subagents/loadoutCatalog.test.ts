@@ -43,7 +43,18 @@ const fixture = async () => {
       'index.js',
     ),
   );
-  process.argv = [process.execPath, 'pi', '--no-extensions', '-e', safety];
+  const herdrPiIntegration = fileURLToPath(
+    new URL('./fixtures/herdrPiIntegration.ts', import.meta.url),
+  );
+  process.argv = [
+    process.execPath,
+    'pi',
+    '--no-extensions',
+    '-e',
+    safety,
+    '-e',
+    herdrPiIntegration,
+  ];
   writeFileSync(
     join(directory, 'models.json'),
     JSON.stringify({ providers: { 'openai-codex': { apiKey: 'catalog-fixture-key' } } }),
@@ -92,8 +103,8 @@ const fixture = async () => {
     providerFingerprintVersion: 2 as const,
     thinking: 'medium' as const,
     noExtensions: true,
-    integrations: [safety],
-    integrationFingerprint: integrationFingerprint([safety]),
+    integrations: [safety, herdrPiIntegration],
+    integrationFingerprint: integrationFingerprint([safety, herdrPiIntegration]),
     safetyExtension: safety,
   };
   const parent = { getAllTools: () => [], getCommands: () => [] };

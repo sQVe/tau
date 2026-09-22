@@ -54,3 +54,4 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0033: Use one generic native worker workflow](./0033-use-one-generic-native-worker-workflow.md)
 - [0034: Check house style outside the editor](./0034-check-house-style-outside-the-editor.md)
 - [0035: Use size thresholds as review guidance](./0035-use-size-thresholds-as-review-guidance.md)
+- [0036: Allowlist worker content and label states from one table](./0036-allowlist-worker-content-and-label-states-from-one-table.md)

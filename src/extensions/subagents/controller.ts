@@ -40,26 +40,25 @@ import {
 } from './controllerLaunchSupport.js';
 import type { FollowUpPreparation, LaunchInput } from './controllerLaunchSupport.js';
 import {
+  EvidenceUnavailableError,
   genericStatus,
-  nativeDescription,
+  handleRecovery,
+  savedRecovery,
   taskStatus,
   cleanupDetail,
   recordNativeIssue,
 } from './controllerRecord.js';
 import { stopOwnedWorker } from './controllerStop.js';
 import type { Handle } from './controllerTypes.js';
-import {
-  readGenericSubmission,
-  submitGenericText,
-  genericPrompt,
-  acceptGenericReport,
-} from './generic.js';
+import { submitGenericText, genericPrompt, acceptGenericReport } from './generic.js';
 import { authorizeHistoryTask } from './history.js';
 import { authenticateParent, currentProcessIdentity } from './identity.js';
 import { validateSavedLoadout } from './loadout.js';
 import { allocateName, nameSuffix } from './names.js';
 import { validateNative } from './native.js';
 import { WorkerPlacement } from './placement.js';
+import { modelEvidenceNotice, modelStatus } from './presentation.js';
+import type { WorkerNotice } from './presentation.js';
 import {
   acceptReply,
   readAcknowledgement,
@@ -69,6 +68,7 @@ import {
 } from './questionRecords.js';
 import {
   readEvent,
+  readGenericSubmission,
   readTask,
   claimSuccessor,
   publish,
@@ -77,17 +77,90 @@ import {
 } from './records.js';
 import { resolveTerminal, text, object, result } from './terminal.js';
 import { isGenericLoadout, isPiLoadout } from './types.js';
-import type { Question, Task, GenericLoadout } from './types.js';
+import type { Task, GenericLoadout } from './types.js';
 
 export { agentPromptArguments, workerArguments } from './controllerInspect.js';
 export type { HerdrClient } from './controllerInspect.js';
-export { taskStatus } from './controllerRecord.js';
+export { EvidenceUnavailableError, taskStatus } from './controllerRecord.js';
 
-const acceptedReply = (directory: string, taskId: string, questionId: string) => ({
+// The reply is saved before this read. A corrupt acknowledgement record must not make a saved reply
+// look failed, because a failure would invite a resend of the same identity.
+const replyAcknowledged = (directory: string, taskId: string, questionId: string): boolean => {
+  try {
+    return Boolean(readAcknowledgement(directory, taskId, questionId));
+  } catch {
+    return false;
+  }
+};
+
+const acceptedReply = (directory: string, task: Task, questionId: string) => ({
   replyAccepted: true,
-  workerAcknowledged: Boolean(readAcknowledgement(directory, taskId, questionId)),
-  delivery: 'Not retried. Prior delivery may be uncertain.',
+  name: task.name,
+  workerAcknowledged: replyAcknowledged(directory, task.taskId, questionId),
+  delivery: 'notResent' as const,
 });
+
+const requireGenericReplyShape = (answer: {
+  questionId?: string;
+  replyId: string;
+  reply: string;
+}): void => {
+  const hasStructuredQuestion = answer.questionId !== undefined;
+  const reusedReplyId = answer.replyId === 'assignment';
+  const invalidText = !answer.reply.trim() || answer.reply.length > 32_000;
+
+  if (hasStructuredQuestion || reusedReplyId || invalidText) {
+    throw new Error(
+      'Generic replies use a unique replyId and plain text, without a structured questionId.',
+    );
+  }
+};
+
+// A caller asked for a task it may not read; this is a refusal, never unreadable evidence.
+class TaskAccessError extends Error {
+  override name = 'TaskAccessError';
+}
+
+const isMissingFile = (error: unknown): boolean =>
+  error instanceof Error && 'code' in error && error.code === 'ENOENT';
+
+const deliveryFromSubmission = (
+  state: 'submitted' | 'not-delivered' | 'uncertain' | undefined,
+): 'sent' | 'notDelivered' | 'uncertain' => {
+  if (state === 'submitted') {
+    return 'sent';
+  }
+
+  if (state === 'not-delivered') {
+    return 'notDelivered';
+  }
+
+  return 'uncertain';
+};
+
+// A saved reply identity is never sent again; different text under the same identity is a conflict.
+const repeatedGenericReply = (
+  directory: string,
+  task: Task,
+  answer: { replyId: string; reply: string },
+) => {
+  const saved = readGenericSubmission(directory, task.taskId, answer.replyId);
+
+  if (!saved) {
+    return undefined;
+  }
+
+  if (saved.intent.text !== answer.reply) {
+    throw new Error('Conflicting native submission identity.');
+  }
+
+  // Only a submitted reply is "already sent"; a repeat of an undelivered or uncertain one keeps
+  // that outcome, so the model never reads a failed delivery as accepted.
+  const state = saved.observation?.state;
+  const delivery = state === 'submitted' ? ('notResent' as const) : deliveryFromSubmission(state);
+
+  return { replyAccepted: true as const, name: task.name, delivery };
+};
 
 interface PiReplyRequest {
   directory: string;
@@ -137,7 +210,7 @@ export class WorkerController {
   constructor(
     private readonly root: string,
     private readonly client: HerdrClient = herdrClient,
-    private readonly notify: (message: string, question?: Question) => void = () => undefined,
+    private readonly notify: (notice: WorkerNotice) => void = () => undefined,
   ) {}
 
   async parentAuthority(parentSession: string, parentSessionId: string, signal?: AbortSignal) {
@@ -194,12 +267,11 @@ export class WorkerController {
   }
 
   status(taskId: string, parentSessionId: string) {
+    const directory = this.statusDirectory(taskId, parentSessionId);
     let handle: Handle | undefined;
     let task: Task | undefined;
-    let directory = join(this.root, taskId);
 
     try {
-      directory = this.directory(taskId, parentSessionId);
       handle = this.handles.get(taskId);
       task = handle ? handle.task : readTask(directory);
 
@@ -207,16 +279,34 @@ export class WorkerController {
         throw new Error(handle.recordErrors.join('; '));
       }
 
+      const { activeOwner, enforcing } = this.ownership(taskId);
+
       return {
-        ...taskStatus(
-          directory,
-          this.closed || !handle ? undefined : this.ownerId,
-          !handle?.stopping,
-        ),
-        ...genericStatus(directory, task, handle),
+        ...taskStatus(directory, activeOwner, enforcing),
+        ...genericStatus(directory, task, handle, !this.closed),
       };
     } catch (error) {
       return this.statusFailure({ taskId, directory, handle, task, error });
+    }
+  }
+
+  // Refusals (bad identity, another parent, no saved task) throw as they are; only a saved task record
+  // that exists but cannot be read becomes unreadable evidence with a recovery hint.
+  private statusDirectory(taskId: string, parentSessionId: string): string {
+    try {
+      return this.directory(taskId, parentSessionId);
+    } catch (error) {
+      if (error instanceof TaskAccessError) {
+        throw error;
+      }
+
+      return this.statusFailure({
+        taskId,
+        directory: join(this.root, taskId),
+        handle: undefined,
+        task: undefined,
+        error,
+      });
     }
   }
 
@@ -228,14 +318,17 @@ export class WorkerController {
       void this.stop(handle, 'failure', `Worker evidence unavailable: ${String(error)}. No retry.`);
     }
 
-    const native = task
-      ? nativeDescription(task, directory)
-      : 'Native session unavailable; inspect the saved directory.';
+    const recovery = handle ? handleRecovery(handle) : savedRecovery(task, directory);
 
-    throw new Error(
-      `Worker ${taskId}: saved evidence is unavailable: ${String(error)}. ${handle?.cleanupDetail ?? 'Cleanup unconfirmed.'} Check pane ${handle?.paneId ?? 'unknown'} manually. Records: ${directory}. ${native}`,
-      { cause: error },
-    );
+    throw new EvidenceUnavailableError({
+      taskId,
+      ...(task?.name === undefined ? {} : { name: task.name }),
+      evidenceError: String(error),
+      recovery,
+      ...(handle?.cleanupDetail === undefined ? {} : { cleanupDetail: handle.cleanupDetail }),
+      ...(handle?.paneId === undefined ? {} : { paneId: handle.paneId }),
+      cause: error,
+    });
   }
 
   submissionReceipt(taskId: string, parentSessionId: string, id: string) {
@@ -278,6 +371,15 @@ export class WorkerController {
     };
   }
 
+  ownership(taskId: string) {
+    const handle = this.handles.get(taskId);
+
+    return {
+      activeOwner: this.closed || !handle ? undefined : this.ownerId,
+      enforcing: !handle?.stopping,
+    };
+  }
+
   questionReceipt(taskId: string, parentSessionId: string, questionId: string) {
     const directory = this.directory(taskId, parentSessionId);
     const question = readQuestion(directory, taskId, questionId);
@@ -297,19 +399,19 @@ export class WorkerController {
     handle: Handle,
     answer: { questionId?: string; replyId: string; reply: string },
   ) {
-    const hasStructuredQuestion = answer.questionId !== undefined;
-    const reusedReplyId = answer.replyId === 'assignment';
-    const invalidText = !answer.reply.trim() || answer.reply.length > 32_000;
-
-    if (hasStructuredQuestion || reusedReplyId || invalidText) {
-      throw new Error(
-        'Generic replies use a unique replyId and plain text, without a structured questionId.',
-      );
-    }
-
+    requireGenericReplyShape(answer);
     const { directory, task } = handle;
     const call = (argumentsList: string[]) =>
       this.client(argumentsList, workBudget(handle), handle.abort.signal);
+
+    // Check the saved submission before native state. A saved reply is never sent twice, so a
+    // blocked dialog must not turn a repeat into an error.
+    const repeated = repeatedGenericReply(directory, task, answer);
+
+    if (repeated) {
+      return repeated;
+    }
+
     handle.nativeState = 'unknown';
     const worker = await inspectWorker(handle, call);
     const location = await resolveTerminal(worker.terminalId, call);
@@ -333,7 +435,7 @@ export class WorkerController {
       );
     }
 
-    return submitGenericText(directory, task, {
+    const submission = await submitGenericText(directory, task, {
       id: answer.replyId,
       text: answer.reply,
       send: () => {
@@ -342,6 +444,12 @@ export class WorkerController {
         return call(agentPromptArguments(location.paneId, answer.reply));
       },
     });
+
+    return {
+      replyAccepted: true as const,
+      name: task.name,
+      delivery: deliveryFromSubmission(submission?.observation?.state),
+    };
   }
 
   async reply(
@@ -391,7 +499,7 @@ export class WorkerController {
     if (readReply(directory, taskId, questionId)) {
       acceptReply(directory, taskId, value);
 
-      return acceptedReply(directory, taskId, questionId);
+      return acceptedReply(directory, handle.task, questionId);
     }
 
     if (readPendingQuestion(directory, taskId)?.questionId !== questionId) {
@@ -413,7 +521,7 @@ export class WorkerController {
     if (readReply(directory, taskId, questionId)) {
       acceptReply(directory, taskId, value);
 
-      return acceptedReply(directory, taskId, questionId);
+      return acceptedReply(directory, handle.task, questionId);
     }
 
     return this.sendPiReply({ directory, handle, questionId, answer, value });
@@ -423,26 +531,26 @@ export class WorkerController {
     const { directory, handle, questionId, answer, value } = request;
     const { taskId } = handle.task;
     const reference = { version: 1, taskId, questionId, replyId: answer.replyId };
-    const delivery = `TAU_REPLY ${JSON.stringify(reference)}`;
+    const prompt = `TAU_REPLY ${JSON.stringify(reference)}`;
     const call = (argumentsList: string[]) =>
       this.client(argumentsList, workBudget(handle), handle.abort.signal);
 
     acceptReply(directory, taskId, value);
 
+    // The reply is saved; a throw here would read as a failed reply and invite a resend.
+    let delivery: 'sent' | 'uncertain' = 'sent';
+
     try {
-      await call(['agent', 'prompt', text(handle.paneId), delivery]);
-    } catch (error) {
-      throw new Error(
-        'Reply accepted durably, but delivery is uncertain. Do not retry delivery; inspect acknowledgement.',
-        { cause: error },
-      );
+      await call(['agent', 'prompt', text(handle.paneId), prompt]);
+    } catch {
+      delivery = 'uncertain';
     }
 
     return {
       replyAccepted: true,
-      workerAcknowledged: Boolean(readAcknowledgement(directory, taskId, questionId)),
-      delivery:
-        'Herdr accepted text. This does not prove worker acknowledgement or applied effects.',
+      name: handle.task.name,
+      workerAcknowledged: replyAcknowledged(directory, taskId, questionId),
+      delivery,
     };
   }
 
@@ -461,19 +569,79 @@ export class WorkerController {
     return this.status(taskId, parentSessionId);
   }
 
+  // A missing record is an unknown task; the raw file error would expose the record path.
+  private savedTask(directory: string): Task {
+    try {
+      return readTask(directory);
+    } catch (error) {
+      if (isMissingFile(error)) {
+        throw new TaskAccessError('Unknown task.');
+      }
+
+      throw error;
+    }
+  }
+
   private directory(taskId: string, parentSessionId: string): string {
     if (!/^[a-zA-Z0-9-]+$/.test(taskId)) {
-      throw new Error('Invalid task identity.');
+      throw new TaskAccessError('Invalid task identity.');
     }
 
     const directory = join(this.root, taskId);
-    const task = this.handles.get(taskId)?.task ?? readTask(directory);
+    const task = this.handles.get(taskId)?.task ?? this.savedTask(directory);
 
     if (task.parentSessionId !== parentSessionId) {
-      throw new Error('Task belongs to another parent session.');
+      throw new TaskAccessError('Task belongs to another parent session.');
     }
 
     return directory;
+  }
+
+  private noticeStatus(handle: Handle) {
+    if (handle.recordErrors.length) {
+      throw new Error(handle.recordErrors.join('; '));
+    }
+
+    const { activeOwner, enforcing } = this.ownership(handle.task.taskId);
+    const status = {
+      ...taskStatus(handle.directory, activeOwner, enforcing),
+      ...genericStatus(handle.directory, handle.task, handle, !this.closed),
+    };
+
+    if (handle.cleanupDetail !== undefined) {
+      status.cleanup = handle.cleanupDetail;
+    }
+
+    return status;
+  }
+
+  private notifySnapshot(
+    handle: Handle,
+    options: { question?: boolean; failure?: string; delivery?: string } = {},
+  ): void {
+    const question = options.question ?? false;
+
+    try {
+      const status = {
+        ...this.noticeStatus(handle),
+        ...(options.failure === undefined ? {} : { failure: options.failure }),
+        ...(options.delivery === undefined ? {} : { delivery: options.delivery }),
+      };
+
+      this.notify({ content: modelStatus(status), details: status, question });
+    } catch (error) {
+      const evidenceError = [String(error), handle.cleanupDetail]
+        .filter((value): value is string => value !== undefined && value !== '')
+        .join(' ');
+      const details = {
+        taskId: handle.task.taskId,
+        ...(handle.task.name === undefined ? {} : { name: handle.task.name }),
+        evidenceError,
+        recovery: handleRecovery(handle),
+      };
+
+      this.notify({ content: modelEvidenceNotice(details), details, question });
+    }
   }
 
   launch(input: LaunchInput, signal: AbortSignal = new AbortController().signal) {
@@ -588,9 +756,7 @@ export class WorkerController {
 
       handle.startError = String(error).slice(0, 4000);
       publish(handle.directory, 'nativeStart-error.json', { detail: handle.startError });
-      this.notify(
-        `Worker ${task.taskId}: native startup is blocked or uncertain. No start retry. ${handle.startError}`,
-      );
+      this.notifySnapshot(handle, { failure: handle.startError });
     });
   }
 
@@ -696,9 +862,9 @@ export class WorkerController {
       observation?.state === 'not-delivered' || observation?.state === 'uncertain';
 
     if (!handle.stopping && !this.closed && undelivered) {
-      this.notify(
-        `Worker ${handle.task.taskId}: assignment ${observation.state}. ${observation.detail} Inspect the native pane; no automatic retry. The original deadline remains active.`,
-      );
+      const delivery = observation.state === 'not-delivered' ? 'notDelivered' : 'uncertain';
+
+      this.notifySnapshot(handle, { delivery });
     }
   }
 
@@ -991,10 +1157,7 @@ export class WorkerController {
 
     if (question && !handle.notifiedQuestions.has(question.questionId)) {
       handle.notifiedQuestions.add(question.questionId);
-      this.notify(
-        `Worker ${handle.task.name ?? 'unnamed'} (${handle.task.taskId}) asks: ${question.question}\nReply with subagent_reply using questionId ${question.questionId}. The original deadline still applies.`,
-        question,
-      );
+      this.notifySnapshot(handle, { question: true });
     }
   }
 
@@ -1066,9 +1229,7 @@ export class WorkerController {
     const blocked = ['blocked', 'unknown'].includes(handle.nativeState ?? 'unknown');
 
     if (handle.nativeState !== previousState && blocked) {
-      this.notify(
-        `Worker ${handle.task.taskId}: ${handle.nativeState}. Inspect the native dialog; no approval is automatic. The original deadline remains active.`,
-      );
+      this.notifySnapshot(handle);
     }
   }
 
@@ -1079,9 +1240,7 @@ export class WorkerController {
     handle.nativeState = 'unknown';
 
     if (previousIssue !== handle.observationIssue) {
-      this.notify(
-        `Worker ${handle.task.taskId}: native observation or delivery is uncertain. ${handle.observationIssue} Inspect saved submission intent; no automatic retry. The original deadline remains active.`,
-      );
+      this.notifySnapshot(handle);
     }
   }
 
@@ -1142,9 +1301,7 @@ export class WorkerController {
           return;
         }
 
-        this.notify(
-          `Worker ${handle.task.name ?? 'unnamed'} (${handle.task.taskId}): cleanup unconfirmed. ${String(error)}. Check pane ${handle.paneId ?? 'unknown'} manually. Records: ${handle.directory}. ${nativeDescription(handle.task, handle.directory)}`,
-        );
+        this.notifySnapshot(handle);
       });
 
     return handle.stopping;
@@ -1199,23 +1356,14 @@ export class WorkerController {
     }
 
     handle.cleanupDetail = reason === 'failure' ? `${detail} ${failureDetail}` : detail;
-    const outcome = this.recordCleanupOutcome({
-      handle,
-      reason,
-      failureDetail,
-      detail,
-      stopped,
-      record,
-    });
-
+    this.recordCleanupEvents({ handle, reason, failureDetail, detail, stopped, record });
     handle.cleanupFinished = true;
-    this.notifyCleanup(handle, outcome, record);
+    this.notifyCleanup(handle, record);
   }
 
-  private recordCleanupOutcome(request: CleanupOutcomeRequest): string {
+  private recordCleanupEvents(request: CleanupOutcomeRequest): void {
     const { handle, reason, failureDetail, detail, stopped, record } = request;
     const { directory, task } = handle;
-    let outcome: string = reason;
 
     record(() => {
       if (reason === 'timeout' || reason === 'cancelled') {
@@ -1230,18 +1378,9 @@ export class WorkerController {
     record(() => {
       recordEvent(directory, task.taskId, 'cleanup', { detail, stopped });
     });
-    record(() => {
-      outcome = taskStatus(directory, this.ownerId, false).outcome;
-    });
-
-    return outcome;
   }
 
-  private notifyCleanup(
-    handle: Handle,
-    outcome: string,
-    record: (operation: () => void) => void,
-  ): void {
+  private notifyCleanup(handle: Handle, record: (operation: () => void) => void): void {
     if (this.closed) {
       return;
     }
@@ -1251,13 +1390,7 @@ export class WorkerController {
     record(() => {
       recordEvent(directory, task.taskId, 'notified', 'Parent notification attempted once.');
     });
-    const errors = handle.recordErrors.length
-      ? ` Evidence errors: ${handle.recordErrors.join('; ')}. Check pane ${handle.paneId ?? 'unknown'} manually.`
-      : '';
-
-    this.notify(
-      `Worker ${task.name ?? 'unnamed'} (${task.taskId}): ${outcome}. ${handle.cleanupDetail}${errors} Records: ${directory}. ${nativeDescription(task, directory)}`,
-    );
+    this.notifySnapshot(handle);
   }
 
   // Cleanup for every worker this controller still owns, so a stopping ancestor does not strand its tree.

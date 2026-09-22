@@ -70,6 +70,15 @@ question and web tools and CC Safety Net, causing worker launch to refuse. Do no
 `--no-extensions` or `--no-skills`; they suppress configured resources, including skills and herdr
 integrations.
 
+Before launching a Pi subagent worker, install herdr's Pi integration in the parent Pi session:
+
+```sh
+herdr integration install pi
+```
+
+The command writes the integration to `~/.pi/agent/extensions/`, where Pi loads global extensions
+automatically. Without the integration, worker launch refuses before it runs any herdr pane command.
+
 For use in another project, run `pi install -l /absolute/path/to/tau` there, then start Pi. This
 records the local package in that project's `.pi/settings.json`.
 

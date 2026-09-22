@@ -12,6 +12,7 @@ import { herdrFake } from './fixtures/herdrFake.js';
 import { fixtureGenericLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import * as identity from './identity.js';
+import type { WorkerNotice } from './presentation.js';
 import { readEvent, readReport, readTask } from './records.js';
 import * as records from './records.js';
 
@@ -64,12 +65,12 @@ const fixture = (kind = 'codex') => {
 
     return true;
   });
-  const notices: string[] = [];
+  const notices: WorkerNotice[] = [];
   const finished = Promise.withResolvers<undefined>();
-  const controller = new WorkerController(root, client, (message) => {
-    notices.push(message);
+  const controller = new WorkerController(root, client, (notice) => {
+    notices.push(notice);
 
-    if (message.includes('Records:')) {
+    if (!notice.question && notice.content.cleanup !== undefined) {
       finished.resolve(undefined);
     }
   });
@@ -122,7 +123,7 @@ it.each(['claude', 'codex', 'gemini'])(
 
     const started = await setup.controller.launch(setup.input);
 
-    expect(started.outcome).toBe('running');
+    expect(started.state).toBe('running');
     expect(setup.calls.find((call) => call[1] === 'start')).toEqual([
       'agent',
       'start',
@@ -153,7 +154,7 @@ it.each(['claude', 'codex', 'gemini'])(
     );
     expect(setup.controller.status(task.taskId, 'parent')).toMatchObject({
       outcome: 'success',
-      stopped: true,
+      state: 'stopped',
       capacityHeld: false,
     });
     expect(setup.calls).toContainEqual(['agent', 'send-keys', 'worker-1', 'ctrl+c']);
@@ -182,8 +183,7 @@ it('retains ownership through transient inspection and partial reports without u
   await vi.advanceTimersByTimeAsync(3000);
 
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
-    outcome: 'running',
-    stopped: false,
+    state: 'running',
     capacityHeld: true,
     nativeState: 'unknown',
   });
@@ -198,7 +198,7 @@ it('retains ownership through transient inspection and partial reports without u
   await setup.finished;
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     outcome: 'success',
-    stopped: true,
+    state: 'stopped',
     deadline: started.deadline,
   });
 });
@@ -210,7 +210,7 @@ it('cancels an identity-checked generic worker before a native reference is avai
 
   const status = await setup.controller.cancel(started.taskId, 'parent');
 
-  expect(status).toMatchObject({ outcome: 'cancelled', stopped: true, capacityHeld: false });
+  expect(status).toMatchObject({ outcome: 'cancelled', state: 'stopped', capacityHeld: false });
   expect(setup.calls).toContainEqual(['agent', 'send-keys', 'worker-1', 'ctrl+c']);
   expect(setup.calls).toContainEqual(['pane', 'close', 'worker-1']);
 });
@@ -247,10 +247,15 @@ it('persists a late native reference and refuses input after that reference chan
   const recovered = new WorkerController(setup.root, async () => {
     throw new Error('Recovery cannot send input.');
   });
-  expect(recovered.status(started.taskId, 'parent')).toMatchObject({
+  const recoveredStatus = recovered.status(started.taskId, 'parent');
+  expect(recoveredStatus).toMatchObject({
     nativeReference: { kind: 'id', value: 'late-reference' },
-    ownedByThisParent: false,
+    state: 'notOwned',
   });
+  expect(recoveredStatus.recovery).toMatchObject({
+    nativeReference: { kind: 'id', value: 'late-reference' },
+  });
+  expect(recoveredStatus.recovery).not.toHaveProperty('nativeSessionFile');
 });
 
 it('finds saved native references and reports after pane cleanup without inventing sessions', async () => {
@@ -285,9 +290,9 @@ it('keeps blocked startup visible and inside the original deadline without submi
 
   const started = await setup.controller.launch(setup.input);
 
-  expect(started).toMatchObject({ outcome: 'running', capacityHeld: true });
+  expect(started).toMatchObject({ state: 'starting', capacityHeld: true });
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
-  expect(setup.notices.join('\n')).toContain('blocked');
+  expect(JSON.stringify(setup.notices)).toContain('blocked');
   setup.state.status = 'idle';
   await vi.advanceTimersByTimeAsync(1500);
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
@@ -313,14 +318,18 @@ it('passes approved native arguments literally and keeps native submission separ
     '--model',
     'model with spaces; $HOME',
   ]);
-  expect(receipt).toMatchObject({ observation: { state: 'submitted' } });
-  expect(repeated).toEqual(receipt);
-  expect(setup.controller.submissionReceipt(started.taskId, 'parent', answer.replyId)).toEqual(
-    receipt,
-  );
+  expect(receipt).toMatchObject({ replyAccepted: true, delivery: 'sent' });
+  expect(repeated).toEqual({ replyAccepted: true, name: started.name, delivery: 'notResent' });
+  expect(
+    setup.controller.submissionReceipt(started.taskId, 'parent', answer.replyId),
+  ).toMatchObject({ observation: { state: 'submitted' } });
+  expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(2);
+  await expect(
+    setup.controller.reply(started.taskId, 'parent', { ...answer, reply: 'Changed answer text.' }),
+  ).rejects.toThrow('Conflicting native submission identity');
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(2);
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
-    accepted: false,
+    state: 'running',
     requestedModel: setup.input.loadout.requestedModel,
     observedModel: null,
   });
@@ -335,6 +344,64 @@ it('passes approved native arguments literally and keeps native submission separ
     'another parent session',
   );
 });
+
+it('returns notResent for a repeated generic reply while the worker is blocked', async () => {
+  const setup = fixture();
+  const started = await setup.controller.launch(setup.input);
+  const answer = {
+    replyId: 'repeat-reply',
+    reply: 'Stay within the assigned scope.',
+    scopeUnchanged: true,
+  };
+  const first = await setup.controller.reply(started.taskId, 'parent', answer);
+  expect(first).toMatchObject({ delivery: 'sent' });
+  setup.state.status = 'blocked';
+
+  const repeated = await setup.controller.reply(started.taskId, 'parent', answer);
+
+  expect(repeated).toEqual({ replyAccepted: true, name: started.name, delivery: 'notResent' });
+  expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(2);
+});
+
+it('reports a blocked generic reply as notDelivered without claiming acknowledgement', async () => {
+  const setup = fixture();
+  const started = await setup.controller.launch(setup.input);
+  setup.state.promptError = 'Prompt refused';
+  setup.state.promptBlocked = true;
+
+  const receipt = await setup.controller.reply(started.taskId, 'parent', {
+    replyId: 'blocked-reply',
+    reply: 'More work.',
+    scopeUnchanged: true,
+  });
+
+  expect(receipt).toEqual({ replyAccepted: true, name: started.name, delivery: 'notDelivered' });
+  expect(receipt).not.toHaveProperty('workerAcknowledged');
+  expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
+    assignment: { observation: { state: 'submitted' } },
+  });
+});
+
+it.each([
+  { blocked: true, delivery: 'notDelivered' },
+  { blocked: false, delivery: 'uncertain' },
+])(
+  'repeats a $delivery generic reply with its saved outcome without prompting again',
+  async ({ blocked, delivery }) => {
+    const setup = fixture();
+    const started = await setup.controller.launch(setup.input);
+    const answer = { replyId: 'failed-reply', reply: 'More work.', scopeUnchanged: true };
+    setup.state.promptError = 'Prompt refused';
+    setup.state.promptBlocked = blocked;
+    await setup.controller.reply(started.taskId, 'parent', answer);
+    const prompts = setup.calls.filter((call) => call[1] === 'prompt').length;
+
+    const repeated = await setup.controller.reply(started.taskId, 'parent', answer);
+
+    expect(repeated).toMatchObject({ replyAccepted: true, delivery });
+    expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(prompts);
+  },
+);
 
 it('returns uncertain startup for inspection without waiting out or resetting the deadline', async () => {
   const setup = fixture();
@@ -351,7 +418,7 @@ it('returns uncertain startup for inspection without waiting out or resetting th
 
   await vi.advanceTimersByTimeAsync(100);
 
-  expect(outcome).toMatchObject({ outcome: 'running', stopped: false, capacityHeld: true });
+  expect(outcome).toMatchObject({ state: 'starting', capacityHeld: true });
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
   setup.state.inspectionError = '';
   await vi.advanceTimersByTimeAsync(1500);
@@ -390,7 +457,7 @@ it.each(['unsupported kind', 'missing executable'])(
 
     const started = await setup.controller.launch(setup.input);
 
-    expect(started).toMatchObject({ outcome: 'failure', stopped: true, capacityHeld: false });
+    expect(started).toMatchObject({ outcome: 'failure', state: 'stopped', capacityHeld: false });
     expect(started.failure).toContain('rejected');
     expect(started.cleanup).toContain('absence evidence');
     expect(started.cleanup).not.toContain('No worker process was ever started');
@@ -408,7 +475,7 @@ it('keeps a lost start response uncertain when absence inspection fails', async 
 
   const started = await setup.controller.launch(setup.input);
 
-  expect(started).toMatchObject({ outcome: 'running', stopped: false, capacityHeld: true });
+  expect(started).toMatchObject({ state: 'starting', capacityHeld: true });
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     nativeState: 'unknown',
   });
@@ -433,8 +500,8 @@ it('does not claim nondelivery when only the submission receipt write fails', as
     setup.controller.submissionReceipt(started.taskId, 'parent', 'assignment')?.observation,
   ).toBeUndefined();
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
-  expect(setup.notices.join(' ')).toContain('delivery is uncertain');
-  expect(setup.notices.join(' ')).not.toContain('no input sent');
+  expect(setup.notices.at(-1)?.content).toMatchObject({ nativeState: 'unknown' });
+  expect(JSON.stringify(setup.notices)).not.toContain('no input sent');
 });
 
 it.each([
@@ -448,7 +515,10 @@ it.each([
   await setup.controller.launch(setup.input);
   await vi.advanceTimersByTimeAsync(4500);
 
-  expect(setup.notices.filter((notice) => notice.includes(`assignment ${state}`))).toHaveLength(1);
+  const expectedDelivery = state === 'not-delivered' ? 'notDelivered' : 'uncertain';
+  expect(
+    setup.notices.filter((notice) => notice.content.delivery === expectedDelivery),
+  ).toHaveLength(1);
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
 });
 
@@ -471,7 +541,7 @@ it('keeps uncertain startup and text delivery visible without repeating either o
   await vi.advanceTimersByTimeAsync(4500);
 
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
-    outcome: 'running',
+    state: 'starting',
     assignment: { observation: { state: 'uncertain' } },
     deadline: started.deadline,
   });
@@ -573,8 +643,7 @@ it('marks process exit without a report incomplete and releases capacity only af
 
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     outcome: 'incomplete',
-    reportAccepted: false,
-    stopped: true,
+    state: 'stopped',
     capacityHeld: false,
   });
 });
@@ -597,8 +666,7 @@ it.each(['cancelled', 'timeout'] as const)(
 
     expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
       outcome: reason,
-      reportAccepted: true,
-      stopped: true,
+      state: 'stopped',
     });
     expect(readReport(join(setup.root, started.taskId), started.taskId)?.summary).toContain(
       'Completed fixture evidence.',
@@ -615,8 +683,7 @@ it('keeps status readable after a report too large to accept', async () => {
   await setup.finished;
 
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
-    reportAccepted: false,
-    stopped: true,
+    state: 'stopped',
   });
   expect(readFileSync(join(setup.root, started.taskId, 'nativeFailure.json'), 'utf8')).toContain(
     'at most 10000 bytes',
@@ -633,8 +700,7 @@ it('keeps an unknown worker inside its original deadline and does not infer succ
 
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     outcome: 'timeout',
-    reportAccepted: false,
-    stopped: true,
+    state: 'stopped',
     deadline: started.deadline,
   });
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
@@ -650,7 +716,11 @@ it('retains shared capacity when generic interrupts cannot confirm a stop', asyn
   await vi.advanceTimersByTimeAsync(10_001);
   const status = await cancelling;
 
-  expect(status).toMatchObject({ outcome: 'cancelled', stopped: false, capacityHeld: true });
+  expect(status).toMatchObject({
+    outcome: 'cancelled',
+    state: 'cleanupUnconfirmed',
+    capacityHeld: true,
+  });
   await expect(setup.controller.launch({ ...setup.input, task: 'Another task.' })).rejects.toThrow(
     'capacity full',
   );
@@ -675,5 +745,5 @@ it('bounds native polling without reading terminal text in the background', asyn
   expect(setup.calls).toHaveLength(12);
   expect(cancellation.runClient).toHaveBeenCalledTimes(8);
   expect(setup.calls.filter((call) => call[1] === 'read')).toHaveLength(0);
-  expect(setup.controller.status(started.taskId, 'parent').outcome).toBe('running');
+  expect(setup.controller.status(started.taskId, 'parent').state).toBe('running');
 });

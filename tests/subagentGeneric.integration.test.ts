@@ -41,7 +41,7 @@ it.runIf(hasHerdr)(
       parentPane: paneId,
     });
 
-    expect(started).toMatchObject({ outcome: 'failure', stopped: true, capacityHeld: false });
+    expect(started).toMatchObject({ outcome: 'failure', state: 'stopped', capacityHeld: false });
 
     const promptFailure = await client(
       agentPromptArguments('no-such-agent', '-x leading text\nsecond line'),
