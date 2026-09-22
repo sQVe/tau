@@ -478,7 +478,7 @@ const registerReplyTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_reply',
     label: 'Reply to worker',
     description:
-      'Send an in-scope reply to an active owned worker within its original deadline. Pi requires questionId and preserves structured acknowledgement. Generic workers omit questionId and receive plain text; delivery is not task acceptance or acknowledgement. Delivery values: sent (herdr accepted the text); notResent (this exact reply was already accepted; do not retry); uncertain (delivery could not be confirmed; do not retry); notDelivered (a blocked native dialog refused input; user action is needed). Use a unique replyId and inspect subagent_status with submissionId after uncertainty. Native blocked or unknown state refuses input; never use this tool to approve native dialogs automatically.',
+      'Send an in-scope reply to an active owned worker within its original deadline. Pi requires questionId and preserves structured acknowledgement. Generic workers omit questionId and receive plain text; delivery is not task acceptance or acknowledgement. Delivery values: sent (herdr accepted the text); notResent (this exact reply was already saved and was not sent again; prior Pi delivery may still be uncertain; do not retry); uncertain (delivery could not be confirmed; do not retry); notDelivered (a blocked native dialog refused input; user action is needed). Use a unique replyId and inspect subagent_status with submissionId after uncertainty. Native blocked or unknown state refuses input; never use this tool to approve native dialogs automatically.',
     parameters: replyParameters,
     renderCall(parameters, theme) {
       return callText('Reply to worker', shortId(parameters.taskId), theme);

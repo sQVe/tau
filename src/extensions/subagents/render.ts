@@ -610,13 +610,21 @@ const historyTotal = (details: HistoryView): number =>
 export const collapsedHistoryLines = (details: HistoryView, theme: Theme): string[] => {
   const total = historyTotal(details);
   const shown = details.candidates.slice(0, historyCollapsedRows);
-  const remaining = total - shown.length;
-
-  return [
+  const hidden = details.candidates.length - shown.length;
+  const lines = [
     `${theme.fg('toolTitle', theme.bold('History'))} · ${matchCount(total)}`,
     ...shown.map((entry) => historyRow(entry, theme)),
-    ...(remaining > 0 ? [theme.fg('dim', `… ${remaining} more (ctrl+o)`)] : []),
   ];
+
+  if (hidden > 0) {
+    lines.push(theme.fg('dim', `… ${hidden} more (ctrl+o)`));
+  }
+
+  if (details.nextOffset !== undefined) {
+    lines.push(theme.fg('dim', 'More matches on the next page'));
+  }
+
+  return lines;
 };
 
 const candidateRows = (candidate: HistoryCandidate, theme: Theme): string[] => [
@@ -642,15 +650,25 @@ const candidateRows = (candidate: HistoryCandidate, theme: Theme): string[] => [
   ...(candidate.report?.evidence ?? []).map((entry) => row('Report evidence', entry, theme)),
 ];
 
-export const expandedHistoryLines = (details: HistoryView, theme: Theme): string[] => [
-  `${theme.fg('toolTitle', theme.bold('History'))} · ${matchCount(historyTotal(details))}`,
-  ...details.candidates.flatMap((candidate) => [
-    '',
-    theme.bold(displayName(candidate)),
-    ...candidateRows(candidate, theme),
-  ]),
-  ...(details.diagnostics ?? []).map((entry) => row('Diagnostic', entry, theme)),
-];
+export const expandedHistoryLines = (details: HistoryView, theme: Theme): string[] => {
+  const lines = [
+    `${theme.fg('toolTitle', theme.bold('History'))} · ${matchCount(historyTotal(details))}`,
+    ...details.candidates.flatMap((candidate) => [
+      '',
+      theme.bold(displayName(candidate)),
+      ...candidateRows(candidate, theme),
+    ]),
+    ...(details.diagnostics ?? []).map((entry) => row('Diagnostic', entry, theme)),
+  ];
+
+  if (details.nextOffset !== undefined) {
+    const instruction = `Repeat the same query with nextOffset: ${details.nextOffset}.`;
+
+    lines.push(row('Next page', instruction, theme));
+  }
+
+  return lines;
+};
 
 const replyLabel = (delivery: string): StateLabel => {
   switch (delivery) {

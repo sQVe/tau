@@ -382,6 +382,30 @@ it('renders at most five history rows and an expansion hint', () => {
   expect(small.join('\n')).not.toContain('ctrl+o');
 });
 
+it('distinguishes unloaded history pages from rows hidden by collapse', () => {
+  const subject = theme();
+
+  for (const loaded of [5, 8]) {
+    const details = { ...historyFixture(loaded), totalMatches: 12, nextOffset: loaded };
+    const collapsed = collapsedHistoryLines(details, subject);
+    const expansionHints = collapsed.filter((line) => line.includes('ctrl+o'));
+    const expanded = expandedHistoryLines(details, subject).join('\n');
+    const expectedHint = loaded > 5 ? /\b3\b/ : /^$/;
+
+    expect(collapsed.join('\n')).toMatch(/next page/i);
+    expect(expansionHints.join('\n')).toMatch(expectedHint);
+    expect(expanded).toContain(`nextOffset: ${loaded}`);
+  }
+
+  const lastPage = { ...historyFixture(2), totalMatches: 12 };
+  const collapsed = collapsedHistoryLines(lastPage, subject).join('\n');
+  const expanded = expandedHistoryLines(lastPage, subject).join('\n');
+
+  expect(collapsed).not.toContain('ctrl+o');
+  expect(collapsed).not.toMatch(/next page/i);
+  expect(expanded).not.toContain('nextOffset');
+});
+
 it('renders every history candidate in the expanded view', () => {
   const subject = theme();
   const expanded = expandedHistoryLines(historyFixture(3), subject).join('\n');
