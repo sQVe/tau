@@ -301,7 +301,8 @@ export default defineConfig({
   fmt: {
     printWidth: 100,
     singleQuote: true,
-    ignorePatterns: ['pnpm-lock.yaml'],
+    // Local `.pi` agent state, including preserved review reports, is not source and must not be reformatted.
+    ignorePatterns: ['pnpm-lock.yaml', '.pi/**'],
     overrides: [
       { files: ['*.md'], options: { proseWrap: 'always' } },
       // Snippet bodies are sent to the model as written, so wrapping them would
