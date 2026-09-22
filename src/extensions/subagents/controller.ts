@@ -116,6 +116,20 @@ const requireGenericReplyShape = (answer: {
   }
 };
 
+const deliveryFromSubmission = (
+  state: 'submitted' | 'not-delivered' | 'uncertain' | undefined,
+): 'sent' | 'notDelivered' | 'uncertain' => {
+  if (state === 'submitted') {
+    return 'sent';
+  }
+
+  if (state === 'not-delivered') {
+    return 'notDelivered';
+  }
+
+  return 'uncertain';
+};
+
 // A saved reply identity is never sent again; different text under the same identity is a conflict.
 const repeatedGenericReply = (
   directory: string,
@@ -132,21 +146,12 @@ const repeatedGenericReply = (
     throw new Error('Conflicting native submission identity.');
   }
 
-  return { replyAccepted: true as const, name: task.name, delivery: 'notResent' as const };
-};
+  // Only a submitted reply is "already sent"; a repeat of an undelivered or uncertain one keeps
+  // that outcome, so the model never reads a failed delivery as accepted.
+  const state = saved.observation?.state;
+  const delivery = state === 'submitted' ? ('notResent' as const) : deliveryFromSubmission(state);
 
-const deliveryFromSubmission = (
-  state: 'submitted' | 'not-delivered' | 'uncertain' | undefined,
-): 'sent' | 'notDelivered' | 'uncertain' => {
-  if (state === 'submitted') {
-    return 'sent';
-  }
-
-  if (state === 'not-delivered') {
-    return 'notDelivered';
-  }
-
-  return 'uncertain';
+  return { replyAccepted: true as const, name: task.name, delivery };
 };
 
 interface PiReplyRequest {

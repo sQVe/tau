@@ -208,6 +208,28 @@ it('keeps paths from error text out of collapsed failure and observation reasons
   }
 });
 
+it('shows the herdr failure reason instead of the failed command', () => {
+  const subject = theme();
+  const failure =
+    'Error: Command failed: herdr agent start codex --pane w-1 --timeout 1799000 -- --model x\nagent_not_ready: trust prompt is waiting for input';
+  const details = { ...statusFixture('starting', true), failure };
+  const output = lines(renderStatusResult(details, false, subject)).join('\n');
+
+  expect(output).toContain('trust prompt is waiting for input');
+  expect(output).not.toContain('herdr agent start');
+});
+
+it('keeps JSON fragments from parse errors out of collapsed failure reasons', () => {
+  const subject = theme();
+  const failure =
+    'Worker evidence unavailable: SyntaxError: Unexpected token \'}\', ..."6","x":tru}" is not valid JSON. No retry.';
+  const details = { ...statusFixture('starting', true), failure };
+  const output = lines(renderStatusResult(details, false, subject)).join('\n');
+
+  expect(output).toContain('Worker evidence unavailable');
+  expect(output).not.toMatch(/[{}]/);
+});
+
 it('uses the check mark only for a stopped success and shows the deadline only for live states', () => {
   const subject = theme();
 

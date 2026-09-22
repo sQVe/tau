@@ -382,6 +382,21 @@ it('reports a blocked generic reply as notDelivered without claiming acknowledge
   });
 });
 
+it('reports a repeated undelivered generic reply as not delivered without prompting again', async () => {
+  const setup = fixture();
+  const started = await setup.controller.launch(setup.input);
+  const answer = { replyId: 'blocked-reply', reply: 'More work.', scopeUnchanged: true };
+  setup.state.promptError = 'Prompt refused';
+  setup.state.promptBlocked = true;
+  await setup.controller.reply(started.taskId, 'parent', answer);
+  const prompts = setup.calls.filter((call) => call[1] === 'prompt').length;
+
+  const repeated = await setup.controller.reply(started.taskId, 'parent', answer);
+
+  expect(repeated).toMatchObject({ replyAccepted: true, delivery: 'notDelivered' });
+  expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(prompts);
+});
+
 it('returns uncertain startup for inspection without waiting out or resetting the deadline', async () => {
   const setup = fixture();
   setup.state.inspectionError = 'Temporary startup observation failure';

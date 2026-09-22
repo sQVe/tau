@@ -326,8 +326,26 @@ const basePart = (details: StatusView): string => {
 // full reason.
 const pathToken = /(?:~|\.{0,2})\/[^\s'"`,;)]+/g;
 
+// A failed herdr call puts the command on the first line and the reason after it.
+const reasonLine = (value: string): string => {
+  const lines = value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const reason = lines.find((line) => !/^(?:Error: )?Command failed:/.test(line));
+
+  return reason ?? lines[0] ?? '';
+};
+
+// Parse errors quote the corrupt record; collapsed lines never show JSON.
+const withoutJson = (line: string): string => {
+  const brace = line.search(/[{}]/);
+
+  return brace === -1 ? line : `${line.slice(0, brace).trimEnd()} …`;
+};
+
 const collapsedReason = (value: string): string => {
-  const line = firstLine(value).replaceAll(pathToken, '…').trim();
+  const line = withoutJson(reasonLine(value).replaceAll(pathToken, '…')).trim();
 
   return line.length > 160 ? `${line.slice(0, 157)}…` : line;
 };
