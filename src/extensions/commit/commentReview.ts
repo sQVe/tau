@@ -42,6 +42,11 @@ For an inaccurate finding, the code shown must contradict the comment. For a pol
 Answer not_established when the claim depends on code that is not shown, such as other files, callers, or other processes, or when the excerpt does not contradict the comment. Read the code carefully; a claim about concurrency, propagation, or control flow needs the shown code to support it.
 Return only JSON: {"verdict":"established|not_established","reason":"one sentence"}.`;
 
+const unverifiedVerdictSchema = Type.Object({
+  verdict: Type.Literal('not_established'),
+  reason: Type.String(),
+});
+
 const stripFence = (text: string) =>
   text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i, '$1');
 
@@ -328,14 +333,7 @@ const verifyFinding = async (
       .join('');
     const verdict: unknown = JSON.parse(stripFence(text));
 
-    if (
-      typeof verdict === 'object' &&
-      verdict !== null &&
-      'verdict' in verdict &&
-      verdict.verdict === 'not_established' &&
-      'reason' in verdict &&
-      typeof verdict.reason === 'string'
-    ) {
+    if (Value.Check(unverifiedVerdictSchema, verdict)) {
       return {
         ...finding,
         kind: 'unverified',
