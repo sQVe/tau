@@ -294,13 +294,21 @@ it('shows a blocked or unknown native state for every live state', () => {
     const unknown = collapsedStatusLines(
       {
         ...statusFixture(state, true),
+        failure: undefined,
         nativeState: 'unknown',
         observationIssue: 'herdr observation failed.',
       },
       subject,
     ).join('\n');
     expect(unknown, `${state} unknown`).toContain('unknown');
+    expect(unknown, `${state} ctrl+o hint`).toContain('ctrl+o');
     expect(unknown, `${state} raw reason`).not.toContain('herdr observation failed.');
+
+    const both = collapsedStatusLines(
+      { ...statusFixture(state, true), nativeState: 'unknown', observationIssue: 'observed.' },
+      subject,
+    ).join('\n');
+    expect(both.split('ctrl+o').length - 1, `${state} one hint`).toBe(1);
   }
 });
 

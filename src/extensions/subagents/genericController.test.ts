@@ -382,20 +382,26 @@ it('reports a blocked generic reply as notDelivered without claiming acknowledge
   });
 });
 
-it('reports a repeated undelivered generic reply as not delivered without prompting again', async () => {
-  const setup = fixture();
-  const started = await setup.controller.launch(setup.input);
-  const answer = { replyId: 'blocked-reply', reply: 'More work.', scopeUnchanged: true };
-  setup.state.promptError = 'Prompt refused';
-  setup.state.promptBlocked = true;
-  await setup.controller.reply(started.taskId, 'parent', answer);
-  const prompts = setup.calls.filter((call) => call[1] === 'prompt').length;
+it.each([
+  { blocked: true, delivery: 'notDelivered' },
+  { blocked: false, delivery: 'uncertain' },
+])(
+  'repeats a $delivery generic reply with its saved outcome without prompting again',
+  async ({ blocked, delivery }) => {
+    const setup = fixture();
+    const started = await setup.controller.launch(setup.input);
+    const answer = { replyId: 'failed-reply', reply: 'More work.', scopeUnchanged: true };
+    setup.state.promptError = 'Prompt refused';
+    setup.state.promptBlocked = blocked;
+    await setup.controller.reply(started.taskId, 'parent', answer);
+    const prompts = setup.calls.filter((call) => call[1] === 'prompt').length;
 
-  const repeated = await setup.controller.reply(started.taskId, 'parent', answer);
+    const repeated = await setup.controller.reply(started.taskId, 'parent', answer);
 
-  expect(repeated).toMatchObject({ replyAccepted: true, delivery: 'notDelivered' });
-  expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(prompts);
-});
+    expect(repeated).toMatchObject({ replyAccepted: true, delivery });
+    expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(prompts);
+  },
+);
 
 it('returns uncertain startup for inspection without waiting out or resetting the deadline', async () => {
   const setup = fixture();

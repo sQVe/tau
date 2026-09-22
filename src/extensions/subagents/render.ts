@@ -351,20 +351,12 @@ const nativeStatePart = (details: StatusView): string[] => {
     return [];
   }
 
-  return details.observationIssue === undefined
-    ? ['native state unknown']
-    : ['native state unknown', reasonHint];
+  return ['native state unknown'];
 };
 
 // oxlint-disable-next-line eslint/complexity -- One ordered list keeps every conditional part together.
-const statusParts = (details: StatusView): string[] => {
-  const state = details.state;
-
+const lifecycleParts = (details: StatusView, state: WorkerState): string[] => {
   return [
-    basePart(details),
-    ...(details.failure ? ['failed', reasonHint] : []),
-    ...assignmentDeliveryPart(details.delivery),
-    ...nativeStatePart(details),
     ...(state === 'reported' ? ['not stopped yet'] : []),
     ...(state === 'starting' && details.predecessorTaskId
       ? [`follows ${details.predecessorName ?? shortId(details.predecessorTaskId)}`]
@@ -377,6 +369,26 @@ const statusParts = (details: StatusView): string[] => {
     ...(state === 'notOwned' && details.recovery?.paneId
       ? [`pane ${details.recovery.paneId}`]
       : []),
+  ];
+};
+
+// One hint covers every reason the collapsed line leaves to ctrl+o.
+const hasHiddenReason = (details: StatusView): boolean => {
+  const observed = nativeStatePart(details).length > 0 && details.observationIssue !== undefined;
+
+  return Boolean(details.failure) || observed;
+};
+
+const statusParts = (details: StatusView): string[] => {
+  const state = details.state;
+
+  return [
+    basePart(details),
+    ...(details.failure ? ['failed'] : []),
+    ...assignmentDeliveryPart(details.delivery),
+    ...nativeStatePart(details),
+    ...lifecycleParts(details, state),
+    ...(hasHiddenReason(details) ? [reasonHint] : []),
   ];
 };
 
