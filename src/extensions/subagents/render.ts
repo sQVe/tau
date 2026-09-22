@@ -4,7 +4,7 @@ import { sep } from 'node:path';
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { Text } from '@earendil-works/pi-tui';
 
-import { stateLabel, stateLabels } from './presentation.js';
+import { handoffSections, stateLabel, stateLabels } from './presentation.js';
 import type { StateLabel } from './presentation.js';
 import type { WorkerState } from './types.js';
 
@@ -555,6 +555,12 @@ const sessionRows = (details: StatusView, theme: Theme): string[] => {
   return [];
 };
 
+const missingHandoffRows = (report: ReportView | undefined, theme: Theme): string[] => {
+  const missing = handoffSections(report)?.missing ?? [];
+
+  return missing.length ? [row('Handoff sections missing', missing.join(', '), theme)] : [];
+};
+
 const requestedRows = (details: StatusView, theme: Theme): string[] => [
   ...(details.unconfirmedChildren ?? []).map((id) => row('Child cleanup unconfirmed', id, theme)),
   ...(details.descendantEvidence ? [row('Descendants', details.descendantEvidence, theme)] : []),
@@ -576,6 +582,7 @@ export const expandedStatusLines = (details: StatusView, theme: Theme): string[]
     ...identityRows(details, theme),
     ...(details.report?.summary ? [row('Report', details.report.summary, theme)] : []),
     ...(details.report?.evidence ?? []).map((entry) => row('Evidence', entry, theme)),
+    ...missingHandoffRows(details.report, theme),
     row('Records', shortenHome(details.directory), theme),
     ...sessionRows(details, theme),
     ...requestedRows(details, theme),

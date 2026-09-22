@@ -201,10 +201,9 @@ it('routes approved native tool arguments through the generic resolver without P
   expect(launch).toHaveBeenCalledTimes(1);
 });
 
-it('delivers question notices as a steer and other notices next turn', () => {
+it('delivers a question notice as a steer that wakes the idle parent', () => {
   const sendMessage = vi.fn<() => void>();
-  const emit = vi.fn<() => void>();
-  const pi = { sendMessage, events: { emit } } as unknown as ExtensionAPI;
+  const pi = { sendMessage, events: { emit: vi.fn<() => void>() } } as unknown as ExtensionAPI;
   const content = {
     taskId: 'task-1',
     state: 'awaitingReply',
@@ -224,11 +223,33 @@ it('delivers question notices as a steer and other notices next turn', () => {
     },
     { deliverAs: 'steer', triggerTurn: true },
   );
-  sendMessage.mockClear();
-  deliverWorkerNotice(pi, { ...notice, question: false }, false);
-  expect(sendMessage).toHaveBeenCalledWith(expect.anything(), { deliverAs: 'nextTurn' });
+});
 
-  deliverWorkerNotice(pi, { ...notice, question: false }, true);
+it.each(['success', 'incomplete', 'failure'])(
+  'wakes an idle parent for a %s report notice',
+  (outcome) => {
+    const sendMessage = vi.fn<() => void>();
+    const pi = { sendMessage, events: { emit: vi.fn<() => void>() } } as unknown as ExtensionAPI;
+    const content = { taskId: 'task-1', state: 'stopped', deadline: 1, outcome };
+
+    deliverWorkerNotice(pi, { content, details: {}, question: false }, false);
+
+    expect(sendMessage).toHaveBeenCalledWith(expect.anything(), {
+      deliverAs: 'followUp',
+      triggerTurn: true,
+    });
+  },
+);
+
+it('routes nested worker notices to the parent event bus instead of the root session', () => {
+  const sendMessage = vi.fn<() => void>();
+  const emit = vi.fn<() => void>();
+  const pi = { sendMessage, events: { emit } } as unknown as ExtensionAPI;
+  const content = { taskId: 'task-1', state: 'stopped', deadline: 1, outcome: 'success' };
+
+  deliverWorkerNotice(pi, { content, details: { full: true }, question: false }, true);
+
+  expect(sendMessage).not.toHaveBeenCalled();
   expect(emit).toHaveBeenCalledWith('tau:child-notification', {
     message: JSON.stringify(content),
     details: { full: true },

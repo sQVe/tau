@@ -437,7 +437,7 @@ const registerReportTool = (pi: ExtensionAPI, state: WorkerState): void => {
     name: 'subagent_report',
     label: 'Worker report',
     description:
-      'Submit the final durable handover once. Receipt does not prove correctness or stopped work. Do not retry uncertain delivery.',
+      'Submit the final durable handoff once. Include the Changes, Evidence, Decisions, and Concerns sections from the assignment. Receipt does not prove correctness or stopped work. Do not retry uncertain delivery.',
     parameters: reportParameters,
     execute(...argumentsList) {
       return reportToParent(state, argumentsList[1], pi);

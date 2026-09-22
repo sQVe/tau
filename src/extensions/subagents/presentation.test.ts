@@ -85,6 +85,7 @@ const expectKeys = (state: WorkerState, generic: boolean) => {
     'predecessorTaskId',
     'successorTaskId',
     'report',
+    'handoffSections',
     'pendingQuestion',
     'failure',
     'cleanup',
@@ -173,6 +174,86 @@ it('drops absent keys and maps receipts to their narrow shape', () => {
       replyAccepted: true,
       workerAcknowledged: true,
     },
+  });
+});
+
+it('marks handoff sections present and missing without inventing evidence', () => {
+  const legacy = modelStatus({
+    taskId: 'task-1',
+    state: 'stopped',
+    deadline: 10,
+    outcome: 'success',
+    report: {
+      taskId: 'task-1',
+      outcome: 'success',
+      summary: 'Finished the fixture.',
+      evidence: ['/abs/run.json'],
+    },
+  });
+
+  expect(legacy.handoffSections).toEqual({
+    present: [],
+    missing: ['Changes', 'Evidence', 'Decisions', 'Concerns'],
+  });
+
+  const complete = modelStatus({
+    taskId: 'task-1',
+    state: 'stopped',
+    deadline: 10,
+    outcome: 'success',
+    report: {
+      taskId: 'task-1',
+      outcome: 'success',
+      summary:
+        'Changes: edited value.ts\nEvidence: pnpm check passed\nDecisions: none\nConcerns: none',
+      evidence: ['/abs/run.json'],
+    },
+  });
+
+  expect(complete.handoffSections).toEqual({
+    present: ['Changes', 'Evidence', 'Decisions', 'Concerns'],
+    missing: [],
+  });
+
+  const withoutReport = modelStatus({ taskId: 'task-1', state: 'running', deadline: 10 });
+  expect(withoutReport).not.toHaveProperty('handoffSections');
+});
+
+it('counts only real handoff headings, including a generic report without an Evidence section', () => {
+  const prose = modelStatus({
+    taskId: 'task-1',
+    state: 'stopped',
+    deadline: 10,
+    outcome: 'success',
+    report: {
+      taskId: 'task-1',
+      outcome: 'success',
+      summary: 'Changes to policy are out of scope.',
+      evidence: ['/saved/report.md'],
+    },
+  });
+
+  expect(prose.handoffSections).toEqual({
+    present: [],
+    missing: ['Changes', 'Evidence', 'Decisions', 'Concerns'],
+  });
+
+  const genericWithoutEvidence = modelStatus({
+    taskId: 'task-1',
+    state: 'stopped',
+    deadline: 10,
+    outcome: 'incomplete',
+    report: {
+      taskId: 'task-1',
+      outcome: 'incomplete',
+      summary: '## Changes\nEdited value.ts.\n**Decisions**: none.\n- Concerns: none.',
+      evidence: ['/saved/report.md'],
+    },
+  });
+
+  expect(genericWithoutEvidence.handoffSections).toEqual({
+    present: ['Changes', 'Decisions', 'Concerns'],
+    missing: ['Evidence'],
   });
 });
 

@@ -10,8 +10,10 @@ import { WorkerController } from './controller.js';
 import type { HerdrClient } from './controller.js';
 import { herdrFake } from './fixtures/herdrFake.js';
 import { fixtureGenericLoadout } from './fixtures/loadout.js';
+import { assignmentContract, handoffContract } from './handoff.js';
 import { searchHistory } from './history.js';
 import * as identity from './identity.js';
+import { handoffSections } from './presentation.js';
 import type { WorkerNotice } from './presentation.js';
 import { readEvent, readReport, readTask } from './records.js';
 import * as records from './records.js';
@@ -161,6 +163,108 @@ it.each(['claude', 'codex', 'gemini'])(
     expect(setup.calls).toContainEqual(['pane', 'close', 'worker-1']);
   },
 );
+
+it('saves the handoff sections and work reference from a generic Markdown report', async () => {
+  const setup = fixture();
+  const started = await setup.controller.launch(setup.input);
+  const taskDirectory = join(setup.root, started.taskId);
+  const body = [
+    'Changes: edited src/value.ts against baseline 3ee3d7a; untracked notes.md',
+    'Evidence: pnpm check passed (1019 tests); record at /saved/run.json',
+    'Decisions: none',
+    'Concerns: none',
+  ].join('\n');
+
+  setup.report(started.taskId, body);
+  await vi.advanceTimersByTimeAsync(1500);
+  await setup.finished;
+
+  const saved = readReport(taskDirectory, started.taskId);
+  const reportPath = join(setup.directory, `.tau-worker-${started.taskId}`, 'report.md');
+  expect(saved?.summary).toContain('baseline 3ee3d7a');
+  expect(saved?.summary).toContain('untracked notes.md');
+  expect(saved?.evidence).toEqual([reportPath]);
+  expect(handoffSections(saved)).toEqual({
+    present: ['Changes', 'Evidence', 'Decisions', 'Concerns'],
+    missing: [],
+  });
+});
+
+it('marks a generic report with no Evidence section as missing Evidence', async () => {
+  const setup = fixture();
+  const started = await setup.controller.launch(setup.input);
+  const body = ['Changes: edited value.ts', 'Decisions: none', 'Concerns: none'].join('\n');
+
+  setup.report(started.taskId, body);
+  await vi.advanceTimersByTimeAsync(1500);
+  await setup.finished;
+
+  const saved = readReport(join(setup.root, started.taskId), started.taskId);
+  expect(handoffSections(saved)).toEqual({
+    present: ['Changes', 'Decisions', 'Concerns'],
+    missing: ['Evidence'],
+  });
+});
+
+it('keeps a scripted failed-then-corrected check inside the handoff without waking the parent', async () => {
+  const setup = fixture();
+  const started = await setup.controller.launch(setup.input);
+
+  // Scripted fixture plumbing: no agent loop runs; this body stands in for worker activity.
+  expect(setup.notices).toHaveLength(0);
+
+  const body = [
+    'Changes: saved diff at /saved/check.diff against baseline 3ee3d7a; untracked notes.md',
+    'Evidence: focused test failed (1 failed); fixed src/value.ts; pnpm check passed (1027 tests); output /saved/run.json',
+    'Decisions: kept the existing loader path',
+    'Concerns: none',
+  ].join('\n');
+
+  setup.report(started.taskId, body);
+  await vi.advanceTimersByTimeAsync(1500);
+  await setup.finished;
+
+  expect(setup.notices).toHaveLength(1);
+  expect(setup.notices[0]?.question).toBe(false);
+
+  const taskDirectory = join(setup.root, started.taskId);
+  const saved = readReport(taskDirectory, started.taskId);
+  expect(saved?.summary).toContain('focused test failed (1 failed)');
+  expect(saved?.summary).toContain('fixed src/value.ts');
+  expect(saved?.summary).toContain('pnpm check passed (1027 tests)');
+  expect(saved?.summary).toContain('Decisions: kept the existing loader path');
+
+  const status = setup.controller.status(started.taskId, 'parent');
+  expect(status.report?.summary).toContain('focused test failed (1 failed)');
+  expect(status.state).toBe('stopped');
+});
+
+it('sends the autonomous assignment and handoff contract to a generic worker', async () => {
+  const setup = fixture();
+  await setup.controller.launch(setup.input);
+  const promptCall = setup.calls.find((call) => call[1] === 'prompt');
+  const prompt = promptCall?.[3];
+
+  expect(typeof prompt).toBe('string');
+  expect(prompt).toContain(assignmentContract);
+  expect(prompt).toContain(handoffContract);
+});
+
+it('keeps the editing assignment out of a generic investigator prompt', async () => {
+  const setup = fixture();
+  setup.input.loadout = {
+    ...setup.input.loadout,
+    profile: 'investigator',
+    role: 'investigation',
+  };
+  await setup.controller.launch(setup.input);
+  const promptCall = setup.calls.find((call) => call[1] === 'prompt');
+  const prompt = promptCall?.[3];
+
+  expect(typeof prompt).toBe('string');
+  expect(prompt).toContain(handoffContract);
+  expect(prompt).not.toContain(assignmentContract);
+});
 
 it('caps each herdr call while polling a long-running generic worker', async () => {
   const setup = fixture();

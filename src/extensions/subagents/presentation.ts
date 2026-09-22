@@ -119,6 +119,39 @@ const addField = (target: Record<string, unknown>, key: string, value: unknown):
   }
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const handoffSectionNames = ['Changes', 'Evidence', 'Decisions', 'Concerns'] as const;
+export type HandoffSection = (typeof handoffSectionNames)[number];
+
+export interface HandoffSections {
+  present: HandoffSection[];
+  missing: HandoffSection[];
+}
+
+const summaryHasHeading = (summary: string, name: string): boolean =>
+  new RegExp(`^\\s*(?:#+\\s*|[-*]\\s*)?(?:\\*\\*)?${name}(?:\\*\\*)?\\s*(?::|$)`, 'im').test(
+    summary,
+  );
+
+// Presence means the saved summary contains a section heading with that name. The scan reports the
+// missing handoff sections; it does not read evidence strings, verify content, or claim freshness.
+export const handoffSections = (report: unknown): HandoffSections | undefined => {
+  if (!isRecord(report)) {
+    return undefined;
+  }
+
+  const summary = typeof report.summary === 'string' ? report.summary : '';
+  const present = handoffSectionNames.filter((name) => summaryHasHeading(summary, name));
+  const presentSet = new Set(present);
+
+  return {
+    present,
+    missing: handoffSectionNames.filter((name) => !presentSet.has(name)),
+  };
+};
+
 // Native observation errors are raw herdr text. Bound them before the model reads them, because the
 // full text stays in details for the pilot.
 const observationIssueLimit = 200;
@@ -189,6 +222,7 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   addField(result, 'predecessorTaskId', status.predecessorTaskId);
   addField(result, 'successorTaskId', status.successorTaskId);
   addField(result, 'report', status.report);
+  addField(result, 'handoffSections', handoffSections(status.report));
   addField(result, 'pendingQuestion', modelQuestion(status.pendingQuestion));
   addField(result, 'failure', status.failure);
   addField(result, 'cleanup', status.cleanup);

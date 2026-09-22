@@ -11,6 +11,7 @@ import type {
 import { createEventBus } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
+import { assignmentContract, handoffContract } from './handoff.js';
 import { checkWorkerRuntime } from './loadout.js';
 import * as questions from './questionRecords.js';
 import { publish, readEvent, readReport, recordEvent } from './records.js';
@@ -21,7 +22,7 @@ vi.mock('./loadout.js', () => ({
   checkWorkerRuntime: vi.fn<typeof checkWorkerRuntime>().mockResolvedValue(undefined),
 }));
 
-const setup = () => {
+const setup = (role: 'editing' | 'investigation' = 'investigation') => {
   vi.useFakeTimers();
   const directory = mkdtempSync(join(tmpdir(), 'tau-worker-clock-'));
   onTestFinished(() => {
@@ -52,8 +53,8 @@ const setup = () => {
     },
     loadout: {
       harness: 'pi',
-      profile: 'investigator',
-      role: 'investigation',
+      profile: role === 'editing' ? 'worker' : 'investigator',
+      role,
       model: 'faux/test',
       modelFingerprint: '0'.repeat(64),
       providerFingerprint: '0'.repeat(64),
@@ -150,8 +151,8 @@ it.each(['before readiness', 'before dispatch', 'before tool call'])(
   },
 );
 
-const waitingWorker = async () => {
-  const worker = setup();
+const waitingWorker = async (role: 'editing' | 'investigation' = 'investigation') => {
+  const worker = setup(role);
   await worker.emit('session_start');
   publish(worker.directory, 'dispatch.json', { taskId: 'task' });
   await vi.advanceTimersByTimeAsync(50);
@@ -159,6 +160,26 @@ const waitingWorker = async () => {
 
   return worker;
 };
+
+it('sends the autonomous assignment and handoff contract to a dispatched Pi editing worker', async () => {
+  const worker = await waitingWorker('editing');
+  const prompt = worker.sendUserMessage.mock.calls[0]?.[0];
+
+  expect(typeof prompt).toBe('string');
+  expect(prompt).toContain(assignmentContract);
+  expect(prompt).toContain(handoffContract);
+  await worker.emit('session_shutdown');
+});
+
+it('keeps the editing assignment out of a dispatched Pi investigator prompt', async () => {
+  const worker = await waitingWorker('investigation');
+  const prompt = worker.sendUserMessage.mock.calls[0]?.[0];
+
+  expect(typeof prompt).toBe('string');
+  expect(prompt).toContain(handoffContract);
+  expect(prompt).not.toContain(assignmentContract);
+  await worker.emit('session_shutdown');
+});
 
 it.each([
   { parent: 'exited', running: false, closed: false, stopped: true, shutdowns: 1 },
@@ -235,6 +256,36 @@ it('refuses reports for active children but includes uncertain cleanup in the fi
   expect(readReport(worker.directory, 'task')?.evidence.at(-1)).toContain('/saved/child-task');
   expect(readReport(worker.directory, 'task')?.evidence.at(-1)).toContain('Dropped 1 evidence');
   expect(worker.shutdown).toHaveBeenCalledOnce();
+  await worker.emit('session_shutdown');
+});
+
+it('saves the handoff sections and work reference from a Pi report', async () => {
+  const worker = await waitingWorker('editing');
+  const report = worker.tools.get('subagent_report');
+
+  if (!report) {
+    throw new Error('Missing report tool.');
+  }
+
+  const summary = [
+    'Changes: edited src/value.ts against baseline 3ee3d7a; untracked notes.md',
+    'Evidence: pnpm check passed; record at /saved/run.json',
+    'Decisions: none',
+    'Concerns: none',
+  ].join('\n');
+  const evidence = ['git diff --stat: src/value.ts | 2 +-'];
+
+  await report.execute(
+    'report',
+    { outcome: 'success', summary, evidence },
+    undefined,
+    undefined,
+    worker.context,
+  );
+
+  const saved = readReport(worker.directory, 'task');
+  expect(saved?.summary).toBe(summary);
+  expect(saved?.evidence).toEqual(evidence);
   await worker.emit('session_shutdown');
 });
 
