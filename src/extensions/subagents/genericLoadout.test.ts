@@ -2,7 +2,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { resolveLoadout } from './loadout.js';
@@ -15,21 +14,19 @@ const fixture = () => {
   });
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.stubEnv('TAU_SUBAGENT_MODEL', 'ignored/environment');
-  const confirm = vi.fn<ExtensionContext['ui']['confirm']>().mockResolvedValue(true);
   const context = {
     cwd: directory,
     isProjectTrusted: () => true,
-    hasUI: true,
-    ui: { confirm },
-  } as unknown as ExtensionContext;
+    modelRegistry: undefined as never,
+  };
   const parent = { getAllTools: () => [], getCommands: () => [] };
   const request = { profile: 'worker', harness: 'codex', permissions: 'native-controls' };
 
-  return { directory, context, parent, request, confirm };
+  return { directory, context, parent, request };
 };
 
 it.each(['claude', 'codex', 'gemini'])(
-  'resolves %s through the user-approved native-controls contract',
+  'resolves %s through the native-controls contract',
   async (harness) => {
     const setup = fixture();
 
@@ -48,49 +45,35 @@ it.each(['claude', 'codex', 'gemini'])(
       permissions: 'native-controls',
       arguments: [],
       reportDirectory: setup.directory,
-      configurationApproved: true,
       instructions: resolved.instructions,
     });
     expect(resolved.instructions).toBeTypeOf('string');
-    expect(setup.confirm).toHaveBeenCalledExactlyOnceWith(
-      'Approve native worker configuration?',
-      expect.stringContaining('Tau does not certify'),
-      expect.anything(),
-    );
   },
 );
 
-it('refuses unapproved arguments and unsupported verified guarantees before launch', async () => {
+it('refuses unsupported verified guarantees and bare model requests before launch', async () => {
   const setup = fixture();
-  setup.confirm.mockResolvedValue(false);
   const request = {
     ...setup.request,
     nativeArguments: ['--model', 'requested'],
     model: 'requested',
   };
 
-  await expect(resolveLoadout(request, setup.context, setup.parent)).rejects.toThrow(
-    'not approved',
-  );
   await expect(
     resolveLoadout({ ...request, permissions: 'trusted-full-tools' }, setup.context, setup.parent),
   ).rejects.toThrow('native-controls');
   await expect(
     resolveLoadout({ ...setup.request, model: 'requested' }, setup.context, setup.parent),
-  ).rejects.toThrow('approved native arguments');
+  ).rejects.toThrow('native arguments');
 });
 
-it('captures native arguments before approval and never takes configuration authority from profiles', async () => {
+it('copies native arguments literally and never takes configuration authority from profiles', async () => {
   const setup = fixture();
   const nativeArguments = ['--model', 'requested; not shell text'];
   const request = { ...setup.request, nativeArguments, model: 'requested' };
-  setup.confirm.mockImplementation(async () => {
-    nativeArguments.push('--unexpected');
-
-    return true;
-  });
 
   const resolved = await resolveLoadout(request, setup.context, setup.parent);
+  nativeArguments.push('--unexpected');
 
   expect(resolved).toMatchObject({
     arguments: ['--model', 'requested; not shell text'],
@@ -102,7 +85,7 @@ it('captures native arguments before approval and never takes configuration auth
     '---\nname: worker\nrole: editing\ncli: codex\nmodel: profile-model\n---\nTask guidance.\n',
   );
   await expect(resolveLoadout(setup.request, setup.context, setup.parent)).rejects.toThrow(
-    'approved native arguments',
+    'native arguments',
   );
 });
 
@@ -127,24 +110,13 @@ it('refuses report scope expansion, invalid native arguments, and profile thinki
   await expect(resolveLoadout(setup.request, setup.context, setup.parent)).rejects.toThrow(
     'Native thinking settings',
   );
-  expect(setup.confirm).not.toHaveBeenCalled();
 });
 
-it('preserves cancellation before and during native configuration approval', async () => {
+it('preserves cancellation before native configuration', async () => {
   const setup = fixture();
-  const reason = new Error('Approval deadline expired.');
+  const reason = new Error('Launch deadline expired.');
 
   await expect(
     resolveLoadout(setup.request, setup.context, setup.parent, AbortSignal.abort(reason)),
-  ).rejects.toBe(reason);
-  expect(setup.confirm).not.toHaveBeenCalled();
-  const cancellation = new AbortController();
-  setup.confirm.mockImplementation(async () => {
-    cancellation.abort(reason);
-
-    return true;
-  });
-  await expect(
-    resolveLoadout(setup.request, setup.context, setup.parent, cancellation.signal),
   ).rejects.toBe(reason);
 });

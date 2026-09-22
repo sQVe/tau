@@ -239,8 +239,7 @@ const requireMatchingModel = <Model>(
 
 export const resolveLoadout = async (
   input: NativeLaunchInput & { profile: string; cwd?: string; harness?: string },
-  context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'isProjectTrusted'> &
-    Partial<Pick<ExtensionContext, 'hasUI' | 'ui'>>,
+  context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'isProjectTrusted'>,
   pi: Pick<ExtensionAPI, 'getAllTools' | 'getCommands'>,
   signal: AbortSignal = AbortSignal.timeout(10_000),
 ): Promise<Loadout> => {
@@ -248,7 +247,7 @@ export const resolveLoadout = async (
   const { cwd, agentDirectory, profile, kind } = resolveLaunchPlan(input, context);
 
   if (kind !== 'pi') {
-    return resolveGenericLoadout({ input, profile, kind, cwd, context, signal });
+    return resolveGenericLoadout({ input, profile, kind, cwd, signal });
   }
 
   requirePiPermissions(input);

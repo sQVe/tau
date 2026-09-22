@@ -27,7 +27,6 @@ export const fixtureGenericLoadout = (directory: string, kind = 'codex'): Generi
   permissions: 'native-controls',
   arguments: [],
   reportDirectory: directory,
-  configurationApproved: true,
   instructions: 'Only the assigned task.',
 });
 
