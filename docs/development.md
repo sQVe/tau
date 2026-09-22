@@ -70,7 +70,7 @@ question and web tools and CC Safety Net, causing worker launch to refuse. Do no
 `--no-extensions` or `--no-skills`; they suppress configured resources, including skills and herdr
 integrations.
 
-Pi subagent workers need herdr's Pi integration in the parent Pi session. Install it with:
+Before launching a Pi subagent worker, install herdr's Pi integration in the parent Pi session:
 
 ```sh
 herdr integration install pi
