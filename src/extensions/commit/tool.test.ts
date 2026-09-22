@@ -463,6 +463,49 @@ describe('commitTool.execute', () => {
     );
   });
 
+  it('commits and reports an unverified finding as advisory', async () => {
+    const repositoryDirectory = await createTemporaryRepository();
+
+    await writeRepositoryFile(
+      repositoryDirectory,
+      'note.ts',
+      '// Narration.\nexport const value = 1;\n',
+    );
+
+    const review = vi.fn<typeof reviewComments>().mockResolvedValue({
+      findings: [
+        {
+          path: 'note.ts',
+          line: 1,
+          kind: 'unverified',
+          message: 'Narration. Unverified: Shown code supports it.',
+        },
+      ],
+    });
+    const tool = createReviewedCommitTool(
+      {
+        exec: (command, commandArguments, options) =>
+          runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
+      },
+      review,
+    );
+
+    const result = await tool.execute(
+      'batch',
+      { groups: [{ files: ['note.ts'], subject: 'feat: add note' }] },
+      undefined,
+      undefined,
+      commitContext(repositoryDirectory),
+    );
+
+    expect((await git(repositoryDirectory, ['log', '-1', '--format=%s'])).trim()).toBe(
+      'feat: add note',
+    );
+    expect(JSON.stringify(result.content)).toContain(
+      '[advisory] Narration. Unverified: Shown code supports it.',
+    );
+  });
+
   it('rejects staged content changed during comment review', async () => {
     const repositoryDirectory = await createTemporaryRepository();
 

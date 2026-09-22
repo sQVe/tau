@@ -16,6 +16,14 @@ const reviewInput = (request?: Parameters<ExtensionContext['modelRegistry']['com
   return typeof content === 'string' ? content : '';
 };
 
+const reviewFiles = (request?: Parameters<ExtensionContext['modelRegistry']['complete']>[1]) => {
+  const input = JSON.parse(reviewInput(request)) as {
+    files: { path: string; content: string }[];
+  };
+
+  return input.files;
+};
+
 const reviewFixture = () => {
   const delegate = fauxProvider({ provider: 'delegate' }).getModel();
   const sessionModel = fauxProvider({ provider: 'session' }).getModel();
@@ -123,8 +131,254 @@ it('retries malformed delegate findings once and preserves finding kinds', async
 
   await expect(app.execute()).resolves.toEqual({ findings });
 
-  expect(app.complete).toHaveBeenCalledTimes(2);
+  // One malformed review retry plus one verifier call for the inaccuracy finding.
+  expect(app.complete).toHaveBeenCalledTimes(3);
   expect(app.complete.mock.calls.every(([model]) => model === app.delegate)).toBe(true);
+});
+
+it('numbers sent file content with 1-based lines including blank and trailing lines', async () => {
+  const content = '// First.\n\n// Third.\n';
+  const app = reviewFixture();
+  app.exec.mockImplementation(async (_command, argumentsList) => {
+    let stdout = '';
+
+    if (argumentsList.includes('--name-only')) {
+      stdout = 'file.ts\0';
+    } else if (argumentsList.includes('ls-tree') && argumentsList.at(-1) === 'file.ts') {
+      stdout = '100644 blob hash 20\tfile.ts\0';
+    } else if (argumentsList[0] === 'cat-file') {
+      stdout = content;
+    }
+
+    return { stdout, stderr: '', code: 0, killed: false };
+  });
+
+  await app.execute();
+
+  expect(reviewFiles(app.complete.mock.calls[0]?.[1])).toEqual([
+    { path: 'file.ts', content: '1\t// First.\n2\t\n3\t// Third.\n4\t' },
+  ]);
+});
+
+it('rejects findings beyond the raw source line count after numbering', async () => {
+  const app = reviewFixture();
+  app.complete.mockResolvedValue(
+    fauxAssistantMessage(
+      '{"findings":[{"path":"file.ts","line":4,"kind":"policy","message":"Narration."}]}',
+    ),
+  );
+
+  await expect(app.execute()).rejects.toThrow('Comment review returned invalid findings.');
+});
+
+it('rejects findings on an empty file after numbering', async () => {
+  const app = reviewFixture();
+  app.exec.mockImplementation(async (_command, argumentsList) => {
+    let stdout = '';
+
+    if (argumentsList.includes('--name-only')) {
+      stdout = 'empty.ts\0';
+    } else if (argumentsList.includes('ls-tree') && argumentsList.at(-1) === 'empty.ts') {
+      stdout = '100644 blob hash 0\tempty.ts\0';
+    }
+
+    return { stdout, stderr: '', code: 0, killed: false };
+  });
+  app.complete.mockResolvedValue(
+    fauxAssistantMessage(
+      '{"findings":[{"path":"empty.ts","line":1,"kind":"policy","message":"Narration."}]}',
+    ),
+  );
+
+  await expect(app.execute()).rejects.toThrow('Comment review returned invalid findings.');
+});
+
+it('counts numbering prefixes in the input budget', async () => {
+  // 130,000 short lines fit the raw budget but exceed it once every line is numbered.
+  const content = 'x\n'.repeat(130_000);
+  const app = reviewFixture();
+  app.exec.mockImplementation(async (_command, argumentsList) => {
+    let stdout = '';
+
+    if (argumentsList.includes('--name-only')) {
+      stdout = 'big.ts\0';
+    } else if (argumentsList.includes('ls-tree') && argumentsList.at(-1) === 'big.ts') {
+      stdout = `100644 blob hash ${content.length}\tbig.ts\0`;
+    } else if (argumentsList[0] === 'cat-file') {
+      stdout = content;
+    }
+
+    return { stdout, stderr: '', code: 0, killed: false };
+  });
+
+  await expect(app.execute()).rejects.toThrow(
+    'Comment review input is too large: big.ts. Reduce the file and retry.',
+  );
+});
+
+describe('finding verification', () => {
+  const finding = {
+    path: 'file.ts',
+    line: 1,
+    kind: 'inaccurate',
+    message: 'Wrong claim.',
+  };
+
+  const reviewWithVerdict = (reviewed: unknown, verdict: string) => {
+    const app = reviewFixture();
+
+    app.complete
+      .mockResolvedValueOnce(fauxAssistantMessage(JSON.stringify({ findings: [reviewed] })))
+      .mockResolvedValueOnce(fauxAssistantMessage(verdict));
+
+    return app;
+  };
+
+  const verifierInput = (request?: Parameters<ExtensionContext['modelRegistry']['complete']>[1]) =>
+    JSON.parse(reviewInput(request)) as { finding: unknown; excerpt: string };
+
+  it('downgrades a finding the verifier does not establish', async () => {
+    const app = reviewWithVerdict(
+      finding,
+      '{"verdict":"not_established","reason":"Other files decide this."}',
+    );
+
+    const review = await app.execute();
+
+    expect(review.findings).toEqual([
+      {
+        ...finding,
+        kind: 'unverified',
+        message: 'Wrong claim. Unverified: Other files decide this.',
+      },
+    ]);
+    expect(app.complete).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a finding the verifier establishes', async () => {
+    const app = reviewWithVerdict(finding, '{"verdict":"established","reason":"Shown code."}');
+
+    const review = await app.execute();
+
+    expect(review.findings).toEqual([finding]);
+  });
+
+  it.each([
+    ['invalid JSON', fauxAssistantMessage('not json')],
+    [
+      'an error stop reason',
+      fauxAssistantMessage('{"verdict":"not_established","reason":"x"}', {
+        stopReason: 'error',
+        errorMessage: 'verifier failed',
+      }),
+    ],
+    ['a rejected call', new Error('provider unavailable')],
+  ])('keeps every remaining finding blocking after %s', async (_name, response) => {
+    const later = { ...finding, line: 2, message: 'Another wrong claim.' };
+    const app = reviewFixture();
+
+    app.complete.mockResolvedValueOnce(
+      fauxAssistantMessage(JSON.stringify({ findings: [finding, later] })),
+    );
+
+    if (response instanceof Error) {
+      app.complete.mockRejectedValueOnce(response);
+    } else {
+      app.complete.mockResolvedValueOnce(response);
+    }
+
+    const review = await app.execute();
+
+    expect(review.findings).toEqual([finding, later]);
+    // The commit cannot pass once one finding stays blocking, so later findings are not verified.
+    expect(app.complete).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['an empty reason', '{"verdict":"not_established","reason":"   "}'],
+    ['extra properties', '{"verdict":"not_established","reason":"x","approve":true}'],
+  ])('keeps a finding blocking on a verdict with %s', async (_name, verdict) => {
+    const app = reviewWithVerdict(finding, verdict);
+
+    const review = await app.execute();
+
+    expect(review.findings).toEqual([finding]);
+  });
+
+  it.each(['missing', 'policy'])('never verifies %s findings', async (kind) => {
+    const unverifiedKind = { path: 'file.ts', line: 1, kind, message: 'Explain it.' };
+    const app = reviewFixture();
+
+    app.complete.mockResolvedValueOnce(
+      fauxAssistantMessage(JSON.stringify({ findings: [unverifiedKind] })),
+    );
+
+    const review = await app.execute();
+
+    expect(review.findings).toEqual([unverifiedKind]);
+    expect(app.complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an unverified kind that the reviewer returns itself', async () => {
+    const app = reviewFixture();
+
+    app.complete
+      .mockResolvedValueOnce(
+        fauxAssistantMessage(JSON.stringify({ findings: [{ ...finding, kind: 'unverified' }] })),
+      )
+      .mockResolvedValueOnce(fauxAssistantMessage('{"findings":[]}'));
+
+    await expect(app.execute()).resolves.toEqual({ findings: [] });
+
+    expect(app.complete).toHaveBeenCalledTimes(2);
+  });
+
+  it('numbers the verifier excerpt from the raw content and clamps it to the file', async () => {
+    const content = Array.from({ length: 200 }, (_value, index) => `line ${index + 1}`).join('\n');
+    const app = reviewFixture();
+
+    app.exec.mockImplementation(async (_command, argumentsList) => {
+      let stdout = '';
+
+      if (argumentsList.includes('--name-only')) {
+        stdout = 'file.ts\0';
+      } else if (argumentsList.includes('ls-tree') && argumentsList.at(-1) === 'file.ts') {
+        stdout = `100644 blob hash ${content.length}\tfile.ts\0`;
+      } else if (argumentsList[0] === 'cat-file') {
+        stdout = content;
+      }
+
+      return { stdout, stderr: '', code: 0, killed: false };
+    });
+    const findings = [
+      { ...finding, line: 5 },
+      { ...finding, line: 200 },
+    ];
+
+    app.complete
+      .mockResolvedValueOnce(fauxAssistantMessage(JSON.stringify({ findings })))
+      .mockResolvedValue(fauxAssistantMessage('{"verdict":"established","reason":"Shown code."}'));
+
+    await app.execute();
+
+    const earlyLines = verifierInput(app.complete.mock.calls[1]?.[1]).excerpt.split('\n');
+
+    expect(earlyLines[0]).toBe('1\tline 1');
+    expect(earlyLines.at(-1)).toBe('65\tline 65');
+
+    const lateLines = verifierInput(app.complete.mock.calls[2]?.[1]).excerpt.split('\n');
+
+    expect(lateLines[0]).toBe('140\tline 140');
+    expect(lateLines.at(-1)).toBe('200\tline 200');
+  });
+
+  it('sends the verifier the finding together with the excerpt', async () => {
+    const app = reviewWithVerdict(finding, '{"verdict":"established","reason":"Shown code."}');
+
+    await app.execute();
+
+    expect(verifierInput(app.complete.mock.calls[1]?.[1]).finding).toEqual(finding);
+  });
 });
 
 describe('reviewGit', () => {

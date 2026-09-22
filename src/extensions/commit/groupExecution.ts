@@ -4,7 +4,12 @@ import { join } from 'node:path';
 import type { ExecResult, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { delegateReference } from '../../delegateModel/index.js';
-import { commentPolicyHash, formatCommentReview, reviewGit } from './commentReview.js';
+import {
+  commentPolicyHash,
+  formatCommentReview,
+  isAdvisoryFinding,
+  reviewGit,
+} from './commentReview.js';
 import type { CommentReview } from './commentReview.js';
 import {
   currentHead,
@@ -241,7 +246,7 @@ const requestCommentReview = async (run: GroupRun): Promise<boolean> => {
 
 const enforceReviewGate = (run: GroupRun): void => {
   const reviewBlocked =
-    run.commentReview?.findings.some((finding) => finding.kind !== 'missing') ?? false;
+    run.commentReview?.findings.some((finding) => !isAdvisoryFinding(finding)) ?? false;
 
   if (!reviewBlocked) {
     return;
