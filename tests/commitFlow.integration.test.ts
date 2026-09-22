@@ -383,9 +383,6 @@ describe('commit flow', () => {
           ],
         }),
       ),
-      fauxAssistantMessage(
-        '{"verdict":"established","reason":"The shown comment narrates the migration state."}',
-      ),
       fauxAssistantMessage([
         fauxToolCall('commit', {
           groups: [
@@ -414,7 +411,7 @@ describe('commit flow', () => {
       false,
     ]);
 
-    expect(faux.state.callCount).toBe(6);
+    expect(faux.state.callCount).toBe(5);
     expect(overlays).toHaveLength(0);
     expect(JSON.stringify(results.at(-1))).toContain('rechecked after dispute');
     expect(JSON.stringify(results.at(-1))).toContain('temporary migration constraint');

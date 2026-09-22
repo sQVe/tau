@@ -131,8 +131,8 @@ it('retries malformed delegate findings once and preserves finding kinds', async
 
   await expect(app.execute()).resolves.toEqual({ findings });
 
-  // One malformed review retry plus one verifier call per non-missing finding.
-  expect(app.complete).toHaveBeenCalledTimes(4);
+  // One malformed review retry plus one verifier call for the inaccuracy finding.
+  expect(app.complete).toHaveBeenCalledTimes(3);
   expect(app.complete.mock.calls.every(([model]) => model === app.delegate)).toBe(true);
 });
 
@@ -220,8 +220,8 @@ describe('finding verification', () => {
   const finding = {
     path: 'file.ts',
     line: 1,
-    kind: 'policy',
-    message: 'Narration.',
+    kind: 'inaccurate',
+    message: 'Wrong claim.',
   };
 
   const reviewWithVerdict = (reviewed: unknown, verdict: string) => {
@@ -249,7 +249,7 @@ describe('finding verification', () => {
       {
         ...finding,
         kind: 'unverified',
-        message: 'Narration. Unverified: Other files decide this.',
+        message: 'Wrong claim. Unverified: Other files decide this.',
       },
     ]);
     expect(app.complete).toHaveBeenCalledTimes(2);
@@ -291,18 +291,32 @@ describe('finding verification', () => {
     expect(review.findings).toEqual([finding]);
   });
 
-  it('never verifies missing findings', async () => {
-    const advisory = { path: 'file.ts', line: 1, kind: 'missing', message: 'Explain it.' };
+  it.each(['missing', 'policy'])('never verifies %s findings', async (kind) => {
+    const unverifiedKind = { path: 'file.ts', line: 1, kind, message: 'Explain it.' };
     const app = reviewFixture();
 
     app.complete.mockResolvedValueOnce(
-      fauxAssistantMessage(JSON.stringify({ findings: [advisory] })),
+      fauxAssistantMessage(JSON.stringify({ findings: [unverifiedKind] })),
     );
 
     const review = await app.execute();
 
-    expect(review.findings).toEqual([advisory]);
+    expect(review.findings).toEqual([unverifiedKind]);
     expect(app.complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an unverified kind that the reviewer returns itself', async () => {
+    const app = reviewFixture();
+
+    app.complete
+      .mockResolvedValueOnce(
+        fauxAssistantMessage(JSON.stringify({ findings: [{ ...finding, kind: 'unverified' }] })),
+      )
+      .mockResolvedValueOnce(fauxAssistantMessage('{"findings":[]}'));
+
+    await expect(app.execute()).resolves.toEqual({ findings: [] });
+
+    expect(app.complete).toHaveBeenCalledTimes(2);
   });
 
   it('numbers the verifier excerpt from the raw content and clamps it to the file', async () => {
@@ -350,27 +364,6 @@ describe('finding verification', () => {
     await app.execute();
 
     expect(verifierInput(app.complete.mock.calls[1]?.[1]).finding).toEqual(finding);
-  });
-
-  it('uses the verifier policy unchanged', async () => {
-    const app = reviewWithVerdict(finding, '{"verdict":"established","reason":"Shown code."}');
-
-    await app.execute();
-
-    expect(app.complete.mock.calls[1]?.[1].systemPrompt).toBe(
-      `You verify one finding from a code-comment review. You receive the finding and a numbered excerpt of the file around the cited line. Decide whether the excerpt alone establishes the finding.
-For an inaccurate finding, the code shown must contradict the comment. For a policy finding, the comment must clearly narrate obvious code, be commented-out code, or be a temporary note.
-Answer not_established when the claim depends on code that is not shown, such as other files, callers, or other processes, or when the excerpt does not contradict the comment. Read the code carefully; a claim about concurrency, propagation, or control flow needs the shown code to support it.
-Return only JSON: {"verdict":"established|not_established","reason":"one sentence"}.`,
-    );
-  });
-
-  it('asks the verifier for one attempt with a bounded token budget', async () => {
-    const app = reviewWithVerdict(finding, '{"verdict":"established","reason":"Shown code."}');
-
-    await app.execute();
-
-    expect(app.complete.mock.calls[1]?.[2]).toMatchObject({ maxTokens: 1024 });
   });
 });
 
