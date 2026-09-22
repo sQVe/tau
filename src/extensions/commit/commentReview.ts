@@ -37,6 +37,14 @@ const lockfilePatterns = [
 
 export const commentPolicyHash = createHash('sha256').update(commentPolicy).digest('hex');
 
+const verifierPolicy = `You verify one finding from a code-comment review. You receive the finding and a numbered excerpt of the file around the cited line. Decide whether the excerpt alone establishes the finding.
+For an inaccurate finding, the code shown must contradict the comment. For a policy finding, the comment must clearly narrate obvious code, be commented-out code, or be a temporary note.
+Answer not_established when the claim depends on code that is not shown, such as other files, callers, or other processes, or when the excerpt does not contradict the comment. Read the code carefully; a claim about concurrency, propagation, or control flow needs the shown code to support it.
+Return only JSON: {"verdict":"established|not_established","reason":"one sentence"}.`;
+
+const stripFence = (text: string) =>
+  text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i, '$1');
+
 const reviewSchema = Type.Object(
   {
     findings: Type.Array(
@@ -48,6 +56,7 @@ const reviewSchema = Type.Object(
             Type.Literal('inaccurate'),
             Type.Literal('policy'),
             Type.Literal('missing'),
+            Type.Literal('unverified'),
           ]),
           message: Type.String({ minLength: 1, maxLength: 2000 }),
         },
@@ -70,6 +79,7 @@ interface ReviewEntry {
   path: string;
   diff: string;
   file: ReviewFile | null;
+  raw: string | null;
   deleted: boolean;
 }
 
@@ -129,9 +139,7 @@ export const reviewGit = async (
 };
 
 const parseReview = (text: string, files: ReviewFile[], deletedPaths: string[]): CommentReview => {
-  const result: unknown = JSON.parse(
-    text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i, '$1'),
-  );
+  const result: unknown = JSON.parse(stripFence(text));
 
   if (!Value.Check(reviewSchema, result)) {
     throw new Error('Comment review returned invalid findings.');
@@ -275,6 +283,72 @@ const numberedContent = (content: string) => {
     .join('\n');
 };
 
+const numberedExcerpt = (content: string, line: number) => {
+  const lines = content.split('\n');
+  const start = Math.max(1, line - 60);
+  const end = Math.min(lines.length, line + 60);
+
+  return lines
+    .slice(start - 1, end)
+    .map((text, index) => `${start + index}\t${text}`)
+    .join('\n');
+};
+
+// The verifier fails closed: only an explicit not_established verdict downgrades a finding.
+const verifyFinding = async (
+  context: ExtensionContext,
+  model: ReturnType<typeof resolveDelegate>,
+  finding: CommentReview['findings'][number],
+  content: string,
+  signal: AbortSignal,
+): Promise<CommentReview['findings'][number]> => {
+  try {
+    const response = await context.modelRegistry.complete(
+      model,
+      {
+        systemPrompt: verifierPolicy,
+        messages: [
+          {
+            role: 'user',
+            content: JSON.stringify({ finding, excerpt: numberedExcerpt(content, finding.line) }),
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      { signal, maxTokens: 1024 },
+    );
+
+    if (response.stopReason !== 'stop') {
+      return finding;
+    }
+
+    const text = response.content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('');
+    const verdict: unknown = JSON.parse(stripFence(text));
+
+    if (
+      typeof verdict === 'object' &&
+      verdict !== null &&
+      'verdict' in verdict &&
+      verdict.verdict === 'not_established' &&
+      'reason' in verdict &&
+      typeof verdict.reason === 'string'
+    ) {
+      return {
+        ...finding,
+        kind: 'unverified',
+        message: `${finding.message} Unverified: ${verdict.reason}`,
+      };
+    }
+
+    return finding;
+  } catch {
+    return finding;
+  }
+};
+
 const resolveReviewModel = (context: ExtensionContext) => {
   const model = resolveDelegate(context);
   const modelApi: unknown = model.api;
@@ -325,6 +399,7 @@ const collectReviewEntries = async (request: {
         diff: diffSections[index] ?? '',
         // Numbering keeps the split length, so line-bound validation still uses raw line numbers.
         file: content === null ? null : { path, content: numberedContent(content) },
+        raw: content,
         deleted: content === null && !binaryPaths.includes(path),
       };
     }),
@@ -515,13 +590,30 @@ export const reviewComments = async (
     signal,
   });
 
-  return { findings };
+  const contents = new Map(entries.map((entry) => [entry.path, entry.raw]));
+  const verifySignal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(120_000)]);
+  const verified: CommentReview['findings'] = [];
+
+  // Sequential verifier calls keep rate limits bounded.
+  for (const finding of findings) {
+    const content = finding.kind === 'missing' ? null : contents.get(finding.path);
+
+    if (content == null) {
+      verified.push(finding);
+      continue;
+    }
+
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Verifier calls run one at a time on purpose.
+    verified.push(await verifyFinding(context, model, finding, content, verifySignal));
+  }
+
+  return { findings: verified };
 };
 
 export const formatCommentReview = (review: CommentReview) =>
   review.findings
     .map(
       (finding) =>
-        `${finding.path}:${finding.line} [${finding.kind === 'missing' ? 'advisory' : 'blocking'}] ${finding.message}`,
+        `${finding.path}:${finding.line} [${finding.kind === 'missing' || finding.kind === 'unverified' ? 'advisory' : 'blocking'}] ${finding.message}`,
     )
     .join('\n');

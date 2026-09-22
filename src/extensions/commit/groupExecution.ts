@@ -241,7 +241,9 @@ const requestCommentReview = async (run: GroupRun): Promise<boolean> => {
 
 const enforceReviewGate = (run: GroupRun): void => {
   const reviewBlocked =
-    run.commentReview?.findings.some((finding) => finding.kind !== 'missing') ?? false;
+    run.commentReview?.findings.some(
+      (finding) => finding.kind !== 'missing' && finding.kind !== 'unverified',
+    ) ?? false;
 
   if (!reviewBlocked) {
     return;

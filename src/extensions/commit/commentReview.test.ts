@@ -131,7 +131,8 @@ it('retries malformed delegate findings once and preserves finding kinds', async
 
   await expect(app.execute()).resolves.toEqual({ findings });
 
-  expect(app.complete).toHaveBeenCalledTimes(2);
+  // One malformed review retry plus one verifier call per non-missing finding.
+  expect(app.complete).toHaveBeenCalledTimes(4);
   expect(app.complete.mock.calls.every(([model]) => model === app.delegate)).toBe(true);
 });
 
@@ -213,6 +214,164 @@ it('counts numbering prefixes in the input budget', async () => {
   await expect(app.execute()).rejects.toThrow(
     'Comment review input is too large: big.ts. Reduce the file and retry.',
   );
+});
+
+describe('finding verification', () => {
+  const finding = {
+    path: 'file.ts',
+    line: 1,
+    kind: 'policy',
+    message: 'Narration.',
+  };
+
+  const reviewWithVerdict = (reviewed: unknown, verdict: string) => {
+    const app = reviewFixture();
+
+    app.complete
+      .mockResolvedValueOnce(fauxAssistantMessage(JSON.stringify({ findings: [reviewed] })))
+      .mockResolvedValueOnce(fauxAssistantMessage(verdict));
+
+    return app;
+  };
+
+  const verifierInput = (request?: Parameters<ExtensionContext['modelRegistry']['complete']>[1]) =>
+    JSON.parse(reviewInput(request)) as { finding: unknown; excerpt: string };
+
+  it('downgrades a finding the verifier does not establish', async () => {
+    const app = reviewWithVerdict(
+      finding,
+      '{"verdict":"not_established","reason":"Other files decide this."}',
+    );
+
+    const review = await app.execute();
+
+    expect(review.findings).toEqual([
+      {
+        ...finding,
+        kind: 'unverified',
+        message: 'Narration. Unverified: Other files decide this.',
+      },
+    ]);
+    expect(app.complete).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a finding the verifier establishes', async () => {
+    const app = reviewWithVerdict(finding, '{"verdict":"established","reason":"Shown code."}');
+
+    const review = await app.execute();
+
+    expect(review.findings).toEqual([finding]);
+  });
+
+  it.each([
+    ['invalid JSON', fauxAssistantMessage('not json')],
+    [
+      'an error stop reason',
+      fauxAssistantMessage('{"verdict":"not_established","reason":"x"}', {
+        stopReason: 'error',
+        errorMessage: 'verifier failed',
+      }),
+    ],
+    ['a rejected call', new Error('provider unavailable')],
+  ])('keeps a finding blocking after %s', async (_name, response) => {
+    const app = reviewFixture();
+
+    app.complete.mockResolvedValueOnce(
+      fauxAssistantMessage(JSON.stringify({ findings: [finding] })),
+    );
+
+    if (response instanceof Error) {
+      app.complete.mockRejectedValueOnce(response);
+    } else {
+      app.complete.mockResolvedValueOnce(response);
+    }
+
+    const review = await app.execute();
+
+    expect(review.findings).toEqual([finding]);
+  });
+
+  it('never verifies missing findings', async () => {
+    const advisory = { path: 'file.ts', line: 1, kind: 'missing', message: 'Explain it.' };
+    const app = reviewFixture();
+
+    app.complete.mockResolvedValueOnce(
+      fauxAssistantMessage(JSON.stringify({ findings: [advisory] })),
+    );
+
+    const review = await app.execute();
+
+    expect(review.findings).toEqual([advisory]);
+    expect(app.complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('numbers the verifier excerpt from the raw content and clamps it to the file', async () => {
+    const content = Array.from({ length: 200 }, (_value, index) => `line ${index + 1}`).join('\n');
+    const app = reviewFixture();
+
+    app.exec.mockImplementation(async (_command, argumentsList) => {
+      let stdout = '';
+
+      if (argumentsList.includes('--name-only')) {
+        stdout = 'file.ts\0';
+      } else if (argumentsList.includes('ls-tree') && argumentsList.at(-1) === 'file.ts') {
+        stdout = `100644 blob hash ${content.length}\tfile.ts\0`;
+      } else if (argumentsList[0] === 'cat-file') {
+        stdout = content;
+      }
+
+      return { stdout, stderr: '', code: 0, killed: false };
+    });
+    const findings = [
+      { ...finding, line: 5 },
+      { ...finding, line: 200 },
+    ];
+
+    app.complete
+      .mockResolvedValueOnce(fauxAssistantMessage(JSON.stringify({ findings })))
+      .mockResolvedValue(fauxAssistantMessage('{"verdict":"established","reason":"Shown code."}'));
+
+    await app.execute();
+
+    const earlyLines = verifierInput(app.complete.mock.calls[1]?.[1]).excerpt.split('\n');
+
+    expect(earlyLines[0]).toBe('1\tline 1');
+    expect(earlyLines.at(-1)).toBe('65\tline 65');
+
+    const lateLines = verifierInput(app.complete.mock.calls[2]?.[1]).excerpt.split('\n');
+
+    expect(lateLines[0]).toBe('140\tline 140');
+    expect(lateLines.at(-1)).toBe('200\tline 200');
+  });
+
+  it('sends the verifier the finding together with the excerpt', async () => {
+    const app = reviewWithVerdict(finding, '{"verdict":"established","reason":"Shown code."}');
+
+    await app.execute();
+
+    expect(verifierInput(app.complete.mock.calls[1]?.[1]).finding).toEqual(finding);
+  });
+
+  it('uses the verifier policy unchanged', async () => {
+    const app = reviewWithVerdict(finding, '{"verdict":"established","reason":"Shown code."}');
+
+    await app.execute();
+
+    expect(app.complete.mock.calls[1]?.[1].systemPrompt).toBe(
+      `You verify one finding from a code-comment review. You receive the finding and a numbered excerpt of the file around the cited line. Decide whether the excerpt alone establishes the finding.
+For an inaccurate finding, the code shown must contradict the comment. For a policy finding, the comment must clearly narrate obvious code, be commented-out code, or be a temporary note.
+Answer not_established when the claim depends on code that is not shown, such as other files, callers, or other processes, or when the excerpt does not contradict the comment. Read the code carefully; a claim about concurrency, propagation, or control flow needs the shown code to support it.
+Return only JSON: {"verdict":"established|not_established","reason":"one sentence"}.`,
+    );
+  });
+
+  it('asks the verifier for one attempt with a bounded token budget', async () => {
+    const app = reviewWithVerdict(finding, '{"verdict":"established","reason":"Shown code."}');
+
+    await app.execute();
+
+    expect(app.complete.mock.calls[1]?.[2]).toMatchObject({ maxTokens: 1024 });
+  });
 });
 
 describe('reviewGit', () => {

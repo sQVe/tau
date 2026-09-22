@@ -383,6 +383,9 @@ describe('commit flow', () => {
           ],
         }),
       ),
+      fauxAssistantMessage(
+        '{"verdict":"established","reason":"The shown comment narrates the migration state."}',
+      ),
       fauxAssistantMessage([
         fauxToolCall('commit', {
           groups: [
@@ -411,7 +414,7 @@ describe('commit flow', () => {
       false,
     ]);
 
-    expect(faux.state.callCount).toBe(5);
+    expect(faux.state.callCount).toBe(6);
     expect(overlays).toHaveLength(0);
     expect(JSON.stringify(results.at(-1))).toContain('rechecked after dispute');
     expect(JSON.stringify(results.at(-1))).toContain('temporary migration constraint');
@@ -542,6 +545,9 @@ describe('commit flow', () => {
           ],
         }),
       ),
+      fauxAssistantMessage(
+        '{"verdict":"established","reason":"The shown code contradicts the comment."}',
+      ),
       request(),
       request(),
       fauxAssistantMessage('The finding still blocks the commit.'),
@@ -550,7 +556,7 @@ describe('commit flow', () => {
     await session.prompt('Commit the retry policy.');
 
     expect(overlays).toHaveLength(0);
-    expect(faux.state.callCount).toBe(5);
+    expect(faux.state.callCount).toBe(6);
 
     const results = events.filter(
       (event) => event.type === 'tool_execution_end' && event.toolName === 'commit',
