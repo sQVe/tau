@@ -119,6 +119,7 @@ const modelQuestion = (
   if (!question) {
     return undefined;
   }
+
   const result: Record<string, unknown> = {};
   addField(result, 'questionId', question.questionId);
   addField(result, 'question', question.question);
@@ -146,6 +147,7 @@ const modelSubmissionReceipt = (
   if (!receipt) {
     return undefined;
   }
+
   const result: Record<string, unknown> = { id: receipt.intent?.id };
   addField(result, 'state', receipt.observation?.state);
   addField(result, 'detail', receipt.observation?.detail);
@@ -176,6 +178,7 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   addField(result, 'delivery', status.delivery);
   addField(result, 'submissionReceipt', modelSubmissionReceipt(status.submissionReceipt));
   addField(result, 'nativeOutput', status.nativeOutput);
+
   if (status.state === 'cleanupUnconfirmed' || status.state === 'notOwned') {
     addField(result, 'recovery', status.recovery);
     addField(result, 'capacityHeld', status.capacityHeld);

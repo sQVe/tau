@@ -255,9 +255,11 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
     registerMessageRenderer: () => undefined,
   } as unknown as ExtensionAPI);
   const tool = tools.get('subagent_follow_up');
+
   if (!tool) {
     throw new Error('Missing follow-up tool.');
   }
+
   vi.stubEnv('TAU_WORKER_RECORD', '');
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent-pane');
@@ -342,6 +344,7 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
   const statusTool = tools.get('subagent_status');
   const replyTool = tools.get('subagent_reply');
   const cancelTool = tools.get('subagent_cancel');
+
   if (!statusTool || !replyTool || !cancelTool) {
     throw new Error('Worker tools missing.');
   }
@@ -355,6 +358,7 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
   );
   const statusContent = textContent(statusResult);
   expect(statusContent).toMatchObject({ taskId: 'task-1', state: 'stopped' });
+
   for (const key of ['directory', 'reservationDirectory', 'usage', 'nativeSessionFile']) {
     expect(statusContent).not.toHaveProperty(key);
     expect((statusResult as { details: Record<string, unknown> }).details).toHaveProperty(key);
@@ -423,6 +427,7 @@ it('returns the unreadable-evidence object when status records fail', async ({
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionContext;
   const tool = tools.get('subagent_status');
+
   if (!tool) {
     throw new Error('Missing status tool.');
   }

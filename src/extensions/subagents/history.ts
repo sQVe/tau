@@ -130,6 +130,21 @@ const genericTaskCandidate = (
   };
 };
 
+const readNativeEvidence = (
+  task: Task,
+  nativeSessionFile: string,
+  tasks: Map<string, Task>,
+  diagnostics: string[],
+): Candidate['nativeEvidence'] => {
+  try {
+    return readNode(canonical(nativeSessionFile), tasks).unavailable ? 'missing' : 'available';
+  } catch (error) {
+    diagnostics.push(`Task ${task.taskId}: ${String(error)}`);
+
+    return 'invalid';
+  }
+};
+
 const taskCandidate = (
   { directory, task }: { directory: string; task: Task },
   tasks: Map<string, Task>,
@@ -159,16 +174,7 @@ const taskCandidate = (
     return undefined;
   }
 
-  let nativeEvidence: Candidate['nativeEvidence'] = 'available';
-
-  try {
-    const node = readNode(canonical(native.nativeSessionFile), tasks);
-    nativeEvidence = node.unavailable ? 'missing' : 'available';
-  } catch (error) {
-    nativeEvidence = 'invalid';
-    diagnostics.push(`Task ${task.taskId}: ${String(error)}`);
-  }
-
+  const nativeEvidence = readNativeEvidence(task, native.nativeSessionFile, tasks, diagnostics);
   const report = readOrDiagnose(
     () => readReport(directory, task.taskId),
     `Task ${task.taskId} report`,

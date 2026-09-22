@@ -102,9 +102,11 @@ const stringValues = (value: unknown, at: string[] = []): { path: string; text: 
   if (typeof value === 'string') {
     return [{ path: at.join('.'), text: value }];
   }
+
   if (Array.isArray(value)) {
     return value.flatMap((entry, index) => stringValues(entry, [...at, String(index)]));
   }
+
   if (value && typeof value === 'object') {
     return Object.entries(value).flatMap(([key, entry]) => stringValues(entry, [...at, key]));
   }
@@ -125,6 +127,7 @@ it('keeps recovery and capacity fields only for unconfirmed or unowned states', 
   for (const state of states) {
     const content = modelStatus(fullStatus(state, false));
     const cleanup = cleanupStates.has(state);
+
     for (const key of ['recovery', 'capacityHeld', 'unconfirmedChildren', 'descendantEvidence']) {
       expect(key in content).toBe(cleanup);
     }
@@ -138,6 +141,7 @@ it('never leaks an absolute path outside recovery and report text', () => {
       const values = stringValues(content).filter(
         ({ path }) => !path.startsWith('recovery') && !path.startsWith('report'),
       );
+
       for (const { path, text } of values) {
         expect(text.startsWith('/'), `${path} leaked a path`).toBe(false);
       }

@@ -137,10 +137,13 @@ const statusView = (details: unknown): StatusView | undefined => {
   if (!isRecord(details)) {
     return undefined;
   }
+
   const state = stateField(details);
+
   if (state === undefined) {
     return undefined;
   }
+
   const pendingQuestion = isRecord(details.pendingQuestion) ? details.pendingQuestion : undefined;
   const recovery = isRecord(details.recovery) ? details.recovery : undefined;
 
@@ -179,10 +182,13 @@ const evidenceView = (details: unknown): EvidenceView | undefined => {
   if (!isRecord(details)) {
     return undefined;
   }
+
   const evidenceError = stringField(details, 'evidenceError');
+
   if (evidenceError === undefined) {
     return undefined;
   }
+
   const recovery = isRecord(details.recovery) ? details.recovery : undefined;
 
   return {
@@ -198,7 +204,9 @@ const replyView = (details: unknown): ReplyView | undefined => {
   if (!isRecord(details)) {
     return undefined;
   }
+
   const delivery = stringField(details, 'delivery');
+
   if (delivery === undefined) {
     return undefined;
   }
@@ -268,6 +276,7 @@ const shortenHome = (path: string | undefined): string => {
   if (!path) {
     return 'unknown';
   }
+
   const home = homedir();
 
   return home.length > 1 && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
@@ -293,9 +302,11 @@ const enforcedByThisSession = (state: WorkerState): boolean => liveStates.has(st
 
 const basePart = (details: StatusView): string => {
   const label = stateLabel(details.state, details.outcome).text;
+
   if (details.state === 'reported') {
     return `${label} ${details.outcome ?? details.report?.outcome ?? 'unknown outcome'}`;
   }
+
   if (details.state === 'cleanupUnconfirmed') {
     return `${details.outcome ?? 'cleanup'} · ${label}`;
   }
@@ -329,6 +340,7 @@ const statusParts = (details: StatusView): string[] => {
 
 const statusStatement = (details: StatusView, name: string, theme: Theme): string => {
   const label = stateLabel(details.state, details.outcome);
+
   if (details.state === 'awaitingReply' && !details.pendingQuestion?.question) {
     return `${head(label, name, theme)} awaiting reply`;
   }
@@ -340,9 +352,11 @@ const collapsedSecondLine = (details: StatusView): string | undefined => {
   if (details.state === 'awaitingReply' && details.pendingQuestion?.question) {
     return firstLine(details.pendingQuestion.question);
   }
+
   if (details.state === 'stopped' && details.report?.summary) {
     return firstLine(details.report.summary);
   }
+
   if (details.state === 'cleanupUnconfirmed') {
     return details.recovery?.paneId
       ? `Check pane ${details.recovery.paneId} and stop it by hand.`
@@ -365,9 +379,11 @@ const followUpHint = (details: StatusView): string => {
   if (details.state !== 'stopped') {
     return `Follow-up unavailable: the worker is ${stateLabel(details.state, details.outcome).text}.`;
   }
+
   if (!details.report) {
     return 'Follow-up unavailable: no report is saved.';
   }
+
   if (details.successorTaskId) {
     return `Follow-up unavailable: already followed up by ${details.successorTaskId}.`;
   }
@@ -379,6 +395,7 @@ const deadlineRow = (details: StatusView, theme: Theme): string[] => {
   if (typeof details.deadline !== 'number') {
     return [];
   }
+
   const enforcement = enforcedByThisSession(details.state)
     ? 'enforced by this session'
     : 'not enforced by this session';
@@ -400,6 +417,7 @@ const sessionRows = (details: StatusView, theme: Theme): string[] => {
   if (details.nativeSessionFile) {
     return [row('Session', shortenHome(details.nativeSessionFile), theme)];
   }
+
   if (details.nativeSessionId) {
     return [row('Native session ID', details.nativeSessionId, theme)];
   }
@@ -511,6 +529,7 @@ const replyLabel = (delivery: string): StateLabel => {
 const replyStatement = (details: ReplyView, name: string, theme: Theme): string => {
   const label = replyLabel(details.delivery);
   const headText = `${theme.fg(label.color, label.icon)} ${theme.bold(name)}`;
+
   switch (details.delivery) {
     case 'sent':
       return details.workerAcknowledged
@@ -558,10 +577,13 @@ const statusOrEvidenceLines = (
   theme: Theme,
 ): string[] | undefined => {
   const status = statusView(details);
+
   if (status) {
     return expanded ? expandedStatusLines(status, theme) : collapsedStatusLines(status, theme);
   }
+
   const evidence = evidenceView(details);
+
   if (evidence) {
     return expanded
       ? expandedEvidenceLines(evidence, theme)
@@ -573,6 +595,7 @@ const statusOrEvidenceLines = (
 
 export const renderStatusResult = (details: unknown, expanded: boolean, theme: Theme): Text => {
   const text = statusOrEvidenceLines(details, expanded, theme);
+
   if (text === undefined) {
     throw new DefaultRenderingRequiredError();
   }
@@ -593,6 +616,7 @@ export const renderNotice = (
 
 export const renderReplyResult = (details: unknown, expanded: boolean, theme: Theme): Text => {
   const reply = replyView(details);
+
   if (!reply) {
     throw new DefaultRenderingRequiredError();
   }
@@ -604,6 +628,7 @@ export const renderReplyResult = (details: unknown, expanded: boolean, theme: Th
 
 export const renderHistoryResult = (details: unknown, expanded: boolean, theme: Theme): Text => {
   const history = historyView(details);
+
   if (!history) {
     throw new DefaultRenderingRequiredError();
   }

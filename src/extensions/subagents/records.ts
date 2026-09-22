@@ -620,9 +620,11 @@ const isMatchingSubmission = (
 
 export const readGenericSubmission = (directory: string, taskId: string, id: string) => {
   const intent = readOptionalRecord(directory, submissionName(id, 'intent'));
+
   if (intent === undefined) {
     return undefined;
   }
+
   if (
     !Value.Check(submissionIntentSchema, intent) ||
     intent.taskId !== taskId ||
@@ -630,7 +632,9 @@ export const readGenericSubmission = (directory: string, taskId: string, id: str
   ) {
     throw new Error('Invalid native submission intent.');
   }
+
   const observation = readOptionalRecord(directory, submissionName(id, 'observation'));
+
   if (observation !== undefined && !isMatchingSubmission(observation, taskId, id)) {
     throw new Error('Invalid native submission observation.');
   }
@@ -644,11 +648,14 @@ export const readGenericSubmission = (directory: string, taskId: string, id: str
 
 export const readPane = (directory: string): string | undefined => {
   const value = readOptionalRecord(directory, 'pane.json');
+
   if (value === undefined) {
     return undefined;
   }
+
   const paneId =
     typeof value === 'object' && value !== null && 'paneId' in value ? value.paneId : undefined;
+
   if (typeof paneId !== 'string' || !paneId) {
     throw new Error('Invalid saved worker pane.');
   }

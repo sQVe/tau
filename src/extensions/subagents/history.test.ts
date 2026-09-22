@@ -170,6 +170,7 @@ it('bounds production history output while paging all matches and retaining reco
   const reportFile = page.candidates[0]?.reportFile ?? '';
   expect(readFileSync(reportFile, 'utf8')).toContain('界'.repeat(10000));
   expect(readFileSync(join(dirname(reportFile), 'task.json'), 'utf8')).toContain('needle-tail');
+
   for (const removed of [
     'rootSessionId',
     'rootSessionFile',
@@ -183,6 +184,7 @@ it('bounds production history output while paging all matches and retaining reco
   ]) {
     expect(page).not.toHaveProperty(removed);
   }
+
   expect(text.text).not.toContain('reportFileRelativeToSource');
   const fullPage = await execute({ query: 'needle-tail' });
   const fullPageText = fullPage.content.find((part) => part.type === 'text')?.text ?? '';

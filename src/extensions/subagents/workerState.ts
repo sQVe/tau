@@ -13,19 +13,25 @@ export const workerState = (
 ): WorkerState => {
   const event = (kind: TaskEvent['kind']) => readEvent(directory, task.taskId, kind);
   const cleanup = event('cleanup');
+
   if (cleanup?.stopped === true) {
     return 'stopped';
   }
 
   const stopRecords = [cleanup, event('timeout'), event('cancelled')];
+
   if (stopRecords.some((record) => record?.stopped === false)) {
     return 'cleanupUnconfirmed';
   }
 
   const owned = activeOwner === task.ownerId;
-  if (owned && (!enforcing || Boolean(event('stopping')))) {
+
+  const stopStarted = !enforcing || Boolean(event('stopping'));
+
+  if (owned && stopStarted) {
     return 'stopping';
   }
+
   if (!owned) {
     const terminal = (
       ['settled', 'startupFailure', 'timeout', 'cancelled', 'stopping'] as const
@@ -33,6 +39,7 @@ export const workerState = (
 
     return terminal ? 'cleanupUnconfirmed' : 'notOwned';
   }
+
   if (readReport(directory, task.taskId)) {
     return 'reported';
   }
@@ -43,7 +50,9 @@ export const workerState = (
       ? 'running'
       : 'starting';
   }
+
   const question = readPendingQuestion(directory, task.taskId);
+
   if (question && !readReply(directory, task.taskId, question.questionId)) {
     return 'awaitingReply';
   }

@@ -1111,8 +1111,8 @@ it("names herdr's Pi integration when a started Pi worker reports no agent sessi
   const { controller, input, calls, notifications } = setup(
     onTestFinished,
     0,
-    async (arguments_) =>
-      arguments_[0] === 'agent' && arguments_[1] === 'get'
+    async (argumentsList) =>
+      argumentsList[0] === 'agent' && argumentsList[1] === 'get'
         ? JSON.stringify({ result: { agent: { pane_id: 'owned-pane', agent: 'pi' } } })
         : '',
   );
@@ -1536,18 +1536,22 @@ it('only lets the owning parent stop work after a status evidence failure', asyn
     'saved evidence is unavailable',
   );
   let evidenceError = '';
+
   try {
     controller.status(launched.taskId, 'parent-id');
   } catch (error) {
     evidenceError = String(error);
   }
+
   expect(evidenceError).not.toContain(launched.nativeSessionFile);
   let evidenceFailure: unknown;
+
   try {
     controller.status(launched.taskId, 'parent-id');
   } catch (error) {
     evidenceFailure = error;
   }
+
   expect(evidenceFailure).toBeInstanceOf(EvidenceUnavailableError);
   expect((evidenceFailure as EvidenceUnavailableError).recovery).toMatchObject({
     directory: launched.directory,
@@ -2075,11 +2079,13 @@ it('reports recovered corrupt task evidence without its directory or native iden
   );
   expect(() => recovered.status(launched.taskId, 'parent-id')).toThrow('manually');
   let evidenceError = '';
+
   try {
     recovered.status(launched.taskId, 'parent-id');
   } catch (error) {
     evidenceError = String(error);
   }
+
   expect(evidenceError).not.toContain(launched.directory);
   expect(evidenceError).not.toContain('Native session unavailable');
 });
@@ -2098,11 +2104,13 @@ it('carries saved recovery when a handle-free status finds corrupt report eviden
   });
 
   let evidenceFailure: unknown;
+
   try {
     recovered.status(launched.taskId, 'parent-id');
   } catch (error) {
     evidenceFailure = error;
   }
+
   expect(evidenceFailure).toBeInstanceOf(EvidenceUnavailableError);
   expect((evidenceFailure as EvidenceUnavailableError).recovery).toEqual({
     directory: launched.directory,
@@ -2151,10 +2159,11 @@ it('keeps a confirmed stop when the shell changes before the pane closes', async
 }) => {
   let checks = 0;
   let exited = false;
-  const { controller, input, calls } = setup(onTestFinished, 0, async (arguments_) => {
-    if (!exited || arguments_[1] !== 'process-info') {
+  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
+    if (!exited || argumentsList[1] !== 'process-info') {
       return '';
     }
+
     checks += 1;
 
     return JSON.stringify({

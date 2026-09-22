@@ -1068,8 +1068,10 @@ it.each([
         });
       },
     };
+
     for (const name of saved) {
       const recordWrite = write[name];
+
       if (recordWrite) {
         recordWrite();
       } else {

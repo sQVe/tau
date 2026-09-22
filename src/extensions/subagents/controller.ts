@@ -77,7 +77,7 @@ import {
 } from './records.js';
 import { resolveTerminal, text, object, result } from './terminal.js';
 import { isGenericLoadout, isPiLoadout } from './types.js';
-import type { Question, Task, GenericLoadout } from './types.js';
+import type { Task, GenericLoadout } from './types.js';
 
 export { agentPromptArguments, workerArguments } from './controllerInspect.js';
 export type { HerdrClient } from './controllerInspect.js';
@@ -89,6 +89,41 @@ const acceptedReply = (directory: string, task: Task, questionId: string) => ({
   workerAcknowledged: Boolean(readAcknowledgement(directory, task.taskId, questionId)),
   delivery: 'notResent' as const,
 });
+
+const requireGenericReplyShape = (answer: {
+  questionId?: string;
+  replyId: string;
+  reply: string;
+}): void => {
+  const hasStructuredQuestion = answer.questionId !== undefined;
+  const reusedReplyId = answer.replyId === 'assignment';
+  const invalidText = !answer.reply.trim() || answer.reply.length > 32_000;
+
+  if (hasStructuredQuestion || reusedReplyId || invalidText) {
+    throw new Error(
+      'Generic replies use a unique replyId and plain text, without a structured questionId.',
+    );
+  }
+};
+
+// A saved reply identity is never sent again; different text under the same identity is a conflict.
+const repeatedGenericReply = (
+  directory: string,
+  task: Task,
+  answer: { replyId: string; reply: string },
+) => {
+  const saved = readGenericSubmission(directory, task.taskId, answer.replyId);
+
+  if (!saved) {
+    return undefined;
+  }
+
+  if (saved.intent.text !== answer.reply) {
+    throw new Error('Conflicting native submission identity.');
+  }
+
+  return { replyAccepted: true as const, name: task.name, delivery: 'notResent' as const };
+};
 
 const deliveryFromSubmission = (
   state: 'submitted' | 'not-delivered' | 'uncertain' | undefined,
@@ -322,16 +357,7 @@ export class WorkerController {
     handle: Handle,
     answer: { questionId?: string; replyId: string; reply: string },
   ) {
-    const hasStructuredQuestion = answer.questionId !== undefined;
-    const reusedReplyId = answer.replyId === 'assignment';
-    const invalidText = !answer.reply.trim() || answer.reply.length > 32_000;
-
-    if (hasStructuredQuestion || reusedReplyId || invalidText) {
-      throw new Error(
-        'Generic replies use a unique replyId and plain text, without a structured questionId.',
-      );
-    }
-
+    requireGenericReplyShape(answer);
     const { directory, task } = handle;
     const call = (argumentsList: string[]) =>
       this.client(argumentsList, workBudget(handle), handle.abort.signal);
@@ -358,14 +384,10 @@ export class WorkerController {
       );
     }
 
-    const savedReply = readGenericSubmission(directory, task.taskId, answer.replyId);
+    const repeated = repeatedGenericReply(directory, task, answer);
 
-    if (savedReply) {
-      if (savedReply.intent.text !== answer.reply) {
-        throw new Error('Conflicting native submission identity.');
-      }
-
-      return { replyAccepted: true as const, name: task.name, delivery: 'notResent' as const };
+    if (repeated) {
+      return repeated;
     }
 
     const submission = await submitGenericText(directory, task, {
@@ -782,7 +804,7 @@ export class WorkerController {
       observation?.state === 'not-delivered' || observation?.state === 'uncertain';
 
     if (!handle.stopping && !this.closed && undelivered) {
-      const delivery = observation?.state === 'not-delivered' ? 'notDelivered' : 'uncertain';
+      const delivery = observation.state === 'not-delivered' ? 'notDelivered' : 'uncertain';
 
       this.notifySnapshot(handle, { delivery });
     }

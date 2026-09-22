@@ -45,6 +45,7 @@ const theme = () => {
   initTheme('dark', false);
 
   const resolved = getThemeByName('dark');
+
   if (!resolved) {
     throw new Error('Missing dark theme.');
   }
@@ -168,10 +169,12 @@ it.each(states)('renders a generic %s status collapsed and expanded', (state) =>
 
 it('keeps generated paths, JSON, and full task IDs out of collapsed status lines', () => {
   const subject = theme();
+
   for (const state of states) {
     if (cleanupStates.has(state)) {
       continue;
     }
+
     for (const generic of [false, true]) {
       const output = collapsedStatusLines(statusFixture(state, generic), subject).join('\n');
       expect(output, `${state} leaked braces`).not.toContain('{');
@@ -184,6 +187,7 @@ it('keeps generated paths, JSON, and full task IDs out of collapsed status lines
 
 it('uses the check mark only for a stopped success and shows the deadline only for live states', () => {
   const subject = theme();
+
   for (const state of states) {
     for (const generic of [false, true]) {
       for (const outcome of ['success', 'failure', 'incomplete']) {
@@ -285,6 +289,7 @@ it.each(collapsedCases)(
 
 it('marks the deadline as enforced only for owned live states', () => {
   const subject = theme();
+
   for (const state of states) {
     const output = expandedStatusLines(statusFixture(state, false), subject)
       .map(stripVTControlCharacters)
@@ -412,6 +417,7 @@ it('renders through the registered tool definitions and the message renderer', (
   const status = tools.get('subagent_status');
   const reply = tools.get('subagent_reply');
   const history = tools.get('subagent_history');
+
   if (!status?.renderResult || !reply?.renderResult || !history?.renderResult) {
     throw new Error('Missing renderers.');
   }
@@ -503,6 +509,7 @@ it('keeps generated paths, JSON, and full task IDs out of collapsed reply and hi
 it('wires a call and a result renderer into every subagent tool', () => {
   const subject = theme();
   const { tools } = renderers();
+
   for (const name of [
     'subagent',
     'subagent_follow_up',
@@ -537,9 +544,11 @@ it('uses Pi default rendering for a state-less result through the tool component
   initTheme('dark', false);
   const { tools } = renderers();
   const status = tools.get('subagent_status');
+
   if (!status) {
     throw new Error('Missing status tool.');
   }
+
   const content = '{"taskId":"legacy-task"}';
   const component = new ToolExecutionComponent(
     'subagent_status',

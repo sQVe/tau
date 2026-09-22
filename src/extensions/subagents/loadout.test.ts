@@ -70,12 +70,15 @@ const piLoadoutFixture = async (
     modelsPath: null,
     refreshOnCreate: false,
   });
+
   for (const registration of loader.getExtensions().runtime.pendingNativeProviderRegistrations) {
     runtime.registerNativeProvider(registration.provider);
   }
+
   const registry = new ModelRegistry(runtime);
   // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model IDs, not an array predicate.
   const model = registry.find('tau-worker-fixture', 'faux-1');
+
   if (!model) {
     throw new Error('Missing fixture model.');
   }

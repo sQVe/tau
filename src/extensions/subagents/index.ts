@@ -275,6 +275,25 @@ const searchWorkerHistory = async (
   return { content: [{ type: 'text' as const, text: JSON.stringify(page) }], details: page };
 };
 
+// The model reads the same unreadable-evidence shape here as in notices.
+const evidenceResult = (error: unknown) => {
+  if (!(error instanceof EvidenceUnavailableError)) {
+    throw error;
+  }
+
+  const details = {
+    taskId: error.taskId,
+    ...(error.taskName === undefined ? {} : { name: error.taskName }),
+    evidenceError: error.evidenceError,
+    recovery: error.recovery,
+  };
+
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(modelEvidenceNotice(details)) }],
+    details,
+  };
+};
+
 const readWorkerStatus = async (
   runtime: SubagentRuntime,
   parameters: StatusParameters,
@@ -305,25 +324,6 @@ const readWorkerStatus = async (
   } catch (error) {
     return evidenceResult(error);
   }
-};
-
-// The model reads the same unreadable-evidence shape here as in notices.
-const evidenceResult = (error: unknown) => {
-  if (!(error instanceof EvidenceUnavailableError)) {
-    throw error;
-  }
-
-  const details = {
-    taskId: error.taskId,
-    ...(error.taskName === undefined ? {} : { name: error.taskName }),
-    evidenceError: error.evidenceError,
-    recovery: error.recovery,
-  };
-
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(modelEvidenceNotice(details)) }],
-    details,
-  };
 };
 
 const replyToWorker = async (
