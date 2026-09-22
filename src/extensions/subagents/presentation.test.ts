@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
+import { modelEvidenceNotice, modelReply, modelStatus, stateLabel } from './presentation.js';
 import type { WorkerState } from './types.js';
 
 const states: WorkerState[] = [
@@ -281,4 +281,9 @@ it('keeps unconfirmed descendants for the model even when the parent stopped', (
     descendantEvidence: 'Descendant reservation evidence unavailable.',
   });
   expect(JSON.stringify(content)).not.toContain('/records/child-1');
+});
+
+it('labels a stopped worker with an inherited-key outcome as plain stopped', () => {
+  expect(stateLabel('stopped', 'constructor')).toEqual(stateLabel('stopped'));
+  expect(stateLabel('stopped', 'success').icon).toBe('✓');
 });

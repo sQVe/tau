@@ -34,7 +34,11 @@ export const stateLabel = (state: WorkerState, outcome?: string): StateLabel => 
     return stateLabels[state];
   }
 
-  return (outcome === undefined ? undefined : stoppedOutcomeLabels[outcome]) ?? stoppedUnknownLabel;
+  if (outcome === undefined || !Object.hasOwn(stoppedOutcomeLabels, outcome)) {
+    return stoppedUnknownLabel;
+  }
+
+  return stoppedOutcomeLabels[outcome] ?? stoppedUnknownLabel;
 };
 
 // Model content copies named fields. Never filter, delete, or infer fields from a full record.
