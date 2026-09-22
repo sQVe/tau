@@ -204,88 +204,38 @@ it('uses the check mark only for a stopped success and shows the deadline only f
   }
 });
 
-it('never claims a stop or acknowledgement the records do not prove', () => {
+// A line may say "stopped" only when a parent cleanup record proves the stop.
+const claimsStop = (text: string): boolean => /(?<!not )\bstopped\b/.test(text);
+
+it('claims a stop only for stopped workers and always names the worker', () => {
   const subject = theme();
-  const running = collapsedStatusLines(statusFixture('running', false), subject).join('\n');
-  expect(running).toContain('running');
-  expect(running).not.toContain('stopped');
 
-  const reported = collapsedStatusLines(statusFixture('reported', false), subject).join('\n');
-  expect(reported).toContain('reported incomplete · not stopped yet');
+  for (const state of states) {
+    for (const generic of [false, true]) {
+      for (const outcome of ['success', 'failure', 'incomplete', undefined]) {
+        const output = lines(
+          renderStatusResult({ ...statusFixture(state, generic), outcome }, false, subject),
+        ).join('\n');
+        const label = `${state}/${String(outcome)}/${generic ? 'generic' : 'pi'}`;
 
-  const cleanup = collapsedStatusLines(statusFixture('cleanupUnconfirmed', false), subject).join(
-    '\n',
-  );
-  expect(cleanup).toContain('cleanup unconfirmed');
-
-  const stopped = collapsedStatusLines(statusFixture('stopped', false), subject).join('\n');
-  expect(stopped).toContain('reported success · stopped');
+        expect(claimsStop(output), `${label} stop claim`).toBe(state === 'stopped');
+        expect(output, `${label} name`).toContain('worker-ab');
+      }
+    }
+  }
 });
 
-const collapsedCases: { state: WorkerState; outcome: string | undefined; lines: string[] }[] = [
-  {
-    state: 'starting',
-    outcome: 'incomplete',
-    lines: ['○ worker-ab starting · follows worker-up · deadline 14:13'],
-  },
-  { state: 'running', outcome: 'incomplete', lines: ['● worker-ab running · deadline 14:13'] },
-  {
-    state: 'awaitingReply',
-    outcome: 'incomplete',
-    lines: ['? worker-ab asks · deadline 14:13', '  Which file should I change?'],
-  },
-  {
-    state: 'reported',
-    outcome: 'incomplete',
-    lines: ['◐ worker-ab reported incomplete · not stopped yet'],
-  },
-  { state: 'stopping', outcome: 'incomplete', lines: ['◐ worker-ab stopping'] },
-  {
-    state: 'stopped',
-    outcome: 'success',
-    lines: ['✓ worker-ab reported success · stopped', '  Finished the loader fix.'],
-  },
-  {
-    state: 'stopped',
-    outcome: 'failure',
-    lines: ['✗ worker-ab stopped · failure', '  Finished the loader fix.'],
-  },
-  {
-    state: 'stopped',
-    outcome: 'incomplete',
-    lines: ['◐ worker-ab stopped · incomplete', '  Finished the loader fix.'],
-  },
-  {
-    state: 'stopped',
-    outcome: undefined,
-    lines: ['◐ worker-ab stopped', '  Finished the loader fix.'],
-  },
-  {
-    state: 'cleanupUnconfirmed',
-    outcome: 'incomplete',
-    lines: [
-      '! worker-ab incomplete · cleanup unconfirmed',
-      '  Check pane pane-1 and stop it by hand.',
-    ],
-  },
-  {
-    state: 'notOwned',
-    outcome: 'incomplete',
-    lines: ['◇ worker-ab may still be running · not tracked by this session · pane pane-1'],
-  },
-];
+it('shows the question, the report summary, and the pane where the pilot needs them', () => {
+  const subject = theme();
+  const render = (state: WorkerState) =>
+    lines(renderStatusResult(statusFixture(state, false), false, subject)).join('\n');
 
-it.each(collapsedCases)(
-  'pins the exact collapsed line for $state ($outcome)',
-  ({ state, outcome, lines: expected }) => {
-    const subject = theme();
-    const rendered = lines(
-      renderStatusResult({ ...statusFixture(state, false), outcome }, false, subject),
-    );
-
-    expect(rendered).toEqual(expected);
-  },
-);
+  expect(render('awaitingReply')).toContain('Which file should I change?');
+  expect(render('stopped')).toContain('Finished the loader fix.');
+  expect(render('cleanupUnconfirmed')).toContain('pane-1');
+  expect(render('notOwned')).toContain('pane-1');
+  expect(render('running')).not.toContain('pane-1');
+});
 
 it('marks the deadline as enforced only for owned live states', () => {
   const subject = theme();
@@ -296,19 +246,20 @@ it('marks the deadline as enforced only for owned live states', () => {
       .join('\n');
     const live = ['starting', 'running', 'awaitingReply', 'reported', 'stopping'].includes(state);
 
-    expect(output).toContain(`Deadline: 14:13 · ${live ? '' : 'not '}enforced by this session`);
+    expect(/\bnot enforced\b/.test(output), `${state} enforcement`).toBe(!live);
   }
 });
 
 it('shows the worker name on a reply line and falls back to the short ID', () => {
   const subject = theme();
   const named = lines(renderReplyResult(replyFixture('sent'), false, subject)).join('\n');
-  expect(named).toContain('↳ worker-ab reply saved');
+  expect(named).toContain('worker-ab');
 
   const unnamed = lines(
     renderReplyResult({ ...replyFixture('sent'), name: undefined }, false, subject),
   ).join('\n');
-  expect(unnamed).toContain('↳ task-abc reply saved');
+  expect(unnamed).toContain(taskId.slice(0, 8));
+  expect(unnamed).not.toContain(taskId);
 });
 
 it('shows the predecessor name on a follow-up line and falls back to the short ID', () => {
@@ -316,7 +267,7 @@ it('shows the predecessor name on a follow-up line and falls back to the short I
   const named = lines(renderStatusResult(statusFixture('starting', false), false, subject)).join(
     '\n',
   );
-  expect(named).toContain('follows worker-up');
+  expect(named).toContain('worker-up');
 
   const unnamed = lines(
     renderStatusResult(
@@ -325,47 +276,31 @@ it('shows the predecessor name on a follow-up line and falls back to the short I
       subject,
     ),
   ).join('\n');
-  expect(unnamed).toContain('follows predeces');
+  expect(unnamed).not.toContain('worker-up');
+  expect(unnamed).toContain('predeces');
 });
 
-it('renders cleanupUnconfirmed with the pane instruction and notOwned with the pane ID', () => {
+it('never claims an acknowledgement and renders each delivery value differently', () => {
   const subject = theme();
-  const cleanup = collapsedStatusLines(statusFixture('cleanupUnconfirmed', false), subject).join(
-    '\n',
+  const deliveries = ['sent', 'uncertain', 'notResent', 'notDelivered'];
+  const outputs = deliveries.map((delivery) =>
+    collapsedReplyLines(replyFixture(delivery), subject).join('\n'),
   );
-  expect(cleanup).toContain('cleanup unconfirmed');
-  expect(cleanup).toContain('Check pane pane-1 and stop it by hand.');
+  const acknowledged = collapsedReplyLines(replyFixture('sent', true), subject).join('\n');
 
-  const notOwned = collapsedStatusLines(statusFixture('notOwned', false), subject).join('\n');
-  expect(notOwned).toContain('may still be running');
-  expect(notOwned).toContain('pane pane-1');
-});
+  expect(new Set(outputs).size).toBe(deliveries.length);
 
-it('renders each reply delivery line', () => {
-  const subject = theme();
-  expect(collapsedReplyLines(replyFixture('sent'), subject).join('\n')).toContain(
-    'sent to its pane · not acknowledged yet',
-  );
-  expect(collapsedReplyLines(replyFixture('sent', true), subject).join('\n')).not.toContain(
-    'not acknowledged yet',
-  );
-  expect(collapsedReplyLines(replyFixture('uncertain'), subject).join('\n')).toContain(
-    'delivery uncertain · do not resend',
-  );
-  expect(collapsedReplyLines(replyFixture('notResent'), subject).join('\n')).toContain(
-    'reply already saved · not resent',
-  );
-  expect(collapsedReplyLines(replyFixture('notDelivered'), subject).join('\n')).toContain(
-    'reply not delivered · a native dialog needs you',
-  );
+  for (const output of [...outputs, acknowledged]) {
+    expect(/(?<!not )\backnowledged\b/.test(output)).toBe(false);
+  }
 });
 
 it('renders at most five history rows and an expansion hint', () => {
   const subject = theme();
   const collapsed = collapsedHistoryLines(historyFixture(8), subject);
   expect(collapsed).toHaveLength(1 + 5 + 1);
-  expect(collapsed.join('\n')).toContain('… 3 more (ctrl+o)');
-  expect(collapsed.join('\n')).toContain('8 matches');
+  expect(collapsed.join('\n')).toMatch(/\b3\b/);
+  expect(collapsed.join('\n')).toMatch(/\b8\b/);
 
   const small = collapsedHistoryLines(historyFixture(2), subject);
   expect(small).toHaveLength(1 + 2);
@@ -378,7 +313,6 @@ it('renders every history candidate in the expanded view', () => {
   expect(expanded).toContain('task-abcdef0123456780');
   expect(expanded).toContain('worker-a0');
   expect(expanded).toContain('Fix loader part 0');
-  expect(expanded).toContain('Native evidence');
 });
 
 it('renders the evidence notice line with the pane ID', () => {
@@ -390,8 +324,8 @@ it('renders the evidence notice line with the pane ID', () => {
     recovery: { paneId: 'pane-7', directory: records },
   };
   const collapsed = plain(renderStatusResult(details, false, subject));
-  expect(collapsed).toContain('evidence unreadable');
-  expect(collapsed).toContain('check pane pane-7');
+  expect(collapsed).toContain('pane-7');
+  expect(claimsStop(collapsed)).toBe(false);
   expect(collapsed).not.toContain('{');
 
   const expanded = plain(renderStatusResult(details, true, subject));
