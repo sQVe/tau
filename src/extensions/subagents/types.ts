@@ -52,7 +52,7 @@ export const genericLoadoutSchema = Type.Object(
     }),
     requestedModel: Type.Optional(text),
     reportDirectory: text,
-    configurationApproved: Type.Literal(true),
+    configurationApproved: Type.Optional(Type.Literal(true)),
     instructions: text,
   },
   { additionalProperties: false },

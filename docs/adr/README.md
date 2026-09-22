@@ -55,3 +55,4 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0034: Check house style outside the editor](./0034-check-house-style-outside-the-editor.md)
 - [0035: Use size thresholds as review guidance](./0035-use-size-thresholds-as-review-guidance.md)
 - [0036: Allowlist worker content and label states from one table](./0036-allowlist-worker-content-and-label-states-from-one-table.md)
+- [0037: Launch native workers without parent approval](./0037-launch-native-workers-without-parent-approval.md)

@@ -1,7 +1,6 @@
 import { realpathSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Value } from 'typebox/value';
 
 import { genericLoadoutSchema } from './types.js';
@@ -19,7 +18,6 @@ export interface GenericLoadoutRequest {
   profile: Profile;
   kind: string;
   cwd: string;
-  context: Partial<Pick<ExtensionContext, 'hasUI' | 'ui'>>;
   signal: AbortSignal;
 }
 
@@ -63,7 +61,7 @@ const captureConfiguration = (
 
   if (profile.thinkingSpecified) {
     throw new Error(
-      'Native thinking settings require user-approved native arguments, not a profile setting.',
+      'Native thinking settings require explicit native arguments, not a profile setting.',
     );
   }
 
@@ -72,7 +70,7 @@ const captureConfiguration = (
 
   if (requestedModel && !nativeArguments.length) {
     throw new Error(
-      'An exact model request requires corresponding user-approved native arguments. Tau does not translate or verify native model selection.',
+      'An exact model request requires corresponding native arguments. Tau does not translate or verify native model selection.',
     );
   }
 
@@ -86,7 +84,6 @@ const captureConfiguration = (
     arguments: nativeArguments,
     ...(requestedModel === undefined ? {} : { requestedModel }),
     reportDirectory: reportArea(cwd, input.reportDirectory),
-    configurationApproved: true as const,
     instructions: profile.instructions,
   };
 
@@ -97,30 +94,10 @@ const captureConfiguration = (
   return loadout;
 };
 
-export const resolveGenericLoadout = async (
-  request: GenericLoadoutRequest,
-): Promise<GenericLoadout> => {
-  const { input, profile, kind, cwd, context, signal } = request;
+export const resolveGenericLoadout = (request: GenericLoadoutRequest): GenericLoadout => {
+  const { input, profile, kind, cwd, signal } = request;
 
   signal.throwIfAborted();
-  const loadout = captureConfiguration(input, profile, kind, cwd);
 
-  if (!context.hasUI || !context.ui) {
-    throw new Error(
-      'Native configuration needs explicit user confirmation in the parent UI. No unattended approval is inferred from tool calls.',
-    );
-  }
-
-  const approved = await context.ui.confirm(
-    'Approve native worker configuration?',
-    `Kind: ${kind}\nCwd: ${cwd}\nArguments (literal list): ${JSON.stringify(loadout.arguments)}\n${loadout.requestedModel ? `Requested model: ${loadout.requestedModel}. Confirm these arguments select it; Tau cannot verify which model runs.` : 'No model requested. The harness selects its configured model.'}\nReport area: ${loadout.reportDirectory}. Confirm it is already authorized and writable for this worker. Tau will create a unique report directory here.\nTau does not certify native safety controls. Existing integrations and approval dialogs remain in force. This approval does not answer later native dialogs or authorize wider scope.`,
-    { signal },
-  );
-  signal.throwIfAborted();
-
-  if (!approved) {
-    throw new Error('Native worker configuration was not approved.');
-  }
-
-  return loadout;
+  return captureConfiguration(input, profile, kind, cwd);
 };

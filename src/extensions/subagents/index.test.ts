@@ -142,12 +142,9 @@ it('routes approved native tool arguments through the generic resolver without P
       monotonicDeadline: Number.MAX_SAFE_INTEGER,
     },
   });
-  const confirm = vi.fn<ExtensionContext['ui']['confirm']>().mockResolvedValue(true);
   const context = {
     cwd: directory,
     isProjectTrusted: () => true,
-    hasUI: true,
-    ui: { confirm },
     sessionManager: {
       getSessionFile: () => join(directory, 'parent.jsonl'),
       getSessionId: () => 'parent',
@@ -180,14 +177,12 @@ it('routes approved native tool arguments through the generic resolver without P
   ).toBe(true);
   await tool.execute('native-call', input, undefined, undefined, context);
 
-  expect(confirm).toHaveBeenCalledTimes(1);
   expect(launch.mock.calls[0]?.[0].loadout).toMatchObject({
     harness: 'generic',
     kind: 'gemini',
     permissions: 'native-controls',
     arguments: input.nativeArguments,
     reportDirectory: directory,
-    configurationApproved: true,
   });
   expect(launch.mock.calls[0]?.[0].loadout).not.toHaveProperty('safetyExtension');
   await expect(
@@ -199,9 +194,6 @@ it('routes approved native tool arguments through the generic resolver without P
       context,
     ),
   ).rejects.toThrow('native-controls');
-  await expect(
-    tool.execute('unattended', input, undefined, undefined, { ...context, hasUI: false }),
-  ).rejects.toThrow('No unattended approval');
   vi.stubEnv('HERDR_ENV', '0');
   await expect(tool.execute('outside-herdr', input, undefined, undefined, context)).rejects.toThrow(
     'inside local herdr',
@@ -568,8 +560,6 @@ it('returns the unreadable-evidence object when launch records fail', async ({
   const context = {
     cwd: directory,
     isProjectTrusted: () => true,
-    hasUI: true,
-    ui: { confirm: vi.fn<ExtensionContext['ui']['confirm']>().mockResolvedValue(true) },
     sessionManager: {
       getSessionFile: () => join(directory, 'parent.jsonl'),
       getSessionId: () => 'parent',

@@ -1,6 +1,7 @@
 # ADR 0033: Use one generic native worker workflow
 
-- Status: Proposed
+- Status: Proposed; parent-user approval rules superseded by
+  [ADR 0037](./0037-launch-native-workers-without-parent-approval.md)
 - Date: 2026-09-19
 - Supersedes: [ADR 0032](./0032-run-claude-workers-through-a-parent-owned-channel.md)
 
@@ -25,20 +26,20 @@ but it cannot certify native permissions, model selection, task acceptance, or c
 Use one generic herdr workflow for all supported non-Pi kinds. Keep Pi's structured controls and
 verified safety integration separate.
 
-Native launch arguments require explicit parent-user approval. Treat them as a literal list, not
-shell code or profile authority. Leave native defaults, integrations, and approval dialogs intact.
-Refuse requests for stronger guarantees rather than silently downgrade them. Record model requests
-without claiming that Tau verified the model used. Do not add per-harness argument translators,
-settings mergers, hook bridges, transcript parsers, or cancellation-key tables.
+Treat native launch arguments as a literal list, not shell code or profile authority. Leave native
+defaults, integrations, and approval dialogs intact. Refuse requests for stronger guarantees rather
+than silently downgrade them. Record model requests without claiming that Tau verified the model
+used. Do not add per-harness argument translators, settings mergers, hook bridges, transcript
+parsers, or cancellation-key tables.
 
 Keep task identity, scope, deadlines, admission, placement, and cleanup decisions in the existing
 parent controller. Native text delivery is an observation, not Pi acceptance or acknowledgement.
 Uncertain delivery does not authorize a retry. Native approval waits consume the original deadline
 and capacity.
 
-Require a task-specific completed report in a user-approved writable area. Save an immutable parent
-receipt after bounded file validation. This separates explicit handover from idle state, terminal
-text, or process exit without depending on a native transcript format.
+Require a task-specific completed report in an existing writable area inside cwd. Save an immutable
+parent receipt after bounded file validation. This separates explicit handover from idle state,
+terminal text, or process exit without depending on a native transcript format.
 
 Retired Claude records and ancestry are not read, migrated, or continued. Saved Pi worker records
 must carry the current shape: an explicit `pi` harness, provider fingerprint version 2, the
@@ -55,7 +56,7 @@ can be reproduced. A new contract requires a fresh task.
 - Cost: non-Pi workers have no Tau nesting channel or structured question acknowledgement.
 - Cost: terminal interrupts are best-effort, not containment. Uncertain cleanup keeps capacity held
   and requires manual inspection. Tau does not promise enforcement after parent exit.
-- Cost: reports require an approved writable area and leave task files there. A saved receipt proves
+- Cost: reports require an existing writable area and leave task files there. A saved receipt proves
   delivery, not answer correctness.
 
 ## See also
