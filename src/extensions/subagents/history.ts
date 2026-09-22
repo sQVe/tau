@@ -216,6 +216,16 @@ const searchOutcome = (query: string, count: number): string => {
 
 type InScope = (file: string, id?: string) => boolean;
 
+// The caller's own task names the current native session, so its own task and every task that owns
+// an ancestor session are not history candidates for that caller.
+const ownsAncestorSession = (task: Task, ancestorFiles: Set<string>): boolean => {
+  if (isGenericLoadout(task.loadout)) {
+    return false;
+  }
+
+  return ancestorFiles.has(canonical(requireNativeTask(task).nativeSessionFile));
+};
+
 const createScopeTest = (origin: LineageNode, tasks: Map<string, Task>): InScope => {
   return (file: string, id?: string) => {
     const chain = lineage(file, tasks, id);
@@ -229,12 +239,17 @@ const taskCandidates = (
   saved: { directory: string; task: Task }[],
   tasks: Map<string, Task>,
   inScope: InScope,
+  ancestorFiles: Set<string>,
   ownership: Ownership,
   diagnostics: string[],
 ): Candidate[] => {
   const candidates: Candidate[] = [];
 
   for (const entry of saved) {
+    if (ownsAncestorSession(entry.task, ancestorFiles)) {
+      continue;
+    }
+
     const candidate = taskCandidate(entry, tasks, inScope, ownership, diagnostics);
 
     if (candidate) {
@@ -377,7 +392,7 @@ export const searchHistory = async (
   // Ancestors stay seeded above so discovered metadata is still checked, but they are never candidates.
   const ancestorFiles = new Set(ancestors.map((node) => node.file));
   const candidates = [
-    ...taskCandidates(saved, tasks, inScope, ownership, diagnostics),
+    ...taskCandidates(saved, tasks, inScope, ancestorFiles, ownership, diagnostics),
     ...nativeSessionCandidates(sessions, tasks, ancestorFiles, inScope, diagnostics),
   ];
   const needle = query.trim().toLowerCase();

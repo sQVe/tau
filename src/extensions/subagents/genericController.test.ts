@@ -345,6 +345,24 @@ it('passes approved native arguments literally and keeps native submission separ
   );
 });
 
+it('returns notResent for a repeated generic reply while the worker is blocked', async () => {
+  const setup = fixture();
+  const started = await setup.controller.launch(setup.input);
+  const answer = {
+    replyId: 'repeat-reply',
+    reply: 'Stay within the assigned scope.',
+    scopeUnchanged: true,
+  };
+  const first = await setup.controller.reply(started.taskId, 'parent', answer);
+  expect(first).toMatchObject({ delivery: 'sent' });
+  setup.state.status = 'blocked';
+
+  const repeated = await setup.controller.reply(started.taskId, 'parent', answer);
+
+  expect(repeated).toEqual({ replyAccepted: true, name: started.name, delivery: 'notResent' });
+  expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(2);
+});
+
 it('reports a blocked generic reply as notDelivered without claiming acknowledgement', async () => {
   const setup = fixture();
   const started = await setup.controller.launch(setup.input);

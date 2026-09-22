@@ -91,6 +91,7 @@ const expectKeys = (state: WorkerState, generic: boolean) => {
     'questionReceipt',
     'submissionReceipt',
     'nativeOutput',
+    'observationIssue',
     ...(generic ? ['nativeState'] : []),
     ...(cleanup ? ['recovery', 'capacityHeld', 'unconfirmedChildren', 'descendantEvidence'] : []),
   ];
@@ -170,6 +171,41 @@ it('drops absent keys and maps receipts to their narrow shape', () => {
       replyAccepted: true,
       workerAcknowledged: true,
     },
+  });
+});
+
+it('carries a bounded native observation reason into model content', () => {
+  const short = modelStatus({
+    taskId: 'task-1',
+    state: 'running',
+    deadline: 10,
+    observationIssue: 'herdr observation failed.',
+  });
+  expect(short.observationIssue).toBe('herdr observation failed.');
+
+  const long = modelStatus({
+    taskId: 'task-1',
+    state: 'running',
+    deadline: 10,
+    observationIssue: '界'.repeat(1000),
+  });
+  const reason = String(long.observationIssue);
+  expect(reason.length).toBeLessThan(1000);
+  expect(reason.startsWith('界'.repeat(200))).toBe(true);
+});
+
+it('carries a saved-reply flag on a pending question', () => {
+  const content = modelStatus({
+    taskId: 'task-1',
+    state: 'awaitingReply',
+    deadline: 10,
+    pendingQuestion: { questionId: 'question-1', question: 'Which file?', replySaved: true },
+  });
+
+  expect(content.pendingQuestion).toEqual({
+    questionId: 'question-1',
+    question: 'Which file?',
+    replySaved: true,
   });
 });
 

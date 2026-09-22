@@ -343,6 +343,28 @@ it('scopes history to the validated root and descendants including siblings and 
   );
 });
 
+it('excludes the calling task and its parent task from history', async () => {
+  const fixture = setup();
+  const parent = fixture.task('parent-task', fixture.child, 'child');
+  const nested = fixture.task(
+    'nested-task',
+    parent.record.nativeSessionFile,
+    parent.record.nativeSessionId,
+  );
+  const current = {
+    file: nested.record.nativeSessionFile,
+    id: nested.record.nativeSessionId,
+    sessionDirectory: fixture.sessions,
+  };
+  const history = await searchHistory(fixture.workers, current);
+  const taskIds = history.candidates.flatMap((candidate) =>
+    candidate.taskId ? [candidate.taskId] : [],
+  );
+
+  expect(taskIds).not.toContain('nested-task');
+  expect(taskIds).not.toContain('parent-task');
+});
+
 it('returns clarification for ambiguous names and descriptions without writing or granting ownership', async () => {
   const fixture = setup();
   const first = fixture.task('first', fixture.child, 'child', 'worker-aa');

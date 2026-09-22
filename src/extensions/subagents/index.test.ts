@@ -444,3 +444,150 @@ it('returns the unreadable-evidence object when status records fail', async ({
     },
   });
 });
+
+const evidenceError = (taskId: string) =>
+  new EvidenceUnavailableError({
+    taskId,
+    name: 'worker-ab',
+    evidenceError: 'Invalid worker lifecycle record.',
+    recovery: { directory: `/abs/records/${taskId}` },
+  });
+
+const evidenceContent = (taskId: string) => ({
+  taskId,
+  name: 'worker-ab',
+  evidenceError: 'Invalid worker lifecycle record.',
+  recovery: { directory: `/abs/records/${taskId}` },
+});
+
+it('returns the unreadable-evidence object when cancel records fail', async ({
+  onTestFinished,
+}) => {
+  const tools = registerTools();
+  vi.spyOn(WorkerController.prototype, 'cancel').mockImplementation(() => {
+    throw evidenceError('task-1');
+  });
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
+  const tool = tools.get('subagent_cancel');
+
+  if (!tool) {
+    throw new Error('Missing cancel tool.');
+  }
+
+  const context = {
+    sessionManager: { getSessionId: () => 'parent' },
+  } as unknown as ExtensionContext;
+  const result = await tool.execute('call', { taskId: 'task-1' }, undefined, undefined, context);
+  const content = textContent(result);
+
+  expect(content).toEqual(evidenceContent('task-1'));
+  expect(content).not.toHaveProperty('state');
+});
+
+it('returns the unreadable-evidence object when follow-up records fail', async ({
+  onTestFinished,
+}) => {
+  const tools = registerTools();
+  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('HERDR_ENV', '1');
+  vi.stubEnv('HERDR_PANE_ID', 'parent');
+  vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
+  vi.spyOn(WorkerController.prototype, 'parentAuthority').mockResolvedValue({
+    tree: {
+      rootSession: '/fixture/parent.jsonl',
+      rootSessionId: 'parent',
+      monotonicDeadline: Number.MAX_SAFE_INTEGER,
+    },
+  });
+  vi.spyOn(WorkerController.prototype, 'followUp').mockImplementation(() => {
+    throw evidenceError('task-1');
+  });
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+  const tool = tools.get('subagent_follow_up');
+
+  if (!tool) {
+    throw new Error('Missing follow-up tool.');
+  }
+
+  const context = {
+    sessionManager: { getSessionFile: () => '/fixture/parent.jsonl', getSessionId: () => 'parent' },
+  } as unknown as ExtensionContext;
+  const result = await tool.execute(
+    'call',
+    { sourceTaskId: 'source', task: 'Continue.', timeoutSeconds: 10, settingsUnchanged: true },
+    undefined,
+    undefined,
+    context,
+  );
+  const content = textContent(result);
+
+  expect(content).toEqual(evidenceContent('task-1'));
+  expect(content).not.toHaveProperty('state');
+});
+
+it('returns the unreadable-evidence object when launch records fail', async ({
+  onTestFinished,
+}) => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-evidence-launch-'));
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('HERDR_ENV', '1');
+  vi.stubEnv('HERDR_PANE_ID', 'parent');
+  vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
+  const tools = registerTools();
+  vi.spyOn(WorkerController.prototype, 'parentAuthority').mockResolvedValue({
+    tree: {
+      rootSession: join(directory, 'parent.jsonl'),
+      rootSessionId: 'parent',
+      monotonicDeadline: Number.MAX_SAFE_INTEGER,
+    },
+  });
+  vi.spyOn(WorkerController.prototype, 'launch').mockImplementation(() => {
+    throw evidenceError('task-1');
+  });
+  const tool = tools.get('subagent');
+
+  if (!tool) {
+    throw new Error('Missing launch tool.');
+  }
+
+  const context = {
+    cwd: directory,
+    isProjectTrusted: () => true,
+    hasUI: true,
+    ui: { confirm: vi.fn<ExtensionContext['ui']['confirm']>().mockResolvedValue(true) },
+    sessionManager: {
+      getSessionFile: () => join(directory, 'parent.jsonl'),
+      getSessionId: () => 'parent',
+    },
+  } as unknown as ExtensionContext;
+  const result = await tool.execute(
+    'call',
+    {
+      profile: 'worker',
+      harness: 'gemini',
+      permissions: 'native-controls',
+      nativeArguments: ['--native-setting'],
+      reportDirectory: directory,
+      task: 'Inspect fixture.',
+      timeoutSeconds: 10,
+    },
+    undefined,
+    undefined,
+    context,
+  );
+  const content = textContent(result);
+
+  expect(content).toEqual(evidenceContent('task-1'));
+  expect(content).not.toHaveProperty('state');
+});

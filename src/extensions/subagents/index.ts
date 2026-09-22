@@ -141,6 +141,32 @@ const requireHerdrParent = (
 const hasNativeConfiguration = (parameters: LaunchParameters): boolean =>
   parameters.nativeArguments !== undefined || parameters.reportDirectory !== undefined;
 
+// Pi streams call arguments, so a renderer can run before the model finishes any field.
+const callDetail = (parts: (string | undefined)[]): string | undefined => {
+  const joined = parts.filter((part): part is string => Boolean(part)).join(' · ');
+
+  return joined.length > 0 ? joined : undefined;
+};
+
+// The model reads the same unreadable-evidence shape here as in notices.
+const evidenceResult = (error: unknown) => {
+  if (!(error instanceof EvidenceUnavailableError)) {
+    throw error;
+  }
+
+  const details = {
+    taskId: error.taskId,
+    ...(error.taskName === undefined ? {} : { name: error.taskName }),
+    evidenceError: error.evidenceError,
+    recovery: error.recovery,
+  };
+
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(modelEvidenceNotice(details)) }],
+    details,
+  };
+};
+
 const launchWorker = async (
   runtime: SubagentRuntime,
   parameters: LaunchParameters,
@@ -187,18 +213,24 @@ const launchWorker = async (
     : await resolveLoadout(parameters, context, runtime.pi, resolutionSignal);
   signal?.throwIfAborted();
 
-  const status = await controller.launch(
-    {
-      task: parameters.task,
-      loadout,
-      timeout,
-      startedAt,
-      parentSession,
-      parentSessionId: context.sessionManager.getSessionId(),
-      ...(parameters.visibility ? { visibility: parameters.visibility } : {}),
-    },
-    signal,
-  );
+  let status: Awaited<ReturnType<WorkerController['launch']>>;
+
+  try {
+    status = await controller.launch(
+      {
+        task: parameters.task,
+        loadout,
+        timeout,
+        startedAt,
+        parentSession,
+        parentSessionId: context.sessionManager.getSessionId(),
+        ...(parameters.visibility ? { visibility: parameters.visibility } : {}),
+      },
+      signal,
+    );
+  } catch (error) {
+    return evidenceResult(error);
+  }
 
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(modelStatus(status)) }],
@@ -228,16 +260,22 @@ const followUpWorker = async (
   );
   runtime.setNested(Boolean(authority.parent));
 
-  const status = await controller.followUp(
-    {
-      ...parameters,
-      timeout: parameters.timeoutSeconds * 1000,
-      parentSession,
-      parentSessionId: context.sessionManager.getSessionId(),
-    },
-    context,
-    signal,
-  );
+  let status: Awaited<ReturnType<WorkerController['followUp']>>;
+
+  try {
+    status = await controller.followUp(
+      {
+        ...parameters,
+        timeout: parameters.timeoutSeconds * 1000,
+        parentSession,
+        parentSessionId: context.sessionManager.getSessionId(),
+      },
+      context,
+      signal,
+    );
+  } catch (error) {
+    return evidenceResult(error);
+  }
 
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(modelStatus(status)) }],
@@ -273,25 +311,6 @@ const searchWorkerHistory = async (
   const page = historyPage(history, parameters.offset, parameters.limit);
 
   return { content: [{ type: 'text' as const, text: JSON.stringify(page) }], details: page };
-};
-
-// The model reads the same unreadable-evidence shape here as in notices.
-const evidenceResult = (error: unknown) => {
-  if (!(error instanceof EvidenceUnavailableError)) {
-    throw error;
-  }
-
-  const details = {
-    taskId: error.taskId,
-    ...(error.taskName === undefined ? {} : { name: error.taskName }),
-    evidenceError: error.evidenceError,
-    recovery: error.recovery,
-  };
-
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(modelEvidenceNotice(details)) }],
-    details,
-  };
 };
 
 const readWorkerStatus = async (
@@ -350,9 +369,15 @@ const cancelWorker = async (
   parameters: CancelParameters,
   context: ExtensionContext,
 ) => {
-  const status = await runtime
-    .getController()
-    .cancel(parameters.taskId, context.sessionManager.getSessionId());
+  let status: Awaited<ReturnType<WorkerController['cancel']>>;
+
+  try {
+    status = await runtime
+      .getController()
+      .cancel(parameters.taskId, context.sessionManager.getSessionId());
+  } catch (error) {
+    return evidenceResult(error);
+  }
 
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(modelStatus(status)) }],
@@ -370,7 +395,7 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
     renderCall(parameters, theme) {
       return callText(
         'Launch worker',
-        `${parameters.profile} · ${firstLine(parameters.task)}`,
+        callDetail([parameters.profile, firstLine(parameters.task)]),
         theme,
       );
     },
@@ -394,7 +419,7 @@ const registerFollowUpTool = (runtime: SubagentRuntime): void => {
     renderCall(parameters, theme) {
       return callText(
         'Follow up worker',
-        `${shortId(parameters.sourceTaskId)} · ${firstLine(parameters.task)}`,
+        callDetail([shortId(parameters.sourceTaskId), firstLine(parameters.task)]),
         theme,
       );
     },

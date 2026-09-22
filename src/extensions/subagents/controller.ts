@@ -83,10 +83,20 @@ export { agentPromptArguments, workerArguments } from './controllerInspect.js';
 export type { HerdrClient } from './controllerInspect.js';
 export { EvidenceUnavailableError, taskStatus } from './controllerRecord.js';
 
+// The reply is saved before this read. A corrupt acknowledgement record must not make a saved reply
+// look failed, because a failure would invite a resend of the same identity.
+const replyAcknowledged = (directory: string, taskId: string, questionId: string): boolean => {
+  try {
+    return Boolean(readAcknowledgement(directory, taskId, questionId));
+  } catch {
+    return false;
+  }
+};
+
 const acceptedReply = (directory: string, task: Task, questionId: string) => ({
   replyAccepted: true,
   name: task.name,
-  workerAcknowledged: Boolean(readAcknowledgement(directory, task.taskId, questionId)),
+  workerAcknowledged: replyAcknowledged(directory, task.taskId, questionId),
   delivery: 'notResent' as const,
 });
 
@@ -361,6 +371,15 @@ export class WorkerController {
     const { directory, task } = handle;
     const call = (argumentsList: string[]) =>
       this.client(argumentsList, workBudget(handle), handle.abort.signal);
+
+    // Check the saved submission before native state. A saved reply is never sent twice, so a
+    // blocked dialog must not turn a repeat into an error.
+    const repeated = repeatedGenericReply(directory, task, answer);
+
+    if (repeated) {
+      return repeated;
+    }
+
     handle.nativeState = 'unknown';
     const worker = await inspectWorker(handle, call);
     const location = await resolveTerminal(worker.terminalId, call);
@@ -382,12 +401,6 @@ export class WorkerController {
       throw new Error(
         'Assignment delivery is not confirmed. Replies cannot bypass native startup approvals or uncertain delivery.',
       );
-    }
-
-    const repeated = repeatedGenericReply(directory, task, answer);
-
-    if (repeated) {
-      return repeated;
     }
 
     const submission = await submitGenericText(directory, task, {
@@ -504,7 +517,7 @@ export class WorkerController {
     return {
       replyAccepted: true,
       name: handle.task.name,
-      workerAcknowledged: Boolean(readAcknowledgement(directory, taskId, questionId)),
+      workerAcknowledged: replyAcknowledged(directory, taskId, questionId),
       delivery,
     };
   }

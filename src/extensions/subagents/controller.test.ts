@@ -901,9 +901,85 @@ it('delivers a clarification once without treating herdr delivery as acknowledge
 
   controller.close();
   const recovered = new WorkerController(directory);
-  expect(recovered.status(task.taskId, 'parent-id').pendingQuestion).toEqual(question);
+  expect(recovered.status(task.taskId, 'parent-id').pendingQuestion).toEqual({
+    ...question,
+    replySaved: true,
+  });
   await expect(recovered.reply(task.taskId, 'parent-id', answer)).rejects.toThrow('active');
   recovered.close();
+});
+
+it('treats an unreadable acknowledgement as unacknowledged after saving the Pi reply', async ({
+  onTestFinished,
+}) => {
+  let taskDirectory = '';
+  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'prompt') {
+      writeFileSync(join(taskDirectory, 'acknowledgement-question-one.json'), '{}');
+
+      return JSON.stringify({ result: {} });
+    }
+
+    return '';
+  });
+  const launched = await controller.launch(input);
+  taskDirectory = launched.directory;
+  const task = readTask(launched.directory);
+  recordEvent(launched.directory, task.taskId, 'accepted', 'Accepted.');
+  questions.acceptQuestion(launched.directory, task.taskId, {
+    version: 1,
+    taskId: task.taskId,
+    questionId: 'question-one',
+    question: 'Which file?',
+  });
+
+  const result = await controller.reply(task.taskId, 'parent-id', {
+    questionId: 'question-one',
+    replyId: 'reply-one',
+    reply: 'source.txt',
+    scopeUnchanged: true,
+  });
+
+  expect(result).toMatchObject({
+    replyAccepted: true,
+    workerAcknowledged: false,
+    delivery: 'sent',
+  });
+  expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
+});
+
+it('treats an unreadable acknowledgement as unacknowledged on a repeated Pi reply', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) =>
+    argumentsList[1] === 'prompt' ? JSON.stringify({ result: {} }) : '',
+  );
+  const launched = await controller.launch(input);
+  const task = readTask(launched.directory);
+  recordEvent(launched.directory, task.taskId, 'accepted', 'Accepted.');
+  questions.acceptQuestion(launched.directory, task.taskId, {
+    version: 1,
+    taskId: task.taskId,
+    questionId: 'question-one',
+    question: 'Which file?',
+  });
+  const answer = {
+    questionId: 'question-one',
+    replyId: 'reply-one',
+    reply: 'source.txt',
+    scopeUnchanged: true,
+  };
+  await controller.reply(task.taskId, 'parent-id', answer);
+  writeFileSync(join(launched.directory, 'acknowledgement-question-one.json'), '{}');
+
+  const repeated = await controller.reply(task.taskId, 'parent-id', answer);
+
+  expect(repeated).toMatchObject({
+    replyAccepted: true,
+    workerAcknowledged: false,
+    delivery: 'notResent',
+  });
+  expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
 });
 
 it.each(['before', 'during'] as const)(

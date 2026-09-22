@@ -41,6 +41,7 @@ export const stateLabel = (state: WorkerState, outcome?: string): StateLabel => 
 export interface StatusQuestion {
   questionId?: string | undefined;
   question?: string | undefined;
+  replySaved?: boolean | undefined;
 }
 
 export interface QuestionReceiptInput {
@@ -79,6 +80,7 @@ export interface StatusInput {
   questionReceipt?: QuestionReceiptInput | undefined;
   nativeState?: string | undefined;
   delivery?: string | undefined;
+  observationIssue?: string | undefined;
   submissionReceipt?: SubmissionReceiptInput | undefined;
   nativeOutput?: unknown;
   recovery?: unknown;
@@ -113,6 +115,18 @@ const addField = (target: Record<string, unknown>, key: string, value: unknown):
   }
 };
 
+// Native observation errors are raw herdr text. Bound them before the model reads them, because the
+// full text stays in details for the pilot.
+const observationIssueLimit = 200;
+
+const boundedReason = (value: string | undefined): string | undefined => {
+  if (value === undefined || value.length <= observationIssueLimit) {
+    return value;
+  }
+
+  return `${value.slice(0, observationIssueLimit)}…`;
+};
+
 const modelQuestion = (
   question: StatusQuestion | undefined,
 ): Record<string, unknown> | undefined => {
@@ -123,6 +137,7 @@ const modelQuestion = (
   const result: Record<string, unknown> = {};
   addField(result, 'questionId', question.questionId);
   addField(result, 'question', question.question);
+  addField(result, 'replySaved', question.replySaved);
 
   return result;
 };
@@ -176,6 +191,7 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   addField(result, 'questionReceipt', modelQuestionReceipt(status.questionReceipt));
   addField(result, 'nativeState', status.nativeState);
   addField(result, 'delivery', status.delivery);
+  addField(result, 'observationIssue', boundedReason(status.observationIssue));
   addField(result, 'submissionReceipt', modelSubmissionReceipt(status.submissionReceipt));
   addField(result, 'nativeOutput', status.nativeOutput);
 

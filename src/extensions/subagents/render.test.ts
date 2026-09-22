@@ -185,6 +185,29 @@ it('keeps generated paths, JSON, and full task IDs out of collapsed status lines
   }
 });
 
+it('keeps paths from error text out of collapsed failure and observation reasons', () => {
+  const subject = theme();
+  const failure = `Error: ENOENT: no such file or directory, open '${records}/report.json'`;
+  const observationIssue = "herdr failed to read '/run/user/1000/herdr/socket' (os error 2)";
+
+  for (const state of states) {
+    if (cleanupStates.has(state)) {
+      continue;
+    }
+
+    const details = {
+      ...statusFixture(state, true),
+      failure,
+      nativeState: 'unknown',
+      observationIssue,
+    };
+    const output = lines(renderStatusResult(details, false, subject)).join('\n');
+
+    expect(output, `${state} path`).not.toMatch(/\/[\w.-]+\/[\w.-]/);
+    expect(output, `${state} home`).not.toContain(homedir());
+  }
+});
+
 it('uses the check mark only for a stopped success and shows the deadline only for live states', () => {
   const subject = theme();
 
@@ -235,6 +258,51 @@ it('shows the question, the report summary, and the pane where the pilot needs t
   expect(render('cleanupUnconfirmed')).toContain('pane-1');
   expect(render('notOwned')).toContain('pane-1');
   expect(render('running')).not.toContain('pane-1');
+});
+
+it('shows a failed start reason on the collapsed notice line', () => {
+  const subject = theme();
+  const details = { ...statusFixture('starting', false), failure: 'Native start was rejected.' };
+
+  expect(collapsedStatusLines(details, subject).join('\n')).toContain('Native start was rejected.');
+});
+
+it('shows an undelivered or uncertain assignment delivery on the collapsed line', () => {
+  const subject = theme();
+  const notDelivered = collapsedStatusLines(
+    { ...statusFixture('running', true), delivery: 'notDelivered' },
+    subject,
+  ).join('\n');
+  const uncertain = collapsedStatusLines(
+    { ...statusFixture('running', true), delivery: 'uncertain' },
+    subject,
+  ).join('\n');
+
+  expect(notDelivered).toContain('not delivered');
+  expect(uncertain).toContain('uncertain');
+});
+
+it('shows a blocked or unknown native state for every live state', () => {
+  const subject = theme();
+  const live: WorkerState[] = ['starting', 'running', 'awaitingReply', 'reported', 'stopping'];
+
+  for (const state of live) {
+    const blocked = collapsedStatusLines(
+      { ...statusFixture(state, true), nativeState: 'blocked' },
+      subject,
+    ).join('\n');
+    expect(blocked, `${state} blocked`).toContain('blocked');
+
+    const unknown = collapsedStatusLines(
+      {
+        ...statusFixture(state, true),
+        nativeState: 'unknown',
+        observationIssue: 'herdr observation failed.',
+      },
+      subject,
+    ).join('\n');
+    expect(unknown, `${state} unknown reason`).toContain('herdr observation failed.');
+  }
 });
 
 it('marks the deadline as enforced only for owned live states', () => {
@@ -343,6 +411,16 @@ it('rejects results without a worker state so Pi renders its default', () => {
   expect(() => renderHistoryResult({ outcome: 'list' }, false, subject)).toThrow(
     DefaultRenderingRequiredError,
   );
+});
+
+it('falls back to Pi rendering for a legacy prose reply delivery', () => {
+  const subject = theme();
+  const legacy = {
+    ...replyFixture('sent'),
+    delivery: 'Herdr accepted the reply text; saved on disk.',
+  };
+
+  expect(() => renderReplyResult(legacy, false, subject)).toThrow(DefaultRenderingRequiredError);
 });
 
 it('renders through the registered tool definitions and the message renderer', () => {
@@ -506,6 +584,20 @@ it('shortens the home directory in the expanded records and session rows', () =>
   const subject = theme();
   const output = expandedStatusLines(statusFixture('stopped', false), subject).join('\n');
   expect(output).toContain(`~/records/${taskId}`);
+});
+
+it('renders call lines while streaming arguments are still incomplete', () => {
+  const subject = theme();
+  const { tools } = renderers();
+  const launch = tools.get('subagent');
+  const followUp = tools.get('subagent_follow_up');
+
+  expect(() => launch?.renderCall?.({ profile: 'worker' }, subject, context)).not.toThrow();
+  expect(() => launch?.renderCall?.({}, subject, context)).not.toThrow();
+  expect(() => followUp?.renderCall?.({}, subject, context)).not.toThrow();
+
+  const text = plain(launch?.renderCall?.({ profile: 'worker' }, subject, context) as Component);
+  expect(text).toContain('worker');
 });
 
 it('shows only a short task ID on task call lines', () => {

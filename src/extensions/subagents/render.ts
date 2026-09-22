@@ -36,6 +36,8 @@ interface StatusView {
   failure?: string | undefined;
   cleanup?: string | undefined;
   nativeState?: string | undefined;
+  delivery?: string | undefined;
+  observationIssue?: string | undefined;
   recovery?: { paneId?: string | undefined; directory?: string | undefined } | undefined;
   directory?: string | undefined;
   nativeSessionId?: string | undefined;
@@ -80,7 +82,7 @@ interface HistoryView {
   diagnostics?: string[] | undefined;
 }
 
-export const firstLine = (value: string): string => value.split('\n')[0] ?? '';
+export const firstLine = (value: string | undefined): string => (value ?? '').split('\n')[0] ?? '';
 
 export const callText = (title: string, detail: string | undefined, theme: Theme): Text => {
   const head = theme.fg('toolTitle', theme.bold(title));
@@ -96,6 +98,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isWorkerState = (value: unknown): value is WorkerState =>
   typeof value === 'string' && Object.hasOwn(stateLabels, value);
+
+const replyDeliveries = new Set(['sent', 'uncertain', 'notResent', 'notDelivered']);
 
 const stringField = (record: Record<string, unknown>, key: string): string | undefined => {
   const value = record[key];
@@ -166,6 +170,8 @@ const statusView = (details: unknown): StatusView | undefined => {
     failure: stringField(details, 'failure'),
     cleanup: stringField(details, 'cleanup'),
     nativeState: stringField(details, 'nativeState'),
+    delivery: stringField(details, 'delivery'),
+    observationIssue: stringField(details, 'observationIssue'),
     recovery: recovery
       ? {
           paneId: stringField(recovery, 'paneId'),
@@ -207,7 +213,9 @@ const replyView = (details: unknown): ReplyView | undefined => {
 
   const delivery = stringField(details, 'delivery');
 
-  if (delivery === undefined) {
+  // Results saved before delivery became a small vocabulary carry prose here. Fall back to Pi's
+  // default rendering instead of labelling unknown text as an uncertain delivery.
+  if (delivery === undefined || !replyDeliveries.has(delivery)) {
     return undefined;
   }
 
@@ -314,15 +322,56 @@ const basePart = (details: StatusView): string => {
   return label;
 };
 
+// Error text often names record files or sockets. Collapsed lines never show paths; ctrl+o keeps the
+// full reason.
+const pathToken = /(?:~|\.{0,2})\/[^\s'"`,;)]+/g;
+
+const collapsedReason = (value: string): string => {
+  const line = firstLine(value).replaceAll(pathToken, '…').trim();
+
+  return line.length > 160 ? `${line.slice(0, 157)}…` : line;
+};
+
+const assignmentDeliveryPart = (delivery: string | undefined): string[] => {
+  if (delivery === 'notDelivered') {
+    return ['assignment not delivered'];
+  }
+
+  if (delivery === 'uncertain') {
+    return ['assignment delivery uncertain'];
+  }
+
+  return [];
+};
+
+const nativeStatePart = (details: StatusView): string[] => {
+  if (!liveStates.has(details.state)) {
+    return [];
+  }
+
+  if (details.nativeState === 'blocked') {
+    return ['blocked on a native approval'];
+  }
+
+  if (details.nativeState !== 'unknown') {
+    return [];
+  }
+
+  const reason =
+    details.observationIssue === undefined ? '' : `: ${collapsedReason(details.observationIssue)}`;
+
+  return [`native state unknown${reason}`];
+};
+
 // oxlint-disable-next-line eslint/complexity -- One ordered list keeps every conditional part together.
 const statusParts = (details: StatusView): string[] => {
   const state = details.state;
 
   return [
     basePart(details),
-    ...(state === 'running' && details.nativeState === 'blocked'
-      ? ['blocked on a native approval']
-      : []),
+    ...(details.failure ? [`failure: ${collapsedReason(details.failure)}`] : []),
+    ...assignmentDeliveryPart(details.delivery),
+    ...nativeStatePart(details),
     ...(state === 'reported' ? ['not stopped yet'] : []),
     ...(state === 'starting' && details.predecessorTaskId
       ? [`follows ${details.predecessorName ?? shortId(details.predecessorTaskId)}`]

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { admissionDirectory, descendantReservations } from './admission.js';
 import type { Handle } from './controllerTypes.js';
 import { genericReportPath, readGenericReference } from './generic.js';
-import { readPendingQuestion } from './questionRecords.js';
+import { readPendingQuestion, readReply } from './questionRecords.js';
 import {
   publish,
   readEvent,
@@ -139,6 +139,19 @@ const predecessorName = (root: string, task: Task): string | undefined => {
   }
 };
 
+// A pending question keeps its identity; only a saved reply adds the delivery flag.
+const pendingQuestionStatus = (directory: string, taskId: string) => {
+  const question = readPendingQuestion(directory, taskId);
+
+  if (question === undefined) {
+    return undefined;
+  }
+
+  const replySaved = readReply(directory, taskId, question.questionId) !== undefined;
+
+  return replySaved ? { ...question, replySaved: true } : question;
+};
+
 export const taskStatus = (directory: string, activeOwner?: string, enforcing = true) => {
   const task = readTask(directory);
   const report = readReport(directory, task.taskId);
@@ -153,6 +166,7 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
     Boolean(event('settled') ?? cleanup),
   );
   const needsRecovery = state === 'cleanupUnconfirmed' || state === 'notOwned';
+  const pendingQuestion = pendingQuestionStatus(directory, task.taskId);
   const recovery = needsRecovery ? taskRecovery(task, directory) : undefined;
 
   return {
@@ -174,7 +188,7 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
     usage: nativeUsage(task),
     directory,
     report,
-    pendingQuestion: readPendingQuestion(directory, task.taskId),
+    pendingQuestion,
     failure: failure?.detail,
     cleanup: cleanup?.detail,
     ...(recovery ? { recovery } : {}),
