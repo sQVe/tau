@@ -322,33 +322,9 @@ const basePart = (details: StatusView): string => {
   return label;
 };
 
-// Error text often names record files or sockets. Collapsed lines never show paths; ctrl+o keeps the
-// full reason.
-const pathToken = /(?:~|\.{0,2})\/[^\s'"`,;)]+/g;
-
-// A failed herdr call puts the command on the first line and the reason after it.
-const reasonLine = (value: string): string => {
-  const lines = value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  const reason = lines.find((line) => !/^(?:Error: )?Command failed:/.test(line));
-
-  return reason ?? lines[0] ?? '';
-};
-
-// Parse errors quote the corrupt record; collapsed lines never show JSON.
-const withoutJson = (line: string): string => {
-  const brace = line.search(/[{}]/);
-
-  return brace === -1 ? line : `${line.slice(0, brace).trimEnd()} …`;
-};
-
-const collapsedReason = (value: string): string => {
-  const line = withoutJson(reasonLine(value).replaceAll(pathToken, '…')).trim();
-
-  return line.length > 160 ? `${line.slice(0, 157)}…` : line;
-};
+// Raw failure and observation text is unbounded and can quote paths, JSON, or commands. Collapsed
+// lines flag it with a fixed phrase; ctrl+o shows the full text.
+const reasonHint = 'ctrl+o for the reason';
 
 const assignmentDeliveryPart = (delivery: string | undefined): string[] => {
   if (delivery === 'notDelivered') {
@@ -375,10 +351,9 @@ const nativeStatePart = (details: StatusView): string[] => {
     return [];
   }
 
-  const reason =
-    details.observationIssue === undefined ? '' : `: ${collapsedReason(details.observationIssue)}`;
-
-  return [`native state unknown${reason}`];
+  return details.observationIssue === undefined
+    ? ['native state unknown']
+    : ['native state unknown', reasonHint];
 };
 
 // oxlint-disable-next-line eslint/complexity -- One ordered list keeps every conditional part together.
@@ -387,7 +362,7 @@ const statusParts = (details: StatusView): string[] => {
 
   return [
     basePart(details),
-    ...(details.failure ? [`failure: ${collapsedReason(details.failure)}`] : []),
+    ...(details.failure ? ['failed', reasonHint] : []),
     ...assignmentDeliveryPart(details.delivery),
     ...nativeStatePart(details),
     ...(state === 'reported' ? ['not stopped yet'] : []),
@@ -475,6 +450,7 @@ const identityRows = (details: StatusView, theme: Theme): string[] => [
   ...(details.predecessorTaskId ? [row('Follows', details.predecessorTaskId, theme)] : []),
   ...(details.successorTaskId ? [row('Followed up by', details.successorTaskId, theme)] : []),
   ...(details.failure ? [row('Failure', details.failure, theme)] : []),
+  ...(details.observationIssue ? [row('Observation', details.observationIssue, theme)] : []),
   ...(details.cleanup ? [row('Cleanup', details.cleanup, theme)] : []),
   ...(details.nativeState ? [row('Native state', details.nativeState, theme)] : []),
   ...(details.recovery?.paneId ? [row('Pane', details.recovery.paneId, theme)] : []),

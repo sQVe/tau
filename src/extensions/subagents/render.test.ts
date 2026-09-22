@@ -185,49 +185,32 @@ it('keeps generated paths, JSON, and full task IDs out of collapsed status lines
   }
 });
 
-it('keeps paths from error text out of collapsed failure and observation reasons', () => {
+// Raw error text is unbounded; collapsed lines flag it and ctrl+o shows it.
+const rawFailure =
+  'Error: Command failed: herdr agent start codex --pane w-1 -- --arg\nline two\nagent_not_ready: trust prompt';
+const rawObservation = `SyntaxError: Unexpected token 'o', ..."","beta":nope,"gamma"... is not valid JSON at ${records}`;
+
+it('keeps raw failure and observation text off collapsed lines and shows it on ctrl+o', () => {
   const subject = theme();
-  const failure = `Error: ENOENT: no such file or directory, open '${records}/report.json'`;
-  const observationIssue = "herdr failed to read '/run/user/1000/herdr/socket' (os error 2)";
 
   for (const state of states) {
-    if (cleanupStates.has(state)) {
-      continue;
-    }
-
     const details = {
       ...statusFixture(state, true),
-      failure,
+      failure: rawFailure,
       nativeState: 'unknown',
-      observationIssue,
+      observationIssue: rawObservation,
     };
-    const output = lines(renderStatusResult(details, false, subject)).join('\n');
+    const collapsed = lines(renderStatusResult(details, false, subject)).join('\n');
+    const expanded = lines(renderStatusResult(details, true, subject)).join('\n');
 
-    expect(output, `${state} path`).not.toMatch(/\/[\w.-]+\/[\w.-]/);
-    expect(output, `${state} home`).not.toContain(homedir());
+    for (const fragment of ['herdr agent start', 'line two', 'trust prompt', '"beta"', 'nope']) {
+      expect(collapsed, `${state} collapsed ${fragment}`).not.toContain(fragment);
+    }
+
+    expect(collapsed, `${state} ctrl+o hint`).toContain('ctrl+o');
+    expect(expanded, `${state} expanded failure`).toContain('trust prompt');
+    expect(expanded, `${state} expanded observation`).toContain('is not valid JSON');
   }
-});
-
-it('shows the herdr failure reason instead of the failed command', () => {
-  const subject = theme();
-  const failure =
-    'Error: Command failed: herdr agent start codex --pane w-1 --timeout 1799000 -- --model x\nagent_not_ready: trust prompt is waiting for input';
-  const details = { ...statusFixture('starting', true), failure };
-  const output = lines(renderStatusResult(details, false, subject)).join('\n');
-
-  expect(output).toContain('trust prompt is waiting for input');
-  expect(output).not.toContain('herdr agent start');
-});
-
-it('keeps JSON fragments from parse errors out of collapsed failure reasons', () => {
-  const subject = theme();
-  const failure =
-    'Worker evidence unavailable: SyntaxError: Unexpected token \'}\', ..."6","x":tru}" is not valid JSON. No retry.';
-  const details = { ...statusFixture('starting', true), failure };
-  const output = lines(renderStatusResult(details, false, subject)).join('\n');
-
-  expect(output).toContain('Worker evidence unavailable');
-  expect(output).not.toMatch(/[{}]/);
 });
 
 it('uses the check mark only for a stopped success and shows the deadline only for live states', () => {
@@ -282,13 +265,6 @@ it('shows the question, the report summary, and the pane where the pilot needs t
   expect(render('running')).not.toContain('pane-1');
 });
 
-it('shows a failed start reason on the collapsed notice line', () => {
-  const subject = theme();
-  const details = { ...statusFixture('starting', false), failure: 'Native start was rejected.' };
-
-  expect(collapsedStatusLines(details, subject).join('\n')).toContain('Native start was rejected.');
-});
-
 it('shows an undelivered or uncertain assignment delivery on the collapsed line', () => {
   const subject = theme();
   const notDelivered = collapsedStatusLines(
@@ -323,7 +299,8 @@ it('shows a blocked or unknown native state for every live state', () => {
       },
       subject,
     ).join('\n');
-    expect(unknown, `${state} unknown reason`).toContain('herdr observation failed.');
+    expect(unknown, `${state} unknown`).toContain('unknown');
+    expect(unknown, `${state} raw reason`).not.toContain('herdr observation failed.');
   }
 });
 
