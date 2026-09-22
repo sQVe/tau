@@ -1537,8 +1537,25 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
   });
   expect(recovered.status(task.taskId, 'parent-id').report?.summary).toBe('Edited fixture.');
   expect(() => recovered.status(task.taskId, 'wrong-parent')).toThrow('another parent');
-  expect(() => recovered.status(task.taskId, 'wrong-parent')).not.toThrow(EvidenceUnavailableError);
-  expect(() => recovered.status('missing-task', 'parent-id')).not.toThrow(EvidenceUnavailableError);
+
+  for (const [taskId, parentSessionId] of [
+    [task.taskId, 'wrong-parent'],
+    ['missing-task', 'parent-id'],
+    ['../escape', 'parent-id'],
+  ] as const) {
+    let refusal: unknown = null;
+
+    try {
+      recovered.status(taskId, parentSessionId);
+    } catch (error) {
+      refusal = error;
+    }
+
+    expect(refusal).toBeInstanceOf(Error);
+    expect(refusal).not.toBeInstanceOf(EvidenceUnavailableError);
+    expect(String(refusal)).not.toContain(dirname(launched.directory));
+  }
+
   await expect(recovered.cancel(task.taskId, 'parent-id')).rejects.toThrow('manual cleanup');
 });
 

@@ -143,7 +143,6 @@ const reportView = (value: unknown): ReportView | undefined => {
   };
 };
 
-// oxlint-disable-next-line eslint/complexity -- One flat field mapping keeps every renderer read-only.
 const childTaskIds = (value: unknown): string[] | undefined => {
   if (!Array.isArray(value)) {
     return undefined;
@@ -417,7 +416,6 @@ const nativeStatePart = (details: StatusView): string[] => {
   return ['native state unknown'];
 };
 
-// oxlint-disable-next-line eslint/complexity -- One ordered list keeps every conditional part together.
 // A child whose cleanup is unconfirmed may still run and holds capacity, whatever the parent's state.
 const childParts = (details: StatusView): string[] => {
   const children = details.unconfirmedChildren ?? [];

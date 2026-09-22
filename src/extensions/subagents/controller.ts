@@ -296,7 +296,7 @@ export class WorkerController {
     try {
       return this.directory(taskId, parentSessionId);
     } catch (error) {
-      if (error instanceof TaskAccessError || isMissingFile(error)) {
+      if (error instanceof TaskAccessError) {
         throw error;
       }
 
@@ -569,13 +569,26 @@ export class WorkerController {
     return this.status(taskId, parentSessionId);
   }
 
+  // A missing record is an unknown task; the raw file error would expose the record path.
+  private savedTask(directory: string): Task {
+    try {
+      return readTask(directory);
+    } catch (error) {
+      if (isMissingFile(error)) {
+        throw new TaskAccessError('Unknown task.');
+      }
+
+      throw error;
+    }
+  }
+
   private directory(taskId: string, parentSessionId: string): string {
     if (!/^[a-zA-Z0-9-]+$/.test(taskId)) {
       throw new TaskAccessError('Invalid task identity.');
     }
 
     const directory = join(this.root, taskId);
-    const task = this.handles.get(taskId)?.task ?? readTask(directory);
+    const task = this.handles.get(taskId)?.task ?? this.savedTask(directory);
 
     if (task.parentSessionId !== parentSessionId) {
       throw new TaskAccessError('Task belongs to another parent session.');
