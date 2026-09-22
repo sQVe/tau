@@ -307,6 +307,33 @@ it('retains ownership through transient inspection and partial reports without u
   });
 });
 
+it('notifies once per unresolved observation-error episode and again after recovery', async () => {
+  const setup = fixture();
+  const started = await setup.controller.launch(setup.input);
+  setup.notices.length = 0;
+
+  setup.state.inspectionError = 'First inspection failure.';
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(setup.notices).toHaveLength(1);
+  expect(setup.notices[0]?.content).toMatchObject({ nativeState: 'unknown' });
+  expect(String(setup.notices[0]?.content.observationIssue)).toContain('First inspection failure.');
+
+  setup.state.inspectionError = 'Second inspection failure.';
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(setup.notices).toHaveLength(1);
+  expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
+    observationIssue: 'Error: Second inspection failure.',
+  });
+
+  setup.state.inspectionError = '';
+  await vi.advanceTimersByTimeAsync(1500);
+
+  setup.state.inspectionError = 'Third inspection failure.';
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(setup.notices).toHaveLength(2);
+  expect(String(setup.notices[1]?.content.observationIssue)).toContain('Third inspection failure.');
+});
+
 it('cancels an identity-checked generic worker before a native reference is available', async () => {
   const setup = fixture();
   setup.state.session = '';
