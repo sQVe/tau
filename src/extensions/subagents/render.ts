@@ -1,4 +1,5 @@
 import { homedir } from 'node:os';
+import { sep } from 'node:path';
 
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { Text } from '@earendil-works/pi-tui';
@@ -42,6 +43,12 @@ interface StatusView {
   directory?: string | undefined;
   nativeSessionId?: string | undefined;
   nativeSessionFile?: string | undefined;
+  harness?: string | undefined;
+  unconfirmedChildren?: string[] | undefined;
+  descendantEvidence?: string | undefined;
+  nativeOutput?: string | undefined;
+  submission?: string | undefined;
+  questionReceipt?: string | undefined;
 }
 
 interface ReplyView {
@@ -137,6 +144,54 @@ const reportView = (value: unknown): ReportView | undefined => {
 };
 
 // oxlint-disable-next-line eslint/complexity -- One flat field mapping keeps every renderer read-only.
+const childTaskIds = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const ids = value.flatMap((child) => {
+    const id = isRecord(child) ? stringField(child, 'taskId') : undefined;
+
+    return id === undefined ? [] : [id];
+  });
+
+  return ids.length > 0 ? ids : undefined;
+};
+
+// Requested receipts are summarized into one row each; ctrl+o is where the pilot reads them.
+const submissionSummary = (value: unknown): string | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const intent = isRecord(value.intent) ? value.intent : {};
+  const observation = isRecord(value.observation) ? value.observation : {};
+  const parts = [
+    stringField(intent, 'id'),
+    stringField(observation, 'state') ?? 'no observation',
+    stringField(observation, 'detail'),
+  ];
+
+  return parts.filter((part): part is string => part !== undefined).join(' · ');
+};
+
+const questionReceiptSummary = (value: unknown): string | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const question = isRecord(value.question) ? value.question : {};
+  const id = stringField(question, 'questionId') ?? 'unknown question';
+  const saved =
+    value.reply === undefined || value.reply === null ? 'no reply saved' : 'reply saved';
+  const acknowledged = isRecord(value.acknowledgement) ? 'acknowledged' : 'not acknowledged yet';
+
+  return `${id} · ${saved} · ${acknowledged}`;
+};
+
+const nativeOutputText = (value: unknown): string | undefined =>
+  isRecord(value) ? stringField(value, 'text') : undefined;
+
 const statusView = (details: unknown): StatusView | undefined => {
   if (!isRecord(details)) {
     return undefined;
@@ -179,6 +234,12 @@ const statusView = (details: unknown): StatusView | undefined => {
         }
       : undefined,
     directory: stringField(details, 'directory'),
+    harness: stringField(details, 'harness'),
+    unconfirmedChildren: childTaskIds(details.unconfirmedChildren),
+    descendantEvidence: stringField(details, 'descendantEvidence'),
+    nativeOutput: nativeOutputText(details.nativeOutput),
+    submission: submissionSummary(details.submissionReceipt),
+    questionReceipt: questionReceiptSummary(details.questionReceipt),
     nativeSessionId: stringField(details, 'nativeSessionId'),
     nativeSessionFile: stringField(details, 'nativeSessionFile'),
   };
@@ -287,7 +348,9 @@ const shortenHome = (path: string | undefined): string => {
 
   const home = homedir();
 
-  return home.length > 1 && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
+  const insideHome = path === home || path.startsWith(`${home}${sep}`);
+
+  return home.length > 1 && insideHome ? `~${path.slice(home.length)}` : path;
 };
 
 const head = (label: StateLabel, name: string, theme: Theme): string =>
@@ -355,6 +418,15 @@ const nativeStatePart = (details: StatusView): string[] => {
 };
 
 // oxlint-disable-next-line eslint/complexity -- One ordered list keeps every conditional part together.
+// A child whose cleanup is unconfirmed may still run and holds capacity, whatever the parent's state.
+const childParts = (details: StatusView): string[] => {
+  const children = details.unconfirmedChildren ?? [];
+
+  return children.length > 0
+    ? [`child ${children.map((id) => shortId(id)).join(', ')} cleanup unconfirmed`]
+    : [];
+};
+
 const lifecycleParts = (details: StatusView, state: WorkerState): string[] => {
   return [
     ...(state === 'reported' ? ['not stopped yet'] : []),
@@ -388,6 +460,7 @@ const statusParts = (details: StatusView): string[] => {
     ...assignmentDeliveryPart(details.delivery),
     ...nativeStatePart(details),
     ...lifecycleParts(details, state),
+    ...childParts(details),
     ...(hasHiddenReason(details) ? [reasonHint] : []),
   ];
 };
@@ -442,6 +515,10 @@ const followUpHint = (details: StatusView): string => {
     return `Follow-up unavailable: already followed up by ${details.successorTaskId}.`;
   }
 
+  if (details.harness !== 'pi') {
+    return 'Follow-up unavailable: only Pi workers can continue; start a fresh task instead.';
+  }
+
   return `Follow-up available with source task ${details.taskId ?? 'unknown'}.`;
 };
 
@@ -480,6 +557,14 @@ const sessionRows = (details: StatusView, theme: Theme): string[] => {
   return [];
 };
 
+const requestedRows = (details: StatusView, theme: Theme): string[] => [
+  ...(details.unconfirmedChildren ?? []).map((id) => row('Child cleanup unconfirmed', id, theme)),
+  ...(details.descendantEvidence ? [row('Descendants', details.descendantEvidence, theme)] : []),
+  ...(details.questionReceipt ? [row('Question receipt', details.questionReceipt, theme)] : []),
+  ...(details.submission ? [row('Submission', details.submission, theme)] : []),
+  ...(details.nativeOutput ? [row('Native output', details.nativeOutput, theme)] : []),
+];
+
 export const expandedStatusLines = (details: StatusView, theme: Theme): string[] => {
   const label = stateLabel(details.state, details.outcome);
   const question = details.pendingQuestion;
@@ -495,6 +580,7 @@ export const expandedStatusLines = (details: StatusView, theme: Theme): string[]
     ...(details.report?.evidence ?? []).map((entry) => row('Evidence', entry, theme)),
     row('Records', shortenHome(details.directory), theme),
     ...sessionRows(details, theme),
+    ...requestedRows(details, theme),
     row('Follow-up', followUpHint(details), theme),
   ];
 };

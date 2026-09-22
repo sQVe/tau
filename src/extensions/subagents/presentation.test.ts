@@ -93,7 +93,9 @@ const expectKeys = (state: WorkerState, generic: boolean) => {
     'nativeOutput',
     'observationIssue',
     ...(generic ? ['nativeState'] : []),
-    ...(cleanup ? ['recovery', 'capacityHeld', 'unconfirmedChildren', 'descendantEvidence'] : []),
+    'unconfirmedChildren',
+    'descendantEvidence',
+    ...(cleanup ? ['recovery', 'capacityHeld'] : []),
   ];
 
   return { content, expected };
@@ -129,7 +131,7 @@ it('keeps recovery and capacity fields only for unconfirmed or unowned states', 
     const content = modelStatus(fullStatus(state, false));
     const cleanup = cleanupStates.has(state);
 
-    for (const key of ['recovery', 'capacityHeld', 'unconfirmedChildren', 'descendantEvidence']) {
+    for (const key of ['recovery', 'capacityHeld']) {
       expect(key in content).toBe(cleanup);
     }
   }
@@ -265,4 +267,18 @@ it('builds the unreadable-evidence notice without state or outcome', () => {
   );
   expect(content).not.toHaveProperty('state');
   expect(content).not.toHaveProperty('outcome');
+});
+
+it('keeps unconfirmed descendants for the model even when the parent stopped', () => {
+  const content = modelStatus({
+    ...fullStatus('stopped', false),
+    unconfirmedChildren: [{ taskId: 'child-1', directory: '/records/child-1' }],
+    descendantEvidence: 'Descendant reservation evidence unavailable.',
+  });
+
+  expect(content).toMatchObject({
+    unconfirmedChildren: [{ taskId: 'child-1' }],
+    descendantEvidence: 'Descendant reservation evidence unavailable.',
+  });
+  expect(JSON.stringify(content)).not.toContain('/records/child-1');
 });

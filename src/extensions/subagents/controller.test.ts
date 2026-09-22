@@ -16,8 +16,8 @@ import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 import { inheritedInstructions } from './admission.js';
 import * as cancellationModule from './cancellation.js';
 import {
-  WorkerController,
   EvidenceUnavailableError,
+  WorkerController,
   taskStatus,
   workerArguments,
 } from './controller.js';
@@ -1537,6 +1537,8 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
   });
   expect(recovered.status(task.taskId, 'parent-id').report?.summary).toBe('Edited fixture.');
   expect(() => recovered.status(task.taskId, 'wrong-parent')).toThrow('another parent');
+  expect(() => recovered.status(task.taskId, 'wrong-parent')).not.toThrow(EvidenceUnavailableError);
+  expect(() => recovered.status('missing-task', 'parent-id')).not.toThrow(EvidenceUnavailableError);
   await expect(recovered.cancel(task.taskId, 'parent-id')).rejects.toThrow('manual cleanup');
 });
 

@@ -388,6 +388,10 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
     'taskId',
     'task-1',
   );
+  expect((replyResult as { details: Record<string, unknown> }).details).toHaveProperty(
+    'questionId',
+    'question-1',
+  );
 
   const cancelResult = await cancelTool.execute(
     'call',

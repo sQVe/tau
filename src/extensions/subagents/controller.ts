@@ -116,6 +116,14 @@ const requireGenericReplyShape = (answer: {
   }
 };
 
+// A caller asked for a task it may not read; this is a refusal, never unreadable evidence.
+class TaskAccessError extends Error {
+  override name = 'TaskAccessError';
+}
+
+const isMissingFile = (error: unknown): boolean =>
+  error instanceof Error && 'code' in error && error.code === 'ENOENT';
+
 const deliveryFromSubmission = (
   state: 'submitted' | 'not-delivered' | 'uncertain' | undefined,
 ): 'sent' | 'notDelivered' | 'uncertain' => {
@@ -259,12 +267,11 @@ export class WorkerController {
   }
 
   status(taskId: string, parentSessionId: string) {
+    const directory = this.statusDirectory(taskId, parentSessionId);
     let handle: Handle | undefined;
     let task: Task | undefined;
-    let directory = join(this.root, taskId);
 
     try {
-      directory = this.directory(taskId, parentSessionId);
       handle = this.handles.get(taskId);
       task = handle ? handle.task : readTask(directory);
 
@@ -280,6 +287,26 @@ export class WorkerController {
       };
     } catch (error) {
       return this.statusFailure({ taskId, directory, handle, task, error });
+    }
+  }
+
+  // Refusals (bad identity, another parent, no saved task) throw as they are; only a saved task record
+  // that exists but cannot be read becomes unreadable evidence with a recovery hint.
+  private statusDirectory(taskId: string, parentSessionId: string): string {
+    try {
+      return this.directory(taskId, parentSessionId);
+    } catch (error) {
+      if (error instanceof TaskAccessError || isMissingFile(error)) {
+        throw error;
+      }
+
+      return this.statusFailure({
+        taskId,
+        directory: join(this.root, taskId),
+        handle: undefined,
+        task: undefined,
+        error,
+      });
     }
   }
 
@@ -544,14 +571,14 @@ export class WorkerController {
 
   private directory(taskId: string, parentSessionId: string): string {
     if (!/^[a-zA-Z0-9-]+$/.test(taskId)) {
-      throw new Error('Invalid task identity.');
+      throw new TaskAccessError('Invalid task identity.');
     }
 
     const directory = join(this.root, taskId);
     const task = this.handles.get(taskId)?.task ?? readTask(directory);
 
     if (task.parentSessionId !== parentSessionId) {
-      throw new Error('Task belongs to another parent session.');
+      throw new TaskAccessError('Task belongs to another parent session.');
     }
 
     return directory;

@@ -593,6 +593,68 @@ it('shortens the home directory in the expanded records and session rows', () =>
   expect(output).toContain(`~/records/${taskId}`);
 });
 
+it('keeps a sibling of the home directory unshortened', () => {
+  const subject = theme();
+  const sibling = `${homedir()}-other/records`;
+  const output = expandedStatusLines(
+    { ...statusFixture('stopped', false), directory: sibling },
+    subject,
+  ).join('\n');
+
+  expect(output).toContain(sibling);
+});
+
+it('offers follow-up only to Pi workers', () => {
+  const subject = theme();
+  const done = { successorTaskId: undefined };
+  const pi = expandedStatusLines({ ...statusFixture('stopped', false), ...done }, subject).join(
+    '\n',
+  );
+  const generic = expandedStatusLines({ ...statusFixture('stopped', true), ...done }, subject).join(
+    '\n',
+  );
+
+  expect(pi).toMatch(/Follow-up available/);
+  expect(generic).not.toMatch(/Follow-up available/);
+});
+
+it('shows requested native output and receipts on ctrl+o', () => {
+  const subject = theme();
+  const details = {
+    ...statusFixture('running', true),
+    nativeOutput: { text: 'Approve the edit? [y/n]' },
+    submissionReceipt: {
+      intent: { id: 'reply-7' },
+      observation: { state: 'not-delivered', detail: 'agent_blocked' },
+    },
+    questionReceipt: {
+      question: { questionId: 'question-9' },
+      reply: { replyId: 'r' },
+      acknowledgement: undefined,
+    },
+  };
+  const output = lines(renderStatusResult(details, true, subject)).join('\n');
+
+  expect(output).toContain('Approve the edit? [y/n]');
+  expect(output).toContain('reply-7');
+  expect(output).toContain('not-delivered');
+  expect(output).toContain('question-9');
+});
+
+it('warns about a child whose cleanup is unconfirmed even when the parent stopped', () => {
+  const subject = theme();
+  const details = {
+    ...statusFixture('stopped', false),
+    unconfirmedChildren: [{ taskId: 'child-abcdef0123', directory: records }],
+  };
+  const collapsed = lines(renderStatusResult(details, false, subject)).join('\n');
+  const expanded = lines(renderStatusResult(details, true, subject)).join('\n');
+
+  expect(collapsed).toContain('child-ab');
+  expect(collapsed).not.toContain('child-abcdef0123');
+  expect(expanded).toContain('child-abcdef0123');
+});
+
 it('renders call lines while streaming arguments are still incomplete', () => {
   const subject = theme();
   const { tools } = renderers();

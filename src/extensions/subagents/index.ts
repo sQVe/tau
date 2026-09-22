@@ -360,7 +360,7 @@ const replyToWorker = async (
 
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(content) }],
-    details: { taskId: parameters.taskId, ...receipt },
+    details: { taskId: parameters.taskId, ...receipt, ...questionId },
   };
 };
 

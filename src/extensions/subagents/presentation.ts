@@ -195,11 +195,17 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   addField(result, 'submissionReceipt', modelSubmissionReceipt(status.submissionReceipt));
   addField(result, 'nativeOutput', status.nativeOutput);
 
+  // A stopped parent can still own a child whose cleanup is unconfirmed; that child may be running
+  // and holds capacity (ADR 0031), so descendant warnings never depend on the parent's state.
+  if (status.unconfirmedChildren?.length) {
+    addField(result, 'unconfirmedChildren', modelChildren(status.unconfirmedChildren));
+  }
+
+  addField(result, 'descendantEvidence', status.descendantEvidence);
+
   if (status.state === 'cleanupUnconfirmed' || status.state === 'notOwned') {
     addField(result, 'recovery', status.recovery);
     addField(result, 'capacityHeld', status.capacityHeld);
-    addField(result, 'unconfirmedChildren', modelChildren(status.unconfirmedChildren));
-    addField(result, 'descendantEvidence', status.descendantEvidence);
   }
 
   return result;
