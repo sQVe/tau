@@ -79,8 +79,9 @@ export interface CommentReview {
   findings: CommentFinding[];
 }
 
-export const isAdvisoryFinding = (finding: CommentFinding) =>
-  finding.kind === 'missing' || finding.kind === 'unverified';
+// Only verified inaccuracies block. Policy findings are unverified style judgments that change
+// between reviews of the same code, so blocking on them makes every retry a new review.
+export const isAdvisoryFinding = (finding: CommentFinding) => finding.kind !== 'inaccurate';
 
 interface ReviewFile {
   path: string;

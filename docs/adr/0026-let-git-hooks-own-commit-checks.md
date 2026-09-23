@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-15
+- Amended by: [ADR 0038](./0038-block-commits-only-on-verified-comment-inaccuracies.md)
 
 ## Context
 

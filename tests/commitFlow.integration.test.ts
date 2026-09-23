@@ -379,10 +379,16 @@ describe('commit flow', () => {
       fauxAssistantMessage(
         JSON.stringify({
           findings: [
-            { path: 'retry.ts', line: 1, kind: 'policy', message: 'Remove the migration note.' },
+            {
+              path: 'retry.ts',
+              line: 1,
+              kind: 'inaccurate',
+              message: 'Remove the migration note.',
+            },
           ],
         }),
       ),
+      fauxAssistantMessage('{"verdict":"established","reason":"Retries are not disabled."}'),
       fauxAssistantMessage([
         fauxToolCall('commit', {
           groups: [
@@ -411,7 +417,7 @@ describe('commit flow', () => {
       false,
     ]);
 
-    expect(faux.state.callCount).toBe(5);
+    expect(faux.state.callCount).toBe(6);
     expect(overlays).toHaveLength(0);
     expect(JSON.stringify(results.at(-1))).toContain('rechecked after dispute');
     expect(JSON.stringify(results.at(-1))).toContain('temporary migration constraint');

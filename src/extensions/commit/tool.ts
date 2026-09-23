@@ -30,7 +30,7 @@ const commitToolGuidelines = [
   'The commit tool rejects NUL in messages. Body CRLF and CR become LF; other whitespace is preserved. Nonempty bodies end in LF. Tau supplies the normalized message through git commit --cleanup=verbatim -F and reports the actual stored message.',
   'Use a conventional commit subject.',
   'Do not commit sensitive files such as .env or SSH keys.',
-  'The commit tool reviews the staged tree before hooks run. Review must pass before committing. Fix blocking findings or supply commentDispute with evidence. Missing-comment suggestions are advisory. After two automatic returns for a group, remaining findings cause a refusal. Stop automatic retries and report the blocker. Evidence alone cannot reopen a refused tree; corrected trees can still pass review.',
+  'The commit tool reviews the staged tree before hooks run. Review must pass before committing. Only verified inaccurate comments block. Fix them or supply commentDispute with evidence. Policy and missing-comment findings are advisory; do not edit code only to silence them. After two automatic returns for a group, remaining findings cause a refusal. Stop automatic retries and report the blocker. Evidence alone cannot reopen a refused tree; corrected trees can still pass review.',
 ];
 
 interface CommitToolRuntime {
