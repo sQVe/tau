@@ -110,7 +110,9 @@ const fixture = async () => {
   const parent = { getAllTools: () => [], getCommands: () => [] };
   const worker = {
     getThinkingLevel: () => saved.thinking,
-    getCommands: () => [{ name: 'cc-safety-net', sourceInfo: { path: safety } }],
+    getCommands: () => [
+      { name: 'cc-safety-net', source: 'extension', sourceInfo: { path: safety } },
+    ],
     getAllTools: () => saved.tools.map((name) => ({ name })),
     setActiveTools: vi.fn<(tools: string[]) => void>(),
   } as unknown as Parameters<typeof checkWorkerRuntime>[1];

@@ -91,7 +91,9 @@ const fixture = () => {
 
     return {
       getThinkingLevel: () => loadout.thinking,
-      getCommands: () => [{ name: 'cc-safety-net', sourceInfo: { path: safety } }],
+      getCommands: () => [
+        { name: 'cc-safety-net', source: 'extension', sourceInfo: { path: safety } },
+      ],
       getAllTools: () => loadout.tools.map((name) => ({ name })),
       setActiveTools: vi.fn<(tools: string[]) => void>(),
     } as unknown as Parameters<typeof checkWorkerRuntime>[1];
@@ -130,6 +132,42 @@ it.each(['fresh launch', 'saved replay', 'worker runtime'] as const)(
     };
 
     await expect(operations[phase]()).rejects.toThrow('cannot reproduce');
+    expect(worker.setActiveTools).not.toHaveBeenCalled();
+  },
+);
+
+it.each(['missing', 'different extension', 'prompt', 'similar name'] as const)(
+  'refuses worker startup without the saved safety command: %s',
+  async (reason) => {
+    const setup = fixture();
+    setup.configure('fixture-key');
+    const context = await setup.createContext();
+    const saved = asPiLoadout(await resolveLoadout(setup.request, context, setup.parent));
+    const worker = setup.worker(saved);
+    const commands = worker.getCommands();
+    const command = commands[0]!;
+
+    if (reason === 'missing') {
+      commands.length = 0;
+    }
+
+    if (reason === 'different extension') {
+      command.sourceInfo.path = setup.directory;
+    }
+
+    if (reason === 'prompt') {
+      command.source = 'prompt';
+    }
+
+    if (reason === 'similar name') {
+      command.name = 'cc-safety-net:unverified';
+    }
+
+    worker.getCommands = () => commands;
+
+    await expect(checkWorkerRuntime(saved, worker, context)).rejects.toThrow(
+      'The saved CC Safety Net integration is not active.',
+    );
     expect(worker.setActiveTools).not.toHaveBeenCalled();
   },
 );

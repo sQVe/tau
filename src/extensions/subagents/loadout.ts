@@ -525,9 +525,17 @@ export const checkWorkerRuntime = async (
 
   requireSavedWorkerDirectory(loadout, context);
 
-  const safety = pi.getCommands().find((command) => command.name === 'cc-safety-net');
+  // Pi suffixes duplicate command names. Accept those names only with extension provenance
+  // and the exact safety extension path verified during loadout resolution.
+  const safetyActive = pi.getCommands().some((command) => {
+    if (command.source !== 'extension' || !/^cc-safety-net(?::[1-9]\d*)?$/.test(command.name)) {
+      return false;
+    }
 
-  if (!safety || realpathSync(safety.sourceInfo.path) !== loadout.safetyExtension) {
+    return realpathSync(command.sourceInfo.path) === loadout.safetyExtension;
+  });
+
+  if (!safetyActive) {
     throw new Error('The saved CC Safety Net integration is not active.');
   }
 
