@@ -2155,6 +2155,57 @@ it('waits for an in-flight start before confirming shutdown cleanup', async ({
   expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
 });
 
+it('refuses a prepared launch while shutdown is still draining workers', async ({
+  onTestFinished,
+}) => {
+  const listingEntered = Promise.withResolvers<undefined>();
+  const releaseListing = Promise.withResolvers<undefined>();
+  const cleanupEntered = Promise.withResolvers<undefined>();
+  const releaseCleanup = Promise.withResolvers<undefined>();
+  let pauseListing = false;
+  let pauseCleanup = false;
+  const fixture = setup(onTestFinished, 0, async (argumentsList) => {
+    if (pauseListing && argumentsList[0] === 'agent' && argumentsList[1] === 'list') {
+      pauseListing = false;
+      listingEntered.resolve(undefined);
+      await releaseListing.promise;
+    }
+
+    if (pauseCleanup && argumentsList[0] === 'pane' && argumentsList[1] === 'list') {
+      pauseCleanup = false;
+      cleanupEntered.resolve(undefined);
+      await releaseCleanup.promise;
+    }
+
+    return '';
+  });
+  onTestFinished(() => {
+    releaseListing.resolve(undefined);
+    releaseCleanup.resolve(undefined);
+  });
+  await fixture.controller.launch(fixture.input);
+  const recordsBefore = readdirSync(fixture.directory);
+  const panesBefore = structuredClone(fixture.fake.layout.panes);
+  pauseListing = true;
+  const launching = fixture.controller.launch(fixture.input).catch((error: unknown) => error);
+  await listingEntered.promise;
+  pauseCleanup = true;
+  const shutdown = fixture.controller.stopAll('reload');
+  await cleanupEntered.promise;
+  releaseListing.resolve(undefined);
+  const launchResult = await launching;
+  const recordsAfter = readdirSync(fixture.directory);
+  const panesAfter = structuredClone(fixture.fake.layout.panes);
+  releaseCleanup.resolve(undefined);
+  await shutdown;
+
+  expect(launchResult).toBeInstanceOf(Error);
+  expect(String(launchResult)).toContain('Parent controller stopped');
+  expect(recordsAfter).toEqual(recordsBefore);
+  expect(panesAfter).toEqual(panesBefore);
+  expect(fixture.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
+});
+
 it('stops running workers and frees their slots on reload', async ({ onTestFinished }) => {
   const fixture = setup(onTestFinished);
   fixture.fake.state.sendKeysError = '';

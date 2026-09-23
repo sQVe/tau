@@ -18,7 +18,7 @@ import type { WorkerNotice } from './presentation.js';
 import { readEvent, readReport, readTask } from './records.js';
 import * as records from './records.js';
 
-const fixture = (kind = 'codex') => {
+const fixture = (kind = 'codex', intercept?: HerdrClient) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-generic-controller-'));
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.stubEnv('TAU_WORKER_RECORD', '');
@@ -42,6 +42,14 @@ const fixture = (kind = 'codex') => {
   });
   const client: HerdrClient = async (argumentsList, budget, signal) => {
     budgets.push(budget);
+
+    if (intercept) {
+      const response = await intercept(argumentsList, budget, signal);
+
+      if (response) {
+        return response;
+      }
+    }
 
     // herdr reports no foreground group while the replacement shell starts.
     if (state.shellExitsOnStart && state.started && argumentsList[1] === 'process-info') {
@@ -117,6 +125,90 @@ const fixture = (kind = 'codex') => {
     finished: finished.promise,
   };
 };
+
+it.each(['start', 'get'])(
+  'recovers generic ownership during shutdown with a pending %s response',
+  async (pendingAction) => {
+    const entered = Promise.withResolvers<undefined>();
+    const released = Promise.withResolvers<undefined>();
+    let pause = true;
+    const setup = fixture('codex', async (argumentsList) => {
+      if (pause && argumentsList[1] === pendingAction) {
+        pause = false;
+        entered.resolve(undefined);
+        await released.promise;
+      }
+
+      return '';
+    });
+    onTestFinished(() => {
+      released.resolve(undefined);
+    });
+    vi.mocked(cancellation.runClient).mockImplementation(
+      async (_executable, argumentsList, _budget, options) => {
+        options?.signal?.throwIfAborted();
+
+        return argumentsList[1] === String(setup.state.shell)
+          ? setup.state.shellStart
+          : setup.state.processStart;
+      },
+    );
+    const launching = setup.controller.launch(setup.input);
+    await vi.advanceTimersByTimeAsync(100);
+    await entered.promise;
+    const shutdown = setup.controller.stopAll('reload');
+    released.resolve(undefined);
+    await shutdown;
+    const launched = await launching;
+
+    expect(setup.state.stopped).toBe(true);
+    expect(setup.controller.status(launched.taskId, 'parent')).toMatchObject({
+      state: 'stopped',
+      capacityHeld: false,
+    });
+    expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
+    expect(setup.calls.filter((call) => call[1] === 'prompt')).toEqual([]);
+    expect(setup.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+  },
+);
+
+it('retains a pending generic worker when shutdown cannot verify its identity', async () => {
+  const entered = Promise.withResolvers<undefined>();
+  const released = Promise.withResolvers<undefined>();
+  const setup = fixture('codex', async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
+      entered.resolve(undefined);
+      await released.promise;
+    }
+
+    return '';
+  });
+  onTestFinished(() => {
+    released.resolve(undefined);
+  });
+  const launching = setup.controller.launch(setup.input);
+  await vi.advanceTimersByTimeAsync(100);
+  await entered.promise;
+  const shutdown = setup.controller.stopAll('reload');
+  setup.state.kind = 'gemini';
+  released.resolve(undefined);
+  await shutdown;
+  const launched = await launching;
+
+  expect(setup.controller.status(launched.taskId, 'parent')).toMatchObject({
+    state: 'cleanupUnconfirmed',
+    capacityHeld: true,
+  });
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.detail).toContain(
+    'identity changed',
+  );
+  expect(setup.state.started).toBe(true);
+  expect(setup.state.stopped).toBe(false);
+  expect(setup.calls.some((call) => ['send-keys', 'close', 'prompt'].includes(call[1] ?? ''))).toBe(
+    false,
+  );
+  expect(setup.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent', 'worker-1']);
+});
 
 it('waits for the split shell before starting a native worker', async () => {
   const setup = fixture();

@@ -247,6 +247,7 @@ const checkGenericAgent = async (
   handle: Handle,
   agent: Record<string, unknown>,
   expected: { kind: string; paneId: string; shellPid: number; processId: number },
+  cleanup?: InspectionBudget,
 ) => {
   const expectedShell = handle.shell;
   const wrongAgent =
@@ -259,7 +260,7 @@ const checkGenericAgent = async (
     throw new Error('Native kind, terminal, or shell identity changed.');
   }
 
-  const shellStart = await readProcessStart(handle, expected.shellPid);
+  const shellStart = await readProcessStart(handle, expected.shellPid, cleanup);
 
   if (shellStart !== expectedShell.startedAt) {
     throw new Error('Native kind, terminal, or shell identity changed.');
@@ -368,11 +369,16 @@ const observedNativeState = (agent: Record<string, unknown>): string =>
 const verifyWorkerAgent = async (
   handle: Handle,
   agent: Record<string, unknown>,
-  generic: GenericLoadout | undefined,
   identity: { paneId: string; shellPid: number; processId: number },
+  cleanup?: InspectionBudget,
 ): Promise<{ kind: string; value: string } | undefined> => {
-  if (generic) {
-    return checkGenericAgent(handle, agent, { kind: generic.kind, ...identity });
+  if (isGenericLoadout(handle.task.loadout)) {
+    return checkGenericAgent(
+      handle,
+      agent,
+      { kind: handle.task.loadout.kind, ...identity },
+      cleanup,
+    );
   }
 
   checkAgentIdentity(
@@ -435,11 +441,16 @@ export const inspectWorker = async (
   const agent = await readAgent(call, paneId, starting);
   const processId = integer(information.foreground_process_group_id);
   const shellPid = integer(information.shell_pid);
-  const nativeReference = await verifyWorkerAgent(handle, agent, generic, {
-    paneId,
-    shellPid,
-    processId,
-  });
+  const nativeReference = await verifyWorkerAgent(
+    handle,
+    agent,
+    {
+      paneId,
+      shellPid,
+      processId,
+    },
+    cleanup,
+  );
   const startedAt = await readProcessStart(handle, processId, cleanup);
   const owned = buildOwnedWorker(handle, previous, generic, {
     paneId,

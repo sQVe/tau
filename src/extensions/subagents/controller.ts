@@ -1004,6 +1004,10 @@ export class WorkerController {
     });
     const listing = await this.readAgentListing(launchSignal, bounded);
 
+    if (this.closed) {
+      throw new Error('Parent controller stopped.');
+    }
+
     this.checkFollowUpSource(input.loadout, listing.agents, source);
     // Synchronous allocation and publication after listing coordinate launches in this process's event loop,
     // not launches in independent processes.
@@ -1377,13 +1381,13 @@ export class WorkerController {
     return failureDetail;
   }
 
-  private async recoverPiStartup(
+  private async recoverStartup(
     handle: Handle,
     call: (argumentsList: string[]) => Promise<string>,
     budget: InspectionBudget,
     record: (operation: () => void) => void,
   ): Promise<string> {
-    if (!isPiLoadout(handle.task.loadout) || handle.workerNeverStarted || handle.owned) {
+    if (handle.workerNeverStarted || handle.owned) {
       return '';
     }
 
@@ -1398,10 +1402,14 @@ export class WorkerController {
       handle.workerNeverStarted = await verifyRejectedStart(handle, call, budget);
 
       if (!handle.workerNeverStarted) {
-        handle.owned = await waitForPiIdentity(handle, call, budget);
-        record(() => {
-          publish(handle.directory, 'owned.json', handle.owned);
-        });
+        if (isPiLoadout(handle.task.loadout)) {
+          handle.owned = await waitForPiIdentity(handle, call, budget);
+          record(() => {
+            publish(handle.directory, 'owned.json', handle.owned);
+          });
+        } else {
+          handle.owned = await inspectWorker(handle, call, budget);
+        }
       }
 
       return '';
@@ -1441,7 +1449,7 @@ export class WorkerController {
       return remaining;
     };
     const call = (argumentsList: string[]) => this.client(argumentsList, remainingBudget(), signal);
-    const inspectionFailure = await this.recoverPiStartup(
+    const inspectionFailure = await this.recoverStartup(
       handle,
       call,
       { remainingBudget, signal },
@@ -1524,8 +1532,10 @@ export class WorkerController {
     this.notifySnapshot(handle);
   }
 
-  // Include tracked tasks whose start response is still pending.
+  // Freeze admission before snapshotting handles, but keep cleanup's lifetime signal active.
   async stopAll(reason: SessionShutdownEvent['reason'] = 'quit'): Promise<void> {
+    this.closed = true;
+
     for (const handle of this.handles.values()) {
       handle.shutdownReason = reason;
     }
@@ -1537,7 +1547,7 @@ export class WorkerController {
   }
 
   close(): void {
-    if (this.closed) {
+    if (this.lifetime.signal.aborted) {
       return;
     }
 
