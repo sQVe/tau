@@ -349,3 +349,38 @@ it('limits the checks joined in one condition and rejects mixed operators', asyn
   expect(diagnostics.filter((line) => line.includes('/valid.ts:'))).toEqual([]);
   expect(diagnostics.filter((line) => line.includes('/invalid.ts:'))).toHaveLength(5);
 }, 30_000);
+
+it('rejects ENOENT literals outside the errors module and tests', async ({ onTestFinished }) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-style-enoent-'));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+  const fixtures = [
+    ['valid.ts', "export const reasons = { ENOENT: 'missing' };\n"],
+    [
+      'fake.test.ts',
+      "export const missing = Object.assign(new Error('gone'), { code: 'ENOENT' });\n",
+    ],
+    [
+      'invalid.ts',
+      "export const missing = (error: { code?: string }) => error.code === 'ENOENT';\n",
+    ],
+  ];
+
+  for (const [name, source] of fixtures) {
+    await writeFile(join(directory, name!), source!);
+  }
+
+  const result = spawnSync('pnpm', ['style:check', directory], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+  const diagnostics = result.stdout
+    .split('\n')
+    .filter((line) => line.includes('no-enoent-literal'));
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toContain('/invalid.ts:');
+}, 30_000);

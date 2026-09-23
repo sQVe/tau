@@ -60,6 +60,9 @@ const isUnusedMarker = (definition: Definition, variable: Variable): boolean => 
   return definition.node.type === 'VariableDeclarator' && definition.node.id.type !== 'Identifier';
 };
 
+const isErrorsModule = (filename: string): boolean =>
+  filename.replaceAll('\\', '/').endsWith('/src/errors/index.ts');
+
 const stylePlugin: Plugin = {
   meta: { name: 'tau' },
   rules: {
@@ -154,6 +157,27 @@ const stylePlugin: Plugin = {
 
             if (count > 3) {
               context.report({ node, messageId: 'tooMany', data: { count: String(count) } });
+            }
+          },
+        };
+      },
+    },
+    'no-enoent-literal': {
+      meta: {
+        type: 'suggestion',
+        schema: [],
+        messages: { literal: "Use isMissingFile from src/errors instead of comparing 'ENOENT'." },
+      },
+      create(context) {
+        if (isErrorsModule(context.filename) || context.filename.endsWith('.test.ts')) {
+          return {};
+        }
+
+        return {
+          Literal(node) {
+            // oxlint-disable-next-line tau/no-enoent-literal -- The rule matches this literal.
+            if (node.value === 'ENOENT') {
+              context.report({ node, messageId: 'literal' });
             }
           },
         };
