@@ -110,7 +110,11 @@ const slowTests = (cwd: string, report: RunnerResult): DurationList => {
 
 const pushDurations = (lines: string[], { header, entries, limit }: DurationList) => {
   for (let shown = Math.min(entries.length, limit); shown > 0; shown -= 1) {
-    const block = header == null ? [] : [header];
+    const block: string[] = [];
+
+    if (header != null) {
+      block.push(header);
+    }
 
     block.push(...entries.slice(0, shown), ...moreLine(entries.length - shown));
 

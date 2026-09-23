@@ -243,7 +243,6 @@ const batchEntries = (entries: ReviewEntry[], sharedSize: number) => {
   return batches;
 };
 
-// Review input limits, authentication and bounded retries are checked before accepting findings.
 const withTimeout = (signal: AbortSignal | undefined) => {
   const signals = [AbortSignal.timeout(120_000)];
 
@@ -254,6 +253,7 @@ const withTimeout = (signal: AbortSignal | undefined) => {
   return AbortSignal.any(signals);
 };
 
+// Review input limits, authentication and bounded retries are checked before accepting findings.
 const reviewBatch = async (request: BatchRequest) => {
   const { context, model, input, source, signal } = request;
 
