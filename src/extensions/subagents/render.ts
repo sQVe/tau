@@ -358,6 +358,14 @@ const head = (label: StateLabel, name: string, theme: Theme): string =>
 const row = (label: string, value: string, theme: Theme): string =>
   `${theme.fg('dim', `${label}:`)} ${value}`;
 
+const optionalRow = (label: string, value: string | undefined, theme: Theme): string[] => {
+  if (value === undefined || value === '') {
+    return [];
+  }
+
+  return [row(label, value, theme)];
+};
+
 const joinParts = (parts: string[]): string => parts.join(' · ');
 
 const liveStates = new Set<WorkerState>([
@@ -425,21 +433,32 @@ const childParts = (details: StatusView): string[] => {
     : [];
 };
 
+const deadlineStates = new Set<WorkerState>(['starting', 'running', 'awaitingReply']);
+
 const lifecycleParts = (details: StatusView, state: WorkerState): string[] => {
-  return [
-    ...(state === 'reported' ? ['not stopped yet'] : []),
-    ...(state === 'starting' && details.predecessorTaskId
-      ? [`follows ${details.predecessorName ?? shortId(details.predecessorTaskId)}`]
-      : []),
-    ...(state === 'notOwned' ? ['not tracked by this session'] : []),
-    ...(['starting', 'running', 'awaitingReply'].includes(state) &&
-    typeof details.deadline === 'number'
-      ? [`deadline ${localClock(details.deadline)}`]
-      : []),
-    ...(state === 'notOwned' && details.recovery?.paneId
-      ? [`pane ${details.recovery.paneId}`]
-      : []),
-  ];
+  const parts: string[] = [];
+
+  if (state === 'reported') {
+    parts.push('not stopped yet');
+  }
+
+  if (state === 'starting' && details.predecessorTaskId) {
+    parts.push(`follows ${details.predecessorName ?? shortId(details.predecessorTaskId)}`);
+  }
+
+  if (state === 'notOwned') {
+    parts.push('not tracked by this session');
+  }
+
+  if (deadlineStates.has(state) && typeof details.deadline === 'number') {
+    parts.push(`deadline ${localClock(details.deadline)}`);
+  }
+
+  if (state === 'notOwned' && details.recovery?.paneId) {
+    parts.push(`pane ${details.recovery.paneId}`);
+  }
+
+  return parts;
 };
 
 // One hint covers every reason the collapsed line leaves to ctrl+o.
@@ -450,17 +469,24 @@ const hasHiddenReason = (details: StatusView): boolean => {
 };
 
 const statusParts = (details: StatusView): string[] => {
-  const state = details.state;
+  const parts = [basePart(details)];
 
-  return [
-    basePart(details),
-    ...(details.failure ? ['failed'] : []),
+  if (details.failure) {
+    parts.push('failed');
+  }
+
+  parts.push(
     ...assignmentDeliveryPart(details.delivery),
     ...nativeStatePart(details),
-    ...lifecycleParts(details, state),
+    ...lifecycleParts(details, details.state),
     ...childParts(details),
-    ...(hasHiddenReason(details) ? [reasonHint] : []),
-  ];
+  );
+
+  if (hasHiddenReason(details)) {
+    parts.push(reasonHint);
+  }
+
+  return parts;
 };
 
 const statusStatement = (details: StatusView, name: string, theme: Theme): string => {
@@ -533,14 +559,14 @@ const deadlineRow = (details: StatusView, theme: Theme): string[] => {
 };
 
 const identityRows = (details: StatusView, theme: Theme): string[] => [
-  ...(details.outcome ? [row('Outcome', details.outcome, theme)] : []),
-  ...(details.predecessorTaskId ? [row('Follows', details.predecessorTaskId, theme)] : []),
-  ...(details.successorTaskId ? [row('Followed up by', details.successorTaskId, theme)] : []),
-  ...(details.failure ? [row('Failure', details.failure, theme)] : []),
-  ...(details.observationIssue ? [row('Observation', details.observationIssue, theme)] : []),
-  ...(details.cleanup ? [row('Cleanup', details.cleanup, theme)] : []),
-  ...(details.nativeState ? [row('Native state', details.nativeState, theme)] : []),
-  ...(details.recovery?.paneId ? [row('Pane', details.recovery.paneId, theme)] : []),
+  ...optionalRow('Outcome', details.outcome, theme),
+  ...optionalRow('Follows', details.predecessorTaskId, theme),
+  ...optionalRow('Followed up by', details.successorTaskId, theme),
+  ...optionalRow('Failure', details.failure, theme),
+  ...optionalRow('Observation', details.observationIssue, theme),
+  ...optionalRow('Cleanup', details.cleanup, theme),
+  ...optionalRow('Native state', details.nativeState, theme),
+  ...optionalRow('Pane', details.recovery?.paneId, theme),
 ];
 
 const sessionRows = (details: StatusView, theme: Theme): string[] => {
@@ -563,10 +589,10 @@ const missingHandoffRows = (report: ReportView | undefined, theme: Theme): strin
 
 const requestedRows = (details: StatusView, theme: Theme): string[] => [
   ...(details.unconfirmedChildren ?? []).map((id) => row('Child cleanup unconfirmed', id, theme)),
-  ...(details.descendantEvidence ? [row('Descendants', details.descendantEvidence, theme)] : []),
-  ...(details.questionReceipt ? [row('Question receipt', details.questionReceipt, theme)] : []),
-  ...(details.submission ? [row('Submission', details.submission, theme)] : []),
-  ...(details.nativeOutput ? [row('Native output', details.nativeOutput, theme)] : []),
+  ...optionalRow('Descendants', details.descendantEvidence, theme),
+  ...optionalRow('Question receipt', details.questionReceipt, theme),
+  ...optionalRow('Submission', details.submission, theme),
+  ...optionalRow('Native output', details.nativeOutput, theme),
 ];
 
 export const expandedStatusLines = (details: StatusView, theme: Theme): string[] => {
@@ -576,11 +602,11 @@ export const expandedStatusLines = (details: StatusView, theme: Theme): string[]
   return [
     row('Task', details.taskId ?? 'unknown', theme),
     row('State', label.text, theme),
-    ...(question?.questionId ? [row('Question ID', question.questionId, theme)] : []),
-    ...(question?.question ? [row('Question', question.question, theme)] : []),
+    ...optionalRow('Question ID', question?.questionId, theme),
+    ...optionalRow('Question', question?.question, theme),
     ...deadlineRow(details, theme),
     ...identityRows(details, theme),
-    ...(details.report?.summary ? [row('Report', details.report.summary, theme)] : []),
+    ...optionalRow('Report', details.report?.summary, theme),
     ...(details.report?.evidence ?? []).map((entry) => row('Evidence', entry, theme)),
     ...missingHandoffRows(details.report, theme),
     row('Records', shortenHome(details.directory), theme),
@@ -712,13 +738,19 @@ export const collapsedReplyLines = (details: ReplyView, theme: Theme): string[] 
   replyStatement(details, displayName(details), theme),
 ];
 
+const acknowledgedText = (acknowledged: boolean | undefined): string | undefined => {
+  if (acknowledged === undefined) {
+    return undefined;
+  }
+
+  return acknowledged ? 'yes' : 'no';
+};
+
 export const expandedReplyLines = (details: ReplyView, theme: Theme): string[] => [
   row('Task', details.taskId ?? 'unknown', theme),
-  ...(details.questionId ? [row('Question ID', details.questionId, theme)] : []),
+  ...optionalRow('Question ID', details.questionId, theme),
   row('Delivery', details.delivery, theme),
-  ...(details.workerAcknowledged === undefined
-    ? []
-    : [row('Acknowledged', details.workerAcknowledged ? 'yes' : 'no', theme)]),
+  ...optionalRow('Acknowledged', acknowledgedText(details.workerAcknowledged), theme),
 ];
 
 export const collapsedEvidenceLines = (details: EvidenceView, theme: Theme): string[] => {
@@ -728,12 +760,16 @@ export const collapsedEvidenceLines = (details: EvidenceView, theme: Theme): str
   return [`${theme.fg('error', '!')} ${theme.bold(name)} evidence unreadable · ${pane}`];
 };
 
-export const expandedEvidenceLines = (details: EvidenceView, theme: Theme): string[] => [
-  row('Task', details.taskId ?? 'unknown', theme),
-  ...(details.paneId ? [row('Pane', details.paneId, theme)] : []),
-  row('Evidence error', details.evidenceError, theme),
-  ...(details.directory ? [row('Records', shortenHome(details.directory), theme)] : []),
-];
+export const expandedEvidenceLines = (details: EvidenceView, theme: Theme): string[] => {
+  const directory = details.directory ? shortenHome(details.directory) : undefined;
+
+  return [
+    row('Task', details.taskId ?? 'unknown', theme),
+    ...optionalRow('Pane', details.paneId, theme),
+    row('Evidence error', details.evidenceError, theme),
+    ...optionalRow('Records', directory, theme),
+  ];
+};
 
 const statusOrEvidenceLines = (
   details: unknown,

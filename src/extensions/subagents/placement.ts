@@ -341,15 +341,8 @@ export class WorkerPlacement {
   }
 
   private async create(input: PlacementInput, call: TerminalCall): Promise<TerminalLocation> {
-    const parent = terminalLocation(
-      result(
-        await call([
-          'pane',
-          'current',
-          ...(input.parentPane ? ['--pane', input.parentPane] : ['--current']),
-        ]),
-      ).pane,
-    );
+    const paneTarget = input.parentPane ? ['--pane', input.parentPane] : ['--current'];
+    const parent = terminalLocation(result(await call(['pane', 'current', ...paneTarget])).pane);
     const locations = await listTerminals(call);
 
     if (
@@ -363,9 +356,13 @@ export class WorkerPlacement {
     const backgroundTabs = locations
       .filter((pane) => this.ownsBackgroundTab(pane, parent))
       .map((pane) => pane.tabId);
-    const tabs = [
-      ...new Set([...(input.visibility === 'foreground' ? [parent.tabId] : []), ...backgroundTabs]),
-    ];
+    const candidateTabs = [...backgroundTabs];
+
+    if (input.visibility === 'foreground') {
+      candidateTabs.unshift(parent.tabId);
+    }
+
+    const tabs = [...new Set(candidateTabs)];
     const environment = input.environment.flatMap((value) => ['--env', value]);
     const options = ['--cwd', input.cwd, '--no-focus', ...environment];
     const placed = await this.placeInTabs({

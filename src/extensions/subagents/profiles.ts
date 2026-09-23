@@ -138,8 +138,11 @@ export const resolveProfile = (
   const directories = [
     fileURLToPath(new URL('./profiles/', import.meta.url)),
     join(agentDirectory, 'agents'),
-    ...(trusted ? [join(cwd, '.pi', 'agents')] : []),
   ];
+
+  if (trusted) {
+    directories.push(join(cwd, '.pi', 'agents'));
+  }
 
   for (const directory of directories) {
     if (!existsSync(directory)) {

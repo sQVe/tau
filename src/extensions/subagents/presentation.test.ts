@@ -93,11 +93,17 @@ const expectKeys = (state: WorkerState, generic: boolean) => {
     'submissionReceipt',
     'nativeOutput',
     'observationIssue',
-    ...(generic ? ['nativeState'] : []),
-    'unconfirmedChildren',
-    'descendantEvidence',
-    ...(cleanup ? ['recovery', 'capacityHeld'] : []),
   ];
+
+  if (generic) {
+    expected.push('nativeState');
+  }
+
+  expected.push('unconfirmedChildren', 'descendantEvidence');
+
+  if (cleanup) {
+    expected.push('recovery', 'capacityHeld');
+  }
 
   return { content, expected };
 };

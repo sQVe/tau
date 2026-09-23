@@ -41,10 +41,17 @@ const updateWidget = (state: SnippetsState, context: ExtensionContext): void => 
     return;
   }
 
-  context.ui.setWidget(widgetKey, [
-    ...(prepended === '' ? [] : [context.ui.theme.fg('accent', `↑ prepend: ${prepended}`)]),
-    ...(appended === '' ? [] : [context.ui.theme.fg('warning', `↓ append: ${appended}`)]),
-  ]);
+  const lines: string[] = [];
+
+  if (prepended !== '') {
+    lines.push(context.ui.theme.fg('accent', `↑ prepend: ${prepended}`));
+  }
+
+  if (appended !== '') {
+    lines.push(context.ui.theme.fg('warning', `↓ append: ${appended}`));
+  }
+
+  context.ui.setWidget(widgetKey, lines);
 };
 
 const openMenu = async (state: SnippetsState, context: ExtensionContext): Promise<void> => {

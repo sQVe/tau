@@ -144,13 +144,12 @@ export default function (pi) {
     modelsPath: null,
     refreshOnCreate: false,
   });
-  const extensions = [
-    provider,
-    safety,
-    secondSafety,
-    integration,
-    ...(scenario === 'early exit' ? [earlyExitExtension] : []),
-  ];
+  const extensions = [provider, safety, secondSafety, integration];
+
+  if (scenario === 'early exit') {
+    extensions.push(earlyExitExtension);
+  }
+
   const parentLoader = new DefaultResourceLoader({
     cwd: root,
     agentDir: environment.PI_CODING_AGENT_DIR,

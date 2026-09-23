@@ -243,6 +243,16 @@ const batchEntries = (entries: ReviewEntry[], sharedSize: number) => {
   return batches;
 };
 
+const withTimeout = (signal: AbortSignal | undefined) => {
+  const signals = [AbortSignal.timeout(120_000)];
+
+  if (signal) {
+    signals.push(signal);
+  }
+
+  return AbortSignal.any(signals);
+};
+
 // Review input limits, authentication and bounded retries are checked before accepting findings.
 const reviewBatch = async (request: BatchRequest) => {
   const { context, model, input, source, signal } = request;
@@ -466,10 +476,7 @@ const runReviewBatches = async (request: BatchRunRequest): Promise<CommentReview
       files,
       ...shared,
     });
-    const reviewSignal = AbortSignal.any([
-      ...(signal ? [signal] : []),
-      AbortSignal.timeout(120_000),
-    ]);
+    const reviewSignal = withTimeout(signal);
 
     // oxlint-disable-next-line eslint/no-await-in-loop -- Batches run one at a time on purpose.
     const review = await reviewBatch({
@@ -615,10 +622,7 @@ export const reviewComments = async (
       continue;
     }
 
-    const verifySignal = AbortSignal.any([
-      ...(signal ? [signal] : []),
-      AbortSignal.timeout(120_000),
-    ]);
+    const verifySignal = withTimeout(signal);
 
     // oxlint-disable-next-line eslint/no-await-in-loop -- Verifier calls run one at a time on purpose.
     const result = await verifyFinding(context, model, finding, content, verifySignal);

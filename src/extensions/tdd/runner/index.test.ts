@@ -138,12 +138,13 @@ describe('runTests', () => {
         failures: [{ fullname, message: 'expected 1 to be 2' }],
       });
       // V4 cannot distinguish a top-level name containing spaces from the same nested name.
-      expect('tests' in result && result.tests).toEqual([
-        { file: '/repo/value.test.ts', fullname, status: 'failed' },
-        ...(version.startsWith('4.')
-          ? [{ file: '/repo/value.test.ts', fullname, status: 'skipped' }]
-          : []),
-      ]);
+      const expected = [{ file: '/repo/value.test.ts', fullname, status: 'failed' }];
+
+      if (version.startsWith('4.')) {
+        expected.push({ file: '/repo/value.test.ts', fullname, status: 'skipped' });
+      }
+
+      expect('tests' in result && result.tests).toEqual(expected);
     },
   );
 
