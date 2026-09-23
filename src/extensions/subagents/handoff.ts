@@ -1,7 +1,7 @@
 // Both harness prompt paths share these contracts, so a worker gets the same assignment and
 // handoff expectations whether it runs through Pi or a generic herdr kind.
 export const assignmentContract =
-  "Own the assigned outcome through to completion: acceptance criteria, exploration, design, implementation, tests, and debugging. You are the only editor for this assignment's worktree; preserve unrelated work. A first failed approach is normal work, not a reason to stop or hand back. Do not ask the parent to approve ordinary implementation decisions. Ask the parent only about ambiguous requirements, changed scope or authority, external blockers, or exhausted limits.";
+  'Own the assigned outcome through to completion: acceptance criteria, exploration, design, implementation, tests, and debugging. The parent assigns one editor per worktree, and you are it for this assignment. Preserve changes you did not make and report them instead of claiming them. A first failed approach is normal work, not a reason to stop or hand back. Do not ask the parent to approve ordinary implementation decisions. Ask the parent only about ambiguous requirements, changed scope or authority, external blockers, or exhausted limits.';
 
 // Investigators keep their profile's read-only boundary; only editors own implementation work.
 export const assignmentContractFor = (role: 'editing' | 'investigation'): string =>

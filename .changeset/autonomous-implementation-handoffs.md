@@ -2,9 +2,10 @@
 'tau': minor
 ---
 
-Give editing workers the complete outcome: acceptance criteria, the assignment baseline, exclusive
-editing ownership, and the Changes, Evidence, Decisions, and Concerns handoff. Pi and generic herdr
-workers receive the same contract, while investigators keep their read-only boundary.
+Give editing workers the complete outcome: acceptance criteria, the assignment baseline, editing
+ownership of a worktree the parent gives to one editor, and the Changes, Evidence, Decisions, and
+Concerns handoff. Pi and generic herdr workers receive the same contract, while investigators keep
+their read-only boundary.
 
 Saved handoffs ask for an inspectable content reference captured at check time, such as a saved diff
 file or `git diff --stat` plus `git status --short`, including relevant untracked files and the
