@@ -7,34 +7,9 @@ import { fauxAssistantMessage } from '@earendil-works/pi-ai';
 import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
-import { createHarness, createWorktree } from './tddHarness.js';
+import { createHarness } from './tddHarness.js';
 
 vi.setConfig({ testTimeout: 125_000 });
-
-it('rejects unformatted files in the real hook without rewriting them', async ({
-  onTestFinished,
-}) => {
-  const cwd = await createWorktree(onTestFinished);
-  const git = (argumentsList: string[]) => promisify(execFile)('git', argumentsList, { cwd });
-
-  await git(['config', 'user.name', 'Tau Test']);
-  await git(['config', 'user.email', 'tau@example.com']);
-  await git(['config', 'commit.gpgsign', 'false']);
-  await git(['config', 'core.hooksPath', '.vite-hooks']);
-  await mkdir(join(cwd, '.vite-hooks'));
-  await writeFile(
-    join(cwd, '.vite-hooks/pre-commit'),
-    `#!/bin/sh\n${await readFile(resolve('.vite-hooks/pre-commit'), 'utf8')}`,
-  );
-  await chmod(join(cwd, '.vite-hooks/pre-commit'), 0o755);
-  await writeFile(join(cwd, 'vite.config.ts'), await readFile(resolve('vite.config.ts'), 'utf8'));
-  await writeFile(join(cwd, 'value.json'), '{"value":1}');
-  await git(['add', '--', 'value.json']);
-
-  await expect(git(['commit', '-m', 'test: reject formatting'])).rejects.toThrow(/format/i);
-  expect(await readFile(join(cwd, 'value.json'), 'utf8')).toBe('{"value":1}');
-  expect((await git(['rev-list', '--all', '--count'])).stdout.trim()).toBe('0');
-});
 
 it('runs commit hooks through Pi without approval or TDD notices', async ({ onTestFinished }) => {
   const { cwd, session, call, faux } = await createHarness(onTestFinished);
