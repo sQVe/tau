@@ -46,7 +46,8 @@ and repository conventions when they differ from these defaults.
 - Assign call chains and ternary expressions to named variables before using them inside arguments,
   conditions, string templates, or literals.
 - Spread a ternary only for an optional property: `...(model === undefined ? {} : { model })`.
-- Build lists with optional items in steps: `push` each in its own `if`.
+- Build lists with optional items in steps: `push` each in its own `if`, or spread a helper that
+  returns `[]` when absent.
 
 ## Comment only what the code cannot say
 
