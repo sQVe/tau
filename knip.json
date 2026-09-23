@@ -1,11 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": [
-    "src/extensions/index.ts",
-    "src/extensions/subagents/worker.ts",
-    "scripts/*.ts",
-    "tests/**/*.ts"
-  ],
+  "entry": ["src/extensions/index.ts", "scripts/*.ts"],
   "ignoreDependencies": ["pi-web-access", "@stylistic/eslint-plugin", "jiti"],
   "ignoreBinaries": ["herdr"]
 }
