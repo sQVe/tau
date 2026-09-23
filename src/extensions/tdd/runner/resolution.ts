@@ -121,8 +121,9 @@ export const resolutionFailure = (
     stage === 'lookup' && errorCode === 'MODULE_NOT_FOUND' && declaresMissingRequest(error);
   const explanation = resolutionExplanation(stage, errorType, errorCode, missing);
 
+  const errorCodeSuffix = errorCode === undefined ? '' : ` (${errorCode})`;
   const lines = [
-    `${explanation} Stage: ${stage}; ${errorType}${errorCode === undefined ? '' : ` (${errorCode})`}.`,
+    `${explanation} Stage: ${stage}; ${errorType}${errorCodeSuffix}.`,
     'Inspect this once, then fix resolution or use the repository runner. Bash tests do not update Tau observations.',
     `Lookup directory: ${resolution.cwd}; request: ${resolution.request}`,
   ];

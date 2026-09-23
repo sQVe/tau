@@ -1063,9 +1063,11 @@ export class WorkerController {
   }
 
   private buildTask(input: LaunchInput, plan: LaunchTaskPlan): Task {
+    const namePrefix = input.loadout.role === 'editing' ? 'worker' : 'investigator';
+
     return validateTask({
       version: isGenericLoadout(input.loadout) ? 2 : 1,
-      name: `${input.loadout.role === 'editing' ? 'worker' : 'investigator'}-00`,
+      name: `${namePrefix}-00`,
       taskId: plan.taskId,
       task: input.task,
       parentSession: input.parentSession,

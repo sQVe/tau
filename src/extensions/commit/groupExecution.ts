@@ -144,8 +144,10 @@ const prepareReviewState = (run: GroupRun): void => {
   }
 
   if (state.refusedTree === run.snapshot.reviewedTree) {
+    const review = state.result ? formatCommentReview(state.result) : '';
+
     throw new Error(
-      `Comment review refused for this unchanged tree:\n${state.result ? formatCommentReview(state.result) : ''}\nStop automatic retries and report the blocker. Evidence alone cannot reopen a refused tree.`,
+      `Comment review refused for this unchanged tree:\n${review}\nStop automatic retries and report the blocker. Evidence alone cannot reopen a refused tree.`,
     );
   }
 };
@@ -457,11 +459,21 @@ const buildCommitReport = async (
     storedMessage,
   );
 
+  const reportLines = [`${commitHash} ${storedSubject}`, 'Git hooks: run.'];
+
+  if (hookReport) {
+    reportLines.push(hookReport);
+  }
+
+  if (run.reviewReport) {
+    reportLines.push(`Comment review:\n${run.reviewReport}`);
+  }
+
   return {
     content: [
       {
         type: 'text',
-        text: `${commitHash} ${storedSubject}\nGit hooks: run.${hookReport ? `\n${hookReport}` : ''}${run.reviewReport ? `\nComment review:\n${run.reviewReport}` : ''}`,
+        text: reportLines.join('\n'),
       },
     ],
     details: {
@@ -506,8 +518,10 @@ const reportCommit = async (run: GroupRun, commitResult: ExecResult): Promise<Co
 
     return await buildCommitReport(run, commitHash, commitObject, messageOffset);
   } catch (error) {
+    const commitSuffix = commitHash ? `: ${commitHash}` : '';
+
     throw new Error(
-      `Git commit succeeded${commitHash ? `: ${commitHash}` : ''}. The commit was not undone.\nReporting failed: ${String(error)}\nDo not retry this group. Inspect Git history first.\n${commitResult.stdout}${commitResult.stderr}`,
+      `Git commit succeeded${commitSuffix}. The commit was not undone.\nReporting failed: ${String(error)}\nDo not retry this group. Inspect Git history first.\n${commitResult.stdout}${commitResult.stderr}`,
       { cause: error },
     );
   }

@@ -67,7 +67,8 @@ export const renderFooterLine = (
     contextColor = 'warning';
   }
 
-  const context = `${percent === null ? '?' : `${percent.toFixed(1)}%`}/${formatTokens(input.contextWindow)}`;
+  const percentText = percent === null ? '?' : `${percent.toFixed(1)}%`;
+  const context = `${percentText}/${formatTokens(input.contextWindow)}`;
 
   let model = theme.fg('muted', sanitizeText(input.modelId));
 

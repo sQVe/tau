@@ -325,18 +325,15 @@ const unparseableReportResult = (input: RunTestsInput, result: SpawnResult): Run
     return compileErrorResult(result, [], 'no parseable report from vitest');
   }
 
+  const output = result.stderr.length > 0 ? result.stderr : result.stdout;
+
   return {
     kind: 'fail',
     failures: [
       {
         file: '<runner>',
         fullname: '<parse>',
-        message: assertionMessage(
-          [
-            `unparseable vitest output: ${result.stderr.length > 0 ? result.stderr : result.stdout}`,
-          ],
-          input.cwd,
-        ),
+        message: assertionMessage([`unparseable vitest output: ${output}`], input.cwd),
       },
     ],
     tests: [],

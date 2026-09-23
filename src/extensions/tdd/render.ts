@@ -147,8 +147,9 @@ const fileFailureLines = (report: RunnerResult): string[] => {
 
 export const summarize = (cwd: string, observation: Observation): string => {
   const { report, scope, freshness } = observation;
+  const scopeLabel = scope === 'full' ? 'full suite' : 'focused';
   const lines = [
-    `${report.kind} · ${scope === 'full' ? 'full suite' : 'focused'} · ${freshness}`,
+    `${report.kind} · ${scopeLabel} · ${freshness}`,
     ...messageLines(report),
     ...testSummary(report),
     ...fileFailureLines(report),
@@ -194,7 +195,9 @@ const diagnosticFileLine = (label: string, file: DiagnosticFile): string => {
       ? `${file.savedBytes}/${file.bytes} bytes`
       : `${file.savedBytes}/${file.decodedBytes} decoded bytes; ${file.bytes} process bytes observed`;
 
-  return `${label}: ${file.path} (${size}${file.truncated ? ', truncated' : ''})`;
+  const truncation = file.truncated ? ', truncated' : '';
+
+  return `${label}: ${file.path} (${size}${truncation})`;
 };
 
 const executionLines = (
