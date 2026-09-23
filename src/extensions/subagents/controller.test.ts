@@ -41,6 +41,8 @@ vi.mock('node:fs', async (importOriginal) => {
   return { ...original, fsyncSync: vi.fn<typeof fsyncSync>(original.fsyncSync) };
 });
 
+const originalRunClient = cancellationModule.runClient;
+
 const setup = (
   onTestFinished: (callback: () => void) => void,
   readyDelay = 0,
@@ -63,13 +65,31 @@ const setup = (
   );
   const fake = herdrFake('pi');
   fake.state.shell = 100;
+  vi.spyOn(cancellationModule, 'runClient').mockImplementation(
+    (executable, argumentsList, budget, options) => {
+      if (executable === 'ps' && argumentsList[1] === '100') {
+        return Promise.resolve('fixture shell start');
+      }
+
+      return originalRunClient(executable, argumentsList, budget, options);
+    },
+  );
   // Input delivery fails in these tests, so the worker process stays alive after cancellation.
   fake.state.sendKeysError = 'Injected herdr failure; active process remains alive.';
   fake.state.promptError = 'Injected herdr failure; active process remains alive.';
   let recordDirectory = '';
   const calls: string[][] = [];
+  let startAttempted = false;
   const client: HerdrClient = async (argumentsList, budget, signal) => {
     calls.push(argumentsList);
+
+    if (argumentsList[1] === 'start') {
+      startAttempted = true;
+    }
+
+    if (argumentsList[1] === 'process-info' && !startAttempted) {
+      return fake.client(argumentsList, budget, signal);
+    }
 
     if (intercept) {
       const response = await intercept(argumentsList, budget, signal);
@@ -79,7 +99,7 @@ const setup = (
       }
     }
 
-    if (argumentsList[1] === 'split') {
+    if (argumentsList[1] === 'split' || argumentsList[1] === 'create') {
       recordDirectory =
         argumentsList
           .find((argument) => argument.startsWith('TAU_WORKER_RECORD='))
@@ -125,6 +145,217 @@ const setup = (
 
   return { directory, controller, client, fake, calls, notifications, input };
 };
+
+it.each(['missing', 'empty'] as const)(
+  'confirms rejected Pi startup with %s agent evidence',
+  async (evidence) => {
+    const fixture = setup(afterTest, -1, async (argumentsList) => {
+      if (evidence === 'empty' && argumentsList[1] === 'get') {
+        return JSON.stringify({ result: { agent: {} } });
+      }
+
+      return '';
+    });
+    fixture.fake.state.startError = 'agent_pane_busy';
+    fixture.fake.state.rejectStart = true;
+
+    const launched = await fixture.controller.launch(fixture.input);
+
+    expect(launched.state).toBe('stopped');
+    expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
+    expect(fixture.controller.children().active).toBe(0);
+    expect(fixture.calls.some((call) => call[1] === 'send-keys')).toBe(false);
+    expect(fixture.calls.filter((call) => call[1] === 'close')).toEqual([
+      ['pane', 'close', 'worker-1'],
+    ]);
+  },
+);
+
+it('does not close a rejected-start pane after its foreground changes', async ({
+  onTestFinished,
+}) => {
+  let absenceChecks = 0;
+  const fixture = setup(onTestFinished, -1, async (argumentsList) => {
+    if (argumentsList[1] === 'get') {
+      absenceChecks += 1;
+    }
+
+    if (absenceChecks > 0 && argumentsList[1] === 'process-info') {
+      return JSON.stringify({
+        result: {
+          process_info: {
+            pane_id: argumentsList[3],
+            shell_pid: 100,
+            foreground_process_group_id: process.pid,
+            foreground_processes: [{ pid: process.pid, argv: ['unrelated-job'] }],
+          },
+        },
+      });
+    }
+
+    return '';
+  });
+  fixture.fake.state.startError = 'agent_pane_busy';
+  fixture.fake.state.rejectStart = true;
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.cleanup).toContain('pane closure refused');
+  expect(launched.state).toBe('cleanupUnconfirmed');
+  expect(launched.capacityHeld).toBe(true);
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(false);
+  expect(fixture.calls.some((call) => call[1] === 'close')).toBe(false);
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toContain('worker-1');
+});
+
+it('keeps confirmed cleanup when placement fails after the rejected-start pane closes', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished, -1);
+  fixture.fake.state.startError = 'Start rejected';
+  fixture.fake.state.rejectStart = true;
+  const close = WorkerPlacement.prototype.close;
+  vi.spyOn(WorkerPlacement.prototype, 'close').mockImplementation(async function (
+    this: WorkerPlacement,
+    ...argumentsList
+  ) {
+    await close.apply(this, argumentsList);
+
+    throw new Error('Placement update failed after closure');
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('stopped');
+  expect(launched.capacityHeld).toBe(false);
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+});
+
+it.each(['fails', 'aborts', 'times out'] as const)(
+  'stops Pi when the start response %s after launch',
+  async (outcome) => {
+    const abort = new AbortController();
+    const fixture = setup(afterTest, -1);
+    const client = fixture.fake.client;
+    vi.spyOn(fixture.fake, 'client').mockImplementation(async (argumentsList, budget, signal) => {
+      try {
+        return await client(argumentsList, budget, signal);
+      } finally {
+        if (outcome === 'aborts' && argumentsList[1] === 'start') {
+          abort.abort();
+        }
+      }
+    });
+    fixture.fake.state.startError =
+      outcome === 'times out'
+        ? 'Client attempt budget expired; delivery and cleanup are unconfirmed.'
+        : 'Start response lost';
+    fixture.fake.state.sendKeysError = '';
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      if (fixture.fake.state.stopped) {
+        throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+      }
+
+      return true;
+    });
+
+    const launched = await fixture.controller.launch(fixture.input, abort.signal);
+
+    expect(launched.state).toBe('stopped');
+    expect(fixture.fake.state.stopped).toBe(true);
+    expect(fixture.controller.children().active).toBe(0);
+    expect(fixture.calls.some((call) => call[1] === 'close')).toBe(true);
+  },
+);
+
+it('requires two matching bare-shell samples after transient startup children', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  const client = fixture.fake.client;
+  let samples = 0;
+  let samplesAtStart = 0;
+  vi.spyOn(fixture.fake, 'client').mockImplementation((argumentsList, budget, signal) => {
+    if (!fixture.fake.state.started && argumentsList[1] === 'process-info') {
+      samples += 1;
+
+      if (samples === 2) {
+        fixture.fake.state.busyShellPolls = 1;
+      }
+    }
+
+    if (argumentsList[1] === 'start') {
+      samplesAtStart = samples;
+    }
+
+    return client(argumentsList, budget, signal);
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('starting');
+  expect(samplesAtStart).toBeGreaterThanOrEqual(5);
+});
+
+it('retries a structured pane-busy rejection once after proving absence', async ({
+  onTestFinished,
+}) => {
+  let attempts = 0;
+  const fixture = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
+      attempts += 1;
+
+      if (attempts === 1) {
+        throw Object.assign(new Error('Busy shell'), {
+          stderr: JSON.stringify({ error: { code: 'agent_pane_busy' } }),
+        });
+      }
+    }
+
+    return '';
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('starting');
+  expect(attempts).toBe(2);
+  expect(records.readRecord(launched.directory, 'startRetry.json')).toMatchObject({
+    taskId: launched.taskId,
+  });
+});
+
+it('does not repeat a second structured pane-busy rejection', async ({ onTestFinished }) => {
+  let attempts = 0;
+  const fixture = setup(onTestFinished, -1, async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
+      attempts += 1;
+      throw Object.assign(new Error('Busy shell'), {
+        stderr: JSON.stringify({ error: { code: 'agent_pane_busy' } }),
+      });
+    }
+
+    return '';
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(attempts).toBe(2);
+  expect(launched.state).toBe('stopped');
+  expect(fixture.controller.children().active).toBe(0);
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+});
+
+it('waits for the split shell before starting Pi', async ({ onTestFinished }) => {
+  const fixture = setup(onTestFinished);
+  fixture.fake.state.busyShellPolls = 2;
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('starting');
+  expect(fixture.fake.state.started).toBe(true);
+  expect(fixture.fake.state.busyShellPolls).toBe(0);
+});
 
 it('skips unpublished preparation debris while published attempts and claims remain exclusive', async ({
   onTestFinished,
@@ -282,6 +513,73 @@ const completed = async (intercept?: HerdrClient) => {
     sourceDirectory: status.directory,
   };
 };
+
+it('retains the follow-up claim when final absence verification fails', async () => {
+  let following = false;
+  let absenceChecks = 0;
+  const fixture = await completed(async (argumentsList) => {
+    if (!following) {
+      return '';
+    }
+
+    if (argumentsList[1] === 'get') {
+      absenceChecks += 1;
+    }
+
+    if (absenceChecks > 0 && argumentsList[1] === 'process-info') {
+      return JSON.stringify({
+        result: {
+          process_info: {
+            pane_id: argumentsList[3],
+            shell_pid: 100,
+            foreground_process_group_id: process.pid,
+            foreground_processes: [{ pid: process.pid, argv: ['unrelated-job'] }],
+          },
+        },
+      });
+    }
+
+    return '';
+  });
+  following = true;
+  fixture.fake.state.startError = 'Start rejected';
+  fixture.fake.state.rejectStart = true;
+
+  const failed = await fixture.controller.followUp(fixture.input, fixture.context);
+
+  expect(failed.state).toBe('cleanupUnconfirmed');
+  expect(failed.capacityHeld).toBe(true);
+  expect(readEvent(failed.directory, failed.taskId, 'cleanup')?.stopped).toBe(false);
+  expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(failed.taskId);
+  expect(fixture.calls.some((call) => call[1] === 'close')).toBe(false);
+  const calls = fixture.calls.length;
+  const claim = readFileSync(join(fixture.sourceDirectory, 'successor.json'));
+
+  await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+    failed.taskId,
+  );
+
+  expect(fixture.calls).toHaveLength(calls);
+  expect(readFileSync(join(fixture.sourceDirectory, 'successor.json'))).toEqual(claim);
+});
+
+it('allows follow-up retry after a rejected start and confirmed cleanup', async () => {
+  const fixture = await completed();
+  fixture.fake.state.startError = 'agent_pane_busy';
+  fixture.fake.state.rejectStart = true;
+
+  const failed = await fixture.controller.followUp(fixture.input, fixture.context);
+
+  expect(failed.state).toBe('stopped');
+  expect(records.readSuccessor(fixture.sourceDirectory)).toBeUndefined();
+  fixture.fake.state.startError = '';
+  fixture.fake.state.rejectStart = false;
+  const retried = await fixture.controller.followUp(fixture.input, fixture.context);
+
+  expect(retried.state).toBe('starting');
+  expect(retried.taskId).not.toBe(failed.taskId);
+  expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(retried.taskId);
+});
 
 it('follows up a completed native task with new identity and unchanged saved evidence', async () => {
   const fixture = await completed();
@@ -466,7 +764,7 @@ it('allows only one competing follow-up and preserves lineage across parents and
 });
 
 it.each(['cancelled', 'missing after claim', 'failed startup', 'sync uncertain'] as const)(
-  'retains a consumed native claim after %s without replay',
+  'releases a native claim after confirmed pre-start %s failure',
   async (failure) => {
     let following = false;
     const abort = new AbortController();
@@ -487,6 +785,7 @@ it.each(['cancelled', 'missing after claim', 'failed startup', 'sync uncertain']
       return '';
     });
     nativeFile = fixture.source.nativeSessionFile;
+    const nativeContents = readFileSync(nativeFile);
     following = true;
 
     if (failure === 'sync uncertain') {
@@ -498,17 +797,47 @@ it.each(['cancelled', 'missing after claim', 'failed startup', 'sync uncertain']
     }
 
     const next = await fixture.controller.followUp(fixture.input, fixture.context, abort.signal);
-    const calls = fixture.calls.length;
-
     expect(next.outcome).toBe(failure === 'cancelled' ? 'cancelled' : 'failure');
-    expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(next.taskId);
-    await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
-      next.taskId,
-    );
-    expect(fixture.calls).toHaveLength(calls);
+    expect(next.state).toBe('stopped');
+    expect(records.readSuccessor(fixture.sourceDirectory)).toBeUndefined();
     expect(records.readReport(next.directory, next.taskId)).toBeUndefined();
+    following = false;
+
+    if (failure === 'sync uncertain') {
+      vi.mocked(records.claimSuccessor).mockRestore();
+    }
+
+    const validationFailures: unknown[] = [];
+
+    if (failure === 'missing after claim') {
+      await fixture.controller.followUp(fixture.input, fixture.context).catch((error: unknown) => {
+        validationFailures.push(error);
+      });
+      writeFileSync(nativeFile, nativeContents);
+    }
+
+    expect(validationFailures).toHaveLength(failure === 'missing after claim' ? 1 : 0);
+    const retry = await fixture.controller.followUp(fixture.input, fixture.context);
+
+    expect(retry.state).toBe('starting');
+    expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(retry.taskId);
   },
 );
+
+it('retains the follow-up claim when a failed start leaves an unconfirmed worker', async () => {
+  const fixture = await completed();
+  fixture.fake.state.startError = 'Response lost after launch';
+
+  const failed = await fixture.controller.followUp(fixture.input, fixture.context);
+  const calls = fixture.calls.length;
+
+  expect(failed.state).toBe('cleanupUnconfirmed');
+  await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+    failed.taskId,
+  );
+  expect(fixture.calls).toHaveLength(calls);
+  expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(failed.taskId);
+});
 
 it('refuses known live native writers and preserves validation time in the original follow-up budget', async () => {
   let live: unknown[] = [];
@@ -840,11 +1169,12 @@ it('retains the chosen name but never retries a late live collision', async ({
     loadout: { ...input.loadout, role: 'investigation' },
   });
 
-  expect(status).toMatchObject({ name: 'investigator-xy', outcome: 'failure', capacityHeld: true });
-  expect(controller.children()).toEqual({
-    active: 0,
-    uncertain: [expect.stringContaining(status.directory)],
+  expect(status).toMatchObject({
+    name: 'investigator-xy',
+    outcome: 'failure',
+    capacityHeld: false,
   });
+  expect(controller.children()).toEqual({ active: 0, uncertain: [] });
   expect(readTask(status.directory).name).toBe('investigator-xy');
   expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(calls.some((call) => ['prompt', 'send-keys'].includes(call[1] ?? ''))).toBe(false);
@@ -1182,6 +1512,29 @@ it('refuses reply delivery when the original native worker identity changes', as
   expect(questions.readReply(launched.directory, launched.taskId, 'question-one')).toBeUndefined();
 });
 
+it('waits for Pi integration session identity before dispatch', async ({ onTestFinished }) => {
+  let missingSessionResponses = 0;
+  const fixture = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'get' && missingSessionResponses < 2) {
+      missingSessionResponses += 1;
+
+      return JSON.stringify({
+        result: { agent: { pane_id: argumentsList[2], agent: 'pi', agent_session: null } },
+      });
+    }
+
+    return '';
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('starting');
+  expect(readFileSync(join(launched.directory, 'dispatch.json'), 'utf8')).toContain(
+    launched.taskId,
+  );
+  expect(missingSessionResponses).toBe(2);
+});
+
 it("names herdr's Pi integration when a started Pi worker reports no agent session", async ({
   onTestFinished,
 }) => {
@@ -1240,13 +1593,17 @@ it.each(['confirmed', 'unconfirmed'] as const)(
       }
 
       if (argumentsList[1] === 'process-info') {
+        const stopped = cleaning && paneId === 'worker-1';
+        const shellForeground = stopped || !tokens.has(paneId);
+        const foregroundProcess = shellForeground ? 100 : process.pid;
+
         return JSON.stringify({
           result: {
             process_info: {
               pane_id: paneId,
               shell_pid: 100,
-              foreground_process_group_id: cleaning && paneId === 'worker-1' ? 100 : process.pid,
-              foreground_processes: [{ pid: process.pid, argv: ['pi', tokens.get(paneId)] }],
+              foreground_process_group_id: foregroundProcess,
+              foreground_processes: [{ pid: foregroundProcess, argv: ['pi', tokens.get(paneId)] }],
             },
           },
         });
@@ -1747,6 +2104,167 @@ it('includes prior loadout resolution in the original task deadline', async ({
   expect(controller.status(launched.taskId, 'parent-id').outcome).toBe('timeout');
 });
 
+it('waits for an in-flight start before confirming shutdown cleanup', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  const fixture = setup(onTestFinished, -1);
+  const processStart = await originalRunClient(
+    'ps',
+    ['-p', String(process.pid), '-o', 'lstart='],
+    1000,
+  );
+  vi.spyOn(cancellationModule, 'runClient').mockResolvedValue(processStart);
+  fixture.fake.state.sendKeysError = '';
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    if (fixture.fake.state.stopped) {
+      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+    }
+
+    return true;
+  });
+  const enteredStart = Promise.withResolvers<undefined>();
+  const client = fixture.fake.client;
+  vi.spyOn(fixture.fake, 'client').mockImplementation(async (argumentsList, budget, signal) => {
+    if (argumentsList[1] === 'start') {
+      enteredStart.resolve(undefined);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await client(argumentsList, budget, signal);
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      throw new Error('Start response lost after server launched Pi');
+    }
+
+    if (argumentsList[1] === 'get' && !fixture.fake.state.started) {
+      const missing = await client(argumentsList, budget, signal).catch((error: unknown) => error);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      throw missing;
+    }
+
+    return client(argumentsList, budget, signal);
+  });
+  const launching = fixture.controller.launch(fixture.input);
+  await enteredStart.promise;
+  const shutdown = fixture.controller.stopAll('reload');
+  await vi.advanceTimersByTimeAsync(100);
+  await shutdown;
+  const launched = await launching;
+
+  expect(fixture.fake.state.stopped).toBe(true);
+  expect(launched.capacityHeld).toBe(false);
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+});
+
+it('refuses a prepared launch while shutdown is still draining workers', async ({
+  onTestFinished,
+}) => {
+  const listingEntered = Promise.withResolvers<undefined>();
+  const releaseListing = Promise.withResolvers<undefined>();
+  const cleanupEntered = Promise.withResolvers<undefined>();
+  const releaseCleanup = Promise.withResolvers<undefined>();
+  let pauseListing = false;
+  let pauseCleanup = false;
+  const fixture = setup(onTestFinished, 0, async (argumentsList) => {
+    if (pauseListing && argumentsList[0] === 'agent' && argumentsList[1] === 'list') {
+      pauseListing = false;
+      listingEntered.resolve(undefined);
+      await releaseListing.promise;
+    }
+
+    if (pauseCleanup && argumentsList[0] === 'pane' && argumentsList[1] === 'list') {
+      pauseCleanup = false;
+      cleanupEntered.resolve(undefined);
+      await releaseCleanup.promise;
+    }
+
+    return '';
+  });
+  onTestFinished(() => {
+    releaseListing.resolve(undefined);
+    releaseCleanup.resolve(undefined);
+  });
+  await fixture.controller.launch(fixture.input);
+  const recordsBefore = readdirSync(fixture.directory);
+  const panesBefore = structuredClone(fixture.fake.layout.panes);
+  pauseListing = true;
+  const launching = fixture.controller.launch(fixture.input).catch((error: unknown) => error);
+  await listingEntered.promise;
+  pauseCleanup = true;
+  const shutdown = fixture.controller.stopAll('reload');
+  await cleanupEntered.promise;
+  releaseListing.resolve(undefined);
+  const launchResult = await launching;
+  const recordsAfter = readdirSync(fixture.directory);
+  const panesAfter = structuredClone(fixture.fake.layout.panes);
+  releaseCleanup.resolve(undefined);
+  await shutdown;
+
+  expect(launchResult).toBeInstanceOf(Error);
+  expect(String(launchResult)).toContain('Parent controller stopped');
+  expect(recordsAfter).toEqual(recordsBefore);
+  expect(panesAfter).toEqual(panesBefore);
+  expect(fixture.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
+});
+
+it('stops running workers and frees their slots on reload', async ({ onTestFinished }) => {
+  const fixture = setup(onTestFinished);
+  fixture.fake.state.sendKeysError = '';
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    if (fixture.fake.state.stopped) {
+      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+    }
+
+    return true;
+  });
+  const launched = await fixture.controller.launch(fixture.input);
+
+  await fixture.controller.stopAll('reload');
+
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.detail).toContain(
+    'Parent session reload',
+  );
+  expect(fixture.controller.status(launched.taskId, fixture.input.parentSessionId).state).toBe(
+    'stopped',
+  );
+  expect(fixture.controller.children()).toEqual({ active: 0, uncertain: [] });
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+  await expect(fixture.controller.launch(fixture.input)).rejects.toThrow(
+    'Parent controller stopped',
+  );
+});
+
+it('bounds reload cleanup by the remaining cancellation budget', async ({ onTestFinished }) => {
+  let cleaning = false;
+  const fixture = setup(onTestFinished, 0, async (argumentsList, _budget, signal) => {
+    if (cleaning && argumentsList[0] === 'pane' && argumentsList[1] === 'list') {
+      return new Promise<string>((_resolve, reject) => {
+        signal?.addEventListener(
+          'abort',
+          () => {
+            reject(new Error('Cleanup deadline reached'));
+          },
+          { once: true },
+        );
+      });
+    }
+
+    return '';
+  });
+  const launched = await fixture.controller.launch({ ...fixture.input, timeout: 1200 });
+  cleaning = true;
+  const began = performance.now();
+
+  await fixture.controller.stopAll('reload');
+
+  expect(performance.now() - began).toBeLessThan(1000);
+  const cleanup = readEvent(launched.directory, launched.taskId, 'cleanup');
+  expect(cleanup?.stopped).toBe(false);
+  expect(cleanup?.detail).toContain('Parent session reload');
+  expect(
+    fixture.controller.status(launched.taskId, fixture.input.parentSessionId).capacityHeld,
+  ).toBe(true);
+});
+
 it('ends enforcement on parent shutdown without claiming cleanup', async ({ onTestFinished }) => {
   vi.useFakeTimers();
   const { controller, calls, input, notifications } = setup(onTestFinished);
@@ -1846,8 +2364,14 @@ it.each([true, false])(
   'preserves uncertain launch ownership when process inspection fails with absent process %s',
   async (absent) => {
     const { controller, input, calls } = setup(afterTest, -1);
-    vi.spyOn(cancellationModule, 'runClient').mockRejectedValue(
-      new Error('Process inspection failed.'),
+    vi.spyOn(cancellationModule, 'runClient').mockImplementation(
+      async (_executable, argumentsList) => {
+        if (argumentsList[1] === '100') {
+          return 'fixture shell start';
+        }
+
+        throw new Error('Process inspection failed.');
+      },
     );
     vi.spyOn(process, 'kill').mockImplementation(() => {
       if (absent) {
@@ -2219,9 +2743,17 @@ it('carries saved recovery when a handle-free status finds corrupt report eviden
 it('waits for worker readiness after herdr readiness without a new startup budget', async ({
   onTestFinished,
 }) => {
-  vi.useFakeTimers();
-  const { controller, input, calls } = setup(onTestFinished, 100);
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  const started = Promise.withResolvers<undefined>();
+  const { controller, input, calls } = setup(onTestFinished, 100, async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
+      started.resolve(undefined);
+    }
+
+    return '';
+  });
   const launch = controller.launch(input);
+  await started.promise;
   await vi.advanceTimersByTimeAsync(150);
   const status = await launch;
 

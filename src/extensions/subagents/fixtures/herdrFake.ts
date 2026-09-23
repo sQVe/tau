@@ -45,6 +45,7 @@ const herdrError = (message: string, code?: string) =>
 export const herdrFake = (kind: string, width = 200, height = 60) => {
   const layout = placementFixture(width, height);
   const state = {
+    busyShellPolls: 0,
     started: false,
     stopped: false,
     status: 'idle',
@@ -81,6 +82,17 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
     const paneId = paneArgument(argumentsList);
     const running = hasAgent(paneId) && state.started && !state.stopped;
 
+    if (!state.started && state.busyShellPolls > 0) {
+      state.busyShellPolls -= 1;
+
+      return processInfoResponse({
+        paneId,
+        shellPid: state.shell,
+        processId: state.process,
+        argv: ['shell-startup'],
+      });
+    }
+
     return processInfoResponse({
       paneId,
       shellPid: state.shell,
@@ -93,6 +105,10 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
     list: () => JSON.stringify({ result: { type: 'agent_list', agents: [] } }),
     read: () => JSON.stringify({ result: { text: 'A bounded native question or approval.' } }),
     start: (argumentsList) => {
+      if (state.busyShellPolls > 0) {
+        throw herdrError('Shell is still starting', 'agent_pane_busy');
+      }
+
       if (state.startError) {
         state.started = !state.rejectStart;
 

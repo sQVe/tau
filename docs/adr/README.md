@@ -58,3 +58,4 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0037: Launch native workers without parent approval](./0037-launch-native-workers-without-parent-approval.md)
 - [0038: Block commits only on comment inaccuracies](./0038-block-commits-only-on-comment-inaccuracies.md)
 - [0039: Reuse reported checks and run one full suite per work state](./0039-reuse-reported-checks-and-run-one-full-suite.md)
+- [0040: Release undispatched follow-up claims after confirmed cleanup](./0040-release-undispatched-follow-up-claims-after-cleanup.md)

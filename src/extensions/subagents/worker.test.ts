@@ -11,6 +11,7 @@ import type {
 import { createEventBus } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
+import { monotonicNow } from './admission.js';
 import { assignmentContract, handoffContract } from './handoff.js';
 import { checkWorkerRuntime } from './loadout.js';
 import * as questions from './questionRecords.js';
@@ -49,7 +50,7 @@ const setup = (role: 'editing' | 'investigation' = 'investigation') => {
     tree: {
       rootSession: join(directory, 'parent.jsonl'),
       rootSessionId: 'parent',
-      monotonicDeadline: createdAt + 30_000,
+      monotonicDeadline: monotonicNow() + 30_000,
     },
     loadout: {
       harness: 'pi',
@@ -160,6 +161,68 @@ const waitingWorker = async (role: 'editing' | 'investigation' = 'investigation'
 
   return worker;
 };
+
+it('requests a missing report once before the worker settles', async () => {
+  const worker = await waitingWorker();
+
+  await worker.emit('agent_end');
+  await worker.emit('agent_end');
+
+  expect(worker.sendMessage).toHaveBeenCalledOnce();
+  expect(worker.sendMessage.mock.calls[0]?.[0].content).toContain('subagent_report');
+  expect(worker.sendMessage.mock.calls[0]?.[1]).toMatchObject({
+    triggerTurn: true,
+    deliverAs: 'followUp',
+  });
+  expect(worker.shutdown).not.toHaveBeenCalled();
+  expect(readEvent(worker.directory, 'task', 'settled')).toBeUndefined();
+  await worker.emit('agent_settled');
+  expect(worker.shutdown).toHaveBeenCalledOnce();
+});
+
+it.each(['deadline', 'parent stopped', 'question', 'reported', 'children'] as const)(
+  'does not request a report when blocked by %s',
+  async (reason) => {
+    const worker = await waitingWorker();
+
+    if (reason === 'deadline') {
+      await vi.advanceTimersByTimeAsync(28_000);
+    }
+
+    if (reason === 'parent stopped') {
+      recordEvent(worker.directory, 'task', 'stopping', 'Parent is stopping.');
+    }
+
+    if (reason === 'question') {
+      vi.stubEnv('TAU_PARENT_PROCESS', String(process.pid));
+      await worker.ask();
+    }
+
+    if (reason === 'reported') {
+      await worker.tools.get('subagent_report')!.execute(
+        'report',
+        {
+          outcome: 'success',
+          summary: 'Done.',
+          evidence: [],
+        },
+        undefined,
+        undefined,
+        worker.context,
+      );
+    }
+
+    if (reason === 'children') {
+      worker.events.on('tau:worker-children', (state: unknown) => {
+        Object.assign(state as object, { active: 1 });
+      });
+    }
+
+    await worker.emit('agent_end');
+
+    expect(worker.sendMessage).not.toHaveBeenCalled();
+  },
+);
 
 it('sends the autonomous assignment and handoff contract to a dispatched Pi editing worker', async () => {
   const worker = await waitingWorker('editing');

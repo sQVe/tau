@@ -16,6 +16,7 @@ import type {
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
+import { monotonicNow, taskEnded } from './admission.js';
 import { processExists } from './cancellation.js';
 import { checkWorkerRuntime } from './loadout.js';
 import { workerPrompt } from './profiles.js';
@@ -25,7 +26,7 @@ import {
   readReply,
   validateQuestion,
 } from './questionRecords.js';
-import { acceptReport, readEvent, readRecord, readTask, recordEvent } from './records.js';
+import { acceptReport, publish, readEvent, readRecord, readTask, recordEvent } from './records.js';
 import { textLimit } from './types.js';
 import type { Question, Report, Task } from './types.js';
 
@@ -476,6 +477,36 @@ const registerAgentStartHandler = (pi: ExtensionAPI, state: WorkerState): void =
   });
 };
 
+const registerReportReminder = (pi: ExtensionAPI, state: WorkerState): void => {
+  pi.on('agent_end', () => {
+    if (!isTaskActive(state) || state.pendingQuestion) {
+      return;
+    }
+
+    const task = state.task;
+    const expired = monotonicNow() >= task.tree.monotonicDeadline - task.cancellationBudget;
+
+    if (expired || taskEnded(state.directory, task)) {
+      return;
+    }
+
+    if (readChildren(pi).active > 0 || existsSync(join(state.directory, 'reportRequest.json'))) {
+      return;
+    }
+
+    publish(state.directory, 'reportRequest.json', { taskId: task.taskId, at: Date.now() });
+    pi.sendMessage(
+      {
+        customType: 'tau-worker-report-request',
+        content:
+          'Finish the original assignment by calling subagent_report now. Report completed work, evidence, and any remaining concerns. Do not start new work. The original scope and deadline are unchanged.',
+        display: true,
+      },
+      { deliverAs: 'followUp', triggerTurn: true },
+    );
+  });
+};
+
 const registerAgentSettledHandler = (pi: ExtensionAPI, state: WorkerState): void => {
   pi.on('agent_settled', (_event, context) => {
     if (!hasRunningTask(state) || state.pendingQuestion) {
@@ -528,5 +559,6 @@ export default function workerExtension(pi: ExtensionAPI): void {
   registerSessionShutdownHandler(pi, state);
   registerAgentStartHandler(pi, state);
   registerToolCallHandler(pi, state);
+  registerReportReminder(pi, state);
   registerAgentSettledHandler(pi, state);
 }

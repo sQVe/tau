@@ -227,9 +227,14 @@ const nestedScenario = async (waitForParentReply: boolean) => {
     return session;
   };
   const placement = placementFixture(200, 60);
+  const shellProcessId = 2_147_483_647;
   const runClient = cancellation.runClient;
   vi.spyOn(cancellation, 'runClient').mockImplementation(
     async (executable, argumentsList, budget, options) => {
+      if (executable === 'ps' && argumentsList[1] === String(shellProcessId)) {
+        return 'fixture shell start';
+      }
+
       if (executable !== 'herdr') {
         return runClient(executable, argumentsList, budget, options);
       }
@@ -264,13 +269,17 @@ const nestedScenario = async (waitForParentReply: boolean) => {
       }
 
       if (argumentsList[1] === 'process-info') {
+        const foregroundProcess = !child || childStopped ? shellProcessId : process.pid;
+
         return JSON.stringify({
           result: {
             process_info: {
               pane_id: 'worker-1',
-              shell_pid: 100,
-              foreground_process_group_id: childStopped ? 100 : process.pid,
-              foreground_processes: [{ pid: process.pid, argv: ['pi', child?.nativeSessionFile] }],
+              shell_pid: shellProcessId,
+              foreground_process_group_id: foregroundProcess,
+              foreground_processes: [
+                { pid: foregroundProcess, argv: ['pi', child?.nativeSessionFile] },
+              ],
             },
           },
         });
@@ -282,7 +291,7 @@ const nestedScenario = async (waitForParentReply: boolean) => {
   vi.spyOn(cancellation, 'workerStopped').mockImplementation(
     (information, owned) =>
       childStopped &&
-      information.foreground_process_group_id === 100 &&
+      information.foreground_process_group_id === shellProcessId &&
       owned.token === child?.nativeSessionFile,
   );
   const request = {

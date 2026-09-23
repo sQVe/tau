@@ -42,5 +42,8 @@ reply or cancellation ownership. An explicit follow-up creates new authority for
 
 ## See also
 
+- [ADR 0040: Release undispatched follow-up claims after confirmed cleanup](./0040-release-undispatched-follow-up-claims-after-cleanup.md)
+  narrows the permanent-claim rule for confirmed pre-dispatch failures.
+
 - [ADR 0028: Keep worker control in the parent](./0028-keep-worker-control-in-the-parent.md)
 - [ADR 0029: Version worker provider fingerprints](./0029-version-worker-provider-fingerprints.md)

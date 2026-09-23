@@ -22,6 +22,7 @@ import {
 import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
+import { workerArguments } from '../src/extensions/subagents/controllerInspect.js';
 import {
   integrationFingerprint,
   modelFingerprint,
@@ -212,6 +213,10 @@ it.each(['editing', 'investigation'] as const)(
     writeFileSync(join(directory, 'source.txt'), 'before\n');
     mkdirSync(join(directory, 'delete-fixture', '.git'), { recursive: true });
     writeFileSync(join(directory, 'delete-fixture', '.git', 'keep'), 'preserve');
+    const argumentsList = workerArguments(task);
+    const extensionPaths = argumentsList.flatMap((argument, index) =>
+      argument === '-e' ? [argumentsList[index + 1]!] : [],
+    );
     const loader = new DefaultResourceLoader({
       cwd: directory,
       agentDir: directory,
@@ -220,8 +225,7 @@ it.each(['editing', 'investigation'] as const)(
       noSkills: true,
       noPromptTemplates: true,
       noThemes: true,
-      additionalExtensionPaths: [safety, questionnaire],
-      extensionFactories: [workerExtension],
+      additionalExtensionPaths: extensionPaths,
     });
     await loader.reload();
     expect(loader.getExtensions().errors).toEqual([]);
@@ -254,6 +258,10 @@ it.each(['editing', 'investigation'] as const)(
       }
     });
     provider.setResponses([
+      fauxAssistantMessage([
+        fauxToolCall('bash', { command: '' }),
+        fauxToolCall('bash', { command: ' \t\n' }),
+      ]),
       fauxAssistantMessage([
         fauxToolCall('ask_user_question', {
           questions: [
@@ -292,6 +300,7 @@ it.each(['editing', 'investigation'] as const)(
         }),
         fauxToolCall('bash', { command: 'find ./delete-fixture/.git -delete' }),
       ]),
+      fauxAssistantMessage('The assigned work is complete.'),
       fauxAssistantMessage([
         fauxToolCall('subagent_report', {
           outcome: 'success',
@@ -374,6 +383,15 @@ it.each(['editing', 'investigation'] as const)(
       readFileSync(join(taskDirectory, `acknowledgement-${question.questionId}.json`), 'utf8'),
     ).toBe(acceptedAcknowledgement);
 
+    const emptyCommands = results.filter((result) => result.toolName === 'bash').slice(0, 2);
+    expect(emptyCommands).toHaveLength(2);
+
+    for (const result of emptyCommands) {
+      expect(result.isError).toBe(true);
+      expect(result.text).toContain('Empty bash command rejected');
+      expect(result.text).not.toContain('CC Safety Net');
+    }
+
     expect(readFileSync(join(directory, 'source.txt'), 'utf8')).toBe(`${expectedSource}\n`);
     expect(results.find((result) => result.text.includes('command-ok'))?.isError).toBe(false);
     expect(
@@ -391,6 +409,10 @@ it.each(['editing', 'investigation'] as const)(
     expect(readReport(taskDirectory, task.taskId)?.summary).toBe('Edited and checked the fixture.');
     expect(readEvent(taskDirectory, task.taskId, 'accepted')).toBeDefined();
     expect(readEvent(taskDirectory, task.taskId, 'settled')?.stopped).toBe(true);
+    const reportRequest = JSON.parse(
+      readFileSync(join(taskDirectory, 'reportRequest.json'), 'utf8'),
+    ) as { taskId: string };
+    expect(reportRequest.taskId).toBe(task.taskId);
     const original = readFileSync(join(taskDirectory, 'report.json'), 'utf8');
     await session.bindExtensions({});
     expect(readEvent(taskDirectory, task.taskId, 'continuationRefused')?.detail).toContain(

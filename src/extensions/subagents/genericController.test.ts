@@ -18,7 +18,7 @@ import type { WorkerNotice } from './presentation.js';
 import { readEvent, readReport, readTask } from './records.js';
 import * as records from './records.js';
 
-const fixture = (kind = 'codex') => {
+const fixture = (kind = 'codex', intercept?: HerdrClient) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-generic-controller-'));
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.stubEnv('TAU_WORKER_RECORD', '');
@@ -42,6 +42,14 @@ const fixture = (kind = 'codex') => {
   });
   const client: HerdrClient = async (argumentsList, budget, signal) => {
     budgets.push(budget);
+
+    if (intercept) {
+      const response = await intercept(argumentsList, budget, signal);
+
+      if (response) {
+        return response;
+      }
+    }
 
     // herdr reports no foreground group while the replacement shell starts.
     if (state.shellExitsOnStart && state.started && argumentsList[1] === 'process-info') {
@@ -117,6 +125,103 @@ const fixture = (kind = 'codex') => {
     finished: finished.promise,
   };
 };
+
+it.each(['start', 'get'])(
+  'recovers generic ownership during shutdown with a pending %s response',
+  async (pendingAction) => {
+    const entered = Promise.withResolvers<undefined>();
+    const released = Promise.withResolvers<undefined>();
+    let pause = true;
+    const setup = fixture('codex', async (argumentsList) => {
+      if (pause && argumentsList[1] === pendingAction) {
+        pause = false;
+        entered.resolve(undefined);
+        await released.promise;
+      }
+
+      return '';
+    });
+    onTestFinished(() => {
+      released.resolve(undefined);
+    });
+    vi.mocked(cancellation.runClient).mockImplementation(
+      async (_executable, argumentsList, _budget, options) => {
+        options?.signal?.throwIfAborted();
+
+        return argumentsList[1] === String(setup.state.shell)
+          ? setup.state.shellStart
+          : setup.state.processStart;
+      },
+    );
+    const launching = setup.controller.launch(setup.input);
+    await vi.advanceTimersByTimeAsync(100);
+    await entered.promise;
+    const shutdown = setup.controller.stopAll('reload');
+    released.resolve(undefined);
+    await shutdown;
+    const launched = await launching;
+
+    expect(setup.state.stopped).toBe(true);
+    expect(setup.controller.status(launched.taskId, 'parent')).toMatchObject({
+      state: 'stopped',
+      capacityHeld: false,
+    });
+    expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
+    expect(setup.calls.filter((call) => call[1] === 'prompt')).toEqual([]);
+    expect(setup.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+  },
+);
+
+it('retains a pending generic worker when shutdown cannot verify its identity', async () => {
+  const entered = Promise.withResolvers<undefined>();
+  const released = Promise.withResolvers<undefined>();
+  const setup = fixture('codex', async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
+      entered.resolve(undefined);
+      await released.promise;
+    }
+
+    return '';
+  });
+  onTestFinished(() => {
+    released.resolve(undefined);
+  });
+  const launching = setup.controller.launch(setup.input);
+  await vi.advanceTimersByTimeAsync(100);
+  await entered.promise;
+  const shutdown = setup.controller.stopAll('reload');
+  setup.state.kind = 'gemini';
+  released.resolve(undefined);
+  await shutdown;
+  const launched = await launching;
+
+  expect(setup.controller.status(launched.taskId, 'parent')).toMatchObject({
+    state: 'cleanupUnconfirmed',
+    capacityHeld: true,
+  });
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.detail).toContain(
+    'identity changed',
+  );
+  expect(setup.state.started).toBe(true);
+  expect(setup.state.stopped).toBe(false);
+  expect(setup.calls.some((call) => ['send-keys', 'close', 'prompt'].includes(call[1] ?? ''))).toBe(
+    false,
+  );
+  expect(setup.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent', 'worker-1']);
+});
+
+it('waits for the split shell before starting a native worker', async () => {
+  const setup = fixture();
+  setup.state.busyShellPolls = 2;
+
+  const launching = setup.controller.launch(setup.input);
+  await vi.advanceTimersByTimeAsync(600);
+  const launched = await launching;
+
+  expect(launched.state).toBe('running');
+  expect(setup.state.started).toBe(true);
+  expect(setup.state.busyShellPolls).toBe(0);
+});
 
 it.each(['claude', 'codex', 'gemini'])(
   'launches %s through herdr and accepts a complete report without Pi events',
@@ -537,15 +642,7 @@ it.each([
 it('returns uncertain startup for inspection without waiting out or resetting the deadline', async () => {
   const setup = fixture();
   setup.state.inspectionError = 'Temporary startup observation failure';
-  let outcome: unknown;
-  const launching = setup.controller.launch(setup.input).then(
-    (status) => {
-      outcome = status;
-    },
-    (error: unknown) => {
-      outcome = error;
-    },
-  );
+  const outcome = await setup.controller.launch(setup.input);
 
   await vi.advanceTimersByTimeAsync(100);
 
@@ -553,7 +650,6 @@ it('returns uncertain startup for inspection without waiting out or resetting th
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
   setup.state.inspectionError = '';
   await vi.advanceTimersByTimeAsync(1500);
-  await launching;
   expect(setup.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
 });
@@ -590,11 +686,13 @@ it.each(['unsupported kind', 'missing executable'])(
 
     expect(started).toMatchObject({ outcome: 'failure', state: 'stopped', capacityHeld: false });
     expect(started.failure).toContain('rejected');
-    expect(started.cleanup).toContain('absence evidence');
-    expect(started.cleanup).not.toContain('No worker process was ever started');
+    expect(readEvent(started.directory, started.taskId, 'cleanup')?.stopped).toBe(true);
+    expect(setup.calls.filter((call) => call[1] === 'close')).toEqual([
+      ['pane', 'close', 'worker-1'],
+    ]);
     expect(setup.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
     expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
-    expect(setup.calls.filter((call) => call[1] === 'get')).toHaveLength(1);
+    expect(setup.calls.filter((call) => call[1] === 'get')).toHaveLength(2);
   },
 );
 

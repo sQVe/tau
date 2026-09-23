@@ -1,5 +1,6 @@
 import { cancelOwnedWorker, runClient, workerStopped } from './cancellation.js';
 import type { OwnedWorker } from './cancellation.js';
+import { verifyRejectedStart } from './controllerInspect.js';
 import type { HerdrClient } from './controllerInspect.js';
 import { cleanupDetail } from './controllerRecord.js';
 import type { Handle } from './controllerTypes.js';
@@ -84,6 +85,43 @@ const closeStoppedShell = async (
   paneConfirmed.confirmed = true;
 
   return 'Owned process stopped and pane closed. Detached descendants are not covered.';
+};
+
+export const closeUnstartedPane = async (
+  request: Omit<StopOwnedWorkerRequest, 'owned' | 'client'>,
+): Promise<{ stopped: boolean; detail: string }> => {
+  const { handle, call, remainingBudget, signal, placement } = request;
+  const paneClosed = { confirmed: false };
+
+  try {
+    const location = await resolveTerminal(text(handle.terminalId), call);
+    await placement.close(
+      location,
+      call,
+      async () => {
+        const absent = await verifyRejectedStart(handle, call, { remainingBudget, signal });
+
+        if (!absent || handle.paneId !== location.paneId) {
+          throw new Error('Unstarted shell identity changed; pane closure refused.');
+        }
+
+        await call(['pane', 'close', location.paneId]);
+        paneClosed.confirmed = true;
+      },
+      signal,
+    );
+
+    return {
+      stopped: true,
+      detail: 'Worker absence confirmed; its unchanged shell pane was closed.',
+    };
+  } catch (error) {
+    const detail = paneClosed.confirmed
+      ? `Worker pane closed; placement cleanup failed: ${String(error)}`
+      : `Pane ${handle.paneId} left open: ${String(error)}`;
+
+    return { stopped: paneClosed.confirmed, detail };
+  }
 };
 
 export const stopOwnedWorker = async (

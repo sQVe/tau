@@ -39,6 +39,48 @@ export const integer = (value: unknown): number => {
   return Number(value);
 };
 
+export const isBareShell = (information: Record<string, unknown>): boolean => {
+  const processes = information.foreground_processes;
+  const shellPid = integer(information.shell_pid);
+  const shellAlone =
+    Array.isArray(processes) && processes.length === 1 && object(processes[0]).pid === shellPid;
+
+  return information.foreground_process_group_id === shellPid && shellAlone;
+};
+
+export const waitForShell = async (
+  handle: Handle,
+  paneId: string,
+  call: (argumentsList: string[]) => Promise<string>,
+): Promise<void> => {
+  let previousShell: number | undefined;
+
+  for (;;) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Shell startup polling shares the original launch budget.
+    const response = await call(['pane', 'process-info', '--pane', paneId]);
+    const information = object(result(response).process_info);
+
+    if (information.pane_id !== paneId) {
+      throw new Error('Shell pane identity changed before startup.');
+    }
+
+    if (isBareShell(information)) {
+      const shell = integer(information.shell_pid);
+
+      if (shell === previousShell) {
+        return;
+      }
+
+      previousShell = shell;
+    } else {
+      previousShell = undefined;
+    }
+
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Poll serially within the original startup budget.
+    await delay(Math.min(100, workBudget(handle)), undefined, { signal: handle.abort.signal });
+  }
+};
+
 export const processAbsent = (processId: number): boolean => {
   try {
     process.kill(processId, 0);
@@ -66,8 +108,10 @@ export const workerArguments = (task: Task): string[] => {
     task.loadout.model.slice(separator + 1),
     '--thinking',
     task.loadout.thinking,
-    // Pi keeps explicit -e entries with --no-extensions. Replay the validated set without rediscovering packages or another Tau checkout.
+    // Load the empty-command guard before the explicitly replayed integrations, including Safety Net.
     '--no-extensions',
+    '-e',
+    fileURLToPath(new URL('./workerBashGuard.ts', import.meta.url)),
     ...task.loadout.integrations.flatMap((path) => ['-e', path]),
     '-e',
     fileURLToPath(new URL('./worker.ts', import.meta.url)),
@@ -115,12 +159,21 @@ const readAgent = async (
   }
 };
 
-export const readProcessStart = async (handle: Handle, processId: number): Promise<string> => {
+export interface InspectionBudget {
+  remainingBudget: () => number;
+  signal: AbortSignal;
+}
+
+export const readProcessStart = async (
+  handle: Handle,
+  processId: number,
+  cleanup?: InspectionBudget,
+): Promise<string> => {
   const processStart = await runClient(
     'ps',
     ['-p', String(processId), '-o', 'lstart='],
-    workBudget(handle, 1000),
-    { signal: handle.abort.signal },
+    cleanup ? Math.min(1000, cleanup.remainingBudget()) : workBudget(handle, 1000),
+    { signal: cleanup?.signal ?? handle.abort.signal },
   ).catch((error: unknown) => {
     if (processAbsent(processId)) {
       throw new Error('Worker exited before readiness. No task dispatch or retry.', {
@@ -134,6 +187,13 @@ export const readProcessStart = async (handle: Handle, processId: number): Promi
   return processStart.trim();
 };
 
+class PendingPiSessionError extends Error {
+  override name = 'PendingPiSessionError';
+}
+
+const missingAgentSession = (session: unknown): boolean =>
+  session === null || session === undefined;
+
 const checkAgentIdentity = (
   agent: Record<string, unknown>,
   expected: { paneId: string; expectedSession: string },
@@ -144,6 +204,12 @@ const checkAgentIdentity = (
 
   if (!Value.Check(agentSessionSchema, session)) {
     const isPiPane = agent.agent === 'pi' || agent.agent === undefined;
+    const sessionPending = missingAgentSession(session);
+    const samePiPane = agent.agent === 'pi' && agent.pane_id === expected.paneId;
+
+    if (sessionPending && samePiPane && !unchangedShell) {
+      throw new PendingPiSessionError(missingPiIntegrationMessage);
+    }
 
     throw new Error(
       isPiPane ? missingPiIntegrationMessage : 'Started worker identity could not be established.',
@@ -181,6 +247,7 @@ const checkGenericAgent = async (
   handle: Handle,
   agent: Record<string, unknown>,
   expected: { kind: string; paneId: string; shellPid: number; processId: number },
+  cleanup?: InspectionBudget,
 ) => {
   const expectedShell = handle.shell;
   const wrongAgent =
@@ -193,7 +260,7 @@ const checkGenericAgent = async (
     throw new Error('Native kind, terminal, or shell identity changed.');
   }
 
-  const shellStart = await readProcessStart(handle, expected.shellPid);
+  const shellStart = await readProcessStart(handle, expected.shellPid, cleanup);
 
   if (shellStart !== expectedShell.startedAt) {
     throw new Error('Native kind, terminal, or shell identity changed.');
@@ -210,7 +277,7 @@ const checkGenericAgent = async (
   return reference;
 };
 
-const isAgentNotFoundError = (error: unknown): boolean => {
+export const isHerdrError = (error: unknown, code: string): boolean => {
   if (!(error instanceof Error)) {
     return false;
   }
@@ -219,7 +286,7 @@ const isAgentNotFoundError = (error: unknown): boolean => {
     try {
       const parsed = object(JSON.parse(error.stderr));
 
-      if (object(parsed.error).code === 'agent_not_found') {
+      if (object(parsed.error).code === code) {
         return true;
       }
     } catch {
@@ -227,13 +294,13 @@ const isAgentNotFoundError = (error: unknown): boolean => {
     }
   }
 
-  return 'cause' in error && isAgentNotFoundError(error.cause);
+  return 'cause' in error && isHerdrError(error.cause, code);
 };
 
-// A rejected start plus an unchanged shell and a known agent_not_found response is definite rejection evidence.
 export const verifyRejectedStart = async (
   handle: Handle,
   call: (argumentsList: string[]) => Promise<string>,
+  cleanup?: InspectionBudget,
 ): Promise<boolean> => {
   const shell = handle.shell;
 
@@ -254,8 +321,8 @@ export const verifyRejectedStart = async (
   }
 
   const changedShell =
-    integer(information.foreground_process_group_id) !== shell.processId ||
-    (await readProcessStart(handle, shell.processId)) !== shell.startedAt;
+    !isBareShell(information) ||
+    (await readProcessStart(handle, shell.processId, cleanup)) !== shell.startedAt;
 
   if (changedShell) {
     return false;
@@ -266,10 +333,11 @@ export const verifyRejectedStart = async (
       return false;
     }
   } catch (error) {
-    return isAgentNotFoundError(error);
+    return isHerdrError(error, 'agent_not_found');
   }
 
-  return false;
+  // Accept a successful empty agent object as absence evidence after checking the shell identity.
+  return true;
 };
 
 export const agentPromptArguments = (paneId: string, message: string): string[] => [
@@ -301,11 +369,16 @@ const observedNativeState = (agent: Record<string, unknown>): string =>
 const verifyWorkerAgent = async (
   handle: Handle,
   agent: Record<string, unknown>,
-  generic: GenericLoadout | undefined,
   identity: { paneId: string; shellPid: number; processId: number },
+  cleanup?: InspectionBudget,
 ): Promise<{ kind: string; value: string } | undefined> => {
-  if (generic) {
-    return checkGenericAgent(handle, agent, { kind: generic.kind, ...identity });
+  if (isGenericLoadout(handle.task.loadout)) {
+    return checkGenericAgent(
+      handle,
+      agent,
+      { kind: handle.task.loadout.kind, ...identity },
+      cleanup,
+    );
   }
 
   checkAgentIdentity(
@@ -347,6 +420,7 @@ const buildOwnedWorker = (
 export const inspectWorker = async (
   handle: Handle,
   call: (argumentsList: string[]) => Promise<string>,
+  cleanup?: InspectionBudget,
 ): Promise<OwnedWorker> => {
   const generic = isGenericLoadout(handle.task.loadout) ? handle.task.loadout : undefined;
   const location = await resolveTerminal(text(handle.terminalId), call);
@@ -367,12 +441,17 @@ export const inspectWorker = async (
   const agent = await readAgent(call, paneId, starting);
   const processId = integer(information.foreground_process_group_id);
   const shellPid = integer(information.shell_pid);
-  const nativeReference = await verifyWorkerAgent(handle, agent, generic, {
-    paneId,
-    shellPid,
-    processId,
-  });
-  const startedAt = await readProcessStart(handle, processId);
+  const nativeReference = await verifyWorkerAgent(
+    handle,
+    agent,
+    {
+      paneId,
+      shellPid,
+      processId,
+    },
+    cleanup,
+  );
+  const startedAt = await readProcessStart(handle, processId, cleanup);
   const owned = buildOwnedWorker(handle, previous, generic, {
     paneId,
     terminalId: location.terminalId,
@@ -393,6 +472,33 @@ export const inspectWorker = async (
   }
 
   return verified;
+};
+
+export const waitForPiIdentity = async (
+  handle: Handle,
+  call: (argumentsList: string[]) => Promise<string>,
+  cleanup?: InspectionBudget,
+): Promise<OwnedWorker> => {
+  for (;;) {
+    try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Only a missing Pi integration session is transient here.
+      return await inspectWorker(handle, call, cleanup);
+    } catch (error) {
+      if (!(error instanceof PendingPiSessionError)) {
+        throw error;
+      }
+
+      try {
+        const remaining = cleanup ? cleanup.remainingBudget() : workBudget(handle);
+        // oxlint-disable-next-line eslint/no-await-in-loop -- Session discovery uses the existing work or cleanup deadline.
+        await delay(Math.min(250, remaining), undefined, {
+          signal: cleanup?.signal ?? handle.abort.signal,
+        });
+      } catch {
+        throw error;
+      }
+    }
+  }
 };
 
 export const prepareTaskDirectory = (

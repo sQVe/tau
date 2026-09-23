@@ -414,7 +414,7 @@ const registerFollowUpTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_follow_up',
     label: 'Follow up completed worker',
     description:
-      'Assign a new bounded Pi task to an exact saved task ID in the current root-session tree. Eligible only when state is stopped, a report exists, and no successorTaskId. Reuses the exact Pi session and unchanged settings. Non-Pi continuation refuses; start a fresh task. One successor claim per task; no uncertain retry or age-based reclaim. Searching grants no live ownership.',
+      'Assign a new bounded Pi task to an exact saved task ID in the current root-session tree. Eligible only when state is stopped, a report exists, and no successorTaskId. Reuses the exact Pi session and unchanged settings. Non-Pi continuation refuses; start a fresh task. One active successor claim per task. Confirmed cleanup before dispatch, acceptance, or a report releases the claim for retry. No uncertain retry or age-based reclaim. Searching grants no live ownership.',
     parameters: followUpParameters,
     renderCall(parameters, theme) {
       return callText(
@@ -551,9 +551,9 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     renderNotice(message.details, options.expanded, theme),
   );
 
-  pi.on('session_shutdown', () => {
+  pi.on('session_shutdown', async (event) => {
     removeChildrenListener();
-    controller?.close();
+    await controller?.stopAll(event.reason);
     controller = undefined;
   });
 }
