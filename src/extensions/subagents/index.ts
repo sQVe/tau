@@ -551,9 +551,9 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     renderNotice(message.details, options.expanded, theme),
   );
 
-  pi.on('session_shutdown', () => {
+  pi.on('session_shutdown', async () => {
     removeChildrenListener();
-    controller?.close();
+    await controller?.stopAll();
     controller = undefined;
   });
 }
