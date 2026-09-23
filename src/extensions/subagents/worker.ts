@@ -1,4 +1,4 @@
-// Running-child settlement adapted from pi-interactive-subagents c3e8b53, subagent-done.ts. See LICENSE.
+// Running-child settlement adapted from pi-interactive-subagents c3e8b53, subagent-done.ts.
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';

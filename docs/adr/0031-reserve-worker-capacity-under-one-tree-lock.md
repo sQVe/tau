@@ -45,9 +45,8 @@ clarification. Unconfirmed cleanup remains in the handover and capacity accounti
 
 Adapt spawn-time restrictions, running-child settlement, and their test cases from
 [pi-interactive-subagents at c3e8b53](https://github.com/amosblomqvist/pi-interactive-subagents/tree/c3e8b53c0754ae5ccc19fdab5a7481ec039bc2f7).
-Retain its [MIT 2026 HazAT attribution](../../src/extensions/subagents/LICENSE). Replace
-environment-based profile allowlists and process-local counts with checked saved authority and
-atomic tree admission. Do not port restricted tool classes, self-spawn bans, or tmux control.
+Replace environment-based profile allowlists and process-local counts with checked saved authority
+and atomic tree admission. Do not port restricted tool classes, self-spawn bans, or tmux control.
 
 ## Tradeoffs
 

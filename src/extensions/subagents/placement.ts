@@ -5,7 +5,7 @@ import {
   rectangle,
   splitDirection,
 } from './foreground.js';
-// Replaces tmux.ts surface placement from pi-interactive-subagents c3e8b53. See LICENSE for its MIT notice.
+// Replaces tmux.ts surface placement from pi-interactive-subagents c3e8b53.
 import {
   listTerminals,
   object,
