@@ -382,6 +382,18 @@ it('caps each herdr call while polling a long-running generic worker', async () 
   expect(Math.max(...setup.budgets)).toBeLessThanOrEqual(30_000);
 });
 
+it('reports a startup inspection failure instead of an undetected agent', async () => {
+  const setup = fixture();
+  setup.state.inspectionError = 'herdr socket closed';
+
+  const started = await setup.controller.launch(setup.input);
+  await vi.advanceTimersByTimeAsync(30_000);
+  const failure = JSON.stringify(setup.controller.status(started.taskId, 'parent'));
+
+  expect(failure).toContain('herdr socket closed');
+  expect(failure).not.toContain('not been detected');
+});
+
 it('retains ownership through transient inspection and partial reports without unsafe input', async () => {
   const setup = fixture();
   const started = await setup.controller.launch(setup.input);
