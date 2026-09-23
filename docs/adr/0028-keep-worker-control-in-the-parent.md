@@ -27,9 +27,8 @@ deadline.
 
 Adapt profile discovery and fresh lineage-only session seeding from
 [pi-interactive-subagents at c3e8b53](https://github.com/amosblomqvist/pi-interactive-subagents/tree/c3e8b53c0754ae5ccc19fdab5a7481ec039bc2f7).
-Keep its [MIT notice](../../src/extensions/subagents/LICENSE). Replace tmux orchestration and
-transient completion signals with herdr identity checks and validated, non-replacing records. Do not
-port native continuation or restricted extension startup.
+Replace tmux orchestration and transient completion signals with herdr identity checks and
+validated, non-replacing records. Do not port native continuation or restricted extension startup.
 
 ### Foreground placement
 

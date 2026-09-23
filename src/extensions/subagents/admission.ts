@@ -1,4 +1,4 @@
-// Spawn restrictions and child accounting adapted from pi-interactive-subagents c3e8b53. See LICENSE.
+// Spawn restrictions and child accounting adapted from pi-interactive-subagents c3e8b53.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, rmdirSync } from 'node:fs';
 import { join } from 'node:path';
