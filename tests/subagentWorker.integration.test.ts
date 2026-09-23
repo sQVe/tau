@@ -292,6 +292,7 @@ it.each(['editing', 'investigation'] as const)(
         }),
         fauxToolCall('bash', { command: 'find ./delete-fixture/.git -delete' }),
       ]),
+      fauxAssistantMessage('The assigned work is complete.'),
       fauxAssistantMessage([
         fauxToolCall('subagent_report', {
           outcome: 'success',
@@ -391,6 +392,10 @@ it.each(['editing', 'investigation'] as const)(
     expect(readReport(taskDirectory, task.taskId)?.summary).toBe('Edited and checked the fixture.');
     expect(readEvent(taskDirectory, task.taskId, 'accepted')).toBeDefined();
     expect(readEvent(taskDirectory, task.taskId, 'settled')?.stopped).toBe(true);
+    const reportRequest = JSON.parse(
+      readFileSync(join(taskDirectory, 'reportRequest.json'), 'utf8'),
+    ) as { taskId: string };
+    expect(reportRequest.taskId).toBe(task.taskId);
     const original = readFileSync(join(taskDirectory, 'report.json'), 'utf8');
     await session.bindExtensions({});
     expect(readEvent(taskDirectory, task.taskId, 'continuationRefused')?.detail).toContain(
