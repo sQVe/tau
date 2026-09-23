@@ -25,8 +25,8 @@ export const buildPayload = (files: { path: string; content: string }[]): string
 
 export const stripLinePrefixes = (text: string): string => text.replace(/^\d+→/gm, '');
 
-const inputError = (message: string) =>
-  Object.assign(new Error(message), { name: bulkReadInputError });
+const inputError = (message: string, cause?: unknown) =>
+  Object.assign(new Error(message, { cause }), { name: bulkReadInputError });
 
 const loadPayload = async (
   cwd: string,
@@ -47,7 +47,7 @@ const loadPayload = async (
     // The per-file cap is measured before reading, so one oversized file never allocates its content.
     // oxlint-disable-next-line eslint/no-await-in-loop -- Validate each file before reading it and stop at the first invalid input.
     const stats = await stat(absolutePath).catch((error: unknown) => {
-      throw inputError(errorMessage(error));
+      throw inputError(errorMessage(error), error);
     });
 
     // A FIFO reports size 0 and then blocks the read until a writer appears, past every timeout.
@@ -63,7 +63,7 @@ const loadPayload = async (
 
     // oxlint-disable-next-line eslint/no-await-in-loop -- Serial reads preserve request order and stop at the first invalid input.
     const content = await readFile(absolutePath, 'utf8').catch((error: unknown) => {
-      throw inputError(errorMessage(error));
+      throw inputError(errorMessage(error), error);
     });
 
     if (content.includes('\0')) {
