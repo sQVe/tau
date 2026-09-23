@@ -126,6 +126,9 @@ export default function (pi) {
     'pi',
     'index.js',
   );
+  // A second entry point simulates duplicate package registration without disabling either handler.
+  const secondSafety = join(root, 'second-safety.mjs');
+  writeFileSync(secondSafety, `export { default } from ${JSON.stringify(safety)};`);
   const provider = fileURLToPath(
     new URL('../src/extensions/subagents/fixtures/controlledProvider.ts', import.meta.url),
   );
@@ -144,6 +147,7 @@ export default function (pi) {
   const extensions = [
     provider,
     safety,
+    secondSafety,
     integration,
     ...(scenario === 'early exit' ? [earlyExitExtension] : []),
   ];
