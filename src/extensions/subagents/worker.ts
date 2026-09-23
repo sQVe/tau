@@ -34,6 +34,14 @@ const reportParameters = Type.Object({
   outcome: StringEnum(['success', 'failure', 'incomplete']),
   summary: Type.String({ minLength: 1, maxLength: 32_000 }),
   evidence: Type.Array(Type.String({ minLength: 1, maxLength: 32_000 }), { maxItems: 100 }),
+  blocker: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 4000,
+      description:
+        'Required for incomplete: the external dependency, exhausted limit, or parent decision that stops you.',
+    }),
+  ),
 });
 
 type ReportInput = Static<typeof reportParameters>;
@@ -43,6 +51,8 @@ interface WorkerState {
   task: Task | undefined;
   accepted: boolean;
   reported: boolean;
+  incompleteRefused: boolean;
+  remindAfterRefusal: boolean;
   settled: boolean;
   kickoff: ReturnType<typeof setInterval> | undefined;
   pendingQuestion: Question | undefined;
@@ -237,6 +247,43 @@ const keepEvidence = (evidence: string[], note: string): string[] => {
   return [...kept, `${marker}${note}`.slice(0, textLimit)];
 };
 
+const remainingWork = (task: Task): number =>
+  task.tree.monotonicDeadline - task.cancellationBudget - monotonicNow();
+
+// Refuse once so an early handback costs a named blocker, but never so late that the report is lost.
+const refuseEarlyIncomplete = (state: WorkerState, task: Task, blocker: string | undefined) => {
+  if (blocker === undefined || blocker.trim() === '') {
+    state.remindAfterRefusal = true;
+    throw new Error(
+      'An incomplete report needs a blocker: the external dependency, exhausted limit, or parent decision that stops you. Without one, finish the work or report failure.',
+    );
+  }
+
+  const remaining = remainingWork(task);
+  const window = task.deadline - task.createdAt;
+
+  if (state.incompleteRefused || remaining < Math.max(0.2 * window, 300_000)) {
+    return;
+  }
+
+  state.incompleteRefused = true;
+  state.remindAfterRefusal = true;
+  throw new Error(
+    `Report refused: ${Math.floor(remaining / 60_000)} minutes remain. Finish the remaining assigned work. Report incomplete only when a concrete blocker stops you.`,
+  );
+};
+
+// Concerns come last and matter most, so trim the blocker first and cut the summary only to fit a short one.
+const withBlocker = (summary: string, blocker: string | undefined): string => {
+  if (blocker === undefined) {
+    return summary;
+  }
+
+  const room = Math.max(200, textLimit - summary.length - 'Blocker: \n\n'.length);
+
+  return `Blocker: ${blocker.slice(0, room)}\n\n${summary}`.slice(0, textLimit);
+};
+
 const reportToParent = (
   state: WorkerState,
   parameters: ReportInput,
@@ -255,12 +302,18 @@ const reportToParent = (
   }
 
   const task = state.task;
+  const { blocker, ...handover } = parameters;
+
+  if (handover.outcome === 'incomplete') {
+    refuseEarlyIncomplete(state, task, blocker);
+  }
 
   // A full summary must never cost the worker its handover.
   const note = descendants.uncertain.join('\n');
   const report = acceptReport(state.directory, task.taskId, {
-    ...parameters,
-    evidence: keepEvidence(parameters.evidence, note),
+    ...handover,
+    summary: withBlocker(handover.summary, handover.outcome === 'incomplete' ? blocker : undefined),
+    evidence: keepEvidence(handover.evidence, note),
     taskId: task.taskId,
   });
   state.reported = true;
@@ -429,7 +482,7 @@ const registerReportTool = (pi: ExtensionAPI, state: WorkerState): void => {
     name: 'subagent_report',
     label: 'Worker report',
     description:
-      'Submit the final durable handoff once. Put the Changes, Evidence, Decisions, and Concerns sections in summary; evidence holds references, not the Evidence section. Receipt does not prove correctness or stopped work. Do not retry uncertain delivery.',
+      'Submit the final durable handoff once. Put the Changes, Evidence, Decisions, and Concerns sections in summary; evidence holds references, not the Evidence section. Outcome incomplete requires blocker. Receipt does not prove correctness or stopped work. Do not retry uncertain delivery.',
     parameters: reportParameters,
     execute(...argumentsList) {
       return reportToParent(state, argumentsList[1], pi);
@@ -475,22 +528,30 @@ const registerReportReminder = (pi: ExtensionAPI, state: WorkerState): void => {
     }
 
     const task = state.task;
-    const expired = monotonicNow() >= task.tree.monotonicDeadline - task.cancellationBudget;
 
-    if (expired || taskEnded(state.directory, task)) {
+    if (remainingWork(task) <= 0 || taskEnded(state.directory, task)) {
       return;
     }
 
-    if (readChildren(pi).active > 0 || existsSync(join(state.directory, 'reportRequest.json'))) {
+    const requested = existsSync(join(state.directory, 'reportRequest.json'));
+    // A refused report earns one more reminder; otherwise the worker could settle with no report.
+    const alreadyReminded = requested && !state.remindAfterRefusal;
+
+    if (readChildren(pi).active > 0 || alreadyReminded) {
       return;
     }
 
-    publish(state.directory, 'reportRequest.json', { taskId: task.taskId, at: Date.now() });
+    state.remindAfterRefusal = false;
+
+    if (!requested) {
+      publish(state.directory, 'reportRequest.json', { taskId: task.taskId, at: Date.now() });
+    }
+
     pi.sendMessage(
       {
         customType: 'tau-worker-report-request',
         content:
-          'Finish the original assignment by calling subagent_report now. Report completed work, evidence, and any remaining concerns. Do not start new work. The original scope and deadline are unchanged.',
+          'Your turn ended without subagent_report. Finish the assigned work, then call subagent_report. Report incomplete only with a concrete blocker. Do not expand the original scope; the deadline is unchanged.',
         display: true,
       },
       { deliverAs: 'followUp', triggerTurn: true },
@@ -532,6 +593,8 @@ export default function workerExtension(pi: ExtensionAPI): void {
     task: undefined,
     accepted: false,
     reported: false,
+    incompleteRefused: false,
+    remindAfterRefusal: false,
     settled: false,
     kickoff: undefined,
     pendingQuestion: undefined,

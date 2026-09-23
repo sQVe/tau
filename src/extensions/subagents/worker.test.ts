@@ -23,7 +23,7 @@ vi.mock('./loadout.js', () => ({
   checkWorkerRuntime: vi.fn<typeof checkWorkerRuntime>().mockResolvedValue(undefined),
 }));
 
-const setup = (role: 'editing' | 'investigation' = 'investigation') => {
+const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_000) => {
   vi.useFakeTimers();
   const directory = mkdtempSync(join(tmpdir(), 'tau-worker-clock-'));
   onTestFinished(() => {
@@ -45,12 +45,12 @@ const setup = (role: 'editing' | 'investigation' = 'investigation') => {
     nativeSessionId: 'native',
     nativeSessionFile: join(directory, 'native.jsonl'),
     createdAt,
-    deadline: createdAt + 30_000,
+    deadline: createdAt + window,
     cancellationBudget: 2000,
     tree: {
       rootSession: join(directory, 'parent.jsonl'),
       rootSessionId: 'parent',
-      monotonicDeadline: monotonicNow() + 30_000,
+      monotonicDeadline: monotonicNow() + window,
     },
     loadout: {
       harness: 'pi',
@@ -152,8 +152,11 @@ it.each(['before readiness', 'before dispatch', 'before tool call'])(
   },
 );
 
-const waitingWorker = async (role: 'editing' | 'investigation' = 'investigation') => {
-  const worker = setup(role);
+const waitingWorker = async (
+  role: 'editing' | 'investigation' = 'investigation',
+  window = 30_000,
+) => {
+  const worker = setup(role, window);
   await worker.emit('session_start');
   publish(worker.directory, 'dispatch.json', { taskId: 'task' });
   await vi.advanceTimersByTimeAsync(50);
@@ -296,6 +299,7 @@ it('refuses reports for active children but includes uncertain cleanup in the fi
       'report',
       {
         outcome: 'incomplete',
+        blocker: 'The parent must choose the storage format.',
         summary: 'Task ended.'.padEnd(textLimit, '.'),
         evidence: Array.from({ length: 100 }, (_value, index) => `Checked ${index}.`),
       },
@@ -350,6 +354,144 @@ it('saves the handoff sections and work reference from a Pi report', async () =>
   expect(saved?.summary).toBe(summary);
   expect(saved?.evidence).toEqual(evidence);
   await worker.emit('session_shutdown');
+});
+
+const hour = 3_600_000;
+
+const reportIncomplete = (worker: Awaited<ReturnType<typeof waitingWorker>>, blocker?: string) => {
+  const report = worker.tools.get('subagent_report');
+
+  if (!report) {
+    throw new Error('Missing report tool.');
+  }
+
+  return report.execute(
+    'report',
+    {
+      outcome: 'incomplete',
+      summary: 'Implementation done. Regression tests remain.',
+      evidence: [],
+      ...(blocker === undefined ? {} : { blocker }),
+    },
+    undefined,
+    undefined,
+    worker.context,
+  );
+};
+
+it('refuses an incomplete report without a blocker', async () => {
+  const worker = await waitingWorker('editing');
+
+  expect(() => reportIncomplete(worker)).toThrow('blocker');
+  expect(readReport(worker.directory, 'task')).toBeUndefined();
+});
+
+it('refuses an incomplete report with a blank blocker', async () => {
+  const worker = await waitingWorker('editing');
+
+  expect(() => reportIncomplete(worker, ' ')).toThrow('blocker');
+  expect(readReport(worker.directory, 'task')).toBeUndefined();
+});
+
+it('refuses the first incomplete report while meaningful time remains', async () => {
+  const worker = await waitingWorker('editing', hour);
+
+  expect(() => reportIncomplete(worker, 'Tests remain.')).toThrow('minutes remain');
+  expect(readReport(worker.directory, 'task')).toBeUndefined();
+
+  await reportIncomplete(worker, 'The parent must choose the storage format.');
+
+  expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
+  expect(readReport(worker.directory, 'task')?.summary).toContain(
+    'The parent must choose the storage format.',
+  );
+});
+
+it('refuses the first incomplete report just above the time bar', async () => {
+  const worker = await waitingWorker('editing', hour);
+  await vi.advanceTimersByTimeAsync(47 * 60_000);
+
+  expect(() => reportIncomplete(worker, 'Tests remain.')).toThrow('minutes remain');
+  expect(readReport(worker.directory, 'task')).toBeUndefined();
+});
+
+it('accepts the first incomplete report just below the time bar', async () => {
+  const worker = await waitingWorker('editing', hour);
+  await vi.advanceTimersByTimeAsync(49 * 60_000);
+
+  await reportIncomplete(worker, 'The parent must choose the storage format.');
+
+  expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
+});
+
+it('reminds a refused worker to report even after an earlier reminder', async () => {
+  const worker = await waitingWorker('editing', hour);
+  await worker.emit('agent_end');
+  expect(() => reportIncomplete(worker, 'Tests remain.')).toThrow('minutes remain');
+
+  await worker.emit('agent_end');
+  await worker.emit('agent_end');
+
+  expect(worker.sendMessage).toHaveBeenCalledTimes(2);
+  expect(worker.shutdown).not.toHaveBeenCalled();
+});
+
+it('reminds a worker refused for a missing blocker even after an earlier reminder', async () => {
+  const worker = await waitingWorker('editing', hour);
+  await worker.emit('agent_end');
+  expect(() => reportIncomplete(worker)).toThrow('blocker');
+
+  await worker.emit('agent_end');
+
+  expect(worker.sendMessage).toHaveBeenCalledTimes(2);
+});
+
+it('keeps the blocker when the summary is at the size limit', async () => {
+  const worker = await waitingWorker('editing');
+  const report = worker.tools.get('subagent_report');
+
+  if (!report) {
+    throw new Error('Missing report tool.');
+  }
+
+  await report.execute(
+    'report',
+    {
+      outcome: 'incomplete',
+      summary: 'Task ended.'.padEnd(textLimit, '.'),
+      evidence: [],
+      blocker: 'The parent must choose the storage format.',
+    },
+    undefined,
+    undefined,
+    worker.context,
+  );
+
+  const summary = readReport(worker.directory, 'task')?.summary;
+  expect(summary).toHaveLength(textLimit);
+  expect(summary).toContain('Blocker: The parent must choose the storage format.\n\nTask ended.');
+});
+
+it('accepts a success report after refusing an incomplete one', async () => {
+  const worker = await waitingWorker('editing', hour);
+  expect(() => reportIncomplete(worker, 'Tests remain.')).toThrow('minutes remain');
+
+  const report = worker.tools.get('subagent_report');
+
+  if (!report) {
+    throw new Error('Missing report tool.');
+  }
+
+  await report.execute(
+    'report',
+    { outcome: 'success', summary: 'All done.', evidence: [], blocker: 'None.' },
+    undefined,
+    undefined,
+    worker.context,
+  );
+
+  expect(readReport(worker.directory, 'task')?.outcome).toBe('success');
+  expect(readReport(worker.directory, 'task')?.summary).toBe('All done.');
 });
 
 it('forwards child notice details to the worker session', async () => {
