@@ -35,7 +35,7 @@ export interface ReviewState {
 
 export type Reviews = Map<string, ReviewState>;
 
-export interface ReviewSnapshot {
+interface ReviewSnapshot {
   tree: string;
   head: string | null;
   dispute?: string;

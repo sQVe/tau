@@ -106,7 +106,7 @@ export const contains = (outer: Record<string, unknown>, inner: Record<string, u
   containsHorizontally(outer, inner) && containsVertically(outer, inner);
 
 // Compare ordered child membership and ratios, not split paths or rectangles that change on sibling collapse.
-export const topologyAfterRemoval = (layout: Record<string, unknown>, removed?: string): string[] =>
+const topologyAfterRemoval = (layout: Record<string, unknown>, removed?: string): string[] =>
   splits(layout)
     .flatMap((split) => {
       const bounds = object(split.rect);

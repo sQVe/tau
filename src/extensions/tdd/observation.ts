@@ -8,7 +8,7 @@ import { finishDiagnostics } from './runner/retention.js';
 import type { RunDiagnostics, RunnerResult } from './runner/types.js';
 import type { Behavior } from './types.js';
 
-export type Freshness = 'fresh' | 'stale' | 'unknown';
+type Freshness = 'fresh' | 'stale' | 'unknown';
 
 const testNames = (behavior: Behavior) =>
   Array.isArray(behavior.testFullName) ? behavior.testFullName : [behavior.testFullName];

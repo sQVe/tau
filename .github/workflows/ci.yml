@@ -28,6 +28,7 @@ jobs:
       - run: pnpm format:check
       - run: pnpm style:check
       - run: pnpm typecheck
+      - run: pnpm knip
 
   test:
     name: Test

@@ -3,7 +3,7 @@ import { posix } from 'node:path';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
-export const conventionalCommitSubjectPattern =
+const conventionalCommitSubjectPattern =
   /^(feat|fix|chore|refactor|docs|test|style|perf|build|ci|revert)(\([a-z0-9-]+\))?!?: [^\r\n]+$/;
 
 export const sensitivePathDenylist = [

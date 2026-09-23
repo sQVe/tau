@@ -27,7 +27,7 @@ const sharedLoadout = {
   safetyExtension: text,
   instructions: text,
 };
-export const piLoadoutSchema = Type.Object(
+const piLoadoutSchema = Type.Object(
   {
     ...sharedLoadout,
     harness: Type.Literal('pi'),
@@ -58,7 +58,7 @@ export const genericLoadoutSchema = Type.Object(
   { additionalProperties: false },
 );
 export const loadoutSchema = Type.Union([piLoadoutSchema, genericLoadoutSchema]);
-export const treeSchema = Type.Object(
+const treeSchema = Type.Object(
   {
     rootSession: text,
     rootSessionId: text,
