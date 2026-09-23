@@ -34,7 +34,14 @@ const reportParameters = Type.Object({
   outcome: StringEnum(['success', 'failure', 'incomplete']),
   summary: Type.String({ minLength: 1, maxLength: 32_000 }),
   evidence: Type.Array(Type.String({ minLength: 1, maxLength: 32_000 }), { maxItems: 100 }),
-  blocker: Type.Optional(Type.String({ minLength: 1, maxLength: 4000 })),
+  blocker: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 4000,
+      description:
+        'Required for incomplete: the external dependency, exhausted limit, or parent decision that stops you.',
+    }),
+  ),
 });
 
 type ReportInput = Static<typeof reportParameters>;
@@ -481,7 +488,7 @@ const registerReportTool = (pi: ExtensionAPI, state: WorkerState): void => {
     name: 'subagent_report',
     label: 'Worker report',
     description:
-      'Submit the final durable handoff once. Put the Changes, Evidence, Decisions, and Concerns sections in summary; evidence holds references, not the Evidence section. Receipt does not prove correctness or stopped work. Do not retry uncertain delivery.',
+      'Submit the final durable handoff once. Put the Changes, Evidence, Decisions, and Concerns sections in summary; evidence holds references, not the Evidence section. Outcome incomplete requires blocker. Receipt does not prove correctness or stopped work. Do not retry uncertain delivery.',
     parameters: reportParameters,
     execute(...argumentsList) {
       return reportToParent(state, argumentsList[1], pi);
@@ -541,7 +548,7 @@ const registerReportReminder = (pi: ExtensionAPI, state: WorkerState): void => {
       {
         customType: 'tau-worker-report-request',
         content:
-          'Finish the original assignment by calling subagent_report now. Report completed work, evidence, and any remaining concerns. Do not start new work. The original scope and deadline are unchanged.',
+          'Your turn ended without subagent_report. Finish the assigned work, then call subagent_report. Report incomplete only with a concrete blocker. Do not expand the original scope; the deadline is unchanged.',
         display: true,
       },
       { deliverAs: 'followUp', triggerTurn: true },
