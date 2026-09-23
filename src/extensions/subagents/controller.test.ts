@@ -1424,10 +1424,13 @@ it('retains uncertain reply delivery without resending or acknowledging it', asy
     scopeUnchanged: true,
   };
 
-  await expect(controller.reply(launched.taskId, 'parent-id', answer)).resolves.toMatchObject({
-    replyAccepted: true,
-    delivery: 'uncertain',
-  });
+  const uncertain = await controller.reply(launched.taskId, 'parent-id', answer);
+
+  expect(uncertain).toMatchObject({ replyAccepted: true, delivery: 'uncertain' });
+  expect(uncertain).toHaveProperty(
+    'deliveryError',
+    expect.stringContaining('Injected herdr failure'),
+  );
   await expect(controller.reply(launched.taskId, 'parent-id', answer)).resolves.toMatchObject({
     workerAcknowledged: false,
     delivery: 'notResent',

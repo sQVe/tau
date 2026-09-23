@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
-import { isMissingFile } from '../../errors/index.js';
+import { errorMessage, isMissingFile } from '../../errors/index.js';
 import {
   descendantReservations,
   admissionDirectory,
@@ -542,19 +542,20 @@ export class WorkerController {
     acceptReply(directory, taskId, value);
 
     // The reply is saved; a throw here would read as a failed reply and invite a resend.
-    let delivery: 'sent' | 'uncertain' = 'sent';
+    let deliveryError: string | undefined;
 
     try {
       await call(['agent', 'prompt', text(handle.paneId), prompt]);
-    } catch {
-      delivery = 'uncertain';
+    } catch (error) {
+      deliveryError = errorMessage(error);
     }
 
     return {
       replyAccepted: true,
       name: handle.task.name,
       workerAcknowledged: replyAcknowledged(directory, taskId, questionId),
-      delivery,
+      delivery: deliveryError === undefined ? 'sent' : 'uncertain',
+      ...(deliveryError === undefined ? {} : { deliveryError }),
     };
   }
 
