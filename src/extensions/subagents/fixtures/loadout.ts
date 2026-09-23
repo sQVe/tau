@@ -12,7 +12,7 @@ export const asPiLoadout = (loadout: Loadout): PiLoadout => {
   return loadout;
 };
 
-export const asPiTask = (task: Task) => ({
+const asPiTask = (task: Task) => ({
   ...requireNativeTask(task),
   loadout: asPiLoadout(task.loadout),
 });

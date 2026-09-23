@@ -35,7 +35,7 @@ export const genericReportPath = (task: Task): string => {
 };
 
 // A 10000-byte report always fits the 64000-byte receipt even when every byte JSON-escapes.
-export const reportByteLimit = 10_000;
+const reportByteLimit = 10_000;
 
 export const prepareGenericReport = (task: Task): void => {
   if (

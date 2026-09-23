@@ -1,4 +1,4 @@
-export type RunTestsScope = 'changed' | 'file' | 'all';
+type RunTestsScope = 'changed' | 'file' | 'all';
 
 export interface RunTestsInput {
   scope: RunTestsScope;
@@ -88,7 +88,7 @@ export interface SpawnResult {
   stderrBytes?: number;
 }
 
-export interface SpawnOptions {
+interface SpawnOptions {
   cwd: string;
   timeoutMs: number;
   signal?: AbortSignal | undefined;
@@ -100,7 +100,7 @@ export type SpawnFn = (
   options: SpawnOptions,
 ) => Promise<SpawnResult>;
 
-export interface ResolvedVitest {
+interface ResolvedVitest {
   path: string;
   version: string;
 }

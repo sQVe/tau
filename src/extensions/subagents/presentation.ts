@@ -42,19 +42,19 @@ export const stateLabel = (state: WorkerState, outcome?: string): StateLabel => 
 };
 
 // Model content copies named fields. Never filter, delete, or infer fields from a full record.
-export interface StatusQuestion {
+interface StatusQuestion {
   questionId?: string | undefined;
   question?: string | undefined;
   replySaved?: boolean | undefined;
 }
 
-export interface QuestionReceiptInput {
+interface QuestionReceiptInput {
   question?: { questionId?: string | undefined } | undefined;
   reply?: unknown;
   acknowledgement?: unknown;
 }
 
-export interface SubmissionReceiptInput {
+interface SubmissionReceiptInput {
   intent?:
     | { taskId?: string | undefined; id?: string | undefined; text?: string | undefined }
     | undefined;
@@ -123,7 +123,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
 const handoffSectionNames = ['Changes', 'Evidence', 'Decisions', 'Concerns'] as const;
-export type HandoffSection = (typeof handoffSectionNames)[number];
+type HandoffSection = (typeof handoffSectionNames)[number];
 
 export interface HandoffSections {
   present: HandoffSection[];

@@ -14,7 +14,7 @@ const headerSchema = Type.Object({
   cwd: Type.Optional(Type.String()),
 });
 
-export const readNative = (path: string) => {
+const readNative = (path: string) => {
   // Nonblocking open prevents a substituted FIFO from hanging prevalidation. Do not follow replacement symlinks.
   const descriptor = openSync(
     path,

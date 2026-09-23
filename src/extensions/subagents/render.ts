@@ -746,21 +746,21 @@ const acknowledgedText = (acknowledged: boolean | undefined): string | undefined
   return acknowledged ? 'yes' : 'no';
 };
 
-export const expandedReplyLines = (details: ReplyView, theme: Theme): string[] => [
+const expandedReplyLines = (details: ReplyView, theme: Theme): string[] => [
   row('Task', details.taskId ?? 'unknown', theme),
   ...optionalRow('Question ID', details.questionId, theme),
   row('Delivery', details.delivery, theme),
   ...optionalRow('Acknowledged', acknowledgedText(details.workerAcknowledged), theme),
 ];
 
-export const collapsedEvidenceLines = (details: EvidenceView, theme: Theme): string[] => {
+const collapsedEvidenceLines = (details: EvidenceView, theme: Theme): string[] => {
   const name = displayName(details);
   const pane = details.paneId ? `check pane ${details.paneId}` : 'check the pane';
 
   return [`${theme.fg('error', '!')} ${theme.bold(name)} evidence unreadable · ${pane}`];
 };
 
-export const expandedEvidenceLines = (details: EvidenceView, theme: Theme): string[] => {
+const expandedEvidenceLines = (details: EvidenceView, theme: Theme): string[] => {
   const directory = details.directory ? shortenHome(details.directory) : undefined;
 
   return [
