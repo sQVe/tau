@@ -75,6 +75,24 @@ describe('runTests', () => {
     });
   });
 
+  it('keeps the runner error when removing its diagnostics directory also fails', async () => {
+    const root = join(process.env.PI_CODING_AGENT_DIR ?? '', 'test-runs');
+    onTestFinished(() => chmod(root, 0o700));
+
+    const run = runTestsWithDiagnostics(
+      { scope: 'all', cwd: '/repo' },
+      makeDeps({
+        spawn: async () => {
+          await chmod(root, 0o500);
+
+          throw new Error('spawn exploded');
+        },
+      }),
+    );
+
+    await expect(run).rejects.toThrow('spawn exploded');
+  });
+
   it.for(['4.1.11', '5.0.1'])(
     'uses Vitest %s native nested names for exact selection and failure identities',
     async (version) => {
