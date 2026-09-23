@@ -209,6 +209,33 @@ describe('direct commit staging', () => {
     expect(await readFile(join(directory, 'requested'), 'utf8')).toBe('working');
   });
 
+  it('keeps the group error when unstaging after it also fails', async () => {
+    const directory = await createTemporaryRepository();
+    await writeRepositoryFile(directory, 'requested', 'working');
+    const tool = createCommitTool(
+      {
+        exec: async (command, argumentsList, options) =>
+          argumentsList.includes('reset')
+            ? { stdout: '', stderr: 'reset denied', code: 1, killed: false }
+            : runCommand(command, argumentsList, options?.cwd ?? directory),
+      },
+      () => Promise.reject(new Error('review exploded')),
+    );
+
+    const failure = await tool
+      .execute(
+        'group-error',
+        { groups: [{ files: ['requested'], subject: 'feat: requested' }] },
+        undefined,
+        undefined,
+        commitContext(directory),
+      )
+      .catch((error: unknown) => String(error));
+
+    expect(failure).toContain('review exploded');
+    expect(failure).toContain('reset denied');
+  });
+
   it('reports earlier commits and preserves concurrent staging during a later review', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'first', 'first');
