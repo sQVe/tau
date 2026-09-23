@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
 
+import { isMissingFile } from '../../errors/index.js';
+
 const isObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object';
 
@@ -109,7 +111,7 @@ export const providerFingerprintValue = (
       .update(readFileSync(join(getAgentDir(), 'models.json')))
       .digest('hex');
   } catch (error) {
-    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
+    if (!isMissingFile(error)) {
       throw error;
     }
   }

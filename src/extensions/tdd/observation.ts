@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { glob, readFile, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
+import { isMissingFile } from '../../errors/index.js';
 import { classifyPath, configurationGlobs, tddConfig } from './config.js';
 import { runTests } from './runner/index.js';
 import { finishDiagnostics } from './runner/retention.js';
@@ -74,7 +75,7 @@ const fingerprint = async (cwd: string, files: string[]): Promise<string | null>
 
           return [file, createHash('sha256').update(content).digest('hex')];
         } catch (error) {
-          if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+          if (!isMissingFile(error)) {
             throw error;
           }
 

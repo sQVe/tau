@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { matchesWorker, runClient } from './cancellation.js';
+import { matchesWorker, processAbsent, runClient } from './cancellation.js';
 import type { OwnedWorker } from './cancellation.js';
 import { workBudget } from './controllerBudget.js';
 import type { Handle } from './controllerTypes.js';
@@ -78,16 +78,6 @@ export const waitForShell = async (
 
     // oxlint-disable-next-line eslint/no-await-in-loop -- Poll serially within the original startup budget.
     await delay(Math.min(100, workBudget(handle)), undefined, { signal: handle.abort.signal });
-  }
-};
-
-export const processAbsent = (processId: number): boolean => {
-  try {
-    process.kill(processId, 0);
-
-    return false;
-  } catch (error) {
-    return error instanceof Error && 'code' in error && error.code === 'ESRCH';
   }
 };
 

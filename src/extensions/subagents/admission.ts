@@ -7,6 +7,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { hasErrorCode } from '../../errors/index.js';
 import {
   isRetiredTask,
   publish,
@@ -275,7 +276,7 @@ const acquireAdmissionLock = (directory: string): string => {
   try {
     mkdirSync(lock, { mode: 0o700 });
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
+    if (hasErrorCode(error, 'EEXIST')) {
       throw new Error(
         `Admission busy. No queue or automatic lock reclaim. Inspect ${lock} manually; stop this tree's controllers before removing an abandoned lock.`,
         { cause: error },

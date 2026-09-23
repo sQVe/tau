@@ -1,14 +1,12 @@
 import { realpathSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 
+import { isMissingFile } from '../../errors/index.js';
 import { continuationOrigins } from './continuations.js';
 import { nativeHeader } from './native.js';
 import { readTasks } from './records.js';
 import { isGenericLoadout, requireNativeTask } from './types.js';
 import type { Task } from './types.js';
-
-const missing = (error: unknown): boolean =>
-  error instanceof Error && 'code' in error && error.code === 'ENOENT';
 
 export const canonical = (path: string): string => {
   if (!isAbsolute(path)) {
@@ -18,7 +16,7 @@ export const canonical = (path: string): string => {
   try {
     return realpathSync(path);
   } catch (error) {
-    if (!missing(error)) {
+    if (!isMissingFile(error)) {
       throw error;
     }
 
@@ -55,7 +53,7 @@ export const readNode = (file: string, tasks: Map<string, Task>) => {
   try {
     header = nativeHeader(file);
   } catch (error) {
-    if (!missing(error) || !task) {
+    if (!isMissingFile(error) || !task) {
       throw new Error(`Session ancestry is unavailable: ${String(error)}`, { cause: error });
     }
 

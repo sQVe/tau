@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
+import { isMissingFile } from '../../errors/index.js';
 import { reviewGit } from './commentReview.js';
 import { normalizeRepositoryPath } from './validation.js';
 
@@ -24,7 +25,7 @@ export const validateFileRequests = async (workingDirectory: string, files: stri
   await Promise.all(
     files.map(async (file) => {
       const status = await lstat(join(workingDirectory, file)).catch((error: unknown) => {
-        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        if (isMissingFile(error)) {
           return null;
         }
 

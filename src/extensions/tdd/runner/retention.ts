@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
+import { isMissingFile } from '../../../errors/index.js';
 import type { RunDiagnostics } from './types.js';
 
 export const maximumRetainedRuns = 32;
@@ -16,7 +17,7 @@ const metadataIfPresent = async (path: string) => {
   try {
     return await lstat(path);
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+    if (isMissingFile(error)) {
       return undefined;
     }
 

@@ -9,6 +9,7 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 
+import { errorMessage } from '../../errors/index.js';
 import { reviewComments } from './commentReview.js';
 import { executeGroup } from './groupExecution.js';
 import type { CommitSuccess, RequestReview, Reviews } from './types.js';
@@ -129,10 +130,7 @@ const runGroup = async (
       : temporaryCleanup;
 
     if (cleanupDiagnostic) {
-      throw new Error(
-        `${error instanceof Error ? error.message : String(error)}\n${cleanupDiagnostic}`,
-        { cause: error },
-      );
+      throw new Error(`${errorMessage(error)}\n${cleanupDiagnostic}`, { cause: error });
     }
 
     throw error;
@@ -173,7 +171,7 @@ const executeCommitTool = async (
       const committed = content.map((item) => item.text);
 
       throw new Error(
-        `Group ${groupLabel}: ${error instanceof Error ? error.message : String(error)}\nAlready committed:\n${committed.join('\n') || 'None.'}`,
+        `Group ${groupLabel}: ${errorMessage(error)}\nAlready committed:\n${committed.join('\n') || 'None.'}`,
         { cause: error },
       );
     }

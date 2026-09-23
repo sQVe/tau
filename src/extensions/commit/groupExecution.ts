@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { ExecResult, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { delegateReference } from '../../delegateModel/index.js';
+import { errorMessage } from '../../errors/index.js';
 import {
   commentPolicyHash,
   formatCommentReview,
@@ -226,7 +227,7 @@ const requestCommentReview = async (run: GroupRun): Promise<boolean> => {
     }
 
     throw new Error(
-      `Comment review failed: ${error instanceof Error ? error.message : String(error)}\nFix the cause and call commit again.`,
+      `Comment review failed: ${errorMessage(error)}\nFix the cause and call commit again.`,
       { cause: error },
     );
   }

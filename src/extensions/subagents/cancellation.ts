@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { hasErrorCode } from '../../errors/index.js';
 import { resolveTerminal, TerminalIdentityError } from './terminal.js';
 
 export interface OwnedWorker {
@@ -127,13 +128,24 @@ export const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker)
   Array.isArray(info.foreground_processes) &&
   info.foreground_processes.some((value) => foregroundProcessMatches(value, owned));
 
-export const processExists = (processId: number) => {
+export const processAbsent = (processId: number): boolean => {
+  try {
+    process.kill(processId, 0);
+
+    return false;
+  } catch (error) {
+    return hasErrorCode(error, 'ESRCH');
+  }
+};
+
+// Cleanup reports EPERM instead of treating it as proof either way.
+const processExists = (processId: number) => {
   try {
     process.kill(processId, 0);
 
     return true;
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+    if (hasErrorCode(error, 'ESRCH')) {
       return false;
     }
 

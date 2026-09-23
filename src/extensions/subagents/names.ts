@@ -5,6 +5,7 @@ import { customAlphabet } from 'nanoid';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { isMissingFile } from '../../errors/index.js';
 import { readTask } from './records.js';
 import type { Loadout } from './types.js';
 
@@ -24,7 +25,7 @@ const retainedNames = (root: string, parentSessionId: string): string[] => {
   try {
     entries = readdirSync(root, { withFileTypes: true });
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+    if (isMissingFile(error)) {
       return [];
     }
 
