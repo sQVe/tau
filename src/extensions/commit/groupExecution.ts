@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { ExecResult, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { delegateReference } from '../../delegateModel/index.js';
-import { errorMessage } from '../../errors/index.js';
+import { errorMessage, isMissingFile } from '../../errors/index.js';
 import {
   commentPolicyHash,
   formatCommentReview,
@@ -298,7 +298,13 @@ const verifyUnchanged = async (run: GroupRun): Promise<void> => {
     );
   }
 
-  const messageStatus = await lstat(run.messagePath).catch(() => null);
+  const messageStatus = await lstat(run.messagePath).catch((error: unknown) => {
+    if (isMissingFile(error)) {
+      return null;
+    }
+
+    throw error;
+  });
   const messageContent = messageStatus?.isFile() ? await readFile(run.messagePath) : null;
 
   if (!messageContent?.equals(Buffer.from(buildCommitMessage(run.subject, run.body)))) {
