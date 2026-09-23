@@ -226,7 +226,7 @@ it('delivers a question notice as a steer that wakes the idle parent', () => {
 });
 
 it.each(['success', 'incomplete', 'failure'])(
-  'wakes an idle parent for a %s report notice',
+  '%s report notices steer to the parent',
   (outcome) => {
     const sendMessage = vi.fn<() => void>();
     const pi = { sendMessage, events: { emit: vi.fn<() => void>() } } as unknown as ExtensionAPI;
@@ -235,7 +235,7 @@ it.each(['success', 'incomplete', 'failure'])(
     deliverWorkerNotice(pi, { content, details: {}, question: false }, false);
 
     expect(sendMessage).toHaveBeenCalledWith(expect.anything(), {
-      deliverAs: 'followUp',
+      deliverAs: 'steer',
       triggerTurn: true,
     });
   },

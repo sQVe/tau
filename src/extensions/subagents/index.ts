@@ -114,9 +114,7 @@ export const deliverWorkerNotice = (
 
   pi.sendMessage(
     { customType: 'tau-worker', content: message, display: true, details: notice.details },
-    notice.question
-      ? { deliverAs: 'steer', triggerTurn: true }
-      : { deliverAs: 'followUp', triggerTurn: true },
+    { deliverAs: 'steer', triggerTurn: true },
   );
 };
 
