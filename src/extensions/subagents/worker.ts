@@ -261,7 +261,8 @@ const remainingWork = (task: Task): number =>
 
 // Refuse once so an early handback costs a named blocker, but never so late that the report is lost.
 const refuseEarlyIncomplete = (state: WorkerState, task: Task, blocker: string | undefined) => {
-  if (blocker === undefined) {
+  if (blocker === undefined || blocker.trim() === '') {
+    state.remindAfterRefusal = true;
     throw new Error(
       'An incomplete report needs a blocker: the external dependency, exhausted limit, or parent decision that stops you. Without one, finish the work or report failure.',
     );

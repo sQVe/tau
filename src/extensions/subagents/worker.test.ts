@@ -386,6 +386,13 @@ it('refuses an incomplete report without a blocker', async () => {
   expect(readReport(worker.directory, 'task')).toBeUndefined();
 });
 
+it('refuses an incomplete report with a blank blocker', async () => {
+  const worker = await waitingWorker('editing');
+
+  expect(() => reportIncomplete(worker, ' ')).toThrow('blocker');
+  expect(readReport(worker.directory, 'task')).toBeUndefined();
+});
+
 it('refuses the first incomplete report while meaningful time remains', async () => {
   const worker = await waitingWorker('editing', hour);
 
@@ -412,7 +419,7 @@ it('accepts the first incomplete report just below the time bar', async () => {
   const worker = await waitingWorker('editing', hour);
   await vi.advanceTimersByTimeAsync(49 * 60_000);
 
-  await reportIncomplete(worker, 'Tests remain.');
+  await reportIncomplete(worker, 'The parent must choose the storage format.');
 
   expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
 });
@@ -427,6 +434,16 @@ it('reminds a refused worker to report even after an earlier reminder', async ()
 
   expect(worker.sendMessage).toHaveBeenCalledTimes(2);
   expect(worker.shutdown).not.toHaveBeenCalled();
+});
+
+it('reminds a worker refused for a missing blocker even after an earlier reminder', async () => {
+  const worker = await waitingWorker('editing', hour);
+  await worker.emit('agent_end');
+  expect(() => reportIncomplete(worker)).toThrow('blocker');
+
+  await worker.emit('agent_end');
+
+  expect(worker.sendMessage).toHaveBeenCalledTimes(2);
 });
 
 it('keeps the blocker when the summary is at the size limit', async () => {
