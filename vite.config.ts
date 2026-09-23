@@ -277,7 +277,12 @@ export default defineConfig({
     },
     overrides: [
       {
-        files: ['**/*.test.{ts,tsx}', 'tests/commitTool.ts', 'tests/piWorkerScenario.ts'],
+        files: [
+          '**/*.test.{ts,tsx}',
+          'tests/commitTool.ts',
+          'tests/piWorkerScenario.ts',
+          'tests/tddHarness.ts',
+        ],
         rules: {
           'typescript/no-explicit-any': 'off',
           'typescript/no-non-null-assertion': 'off',

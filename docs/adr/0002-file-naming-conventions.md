@@ -32,7 +32,7 @@ Use the following naming rules for TypeScript, tests, docs, special files, and c
 
 - Name unit tests `foo.test.ts` next to `foo.ts`.
 - Cross-module integration and end-to-end tests live under `tests/` with the same suffix.
-- Add directories by test type as needed, such as `tests/integration/`.
+- Mark the test type with a suffix, such as `.integration.test.ts`, not with a directory.
 
 ### Documentation
 
