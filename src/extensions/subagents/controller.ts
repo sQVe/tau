@@ -4,12 +4,14 @@ import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
+import { isMissingFile } from '../../errors/index.js';
 import {
   descendantReservations,
   admissionDirectory,
   reserveTask,
   requireActiveAncestry,
 } from './admission.js';
+import { processAbsent } from './cancellation.js';
 import { refuseLiveNativeWriter } from './continuations.js';
 import {
   ensureReplyActive,
@@ -33,7 +35,6 @@ import {
   verifyRejectedStart,
   waitForWorkerReadiness,
   workerArguments,
-  processAbsent,
 } from './controllerInspect.js';
 import type { HerdrClient, InspectionBudget } from './controllerInspect.js';
 import {
@@ -126,9 +127,6 @@ const requireGenericReplyShape = (answer: {
 class TaskAccessError extends Error {
   override name = 'TaskAccessError';
 }
-
-const isMissingFile = (error: unknown): boolean =>
-  error instanceof Error && 'code' in error && error.code === 'ENOENT';
 
 const deliveryFromSubmission = (
   state: 'submitted' | 'not-delivered' | 'uncertain' | undefined,
@@ -1065,9 +1063,11 @@ export class WorkerController {
   }
 
   private buildTask(input: LaunchInput, plan: LaunchTaskPlan): Task {
+    const namePrefix = input.loadout.role === 'editing' ? 'worker' : 'investigator';
+
     return validateTask({
       version: isGenericLoadout(input.loadout) ? 2 : 1,
-      name: `${input.loadout.role === 'editing' ? 'worker' : 'investigator'}-00`,
+      name: `${namePrefix}-00`,
       taskId: plan.taskId,
       task: input.task,
       parentSession: input.parentSession,

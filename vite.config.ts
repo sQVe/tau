@@ -41,6 +41,7 @@ export default defineConfig({
             'eslint/one-var': ['error', 'never'],
             'tau/helper-before-use': 'error',
             'tau/max-condition-checks': 'error',
+            'tau/no-enoent-literal': 'error',
             '@stylistic/padding-line-between-statements': [
               'error',
               { blankLine: 'always', prev: '*', next: 'return' },

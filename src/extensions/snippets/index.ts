@@ -8,6 +8,7 @@ import type {
   InputEventResult,
 } from '@earendil-works/pi-coding-agent';
 
+import { errorMessage } from '../../errors/index.js';
 import { openSnippetMenu } from './menu.js';
 import { acceptsSnippets, buildSnippetMessage, loadSnippets } from './snippet.js';
 import type { Snippet } from './types.js';
@@ -66,7 +67,7 @@ const openMenu = async (state: SnippetsState, context: ExtensionContext): Promis
   try {
     state.snippets = await loadSnippets(snippetsDirectory);
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = errorMessage(error);
 
     context.ui.notify(`Snippets could not be read: ${reason}`, 'error');
 
@@ -166,7 +167,7 @@ const handleInput = async (
   try {
     loaded = await loadSnippets(snippetsDirectory);
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = errorMessage(error);
 
     context.ui.notify(`Snippets could not be read, so nothing was sent: ${reason}`, 'error');
 

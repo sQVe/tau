@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { isMissingFile } from '../../errors/index.js';
 import { readEvent, readReport, readSuccessor } from './records.js';
 import { requireNativeTask } from './types.js';
 import type { Task } from './types.js';
@@ -106,7 +107,7 @@ const resolveExistingPath = (value: string): string | undefined => {
   try {
     return realpathSync(value);
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+    if (isMissingFile(error)) {
       return undefined;
     }
 

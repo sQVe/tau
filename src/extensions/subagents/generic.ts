@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { isMissingFile } from '../../errors/index.js';
 import { assignmentContractFor, handoffContract } from './handoff.js';
 import {
   acceptReport,
@@ -120,7 +121,7 @@ const readPublishedReport = (path: string): string | undefined => {
   try {
     descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+    if (isMissingFile(error)) {
       return undefined;
     }
 

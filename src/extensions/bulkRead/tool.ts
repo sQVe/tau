@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { AgentToolResult, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
+import { errorMessage } from '../../errors/index.js';
+
 export const bulkReadTool = 'bulk_read';
 
 export const bulkReadInputError = 'BulkReadInputError';
@@ -45,7 +47,7 @@ const loadPayload = async (
     // The per-file cap is measured before reading, so one oversized file never allocates its content.
     // oxlint-disable-next-line eslint/no-await-in-loop -- Validate each file before reading it and stop at the first invalid input.
     const stats = await stat(absolutePath).catch((error: unknown) => {
-      throw inputError(error instanceof Error ? error.message : String(error));
+      throw inputError(errorMessage(error));
     });
 
     // A FIFO reports size 0 and then blocks the read until a writer appears, past every timeout.
@@ -61,7 +63,7 @@ const loadPayload = async (
 
     // oxlint-disable-next-line eslint/no-await-in-loop -- Serial reads preserve request order and stop at the first invalid input.
     const content = await readFile(absolutePath, 'utf8').catch((error: unknown) => {
-      throw inputError(error instanceof Error ? error.message : String(error));
+      throw inputError(errorMessage(error));
     });
 
     if (content.includes('\0')) {
@@ -129,7 +131,7 @@ export const bulkRead = async (
         throw error;
       }
 
-      const cause = error instanceof Error ? error.message : String(error);
+      const cause = errorMessage(error);
 
       throw new Error(`Bulk read ${reference} failed: ${cause}. Check pi --list-models.`, {
         cause: error,

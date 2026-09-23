@@ -17,7 +17,7 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import { monotonicNow, taskEnded } from './admission.js';
-import { processExists } from './cancellation.js';
+import { processAbsent } from './cancellation.js';
 import { checkWorkerRuntime } from './loadout.js';
 import { workerPrompt } from './profiles.js';
 import {
@@ -49,15 +49,6 @@ interface WorkerState {
   parentWatch: ReturnType<typeof setInterval> | undefined;
   removeNotificationListener: (() => void) | undefined;
 }
-
-const parentRunning = (processId: number): boolean => {
-  try {
-    return processExists(processId);
-  } catch {
-    // Errors such as EPERM do not prove that the parent exited.
-    return true;
-  }
-};
 
 const hasRunningTask = (state: WorkerState): state is WorkerState & { task: Task } =>
   state.task !== undefined && state.accepted && !state.settled;
@@ -102,7 +93,7 @@ const handleChildNotification = (pi: ExtensionAPI, state: WorkerState, value: un
 };
 
 const parentGone = (state: WorkerState, task: Task, parentProcess: number): boolean =>
-  !parentRunning(parentProcess) || Boolean(readEvent(state.directory, task.taskId, 'parentClosed'));
+  processAbsent(parentProcess) || Boolean(readEvent(state.directory, task.taskId, 'parentClosed'));
 
 const shouldEndParentWait = (state: WorkerState, task: Task, parentProcess: number): boolean =>
   Boolean(state.pendingQuestion) && !state.settled && parentGone(state, task, parentProcess);

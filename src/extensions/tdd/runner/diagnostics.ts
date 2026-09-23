@@ -2,6 +2,7 @@ import { chmod, lstat, truncate, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
+import { isMissingFile } from '../../../errors/index.js';
 import type { DiagnosticFile, RunDiagnostics, SpawnResult } from './types.js';
 import { maximumReportBytes, maximumStdoutBytes, maximumTotalBytes } from './types.js';
 
@@ -46,7 +47,7 @@ const retainReport = async (directory: string): Promise<DiagnosticFile | undefin
 
     bytes = metadata.size;
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+    if (isMissingFile(error)) {
       return undefined;
     }
 

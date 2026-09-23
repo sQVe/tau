@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { Value } from 'typebox/value';
 
+import { hasErrorCode } from '../../errors/index.js';
 import { publish, readOptionalRecord, readRecord, readTask } from './records.js';
 import {
   acknowledgementSchema,
@@ -42,7 +43,7 @@ const publishQuestionRecord = (
   try {
     publish(directory, name, value);
   } catch (error) {
-    if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) {
+    if (!hasErrorCode(error, 'EEXIST')) {
       throw error;
     }
 

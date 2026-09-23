@@ -17,6 +17,7 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { isMissingFile } from '../../errors/index.js';
 import {
   eventSchema,
   reportSchema,
@@ -100,7 +101,7 @@ export const readOptionalRecord = (directory: string, name: string): unknown => 
   try {
     return readRecord(directory, name);
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+    if (isMissingFile(error)) {
       return undefined;
     }
 
@@ -223,7 +224,7 @@ export const readSuccessor = (directory: string): Successor | undefined => {
   try {
     value = readRecord(directory, 'successor.json');
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+    if (isMissingFile(error)) {
       return undefined;
     }
 
@@ -311,7 +312,7 @@ const readScannedTask = (directory: string): Task | undefined => {
   try {
     return readTask(directory);
   } catch (error) {
-    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
+    if (!isMissingFile(error)) {
       throw error;
     }
   }
@@ -366,7 +367,7 @@ const readTaskEntries = (root: string): Dirent[] | undefined => {
   try {
     return readdirSync(root, { withFileTypes: true });
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+    if (isMissingFile(error)) {
       return undefined;
     }
 
@@ -524,7 +525,7 @@ export const readReport = (directory: string, taskId: string): Report | undefine
 
     return value;
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+    if (isMissingFile(error)) {
       return undefined;
     }
 
@@ -570,7 +571,7 @@ export const readEvent = (
 
     return value;
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+    if (isMissingFile(error)) {
       return undefined;
     }
 
