@@ -227,7 +227,7 @@ it.for(['ordinary', 'long'] as const)(
     const result = await application.run(cwd);
     const hint =
       size === 'ordinary'
-        ? 'Hint: Focused tests passed; run_tests with scope "full" to verify the suite.'
+        ? 'Hint: Focused tests passed; verify the full suite with the repository full check or run_tests scope "full".'
         : 'Hint: Test results are stale; rerun run_tests on the current inputs.';
     const parameters = {
       behavior: 'value',

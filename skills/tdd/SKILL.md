@@ -1,8 +1,9 @@
 ---
 name: tdd
 description:
-  Use Tau's run_tests tool for failing focused tests, passing focused tests, and full verification.
-  Use when changing behavior. Covers the tool protocol, not test design.
+  Use Tau's run_tests tool for failing focused tests and passing focused tests. Verify the full
+  suite with the repository full check or run_tests. Use when changing behavior. Covers the tool
+  protocol, not test design.
 ---
 
 # TDD
@@ -10,7 +11,8 @@ description:
 ## When to use
 
 Use this skill when changing behavior where `run_tests` is available. Start with a failing test,
-make it pass, then run the whole suite.
+make it pass, then verify the whole suite through the repository's full check or one full
+`run_tests` run.
 
 ## Principles
 
@@ -32,8 +34,11 @@ make it pass, then run the whole suite.
    format. Do not restructure tests or broaden selection to make the tool run.
 3. Read the failure summary and the runner report in `details`. Implement the change, then rerun
    focused with the same files and names. The label can change without changing test selection.
-4. Refactor and format as needed. Call `run_tests` with `scope: "full"` before handing off. A full
-   pass counts without prior RED or a renewed focused run after formatting.
+4. Refactor and format as needed. Before handing off, run the repository's full check, such as
+   `pnpm check`, or reuse a qualifying current reported full check for the same inputs. One pass on
+   the current inputs satisfies full verification; do not rerun an equivalent full suite for
+   bookkeeping, and do not rerun only because you are about to hand off. Mandatory hooks and CI
+   still run on their own. A full `run_tests` pass also counts when no repository check will run.
 5. Report the outcome and freshness separately. `stale` means tracked inputs changed; `unknown`
    means Tau could not read them. The actual runner report remains available in both cases. Rerun
    tests on the current inputs before claiming current verification.

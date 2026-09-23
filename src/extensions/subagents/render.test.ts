@@ -642,6 +642,29 @@ it('offers follow-up only to Pi workers', () => {
   expect(generic).not.toMatch(/Follow-up available/);
 });
 
+it('shows which handoff sections the saved report is missing', () => {
+  const subject = theme();
+  const legacy = stripVTControlCharacters(
+    expandedStatusLines(statusFixture('stopped', false), subject).join('\n'),
+  );
+
+  expect(legacy).toContain('Handoff sections missing: Changes, Evidence, Decisions, Concerns');
+
+  const completeReport = {
+    ...statusFixture('stopped', false),
+    report: {
+      outcome: 'success',
+      summary: 'Changes: fixed loader\nEvidence: tests passed\nDecisions: none\nConcerns: none',
+      evidence: [],
+    },
+  };
+  const complete = stripVTControlCharacters(
+    expandedStatusLines(completeReport, subject).join('\n'),
+  );
+
+  expect(complete).not.toContain('Handoff sections missing');
+});
+
 it('shows requested native output and receipts on ctrl+o', () => {
   const subject = theme();
   const details = {

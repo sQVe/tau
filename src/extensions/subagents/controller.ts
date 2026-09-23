@@ -1234,12 +1234,14 @@ export class WorkerController {
   }
 
   private reportNativeObservationIssue(handle: Handle, error: unknown): void {
-    const previousIssue = handle.observationIssue;
+    // One notice per unresolved observation episode. A successful inspection deletes observationIssue,
+    // so the next genuine failure notifies again while changing diagnostics stay quiet.
+    const firstIssue = handle.observationIssue === undefined;
 
     recordNativeIssue(handle, 'nativeObservation-error.json', error);
     handle.nativeState = 'unknown';
 
-    if (previousIssue !== handle.observationIssue) {
+    if (firstIssue) {
       this.notifySnapshot(handle);
     }
   }

@@ -7,3 +7,6 @@ coverage/
 .env*
 
 *.tsbuildinfo
+
+/.pi/*review-reports/
+/.pi/settings.json

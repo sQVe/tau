@@ -57,3 +57,4 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0036: Allowlist worker content and label states from one table](./0036-allowlist-worker-content-and-label-states-from-one-table.md)
 - [0037: Launch native workers without parent approval](./0037-launch-native-workers-without-parent-approval.md)
 - [0038: Block commits only on comment inaccuracies](./0038-block-commits-only-on-comment-inaccuracies.md)
+- [0039: Reuse reported checks and run one full suite per work state](./0039-reuse-reported-checks-and-run-one-full-suite.md)
