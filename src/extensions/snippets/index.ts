@@ -142,7 +142,6 @@ const handleSessionStart = (
 
 // Reload snippets on every send so edits apply without reloading Pi.
 const handleInput = async (
-  pi: ExtensionAPI,
   state: SnippetsState,
   context: ExtensionContext,
   event: InputEvent,
@@ -213,7 +212,7 @@ export default function snippetsExtension(pi: ExtensionAPI) {
     return undefined;
   });
 
-  pi.on('input', (event, context) => handleInput(pi, state, context, event));
+  pi.on('input', (event, context) => handleInput(state, context, event));
 
   // Ctrl+q reaches the app because Pi's raw mode turns off terminal flow control.
   pi.registerShortcut('ctrl+q', {
