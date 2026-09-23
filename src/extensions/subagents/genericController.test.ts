@@ -603,11 +603,13 @@ it.each(['unsupported kind', 'missing executable'])(
 
     expect(started).toMatchObject({ outcome: 'failure', state: 'stopped', capacityHeld: false });
     expect(started.failure).toContain('rejected');
-    expect(started.cleanup).toContain('absence evidence');
-    expect(started.cleanup).not.toContain('No worker process was ever started');
+    expect(readEvent(started.directory, started.taskId, 'cleanup')?.stopped).toBe(true);
+    expect(setup.calls.filter((call) => call[1] === 'close')).toEqual([
+      ['pane', 'close', 'worker-1'],
+    ]);
     expect(setup.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
     expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
-    expect(setup.calls.filter((call) => call[1] === 'get')).toHaveLength(1);
+    expect(setup.calls.filter((call) => call[1] === 'get')).toHaveLength(2);
   },
 );
 

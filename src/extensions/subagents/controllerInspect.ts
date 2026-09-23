@@ -39,6 +39,15 @@ export const integer = (value: unknown): number => {
   return Number(value);
 };
 
+export const isBareShell = (information: Record<string, unknown>): boolean => {
+  const processes = information.foreground_processes;
+  const shellPid = integer(information.shell_pid);
+  const shellAlone =
+    Array.isArray(processes) && processes.length === 1 && object(processes[0]).pid === shellPid;
+
+  return information.foreground_process_group_id === shellPid && shellAlone;
+};
+
 export const waitForShell = async (
   handle: Handle,
   paneId: string,
@@ -48,17 +57,12 @@ export const waitForShell = async (
     // oxlint-disable-next-line eslint/no-await-in-loop -- Shell startup polling shares the original launch budget.
     const response = await call(['pane', 'process-info', '--pane', paneId]);
     const information = object(result(response).process_info);
-    const processes = information.foreground_processes;
-    const shellPid = integer(information.shell_pid);
-    const shellAlone =
-      Array.isArray(processes) && processes.length === 1 && object(processes[0]).pid === shellPid;
-    const shellForeground = information.foreground_process_group_id === shellPid;
 
     if (information.pane_id !== paneId) {
       throw new Error('Shell pane identity changed before startup.');
     }
 
-    if (shellForeground && shellAlone) {
+    if (isBareShell(information)) {
       return;
     }
 
@@ -143,12 +147,21 @@ const readAgent = async (
   }
 };
 
-export const readProcessStart = async (handle: Handle, processId: number): Promise<string> => {
+export interface InspectionBudget {
+  remainingBudget: () => number;
+  signal: AbortSignal;
+}
+
+export const readProcessStart = async (
+  handle: Handle,
+  processId: number,
+  cleanup?: InspectionBudget,
+): Promise<string> => {
   const processStart = await runClient(
     'ps',
     ['-p', String(processId), '-o', 'lstart='],
-    workBudget(handle, 1000),
-    { signal: handle.abort.signal },
+    cleanup ? Math.min(1000, cleanup.remainingBudget()) : workBudget(handle, 1000),
+    { signal: cleanup?.signal ?? handle.abort.signal },
   ).catch((error: unknown) => {
     if (processAbsent(processId)) {
       throw new Error('Worker exited before readiness. No task dispatch or retry.', {
@@ -162,6 +175,13 @@ export const readProcessStart = async (handle: Handle, processId: number): Promi
   return processStart.trim();
 };
 
+class PendingPiSessionError extends Error {
+  override name = 'PendingPiSessionError';
+}
+
+const missingAgentSession = (session: unknown): boolean =>
+  session === null || session === undefined;
+
 const checkAgentIdentity = (
   agent: Record<string, unknown>,
   expected: { paneId: string; expectedSession: string },
@@ -172,6 +192,12 @@ const checkAgentIdentity = (
 
   if (!Value.Check(agentSessionSchema, session)) {
     const isPiPane = agent.agent === 'pi' || agent.agent === undefined;
+    const sessionPending = missingAgentSession(session);
+    const samePiPane = agent.agent === 'pi' && agent.pane_id === expected.paneId;
+
+    if (sessionPending && samePiPane && !unchangedShell) {
+      throw new PendingPiSessionError(missingPiIntegrationMessage);
+    }
 
     throw new Error(
       isPiPane ? missingPiIntegrationMessage : 'Started worker identity could not be established.',
@@ -258,10 +284,10 @@ const isAgentNotFoundError = (error: unknown): boolean => {
   return 'cause' in error && isAgentNotFoundError(error.cause);
 };
 
-// A rejected start plus an unchanged shell and a known agent_not_found response is definite rejection evidence.
 export const verifyRejectedStart = async (
   handle: Handle,
   call: (argumentsList: string[]) => Promise<string>,
+  cleanup?: InspectionBudget,
 ): Promise<boolean> => {
   const shell = handle.shell;
 
@@ -282,8 +308,8 @@ export const verifyRejectedStart = async (
   }
 
   const changedShell =
-    integer(information.foreground_process_group_id) !== shell.processId ||
-    (await readProcessStart(handle, shell.processId)) !== shell.startedAt;
+    !isBareShell(information) ||
+    (await readProcessStart(handle, shell.processId, cleanup)) !== shell.startedAt;
 
   if (changedShell) {
     return false;
@@ -297,7 +323,8 @@ export const verifyRejectedStart = async (
     return isAgentNotFoundError(error);
   }
 
-  return false;
+  // Accept a successful empty agent object as absence evidence after checking the shell identity.
+  return true;
 };
 
 export const agentPromptArguments = (paneId: string, message: string): string[] => [
@@ -375,6 +402,7 @@ const buildOwnedWorker = (
 export const inspectWorker = async (
   handle: Handle,
   call: (argumentsList: string[]) => Promise<string>,
+  cleanup?: InspectionBudget,
 ): Promise<OwnedWorker> => {
   const generic = isGenericLoadout(handle.task.loadout) ? handle.task.loadout : undefined;
   const location = await resolveTerminal(text(handle.terminalId), call);
@@ -400,7 +428,7 @@ export const inspectWorker = async (
     shellPid,
     processId,
   });
-  const startedAt = await readProcessStart(handle, processId);
+  const startedAt = await readProcessStart(handle, processId, cleanup);
   const owned = buildOwnedWorker(handle, previous, generic, {
     paneId,
     terminalId: location.terminalId,
@@ -421,6 +449,33 @@ export const inspectWorker = async (
   }
 
   return verified;
+};
+
+export const waitForPiIdentity = async (
+  handle: Handle,
+  call: (argumentsList: string[]) => Promise<string>,
+  cleanup?: InspectionBudget,
+): Promise<OwnedWorker> => {
+  for (;;) {
+    try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Only a missing Pi integration session is transient here.
+      return await inspectWorker(handle, call, cleanup);
+    } catch (error) {
+      if (!(error instanceof PendingPiSessionError)) {
+        throw error;
+      }
+
+      try {
+        const remaining = cleanup ? cleanup.remainingBudget() : workBudget(handle);
+        // oxlint-disable-next-line eslint/no-await-in-loop -- Session discovery uses the existing work or cleanup deadline.
+        await delay(Math.min(250, remaining), undefined, {
+          signal: cleanup?.signal ?? handle.abort.signal,
+        });
+      } catch {
+        throw error;
+      }
+    }
+  }
 };
 
 export const prepareTaskDirectory = (

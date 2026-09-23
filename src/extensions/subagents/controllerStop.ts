@@ -1,5 +1,6 @@
 import { cancelOwnedWorker, runClient, workerStopped } from './cancellation.js';
 import type { OwnedWorker } from './cancellation.js';
+import { verifyRejectedStart } from './controllerInspect.js';
 import type { HerdrClient } from './controllerInspect.js';
 import { cleanupDetail } from './controllerRecord.js';
 import type { Handle } from './controllerTypes.js';
@@ -84,6 +85,34 @@ const closeStoppedShell = async (
   paneConfirmed.confirmed = true;
 
   return 'Owned process stopped and pane closed. Detached descendants are not covered.';
+};
+
+export const closeUnstartedPane = async (
+  request: Omit<StopOwnedWorkerRequest, 'owned' | 'client'>,
+): Promise<string> => {
+  const { handle, call, remainingBudget, signal, placement } = request;
+
+  try {
+    const location = await resolveTerminal(text(handle.terminalId), call);
+    await placement.close(
+      location,
+      call,
+      async () => {
+        const absent = await verifyRejectedStart(handle, call, { remainingBudget, signal });
+
+        if (!absent || handle.paneId !== location.paneId) {
+          throw new Error('Unstarted shell identity changed; pane closure refused.');
+        }
+
+        await call(['pane', 'close', location.paneId]);
+      },
+      signal,
+    );
+
+    return 'Worker absence confirmed; its unchanged shell pane was closed.';
+  } catch (error) {
+    return `Pane ${handle.paneId} left open: ${String(error)}`;
+  }
 };
 
 export const stopOwnedWorker = async (

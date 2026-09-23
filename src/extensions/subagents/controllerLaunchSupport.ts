@@ -1,3 +1,5 @@
+import { existsSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import { requireHandover, refuseLiveNativeWriter } from './continuations.js';
@@ -5,7 +7,7 @@ import { authorizeHistoryTask } from './history.js';
 import { validateNative } from './native.js';
 import type { Visibility } from './placement.js';
 import { nativeIdentity } from './profiles.js';
-import { readSuccessor, readTask, readTasks } from './records.js';
+import { readEvent, readReport, readSuccessor, readTask, readTasks } from './records.js';
 import { result } from './terminal.js';
 import { isGenericLoadout } from './types.js';
 import type { Loadout, Task } from './types.js';
@@ -44,9 +46,37 @@ export const nativeReference = (
   return isGenericLoadout(loadout) ? {} : nativeIdentity(directory);
 };
 
+const rejectedBeforeDispatch = (directory: string, task: Task): boolean => {
+  if (readEvent(directory, task.taskId, 'cleanup')?.stopped !== true) {
+    return false;
+  }
+
+  const dispatched = existsSync(join(directory, 'dispatch.json'));
+  const accepted = readEvent(directory, task.taskId, 'accepted');
+  const reported = readReport(directory, task.taskId);
+
+  return !dispatched && !accepted && !reported;
+};
+
+export const releaseRejectedSuccessor = (root: string, directory: string, task: Task): void => {
+  if (!task.predecessorTaskId || !rejectedBeforeDispatch(directory, task)) {
+    return;
+  }
+
+  const predecessorDirectory = join(root, task.predecessorTaskId);
+
+  if (readSuccessor(predecessorDirectory)?.successorTaskId === task.taskId) {
+    unlinkSync(join(predecessorDirectory, 'successor.json'));
+  }
+};
+
 export const requireUnclaimed = (root: string, source: { directory: string; task: Task }): void => {
   const claim = readSuccessor(source.directory);
-  const pending = readTasks(root).find(({ task }) => task.predecessorTaskId === source.task.taskId);
+  const pending = readTasks(root).find(({ directory, task }) => {
+    const followsSource = task.predecessorTaskId === source.task.taskId;
+
+    return followsSource && !rejectedBeforeDispatch(directory, task);
+  });
   const successor = claim?.successorTaskId ?? pending?.task.taskId;
 
   if (successor) {

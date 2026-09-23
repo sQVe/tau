@@ -24,7 +24,9 @@ import {
   herdrClient,
   inspectWorker,
   waitForShell,
+  waitForPiIdentity,
   integer,
+  isBareShell,
   prepareTaskDirectory,
   readProcessStart,
   verifyRejectedStart,
@@ -38,6 +40,7 @@ import {
   checkNativeWriterListing,
   nativeReference,
   requireUnclaimed,
+  releaseRejectedSuccessor,
 } from './controllerLaunchSupport.js';
 import type { FollowUpPreparation, LaunchInput } from './controllerLaunchSupport.js';
 import {
@@ -49,7 +52,7 @@ import {
   cleanupDetail,
   recordNativeIssue,
 } from './controllerRecord.js';
-import { stopOwnedWorker } from './controllerStop.js';
+import { closeUnstartedPane, stopOwnedWorker } from './controllerStop.js';
 import type { Handle } from './controllerTypes.js';
 import { submitGenericText, genericPrompt, acceptGenericReport } from './generic.js';
 import { authorizeHistoryTask } from './history.js';
@@ -734,11 +737,9 @@ export class WorkerController {
 
     await waitForShell(handle, paneId, call);
 
-    if (generic) {
-      await this.prepareGenericStart(handle, paneId, call, generic);
-    }
+    await this.prepareStart(handle, paneId, call, generic);
 
-    // A failing start call can still leave a process behind.
+    // Treat startup as uncertain before awaiting its response; cleanup must establish ownership or absence.
     handle.workerNeverStarted = false;
     await call([
       'agent',
@@ -753,28 +754,29 @@ export class WorkerController {
       '--',
       ...(generic?.arguments ?? workerArguments(task)),
     ]).catch((error: unknown) => {
+      handle.startError = String(error).slice(0, 4000);
+
       if (!generic) {
         throw error;
       }
 
-      handle.startError = String(error).slice(0, 4000);
       publish(handle.directory, 'nativeStart-error.json', { detail: handle.startError });
       this.notifySnapshot(handle, { failure: handle.startError });
     });
   }
 
-  private async prepareGenericStart(
+  private async prepareStart(
     handle: Handle,
     paneId: string,
     call: (argumentsList: string[]) => Promise<string>,
-    generic: GenericLoadout,
+    generic?: GenericLoadout,
   ): Promise<void> {
     const information = object(
       result(await call(['pane', 'process-info', '--pane', paneId])).process_info,
     );
     const shellPid = integer(information.shell_pid);
 
-    if (information.pane_id !== paneId || information.foreground_process_group_id !== shellPid) {
+    if (information.pane_id !== paneId || !isBareShell(information)) {
       throw new Error('Native start requires an unchanged foreground shell.');
     }
 
@@ -785,12 +787,15 @@ export class WorkerController {
     }
 
     publish(handle.directory, 'shell.json', handle.shell);
-    publish(handle.directory, 'nativeStart-intent.json', {
-      taskId: handle.task.taskId,
-      kind: generic.kind,
-      arguments: generic.arguments,
-      terminalId: handle.terminalId,
-    });
+
+    if (generic) {
+      publish(handle.directory, 'nativeStart-intent.json', {
+        taskId: handle.task.taskId,
+        kind: generic.kind,
+        arguments: generic.arguments,
+        terminalId: handle.terminalId,
+      });
+    }
   }
 
   private checkFollowUpSource(
@@ -1067,7 +1072,7 @@ export class WorkerController {
       return;
     }
 
-    handle.owned = await inspectWorker(handle, call);
+    handle.owned = await waitForPiIdentity(handle, call);
     publish(handle.directory, 'owned.json', handle.owned);
     const ready = await waitForWorkerReadiness(handle, call);
     const current = await inspectWorker(handle, call);
@@ -1084,7 +1089,7 @@ export class WorkerController {
   private startupFailureDetail(handle: Handle, error: unknown): string {
     return handle.startError !== undefined && handle.workerNeverStarted
       ? `Native startup was rejected by herdr absence evidence; no retry. ${String(error)}`
-      : `Startup delivery is uncertain; no retry. ${String(error)}`;
+      : `Startup delivery is uncertain; no automatic retry. ${String(error)}`;
   }
 
   private poll(handle: Handle): void {
@@ -1312,6 +1317,14 @@ export class WorkerController {
     return handle.stopping;
   }
 
+  private cleanupFailureDetail(handle: Handle, failureDetail: string): string {
+    if (handle.workerNeverStarted && handle.startError !== undefined) {
+      return `Startup was rejected or exited before dispatch; worker absence confirmed. No automatic retry. ${handle.startError}`;
+    }
+
+    return failureDetail;
+  }
+
   private async cleanup(
     handle: Handle,
     reason: 'timeout' | 'cancelled' | 'completion' | 'failure',
@@ -1343,8 +1356,40 @@ export class WorkerController {
       return remaining;
     };
     const call = (argumentsList: string[]) => this.client(argumentsList, remainingBudget(), signal);
+    const uncertainPiStart =
+      isPiLoadout(task.loadout) && !handle.workerNeverStarted && !handle.owned;
+    let inspectionFailure = '';
+
+    if (uncertainPiStart) {
+      try {
+        handle.workerNeverStarted = await verifyRejectedStart(handle, call, {
+          remainingBudget,
+          signal,
+        });
+
+        if (!handle.workerNeverStarted) {
+          handle.owned = await waitForPiIdentity(handle, call, { remainingBudget, signal });
+          record(() => {
+            publish(handle.directory, 'owned.json', handle.owned);
+          });
+        }
+      } catch (error) {
+        inspectionFailure = ` Cleanup inspection failed: ${String(error)}`;
+      }
+    }
+
     let stopped = handle.workerNeverStarted;
-    let detail = cleanupDetail(handle, stopped);
+    let detail = cleanupDetail(handle, stopped) + inspectionFailure;
+
+    if (stopped && handle.shell && handle.terminalId) {
+      detail = await closeUnstartedPane({
+        handle,
+        call,
+        remainingBudget,
+        signal,
+        placement: this.placement,
+      });
+    }
 
     if (handle.owned) {
       const stoppedWorker = await stopOwnedWorker({
@@ -1360,8 +1405,12 @@ export class WorkerController {
       detail = stoppedWorker.detail;
     }
 
-    handle.cleanupDetail = reason === 'failure' ? `${detail} ${failureDetail}` : detail;
-    this.recordCleanupEvents({ handle, reason, failureDetail, detail, stopped, record });
+    const failure = this.cleanupFailureDetail(handle, failureDetail);
+    handle.cleanupDetail = reason === 'failure' ? `${detail} ${failure}` : detail;
+    this.recordCleanupEvents({ handle, reason, failureDetail: failure, detail, stopped, record });
+    record(() => {
+      releaseRejectedSuccessor(this.root, handle.directory, task);
+    });
     handle.cleanupFinished = true;
     this.notifyCleanup(handle, record);
   }
