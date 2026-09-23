@@ -23,6 +23,7 @@ import {
   agentPromptArguments,
   herdrClient,
   inspectWorker,
+  waitForShell,
   integer,
   prepareTaskDirectory,
   readProcessStart,
@@ -730,6 +731,8 @@ export class WorkerController {
   ): Promise<void> {
     const { task } = handle;
     const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
+
+    await waitForShell(handle, paneId, call);
 
     if (generic) {
       await this.prepareGenericStart(handle, paneId, call, generic);

@@ -264,13 +264,17 @@ const nestedScenario = async (waitForParentReply: boolean) => {
       }
 
       if (argumentsList[1] === 'process-info') {
+        const foregroundProcess = !child || childStopped ? 100 : process.pid;
+
         return JSON.stringify({
           result: {
             process_info: {
               pane_id: 'worker-1',
               shell_pid: 100,
-              foreground_process_group_id: childStopped ? 100 : process.pid,
-              foreground_processes: [{ pid: process.pid, argv: ['pi', child?.nativeSessionFile] }],
+              foreground_process_group_id: foregroundProcess,
+              foreground_processes: [
+                { pid: foregroundProcess, argv: ['pi', child?.nativeSessionFile] },
+              ],
             },
           },
         });

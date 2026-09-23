@@ -118,6 +118,19 @@ const fixture = (kind = 'codex') => {
   };
 };
 
+it('waits for the split shell before starting a native worker', async () => {
+  const setup = fixture();
+  setup.state.busyShellPolls = 2;
+
+  const launching = setup.controller.launch(setup.input);
+  await vi.advanceTimersByTimeAsync(600);
+  const launched = await launching;
+
+  expect(launched.state).toBe('running');
+  expect(setup.state.started).toBe(true);
+  expect(setup.state.busyShellPolls).toBe(0);
+});
+
 it.each(['claude', 'codex', 'gemini'])(
   'launches %s through herdr and accepts a complete report without Pi events',
   async (kind) => {

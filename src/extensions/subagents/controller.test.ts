@@ -68,8 +68,17 @@ const setup = (
   fake.state.promptError = 'Injected herdr failure; active process remains alive.';
   let recordDirectory = '';
   const calls: string[][] = [];
+  let startAttempted = false;
   const client: HerdrClient = async (argumentsList, budget, signal) => {
     calls.push(argumentsList);
+
+    if (argumentsList[1] === 'start') {
+      startAttempted = true;
+    }
+
+    if (argumentsList[1] === 'process-info' && !startAttempted) {
+      return fake.client(argumentsList, budget, signal);
+    }
 
     if (intercept) {
       const response = await intercept(argumentsList, budget, signal);
@@ -125,6 +134,17 @@ const setup = (
 
   return { directory, controller, client, fake, calls, notifications, input };
 };
+
+it('waits for the split shell before starting Pi', async ({ onTestFinished }) => {
+  const fixture = setup(onTestFinished);
+  fixture.fake.state.busyShellPolls = 2;
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('starting');
+  expect(fixture.fake.state.started).toBe(true);
+  expect(fixture.fake.state.busyShellPolls).toBe(0);
+});
 
 it('skips unpublished preparation debris while published attempts and claims remain exclusive', async ({
   onTestFinished,
@@ -1240,13 +1260,17 @@ it.each(['confirmed', 'unconfirmed'] as const)(
       }
 
       if (argumentsList[1] === 'process-info') {
+        const stopped = cleaning && paneId === 'worker-1';
+        const shellForeground = stopped || !tokens.has(paneId);
+        const foregroundProcess = shellForeground ? 100 : process.pid;
+
         return JSON.stringify({
           result: {
             process_info: {
               pane_id: paneId,
               shell_pid: 100,
-              foreground_process_group_id: cleaning && paneId === 'worker-1' ? 100 : process.pid,
-              foreground_processes: [{ pid: process.pid, argv: ['pi', tokens.get(paneId)] }],
+              foreground_process_group_id: foregroundProcess,
+              foreground_processes: [{ pid: foregroundProcess, argv: ['pi', tokens.get(paneId)] }],
             },
           },
         });

@@ -39,6 +39,34 @@ export const integer = (value: unknown): number => {
   return Number(value);
 };
 
+export const waitForShell = async (
+  handle: Handle,
+  paneId: string,
+  call: (argumentsList: string[]) => Promise<string>,
+): Promise<void> => {
+  for (;;) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Shell startup polling shares the original launch budget.
+    const response = await call(['pane', 'process-info', '--pane', paneId]);
+    const information = object(result(response).process_info);
+    const processes = information.foreground_processes;
+    const shellPid = integer(information.shell_pid);
+    const shellAlone =
+      Array.isArray(processes) && processes.length === 1 && object(processes[0]).pid === shellPid;
+    const shellForeground = information.foreground_process_group_id === shellPid;
+
+    if (information.pane_id !== paneId) {
+      throw new Error('Shell pane identity changed before startup.');
+    }
+
+    if (shellForeground && shellAlone) {
+      return;
+    }
+
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Wait for shell initialization without extending the work budget.
+    await delay(Math.min(250, workBudget(handle)), undefined, { signal: handle.abort.signal });
+  }
+};
+
 export const processAbsent = (processId: number): boolean => {
   try {
     process.kill(processId, 0);
