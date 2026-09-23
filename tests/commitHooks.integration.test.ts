@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { chmod, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -63,7 +63,7 @@ it('runs commit hooks through Pi without approval or TDD notices', async ({ onTe
   await mkdir(join(cwd, '.vite-hooks'));
   await writeFile(
     join(cwd, '.vite-hooks/pre-commit'),
-    `#!/bin/sh\n${await readFile(resolve('.vite-hooks/pre-commit'), 'utf8')}`,
+    `#!/bin/sh\n${await readFile(join(repositoryRoot, '.vite-hooks/pre-commit'), 'utf8')}`,
   );
   await chmod(join(cwd, '.vite-hooks/pre-commit'), 0o755);
   await writeFile(

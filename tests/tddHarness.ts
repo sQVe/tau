@@ -25,7 +25,7 @@ export const createWorktree = async (cleanup: TestContext['onTestFinished']) => 
   cleanup(() => rm(cwd, { recursive: true, force: true }));
 
   await initializeRepository(cwd);
-  await symlink(resolve('node_modules'), join(cwd, 'node_modules'), 'dir');
+  await symlink(resolve(import.meta.dirname, '../node_modules'), join(cwd, 'node_modules'), 'dir');
   await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
   await writeFile(join(cwd, 'vite.config.ts'), 'export default {};');
   await writeFile(
