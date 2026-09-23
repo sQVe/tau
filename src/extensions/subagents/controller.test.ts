@@ -853,6 +853,7 @@ it('retains the chosen name but never retries a late live collision', async ({
 it('delivers a clarification once without treating herdr delivery as acknowledgement', async ({
   onTestFinished,
 }) => {
+  vi.useFakeTimers();
   const { controller, input, calls, notifications, directory } = setup(
     onTestFinished,
     0,

@@ -195,7 +195,7 @@ describe('commitTool.execute', () => {
       .fn<typeof reviewComments>()
       .mockResolvedValueOnce({ findings: [] })
       .mockResolvedValue({
-        findings: [{ path: 'two.txt', line: 1, kind: 'policy', message: 'Remove stale note.' }],
+        findings: [{ path: 'two.txt', line: 1, kind: 'inaccurate', message: 'Remove stale note.' }],
       });
     const tool = createReviewedCommitTool(
       {
@@ -342,7 +342,7 @@ describe('commitTool.execute', () => {
         if (reviews === 3 && failure === 'corrections') {
           return {
             findings: [
-              { path: 'three.txt', line: 1, kind: 'policy' as const, message: 'Fix comment.' },
+              { path: 'three.txt', line: 1, kind: 'inaccurate' as const, message: 'Fix comment.' },
             ],
           };
         }
@@ -463,48 +463,49 @@ describe('commitTool.execute', () => {
     );
   });
 
-  it('commits and reports an unverified finding as advisory', async () => {
-    const repositoryDirectory = await createTemporaryRepository();
+  it.each(['unverified', 'policy'] as const)(
+    'commits and reports a %s finding as advisory',
+    async (kind) => {
+      const repositoryDirectory = await createTemporaryRepository();
 
-    await writeRepositoryFile(
-      repositoryDirectory,
-      'note.ts',
-      '// Narration.\nexport const value = 1;\n',
-    );
+      await writeRepositoryFile(
+        repositoryDirectory,
+        'note.ts',
+        '// Narration.\nexport const value = 1;\n',
+      );
 
-    const review = vi.fn<typeof reviewComments>().mockResolvedValue({
-      findings: [
+      const review = vi.fn<typeof reviewComments>().mockResolvedValue({
+        findings: [
+          {
+            path: 'note.ts',
+            line: 1,
+            kind,
+            message: 'Narration.',
+          },
+        ],
+      });
+      const tool = createReviewedCommitTool(
         {
-          path: 'note.ts',
-          line: 1,
-          kind: 'unverified',
-          message: 'Narration. Unverified: Shown code supports it.',
+          exec: (command, commandArguments, options) =>
+            runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
         },
-      ],
-    });
-    const tool = createReviewedCommitTool(
-      {
-        exec: (command, commandArguments, options) =>
-          runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
-      },
-      review,
-    );
+        review,
+      );
 
-    const result = await tool.execute(
-      'batch',
-      { groups: [{ files: ['note.ts'], subject: 'feat: add note' }] },
-      undefined,
-      undefined,
-      commitContext(repositoryDirectory),
-    );
+      const result = await tool.execute(
+        'batch',
+        { groups: [{ files: ['note.ts'], subject: 'feat: add note' }] },
+        undefined,
+        undefined,
+        commitContext(repositoryDirectory),
+      );
 
-    expect((await git(repositoryDirectory, ['log', '-1', '--format=%s'])).trim()).toBe(
-      'feat: add note',
-    );
-    expect(JSON.stringify(result.content)).toContain(
-      '[advisory] Narration. Unverified: Shown code supports it.',
-    );
-  });
+      expect((await git(repositoryDirectory, ['log', '-1', '--format=%s'])).trim()).toBe(
+        'feat: add note',
+      );
+      expect(JSON.stringify(result.content)).toContain('[advisory] Narration.');
+    },
+  );
 
   it('rejects staged content changed during comment review', async () => {
     const repositoryDirectory = await createTemporaryRepository();
@@ -544,7 +545,9 @@ describe('commitTool.execute', () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     const review = vi.fn<() => Promise<CommentReview>>(async () => ({
-      findings: [{ path: 'retry.ts', line: 1, kind: 'policy' as const, message: 'Stale comment.' }],
+      findings: [
+        { path: 'retry.ts', line: 1, kind: 'inaccurate' as const, message: 'Stale comment.' },
+      ],
     }));
     const tool = createReviewedCommitTool(
       {
@@ -1054,7 +1057,9 @@ describe('commits without approvals', () => {
     const repositoryDirectory = await createTemporaryRepository();
     await writeRepositoryFile(repositoryDirectory, 'retry.ts', '// stale\n');
     const findings = {
-      findings: [{ path: 'retry.ts', line: 1, kind: 'policy' as const, message: 'Stale note.' }],
+      findings: [
+        { path: 'retry.ts', line: 1, kind: 'inaccurate' as const, message: 'Stale note.' },
+      ],
     };
     const review = vi
       .fn<typeof reviewComments>()

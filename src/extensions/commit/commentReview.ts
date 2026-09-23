@@ -79,8 +79,8 @@ export interface CommentReview {
   findings: CommentFinding[];
 }
 
-export const isAdvisoryFinding = (finding: CommentFinding) =>
-  finding.kind === 'missing' || finding.kind === 'unverified';
+// Only inaccurate findings block, unless the verifier rejects them.
+export const isAdvisoryFinding = (finding: CommentFinding) => finding.kind !== 'inaccurate';
 
 interface ReviewFile {
   path: string;
