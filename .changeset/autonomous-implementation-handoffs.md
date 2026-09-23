@@ -7,12 +7,11 @@ ownership of a worktree the parent gives to one editor, and the Changes, Evidenc
 Concerns handoff. Pi and generic herdr workers receive the same contract, while investigators keep
 their read-only boundary.
 
-Saved handoffs ask for an inspectable content reference captured at check time, such as a saved diff
-file or `git diff --stat` plus `git status --short`, including relevant untracked files and the
-assignment baseline. A separate output path names the check result, and the worker states when the
-current work cannot be compared to that reference. Status marks which handoff section headings a
-saved report is missing, so older or incomplete reports stay honest without reading evidence
-strings.
+Saved handoffs ask for a content reference captured at check time: a saved full diff plus hashes of
+relevant untracked files, alongside the assignment baseline. A separate output path names the check
+result, and the worker states when the current work cannot be compared to that reference. Status
+marks which handoff section headings a saved report is missing, so older or incomplete reports stay
+honest without reading evidence strings.
 
 Wake the parent manager for terminal worker notices, including success, failure, incomplete, and
 undelivered outcomes, so an idle manager reacts without a new user prompt. Question notices keep
