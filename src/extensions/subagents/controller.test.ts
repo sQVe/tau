@@ -201,8 +201,35 @@ it('does not close a rejected-start pane after its foreground changes', async ({
   const launched = await fixture.controller.launch(fixture.input);
 
   expect(launched.cleanup).toContain('pane closure refused');
+  expect(launched.state).toBe('cleanupUnconfirmed');
+  expect(launched.capacityHeld).toBe(true);
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(false);
   expect(fixture.calls.some((call) => call[1] === 'close')).toBe(false);
   expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toContain('worker-1');
+});
+
+it('keeps confirmed cleanup when placement fails after the rejected-start pane closes', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished, -1);
+  fixture.fake.state.startError = 'Start rejected';
+  fixture.fake.state.rejectStart = true;
+  const close = WorkerPlacement.prototype.close;
+  vi.spyOn(WorkerPlacement.prototype, 'close').mockImplementation(async function (
+    this: WorkerPlacement,
+    ...argumentsList
+  ) {
+    await close.apply(this, argumentsList);
+
+    throw new Error('Placement update failed after closure');
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('stopped');
+  expect(launched.capacityHeld).toBe(false);
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
 });
 
 it.each(['fails', 'aborts', 'times out'] as const)(
@@ -486,6 +513,55 @@ const completed = async (intercept?: HerdrClient) => {
     sourceDirectory: status.directory,
   };
 };
+
+it('retains the follow-up claim when final absence verification fails', async () => {
+  let following = false;
+  let absenceChecks = 0;
+  const fixture = await completed(async (argumentsList) => {
+    if (!following) {
+      return '';
+    }
+
+    if (argumentsList[1] === 'get') {
+      absenceChecks += 1;
+    }
+
+    if (absenceChecks > 0 && argumentsList[1] === 'process-info') {
+      return JSON.stringify({
+        result: {
+          process_info: {
+            pane_id: argumentsList[3],
+            shell_pid: 100,
+            foreground_process_group_id: process.pid,
+            foreground_processes: [{ pid: process.pid, argv: ['unrelated-job'] }],
+          },
+        },
+      });
+    }
+
+    return '';
+  });
+  following = true;
+  fixture.fake.state.startError = 'Start rejected';
+  fixture.fake.state.rejectStart = true;
+
+  const failed = await fixture.controller.followUp(fixture.input, fixture.context);
+
+  expect(failed.state).toBe('cleanupUnconfirmed');
+  expect(failed.capacityHeld).toBe(true);
+  expect(readEvent(failed.directory, failed.taskId, 'cleanup')?.stopped).toBe(false);
+  expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(failed.taskId);
+  expect(fixture.calls.some((call) => call[1] === 'close')).toBe(false);
+  const calls = fixture.calls.length;
+  const claim = readFileSync(join(fixture.sourceDirectory, 'successor.json'));
+
+  await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+    failed.taskId,
+  );
+
+  expect(fixture.calls).toHaveLength(calls);
+  expect(readFileSync(join(fixture.sourceDirectory, 'successor.json'))).toEqual(claim);
+});
 
 it('allows follow-up retry after a rejected start and confirmed cleanup', async () => {
   const fixture = await completed();

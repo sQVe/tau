@@ -89,8 +89,9 @@ const closeStoppedShell = async (
 
 export const closeUnstartedPane = async (
   request: Omit<StopOwnedWorkerRequest, 'owned' | 'client'>,
-): Promise<string> => {
+): Promise<{ stopped: boolean; detail: string }> => {
   const { handle, call, remainingBudget, signal, placement } = request;
+  const paneClosed = { confirmed: false };
 
   try {
     const location = await resolveTerminal(text(handle.terminalId), call);
@@ -105,13 +106,21 @@ export const closeUnstartedPane = async (
         }
 
         await call(['pane', 'close', location.paneId]);
+        paneClosed.confirmed = true;
       },
       signal,
     );
 
-    return 'Worker absence confirmed; its unchanged shell pane was closed.';
+    return {
+      stopped: true,
+      detail: 'Worker absence confirmed; its unchanged shell pane was closed.',
+    };
   } catch (error) {
-    return `Pane ${handle.paneId} left open: ${String(error)}`;
+    const detail = paneClosed.confirmed
+      ? `Worker pane closed; placement cleanup failed: ${String(error)}`
+      : `Pane ${handle.paneId} left open: ${String(error)}`;
+
+    return { stopped: paneClosed.confirmed, detail };
   }
 };
 

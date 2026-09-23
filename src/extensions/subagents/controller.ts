@@ -1452,13 +1452,16 @@ export class WorkerController {
     let detail = cleanupDetail(handle, stopped) + inspectionFailure;
 
     if (stopped && handle.shell && handle.terminalId) {
-      detail = await closeUnstartedPane({
+      const closedPane = await closeUnstartedPane({
         handle,
         call,
         remainingBudget,
         signal,
         placement: this.placement,
       });
+      stopped = closedPane.stopped;
+      handle.workerNeverStarted = stopped;
+      detail = closedPane.detail;
     }
 
     if (handle.owned) {
