@@ -318,7 +318,10 @@ export default defineConfig({
     },
   },
   staged: {
-    '*.{ts,tsx,js,jsx,mjs,cjs}': ['node scripts/runStyle.ts', 'vp fmt --check'],
-    '!(pnpm-lock).{json,md,yaml,yml,css}': 'vp fmt --check',
+    '*.{ts,tsx,js,jsx,mjs,cjs}': [
+      'node scripts/runStyle.ts',
+      'vp fmt --check --no-error-on-unmatched-pattern',
+    ],
+    '!(pnpm-lock).{json,md,yaml,yml,css}': 'vp fmt --check --no-error-on-unmatched-pattern',
   },
 });
