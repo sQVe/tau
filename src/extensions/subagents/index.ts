@@ -25,7 +25,7 @@ import {
 const visibility = Type.Optional(
   StringEnum(['foreground', 'background'] as const, {
     description:
-      'Foreground splits the parent tab and shares its space roughly equally with the worker. Background groups workers in separate worker tabs. Both preserve focus, manual split ratios, and unrelated panes. Use foreground when the user benefits from watching the work, such as implementation; use background for work they do not need to watch. Default: foreground; a worker gets a separate tab when the parent cannot share useful space.',
+      'Foreground splits the parent pane and keeps the parent and its workers roughly equal in size. Background groups workers in separate worker tabs. Both preserve focus, manual split ratios, and unrelated panes. Use foreground when the user benefits from watching the work, such as implementation; use background for work they do not need to watch. Default: foreground; a worker gets a separate tab when the parent cannot share useful space.',
   }),
 );
 
