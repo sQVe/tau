@@ -52,6 +52,7 @@ interface WorkerState {
   accepted: boolean;
   reported: boolean;
   incompleteRefused: boolean;
+  remindAfterRefusal: boolean;
   settled: boolean;
   kickoff: ReturnType<typeof setInterval> | undefined;
   pendingQuestion: Question | undefined;
@@ -274,20 +275,21 @@ const refuseEarlyIncomplete = (state: WorkerState, task: Task, blocker: string |
   }
 
   state.incompleteRefused = true;
+  state.remindAfterRefusal = true;
   throw new Error(
     `Report refused: ${Math.floor(remaining / 60_000)} minutes remain. Finish the remaining assigned work. Report incomplete only when a concrete blocker stops you.`,
   );
 };
 
-// Truncate the blocker, not the summary: Concerns come last and matter most to the parent.
+// Concerns come last and matter most, so trim the blocker first and cut the summary only to fit a short one.
 const withBlocker = (summary: string, blocker: string | undefined): string => {
   if (blocker === undefined) {
     return summary;
   }
 
-  const prefix = `Blocker: ${blocker}\n\n`.slice(0, textLimit - summary.length);
+  const room = Math.max(200, textLimit - summary.length - 'Blocker: \n\n'.length);
 
-  return `${prefix}${summary}`;
+  return `Blocker: ${blocker.slice(0, room)}\n\n${summary}`.slice(0, textLimit);
 };
 
 const reportToParent = (
@@ -539,11 +541,20 @@ const registerReportReminder = (pi: ExtensionAPI, state: WorkerState): void => {
       return;
     }
 
-    if (readChildren(pi).active > 0 || existsSync(join(state.directory, 'reportRequest.json'))) {
+    const requested = existsSync(join(state.directory, 'reportRequest.json'));
+    // A refused report earns one more reminder; otherwise the worker could settle with no report.
+    const alreadyReminded = requested && !state.remindAfterRefusal;
+
+    if (readChildren(pi).active > 0 || alreadyReminded) {
       return;
     }
 
-    publish(state.directory, 'reportRequest.json', { taskId: task.taskId, at: Date.now() });
+    state.remindAfterRefusal = false;
+
+    if (!requested) {
+      publish(state.directory, 'reportRequest.json', { taskId: task.taskId, at: Date.now() });
+    }
+
     pi.sendMessage(
       {
         customType: 'tau-worker-report-request',
@@ -591,6 +602,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
     accepted: false,
     reported: false,
     incompleteRefused: false,
+    remindAfterRefusal: false,
     settled: false,
     kickoff: undefined,
     pendingQuestion: undefined,

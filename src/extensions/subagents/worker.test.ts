@@ -417,19 +417,61 @@ it('accepts the first incomplete report just below the time bar', async () => {
   expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
 });
 
+it('reminds a refused worker to report even after an earlier reminder', async () => {
+  const worker = await waitingWorker('editing', hour);
+  await worker.emit('agent_end');
+  expect(() => reportIncomplete(worker, 'Tests remain.')).toThrow('minutes remain');
+
+  await worker.emit('agent_end');
+  await worker.emit('agent_end');
+
+  expect(worker.sendMessage).toHaveBeenCalledTimes(2);
+  expect(worker.shutdown).not.toHaveBeenCalled();
+});
+
+it('keeps the blocker when the summary is at the size limit', async () => {
+  const worker = await waitingWorker('editing');
+  const report = worker.tools.get('subagent_report');
+
+  if (!report) {
+    throw new Error('Missing report tool.');
+  }
+
+  await report.execute(
+    'report',
+    {
+      outcome: 'incomplete',
+      summary: 'Task ended.'.padEnd(textLimit, '.'),
+      evidence: [],
+      blocker: 'The parent must choose the storage format.',
+    },
+    undefined,
+    undefined,
+    worker.context,
+  );
+
+  const summary = readReport(worker.directory, 'task')?.summary;
+  expect(summary).toHaveLength(textLimit);
+  expect(summary).toContain('Blocker: The parent must choose the storage format.\n\nTask ended.');
+});
+
 it('accepts a success report after refusing an incomplete one', async () => {
   const worker = await waitingWorker('editing', hour);
   expect(() => reportIncomplete(worker, 'Tests remain.')).toThrow('minutes remain');
 
-  await worker.tools
-    .get('subagent_report')!
-    .execute(
-      'report',
-      { outcome: 'success', summary: 'All done.', evidence: [], blocker: 'None.' },
-      undefined,
-      undefined,
-      worker.context,
-    );
+  const report = worker.tools.get('subagent_report');
+
+  if (!report) {
+    throw new Error('Missing report tool.');
+  }
+
+  await report.execute(
+    'report',
+    { outcome: 'success', summary: 'All done.', evidence: [], blocker: 'None.' },
+    undefined,
+    undefined,
+    worker.context,
+  );
 
   expect(readReport(worker.directory, 'task')?.outcome).toBe('success');
   expect(readReport(worker.directory, 'task')?.summary).toBe('All done.');
