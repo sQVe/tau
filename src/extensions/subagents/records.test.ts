@@ -141,6 +141,19 @@ it.each([
   expect(() => records.readTasks(root)).toThrow(/JSON|property|Permission|identity|task.json/);
 });
 
+it.for([
+  ['malformed', '{'],
+  ['invalid', '{"version":1}'],
+] as const)('names the task whose saved record is %s', ([, content]) => {
+  const { directory, task } = questionFixture();
+  const root = join(directory, 'registry');
+  const child = join(root, task.taskId);
+  mkdirSync(child, { recursive: true });
+  writeFileSync(join(child, 'task.json'), content);
+
+  expect(() => records.readTasks(root)).toThrow(task.taskId);
+});
+
 it('skips tasks saved in a retired format without blocking current tasks', () => {
   const { directory, task } = questionFixture();
   const root = join(directory, 'registry');

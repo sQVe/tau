@@ -11,13 +11,13 @@ import {
   writeFileSync,
 } from 'node:fs';
 import type { Dirent } from 'node:fs';
-import { isAbsolute, join, relative } from 'node:path';
+import { basename, isAbsolute, join, relative } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isMissingFile } from '../../errors/index.js';
+import { errorMessage, isMissingFile } from '../../errors/index.js';
 import {
   eventSchema,
   reportSchema,
@@ -206,8 +206,19 @@ export const validateTask = (value: unknown): Task => {
   return value;
 };
 
+// Callers treat a missing task as unpublished, so only other failures name the task.
 export const readTask = (directory: string): Task => {
-  return validateTask(readRecord(directory, 'task.json'));
+  try {
+    return validateTask(readRecord(directory, 'task.json'));
+  } catch (error) {
+    if (isMissingFile(error)) {
+      throw error;
+    }
+
+    throw new Error(`Saved task ${basename(directory)} is unreadable: ${errorMessage(error)}`, {
+      cause: error,
+    });
+  }
 };
 
 const claimSessionMatchesTask = (claim: Successor, task: Task): boolean =>
