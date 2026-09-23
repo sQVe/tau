@@ -28,6 +28,10 @@ This replaces the permanent-claim rule in
 [ADR 0030](./0030-claim-native-follow-ups-before-opening.md) for this bounded case. Keep pre-opening
 claims and all other follow-up restrictions.
 
+A structured `agent_pane_busy` rejection may be retried once within the original startup budget,
+after verifying an unchanged bare shell and no agent. Record the retry before sending it. This is
+not permission to retry an uncertain start response.
+
 ## Tradeoffs
 
 - Confirmed pre-dispatch failures do not permanently block a conversation.

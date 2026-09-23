@@ -1,3 +1,5 @@
+import type { SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
+
 import type { OwnedWorker } from './cancellation.js';
 import type { Task } from './types.js';
 
@@ -8,6 +10,7 @@ export interface Handle {
   paneId?: string;
   terminalId?: string;
   timer?: ReturnType<typeof setTimeout>;
+  starting?: Promise<string>;
   stopping?: Promise<void>;
   abort: AbortController;
   expires: number;
@@ -19,6 +22,7 @@ export interface Handle {
   nativeState?: string;
   observationIssue?: string;
   recordErrors: string[];
+  shutdownReason?: SessionShutdownEvent['reason'];
   cleanupDetail?: string;
   cleanupFinished?: boolean;
   notifiedQuestions: Set<string>;

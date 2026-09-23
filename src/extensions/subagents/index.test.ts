@@ -51,15 +51,17 @@ const fullWorkerStatus = {
 };
 
 it('waits for bounded worker cleanup during session shutdown', async ({ onTestFinished }) => {
-  const handlers = new Map<string, () => Promise<void>>();
+  const handlers = new Map<string, (event: { reason: string }) => Promise<void>>();
   const tools = new Map<string, ToolDefinition>();
   const released = Promise.withResolvers<undefined>();
   let cleanupFinished = false;
+  let shutdownReason: string | undefined;
   vi.spyOn(WorkerController.prototype, 'status').mockReturnValue(
     fullWorkerStatus as unknown as ReturnType<WorkerController['status']>,
   );
-  vi.spyOn(WorkerController.prototype, 'stopAll').mockImplementation(async () => {
+  vi.spyOn(WorkerController.prototype, 'stopAll').mockImplementation(async (reason) => {
     await released.promise;
+    shutdownReason = reason;
     cleanupFinished = true;
   });
   onTestFinished(() => {
@@ -67,7 +69,8 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
   });
   subagentsExtension({
     events: createEventBus(),
-    on: (name: string, handler: () => Promise<void>) => handlers.set(name, handler),
+    on: (name: string, handler: (event: { reason: string }) => Promise<void>) =>
+      handlers.set(name, handler),
     registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
     registerMessageRenderer: () => undefined,
   } as unknown as ExtensionAPI);
@@ -78,15 +81,18 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
     .get('subagent_status')!
     .execute('status', { taskId: 'task-1' }, undefined, undefined, context);
   let shutdownFinished = false;
-  const shutdown = Promise.resolve(handlers.get('session_shutdown')!()).then(() => {
-    shutdownFinished = true;
-  });
+  const shutdown = Promise.resolve(handlers.get('session_shutdown')!({ reason: 'reload' })).then(
+    () => {
+      shutdownFinished = true;
+    },
+  );
   await Promise.resolve();
 
   expect(shutdownFinished).toBe(false);
   released.resolve(undefined);
   await shutdown;
   expect(cleanupFinished).toBe(true);
+  expect(shutdownReason).toBe('reload');
 });
 
 it('places follow-ups with explicit visibility and the current parent terminal', async ({

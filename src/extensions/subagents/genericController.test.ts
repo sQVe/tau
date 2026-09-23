@@ -550,15 +550,7 @@ it.each([
 it('returns uncertain startup for inspection without waiting out or resetting the deadline', async () => {
   const setup = fixture();
   setup.state.inspectionError = 'Temporary startup observation failure';
-  let outcome: unknown;
-  const launching = setup.controller.launch(setup.input).then(
-    (status) => {
-      outcome = status;
-    },
-    (error: unknown) => {
-      outcome = error;
-    },
-  );
+  const outcome = await setup.controller.launch(setup.input);
 
   await vi.advanceTimersByTimeAsync(100);
 
@@ -566,7 +558,6 @@ it('returns uncertain startup for inspection without waiting out or resetting th
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
   setup.state.inspectionError = '';
   await vi.advanceTimersByTimeAsync(1500);
-  await launching;
   expect(setup.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
 });

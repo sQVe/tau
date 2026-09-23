@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
 import {
   descendantReservations,
@@ -27,6 +27,7 @@ import {
   waitForPiIdentity,
   integer,
   isBareShell,
+  isHerdrError,
   prepareTaskDirectory,
   readProcessStart,
   verifyRejectedStart,
@@ -34,7 +35,7 @@ import {
   workerArguments,
   processAbsent,
 } from './controllerInspect.js';
-import type { HerdrClient } from './controllerInspect.js';
+import type { HerdrClient, InspectionBudget } from './controllerInspect.js';
 import {
   checkHandoff,
   checkNativeWriterListing,
@@ -58,6 +59,7 @@ import { submitGenericText, genericPrompt, acceptGenericReport } from './generic
 import { authorizeHistoryTask } from './history.js';
 import { authenticateParent, currentProcessIdentity } from './identity.js';
 import { validateSavedLoadout } from './loadout.js';
+import { waitForResolution } from './loadoutFingerprint.js';
 import { allocateName, nameSuffix } from './names.js';
 import { validateNative } from './native.js';
 import { WorkerPlacement } from './placement.js';
@@ -726,6 +728,70 @@ export class WorkerController {
     );
   }
 
+  private async startAgent(
+    handle: Handle,
+    paneId: string,
+    name: string,
+    call: (argumentsList: string[]) => Promise<string>,
+  ): Promise<void> {
+    const { task } = handle;
+    const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
+    handle.workerNeverStarted = false;
+
+    handle.starting = Promise.resolve().then(() =>
+      call([
+        'agent',
+        'start',
+        name,
+        '--kind',
+        generic?.kind ?? 'pi',
+        '--pane',
+        paneId,
+        '--timeout',
+        String(workBudget(handle)),
+        '--',
+        ...(generic?.arguments ?? workerArguments(task)),
+      ]),
+    );
+    await handle.starting;
+  }
+
+  private async startWithBusyRetry(
+    handle: Handle,
+    paneId: string,
+    name: string,
+    call: (argumentsList: string[]) => Promise<string>,
+  ): Promise<void> {
+    try {
+      await this.startAgent(handle, paneId, name, call);
+    } catch (error) {
+      if (!isHerdrError(error, 'agent_pane_busy')) {
+        throw error;
+      }
+
+      if (!(await verifyRejectedStart(handle, call))) {
+        throw error;
+      }
+
+      handle.workerNeverStarted = true;
+      await waitForShell(handle, paneId, call);
+
+      if (!(await verifyRejectedStart(handle, call))) {
+        throw new Error('Shell identity changed before the rejected-start retry.', {
+          cause: error,
+        });
+      }
+
+      publish(handle.directory, 'startRetry.json', {
+        taskId: handle.task.taskId,
+        at: Date.now(),
+        reason: 'agent_pane_busy',
+        detail: 'One retry after unchanged-shell and agent-absence verification.',
+      });
+      await this.startAgent(handle, paneId, name, call);
+    }
+  }
+
   private async startWorker(
     handle: Handle,
     paneId: string,
@@ -739,21 +805,7 @@ export class WorkerController {
 
     await this.prepareStart(handle, paneId, call, generic);
 
-    // Treat startup as uncertain before awaiting its response; cleanup must establish ownership or absence.
-    handle.workerNeverStarted = false;
-    await call([
-      'agent',
-      'start',
-      name,
-      '--kind',
-      generic?.kind ?? 'pi',
-      '--pane',
-      paneId,
-      '--timeout',
-      String(workBudget(handle)),
-      '--',
-      ...(generic?.arguments ?? workerArguments(task)),
-    ]).catch((error: unknown) => {
+    await this.startWithBusyRetry(handle, paneId, name, call).catch((error: unknown) => {
       handle.startError = String(error).slice(0, 4000);
 
       if (!generic) {
@@ -1325,6 +1377,39 @@ export class WorkerController {
     return failureDetail;
   }
 
+  private async recoverPiStartup(
+    handle: Handle,
+    call: (argumentsList: string[]) => Promise<string>,
+    budget: InspectionBudget,
+    record: (operation: () => void) => void,
+  ): Promise<string> {
+    if (!isPiLoadout(handle.task.loadout) || handle.workerNeverStarted || handle.owned) {
+      return '';
+    }
+
+    try {
+      if (handle.starting) {
+        await waitForResolution(
+          handle.starting.catch(() => undefined),
+          budget.signal,
+        );
+      }
+
+      handle.workerNeverStarted = await verifyRejectedStart(handle, call, budget);
+
+      if (!handle.workerNeverStarted) {
+        handle.owned = await waitForPiIdentity(handle, call, budget);
+        record(() => {
+          publish(handle.directory, 'owned.json', handle.owned);
+        });
+      }
+
+      return '';
+    } catch (error) {
+      return ` Cleanup inspection failed: ${String(error)}`;
+    }
+  }
+
   private async cleanup(
     handle: Handle,
     reason: 'timeout' | 'cancelled' | 'completion' | 'failure',
@@ -1356,27 +1441,12 @@ export class WorkerController {
       return remaining;
     };
     const call = (argumentsList: string[]) => this.client(argumentsList, remainingBudget(), signal);
-    const uncertainPiStart =
-      isPiLoadout(task.loadout) && !handle.workerNeverStarted && !handle.owned;
-    let inspectionFailure = '';
-
-    if (uncertainPiStart) {
-      try {
-        handle.workerNeverStarted = await verifyRejectedStart(handle, call, {
-          remainingBudget,
-          signal,
-        });
-
-        if (!handle.workerNeverStarted) {
-          handle.owned = await waitForPiIdentity(handle, call, { remainingBudget, signal });
-          record(() => {
-            publish(handle.directory, 'owned.json', handle.owned);
-          });
-        }
-      } catch (error) {
-        inspectionFailure = ` Cleanup inspection failed: ${String(error)}`;
-      }
-    }
+    const inspectionFailure = await this.recoverPiStartup(
+      handle,
+      call,
+      { remainingBudget, signal },
+      record,
+    );
 
     let stopped = handle.workerNeverStarted;
     let detail = cleanupDetail(handle, stopped) + inspectionFailure;
@@ -1403,6 +1473,10 @@ export class WorkerController {
       });
       stopped = stoppedWorker.stopped;
       detail = stoppedWorker.detail;
+    }
+
+    if (handle.shutdownReason) {
+      detail = `Parent session ${handle.shutdownReason}. ${detail}`;
     }
 
     const failure = this.cleanupFailureDetail(handle, failureDetail);
@@ -1447,8 +1521,12 @@ export class WorkerController {
     this.notifySnapshot(handle);
   }
 
-  // Cleanup for every worker this controller still owns, so a stopping ancestor does not strand its tree.
-  async stopAll(): Promise<void> {
+  // Include tracked tasks whose start response is still pending.
+  async stopAll(reason: SessionShutdownEvent['reason'] = 'quit'): Promise<void> {
+    for (const handle of this.handles.values()) {
+      handle.shutdownReason = reason;
+    }
+
     await Promise.allSettled(
       [...this.handles.values()].map((handle) => this.stop(handle, 'cancelled')),
     );

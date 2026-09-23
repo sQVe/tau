@@ -53,6 +53,8 @@ export const waitForShell = async (
   paneId: string,
   call: (argumentsList: string[]) => Promise<string>,
 ): Promise<void> => {
+  let previousShell: number | undefined;
+
   for (;;) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- Shell startup polling shares the original launch budget.
     const response = await call(['pane', 'process-info', '--pane', paneId]);
@@ -63,11 +65,19 @@ export const waitForShell = async (
     }
 
     if (isBareShell(information)) {
-      return;
+      const shell = integer(information.shell_pid);
+
+      if (shell === previousShell) {
+        return;
+      }
+
+      previousShell = shell;
+    } else {
+      previousShell = undefined;
     }
 
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Wait for shell initialization without extending the work budget.
-    await delay(Math.min(250, workBudget(handle)), undefined, { signal: handle.abort.signal });
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Poll serially within the original startup budget.
+    await delay(Math.min(100, workBudget(handle)), undefined, { signal: handle.abort.signal });
   }
 };
 
@@ -98,8 +108,10 @@ export const workerArguments = (task: Task): string[] => {
     task.loadout.model.slice(separator + 1),
     '--thinking',
     task.loadout.thinking,
-    // Pi keeps explicit -e entries with --no-extensions. Replay the validated set without rediscovering packages or another Tau checkout.
+    // Load the empty-command guard before the explicitly replayed integrations, including Safety Net.
     '--no-extensions',
+    '-e',
+    fileURLToPath(new URL('./workerBashGuard.ts', import.meta.url)),
     ...task.loadout.integrations.flatMap((path) => ['-e', path]),
     '-e',
     fileURLToPath(new URL('./worker.ts', import.meta.url)),
@@ -264,7 +276,7 @@ const checkGenericAgent = async (
   return reference;
 };
 
-const isAgentNotFoundError = (error: unknown): boolean => {
+export const isHerdrError = (error: unknown, code: string): boolean => {
   if (!(error instanceof Error)) {
     return false;
   }
@@ -273,7 +285,7 @@ const isAgentNotFoundError = (error: unknown): boolean => {
     try {
       const parsed = object(JSON.parse(error.stderr));
 
-      if (object(parsed.error).code === 'agent_not_found') {
+      if (object(parsed.error).code === code) {
         return true;
       }
     } catch {
@@ -281,7 +293,7 @@ const isAgentNotFoundError = (error: unknown): boolean => {
     }
   }
 
-  return 'cause' in error && isAgentNotFoundError(error.cause);
+  return 'cause' in error && isHerdrError(error.cause, code);
 };
 
 export const verifyRejectedStart = async (
@@ -320,7 +332,7 @@ export const verifyRejectedStart = async (
       return false;
     }
   } catch (error) {
-    return isAgentNotFoundError(error);
+    return isHerdrError(error, 'agent_not_found');
   }
 
   // Accept a successful empty agent object as absence evidence after checking the shell identity.

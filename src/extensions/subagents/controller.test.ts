@@ -205,7 +205,7 @@ it('does not close a rejected-start pane after its foreground changes', async ({
   expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toContain('worker-1');
 });
 
-it.each(['fails', 'aborts'] as const)(
+it.each(['fails', 'aborts', 'times out'] as const)(
   'stops Pi when the start response %s after launch',
   async (outcome) => {
     const abort = new AbortController();
@@ -220,7 +220,10 @@ it.each(['fails', 'aborts'] as const)(
         }
       }
     });
-    fixture.fake.state.startError = 'Start response lost';
+    fixture.fake.state.startError =
+      outcome === 'times out'
+        ? 'Client attempt budget expired; delivery and cleanup are unconfirmed.'
+        : 'Start response lost';
     fixture.fake.state.sendKeysError = '';
     vi.spyOn(process, 'kill').mockImplementation(() => {
       if (fixture.fake.state.stopped) {
@@ -238,6 +241,83 @@ it.each(['fails', 'aborts'] as const)(
     expect(fixture.calls.some((call) => call[1] === 'close')).toBe(true);
   },
 );
+
+it('requires two matching bare-shell samples after transient startup children', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  const client = fixture.fake.client;
+  let samples = 0;
+  let samplesAtStart = 0;
+  vi.spyOn(fixture.fake, 'client').mockImplementation((argumentsList, budget, signal) => {
+    if (!fixture.fake.state.started && argumentsList[1] === 'process-info') {
+      samples += 1;
+
+      if (samples === 2) {
+        fixture.fake.state.busyShellPolls = 1;
+      }
+    }
+
+    if (argumentsList[1] === 'start') {
+      samplesAtStart = samples;
+    }
+
+    return client(argumentsList, budget, signal);
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('starting');
+  expect(samplesAtStart).toBeGreaterThanOrEqual(5);
+});
+
+it('retries a structured pane-busy rejection once after proving absence', async ({
+  onTestFinished,
+}) => {
+  let attempts = 0;
+  const fixture = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
+      attempts += 1;
+
+      if (attempts === 1) {
+        throw Object.assign(new Error('Busy shell'), {
+          stderr: JSON.stringify({ error: { code: 'agent_pane_busy' } }),
+        });
+      }
+    }
+
+    return '';
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('starting');
+  expect(attempts).toBe(2);
+  expect(records.readRecord(launched.directory, 'startRetry.json')).toMatchObject({
+    taskId: launched.taskId,
+  });
+});
+
+it('does not repeat a second structured pane-busy rejection', async ({ onTestFinished }) => {
+  let attempts = 0;
+  const fixture = setup(onTestFinished, -1, async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
+      attempts += 1;
+      throw Object.assign(new Error('Busy shell'), {
+        stderr: JSON.stringify({ error: { code: 'agent_pane_busy' } }),
+      });
+    }
+
+    return '';
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(attempts).toBe(2);
+  expect(launched.state).toBe('stopped');
+  expect(fixture.controller.children().active).toBe(0);
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+});
 
 it('waits for the split shell before starting Pi', async ({ onTestFinished }) => {
   const fixture = setup(onTestFinished);
@@ -1948,9 +2028,58 @@ it('includes prior loadout resolution in the original task deadline', async ({
   expect(controller.status(launched.taskId, 'parent-id').outcome).toBe('timeout');
 });
 
-it('stops owned workers and frees their slots before shutdown completes', async ({
+it('waits for an in-flight start before confirming shutdown cleanup', async ({
   onTestFinished,
 }) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  const fixture = setup(onTestFinished, -1);
+  const processStart = await originalRunClient(
+    'ps',
+    ['-p', String(process.pid), '-o', 'lstart='],
+    1000,
+  );
+  vi.spyOn(cancellationModule, 'runClient').mockResolvedValue(processStart);
+  fixture.fake.state.sendKeysError = '';
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    if (fixture.fake.state.stopped) {
+      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+    }
+
+    return true;
+  });
+  const enteredStart = Promise.withResolvers<undefined>();
+  const client = fixture.fake.client;
+  vi.spyOn(fixture.fake, 'client').mockImplementation(async (argumentsList, budget, signal) => {
+    if (argumentsList[1] === 'start') {
+      enteredStart.resolve(undefined);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await client(argumentsList, budget, signal);
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      throw new Error('Start response lost after server launched Pi');
+    }
+
+    if (argumentsList[1] === 'get' && !fixture.fake.state.started) {
+      const missing = await client(argumentsList, budget, signal).catch((error: unknown) => error);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      throw missing;
+    }
+
+    return client(argumentsList, budget, signal);
+  });
+  const launching = fixture.controller.launch(fixture.input);
+  await enteredStart.promise;
+  const shutdown = fixture.controller.stopAll('reload');
+  await vi.advanceTimersByTimeAsync(100);
+  await shutdown;
+  const launched = await launching;
+
+  expect(fixture.fake.state.stopped).toBe(true);
+  expect(launched.capacityHeld).toBe(false);
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+});
+
+it('stops running workers and frees their slots on reload', async ({ onTestFinished }) => {
   const fixture = setup(onTestFinished);
   fixture.fake.state.sendKeysError = '';
   vi.spyOn(process, 'kill').mockImplementation(() => {
@@ -1962,8 +2091,11 @@ it('stops owned workers and frees their slots before shutdown completes', async 
   });
   const launched = await fixture.controller.launch(fixture.input);
 
-  await fixture.controller.stopAll();
+  await fixture.controller.stopAll('reload');
 
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.detail).toContain(
+    'Parent session reload',
+  );
   expect(fixture.controller.status(launched.taskId, fixture.input.parentSessionId).state).toBe(
     'stopped',
   );
@@ -1972,6 +2104,38 @@ it('stops owned workers and frees their slots before shutdown completes', async 
   await expect(fixture.controller.launch(fixture.input)).rejects.toThrow(
     'Parent controller stopped',
   );
+});
+
+it('bounds reload cleanup by the remaining cancellation budget', async ({ onTestFinished }) => {
+  let cleaning = false;
+  const fixture = setup(onTestFinished, 0, async (argumentsList, _budget, signal) => {
+    if (cleaning && argumentsList[0] === 'pane' && argumentsList[1] === 'list') {
+      return new Promise<string>((_resolve, reject) => {
+        signal?.addEventListener(
+          'abort',
+          () => {
+            reject(new Error('Cleanup deadline reached'));
+          },
+          { once: true },
+        );
+      });
+    }
+
+    return '';
+  });
+  const launched = await fixture.controller.launch({ ...fixture.input, timeout: 1200 });
+  cleaning = true;
+  const began = performance.now();
+
+  await fixture.controller.stopAll('reload');
+
+  expect(performance.now() - began).toBeLessThan(1000);
+  const cleanup = readEvent(launched.directory, launched.taskId, 'cleanup');
+  expect(cleanup?.stopped).toBe(false);
+  expect(cleanup?.detail).toContain('Parent session reload');
+  expect(
+    fixture.controller.status(launched.taskId, fixture.input.parentSessionId).capacityHeld,
+  ).toBe(true);
 });
 
 it('ends enforcement on parent shutdown without claiming cleanup', async ({ onTestFinished }) => {
@@ -2452,9 +2616,17 @@ it('carries saved recovery when a handle-free status finds corrupt report eviden
 it('waits for worker readiness after herdr readiness without a new startup budget', async ({
   onTestFinished,
 }) => {
-  vi.useFakeTimers();
-  const { controller, input, calls } = setup(onTestFinished, 100);
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  const started = Promise.withResolvers<undefined>();
+  const { controller, input, calls } = setup(onTestFinished, 100, async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
+      started.resolve(undefined);
+    }
+
+    return '';
+  });
   const launch = controller.launch(input);
+  await started.promise;
   await vi.advanceTimersByTimeAsync(150);
   const status = await launch;
 
