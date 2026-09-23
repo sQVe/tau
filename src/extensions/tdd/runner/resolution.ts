@@ -121,13 +121,21 @@ export const resolutionFailure = (
     stage === 'lookup' && errorCode === 'MODULE_NOT_FOUND' && declaresMissingRequest(error);
   const explanation = resolutionExplanation(stage, errorType, errorCode, missing);
 
-  const message = [
+  const lines = [
     `${explanation} Stage: ${stage}; ${errorType}${errorCode === undefined ? '' : ` (${errorCode})`}.`,
     'Inspect this once, then fix resolution or use the repository runner. Bash tests do not update Tau observations.',
     `Lookup directory: ${resolution.cwd}; request: ${resolution.request}`,
-    ...(resolution.manifestPath === undefined ? [] : [`Manifest: ${resolution.manifestPath}`]),
-    ...(resolution.binaryPath === undefined ? [] : [`Binary: ${resolution.binaryPath}`]),
-  ].join('\n');
+  ];
+
+  if (resolution.manifestPath !== undefined) {
+    lines.push(`Manifest: ${resolution.manifestPath}`);
+  }
+
+  if (resolution.binaryPath !== undefined) {
+    lines.push(`Binary: ${resolution.binaryPath}`);
+  }
+
+  const message = lines.join('\n');
 
   return { kind: missing ? 'runner-missing' : 'runner-resolution-error', message, resolution };
 };

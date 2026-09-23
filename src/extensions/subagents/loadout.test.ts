@@ -51,7 +51,12 @@ const piLoadoutFixture = async (
   vi.stubEnv('TAU_SUBAGENT_MODEL', '');
   const safety = safetyExtensionPath();
   const provider = fileURLToPath(new URL('./fixtures/controlledProvider.ts', import.meta.url));
-  const extensions = [safety, provider, ...(options.marker ? [herdrPiIntegrationPath] : [])];
+  const extensions = [safety, provider];
+
+  if (options.marker) {
+    extensions.push(herdrPiIntegrationPath);
+  }
+
   process.argv = [
     process.execPath,
     'pi',

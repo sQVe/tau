@@ -405,13 +405,21 @@ const buildHookReport = (
   const sensitivePaths = committedPaths.filter((file) =>
     sensitivePathDenylist.some((pattern) => pattern.test(file.replaceAll('\\', '/'))),
   );
-  const hookReport = [
-    ...(sensitivePaths.length
-      ? [`Warning: committed sensitive paths: ${sensitivePaths.join(', ')}`]
-      : []),
-    ...(hookChanges.files.length ? [`Hook changed paths: ${hookChanges.files.join(', ')}`] : []),
-    ...(hookChanges.message ? [`Hook changed the commit message:\n${storedMessage}`] : []),
-  ].join('\n');
+  const reportLines: string[] = [];
+
+  if (sensitivePaths.length) {
+    reportLines.push(`Warning: committed sensitive paths: ${sensitivePaths.join(', ')}`);
+  }
+
+  if (hookChanges.files.length) {
+    reportLines.push(`Hook changed paths: ${hookChanges.files.join(', ')}`);
+  }
+
+  if (hookChanges.message) {
+    reportLines.push(`Hook changed the commit message:\n${storedMessage}`);
+  }
+
+  const hookReport = reportLines.join('\n');
 
   return { hookChanges, hookReport };
 };

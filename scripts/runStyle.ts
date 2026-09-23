@@ -22,7 +22,13 @@ const run = (commandArguments: string[], styleEnabled: boolean) => {
   return result.status ?? 1;
 };
 
-const lintStatus = run(['lint', '--deny-warnings', ...(fixing ? ['--fix'] : []), ...paths], true);
+const lintArguments = ['lint', '--deny-warnings'];
+
+if (fixing) {
+  lintArguments.push('--fix');
+}
+
+const lintStatus = run([...lintArguments, ...paths], true);
 // Format even when a manual rename or helper move is still needed.
 const formatStatus = fixing ? run(['fmt', ...paths], false) : 0;
 

@@ -103,10 +103,13 @@ export const bulkRead = async (
     throw inputError('Input is too large. Split the request');
   }
 
-  const delegateSignal = AbortSignal.any([
-    ...(signal ? [signal] : []),
-    AbortSignal.timeout(120_000),
-  ]);
+  const signals = [AbortSignal.timeout(120_000)];
+
+  if (signal) {
+    signals.push(signal);
+  }
+
+  const delegateSignal = AbortSignal.any(signals);
   delegateSignal.throwIfAborted();
 
   const response = await ctx.modelRegistry

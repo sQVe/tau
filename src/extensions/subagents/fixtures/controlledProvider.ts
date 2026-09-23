@@ -69,16 +69,18 @@ const registerCancellationProvider = (pi: ExtensionAPI): void => {
 const registerDefaultProvider = (pi: ExtensionAPI): void => {
   const asking = directory ? readTask(directory).task.includes('question') : false;
 
+  const questionResponses = asking
+    ? [
+        fauxAssistantMessage([
+          fauxToolCall('subagent_question', {
+            question: 'May I edit source.txt within the assigned scope?',
+          }),
+        ]),
+      ]
+    : [];
+
   provider.setResponses([
-    ...(asking
-      ? [
-          fauxAssistantMessage([
-            fauxToolCall('subagent_question', {
-              question: 'May I edit source.txt within the assigned scope?',
-            }),
-          ]),
-        ]
-      : []),
+    ...questionResponses,
     fauxAssistantMessage([
       fauxToolCall('edit', {
         path: 'source.txt',
