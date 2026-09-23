@@ -34,6 +34,7 @@ const reportParameters = Type.Object({
   outcome: StringEnum(['success', 'failure', 'incomplete']),
   summary: Type.String({ minLength: 1, maxLength: 32_000 }),
   evidence: Type.Array(Type.String({ minLength: 1, maxLength: 32_000 }), { maxItems: 100 }),
+  blocker: Type.Optional(Type.String({ minLength: 1, maxLength: 4000 })),
 });
 
 type ReportInput = Static<typeof reportParameters>;
@@ -43,6 +44,7 @@ interface WorkerState {
   task: Task | undefined;
   accepted: boolean;
   reported: boolean;
+  incompleteRefused: boolean;
   settled: boolean;
   kickoff: ReturnType<typeof setInterval> | undefined;
   pendingQuestion: Question | undefined;
@@ -246,6 +248,41 @@ const keepEvidence = (evidence: string[], note: string): string[] => {
   return [...kept, `${marker}${note}`.slice(0, textLimit)];
 };
 
+const remainingWork = (task: Task): number =>
+  task.tree.monotonicDeadline - task.cancellationBudget - monotonicNow();
+
+// Refuse once so an early handback costs a named blocker, but never so late that the report is lost.
+const refuseEarlyIncomplete = (state: WorkerState, task: Task, blocker: string | undefined) => {
+  if (blocker === undefined) {
+    throw new Error(
+      'An incomplete report needs a blocker: the external dependency, exhausted limit, or parent decision that stops you. Without one, finish the work or report failure.',
+    );
+  }
+
+  const remaining = remainingWork(task);
+  const window = task.deadline - task.createdAt;
+
+  if (state.incompleteRefused || remaining < Math.max(0.2 * window, 300_000)) {
+    return;
+  }
+
+  state.incompleteRefused = true;
+  throw new Error(
+    `Report refused: ${Math.floor(remaining / 60_000)} minutes remain. Finish the remaining assigned work. Report incomplete only when a concrete blocker stops you.`,
+  );
+};
+
+// Truncate the blocker, not the summary: Concerns come last and matter most to the parent.
+const withBlocker = (summary: string, blocker: string | undefined): string => {
+  if (blocker === undefined) {
+    return summary;
+  }
+
+  const prefix = `Blocker: ${blocker}\n\n`.slice(0, textLimit - summary.length);
+
+  return `${prefix}${summary}`;
+};
+
 const reportToParent = (
   state: WorkerState,
   parameters: ReportInput,
@@ -264,12 +301,18 @@ const reportToParent = (
   }
 
   const task = state.task;
+  const { blocker, ...handover } = parameters;
+
+  if (handover.outcome === 'incomplete') {
+    refuseEarlyIncomplete(state, task, blocker);
+  }
 
   // A full summary must never cost the worker its handover.
   const note = descendants.uncertain.join('\n');
   const report = acceptReport(state.directory, task.taskId, {
-    ...parameters,
-    evidence: keepEvidence(parameters.evidence, note),
+    ...handover,
+    summary: withBlocker(handover.summary, handover.outcome === 'incomplete' ? blocker : undefined),
+    evidence: keepEvidence(handover.evidence, note),
     taskId: task.taskId,
   });
   state.reported = true;
@@ -484,9 +527,8 @@ const registerReportReminder = (pi: ExtensionAPI, state: WorkerState): void => {
     }
 
     const task = state.task;
-    const expired = monotonicNow() >= task.tree.monotonicDeadline - task.cancellationBudget;
 
-    if (expired || taskEnded(state.directory, task)) {
+    if (remainingWork(task) <= 0 || taskEnded(state.directory, task)) {
       return;
     }
 
@@ -541,6 +583,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
     task: undefined,
     accepted: false,
     reported: false,
+    incompleteRefused: false,
     settled: false,
     kickoff: undefined,
     pendingQuestion: undefined,
