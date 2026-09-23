@@ -1,8 +1,8 @@
-# ADR 0038: Block commits only on verified comment inaccuracies
+# ADR 0038: Block commits only on comment inaccuracies
 
 - Status: Proposed
 - Date: 2026-09-23
-- Amends: the blocking rule in [ADR 0026](./0026-let-git-hooks-own-commit-checks.md)
+- Supersedes: the blocking rule in [ADR 0026](./0026-let-git-hooks-own-commit-checks.md)
 
 ## Context
 
@@ -27,9 +27,9 @@ refused the commit, and the agent handed a passing, reviewed change back to the 
 
 ## Decision
 
-Only verified inaccurate findings block a commit. Policy, missing, and unverified findings are
-advisory and appear in the commit report. The return limit and refusal rules from ADR 0026 still
-apply to blocking findings.
+Only inaccurate findings block a commit, unless the verifier rejects them. Policy, missing, and
+unverified findings are advisory and appear in the commit report. The return limit and refusal rules
+from ADR 0026 still apply to blocking findings.
 
 ## Tradeoffs
 
