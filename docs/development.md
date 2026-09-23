@@ -91,6 +91,16 @@ including router prefixes such as `openrouter/anthropic/model-id`. The model nee
 credentials. See the [shared-delegate decision](adr/0027-share-one-delegate-model.md) for the
 default and its comparison.
 
+### Workers
+
+Set `TAU_SUBAGENT_MODEL=provider/model-id` to choose the worker model when neither the launch nor
+the profile names one. Without any of the three, worker launch refuses; it never falls back to the
+parent's model.
+
+Set `TAU_SUBAGENT_CAP` to limit how many workers one root session's tree runs at once. It takes an
+integer from 1 to 256 and defaults to 4. The first launch in a root session saves the cap, so
+changing the variable affects only new root sessions.
+
 ### Web provider
 
 Configure a search provider in `~/.pi/web-search.json`, not in this repository. Most providers need
