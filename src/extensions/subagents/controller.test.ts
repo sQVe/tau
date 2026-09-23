@@ -1022,7 +1022,7 @@ it('stops a nested worker as unreadable evidence, not a cancellation, when its p
     startedAt: string;
   };
   vi.mocked(identity.currentProcessIdentity).mockResolvedValue(owned);
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   const nested = new WorkerController(fixture.directory, fixture.client);
   onTestFinished(() => {
     nested.close();
