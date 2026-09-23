@@ -46,8 +46,7 @@ Uppercase filenames exist only when an external convention requires them: `LICEN
 
 ### Config files
 
-Root config files, such as `.oxlintrc.json` and `tsconfig.json`, follow the naming rules of their
-tools.
+Root config files, such as `tsconfig.json`, follow the naming rules of their tools.
 
 ## Tradeoffs
 

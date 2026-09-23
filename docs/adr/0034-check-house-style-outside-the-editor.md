@@ -1,6 +1,7 @@
 # ADR 0034: Check house style outside the editor
 
-- Status: Accepted
+- Status: Accepted; size limits superseded by
+  [ADR 0035](./0035-use-size-thresholds-as-review-guidance.md)
 - Date: 2026-09-21
 
 ## Context
