@@ -54,9 +54,9 @@ The owner replies once when done.
    herdr agent prompt <pane> "$(cat <file>)" --wait --until working
    ```
 
-   The command rejects a blocked agent with `agent_blocked` and reports `agent_prompt_stalled` when
-   the agent does not start. Inspect `herdr agent read <pane>` before deciding what to do; do not
-   send the brief again blindly.
+   If it fails with `agent_blocked`, nothing was sent; the receiver is waiting on its user, so tell
+   yours. If it fails with `agent_prompt_stalled`, the brief may have arrived; check
+   `herdr agent read <pane>` before sending again.
 
 4. The reply arrives as a prompt in your pane, possibly in the middle of a later turn. Treat it as
    the receiver's report and check the result before acting on it.
