@@ -48,6 +48,28 @@ const fullWorkerStatus = {
   harness: 'pi',
 };
 
+it('returns from session start while worker reattachment is still pending', async ({
+  onTestFinished,
+}) => {
+  const fake = fakeExtensionApi();
+  const released = Promise.withResolvers<undefined>();
+  vi.spyOn(WorkerController.prototype, 'resume').mockReturnValue(released.promise);
+  subagentsExtension(fake.pi);
+  const context = {
+    sessionManager: { getSessionId: () => 'parent' },
+  } as unknown as ExtensionContext;
+  onTestFinished(async () => {
+    released.resolve(undefined);
+    await released.promise;
+    await fake.handler('session_shutdown')({ reason: 'quit' }, context);
+    vi.restoreAllMocks();
+  });
+
+  const result = fake.handler('session_start')({}, context);
+
+  expect(result).toBeUndefined();
+});
+
 it('waits for bounded worker cleanup during session shutdown', async ({ onTestFinished }) => {
   const fake = fakeExtensionApi();
   const released = Promise.withResolvers<undefined>();

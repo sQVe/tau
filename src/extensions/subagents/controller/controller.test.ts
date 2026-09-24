@@ -192,6 +192,111 @@ it('reattaches accepted work and cancels it without replacing saved records', as
   }
 });
 
+it.each(['stopping', 'cancelled', 'timeout'])(
+  'finishes cleanup after the previous parent saved %s',
+  async (kind) => {
+    vi.useFakeTimers();
+    const fixture = setup(afterTest);
+    fixture.fake.state.sendKeysError = '';
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      if (fixture.fake.state.stopped) {
+        throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+      }
+
+      return true;
+    });
+    const launched = await fixture.controller.launch(fixture.input);
+    recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
+    recordEvent(launched.directory, launched.taskId, kind, 'Cleanup interrupted.');
+    fixture.controller.close();
+    const originalEvent = readEvent(launched.directory, launched.taskId, kind);
+    const finished = Promise.withResolvers<undefined>();
+    const recovered = new WorkerController(fixture.directory, fixture.client, () => {
+      finished.resolve(undefined);
+    });
+    afterTest(() => {
+      recovered.close();
+    });
+
+    await recovered.resume('parent-id');
+
+    expect(recovered.owns(launched.taskId)).toBe(true);
+
+    if (kind === 'timeout') {
+      await vi.advanceTimersByTimeAsync(7500);
+      await finished.promise;
+    }
+
+    const stopped = await recovered
+      .cancel(launched.taskId, 'parent-id')
+      .catch((error: unknown) => error);
+
+    expect(stopped).toMatchObject({ state: 'stopped' });
+    expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
+    expect(recovered.status(launched.taskId, 'parent-id').state).toBe('stopped');
+    expect(readEvent(launched.directory, launched.taskId, kind)).toEqual(originalEvent);
+  },
+);
+
+it('refuses cancellation without saved ownership without exposing paths or changing records', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers();
+  const fixture = setup(onTestFinished);
+  const launched = await fixture.controller.launch(fixture.input);
+  fixture.controller.close();
+  rmSync(join(launched.directory, 'owned.json'));
+  const saved = readdirSync(launched.directory);
+  const callsBefore = fixture.calls.length;
+  const recovered = new WorkerController(fixture.directory, fixture.client);
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  const refusal = await recovered
+    .cancel(launched.taskId, 'parent-id')
+    .catch((error: unknown) => error);
+
+  expect(refusal).toBeInstanceOf(Error);
+  expect(String(refusal)).not.toContain(launched.directory);
+  expect(readdirSync(launched.directory)).toEqual(saved);
+  expect(fixture.calls).toHaveLength(callsBefore);
+});
+
+it('closes an unchanged shell once after the saved deadline has expired', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers();
+  const fixture = setup(onTestFinished);
+  const launched = await fixture.controller.launch(fixture.input);
+  fixture.controller.close();
+  fixture.fake.state.stopped = true;
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+  });
+  await vi.advanceTimersByTimeAsync(20_000);
+  const callsBefore = fixture.calls.length;
+  const recovered = new WorkerController(fixture.directory, fixture.client);
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  await recovered.resume('parent-id');
+
+  expect(fixture.calls).toHaveLength(callsBefore);
+  const stopped = await recovered.cancel(launched.taskId, 'parent-id');
+
+  expect(stopped.state).toBe('stopped');
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+  const cleanupCalls = fixture.calls.length;
+  const cleanup = readEvent(launched.directory, launched.taskId, 'cleanup');
+  await recovered.cancel(launched.taskId, 'parent-id');
+
+  expect(fixture.calls).toHaveLength(cleanupCalls);
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')).toEqual(cleanup);
+});
+
 it('resumes polling with the remaining wall-clock deadline', async ({ onTestFinished }) => {
   vi.useFakeTimers();
   const fixture = setup(onTestFinished);
@@ -260,7 +365,7 @@ it.each(['changed session', 'absent process'])(
     expect(recovered.owns(launched.taskId)).toBe(false);
     expect(readdirSync(launched.directory)).toEqual(saved);
     expect(recovered.status(launched.taskId, 'parent-id')).toMatchObject({
-      state: 'cleanupUnconfirmed',
+      state: 'notOwned',
       recovery: { paneId: 'worker-1' },
     });
     const stopped = await recovered.cancel(launched.taskId, 'parent-id');
@@ -276,37 +381,25 @@ it.each(['changed session', 'absent process'])(
   },
 );
 
-it.each(['cleanup', 'timeout', 'cancelled', 'notified'])(
-  'does not reattach work with a terminal %s record',
-  async (kind) => {
-    vi.useFakeTimers();
-    const fixture = setup(afterTest);
-    const launched = await fixture.controller.launch(fixture.input);
-    recordEvent(launched.directory, launched.taskId, kind, { detail: 'Handled.', stopped: true });
+it.each([true, false])('does not reattach work with cleanup stopped %s', async (stopped) => {
+  vi.useFakeTimers();
+  const fixture = setup(afterTest);
+  const launched = await fixture.controller.launch(fixture.input);
+  recordEvent(launched.directory, launched.taskId, 'cleanup', { detail: 'Handled.', stopped });
 
-    if (kind === 'notified') {
-      acceptReport(launched.directory, launched.taskId, {
-        taskId: launched.taskId,
-        outcome: 'success',
-        summary: 'Completed.',
-        evidence: [],
-      });
-    }
+  const saved = readdirSync(launched.directory);
+  const callsBefore = fixture.calls.length;
+  const recovered = new WorkerController(fixture.directory, fixture.client);
+  afterTest(() => {
+    recovered.close();
+  });
 
-    const saved = readdirSync(launched.directory);
-    const callsBefore = fixture.calls.length;
-    const recovered = new WorkerController(fixture.directory, fixture.client);
-    afterTest(() => {
-      recovered.close();
-    });
+  await recovered.resume('parent-id');
 
-    await recovered.resume('parent-id');
-
-    expect(recovered.owns(launched.taskId)).toBe(false);
-    expect(fixture.calls).toHaveLength(callsBefore);
-    expect(readdirSync(launched.directory)).toEqual(saved);
-  },
-);
+  expect(recovered.owns(launched.taskId)).toBe(false);
+  expect(fixture.calls).toHaveLength(callsBefore);
+  expect(readdirSync(launched.directory)).toEqual(saved);
+});
 
 it('does not reattach or cancel work from another parent session', async ({ onTestFinished }) => {
   vi.useFakeTimers();
@@ -2478,7 +2571,7 @@ it('ends enforcement on parent shutdown without claiming cleanup', async ({ onTe
   await vi.advanceTimersByTimeAsync(20_000);
 
   const status = controller.status(launched.taskId, 'parent-id');
-  expect(status.state).toBe('cleanupUnconfirmed');
+  expect(status.state).toBe('notOwned');
   expect(status).not.toHaveProperty('outcome');
   expect(calls).toHaveLength(callCount);
   expect(notifications).toEqual([]);

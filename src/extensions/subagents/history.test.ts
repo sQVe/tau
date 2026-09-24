@@ -518,6 +518,24 @@ it('carries derived state for generic task candidates without inventing native s
   expect(candidate).not.toHaveProperty('nativeSessionFile');
 });
 
+it('derives candidate state with ownership from the live controller', async () => {
+  const fixture = setup();
+  const saved = fixture.task('owned', fixture.child, 'child', 'worker-aa');
+  rmSync(join(saved.taskDirectory, 'cleanup.json'));
+  const current = { file: fixture.root, id: 'root', sessionDirectory: fixture.sessions };
+
+  const untracked = await searchHistory(fixture.workers, current, 'worker-aa');
+  const owned = await searchHistory(
+    fixture.workers,
+    current,
+    'worker-aa',
+    (taskId) => taskId === 'owned',
+  );
+
+  expect(untracked.candidates[0]?.state).toBe('cleanupUnconfirmed');
+  expect(owned.candidates[0]?.state).toBe('reported');
+});
+
 it('diagnoses discovered metadata that disagrees with a seeded ancestor identity', async () => {
   const fixture = setup();
   const [discovered] = await SessionManager.listAll(fixture.sessions);

@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { Value } from 'typebox/value';
+
 import type { OwnedWorker } from '../cancellation.js';
 import { genericReportPath, readGenericReference } from '../generic.js';
 import { readPendingQuestion, readReply } from '../questionRecords.js';
@@ -9,47 +11,46 @@ import {
   readEvent,
   readGenericSubmission,
   readPane,
-  readRecord,
+  readOptionalRecord,
   readReport,
   readSuccessor,
   readTask,
 } from '../records.js';
-import { requireObject, text } from '../terminal.js';
-import { harnessOf, isGenericLoadout, isPiLoadout, requireNativeTask } from '../types.js';
+import {
+  harnessOf,
+  isGenericLoadout,
+  isPiLoadout,
+  ownedWorkerSchema,
+  requireNativeTask,
+} from '../types.js';
 import type { Report, Task, TaskEvent } from '../types.js';
 import { workerState } from '../workerState.js';
-import { integer } from './shellIdentity.js';
 import type { Handle } from './types.js';
 
 export const readOwnedWorker = (directory: string, task: Task): OwnedWorker => {
-  const value = requireObject(readRecord(directory, 'owned.json'));
+  const value = readOptionalRecord(directory, 'owned.json');
+
+  if (value === undefined) {
+    throw new Error('No saved worker ownership.');
+  }
+
+  if (!Value.Check(ownedWorkerSchema, value)) {
+    throw new Error('Invalid saved worker ownership.');
+  }
+
   const generic = isGenericLoadout(task.loadout);
 
   if (value.kind !== (generic ? 'generic' : 'pi')) {
     throw new Error('Saved worker kind does not match the task.');
   }
 
-  if (!generic && value.token !== task.nativeSessionFile) {
+  if (value.kind === 'pi' && value.token !== task.nativeSessionFile) {
     throw new Error('Saved worker session does not match the task.');
   }
 
-  const savedReference = value.nativeReference ?? readGenericReference(directory, task.taskId);
-  const reference = savedReference === undefined ? undefined : requireObject(savedReference);
+  const reference = value.nativeReference ?? readGenericReference(directory, task.taskId);
 
-  return {
-    kind: generic ? 'generic' : 'pi',
-    paneId: text(value.paneId),
-    terminalId: text(value.terminalId),
-    shellPid: integer(value.shellPid),
-    processId: integer(value.processId),
-    startedAt: text(value.startedAt),
-    ...(generic
-      ? { agentKind: text(value.agentKind), shellStartedAt: text(value.shellStartedAt) }
-      : { token: text(value.token) }),
-    ...(reference
-      ? { nativeReference: { kind: text(reference.kind), value: text(reference.value) } }
-      : {}),
-  };
+  return reference ? { ...value, nativeReference: reference } : value;
 };
 
 // Without a report, terminal event, or cleanup record there is no outcome to claim.

@@ -147,7 +147,7 @@ it.each(['same', 'changed', 'missing'])(
 
     expect(recovered.owns(launched.taskId)).toBe(reference === 'same');
     expect(recovered.status(launched.taskId, 'parent').state).toBe(
-      reference === 'same' ? 'running' : 'cleanupUnconfirmed',
+      reference === 'same' ? 'running' : 'notOwned',
     );
     expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
 
@@ -531,7 +531,7 @@ it('persists a late native reference and refuses input after that reference chan
   const recoveredStatus = recovered.status(started.taskId, 'parent');
   expect(recoveredStatus).toMatchObject({
     nativeReference: { kind: 'id', value: 'late-reference' },
-    state: 'cleanupUnconfirmed',
+    state: 'notOwned',
   });
   expect(recoveredStatus.recovery).toMatchObject({
     nativeReference: { kind: 'id', value: 'late-reference' },

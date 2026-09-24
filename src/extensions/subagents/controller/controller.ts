@@ -646,11 +646,8 @@ export class WorkerController {
 
   private savedHandle(directory: string, task: Task): Handle {
     const owned = readOwnedWorker(directory, task);
-    const handle = this.createHandle(
-      directory,
-      task,
-      performance.now() + (task.deadline - Date.now()),
-    );
+    const remaining = Math.max(task.deadline - Date.now(), task.cancellationBudget);
+    const handle = this.createHandle(directory, task, performance.now() + remaining);
     handle.owned = owned;
     handle.paneId = owned.paneId;
     handle.terminalId = owned.terminalId;
@@ -674,11 +671,7 @@ export class WorkerController {
       }
 
       try {
-        const terminal = ['cleanup', 'timeout', 'cancelled', 'notified'].some((kind) =>
-          readEvent(directory, task.taskId, kind),
-        );
-
-        if (terminal) {
+        if (readEvent(directory, task.taskId, 'cleanup')) {
           continue;
         }
 
@@ -1649,12 +1642,14 @@ export class WorkerController {
     }
 
     try {
-      recordEvent(
-        handle.directory,
-        handle.task.taskId,
-        'stopping',
-        'Parent started bounded cleanup.',
-      );
+      if (readEvent(handle.directory, handle.task.taskId, 'stopping') === undefined) {
+        recordEvent(
+          handle.directory,
+          handle.task.taskId,
+          'stopping',
+          'Parent started bounded cleanup.',
+        );
+      }
     } catch (error) {
       handle.recordErrors.push(String(error));
     }
@@ -1827,10 +1822,12 @@ export class WorkerController {
 
     record(() => {
       if (reason === 'timeout' || reason === 'cancelled') {
-        recordEvent(directory, task.taskId, reason, {
-          detail: `Parent requested ${reason}. ${detail}`,
-          stopped,
-        });
+        if (readEvent(directory, task.taskId, reason) === undefined) {
+          recordEvent(directory, task.taskId, reason, {
+            detail: `Parent requested ${reason}. ${detail}`,
+            stopped,
+          });
+        }
       } else if (reason === 'failure' && !readEvent(directory, task.taskId, 'startupFailure')) {
         recordEvent(directory, task.taskId, 'startupFailure', failureDetail);
       }

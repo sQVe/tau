@@ -853,12 +853,18 @@ const genericWorkerFixture = () => {
 
 it.each([
   { harness: 'pi', records: ['ready'], controlled: false, state: 'notOwned' },
-  { harness: 'pi', records: ['parentClosed'], controlled: false, state: 'cleanupUnconfirmed' },
+  { harness: 'pi', records: ['parentClosed'], controlled: false, state: 'notOwned' },
   { harness: 'pi', records: ['ready'], controlled: true, state: 'starting' },
   { harness: 'pi', records: ['ready', 'accepted'], controlled: true, state: 'running' },
   { harness: 'pi', records: ['accepted', 'question'], controlled: true, state: 'awaitingReply' },
   { harness: 'pi', records: ['accepted', 'question', 'reply'], controlled: true, state: 'running' },
   { harness: 'pi', records: ['accepted', 'report'], controlled: true, state: 'reported' },
+  {
+    harness: 'pi',
+    records: ['accepted', 'report'],
+    controlled: false,
+    state: 'cleanupUnconfirmed',
+  },
   {
     harness: 'pi',
     records: ['accepted', 'report', 'stopping'],
@@ -918,6 +924,12 @@ it.each([
   { harness: 'generic', records: ['assignment'], controlled: true, state: 'running' },
   { harness: 'generic', records: ['assignmentUncertain'], controlled: true, state: 'starting' },
   { harness: 'generic', records: ['assignment', 'report'], controlled: true, state: 'reported' },
+  {
+    harness: 'generic',
+    records: ['assignment', 'report'],
+    controlled: false,
+    state: 'cleanupUnconfirmed',
+  },
   {
     harness: 'generic',
     records: ['assignment', 'settledStopped'],

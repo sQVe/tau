@@ -1,5 +1,5 @@
 import { readPendingQuestion, readReply } from './questionRecords.js';
-import { readEvent, readGenericSubmission, readReport, readOptionalRecord } from './records.js';
+import { readEvent, readGenericSubmission, readReport } from './records.js';
 import { isGenericLoadout, taskEndedEventKinds } from './types.js';
 import type { Task, TaskEvent, WorkerState } from './types.js';
 
@@ -24,11 +24,10 @@ export const workerState = (directory: string, task: Task, controlled = false): 
   }
 
   if (!controlled) {
-    const terminal = taskEndedEventKinds.some((kind) => event(kind));
-    const savedOwnership = readOptionalRecord(directory, 'owned.json') !== undefined;
+    const terminal = taskEndedEventKinds.some((kind) => kind !== 'parentClosed' && event(kind));
     const reported = readReport(directory, task.taskId) !== undefined;
 
-    return terminal || savedOwnership || reported ? 'cleanupUnconfirmed' : 'notOwned';
+    return terminal || reported ? 'cleanupUnconfirmed' : 'notOwned';
   }
 
   if (readReport(directory, task.taskId)) {

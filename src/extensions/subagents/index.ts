@@ -365,7 +365,7 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
     name: 'subagent',
     label: 'Launch worker',
     description:
-      'Launch a bounded worker in herdr. Pi (default) requires trusted-full-tools and verified CC Safety Net; its model must be explicit or configured. Other herdr kinds use native-controls, which Tau does not certify. Their nativeArguments are a literal list, and they report to cwd/.tau/workers/<taskId>/report.md, so cwd must be writable. No native arguments by default; the harness selects its configured model. An exact native model request requires corresponding nativeArguments, but Tau cannot verify the model used. Native approval dialogs remain in force and need user action. Tau adds no bypass flags and never approves dialogs. Model translation and native resume are unavailable for non-Pi workers. Workers cannot launch workers; ask the parent instead. Reports are required from the start; assign the complete outcome with acceptance criteria, the baseline, and the worktree, give each worktree one editing worker, and expect a handoff with Changes, Evidence, Decisions, and Concerns. Each parent caps its own live workers. Each worker has one original deadline, including waits and cleanup. No uncertain retries or fallback. Built-in profiles: investigator and worker. States: starting (launched, not accepted yet); running (accepted and working); awaitingReply (waiting for a parent reply); reported (final report saved, cleanup pending); stopping (bounded cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (cleanup unconfirmed, capacity stays held); notOwned (parent stopped before saving worker ownership). Notices are status snapshots taken when sent. A notice without a state means the parent could not read the task records; inspect recovery.',
+      'Launch a bounded worker in herdr. Pi (default) requires trusted-full-tools and verified CC Safety Net; its model must be explicit or configured. Other herdr kinds use native-controls, which Tau does not certify. Their nativeArguments are a literal list, and they report to cwd/.tau/workers/<taskId>/report.md, so cwd must be writable. No native arguments by default; the harness selects its configured model. An exact native model request requires corresponding nativeArguments, but Tau cannot verify the model used. Native approval dialogs remain in force and need user action. Tau adds no bypass flags and never approves dialogs. Model translation and native resume are unavailable for non-Pi workers. Workers cannot launch workers; ask the parent instead. Reports are required from the start; assign the complete outcome with acceptance criteria, the baseline, and the worktree, give each worktree one editing worker, and expect a handoff with Changes, Evidence, Decisions, and Concerns. Each parent caps its own live workers. Each worker has one original deadline, including waits and cleanup. No uncertain retries or fallback. Built-in profiles: investigator and worker. States: starting (launched, not accepted yet); running (accepted and working); awaitingReply (waiting for a parent reply); reported (final report saved, cleanup pending); stopping (bounded cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (cleanup unconfirmed, capacity stays held); notOwned (no verified handle in this controller, worker may still be running). Notices are status snapshots taken when sent. A notice without a state means the parent could not read the task records; inspect recovery.',
     parameters: launchParameters,
     renderCall(parameters, theme) {
       return callText(
@@ -583,7 +583,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     },
   });
 
-  pi.on('session_start', async (_event, context) => {
+  pi.on('session_start', (_event, context) => {
     shuttingDown = false;
 
     if (widgetTimer) {
@@ -591,9 +591,12 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       widgetTimer = undefined;
     }
 
-    const resumed = runtime.getController().resume(context.sessionManager.getSessionId());
-    refreshWidget(context);
-    await resumed;
+    void runtime
+      .getController()
+      .resume(context.sessionManager.getSessionId())
+      .then(() => {
+        refreshWidget(context);
+      });
     refreshWidget(context);
   });
   pi.on('tool_result', (_event, context) => {
