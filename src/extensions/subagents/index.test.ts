@@ -137,6 +137,8 @@ it('blocks long parent sleeps only while this session has an active worker', asy
 
   expect(bash('sleep 900; git status --short')).toMatchObject({ block: true });
   expect(bash('sleep 2m')).toMatchObject({ block: true });
+  expect(bash('sleep 20 20')).toMatchObject({ block: true });
+  expect(bash('sleep 20; sleep 20')).toMatchObject({ block: true });
   expect(bash('sleep 5 && ls')).toBeUndefined();
   state = 'stopped';
   expect(bash('sleep 900')).toBeUndefined();

@@ -501,13 +501,18 @@ const activeStates = new Set(['starting', 'running', 'awaitingReply', 'reported'
 const unitSeconds: Record<string, number> = { '': 1, s: 1, m: 60, h: 3600, d: 86_400 };
 
 // A running tool call holds worker notices back, so a long sleep delays the notice it waits for.
-const longestSleepSeconds = (command: string): number =>
-  Math.max(
-    0,
-    ...[...command.matchAll(/\bsleep\s+(\d+(?:\.\d+)?)([smhd]?)\b/g)].map(
-      ([, amount, unit]) => Number(amount) * (unitSeconds[unit ?? ''] ?? 1),
-    ),
-  );
+// Sleep sums its operands, and chained sleeps add up, so count every operand in the command.
+const totalSleepSeconds = (command: string): number => {
+  let total = 0;
+
+  for (const [, operands] of command.matchAll(/\bsleep((?:\s+\d+(?:\.\d+)?[smhd]?\b)+)/g)) {
+    for (const [, amount, unit] of (operands ?? '').matchAll(/(\d+(?:\.\d+)?)([smhd]?)/g)) {
+      total += Number(amount) * (unitSeconds[unit ?? ''] ?? 1);
+    }
+  }
+
+  return total;
+};
 
 export default function subagentsExtension(pi: ExtensionAPI): void {
   if (process.env.TAU_WORKER_RECORD) {
@@ -615,7 +620,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   pi.on('tool_call', (event, context) => {
     const command = event.toolName === 'bash' ? event.input.command : undefined;
 
-    if (typeof command !== 'string' || longestSleepSeconds(command) < 30) {
+    if (typeof command !== 'string' || totalSleepSeconds(command) < 30) {
       return undefined;
     }
 
