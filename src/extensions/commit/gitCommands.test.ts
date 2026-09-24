@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createTemporaryRepository, runCommand } from '../../../tests/commitTool.js';
+import { createTemporaryRepository, runCommand } from './fixtures/commitTool.js';
 import { runGit } from './gitCommands.js';
 
 describe('runGit', () => {

@@ -278,12 +278,7 @@ export default defineConfig({
     },
     overrides: [
       {
-        files: [
-          '**/*.test.{ts,tsx}',
-          'tests/commitTool.ts',
-          'tests/piWorkerScenario.ts',
-          'tests/tddHarness.ts',
-        ],
+        files: ['**/*.test.{ts,tsx}', '**/fixtures/**', 'tests/*.ts'],
         rules: {
           'typescript/no-explicit-any': 'off',
           'typescript/no-non-null-assertion': 'off',
@@ -304,13 +299,6 @@ export default defineConfig({
             'error',
             { assertFunctionNames: ['expect', 'runPiWorkerScenario'] },
           ],
-        },
-      },
-      {
-        files: ['tests/*.ts'],
-        rules: {
-          // Test helpers isolate the real process environment.
-          'node/no-process-env': 'off',
         },
       },
     ],

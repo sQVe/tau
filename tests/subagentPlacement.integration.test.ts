@@ -1,5 +1,7 @@
 import { expect, it } from 'vitest';
 
+import { isolatedHerdr } from '../src/extensions/subagents/fixtures/isolatedHerdr.js';
+import { toolAvailable } from '../src/extensions/subagents/fixtures/toolAvailable.js';
 import { minimumPane } from '../src/extensions/subagents/foreground.js';
 import { WorkerPlacement } from '../src/extensions/subagents/placement.js';
 import {
@@ -9,8 +11,6 @@ import {
   result,
   terminalLocation,
 } from '../src/extensions/subagents/terminal.js';
-import { isolatedHerdr } from './isolatedHerdr.js';
-import { toolAvailable } from './toolAvailable.js';
 
 const hasHerdr = toolAvailable('herdr');
 

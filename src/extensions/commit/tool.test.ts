@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { commentPolicyHash } from './commentReview.js';
+import type { reviewComments } from './commentReview.js';
 import {
   createCommitTool,
   runCommand,
@@ -14,9 +16,7 @@ import {
   noUiContext,
   executeCommit,
   fakeCommit,
-} from '../../../tests/commitTool.js';
-import { commentPolicyHash } from './commentReview.js';
-import type { reviewComments } from './commentReview.js';
+} from './fixtures/commitTool.js';
 import { createCommitTool as createReviewedCommitTool } from './tool.js';
 import type { CommentReview } from './types.js';
 import { commitFailedError, validatePaths, validateSubject } from './validation.js';

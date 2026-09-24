@@ -10,7 +10,7 @@ import {
   git,
   runCommand,
   writeRepositoryFile,
-} from '../../../tests/commitTool.js';
+} from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 
 const installHook = async (directory: string, name: string, script: string) => {

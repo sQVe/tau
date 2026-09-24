@@ -6,7 +6,6 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { readTask } from '../records.js';
 
-// oxlint-disable-next-line node/no-process-env -- The real CLI test binds its fixture through the production task environment.
 const directory = process.env.TAU_WORKER_RECORD;
 const savedTask = directory ? readTask(directory) : undefined;
 const activeCancellation = savedTask?.task.includes('active cancellation');

@@ -23,13 +23,13 @@ import {
 } from './controller.js';
 import type { HerdrClient } from './controller.js';
 import { herdrFake } from './fixtures/herdrFake.js';
+import { placementFixture } from './fixtures/layout.js';
 import { fixtureLoadout, readPiTask as readTask } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import * as identity from './identity.js';
 import * as loadoutModule from './loadout.js';
 import * as names from './names.js';
 import { WorkerPlacement } from './placement.js';
-import { placementFixture } from './placementFixture.js';
 import type { WorkerNotice } from './presentation.js';
 import * as questions from './questionRecords.js';
 import { acceptReport, readEvent, recordEvent } from './records.js';

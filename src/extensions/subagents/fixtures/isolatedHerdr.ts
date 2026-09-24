@@ -7,7 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { onTestFinished } from 'vitest';
 
-import { runClient } from '../src/extensions/subagents/cancellation.js';
+import { runClient } from '../cancellation.js';
 
 export const isolatedHerdr = async (
   configuration = '',
@@ -15,8 +15,8 @@ export const isolatedHerdr = async (
   extraEnvironment: Record<string, string> = {},
 ) => {
   const root = mkdtempSync(join(tmpdir(), 'tau-herdr-worker-'));
+  // Never inherit the active socket, caller IDs, or user configuration.
   const environment = {
-    // oxlint-disable-next-line node/no-process-env -- Never inherit the active socket, caller IDs, or user configuration.
     PATH: process.env.PATH,
     HOME: root,
     XDG_CONFIG_HOME: join(root, 'config'),
@@ -48,7 +48,6 @@ export const isolatedHerdr = async (
       throw new Error('Isolated herdr did not start.');
     }
 
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Real socket readiness is bounded by the test deadline.
     await delay(25);
   }
 

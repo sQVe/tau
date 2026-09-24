@@ -15,7 +15,7 @@ import {
   commitContext,
   executeCommit,
   fakeCommit,
-} from '../../../tests/commitTool.js';
+} from './fixtures/commitTool.js';
 import { createCommitTool as createReviewedCommitTool } from './tool.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => {

@@ -1,6 +1,10 @@
 import { it } from 'vitest';
 
-import { canRunPiWorker, piWorkerTimeout, runPiWorkerScenario } from './piWorkerScenario.js';
+import {
+  canRunPiWorker,
+  piWorkerTimeout,
+  runPiWorkerScenario,
+} from '../src/extensions/subagents/fixtures/piWorkerScenario.js';
 
 it
   .runIf(canRunPiWorker)

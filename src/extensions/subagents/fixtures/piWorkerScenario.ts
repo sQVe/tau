@@ -10,18 +10,15 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, onTestFinished, vi } from 'vitest';
 
-import { runClient } from '../src/extensions/subagents/cancellation.js';
-import { WorkerController } from '../src/extensions/subagents/controller.js';
-import { fixtureModel } from '../src/extensions/subagents/fixtures/controlledProvider.js';
-import {
-  asPiLoadout,
-  readPiTask as readTask,
-} from '../src/extensions/subagents/fixtures/loadout.js';
-import { searchHistory } from '../src/extensions/subagents/history.js';
-import { resolveLoadout, validateSavedLoadout } from '../src/extensions/subagents/loadout.js';
-import { readAcknowledgement, readReply } from '../src/extensions/subagents/questionRecords.js';
-import { requireObject, result, terminalLocation } from '../src/extensions/subagents/terminal.js';
+import { runClient } from '../cancellation.js';
+import { WorkerController } from '../controller.js';
+import { searchHistory } from '../history.js';
+import { resolveLoadout, validateSavedLoadout } from '../loadout.js';
+import { readAcknowledgement, readReply } from '../questionRecords.js';
+import { requireObject, result, terminalLocation } from '../terminal.js';
+import { fixtureModel } from './controlledProvider.js';
 import { isolatedHerdr } from './isolatedHerdr.js';
+import { asPiLoadout, readPiTask as readTask } from './loadout.js';
 import { toolAvailable } from './toolAvailable.js';
 
 export type PiWorkerScenario =
@@ -129,9 +126,7 @@ export default function (pi) {
   // A second entry point simulates duplicate package registration without disabling either handler.
   const secondSafety = join(root, 'second-safety.mjs');
   writeFileSync(secondSafety, `export { default } from ${JSON.stringify(safety)};`);
-  const provider = fileURLToPath(
-    new URL('../src/extensions/subagents/fixtures/controlledProvider.ts', import.meta.url),
-  );
+  const provider = fileURLToPath(new URL('./controlledProvider.ts', import.meta.url));
   const integration = join(environment.PI_CODING_AGENT_DIR, 'extensions', 'herdr-agent-state.ts');
   writeFileSync(
     join(environment.PI_CODING_AGENT_DIR, 'auth.json'),
@@ -249,7 +244,6 @@ export default function (pi) {
         throw new Error('Worker never entered active streaming.');
       }
 
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Wait for a real child streaming signal, not an assumed startup delay.
       await delay(25);
     }
 

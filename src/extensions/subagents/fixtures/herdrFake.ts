@@ -1,6 +1,5 @@
-/* oxlint-disable typescript/require-await -- Async client calls need not suspend in this fake. */
 import type { HerdrClient } from '../controller.js';
-import { placementFixture } from '../placementFixture.js';
+import { placementFixture } from './layout.js';
 
 interface ProcessSnapshot {
   paneId: string | undefined;
