@@ -4,9 +4,10 @@ import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
-import { isMissingFile } from '../../errors/index.js';
+import { errorMessage, isMissingFile } from '../../errors/index.js';
 import {
   descendantReservations,
+  InactiveAncestryError,
   admissionDirectory,
   reserveTask,
   requireActiveAncestry,
@@ -542,19 +543,20 @@ export class WorkerController {
     acceptReply(directory, taskId, value);
 
     // The reply is saved; a throw here would read as a failed reply and invite a resend.
-    let delivery: 'sent' | 'uncertain' = 'sent';
+    let deliveryError: string | undefined;
 
     try {
       await call(['agent', 'prompt', text(handle.paneId), prompt]);
-    } catch {
-      delivery = 'uncertain';
+    } catch (error) {
+      deliveryError = errorMessage(error).slice(0, 4000);
     }
 
     return {
       replyAccepted: true,
       name: handle.task.name,
       workerAcknowledged: replyAcknowledged(directory, taskId, questionId),
-      delivery,
+      delivery: deliveryError === undefined ? 'sent' : 'uncertain',
+      ...(deliveryError === undefined ? {} : { deliveryError }),
     };
   }
 
@@ -1196,23 +1198,37 @@ export class WorkerController {
         return;
       }
 
-      if (handle.task.tree.parentTaskId) {
-        try {
-          requireActiveAncestry(
-            this.root,
-            readTask(join(this.root, handle.task.tree.parentTaskId)),
-          );
-        } catch {
-          void this.stop(handle, 'cancelled');
+      if (this.ancestryEnded(handle)) {
+        void this.stop(handle, 'cancelled');
 
-          return;
-        }
+        return;
       }
 
       this.notifyPendingQuestion(handle);
       this.poll(handle);
     } catch (error) {
       void this.stop(handle, 'failure', `Worker evidence unavailable: ${String(error)}. No retry.`);
+    }
+  }
+
+  // An unreadable ancestor is unavailable evidence, not a parent's cancellation.
+  private ancestryEnded(handle: Handle): boolean {
+    const parentTaskId = handle.task.tree.parentTaskId;
+
+    if (!parentTaskId) {
+      return false;
+    }
+
+    try {
+      requireActiveAncestry(this.root, readTask(join(this.root, parentTaskId)));
+
+      return false;
+    } catch (error) {
+      if (error instanceof InactiveAncestryError) {
+        return true;
+      }
+
+      throw error;
     }
   }
 

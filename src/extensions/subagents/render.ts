@@ -56,6 +56,7 @@ interface ReplyView {
   name?: string | undefined;
   questionId?: string | undefined;
   delivery: string;
+  deliveryError?: string | undefined;
   workerAcknowledged?: boolean | undefined;
 }
 
@@ -284,6 +285,7 @@ const replyView = (details: unknown): ReplyView | undefined => {
     name: stringField(details, 'name'),
     questionId: stringField(details, 'questionId'),
     delivery,
+    deliveryError: stringField(details, 'deliveryError'),
     workerAcknowledged:
       typeof details.workerAcknowledged === 'boolean' ? details.workerAcknowledged : undefined,
   };
@@ -750,6 +752,7 @@ const expandedReplyLines = (details: ReplyView, theme: Theme): string[] => [
   row('Task', details.taskId ?? 'unknown', theme),
   ...optionalRow('Question ID', details.questionId, theme),
   row('Delivery', details.delivery, theme),
+  ...optionalRow('Delivery error', details.deliveryError, theme),
   ...optionalRow('Acknowledged', acknowledgedText(details.workerAcknowledged), theme),
 ];
 

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { ExecResult, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { delegateReference } from '../../delegateModel/index.js';
-import { errorMessage } from '../../errors/index.js';
+import { errorMessage, isMissingFile } from '../../errors/index.js';
 import {
   commentPolicyHash,
   formatCommentReview,
@@ -65,7 +65,6 @@ interface CleanupCheck {
   cwd: string;
   requestedFiles: Set<string>;
   snapshot: StagedSnapshot;
-  groupError: unknown;
 }
 
 const buildCancelledResult = (
@@ -299,7 +298,13 @@ const verifyUnchanged = async (run: GroupRun): Promise<void> => {
     );
   }
 
-  const messageStatus = await lstat(run.messagePath).catch(() => null);
+  const messageStatus = await lstat(run.messagePath).catch((error: unknown) => {
+    if (isMissingFile(error)) {
+      return null;
+    }
+
+    throw error;
+  });
   const messageContent = messageStatus?.isFile() ? await readFile(run.messagePath) : null;
 
   if (!messageContent?.equals(Buffer.from(buildCommitMessage(run.subject, run.body)))) {
@@ -316,15 +321,11 @@ const snapshotChanged = async (check: CleanupCheck, currentIndex: string): Promi
 };
 
 const assertCleanupOwnership = async (check: CleanupCheck): Promise<void> => {
-  const message = check.groupError instanceof Error ? `${check.groupError.message}\n` : '';
-
   // Before the candidate snapshot, unexpected entries may belong to another writer.
   const staged = await listStagedPaths(check.pi, check.cwd);
 
   if (!check.snapshot.reviewedTree && staged.some((file) => !check.requestedFiles.has(file))) {
-    throw new Error(
-      `${message}Concurrent staging was left untouched. Inspect the index before retrying.`,
-    );
+    throw new Error('Concurrent staging was left untouched. Inspect the index before retrying.');
   }
 
   const currentIndex = await reviewGit(check.pi, check.cwd, [
@@ -336,10 +337,24 @@ const assertCleanupOwnership = async (check: CleanupCheck): Promise<void> => {
   ]);
 
   if (check.snapshot.reviewedTree && (await snapshotChanged(check, currentIndex))) {
-    throw new Error(
-      `${message}Staged content or HEAD changed. Concurrent staging was left untouched.`,
-    );
+    throw new Error('Staged content or HEAD changed. Concurrent staging was left untouched.');
   }
+};
+
+const cleanUpGroup = async (check: CleanupCheck, files: string[]): Promise<void> => {
+  await assertCleanupOwnership(check);
+  await unstageFiles(check.pi, check.cwd, files);
+};
+
+// A cleanup failure must not hide why the group failed.
+const withGroupError = (groupError: unknown, cleanupError: unknown): unknown => {
+  if (groupError === undefined) {
+    return cleanupError;
+  }
+
+  return new Error(`${errorMessage(groupError)}\n${errorMessage(cleanupError)}`, {
+    cause: groupError,
+  });
 };
 
 const runGroupPipeline = async (run: GroupRun): Promise<boolean> => {
@@ -569,14 +584,16 @@ export const executeGroup = async (execution: GroupExecution): Promise<CommitSuc
     throw error;
   } finally {
     if (!readyToCommit) {
-      await assertCleanupOwnership({
+      const check = {
         pi: execution.pi,
         cwd: execution.context.cwd,
         requestedFiles,
         snapshot: run.snapshot,
-        groupError,
+      };
+
+      await cleanUpGroup(check, execution.parameters.files).catch((cleanupError: unknown) => {
+        throw withGroupError(groupError, cleanupError);
       });
-      await unstageFiles(execution.pi, execution.context.cwd, execution.parameters.files);
     }
   }
 

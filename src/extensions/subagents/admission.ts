@@ -178,6 +178,10 @@ const retainedReservations = (root: string, directory: string, tree: TreeIdentit
   return [...retained.values()];
 };
 
+export class InactiveAncestryError extends Error {
+  override name = 'InactiveAncestryError';
+}
+
 export const requireActiveAncestry = (root: string, task: Task): void => {
   const tree = task.tree;
   const seen = new Set<string>();
@@ -189,7 +193,7 @@ export const requireActiveAncestry = (root: string, task: Task): void => {
     const repeated = seen.has(current.taskId) || seen.size >= 1024;
 
     if (inactive || repeated) {
-      throw new Error('Nested work has inactive or invalid parent ancestry.');
+      throw new InactiveAncestryError('Nested work has inactive or invalid parent ancestry.');
     }
 
     seen.add(current.taskId);

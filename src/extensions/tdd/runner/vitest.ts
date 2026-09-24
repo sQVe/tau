@@ -482,7 +482,8 @@ export const runVitest = async (
 
     return { ...report, diagnostics };
   } catch (error) {
-    await rm(directory, { recursive: true, force: true });
+    // Retention prunes a leftover directory once it expires; report the runner error instead.
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
 
     throw error;
   }

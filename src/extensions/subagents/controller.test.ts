@@ -1005,6 +1005,50 @@ it('bounds nested launches by the shared cap and original ancestor deadline', as
   ).toEqual([{ taskId: child.taskId, directory: childStatus.directory }]);
 });
 
+it('stops a nested worker as unreadable evidence, not a cancellation, when its parent is unreadable', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  vi.stubEnv('TAU_SUBAGENT_CAP', '2');
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  fixture.input.loadout.tools.push('subagent');
+  const parentStatus = await fixture.controller.launch(fixture.input);
+  const parent = readTask(parentStatus.directory);
+  recordEvent(parentStatus.directory, parent.taskId, 'accepted', 'Started.');
+  const owned = records.readRecord(parentStatus.directory, 'owned.json') as {
+    processId: number;
+    startedAt: string;
+  };
+  vi.mocked(identity.currentProcessIdentity).mockResolvedValue(owned);
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  const nested = new WorkerController(fixture.directory, fixture.client);
+  onTestFinished(() => {
+    nested.close();
+  });
+  const childStatus = await nested.launch({
+    ...fixture.input,
+    timeout: 60000,
+    parentSession: parent.nativeSessionFile,
+    parentSessionId: parent.nativeSessionId,
+    loadout: {
+      ...parent.loadout,
+      instructions: `${inheritedInstructions(parent)}Inspect the fixture.`,
+    },
+  });
+  recordEvent(childStatus.directory, childStatus.taskId, 'accepted', 'Started.');
+  writeFileSync(join(parentStatus.directory, 'task.json'), '{');
+
+  await vi.advanceTimersByTimeAsync(20_000);
+
+  expect(readEvent(childStatus.directory, childStatus.taskId, 'cancelled')).toBeUndefined();
+  expect(readEvent(childStatus.directory, childStatus.taskId, 'startupFailure')).toHaveProperty(
+    'detail',
+    expect.stringContaining('Worker evidence unavailable'),
+  );
+});
+
 it('refuses full-cap native follow-up before consuming its successor claim', async () => {
   const fixture = await completed();
 
@@ -1424,10 +1468,13 @@ it('retains uncertain reply delivery without resending or acknowledging it', asy
     scopeUnchanged: true,
   };
 
-  await expect(controller.reply(launched.taskId, 'parent-id', answer)).resolves.toMatchObject({
-    replyAccepted: true,
-    delivery: 'uncertain',
-  });
+  const uncertain = await controller.reply(launched.taskId, 'parent-id', answer);
+
+  expect(uncertain).toMatchObject({ replyAccepted: true, delivery: 'uncertain' });
+  expect(uncertain).toHaveProperty(
+    'deliveryError',
+    expect.stringContaining('Injected herdr failure'),
+  );
   await expect(controller.reply(launched.taskId, 'parent-id', answer)).resolves.toMatchObject({
     workerAcknowledged: false,
     delivery: 'notResent',

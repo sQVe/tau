@@ -132,6 +132,26 @@ const checkForeground = (
   throw new Error('Worker exited before readiness. No task dispatch or retry.');
 };
 
+export const isHerdrError = (error: unknown, code: string): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  if ('stderr' in error && typeof error.stderr === 'string') {
+    try {
+      const parsed = object(JSON.parse(error.stderr));
+
+      if (object(parsed.error).code === code) {
+        return true;
+      }
+    } catch {
+      // The transport error is not absence evidence unless its structured code is known.
+    }
+  }
+
+  return 'cause' in error && isHerdrError(error.cause, code);
+};
+
 const readAgent = async (
   call: (argumentsList: string[]) => Promise<string>,
   paneId: string,
@@ -141,7 +161,7 @@ const readAgent = async (
     // herdr answers with an error document for a pane that has no detected agent yet.
     return object(result(await call(['agent', 'get', paneId])).agent);
   } catch (error) {
-    if (starting) {
+    if (starting && isHerdrError(error, 'agent_not_found')) {
       throw new Error('Native worker has not been detected by herdr yet.', { cause: error });
     }
 
@@ -265,26 +285,6 @@ const checkGenericAgent = async (
   }
 
   return reference;
-};
-
-export const isHerdrError = (error: unknown, code: string): boolean => {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  if ('stderr' in error && typeof error.stderr === 'string') {
-    try {
-      const parsed = object(JSON.parse(error.stderr));
-
-      if (object(parsed.error).code === code) {
-        return true;
-      }
-    } catch {
-      // The transport error is not absence evidence unless its structured code is known.
-    }
-  }
-
-  return 'cause' in error && isHerdrError(error.cause, code);
 };
 
 export const verifyRejectedStart = async (

@@ -337,6 +337,16 @@ it('shows the worker name on a reply line and falls back to the short ID', () =>
   expect(unnamed).not.toContain(taskId);
 });
 
+it('shows why an uncertain reply delivery failed in the expanded view', () => {
+  const subject = theme();
+  const reply = { ...replyFixture('uncertain'), deliveryError: 'herdr timed out' };
+
+  expect(lines(renderReplyResult(reply, true, subject)).join('\n')).toContain('herdr timed out');
+  expect(lines(renderReplyResult(reply, false, subject)).join('\n')).not.toContain(
+    'herdr timed out',
+  );
+});
+
 it('shows the predecessor name on a follow-up line and falls back to the short ID', () => {
   const subject = theme();
   const named = lines(renderStatusResult(statusFixture('starting', false), false, subject)).join(

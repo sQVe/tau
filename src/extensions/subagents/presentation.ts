@@ -98,6 +98,7 @@ export interface ReplyReceiptInput {
   replyAccepted: boolean;
   workerAcknowledged?: boolean | undefined;
   delivery: string;
+  deliveryError?: string | undefined;
 }
 
 export interface EvidenceNoticeInput {
@@ -255,6 +256,7 @@ export const modelReply = (taskId: string, receipt: ReplyReceiptInput): Record<s
   result.replyAccepted = receipt.replyAccepted;
   addField(result, 'workerAcknowledged', receipt.workerAcknowledged);
   result.delivery = receipt.delivery;
+  addField(result, 'deliveryError', receipt.deliveryError);
 
   return result;
 };
