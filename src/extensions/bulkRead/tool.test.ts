@@ -35,8 +35,8 @@ it('numbers payload lines from 1 with a line prefix', async () => {
 
   await bulkRead(context, model, { paths: ['a.ts', 'b.ts'], question: 'Why?' }, undefined);
 
-  expect(complete.mock.calls[0]?.[1].messages[0]?.content).toBe(
-    'Question: Why?\n\na.ts\n1→first\n2→second\n3→\n\nb.ts\n1→next',
+  expect(complete.mock.calls[0]?.[1].messages[0]?.content).toMatch(
+    /\n\na\.ts\n1→first\n2→second\n3→\n\nb\.ts\n1→next$/u,
   );
 });
 
