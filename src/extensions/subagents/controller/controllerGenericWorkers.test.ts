@@ -89,7 +89,7 @@ const fixture = (kind = 'codex', intercept?: HerdrClient, capacity = 4) => {
     parentPane: 'parent',
   };
   const report = (taskId: string, body = 'Completed fixture evidence.', outcome = 'success') => {
-    const reportDirectory = join(directory, `.tau-worker-${taskId}`);
+    const reportDirectory = join(directory, '.tau', 'workers', taskId);
     const temporary = join(reportDirectory, 'report.partial');
     writeFileSync(
       temporary,
@@ -280,7 +280,7 @@ it('saves the handoff sections and work reference from a generic Markdown report
   await setup.finished;
 
   const saved = readReport(taskDirectory, started.taskId);
-  const reportPath = join(setup.directory, `.tau-worker-${started.taskId}`, 'report.md');
+  const reportPath = join(setup.directory, '.tau', 'workers', started.taskId, 'report.md');
   expect(saved?.summary).toContain('baseline 3ee3d7a');
   expect(saved?.summary).toContain('untracked notes.md');
   expect(saved?.evidence).toEqual([reportPath]);
@@ -392,7 +392,7 @@ it('reports a startup inspection failure instead of an undetected agent', async 
 it('retains ownership through transient inspection and partial reports without unsafe input', async () => {
   const setup = fixture();
   const started = await setup.controller.launch(setup.input);
-  const reportPath = join(setup.directory, `.tau-worker-${started.taskId}`, 'report.md');
+  const reportPath = join(setup.directory, '.tau', 'workers', started.taskId, 'report.md');
   writeFileSync(reportPath, `Task: ${started.taskId}\nOutcome: success\n\nPartial evidence.`);
   setup.state.inspectionError = 'Temporary herdr inspection failure';
 

@@ -1,6 +1,3 @@
-import { realpathSync, statSync } from 'node:fs';
-import { isAbsolute, relative, resolve } from 'node:path';
-
 import { Value } from 'typebox/value';
 
 import { genericLoadoutSchema } from './types.js';
@@ -8,7 +5,6 @@ import type { GenericLoadout, Profile } from './types.js';
 
 export interface NativeLaunchInput {
   nativeArguments?: string[];
-  reportDirectory?: string;
   model?: string;
   permissions: string;
 }
@@ -20,24 +16,6 @@ export interface GenericLoadoutRequest {
   cwd: string;
   signal: AbortSignal;
 }
-
-const escapesCwd = (relativeDirectory: string): boolean =>
-  isAbsolute(relativeDirectory) ||
-  relativeDirectory === '..' ||
-  relativeDirectory.startsWith('../');
-
-const reportArea = (cwd: string, requested: string | undefined): string => {
-  const directory = realpathSync(resolve(cwd, requested ?? '.'));
-  const relativeDirectory = relative(cwd, directory);
-
-  if (escapesCwd(relativeDirectory) || !statSync(directory).isDirectory()) {
-    throw new Error(
-      'The report directory must already exist inside the authorized cwd. Tau will not widen a native sandbox.',
-    );
-  }
-
-  return directory;
-};
 
 const requireSupportedKind = (kind: string): void => {
   if (kind === 'pi' || kind === 'generic' || !/^[a-z][a-z0-9-]{0,63}$/.test(kind)) {
@@ -83,7 +61,6 @@ const captureConfiguration = (
     permissions: 'native-controls' as const,
     arguments: nativeArguments,
     ...(requestedModel === undefined ? {} : { requestedModel }),
-    reportDirectory: reportArea(cwd, input.reportDirectory),
     instructions: profile.instructions,
   };
 

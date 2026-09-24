@@ -5,16 +5,18 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readFileSync,
   readSync,
   realpathSync,
+  writeFileSync,
 } from 'node:fs';
 import type { BigIntStats } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isMissingFile } from '../../errors/index.js';
+import { hasErrorCode, isMissingFile } from '../../errors/index.js';
 import { assignmentContractFor, handoffContract } from './handoff.js';
 import {
   acceptReport,
@@ -27,26 +29,69 @@ import {
 import { isGenericLoadout } from './types.js';
 import type { SubmissionState, Task } from './types.js';
 
-export const genericReportPath = (task: Task): string => {
+const reportDirectory = (task: Task): string => {
   if (!isGenericLoadout(task.loadout)) {
     throw new Error('Only generic workers use report files.');
   }
 
-  return join(task.loadout.reportDirectory, `.tau-worker-${task.taskId}`, 'report.md');
+  return join(task.loadout.cwd, '.tau', 'workers', task.taskId);
 };
+
+export const genericReportPath = (task: Task): string => join(reportDirectory(task), 'report.md');
+
+const reportAreaIsIntact = (task: Task): boolean =>
+  [task.loadout.cwd, reportDirectory(task)].every((path) => realpathSync(path) === path);
 
 // A 10000-byte report always fits the 64000-byte receipt even when every byte JSON-escapes.
 const reportByteLimit = 10_000;
 
-export const prepareGenericReport = (task: Task): void => {
-  if (
-    !isGenericLoadout(task.loadout) ||
-    realpathSync(task.loadout.reportDirectory) !== task.loadout.reportDirectory
-  ) {
-    throw new Error('The approved report area changed.');
+// A symlinked folder would make preparation write outside the worker's cwd.
+const ensureRealDirectory = (path: string): void => {
+  try {
+    mkdirSync(path, { mode: 0o700 });
+  } catch (error) {
+    if (!hasErrorCode(error, 'EEXIST')) {
+      throw error;
+    }
   }
 
-  mkdirSync(join(task.loadout.reportDirectory, `.tau-worker-${task.taskId}`), { mode: 0o700 });
+  if (!lstatSync(path).isDirectory()) {
+    throw new Error(`${path} must be a directory, not a symbolic link or file.`);
+  }
+};
+
+// The * rule keeps .tau/ out of Git in any repository, whatever the repository ignores.
+const ensureIgnoreRule = (folder: string): void => {
+  const descriptor = openSync(
+    join(folder, '.gitignore'),
+    constants.O_RDWR | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW,
+    0o600,
+  );
+
+  try {
+    const content = readFileSync(descriptor, 'utf8');
+
+    if (!content.split('\n').some((line) => line.trim() === '*')) {
+      writeFileSync(descriptor, content === '' || content.endsWith('\n') ? '*\n' : '\n*\n');
+    }
+  } finally {
+    closeSync(descriptor);
+  }
+};
+
+export const prepareGenericReport = (task: Task): void => {
+  const directory = reportDirectory(task);
+  const workers = dirname(directory);
+  const tau = dirname(workers);
+
+  if (realpathSync(task.loadout.cwd) !== task.loadout.cwd) {
+    throw new Error('The worker cwd changed.');
+  }
+
+  ensureRealDirectory(tau);
+  ensureIgnoreRule(tau);
+  ensureRealDirectory(workers);
+  mkdirSync(directory, { mode: 0o700 });
 };
 
 export const genericPrompt = (task: Task): string => {
@@ -168,12 +213,7 @@ export const acceptGenericReport = (directory: string, task: Task): boolean => {
 
   const path = genericReportPath(task);
 
-  if (
-    !isGenericLoadout(task.loadout) ||
-    realpathSync(task.loadout.reportDirectory) !== task.loadout.reportDirectory ||
-    realpathSync(join(task.loadout.reportDirectory, `.tau-worker-${task.taskId}`)) !==
-      join(task.loadout.reportDirectory, `.tau-worker-${task.taskId}`)
-  ) {
+  if (!reportAreaIsIntact(task)) {
     throw new Error('The report area changed.');
   }
 

@@ -1,8 +1,6 @@
 /* oxlint-disable node/no-process-env -- Worker ownership and herdr connection come from the active Pi process. */
-import { join } from 'node:path';
 
 import { StringEnum } from '@earendil-works/pi-ai';
-import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
@@ -13,6 +11,7 @@ import { historyPage, searchHistory } from './history.js';
 import { resolveLoadout } from './loadout.js';
 import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
 import type { WorkerNotice } from './presentation.js';
+import { workerRecordsDirectory } from './records.js';
 import {
   callText,
   firstLine,
@@ -51,7 +50,6 @@ const launchParameters = Type.Object({
   nativeArguments: Type.Optional(
     Type.Array(Type.String({ maxLength: 8000, pattern: '^[^\\u0000]*$' }), { maxItems: 100 }),
   ),
-  reportDirectory: Type.Optional(Type.String()),
   visibility,
   permissions: StringEnum(['trusted-full-tools', 'native-controls'] as const),
   timeoutSeconds: Type.Integer({ minimum: 10, maximum: 86_400 }),
@@ -124,7 +122,7 @@ export const deliverWorkerNotice = (pi: ExtensionAPI, notice: WorkerNotice): voi
 };
 
 const createController = (pi: ExtensionAPI): WorkerController =>
-  new WorkerController(join(getAgentDir(), 'tau', 'workers'), undefined, (notice) => {
+  new WorkerController(workerRecordsDirectory(), undefined, (notice) => {
     deliverWorkerNotice(pi, notice);
   });
 
@@ -274,7 +272,7 @@ const searchWorkerHistory = async (
   }
 
   const history = await searchHistory(
-    join(getAgentDir(), 'tau', 'workers'),
+    workerRecordsDirectory(),
     {
       file,
       id: context.sessionManager.getSessionId(),
@@ -367,7 +365,7 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
     name: 'subagent',
     label: 'Launch worker',
     description:
-      'Launch a bounded worker in herdr. Pi (default) requires trusted-full-tools and verified CC Safety Net; its model must be explicit or configured. Other herdr kinds use native-controls, which Tau does not certify. Their nativeArguments are a literal list and reportDirectory must already exist and be writable inside cwd. No native arguments by default; the harness selects its configured model. An exact native model request requires corresponding nativeArguments, but Tau cannot verify the model used. Native approval dialogs remain in force and need user action. Tau adds no bypass flags and never approves dialogs. Model translation and native resume are unavailable for non-Pi workers. Workers cannot launch workers; ask the parent instead. Reports are required from the start; assign the complete outcome with acceptance criteria, the baseline, and the worktree, give each worktree one editing worker, and expect a handoff with Changes, Evidence, Decisions, and Concerns. Each parent caps its own live workers. Each worker has one original deadline, including waits and cleanup. No uncertain retries or fallback. Built-in profiles: investigator and worker. States: starting (launched, not accepted yet); running (accepted and working); awaitingReply (waiting for a parent reply); reported (final report saved, cleanup pending); stopping (bounded cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (cleanup unconfirmed, capacity stays held); notOwned (no live parent controller, saved evidence only). Notices are status snapshots taken when sent. A notice without a state means the parent could not read the task records; inspect recovery.',
+      'Launch a bounded worker in herdr. Pi (default) requires trusted-full-tools and verified CC Safety Net; its model must be explicit or configured. Other herdr kinds use native-controls, which Tau does not certify. Their nativeArguments are a literal list, and they report to cwd/.tau/workers/<taskId>/report.md, so cwd must be writable. No native arguments by default; the harness selects its configured model. An exact native model request requires corresponding nativeArguments, but Tau cannot verify the model used. Native approval dialogs remain in force and need user action. Tau adds no bypass flags and never approves dialogs. Model translation and native resume are unavailable for non-Pi workers. Workers cannot launch workers; ask the parent instead. Reports are required from the start; assign the complete outcome with acceptance criteria, the baseline, and the worktree, give each worktree one editing worker, and expect a handoff with Changes, Evidence, Decisions, and Concerns. Each parent caps its own live workers. Each worker has one original deadline, including waits and cleanup. No uncertain retries or fallback. Built-in profiles: investigator and worker. States: starting (launched, not accepted yet); running (accepted and working); awaitingReply (waiting for a parent reply); reported (final report saved, cleanup pending); stopping (bounded cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (cleanup unconfirmed, capacity stays held); notOwned (no live parent controller, saved evidence only). Notices are status snapshots taken when sent. A notice without a state means the parent could not read the task records; inspect recovery.',
     parameters: launchParameters,
     renderCall(parameters, theme) {
       return callText(

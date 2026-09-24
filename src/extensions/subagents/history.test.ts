@@ -3,6 +3,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -18,7 +19,14 @@ import { WorkerController } from './controller/controller.js';
 import { fixtureGenericLoadout, fixtureLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import subagentsExtension from './index.js';
-import { acceptReport, publish, readTask, recordEvent, validateTask } from './records.js';
+import {
+  acceptReport,
+  publish,
+  readTask,
+  recordEvent,
+  validateTask,
+  workerRecordsDirectory,
+} from './records.js';
 import { requireNativeTask } from './types.js';
 
 const setup = () => {
@@ -30,7 +38,7 @@ const setup = () => {
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.stubEnv('TAU_WORKER_RECORD', '');
   const sessions = join(directory, 'custom-sessions');
-  const workers = join(directory, 'tau', 'workers');
+  const workers = workerRecordsDirectory();
   mkdirSync(sessions, { recursive: true });
   mkdirSync(workers, { recursive: true });
   const session = (id: string, parentSession?: string, path = join(sessions, `${id}.jsonl`)) => {
@@ -206,6 +214,30 @@ it('bounds production history output while paging all matches and retaining reco
   expect(JSON.stringify(second)).toContain('task-01');
   const empty = await execute({ query: 'needle-tail', offset: 20 });
   expect(empty.details).toEqual({ outcome: 'clarification', totalMatches: 20, candidates: [] });
+});
+
+it('reads history only from the records of the running Tau checkout', async () => {
+  const fixture = setup();
+  const otherFolders = [
+    join(fixture.directory, 'tau', 'workers'),
+    join(fixture.directory, 'tau', 'abu-400-0123abcd', 'workers'),
+  ];
+
+  for (const [index, folder] of otherFolders.entries()) {
+    const { taskDirectory } = fixture.task(`other-${index}`, fixture.child, 'child');
+    mkdirSync(folder, { recursive: true });
+    renameSync(taskDirectory, join(folder, `other-${index}`));
+  }
+
+  fixture.task('own', fixture.child, 'child');
+  const execute = await historyTool(fixture, fixture.root, 'root');
+  const response = await execute({});
+
+  const { candidates } = response.details as { candidates: { taskId?: string }[] };
+
+  expect(candidates.flatMap((candidate) => (candidate.taskId ? [candidate.taskId] : []))).toEqual([
+    'own',
+  ]);
 });
 
 it('excludes explicit custom-extension current and root sessions from the production history tool', async () => {
