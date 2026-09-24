@@ -19,12 +19,10 @@ import { createPiSession } from './piSession.js';
 vi.setConfig({ testTimeout: 60_000 });
 
 beforeEach(() => {
-  // eslint-disable-next-line node/no-process-env -- Exercise the shared delegate setting through Pi.
-  process.env.TAU_DELEGATE_MODEL = 'tau-delegate/reader';
+  vi.stubEnv('TAU_DELEGATE_MODEL', 'tau-delegate/reader');
 });
 afterEach(() => {
-  // eslint-disable-next-line node/no-process-env -- Restore the integration test environment.
-  delete process.env.TAU_DELEGATE_MODEL;
+  vi.unstubAllEnvs();
 });
 
 const createHarness = async (registerCleanup: TestContext['onTestFinished']) => {
