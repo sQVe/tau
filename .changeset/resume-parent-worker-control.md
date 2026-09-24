@@ -9,3 +9,7 @@ controller-instance ownership are skipped as retired.
 
 Expired saved tasks get one cleanup attempt using their original cancellation budget, without
 extending worker work.
+
+Reattachment respects the parent's live-worker cap, and shutdown stops workers whose reattachment
+checks are still pending. Workers waiting for a reply survive a parent crash until the original
+deadline, while a clean parent close still ends the wait.

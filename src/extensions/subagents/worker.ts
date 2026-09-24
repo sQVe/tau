@@ -17,7 +17,6 @@ import type { Static } from 'typebox';
 
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
-import { processAbsent } from './cancellation.js';
 import { monotonicNow } from './controller/budget.js';
 import { checkWorkerRuntime } from './loadout.js';
 import { workerPrompt } from './profiles.js';
@@ -196,23 +195,21 @@ const matchesNativeSession = (task: Task, context: ExtensionContext): boolean =>
   context.sessionManager.getSessionId() === task.nativeSessionId &&
   context.sessionManager.getSessionFile() === task.nativeSessionFile;
 
-const parentGone = (state: WorkerState, task: Task, parentProcess: number): boolean =>
-  processAbsent(parentProcess) || Boolean(readEvent(state.directory, task.taskId, 'parentClosed'));
+const shouldEndParentWait = (state: WorkerState, task: Task): boolean => {
+  if (!state.pendingQuestion || state.settled) {
+    return false;
+  }
 
-const shouldEndParentWait = (state: WorkerState, task: Task, parentProcess: number): boolean =>
-  Boolean(state.pendingQuestion) && !state.settled && parentGone(state, task, parentProcess);
+  return (
+    Date.now() >= task.deadline || Boolean(readEvent(state.directory, task.taskId, 'parentClosed'))
+  );
+};
 
-const startParentWatch = (
-  state: WorkerState,
-  task: Task,
-  parentProcess: number,
-  context: ExtensionContext,
-): void => {
-  // A closed or exited parent cannot reply, so waiting would keep this worker open forever.
+const startParentWatch = (state: WorkerState, task: Task, context: ExtensionContext): void => {
+  // A restarted parent can reply until the deadline unless the previous parent closed cleanly.
   // Start watching before publication so an uncertain save still ends the wait.
-  // ponytail: PID reuse can hide parent exit; compare process start times if that shows up.
   state.parentWatch = setInterval(() => {
-    if (!shouldEndParentWait(state, task, parentProcess)) {
+    if (!shouldEndParentWait(state, task)) {
       return;
     }
 
@@ -221,8 +218,7 @@ const startParentWatch = (
 
     try {
       recordEvent(state.directory, task.taskId, 'settled', {
-        detail:
-          'Parent closed or exited while this worker waited for a reply. No reply can arrive.',
+        detail: 'Parent closed or task deadline passed while this worker waited for a reply.',
         stopped: true,
       });
     } finally {
@@ -240,13 +236,6 @@ const askParent = (
     throw new Error('This worker has no active task available for a question.');
   }
 
-  // oxlint-disable-next-line node/no-process-env -- The parent binds its process identity through the pane environment.
-  const parentProcess = Number(process.env.TAU_PARENT_PROCESS);
-
-  if (!Number.isSafeInteger(parentProcess) || parentProcess <= 0) {
-    throw new Error('This worker has no parent process to ask.');
-  }
-
   const task = state.task;
   const question = validateQuestion(
     {
@@ -261,7 +250,7 @@ const askParent = (
   // Keep waiting after uncertain publication rather than generate another question identity.
   state.pendingQuestion = question;
   recordWorkerActivity(state, context, 'waiting', 'Waiting for parent question reply');
-  startParentWatch(state, task, parentProcess, context);
+  startParentWatch(state, task, context);
   acceptQuestion(state.directory, task.taskId, question);
 
   return Promise.resolve({
@@ -467,7 +456,7 @@ const startWorker = (pi: ExtensionAPI, state: WorkerState, context: ExtensionCon
       return;
     }
 
-    // Only the parent enforces the task deadline; wall-clock records are for display and recovery.
+    // The parent enforces active work deadlines; the reply wait uses the saved wall-clock deadline.
     checkWorkerRuntime(task.loadout, pi, context);
     recordEvent(state.directory, task.taskId, 'ready', {
       detail: 'Saved model, cwd, and CC Safety Net checked.',

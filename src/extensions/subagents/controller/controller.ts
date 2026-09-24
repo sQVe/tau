@@ -670,6 +670,10 @@ export class WorkerController {
         continue;
       }
 
+      if (this.live.size >= this.capacity) {
+        continue;
+      }
+
       try {
         if (readEvent(directory, task.taskId, 'cleanup')) {
           continue;
@@ -681,18 +685,18 @@ export class WorkerController {
           continue;
         }
 
-        // oxlint-disable-next-line eslint/no-await-in-loop -- Reattach each task only after its saved identity passes the existing verifier.
-        handle.owned = await inspectWorker(handle, this.herdrCall(handle));
-
-        if (this.lifetime.signal.aborted || this.handles.has(task.taskId)) {
-          continue;
-        }
-
+        // Reserve capacity and expose saved ownership to shutdown before inspection can yield.
         // ponytail: one Pi process per parent session; add cross-process exclusion if concurrent resumes become supported.
         this.handles.set(task.taskId, handle);
         this.live.add(task.taskId);
+
+        // oxlint-disable-next-line eslint/no-await-in-loop -- Reattach each task only after its saved identity passes the existing verifier.
+        handle.owned = await inspectWorker(handle, this.herdrCall(handle));
+        this.lifetime.signal.throwIfAborted();
         this.poll(handle);
       } catch {
+        this.handles.delete(task.taskId);
+        this.live.delete(task.taskId);
         // Saved evidence remains available; cancellation can still check the saved shell and pane.
       }
     }
@@ -1025,7 +1029,6 @@ export class WorkerController {
         environment: isPiLoadout(handle.task.loadout)
           ? [
               `TAU_WORKER_RECORD=${handle.directory}`,
-              `TAU_PARENT_PROCESS=${process.pid}`,
               `PI_CODING_AGENT_DIR=${handle.task.loadout.agentDirectory}`,
             ]
           : [],

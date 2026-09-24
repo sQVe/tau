@@ -251,7 +251,6 @@ it.each(['deadline', 'parent stopped', 'question', 'reported'] as const)(
     }
 
     if (reason === 'question') {
-      vi.stubEnv('TAU_PARENT_PROCESS', String(process.pid));
       await worker.ask();
     }
 
@@ -462,22 +461,21 @@ it('keeps the editing assignment out of a dispatched Pi investigator prompt', as
 });
 
 it.each([
-  { parent: 'exited', running: false, closed: false, stopped: true, shutdowns: 1 },
-  { parent: 'closed its controller', running: true, closed: true, stopped: true, shutdowns: 1 },
-  { parent: 'kept running', running: true, closed: false, stopped: undefined, shutdowns: 0 },
+  {
+    condition: 'parent is absent',
+    closed: false,
+    expired: false,
+    stopped: undefined,
+    shutdowns: 0,
+  },
+  { condition: 'parent closed', closed: true, expired: false, stopped: true, shutdowns: 1 },
+  { condition: 'deadline passed', closed: false, expired: true, stopped: true, shutdowns: 1 },
 ])(
-  'stops waiting for a reply only when the parent $parent',
-  async ({ running, closed, stopped, shutdowns }) => {
-    const { directory, emit, ask, shutdown } = await waitingWorker();
-    expect(ask).toThrow('parent process');
-    expect(questions.readPendingQuestion(directory, 'task')).toBeUndefined();
-    vi.stubEnv('TAU_PARENT_PROCESS', '4242');
-    const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
-      if (!running) {
-        throw Object.assign(new Error('No such process.'), { code: 'ESRCH' });
-      }
-
-      return true;
+  'ends the reply wait only on closure or expiry when $condition',
+  async ({ closed, expired, stopped, shutdowns }) => {
+    const { directory, createdAt, emit, ask, shutdown } = await waitingWorker();
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('No such process.'), { code: 'ESRCH' });
     });
 
     await ask();
@@ -486,9 +484,13 @@ it.each([
       recordEvent(directory, 'task', 'parentClosed', 'Parent controller closed.');
     }
 
+    if (expired) {
+      vi.setSystemTime(createdAt + 30_000);
+    }
+
     await vi.advanceTimersByTimeAsync(1000);
 
-    expect(kill).toHaveBeenCalledWith(4242, 0);
+    expect(questions.readPendingQuestion(directory, 'task')).toBeDefined();
     expect(shutdown).toHaveBeenCalledTimes(shutdowns);
     expect(readEvent(directory, 'task', 'settled')?.stopped).toBe(stopped);
     await emit('session_shutdown');
@@ -664,20 +666,20 @@ it('accepts a success report after refusing an incomplete one', async () => {
   expect(readReport(worker.directory, 'task')?.summary).toBe('All done.');
 });
 
-it('stops waiting after uncertain question publication once the parent exits', async () => {
-  const { emit, ask, shutdown } = await waitingWorker();
-  vi.stubEnv('TAU_PARENT_PROCESS', '4242');
+it('stops waiting after uncertain question publication once the deadline passes', async () => {
+  const { directory, createdAt, emit, ask, shutdown } = await waitingWorker();
   vi.spyOn(questions, 'acceptQuestion').mockImplementation(() => {
     throw new Error('Directory sync failed.');
   });
-  vi.spyOn(process, 'kill').mockImplementation(() => {
-    throw Object.assign(new Error('No such process.'), { code: 'ESRCH' });
-  });
-
   expect(ask).toThrow('Directory sync failed.');
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(shutdown).not.toHaveBeenCalled();
+
+  vi.setSystemTime(createdAt + 30_000);
   await vi.advanceTimersByTimeAsync(1000);
 
   expect(shutdown).toHaveBeenCalledOnce();
+  expect(readEvent(directory, 'task', 'settled')?.stopped).toBe(true);
   await emit('session_shutdown');
   expect(vi.getTimerCount()).toBe(0);
 });

@@ -192,6 +192,156 @@ it('reattaches accepted work and cancels it without replacing saved records', as
   }
 });
 
+it('skips saved workers without herdr calls when the reattach capacity is full', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers();
+  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  const fixture = setup(onTestFinished);
+  const saved = await fixture.controller.launch(fixture.input);
+  fixture.controller.close();
+  const recovered = new WorkerController(fixture.directory, fixture.client);
+  onTestFinished(() => {
+    recovered.close();
+  });
+  const live = await recovered.launch(fixture.input);
+  const callsBefore = fixture.calls.length;
+  const recordsBefore = readdirSync(saved.directory);
+
+  await recovered.resume('parent-id');
+
+  expect(recovered.owns(live.taskId)).toBe(true);
+  expect(recovered.owns(saved.taskId)).toBe(false);
+  expect(fixture.calls).toHaveLength(callsBefore);
+  expect(readdirSync(saved.directory)).toEqual(recordsBefore);
+});
+
+it('reserves capacity while a saved worker inspection is pending', async ({ onTestFinished }) => {
+  vi.useFakeTimers();
+  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  const fixture = setup(onTestFinished);
+  const saved = await fixture.controller.launch(fixture.input);
+  fixture.controller.close();
+  const entered = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  let paused = false;
+  const recovered = new WorkerController(
+    fixture.directory,
+    async (argumentsList, budget, signal) => {
+      if (argumentsList[1] === 'get' && !paused) {
+        paused = true;
+        entered.resolve(undefined);
+        await release.promise;
+      }
+
+      return fixture.client(argumentsList, budget, signal);
+    },
+  );
+  onTestFinished(() => {
+    recovered.close();
+  });
+  const resuming = recovered.resume('parent-id');
+  await entered.promise;
+  const recordsBefore = readdirSync(fixture.directory);
+  const startsBefore = fixture.calls.filter((call) => call[1] === 'start').length;
+  const launched = await recovered.launch(fixture.input).catch((error: unknown) => error);
+  release.resolve(undefined);
+  await resuming;
+
+  expect(launched).toBeInstanceOf(Error);
+  expect(String(launched)).toContain('capacity full');
+  expect(readdirSync(fixture.directory)).toEqual(recordsBefore);
+  expect(fixture.calls.filter((call) => call[1] === 'start')).toHaveLength(startsBefore);
+  expect(recovered.owns(saved.taskId)).toBe(true);
+});
+
+it('stops a saved worker while its resume inspection is pending', async ({ onTestFinished }) => {
+  vi.useFakeTimers();
+  const fixture = setup(onTestFinished);
+  fixture.fake.state.sendKeysError = '';
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    if (fixture.fake.state.stopped) {
+      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+    }
+
+    return true;
+  });
+  const saved = await fixture.controller.launch(fixture.input);
+  fixture.controller.close();
+  const entered = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  let paused = false;
+  const recovered = new WorkerController(
+    fixture.directory,
+    async (argumentsList, budget, signal) => {
+      if (argumentsList[1] === 'get' && !paused) {
+        paused = true;
+        entered.resolve(undefined);
+        await release.promise;
+      }
+
+      return fixture.client(argumentsList, budget, signal);
+    },
+  );
+  onTestFinished(() => {
+    recovered.close();
+  });
+  const resuming = recovered.resume('parent-id');
+  await entered.promise;
+
+  await recovered.stopAll('reload');
+  release.resolve(undefined);
+  await resuming;
+
+  expect(fixture.fake.calls).toContainEqual([
+    'agent',
+    'send-keys',
+    'worker-1',
+    'escape',
+    'ctrl+c',
+    'ctrl+d',
+  ]);
+  expect(readEvent(saved.directory, saved.taskId, 'cleanup')?.stopped).toBe(true);
+  expect(recovered.status(saved.taskId, 'parent-id').state).toBe('stopped');
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('releases the handle and capacity after failed reattach verification', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers();
+  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  const fixture = setup(onTestFinished);
+  const saved = await fixture.controller.launch(fixture.input);
+  fixture.controller.close();
+  fixture.fake.state.session = 'different-session';
+  const recordsBefore = readdirSync(saved.directory);
+  const recovered = new WorkerController(fixture.directory, fixture.client);
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  await recovered.resume('parent-id');
+
+  expect(recovered.owns(saved.taskId)).toBe(false);
+  expect(recovered.status(saved.taskId, 'parent-id').state).toBe('notOwned');
+  expect(readdirSync(saved.directory)).toEqual(recordsBefore);
+  expect(fixture.calls.filter((call) => call[1] === 'send-keys')).toEqual([]);
+  const launched = await recovered.launch(fixture.input);
+
+  expect(recovered.owns(launched.taskId)).toBe(true);
+  expect(launched.state).toBe('starting');
+});
+
 it.each(['stopping', 'cancelled', 'timeout'])(
   'finishes cleanup after the previous parent saved %s',
   async (kind) => {
@@ -1298,14 +1448,6 @@ it('bounds a stalled cosmetic terminal resolution by the same short deadline', a
   expect(launched.failure).toBeUndefined();
   expect(readdirSync(launched.directory)).toContain('dispatch.json');
   expect(calls.some((call) => call[1] === 'rename')).toBe(false);
-});
-
-it('gives the worker pane its parent process identity', async ({ onTestFinished }) => {
-  const { controller, input, calls } = setup(onTestFinished);
-
-  await controller.launch(input);
-
-  expect(calls.find((call) => call[1] === 'split')).toContain(`TAU_PARENT_PROCESS=${process.pid}`);
 });
 
 it('reports stopped without recovery once the parent confirmed the worker stopped', async ({
