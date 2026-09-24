@@ -9,7 +9,7 @@ import { Type } from 'typebox';
 import { expect, it, vi } from 'vitest';
 
 import { deliverWorkerNotice } from '../src/extensions/subagents/index.js';
-import { createPiSession } from './piSession.js';
+import { createBoundSession } from './piSession.js';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -35,7 +35,7 @@ const waitForSettle = (session: AgentSession): Promise<undefined> => {
 };
 
 const createHarness = async (
-  registerCleanup: Parameters<typeof createPiSession>[0],
+  registerCleanup: Parameters<typeof createBoundSession>[0],
   options: { blockTool: boolean },
 ) => {
   const directory = await mkdtemp(join(tmpdir(), 'tau-subagent-notice-'));
@@ -66,15 +66,13 @@ const createHarness = async (
     });
   };
 
-  const { session, extensionsResult } = await createPiSession(registerCleanup, {
+  const { session } = await createBoundSession(registerCleanup, {
     cwd: directory,
     agentDirectory: join(directory, 'agent'),
     providers: [faux],
     tools: ['subagent_status'],
     extensionFactories: [fixtureExtension],
   });
-  expect(extensionsResult.errors).toEqual([]);
-  await session.bindExtensions({});
 
   if (!capturedPi) {
     throw new Error('Fixture extension did not capture the Pi API.');

@@ -7,7 +7,7 @@ import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-work
 import { expect, it, vi } from 'vitest';
 
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
-import { createPiSession } from './piSession.js';
+import { createBoundSession } from './piSession.js';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -74,7 +74,7 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
       provider.provider.auth.apiKey!.resolve = async () => ({ auth: { apiKey: 'test' } });
     }
 
-    const { session, extensionsResult } = await createPiSession(onTestFinished, {
+    const { session } = await createBoundSession(onTestFinished, {
       cwd: directory,
       agentDirectory,
       providers: [sessionModel, delegate, override],
@@ -85,8 +85,6 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
       ],
       settings: { compaction: { enabled: false }, retry: { enabled: false } },
     });
-    expect(extensionsResult.errors).toEqual([]);
-    await session.bindExtensions({});
 
     if (scenario === 'invalid' || scenario === 'missing') {
       vi.stubEnv('TAU_DELEGATE_MODEL', scenario === 'invalid' ? 'invalid' : 'missing/model');
