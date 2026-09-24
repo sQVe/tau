@@ -267,9 +267,14 @@ const isRetiredRecord = (directory: string): boolean => {
   }
 };
 
-const diagnoseSkippedTask = (directory: string, error: unknown, diagnostics: string[]): void => {
+const diagnoseSkippedTask = (
+  directory: string,
+  error: unknown,
+  diagnostics: string[],
+  skipped: string[],
+): void => {
   if (isRetiredRecord(directory)) {
-    diagnostics.push(
+    skipped.push(
       `Skipped task ${basename(directory)} saved in a retired format; start a fresh task instead.`,
     );
 
@@ -303,6 +308,7 @@ const readReferencedTask = (
   directory: string,
   taskId: string,
   diagnostics: string[],
+  skipped: string[],
 ): Task | undefined => {
   try {
     const task = readScannedTask(directory);
@@ -315,7 +321,7 @@ const readReferencedTask = (
 
     return task;
   } catch (error) {
-    diagnoseSkippedTask(directory, error, diagnostics);
+    diagnoseSkippedTask(directory, error, diagnostics, skipped);
 
     return undefined;
   }
@@ -327,6 +333,7 @@ const addReferencedTasks = (
   tasks: { directory: string; task: Task }[],
   unpublished: Map<string, string>,
   diagnostics: string[],
+  skipped: string[],
 ): void => {
   // Tasks published late are appended here and checked by this same loop.
   for (const { task } of tasks) {
@@ -344,7 +351,7 @@ const addReferencedTasks = (
     const referencedDirectory = join(root, referenced);
     unpublished.delete(referenced);
 
-    const late = readReferencedTask(referencedDirectory, referenced, diagnostics);
+    const late = readReferencedTask(referencedDirectory, referenced, diagnostics, skipped);
 
     if (late) {
       tasks.push({ directory: referencedDirectory, task: late });
@@ -378,6 +385,7 @@ const scanTaskEntry = (
   root: string,
   entry: Dirent,
   diagnostics: string[],
+  skipped: string[],
 ): FoundTaskEntry | UnpublishedTaskEntry | undefined => {
   const directory = join(root, entry.name);
 
@@ -394,7 +402,7 @@ const scanTaskEntry = (
 
     return { directory, task };
   } catch (error) {
-    diagnoseSkippedTask(directory, error, diagnostics);
+    diagnoseSkippedTask(directory, error, diagnostics, skipped);
 
     return undefined;
   }
@@ -403,6 +411,7 @@ const scanTaskEntry = (
 export const readTasks = (
   root: string,
   diagnostics: string[] = [],
+  skipped: string[] = diagnostics,
 ): { directory: string; task: Task }[] => {
   const entries = readTaskEntries(root, diagnostics);
 
@@ -416,7 +425,7 @@ export const readTasks = (
   for (const entry of entries.filter(
     (candidate) => candidate.isDirectory() && candidate.name !== '.admission',
   )) {
-    const outcome = scanTaskEntry(root, entry, diagnostics);
+    const outcome = scanTaskEntry(root, entry, diagnostics, skipped);
 
     if (!outcome) {
       continue;
@@ -430,12 +439,10 @@ export const readTasks = (
     tasks.push({ directory: outcome.directory, task: outcome.task });
   }
 
-  addReferencedTasks(root, tasks, unpublished, diagnostics);
+  addReferencedTasks(root, tasks, unpublished, diagnostics, skipped);
 
   for (const [id, directory] of unpublished) {
-    diagnostics.push(
-      `Skipped unpublished task ${id}; preparation evidence remains at ${directory}.`,
-    );
+    skipped.push(`Skipped unpublished task ${id}; preparation evidence remains at ${directory}.`);
   }
 
   return tasks;

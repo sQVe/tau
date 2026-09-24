@@ -45,7 +45,7 @@ export const nativeReference = (
 
 export const requireUnclaimed = (root: string, source: { directory: string; task: Task }): void => {
   const diagnostics: string[] = [];
-  const successor = findSuccessor(readTasks(root, diagnostics), source.task.taskId);
+  const successor = findSuccessor(readTasks(root, diagnostics, []), source.task.taskId);
 
   if (successor) {
     throw new Error(

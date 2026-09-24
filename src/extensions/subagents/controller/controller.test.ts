@@ -1008,6 +1008,37 @@ it.each(['pending', 'uncertain cleanup', 'dispatch', 'accepted', 'report'] as co
   },
 );
 
+it('admits follow-up with retired records and an unpublished directory', async () => {
+  const fixture = await completed();
+  const retiredRecords = [
+    { ...fixture.source, taskId: 'retired-tree', tree: {} },
+    { ...fixture.source, taskId: 'retired-owner', ownerId: 'old-controller' },
+    {
+      ...fixture.source,
+      taskId: 'retired-fingerprint',
+      loadout: { ...fixture.source.loadout, modelFingerprint: '0'.repeat(64) },
+    },
+  ];
+
+  for (const record of retiredRecords) {
+    const directory = join(fixture.directory, record.taskId);
+    mkdirSync(directory);
+    records.publish(directory, 'task.json', record);
+  }
+
+  const unpublished = join(fixture.directory, 'unpublished');
+  mkdirSync(unpublished);
+  const saved = savedFiles(fixture.directory);
+  const result = fixture.controller.followUp(fixture.input, fixture.context);
+
+  await expect(result).resolves.toMatchObject({
+    state: 'starting',
+    predecessorTaskId: fixture.source.taskId,
+  });
+  expect(savedFiles(fixture.directory)).toEqual(expect.arrayContaining(saved));
+  expect(readdirSync(unpublished)).toEqual([]);
+});
+
 it('reports unreadable successor records and refuses follow-up without writes', async () => {
   const fixture = await completed();
   const directory = join(fixture.directory, 'unreadable');
