@@ -87,6 +87,7 @@ import {
   handleRecovery,
   savedRecovery,
   taskStatus,
+  taskRecordStatus,
   cleanupDetail,
   recordNativeIssue,
 } from './record.js';
@@ -216,10 +217,11 @@ interface CleanupOutcomeRequest {
 
 const readWidgetStatus = (
   directory: string,
+  task: Task,
   owner: { activeOwner: string | undefined; enforcing: boolean },
 ) => {
   try {
-    return taskStatus(directory, owner.activeOwner, owner.enforcing);
+    return taskRecordStatus(directory, task, owner.activeOwner, owner.enforcing);
   } catch {
     return undefined;
   }
@@ -571,7 +573,7 @@ export class WorkerController {
     }
 
     const owner = this.ownership(task.taskId);
-    const status = readWidgetStatus(directory, owner);
+    const status = readWidgetStatus(directory, task, owner);
     const activity = readWorkerActivity(directory, task.taskId);
     const handle = this.handles.get(task.taskId);
 

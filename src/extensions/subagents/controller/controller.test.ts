@@ -1,4 +1,4 @@
-import type * as fileSystem from 'node:fs';
+import * as fileSystem from 'node:fs';
 import {
   fsyncSync,
   mkdirSync,
@@ -14,7 +14,7 @@ import { dirname, join } from 'node:path';
 import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
 import { writeWorkerActivity } from '../activity.js';
-import { inheritedInstructions } from '../admission.js';
+import { admissionDirectory, inheritedInstructions } from '../admission.js';
 import * as cancellationModule from '../cancellation.js';
 import { herdrFake } from '../fixtures/herdrFake.js';
 import { placementFixture } from '../fixtures/layout.js';
@@ -3038,6 +3038,43 @@ it('exposes read-only widget rows without inferring success from worker readines
 
   expect(stoppedRow.stoppedAt).toBeGreaterThan(0);
   expect(stoppedRow.detailPath).toBe(join(launched.directory, 'report.json'));
+});
+
+it('refreshes worker history without reopening reservation files for every row', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  const launched = await fixture.controller.launch(fixture.input);
+  const task = readTask(launched.directory);
+  const reservations = admissionDirectory(fixture.directory, task.tree);
+
+  for (let index = 0; index < 3; index++) {
+    const historical = { ...task, taskId: `history-${index}`, name: `worker-${index}0` };
+    const directory = join(fixture.directory, historical.taskId);
+    mkdirSync(directory);
+    records.publish(directory, 'task.json', historical);
+    records.publish(reservations, `${historical.taskId}.json`, historical);
+    recordEvent(directory, historical.taskId, 'cleanup', { stopped: true, detail: 'Stopped.' });
+  }
+
+  const opened = vi.spyOn(fileSystem, 'openSync');
+  const rows = fixture.controller.widgetRows(fixture.input.parentSessionId);
+
+  expect(rows).toHaveLength(4);
+  expect(rows.filter((row) => row.state === 'stopped')).toHaveLength(3);
+  expect(rows.find((row) => row.taskId === launched.taskId)?.state).toBe('starting');
+
+  recordEvent(launched.directory, launched.taskId, 'cleanup', {
+    stopped: true,
+    detail: 'Stopped.',
+  });
+  const refreshed = fixture.controller.widgetRows(fixture.input.parentSessionId);
+  const reservationReads = opened.mock.calls.filter(([path]) =>
+    String(path).startsWith(reservations),
+  );
+
+  expect(refreshed.filter((row) => row.state === 'stopped')).toHaveLength(4);
+  expect(reservationReads).toHaveLength(0);
 });
 
 it('saves and exposes a parent-provided short task label without changing the task text', async ({

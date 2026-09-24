@@ -153,14 +153,17 @@ const pendingQuestionStatus = (directory: string, taskId: string) => {
 };
 
 // oxlint-disable-next-line eslint/complexity -- Status fields must reflect one consistent read of the task records.
-export const taskStatus = (directory: string, activeOwner?: string, enforcing = true) => {
-  const task = readTask(directory);
+export const taskRecordStatus = (
+  directory: string,
+  task: Task,
+  activeOwner?: string,
+  enforcing = true,
+) => {
   const report = readReport(directory, task.taskId);
   const event = (kind: TaskEvent['kind']) => readEvent(directory, task.taskId, kind);
   const failure = event('startupFailure');
   const cleanup = event('cleanup');
   const settled = event('settled');
-  const descendants = unconfirmedDescendants(dirname(directory), task);
   const state = workerState(directory, task, activeOwner, enforcing);
   const outcome = taskOutcome(
     [event('timeout'), event('cancelled'), failure],
@@ -185,8 +188,6 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
       : {}),
     capacityHeld: cleanup?.stopped !== true,
     reservationDirectory: admissionDirectory(dirname(directory), task.tree),
-    unconfirmedChildren: descendants.children,
-    descendantEvidence: descendants.evidence,
     harness: harnessOf(task.loadout),
     nativeSessionId: task.nativeSessionId,
     nativeSessionFile: task.nativeSessionFile,
@@ -197,6 +198,18 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
     failure: failure?.detail,
     cleanup: cleanup?.detail,
     ...(recovery ? { recovery } : {}),
+  };
+};
+
+export const taskStatus = (directory: string, activeOwner?: string, enforcing = true) => {
+  const task = readTask(directory);
+  const status = taskRecordStatus(directory, task, activeOwner, enforcing);
+  const descendants = unconfirmedDescendants(dirname(directory), task);
+
+  return {
+    ...status,
+    unconfirmedChildren: descendants.children,
+    descendantEvidence: descendants.evidence,
   };
 };
 
