@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, vi } from 'vitest';
 
-import { initializeRepository } from '../../../../tests/gitRepository.js';
+import { createTemporaryRepository as createRepository } from '../../../../tests/gitRepository.js';
 import type { reviewComments } from '../commentReview.js';
 import { createCommitTool as createReviewedCommitTool } from '../tool.js';
 import type { CommitInput } from '../validation.js';
@@ -25,11 +25,12 @@ export const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   vi.restoreAllMocks();
-  await Promise.all(
-    temporaryDirectories
+  await Promise.all([
+    ...temporaryDirectories
       .splice(0)
       .map((directory) => rm(directory, { recursive: true, force: true })),
-  );
+    ...repositoryCleanups.splice(0).map((cleanup) => cleanup()),
+  ]);
 });
 
 export const runCommand = async (
@@ -76,14 +77,12 @@ export const git = async (
   return result.stdout;
 };
 
-export const createTemporaryRepository = async (): Promise<string> => {
-  const repositoryDirectory = await mkdtemp(join(tmpdir(), 'tau-commit-'));
-  temporaryDirectories.push(repositoryDirectory);
+const repositoryCleanups: (() => Promise<void>)[] = [];
 
-  await initializeRepository(repositoryDirectory);
-
-  return repositoryDirectory;
-};
+export const createTemporaryRepository = () =>
+  createRepository((cleanup) => {
+    repositoryCleanups.push(cleanup);
+  }, 'tau-commit-');
 
 export const writeRepositoryFile = async (
   repositoryDirectory: string,
