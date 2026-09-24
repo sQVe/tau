@@ -820,7 +820,11 @@ export class WorkerHistoryView implements Component {
         visibleWidth(corner),
     );
 
-    return `${this.theme.fg('border', left)}${this.theme.fg('accent', fittedTitle)}${this.theme.fg('border', '─'.repeat(fill))}${this.theme.fg('muted', fittedRight)}${this.theme.fg('border', corner)}`;
+    return [
+      `${this.theme.fg('border', left)}${this.theme.fg('accent', fittedTitle)}`,
+      this.theme.fg('border', '─'.repeat(fill)),
+      `${this.theme.fg('muted', fittedRight)}${this.theme.fg('border', corner)}`,
+    ].join('');
   }
 }
 

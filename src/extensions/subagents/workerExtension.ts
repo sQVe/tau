@@ -566,8 +566,11 @@ const registerProgressTool = (pi: ExtensionAPI, state: WorkerExtensionState): vo
   pi.registerTool({
     name: 'subagent_progress',
     label: 'Report progress',
-    description:
-      'Publish one short single-line phase description when the work phase changes, for example "Inspecting launch code" or "Running focused tests". Update it on phase changes only, not for every tool call and not for reassurance. It is passive: it never wakes the parent and never extends the deadline.',
+    description: [
+      'Publish one short single-line phase description when the work phase changes, for example "Inspecting launch code" or "Running focused tests".',
+      'Update it on phase changes only, not for every tool call and not for reassurance.',
+      'It is passive: it never wakes the parent and never extends the deadline.',
+    ].join(' '),
     parameters: progressParameters,
     execute(...argumentsList) {
       const saved = recordPhaseDescription(state, argumentsList[4], argumentsList[1].description);
@@ -584,8 +587,11 @@ const registerReportTool = (pi: ExtensionAPI, state: WorkerExtensionState): void
   pi.registerTool({
     name: 'subagent_report',
     label: 'Worker report',
-    description:
-      'Submit the final durable handoff once. Put the Changes, Evidence, Decisions, and Concerns sections in summary; evidence holds references, not the Evidence section. Outcome incomplete requires blocker. Receipt does not prove correctness or stopped work. Do not retry uncertain delivery.',
+    description: [
+      'Submit the final durable handoff once.',
+      'Put the Changes, Evidence, Decisions, and Concerns sections in summary; evidence holds references, not the Evidence section.',
+      'Outcome incomplete requires blocker. Receipt does not prove correctness or stopped work. Do not retry uncertain delivery.',
+    ].join(' '),
     parameters: reportParameters,
     execute(...argumentsList) {
       return reportToParent(state, argumentsList[1]);
@@ -682,8 +688,10 @@ const registerReportReminder = (pi: ExtensionAPI, state: WorkerExtensionState): 
     pi.sendMessage(
       {
         customType: 'tau-worker-report-request',
-        content:
-          'Your turn ended without subagent_report. Finish the assigned work, then call subagent_report. Report incomplete only with a concrete blocker. Do not expand the original scope; the deadline is unchanged.',
+        content: [
+          'Your turn ended without subagent_report. Finish the assigned work, then call subagent_report.',
+          'Report incomplete only with a concrete blocker. Do not expand the original scope; the deadline is unchanged.',
+        ].join(' '),
         display: true,
       },
       { deliverAs: 'followUp', triggerTurn: true },

@@ -665,8 +665,10 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
 
     return {
       block: true,
-      reason:
-        'A worker is active. Worker notices wait until the current tool call finishes, so a sleep delays them. End your turn to wait; a notice starts a new turn when the worker asks, reports, or stops.',
+      reason: [
+        'A worker is active. Worker notices wait until the current tool call finishes, so a sleep delays them.',
+        'End your turn to wait; a notice starts a new turn when the worker asks, reports, or stops.',
+      ].join(' '),
     };
   });
   pi.registerMessageRenderer('tau-worker', (message, options, theme) =>
