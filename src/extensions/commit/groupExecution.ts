@@ -6,7 +6,6 @@ import type { ExecResult, ExtensionAPI, ExtensionContext } from '@earendil-works
 import { delegateReference } from '../../delegateModel/index.js';
 import { errorMessage, isMissingFile } from '../../errors/index.js';
 import { commentPolicyHash, formatCommentReview, isAdvisoryFinding } from './commentReview.js';
-import type { CommentReview } from './commentReview.js';
 import {
   currentHead,
   listCommitPaths,
@@ -19,7 +18,7 @@ import {
   validateFileRequests,
   writeTree,
 } from './gitCommands.js';
-import type { CommitSuccess, RequestReview, Reviews, ReviewState } from './types.js';
+import type { CommentReview, CommitSuccess, RequestReview, Reviews, ReviewState } from './types.js';
 import {
   buildCommitMessage,
   commitFailedError,

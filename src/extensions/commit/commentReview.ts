@@ -3,11 +3,12 @@ import { posix } from 'node:path';
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
-import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { resolveDelegate } from '../../delegateModel/index.js';
 import { runGit } from './gitCommands.js';
+import { reviewerFindingSchema } from './types.js';
+import type { CommentFinding, CommentReview } from './types.js';
 
 export const commentPolicy = `Review code comments in the staged changes. Do not review unrelated code quality.
 Check changed comments and existing comments whose meaning is affected by changed behavior.
@@ -55,30 +56,10 @@ const stripFence = (text: string) =>
   text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i, '$1');
 
 // The reviewer may not return the advisory unverified kind; only the verifier assigns it.
-const reviewerFindingSchema = Type.Object(
-  {
-    path: Type.String({ minLength: 1 }),
-    line: Type.Integer({ minimum: 1 }),
-    kind: Type.Union([Type.Literal('inaccurate'), Type.Literal('policy'), Type.Literal('missing')]),
-    message: Type.String({ minLength: 1, maxLength: 2000 }),
-  },
-  { additionalProperties: false },
-);
-
 const reviewSchema = Type.Object(
   { findings: Type.Array(reviewerFindingSchema, { maxItems: 50 }) },
   { additionalProperties: false },
 );
-
-type ReviewerFinding = Static<typeof reviewerFindingSchema>;
-
-export type CommentFinding =
-  | ReviewerFinding
-  | (Omit<ReviewerFinding, 'kind'> & { kind: 'unverified' });
-
-export interface CommentReview {
-  findings: CommentFinding[];
-}
 
 // Only inaccurate findings block, unless the verifier rejects them.
 export const isAdvisoryFinding = (finding: CommentFinding) => finding.kind !== 'inaccurate';

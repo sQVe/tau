@@ -16,8 +16,9 @@ import {
   fakeCommit,
 } from '../../../tests/commitTool.js';
 import { commentPolicyHash } from './commentReview.js';
-import type { CommentReview, reviewComments } from './commentReview.js';
+import type { reviewComments } from './commentReview.js';
 import { createCommitTool as createReviewedCommitTool } from './tool.js';
+import type { CommentReview } from './types.js';
 import { commitFailedError, validatePaths, validateSubject } from './validation.js';
 
 describe('validateSubject', () => {
