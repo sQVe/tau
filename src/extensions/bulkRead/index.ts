@@ -7,13 +7,10 @@ import type {
 import { Type } from 'typebox';
 
 import { resolveDelegate } from '../../delegateModel/index.js';
-import { BulkReadRecoverableError, bulkReadTool, bulkRead } from './tool.js';
+import { BulkReadRecoverableError, bulkReadTool, bulkRead, isCancellation } from './tool.js';
 
 // ADR 0014 records the measurement behind this threshold.
 export const bulkReadLineThreshold = 400;
-
-const isCancellation = (error: unknown): boolean =>
-  error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name);
 
 // Cancellations and timeouts, like recoverable bulk read failures, say nothing about the delegate.
 const isRecoverable = (error: unknown): boolean =>

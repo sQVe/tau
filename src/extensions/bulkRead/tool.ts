@@ -9,6 +9,9 @@ import { errorMessage } from '../../errors/index.js';
 
 export const bulkReadTool = 'bulk_read';
 
+export const isCancellation = (error: unknown): boolean =>
+  error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name);
+
 // Failures that say nothing about whether the delegate is reachable, so read trimming stays on.
 export class BulkReadRecoverableError extends Error {
   override name = 'BulkReadRecoverableError';
@@ -130,7 +133,7 @@ export const bulkRead = async (
     .catch((error: unknown) => {
       delegateSignal.throwIfAborted();
 
-      if (error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name)) {
+      if (isCancellation(error)) {
         throw error;
       }
 
