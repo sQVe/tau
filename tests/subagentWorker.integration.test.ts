@@ -37,7 +37,7 @@ import {
   validateTask,
 } from '../src/extensions/subagents/records.js';
 import { requireNativeTask } from '../src/extensions/subagents/types.js';
-import workerExtension from '../src/extensions/subagents/worker.js';
+import workerExtension from '../src/extensions/subagents/workerExtension.js';
 
 it('keeps the real bundled questionnaire available to the parent', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-parent-questionnaire-'));

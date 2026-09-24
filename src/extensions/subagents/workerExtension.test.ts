@@ -17,7 +17,7 @@ import { checkWorkerRuntime } from './loadout.js';
 import * as questions from './questionRecords.js';
 import { publish, readEvent, readReport, recordEvent } from './records.js';
 import { textLimit } from './types.js';
-import workerExtension from './worker.js';
+import workerExtension from './workerExtension.js';
 
 vi.mock('./loadout.js', () => ({
   checkWorkerRuntime: vi.fn<typeof checkWorkerRuntime>(),
