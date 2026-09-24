@@ -795,26 +795,37 @@ it('refuses to start when the shell process changes during startup checks', asyn
   expect(fixture.fake.state.started).toBe(false);
 });
 
-it.each([10_000, 1200])(
-  'gives herdr a start timeout inside the client budget for a %i ms task',
-  async (timeout) => {
-    let herdrTimeout = 0;
-    let clientBudget = 0;
-    const fixture = setup(afterTest, 0, async (argumentsList, budget) => {
-      if (argumentsList[1] === 'start') {
-        herdrTimeout = Number(argumentsList[argumentsList.indexOf('--timeout') + 1]);
-        clientBudget = budget;
-      }
+it('gives herdr a valid start timeout inside the client budget', async ({ onTestFinished }) => {
+  let herdrTimeout = 0;
+  let clientBudget = 0;
+  const fixture = setup(onTestFinished, 0, async (argumentsList, budget) => {
+    if (argumentsList[1] === 'start') {
+      herdrTimeout = Number(argumentsList[argumentsList.indexOf('--timeout') + 1]);
+      clientBudget = budget;
+    }
 
-      return '';
-    });
+    return '';
+  });
 
-    await fixture.controller.launch({ ...fixture.input, timeout });
+  await fixture.controller.launch(fixture.input);
 
-    expect(herdrTimeout).toBeGreaterThanOrEqual(1);
-    expect(herdrTimeout).toBeLessThan(clientBudget);
-  },
-);
+  // herdr 0.9.1 rejects start timeouts of 3000 ms or less.
+  expect(herdrTimeout).toBeGreaterThan(3000);
+  expect(herdrTimeout).toBeLessThan(clientBudget);
+});
+
+it('refuses to start a worker when too little budget is left for herdr', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+
+  const launched = await fixture.controller.launch({ ...fixture.input, timeout: 4000 });
+
+  expect(launched).toMatchObject({ outcome: 'failure', state: 'stopped' });
+  expect(launched.failure).toContain('No worker was started');
+  expect(fixture.calls.some((call) => call[1] === 'start')).toBe(false);
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+});
 
 it('retries a structured pane-busy rejection once after proving absence', async ({
   onTestFinished,
@@ -1312,16 +1323,22 @@ it('classifies follow-up readiness deadline expiry as timeout rather than caller
   const validationDeadline = new AbortController();
   vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(validationDeadline.signal);
   // Leave slow runners room to reach start; an early rejection fails here instead of hanging.
-  const pending = fixture.controller.followUp({ ...fixture.input, timeout: 1200 }, fixture.context);
+  vi.spyOn(cancellationModule, 'runClient').mockResolvedValue('fixture shell start');
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  const pending = fixture.controller.followUp(
+    { ...fixture.input, timeout: 10_000 },
+    fixture.context,
+  );
   await Promise.race([started.promise, pending]);
   validationDeadline.abort(new DOMException('Validation deadline expired.', 'TimeoutError'));
+  await vi.advanceTimersByTimeAsync(10_000);
   const status = await pending;
 
   expect(status.outcome).toBe('timeout');
   expect(records.readEvent(status.directory, status.taskId, 'cancelled')).toBeUndefined();
   expect(records.readEvent(status.directory, status.taskId, 'timeout')).toBeDefined();
   const task = readTask(status.directory);
-  expect(task.deadline - task.createdAt).toBe(1200);
+  expect(task.deadline - task.createdAt).toBe(10_000);
 });
 
 it('allows only one competing follow-up and preserves lineage across parents and successive tasks', async () => {
@@ -2689,11 +2706,11 @@ it('includes prior loadout resolution in the original task deadline', async ({
 }) => {
   vi.useFakeTimers();
   const { controller, input } = setup(onTestFinished);
-  const startedAt = { wall: Date.now() - 4000, monotonic: performance.now() - 4000 };
+  const startedAt = { wall: Date.now() - 2000, monotonic: performance.now() - 2000 };
   const launched = await controller.launch({ ...input, startedAt });
 
   expect(launched.deadline).toBe(startedAt.wall + input.timeout);
-  await vi.advanceTimersByTimeAsync(3600);
+  await vi.advanceTimersByTimeAsync(5600);
   await controller.cancel(launched.taskId, 'parent-id');
   expect(controller.status(launched.taskId, 'parent-id').outcome).toBe('timeout');
 });
@@ -2913,13 +2930,14 @@ it('bounds reload cleanup by the remaining cancellation budget', async ({ onTest
 
     return '';
   });
-  const launched = await fixture.controller.launch({ ...fixture.input, timeout: 1200 });
+  // The smallest task that still leaves herdr a valid start timeout has a 1500 ms cleanup budget.
+  const launched = await fixture.controller.launch({ ...fixture.input, timeout: 6000 });
   cleaning = true;
   const began = performance.now();
 
   await fixture.controller.stopAll('reload');
 
-  expect(performance.now() - began).toBeLessThan(1000);
+  expect(performance.now() - began).toBeLessThan(2500);
   const cleanup = readEvent(launched.directory, launched.taskId, 'cleanup');
   expect(cleanup?.stopped).toBe(false);
   expect(cleanup?.detail).toContain('Parent session reload');

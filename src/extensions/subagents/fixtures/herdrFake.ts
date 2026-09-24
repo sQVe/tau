@@ -104,6 +104,12 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
     list: () => JSON.stringify({ result: { type: 'agent_list', agents: [] } }),
     read: () => JSON.stringify({ result: { text: 'A bounded native question or approval.' } }),
     start: (argumentsList) => {
+      const timeout = Number(argumentsList[argumentsList.indexOf('--timeout') + 1]);
+
+      if (!(timeout > 3000 && timeout <= 300_000)) {
+        throw herdrError('agent start timeout out of range', 'invalid_agent_timeout');
+      }
+
       if (state.busyShellPolls > 0) {
         throw herdrError('Shell is still starting', 'agent_pane_busy');
       }
