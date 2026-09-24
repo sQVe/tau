@@ -4,9 +4,9 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { isMissingFile } from '../../errors/index.js';
 import { classifyPath, configurationGlobs, tddConfig } from './config.js';
-import { runTests } from './runner/index.js';
 import { finishDiagnostics } from './runner/retention.js';
 import type { RunDiagnostics, RunnerResult } from './runner/types.js';
+import { runTests } from './runner/vitest.js';
 import type { Behavior } from './types.js';
 
 type Freshness = 'fresh' | 'stale' | 'unknown';

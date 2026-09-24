@@ -6,9 +6,9 @@ import { beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTestObservation } from '../observation.js';
 import { runContext, summarize } from '../render.js';
-import { runTests } from './index.js';
 import { defaultResolveVitest } from './resolution.js';
 import type { SpawnFn } from './types.js';
+import { runTests } from './vitest.js';
 
 let cwd: string;
 let manifestPath: string;

@@ -14,7 +14,6 @@ import { join } from 'node:path';
 
 import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
-import { runTests as runTestsWithDiagnostics } from './index.js';
 import { defaultSpawn, nodeExecutable } from './process.js';
 import { defaultResolveVitest, extractBinPath } from './resolution.js';
 import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js';
@@ -25,7 +24,7 @@ import {
   maximumStdoutBytes,
   maximumTotalBytes,
 } from './types.js';
-import { defaultDeps } from './vitest.js';
+import { defaultDeps, runTests as runTestsWithDiagnostics } from './vitest.js';
 
 const runTests = async (...argumentsList: Parameters<typeof runTestsWithDiagnostics>) => {
   const result = await runTestsWithDiagnostics(...argumentsList);

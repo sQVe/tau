@@ -449,9 +449,9 @@ const runInDirectory = async (
   return { report: await classifyResult(input, result, outputFile, runner.version), result };
 };
 
-export const runVitest = async (
+export const runTests = async (
   input: RunTestsInput,
-  dependencies: RunnerDeps,
+  dependencies: RunnerDeps = defaultDeps(input.scope),
 ): Promise<RunnerResult> => {
   const directory = await createDiagnosticsDirectory();
   const started = performance.now();
