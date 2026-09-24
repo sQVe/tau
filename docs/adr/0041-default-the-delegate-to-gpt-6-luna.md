@@ -22,7 +22,8 @@ states that it is the next Luna iteration and costs less.
 ## Decision
 
 Default `TAU_DELEGATE_MODEL` to `openai-codex/gpt-6-luna` when it is unset or empty. Bulk reads, web
-answers, and commit comment review use it unless the setting names another model.
+answers, and commit comment review use it unless the setting names another model. A web call's
+`answerModel` override still takes precedence.
 
 This replaces the default and the repeat-the-comparison rule in ADR 0027. Keep its other decisions.
 No comparison was run for this change.
