@@ -1260,6 +1260,45 @@ export class WorkerController {
     }
   }
 
+  // The pane display title is cosmetic. Startup is already complete, so an unresponsive herdr call
+  // only delays the launch return by at most the short shared deadline below; it cannot block
+  // dispatch or extend the task's original deadline. A rejected or unresolved write leaves the
+  // saved pane unchanged.
+  private async renameWorkerPane(handle: Handle): Promise<void> {
+    if (handle.abort.signal.aborted || this.lifetime.signal.aborted) {
+      return;
+    }
+
+    const remainingWork = remainingWorkBudget(handle);
+
+    if (remainingWork <= 0) {
+      return;
+    }
+
+    const budget = Math.min(2_000, remainingWork);
+    const deadline = performance.now() + budget;
+    const limit = new AbortController();
+    const timer = setTimeout(() => {
+      limit.abort();
+    }, budget);
+    const signal = AbortSignal.any([this.lifetime.signal, handle.abort.signal, limit.signal]);
+    const call = (argumentsList: string[]) => {
+      const remaining = Math.max(1, Math.floor(deadline - performance.now()));
+
+      return this.client(argumentsList, remaining, signal);
+    };
+
+    try {
+      const ownedLocation = await resolveTerminal(text(handle.terminalId), call);
+
+      await call(['pane', 'rename', ownedLocation.paneId, paneTitle(handle.task)]);
+    } catch {
+      // Keep the saved pane as-is; the worker still launched with its unique agent key.
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   private async launchTask(
     input: LaunchInput,
     launchSignal: AbortSignal,
@@ -1291,19 +1330,10 @@ export class WorkerController {
       }
 
       await this.startWorker(handle, location.paneId, name, call);
-
-      // The pane display title is cosmetic. A rejected or unresolved title write must not fail the
-      // launch or change cleanup ownership, so keep it best-effort after startup.
-      try {
-        const ownedLocation = await resolveTerminal(text(handle.terminalId), call);
-
-        await call(['pane', 'rename', ownedLocation.paneId, paneTitle(handle.task)]);
-      } catch {
-        // Keep the saved pane as-is; the worker still launches with its unique agent key.
-      }
-
       await this.finishStartup(handle, call);
       handle.removeLaunchAbort?.();
+
+      await this.renameWorkerPane(handle);
     } catch (error) {
       const reason = remainingWorkBudget(handle) <= 0 ? 'timeout' : 'failure';
 

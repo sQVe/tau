@@ -154,6 +154,16 @@ const setup = (
   return { directory, controller, client, fake, calls, notifications, input };
 };
 
+const dispatchRecordedForWorker = (calls: string[][]): boolean => {
+  const recordDirectory = calls
+    .filter((call) => call[1] === 'split')
+    .map((call) => call.find((argument) => argument.startsWith('TAU_WORKER_RECORD=')))
+    .find((argument): argument is string => argument !== undefined)
+    ?.slice('TAU_WORKER_RECORD='.length);
+
+  return recordDirectory !== undefined && readdirSync(recordDirectory).includes('dispatch.json');
+};
+
 it.each(['missing', 'empty'] as const)(
   'confirms rejected Pi startup with %s agent evidence',
   async (evidence) => {
@@ -1072,6 +1082,95 @@ it('refuses full-cap native follow-up before consuming its successor claim', asy
       .readTasks(fixture.directory)
       .some(({ task }) => task.predecessorTaskId === fixture.source.taskId),
   ).toBe(false);
+});
+
+it('dispatches the task before a stalled cosmetic pane rename can hold the launch', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  const renameStarted = Promise.withResolvers<undefined>();
+  let dispatchedWhenRenameStarted: boolean | undefined;
+  const { controller, input, calls } = setup(
+    onTestFinished,
+    0,
+    async (argumentsList, _budget, signal) => {
+      if (argumentsList[1] === 'rename') {
+        dispatchedWhenRenameStarted = dispatchRecordedForWorker(calls);
+        renameStarted.resolve(undefined);
+
+        return new Promise<string>((_resolve, reject) => {
+          signal?.addEventListener(
+            'abort',
+            () => {
+              reject(new Error('rename aborted'));
+            },
+            { once: true },
+          );
+        });
+      }
+
+      return '';
+    },
+  );
+  const launching = controller.launch(input);
+
+  await renameStarted.promise;
+  expect(dispatchedWhenRenameStarted).toBe(true);
+  await vi.advanceTimersByTimeAsync(2000);
+  const launched = await launching;
+
+  expect(launched.failure).toBeUndefined();
+  expect(readdirSync(launched.directory)).toContain('dispatch.json');
+  expect(calls.some((call) => call[1] === 'rename')).toBe(true);
+  expect(calls.filter((call) => call[1] === 'rename')).toHaveLength(1);
+});
+
+it('bounds a stalled cosmetic terminal resolution by the same short deadline', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  const resolutionStalled = Promise.withResolvers<undefined>();
+  let started = false;
+  let dispatchedWhenResolutionStalled: boolean | undefined;
+  const { controller, input, calls } = setup(
+    onTestFinished,
+    0,
+    async (argumentsList, _budget, signal) => {
+      if (argumentsList[1] === 'start') {
+        started = true;
+      }
+
+      const cosmeticResolution =
+        started && argumentsList[0] === 'pane' && argumentsList[1] === 'list';
+
+      if (cosmeticResolution && dispatchRecordedForWorker(calls)) {
+        dispatchedWhenResolutionStalled = dispatchRecordedForWorker(calls);
+        resolutionStalled.resolve(undefined);
+
+        return new Promise<string>((_resolve, reject) => {
+          signal?.addEventListener(
+            'abort',
+            () => {
+              reject(new Error('terminal resolution aborted'));
+            },
+            { once: true },
+          );
+        });
+      }
+
+      return '';
+    },
+  );
+  const launching = controller.launch(input);
+
+  await resolutionStalled.promise;
+  expect(dispatchedWhenResolutionStalled).toBe(true);
+  await vi.advanceTimersByTimeAsync(2000);
+  const launched = await launching;
+
+  expect(launched.failure).toBeUndefined();
+  expect(readdirSync(launched.directory)).toContain('dispatch.json');
+  expect(calls.some((call) => call[1] === 'rename')).toBe(false);
 });
 
 it('gives the worker pane its parent process identity', async ({ onTestFinished }) => {
