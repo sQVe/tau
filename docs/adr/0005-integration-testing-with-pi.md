@@ -31,8 +31,8 @@ model responses through the faux provider from `@earendil-works/pi-ai`.
 
 ### Layers
 
-- `*.test.ts` for unit tests next to the code they test. They may use a temporary Git repository but
-  never a Pi session.
+- `*.test.ts` for unit tests next to the code they test, or under `tests/` for cross-module checks.
+  They may use a temporary Git repository but never a Pi session.
 - `*.integration.test.ts` for tests with a real `AgentSession` and scripted model responses. Run in
   CI without a network connection or API key.
 - Check whether the model follows a skill through separate evaluations outside CI.

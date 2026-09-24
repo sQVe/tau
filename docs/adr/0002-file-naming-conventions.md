@@ -25,9 +25,8 @@ Use the following naming rules for TypeScript, tests, docs, special files, and c
   classes.
 - `index.ts` contains real implementation. Do not use files that only re-export other modules, also
   called barrel files. Change the module structure if callers need one entry point.
-- `types.ts` next to `index.ts` holds the module's types, with the schemas, type guards, and
-  constant lists that define them. Keep other runtime code in the modules that use it. Do not create
-  a separate file for each type.
+- A module's `types.ts` holds its shared types, with the schemas and small helpers that belong to
+  those types. Do not create a separate file for each type.
 
 ### Tests
 
