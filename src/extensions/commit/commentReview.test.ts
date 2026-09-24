@@ -5,8 +5,8 @@ import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createTemporaryRepository, runCommand } from '../../../tests/commitTool.js';
 import { reviewComments } from './commentReview.js';
+import { createTemporaryRepository, runCommand } from './fixtures/commitTool.js';
 
 afterEach(() => vi.unstubAllEnvs());
 

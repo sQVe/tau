@@ -24,6 +24,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { monotonicNow, reserveTask } from '../src/extensions/subagents/admission.js';
 import * as cancellation from '../src/extensions/subagents/cancellation.js';
+import { placementFixture } from '../src/extensions/subagents/fixtures/layout.js';
 import {
   asPiLoadout,
   readPiTask as readTask,
@@ -35,7 +36,6 @@ import {
   modelFingerprint,
   providerFingerprint,
 } from '../src/extensions/subagents/loadoutFingerprint.js';
-import { placementFixture } from '../src/extensions/subagents/placementFixture.js';
 import { nativeIdentity, seedSession } from '../src/extensions/subagents/profiles.js';
 import {
   acceptReply,

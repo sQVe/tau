@@ -8,10 +8,10 @@ import { promisify } from 'node:util';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, vi } from 'vitest';
 
-import type { reviewComments } from '../src/extensions/commit/commentReview.js';
-import { createCommitTool as createReviewedCommitTool } from '../src/extensions/commit/tool.js';
-import type { CommitInput } from '../src/extensions/commit/validation.js';
-import { initializeRepository } from './gitRepository.js';
+import { initializeRepository } from '../../../../tests/gitRepository.js';
+import type { reviewComments } from '../commentReview.js';
+import { createCommitTool as createReviewedCommitTool } from '../tool.js';
+import type { CommitInput } from '../validation.js';
 
 // Git tests use a clean reviewer.
 // tests/commitFlow.integration.test.ts covers real Pi review.

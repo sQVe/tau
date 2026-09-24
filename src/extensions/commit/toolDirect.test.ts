@@ -11,7 +11,7 @@ import {
   git,
   runCommand,
   writeRepositoryFile,
-} from '../../../tests/commitTool.js';
+} from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 
 describe('direct commit staging', () => {

@@ -7,7 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { onTestFinished } from 'vitest';
 
-import { runClient } from '../src/extensions/subagents/cancellation.js';
+import { runClient } from '../cancellation.js';
 
 export const isolatedHerdr = async (
   configuration = '',

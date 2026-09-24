@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { agentPromptArguments, WorkerController } from '../src/extensions/subagents/controller.js';
+import { isolatedHerdr } from '../src/extensions/subagents/fixtures/isolatedHerdr.js';
 import { fixtureGenericLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
-import { isolatedHerdr } from './isolatedHerdr.js';
 import { toolAvailable } from './toolAvailable.js';
 
 const hasHerdr = toolAvailable('herdr');
