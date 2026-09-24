@@ -39,6 +39,7 @@ interface FixtureState {
   dimensions: Map<string, { width: number; height: number }>;
   positions: Map<string, { x: number; y: number }>;
   trees: Map<string, LayoutNode>;
+  titles: Map<string, string>;
   calls: string[][];
   created: number;
 }
@@ -212,6 +213,20 @@ const respond = async (state: FixtureState, argumentsList: string[]) => {
     return handleLayout(state, value);
   }
 
+  if (operation === 'rename') {
+    const paneId = argumentsList[2] ?? '';
+    const label = argumentsList.slice(3).join(' ');
+    const pane = state.panes.find((item) => item.pane_id === paneId);
+
+    if (pane === undefined) {
+      throw new Error('pane not found');
+    }
+
+    state.titles.set(paneId, label);
+
+    return JSON.stringify({ result: { pane: { ...pane, title: label } } });
+  }
+
   if (operation === 'close') {
     return handleClose(state, argumentsList);
   }
@@ -242,6 +257,7 @@ export const placementFixture = (width: number, height: number) => {
     dimensions: new Map([['parent', { width, height }]]),
     positions: new Map([['parent', { x: 0, y: 0 }]]),
     trees: new Map([['working', 'parent']]),
+    titles: new Map(),
     calls: [],
     created: 0,
   };
@@ -252,6 +268,7 @@ export const placementFixture = (width: number, height: number) => {
     input: placementInput,
     calls: state.calls,
     panes: state.panes,
+    titles: state.titles,
     dimensions: state.dimensions,
     parent: state.parent,
   };

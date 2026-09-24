@@ -152,12 +152,14 @@ const pendingQuestionStatus = (directory: string, taskId: string) => {
   return replySaved ? { ...question, replySaved: true } : question;
 };
 
+// oxlint-disable-next-line eslint/complexity -- Status fields must reflect one consistent read of the task records.
 export const taskStatus = (directory: string, activeOwner?: string, enforcing = true) => {
   const task = readTask(directory);
   const report = readReport(directory, task.taskId);
   const event = (kind: TaskEvent['kind']) => readEvent(directory, task.taskId, kind);
   const failure = event('startupFailure');
   const cleanup = event('cleanup');
+  const settled = event('settled');
   const descendants = unconfirmedDescendants(dirname(directory), task);
   const state = workerState(directory, task, activeOwner, enforcing);
   const outcome = taskOutcome(
@@ -178,6 +180,9 @@ export const taskStatus = (directory: string, activeOwner?: string, enforcing = 
     predecessorName: predecessorName(dirname(directory), task),
     successorTaskId: readSuccessor(directory)?.successorTaskId,
     deadline: task.deadline,
+    ...(state === 'stopped'
+      ? { stoppedAt: settled?.at ?? event('timeout')?.at ?? event('cancelled')?.at ?? cleanup?.at }
+      : {}),
     capacityHeld: cleanup?.stopped !== true,
     reservationDirectory: admissionDirectory(dirname(directory), task.tree),
     unconfirmedChildren: descendants.children,

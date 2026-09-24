@@ -22,6 +22,10 @@ import {
   renderStatusResult,
   shortId,
 } from './render.js';
+import { renderWorkerWidget } from './widget.js';
+import type { WorkerWidgetRow } from './widget.js';
+import { openWorkerHistory } from './widgetOverlay.js';
+import type { WorkerHistoryView } from './widgetOverlay.js';
 
 const visibility = Type.Optional(
   StringEnum(['foreground', 'background'] as const, {
@@ -32,6 +36,14 @@ const visibility = Type.Optional(
 
 const launchParameters = Type.Object({
   task: Type.String({ minLength: 1, maxLength: 32_000 }),
+  label: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 120,
+      description:
+        'Short human label for the compact widget, such as "Fix status counts". Keep the full assignment in task.',
+    }),
+  ),
   profile: Type.String({ minLength: 1 }),
   cwd: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
@@ -49,6 +61,13 @@ const followUpParameters = Type.Object(
   {
     sourceTaskId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
     task: Type.String({ minLength: 1, maxLength: 32000 }),
+    label: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 120,
+        description: 'Short human label for the compact widget. Keep the full assignment in task.',
+      }),
+    ),
     timeoutSeconds: Type.Integer({ minimum: 10, maximum: 86400 }),
     settingsUnchanged: Type.Literal(true),
     visibility,
@@ -220,6 +239,7 @@ const launchWorker = async (
     status = await controller.launch(
       {
         task: parameters.task,
+        ...(parameters.label === undefined ? {} : { label: parameters.label }),
         loadout,
         timeout,
         startedAt,
@@ -526,6 +546,10 @@ const registerSubagentTools = (runtime: SubagentRuntime): void => {
 export default function subagentsExtension(pi: ExtensionAPI): void {
   let controller: WorkerController | undefined;
   let nested = false;
+  let widgetTimer: ReturnType<typeof setInterval> | undefined;
+  let historyView: WorkerHistoryView | undefined;
+  let historyOpen = false;
+  let shuttingDown = false;
   const removeChildrenListener = pi.events.on('tau:worker-children', (value: unknown) => {
     if (value && typeof value === 'object') {
       Object.assign(value, controller?.children() ?? { active: 0, uncertain: [] });
@@ -545,15 +569,104 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   };
 
   registerSubagentTools(runtime);
+  const refreshWidget = (context: ExtensionContext, currentRows?: WorkerWidgetRow[]): void => {
+    if (shuttingDown || !context.hasUI || context.mode !== 'tui') {
+      return;
+    }
+
+    const rows =
+      currentRows ?? runtime.getController().widgetRows(context.sessionManager.getSessionId());
+
+    historyView?.setRows(rows);
+
+    if (rows.length === 0 || historyOpen) {
+      context.ui.setWidget('tau-subagents', undefined);
+    } else {
+      context.ui.setWidget(
+        'tau-subagents',
+        (_tui, theme) => ({
+          // eslint-disable-next-line eslint/no-empty-function -- The rows are replaced on each refresh.
+          invalidate() {},
+          render(width) {
+            return renderWorkerWidget(rows, width, Date.now(), theme);
+          },
+        }),
+        { placement: 'aboveEditor' },
+      );
+    }
+
+    const hasActiveWorkers = rows.some((row) =>
+      ['starting', 'running', 'awaitingReply', 'reported', 'stopping'].includes(row.state),
+    );
+    const refreshIsNeeded = hasActiveWorkers || historyOpen;
+
+    if (refreshIsNeeded) {
+      widgetTimer ??= setInterval(() => {
+        refreshWidget(context);
+      }, 1000);
+    } else if (widgetTimer) {
+      clearInterval(widgetTimer);
+      widgetTimer = undefined;
+    }
+  };
+
+  pi.registerCommand('subagents', {
+    description: 'Browse worker history, reports, usage, and recovery details.',
+    handler: async (_arguments, context) => {
+      if (!context.hasUI || context.mode !== 'tui') {
+        return;
+      }
+
+      historyOpen = true;
+
+      try {
+        const rows = runtime.getController().widgetRows(context.sessionManager.getSessionId());
+
+        refreshWidget(context, rows);
+        await openWorkerHistory(context, rows, (view) => {
+          historyView = view;
+        });
+      } finally {
+        historyView = undefined;
+        historyOpen = false;
+        refreshWidget(context);
+      }
+    },
+  });
+
+  pi.on('session_start', (_event, context) => {
+    shuttingDown = false;
+
+    if (widgetTimer) {
+      clearInterval(widgetTimer);
+      widgetTimer = undefined;
+    }
+
+    refreshWidget(context);
+  });
+  pi.on('tool_result', (_event, context) => {
+    refreshWidget(context);
+  });
   pi.registerMessageRenderer('tau-worker', (message, options, theme) =>
     renderNotice(message.details, options.expanded, theme),
   );
+
   pi.registerMessageRenderer('tau-worker-child', (message, options, theme) =>
     renderNotice(message.details, options.expanded, theme),
   );
 
   pi.on('session_shutdown', async (event) => {
+    shuttingDown = true;
+    historyOpen = false;
+    historyView?.dismiss();
+    historyView = undefined;
     removeChildrenListener();
+
+    if (widgetTimer) {
+      clearInterval(widgetTimer);
+      widgetTimer = undefined;
+    }
+
     await controller?.stopAll(event.reason);
     controller = undefined;
   });

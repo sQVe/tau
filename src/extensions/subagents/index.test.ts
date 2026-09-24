@@ -3,14 +3,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { createEventBus } from '@earendil-works/pi-coding-agent';
+import { TuiAltScreen, VStack } from '@earendil-works/pi-tui';
+import type { Terminal } from '@earendil-works/pi-tui';
 import { Value } from 'typebox/value';
-import { expect, it, vi } from 'vitest';
+import { expect, it, vi, onTestFinished as finishTest } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import subagentsExtension, { deliverWorkerNotice } from './index.js';
 import type { WorkerNotice } from './presentation.js';
+import type { WorkerWidgetRow } from './widget.js';
 
 const registerTools = () => {
   const fake = fakeExtensionApi();
@@ -25,6 +29,9 @@ const textContent = (result: unknown): Record<string, unknown> => {
 
   return JSON.parse(text) as Record<string, unknown>;
 };
+
+const testTheme = { fg: (_color: string, text: string) => text };
+const noOperation = (): void => undefined;
 
 const fullWorkerStatus = {
   taskId: 'task-1',
@@ -79,6 +86,264 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
   await shutdown;
   expect(cleanupFinished).toBe(true);
   expect(shutdownReason).toBe('reload');
+it('updates the parent widget from live worker rows without a model turn', () => {
+  vi.useFakeTimers();
+  const handlers = new Map<string, (event: unknown, context: ExtensionContext) => void>();
+  const setWidget = vi.fn<ExtensionContext['ui']['setWidget']>();
+  const sendMessage = vi.fn<ExtensionAPI['sendMessage']>();
+  const sendUserMessage = vi.fn<ExtensionAPI['sendUserMessage']>();
+  const extension = {
+    events: createEventBus(),
+    on: (name: string, handler: (event: unknown, context: ExtensionContext) => void) =>
+      handlers.set(name, handler),
+    registerTool: () => undefined,
+    registerCommand: () => undefined,
+    registerMessageRenderer: () => undefined,
+    sendMessage,
+    sendUserMessage,
+  } as unknown as ExtensionAPI;
+  vi.spyOn(WorkerController.prototype, 'widgetRows').mockReturnValue([
+    {
+      name: 'investigator-ab',
+      taskId: 'task-a',
+      state: 'running',
+      createdAt: 1,
+      deadline: Date.now() + 10_000,
+      activity: 'tool: read',
+      usage: { available: false, reason: 'Pi session usage was not recorded' },
+    },
+  ]);
+  subagentsExtension(extension);
+  const context = {
+    mode: 'tui',
+    hasUI: true,
+    ui: { setWidget },
+    sessionManager: { getSessionId: () => 'parent-session' },
+  } as unknown as ExtensionContext;
+  handlers.get('session_start')?.({}, context);
+  finishTest(() => {
+    handlers.get('session_shutdown')?.({}, context);
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  const widgetFactory = setWidget.mock.calls[0]?.[1];
+
+  if (typeof widgetFactory !== 'function') {
+    throw new TypeError('Parent worker widget was not installed.');
+  }
+
+  const component = widgetFactory({} as never, testTheme as never);
+
+  expect(component.render(80).join('\n')).toContain('investigator-ab');
+  expect(component.render(80).join('\n')).not.toContain('/subagents');
+  expect(component.handleMouse).toBeUndefined();
+  expect(component.handleInput).toBeUndefined();
+  vi.advanceTimersByTime(1000);
+  expect(sendMessage).not.toHaveBeenCalled();
+  expect(sendUserMessage).not.toHaveBeenCalled();
+  expect(WorkerController.prototype.widgetRows).toHaveBeenCalledWith('parent-session');
+});
+
+it('refreshes history while open, then stops polling after close without a model turn', async () => {
+  vi.useFakeTimers();
+  const handlers = new Map<string, (event: unknown, context: ExtensionContext) => void>();
+  const commands = new Map<string, Parameters<ExtensionAPI['registerCommand']>[1]>();
+  const setWidget = vi.fn<ExtensionContext['ui']['setWidget']>();
+  const sendMessage = vi.fn<ExtensionAPI['sendMessage']>();
+  const sendUserMessage = vi.fn<ExtensionAPI['sendUserMessage']>();
+  let finishOverlay: () => void = noOperation;
+  const custom = vi.fn<(factory: unknown, options: unknown) => Promise<void>>(
+    () =>
+      new Promise((resolve) => {
+        finishOverlay = resolve;
+      }),
+  );
+  const extension = {
+    events: createEventBus(),
+    on: (name: string, handler: (event: unknown, context: ExtensionContext) => void) =>
+      handlers.set(name, handler),
+    registerTool: () => undefined,
+    registerMessageRenderer: () => undefined,
+    registerCommand: (
+      name: Parameters<ExtensionAPI['registerCommand']>[0],
+      command: Parameters<ExtensionAPI['registerCommand']>[1],
+    ) => commands.set(name, command),
+    sendMessage,
+    sendUserMessage,
+  } as unknown as ExtensionAPI;
+  let historyRows: WorkerWidgetRow[] = [
+    {
+      name: 'worker-c2',
+      taskId: 'task-full-id',
+      state: 'cleanupUnconfirmed',
+      createdAt: 1,
+      deadline: 10_000,
+      details: 'native-controls, not Tau-certified · manual cleanup pane-7',
+      detailPath: '/records/task-full-id/task.json',
+      issue: 'inspect recovery',
+      model: 'requested claude · observed unavailable',
+      usage: { available: false, reason: 'herdr did not expose usage' },
+      report: { summary: 'Partial handoff', evidence: ['output.log'] },
+    },
+  ];
+  const readHistoryRows = vi
+    .spyOn(WorkerController.prototype, 'widgetRows')
+    .mockImplementation(() => historyRows);
+  subagentsExtension(extension);
+  const context = {
+    mode: 'tui',
+    hasUI: true,
+    ui: { setWidget, custom },
+    sessionManager: { getSessionId: () => 'parent-session' },
+  } as unknown as ExtensionContext;
+  handlers.get('session_start')?.({}, context);
+  finishTest(() => {
+    handlers.get('session_shutdown')?.({}, context);
+    finishOverlay();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  const command = commands.get('subagents');
+  expect(command).toBeDefined();
+
+  if (!command) {
+    return;
+  }
+
+  const commandPromise = command.handler('', context as never);
+
+  expect(custom).toHaveBeenCalledOnce();
+  expect(custom.mock.calls[0]?.[1]).toBeUndefined();
+  expect(setWidget).toHaveBeenLastCalledWith('tau-subagents', undefined);
+  expect(readHistoryRows).toHaveBeenCalledWith('parent-session');
+  const pollsBeforeRefresh = readHistoryRows.mock.calls.length;
+
+  historyRows = [
+    { ...historyRows[0]!, state: 'stopped', stoppedAt: Date.now(), cleanupConfirmed: true },
+  ];
+  vi.advanceTimersByTime(1000);
+
+  expect(readHistoryRows.mock.calls.length).toBeGreaterThan(pollsBeforeRefresh);
+  expect(setWidget).toHaveBeenLastCalledWith('tau-subagents', undefined);
+  expect(sendMessage).not.toHaveBeenCalled();
+  expect(sendUserMessage).not.toHaveBeenCalled();
+
+  finishOverlay();
+  await commandPromise;
+  const restoredWidget = setWidget.mock.calls.at(-1)?.[1];
+
+  if (typeof restoredWidget !== 'function') {
+    throw new TypeError('Parent worker widget was not restored.');
+  }
+
+  expect(
+    restoredWidget({} as never, testTheme as never)
+      .render(160)
+      .join('\n'),
+  ).toContain('1 stopped');
+
+  const pollsAfterClose = readHistoryRows.mock.calls.length;
+  vi.advanceTimersByTime(1000);
+
+  expect(readHistoryRows.mock.calls.length).toBe(pollsAfterClose);
+
+  custom.mockRejectedValueOnce(new Error('overlay failed'));
+  await expect(command.handler('', context as never)).rejects.toThrow('overlay failed');
+  expect(typeof setWidget.mock.calls.at(-1)?.[1]).toBe('function');
+});
+
+it('keeps editor focus and typing after a click on the passive fullscreen widget', () => {
+  const deliverInput = vi.fn<(input: string) => void>();
+  const terminal = {
+    start: (onInput: (input: string) => void) => {
+      deliverInput.mockImplementation(onInput);
+    },
+    stop: () => undefined,
+    drainInput: async () => undefined,
+    write: () => undefined,
+    get columns() {
+      return 80;
+    },
+    get rows() {
+      return 24;
+    },
+    get kittyProtocolActive() {
+      return false;
+    },
+    moveBy: () => undefined,
+    hideCursor: () => undefined,
+    showCursor: () => undefined,
+    clearLine: () => undefined,
+    clearFromCursor: () => undefined,
+    clearScreen: () => undefined,
+    setTitle: () => undefined,
+    setProgress: () => undefined,
+  } as Terminal;
+  const handlers = new Map<string, (event: unknown, context: ExtensionContext) => void>();
+  const setWidget = vi.fn<ExtensionContext['ui']['setWidget']>();
+  const extension = {
+    events: createEventBus(),
+    on: (name: string, handler: (event: unknown, context: ExtensionContext) => void) =>
+      handlers.set(name, handler),
+    registerTool: () => undefined,
+    registerCommand: () => undefined,
+    registerMessageRenderer: () => undefined,
+  } as unknown as ExtensionAPI;
+  vi.spyOn(WorkerController.prototype, 'widgetRows').mockReturnValue([
+    {
+      name: 'worker-ab',
+      taskId: 'task-ab',
+      state: 'running',
+      createdAt: 1,
+      deadline: Date.now() + 60_000,
+      usage: { available: false, reason: 'Pi session usage was not recorded' },
+    },
+  ]);
+  subagentsExtension(extension);
+  const context = {
+    mode: 'tui',
+    hasUI: true,
+    ui: { setWidget },
+    sessionManager: { getSessionId: () => 'parent-session' },
+  } as unknown as ExtensionContext;
+  handlers.get('session_start')?.({}, context);
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+  finishTest(() => {
+    tui.stop();
+    handlers.get('session_shutdown')?.({}, context);
+    vi.restoreAllMocks();
+  });
+
+  const widgetFactory = setWidget.mock.calls[0]?.[1];
+
+  if (typeof widgetFactory !== 'function') {
+    throw new TypeError('Worker widget component is missing.');
+  }
+
+  const widget = widgetFactory({} as never, testTheme as never);
+  const typedInput: string[] = [];
+  const editor = {
+    render: () => ['Editor:'],
+    invalidate: () => undefined,
+    handleInput: (input: string) => typedInput.push(input),
+  };
+  tui.setLayoutRoot(new VStack([widget, editor]));
+  tui.setFocus(editor);
+  tui.start();
+  tui.renderNow();
+  const originalFocus = tui.getFocusedComponent();
+
+  deliverInput('\u001b[<0;2;1M');
+  deliverInput('\u001b[<32;7;1M');
+  deliverInput('\u001b[<0;7;1m');
+  deliverInput('x');
+
+  expect(originalFocus).toBe(editor);
+  expect(tui.getFocusedComponent()).toBe(editor);
+  expect(tui.hasActiveSelection()).toBe(true);
+  expect(typedInput).toEqual(['x']);
 });
 
 it('places follow-ups with explicit visibility and the current parent terminal', async ({

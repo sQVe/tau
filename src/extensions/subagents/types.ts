@@ -70,6 +70,7 @@ const treeSchema = Type.Object(
 const taskProperties = {
   taskId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
   name: Type.Optional(Type.String({ pattern: '^(worker|investigator)-[a-z0-9]{2}$' })),
+  label: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
   predecessorTaskId: Type.Optional(Type.String({ pattern: '^[a-zA-Z0-9-]+$' })),
   task: text,
   parentSession: text,
