@@ -421,7 +421,11 @@ const bottomBorder = (
   const fittedLeft = truncateToWidth(leftContent, leftWidth, '…');
   const fill = Math.max(0, inside - visibleWidth(fittedLeft) - visibleWidth(fittedRight));
 
-  return `${theme?.fg('border', '╰') ?? '╰'}${theme?.fg('muted', fittedLeft) ?? fittedLeft}${theme?.fg('border', '─'.repeat(fill)) ?? '─'.repeat(fill)}${theme?.fg('muted', fittedRight) ?? fittedRight}${theme?.fg('border', '╯') ?? '╯'}`;
+  return [
+    `${theme?.fg('border', '╰') ?? '╰'}${theme?.fg('muted', fittedLeft) ?? fittedLeft}`,
+    theme?.fg('border', '─'.repeat(fill)) ?? '─'.repeat(fill),
+    `${theme?.fg('muted', fittedRight) ?? fittedRight}${theme?.fg('border', '╯') ?? '╯'}`,
+  ].join('');
 };
 
 export const renderWorkerWidget = (

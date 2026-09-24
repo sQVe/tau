@@ -202,5 +202,23 @@ export const workerPrompt = (task: Task): string => {
     throw new Error('Only Pi workers use the structured worker prompt.');
   }
 
-  return `${task.loadout.instructions}\n\nTask ${task.taskId} (${task.loadout.role}):\n${task.task}\n\n${assignmentContractFor(task.loadout.role)}${handoffContract}\n\nDeadline: ${new Date(task.deadline).toISOString()}. Work only within this task. Full tools and CC Safety Net are not a sandbox. Do not commit, merge, reset, or run extra model trials. Do not launch workers. Ask the parent through subagent_question if the task needs delegation. Preserve unrelated edits. Do not resume arbitrary conversations. Ask the parent for clarification with subagent_question, never ask_user_question. Report each work-phase change once with subagent_progress, for example "Inspecting launch code" or "Running focused tests". Do not report every tool call or repeat a phase for reassurance. Waiting does not extend the original deadline or authorize increased scope. Finish by calling subagent_report once with the outcome, a summary holding the Changes, Evidence, Decisions, and Concerns sections, evidence references, and a blocker when the outcome is incomplete. Missing or uncertain handoff is not success; do not retry it automatically.`;
+  return [
+    task.loadout.instructions,
+    [`Task ${task.taskId} (${task.loadout.role}):`, task.task].join('\n'),
+    `${assignmentContractFor(task.loadout.role)}${handoffContract}`,
+    [
+      `Deadline: ${new Date(task.deadline).toISOString()}. Work only within this task.`,
+      'Full tools and CC Safety Net are not a sandbox.',
+      'Do not commit, merge, reset, or run extra model trials. Do not launch workers.',
+      'Ask the parent through subagent_question if the task needs delegation.',
+      'Preserve unrelated edits. Do not resume arbitrary conversations.',
+      'Ask the parent for clarification with subagent_question, never ask_user_question.',
+      'Report each work-phase change once with subagent_progress, for example "Inspecting launch code" or "Running focused tests".',
+      'Do not report every tool call or repeat a phase for reassurance.',
+      'Waiting does not extend the original deadline or authorize increased scope.',
+      'Finish by calling subagent_report once with the outcome, a summary holding the Changes, Evidence, Decisions, and Concerns sections,',
+      'evidence references, and a blocker when the outcome is incomplete.',
+      'Missing or uncertain handoff is not success; do not retry it automatically.',
+    ].join(' '),
+  ].join('\n\n');
 };
