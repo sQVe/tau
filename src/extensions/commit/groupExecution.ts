@@ -326,16 +326,20 @@ const snapshotChanged = async (
 };
 
 const assertCleanupOwnership = async (check: CleanupCheck): Promise<void> => {
-  // Before the candidate snapshot, unexpected entries may belong to another writer.
-  const staged = await listStagedPaths(check.pi, check.cwd);
+  if (check.snapshot === null) {
+    // Before the candidate snapshot, unexpected entries may belong to another writer.
+    const staged = await listStagedPaths(check.pi, check.cwd);
 
-  if (check.snapshot === null && staged.some((file) => !check.requestedFiles.has(file))) {
-    throw new Error('Concurrent staging was left untouched. Inspect the index before retrying.');
+    if (staged.some((file) => !check.requestedFiles.has(file))) {
+      throw new Error('Concurrent staging was left untouched. Inspect the index before retrying.');
+    }
+
+    return;
   }
 
   const currentIndex = await readIndex(check.pi, check.cwd);
 
-  if (check.snapshot !== null && (await snapshotChanged(check, check.snapshot, currentIndex))) {
+  if (await snapshotChanged(check, check.snapshot, currentIndex)) {
     throw new Error('Staged content or HEAD changed. Concurrent staging was left untouched.');
   }
 };
