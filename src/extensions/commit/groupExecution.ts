@@ -24,7 +24,7 @@ import {
   commitFailedError,
   normalizeBody,
   normalizeRepositoryPath,
-  sensitivePathDenylist,
+  isSensitivePath,
 } from './validation.js';
 import type { CommitInput } from './validation.js';
 
@@ -421,9 +421,7 @@ const buildHookReport = (
     files: changedPathsOutput.split('\0').filter(Boolean),
     message: storedMessage !== buildCommitMessage(run.subject, run.body),
   };
-  const sensitivePaths = committedPaths.filter((file) =>
-    sensitivePathDenylist.some((pattern) => pattern.test(file.replaceAll('\\', '/'))),
-  );
+  const sensitivePaths = committedPaths.filter((file) => isSensitivePath(file));
   const reportLines: string[] = [];
 
   if (sensitivePaths.length) {
