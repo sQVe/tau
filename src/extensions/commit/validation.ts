@@ -87,7 +87,7 @@ export const validatePaths = (files: string[]) => {
       );
     }
 
-    if (sensitivePathDenylist.some((pattern) => pattern.test(file))) {
+    if (isSensitivePath(file)) {
       throw new Error(`Invalid path: ${rawFile}`);
     }
   }
