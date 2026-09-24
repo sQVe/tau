@@ -731,6 +731,69 @@ it('requires two matching bare-shell samples after transient startup children', 
   expect(samplesAtStart).toBeGreaterThanOrEqual(5);
 });
 
+it('waits again when a startup child appears after the shell looked stable', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  const client = fixture.fake.client;
+  let samples = 0;
+  vi.spyOn(fixture.fake, 'client').mockImplementation((argumentsList, budget, signal) => {
+    if (!fixture.fake.state.started && argumentsList[1] === 'process-info') {
+      samples += 1;
+
+      if (samples === 3) {
+        fixture.fake.state.busyShellPolls = 1;
+      }
+
+      if (samples === 4) {
+        return Promise.resolve(
+          JSON.stringify({
+            result: {
+              process_info: {
+                pane_id: argumentsList[3],
+                shell_pid: fixture.fake.state.shell,
+                foreground_process_group_id: fixture.fake.state.shell,
+              },
+            },
+          }),
+        );
+      }
+    }
+
+    return client(argumentsList, budget, signal);
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('starting');
+  expect(fixture.fake.state.started).toBe(true);
+  expect(records.readRecord(launched.directory, 'shell.json')).toMatchObject({ processId: 100 });
+});
+
+it('refuses to start when the shell process changes during startup checks', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished, -1);
+  const client = fixture.fake.client;
+  let samples = 0;
+  vi.spyOn(fixture.fake, 'client').mockImplementation((argumentsList, budget, signal) => {
+    if (!fixture.fake.state.started && argumentsList[1] === 'process-info') {
+      samples += 1;
+
+      if (samples === 3) {
+        fixture.fake.state.shell = 101;
+      }
+    }
+
+    return client(argumentsList, budget, signal);
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('stopped');
+  expect(fixture.fake.state.started).toBe(false);
+});
+
 it('retries a structured pane-busy rejection once after proving absence', async ({
   onTestFinished,
 }) => {

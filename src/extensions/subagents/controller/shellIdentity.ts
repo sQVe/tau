@@ -29,7 +29,7 @@ export const waitForShell = async (
   handle: Handle,
   paneId: string,
   call: TerminalCall,
-): Promise<void> => {
+): Promise<number> => {
   let previousShell: number | undefined;
 
   for (;;) {
@@ -45,7 +45,7 @@ export const waitForShell = async (
       const shell = integer(information.shell_pid);
 
       if (shell === previousShell) {
-        return;
+        return shell;
       }
 
       previousShell = shell;

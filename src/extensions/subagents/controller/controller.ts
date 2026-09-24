@@ -1109,8 +1109,6 @@ export class WorkerController {
     const { task } = handle;
     const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
 
-    await waitForShell(handle, paneId, call);
-
     await this.prepareStart(handle, paneId, call, generic);
 
     await this.startWithBusyRetry(handle, paneId, name, call).catch((error: unknown) => {
@@ -1131,13 +1129,26 @@ export class WorkerController {
     call: TerminalCall,
     generic?: GenericLoadout,
   ): Promise<void> {
-    const information = requireObject(
-      result(await call(['pane', 'process-info', '--pane', paneId])).process_info,
-    );
-    const shellPid = integer(information.shell_pid);
+    const shellPid = await waitForShell(handle, paneId, call);
 
-    if (information.pane_id !== paneId || !isBareShell(information)) {
-      throw new Error('Native start requires an unchanged foreground shell.');
+    // A new shell briefly starts prompt-hook children; wait again instead of failing on one.
+    for (;;) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Rechecks share the original startup budget.
+      const response = await call(['pane', 'process-info', '--pane', paneId]);
+      const information = requireObject(result(response).process_info);
+
+      if (information.pane_id !== paneId || integer(information.shell_pid) !== shellPid) {
+        throw new Error('Native start requires an unchanged foreground shell.');
+      }
+
+      if (isBareShell(information)) {
+        break;
+      }
+
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Rechecks share the original startup budget.
+      if ((await waitForShell(handle, paneId, call)) !== shellPid) {
+        throw new Error('Native start requires an unchanged foreground shell.');
+      }
     }
 
     handle.shell = { processId: shellPid, startedAt: await readProcessStart(handle, shellPid) };
