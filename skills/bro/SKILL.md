@@ -3,8 +3,8 @@ name: bro
 description:
   Restate the last assistant response in plain language, covering what happened, what it means, and
   what to do next. Use it when the user asks to explain that, say it in plain English, or eli5. With
-  a topic, such as `/bro what is this ticket for`, explain that topic instead. Not for redoing the
-  work.
+  a topic after `/bro`, such as `/bro what is this ticket for`, explain that topic instead. Not for
+  redoing the work or for ordinary questions without `/bro`.
 ---
 
 # Bro
@@ -12,12 +12,12 @@ description:
 ## When to use
 
 Use this skill when the user did not understand the last assistant response and asks for it in plain
-language, or asks for a plain-language explanation of a topic.
+language, or runs `/bro` with a topic.
 
 ## Goal
 
 Without a topic, restate the last assistant response in plain language. With a topic, explain that
-topic in plain language. Either way, explain without doing new work.
+topic in plain language, reading its source only if needed. Either way, change nothing.
 
 ## Hard rules
 
