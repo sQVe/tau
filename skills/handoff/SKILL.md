@@ -17,7 +17,8 @@ commit another worktree from your session, even over bash.
 
 - Requires `HERDR_ENV=1`. Otherwise tell the user you cannot reach the other workspace and stop.
 - Ask the user when the target pane is ambiguous. Do not guess.
-- The message is one-way. Do not ask for a reply, poll, or wait after sending.
+- The message is one-way. Do not ask for a reply, poll, or wait for the receiver to finish. The send
+  only waits until the receiver starts working.
 - Write the message with the file tool, then send it in a separate step. Never write and send in the
   same parallel tool batch: the send can run first and read an empty file. Never type the message on
   the bash line: the shell expands `$()` and backticks typed there, but not in the output of
@@ -33,9 +34,9 @@ commit another worktree from your session, even over bash.
    `cwd` is the target worktree. Drop agents named `worker-*` or `investigator-*`: they are Tau
    subagents working for a parent. One match is the target; otherwise ask the user.
 2. Write the message to `<your-worktree>/.tau/handoffs/<your-pane>-<timestamp>.md` with the file
-   tool. If `.tau/.gitignore` does not exist, write it first with `*` as its only line, so `.tau/`
-   stays out of Git. Take your pane from `HERDR_PANE_ID`. Make it self-contained: what to do, the
-   state the receiver needs, and what it must not touch.
+   tool. First make sure `.tau/.gitignore` has a `*` line, adding it if needed, so `.tau/` stays out
+   of Git. Take your pane from `HERDR_PANE_ID`. Make it self-contained: what to do, the state the
+   receiver needs, and what it must not touch.
 3. Send it and end your turn:
 
    ```bash
