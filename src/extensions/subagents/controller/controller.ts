@@ -1045,6 +1045,9 @@ export class WorkerController {
     const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
 
     handle.workerNeverStarted = false;
+    // herdr must time out before the client budget kills it, so its structured error survives.
+    const budget = workBudget(handle);
+    const herdrTimeout = Math.max(1, budget - Math.min(3000, Math.ceil(budget / 4)));
 
     handle.starting = Promise.resolve().then(() =>
       call([
@@ -1056,7 +1059,7 @@ export class WorkerController {
         '--pane',
         paneId,
         '--timeout',
-        String(workBudget(handle)),
+        String(herdrTimeout),
         '--',
         ...(generic?.arguments ?? workerArguments(task)),
       ]),

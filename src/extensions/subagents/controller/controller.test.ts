@@ -794,6 +794,27 @@ it('refuses to start when the shell process changes during startup checks', asyn
   expect(fixture.fake.state.started).toBe(false);
 });
 
+it.each([10_000, 1200])(
+  'gives herdr a start timeout inside the client budget for a %i ms task',
+  async (timeout) => {
+    let herdrTimeout = 0;
+    let clientBudget = 0;
+    const fixture = setup(afterTest, 0, async (argumentsList, budget) => {
+      if (argumentsList[1] === 'start') {
+        herdrTimeout = Number(argumentsList[argumentsList.indexOf('--timeout') + 1]);
+        clientBudget = budget;
+      }
+
+      return '';
+    });
+
+    await fixture.controller.launch({ ...fixture.input, timeout });
+
+    expect(herdrTimeout).toBeGreaterThanOrEqual(1);
+    expect(herdrTimeout).toBeLessThan(clientBudget);
+  },
+);
+
 it('retries a structured pane-busy rejection once after proving absence', async ({
   onTestFinished,
 }) => {
