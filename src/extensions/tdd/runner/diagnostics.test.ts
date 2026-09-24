@@ -6,7 +6,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { expect, it } from 'vitest';
 
 import { saveDiagnostics } from './diagnostics.js';
-import { maximumTotalBytes } from './types.js';
+import { maximumTotalBytes } from './process.js';
 
 it('reports decoded byte counts and truncation without splitting UTF-8 characters', async ({
   onTestFinished,

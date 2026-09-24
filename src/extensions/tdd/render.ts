@@ -3,8 +3,8 @@ import { stripVTControlCharacters } from 'node:util';
 
 import type { createTestObservation } from './observation.js';
 import { maximumRetainedRuns } from './runner/retention.js';
-import { maximumFailures } from './runner/types.js';
 import type { DiagnosticFile, RunnerResult } from './runner/types.js';
+import { maximumFailures } from './runner/vitest.js';
 import type { Behavior } from './types.js';
 
 type Observation = Omit<

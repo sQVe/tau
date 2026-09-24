@@ -8,8 +8,12 @@ import type { TestContext } from 'vitest';
 import { createTestObservation, thrownErrorType } from './observation.js';
 import type { RunnerResult } from './runner/types.js';
 import { runTests } from './runner/vitest.js';
+import type * as runnerModule from './runner/vitest.js';
 
-vi.mock('./runner/vitest.js', () => ({ runTests: vi.fn<typeof runTests>() }));
+vi.mock('./runner/vitest.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof runnerModule>()),
+  runTests: vi.fn<typeof runTests>(),
+}));
 
 const behavior = { behavior: 'value', testFullName: 'value works', files: ['value.test.ts'] };
 const result = (status: 'passed' | 'failed', fullname = 'value works'): RunnerResult => {

@@ -15,12 +15,11 @@ import type {
   TestFailure,
   TestResult,
 } from './types.js';
-import {
-  defaultTimeoutMilliseconds,
-  fullTimeoutMilliseconds,
-  maximumFailures,
-  maximumMessageCharacters,
-} from './types.js';
+
+const defaultTimeoutMilliseconds = 30_000;
+const fullTimeoutMilliseconds = 120_000;
+export const maximumFailures = 10;
+export const maximumMessageCharacters = 300;
 
 interface VitestAssertionResult {
   fullName?: string;

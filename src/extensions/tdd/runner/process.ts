@@ -5,7 +5,10 @@ import { basename, delimiter, join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import type { SpawnFn, SpawnResult } from './types.js';
-import { maximumStdoutBytes, maximumTotalBytes } from './types.js';
+
+export const maximumTotalBytes = 32 * 1024;
+// Bound captured process output separately from the shorter diagnostic messages.
+export const maximumStdoutBytes = 8 * 1024 * 1024;
 
 // Debian-family systems name the runtime `nodejs`, so both spellings count as a Node command.
 const nodeNames = process.platform === 'win32' ? ['node.exe'] : ['node', 'nodejs'];

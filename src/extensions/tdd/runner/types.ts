@@ -112,13 +112,3 @@ export interface RunnerDeps {
   spawn: SpawnFn;
   timeoutMs: number;
 }
-
-export const defaultTimeoutMilliseconds = 30_000;
-export const fullTimeoutMilliseconds = 120_000;
-export const maximumFailures = 10;
-export const maximumMessageCharacters = 300;
-export const maximumTotalBytes = 32 * 1024;
-
-// Bound captured process output separately from the shorter diagnostic messages.
-export const maximumStdoutBytes = 8 * 1024 * 1024;
-export const maximumReportBytes = 8 * 1024 * 1024;
