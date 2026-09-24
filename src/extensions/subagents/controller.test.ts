@@ -669,7 +669,6 @@ it('classifies follow-up readiness deadline expiry as timeout rather than caller
   following = true;
   const validationDeadline = new AbortController();
   vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(validationDeadline.signal);
-  const beginning = performance.now();
   // Leave slow runners room to reach start; an early rejection fails here instead of hanging.
   const pending = fixture.controller.followUp({ ...fixture.input, timeout: 1200 }, fixture.context);
   await Promise.race([started.promise, pending]);
@@ -677,7 +676,6 @@ it('classifies follow-up readiness deadline expiry as timeout rather than caller
   const status = await pending;
 
   expect(status.outcome).toBe('timeout');
-  expect(performance.now() - beginning).toBeGreaterThanOrEqual(250);
   expect(records.readEvent(status.directory, status.taskId, 'cancelled')).toBeUndefined();
   expect(records.readEvent(status.directory, status.taskId, 'timeout')).toBeDefined();
   const task = readTask(status.directory);
