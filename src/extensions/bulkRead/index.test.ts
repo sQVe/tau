@@ -21,7 +21,11 @@ const setup = () => {
   const context = { cwd: '/tmp', modelRegistry: { find, complete } } as unknown as ExtensionContext;
 
   bulkReadExtension(fake.pi);
-  const tool = fake.tools.get('bulk_read')!;
+  const tool = fake.tools.get('bulk_read');
+
+  if (tool == null) {
+    throw new Error('Expected bulk_read to be registered');
+  }
 
   const execute = (signal?: AbortSignal, paths = [import.meta.filename]) =>
     tool.execute('bulk', { paths, question: 'Why?' }, signal, undefined, context);

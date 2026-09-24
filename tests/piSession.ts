@@ -80,7 +80,6 @@ type BindOptions = Parameters<
   Awaited<ReturnType<typeof createPiSession>>['session']['bindExtensions']
 >[0];
 
-// Most tests bind right away; a failed extension load stops the test before any prompt runs.
 export const createBoundSession = async (
   registerCleanup: TestContext['onTestFinished'],
   options: PiSessionOptions,
