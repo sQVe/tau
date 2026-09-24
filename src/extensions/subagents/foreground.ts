@@ -14,7 +14,7 @@ import {
   splits,
 } from './foregroundLayout.js';
 import type { Branch, Tree } from './foregroundLayout.js';
-import { listTerminals, object, result, text } from './terminal.js';
+import { listTerminals, requireObject, result, text } from './terminal.js';
 import type { TerminalCall, TerminalLocation } from './terminal.js';
 
 export interface Rectangle {
@@ -26,7 +26,7 @@ export interface Rectangle {
 export const minimumPane = { width: 82, height: 24 };
 
 export const rectangle = (value: unknown): Rectangle => {
-  const bounds = object(value);
+  const bounds = requireObject(value);
 
   if (!isPositiveInteger(bounds.width) || !isPositiveInteger(bounds.height)) {
     throw new Error('Invalid herdr pane dimensions.');
@@ -72,12 +72,14 @@ const branchSplit = (tree: Branch, layout: Record<string, unknown>) => {
     .filter(
       (split) =>
         split.direction === tree.direction &&
-        children.every((child) => child && contains(object(split.rect), object(child.rect))),
+        children.every(
+          (child) => child && contains(requireObject(split.rect), requireObject(child.rect)),
+        ),
     )
     .toSorted(
       (left, right) =>
-        Number(object(left.rect).width) * Number(object(left.rect).height) -
-        Number(object(right.rect).width) * Number(object(right.rect).height),
+        Number(requireObject(left.rect).width) * Number(requireObject(left.rect).height) -
+        Number(requireObject(right.rect).width) * Number(requireObject(right.rect).height),
     );
   const split = candidates[0];
 
@@ -167,7 +169,9 @@ const ensureOwnedLayout = async (
     throw new Error('Owned foreground terminal moved; resizing refused.');
   }
 
-  const checked = object(result(await context.call(['pane', 'layout', '--pane', anchor])).layout);
+  const checked = requireObject(
+    result(await context.call(['pane', 'layout', '--pane', anchor])).layout,
+  );
 
   if (layoutShape(checked) !== layoutShape(current)) {
     throw new Error('Layout changed during foreground placement; resizing refused.');
@@ -287,7 +291,7 @@ const applyAdjustment = async (
     '--amount',
     String(Math.abs(difference)),
   ]);
-  const resized = object(object(result(response).resize).layout);
+  const resized = requireObject(requireObject(result(response).resize).layout);
   const snapshot: ResizeSnapshot = {
     before: current,
     after: resized,
@@ -318,7 +322,9 @@ const captureCloseSnapshot = async (
   }
 
   try {
-    const layout = object(result(await call(['pane', 'layout', '--pane', location.paneId])).layout);
+    const layout = requireObject(
+      result(await call(['pane', 'layout', '--pane', location.paneId])).layout,
+    );
     const terminals = await listTerminals(call);
     const stillOwned = terminals.some(
       (pane) => pane.paneId === location.paneId && pane.terminalId === location.terminalId,
@@ -378,7 +384,7 @@ const restoreGroupsAfterClose = async (
       return;
     }
 
-    const layout = object(result(await call(['pane', 'layout', '--pane', survivor])).layout);
+    const layout = requireObject(result(await call(['pane', 'layout', '--pane', survivor])).layout);
 
     if (matchesOwnClose(captured.layout, layout, location.paneId)) {
       shares.set(location.tabId, { tree, shape: layoutShape(layout) });
@@ -525,7 +531,7 @@ export class ForegroundShares {
     this.groups.delete(request.added.tabId);
 
     try {
-      const after = object(
+      const after = requireObject(
         result(await request.call(['pane', 'layout', '--pane', request.added.paneId])).layout,
       );
       const previousSplits = splits(request.before);

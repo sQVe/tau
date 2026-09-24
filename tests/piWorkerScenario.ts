@@ -20,7 +20,7 @@ import {
 import { searchHistory } from '../src/extensions/subagents/history.js';
 import { resolveLoadout, validateSavedLoadout } from '../src/extensions/subagents/loadout.js';
 import { readAcknowledgement, readReply } from '../src/extensions/subagents/questionRecords.js';
-import { object, result, terminalLocation } from '../src/extensions/subagents/terminal.js';
+import { requireObject, result, terminalLocation } from '../src/extensions/subagents/terminal.js';
 import { isolatedHerdr } from './isolatedHerdr.js';
 import { toolAvailable } from './toolAvailable.js';
 
@@ -254,10 +254,10 @@ export default function (pi) {
     }
 
     if (scenario === 'moved cancellation') {
-      const owned = object(
+      const owned = requireObject(
         JSON.parse(readFileSync(join(launched.directory, 'owned.json'), 'utf8')),
       );
-      const moved = object(
+      const moved = requireObject(
         result(
           await client(['pane', 'move', String(owned.paneId), '--new-workspace', '--no-focus']),
         ).move_result,

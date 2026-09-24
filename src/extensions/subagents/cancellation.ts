@@ -89,7 +89,7 @@ export const runClient = (
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const object = (value: unknown): Record<string, unknown> => {
+const objectOrEmpty = (value: unknown): Record<string, unknown> => {
   if (!isObject(value)) {
     return {};
   }
@@ -100,7 +100,7 @@ const object = (value: unknown): Record<string, unknown> => {
 const processInfo = (response: string) => {
   const parsed: unknown = JSON.parse(response);
 
-  return object(object(object(parsed).result).process_info);
+  return objectOrEmpty(objectOrEmpty(objectOrEmpty(parsed).result).process_info);
 };
 
 const sameWorkerOwner = (info: Record<string, unknown>, owned: OwnedWorker): boolean =>
@@ -118,7 +118,7 @@ const processIdentityMatches = (process: Record<string, unknown>, owned: OwnedWo
   argvHasLaunchToken(process, owned) || kindUsesStartTime(owned);
 
 const foregroundProcessMatches = (value: unknown, owned: OwnedWorker): boolean => {
-  const process = object(value);
+  const process = objectOrEmpty(value);
 
   return process.pid === owned.processId && processIdentityMatches(process, owned);
 };
@@ -299,7 +299,7 @@ const refuseInput = (run: CancellationRun, reason: string): CleanupResult => ({
 });
 
 const agentSessionMatches = (agent: Record<string, unknown>, owned: OwnedWorker): boolean => {
-  const session = object(agent.agent_session);
+  const session = objectOrEmpty(agent.agent_session);
 
   if (owned.kind !== 'generic') {
     return session.value === owned.token;
@@ -332,7 +332,7 @@ const verifyAgentSession = async (run: CancellationRun): Promise<CleanupResult |
   }
 
   const response: unknown = JSON.parse(await run.call(['agent', 'get', run.owned.paneId]));
-  const agent = object(object(object(response).result).agent);
+  const agent = objectOrEmpty(objectOrEmpty(objectOrEmpty(response).result).agent);
 
   if (!agentIdentityMatches(agent, run.owned)) {
     return refuseInput(run, `${run.owned.kind} session identity did not match`);

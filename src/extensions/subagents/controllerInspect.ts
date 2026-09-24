@@ -14,7 +14,7 @@ import type { Handle } from './controllerTypes.js';
 import { readGenericReference, prepareGenericReport } from './generic.js';
 import { seedSession } from './profiles.js';
 import { publish, readEvent } from './records.js';
-import { object, resolveTerminal, result, text } from './terminal.js';
+import { requireObject, resolveTerminal, result, text } from './terminal.js';
 import { isGenericLoadout, isPiLoadout, nativeAgentStates, requireNativeTask } from './types.js';
 import type { GenericLoadout, NativeAgentState, Task, TaskEvent } from './types.js';
 
@@ -43,7 +43,9 @@ export const isBareShell = (information: Record<string, unknown>): boolean => {
   const processes = information.foreground_processes;
   const shellPid = integer(information.shell_pid);
   const shellAlone =
-    Array.isArray(processes) && processes.length === 1 && object(processes[0]).pid === shellPid;
+    Array.isArray(processes) &&
+    processes.length === 1 &&
+    requireObject(processes[0]).pid === shellPid;
 
   return information.foreground_process_group_id === shellPid && shellAlone;
 };
@@ -58,7 +60,7 @@ export const waitForShell = async (
   for (;;) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- Shell startup polling shares the original launch budget.
     const response = await call(['pane', 'process-info', '--pane', paneId]);
-    const information = object(result(response).process_info);
+    const information = requireObject(result(response).process_info);
 
     if (information.pane_id !== paneId) {
       throw new Error('Shell pane identity changed before startup.');
@@ -139,9 +141,9 @@ export const isHerdrError = (error: unknown, code: string): boolean => {
 
   if ('stderr' in error && typeof error.stderr === 'string') {
     try {
-      const parsed = object(JSON.parse(error.stderr));
+      const parsed = requireObject(JSON.parse(error.stderr));
 
-      if (object(parsed.error).code === code) {
+      if (requireObject(parsed.error).code === code) {
         return true;
       }
     } catch {
@@ -159,7 +161,7 @@ const readAgent = async (
 ): Promise<Record<string, unknown>> => {
   try {
     // herdr answers with an error document for a pane that has no detected agent yet.
-    return object(result(await call(['agent', 'get', paneId])).agent);
+    return requireObject(result(await call(['agent', 'get', paneId])).agent);
   } catch (error) {
     if (starting && isHerdrError(error, 'agent_not_found')) {
       throw new Error('Native worker has not been detected by herdr yet.', { cause: error });
@@ -300,7 +302,7 @@ export const verifyRejectedStart = async (
 
   const location = await resolveTerminal(text(handle.terminalId), call);
   handle.paneId = location.paneId;
-  const information = object(
+  const information = requireObject(
     result(await call(['pane', 'process-info', '--pane', location.paneId])).process_info,
   );
   const changedPane =
@@ -418,7 +420,7 @@ export const inspectWorker = async (
 
   handle.paneId = paneId;
 
-  const information = object(
+  const information = requireObject(
     result(await call(['pane', 'process-info', '--pane', paneId])).process_info,
   );
   const previous = handle.owned ? { ...handle.owned, paneId } : undefined;

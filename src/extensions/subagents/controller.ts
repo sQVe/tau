@@ -85,7 +85,7 @@ import {
   validateTask,
   recordEvent,
 } from './records.js';
-import { resolveTerminal, text, object, result } from './terminal.js';
+import { resolveTerminal, text, requireObject, result } from './terminal.js';
 import type { TerminalCall } from './terminal.js';
 import { isGenericLoadout, isPiLoadout } from './types.js';
 import type { GenericLoadout, ReplyDelivery, SubmissionState, Task } from './types.js';
@@ -821,7 +821,7 @@ export class WorkerController {
     call: TerminalCall,
     generic?: GenericLoadout,
   ): Promise<void> {
-    const information = object(
+    const information = requireObject(
       result(await call(['pane', 'process-info', '--pane', paneId])).process_info,
     );
     const shellPid = integer(information.shell_pid);

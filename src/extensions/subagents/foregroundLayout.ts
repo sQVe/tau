@@ -1,4 +1,4 @@
-import { object, text } from './terminal.js';
+import { requireObject, text } from './terminal.js';
 
 export type Tree = string | { direction: 'right' | 'down'; first: Tree; second: Tree };
 export type Branch = Exclude<Tree, string>;
@@ -65,7 +65,7 @@ export const panes = (layout: Record<string, unknown>) => {
     throw new TypeError('Missing herdr layout panes.');
   }
 
-  return layout.panes.map(object);
+  return layout.panes.map(requireObject);
 };
 
 export const splits = (layout: Record<string, unknown>) => {
@@ -73,7 +73,7 @@ export const splits = (layout: Record<string, unknown>) => {
     throw new TypeError('Missing herdr layout splits.');
   }
 
-  return layout.splits.map(object);
+  return layout.splits.map(requireObject);
 };
 
 export const frame = (layout: Record<string, unknown>) => ({
@@ -109,18 +109,18 @@ export const contains = (outer: Record<string, unknown>, inner: Record<string, u
 const topologyAfterRemoval = (layout: Record<string, unknown>, removed?: string): string[] =>
   splits(layout)
     .flatMap((split) => {
-      const bounds = object(split.rect);
+      const bounds = requireObject(split.rect);
       const position = split.direction === 'right' ? 'x' : 'y';
       const dimension = split.direction === 'right' ? 'width' : 'height';
       const boundary = Number(bounds[position]) + Number(bounds[dimension]) * Number(split.ratio);
       const children = panes(layout).filter(
-        (pane) => pane.pane_id !== removed && contains(bounds, object(pane.rect)),
+        (pane) => pane.pane_id !== removed && contains(bounds, requireObject(pane.rect)),
       );
       const first: string[] = [];
       const second: string[] = [];
 
       for (const pane of children) {
-        const paneBounds = object(pane.rect);
+        const paneBounds = requireObject(pane.rect);
         const center = Number(paneBounds[position]) + Number(paneBounds[dimension]) / 2;
         const side = center < boundary ? first : second;
         side.push(text(pane.pane_id));
