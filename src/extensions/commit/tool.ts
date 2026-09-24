@@ -10,10 +10,9 @@ import type {
 import { defineTool } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../errors/index.js';
-import { reviewComments } from './commentReview.js';
 import { executeGroup } from './groupExecution.js';
 import type { GroupOutcome } from './groupExecution.js';
-import type { CommitSuccess, RequestReview, Reviews } from './types.js';
+import type { CommitSuccess } from './types.js';
 import {
   commitToolParameters,
   normalizeBody,
@@ -24,7 +23,7 @@ import {
 import type { CommitInput } from './validation.js';
 
 const commitToolGuidelines = [
-  'When asked to commit, call commit with exact, ordered groups without asking for confirmation. It stages, reviews comments, and commits each group with installed Git hooks.',
+  'When asked to commit, call commit with exact, ordered groups without asking for confirmation. It stages and commits each group with installed Git hooks.',
   'The commit tool stages whole requested files on the real index. Assign each path to one group. Working edits remain visible to hooks. Installed hooks may add paths; commit reports actual committed files relative to the repository root.',
   "Never absorb unrelated edits, another group's paths, or rejected sensitive paths to clear a commit error. Never overwrite concurrent staging or HEAD.",
   "The commit tool runs the repository's installed hooks. Never bypass hooks through --no-verify, core.hooksPath, environment variables, or config changes to evade a failure.",
@@ -32,15 +31,12 @@ const commitToolGuidelines = [
   'The commit tool rejects NUL in messages. Body CRLF and CR become LF; other whitespace is preserved. Nonempty bodies end in LF. Tau supplies the normalized message through git commit --cleanup=verbatim -F and reports the actual stored message.',
   'Use a conventional commit subject.',
   'Do not commit sensitive files such as .env or SSH keys.',
-  'The commit tool reviews the staged tree before hooks run. Review must pass before committing. Only inaccurate comments block, unless the verifier rejects them. Fix them or supply commentDispute with evidence. Policy and missing-comment findings are advisory; do not edit code only to silence them. After two automatic returns for a group, remaining findings cause a refusal. Stop automatic retries and report the blocker. Evidence alone cannot reopen a refused tree; corrected trees can still pass review.',
 ];
 
 interface CommitToolRuntime {
   pi: Pick<ExtensionAPI, 'exec'>;
-  reviews: Reviews;
   context: ExtensionContext;
   signal: AbortSignal | undefined;
-  requestReview: RequestReview;
 }
 
 interface CommitToolResult {
@@ -105,8 +101,6 @@ const runGroup = async (
       pi: runtime.pi,
       context: runtime.context,
       signal: runtime.signal,
-      reviews: runtime.reviews,
-      requestReview: runtime.requestReview,
       committedFiles: new Set(committedGroups.flatMap((committedGroup) => committedGroup.files)),
     });
   } catch (error) {
@@ -181,23 +175,17 @@ const executeCommitTool = async (
 
 export const createCommitTool = (
   pi: Pick<ExtensionAPI, 'exec'>,
-  review = reviewComments,
-): ToolDefinition<typeof commitToolParameters, { groups: CommitSuccess['details'][] }> => {
-  const reviews: Reviews = new Map();
-
-  return defineTool({
+): ToolDefinition<typeof commitToolParameters, { groups: CommitSuccess['details'][] }> =>
+  defineTool({
     name: 'commit',
     label: 'Commit',
     description:
-      'Stage, review, and commit each group sequentially with Git hooks. Hook failures and blocking comment reviews return errors.',
+      'Stage and commit each group sequentially with Git hooks. Hook failures return errors.',
     promptSnippet: 'Create git commits for an ordered groups array in one call.',
     promptGuidelines: commitToolGuidelines,
     parameters: commitToolParameters,
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
-      const requestReview: RequestReview = (snapshot) => review(pi, context, signal, snapshot);
-
-      return executeCommitTool({ pi, reviews, context, signal, requestReview }, parameters);
+      return executeCommitTool({ pi, context, signal }, parameters);
     },
   });
-};

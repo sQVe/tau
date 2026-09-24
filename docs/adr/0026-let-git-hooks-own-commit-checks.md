@@ -1,7 +1,8 @@
 # ADR 0026: Let Git hooks own commit checks
 
-- Status: Accepted; comment-review blocking rule superseded by
-  [ADR 0038](./0038-block-commits-only-on-comment-inaccuracies.md)
+- Status: Accepted; comment-review rules superseded by
+  [ADR 0038](./0038-block-commits-only-on-comment-inaccuracies.md), then removed by
+  [ADR 0042](./0042-remove-commit-comment-review.md)
 - Date: 2026-09-15
 
 ## Context

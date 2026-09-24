@@ -8,7 +8,7 @@ description:
 # Commit
 
 Use this skill when the user wants to commit changes from the current working tree. The `commit`
-tool stages each group, reviews comments, and commits with installed Git hooks without a prompt.
+tool stages each group and commits with installed Git hooks without a prompt.
 
 ## Hard rules
 
@@ -17,8 +17,7 @@ tool stages each group, reviews comments, and commits with installed Git hooks w
 - Never stage with `git add -A` or `git add .`, or rewrite history with `--amend`.
 - Never bypass hooks with `--no-verify`, `core.hooksPath`, environment variables, or configuration
   changes to evade a failure.
-- Do not ask for confirmation. Hook failures and blocking comment reviews return errors. Fix the
-  cause before retrying.
+- Do not ask for confirmation. Hook failures return errors. Fix the cause before retrying.
 - Stage only files in the requested groups. Installed hooks may add paths, which the tool reports.
   Never add unrelated edits or rejected sensitive files to clear an error.
 
@@ -68,11 +67,6 @@ tool stages each group, reviews comments, and commits with installed Git hooks w
      changes, the batch stops when that group has no staged changes. Inspect reported commits and
      remaining changes; do not retry committed groups.
    - If reporting fails after commit success, inspect Git history before retrying.
-   - Comment review must pass. Only inaccurate comments block, unless the verifier rejects them. Fix
-     them or supply `commentDispute` with evidence. Policy and missing-comment findings are
-     advisory; do not edit code only to silence them. After two automatic returns, remaining
-     findings cause a refusal. Stop automatic retries and report the blocker. Evidence alone cannot
-     reopen a refused tree; corrected trees can still pass review.
    - Retry only corrected and remaining groups that were not committed. Stop after three failed
      retries of the same group and report the blocker.
 

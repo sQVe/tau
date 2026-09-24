@@ -83,7 +83,7 @@ const createScriptedUI = (overlays: string[]): ExtensionUIContext =>
 
 const createHarness = async (
   registerCleanup: RegisterCleanup,
-  options: { hasUI?: boolean; delegate?: FauxProviderHandle } = {},
+  options: { hasUI?: boolean } = {},
 ): Promise<Harness> => {
   const repositoryDirectory = await createCommittedRepository(registerCleanup);
   const agentDirectory = await createTemporaryDirectory(registerCleanup, 'tau-flow-agent-');
@@ -91,15 +91,10 @@ const createHarness = async (
   isolateWebAccessConfig(agentDirectory, registerCleanup);
 
   const faux = fauxProvider({ provider: 'tau-test' });
-  const delegate = options.delegate ?? faux;
-  vi.stubEnv('TAU_DELEGATE_MODEL', `${delegate.getModel().provider}/${delegate.getModel().id}`);
-  registerCleanup(() => {
-    vi.unstubAllEnvs();
-  });
   const { session, extensionsResult } = await createPiSession(registerCleanup, {
     cwd: repositoryDirectory,
     agentDirectory,
-    providers: delegate === faux ? [faux] : [faux, delegate],
+    providers: [faux],
     tools: ['read', 'bash', 'edit', 'write', 'commit'],
     extensionPaths: [
       tauExtensionsPath,
@@ -137,452 +132,6 @@ const toolResultOf = (events: AgentSessionEvent[], toolName: string) => {
 };
 
 describe('commit flow', () => {
-  it('uses a separate delegate for review while the session model keeps control', async ({
-    onTestFinished,
-  }) => {
-    const delegate = fauxProvider({ provider: 'review-delegate' });
-    const { session, faux, repositoryDirectory, events } = await createHarness(onTestFinished, {
-      delegate,
-    });
-    await writeFile(join(repositoryDirectory, 'feature.txt'), 'hello\n');
-    faux.setResponses([
-      fauxAssistantMessage([
-        fauxToolCall('commit', {
-          groups: [{ files: ['feature.txt'], subject: 'feat: add feature' }],
-        }),
-      ]),
-      fauxAssistantMessage('Committed.'),
-    ]);
-    delegate.setResponses([fauxAssistantMessage('{"findings":[]}')]);
-
-    await session.prompt('Commit the file.');
-
-    expect(toolResultOf(events, 'commit').isError).toBe(false);
-    expect(session.model?.provider).toBe('tau-test');
-    expect(delegate.state.callCount).toBe(1);
-    expect(faux.state.callCount).toBe(2);
-  });
-
-  it.for(['invalid', 'missing', 'authentication', 'provider'] as const)(
-    'blocks commits on delegate %s failure without falling back',
-    async (failure, { onTestFinished }) => {
-      const delegate = fauxProvider({ provider: 'review-delegate' });
-      const { session, faux, repositoryDirectory, events } = await createHarness(onTestFinished, {
-        delegate,
-      });
-      await writeFile(join(repositoryDirectory, 'feature.txt'), 'hello\n');
-
-      if (failure === 'invalid' || failure === 'missing') {
-        vi.stubEnv('TAU_DELEGATE_MODEL', failure === 'invalid' ? 'invalid' : 'missing/model');
-      } else if (failure === 'authentication') {
-        const authentication = vi
-          .spyOn(delegate.provider.auth.apiKey!, 'resolve')
-          .mockRejectedValue(new Error('credentials expired'));
-        onTestFinished(() => {
-          authentication.mockRestore();
-        });
-      }
-
-      delegate.setResponses([
-        fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'provider unavailable' }),
-      ]);
-      faux.setResponses([
-        fauxAssistantMessage([
-          fauxToolCall('commit', {
-            groups: [{ files: ['feature.txt'], subject: 'feat: add feature' }],
-          }),
-        ]),
-        fauxAssistantMessage('Stopped.'),
-      ]);
-
-      await session.prompt('Commit the file.');
-
-      expect(toolResultOf(events, 'commit').isError).toBe(true);
-      expect(faux.state.callCount).toBe(2);
-      expect((await git(repositoryDirectory, ['log', '-1', '--pretty=%s'])).trim()).toBe(
-        'chore: initial commit',
-      );
-      expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
-    },
-  );
-
-  it('preserves the provider-resolved endpoint during comment review', async ({
-    onTestFinished,
-  }) => {
-    const { session, faux, repositoryDirectory, events } = await createHarness(onTestFinished);
-    const endpoint = 'https://enterprise.example.test';
-    const authenticationResolver = vi
-      .spyOn(faux.provider.auth.apiKey!, 'resolve')
-      .mockImplementation((input) =>
-        Promise.resolve({
-          auth: input.credential?.key
-            ? { apiKey: input.credential.key }
-            : { apiKey: 'test-token', baseUrl: endpoint },
-        }),
-      );
-    onTestFinished(() => {
-      authenticationResolver.mockRestore();
-    });
-
-    await writeFile(join(repositoryDirectory, 'feature.txt'), 'hello\n');
-
-    faux.setResponses([
-      fauxAssistantMessage([
-        fauxToolCall('commit', {
-          groups: [{ files: ['feature.txt'], subject: 'feat: add feature' }],
-        }),
-      ]),
-      (_context, _options, _state, model) => {
-        expect(model.baseUrl).toBe(endpoint);
-
-        return fauxAssistantMessage('{"findings":[]}');
-      },
-      fauxAssistantMessage('Committed.'),
-    ]);
-
-    await session.prompt('Commit the file.');
-
-    expect(toolResultOf(events, 'commit').isError).toBe(false);
-    expect(faux.state.callCount).toBe(3);
-  });
-
-  it('commits an oversized lockfile update without comment review', async ({ onTestFinished }) => {
-    const { session, faux, repositoryDirectory, events } = await createHarness(onTestFinished);
-    const before = 'dependency: version-1\n'.repeat(20_000);
-    const after = before.replace('version-1', 'version-2');
-
-    await writeFile(join(repositoryDirectory, 'pnpm-lock.yaml'), before);
-    await git(repositoryDirectory, ['add', 'pnpm-lock.yaml']);
-    await git(repositoryDirectory, ['commit', '-m', 'chore: add dependencies']);
-    await writeFile(join(repositoryDirectory, 'pnpm-lock.yaml'), after);
-
-    faux.setResponses([
-      fauxAssistantMessage([
-        fauxToolCall('commit', {
-          groups: [{ files: ['pnpm-lock.yaml'], subject: 'chore: update dependency' }],
-        }),
-      ]),
-      fauxAssistantMessage('Committed.'),
-    ]);
-
-    await session.prompt('Commit the dependency update.');
-
-    expect(toolResultOf(events, 'commit').isError).toBe(false);
-    expect(faux.state.callCount).toBe(2);
-  });
-
-  it.for([
-    { path: 'unrelated.ts', line: 1 },
-    { path: 'retry.ts', line: 9999 },
-  ])(
-    'rejects review findings outside the supplied source: %j',
-    async (location, { onTestFinished }) => {
-      const { session, faux, repositoryDirectory, events, overlays } =
-        await createHarness(onTestFinished);
-
-      await writeFile(join(repositoryDirectory, 'retry.ts'), 'export const retries = 0;\n');
-
-      faux.setResponses([
-        fauxAssistantMessage([
-          fauxToolCall('commit', {
-            groups: [{ files: ['retry.ts'], subject: 'feat: add retry policy' }],
-          }),
-        ]),
-        fauxAssistantMessage(
-          JSON.stringify({
-            findings: [{ ...location, kind: 'inaccurate', message: 'Invalid location.' }],
-          }),
-        ),
-        fauxAssistantMessage(
-          '{"findings":[{"path":"outside.ts","line":1,"kind":"policy","message":"Invalid location."}]}',
-        ),
-        fauxAssistantMessage('Review failed.'),
-      ]);
-
-      await session.prompt('Commit the retry policy.');
-
-      expect(overlays).toHaveLength(0);
-      expect(toolResultOf(events, 'commit').isError).toBe(true);
-      expect(JSON.stringify(toolResultOf(events, 'commit').result)).toContain('invalid findings');
-      expect((await git(repositoryDirectory, ['log', '-1', '--pretty=%s'])).trim()).toBe(
-        'chore: initial commit',
-      );
-    },
-  );
-
-  it('retries an invalid review once without accepting findings outside the source', async ({
-    onTestFinished,
-  }) => {
-    const { session, faux, repositoryDirectory, events } = await createHarness(onTestFinished);
-
-    await writeFile(join(repositoryDirectory, 'retry.ts'), 'export const retries = 0;\n');
-
-    faux.setResponses([
-      fauxAssistantMessage([
-        fauxToolCall('commit', { groups: [{ files: ['retry.ts'], subject: 'feat: add retries' }] }),
-      ]),
-      fauxAssistantMessage(
-        '{"findings":[{"path":"AGENTS.md","line":1,"kind":"policy","message":"Invalid target"}]}',
-      ),
-      fauxAssistantMessage('{"findings":[]}'),
-      fauxAssistantMessage('Committed.'),
-    ]);
-
-    await session.prompt('Commit the file.');
-
-    expect(toolResultOf(events, 'commit').isError).toBe(false);
-    expect(faux.state.callCount).toBe(4);
-  });
-
-  it('excludes binary assets from comment context', async ({ onTestFinished }) => {
-    const { session, faux, repositoryDirectory, events } = await createHarness(onTestFinished);
-
-    await writeFile(join(repositoryDirectory, 'asset.bin'), Buffer.alloc(300_000));
-
-    faux.setResponses([
-      fauxAssistantMessage([
-        fauxToolCall('commit', { groups: [{ files: ['asset.bin'], subject: 'feat: add asset' }] }),
-      ]),
-      (context) => {
-        const user = context.messages[0];
-        const payload = JSON.parse(
-          user?.role === 'user' && typeof user.content === 'string' ? user.content : '{}',
-        ) as { files: unknown; binaryPaths: unknown };
-
-        expect(payload.files).toEqual([]);
-        expect(payload.binaryPaths).toEqual(['asset.bin']);
-
-        return fauxAssistantMessage('{"findings":[]}');
-      },
-      fauxAssistantMessage('Committed.'),
-    ]);
-
-    await session.prompt('Commit the asset.');
-
-    expect(toolResultOf(events, 'commit').isError).toBe(false);
-  });
-
-  it('rechecks a disputed finding without changing the staged content', async ({
-    onTestFinished,
-  }) => {
-    const { session, faux, repositoryDirectory, events, overlays } =
-      await createHarness(onTestFinished);
-
-    await writeFile(
-      join(repositoryDirectory, 'retry.ts'),
-      '// Disabled during migration\nexport const retries = 0;\n',
-    );
-    const commitInput = { groups: [{ files: ['retry.ts'], subject: 'feat: add retry policy' }] };
-
-    faux.setResponses([
-      fauxAssistantMessage([fauxToolCall('commit', commitInput)]),
-      fauxAssistantMessage(
-        JSON.stringify({
-          findings: [
-            {
-              path: 'retry.ts',
-              line: 1,
-              kind: 'inaccurate',
-              message: 'Remove the migration note.',
-            },
-          ],
-        }),
-      ),
-      fauxAssistantMessage('{"verdict":"established","reason":"Retries are not disabled."}'),
-      fauxAssistantMessage([
-        fauxToolCall('commit', {
-          groups: [
-            {
-              ...commitInput.groups[0],
-              commentDispute: 'The note explains the temporary migration constraint.',
-            },
-          ],
-        }),
-      ]),
-      (context) => {
-        expect(JSON.stringify(context.messages)).toContain('temporary migration constraint');
-
-        return fauxAssistantMessage('{"findings":[]}');
-      },
-      fauxAssistantMessage('Committed after rechecking the finding.'),
-    ]);
-
-    await session.prompt('Commit the retry policy.');
-    const results = events.filter(
-      (event) => event.type === 'tool_execution_end' && event.toolName === 'commit',
-    );
-
-    expect(results.map((event) => event.type === 'tool_execution_end' && event.isError)).toEqual([
-      true,
-      false,
-    ]);
-
-    expect(faux.state.callCount).toBe(6);
-    expect(overlays).toHaveLength(0);
-    expect(JSON.stringify(results.at(-1))).toContain('rechecked after dispute');
-    expect(JSON.stringify(results.at(-1))).toContain('temporary migration constraint');
-    expect(JSON.stringify(results.at(-1))).toContain('Remove the migration note.');
-  });
-
-  it('reviews staged versions with nearby comments and keeps missing-comment suggestions advisory', async ({
-    onTestFinished,
-  }) => {
-    const { session, faux, repositoryDirectory, events, overlays } =
-      await createHarness(onTestFinished);
-    const before = '// Retry failures once\nexport const retries = 1;\n';
-    const after = '// Retry failures once\nexport const retries = 0;\n';
-
-    await writeFile(join(repositoryDirectory, 'retry.ts'), before);
-    await writeFile(join(repositoryDirectory, 'AGENTS.md'), 'Document public retry settings.\n');
-    await git(repositoryDirectory, ['add', 'retry.ts', 'AGENTS.md']);
-    await git(repositoryDirectory, ['commit', '-m', 'feat: add retries']);
-    await writeFile(join(repositoryDirectory, 'retry.ts'), after);
-
-    faux.setResponses([
-      fauxAssistantMessage([
-        fauxToolCall('commit', {
-          groups: [{ files: ['retry.ts'], subject: 'fix: disable retries' }],
-        }),
-      ]),
-      (context) => {
-        const user = context.messages[0];
-
-        expect(user?.role).toBe('user');
-
-        const payload = JSON.parse(
-          user?.role === 'user' && typeof user.content === 'string' ? user.content : '{}',
-        ) as { files: unknown; policies: unknown };
-
-        expect(payload.files).toContainEqual({
-          path: 'retry.ts',
-          content: '1\t// Retry failures once\n2\texport const retries = 0;\n3\t',
-        });
-        expect(payload.policies).toContainEqual({
-          path: 'AGENTS.md',
-          content: 'Document public retry settings.\n',
-        });
-
-        expect(context.tools ?? []).toHaveLength(0);
-
-        return fauxAssistantMessage(
-          JSON.stringify({
-            findings: [
-              {
-                path: 'retry.ts',
-                line: 2,
-                kind: 'missing',
-                message: 'Consider explaining why retries are disabled.',
-              },
-            ],
-          }),
-        );
-      },
-      fauxAssistantMessage('Committed with an advisory.'),
-    ]);
-
-    await session.prompt('Commit the retry policy.');
-
-    expect(overlays).toHaveLength(0);
-    expect(JSON.stringify(toolResultOf(events, 'commit').result)).toContain('[advisory]');
-    expect(toolResultOf(events, 'commit').isError).toBe(false);
-  });
-
-  it('returns a tool error when the reviewer returns malformed output', async ({
-    onTestFinished,
-  }) => {
-    const { session, faux, repositoryDirectory, events, overlays } =
-      await createHarness(onTestFinished);
-
-    await writeFile(join(repositoryDirectory, 'retry.ts'), 'export const retries = 0;\n');
-
-    faux.setResponses([
-      fauxAssistantMessage([
-        fauxToolCall('commit', {
-          groups: [{ files: ['retry.ts'], subject: 'feat: add retry policy' }],
-        }),
-      ]),
-      fauxAssistantMessage('I could not complete the review.'),
-      fauxAssistantMessage('Still invalid.'),
-      fauxAssistantMessage('Review failed.'),
-    ]);
-
-    await session.prompt('Commit the retry policy.');
-
-    expect(overlays).toHaveLength(0);
-    expect(toolResultOf(events, 'commit').isError).toBe(true);
-    expect(JSON.stringify(toolResultOf(events, 'commit').result)).toContain(
-      'Comment review failed',
-    );
-    expect((await git(repositoryDirectory, ['log', '-1', '--pretty=%s'])).trim()).toBe(
-      'chore: initial commit',
-    );
-  });
-
-  it('reuses an unchanged review and returns errors on every retry', async ({ onTestFinished }) => {
-    const { session, faux, repositoryDirectory, events, overlays } =
-      await createHarness(onTestFinished);
-
-    await writeFile(
-      join(repositoryDirectory, 'retry.ts'),
-      '// Retries every error\nexport const retries = 0;\n',
-    );
-    // oxlint-disable-next-line unicorn/consistent-function-scoping -- This repeated tool request belongs only to the retry scenario.
-    const request = () =>
-      fauxAssistantMessage([
-        fauxToolCall('commit', {
-          groups: [{ files: ['retry.ts'], subject: 'feat: add retry policy' }],
-        }),
-      ]);
-
-    faux.setResponses([
-      request(),
-      fauxAssistantMessage(
-        JSON.stringify({
-          findings: [
-            {
-              path: 'retry.ts',
-              line: 1,
-              kind: 'inaccurate',
-              message: 'The comment promises retries.',
-            },
-          ],
-        }),
-      ),
-      fauxAssistantMessage(
-        '{"verdict":"established","reason":"The shown code contradicts the comment."}',
-      ),
-      request(),
-      request(),
-      fauxAssistantMessage('The finding still blocks the commit.'),
-    ]);
-
-    await session.prompt('Commit the retry policy.');
-
-    expect(overlays).toHaveLength(0);
-    expect(faux.state.callCount).toBe(6);
-
-    const results = events.filter(
-      (event) => event.type === 'tool_execution_end' && event.toolName === 'commit',
-    );
-
-    expect(results.map((event) => event.type === 'tool_execution_end' && event.isError)).toEqual([
-      true,
-      true,
-      true,
-    ]);
-
-    expect(JSON.stringify(results[0])).toContain('Comment review needs corrections');
-    expect(JSON.stringify(results[0])).toContain('The comment promises retries');
-    expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
-    expect(JSON.stringify(results[1])).toContain('Comment review needs corrections');
-    expect(JSON.stringify(results.at(-1))).toContain(
-      'Comment review refused after two automatic returns',
-    );
-    expect((await git(repositoryDirectory, ['log', '-1', '--pretty=%s'])).trim()).toBe(
-      'chore: initial commit',
-    );
-  });
-
   it('returns a message hook failure as a tool error without UI', async ({ onTestFinished }) => {
     const { session, faux, repositoryDirectory, events, overlays } =
       await createHarness(onTestFinished);
@@ -599,7 +148,6 @@ describe('commit flow', () => {
           groups: [{ files: ['message.txt'], subject: 'feat: add message' }],
         }),
       ]),
-      fauxAssistantMessage('{"findings":[]}'),
       fauxAssistantMessage('The message hook failed.'),
     ]);
 
@@ -616,45 +164,41 @@ describe('commit flow', () => {
     );
   });
 
-  it.for([true, false])(
-    'commits after a clean review with hasUI=%s',
-    async (hasUI, { onTestFinished }) => {
-      const { session, faux, repositoryDirectory, events, overlays } = await createHarness(
-        onTestFinished,
-        { hasUI },
-      );
+  it.for([true, false])('commits with hasUI=%s', async (hasUI, { onTestFinished }) => {
+    const { session, faux, repositoryDirectory, events, overlays } = await createHarness(
+      onTestFinished,
+      { hasUI },
+    );
 
-      await writeFile(join(repositoryDirectory, 'feature.txt'), 'hello\n', 'utf8');
+    await writeFile(join(repositoryDirectory, 'feature.txt'), 'hello\n', 'utf8');
 
-      faux.setResponses([
-        fauxAssistantMessage([
-          fauxToolCall('commit', {
-            groups: [
-              {
-                files: ['feature.txt'],
-                subject: 'feat: add feature file',
-                body: 'Prove the commit tool runs end to end.',
-              },
-            ],
-          }),
-        ]),
-        fauxAssistantMessage('```json\n{"findings":[]}\n```'),
-        fauxAssistantMessage('Committed.'),
-      ]);
+    faux.setResponses([
+      fauxAssistantMessage([
+        fauxToolCall('commit', {
+          groups: [
+            {
+              files: ['feature.txt'],
+              subject: 'feat: add feature file',
+              body: 'Prove the commit tool runs end to end.',
+            },
+          ],
+        }),
+      ]),
+      fauxAssistantMessage('Committed.'),
+    ]);
 
-      await session.prompt('Commit the new file.');
+    await session.prompt('Commit the new file.');
 
-      expect(overlays).toHaveLength(0);
+    expect(overlays).toHaveLength(0);
 
-      const result = toolResultOf(events, 'commit');
+    const result = toolResultOf(events, 'commit');
 
-      expect(result.isError).toBe(false);
+    expect(result.isError).toBe(false);
 
-      const log = await git(repositoryDirectory, ['log', '-1', '--pretty=%s']);
+    const log = await git(repositoryDirectory, ['log', '-1', '--pretty=%s']);
 
-      expect(log.trim()).toBe('feat: add feature file');
-    },
-  );
+    expect(log.trim()).toBe('feat: add feature file');
+  });
 
   it('blocks git commit run through the bash tool', async ({ onTestFinished }) => {
     const { session, faux, repositoryDirectory, events } = await createHarness(onTestFinished);

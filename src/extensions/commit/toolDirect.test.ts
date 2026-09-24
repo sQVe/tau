@@ -15,7 +15,7 @@ import {
 import { createCommitTool } from './tool.js';
 
 describe('direct commit staging', () => {
-  it('preserves untimed wrappers and bounded review calls', async () => {
+  it('preserves untimed wrappers and bounded Git calls', async () => {
     const { execute, exec } = fakeCommit();
     const signal = new AbortController().signal;
 
@@ -61,7 +61,7 @@ describe('direct commit staging', () => {
   });
 
   it('stops and unstages when Git staging is killed despite a zero exit code', async () => {
-    const { execute, exec, review } = fakeCommit();
+    const { execute, exec } = fakeCommit();
     const executeGit = exec.getMockImplementation()!;
 
     exec.mockImplementation(async (command, argumentsList, options) => {
@@ -74,7 +74,6 @@ describe('direct commit staging', () => {
 
     await expect(execute()).rejects.toThrow('staging interrupted');
 
-    expect(review).not.toHaveBeenCalled();
     expect(exec.mock.calls.some((call) => call[1][0] === 'commit')).toBe(false);
     expect(exec).toHaveBeenLastCalledWith(
       'git',
@@ -142,22 +141,19 @@ describe('direct commit staging', () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'requested');
     await writeRepositoryFile(directory, 'other', 'working bytes');
-    const tool = createCommitTool(
-      {
-        exec: async (command, argumentsList, options) => {
-          const result = await runCommand(command, argumentsList, options?.cwd ?? directory);
+    const tool = createCommitTool({
+      exec: async (command, argumentsList, options) => {
+        const result = await runCommand(command, argumentsList, options?.cwd ?? directory);
 
-          if (argumentsList.includes('add')) {
-            await writeRepositoryFile(directory, 'other', 'staged bytes');
-            await git(directory, ['add', 'other']);
-            await writeRepositoryFile(directory, 'other', 'working bytes');
-          }
+        if (argumentsList.includes('add')) {
+          await writeRepositoryFile(directory, 'other', 'staged bytes');
+          await git(directory, ['add', 'other']);
+          await writeRepositoryFile(directory, 'other', 'working bytes');
+        }
 
-          return result;
-        },
+        return result;
       },
-      async () => ({ findings: [] }),
-    );
+    });
 
     await expect(
       tool.execute(
@@ -194,13 +190,10 @@ describe('direct commit staging', () => {
       '#!/bin/sh\ngit add -- root.txt sibling/extra sub/extra\n',
     );
     await chmod(join(directory, '.git/hooks/pre-commit'), 0o755);
-    const tool = createCommitTool(
-      {
-        exec: (command, argumentsList, options) =>
-          runCommand(command, argumentsList, options?.cwd ?? directory),
-      },
-      async () => ({ findings: [] }),
-    );
+    const tool = createCommitTool({
+      exec: (command, argumentsList, options) =>
+        runCommand(command, argumentsList, options?.cwd ?? directory),
+    });
 
     const result = await tool.execute(
       'nested',
@@ -247,15 +240,19 @@ describe('direct commit staging', () => {
   it('keeps the group error when unstaging after it also fails', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'working');
-    const tool = createCommitTool(
-      {
-        exec: async (command, argumentsList, options) =>
-          argumentsList.includes('reset')
-            ? { stdout: '', stderr: 'reset denied', code: 1, killed: false }
-            : runCommand(command, argumentsList, options?.cwd ?? directory),
+    const tool = createCommitTool({
+      exec: async (command, argumentsList, options) => {
+        if (argumentsList.includes('reset')) {
+          return { stdout: '', stderr: 'reset denied', code: 1, killed: false };
+        }
+
+        if (argumentsList[0] === 'write-tree') {
+          return { stdout: '', stderr: 'snapshot exploded', code: 1, killed: false };
+        }
+
+        return runCommand(command, argumentsList, options?.cwd ?? directory);
       },
-      () => Promise.reject(new Error('review exploded')),
-    );
+    });
 
     const failure = await tool
       .execute(
@@ -267,52 +264,10 @@ describe('direct commit staging', () => {
       )
       .catch((error: unknown) => String(error));
 
-    expect(failure).toContain('review exploded');
+    expect(failure).toContain('snapshot exploded');
     expect(failure).toContain('reset denied');
   });
 
-  it('reports earlier commits and preserves concurrent staging during a later review', async () => {
-    const directory = await createTemporaryRepository();
-    await writeRepositoryFile(directory, 'first', 'first');
-    await writeRepositoryFile(directory, 'second', 'second');
-    let reviews = 0;
-    const tool = createCommitTool(
-      {
-        exec: (command, argumentsList, options) =>
-          runCommand(command, argumentsList, options?.cwd ?? directory),
-      },
-      async () => {
-        reviews += 1;
-
-        if (reviews === 2) {
-          await writeRepositoryFile(directory, 'second', 'concurrent');
-          await git(directory, ['add', 'second']);
-        }
-
-        return { findings: [] };
-      },
-    );
-
-    const failure = await tool
-      .execute(
-        'batch',
-        {
-          groups: [
-            { files: ['first'], subject: 'feat: first' },
-            { files: ['second'], subject: 'feat: second' },
-          ],
-        },
-        undefined,
-        undefined,
-        commitContext(directory),
-      )
-      .catch((error: unknown) => String(error));
-    const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
-
-    expect(failure).toContain(`Group 1/2: ${head} feat: first`);
-    expect(failure).toContain('Concurrent staging was left untouched');
-    expect(await git(directory, ['show', ':second'])).toBe('concurrent');
-  });
   it('ignores obsolete commands and commits without creating recovery data', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'other', 'original\n');

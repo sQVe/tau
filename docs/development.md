@@ -85,12 +85,11 @@ records the local package in that project's `.pi/settings.json`.
 ### Delegate model
 
 Set `TAU_DELEGATE_MODEL=provider/model-id` before launching Pi to choose the delegate for
-`bulk_read`, answer-mode `fetch_content`, and commit comment review. It uses Pi's credentials and
-does not change the session model. Use the exact provider and model ID from `pi --list-models`,
-including router prefixes such as `openrouter/anthropic/model-id`. The model needs working
-credentials. See the [shared-delegate decision](adr/0027-share-one-delegate-model.md) for why the
-tasks share one model, and the [default decision](adr/0041-default-the-delegate-to-gpt-6-luna.md)
-for the default.
+`bulk_read` and answer-mode `fetch_content`. It uses Pi's credentials and does not change the
+session model. Use the exact provider and model ID from `pi --list-models`, including router
+prefixes such as `openrouter/anthropic/model-id`. The model needs working credentials. See the
+[shared-delegate decision](adr/0027-share-one-delegate-model.md) for why the tasks share one model,
+and the [default decision](adr/0041-default-the-delegate-to-gpt-6-luna.md) for the default.
 
 ### Workers
 
@@ -141,13 +140,12 @@ the terminal and check that the right group truncates before the left.
 
 ### Commits
 
-Use a temporary repository. Comment review calls the shared delegate, so that model needs working
-credentials.
+Use a temporary repository.
 
-1. Change a file with an accurate comment and call `commit`. Let the tool stage the file. Check that
-   a clean review commits without a prompt.
-2. Submit a change with an inaccurate comment. Check that a blocking finding returns a tool error
-   without a prompt or a new commit. Correct the comment and call `commit` again.
+1. Change a file and call `commit`. Let the tool stage the file. Check that it commits without a
+   prompt.
+2. Install a `pre-commit` hook that exits with an error and call `commit` again. Check that the hook
+   output returns as a tool error without a prompt or a new commit, and that the file is unstaged.
 
 ### Bulk read
 

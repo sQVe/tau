@@ -75,39 +75,21 @@ describe('hook outcomes', () => {
     expect(await git(directory, ['show', 'HEAD:second'])).toBe('second');
   });
 
-  it('rejects an empty candidate before review or hooks', async () => {
+  it('rejects an empty candidate before hooks', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'value');
     await git(directory, ['add', 'requested']);
     await git(directory, ['commit', '-m', 'test: baseline']);
     const head = await git(directory, ['rev-parse', 'HEAD']);
     await installHook(directory, 'pre-commit', 'echo invocation >> generated; git add generated');
-    let reviews = 0;
-    const tool = createCommitTool(
-      {
-        exec: (command, argumentsList, options) =>
-          runCommand(command, argumentsList, options?.cwd ?? directory),
-      },
-      async () => {
-        reviews += 1;
-
-        return { findings: [] };
-      },
-    );
 
     await expect(
-      tool.execute(
-        'empty',
-        {
-          groups: [{ files: ['requested'], subject: 'feat: unchanged' }],
-        },
-        undefined,
-        undefined,
-        commitContext(directory),
-      ),
+      executeCommit(directory, {
+        groups: [{ files: ['requested'], subject: 'feat: unchanged' }],
+      }),
     ).rejects.toThrow('No staged changes');
 
-    expect(reviews).toBe(0);
+    await expect(readFile(join(directory, 'generated'))).rejects.toThrow(/ENOENT/);
     expect(await git(directory, ['rev-parse', 'HEAD'])).toBe(head);
     expect(await git(directory, ['status', '--short'])).toBe('');
   });
@@ -125,25 +107,22 @@ describe('hook outcomes', () => {
 
       await writeRepositoryFile(directory, 'requested', 'value');
       let concurrentHead = '';
-      const tool = createCommitTool(
-        {
-          exec: async (command, argumentsList, options) => {
-            const result = await runCommand(command, argumentsList, options?.cwd ?? directory);
+      const tool = createCommitTool({
+        exec: async (command, argumentsList, options) => {
+          const result = await runCommand(command, argumentsList, options?.cwd ?? directory);
 
-            if (argumentsList[0] === 'commit') {
-              await writeRepositoryFile(directory, 'other', 'other');
-              await git(directory, ['add', 'other']);
-              await git(directory, ['commit', '-m', 'test: concurrent writer']);
-              concurrentHead = (await git(directory, ['rev-parse', 'HEAD'])).trim();
-              await writeRepositoryFile(directory, 'other', 'staged edit');
-              await git(directory, ['add', 'other']);
-            }
+          if (argumentsList[0] === 'commit') {
+            await writeRepositoryFile(directory, 'other', 'other');
+            await git(directory, ['add', 'other']);
+            await git(directory, ['commit', '-m', 'test: concurrent writer']);
+            concurrentHead = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+            await writeRepositoryFile(directory, 'other', 'staged edit');
+            await git(directory, ['add', 'other']);
+          }
 
-            return result;
-          },
+          return result;
         },
-        async () => ({ findings: [] }),
-      );
+      });
 
       const failure = await tool
         .execute(
@@ -173,15 +152,12 @@ describe('hook outcomes', () => {
       'commit-msg',
       'printf "  subject-empty  \\n"; printf "  commitlint rejected  \\n" >&2; exit 1',
     );
-    const tool = createCommitTool(
-      {
-        exec: (command, argumentsList, options) =>
-          argumentsList.includes('reset')
-            ? Promise.resolve({ code: 1, killed: false, stdout: '', stderr: 'index locked\n' })
-            : runCommand(command, argumentsList, options?.cwd ?? directory),
-      },
-      async () => ({ findings: [] }),
-    );
+    const tool = createCommitTool({
+      exec: (command, argumentsList, options) =>
+        argumentsList.includes('reset')
+          ? Promise.resolve({ code: 1, killed: false, stdout: '', stderr: 'index locked\n' })
+          : runCommand(command, argumentsList, options?.cwd ?? directory),
+    });
 
     const failure = await tool
       .execute(
@@ -226,21 +202,18 @@ describe('hook outcomes', () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'value');
     await writeRepositoryFile(directory, 'other', 'other');
-    const tool = createCommitTool(
-      {
-        exec: async (command, argumentsList, options) => {
-          if (argumentsList[0] === 'commit') {
-            await git(directory, ['commit', '-m', 'test: concurrent writer']);
-            await git(directory, ['add', 'other']);
+    const tool = createCommitTool({
+      exec: async (command, argumentsList, options) => {
+        if (argumentsList[0] === 'commit') {
+          await git(directory, ['commit', '-m', 'test: concurrent writer']);
+          await git(directory, ['add', 'other']);
 
-            return { code: 1, killed: false, stdout: 'raw output\n', stderr: 'raw error\n' };
-          }
+          return { code: 1, killed: false, stdout: 'raw output\n', stderr: 'raw error\n' };
+        }
 
-          return runCommand(command, argumentsList, options?.cwd ?? directory);
-        },
+        return runCommand(command, argumentsList, options?.cwd ?? directory);
       },
-      async () => ({ findings: [] }),
-    );
+    });
 
     const failure = await tool
       .execute(
@@ -266,24 +239,21 @@ describe('hook outcomes', () => {
       const directory = await createTemporaryRepository();
       await writeRepositoryFile(directory, 'requested', 'value');
       let committed = false;
-      const tool = createCommitTool(
-        {
-          exec: async (command, argumentsList, options) => {
-            if (committed && argumentsList[0] === failingCommand) {
-              return { code: 1, killed: false, stdout: '', stderr: 'report unavailable' };
-            }
+      const tool = createCommitTool({
+        exec: async (command, argumentsList, options) => {
+          if (committed && argumentsList[0] === failingCommand) {
+            return { code: 1, killed: false, stdout: '', stderr: 'report unavailable' };
+          }
 
-            const result = await runCommand(command, argumentsList, options?.cwd ?? directory);
+          const result = await runCommand(command, argumentsList, options?.cwd ?? directory);
 
-            if (argumentsList[0] === 'commit') {
-              committed = true;
-            }
+          if (argumentsList[0] === 'commit') {
+            committed = true;
+          }
 
-            return result;
-          },
+          return result;
         },
-        async () => ({ findings: [] }),
-      );
+      });
 
       const failure = await tool
         .execute(
@@ -300,7 +270,6 @@ describe('hook outcomes', () => {
 
       expect(failure).toContain('Git commit succeeded');
       expect(failure).toContain('report unavailable');
-      expect(failure).not.toContain('Comment review: git');
       expect(failure).toContain('Do not retry this group');
       expect(failure).toContain(
         failingCommand === 'rev-parse' || failingCommand === 'cat-file' ? head.slice(0, 7) : head,
@@ -353,23 +322,20 @@ describe('hook outcomes', () => {
     await writeRepositoryFile(directory, 'other', 'other');
     let commitHash = '';
     let concurrentHead = '';
-    const tool = createCommitTool(
-      {
-        exec: async (command, argumentsList, options) => {
-          if (argumentsList[0] === 'diff-tree') {
-            commitHash = argumentsList.at(-1)!;
-            await git(directory, ['add', 'other']);
-            await git(directory, ['commit', '-m', 'test: concurrent writer']);
-            concurrentHead = (await git(directory, ['rev-parse', 'HEAD'])).trim();
-            await writeRepositoryFile(directory, 'other', 'staged edit');
-            await git(directory, ['add', 'other']);
-          }
+    const tool = createCommitTool({
+      exec: async (command, argumentsList, options) => {
+        if (argumentsList[0] === 'diff-tree') {
+          commitHash = argumentsList.at(-1)!;
+          await git(directory, ['add', 'other']);
+          await git(directory, ['commit', '-m', 'test: concurrent writer']);
+          concurrentHead = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+          await writeRepositoryFile(directory, 'other', 'staged edit');
+          await git(directory, ['add', 'other']);
+        }
 
-          return runCommand(command, argumentsList, options?.cwd ?? directory);
-        },
+        return runCommand(command, argumentsList, options?.cwd ?? directory);
       },
-      async () => ({ findings: [] }),
-    );
+    });
 
     const result = await tool.execute(
       'report',
@@ -401,40 +367,19 @@ describe('hook outcomes', () => {
       'pre-commit',
       'echo invocation >> generated; git add generated second',
     );
-    let reviews = 0;
-    const tool = createCommitTool(
-      {
-        exec: (command, argumentsList, options) =>
-          runCommand(command, argumentsList, options?.cwd ?? directory),
-      },
-      async () => {
-        reviews += 1;
 
-        return { findings: [] };
-      },
-    );
-
-    const failure = await tool
-      .execute(
-        'batch',
-        {
-          groups: [
-            { files: ['first'], subject: 'feat: first' },
-            { files: ['second'], subject: 'feat: second' },
-            { files: ['third'], subject: 'feat: third' },
-          ],
-        },
-        undefined,
-        undefined,
-        commitContext(directory),
-      )
-      .catch((error: unknown) => String(error));
+    const failure = await executeCommit(directory, {
+      groups: [
+        { files: ['first'], subject: 'feat: first' },
+        { files: ['second'], subject: 'feat: second' },
+        { files: ['third'], subject: 'feat: third' },
+      ],
+    }).catch((error: unknown) => String(error));
     const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
 
     expect(failure).toContain('already committed by an earlier hook');
     expect(failure).toContain(`Group 1/3: ${head} feat: first`);
     expect(failure).toContain('Hook changed paths: generated, second');
-    expect(reviews).toBe(1);
     expect(await git(directory, ['rev-list', '--all', '--count'])).toBe('1\n');
     expect(await git(directory, ['show', 'HEAD:second'])).toBe('second');
     expect(await readFile(join(directory, 'generated'), 'utf8')).toBe('invocation\n');
@@ -478,7 +423,7 @@ describe('hook outcomes', () => {
   });
 
   it.each([false, true])(
-    'reviews remaining changes after hook overlap with new working changes: %s',
+    'commits remaining changes after hook overlap with new working changes: %s',
     async (partialOverlap) => {
       const directory = await createTemporaryRepository();
       await writeRepositoryFile(directory, 'first', 'first');
@@ -489,47 +434,27 @@ describe('hook outcomes', () => {
         'pre-commit',
         'if [ ! -f .git/hook-ran ]; then git add second; printf new > second; touch .git/hook-ran; fi',
       );
-      const reviewedTrees: string[] = [];
-      const tool = createCommitTool(
-        {
-          exec: (command, argumentsList, options) =>
-            runCommand(command, argumentsList, options?.cwd ?? directory),
-        },
-        async (_pi, _context, _signal, snapshot) => {
-          reviewedTrees.push(snapshot.tree);
 
-          return { findings: [] };
-        },
-      );
-
-      const result = await tool.execute(
-        'batch',
-        {
-          groups: [
-            { files: ['first'], subject: 'feat: first' },
-            {
-              files: partialOverlap ? ['second', 'third'] : ['second'],
-              subject: 'feat: remaining',
-            },
-          ],
-        },
-        undefined,
-        undefined,
-        commitContext(directory),
-      );
+      const result = await executeCommit(directory, {
+        groups: [
+          { files: ['first'], subject: 'feat: first' },
+          {
+            files: partialOverlap ? ['second', 'third'] : ['second'],
+            subject: 'feat: remaining',
+          },
+        ],
+      });
 
       expect(result.details.groups).toHaveLength(2);
-      expect(reviewedTrees).toHaveLength(2);
-      expect(await git(directory, ['show', `${reviewedTrees[1]}:second`])).toBe('new');
       expect(await git(directory, ['show', 'HEAD:second'])).toBe('new');
       expect(await git(directory, ['show', 'HEAD^:second'])).toBe('second');
       expect(result.details.groups[1]!.files).toEqual(
         partialOverlap ? ['second', 'third'] : ['second'],
       );
 
-      expect(
-        await git(directory, ['ls-tree', '--name-only', reviewedTrees[1]!, '--', 'third']),
-      ).toBe(partialOverlap ? 'third\n' : '');
+      expect(await git(directory, ['ls-tree', '--name-only', 'HEAD', '--', 'third'])).toBe(
+        partialOverlap ? 'third\n' : '',
+      );
       expect(await readFile(join(directory, 'third'), 'utf8')).toBe('third');
 
       expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');

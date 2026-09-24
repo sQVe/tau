@@ -48,8 +48,8 @@ change a result.
 ### Dependency versions
 
 `@earendil-works/pi-ai` is a devDependency with the same version range as pi-coding-agent, so both
-resolve to a single copy. Register the faux provider on the session's `ModelRuntime` so both the
-agent and comment reviewer use the same scripted responses.
+resolve to a single copy. Register the faux provider on the session's `ModelRuntime` so the agent
+and any delegate calls use the same scripted responses.
 
 ## Tradeoffs
 

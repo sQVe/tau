@@ -9,14 +9,8 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, vi } from 'vitest';
 
 import { createTemporaryRepository as createRepository } from '../../../../tests/gitRepository.js';
-import type { reviewComments } from '../commentReview.js';
-import { createCommitTool as createReviewedCommitTool } from '../tool.js';
+import { createCommitTool } from '../tool.js';
 import type { CommitInput } from '../validation.js';
-
-// Git tests use a clean reviewer.
-// tests/commitFlow.integration.test.ts covers real Pi review.
-export const createCommitTool = (pi: Pick<ExtensionAPI, 'exec'>) =>
-  createReviewedCommitTool(pi, async () => ({ findings: [] }));
 
 const execFileAsync = promisify(execFile);
 
@@ -187,8 +181,7 @@ export const fakeCommit = () => {
 
     return { code: 0, killed: false, stderr: '', stdout };
   });
-  const review = vi.fn<typeof reviewComments>().mockResolvedValue({ findings: [] });
-  const tool = createReviewedCommitTool({ exec }, review);
+  const tool = createCommitTool({ exec });
   const context = { cwd: '/repo', hasUI: true, ui: { custom, editor } };
   const input = {
     groups: [
@@ -203,5 +196,5 @@ export const fakeCommit = () => {
   const execute = (signal?: AbortSignal) =>
     tool.execute('call', input, signal, undefined, context as never);
 
-  return { custom, editor, exec, context, input, execute, review, gitDirectory };
+  return { custom, editor, exec, context, input, execute, gitDirectory };
 };

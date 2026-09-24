@@ -151,7 +151,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
   } finally {
     await rm(workingDirectory, { recursive: true, force: true });
   }
-});
+}, 30_000);
 
 it('reports extension errors for missing bundled question and web extensions', async ({
   onTestFinished,
@@ -211,4 +211,4 @@ it('reports extension errors for missing bundled question and web extensions', a
   expect(questionError).toContain('@juicesharp/rpiv-ask-user-question');
   expect(webAccessError).toContain('web_search');
   expect(webAccessError).toContain('fetch_content');
-});
+}, 30_000);

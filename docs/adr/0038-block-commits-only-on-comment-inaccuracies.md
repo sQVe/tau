@@ -1,6 +1,6 @@
 # ADR 0038: Block commits only on comment inaccuracies
 
-- Status: Proposed
+- Status: Superseded by [ADR 0042](./0042-remove-commit-comment-review.md)
 - Date: 2026-09-23
 - Supersedes: the blocking rule in [ADR 0026](./0026-let-git-hooks-own-commit-checks.md)
 
