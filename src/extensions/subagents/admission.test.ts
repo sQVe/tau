@@ -7,7 +7,12 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { admissionDirectory, inheritedInstructions, reserveTask } from './admission.js';
+import {
+  admissionDirectory,
+  descendantReservations,
+  inheritedInstructions,
+  reserveTask,
+} from './admission.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { publish, recordEvent } from './records.js';
 import type { Task } from './types.js';
@@ -190,6 +195,64 @@ it('rejects descendant authority changes and never lets descendants configure th
     reserveTask(root, { ...child, tree: { ...child.tree, monotonicDeadline: 56001 } });
   }).toThrow('deadline');
   reserveTask(root, child, 256);
+});
+
+const savedPaths = (root: string) =>
+  readdirSync(root, { recursive: true, encoding: 'utf8' }).toSorted((left, right) =>
+    left.localeCompare(right),
+  );
+
+it.each([
+  {
+    refusal: 'a reservation cycle',
+    expected: 'Cyclic reservation ancestry',
+    refuse: ({ root, task }: ReturnType<typeof setup>) => {
+      const first = task('first', 'second');
+      const directory = admissionDirectory(root, first.tree);
+      mkdirSync(directory, { recursive: true });
+      publish(directory, 'first.json', first);
+      publish(directory, 'second.json', task('second', 'first'));
+
+      return () => descendantReservations(root, first);
+    },
+  },
+  {
+    refusal: 'a saved task that differs from its reservation',
+    expected: 'Task differs from its reservation',
+    refuse: ({ root, task, save }: ReturnType<typeof setup>) => {
+      const reserved = task('reserved');
+      reserveTask(root, reserved);
+      save({ ...reserved, task: 'Changed after reservation.' });
+
+      return () => {
+        reserveTask(root, task('next'));
+      };
+    },
+  },
+  {
+    refusal: 'an ended parent',
+    expected: 'inactive or invalid parent ancestry',
+    refuse: ({ root, task, save }: ReturnType<typeof setup>) => {
+      const parent = task('parent');
+      const child = task('child', 'parent');
+      child.parentSessionId = parent.nativeSessionId;
+      child.tree.monotonicDeadline = 56000;
+      child.loadout.instructions = `${inheritedInstructions(parent)}Read the fixture.`;
+      reserveTask(root, parent);
+      recordEvent(save(parent), parent.taskId, 'settled', { detail: 'Done.', stopped: true });
+
+      return () => {
+        reserveTask(root, child);
+      };
+    },
+  },
+])('refuses admission for $refusal without reserving work', ({ expected, refuse }) => {
+  const fixture = setup();
+  const attempt = refuse(fixture);
+  const before = savedPaths(fixture.root);
+
+  expect(attempt).toThrow(expected);
+  expect(savedPaths(fixture.root)).toEqual(before);
 });
 
 it('atomically admits competing root and descendant processes into one remaining slot', async () => {
