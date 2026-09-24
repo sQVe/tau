@@ -60,7 +60,7 @@ it('enforces house style only when explicitly enabled', async ({ onTestFinished 
     encoding: 'utf8',
     timeout: 20_000,
   });
-  const style = spawnSync('pnpm', ['style:check', fixture], {
+  const style = spawnSync(process.execPath, ['scripts/runStyle.ts', fixture], {
     cwd: root,
     env: environment,
     encoding: 'utf8',
@@ -158,7 +158,7 @@ it('checks binding names and helper order without rejecting external fields or r
     await writeFile(join(directory, name!), source!);
   }
 
-  const result = spawnSync('pnpm', ['style:check', directory], {
+  const result = spawnSync(process.execPath, ['scripts/runStyle.ts', directory], {
     cwd: root,
     encoding: 'utf8',
     timeout: 20_000,
@@ -211,7 +211,7 @@ it('fixes house spacing without changing comments or names', async ({ onTestFini
     ].join('\n'),
   );
 
-  const result = spawnSync('pnpm', ['style:fix', fixture], {
+  const result = spawnSync(process.execPath, ['scripts/runStyle.ts', '--fix', fixture], {
     cwd: root,
     encoding: 'utf8',
     timeout: 20_000,
@@ -239,7 +239,7 @@ it('fixes house spacing without changing comments or names', async ({ onTestFini
   );
 
   const fixed = await readFile(fixture, 'utf8');
-  const repeated = spawnSync('pnpm', ['style:fix', fixture], {
+  const repeated = spawnSync(process.execPath, ['scripts/runStyle.ts', '--fix', fixture], {
     cwd: root,
     encoding: 'utf8',
     timeout: 20_000,
@@ -255,7 +255,7 @@ it('fixes house spacing without changing comments or names', async ({ onTestFini
     'export const MAX_RETRIES=3;\nexport const caller=()=>helper();\nconst helper=()=>1;\n',
   );
 
-  const manualResult = spawnSync('pnpm', ['style:fix', manual], {
+  const manualResult = spawnSync(process.execPath, ['scripts/runStyle.ts', '--fix', manual], {
     cwd: root,
     encoding: 'utf8',
     timeout: 20_000,
@@ -286,7 +286,7 @@ it('keeps size thresholds advisory without weakening other lint checks', async (
     ].join('\n'),
   );
 
-  const result = spawnSync('pnpm', ['style:check', fixture], {
+  const result = spawnSync(process.execPath, ['scripts/runStyle.ts', fixture], {
     cwd: root,
     encoding: 'utf8',
     timeout: 20_000,
@@ -335,7 +335,7 @@ it('limits the checks joined in one condition and rejects mixed operators', asyn
     await writeFile(join(directory, name!), source!);
   }
 
-  const result = spawnSync('pnpm', ['style:check', directory], {
+  const result = spawnSync(process.execPath, ['scripts/runStyle.ts', directory], {
     cwd: root,
     encoding: 'utf8',
     timeout: 20_000,
@@ -370,7 +370,7 @@ it('rejects ENOENT literals outside the errors module and tests', async ({ onTes
     await writeFile(join(directory, name!), source!);
   }
 
-  const result = spawnSync('pnpm', ['style:check', directory], {
+  const result = spawnSync(process.execPath, ['scripts/runStyle.ts', directory], {
     cwd: root,
     encoding: 'utf8',
     timeout: 20_000,
