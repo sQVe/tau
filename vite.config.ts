@@ -36,6 +36,7 @@ export default defineConfig({
       ...(styleEnabled
         ? {
             'tau/naming-convention': 'error',
+            'tau/extension-boundary': 'error',
             'eslint/no-cond-assign': ['error', 'always'],
             'eslint/id-denylist': ['error', 'btn', 'cb', 'errMsg'],
             'eslint/one-var': ['error', 'never'],

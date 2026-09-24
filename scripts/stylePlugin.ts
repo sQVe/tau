@@ -1,3 +1,5 @@
+import { posix } from 'node:path';
+
 import type { Definition, ESTree, Plugin, Variable } from '@oxlint/plugins';
 
 type WrappedExpression =
@@ -63,9 +65,62 @@ const isUnusedMarker = (definition: Definition, variable: Variable): boolean => 
 const isErrorsModule = (filename: string): boolean =>
   filename.replaceAll('\\', '/').endsWith('/src/errors/index.ts');
 
+// The extension directory a path belongs to; src/extensions/index.ts composes them and has none.
+const extensionOf = (path: string): string | undefined => {
+  const segments = path.replaceAll('\\', '/').split('/');
+  const index = segments.lastIndexOf('extensions');
+  const insideExtension = segments[index - 1] === 'src' && index + 2 < segments.length;
+
+  return index > 0 && insideExtension ? segments[index + 1] : undefined;
+};
+
 const stylePlugin: Plugin = {
   meta: { name: 'tau' },
   rules: {
+    'extension-boundary': {
+      meta: {
+        type: 'problem',
+        schema: [],
+        messages: {
+          crossing:
+            'Extension "{{source}}" must not import from extension "{{target}}". Move shared code under src/.',
+        },
+      },
+      create(context) {
+        const source = extensionOf(context.filename);
+
+        if (source === undefined) {
+          return {};
+        }
+
+        const check = (node: ESTree.Node, specifier: unknown) => {
+          if (typeof specifier !== 'string' || !specifier.startsWith('.')) {
+            return;
+          }
+
+          const target = extensionOf(posix.join(posix.dirname(context.filename), specifier));
+
+          if (target !== undefined && target !== source) {
+            context.report({ node, messageId: 'crossing', data: { source, target } });
+          }
+        };
+
+        return {
+          ImportDeclaration(node) {
+            check(node, node.source.value);
+          },
+          ExportAllDeclaration(node) {
+            check(node, node.source.value);
+          },
+          ExportNamedDeclaration(node) {
+            check(node, node.source?.value);
+          },
+          ImportExpression(node) {
+            check(node, node.source.type === 'Literal' ? node.source.value : undefined);
+          },
+        };
+      },
+    },
     'helper-before-use': {
       meta: {
         type: 'suggestion',

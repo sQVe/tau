@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -378,6 +378,37 @@ it('rejects ENOENT literals outside the errors module and tests', async ({ onTes
   const diagnostics = result.stdout
     .split('\n')
     .filter((line) => line.includes('no-enoent-literal'));
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toContain('/invalid.ts:');
+}, 30_000);
+
+it('rejects imports from one extension into another', async ({ onTestFinished }) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-style-boundary-'));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const extension = join(directory, 'src', 'extensions', 'probe');
+  await mkdir(extension, { recursive: true });
+  const files = {
+    'own.ts': 'export const own = 1;\n',
+    'valid.ts': "import { own } from './own.js';\n\nexport const value = own;\n",
+    'invalid.ts':
+      "import { errorMessage } from '../../errors/index.js';\nimport { bulkReadTool } from '../bulkRead/tool.js';\n\nexport const value = [errorMessage, bulkReadTool];\n",
+  };
+
+  for (const [name, source] of Object.entries(files)) {
+    await writeFile(join(extension, name), source);
+  }
+
+  const result = spawnSync(process.execPath, ['scripts/runStyle.ts', extension], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+  const diagnostics = result.stdout
+    .split('\n')
+    .filter((line) => line.includes('extension-boundary'));
 
   expect(result.error).toBeUndefined();
   expect(result.status).toBe(1);
