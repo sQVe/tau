@@ -10,7 +10,6 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, onTestFinished, vi } from 'vitest';
 
-import { toolAvailable } from '../../../../tests/toolAvailable.js';
 import { runClient } from '../cancellation.js';
 import { WorkerController } from '../controller.js';
 import { searchHistory } from '../history.js';
@@ -20,6 +19,7 @@ import { requireObject, result, terminalLocation } from '../terminal.js';
 import { fixtureModel } from './controlledProvider.js';
 import { isolatedHerdr } from './isolatedHerdr.js';
 import { asPiLoadout, readPiTask as readTask } from './loadout.js';
+import { toolAvailable } from './toolAvailable.js';
 
 export type PiWorkerScenario =
   | 'completion'
@@ -244,7 +244,6 @@ export default function (pi) {
         throw new Error('Worker never entered active streaming.');
       }
 
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Wait for a real child streaming signal, not an assumed startup delay.
       await delay(25);
     }
 
