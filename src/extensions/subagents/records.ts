@@ -137,9 +137,10 @@ export const readOptionalRecord = (directory: string, name: string): unknown => 
   }
 };
 
+// Records saved before the rename name scouts `investigator-`.
 const nameMatchesRole = (task: Task): boolean =>
   task.name === undefined ||
-  task.name.startsWith(task.loadout.role === 'editing' ? 'worker-' : 'investigator-');
+  (task.loadout.role === 'editing' ? /^worker-/ : /^(scout|investigator)-/).test(task.name);
 
 const modelArgumentsAreConsistent = (loadout: GenericLoadout): boolean =>
   loadout.requestedModel === undefined || Boolean(loadout.arguments.length);

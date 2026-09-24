@@ -59,7 +59,7 @@ const questionFixture = () => {
     monotonicDeadline: 20000,
     loadout: {
       harness: 'pi',
-      profile: 'investigator',
+      profile: 'scout',
       role: 'investigation',
       model: 'faux/test',
       thinking: 'off',
@@ -221,6 +221,15 @@ it('skips tasks saved in a retired format without blocking current tasks', () =>
       (taskId) => `Skipped task ${taskId} saved in a retired format; start a fresh task instead.`,
     ),
   );
+});
+
+it('reads a task saved before investigators were renamed to scouts', () => {
+  const { directory, task } = questionFixture();
+  const saved = { ...task, name: 'investigator-ab' };
+  mkdirSync(join(directory, 'old'));
+  records.publish(join(directory, 'old'), 'task.json', saved);
+
+  expect(records.readTask(join(directory, 'old'))).toEqual(saved);
 });
 
 it('skips an invalid current-format task but refuses a direct read', () => {

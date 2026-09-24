@@ -2375,11 +2375,11 @@ it('retains the chosen name but never retries a late live collision', async ({
   });
 
   expect(status).toMatchObject({
-    name: 'investigator-xy',
+    name: 'scout-xy',
     outcome: 'failure',
   });
 
-  expect(readTask(status.directory).name).toBe('investigator-xy');
+  expect(readTask(status.directory).name).toBe('scout-xy');
   expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(calls.some((call) => ['prompt', 'send-keys'].includes(call[1] ?? ''))).toBe(false);
 });
@@ -4237,7 +4237,7 @@ it('exposes read-only widget rows without inferring success from worker readines
     throw new TypeError('Expected the launched worker in the widget.');
   }
 
-  expect(starting.name).toMatch(/^(worker|investigator)-[a-z0-9]{2}$/);
+  expect(starting.name).toMatch(/^(worker|scout)-[a-z0-9]{2}$/);
 
   expect(starting).toMatchObject({
     state: 'starting',
@@ -4451,7 +4451,7 @@ it('keeps historical tasks without saved names in the worker history', async ({
 
   const [row] = fixture.controller.widgetRows(fixture.input.parentSessionId);
 
-  const roleName = task.loadout.role === 'editing' ? 'worker' : 'investigator';
+  const roleName = task.loadout.role === 'editing' ? 'worker' : 'scout';
 
   expect(row?.taskId).toBe(launched.taskId);
   expect(row?.name).toBe(`${roleName}-${launched.taskId.slice(0, 6)}`);

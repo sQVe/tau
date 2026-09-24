@@ -197,7 +197,7 @@ it('updates the parent widget from live worker rows without a model turn', () =>
 
   vi.spyOn(WorkerController.prototype, 'widgetRows').mockReturnValue([
     {
-      name: 'investigator-ab',
+      name: 'scout-ab',
       taskId: 'task-a',
       state: 'running',
       createdAt: 1,
@@ -232,7 +232,7 @@ it('updates the parent widget from live worker rows without a model turn', () =>
 
   const component = widgetFactory({} as never, testTheme as never);
 
-  expect(component.render(80).join('\n')).toContain('investigator-ab');
+  expect(component.render(80).join('\n')).toContain('scout-ab');
   expect(component.render(80).join('\n')).not.toContain('/subagents');
   expect(component.handleMouse).toBeUndefined();
   expect(component.handleInput).toBeUndefined();

@@ -229,8 +229,17 @@ it('refuses worker startup without the saved model, cwd, or CC Safety Net and ac
   expect(setActiveTools).toHaveBeenCalledOnce();
 });
 
+it('launches the bundled reviewer without editing responsibility', async ({ onTestFinished }) => {
+  const { context, request } = await workerFixture(onTestFinished);
+
+  expect(resolveLoadout({ ...request, profile: 'reviewer' }, context)).toMatchObject({
+    profile: 'reviewer',
+    role: 'investigation',
+  });
+});
+
 it('defaults bundled roles to medium effort without model or effort settings in markdown', () => {
-  for (const name of ['investigator', 'worker']) {
+  for (const name of ['scout', 'worker', 'reviewer']) {
     const source = new URL(`./profiles/${name}.md`, import.meta.url);
     const content = readFileSync(source, 'utf8');
 

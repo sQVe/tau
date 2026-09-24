@@ -68,7 +68,7 @@ export const allocateName = (allocation: NameAllocation): string => {
     taken.add(name);
   }
 
-  const prefix = allocation.role === 'editing' ? 'worker' : 'investigator';
+  const prefix = allocation.role === 'editing' ? 'worker' : 'scout';
 
   for (let attempt = 0; attempt < 32; attempt++) {
     const name = `${prefix}-${allocation.suffix()}`;

@@ -423,12 +423,12 @@ it('sends the autonomous assignment and handoff contract to a generic worker', a
   expect(prompt).toContain(handoffContract);
 });
 
-it('keeps the editing assignment out of a generic investigator prompt', async () => {
+it('keeps the editing assignment out of a generic scout prompt', async () => {
   const setup = fixture();
 
   setup.input.loadout = {
     ...setup.input.loadout,
-    profile: 'investigator',
+    profile: 'scout',
     role: 'investigation',
   };
 

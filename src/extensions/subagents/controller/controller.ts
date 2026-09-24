@@ -485,7 +485,7 @@ const buildWidgetRow = (
   return {
     name:
       task.name ??
-      `${task.loadout.role === 'editing' ? 'worker' : 'investigator'}-${task.taskId.slice(0, 6)}`,
+      `${task.loadout.role === 'editing' ? 'worker' : 'scout'}-${task.taskId.slice(0, 6)}`,
     ...(task.label === undefined ? {} : { label: task.label }),
     taskId: task.taskId,
     task: task.task,
@@ -1445,7 +1445,7 @@ export class WorkerController {
   }
 
   private buildTask(input: LaunchInput, plan: LaunchTaskPlan): Task {
-    const namePrefix = input.loadout.role === 'editing' ? 'worker' : 'investigator';
+    const namePrefix = input.loadout.role === 'editing' ? 'worker' : 'scout';
 
     return validateTask({
       version: isGenericLoadout(input.loadout) ? 2 : 1,
