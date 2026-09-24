@@ -4,11 +4,47 @@ import { join } from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { isMissingFile } from '../../errors/index.js';
-import { reviewGit } from './commentReview.js';
 import { normalizeRepositoryPath } from './validation.js';
 
+interface RunGitOptions {
+  signal?: AbortSignal | undefined;
+  timeout?: number | null;
+}
+
+export const runGit = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+  commandArguments: string[],
+  options: RunGitOptions = {},
+) => {
+  const result = await pi.exec('git', commandArguments, {
+    cwd: workingDirectory,
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.timeout === null ? {} : { timeout: options.timeout ?? 30_000 }),
+  });
+
+  if (result.code !== 0 || result.killed) {
+    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr || result.stdout}`);
+  }
+
+  return result.stdout;
+};
+
+export const readIndex = (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) =>
+  runGit(pi, workingDirectory, ['ls-files', '--stage', '--debug', '-v', '-z']);
+
+export const writeTree = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+  signal: AbortSignal | undefined,
+) => {
+  const tree = await runGit(pi, workingDirectory, ['write-tree'], { signal });
+
+  return tree.trim();
+};
+
 export const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
-  const output = await reviewGit(
+  const output = await runGit(
     pi,
     workingDirectory,
     ['diff', '--cached', '--no-relative', '--name-only', '--diff-filter=ACMRDT', '-z'],
@@ -47,7 +83,7 @@ export const stageFiles = (
   workingDirectory: string,
   files: string[],
 ) =>
-  reviewGit(pi, workingDirectory, ['--literal-pathspecs', 'add', '--', ...files], {
+  runGit(pi, workingDirectory, ['--literal-pathspecs', 'add', '--', ...files], {
     timeout: null,
   });
 
@@ -56,7 +92,7 @@ export const unstageFiles = (
   workingDirectory: string,
   files: string[],
 ) =>
-  reviewGit(pi, workingDirectory, ['--literal-pathspecs', 'reset', '--', ...files], {
+  runGit(pi, workingDirectory, ['--literal-pathspecs', 'reset', '--', ...files], {
     timeout: null,
   });
 
@@ -66,7 +102,7 @@ export const repositoryPathPrefix = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
 ) => {
-  const output = await reviewGit(
+  const output = await runGit(
     pi,
     workingDirectory,
     ['rev-parse', '--is-inside-work-tree', '--show-prefix'],
@@ -96,7 +132,7 @@ export const listCommitPaths = async (
   workingDirectory: string,
   commitHash: string,
 ) => {
-  const output = await reviewGit(
+  const output = await runGit(
     pi,
     workingDirectory,
     [

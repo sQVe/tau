@@ -7,6 +7,7 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { resolveDelegate } from '../../delegateModel/index.js';
+import { runGit } from './gitCommands.js';
 
 export const commentPolicy = `Review code comments in the staged changes. Do not review unrelated code quality.
 Check changed comments and existing comments whose meaning is affected by changed behavior.
@@ -95,11 +96,6 @@ interface ReviewEntry {
   deleted: boolean;
 }
 
-interface ReviewGitOptions {
-  signal?: AbortSignal | undefined;
-  timeout?: number | null;
-}
-
 interface BlobRequest {
   workingDirectory: string;
   tree: string;
@@ -131,25 +127,6 @@ interface BatchRunRequest {
   signal: AbortSignal | undefined;
 }
 
-export const reviewGit = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
-  workingDirectory: string,
-  commandArguments: string[],
-  options: ReviewGitOptions = {},
-) => {
-  const result = await pi.exec('git', commandArguments, {
-    cwd: workingDirectory,
-    ...(options.signal ? { signal: options.signal } : {}),
-    ...(options.timeout === null ? {} : { timeout: options.timeout ?? 30_000 }),
-  });
-
-  if (result.code !== 0 || result.killed) {
-    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr || result.stdout}`);
-  }
-
-  return result.stdout;
-};
-
 const parseReview = (text: string, files: ReviewFile[], deletedPaths: string[]): CommentReview => {
   const result: unknown = JSON.parse(stripFence(text));
 
@@ -177,7 +154,7 @@ const readBlob = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   request: BlobRequest,
 ): Promise<string | null> => {
-  const entry = await reviewGit(
+  const entry = await runGit(
     pi,
     request.workingDirectory,
     ['--literal-pathspecs', 'ls-tree', '--full-tree', '-l', '-z', request.tree, '--', request.path],
@@ -200,7 +177,7 @@ const readBlob = async (
     );
   }
 
-  const content = await reviewGit(pi, request.workingDirectory, ['cat-file', 'blob', hash], {
+  const content = await runGit(pi, request.workingDirectory, ['cat-file', 'blob', hash], {
     signal: request.signal,
   });
 
@@ -503,7 +480,7 @@ const resolveReviewBase = async (
     return snapshot.head;
   }
 
-  const emptyTree = await reviewGit(pi, cwd, ['mktree'], { signal });
+  const emptyTree = await runGit(pi, cwd, ['mktree'], { signal });
 
   return emptyTree.trim();
 };
@@ -513,7 +490,7 @@ const collectDiff = async (
   request: { cwd: string; base: string; tree: string; signal: AbortSignal | undefined },
 ): Promise<{ paths: string[]; diffSections: string[]; binaryPaths: string[] }> => {
   const diffArguments = buildDiffArguments(request.base, request.tree);
-  const pathsOutput = await reviewGit(
+  const pathsOutput = await runGit(
     pi,
     request.cwd,
     ['--no-literal-pathspecs', 'diff', '--name-only', '-z', ...diffArguments],
@@ -525,13 +502,10 @@ const collectDiff = async (
     return { paths, diffSections: [], binaryPaths: [] };
   }
 
-  const diff = await reviewGit(
-    pi,
-    request.cwd,
-    ['--no-literal-pathspecs', 'diff', ...diffArguments],
-    { signal: request.signal },
-  );
-  const numstat = await reviewGit(
+  const diff = await runGit(pi, request.cwd, ['--no-literal-pathspecs', 'diff', ...diffArguments], {
+    signal: request.signal,
+  });
+  const numstat = await runGit(
     pi,
     request.cwd,
     ['--no-literal-pathspecs', 'diff', '--numstat', '-z', ...diffArguments],

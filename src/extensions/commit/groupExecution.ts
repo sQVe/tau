@@ -5,21 +5,19 @@ import type { ExecResult, ExtensionAPI, ExtensionContext } from '@earendil-works
 
 import { delegateReference } from '../../delegateModel/index.js';
 import { errorMessage, isMissingFile } from '../../errors/index.js';
-import {
-  commentPolicyHash,
-  formatCommentReview,
-  isAdvisoryFinding,
-  reviewGit,
-} from './commentReview.js';
+import { commentPolicyHash, formatCommentReview, isAdvisoryFinding } from './commentReview.js';
 import type { CommentReview } from './commentReview.js';
 import {
   currentHead,
   listCommitPaths,
+  readIndex,
   listStagedPaths,
   repositoryPathPrefix,
+  runGit,
   stageFiles,
   unstageFiles,
   validateFileRequests,
+  writeTree,
 } from './gitCommands.js';
 import type { CommitSuccess, RequestReview, Reviews, ReviewState } from './types.js';
 import {
@@ -152,18 +150,8 @@ const prepareReviewState = (run: GroupRun): void => {
 };
 
 const snapshotStagedTree = async (run: GroupRun): Promise<boolean> => {
-  const treeOutput = await reviewGit(run.pi, run.context.cwd, ['write-tree'], {
-    signal: run.signal,
-  });
-
-  run.snapshot.reviewedTree = treeOutput.trim();
-  run.snapshot.reviewedIndex = await reviewGit(run.pi, run.context.cwd, [
-    'ls-files',
-    '--stage',
-    '--debug',
-    '-v',
-    '-z',
-  ]);
+  run.snapshot.reviewedTree = await writeTree(run.pi, run.context.cwd, run.signal);
+  run.snapshot.reviewedIndex = await readIndex(run.pi, run.context.cwd);
   run.snapshot.reviewedHead = await currentHead(run.pi, run.context.cwd);
 
   if (run.signal?.aborted) {
@@ -270,13 +258,7 @@ const enforceReviewGate = (run: GroupRun): void => {
 };
 
 const verifyUnchanged = async (run: GroupRun): Promise<void> => {
-  const currentIndex = await reviewGit(run.pi, run.context.cwd, [
-    'ls-files',
-    '--stage',
-    '--debug',
-    '-v',
-    '-z',
-  ]);
+  const currentIndex = await readIndex(run.pi, run.context.cwd);
 
   if (currentIndex !== run.snapshot.reviewedIndex) {
     throw new Error(
@@ -284,10 +266,7 @@ const verifyUnchanged = async (run: GroupRun): Promise<void> => {
     );
   }
 
-  const currentTreeOutput = await reviewGit(run.pi, run.context.cwd, ['write-tree'], {
-    signal: run.signal,
-  });
-  const currentTree = currentTreeOutput.trim();
+  const currentTree = await writeTree(run.pi, run.context.cwd, run.signal);
   const changedSinceReview =
     currentTree !== run.snapshot.reviewedTree ||
     (await currentHead(run.pi, run.context.cwd)) !== run.snapshot.reviewedHead;
@@ -328,13 +307,7 @@ const assertCleanupOwnership = async (check: CleanupCheck): Promise<void> => {
     throw new Error('Concurrent staging was left untouched. Inspect the index before retrying.');
   }
 
-  const currentIndex = await reviewGit(check.pi, check.cwd, [
-    'ls-files',
-    '--stage',
-    '--debug',
-    '-v',
-    '-z',
-  ]);
+  const currentIndex = await readIndex(check.pi, check.cwd);
 
   if (check.snapshot.reviewedTree && (await snapshotChanged(check, currentIndex))) {
     throw new Error('Staged content or HEAD changed. Concurrent staging was left untouched.');
@@ -455,7 +428,7 @@ const buildCommitReport = async (
   const storedBody =
     firstNewline === -1 ? '' : storedMessage.slice(firstNewline + 1).replace(/^\n/, '');
 
-  const changedPathsOutput = await reviewGit(run.pi, run.context.cwd, [
+  const changedPathsOutput = await runGit(run.pi, run.context.cwd, [
     'diff',
     '--no-ext-diff',
     '--no-textconv',
@@ -516,9 +489,9 @@ const reportCommit = async (run: GroupRun, commitResult: ExecResult): Promise<Co
 
   // A reporting failure must not hide a successful commit or undo hooks' work.
   try {
-    const commitHashOutput = await reviewGit(run.pi, run.context.cwd, ['rev-parse', 'HEAD']);
+    const commitHashOutput = await runGit(run.pi, run.context.cwd, ['rev-parse', 'HEAD']);
     const capturedHead = commitHashOutput.trim();
-    const commitObject = await reviewGit(run.pi, run.context.cwd, ['cat-file', '-p', capturedHead]);
+    const commitObject = await runGit(run.pi, run.context.cwd, ['cat-file', '-p', capturedHead]);
     const messageOffset = commitObject.indexOf('\n\n');
     const firstParent = commitObject.slice(0, messageOffset).match(/^parent (.+)$/m)?.[1] ?? null;
 
