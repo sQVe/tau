@@ -7,13 +7,14 @@ import type {
 import { Type } from 'typebox';
 
 import { resolveDelegate } from '../../delegateModel/index.js';
-import { bulkReadInputError, bulkReadTool, bulkRead } from './tool.js';
+import { BulkReadRecoverableError, bulkReadTool, bulkRead, isCancellation } from './tool.js';
 
 // ADR 0014 records the measurement behind this threshold.
 export const bulkReadLineThreshold = 400;
 
-// Recoverable failures say nothing about whether the delegate is reachable, so trimming stays on.
-const recoverableErrors = new Set(['AbortError', 'TimeoutError', bulkReadInputError]);
+// Cancellations and timeouts, like recoverable bulk read failures, say nothing about the delegate.
+const isRecoverable = (error: unknown): boolean =>
+  error instanceof BulkReadRecoverableError || isCancellation(error);
 
 const bulkReadDescription =
   'Ask a cheaper model for focused summaries, test inventories, and line-cited evidence from supplied files, not correctness or branch review judgments.';
@@ -74,7 +75,7 @@ const registerBulkRead = (pi: ExtensionAPI, state: BulkReadState): void => {
 
         return await bulkRead(context, model, params, signal);
       } catch (error) {
-        if (!(error instanceof Error) || !recoverableErrors.has(error.name)) {
+        if (!isRecoverable(error)) {
           state.trimming = false;
         }
 

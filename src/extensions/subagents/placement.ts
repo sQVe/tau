@@ -8,7 +8,7 @@ import {
 // Replaces tmux.ts surface placement from pi-interactive-subagents c3e8b53.
 import {
   listTerminals,
-  object,
+  requireObject,
   resolveTerminal,
   result,
   terminalLocation,
@@ -38,7 +38,7 @@ const splitCandidate = (
 
   const candidates = layout.panes
     .flatMap((value) => {
-      const pane = object(value);
+      const pane = requireObject(value);
       const bounds = rectangle(pane.rect);
       const direction = splitDirection(bounds);
       const location = eligible.find((entry) => entry.paneId === text(pane.pane_id));
@@ -208,7 +208,9 @@ export class WorkerPlacement {
       throw new Error('Placement target moved or closed; no layout changes.');
     }
 
-    const latest = object(result(await call(['pane', 'layout', '--pane', target.paneId])).layout);
+    const latest = requireObject(
+      result(await call(['pane', 'layout', '--pane', target.paneId])).layout,
+    );
 
     if (layoutShape(latest) !== shape) {
       throw new Error('Layout changed during placement; no layout changes.');
@@ -223,7 +225,9 @@ export class WorkerPlacement {
       return undefined;
     }
 
-    let layout = object(result(await call(['pane', 'layout', '--pane', first.paneId])).layout);
+    let layout = requireObject(
+      result(await call(['pane', 'layout', '--pane', first.paneId])).layout,
+    );
     const plan = visibility === 'foreground' ? this.foreground.plan(layout, eligible) : undefined;
 
     if (plan) {
@@ -311,7 +315,7 @@ export class WorkerPlacement {
       throw new Error('Parent moved during placement; no layout changes.');
     }
 
-    const parentLayout = object(
+    const parentLayout = requireObject(
       result(await call(['pane', 'layout', '--pane', currentParent.paneId])).layout,
     );
     const area = rectangle(parentLayout.area);

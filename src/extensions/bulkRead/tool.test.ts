@@ -115,7 +115,7 @@ it('rejects aggregate file sizes above the model cap before loading later paths'
   await expect(
     bulkRead(context, model, { paths: ['large', 'large', 'missing'], question: 'Why?' }, undefined),
   ).rejects.toMatchObject({
-    name: 'BulkReadInputError',
+    name: 'BulkReadRecoverableError',
     message: 'Input is too large. Split the request',
   });
   expect(complete).not.toHaveBeenCalled();
@@ -162,7 +162,7 @@ it.each([
     await expect(
       bulkRead(context, model, { ...params, question: `${question}?` }, undefined),
     ).rejects.toMatchObject({
-      name: 'BulkReadInputError',
+      name: 'BulkReadRecoverableError',
       message: 'Input is too large. Split the request',
     });
     expect(complete).not.toHaveBeenCalled();

@@ -5,7 +5,7 @@ import type { HerdrClient } from './controllerInspect.js';
 import { cleanupDetail } from './controllerRecord.js';
 import type { Handle } from './controllerTypes.js';
 import type { WorkerPlacement } from './placement.js';
-import { object, resolveTerminal, result, text } from './terminal.js';
+import { requireObject, resolveTerminal, result, text } from './terminal.js';
 
 export interface StopOwnedWorkerRequest {
   handle: Handle;
@@ -34,7 +34,7 @@ const checkShellOwned = async (
 
   handle.paneId = location.paneId;
   handle.owned = owned;
-  const information = object(
+  const information = requireObject(
     result(await call(['pane', 'process-info', '--pane', owned.paneId])).process_info,
   );
 

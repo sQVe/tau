@@ -10,7 +10,7 @@ export interface TerminalLocation {
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-export const object = (value: unknown): Record<string, unknown> => {
+export const requireObject = (value: unknown): Record<string, unknown> => {
   if (!isObject(value)) {
     throw new Error('Malformed herdr response.');
   }
@@ -19,7 +19,7 @@ export const object = (value: unknown): Record<string, unknown> => {
 };
 
 export const result = (response: string): Record<string, unknown> =>
-  object(object(JSON.parse(response)).result);
+  requireObject(requireObject(JSON.parse(response)).result);
 
 export const text = (value: unknown): string => {
   if (typeof value !== 'string' || !value) {
@@ -30,7 +30,7 @@ export const text = (value: unknown): string => {
 };
 
 export const terminalLocation = (value: unknown): TerminalLocation => {
-  const pane = object(value);
+  const pane = requireObject(value);
 
   return {
     paneId: text(pane.pane_id),

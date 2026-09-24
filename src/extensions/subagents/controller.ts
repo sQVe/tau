@@ -19,6 +19,8 @@ import {
   workBudget,
   boundedTiming,
   launchTiming,
+  remainingCleanupBudget,
+  remainingLaunchBudget,
   remainingWorkBudget,
   treeCapacity,
 } from './controllerBudget.js';
@@ -83,7 +85,8 @@ import {
   validateTask,
   recordEvent,
 } from './records.js';
-import { resolveTerminal, text, object, result } from './terminal.js';
+import { resolveTerminal, text, requireObject, result } from './terminal.js';
+import type { TerminalCall } from './terminal.js';
 import { isGenericLoadout, isPiLoadout } from './types.js';
 import type { GenericLoadout, ReplyDelivery, SubmissionState, Task } from './types.js';
 
@@ -217,6 +220,10 @@ export class WorkerController {
     private readonly client: HerdrClient = herdrClient,
     private readonly notify: (notice: WorkerNotice) => void = () => undefined,
   ) {}
+
+  private herdrCall(handle: Handle): TerminalCall {
+    return (argumentsList) => this.client(argumentsList, workBudget(handle), handle.abort.signal);
+  }
 
   async parentAuthority(parentSession: string, parentSessionId: string, signal?: AbortSignal) {
     const identity = await currentProcessIdentity(signal);
@@ -358,8 +365,7 @@ export class WorkerController {
       throw new Error('Native output requires an active owned generic worker.');
     }
 
-    const call = (argumentsList: string[]) =>
-      this.client(argumentsList, workBudget(handle), handle.abort.signal);
+    const call = this.herdrCall(handle);
     const worker = await inspectWorker(handle, call);
     const location = await resolveTerminal(worker.terminalId, call);
 
@@ -406,8 +412,7 @@ export class WorkerController {
   ) {
     requireGenericReplyShape(answer);
     const { directory, task } = handle;
-    const call = (argumentsList: string[]) =>
-      this.client(argumentsList, workBudget(handle), handle.abort.signal);
+    const call = this.herdrCall(handle);
 
     // Check the saved submission before native state. A saved reply is never sent twice, so a
     // blocked dialog must not turn a repeat into an error.
@@ -511,8 +516,7 @@ export class WorkerController {
       throw new Error('Reply does not match the pending question.');
     }
 
-    const call = (argumentsList: string[]) =>
-      this.client(argumentsList, workBudget(handle), handle.abort.signal);
+    const call = this.herdrCall(handle);
     const worker = await inspectWorker(handle, call);
     const location = await resolveTerminal(worker.terminalId, call);
 
@@ -537,8 +541,7 @@ export class WorkerController {
     const { taskId } = handle.task;
     const reference = { version: 1, taskId, questionId, replyId: answer.replyId };
     const prompt = `TAU_REPLY ${JSON.stringify(reference)}`;
-    const call = (argumentsList: string[]) =>
-      this.client(argumentsList, workBudget(handle), handle.abort.signal);
+    const call = this.herdrCall(handle);
 
     acceptReply(directory, taskId, value);
 
@@ -667,9 +670,7 @@ export class WorkerController {
     const validationSignal = AbortSignal.any([
       signal,
       this.lifetime.signal,
-      AbortSignal.timeout(
-        Math.max(1, Math.floor(timing.expires - timing.cancellationBudget - performance.now())),
-      ),
+      AbortSignal.timeout(Math.max(1, remainingLaunchBudget(timing))),
     ]);
     validationSignal.throwIfAborted();
 
@@ -700,11 +701,7 @@ export class WorkerController {
     });
   }
 
-  private placeWorker(
-    input: LaunchInput,
-    handle: Handle,
-    call: (argumentsList: string[]) => Promise<string>,
-  ) {
+  private placeWorker(input: LaunchInput, handle: Handle, call: TerminalCall) {
     return this.placement.place(
       {
         ...(input.parentPane ? { parentPane: input.parentPane } : {}),
@@ -732,7 +729,7 @@ export class WorkerController {
     handle: Handle,
     paneId: string,
     name: string,
-    call: (argumentsList: string[]) => Promise<string>,
+    call: TerminalCall,
   ): Promise<void> {
     const { task } = handle;
     const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
@@ -760,7 +757,7 @@ export class WorkerController {
     handle: Handle,
     paneId: string,
     name: string,
-    call: (argumentsList: string[]) => Promise<string>,
+    call: TerminalCall,
   ): Promise<void> {
     try {
       await this.startAgent(handle, paneId, name, call);
@@ -796,7 +793,7 @@ export class WorkerController {
     handle: Handle,
     paneId: string,
     name: string,
-    call: (argumentsList: string[]) => Promise<string>,
+    call: TerminalCall,
   ): Promise<void> {
     const { task } = handle;
     const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
@@ -820,10 +817,10 @@ export class WorkerController {
   private async prepareStart(
     handle: Handle,
     paneId: string,
-    call: (argumentsList: string[]) => Promise<string>,
+    call: TerminalCall,
     generic?: GenericLoadout,
   ): Promise<void> {
-    const information = object(
+    const information = requireObject(
       result(await call(['pane', 'process-info', '--pane', paneId])).process_info,
     );
     const shellPid = integer(information.shell_pid);
@@ -880,10 +877,7 @@ export class WorkerController {
     return ['idle', 'done'].includes(handle.nativeState ?? 'unknown');
   }
 
-  private async dispatch(
-    handle: Handle,
-    call: (argumentsList: string[]) => Promise<string>,
-  ): Promise<void> {
+  private async dispatch(handle: Handle, call: TerminalCall): Promise<void> {
     const { directory, task } = handle;
 
     if (isPiLoadout(task.loadout)) {
@@ -948,8 +942,7 @@ export class WorkerController {
         checkHandoff(this.root, source, handle.task);
       }
 
-      const call = (argumentsList: string[]) =>
-        this.client(argumentsList, workBudget(handle), handle.abort.signal);
+      const call = this.herdrCall(handle);
       const location = await this.placeWorker(input, handle, call);
 
       if (source) {
@@ -1033,7 +1026,7 @@ export class WorkerController {
     launchSignal: AbortSignal,
     bounded: ReturnType<typeof boundedTiming>,
   ) {
-    const remaining = Math.floor(bounded.expires - bounded.cancellationBudget - performance.now());
+    const remaining = remainingLaunchBudget(bounded);
     const listingSignal = AbortSignal.any([
       launchSignal,
       this.lifetime.signal,
@@ -1044,10 +1037,7 @@ export class WorkerController {
     );
     listingSignal.throwIfAborted();
 
-    if (
-      listing.type !== 'agent_list' ||
-      performance.now() >= bounded.expires - bounded.cancellationBudget
-    ) {
+    if (listing.type !== 'agent_list' || remainingLaunchBudget(bounded) <= 0) {
       throw new Error('Invalid live agent listing or original startup budget expired.');
     }
 
@@ -1107,14 +1097,11 @@ export class WorkerController {
       () => {
         void this.stop(handle, 'timeout');
       },
-      Math.max(1, handle.expires - handle.task.cancellationBudget - performance.now()),
+      Math.max(1, remainingWorkBudget(handle)),
     );
   }
 
-  private async finishStartup(
-    handle: Handle,
-    call: (argumentsList: string[]) => Promise<string>,
-  ): Promise<void> {
+  private async finishStartup(handle: Handle, call: TerminalCall): Promise<void> {
     if (!isPiLoadout(handle.task.loadout)) {
       if (handle.startError !== undefined && (await verifyRejectedStart(handle, call))) {
         handle.workerNeverStarted = true;
@@ -1163,10 +1150,7 @@ export class WorkerController {
       },
       Math.max(
         1,
-        Math.min(
-          isGenericLoadout(handle.task.loadout) ? 1500 : 250,
-          handle.expires - handle.task.cancellationBudget - performance.now(),
-        ),
+        Math.min(isGenericLoadout(handle.task.loadout) ? 1500 : 250, remainingWorkBudget(handle)),
       ),
     );
   }
@@ -1274,8 +1258,7 @@ export class WorkerController {
       return;
     }
 
-    const call = (argumentsList: string[]) =>
-      this.client(argumentsList, workBudget(handle), handle.abort.signal);
+    const call = this.herdrCall(handle);
     const previousState = handle.nativeState;
 
     handle.owned = await inspectWorker(handle, call);
@@ -1397,7 +1380,7 @@ export class WorkerController {
 
   private async recoverStartup(
     handle: Handle,
-    call: (argumentsList: string[]) => Promise<string>,
+    call: TerminalCall,
     budget: InspectionBudget,
     record: (operation: () => void) => void,
   ): Promise<string> {
@@ -1446,10 +1429,7 @@ export class WorkerController {
         handle.recordErrors.push(String(error));
       }
     };
-    const budget = Math.max(
-      1,
-      Math.floor(Math.min(task.cancellationBudget, handle.expires - performance.now())),
-    );
+    const budget = Math.max(1, remainingCleanupBudget(handle));
     const expires = Math.min(handle.expires, performance.now() + budget);
     const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(budget)]);
     const remainingBudget = () => {

@@ -4,7 +4,7 @@ import { minimumPane } from '../src/extensions/subagents/foreground.js';
 import { WorkerPlacement } from '../src/extensions/subagents/placement.js';
 import {
   listTerminals,
-  object,
+  requireObject,
   resolveTerminal,
   result,
   terminalLocation,
@@ -36,8 +36,12 @@ it.runIf(hasHerdr).each([
         ),
       ),
     );
-    const layout = object(result(await client(['pane', 'layout', '--pane', parent.paneId])).layout);
-    const entries = (layout.panes as Record<string, unknown>[]).map((pane) => object(pane.rect));
+    const layout = requireObject(
+      result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,
+    );
+    const entries = (layout.panes as Record<string, unknown>[]).map((pane) =>
+      requireObject(pane.rect),
+    );
     const areas = entries.map((bounds) => Number(bounds.width) * Number(bounds.height));
 
     expect(layout.area).toMatchObject({ width, height });
@@ -80,8 +84,12 @@ it.runIf(hasHerdr).each([0, 1])(
       await client(['pane', 'close', closing.paneId]);
     });
     const replacement = await placement.place(input, client);
-    const layout = object(result(await client(['pane', 'layout', '--pane', parent.paneId])).layout);
-    const entries = (layout.panes as Record<string, unknown>[]).map((pane) => object(pane.rect));
+    const layout = requireObject(
+      result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,
+    );
+    const entries = (layout.panes as Record<string, unknown>[]).map((pane) =>
+      requireObject(pane.rect),
+    );
     const areas = entries.map((bounds) => Number(bounds.width) * Number(bounds.height));
     const terminals = await listTerminals(client);
 
@@ -140,10 +148,14 @@ it.runIf(hasHerdr)(
       '0.1',
     ]);
     await client(['pane', 'focus', '--pane', parent.paneId, '--direction', 'right']);
-    const before = object(result(await client(['pane', 'layout', '--pane', parent.paneId])).layout);
+    const before = requireObject(
+      result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,
+    );
     await placement.place(input, client);
     await placement.place(input, client);
-    const after = object(result(await client(['pane', 'layout', '--pane', parent.paneId])).layout);
+    const after = requireObject(
+      result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,
+    );
     const beforeSplits = before.splits as Record<string, unknown>[];
     const afterSplits = after.splits as Record<string, unknown>[];
     const beforePanes = before.panes as Record<string, unknown>[];
@@ -202,8 +214,10 @@ it.runIf(hasHerdr)(
       '--amount',
       '0.05',
     ]);
-    const before = object(result(await client(['pane', 'layout', '--pane', parent.paneId])).layout);
-    const focusBefore = object(result(await client(['api', 'snapshot'])).snapshot);
+    const before = requireObject(
+      result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,
+    );
+    const focusBefore = requireObject(result(await client(['api', 'snapshot'])).snapshot);
     const placement = new WorkerPlacement();
     const workers = await Promise.all(
       Array.from({ length: 10 }, () =>
@@ -218,8 +232,10 @@ it.runIf(hasHerdr)(
         ),
       ),
     );
-    const after = object(result(await client(['pane', 'layout', '--pane', parent.paneId])).layout);
-    const focusAfter = object(result(await client(['api', 'snapshot'])).snapshot);
+    const after = requireObject(
+      result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,
+    );
+    const focusAfter = requireObject(result(await client(['api', 'snapshot'])).snapshot);
 
     expect(after).toEqual(before);
     expect(workers).toHaveLength(10);
@@ -231,7 +247,7 @@ it.runIf(hasHerdr)(
 
     for (const worker of workers) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- Check real geometry of every created terminal, not a fixed tab capacity.
-      const layout = object(
+      const layout = requireObject(
         result(await client(['pane', 'layout', '--pane', worker.paneId])).layout,
       );
       const panes = layout.panes as { pane_id: string; rect: { width: number; height: number } }[];
@@ -241,7 +257,7 @@ it.runIf(hasHerdr)(
       expect(bounds.height).toBeGreaterThanOrEqual(minimumPane.height);
     }
 
-    const moved = object(
+    const moved = requireObject(
       result(await client(['pane', 'move', workers[0]!.paneId, '--new-workspace', '--no-focus']))
         .move_result,
     );
@@ -255,7 +271,7 @@ it.runIf(hasHerdr)(
     expect(remaining.some((pane) => pane.terminalId === resolved.terminalId)).toBe(false);
     expect(remaining.some((pane) => pane.terminalId === unrelated.terminalId)).toBe(true);
     expect(
-      object(result(await client(['pane', 'layout', '--pane', parent.paneId])).layout),
+      requireObject(result(await client(['pane', 'layout', '--pane', parent.paneId])).layout),
     ).toEqual(before);
   },
   20_000,

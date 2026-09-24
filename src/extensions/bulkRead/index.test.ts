@@ -293,11 +293,11 @@ it.each(['error', 'aborted', 'length', 'throw', 'abort', 'timeout', 'file', 'loo
     const expected = {
       error: { name: 'Error', message: 'pi --list-models' },
       aborted: { name: 'AbortError', message: 'failed: aborted' },
-      length: { name: 'AbortError', message: 'failed: length' },
+      length: { name: 'BulkReadRecoverableError', message: 'failed: length' },
       throw: { name: 'Error', message: 'denied. Check pi --list-models.' },
       abort: { name: 'AbortError', message: 'cancelled' },
       timeout: { name: 'TimeoutError', message: 'timed out' },
-      file: { name: 'BulkReadInputError', message: '/missing/tau-bulk-file' },
+      file: { name: 'BulkReadRecoverableError', message: '/missing/tau-bulk-file' },
       lookup: { name: 'Error', message: 'denied' },
     }[reason];
     const failure = app.execute(signal, paths);
@@ -323,7 +323,7 @@ it('keeps trimming and accepts a smaller request after exceeding the model cap',
   await writeFile(path, 'x'.repeat(301));
 
   await expect(app.execute(undefined, [path])).rejects.toMatchObject({
-    name: 'BulkReadInputError',
+    name: 'BulkReadRecoverableError',
     message: 'Input is too large. Split the request',
   });
   expect(app.complete).not.toHaveBeenCalled();
