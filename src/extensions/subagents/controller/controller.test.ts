@@ -1,4 +1,4 @@
-import * as fileSystem from 'node:fs';
+import type * as fileSystem from 'node:fs';
 import {
   fsyncSync,
   mkdirSync,
@@ -14,13 +14,11 @@ import { dirname, join } from 'node:path';
 import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
 import { writeWorkerActivity } from '../activity.js';
-import { admissionDirectory, inheritedInstructions } from '../admission.js';
 import * as cancellationModule from '../cancellation.js';
 import { herdrFake } from '../fixtures/herdrFake.js';
 import { placementFixture } from '../fixtures/layout.js';
 import { fixtureLoadout, readPiTask as readTask } from '../fixtures/loadout.js';
 import { searchHistory } from '../history.js';
-import * as identity from '../identity.js';
 import * as loadoutModule from '../loadout.js';
 import * as names from '../names.js';
 import { WorkerPlacement } from '../placement.js';
@@ -61,11 +59,6 @@ const setup = (
     vi.useRealTimers();
     vi.restoreAllMocks();
     rmSync(directory, { recursive: true, force: true });
-  });
-  // The fake worker uses this test process; the parent must have a distinct identity.
-  vi.spyOn(identity, 'currentProcessIdentity').mockResolvedValue({
-    processId: process.pid + 1,
-    startedAt: 'fixture parent',
   });
   writeFileSync(
     join(directory, 'parent.jsonl'),
@@ -181,7 +174,6 @@ it.each(['missing', 'empty'] as const)(
 
     expect(launched.state).toBe('stopped');
     expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
-    expect(fixture.controller.children().active).toBe(0);
     expect(fixture.calls.some((call) => call[1] === 'send-keys')).toBe(false);
     expect(fixture.calls.filter((call) => call[1] === 'close')).toEqual([
       ['pane', 'close', 'worker-1'],
@@ -282,7 +274,6 @@ it.each(['fails', 'aborts', 'times out'] as const)(
 
     expect(launched.state).toBe('stopped');
     expect(fixture.fake.state.stopped).toBe(true);
-    expect(fixture.controller.children().active).toBe(0);
     expect(fixture.calls.some((call) => call[1] === 'close')).toBe(true);
   },
 );
@@ -360,7 +351,6 @@ it('does not repeat a second structured pane-busy rejection', async ({ onTestFin
 
   expect(attempts).toBe(2);
   expect(launched.state).toBe('stopped');
-  expect(fixture.controller.children().active).toBe(0);
   expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
 });
 
@@ -400,8 +390,8 @@ it('skips unpublished preparation debris while published attempts and claims rem
     originalPublish(directory, name, value);
   });
   await expect(fixture.controller.launch(fixture.input)).rejects.toThrow('Task preparation');
-  const abandoned = readdirSync(fixture.directory, { withFileTypes: true }).find(
-    (entry) => entry.isDirectory() && entry.name !== '.admission',
+  const abandoned = readdirSync(fixture.directory, { withFileTypes: true }).find((entry) =>
+    entry.isDirectory(),
   );
 
   if (!abandoned) {
@@ -414,10 +404,6 @@ it('skips unpublished preparation debris while published attempts and claims rem
   expect(receiptFiles[0]).toMatch(/^\.receipt-/);
   const receipt = readFileSync(join(abandonedDirectory, receiptFiles[0] ?? ''));
 
-  expect(fixture.controller.children()).toEqual({
-    active: 0,
-    uncertain: [expect.stringContaining(abandonedDirectory)],
-  });
   const launched = await fixture.controller.launch(fixture.input);
   expect(launched.state).toBe('starting');
   expect(launched).not.toHaveProperty('outcome');
@@ -923,118 +909,6 @@ it('retains friendly names and avoids retained and live collisions', async ({ on
   recovered.close();
 });
 
-it('refuses admission when unreadable saved work makes tree capacity uncertain', async ({
-  onTestFinished,
-}) => {
-  vi.spyOn(names, 'nameSuffix').mockReturnValue('aa');
-  const { controller, input, directory, calls } = setup(onTestFinished);
-  mkdirSync(join(directory, 'corrupt'));
-  writeFileSync(join(directory, 'corrupt', 'task.json'), '{');
-
-  await expect(controller.launch(input)).rejects.toThrow(/JSON/);
-
-  expect(calls.filter((call) => call[1] === 'start')).toEqual([]);
-});
-
-it('bounds nested launches by the shared cap and original ancestor deadline', async ({
-  onTestFinished,
-}) => {
-  const fixture = setup(onTestFinished);
-  vi.stubEnv('TAU_SUBAGENT_CAP', '2');
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-  const parentStatus = await fixture.controller.launch(fixture.input);
-  const parent = readTask(parentStatus.directory);
-  recordEvent(parentStatus.directory, parent.taskId, 'accepted', 'Started.');
-  const owned = records.readRecord(parentStatus.directory, 'owned.json') as {
-    processId: number;
-    startedAt: string;
-  };
-  vi.mocked(identity.currentProcessIdentity).mockResolvedValue(owned);
-  vi.stubEnv('TAU_SUBAGENT_CAP', '256');
-  const nested = new WorkerController(fixture.directory, fixture.client);
-  onTestFinished(() => {
-    nested.close();
-  });
-  const input = {
-    ...fixture.input,
-    timeout: 60000,
-    parentSession: parent.nativeSessionFile,
-    parentSessionId: parent.nativeSessionId,
-    loadout: {
-      ...parent.loadout,
-      instructions: `${inheritedInstructions(parent)}Inspect the fixture.`,
-    },
-  };
-
-  vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 3600000);
-  const childStatus = await nested.launch(input);
-  const child = readTask(childStatus.directory);
-  expect(child.tree.parentTaskId).toBe(parent.taskId);
-  expect(child.tree.rootSessionId).toBe(parent.parentSessionId);
-  expect(child.tree.monotonicDeadline).toBeLessThanOrEqual(
-    parent.tree.monotonicDeadline - parent.cancellationBudget,
-  );
-  expect(child.deadline).toBeLessThanOrEqual(parent.deadline - parent.cancellationBudget);
-  expect(child.loadout.model).toBe(parent.loadout.model);
-  await expect(nested.launch(input)).rejects.toThrow('capacity full');
-  expect(nested.children().active).toBe(1);
-  const cancelled = await nested.cancel(child.taskId, parent.nativeSessionId);
-  expect(cancelled.capacityHeld).toBe(true);
-  expect(nested.children()).toMatchObject({
-    active: 0,
-    uncertain: [expect.stringContaining(child.taskId)],
-  });
-  await expect(nested.launch(input)).rejects.toThrow('capacity full');
-  expect(
-    fixture.controller.status(parent.taskId, fixture.input.parentSessionId).unconfirmedChildren,
-  ).toEqual([{ taskId: child.taskId, directory: childStatus.directory }]);
-});
-
-it('stops a nested worker as unreadable evidence, not a cancellation, when its parent is unreadable', async ({
-  onTestFinished,
-}) => {
-  const fixture = setup(onTestFinished);
-  vi.stubEnv('TAU_SUBAGENT_CAP', '2');
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-  const parentStatus = await fixture.controller.launch(fixture.input);
-  const parent = readTask(parentStatus.directory);
-  recordEvent(parentStatus.directory, parent.taskId, 'accepted', 'Started.');
-  const owned = records.readRecord(parentStatus.directory, 'owned.json') as {
-    processId: number;
-    startedAt: string;
-  };
-  vi.mocked(identity.currentProcessIdentity).mockResolvedValue(owned);
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
-  const nested = new WorkerController(fixture.directory, fixture.client);
-  onTestFinished(() => {
-    nested.close();
-  });
-  const childStatus = await nested.launch({
-    ...fixture.input,
-    timeout: 60000,
-    parentSession: parent.nativeSessionFile,
-    parentSessionId: parent.nativeSessionId,
-    loadout: {
-      ...parent.loadout,
-      instructions: `${inheritedInstructions(parent)}Inspect the fixture.`,
-    },
-  });
-  recordEvent(childStatus.directory, childStatus.taskId, 'accepted', 'Started.');
-  writeFileSync(join(parentStatus.directory, 'task.json'), '{');
-
-  await vi.advanceTimersByTimeAsync(20_000);
-
-  expect(readEvent(childStatus.directory, childStatus.taskId, 'cancelled')).toBeUndefined();
-  expect(readEvent(childStatus.directory, childStatus.taskId, 'startupFailure')).toHaveProperty(
-    'detail',
-    expect.stringContaining('Worker evidence unavailable'),
-  );
-});
-
 it('refuses full-cap native follow-up before consuming its successor claim', async () => {
   const fixture = await completed();
 
@@ -1293,7 +1167,6 @@ it('retains the chosen name but never retries a late live collision', async ({
     outcome: 'failure',
     capacityHeld: false,
   });
-  expect(controller.children()).toEqual({ active: 0, uncertain: [] });
   expect(readTask(status.directory).name).toBe('investigator-xy');
   expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(calls.some((call) => ['prompt', 'send-keys'].includes(call[1] ?? ''))).toBe(false);
@@ -2310,6 +2183,40 @@ it('refuses a prepared launch while shutdown is still draining workers', async (
   expect(fixture.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
 });
 
+it('caps live workers per controller and admits again after confirmed cleanup', async ({
+  onTestFinished,
+}) => {
+  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  const fixture = setup(onTestFinished);
+  vi.stubEnv('TAU_SUBAGENT_CAP', '2');
+  fixture.fake.state.sendKeysError = '';
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    if (fixture.fake.state.stopped) {
+      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+    }
+
+    return true;
+  });
+  const launched = await fixture.controller.launch(fixture.input);
+  const recordsBefore = readdirSync(fixture.directory);
+  const panesBefore = structuredClone(fixture.fake.layout.panes);
+
+  await expect(fixture.controller.launch(fixture.input)).rejects.toThrow('capacity full');
+
+  expect(readdirSync(fixture.directory)).toEqual(recordsBefore);
+  expect(fixture.fake.layout.panes).toEqual(panesBefore);
+  expect(fixture.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
+  await fixture.controller.cancel(launched.taskId, fixture.input.parentSessionId);
+  fixture.fake.state.stopped = false;
+  const replacement = await fixture.controller.launch(fixture.input);
+
+  expect(replacement.state).toBe('starting');
+  expect(fixture.calls.filter((call) => call[1] === 'start')).toHaveLength(2);
+});
+
 it('stops running workers and frees their slots on reload', async ({ onTestFinished }) => {
   const fixture = setup(onTestFinished);
   fixture.fake.state.sendKeysError = '';
@@ -2330,7 +2237,6 @@ it('stops running workers and frees their slots on reload', async ({ onTestFinis
   expect(fixture.controller.status(launched.taskId, fixture.input.parentSessionId).state).toBe(
     'stopped',
   );
-  expect(fixture.controller.children()).toEqual({ active: 0, uncertain: [] });
   expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
   await expect(fixture.controller.launch(fixture.input)).rejects.toThrow(
     'Parent controller stopped',
@@ -2495,10 +2401,6 @@ it.each([true, false])(
     expect(status.failure).toContain(
       absent ? 'exited before readiness' : 'Process inspection failed.',
     );
-    expect(controller.children()).toEqual({
-      active: 0,
-      uncertain: [expect.stringContaining(status.directory)],
-    });
     expect(readEvent(status.directory, status.taskId, 'cleanup')?.stopped).toBe(false);
     expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
     expect(calls.some((call) => ['send-keys', 'close'].includes(call[1] ?? ''))).toBe(false);
@@ -2853,25 +2755,6 @@ it('waits for worker readiness after herdr readiness without a new startup budge
   expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
 });
 
-it('reports unreadable descendant evidence instead of breaking status', async ({
-  onTestFinished,
-}) => {
-  const { controller, input } = setup(onTestFinished, 0);
-  const status = await controller.launch(input);
-  const reservations = status.reservationDirectory;
-
-  if (!reservations) {
-    throw new Error('Missing reservation directory.');
-  }
-
-  writeFileSync(join(reservations, 'broken.json'), '{');
-
-  const degraded = taskStatus(status.directory);
-
-  expect(degraded.unconfirmedChildren).toEqual([]);
-  expect(degraded.descendantEvidence).toContain('capacity may still be held');
-});
-
 it('keeps a confirmed stop when the shell changes before the pane closes', async ({
   onTestFinished,
 }) => {
@@ -3008,24 +2891,19 @@ it('exposes read-only widget rows without inferring success from worker readines
   expect(stoppedRow.detailPath).toBe(join(launched.directory, 'report.json'));
 });
 
-it('refreshes worker history without reopening reservation files for every row', async ({
-  onTestFinished,
-}) => {
+it('refreshes worker history after cleanup', async ({ onTestFinished }) => {
   const fixture = setup(onTestFinished);
   const launched = await fixture.controller.launch(fixture.input);
   const task = readTask(launched.directory);
-  const reservations = admissionDirectory(fixture.directory, task.tree);
 
   for (let index = 0; index < 3; index++) {
     const historical = { ...task, taskId: `history-${index}`, name: `worker-${index}0` };
     const directory = join(fixture.directory, historical.taskId);
     mkdirSync(directory);
     records.publish(directory, 'task.json', historical);
-    records.publish(reservations, `${historical.taskId}.json`, historical);
     recordEvent(directory, historical.taskId, 'cleanup', { stopped: true, detail: 'Stopped.' });
   }
 
-  const opened = vi.spyOn(fileSystem, 'openSync');
   const rows = fixture.controller.widgetRows(fixture.input.parentSessionId);
 
   expect(rows).toHaveLength(4);
@@ -3037,12 +2915,8 @@ it('refreshes worker history without reopening reservation files for every row',
     detail: 'Stopped.',
   });
   const refreshed = fixture.controller.widgetRows(fixture.input.parentSessionId);
-  const reservationReads = opened.mock.calls.filter(([path]) =>
-    String(path).startsWith(reservations),
-  );
 
   expect(refreshed.filter((row) => row.state === 'stopped')).toHaveLength(4);
-  expect(reservationReads).toHaveLength(0);
 });
 
 it('saves and exposes a parent-provided short task label without changing the task text', async ({

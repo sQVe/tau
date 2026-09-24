@@ -55,11 +55,7 @@ const questionFixture = () => {
     createdAt: 1000,
     deadline: 20000,
     cancellationBudget: 1000,
-    tree: {
-      rootSession: join(directory, 'parent.jsonl'),
-      rootSessionId: 'parent-one',
-      monotonicDeadline: 20000,
-    },
+    monotonicDeadline: 20000,
     loadout: {
       harness: 'pi',
       profile: 'investigator',
@@ -155,6 +151,16 @@ it('skips tasks saved in a retired format without blocking current tasks', () =>
   const { harness: _harness, ...unversioned } = task.loadout;
   const retired = {
     unversioned: { ...task, taskId: 'unversioned', loadout: unversioned },
+    tree: {
+      ...task,
+      taskId: 'tree',
+      tree: {
+        rootSession: task.parentSession,
+        rootSessionId: task.parentSessionId,
+        monotonicDeadline: task.monotonicDeadline,
+      },
+    },
+    parent: { ...task, taskId: 'parent', parentTaskId: 'ancestor' },
     claude: { ...task, taskId: 'claude', loadout: { ...task.loadout, harness: 'claude' } },
     fingerprinted: {
       ...task,
@@ -174,7 +180,7 @@ it('skips tasks saved in a retired format without blocking current tasks', () =>
 
   expect(scanned).toEqual([{ directory: current, task }]);
   expect(diagnostics.toSorted()).toEqual(
-    ['claude', 'fingerprinted', 'unversioned'].map(
+    ['claude', 'fingerprinted', 'parent', 'tree', 'unversioned'].map(
       (taskId) => `Skipped task ${taskId} saved in a retired format; start a fresh task instead.`,
     ),
   );
@@ -191,20 +197,6 @@ it('fails a scan for an invalid task saved in the current format', () => {
   );
 
   expect(() => records.readTasks(root)).toThrow('absolute');
-});
-
-it('fails a scan for a generic task saved without its tree', () => {
-  const { directory, task } = questionFixture();
-  const root = join(directory, 'registry');
-  const child = join(root, task.taskId);
-  mkdirSync(child, { recursive: true });
-  const { tree: _tree, ...treeLess } = task;
-  writeFileSync(
-    join(child, 'task.json'),
-    JSON.stringify({ ...treeLess, loadout: { harness: 'generic', kind: 'codex' } }),
-  );
-
-  expect(() => records.readTasks(root)).toThrow('Invalid saved worker task or loadout');
 });
 
 it('reads a task published by another process during the scan', () => {
@@ -812,11 +804,7 @@ const genericWorkerFixture = () => {
     createdAt: 1000,
     deadline: 20000,
     cancellationBudget: 1000,
-    tree: {
-      rootSession: join(directory, 'root.jsonl'),
-      rootSessionId: 'root-two',
-      monotonicDeadline: 20000,
-    },
+    monotonicDeadline: 20000,
     loadout: fixtureGenericLoadout(directory),
   };
   records.publish(directory, 'task.json', task);

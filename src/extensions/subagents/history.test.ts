@@ -73,11 +73,7 @@ const setup = () => {
       createdAt: 1000,
       deadline: 20000,
       cancellationBudget: 1000,
-      tree: {
-        rootSession: parentSession,
-        rootSessionId: parentSessionId,
-        monotonicDeadline: 20000,
-      },
+      monotonicDeadline: 20000,
       loadout: fixtureLoadout(directory),
     });
     publish(taskDirectory, 'task.json', record);
@@ -474,11 +470,7 @@ it('carries derived state for generic task candidates without inventing native s
     createdAt: 1000,
     deadline: 20000,
     cancellationBudget: 1000,
-    tree: {
-      rootSession: fixture.child,
-      rootSessionId: 'child',
-      monotonicDeadline: 20000,
-    },
+    monotonicDeadline: 20000,
     loadout: fixtureGenericLoadout(fixture.directory),
   });
   publish(taskDirectory, 'task.json', record);

@@ -10,7 +10,7 @@ import type { Static } from 'typebox';
 import { WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { historyPage, searchHistory } from './history.js';
-import { resolveInheritedLoadout, resolveLoadout } from './loadout.js';
+import { resolveLoadout } from './loadout.js';
 import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
 import type { WorkerNotice } from './presentation.js';
 import {
@@ -112,25 +112,10 @@ interface SubagentRuntime {
   pi: ExtensionAPI;
   getController: () => WorkerController;
   peekController: () => WorkerController | undefined;
-  setNested: (value: boolean) => void;
 }
 
-export const deliverWorkerNotice = (
-  pi: ExtensionAPI,
-  notice: WorkerNotice,
-  nested: boolean,
-): void => {
+export const deliverWorkerNotice = (pi: ExtensionAPI, notice: WorkerNotice): void => {
   const message = JSON.stringify(notice.content);
-
-  if (nested) {
-    pi.events.emit('tau:child-notification', {
-      message,
-      details: notice.details,
-      question: notice.question,
-    });
-
-    return;
-  }
 
   pi.sendMessage(
     { customType: 'tau-worker', content: message, display: true, details: notice.details },
@@ -138,9 +123,9 @@ export const deliverWorkerNotice = (
   );
 };
 
-const createController = (pi: ExtensionAPI, isNested: () => boolean): WorkerController =>
+const createController = (pi: ExtensionAPI): WorkerController =>
   new WorkerController(join(getAgentDir(), 'tau', 'workers'), undefined, (notice) => {
-    deliverWorkerNotice(pi, notice, isNested());
+    deliverWorkerNotice(pi, notice);
   });
 
 const hasHerdrEnvironment = (): boolean =>
@@ -157,9 +142,6 @@ const requireHerdrParent = (
 
   return parentSession;
 };
-
-const hasNativeConfiguration = (parameters: LaunchParameters): boolean =>
-  parameters.nativeArguments !== undefined || parameters.reportDirectory !== undefined;
 
 // Pi streams call arguments, so a renderer can run before the model finishes any field.
 const callDetail = (parts: (string | undefined)[]): string | undefined => {
@@ -210,26 +192,7 @@ const launchWorker = async (
   );
 
   const controller = runtime.getController();
-  const authority = await controller.parentAuthority(
-    parentSession,
-    context.sessionManager.getSessionId(),
-    resolutionSignal,
-  );
-
-  if (authority.parent && hasNativeConfiguration(parameters)) {
-    throw new Error('Nested workers cannot supply native launch configuration.');
-  }
-
-  runtime.setNested(Boolean(authority.parent));
-
-  const loadout = authority.parent
-    ? resolveInheritedLoadout({
-        parent: authority.parent,
-        input: parameters,
-        context,
-        pi: runtime.pi,
-      })
-    : resolveLoadout(parameters, context, resolutionSignal);
+  const loadout = resolveLoadout(parameters, context, resolutionSignal);
   signal?.throwIfAborted();
 
   let status: Awaited<ReturnType<WorkerController['launch']>>;
@@ -273,12 +236,6 @@ const followUpWorker = async (
   );
 
   const controller = runtime.getController();
-  const authority = await controller.parentAuthority(
-    parentSession,
-    context.sessionManager.getSessionId(),
-    signal,
-  );
-  runtime.setNested(Boolean(authority.parent));
 
   let status: Awaited<ReturnType<WorkerController['followUp']>>;
 
@@ -410,7 +367,7 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
     name: 'subagent',
     label: 'Launch worker',
     description:
-      'Launch a bounded worker in herdr. Pi (default) requires trusted-full-tools and verified CC Safety Net; its model must be explicit or configured. Other herdr kinds use native-controls, which Tau does not certify. Their nativeArguments are a literal list and reportDirectory must already exist and be writable inside cwd. No native arguments by default; the harness selects its configured model. An exact native model request requires corresponding nativeArguments, but Tau cannot verify the model used. Native approval dialogs remain in force and need user action. Tau adds no bypass flags and never approves dialogs. Model translation, native resume, and a Tau nesting channel are unavailable for non-Pi workers. Reports are required from the start; assign the complete outcome with acceptance criteria, the baseline, and the worktree, give each worktree one editing worker, and expect a handoff with Changes, Evidence, Decisions, and Concerns. All workers share root capacity and one original deadline, including waits and cleanup. No uncertain retries or fallback. Built-in profiles: investigator and worker. States: starting (launched, not accepted yet); running (accepted and working); awaitingReply (waiting for a parent reply); reported (final report saved, cleanup pending); stopping (bounded cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (cleanup unconfirmed, capacity stays held); notOwned (no live parent controller, saved evidence only). Notices are status snapshots taken when sent. A notice without a state means the parent could not read the task records; inspect recovery.',
+      'Launch a bounded worker in herdr. Pi (default) requires trusted-full-tools and verified CC Safety Net; its model must be explicit or configured. Other herdr kinds use native-controls, which Tau does not certify. Their nativeArguments are a literal list and reportDirectory must already exist and be writable inside cwd. No native arguments by default; the harness selects its configured model. An exact native model request requires corresponding nativeArguments, but Tau cannot verify the model used. Native approval dialogs remain in force and need user action. Tau adds no bypass flags and never approves dialogs. Model translation and native resume are unavailable for non-Pi workers. Workers cannot launch workers; ask the parent instead. Reports are required from the start; assign the complete outcome with acceptance criteria, the baseline, and the worktree, give each worktree one editing worker, and expect a handoff with Changes, Evidence, Decisions, and Concerns. Each parent caps its own live workers. Each worker has one original deadline, including waits and cleanup. No uncertain retries or fallback. Built-in profiles: investigator and worker. States: starting (launched, not accepted yet); running (accepted and working); awaitingReply (waiting for a parent reply); reported (final report saved, cleanup pending); stopping (bounded cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (cleanup unconfirmed, capacity stays held); notOwned (no live parent controller, saved evidence only). Notices are status snapshots taken when sent. A notice without a state means the parent could not read the task records; inspect recovery.',
     parameters: launchParameters,
     renderCall(parameters, theme) {
       return callText(
@@ -543,28 +500,23 @@ const registerSubagentTools = (runtime: SubagentRuntime): void => {
 };
 
 export default function subagentsExtension(pi: ExtensionAPI): void {
+  if (process.env.TAU_WORKER_RECORD) {
+    return;
+  }
+
   let controller: WorkerController | undefined;
-  let nested = false;
   let widgetTimer: ReturnType<typeof setInterval> | undefined;
   let historyView: WorkerHistoryView | undefined;
   let historyOpen = false;
   let shuttingDown = false;
-  const removeChildrenListener = pi.events.on('tau:worker-children', (value: unknown) => {
-    if (value && typeof value === 'object') {
-      Object.assign(value, controller?.children() ?? { active: 0, uncertain: [] });
-    }
-  });
   const runtime: SubagentRuntime = {
     pi,
     getController: () => {
-      controller ??= createController(pi, () => nested);
+      controller ??= createController(pi);
 
       return controller;
     },
     peekController: () => controller,
-    setNested: (value: boolean) => {
-      nested = value;
-    },
   };
 
   registerSubagentTools(runtime);
@@ -659,7 +611,6 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     historyOpen = false;
     historyView?.dismiss();
     historyView = undefined;
-    removeChildrenListener();
 
     if (widgetTimer) {
       clearInterval(widgetTimer);

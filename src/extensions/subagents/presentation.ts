@@ -89,8 +89,6 @@ export interface StatusInput {
   nativeOutput?: unknown;
   recovery?: unknown;
   capacityHeld?: boolean | undefined;
-  unconfirmedChildren?: { taskId: string; directory?: string | undefined }[] | undefined;
-  descendantEvidence?: unknown;
 }
 
 export interface ReplyReceiptInput {
@@ -208,10 +206,6 @@ const modelSubmissionReceipt = (
   return result;
 };
 
-const modelChildren = (
-  children: { taskId: string; directory?: string | undefined }[] | undefined,
-): { taskId: string }[] | undefined => children?.map((child) => ({ taskId: child.taskId }));
-
 export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   const result: Record<string, unknown> = {
     taskId: status.taskId,
@@ -233,14 +227,6 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   addField(result, 'observationIssue', boundedReason(status.observationIssue));
   addField(result, 'submissionReceipt', modelSubmissionReceipt(status.submissionReceipt));
   addField(result, 'nativeOutput', status.nativeOutput);
-
-  // A stopped parent can still own a child whose cleanup is unconfirmed; that child may be running
-  // and holds capacity (ADR 0031), so descendant warnings never depend on the parent's state.
-  if (status.unconfirmedChildren?.length) {
-    addField(result, 'unconfirmedChildren', modelChildren(status.unconfirmedChildren));
-  }
-
-  addField(result, 'descendantEvidence', status.descendantEvidence);
 
   if (status.state === 'cleanupUnconfirmed' || status.state === 'notOwned') {
     addField(result, 'recovery', status.recovery);

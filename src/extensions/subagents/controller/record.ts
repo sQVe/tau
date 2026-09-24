@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { admissionDirectory, descendantReservations } from '../admission.js';
 import { genericReportPath, readGenericReference } from '../generic.js';
 import { readPendingQuestion, readReply } from '../questionRecords.js';
 import {
@@ -44,23 +43,6 @@ const taskRecovery = (task: Task, directory: string) => {
   const reference = readGenericReference(directory, task.taskId);
 
   return { ...base, ...(reference ? { nativeReference: reference } : {}) };
-};
-
-const unconfirmedDescendants = (root: string, task: Task) => {
-  try {
-    const children = descendantReservations(root, task)
-      .filter(
-        (child) => readEvent(join(root, child.taskId), child.taskId, 'cleanup')?.stopped !== true,
-      )
-      .map((child) => ({ taskId: child.taskId, directory: join(root, child.taskId) }));
-
-    return { children, evidence: undefined };
-  } catch (error) {
-    return {
-      children: [],
-      evidence: `Descendant reservation evidence unavailable; capacity may still be held. ${String(error)}`,
-    };
-  }
 };
 
 // Evidence notices read only handle memory; a corrupt record cannot build this recovery hint.
@@ -187,7 +169,6 @@ export const taskRecordStatus = (
       ? { stoppedAt: settled?.at ?? event('timeout')?.at ?? event('cancelled')?.at ?? cleanup?.at }
       : {}),
     capacityHeld: cleanup?.stopped !== true,
-    reservationDirectory: admissionDirectory(dirname(directory), task.tree),
     harness: harnessOf(task.loadout),
     nativeSessionId: task.nativeSessionId,
     nativeSessionFile: task.nativeSessionFile,
@@ -203,14 +184,8 @@ export const taskRecordStatus = (
 
 export const taskStatus = (directory: string, activeOwner?: string, enforcing = true) => {
   const task = readTask(directory);
-  const status = taskRecordStatus(directory, task, activeOwner, enforcing);
-  const descendants = unconfirmedDescendants(dirname(directory), task);
 
-  return {
-    ...status,
-    unconfirmedChildren: descendants.children,
-    descendantEvidence: descendants.evidence,
-  };
+  return taskRecordStatus(directory, task, activeOwner, enforcing);
 };
 
 export const genericStatus = (

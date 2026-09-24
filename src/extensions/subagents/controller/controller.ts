@@ -8,18 +8,11 @@ import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-
 
 import { errorMessage, isMissingFile } from '../../../errors/index.js';
 import { readWorkerActivity } from '../activity.js';
-import {
-  descendantReservations,
-  InactiveAncestryError,
-  admissionDirectory,
-  reserveTask,
-  requireActiveAncestry,
-} from '../admission.js';
+import { workerCapacity } from '../admission.js';
 import { processAbsent } from '../cancellation.js';
 import { refuseLiveNativeWriter } from '../continuations.js';
 import { submitGenericText, genericPrompt, acceptGenericReport } from '../generic.js';
 import { authorizeHistoryTask } from '../history.js';
-import { authenticateParent, currentProcessIdentity } from '../identity.js';
 import { validateSavedLoadout } from '../loadout.js';
 import { allocateName, nameSuffix } from '../names.js';
 import { validateNative } from '../native.js';
@@ -55,7 +48,6 @@ import {
   remainingCleanupBudget,
   remainingLaunchBudget,
   remainingWorkBudget,
-  treeCapacity,
 } from './budget.js';
 import {
   agentPromptArguments,
@@ -206,7 +198,6 @@ interface LaunchTaskPlan {
   deadline: number;
   cancellationBudget: number;
   monotonicDeadline: number;
-  tree: NonNullable<Task['tree']>;
   source?: FollowUpPreparation;
 }
 
@@ -509,7 +500,8 @@ const buildWidgetRow = (
 export class WorkerController {
   readonly ownerId = randomUUID();
   private readonly handles = new Map<string, Handle>();
-  private readonly admitted = new Map<string, Task>();
+  private readonly capacity = workerCapacity();
+  private readonly live = new Set<string>();
   private readonly lifetime = new AbortController();
   private readonly placement = new WorkerPlacement();
   private closed = false;
@@ -522,19 +514,6 @@ export class WorkerController {
 
   private herdrCall(handle: Handle): TerminalCall {
     return (argumentsList) => this.client(argumentsList, workBudget(handle), handle.abort.signal);
-  }
-
-  async parentAuthority(parentSession: string, parentSessionId: string, signal?: AbortSignal) {
-    const identity = await currentProcessIdentity(signal);
-    // oxlint-disable-next-line node/no-process-env -- The locator is checked against session and parent-owned process evidence.
-    const locator = process.env.TAU_WORKER_RECORD;
-
-    return authenticateParent(
-      this.root,
-      { file: parentSession, id: parentSessionId },
-      identity,
-      locator,
-    );
   }
 
   widgetRows(parentSessionId: string): WorkerWidgetRow[] {
@@ -582,46 +561,6 @@ export class WorkerController {
     const handle = this.handles.get(task.taskId);
 
     return buildWidgetRow(directory, task, status, activity, handle);
-  }
-
-  children() {
-    const active = [...this.handles.values()].filter((handle) => !handle.cleanupFinished);
-    const reservations = new Map(this.admitted);
-    const uncertain: string[] = [];
-
-    for (const task of this.admitted.values()) {
-      try {
-        for (const descendant of descendantReservations(this.root, task)) {
-          reservations.set(descendant.taskId, descendant);
-        }
-      } catch (error) {
-        uncertain.push(
-          `Child ${task.taskId}: descendant evidence unavailable. Inspect ${join(this.root, task.taskId)} manually. ${String(error)}`,
-        );
-      }
-    }
-
-    for (const task of reservations.values()) {
-      if (active.some((handle) => handle.task.taskId === task.taskId)) {
-        continue;
-      }
-
-      const directory = join(this.root, task.taskId);
-
-      try {
-        if (readEvent(directory, task.taskId, 'cleanup')?.stopped === true) {
-          continue;
-        }
-      } catch {
-        // Missing or corrupt cleanup evidence cannot free a reservation or imply stopped work.
-      }
-
-      uncertain.push(
-        `Child ${task.taskId}: cleanup unconfirmed; reservation retained. Inspect ${directory} manually.`,
-      );
-    }
-
-    return { active: active.length, uncertain };
   }
 
   status(taskId: string, parentSessionId: string) {
@@ -1357,18 +1296,7 @@ export class WorkerController {
     const taskId = randomUUID();
     const directory = join(this.root, taskId);
     const timing = launchTiming(input.timeout, input.startedAt);
-    const authority = await this.parentAuthority(
-      input.parentSession,
-      input.parentSessionId,
-      launchSignal,
-    );
-    const bounded = boundedTiming(timing, authority.parent);
-
-    if (authority.parent && isGenericLoadout(input.loadout)) {
-      throw new Error(
-        'Generic workers require root-parent approval and have no Tau nesting channel.',
-      );
-    }
+    const bounded = boundedTiming(timing);
 
     const task = this.buildTask(input, {
       taskId,
@@ -1377,13 +1305,18 @@ export class WorkerController {
       deadline: bounded.deadline,
       cancellationBudget: bounded.cancellationBudget,
       monotonicDeadline: bounded.monotonicDeadline,
-      tree: authority.tree,
       ...(source ? { source } : {}),
     });
     const listing = await this.readAgentListing(launchSignal, bounded);
 
     if (this.closed) {
       throw new Error('Parent controller stopped.');
+    }
+
+    if (this.live.size >= this.capacity) {
+      throw new Error(
+        `Worker capacity full (${this.live.size}/${this.capacity}). No queue or retry.`,
+      );
     }
 
     this.checkFollowUpSource(input.loadout, listing.agents, source);
@@ -1399,8 +1332,8 @@ export class WorkerController {
     task.name = name;
     validateTask(task);
 
-    // The reservation precedes task publication, native opening, and successor claims.
-    this.reserveAndPublish(task, authority.tree, Boolean(source));
+    this.live.add(taskId);
+    prepareTaskDirectory(directory, task, Boolean(source));
 
     const handle = this.createHandle(directory, task, bounded.expires);
     this.handles.set(taskId, handle);
@@ -1431,14 +1364,6 @@ export class WorkerController {
     return listing;
   }
 
-  private reserveAndPublish(task: Task, tree: NonNullable<Task['tree']>, continued: boolean): void {
-    reserveTask(this.root, task, treeCapacity());
-    this.admitted.set(task.taskId, task);
-    prepareTaskDirectory(join(this.root, task.taskId), task, continued, () =>
-      admissionDirectory(this.root, tree),
-    );
-  }
-
   private buildTask(input: LaunchInput, plan: LaunchTaskPlan): Task {
     const namePrefix = input.loadout.role === 'editing' ? 'worker' : 'investigator';
 
@@ -1455,7 +1380,7 @@ export class WorkerController {
       createdAt: plan.createdAt,
       deadline: plan.deadline,
       cancellationBudget: plan.cancellationBudget,
-      tree: { ...plan.tree, monotonicDeadline: plan.monotonicDeadline },
+      monotonicDeadline: plan.monotonicDeadline,
       loadout: input.loadout,
     });
   }
@@ -1568,37 +1493,10 @@ export class WorkerController {
         return;
       }
 
-      if (this.ancestryEnded(handle)) {
-        void this.stop(handle, 'cancelled');
-
-        return;
-      }
-
       this.notifyPendingQuestion(handle);
       this.poll(handle);
     } catch (error) {
       void this.stop(handle, 'failure', `Worker evidence unavailable: ${String(error)}. No retry.`);
-    }
-  }
-
-  // An unreadable ancestor is unavailable evidence, not a parent's cancellation.
-  private ancestryEnded(handle: Handle): boolean {
-    const parentTaskId = handle.task.tree.parentTaskId;
-
-    if (!parentTaskId) {
-      return false;
-    }
-
-    try {
-      requireActiveAncestry(this.root, readTask(join(this.root, parentTaskId)));
-
-      return false;
-    } catch (error) {
-      if (error instanceof InactiveAncestryError) {
-        return true;
-      }
-
-      throw error;
     }
   }
 
@@ -1725,7 +1623,7 @@ export class WorkerController {
         handle.directory,
         handle.task.taskId,
         'stopping',
-        'Parent started bounded cleanup; no further delegation is authorized.',
+        'Parent started bounded cleanup.',
       );
     } catch (error) {
       handle.recordErrors.push(String(error));
@@ -1741,11 +1639,10 @@ export class WorkerController {
           this.placement.release(handle.terminalId);
         }
 
-        // Report the cleanup failure only once the whole subtree has settled.
+        // Report the cleanup failure only once placement cleanup finishes.
         return cleaned;
       })
       .catch((error: unknown) => {
-        handle.cleanupFinished = true;
         handle.recordErrors.push(String(error));
 
         if (this.closed) {
@@ -1886,7 +1783,11 @@ export class WorkerController {
     record(() => {
       releaseRejectedSuccessor(this.root, handle.directory, task);
     });
-    handle.cleanupFinished = true;
+
+    if (stopped) {
+      this.live.delete(task.taskId);
+    }
+
     this.notifyCleanup(handle, record);
   }
 

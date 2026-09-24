@@ -44,8 +44,6 @@ interface StatusView {
   nativeSessionId?: string | undefined;
   nativeSessionFile?: string | undefined;
   harness?: string | undefined;
-  unconfirmedChildren?: string[] | undefined;
-  descendantEvidence?: string | undefined;
   nativeOutput?: string | undefined;
   submission?: string | undefined;
   questionReceipt?: string | undefined;
@@ -144,20 +142,6 @@ const reportView = (value: unknown): ReportView | undefined => {
   };
 };
 
-const childTaskIds = (value: unknown): string[] | undefined => {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-
-  const ids = value.flatMap((child) => {
-    const id = isRecord(child) ? stringField(child, 'taskId') : undefined;
-
-    return id === undefined ? [] : [id];
-  });
-
-  return ids.length > 0 ? ids : undefined;
-};
-
 // Requested receipts are summarized into one row each; ctrl+o is where the pilot reads them.
 const submissionSummary = (value: unknown): string | undefined => {
   if (!isRecord(value)) {
@@ -235,8 +219,6 @@ const statusView = (details: unknown): StatusView | undefined => {
       : undefined,
     directory: stringField(details, 'directory'),
     harness: stringField(details, 'harness'),
-    unconfirmedChildren: childTaskIds(details.unconfirmedChildren),
-    descendantEvidence: stringField(details, 'descendantEvidence'),
     nativeOutput: nativeOutputText(details.nativeOutput),
     submission: submissionSummary(details.submissionReceipt),
     questionReceipt: questionReceiptSummary(details.questionReceipt),
@@ -426,15 +408,6 @@ const nativeStatePart = (details: StatusView): string[] => {
   return ['native state unknown'];
 };
 
-// A child whose cleanup is unconfirmed may still run and holds capacity, whatever the parent's state.
-const childParts = (details: StatusView): string[] => {
-  const children = details.unconfirmedChildren ?? [];
-
-  return children.length > 0
-    ? [`child ${children.map((id) => shortId(id)).join(', ')} cleanup unconfirmed`]
-    : [];
-};
-
 export const deadlineStates = new Set<WorkerState>(['starting', 'running', 'awaitingReply']);
 
 const lifecycleParts = (details: StatusView, state: WorkerState): string[] => {
@@ -481,7 +454,6 @@ const statusParts = (details: StatusView): string[] => {
     ...assignmentDeliveryPart(details.delivery),
     ...nativeStatePart(details),
     ...lifecycleParts(details, details.state),
-    ...childParts(details),
   );
 
   if (hasHiddenReason(details)) {
@@ -590,8 +562,6 @@ const missingHandoffRows = (report: ReportView | undefined, theme: Theme): strin
 };
 
 const requestedRows = (details: StatusView, theme: Theme): string[] => [
-  ...(details.unconfirmedChildren ?? []).map((id) => row('Child cleanup unconfirmed', id, theme)),
-  ...optionalRow('Descendants', details.descendantEvidence, theme),
   ...optionalRow('Question receipt', details.questionReceipt, theme),
   ...optionalRow('Submission', details.submission, theme),
   ...optionalRow('Native output', details.nativeOutput, theme),

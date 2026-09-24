@@ -23,6 +23,7 @@ import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { workerArguments } from '../src/extensions/subagents/controller/inspect.js';
+import subagentsExtension from '../src/extensions/subagents/index.js';
 import { nativeIdentity, seedSession, workerPrompt } from '../src/extensions/subagents/profiles.js';
 import {
   acceptReply,
@@ -174,11 +175,7 @@ it.each(['editing', 'investigation'] as const)(
       createdAt: Date.now(),
       deadline: Date.now() + 30_000,
       cancellationBudget: 2000,
-      tree: {
-        rootSession: join(directory, 'parent.jsonl'),
-        rootSessionId: 'parent',
-        monotonicDeadline: Date.now() + 30_000,
-      },
+      monotonicDeadline: Date.now() + 30_000,
       loadout: {
         harness: 'pi',
         profile: 'worker',
@@ -213,6 +210,7 @@ it.each(['editing', 'investigation'] as const)(
       noPromptTemplates: true,
       noThemes: true,
       additionalExtensionPaths: extensionPaths,
+      extensionFactories: [subagentsExtension],
     });
     await loader.reload();
     expect(loader.getExtensions().errors).toEqual([]);
@@ -318,6 +316,17 @@ it.each(['editing', 'investigation'] as const)(
     });
     await session.bindExtensions({ uiContext, mode: 'tui' });
     expect(session.getActiveToolNames()).not.toContain('ask_user_question');
+    const workerTools = session
+      .getAllTools()
+      .map((tool) => tool.name)
+      .filter((name) => name.startsWith('subagent'))
+      .toSorted();
+    expect(workerTools).toEqual(['subagent_progress', 'subagent_question', 'subagent_report']);
+    const activeWorkerTools = session
+      .getActiveToolNames()
+      .filter((name) => name.startsWith('subagent'))
+      .toSorted();
+    expect(activeWorkerTools).toEqual(workerTools);
     publish(taskDirectory, 'dispatch.json', { taskId: task.taskId });
     await finished.promise;
     expect(session.getActiveToolNames()).toContain('ask_user_question');

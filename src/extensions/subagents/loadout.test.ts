@@ -5,19 +5,12 @@ import { fileURLToPath } from 'node:url';
 
 import { fauxProvider, InMemoryCredentialStore, InMemoryModelsStore } from '@earendil-works/pi-ai';
 import { ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
 import { asPiLoadout, fixtureGenericLoadout, fixtureLoadout } from './fixtures/loadout.js';
-import {
-  checkWorkerRuntime,
-  resolveInheritedLoadout,
-  resolveLoadout,
-  validateSavedLoadout,
-} from './loadout.js';
+import { checkWorkerRuntime, resolveLoadout, validateSavedLoadout } from './loadout.js';
 import { resolveProfile, parseProfile } from './profiles.js';
-import { textLimit } from './types.js';
-import type { Task } from './types.js';
 
 const profile = (body: string) => `---\nname: worker\nrole: editing\nthinking: off\n---\n${body}`;
 
@@ -163,7 +156,7 @@ it('refuses worker startup without the saved model, cwd, or CC Safety Net and ac
     getAllTools: () => [
       { name: 'read', sourceInfo: { source: 'builtin' } },
       { name: 'ask_user_question', sourceInfo: { source: 'extension' } },
-      { name: 'subagent', sourceInfo: { source: 'extension' } },
+      { name: 'commit', sourceInfo: { source: 'extension' } },
     ],
     setActiveTools,
   } as unknown as Parameters<typeof checkWorkerRuntime>[1];
@@ -180,7 +173,7 @@ it('refuses worker startup without the saved model, cwd, or CC Safety Net and ac
     'bash',
     'edit',
     'write',
-    'subagent',
+    'commit',
     'subagent_progress',
     'subagent_report',
     'subagent_question',
@@ -376,51 +369,4 @@ it('resolves profile precedence and refuses discarded isolation and transcript s
   expect(() =>
     parseProfile('---\nrole: editing\ntools: read\n---\nTask', 'worker', 'fixture'),
   ).toThrow('Unsupported');
-});
-
-it('refuses nested delegation once inherited instructions and scope exceed the saved limit', ({
-  onTestFinished,
-}) => {
-  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'tau-nested-instructions-')));
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
-  mkdirSync(join(directory, 'agents'));
-  writeFileSync(join(directory, 'agents', 'worker.md'), profile('Child role guidance.'));
-  const loadout = fixtureLoadout(directory);
-  loadout.instructions = 'Parent instructions.'.padEnd(textLimit - 1000, '.');
-  const parent = {
-    version: 1,
-    taskId: 'parent',
-    task: 'Read the assigned file.'.padEnd(2000, '.'),
-    ownerId: 'controller',
-    parentSession: join(directory, 'root.jsonl'),
-    parentSessionId: 'root',
-    nativeSessionId: 'native',
-    nativeSessionFile: join(directory, 'native.jsonl'),
-    createdAt: Date.now(),
-    deadline: Date.now() + 60_000,
-    cancellationBudget: 5000,
-    tree: {
-      rootSession: join(directory, 'root.jsonl'),
-      rootSessionId: 'root',
-      monotonicDeadline: Date.now() + 60_000,
-    },
-    loadout,
-  } satisfies Task;
-  const context = {
-    cwd: directory,
-    isProjectTrusted: () => true,
-  } as unknown as ExtensionContext;
-  const nested = () =>
-    resolveInheritedLoadout({
-      parent,
-      input: { profile: 'worker', permissions: loadout.permissions },
-      context,
-      pi: {} as ExtensionAPI,
-    });
-
-  expect(nested).toThrow(`over the ${textLimit} limit`);
-  loadout.instructions = 'Parent instructions.';
-  expect(nested).toThrow('no fallback');
 });

@@ -128,9 +128,7 @@ const reportAreaIsValid = (loadout: GenericLoadout): boolean => {
 };
 
 const hasAbsoluteGenericPaths = (task: Task, loadout: GenericLoadout): boolean =>
-  [task.parentSession, loadout.cwd, loadout.reportDirectory, task.tree.rootSession].every(
-    isAbsolute,
-  );
+  [task.parentSession, loadout.cwd, loadout.reportDirectory].every(isAbsolute);
 
 const hasGenericTaskIdentity = (task: Task, loadout: GenericLoadout): boolean =>
   task.version === 2 &&
@@ -180,7 +178,6 @@ export const validateTask = (value: unknown): Task => {
       value.parentSession,
       value.loadout.cwd,
       value.loadout.agentDirectory,
-      value.tree.rootSession,
     ].every(isAbsolute)
   ) {
     throw new Error('Worker paths must be absolute.');
@@ -246,11 +243,11 @@ const isUnpublishedDirectory = (directory: string): boolean =>
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
-// Earlier Pi formats lacked the tree or saved replay fingerprints instead of explicit settings.
+// Earlier Pi formats lacked a task-level monotonic deadline or saved replay fingerprints.
 const isRetiredPiTask = (
   value: Record<string, unknown>,
   loadout: Record<string, unknown>,
-): boolean => !('tree' in value) || 'modelFingerprint' in loadout;
+): boolean => !('monotonicDeadline' in value) || 'modelFingerprint' in loadout;
 
 const isRetiredHarness = (
   harness: unknown,
@@ -272,6 +269,10 @@ const isRetiredHarness = (
 export const isRetiredTask = (value: unknown): boolean => {
   if (!isObjectRecord(value) || !('loadout' in value)) {
     return false;
+  }
+
+  if ('tree' in value || 'parentTaskId' in value) {
+    return true;
   }
 
   const loadout = value.loadout;
@@ -374,7 +375,6 @@ const scanTaskEntry = (
   root: string,
   entry: Dirent,
   diagnostics: string[],
-  retired: string[],
 ): FoundTaskEntry | UnpublishedTaskEntry | undefined => {
   const directory = join(root, entry.name);
   let task: Task | undefined;
@@ -389,7 +389,6 @@ const scanTaskEntry = (
     diagnostics.push(
       `Skipped task ${entry.name} saved in a retired format; start a fresh task instead.`,
     );
-    retired.push(directory);
 
     return undefined;
   }
@@ -408,7 +407,6 @@ const scanTaskEntry = (
 export const readTasks = (
   root: string,
   diagnostics: string[] = [],
-  retired: string[] = [],
 ): { directory: string; task: Task }[] => {
   const entries = readTaskEntries(root);
 
@@ -422,7 +420,7 @@ export const readTasks = (
   for (const entry of entries.filter(
     (candidate) => candidate.isDirectory() && candidate.name !== '.admission',
   )) {
-    const outcome = scanTaskEntry(root, entry, diagnostics, retired);
+    const outcome = scanTaskEntry(root, entry, diagnostics);
 
     if (!outcome) {
       continue;

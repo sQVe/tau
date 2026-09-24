@@ -29,11 +29,7 @@ it('allows only one production successor claim across competing processes', asyn
     createdAt: 1000,
     deadline: 20000,
     cancellationBudget: 1000,
-    tree: {
-      rootSession: join(root, 'parent.jsonl'),
-      rootSessionId: 'parent',
-      monotonicDeadline: 20000,
-    },
+    monotonicDeadline: 20000,
     loadout: fixtureLoadout(root),
   });
   publish(directory, 'task.json', task);

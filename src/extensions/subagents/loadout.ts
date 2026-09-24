@@ -11,12 +11,11 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { Value } from 'typebox/value';
 
-import { inheritedInstructions } from './admission.js';
 import { resolveGenericLoadout } from './genericLoadout.js';
 import type { NativeLaunchInput } from './genericLoadout.js';
 import { resolveProfile } from './profiles.js';
-import { harnessOf, isPiLoadout, loadoutSchema, textLimit } from './types.js';
-import type { Loadout, PiLoadout, Profile, Task } from './types.js';
+import { isPiLoadout, loadoutSchema } from './types.js';
+import type { Loadout, PiLoadout } from './types.js';
 
 type ModelContext = Pick<ExtensionContext, 'modelRegistry' | 'scopedModels'>;
 
@@ -233,100 +232,4 @@ export const checkWorkerRuntime = (
         .map((tool) => tool.name),
     ),
   );
-};
-
-const hasHarnessConflict = (profile: Profile, inherited: PiLoadout): boolean =>
-  profile.harnessSpecified === true && profile.harness !== harnessOf(inherited);
-
-const hasModelConflict = (profile: Profile, inherited: PiLoadout): boolean =>
-  profile.model !== undefined && profile.model !== inherited.model;
-
-const hasThinkingConflict = (profile: Profile, inherited: PiLoadout): boolean =>
-  profile.thinkingSpecified === true && profile.thinking !== inherited.thinking;
-
-const conflictsWithInheritedSettings = (profile: Profile, inherited: PiLoadout): boolean =>
-  hasHarnessConflict(profile, inherited) ||
-  hasModelConflict(profile, inherited) ||
-  hasThinkingConflict(profile, inherited);
-
-const inheritedProfile = (parent: Task, input: { profile: string }, trusted: boolean) => {
-  if (!isPiLoadout(parent.loadout)) {
-    throw new Error('Non-Pi workers have no Tau nesting channel.');
-  }
-
-  const profile = resolveProfile(
-    parent.loadout.cwd,
-    parent.loadout.agentDirectory,
-    trusted,
-    input.profile,
-  );
-
-  if (!profile || conflictsWithInheritedSettings(profile, parent.loadout)) {
-    throw new Error('Nested profile is unavailable or conflicts with inherited model settings.');
-  }
-
-  const instructions = `${inheritedInstructions(parent)}${profile.instructions}`;
-
-  if (instructions.length > textLimit) {
-    throw new Error(
-      `Inherited instructions and parent-assigned scope reached ${instructions.length} characters, over the ${textLimit} limit. Delegate a shorter task or choose a shorter profile.`,
-    );
-  }
-
-  return { profile, instructions };
-};
-
-interface InheritedLoadoutRequest {
-  parent: Task;
-  input: { profile: string; cwd?: string; model?: string; harness?: string; permissions: string };
-  context: ExtensionContext;
-  pi: ExtensionAPI;
-}
-
-const hasHarnessOverride = (input: InheritedLoadoutRequest['input']): boolean =>
-  input.harness !== undefined && input.harness !== 'pi';
-
-const hasModelOverride = (input: InheritedLoadoutRequest['input'], inherited: PiLoadout): boolean =>
-  input.model !== undefined && input.model !== inherited.model;
-
-const changesInheritedSettings = (
-  input: InheritedLoadoutRequest['input'],
-  inherited: PiLoadout,
-): boolean =>
-  input.permissions !== inherited.permissions ||
-  hasHarnessOverride(input) ||
-  hasModelOverride(input, inherited);
-
-const changesInheritedCwd = (
-  input: InheritedLoadoutRequest['input'],
-  inherited: PiLoadout,
-  context: ExtensionContext,
-): boolean => realpathSync(resolve(context.cwd, input.cwd ?? '.')) !== inherited.cwd;
-
-export const resolveInheritedLoadout = (request: InheritedLoadoutRequest): PiLoadout => {
-  const { parent, input, context, pi } = request;
-  const inherited = parent.loadout;
-
-  if (!isPiLoadout(inherited)) {
-    throw new Error('Non-Pi workers have no Tau nesting channel.');
-  }
-
-  const changedSettings = changesInheritedSettings(input, inherited);
-  const changedCwd = changesInheritedCwd(input, inherited, context);
-
-  if (changedSettings || changedCwd) {
-    throw new Error(
-      'Nested workers require the exact inherited model, permissions, harness, and cwd.',
-    );
-  }
-
-  const { profile, instructions } = inheritedProfile(parent, input, context.isProjectTrusted());
-  checkWorkerRuntime(inherited, pi, context);
-
-  return {
-    ...inherited,
-    profile: profile.name,
-    role: profile.role,
-    instructions,
-  };
 };

@@ -686,20 +686,6 @@ it('shows requested native output and receipts on ctrl+o', () => {
   expect(output).toContain('question-9');
 });
 
-it('warns about a child whose cleanup is unconfirmed even when the parent stopped', () => {
-  const subject = theme();
-  const details = {
-    ...statusFixture('stopped', false),
-    unconfirmedChildren: [{ taskId: 'child-abcdef0123', directory: records }],
-  };
-  const collapsed = lines(renderStatusResult(details, false, subject)).join('\n');
-  const expanded = lines(renderStatusResult(details, true, subject)).join('\n');
-
-  expect(collapsed).toContain('child-ab');
-  expect(collapsed).not.toContain('child-abcdef0123');
-  expect(expanded).toContain('child-abcdef0123');
-});
-
 it('renders call lines while streaming arguments are still incomplete', () => {
   const subject = theme();
   const { tools } = renderers();

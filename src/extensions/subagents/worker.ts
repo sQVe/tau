@@ -1,4 +1,3 @@
-// Running-child settlement adapted from pi-interactive-subagents c3e8b53, subagent-done.ts.
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -61,7 +60,6 @@ interface WorkerState {
   kickoff: ReturnType<typeof setInterval> | undefined;
   pendingQuestion: Question | undefined;
   parentWatch: ReturnType<typeof setInterval> | undefined;
-  removeNotificationListener: (() => void) | undefined;
   activitySequence: number;
   activityTimer: ReturnType<typeof setTimeout> | undefined;
   phase: WorkerPhase;
@@ -189,38 +187,6 @@ const recordPhaseDescription = (
 const matchesNativeSession = (task: Task, context: ExtensionContext): boolean =>
   context.sessionManager.getSessionId() === task.nativeSessionId &&
   context.sessionManager.getSessionFile() === task.nativeSessionFile;
-
-const readChildren = (pi: ExtensionAPI): { active: number; uncertain: string[] } => {
-  const state = { active: 0, uncertain: [] as string[] };
-  pi.events.emit('tau:worker-children', state);
-
-  return state;
-};
-
-const hasMessageField = (value: unknown): value is { message: unknown } =>
-  typeof value === 'object' && value !== null && 'message' in value;
-
-const isChildNotification = (value: unknown): value is { message: string } =>
-  hasMessageField(value) && typeof value.message === 'string';
-
-const handleChildNotification = (pi: ExtensionAPI, state: WorkerState, value: unknown): void => {
-  if (!isTaskActive(state) || !isChildNotification(value)) {
-    return;
-  }
-
-  // A child result is evidence, never a reply to this worker's pending parent question.
-  pi.sendMessage(
-    {
-      customType: 'tau-worker-child',
-      content: value.message,
-      display: true,
-      ...('details' in value ? { details: value.details } : {}),
-    },
-    state.pendingQuestion
-      ? { deliverAs: 'nextTurn' }
-      : { deliverAs: 'followUp', triggerTurn: true },
-  );
-};
 
 const parentGone = (state: WorkerState, task: Task, parentProcess: number): boolean =>
   processAbsent(parentProcess) || Boolean(readEvent(state.directory, task.taskId, 'parentClosed'));
@@ -355,21 +321,8 @@ const handleInput = (
   }
 };
 
-const keepEvidence = (evidence: string[], note: string): string[] => {
-  const kept = note ? evidence.slice(0, 99) : evidence;
-
-  if (!note) {
-    return kept;
-  }
-
-  const dropped = evidence.length - kept.length;
-  const marker = dropped ? `Dropped ${dropped} evidence entries for this note.\n` : '';
-
-  return [...kept, `${marker}${note}`.slice(0, textLimit)];
-};
-
 const remainingWork = (task: Task): number =>
-  task.tree.monotonicDeadline - task.cancellationBudget - monotonicNow();
+  task.monotonicDeadline - task.cancellationBudget - monotonicNow();
 
 // Refuse once so an early handback costs a named blocker, but never so late that the report is lost.
 const refuseEarlyIncomplete = (state: WorkerState, task: Task, blocker: string | undefined) => {
@@ -408,18 +361,9 @@ const withBlocker = (summary: string, blocker: string | undefined): string => {
 const reportToParent = (
   state: WorkerState,
   parameters: ReportInput,
-  pi: ExtensionAPI,
 ): Promise<AgentToolResult<Report>> => {
   if (!isTaskActive(state)) {
     throw new Error('This worker has no accepted active task.');
-  }
-
-  const descendants = readChildren(pi);
-
-  if (descendants.active) {
-    throw new Error(
-      'Active children remain. Wait for completion or request bounded cancellation before reporting.',
-    );
   }
 
   const task = state.task;
@@ -429,12 +373,9 @@ const reportToParent = (
     refuseEarlyIncomplete(state, task, blocker);
   }
 
-  // A full summary must never cost the worker its handover.
-  const note = descendants.uncertain.join('\n');
   const report = acceptReport(state.directory, task.taskId, {
     ...handover,
     summary: withBlocker(handover.summary, handover.outcome === 'incomplete' ? blocker : undefined),
-    evidence: keepEvidence(handover.evidence, note),
     taskId: task.taskId,
   });
   state.reported = true;
@@ -628,7 +569,7 @@ const registerReportTool = (pi: ExtensionAPI, state: WorkerState): void => {
       'Submit the final durable handoff once. Put the Changes, Evidence, Decisions, and Concerns sections in summary; evidence holds references, not the Evidence section. Outcome incomplete requires blocker. Receipt does not prove correctness or stopped work. Do not retry uncertain delivery.',
     parameters: reportParameters,
     execute(...argumentsList) {
-      return reportToParent(state, argumentsList[1], pi);
+      return reportToParent(state, argumentsList[1]);
     },
   });
 };
@@ -676,7 +617,6 @@ const registerSessionShutdownHandler = (pi: ExtensionAPI, state: WorkerState): v
   pi.on('session_shutdown', () => {
     clearActivityTimer(state);
 
-    state.removeNotificationListener?.();
     clearInterval(state.kickoff);
     clearInterval(state.parentWatch);
   });
@@ -710,7 +650,7 @@ const registerReportReminder = (pi: ExtensionAPI, state: WorkerState): void => {
     // A refused report earns one more reminder; otherwise the worker could settle with no report.
     const alreadyReminded = requested && !state.remindAfterRefusal;
 
-    if (readChildren(pi).active > 0 || alreadyReminded) {
+    if (alreadyReminded) {
       return;
     }
 
@@ -739,10 +679,6 @@ const registerAgentSettledHandler = (pi: ExtensionAPI, state: WorkerState): void
     }
 
     const task = state.task;
-
-    if (readChildren(pi).active > 0) {
-      return;
-    }
 
     state.settled = true;
     recordEvent(state.directory, task.taskId, 'settled', {
@@ -773,7 +709,6 @@ export default function workerExtension(pi: ExtensionAPI): void {
     kickoff: undefined,
     pendingQuestion: undefined,
     parentWatch: undefined,
-    removeNotificationListener: undefined,
     activitySequence: 0,
     activityTimer: undefined,
     phase: 'starting',
@@ -781,10 +716,6 @@ export default function workerExtension(pi: ExtensionAPI): void {
     phaseDescription: undefined,
     usageBaseline: undefined,
   };
-
-  state.removeNotificationListener = pi.events.on('tau:child-notification', (value: unknown) => {
-    handleChildNotification(pi, state, value);
-  });
 
   registerQuestionTool(pi, state);
   registerInputHandler(pi, state);

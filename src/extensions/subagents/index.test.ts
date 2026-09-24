@@ -41,7 +41,6 @@ const fullWorkerStatus = {
   outcome: 'success',
   report: { taskId: 'task-1', outcome: 'success', summary: 'Done.', evidence: [] },
   directory: '/abs/records/task-1',
-  reservationDirectory: '/abs/admission',
   usage: { available: false, reason: 'native' },
   nativeSessionId: 'native-1',
   nativeSessionFile: '/abs/records/task-1/session.jsonl',
@@ -364,13 +363,6 @@ it('places follow-ups with explicit visibility and the current parent terminal',
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'stale-pane-before-movement');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
-  vi.spyOn(WorkerController.prototype, 'parentAuthority').mockResolvedValue({
-    tree: {
-      rootSession: '/fixture/parent.jsonl',
-      rootSessionId: 'parent',
-      monotonicDeadline: Number.MAX_SAFE_INTEGER,
-    },
-  });
   const followUp = vi
     .spyOn(WorkerController.prototype, 'followUp')
     .mockResolvedValue({} as Awaited<ReturnType<WorkerController['followUp']>>);
@@ -425,13 +417,6 @@ it('routes approved native tool arguments through the generic resolver without P
   const launch = vi
     .spyOn(WorkerController.prototype, 'launch')
     .mockResolvedValue({} as Awaited<ReturnType<WorkerController['launch']>>);
-  vi.spyOn(WorkerController.prototype, 'parentAuthority').mockResolvedValue({
-    tree: {
-      rootSession: join(directory, 'parent.jsonl'),
-      rootSessionId: 'parent',
-      monotonicDeadline: Number.MAX_SAFE_INTEGER,
-    },
-  });
   const context = {
     cwd: directory,
     isProjectTrusted: () => true,
@@ -502,7 +487,7 @@ it('delivers a question notice as a steer that wakes the idle parent', () => {
   };
   const notice: WorkerNotice = { content, details: { full: true }, question: true };
 
-  deliverWorkerNotice(pi, notice, false);
+  deliverWorkerNotice(pi, notice);
 
   expect(sendMessage).toHaveBeenCalledWith(
     {
@@ -522,7 +507,7 @@ it.each(['success', 'incomplete', 'failure'])(
     const pi = fakeExtensionApi({ sendMessage }).pi;
     const content = { taskId: 'task-1', state: 'stopped', deadline: 1, outcome };
 
-    deliverWorkerNotice(pi, { content, details: {}, question: false }, false);
+    deliverWorkerNotice(pi, { content, details: {}, question: false });
 
     expect(sendMessage).toHaveBeenCalledWith(expect.anything(), {
       deliverAs: 'steer',
@@ -530,25 +515,6 @@ it.each(['success', 'incomplete', 'failure'])(
     });
   },
 );
-
-it('routes nested worker notices to the parent event bus instead of the root session', () => {
-  const sendMessage = vi.fn<() => void>();
-  const emit = vi.fn<() => void>();
-  const pi = fakeExtensionApi({
-    sendMessage,
-    events: { emit } as unknown as ExtensionAPI['events'],
-  }).pi;
-  const content = { taskId: 'task-1', state: 'stopped', deadline: 1, outcome: 'success' };
-
-  deliverWorkerNotice(pi, { content, details: { full: true }, question: false }, true);
-
-  expect(sendMessage).not.toHaveBeenCalled();
-  expect(emit).toHaveBeenCalledWith('tau:child-notification', {
-    message: JSON.stringify(content),
-    details: { full: true },
-    question: false,
-  });
-});
 
 it('returns allowlisted model content for a follow-up successor and keeps full details', async ({
   onTestFinished,
@@ -566,13 +532,6 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent-pane');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
-  vi.spyOn(WorkerController.prototype, 'parentAuthority').mockResolvedValue({
-    tree: {
-      rootSession: '/fixture/parent.jsonl',
-      rootSessionId: 'parent',
-      monotonicDeadline: Number.MAX_SAFE_INTEGER,
-    },
-  });
   vi.spyOn(WorkerController.prototype, 'followUp').mockResolvedValue({
     taskId: 'successor-1',
     name: 'worker-ab',
@@ -580,7 +539,6 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
     deadline: 1234,
     predecessorTaskId: 'source-1',
     directory: '/abs/records/successor-1',
-    reservationDirectory: '/abs/admission',
     usage: { available: false },
     nativeSessionId: 'native-1',
     nativeSessionFile: '/abs/records/successor-1/session.jsonl',
@@ -616,7 +574,6 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
   });
   expect(result.details).toMatchObject({
     directory: '/abs/records/successor-1',
-    reservationDirectory: '/abs/admission',
     usage: { available: false },
   });
 });
@@ -657,7 +614,7 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
   const statusContent = textContent(statusResult);
   expect(statusContent).toMatchObject({ taskId: 'task-1', state: 'stopped' });
 
-  for (const key of ['directory', 'reservationDirectory', 'usage', 'nativeSessionFile']) {
+  for (const key of ['directory', 'usage', 'nativeSessionFile']) {
     expect(statusContent).not.toHaveProperty(key);
     expect((statusResult as { details: Record<string, unknown> }).details).toHaveProperty(key);
   }
@@ -793,13 +750,6 @@ it('returns the unreadable-evidence object when follow-up records fail', async (
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
-  vi.spyOn(WorkerController.prototype, 'parentAuthority').mockResolvedValue({
-    tree: {
-      rootSession: '/fixture/parent.jsonl',
-      rootSessionId: 'parent',
-      monotonicDeadline: Number.MAX_SAFE_INTEGER,
-    },
-  });
   vi.spyOn(WorkerController.prototype, 'followUp').mockImplementation(() => {
     throw evidenceError('task-1');
   });
@@ -844,13 +794,6 @@ it('returns the unreadable-evidence object when launch records fail', async ({
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
   const tools = registerTools();
-  vi.spyOn(WorkerController.prototype, 'parentAuthority').mockResolvedValue({
-    tree: {
-      rootSession: join(directory, 'parent.jsonl'),
-      rootSessionId: 'parent',
-      monotonicDeadline: Number.MAX_SAFE_INTEGER,
-    },
-  });
   vi.spyOn(WorkerController.prototype, 'launch').mockImplementation(() => {
     throw evidenceError('task-1');
   });
