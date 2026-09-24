@@ -261,6 +261,43 @@ describe('statusbar extension', () => {
     expect(footer.unsubscribe).toHaveBeenCalledOnce();
   });
 
+  it('runs one git status at a time and merges overlapping refreshes', async ({
+    onTestFinished,
+  }) => {
+    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const log = join(directory, 'git.log');
+    const bin = join(directory, 'bin');
+    await mkdir(bin);
+    await writeFile(
+      join(bin, 'git'),
+      `#!/bin/sh\necho start >> '${log}'\nsleep 0.2\necho end >> '${log}'\n`,
+      { mode: 0o755 },
+    );
+    vi.stubEnv('PATH', `${bin}:${process.env.PATH ?? ''}`);
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+    const application = setup(directory);
+    await application.emit('session_start');
+    const footer = application.mount();
+    onTestFinished(() => footer.component.dispose?.());
+
+    for (let index = 0; index < 4; index += 1) {
+      await application.emit('tool_result');
+    }
+
+    await vi.waitFor(
+      async () => {
+        expect(await readFile(log, 'utf8')).toBe('start\nend\nstart\nend\n');
+      },
+      { timeout: 3000 },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(await readFile(log, 'utf8')).toBe('start\nend\nstart\nend\n');
+  });
+
   it('marks a new file dirty at startup even when git hides untracked files', async ({
     onTestFinished,
   }) => {
