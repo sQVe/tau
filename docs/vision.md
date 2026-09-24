@@ -30,7 +30,7 @@ This is the goal. Tau is under active development, so parts of it are not there 
 - model selection for Tau's tools and subagents, including delegation to cheaper models.
 - agent behavior: writing rules, prompt snippets, skills for commit, brainstorm, bug fixing, and
   pull requests.
-- gates with evidence: confirmed commits and comment review.
+- gates with evidence: commits through installed Git hooks.
 - test-driven development guided by truthful test outcomes and nonblocking hints.
 - Pi user interface pieces those flows need, such as overlays and footers.
 

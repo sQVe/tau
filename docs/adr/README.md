@@ -60,3 +60,4 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0039: Reuse reported checks and run one full suite per work state](./0039-reuse-reported-checks-and-run-one-full-suite.md)
 - [0040: Release undispatched follow-up claims after confirmed cleanup](./0040-release-undispatched-follow-up-claims-after-cleanup.md)
 - [0041: Default the delegate to gpt-6-luna](./0041-default-the-delegate-to-gpt-6-luna.md)
+- [0042: Remove commit comment review](./0042-remove-commit-comment-review.md)

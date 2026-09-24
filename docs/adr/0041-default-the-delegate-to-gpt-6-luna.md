@@ -1,6 +1,7 @@
 # ADR 0041: Default the delegate to gpt-6-luna
 
-- Status: Accepted
+- Status: Accepted; comment review removed from the delegate by
+  [ADR 0042](./0042-remove-commit-comment-review.md)
 - Date: 2026-09-24
 
 ## Context

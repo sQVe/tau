@@ -1,6 +1,7 @@
 # ADR 0008: Coding instructions
 
-- Status: Accepted
+- Status: Accepted; the duplicated comment rules were removed by
+  [ADR 0042](./0042-remove-commit-comment-review.md)
 - Date: 2026-09-09
 
 [ADR 0034](./0034-check-house-style-outside-the-editor.md) replaces the decision against mechanical
@@ -51,15 +52,11 @@ Keep the duplicate loaders anyway. The tests copy `index.ts` into a temporary di
 through `DefaultResourceLoader`, so a relative import outside the extension directory cannot
 resolve. Extract the loader only together with a test setup that does not copy the file.
 
-### The comment rules are stated twice on purpose
+### The comment rules are stated once
 
-The comment review gate in [`commentReview.ts`](../../src/extensions/commit/commentReview.ts) sends
-its policy as the whole system prompt for a separate model call. That call never receives the Tau
-prompt, so the policy cannot link to the coding instructions. It states the comment rules itself.
-
-Keep both statements in agreement. The instructions guide the agent as it writes; the gate decides
-whether a commit passes. If the gate protects a comment the instructions do not mention, the agent
-may delete it, and the gate may block the commit. Change both files together.
+This section first kept a second copy of the comment rules in the commit comment review policy.
+[ADR 0042](./0042-remove-commit-comment-review.md) removed that review, so the coding instructions
+are the only statement.
 
 ### Types
 
@@ -71,9 +68,6 @@ This extension defines no types of its own and may omit `types.ts`, an exception
 - Ordinary runs receive the rules without loading a skill.
 - Cost: a second policy uses more space in the prompt on every run.
 - Cost: two instruction files can drift apart. Keep comment rules on one side of the boundary.
-- Cost: the comment rules also appear in the review policy in
-  [`commentReview.ts`](../../src/extensions/commit/commentReview.ts), which the decision above
-  explains. Both statements must change together.
 - Cost: prompt instructions cannot guarantee readable code, and other extensions can replace them.
 
 ## See also
@@ -81,4 +75,4 @@ This extension defines no types of its own and may omit `types.ts`, an exception
 - [ADR-0001: Application structure](./0001-application-structure.md)
 - [ADR-0006: Default writing policy](./0006-default-writing-policy.md)
 - [Agent coding instructions](../../src/extensions/coding/instructions.md)
-- [Comment review policy](../../src/extensions/commit/commentReview.ts)
+- [ADR-0042: Remove commit comment review](./0042-remove-commit-comment-review.md)

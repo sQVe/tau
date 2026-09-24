@@ -1,7 +1,8 @@
 # ADR 0025: Use Git hooks without preparation
 
 - Status: Accepted; hook-rewrite restrictions and deferred review limits superseded by
-  [ADR 0026](./0026-let-git-hooks-own-commit-checks.md)
+  [ADR 0026](./0026-let-git-hooks-own-commit-checks.md); comment review removed by
+  [ADR 0042](./0042-remove-commit-comment-review.md)
 - Date: 2026-09-15
 
 ## Context
