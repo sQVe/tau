@@ -119,35 +119,42 @@ it('rewrites the trailing continuation notice of a clamped read into the hint', 
   expect(app.emit('tool_result', event)).toBeUndefined();
 });
 
-it('states the remaining range and gates delegation for count notices', () => {
-  for (const remaining of [1, 50, 400, 401]) {
+const delegation =
+  'For questions, call bulk_read with paths and question. To edit, use a bounded read with offset and limit.';
+
+it.for([
+  [1, 'Lines 801-801 remain. Read with offset=801 and limit=1 to continue.'],
+  [50, 'Lines 801-850 remain. Read with offset=801 and limit=50 to continue.'],
+  [400, 'Lines 801-1200 remain. Read with offset=801 and limit=400 to continue.'],
+  [401, `Lines 801-1201 remain. ${delegation}`],
+] as const)(
+  'states the remaining range for a count notice of %i lines',
+  ([remaining, expected]) => {
     const text = `head\n\n[${remaining} more lines in file. Use offset=801 to continue.]`;
-    const guidance =
-      remaining > 400
-        ? 'For questions, call bulk_read with paths and question. To edit, use a bounded read with offset and limit.'
-        : `Read with offset=801 and limit=${remaining} to continue.`;
 
-    expect
-      .soft(rewriteContinuationNotice(text))
-      .toBe(`head\n\nLines 801-${800 + remaining} remain. ${guidance}`);
-  }
-});
+    expect(rewriteContinuationNotice(text)).toBe(`head\n\n${expected}`);
+  },
+);
 
-it('states the remaining range and gates delegation for showing-lines notices', () => {
-  for (const suffix of ['', ' (50.0KB limit)']) {
-    for (const remaining of [1, 350, 400, 401]) {
-      const text = `head\n\n[Showing lines 51-100 of ${100 + remaining}${suffix}. Use offset=101 to continue.]`;
-      const guidance =
-        remaining > 400
-          ? 'For questions, call bulk_read with paths and question. To edit, use a bounded read with offset and limit.'
-          : `Read with offset=101 and limit=${remaining} to continue.`;
+it.for(
+  ['', ' (50.0KB limit)'].flatMap((suffix) =>
+    (
+      [
+        [1, 'Lines 101-101 remain. Read with offset=101 and limit=1 to continue.'],
+        [350, 'Lines 101-450 remain. Read with offset=101 and limit=350 to continue.'],
+        [400, 'Lines 101-500 remain. Read with offset=101 and limit=400 to continue.'],
+        [401, `Lines 101-501 remain. ${delegation}`],
+      ] as const
+    ).map(([remaining, expected]) => ({ suffix, remaining, expected })),
+  ),
+)(
+  'states the remaining range for a showing-lines notice of $remaining lines$suffix',
+  ({ suffix, remaining, expected }) => {
+    const text = `head\n\n[Showing lines 51-100 of ${100 + remaining}${suffix}. Use offset=101 to continue.]`;
 
-      expect
-        .soft(rewriteContinuationNotice(text))
-        .toBe(`head\n\nLines 101-${100 + remaining} remain. ${guidance}`);
-    }
-  }
-});
+    expect(rewriteContinuationNotice(text)).toBe(`head\n\n${expected}`);
+  },
+);
 
 it('leaves text without a trailing continuation notice unchanged', () => {
   expect(rewriteContinuationNotice('small file')).toBe('small file');

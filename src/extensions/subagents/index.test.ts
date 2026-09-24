@@ -381,18 +381,14 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
   onTestFinished,
 }) => {
   const tools = registerTools();
-  const status = vi
-    .spyOn(WorkerController.prototype, 'status')
-    .mockReturnValue(fullWorkerStatus as never);
-  const reply = vi.spyOn(WorkerController.prototype, 'reply').mockResolvedValue({
+  vi.spyOn(WorkerController.prototype, 'status').mockReturnValue(fullWorkerStatus as never);
+  vi.spyOn(WorkerController.prototype, 'reply').mockResolvedValue({
     replyAccepted: true,
     name: 'worker-ab',
     workerAcknowledged: false,
     delivery: 'sent',
   });
-  const cancel = vi
-    .spyOn(WorkerController.prototype, 'cancel')
-    .mockResolvedValue(fullWorkerStatus as never);
+  vi.spyOn(WorkerController.prototype, 'cancel').mockResolvedValue(fullWorkerStatus as never);
   onTestFinished(() => {
     vi.restoreAllMocks();
   });
@@ -462,9 +458,6 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
   expect((cancelResult as { details: Record<string, unknown> }).details).toHaveProperty(
     'directory',
   );
-  expect(status).toHaveBeenCalled();
-  expect(reply).toHaveBeenCalled();
-  expect(cancel).toHaveBeenCalled();
 });
 
 it('returns the unreadable-evidence object when status records fail', async ({

@@ -148,6 +148,17 @@ const handleSessionStart = (
   installEditor(pi, state, context);
 };
 
+// Keep the typed message in the editor so the user can retry after fixing the snippets.
+const stopSend = (context: ExtensionContext, text: string, problem: string, detail: string) => {
+  context.ui.notify(`${problem}, so nothing was sent: ${detail}`, 'error');
+
+  if (context.mode === 'tui') {
+    context.ui.setEditorText(text);
+  }
+
+  return { action: 'handled' as const };
+};
+
 // Reload snippets on every send so edits apply without reloading Pi.
 const handleInput = async (
   state: SnippetsState,
@@ -167,15 +178,7 @@ const handleInput = async (
   try {
     loaded = await loadSnippets(snippetsDirectory);
   } catch (error) {
-    const reason = errorMessage(error);
-
-    context.ui.notify(`Snippets could not be read, so nothing was sent: ${reason}`, 'error');
-
-    if (context.mode === 'tui') {
-      context.ui.setEditorText(event.text);
-    }
-
-    return { action: 'handled' as const };
+    return stopSend(context, event.text, 'Snippets could not be read', errorMessage(error));
   }
 
   state.snippets = loaded;
@@ -186,13 +189,7 @@ const handleInput = async (
   if (active.length < state.enabled.size) {
     const missing = [...state.enabled].filter((id) => !active.some((snippet) => snippet.id === id));
 
-    context.ui.notify(`Snippets missing, so nothing was sent: ${missing.join(', ')}`, 'error');
-
-    if (context.mode === 'tui') {
-      context.ui.setEditorText(event.text);
-    }
-
-    return { action: 'handled' as const };
+    return stopSend(context, event.text, 'Snippets missing', missing.join(', '));
   }
 
   state.enabled = new Set();

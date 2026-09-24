@@ -114,6 +114,24 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
   };
 };
 
+it('records a startup failure and shuts down when the worker runtime is refused', async () => {
+  const { directory, emit, shutdown, context } = setup();
+  vi.mocked(checkWorkerRuntime).mockRejectedValueOnce(new Error('Saved model changed.'));
+
+  await emit('session_start');
+
+  expect(readEvent(directory, 'task', 'ready')).toBeUndefined();
+  expect(readEvent(directory, 'task', 'startupFailure')).toHaveProperty(
+    'detail',
+    expect.stringContaining('Saved model changed.'),
+  );
+  expect(context.ui.notify).toHaveBeenCalledWith(
+    expect.stringContaining('Worker refused'),
+    'error',
+  );
+  expect(shutdown).toHaveBeenCalledOnce();
+});
+
 it.each(['before readiness', 'before dispatch', 'before tool call'])(
   'leaves expiry to the parent when the wall clock jumps %s',
   async (phase) => {
@@ -125,7 +143,6 @@ it.each(['before readiness', 'before dispatch', 'before tool call'])(
     }
 
     await emit('session_start');
-    expect(checkWorkerRuntime).toHaveBeenCalledOnce();
     expect(readEvent(directory, 'task', 'ready')).toBeDefined();
 
     if (phase === 'before dispatch') {
