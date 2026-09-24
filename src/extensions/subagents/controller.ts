@@ -86,6 +86,7 @@ import {
   recordEvent,
 } from './records.js';
 import { resolveTerminal, text, object, result } from './terminal.js';
+import type { TerminalCall } from './terminal.js';
 import { isGenericLoadout, isPiLoadout } from './types.js';
 import type { GenericLoadout, ReplyDelivery, SubmissionState, Task } from './types.js';
 
@@ -219,6 +220,11 @@ export class WorkerController {
     private readonly client: HerdrClient = herdrClient,
     private readonly notify: (notice: WorkerNotice) => void = () => undefined,
   ) {}
+
+  // Every herdr call for a worker is bounded by its work budget and stops with its abort signal.
+  private herdrCall(handle: Handle): TerminalCall {
+    return (argumentsList) => this.client(argumentsList, workBudget(handle), handle.abort.signal);
+  }
 
   async parentAuthority(parentSession: string, parentSessionId: string, signal?: AbortSignal) {
     const identity = await currentProcessIdentity(signal);
@@ -360,8 +366,7 @@ export class WorkerController {
       throw new Error('Native output requires an active owned generic worker.');
     }
 
-    const call = (argumentsList: string[]) =>
-      this.client(argumentsList, workBudget(handle), handle.abort.signal);
+    const call = this.herdrCall(handle);
     const worker = await inspectWorker(handle, call);
     const location = await resolveTerminal(worker.terminalId, call);
 
@@ -408,8 +413,7 @@ export class WorkerController {
   ) {
     requireGenericReplyShape(answer);
     const { directory, task } = handle;
-    const call = (argumentsList: string[]) =>
-      this.client(argumentsList, workBudget(handle), handle.abort.signal);
+    const call = this.herdrCall(handle);
 
     // Check the saved submission before native state. A saved reply is never sent twice, so a
     // blocked dialog must not turn a repeat into an error.
@@ -513,8 +517,7 @@ export class WorkerController {
       throw new Error('Reply does not match the pending question.');
     }
 
-    const call = (argumentsList: string[]) =>
-      this.client(argumentsList, workBudget(handle), handle.abort.signal);
+    const call = this.herdrCall(handle);
     const worker = await inspectWorker(handle, call);
     const location = await resolveTerminal(worker.terminalId, call);
 
@@ -539,8 +542,7 @@ export class WorkerController {
     const { taskId } = handle.task;
     const reference = { version: 1, taskId, questionId, replyId: answer.replyId };
     const prompt = `TAU_REPLY ${JSON.stringify(reference)}`;
-    const call = (argumentsList: string[]) =>
-      this.client(argumentsList, workBudget(handle), handle.abort.signal);
+    const call = this.herdrCall(handle);
 
     acceptReply(directory, taskId, value);
 
@@ -700,11 +702,7 @@ export class WorkerController {
     });
   }
 
-  private placeWorker(
-    input: LaunchInput,
-    handle: Handle,
-    call: (argumentsList: string[]) => Promise<string>,
-  ) {
+  private placeWorker(input: LaunchInput, handle: Handle, call: TerminalCall) {
     return this.placement.place(
       {
         ...(input.parentPane ? { parentPane: input.parentPane } : {}),
@@ -732,7 +730,7 @@ export class WorkerController {
     handle: Handle,
     paneId: string,
     name: string,
-    call: (argumentsList: string[]) => Promise<string>,
+    call: TerminalCall,
   ): Promise<void> {
     const { task } = handle;
     const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
@@ -760,7 +758,7 @@ export class WorkerController {
     handle: Handle,
     paneId: string,
     name: string,
-    call: (argumentsList: string[]) => Promise<string>,
+    call: TerminalCall,
   ): Promise<void> {
     try {
       await this.startAgent(handle, paneId, name, call);
@@ -796,7 +794,7 @@ export class WorkerController {
     handle: Handle,
     paneId: string,
     name: string,
-    call: (argumentsList: string[]) => Promise<string>,
+    call: TerminalCall,
   ): Promise<void> {
     const { task } = handle;
     const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
@@ -820,7 +818,7 @@ export class WorkerController {
   private async prepareStart(
     handle: Handle,
     paneId: string,
-    call: (argumentsList: string[]) => Promise<string>,
+    call: TerminalCall,
     generic?: GenericLoadout,
   ): Promise<void> {
     const information = object(
@@ -880,10 +878,7 @@ export class WorkerController {
     return ['idle', 'done'].includes(handle.nativeState ?? 'unknown');
   }
 
-  private async dispatch(
-    handle: Handle,
-    call: (argumentsList: string[]) => Promise<string>,
-  ): Promise<void> {
+  private async dispatch(handle: Handle, call: TerminalCall): Promise<void> {
     const { directory, task } = handle;
 
     if (isPiLoadout(task.loadout)) {
@@ -948,8 +943,7 @@ export class WorkerController {
         checkHandoff(this.root, source, handle.task);
       }
 
-      const call = (argumentsList: string[]) =>
-        this.client(argumentsList, workBudget(handle), handle.abort.signal);
+      const call = this.herdrCall(handle);
       const location = await this.placeWorker(input, handle, call);
 
       if (source) {
@@ -1108,10 +1102,7 @@ export class WorkerController {
     );
   }
 
-  private async finishStartup(
-    handle: Handle,
-    call: (argumentsList: string[]) => Promise<string>,
-  ): Promise<void> {
+  private async finishStartup(handle: Handle, call: TerminalCall): Promise<void> {
     if (!isPiLoadout(handle.task.loadout)) {
       if (handle.startError !== undefined && (await verifyRejectedStart(handle, call))) {
         handle.workerNeverStarted = true;
@@ -1268,8 +1259,7 @@ export class WorkerController {
       return;
     }
 
-    const call = (argumentsList: string[]) =>
-      this.client(argumentsList, workBudget(handle), handle.abort.signal);
+    const call = this.herdrCall(handle);
     const previousState = handle.nativeState;
 
     handle.owned = await inspectWorker(handle, call);
@@ -1391,7 +1381,7 @@ export class WorkerController {
 
   private async recoverStartup(
     handle: Handle,
-    call: (argumentsList: string[]) => Promise<string>,
+    call: TerminalCall,
     budget: InspectionBudget,
     record: (operation: () => void) => void,
   ): Promise<string> {
