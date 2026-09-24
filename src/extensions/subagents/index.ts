@@ -223,14 +223,13 @@ const launchWorker = async (
   runtime.setNested(Boolean(authority.parent));
 
   const loadout = authority.parent
-    ? await resolveInheritedLoadout({
+    ? resolveInheritedLoadout({
         parent: authority.parent,
         input: parameters,
         context,
         pi: runtime.pi,
-        signal: resolutionSignal,
       })
-    : await resolveLoadout(parameters, context, runtime.pi, resolutionSignal);
+    : resolveLoadout(parameters, context, resolutionSignal);
   signal?.throwIfAborted();
 
   let status: Awaited<ReturnType<WorkerController['launch']>>;

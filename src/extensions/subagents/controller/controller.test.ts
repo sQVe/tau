@@ -507,7 +507,7 @@ const completed = async (intercept?: HerdrClient) => {
   });
   const validation = vi
     .spyOn(loadoutModule, 'validateSavedLoadout')
-    .mockImplementation(async (value) => value as ReturnType<typeof readTask>['loadout']);
+    .mockImplementation((value) => value as ReturnType<typeof readTask>['loadout']);
   const context = { cwd: fixture.directory, isProjectTrusted: () => true } as Parameters<
     typeof loadoutModule.validateSavedLoadout
   >[1];
@@ -875,7 +875,7 @@ it('refuses known live native writers and preserves validation time in the origi
   expect(records.readSuccessor(fixture.sourceDirectory)).toBeUndefined();
   live = [];
   const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
-  fixture.validation.mockImplementation(async (value) => {
+  fixture.validation.mockImplementation((value) => {
     clock.mockReturnValue(20000);
 
     return value as ReturnType<typeof readTask>['loadout'];
@@ -887,34 +887,6 @@ it('refuses known live native writers and preserves validation time in the origi
   );
   expect(fixture.calls).toEqual([]);
   expect(records.readSuccessor(fixture.sourceDirectory)).toBeUndefined();
-});
-
-it('cancels follow-up validation without claiming or launching native work', async () => {
-  const fixture = await completed();
-  const entered = Promise.withResolvers<undefined>();
-  const abort = new AbortController();
-  fixture.validation.mockImplementation(
-    (_value, _context, signal) =>
-      new Promise((_resolve, reject) => {
-        signal?.addEventListener(
-          'abort',
-          () => {
-            reject(new Error('Cancelled validation.', { cause: signal.reason }));
-          },
-          { once: true },
-        );
-        entered.resolve(undefined);
-      }),
-  );
-  fixture.calls.length = 0;
-  const pending = fixture.controller.followUp(fixture.input, fixture.context, abort.signal);
-  await entered.promise;
-  abort.abort(new Error('Cancelled validation.'));
-
-  await expect(pending).rejects.toThrow('Cancelled validation.');
-  expect(fixture.calls).toEqual([]);
-  expect(records.readSuccessor(fixture.sourceDirectory)).toBeUndefined();
-  expect(records.readTasks(fixture.directory)).toHaveLength(1);
 });
 
 it('retains friendly names and avoids retained and live collisions', async ({ onTestFinished }) => {
@@ -972,7 +944,6 @@ it('bounds nested launches by the shared cap and original ancestor deadline', as
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });
-  fixture.input.loadout.tools.push('subagent');
   const parentStatus = await fixture.controller.launch(fixture.input);
   const parent = readTask(parentStatus.directory);
   recordEvent(parentStatus.directory, parent.taskId, 'accepted', 'Started.');
@@ -1029,7 +1000,6 @@ it('stops a nested worker as unreadable evidence, not a cancellation, when its p
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });
-  fixture.input.loadout.tools.push('subagent');
   const parentStatus = await fixture.controller.launch(fixture.input);
   const parent = readTask(parentStatus.directory);
   recordEvent(parentStatus.directory, parent.taskId, 'accepted', 'Started.');
@@ -2014,8 +1984,7 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
     '--thinking',
     'off',
   ]);
-  expect(workerArguments(task)).toContain('--no-extensions');
-  expect(workerArguments(task)).toContain(input.loadout.safetyExtension);
+  expect(workerArguments(task)).not.toContain('--no-extensions');
   expect(launched.state).toBe('starting');
   recordEvent(launched.directory, task.taskId, 'accepted', 'Accepted.');
   acceptReport(launched.directory, task.taskId, {
@@ -2094,8 +2063,7 @@ it('recovers reports and native references without extension discovery metadata'
     nativeSessionFile: task.nativeSessionFile,
     report: { summary: 'Saved HEAD handover.' },
   });
-  expect(workerArguments(readTask(launched.directory))).toContain('--no-extensions');
-  expect(workerArguments(readTask(launched.directory))).toContain(task.loadout.safetyExtension);
+  expect(workerArguments(readTask(launched.directory))).toEqual(workerArguments(task));
 });
 
 it('stops dispatched work when the launch status finds corrupt report evidence', async ({

@@ -704,7 +704,7 @@ it.each(['unsupported kind', 'missing executable'])(
     ]);
     expect(setup.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
     expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
-    expect(setup.calls.filter((call) => call[1] === 'get')).toHaveLength(2);
+    expect(setup.calls.filter((call) => call[1] === 'get')).toHaveLength(1);
   },
 );
 

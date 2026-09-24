@@ -102,8 +102,7 @@ const matchesRootSession = (task: Task, ancestry: ReturnType<typeof sessionLinea
   task.tree.rootSession === ancestry.root.rootSession &&
   task.tree.rootSessionId === ancestry.root.rootSessionId;
 
-const hasDelegationAuthority = (task: Task): boolean =>
-  isPiLoadout(task.loadout) && task.loadout.tools.includes('subagent');
+const hasDelegationAuthority = (task: Task): boolean => isPiLoadout(task.loadout);
 
 const deadlineHasBudgetLeft = (task: Task): boolean =>
   monotonicNow() < task.tree.monotonicDeadline - task.cancellationBudget;

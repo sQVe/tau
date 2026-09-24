@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
@@ -20,7 +21,6 @@ import { submitGenericText, genericPrompt, acceptGenericReport } from '../generi
 import { authorizeHistoryTask } from '../history.js';
 import { authenticateParent, currentProcessIdentity } from '../identity.js';
 import { validateSavedLoadout } from '../loadout.js';
-import { waitForResolution } from '../loadoutFingerprint.js';
 import { allocateName, nameSuffix } from '../names.js';
 import { validateNative } from '../native.js';
 import { WorkerPlacement } from '../placement.js';
@@ -87,7 +87,13 @@ import {
   cleanupDetail,
   recordNativeIssue,
 } from './record.js';
-import { waitForShell, integer, isBareShell, readProcessStart } from './shellIdentity.js';
+import {
+  waitForShell,
+  integer,
+  isBareShell,
+  readProcessStart,
+  WorkerExitedError,
+} from './shellIdentity.js';
 import type { InspectionBudget } from './shellIdentity.js';
 import { closeUnstartedPane, stopOwnedWorker } from './stop.js';
 import type { Handle } from './types.js';
@@ -1030,7 +1036,7 @@ export class WorkerController {
 
     requireUnclaimed(this.root, source);
     const native = validateNative(source.task, source.origin);
-    const loadout = await validateSavedLoadout(source.task.loadout, context, validationSignal);
+    const loadout = validateSavedLoadout(source.task.loadout, context);
     validationSignal.throwIfAborted();
     requireUnclaimed(this.root, source);
 
@@ -1772,10 +1778,10 @@ export class WorkerController {
 
     try {
       if (handle.starting) {
-        await waitForResolution(
+        await Promise.race([
           handle.starting.catch(() => undefined),
-          budget.signal,
-        );
+          delay(budget.remainingBudget(), undefined, { signal: budget.signal }),
+        ]);
       }
 
       handle.workerNeverStarted = await verifyRejectedStart(handle, call, budget);
@@ -1793,6 +1799,13 @@ export class WorkerController {
 
       return '';
     } catch (error) {
+      // A worker that left its bare shell before herdr reported its session has nothing left to stop.
+      if (error instanceof WorkerExitedError) {
+        handle.workerNeverStarted = true;
+
+        return '';
+      }
+
       return ` Cleanup inspection failed: ${String(error)}`;
     }
   }

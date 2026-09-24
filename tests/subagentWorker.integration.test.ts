@@ -23,11 +23,6 @@ import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { workerArguments } from '../src/extensions/subagents/controller/inspect.js';
-import {
-  integrationFingerprint,
-  modelFingerprint,
-  providerFingerprint,
-} from '../src/extensions/subagents/loadoutFingerprint.js';
 import { nativeIdentity, seedSession, workerPrompt } from '../src/extensions/subagents/profiles.js';
 import {
   acceptReply,
@@ -189,30 +184,10 @@ it.each(['editing', 'investigation'] as const)(
         profile: 'worker',
         role,
         model: `${model.provider}/${model.id}`,
-        modelFingerprint: modelFingerprint(model),
-        providerFingerprint: await providerFingerprint(
-          new ModelRegistry(runtime),
-          model,
-          new AbortController().signal,
-        ),
-        providerFingerprintVersion: 2,
         thinking: 'off',
         cwd: directory,
         agentDirectory: directory,
         permissions: 'trusted-full-tools',
-        tools: [
-          'read',
-          'bash',
-          'edit',
-          'write',
-          'subagent_progress',
-          'subagent_report',
-          'subagent_question',
-        ],
-        noExtensions: true,
-        integrations: [safety, questionnaire],
-        integrationFingerprint: integrationFingerprint([safety, questionnaire]),
-        safetyExtension: safety,
         instructions: 'Edit the fixture only.',
       },
     });
@@ -222,9 +197,13 @@ it.each(['editing', 'investigation'] as const)(
     mkdirSync(join(directory, 'delete-fixture', '.git'), { recursive: true });
     writeFileSync(join(directory, 'delete-fixture', '.git', 'keep'), 'preserve');
     const argumentsList = workerArguments(task);
-    const extensionPaths = argumentsList.flatMap((argument, index) =>
-      argument === '-e' ? [argumentsList[index + 1]!] : [],
-    );
+    const extensionPaths = [
+      ...argumentsList.flatMap((argument, index) =>
+        argument === '-e' ? [argumentsList[index + 1]!] : [],
+      ),
+      safety,
+      questionnaire,
+    ];
     const loader = new DefaultResourceLoader({
       cwd: directory,
       agentDir: directory,

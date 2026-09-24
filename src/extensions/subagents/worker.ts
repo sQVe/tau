@@ -497,11 +497,7 @@ const refuseAcceptedTask = (state: WorkerState, task: Task, context: ExtensionCo
   context.shutdown();
 };
 
-const startWorker = async (
-  pi: ExtensionAPI,
-  state: WorkerState,
-  context: ExtensionContext,
-): Promise<void> => {
+const startWorker = (pi: ExtensionAPI, state: WorkerState, context: ExtensionContext): void => {
   try {
     const task = readTask(state.directory);
     state.task = task;
@@ -523,9 +519,9 @@ const startWorker = async (
     }
 
     // Only the parent enforces the task deadline; wall-clock records are for display and recovery.
-    await checkWorkerRuntime(task.loadout, pi, context);
+    checkWorkerRuntime(task.loadout, pi, context);
     recordEvent(state.directory, task.taskId, 'ready', {
-      detail: 'Saved model, tools, cwd, and CC Safety Net checked.',
+      detail: 'Saved model, cwd, and CC Safety Net checked.',
       processId: process.pid,
     });
     startDispatchWatch(pi, state, task, context);
@@ -646,7 +642,9 @@ const registerToolCallHandler = (pi: ExtensionAPI, state: WorkerState): void => 
 };
 
 const registerSessionStartHandler = (pi: ExtensionAPI, state: WorkerState): void => {
-  pi.on('session_start', (_event, context) => startWorker(pi, state, context));
+  pi.on('session_start', (_event, context) => {
+    startWorker(pi, state, context);
+  });
 };
 
 const registerActivityHandlers = (pi: ExtensionAPI, state: WorkerState): void => {

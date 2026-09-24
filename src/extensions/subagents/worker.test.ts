@@ -20,7 +20,7 @@ import { textLimit } from './types.js';
 import workerExtension from './worker.js';
 
 vi.mock('./loadout.js', () => ({
-  checkWorkerRuntime: vi.fn<typeof checkWorkerRuntime>().mockResolvedValue(undefined),
+  checkWorkerRuntime: vi.fn<typeof checkWorkerRuntime>(),
 }));
 
 const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_000) => {
@@ -57,18 +57,10 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
       profile: role === 'editing' ? 'worker' : 'investigator',
       role,
       model: 'faux/test',
-      modelFingerprint: '0'.repeat(64),
-      providerFingerprint: '0'.repeat(64),
-      providerFingerprintVersion: 2,
       thinking: 'off',
       cwd: directory,
       agentDirectory: directory,
       permissions: 'trusted-full-tools',
-      tools: ['read', 'bash', 'edit', 'write', 'subagent_report', 'subagent_question'],
-      noExtensions: false,
-      integrations: [join(directory, 'safety.js')],
-      integrationFingerprint: '0'.repeat(64),
-      safetyExtension: join(directory, 'safety.js'),
       instructions: 'Read only.',
     },
   });
@@ -109,7 +101,9 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
 
 it('records a startup failure and shuts down when the worker runtime is refused', async () => {
   const { directory, emit, shutdown, context } = setup();
-  vi.mocked(checkWorkerRuntime).mockRejectedValueOnce(new Error('Saved model changed.'));
+  vi.mocked(checkWorkerRuntime).mockImplementationOnce(() => {
+    throw new Error('Saved model changed.');
+  });
 
   await emit('session_start');
 

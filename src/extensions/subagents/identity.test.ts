@@ -24,7 +24,6 @@ const setup = () => {
   const directory = join(root, 'worker');
   mkdirSync(directory);
   const loadout = fixtureLoadout(root);
-  loadout.tools.push('subagent');
   const task = {
     version: 1,
     taskId: 'worker',
@@ -85,14 +84,6 @@ it('authenticates a nested parent without trusting its environment locator', () 
   expect(() =>
     authenticateParent(root, current, { ...processIdentity, startedAt: 'reused PID' }),
   ).toThrow('identity');
-  writeFileSync(
-    join(directory, 'task.json'),
-    JSON.stringify({
-      ...task,
-      loadout: { ...task.loadout, tools: task.loadout.tools.filter((tool) => tool !== 'subagent') },
-    }),
-  );
-  expect(() => authenticateParent(root, current, processIdentity)).toThrow('authority');
   writeFileSync(
     join(directory, 'task.json'),
     JSON.stringify({ ...task, tree: { ...task.tree, monotonicDeadline: monotonicNow() - 1 } }),

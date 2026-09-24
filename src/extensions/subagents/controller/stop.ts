@@ -2,7 +2,7 @@ import { cancelOwnedWorker, runClient, workerStopped } from '../cancellation.js'
 import type { OwnedWorker } from '../cancellation.js';
 import type { WorkerPlacement } from '../placement.js';
 import { requireObject, resolveTerminal, result, text } from '../terminal.js';
-import { verifyRejectedStart } from './inspect.js';
+import { shellUnchanged } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
 import { cleanupDetail } from './record.js';
 import type { Handle } from './types.js';
@@ -99,10 +99,10 @@ export const closeUnstartedPane = async (
       location,
       call,
       async () => {
-        const absent = await verifyRejectedStart(handle, call, { remainingBudget, signal });
+        const absent = await shellUnchanged(handle, call, { remainingBudget, signal });
 
         if (!absent || handle.paneId !== location.paneId) {
-          throw new Error('Unstarted shell identity changed; pane closure refused.');
+          throw new Error('Worker shell identity changed; pane closure refused.');
         }
 
         await call(['pane', 'close', location.paneId]);
@@ -113,7 +113,7 @@ export const closeUnstartedPane = async (
 
     return {
       stopped: true,
-      detail: 'Worker absence confirmed; its unchanged shell pane was closed.',
+      detail: 'Worker absence confirmed; its unchanged shell pane closed.',
     };
   } catch (error) {
     const detail = paneClosed.confirmed

@@ -12,7 +12,6 @@ import {
 } from '@earendil-works/pi-ai';
 import {
   DefaultResourceLoader,
-  ModelRegistry,
   ModelRuntime,
   SessionManager,
   SettingsManager,
@@ -31,11 +30,6 @@ import {
 } from '../src/extensions/subagents/fixtures/loadout.js';
 import { currentProcessIdentity } from '../src/extensions/subagents/identity.js';
 import subagentsExtension from '../src/extensions/subagents/index.js';
-import {
-  integrationFingerprint,
-  modelFingerprint,
-  providerFingerprint,
-} from '../src/extensions/subagents/loadoutFingerprint.js';
 import { nativeIdentity, seedSession } from '../src/extensions/subagents/profiles.js';
 import {
   acceptReply,
@@ -117,32 +111,10 @@ const nestedScenario = async (waitForParentReply: boolean) => {
       profile: 'worker',
       role: 'editing',
       model: `${model.provider}/${model.id}`,
-      modelFingerprint: modelFingerprint(model),
-      providerFingerprint: await providerFingerprint(new ModelRegistry(runtime), model),
-      providerFingerprintVersion: 2,
       thinking: 'off',
       cwd: directory,
       agentDirectory: directory,
       permissions: 'trusted-full-tools',
-      tools: [
-        'read',
-        'bash',
-        'edit',
-        'write',
-        'subagent',
-        'subagent_status',
-        'subagent_history',
-        'subagent_follow_up',
-        'subagent_cancel',
-        'subagent_reply',
-        'subagent_report',
-        'subagent_question',
-        'subagent_progress',
-      ],
-      noExtensions: true,
-      integrations: [safety],
-      integrationFingerprint: integrationFingerprint([safety]),
-      safetyExtension: safety,
       instructions: 'Work only on the fixture. Preserve unrelated files.',
     },
   };
@@ -358,8 +330,7 @@ const nestedScenario = async (waitForParentReply: boolean) => {
   expect(child).toBeDefined();
   const childPi = child ? asPiLoadout(child.loadout) : undefined;
   expect(childPi?.model).toBe(asPiLoadout(parent.loadout).model);
-  expect(childPi?.tools).toEqual(asPiLoadout(parent.loadout).tools);
-  expect(childPi?.integrations).toEqual(asPiLoadout(parent.loadout).integrations);
+  expect(childPi?.thinking).toBe(asPiLoadout(parent.loadout).thinking);
   expect(child?.loadout.instructions).toContain(parent.task);
   expect(
     results.some(

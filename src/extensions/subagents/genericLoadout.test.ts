@@ -18,11 +18,11 @@ const fixture = () => {
     cwd: directory,
     isProjectTrusted: () => true,
     modelRegistry: undefined as never,
+    scopedModels: [],
   };
-  const parent = { getAllTools: () => [], getCommands: () => [] };
   const request = { profile: 'worker', harness: 'codex', permissions: 'native-controls' };
 
-  return { directory, context, parent, request };
+  return { directory, context, request };
 };
 
 it.each(['claude', 'codex', 'gemini'])(
@@ -30,11 +30,7 @@ it.each(['claude', 'codex', 'gemini'])(
   async (harness) => {
     const setup = fixture();
 
-    const resolved = await resolveLoadout(
-      { ...setup.request, harness },
-      setup.context,
-      setup.parent,
-    );
+    const resolved = resolveLoadout({ ...setup.request, harness }, setup.context);
 
     expect(resolved).toEqual({
       harness: 'generic',
@@ -59,12 +55,12 @@ it('refuses unsupported verified guarantees and bare model requests before launc
     model: 'requested',
   };
 
-  await expect(
-    resolveLoadout({ ...request, permissions: 'trusted-full-tools' }, setup.context, setup.parent),
-  ).rejects.toThrow('native-controls');
-  await expect(
-    resolveLoadout({ ...setup.request, model: 'requested' }, setup.context, setup.parent),
-  ).rejects.toThrow('native arguments');
+  expect(() =>
+    resolveLoadout({ ...request, permissions: 'trusted-full-tools' }, setup.context),
+  ).toThrow('native-controls');
+  expect(() => resolveLoadout({ ...setup.request, model: 'requested' }, setup.context)).toThrow(
+    'native arguments',
+  );
 });
 
 it('copies native arguments literally and never takes configuration authority from profiles', async () => {
@@ -72,7 +68,7 @@ it('copies native arguments literally and never takes configuration authority fr
   const nativeArguments = ['--model', 'requested; not shell text'];
   const request = { ...setup.request, nativeArguments, model: 'requested' };
 
-  const resolved = await resolveLoadout(request, setup.context, setup.parent);
+  const resolved = resolveLoadout(request, setup.context);
   nativeArguments.push('--unexpected');
 
   expect(resolved).toMatchObject({
@@ -84,39 +80,31 @@ it('copies native arguments literally and never takes configuration authority fr
     join(setup.directory, 'agents', 'worker.md'),
     '---\nname: worker\nrole: editing\ncli: codex\nmodel: profile-model\n---\nTask guidance.\n',
   );
-  await expect(resolveLoadout(setup.request, setup.context, setup.parent)).rejects.toThrow(
-    'native arguments',
-  );
+  expect(() => resolveLoadout(setup.request, setup.context)).toThrow('native arguments');
 });
 
 it('refuses report scope expansion, invalid native arguments, and profile thinking translation', async () => {
   const setup = fixture();
 
-  await expect(
-    resolveLoadout({ ...setup.request, reportDirectory: '..' }, setup.context, setup.parent),
-  ).rejects.toThrow('inside the authorized cwd');
-  await expect(
-    resolveLoadout(
-      { ...setup.request, nativeArguments: ['unsafe\u0000argument'] },
-      setup.context,
-      setup.parent,
-    ),
-  ).rejects.toThrow('Invalid or oversized');
+  expect(() => resolveLoadout({ ...setup.request, reportDirectory: '..' }, setup.context)).toThrow(
+    'inside the authorized cwd',
+  );
+  expect(() =>
+    resolveLoadout({ ...setup.request, nativeArguments: ['unsafe\u0000argument'] }, setup.context),
+  ).toThrow('Invalid or oversized');
   mkdirSync(join(setup.directory, 'agents'));
   writeFileSync(
     join(setup.directory, 'agents', 'worker.md'),
     '---\nname: worker\nrole: editing\ncli: codex\nthinking: high\n---\nTask guidance.\n',
   );
-  await expect(resolveLoadout(setup.request, setup.context, setup.parent)).rejects.toThrow(
-    'Native thinking settings',
-  );
+  expect(() => resolveLoadout(setup.request, setup.context)).toThrow('Native thinking settings');
 });
 
 it('preserves cancellation before native configuration', async () => {
   const setup = fixture();
   const reason = new Error('Launch deadline expired.');
 
-  await expect(
-    resolveLoadout(setup.request, setup.context, setup.parent, AbortSignal.abort(reason)),
-  ).rejects.toBe(reason);
+  expect(() => resolveLoadout(setup.request, setup.context, AbortSignal.abort(reason))).toThrow(
+    reason,
+  );
 });

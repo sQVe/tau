@@ -58,6 +58,14 @@ export const waitForShell = async (
   }
 };
 
+export class WorkerExitedError extends Error {
+  override name = 'WorkerExitedError';
+
+  constructor(options?: ErrorOptions) {
+    super('Worker exited before readiness. No task dispatch or retry.', options);
+  }
+}
+
 export interface InspectionBudget {
   remainingBudget: () => number;
   signal: AbortSignal;
@@ -75,9 +83,7 @@ export const readProcessStart = async (
     { signal: cleanup?.signal ?? handle.abort.signal },
   ).catch((error: unknown) => {
     if (processAbsent(processId)) {
-      throw new Error('Worker exited before readiness. No task dispatch or retry.', {
-        cause: error,
-      });
+      throw new WorkerExitedError({ cause: error });
     }
 
     throw error;

@@ -1,262 +1,192 @@
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import { fauxProvider, InMemoryCredentialStore, InMemoryModelsStore } from '@earendil-works/pi-ai';
-import {
-  DefaultResourceLoader,
-  ModelRegistry,
-  ModelRuntime,
-} from '@earendil-works/pi-coding-agent';
+import { ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
-import { asPiLoadout, fixtureLoadout } from './fixtures/loadout.js';
-import { resolveInheritedLoadout } from './loadout.js';
-import * as loadoutModule from './loadout.js';
-import * as loadoutFingerprintModule from './loadoutFingerprint.js';
+import { asPiLoadout, fixtureGenericLoadout, fixtureLoadout } from './fixtures/loadout.js';
+import {
+  checkWorkerRuntime,
+  resolveInheritedLoadout,
+  resolveLoadout,
+  validateSavedLoadout,
+} from './loadout.js';
 import { resolveProfile, parseProfile } from './profiles.js';
 import { textLimit } from './types.js';
 import type { Task } from './types.js';
 
-const closure = (setting: string) => () => setting;
-const resolveLoadout = async (...argumentsList: Parameters<typeof loadoutModule.resolveLoadout>) =>
-  asPiLoadout(await loadoutModule.resolveLoadout(...argumentsList));
+const profile = (body: string) => `---\nname: worker\nrole: editing\nthinking: off\n---\n${body}`;
 
-const safetyExtensionPath = () =>
-  join(
-    dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
-    'dist',
-    'pi',
-    'index.js',
-  );
+const startup =
+  (...startupArguments: Parameters<typeof checkWorkerRuntime>) =>
+  () => {
+    checkWorkerRuntime(...startupArguments);
+  };
 
-const herdrPiIntegrationPath = fileURLToPath(
-  new URL('./fixtures/herdrPiIntegration.ts', import.meta.url),
-);
-
-const piLoadoutFixture = async (
-  onTestFinished: (callback: () => void) => void,
-  options: { marker: boolean },
-) => {
+const workerFixture = async (onTestFinished: (callback: () => void) => void) => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'tau-pi-loadout-')));
-  const originalArguments = process.argv;
   onTestFinished(() => {
-    process.argv = originalArguments;
     vi.unstubAllEnvs();
     rmSync(directory, { recursive: true, force: true });
   });
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.stubEnv('TAU_SUBAGENT_MODEL', '');
-  const safety = safetyExtensionPath();
-  const provider = fileURLToPath(new URL('./fixtures/controlledProvider.ts', import.meta.url));
-  const extensions = [safety, provider];
-
-  if (options.marker) {
-    extensions.push(herdrPiIntegrationPath);
-  }
-
-  process.argv = [
-    process.execPath,
-    'pi',
-    '--no-extensions',
-    ...extensions.flatMap((path) => ['-e', path]),
-  ];
-  const loader = new DefaultResourceLoader({
-    cwd: directory,
-    agentDir: directory,
-    noExtensions: true,
-    additionalExtensionPaths: extensions,
-  });
-  await loader.reload();
-  const runtime = await ModelRuntime.create({
-    authPath: join(directory, 'auth.json'),
-    modelsPath: null,
-    refreshOnCreate: false,
-  });
-
-  for (const registration of loader.getExtensions().runtime.pendingNativeProviderRegistrations) {
-    runtime.registerNativeProvider(registration.provider);
-  }
-
-  const registry = new ModelRegistry(runtime);
-  // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model IDs, not an array predicate.
-  const model = registry.find('tau-worker-fixture', 'faux-1');
-
-  if (!model) {
-    throw new Error('Missing fixture model.');
-  }
-
-  return {
-    directory,
-    safety,
-    provider,
-    extensions,
-    model,
-    context: { cwd: directory, modelRegistry: registry, isProjectTrusted: () => true },
-    pi: { getAllTools: () => [], getCommands: () => [] },
-    request: {
-      profile: 'worker',
-      permissions: 'trusted-full-tools',
-      model: 'tau-worker-fixture/faux-1',
-    },
-  };
-};
-
-it("refuses a Pi loadout whose loaded extensions omit herdr's Pi integration", async ({
-  onTestFinished,
-}) => {
-  const fixture = await piLoadoutFixture(onTestFinished, { marker: false });
-
-  await expect(resolveLoadout(fixture.request, fixture.context, fixture.pi)).rejects.toThrow(
-    'herdr integration install pi',
-  );
-  await expect(resolveLoadout(fixture.request, fixture.context, fixture.pi)).rejects.toThrow(
-    "herdr's Pi integration must be loaded in Pi",
-  );
-});
-
-it("resolves a Pi loadout when a loaded extension carries herdr's Pi marker", async ({
-  onTestFinished,
-}) => {
-  const fixture = await piLoadoutFixture(onTestFinished, { marker: true });
-
-  const resolved = await resolveLoadout(fixture.request, fixture.context, fixture.pi);
-
-  expect(resolved.integrations).toContain(herdrPiIntegrationPath);
-});
-
-it('applies the herdr Pi integration check to saved loadout replay', async ({ onTestFinished }) => {
-  const fixture = await piLoadoutFixture(onTestFinished, { marker: false });
-  const saved = {
-    ...fixtureLoadout(fixture.directory),
-    model: fixture.request.model,
-    modelFingerprint: loadoutFingerprintModule.modelFingerprint(fixture.model),
-    thinking: 'off' as const,
-    noExtensions: true,
-    integrations: fixture.extensions,
-    integrationFingerprint: loadoutFingerprintModule.integrationFingerprint(fixture.extensions),
-    safetyExtension: fixture.safety,
-  };
-
-  await expect(loadoutModule.validateSavedLoadout(saved, fixture.context)).rejects.toThrow(
-    'herdr integration install pi',
-  );
-});
-
-it('allows only resolved API key rotation under explicitly versioned provider fingerprints', async ({
-  onTestFinished,
-}) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-provider-version-'));
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
-  });
-  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  const provider = fauxProvider({ provider: 'fingerprint-fixture' });
+  const provider = fauxProvider({ provider: 'tau-worker-fixture' });
   const runtime = await ModelRuntime.create({
     credentials: new InMemoryCredentialStore(),
     modelsStore: new InMemoryModelsStore(),
     modelsPath: null,
     refreshOnCreate: false,
   });
-  let resolution = {
-    auth: { apiKey: 'first', baseUrl: 'https://fixture.invalid', headers: { account: 'one' } },
-    env: { REGION: 'one' },
-  };
-  const native = {
-    ...provider.provider,
-    auth: { apiKey: { name: 'Fixture', resolve: () => Promise.resolve(resolution) } },
-  };
-  runtime.registerNativeProvider(native);
-  const registry = new ModelRegistry(runtime);
+  runtime.registerNativeProvider(provider.provider);
   const model = provider.getModel();
-  const signal = new AbortController().signal;
-  const current = await loadoutFingerprintModule.providerFingerprint(registry, model, signal);
-  resolution = { ...resolution, auth: { ...resolution.auth, apiKey: 'rotated' } };
+  const context = {
+    cwd: directory,
+    modelRegistry: new ModelRegistry(runtime),
+    scopedModels: [{ model }],
+    isProjectTrusted: () => true,
+  };
+  const request = {
+    profile: 'worker',
+    permissions: 'trusted-full-tools',
+    model: `${model.provider}/${model.id}`,
+  };
 
-  expect(await loadoutFingerprintModule.providerFingerprint(registry, model, signal)).toBe(current);
-  const rotated = resolution;
+  return { directory, model, context, request };
+};
 
-  for (const changed of [
-    { ...rotated, auth: { ...rotated.auth, baseUrl: 'https://changed.invalid' } },
-    { ...rotated, auth: { ...rotated.auth, headers: { account: 'two' } } },
-    { ...rotated, env: { REGION: 'two' } },
-  ]) {
-    resolution = changed;
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Compare each independent auth mutation against the same saved fingerprint.
-    expect(await loadoutFingerprintModule.providerFingerprint(registry, model, signal)).not.toBe(
-      current,
-    );
-  }
+it('resolves an explicit worker model and names the configured models when none resolves', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, request } = await workerFixture(onTestFinished);
 
-  resolution = rotated;
-  const registration = vi
-    .spyOn(registry, 'getRegisteredProviderConfig')
-    .mockReturnValue({ apiKey: 'literal-one' });
-  const literal = await loadoutFingerprintModule.providerFingerprint(registry, model, signal);
-  registration.mockReturnValue({ apiKey: 'literal-two' });
-  expect(await loadoutFingerprintModule.providerFingerprint(registry, model, signal)).not.toBe(
-    literal,
+  const resolved = asPiLoadout(resolveLoadout(request, context));
+
+  expect(resolved).toEqual({
+    harness: 'pi',
+    profile: 'worker',
+    role: 'editing',
+    model: request.model,
+    thinking: 'off',
+    cwd: directory,
+    agentDirectory: directory,
+    permissions: 'trusted-full-tools',
+    instructions: resolved.instructions,
+  });
+  const withoutModel = { profile: 'worker', permissions: 'trusted-full-tools' };
+  const missing = () => resolveLoadout(withoutModel, context);
+  expect(missing).toThrow('no fallback');
+  expect(missing).toThrow(`Configured models: ${request.model}.`);
+  expect(() => resolveLoadout(withoutModel, { ...context, scopedModels: [] })).toThrow(
+    /no fallback\.$/,
   );
-  registration.mockRestore();
-  const modelsPath = join(directory, 'models.json');
+  expect(() => resolveLoadout({ ...request, model: 'invalid model' }, context)).toThrow(
+    'no fallback',
+  );
+  const unavailable = () => resolveLoadout({ ...request, model: 'missing/model' }, context);
+  expect(unavailable).toThrow('unavailable: missing/model');
+  expect(unavailable).toThrow(request.model);
+  vi.stubEnv('TAU_SUBAGENT_MODEL', request.model);
+  expect(asPiLoadout(resolveLoadout(withoutModel, context)).model).toBe(request.model);
+  mkdirSync(join(directory, 'agents'));
   writeFileSync(
-    modelsPath,
-    JSON.stringify({ providers: { unrelated: { apiKey: 'literal-one' } } }),
+    join(directory, 'agents', 'worker.md'),
+    profile('Custom task.').replace('role: editing', 'role: editing\nmodel: missing/profile'),
   );
-  const fileConfiguration = await loadoutFingerprintModule.providerFingerprint(
-    registry,
-    model,
-    signal,
+  vi.stubEnv('TAU_SUBAGENT_MODEL', 'missing/environment');
+  expect(() => resolveLoadout(withoutModel, context)).toThrow('missing/profile');
+  expect(asPiLoadout(resolveLoadout(request, context)).model).toBe(request.model);
+  expect(() => resolveLoadout({ ...request, harness: 'codex' }, context)).toThrow(
+    'native-controls',
   );
-  expect(fileConfiguration).not.toBe(current);
-  writeFileSync(
-    modelsPath,
-    JSON.stringify({ providers: { unrelated: { apiKey: 'literal-two' } } }),
+  expect(() => resolveLoadout({ ...request, permissions: 'read-only' }, context)).toThrow(
+    'trusted-full-tools',
   );
-  expect(await loadoutFingerprintModule.providerFingerprint(registry, model, signal)).not.toBe(
-    fileConfiguration,
+  expect(() => resolveLoadout(request, { ...context, isProjectTrusted: () => false })).toThrow(
+    'trusted project',
   );
-  rmSync(modelsPath);
-
-  const auth = vi.spyOn(registry, 'getApiKeyAndHeaders');
-  auth.mockResolvedValueOnce({ ok: false, error: 'Refresh failed' });
-  await expect(
-    loadoutFingerprintModule.providerFingerprint(registry, model, signal),
-  ).rejects.toThrow('authentication is unavailable');
-  const deferred =
-    Promise.withResolvers<Awaited<ReturnType<ModelRegistry['getApiKeyAndHeaders']>>>();
-  auth.mockReturnValueOnce(deferred.promise);
-  const cancellation = new AbortController();
-  const pending = loadoutFingerprintModule.providerFingerprint(
-    registry,
-    model,
-    cancellation.signal,
-  );
-  cancellation.abort();
-  await expect(pending).rejects.toThrow('cancelled');
-  expect(auth).toHaveBeenCalledTimes(2);
-  deferred.resolve({ ok: false, error: 'Finished after cancellation' });
-  auth.mockRestore();
+  const otherCwd = () => resolveLoadout({ ...request, cwd: tmpdir() }, context);
+  expect(otherCwd).toThrow(context.cwd);
+  expect(otherCwd).toThrow('herdr agent prompt');
+  expect(() => resolveLoadout({ ...request, profile: 'missing' }, context)).toThrow('not found');
 });
 
-it('refuses distinct provider closures even when their source text matches', () => {
-  const original = closure('original');
-  const replacement = closure('replacement');
+it('replays a saved loadout only under the same trust, directories, model, and thinking', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, request } = await workerFixture(onTestFinished);
+  const saved = asPiLoadout(resolveLoadout(request, context));
 
-  expect(original.toString()).toBe(replacement.toString());
-  expect(loadoutFingerprintModule).toHaveProperty('providerCallbacksMatch');
-  expect(
-    loadoutFingerprintModule.providerCallbacksMatch({ stream: original }, { stream: replacement }),
-  ).toBe(false);
-  expect(
-    loadoutFingerprintModule.providerCallbacksMatch({ stream: original }, { stream: original }),
-  ).toBe(true);
+  expect(validateSavedLoadout(saved, context)).toEqual(saved);
+  expect(() => validateSavedLoadout({ ...saved, providerFingerprint: 'f' }, context)).toThrow(
+    'Invalid saved',
+  );
+  expect(() => validateSavedLoadout(fixtureGenericLoadout(directory), context)).toThrow('Non-Pi');
+  expect(() => validateSavedLoadout(saved, { ...context, isProjectTrusted: () => false })).toThrow(
+    'trusted',
+  );
+  expect(() => validateSavedLoadout({ ...saved, cwd: join(directory, 'wrong') }, context)).toThrow(
+    'cwd',
+  );
+  expect(() =>
+    validateSavedLoadout({ ...saved, agentDirectory: join(directory, 'wrong') }, context),
+  ).toThrow('directory');
+  expect(() => validateSavedLoadout({ ...saved, model: 'missing/model' }, context)).toThrow(
+    'no fallback',
+  );
+  expect(() => validateSavedLoadout({ ...saved, thinking: 'high' }, context)).toThrow('thinking');
 });
 
-const profile = (body: string) => `---\nname: worker\nrole: editing\nthinking: off\n---\n${body}`;
+it('refuses worker startup without the saved model, cwd, or CC Safety Net and activates the worker tools', async ({
+  onTestFinished,
+}) => {
+  const { directory, model, request } = await workerFixture(onTestFinished);
+  const loadout = { ...fixtureLoadout(directory), model: request.model };
+  const setActiveTools = vi.fn<ExtensionAPI['setActiveTools']>();
+  const pi = {
+    getThinkingLevel: () => 'off',
+    getCommands: () => [{ name: 'cc-safety-net:2', source: 'extension' }],
+    getAllTools: () => [
+      { name: 'read', sourceInfo: { source: 'builtin' } },
+      { name: 'ask_user_question', sourceInfo: { source: 'extension' } },
+      { name: 'subagent', sourceInfo: { source: 'extension' } },
+    ],
+    setActiveTools,
+  } as unknown as Parameters<typeof checkWorkerRuntime>[1];
+  const worker: Parameters<typeof checkWorkerRuntime>[2] = {
+    model,
+    cwd: directory,
+    isProjectTrusted: () => true,
+  };
+
+  checkWorkerRuntime(loadout, pi, worker);
+
+  expect(setActiveTools).toHaveBeenCalledWith([
+    'read',
+    'bash',
+    'edit',
+    'write',
+    'subagent',
+    'subagent_report',
+    'subagent_question',
+  ]);
+  expect(startup(loadout, pi, { ...worker, isProjectTrusted: () => false })).toThrow('trust');
+  expect(startup(loadout, pi, { ...worker, model: undefined })).toThrow('no fallback');
+  expect(startup({ ...loadout, model: 'other/model' }, pi, worker)).toThrow('no fallback');
+  expect(startup({ ...loadout, thinking: 'high' }, pi, worker)).toThrow('no fallback');
+  expect(startup({ ...loadout, cwd: join(directory, 'wrong') }, pi, worker)).toThrow('cwd');
+  expect(
+    startup(
+      loadout,
+      { ...pi, getCommands: () => [{ name: 'cc-safety-net', source: 'skill' }] } as typeof pi,
+      worker,
+    ),
+  ).toThrow('CC Safety Net');
+  expect(setActiveTools).toHaveBeenCalledOnce();
+});
 
 it('defaults bundled roles to medium effort without model or effort settings in markdown', () => {
   for (const name of ['investigator', 'worker']) {
@@ -309,290 +239,6 @@ it('preserves custom thinking profiles and rejects invalid settings without norm
 });
 
 // Loads real extensions from source, which can take several seconds on a busy CI runner.
-it('reproduces CLI provider integrations but refuses runtime headers and invalid authority', async ({
-  onTestFinished,
-}) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-loadout-'));
-  const originalArguments = process.argv;
-  onTestFinished(() => {
-    process.argv = originalArguments;
-    vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
-  });
-  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  vi.stubEnv('TAU_SUBAGENT_MODEL', '');
-  const safety = join(
-    dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
-    'dist',
-    'pi',
-    'index.js',
-  );
-  const provider = fileURLToPath(new URL('./fixtures/controlledProvider.ts', import.meta.url));
-  const questionnaire = fileURLToPath(import.meta.resolve('@juicesharp/rpiv-ask-user-question'));
-  const parentTools = fileURLToPath(new URL('./index.ts', import.meta.url));
-  const herdrPiIntegration = fileURLToPath(
-    new URL('./fixtures/herdrPiIntegration.ts', import.meta.url),
-  );
-  process.argv = [
-    process.execPath,
-    'pi',
-    '--no-extensions',
-    '-e',
-    safety,
-    '-e',
-    provider,
-    '-e',
-    questionnaire,
-    '-e',
-    parentTools,
-    '-e',
-    herdrPiIntegration,
-  ];
-  const loader = new DefaultResourceLoader({
-    cwd: directory,
-    agentDir: directory,
-    additionalExtensionPaths: [safety, provider, questionnaire, parentTools, herdrPiIntegration],
-  });
-  await loader.reload();
-  const runtime = await ModelRuntime.create({
-    authPath: join(directory, 'auth.json'),
-    modelsPath: null,
-    refreshOnCreate: false,
-  });
-
-  for (const registration of loader.getExtensions().runtime.pendingNativeProviderRegistrations) {
-    runtime.registerNativeProvider(registration.provider);
-  }
-
-  const registry = new ModelRegistry(runtime);
-  const context = { cwd: directory, modelRegistry: registry, isProjectTrusted: () => true };
-  const pi = { getAllTools: () => [], getCommands: () => [] };
-  const request = {
-    profile: 'worker',
-    permissions: 'trusted-full-tools',
-    model: 'tau-worker-fixture/faux-1',
-  };
-  const disabled = join(directory, 'disabled-package');
-  mkdirSync(disabled);
-  writeFileSync(
-    join(disabled, 'package.json'),
-    JSON.stringify({ pi: { extensions: ['index.js'] } }),
-  );
-  writeFileSync(
-    join(disabled, 'index.js'),
-    'throw new Error("Disabled package was rediscovered");',
-  );
-  writeFileSync(join(directory, 'settings.json'), JSON.stringify({ packages: [disabled] }));
-
-  const resolved = await resolveLoadout(request, context, pi);
-  expect(resolved).toMatchObject({ noExtensions: true, providerFingerprintVersion: 2 });
-  expect(loadoutModule).toHaveProperty('validateSavedLoadout');
-  expect(await loadoutModule.validateSavedLoadout(resolved, context)).toEqual(resolved);
-  const selectedModel = registry.find('tau-worker-fixture', 'faux-1');
-
-  if (!selectedModel) {
-    throw new Error('Missing fixture model.');
-  }
-
-  const recomputed = {
-    ...resolved,
-    providerFingerprint: await loadoutFingerprintModule.providerFingerprint(
-      registry,
-      selectedModel,
-    ),
-  };
-  expect(await loadoutModule.validateSavedLoadout(recomputed, context)).toEqual(recomputed);
-  const originalAuth = registry.getApiKeyAndHeaders.bind(registry);
-  const rotatingAuth = vi
-    .spyOn(registry, 'getApiKeyAndHeaders')
-    .mockImplementation(async (model) => {
-      const auth = await originalAuth(model);
-
-      return auth.ok ? { ...auth, apiKey: 'rotated-token' } : auth;
-    });
-  await expect(loadoutModule.validateSavedLoadout(resolved, context)).rejects.toThrow(
-    'cannot reproduce',
-  );
-  await expect(loadoutModule.validateSavedLoadout(recomputed, context)).rejects.toThrow(
-    'cannot reproduce',
-  );
-  rotatingAuth.mockRestore();
-  expect(resolved.integrations).toEqual([
-    safety,
-    provider,
-    questionnaire,
-    parentTools,
-    herdrPiIntegration,
-  ]);
-  expect(
-    loader.getExtensions().extensions.some((extension) => extension.tools.has('subagent_history')),
-  ).toBe(true);
-  expect(resolved.tools).toContain('subagent_history');
-  expect(resolved.tools).toContain('subagent_follow_up');
-  expect(resolved.tools).toContain('subagent_question');
-  expect(resolved.tools).not.toContain('ask_user_question');
-  const incompleteTools = {
-    ...resolved,
-    tools: resolved.tools.filter(
-      (tool) =>
-        !tool.startsWith('subagent_') || ['subagent_report', 'subagent_question'].includes(tool),
-    ),
-  };
-  await expect(loadoutModule.validateSavedLoadout(incompleteTools, context)).rejects.toThrow(
-    'Saved worker tools',
-  );
-  const directQuestionnaire = { ...resolved, tools: [...resolved.tools, 'ask_user_question'] };
-  await expect(loadoutModule.validateSavedLoadout(directQuestionnaire, context)).rejects.toThrow(
-    'Saved worker tools',
-  );
-  rmSync(join(directory, 'settings.json'));
-  const withoutModel = { profile: 'worker', permissions: 'trusted-full-tools' };
-  await expect(resolveLoadout(withoutModel, context, pi)).rejects.toThrow('no fallback');
-  vi.stubEnv('TAU_SUBAGENT_MODEL', request.model);
-  expect((await resolveLoadout(withoutModel, context, pi)).model).toBe(request.model);
-
-  mkdirSync(join(directory, 'agents'));
-  const customProfile = join(directory, 'agents', 'worker.md');
-  writeFileSync(
-    customProfile,
-    profile('Custom task.').replace('role: editing', `role: editing\nmodel: ${request.model}`),
-  );
-  vi.stubEnv('TAU_SUBAGENT_MODEL', 'missing/environment');
-  expect(await loadoutModule.validateSavedLoadout(resolved, context)).toEqual(resolved);
-  expect((await resolveLoadout(withoutModel, context, pi)).model).toBe(request.model);
-  writeFileSync(
-    customProfile,
-    profile('Custom task.').replace('role: editing', 'role: editing\nmodel: missing/profile'),
-  );
-  expect(await loadoutModule.validateSavedLoadout(resolved, context)).toEqual(resolved);
-  await expect(resolveLoadout(withoutModel, context, pi)).rejects.toThrow('missing/profile');
-  expect((await resolveLoadout(request, context, pi)).model).toBe(request.model);
-  await expect(resolveLoadout({ ...request, model: 'invalid model' }, context, pi)).rejects.toThrow(
-    'no fallback',
-  );
-  rmSync(customProfile);
-  expect(await loadoutModule.validateSavedLoadout(resolved, context)).toEqual(resolved);
-  await expect(
-    loadoutModule.validateSavedLoadout(resolved, { ...context, isProjectTrusted: () => false }),
-  ).rejects.toThrow('trusted');
-  await expect(
-    loadoutModule.validateSavedLoadout({ ...resolved, thinking: 'high' }, context),
-  ).rejects.toThrow('thinking');
-  await expect(
-    loadoutModule.validateSavedLoadout(
-      { ...resolved, integrationFingerprint: 'f'.repeat(64) },
-      context,
-    ),
-  ).rejects.toThrow('integration');
-
-  await expect(
-    loadoutModule.validateSavedLoadout({ ...resolved, providerFingerprintVersion: 99 }, context),
-  ).rejects.toThrow('Invalid saved');
-  await expect(
-    loadoutModule.validateSavedLoadout({ ...resolved, modelFingerprint: 'f'.repeat(64) }, context),
-  ).rejects.toThrow('model');
-  await expect(
-    loadoutModule.validateSavedLoadout({ ...resolved, cwd: join(directory, 'wrong') }, context),
-  ).rejects.toThrow('cwd');
-  await expect(
-    loadoutModule.validateSavedLoadout(
-      { ...resolved, agentDirectory: join(directory, 'wrong') },
-      context,
-    ),
-  ).rejects.toThrow('directory');
-  const cancelledReplay = AbortSignal.abort(new Error('Replay cancelled.'));
-  await expect(
-    loadoutModule.validateSavedLoadout(resolved, context, cancelledReplay),
-  ).rejects.toThrow('Replay cancelled.');
-
-  const invalidModelsPath = join(directory, 'models.json');
-  writeFileSync(invalidModelsPath, '{');
-  await expect(loadoutModule.validateSavedLoadout(resolved, context)).rejects.toThrow(
-    'model configuration',
-  );
-  rmSync(invalidModelsPath);
-
-  const authStarted = Promise.withResolvers<undefined>();
-  const stalledAuth =
-    Promise.withResolvers<Awaited<ReturnType<ModelRegistry['getApiKeyAndHeaders']>>>();
-  const authSpy = vi.spyOn(registry, 'getApiKeyAndHeaders').mockImplementation(() => {
-    authStarted.resolve(undefined);
-
-    return stalledAuth.promise;
-  });
-  const cancellation = new AbortController();
-  let cancellationError: unknown;
-  const pendingResolution = resolveLoadout(request, context, pi, cancellation.signal).catch(
-    (error: unknown) => {
-      cancellationError = error;
-    },
-  );
-  await authStarted.promise;
-  cancellation.abort(new Error('Resolution cancelled by parent.'));
-  await new Promise((done) => setImmediate(done));
-  const rejectedBeforeAuthFinished = cancellationError instanceof Error;
-  stalledAuth.resolve({ ok: false, error: 'Fixture released after cancellation.' });
-  await pendingResolution;
-  authSpy.mockRestore();
-  const failedAuth = vi
-    .spyOn(registry, 'getApiKeyAndHeaders')
-    .mockResolvedValueOnce({ ok: false, error: 'No credentials' });
-  await expect(loadoutModule.validateSavedLoadout(resolved, context)).rejects.toThrow(
-    'authentication is unavailable',
-  );
-  failedAuth.mockRestore();
-
-  expect(rejectedBeforeAuthFinished).toBe(true);
-  expect(resolved.integrations).toContain(provider);
-  expect(resolved.permissions).toBe('trusted-full-tools');
-  expect(resolved.thinking).toBe('off');
-  await expect(resolveLoadout({ ...request, harness: 'codex' }, context, pi)).rejects.toThrow(
-    'native-controls',
-  );
-  await expect(
-    resolveLoadout({ ...request, permissions: 'read-only' }, context, pi),
-  ).rejects.toThrow('trusted-full-tools');
-  await expect(
-    resolveLoadout(request, { ...context, isProjectTrusted: () => false }, pi),
-  ).rejects.toThrow('trusted project');
-  const otherCwd = resolveLoadout({ ...request, cwd: tmpdir() }, context, pi);
-  await expect(otherCwd).rejects.toThrow(context.cwd);
-  await expect(otherCwd).rejects.toThrow('herdr agent prompt');
-  await expect(resolveLoadout({ ...request, profile: 'missing' }, context, pi)).rejects.toThrow(
-    'not found',
-  );
-  await expect(resolveLoadout({ ...request, model: 'missing/model' }, context, pi)).rejects.toThrow(
-    'unavailable',
-  );
-  const originalProvider = registry.getRegisteredNativeProvider('tau-worker-fixture');
-
-  if (!originalProvider) {
-    throw new Error('Fixture provider missing.');
-  }
-
-  registry.registerProvider({ ...originalProvider, headers: { 'X-Worker-Test': 'runtime-only' } });
-  await expect(loadoutModule.validateSavedLoadout(resolved, context)).rejects.toThrow(
-    'cannot reproduce current provider',
-  );
-  await expect(resolveLoadout(request, context, pi)).rejects.toThrow(
-    'cannot reproduce current provider',
-  );
-  const replacement = fauxProvider({
-    provider: 'tau-worker-fixture',
-    api: 'tau-worker-fixture',
-  }).provider;
-  expect(replacement.streamSimple.toString()).toBe(originalProvider.streamSimple.toString());
-  registry.registerProvider({ ...replacement, auth: originalProvider.auth });
-  await expect(loadoutModule.validateSavedLoadout(resolved, context)).rejects.toThrow(
-    'cannot reproduce current provider',
-  );
-  await expect(resolveLoadout(request, context, pi)).rejects.toThrow(
-    'cannot reproduce current provider',
-  );
-  process.argv = [process.execPath, 'pi'];
-  await expect(resolveLoadout(request, context, pi)).rejects.toThrow('CC Safety Net');
-}, 20_000);
-
 it('selects a valid named winner using the strict parser whitespace syntax', ({
   onTestFinished,
 }) => {
@@ -714,7 +360,7 @@ it('resolves profile precedence and refuses discarded isolation and transcript s
   ).toThrow('Unsupported');
 });
 
-it('refuses nested delegation once inherited instructions and scope exceed the saved limit', async ({
+it('refuses nested delegation once inherited instructions and scope exceed the saved limit', ({
   onTestFinished,
 }) => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'tau-nested-instructions-')));
@@ -754,10 +400,9 @@ it('refuses nested delegation once inherited instructions and scope exceed the s
       input: { profile: 'worker', permissions: loadout.permissions },
       context,
       pi: {} as ExtensionAPI,
-      signal: new AbortController().signal,
     });
 
-  await expect(nested()).rejects.toThrow(`over the ${textLimit} limit`);
+  expect(nested).toThrow(`over the ${textLimit} limit`);
   loadout.instructions = 'Parent instructions.';
-  await expect(nested()).rejects.toThrow(join(directory, 'safety.js'));
+  expect(nested).toThrow('no fallback');
 });
