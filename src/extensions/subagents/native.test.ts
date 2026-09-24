@@ -27,7 +27,6 @@ const fixture = () => {
     task: 'Inspect.',
     parentSession: join(directory, 'parent.jsonl'),
     parentSessionId: 'parent',
-    ownerId: 'owner',
     nativeSessionId: 'native',
     nativeSessionFile: join(directory, 'native.jsonl'),
     createdAt: 1000,

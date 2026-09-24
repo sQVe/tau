@@ -25,6 +25,7 @@ export type PiWorkerScenario =
   | 'completion'
   | 'follow-up'
   | 'active cancellation'
+  | 'resumed cancellation'
   | 'moved cancellation'
   | 'active timeout'
   | 'early exit'
@@ -176,13 +177,14 @@ export default function (pi) {
   );
   let done = Promise.withResolvers<string>();
   const questionAsked = Promise.withResolvers<undefined>();
-  const controller = new WorkerController(join(root, 'records'), client, (notice) => {
+  const notify = (notice: { question: boolean; content: unknown }) => {
     if (notice.question) {
       questionAsked.resolve(undefined);
     } else {
       done.resolve(JSON.stringify(notice.content));
     }
-  });
+  };
+  let controller = new WorkerController(join(root, 'records'), client, notify);
   onTestFinished(() => {
     controller.close();
   });
@@ -210,7 +212,7 @@ export default function (pi) {
   expect(existsSync(join(launched.directory, 'dispatch.json'))).toBe(scenario !== 'early exit');
   let movement: { sameTerminal: boolean; newPane: boolean } | undefined;
 
-  if (scenario === 'active cancellation' || scenario === 'moved cancellation') {
+  if (['active cancellation', 'moved cancellation', 'resumed cancellation'].includes(scenario)) {
     const streamingDeadline = performance.now() + 10_000;
 
     while (!existsSync(join(root, 'streaming'))) {
@@ -236,6 +238,13 @@ export default function (pi) {
         sameTerminal: location.terminalId === owned.terminalId,
         newPane: location.paneId !== owned.paneId,
       };
+    }
+
+    if (scenario === 'resumed cancellation') {
+      controller.close();
+      controller = new WorkerController(join(root, 'records'), client, notify);
+      await controller.resume('parent');
+      expect(controller.status(launched.taskId, 'parent').state).toBe('running');
     }
 
     await controller.cancel(launched.taskId, 'parent');
@@ -317,6 +326,7 @@ export default function (pi) {
         completion: 'success',
         'follow-up': 'success',
         'active cancellation': 'cancelled',
+        'resumed cancellation': 'cancelled',
         'moved cancellation': 'cancelled',
         'active timeout': 'timeout',
         'early exit': 'failure',

@@ -110,6 +110,7 @@ const fixture = (kind = 'codex', intercept?: HerdrClient, capacity = 4) => {
     directory,
     root,
     controller,
+    client,
     state,
     calls,
     budgets,
@@ -120,6 +121,43 @@ const fixture = (kind = 'codex', intercept?: HerdrClient, capacity = 4) => {
     finished: finished.promise,
   };
 };
+
+it.each(['same', 'changed', 'missing'])(
+  'reattaches native workers only with the %s saved reference',
+  async (reference) => {
+    const setup = fixture();
+
+    if (reference === 'missing') {
+      setup.state.session = '';
+    }
+
+    const launched = await setup.controller.launch(setup.input);
+    setup.controller.close();
+
+    if (reference === 'changed') {
+      setup.state.session = 'another-session';
+    }
+
+    const recovered = new WorkerController(setup.root, setup.client);
+    onTestFinished(() => {
+      recovered.close();
+    });
+
+    await recovered.resume('parent');
+
+    expect(recovered.owns(launched.taskId)).toBe(reference === 'same');
+    expect(recovered.status(launched.taskId, 'parent').state).toBe(
+      reference === 'same' ? 'running' : 'cleanupUnconfirmed',
+    );
+    expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
+
+    const stopped =
+      reference === 'same' ? await recovered.cancel(launched.taskId, 'parent') : undefined;
+
+    expect(stopped?.state).toBe(reference === 'same' ? 'stopped' : undefined);
+    expect(stopped?.outcome).toBe(reference === 'same' ? 'cancelled' : undefined);
+  },
+);
 
 it.each(['start', 'get'])(
   'recovers generic ownership during shutdown with a pending %s response',
@@ -493,7 +531,7 @@ it('persists a late native reference and refuses input after that reference chan
   const recoveredStatus = recovered.status(started.taskId, 'parent');
   expect(recoveredStatus).toMatchObject({
     nativeReference: { kind: 'id', value: 'late-reference' },
-    state: 'notOwned',
+    state: 'cleanupUnconfirmed',
   });
   expect(recoveredStatus.recovery).toMatchObject({
     nativeReference: { kind: 'id', value: 'late-reference' },

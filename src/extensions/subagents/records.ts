@@ -274,7 +274,7 @@ export const isRetiredTask = (value: unknown): boolean => {
     return false;
   }
 
-  if ('tree' in value || 'parentTaskId' in value) {
+  if ('tree' in value || 'parentTaskId' in value || 'ownerId' in value) {
     return true;
   }
 

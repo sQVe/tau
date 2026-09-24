@@ -170,7 +170,6 @@ it.each(['editing', 'investigation'] as const)(
       task: 'Edit source.txt and check it.',
       parentSession: join(directory, 'parent.jsonl'),
       parentSessionId: 'parent',
-      ownerId: 'owner',
       ...nativeIdentity(taskDirectory),
       createdAt: Date.now(),
       deadline: Date.now() + 30_000,

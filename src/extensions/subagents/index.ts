@@ -279,7 +279,7 @@ const searchWorkerHistory = async (
       sessionDirectory: context.sessionManager.getSessionDir(),
     },
     parameters.query,
-    (taskId) => controller?.ownership(taskId) ?? { activeOwner: undefined, enforcing: true },
+    (taskId) => controller?.owns(taskId) ?? false,
   );
   signal?.throwIfAborted();
 
@@ -365,7 +365,7 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
     name: 'subagent',
     label: 'Launch worker',
     description:
-      'Launch a bounded worker in herdr. Pi (default) requires trusted-full-tools and verified CC Safety Net; its model must be explicit or configured. Other herdr kinds use native-controls, which Tau does not certify. Their nativeArguments are a literal list, and they report to cwd/.tau/workers/<taskId>/report.md, so cwd must be writable. No native arguments by default; the harness selects its configured model. An exact native model request requires corresponding nativeArguments, but Tau cannot verify the model used. Native approval dialogs remain in force and need user action. Tau adds no bypass flags and never approves dialogs. Model translation and native resume are unavailable for non-Pi workers. Workers cannot launch workers; ask the parent instead. Reports are required from the start; assign the complete outcome with acceptance criteria, the baseline, and the worktree, give each worktree one editing worker, and expect a handoff with Changes, Evidence, Decisions, and Concerns. Each parent caps its own live workers. Each worker has one original deadline, including waits and cleanup. No uncertain retries or fallback. Built-in profiles: investigator and worker. States: starting (launched, not accepted yet); running (accepted and working); awaitingReply (waiting for a parent reply); reported (final report saved, cleanup pending); stopping (bounded cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (cleanup unconfirmed, capacity stays held); notOwned (no live parent controller, saved evidence only). Notices are status snapshots taken when sent. A notice without a state means the parent could not read the task records; inspect recovery.',
+      'Launch a bounded worker in herdr. Pi (default) requires trusted-full-tools and verified CC Safety Net; its model must be explicit or configured. Other herdr kinds use native-controls, which Tau does not certify. Their nativeArguments are a literal list, and they report to cwd/.tau/workers/<taskId>/report.md, so cwd must be writable. No native arguments by default; the harness selects its configured model. An exact native model request requires corresponding nativeArguments, but Tau cannot verify the model used. Native approval dialogs remain in force and need user action. Tau adds no bypass flags and never approves dialogs. Model translation and native resume are unavailable for non-Pi workers. Workers cannot launch workers; ask the parent instead. Reports are required from the start; assign the complete outcome with acceptance criteria, the baseline, and the worktree, give each worktree one editing worker, and expect a handoff with Changes, Evidence, Decisions, and Concerns. Each parent caps its own live workers. Each worker has one original deadline, including waits and cleanup. No uncertain retries or fallback. Built-in profiles: investigator and worker. States: starting (launched, not accepted yet); running (accepted and working); awaitingReply (waiting for a parent reply); reported (final report saved, cleanup pending); stopping (bounded cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (cleanup unconfirmed, capacity stays held); notOwned (parent stopped before saving worker ownership). Notices are status snapshots taken when sent. A notice without a state means the parent could not read the task records; inspect recovery.',
     parameters: launchParameters,
     renderCall(parameters, theme) {
       return callText(
@@ -433,7 +433,7 @@ const registerStatusTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_status',
     label: 'Worker status',
     description:
-      'Recover task results and saved native references. A saved report is the worker handoff. Its reported checks are reusable evidence for the work state they name; repeat a check only for a concrete reason such as changed inputs, a suspected defect, an integration change, or a required gate. Accepting reported checks is not a correctness claim; review still inspects the actual diff. For Pi, questionId shows its reply and acknowledgement. For generic workers, submissionId shows plain-text intent and delivery without claiming acceptance. A missing observation means uncertain delivery; never resubmit that identity. readOutput reads bounded terminal text once from an active identity-checked generic worker; approval dialogs need user action. Reconnect never resubmits work or resets deadlines. Recovery after parent exit is saved evidence only. Only Pi supports completed-task follow-up. When saved records are unreadable, the result has no state; inspect its recovery for manual cleanup.',
+      'Recover task results and saved native references. A saved report is the worker handoff. Its reported checks are reusable evidence for the work state they name; repeat a check only for a concrete reason such as changed inputs, a suspected defect, an integration change, or a required gate. Accepting reported checks is not a correctness claim; review still inspects the actual diff. For Pi, questionId shows its reply and acknowledgement. For generic workers, submissionId shows plain-text intent and delivery without claiming acceptance. A missing observation means uncertain delivery; never resubmit that identity. readOutput reads bounded terminal text once from an active identity-checked generic worker; approval dialogs need user action. Reconnect never resubmits work or resets deadlines. The same parent session reattaches after restart when herdr confirms the saved worker identity. Only Pi supports completed-task follow-up. When saved records are unreadable, the result has no state; inspect its recovery for manual cleanup.',
     parameters: statusParameters,
     renderCall(parameters, theme) {
       return callText('Worker status', shortId(parameters.taskId), theme);
@@ -473,7 +473,7 @@ const registerCancelTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_cancel',
     label: 'Cancel worker',
     description:
-      'Attempt bounded identity-checked cancellation of an owned worker. Failed herdr calls and active-work shutdown may require manual cleanup. Detached descendants are not contained.',
+      'Attempt bounded identity-checked cancellation using live or saved worker ownership. Failed herdr calls and active-work shutdown may require manual cleanup. Detached descendants are not contained.',
     parameters: cancelParameters,
     renderCall(parameters, theme) {
       return callText('Cancel worker', shortId(parameters.taskId), theme);
@@ -583,7 +583,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     },
   });
 
-  pi.on('session_start', (_event, context) => {
+  pi.on('session_start', async (_event, context) => {
     shuttingDown = false;
 
     if (widgetTimer) {
@@ -591,6 +591,9 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       widgetTimer = undefined;
     }
 
+    const resumed = runtime.getController().resume(context.sessionManager.getSessionId());
+    refreshWidget(context);
+    await resumed;
     refreshWidget(context);
   });
   pi.on('tool_result', (_event, context) => {

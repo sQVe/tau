@@ -41,7 +41,6 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
     task: 'Read the assigned file.',
     parentSession: join(directory, 'parent.jsonl'),
     parentSessionId: 'parent',
-    ownerId: 'owner',
     nativeSessionId: 'native',
     nativeSessionFile: join(directory, 'native.jsonl'),
     createdAt,

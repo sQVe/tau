@@ -23,7 +23,6 @@ it('allows only one production successor claim across competing processes', asyn
     task: 'Inspect.',
     parentSession: join(root, 'parent.jsonl'),
     parentSessionId: 'parent',
-    ownerId: 'owner',
     nativeSessionId: 'native',
     nativeSessionFile: join(directory, 'native.jsonl'),
     createdAt: 1000,

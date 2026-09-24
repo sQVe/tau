@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual } from 'node:util';
@@ -29,6 +28,7 @@ import {
   readEvent,
   readGenericSubmission,
   readTask,
+  readTasks,
   claimSuccessor,
   publish,
   validateTask,
@@ -76,6 +76,7 @@ import {
   taskRecordStatus,
   cleanupDetail,
   recordNativeIssue,
+  readOwnedWorker,
 } from './record.js';
 import {
   waitForShell,
@@ -219,13 +220,9 @@ interface CleanupOutcomeRequest {
   record: (operation: () => void) => void;
 }
 
-const readWidgetStatus = (
-  directory: string,
-  task: Task,
-  owner: { activeOwner: string | undefined; enforcing: boolean },
-) => {
+const readWidgetStatus = (directory: string, task: Task, controlled: boolean) => {
   try {
-    return taskRecordStatus(directory, task, owner.activeOwner, owner.enforcing);
+    return taskRecordStatus(directory, task, controlled);
   } catch {
     return undefined;
   }
@@ -507,7 +504,6 @@ const buildWidgetRow = (
 
 // Launch, replies, and cleanup share ownership state and one deadline. Keep their transitions together.
 export class WorkerController {
-  readonly ownerId = randomUUID();
   private readonly handles = new Map<string, Handle>();
   private readonly capacity = workerCapacity();
   private readonly live = new Set<string>();
@@ -526,50 +522,20 @@ export class WorkerController {
   }
 
   widgetRows(parentSessionId: string): WorkerWidgetRow[] {
-    let entries;
-
-    try {
-      entries = readdirSync(this.root, { withFileTypes: true });
-    } catch {
-      return [];
-    }
-
     const rows: WorkerWidgetRow[] = [];
 
-    for (const entry of entries) {
-      if (!entry.isDirectory()) {
+    for (const { directory, task } of readTasks(this.root)) {
+      if (task.parentSessionId !== parentSessionId) {
         continue;
       }
 
-      const row = this.widgetRow(join(this.root, entry.name), parentSessionId);
-
-      if (row) {
-        rows.push(row);
-      }
+      const status = readWidgetStatus(directory, task, this.owns(task.taskId));
+      const activity = readWorkerActivity(directory, task.taskId);
+      const handle = this.handles.get(task.taskId);
+      rows.push(buildWidgetRow(directory, task, status, activity, handle));
     }
 
     return rows.toSorted((left, right) => right.createdAt - left.createdAt);
-  }
-
-  private widgetRow(directory: string, parentSessionId: string): WorkerWidgetRow | undefined {
-    let task;
-
-    try {
-      task = readTask(directory);
-    } catch {
-      return undefined;
-    }
-
-    if (task.parentSessionId !== parentSessionId) {
-      return undefined;
-    }
-
-    const owner = this.ownership(task.taskId);
-    const status = readWidgetStatus(directory, task, owner);
-    const activity = readWorkerActivity(directory, task.taskId);
-    const handle = this.handles.get(task.taskId);
-
-    return buildWidgetRow(directory, task, status, activity, handle);
   }
 
   status(taskId: string, parentSessionId: string) {
@@ -585,10 +551,8 @@ export class WorkerController {
         throw new Error(handle.recordErrors.join('; '));
       }
 
-      const { activeOwner, enforcing } = this.ownership(taskId);
-
       return {
-        ...taskStatus(directory, activeOwner, enforcing),
+        ...taskStatus(directory, this.owns(taskId)),
         ...genericStatus(directory, task, handle, !this.closed),
       };
     } catch (error) {
@@ -676,13 +640,69 @@ export class WorkerController {
     };
   }
 
-  ownership(taskId: string) {
-    const handle = this.handles.get(taskId);
+  owns(taskId: string): boolean {
+    return !this.closed && this.handles.has(taskId);
+  }
 
-    return {
-      activeOwner: this.closed || !handle ? undefined : this.ownerId,
-      enforcing: !handle?.stopping,
-    };
+  private savedHandle(directory: string, task: Task): Handle {
+    const owned = readOwnedWorker(directory, task);
+    const handle = this.createHandle(
+      directory,
+      task,
+      performance.now() + (task.deadline - Date.now()),
+    );
+    handle.owned = owned;
+    handle.paneId = owned.paneId;
+    handle.terminalId = owned.terminalId;
+    handle.workerNeverStarted = false;
+
+    if (owned.shellStartedAt) {
+      handle.shell = { processId: owned.shellPid, startedAt: owned.shellStartedAt };
+    }
+
+    return handle;
+  }
+
+  async resume(parentSessionId: string): Promise<void> {
+    for (const { directory, task } of readTasks(this.root)) {
+      if (
+        this.closed ||
+        this.handles.has(task.taskId) ||
+        task.parentSessionId !== parentSessionId
+      ) {
+        continue;
+      }
+
+      try {
+        const terminal = ['cleanup', 'timeout', 'cancelled', 'notified'].some((kind) =>
+          readEvent(directory, task.taskId, kind),
+        );
+
+        if (terminal) {
+          continue;
+        }
+
+        const handle = this.savedHandle(directory, task);
+
+        if (isGenericLoadout(task.loadout) && !handle.owned?.nativeReference) {
+          continue;
+        }
+
+        // oxlint-disable-next-line eslint/no-await-in-loop -- Reattach each task only after its saved identity passes the existing verifier.
+        handle.owned = await inspectWorker(handle, this.herdrCall(handle));
+
+        if (this.lifetime.signal.aborted || this.handles.has(task.taskId)) {
+          continue;
+        }
+
+        // ponytail: one Pi process per parent session; add cross-process exclusion if concurrent resumes become supported.
+        this.handles.set(task.taskId, handle);
+        this.live.add(task.taskId);
+        this.poll(handle);
+      } catch {
+        // Saved evidence remains available; cancellation can still check the saved shell and pane.
+      }
+    }
   }
 
   questionReceipt(taskId: string, parentSessionId: string, questionId: string) {
@@ -858,15 +878,19 @@ export class WorkerController {
   }
 
   async cancel(taskId: string, parentSessionId: string) {
-    this.directory(taskId, parentSessionId);
-    const handle = this.handles.get(taskId);
+    const directory = this.directory(taskId, parentSessionId);
 
-    if (!handle || this.closed) {
-      throw new Error(
-        'No active owned handle. Use saved pane and native references for manual cleanup.',
-      );
+    if (this.closed) {
+      throw new Error('Parent controller stopped.');
     }
 
+    if (readEvent(directory, taskId, 'cleanup')) {
+      return this.status(taskId, parentSessionId);
+    }
+
+    const handle = this.handles.get(taskId) ?? this.savedHandle(directory, readTask(directory));
+    this.handles.set(taskId, handle);
+    this.live.add(taskId);
     await this.stop(handle, 'cancelled');
 
     return this.status(taskId, parentSessionId);
@@ -905,9 +929,8 @@ export class WorkerController {
       throw new Error(handle.recordErrors.join('; '));
     }
 
-    const { activeOwner, enforcing } = this.ownership(handle.task.taskId);
     const status = {
-      ...taskStatus(handle.directory, activeOwner, enforcing),
+      ...taskStatus(handle.directory, this.owns(handle.task.taskId)),
       ...genericStatus(handle.directory, handle.task, handle, !this.closed),
     };
 
@@ -1383,7 +1406,6 @@ export class WorkerController {
       task: input.task,
       parentSession: input.parentSession,
       parentSessionId: input.parentSessionId,
-      ownerId: this.ownerId,
       ...nativeReference(input.loadout, plan.directory, plan.source),
       createdAt: plan.createdAt,
       deadline: plan.deadline,

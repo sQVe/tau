@@ -53,7 +53,6 @@ const taskProperties = {
   task: text,
   parentSession: text,
   parentSessionId: text,
-  ownerId: text,
 
   createdAt: Type.Integer({ minimum: 1 }),
   deadline: Type.Integer({ minimum: 1 }),
@@ -208,15 +207,6 @@ export const replyClosedEventKinds: readonly TaskEvent['kind'][] = [
   'cleanup',
   'cancelled',
   'timeout',
-];
-
-// A worker this session does not own, with any of these events, still needs cleanup confirmed.
-export const unownedTerminalEventKinds: readonly TaskEvent['kind'][] = [
-  'settled',
-  'startupFailure',
-  'timeout',
-  'cancelled',
-  'stopping',
 ];
 
 export interface Profile {

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import type { OwnedWorker } from '../cancellation.js';
 import { genericReportPath, readGenericReference } from '../generic.js';
 import { readPendingQuestion, readReply } from '../questionRecords.js';
 import {
@@ -8,14 +9,48 @@ import {
   readEvent,
   readGenericSubmission,
   readPane,
+  readRecord,
   readReport,
   readSuccessor,
   readTask,
 } from '../records.js';
+import { requireObject, text } from '../terminal.js';
 import { harnessOf, isGenericLoadout, isPiLoadout, requireNativeTask } from '../types.js';
 import type { Report, Task, TaskEvent } from '../types.js';
 import { workerState } from '../workerState.js';
+import { integer } from './shellIdentity.js';
 import type { Handle } from './types.js';
+
+export const readOwnedWorker = (directory: string, task: Task): OwnedWorker => {
+  const value = requireObject(readRecord(directory, 'owned.json'));
+  const generic = isGenericLoadout(task.loadout);
+
+  if (value.kind !== (generic ? 'generic' : 'pi')) {
+    throw new Error('Saved worker kind does not match the task.');
+  }
+
+  if (!generic && value.token !== task.nativeSessionFile) {
+    throw new Error('Saved worker session does not match the task.');
+  }
+
+  const savedReference = value.nativeReference ?? readGenericReference(directory, task.taskId);
+  const reference = savedReference === undefined ? undefined : requireObject(savedReference);
+
+  return {
+    kind: generic ? 'generic' : 'pi',
+    paneId: text(value.paneId),
+    terminalId: text(value.terminalId),
+    shellPid: integer(value.shellPid),
+    processId: integer(value.processId),
+    startedAt: text(value.startedAt),
+    ...(generic
+      ? { agentKind: text(value.agentKind), shellStartedAt: text(value.shellStartedAt) }
+      : { token: text(value.token) }),
+    ...(reference
+      ? { nativeReference: { kind: text(reference.kind), value: text(reference.value) } }
+      : {}),
+  };
+};
 
 // Without a report, terminal event, or cleanup record there is no outcome to claim.
 const taskOutcome = (
@@ -135,18 +170,13 @@ const pendingQuestionStatus = (directory: string, taskId: string) => {
 };
 
 // oxlint-disable-next-line eslint/complexity -- Status fields must reflect one consistent read of the task records.
-export const taskRecordStatus = (
-  directory: string,
-  task: Task,
-  activeOwner?: string,
-  enforcing = true,
-) => {
+export const taskRecordStatus = (directory: string, task: Task, controlled = false) => {
   const report = readReport(directory, task.taskId);
   const event = (kind: TaskEvent['kind']) => readEvent(directory, task.taskId, kind);
   const failure = event('startupFailure');
   const cleanup = event('cleanup');
   const settled = event('settled');
-  const state = workerState(directory, task, activeOwner, enforcing);
+  const state = workerState(directory, task, controlled);
   const outcome = taskOutcome(
     [event('timeout'), event('cancelled'), failure],
     report,
@@ -182,10 +212,10 @@ export const taskRecordStatus = (
   };
 };
 
-export const taskStatus = (directory: string, activeOwner?: string, enforcing = true) => {
+export const taskStatus = (directory: string, controlled = false) => {
   const task = readTask(directory);
 
-  return taskRecordStatus(directory, task, activeOwner, enforcing);
+  return taskRecordStatus(directory, task, controlled);
 };
 
 export const genericStatus = (

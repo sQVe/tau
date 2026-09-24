@@ -75,7 +75,6 @@ const setup = () => {
       ...(name ? { name } : {}),
       parentSession,
       parentSessionId,
-      ownerId: 'owner',
       nativeSessionId,
       nativeSessionFile,
       createdAt: 1000,
@@ -498,7 +497,6 @@ it('carries derived state for generic task candidates without inventing native s
     task: 'Inspect shared source.',
     parentSession: fixture.child,
     parentSessionId: 'child',
-    ownerId: 'owner',
     createdAt: 1000,
     deadline: 20000,
     cancellationBudget: 1000,
@@ -518,22 +516,6 @@ it('carries derived state for generic task candidates without inventing native s
   expect(candidate).toMatchObject({ state: 'stopped', nativeEvidence: 'opaque' });
   expect(candidate).not.toHaveProperty('nativeSessionId');
   expect(candidate).not.toHaveProperty('nativeSessionFile');
-});
-
-it('derives candidate state with ownership from the live controller', async () => {
-  const fixture = setup();
-  const saved = fixture.task('owned', fixture.child, 'child', 'worker-aa');
-  rmSync(join(saved.taskDirectory, 'cleanup.json'));
-  const current = { file: fixture.root, id: 'root', sessionDirectory: fixture.sessions };
-
-  const untracked = await searchHistory(fixture.workers, current, 'worker-aa');
-  const owned = await searchHistory(fixture.workers, current, 'worker-aa', (taskId) => ({
-    activeOwner: taskId === 'owned' ? 'owner' : undefined,
-    enforcing: true,
-  }));
-
-  expect(untracked.candidates[0]?.state).toBe('notOwned');
-  expect(owned.candidates[0]?.state).toBe('reported');
 });
 
 it('diagnoses discovered metadata that disagrees with a seeded ancestor identity', async () => {
