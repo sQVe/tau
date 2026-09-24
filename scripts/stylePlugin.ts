@@ -74,6 +74,10 @@ const extensionOf = (path: string): string | undefined => {
   return index > 0 && insideExtension ? segments[index + 1] : undefined;
 };
 
+// src/extensions/index.ts loads every extension, so importing it crosses every boundary at once.
+const isCompositionRoot = (path: string): boolean =>
+  /(^|\/)src\/extensions(\/index(\.[jt]s)?)?$/.test(path);
+
 const stylePlugin: Plugin = {
   meta: { name: 'tau' },
   rules: {
@@ -84,6 +88,7 @@ const stylePlugin: Plugin = {
         messages: {
           crossing:
             'Extension "{{source}}" must not import from extension "{{target}}". Move shared code under src/.',
+          root: 'Extension "{{source}}" must not import src/extensions/index.ts, which loads every extension.',
         },
       },
       create(context) {
@@ -98,9 +103,13 @@ const stylePlugin: Plugin = {
             return;
           }
 
-          const target = extensionOf(posix.join(posix.dirname(context.filename), specifier));
+          const directory = posix.dirname(context.filename.replaceAll('\\', '/'));
+          const resolved = posix.join(directory, specifier);
+          const target = extensionOf(resolved);
 
-          if (target !== undefined && target !== source) {
+          if (isCompositionRoot(resolved)) {
+            context.report({ node, messageId: 'root', data: { source } });
+          } else if (target !== undefined && target !== source) {
             context.report({ node, messageId: 'crossing', data: { source, target } });
           }
         };

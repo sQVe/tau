@@ -16,6 +16,10 @@ const declarationPadding = [
   { blankLine: 'always', prev: ['const', 'let'], next: '*' },
   { blankLine: 'any', prev: ['const', 'let'], next: ['const', 'let'] },
 ];
+const testHelperImports = {
+  group: ['**/tests/**'],
+  message: 'Production code must not import test helpers.',
+};
 const paddingRule = (...entries: object[]): ['error', ...object[]] => ['error', ...entries];
 
 export default defineConfig({
@@ -308,12 +312,7 @@ export default defineConfig({
           'eslint/no-restricted-imports': [
             'error',
             {
-              patterns: [
-                {
-                  group: ['**/tests/**'],
-                  message: 'Production code must not import test helpers.',
-                },
-              ],
+              patterns: [testHelperImports],
             },
           ],
         },
@@ -325,10 +324,7 @@ export default defineConfig({
             'error',
             {
               patterns: [
-                {
-                  group: ['**/tests/**'],
-                  message: 'Production code must not import test helpers.',
-                },
+                testHelperImports,
                 {
                   group: ['**/extensions/**'],
                   message: 'Shared modules must not depend on extensions.',
