@@ -43,6 +43,16 @@ vi.mock('node:fs', async (importOriginal) => {
 
 const originalRunClient = cancellationModule.runClient;
 
+const captureError = (action: () => unknown): unknown => {
+  try {
+    action();
+  } catch (error) {
+    return error;
+  }
+
+  throw new Error('Expected the action to throw.');
+};
+
 const setup = (
   onTestFinished: (callback: () => void) => void,
   readyDelay = 0,
@@ -2030,26 +2040,10 @@ it('only lets the owning parent stop work after a status evidence failure', asyn
     'another parent session',
   );
   expect(calls).toHaveLength(callCount);
-  expect(() => controller.status(launched.taskId, 'parent-id')).toThrow(
-    'saved evidence is unavailable',
-  );
-  let evidenceError = '';
+  const evidenceFailure = captureError(() => controller.status(launched.taskId, 'parent-id'));
 
-  try {
-    controller.status(launched.taskId, 'parent-id');
-  } catch (error) {
-    evidenceError = String(error);
-  }
-
-  expect(evidenceError).not.toContain(launched.nativeSessionFile);
-  let evidenceFailure: unknown;
-
-  try {
-    controller.status(launched.taskId, 'parent-id');
-  } catch (error) {
-    evidenceFailure = error;
-  }
-
+  expect(String(evidenceFailure)).toContain('saved evidence is unavailable');
+  expect(String(evidenceFailure)).not.toContain(launched.nativeSessionFile);
   expect(evidenceFailure).toBeInstanceOf(EvidenceUnavailableError);
   expect((evidenceFailure as EvidenceUnavailableError).recovery).toMatchObject({
     directory: launched.directory,
@@ -2739,18 +2733,10 @@ it('reports recovered corrupt task evidence without its directory or native iden
     recovered.close();
   });
 
-  expect(() => recovered.status(launched.taskId, 'parent-id')).toThrow(
-    'saved evidence is unavailable',
-  );
-  expect(() => recovered.status(launched.taskId, 'parent-id')).toThrow('manually');
-  let evidenceError = '';
+  const evidenceError = String(captureError(() => recovered.status(launched.taskId, 'parent-id')));
 
-  try {
-    recovered.status(launched.taskId, 'parent-id');
-  } catch (error) {
-    evidenceError = String(error);
-  }
-
+  expect(evidenceError).toContain('saved evidence is unavailable');
+  expect(evidenceError).toContain('manually');
   expect(evidenceError).not.toContain(launched.directory);
   expect(evidenceError).not.toContain('Native session unavailable');
 });
@@ -2768,13 +2754,7 @@ it('carries saved recovery when a handle-free status finds corrupt report eviden
     recovered.close();
   });
 
-  let evidenceFailure: unknown;
-
-  try {
-    recovered.status(launched.taskId, 'parent-id');
-  } catch (error) {
-    evidenceFailure = error;
-  }
+  const evidenceFailure = captureError(() => recovered.status(launched.taskId, 'parent-id'));
 
   expect(evidenceFailure).toBeInstanceOf(EvidenceUnavailableError);
   expect((evidenceFailure as EvidenceUnavailableError).recovery).toEqual({
