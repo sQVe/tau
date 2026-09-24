@@ -854,19 +854,24 @@ it('retries a pane-busy start when a prompt hook briefly occupies the shell', as
   expect(attempts).toBe(2);
 });
 
-it('closes a never-started pane when a prompt hook briefly occupies the shell', async ({
-  onTestFinished,
-}) => {
+it.each([
+  ['briefly occupies the shell', [2]],
+  // The close check takes 20 samples; only its last one sees the bare shell.
+  [
+    'clears at the last sample of the settling window',
+    Array.from({ length: 19 }, (_, index) => index + 2),
+  ],
+])('closes a never-started pane when a prompt hook %s', async (_case, hookSamples) => {
   let samples = 0;
-  const fixture = setup(onTestFinished, 0, async (argumentsList) => {
+  const fixture = setup(afterTest, 0, async (argumentsList) => {
     if (argumentsList[1] !== 'process-info') {
       return '';
     }
 
     samples += 1;
 
-    // Sample 1 proves absence after the rejected start; sample 2 rechecks before the close.
-    return samples === 2 ? promptHookSample(argumentsList[3]) : '';
+    // Sample 1 proves absence after the rejected start; later samples recheck before the close.
+    return hookSamples.includes(samples) ? promptHookSample(argumentsList[3]) : '';
   });
   fixture.fake.state.startError = 'Start rejected';
   fixture.fake.state.rejectStart = true;

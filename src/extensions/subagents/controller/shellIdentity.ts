@@ -80,7 +80,7 @@ export const settledShell = async (
   signal: AbortSignal,
 ): Promise<void> => {
   // oxlint-disable-next-line eslint/no-await-in-loop -- Samples must observe the shell in order.
-  for (let attempt = 1; attempt < 20 && !(await sample()); attempt += 1) {
+  for (let attempt = 1; !(await sample()) && attempt < 20; attempt += 1) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- Resampling shares the caller's budget.
     await delay(50, undefined, { signal });
   }
