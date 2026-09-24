@@ -46,9 +46,9 @@ export const rewriteContinuationNotice = (text: string): string =>
 
 // A throwing registry would escape the hook and block the read itself, so clamping falls back to
 // stock behavior instead. The tool path still reports the error.
-const clampDelegate = (ctx: ExtensionContext) => {
+const clampDelegate = (context: ExtensionContext) => {
   try {
-    return resolveDelegate(ctx);
+    return resolveDelegate(context);
   } catch {
     return undefined;
   }
@@ -86,12 +86,12 @@ const registerBulkRead = (pi: ExtensionAPI, state: BulkReadState): void => {
 };
 
 const registerTrimHook = (pi: ExtensionAPI, state: BulkReadState): void => {
-  pi.on('tool_call', (event, ctx) => {
+  pi.on('tool_call', (event, context) => {
     if (!state.trimming || !isToolCallEventType('read', event) || event.input.limit !== undefined) {
       return;
     }
 
-    if (!clampDelegate(ctx)) {
+    if (!clampDelegate(context)) {
       state.trimming = false;
 
       return;

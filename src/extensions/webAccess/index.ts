@@ -10,11 +10,11 @@ export const webAccessTools = ['web_search', 'source_check', 'fetch_content', 'g
 
 const requiredWebAccessTools = ['web_search', 'fetch_content'];
 
-export default function webAccessExtension(extensionApi: ExtensionAPI) {
-  requireRegisteredTools(extensionApi, 'pi-web-access', requiredWebAccessTools);
+export default function webAccessExtension(pi: ExtensionAPI) {
+  requireRegisteredTools(pi, 'pi-web-access', requiredWebAccessTools);
 
   // pi-web-access treats a blank answerModel as absent and falls back to the session model.
-  extensionApi.on('tool_call', (event, context) => {
+  pi.on('tool_call', (event, context) => {
     if (event.toolName !== 'fetch_content' || event.input.mode !== 'answer') {
       return;
     }

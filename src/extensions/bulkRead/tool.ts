@@ -95,7 +95,7 @@ const loadPayload = async (
 };
 
 export const bulkRead = async (
-  ctx: ExtensionContext,
+  context: ExtensionContext,
   model: Model<Api>,
   params: { paths: string[]; question: string },
   signal: AbortSignal | undefined,
@@ -104,7 +104,7 @@ export const bulkRead = async (
   // Three characters per token is a conservative estimate to avoid overflowing the delegate window,
   // and the output allowance is reserved so a request at the cap leaves room for the answer.
   const maxCharacters = Math.min(1_000_000, (model.contextWindow - model.maxTokens) * 3);
-  const input = await loadPayload(ctx.cwd, params.paths, maxCharacters, signal);
+  const input = await loadPayload(context.cwd, params.paths, maxCharacters, signal);
   const content = `Question: ${params.question}\n\n${input.payload}`;
 
   if (content.length > maxCharacters) {
@@ -120,7 +120,7 @@ export const bulkRead = async (
   const delegateSignal = AbortSignal.any(signals);
   delegateSignal.throwIfAborted();
 
-  const response = await ctx.modelRegistry
+  const response = await context.modelRegistry
     .complete(
       model,
       {
