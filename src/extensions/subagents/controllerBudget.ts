@@ -1,7 +1,7 @@
 import { monotonicNow } from './admission.js';
 import type { Handle } from './controllerTypes.js';
 import { readEvent, readReport } from './records.js';
-import { isGenericLoadout } from './types.js';
+import { isGenericLoadout, replyClosedEventKinds } from './types.js';
 import type { Task } from './types.js';
 
 // One remainder for every budget question; two clocks disagree within a millisecond.
@@ -25,9 +25,8 @@ export const ensureReplyActive = (handle: Handle): void => {
   const missingPiAcceptance =
     !isGenericLoadout(task.loadout) && !readEvent(directory, task.taskId, 'accepted');
   const ended =
-    (['settled', 'startupFailure', 'cleanup', 'cancelled', 'timeout'] as const).some((kind) =>
-      readEvent(directory, task.taskId, kind),
-    ) || readReport(directory, task.taskId);
+    replyClosedEventKinds.some((kind) => readEvent(directory, task.taskId, kind)) ||
+    readReport(directory, task.taskId);
 
   if (missingPiAcceptance || ended) {
     throw new Error('Worker task is inactive.');

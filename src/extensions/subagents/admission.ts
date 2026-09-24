@@ -18,25 +18,15 @@ import {
   readTasks,
   validateTask,
 } from './records.js';
-import { isPiLoadout } from './types.js';
+import { isPiLoadout, taskEndedEventKinds } from './types.js';
 import type { Loadout, Task } from './types.js';
 
 type TreeIdentity = Pick<NonNullable<Task['tree']>, 'rootSession' | 'rootSessionId'>;
 
 export const monotonicNow = (): number => Number(process.hrtime.bigint()) / 1_000_000;
 
-export const endedKinds = [
-  'cleanup',
-  'cancelled',
-  'timeout',
-  'startupFailure',
-  'parentClosed',
-  'settled',
-  'stopping',
-] as const;
-
 export const taskEnded = (directory: string, task: Task): boolean =>
-  endedKinds.some((kind) => readEvent(directory, task.taskId, kind)) ||
+  taskEndedEventKinds.some((kind) => readEvent(directory, task.taskId, kind)) ||
   Boolean(readReport(directory, task.taskId));
 
 export const inheritedInstructions = (parent: Task): string =>

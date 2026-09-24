@@ -1,6 +1,6 @@
 import { readPendingQuestion, readReply } from './questionRecords.js';
 import { readEvent, readGenericSubmission, readReport } from './records.js';
-import { isGenericLoadout } from './types.js';
+import { isGenericLoadout, unownedTerminalEventKinds } from './types.js';
 import type { Task, TaskEvent, WorkerState } from './types.js';
 
 // The worker's own settled.stopped never proves a stop; only the parent's cleanup record does.
@@ -33,9 +33,7 @@ export const workerState = (
   }
 
   if (!owned) {
-    const terminal = (
-      ['settled', 'startupFailure', 'timeout', 'cancelled', 'stopping'] as const
-    ).some((kind) => event(kind));
+    const terminal = unownedTerminalEventKinds.some((kind) => event(kind));
 
     return terminal ? 'cleanupUnconfirmed' : 'notOwned';
   }
