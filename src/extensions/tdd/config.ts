@@ -3,7 +3,10 @@ import { matchesGlob } from 'node:path';
 export const tddConfig = {
   productionGlobs: ['{src,apps,packages,functions,infra}/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
   testGlobs: ['**/*.test.{ts,tsx,js,jsx,mjs,cjs}', '**/*.spec.{ts,tsx,js,jsx,mjs,cjs}'],
-  testSupportGlobs: ['tests/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+  testSupportGlobs: [
+    'tests/**/*.{ts,tsx,js,jsx,mjs,cjs}',
+    '**/fixtures/**/*.{ts,tsx,js,jsx,mjs,cjs}',
+  ],
   excludedGlobs: [
     '**/{node_modules,.git,dist,build,coverage,.next,.nuxt,.output,.turbo,.cache,generated,__generated__}/**',
   ],
@@ -31,6 +34,11 @@ export const classifyPath = (path: string): 'test' | 'production' | 'other' => {
 
   if (isTest) {
     return 'test';
+  }
+
+  // Test helpers change test inputs but are not production code.
+  if (tddConfig.testSupportGlobs.some((glob) => matchesGlob(normalizedPath, glob))) {
+    return 'other';
   }
 
   return tddConfig.productionGlobs.some((glob) => matchesGlob(normalizedPath, glob))
