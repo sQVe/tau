@@ -318,7 +318,8 @@ export default defineConfig({
         },
       },
       {
-        files: ['src/{bundledTools,delegateModel,errors,keys}/**/*.ts'],
+        // Every module directory under src/ is shared; the next override restores extensions.
+        files: ['src/*/**/*.ts'],
         rules: {
           'eslint/no-restricted-imports': [
             'error',
@@ -332,6 +333,12 @@ export default defineConfig({
               ],
             },
           ],
+        },
+      },
+      {
+        files: ['src/extensions/**/*.ts'],
+        rules: {
+          'eslint/no-restricted-imports': ['error', { patterns: [testHelperImports] }],
         },
       },
       ...(styleEnabled

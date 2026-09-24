@@ -419,10 +419,10 @@ it('rejects imports from one extension into another', async ({ onTestFinished })
 it('keeps test helpers out of production code and extensions out of shared modules', async ({
   onTestFinished,
 }) => {
-  const directory = await mkdtemp(join(root, 'src', 'keys', 'tau-lint-imports-'));
+  const directory = await mkdtemp(join(root, 'src', 'tau-lint-imports-'));
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
-  const helper = "import { initializeRepository } from '../../../tests/gitRepository.js';\n";
-  const extension = "import { bulkReadTool } from '../../extensions/bulkRead/tool.js';\n";
+  const helper = "import { initializeRepository } from '../../tests/gitRepository.js';\n";
+  const extension = "import { bulkReadTool } from '../extensions/bulkRead/tool.js';\n";
   await writeFile(
     join(directory, 'probe.ts'),
     `${helper}${extension}\nexport const value = [initializeRepository, bulkReadTool];\n`,
