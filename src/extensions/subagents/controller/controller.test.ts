@@ -68,7 +68,7 @@ const setup = (
   fake.state.shell = 100;
   vi.spyOn(cancellationModule, 'runClient').mockImplementation(
     (executable, argumentsList, budget, options) => {
-      if (executable === 'ps' && argumentsList[1] === '100') {
+      if (executable === 'ps' && ['100', '101'].includes(argumentsList[1] ?? '')) {
         return Promise.resolve('fixture shell start');
       }
 
@@ -790,6 +790,7 @@ it('refuses to start when the shell process changes during startup checks', asyn
 
   const launched = await fixture.controller.launch(fixture.input);
 
+  expect(launched.failure).toContain('unchanged foreground shell');
   expect(launched.state).toBe('stopped');
   expect(fixture.fake.state.started).toBe(false);
 });
