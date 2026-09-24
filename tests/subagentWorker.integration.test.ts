@@ -163,14 +163,12 @@ it.each(['editing', 'investigation'] as const)(
     const taskDirectory = join(directory, 'task');
     mkdirSync(taskDirectory);
     vi.stubEnv('TAU_WORKER_RECORD', taskDirectory);
-    vi.stubEnv('TAU_PARENT_PROCESS', String(process.pid));
     const task = validateTask({
       version: 1,
       taskId: 'fixture-task',
       task: 'Edit source.txt and check it.',
       parentSession: join(directory, 'parent.jsonl'),
       parentSessionId: 'parent',
-      ownerId: 'owner',
       ...nativeIdentity(taskDirectory),
       createdAt: Date.now(),
       deadline: Date.now() + 30_000,

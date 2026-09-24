@@ -75,7 +75,6 @@ const setup = () => {
       ...(name ? { name } : {}),
       parentSession,
       parentSessionId,
-      ownerId: 'owner',
       nativeSessionId,
       nativeSessionFile,
       createdAt: 1000,
@@ -498,7 +497,6 @@ it('carries derived state for generic task candidates without inventing native s
     task: 'Inspect shared source.',
     parentSession: fixture.child,
     parentSessionId: 'child',
-    ownerId: 'owner',
     createdAt: 1000,
     deadline: 20000,
     cancellationBudget: 1000,
@@ -527,12 +525,14 @@ it('derives candidate state with ownership from the live controller', async () =
   const current = { file: fixture.root, id: 'root', sessionDirectory: fixture.sessions };
 
   const untracked = await searchHistory(fixture.workers, current, 'worker-aa');
-  const owned = await searchHistory(fixture.workers, current, 'worker-aa', (taskId) => ({
-    activeOwner: taskId === 'owned' ? 'owner' : undefined,
-    enforcing: true,
-  }));
+  const owned = await searchHistory(
+    fixture.workers,
+    current,
+    'worker-aa',
+    (taskId) => taskId === 'owned',
+  );
 
-  expect(untracked.candidates[0]?.state).toBe('notOwned');
+  expect(untracked.candidates[0]?.state).toBe('cleanupUnconfirmed');
   expect(owned.candidates[0]?.state).toBe('reported');
 });
 

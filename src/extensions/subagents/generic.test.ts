@@ -46,7 +46,6 @@ const fixture = () => {
     task: 'Inspect.',
     parentSession: join(directory, 'parent.jsonl'),
     parentSessionId: 'parent',
-    ownerId: 'owner',
     createdAt: 1000,
     deadline: 20000,
     cancellationBudget: 1000,

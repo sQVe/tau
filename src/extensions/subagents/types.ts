@@ -53,7 +53,6 @@ const taskProperties = {
   task: text,
   parentSession: text,
   parentSessionId: text,
-  ownerId: text,
 
   createdAt: Type.Integer({ minimum: 1 }),
   deadline: Type.Integer({ minimum: 1 }),
@@ -78,6 +77,29 @@ export const taskSchema = Type.Union([
       nativeSessionId: Type.Optional(Type.Never()),
       nativeSessionFile: Type.Optional(Type.Never()),
       loadout: genericLoadoutSchema,
+    },
+    { additionalProperties: false },
+  ),
+]);
+const ownedWorkerProperties = {
+  paneId: text,
+  terminalId: text,
+  shellPid: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+  processId: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+  startedAt: text,
+  nativeReference: Type.Optional(Type.Object({ kind: text, value: text })),
+};
+export const ownedWorkerSchema = Type.Union([
+  Type.Object(
+    { ...ownedWorkerProperties, kind: Type.Literal('pi'), token: text },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...ownedWorkerProperties,
+      kind: Type.Literal('generic'),
+      agentKind: text,
+      shellStartedAt: text,
     },
     { additionalProperties: false },
   ),
@@ -208,15 +230,6 @@ export const replyClosedEventKinds: readonly TaskEvent['kind'][] = [
   'cleanup',
   'cancelled',
   'timeout',
-];
-
-// A worker this session does not own, with any of these events, still needs cleanup confirmed.
-export const unownedTerminalEventKinds: readonly TaskEvent['kind'][] = [
-  'settled',
-  'startupFailure',
-  'timeout',
-  'cancelled',
-  'stopping',
 ];
 
 export interface Profile {

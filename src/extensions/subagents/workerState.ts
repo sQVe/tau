@@ -1,16 +1,11 @@
 import { readPendingQuestion, readReply } from './questionRecords.js';
 import { readEvent, readGenericSubmission, readReport } from './records.js';
-import { isGenericLoadout, unownedTerminalEventKinds } from './types.js';
+import { isGenericLoadout, taskEndedEventKinds } from './types.js';
 import type { Task, TaskEvent, WorkerState } from './types.js';
 
 // The worker's own settled.stopped never proves a stop; only the parent's cleanup record does.
 // oxlint-disable-next-line eslint/complexity -- One ordered table of ownership and lifecycle rules is clearer than nested helpers.
-export const workerState = (
-  directory: string,
-  task: Task,
-  activeOwner: string | undefined,
-  enforcing: boolean,
-): WorkerState => {
+export const workerState = (directory: string, task: Task, controlled = false): WorkerState => {
   const event = (kind: TaskEvent['kind']) => readEvent(directory, task.taskId, kind);
   const cleanup = event('cleanup');
 
@@ -24,18 +19,15 @@ export const workerState = (
     return 'cleanupUnconfirmed';
   }
 
-  const owned = activeOwner === task.ownerId;
-
-  const stopStarted = !enforcing || Boolean(event('stopping'));
-
-  if (owned && stopStarted) {
+  if (controlled && event('stopping')) {
     return 'stopping';
   }
 
-  if (!owned) {
-    const terminal = unownedTerminalEventKinds.some((kind) => event(kind));
+  if (!controlled) {
+    const terminal = taskEndedEventKinds.some((kind) => kind !== 'parentClosed' && event(kind));
+    const reported = readReport(directory, task.taskId) !== undefined;
 
-    return terminal ? 'cleanupUnconfirmed' : 'notOwned';
+    return terminal || reported ? 'cleanupUnconfirmed' : 'notOwned';
   }
 
   if (readReport(directory, task.taskId)) {

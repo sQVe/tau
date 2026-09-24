@@ -49,7 +49,6 @@ const questionFixture = () => {
     task: 'Inspect source.',
     parentSession: join(directory, 'parent.jsonl'),
     parentSessionId: 'parent-one',
-    ownerId: 'owner-one',
     nativeSessionId: 'native-one',
     nativeSessionFile: join(directory, 'native.jsonl'),
     createdAt: 1000,
@@ -191,6 +190,7 @@ it('skips tasks saved in a retired format without blocking current tasks', () =>
       },
     },
     parent: { ...task, taskId: 'parent', parentTaskId: 'ancestor' },
+    owned: { ...task, taskId: 'owned', ownerId: 'old-controller' },
     claude: { ...task, taskId: 'claude', loadout: { ...task.loadout, harness: 'claude' } },
     fingerprinted: {
       ...task,
@@ -210,7 +210,7 @@ it('skips tasks saved in a retired format without blocking current tasks', () =>
 
   expect(scanned).toEqual([{ directory: current, task }]);
   expect(diagnostics.toSorted()).toEqual(
-    ['claude', 'fingerprinted', 'parent', 'tree', 'unversioned'].map(
+    ['claude', 'fingerprinted', 'owned', 'parent', 'tree', 'unversioned'].map(
       (taskId) => `Skipped task ${taskId} saved in a retired format; start a fresh task instead.`,
     ),
   );
@@ -840,7 +840,6 @@ const genericWorkerFixture = () => {
     task: 'Inspect source.',
     parentSession: join(directory, 'parent.jsonl'),
     parentSessionId: 'parent-two',
-    ownerId: 'owner-one',
     createdAt: 1000,
     deadline: 20000,
     cancellationBudget: 1000,
@@ -853,192 +852,106 @@ const genericWorkerFixture = () => {
 };
 
 it.each([
-  { harness: 'pi', records: ['ready'], owner: 'owner-one', enforcing: true, state: 'starting' },
-  {
-    harness: 'pi',
-    records: ['ready', 'accepted'],
-    owner: 'owner-one',
-    enforcing: true,
-    state: 'running',
-  },
-  {
-    harness: 'pi',
-    records: ['accepted', 'question'],
-    owner: 'owner-one',
-    enforcing: true,
-    state: 'awaitingReply',
-  },
-  {
-    harness: 'pi',
-    records: ['accepted', 'question', 'reply'],
-    owner: 'owner-one',
-    enforcing: true,
-    state: 'running',
-  },
+  { harness: 'pi', records: ['ready'], controlled: false, state: 'notOwned' },
+  { harness: 'pi', records: ['parentClosed'], controlled: false, state: 'notOwned' },
+  { harness: 'pi', records: ['ready'], controlled: true, state: 'starting' },
+  { harness: 'pi', records: ['ready', 'accepted'], controlled: true, state: 'running' },
+  { harness: 'pi', records: ['accepted', 'question'], controlled: true, state: 'awaitingReply' },
+  { harness: 'pi', records: ['accepted', 'question', 'reply'], controlled: true, state: 'running' },
+  { harness: 'pi', records: ['accepted', 'report'], controlled: true, state: 'reported' },
   {
     harness: 'pi',
     records: ['accepted', 'report'],
-    owner: 'owner-one',
-    enforcing: true,
-    state: 'reported',
-  },
-  {
-    harness: 'pi',
-    records: ['accepted', 'report'],
-    owner: 'owner-one',
-    enforcing: false,
-    state: 'stopping',
+    controlled: false,
+    state: 'cleanupUnconfirmed',
   },
   {
     harness: 'pi',
     records: ['accepted', 'report', 'stopping'],
-    owner: 'owner-one',
-    enforcing: true,
+    controlled: true,
     state: 'stopping',
   },
   {
     harness: 'pi',
     records: ['accepted', 'stopping'],
-    owner: undefined,
-    enforcing: true,
+    controlled: false,
     state: 'cleanupUnconfirmed',
   },
   {
     harness: 'pi',
-    records: ['accepted', 'report'],
-    owner: undefined,
-    enforcing: true,
-    state: 'notOwned',
-  },
-  {
-    harness: 'pi',
     records: ['accepted', 'report', 'cleanupStopped'],
-    owner: 'owner-one',
-    enforcing: true,
+    controlled: true,
     state: 'stopped',
   },
   {
     harness: 'pi',
     records: ['accepted', 'settledStopped'],
-    owner: undefined,
-    enforcing: true,
+    controlled: false,
     state: 'cleanupUnconfirmed',
   },
-  {
-    harness: 'pi',
-    records: ['accepted', 'settled'],
-    owner: 'owner-one',
-    enforcing: true,
-    state: 'running',
-  },
+  { harness: 'pi', records: ['accepted', 'settled'], controlled: true, state: 'running' },
   {
     harness: 'pi',
     records: ['accepted', 'startupFailure'],
-    owner: 'other-owner',
-    enforcing: true,
+    controlled: false,
     state: 'cleanupUnconfirmed',
   },
   {
     harness: 'pi',
     records: ['accepted', 'timeoutStopped'],
-    owner: undefined,
-    enforcing: true,
+    controlled: false,
     state: 'cleanupUnconfirmed',
   },
   {
     harness: 'pi',
     records: ['accepted', 'timeout'],
-    owner: 'owner-one',
-    enforcing: true,
+    controlled: true,
     state: 'cleanupUnconfirmed',
   },
   {
     harness: 'pi',
     records: ['accepted', 'cancelled'],
-    owner: 'owner-one',
-    enforcing: false,
+    controlled: true,
     state: 'cleanupUnconfirmed',
   },
   {
     harness: 'pi',
     records: ['accepted', 'cleanup'],
-    owner: 'owner-one',
-    enforcing: false,
+    controlled: true,
+    state: 'cleanupUnconfirmed',
+  },
+  { harness: 'generic', records: ['ready'], controlled: true, state: 'starting' },
+  { harness: 'generic', records: ['assignment'], controlled: true, state: 'running' },
+  { harness: 'generic', records: ['assignmentUncertain'], controlled: true, state: 'starting' },
+  { harness: 'generic', records: ['assignment', 'report'], controlled: true, state: 'reported' },
+  {
+    harness: 'generic',
+    records: ['assignment', 'report'],
+    controlled: false,
     state: 'cleanupUnconfirmed',
   },
   {
     harness: 'generic',
-    records: ['ready'],
-    owner: 'owner-one',
-    enforcing: true,
-    state: 'starting',
-  },
-  {
-    harness: 'generic',
-    records: ['assignment'],
-    owner: 'owner-one',
-    enforcing: true,
-    state: 'running',
-  },
-  {
-    harness: 'generic',
-    records: ['assignmentUncertain'],
-    owner: 'owner-one',
-    enforcing: true,
-    state: 'starting',
-  },
-  {
-    harness: 'generic',
-    records: ['assignment', 'report'],
-    owner: 'owner-one',
-    enforcing: true,
-    state: 'reported',
-  },
-  {
-    harness: 'generic',
-    records: ['assignment', 'report'],
-    owner: 'owner-one',
-    enforcing: false,
-    state: 'stopping',
-  },
-  {
-    harness: 'generic',
-    records: ['assignment', 'report'],
-    owner: undefined,
-    enforcing: true,
-    state: 'notOwned',
-  },
-  {
-    harness: 'generic',
     records: ['assignment', 'settledStopped'],
-    owner: undefined,
-    enforcing: true,
+    controlled: false,
     state: 'cleanupUnconfirmed',
   },
   {
     harness: 'generic',
     records: ['assignment', 'timeoutStopped'],
-    owner: undefined,
-    enforcing: true,
+    controlled: false,
     state: 'cleanupUnconfirmed',
   },
-  {
-    harness: 'generic',
-    records: ['assignment', 'stopping'],
-    owner: 'owner-one',
-    enforcing: true,
-    state: 'stopping',
-  },
+  { harness: 'generic', records: ['assignment', 'stopping'], controlled: true, state: 'stopping' },
   {
     harness: 'generic',
     records: ['assignment', 'cleanupStopped'],
-    owner: undefined,
-    enforcing: true,
+    controlled: false,
     state: 'stopped',
   },
 ])(
-  'derives $state from $records for $harness owner $owner',
-  ({ harness, records: saved, owner, enforcing, state }) => {
+  'derives $state from $records for $harness with control $controlled',
+  ({ harness, records: saved, controlled, state }) => {
     const { directory, task } = harness === 'pi' ? questionFixture() : genericWorkerFixture();
     const publishAssignment = (observationState: string) => {
       records.publish(directory, records.submissionName('assignment', 'intent'), {
@@ -1112,7 +1025,7 @@ it.each([
       }
     }
 
-    expect(workerState(directory, records.readTask(directory), owner, enforcing)).toBe(state);
+    expect(workerState(directory, records.readTask(directory), controlled)).toBe(state);
   },
 );
 

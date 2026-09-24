@@ -58,7 +58,7 @@ interface Candidate {
   report?: Report;
 }
 
-type Ownership = (taskId: string) => { activeOwner: string | undefined; enforcing: boolean };
+type Ownership = (taskId: string) => boolean;
 
 // Internal display budget for one history page.
 const historyByteBudget = 48_000;
@@ -80,10 +80,8 @@ const candidateState = (
   ownership: Ownership,
   diagnostics: string[],
 ): WorkerState | undefined => {
-  const { activeOwner, enforcing } = ownership(task.taskId);
-
   return readOrDiagnose(
-    () => workerState(directory, task, activeOwner, enforcing),
+    () => workerState(directory, task, ownership(task.taskId)),
     `Task ${task.taskId} state`,
     diagnostics,
   );
@@ -371,7 +369,7 @@ export const searchHistory = async (
   root: string,
   current: { file: string; id: string; sessionDirectory: string },
   query = '',
-  ownership: Ownership = () => ({ activeOwner: undefined, enforcing: true }),
+  ownership: Ownership = () => false,
 ) => {
   const { saved, tasks, diagnostics } = historyRegistry(root);
   const ancestors = lineage(current.file, tasks, current.id);
