@@ -34,8 +34,10 @@ The owner replies once when done.
 ## Procedure
 
 1. Find the owner. Run `herdr agent list` and keep the agents whose `cwd` is the target worktree.
+   Drop agents named `worker-*` or `investigator-*`: they are Tau subagents working for a parent,
+   and can outlive it.
    - One match: that pane is the owner.
-   - Several matches, such as subagent workers or two user panes: ask the user which pane.
+   - Several matches, such as two user panes: ask the user which pane.
    - No match: run `herdr pane list` and keep panes with that `cwd`. No pane means no workspace; ask
      the user. Otherwise take a pane at its shell prompt, or split one with
      `herdr pane split <pane> --cwd <path>`, then run
@@ -64,5 +66,8 @@ The owner replies once when done.
 ## Receiving a brief
 
 When a brief arrives, do the work in your own worktree under your normal rules. When done, reply
-once with `herdr agent prompt <sender-pane> "<summary>"`: changes, checks run with results,
-decisions, and concerns. Do not send progress updates.
+once: write the summary (changes, checks run with results, decisions, and concerns) with the file
+tool to `~/.cache/tau/handoffs/<your-pane>-<timestamp>.md`, then run
+`herdr agent prompt <sender-pane> "$(cat <file>)"`. Never type the summary into the command itself:
+the shell expands `$()` and backticks typed there, but not in the output of `$(cat <file>)`. Do not
+send progress updates.
