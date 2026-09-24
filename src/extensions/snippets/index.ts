@@ -11,7 +11,7 @@ import type {
 import { errorMessage } from '../../errors/index.js';
 import { openSnippetMenu } from './menu.js';
 import { acceptsSnippets, buildSnippetMessage, loadSnippets } from './snippet.js';
-import type { Snippet } from './types.js';
+import type { Snippet, SnippetPlacement } from './types.js';
 
 const snippetsDirectory = fileURLToPath(new URL('./snippets/', import.meta.url));
 const widgetKey = 'prompt-snippets';
@@ -27,7 +27,7 @@ const updateWidget = (state: SnippetsState, context: ExtensionContext): void => 
   }
 
   const active = state.snippets.filter((snippet) => state.enabled.has(snippet.id));
-  const namesForPlacement = (placement: string) =>
+  const namesForPlacement = (placement: SnippetPlacement) =>
     active
       .filter((snippet) => snippet.placement === placement)
       .map((snippet) => snippet.name)

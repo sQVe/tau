@@ -15,8 +15,8 @@ import { readGenericReference, prepareGenericReport } from './generic.js';
 import { seedSession } from './profiles.js';
 import { publish, readEvent } from './records.js';
 import { object, resolveTerminal, result, text } from './terminal.js';
-import { isGenericLoadout, isPiLoadout, requireNativeTask } from './types.js';
-import type { GenericLoadout, Task, TaskEvent } from './types.js';
+import { isGenericLoadout, isPiLoadout, nativeAgentStates, requireNativeTask } from './types.js';
+import type { GenericLoadout, NativeAgentState, Task, TaskEvent } from './types.js';
 
 const agentSessionSchema = Type.Object({ value: Type.String({ minLength: 1 }) });
 const missingPiIntegrationMessage =
@@ -350,11 +350,11 @@ const saveGenericOwnership = (handle: Handle, owned: OwnedWorker): void => {
   }
 };
 
-const observedNativeState = (agent: Record<string, unknown>): string =>
-  typeof agent.agent_status === 'string' &&
-  ['idle', 'done', 'working', 'blocked', 'unknown'].includes(agent.agent_status)
-    ? agent.agent_status
-    : 'unknown';
+const isNativeAgentState = (value: unknown): value is NativeAgentState =>
+  nativeAgentStates.some((state) => state === value);
+
+const observedNativeState = (agent: Record<string, unknown>): NativeAgentState =>
+  isNativeAgentState(agent.agent_status) ? agent.agent_status : 'unknown';
 
 const verifyWorkerAgent = async (
   handle: Handle,

@@ -1,4 +1,4 @@
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import type { Component, TUI } from '@earendil-works/pi-tui';
 
@@ -11,7 +11,7 @@ const chromeHeight = 6;
 const frameHeight = 10;
 const minimumViewHeight = 5;
 
-type MenuTheme = Parameters<Parameters<ExtensionContext['ui']['custom']>[0]>[1];
+type MenuTheme = Pick<Theme, 'fg' | 'bold'>;
 
 interface ListRow {
   text: string;

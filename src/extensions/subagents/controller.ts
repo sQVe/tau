@@ -85,7 +85,7 @@ import {
 } from './records.js';
 import { resolveTerminal, text, object, result } from './terminal.js';
 import { isGenericLoadout, isPiLoadout } from './types.js';
-import type { Task, GenericLoadout } from './types.js';
+import type { GenericLoadout, ReplyDelivery, SubmissionState, Task } from './types.js';
 
 export { agentPromptArguments, workerArguments } from './controllerInspect.js';
 export type { HerdrClient } from './controllerInspect.js';
@@ -130,8 +130,8 @@ class TaskAccessError extends Error {
 }
 
 const deliveryFromSubmission = (
-  state: 'submitted' | 'not-delivered' | 'uncertain' | undefined,
-): 'sent' | 'notDelivered' | 'uncertain' => {
+  state: SubmissionState | undefined,
+): Exclude<ReplyDelivery, 'notResent'> => {
   if (state === 'submitted') {
     return 'sent';
   }
@@ -911,19 +911,17 @@ export class WorkerController {
       send: () => call(agentPromptArguments(location.paneId, prompt)),
     });
 
-    this.notifyUndelivered(handle, submission?.observation);
+    this.notifyUndelivered(handle, submission?.observation?.state);
   }
 
-  private notifyUndelivered(
-    handle: Handle,
-    observation: { state?: string; detail?: string } | undefined,
-  ): void {
-    const undelivered =
-      observation?.state === 'not-delivered' || observation?.state === 'uncertain';
+  private notifyUndelivered(handle: Handle, state: SubmissionState | undefined): void {
+    if (state === undefined || handle.stopping || this.closed) {
+      return;
+    }
 
-    if (!handle.stopping && !this.closed && undelivered) {
-      const delivery = observation.state === 'not-delivered' ? 'notDelivered' : 'uncertain';
+    const delivery = deliveryFromSubmission(state);
 
+    if (delivery !== 'sent') {
       this.notifySnapshot(handle, { delivery });
     }
   }

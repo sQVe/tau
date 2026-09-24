@@ -203,6 +203,43 @@ export const requireNativeTask = (task: Task): NativeTask => {
 export type Report = Static<typeof reportSchema>;
 export type TaskEvent = Static<typeof eventSchema>;
 
+export const nativeAgentStates = ['idle', 'done', 'working', 'blocked', 'unknown'] as const;
+
+export type NativeAgentState = (typeof nativeAgentStates)[number];
+
+export type SubmissionState = 'submitted' | 'not-delivered' | 'uncertain';
+
+export type ReplyDelivery = 'sent' | 'uncertain' | 'notResent' | 'notDelivered';
+
+// Any of these events ends a task for admission and ancestry checks.
+export const taskEndedEventKinds: readonly TaskEvent['kind'][] = [
+  'cleanup',
+  'cancelled',
+  'timeout',
+  'startupFailure',
+  'parentClosed',
+  'settled',
+  'stopping',
+];
+
+// A worker with any of these events no longer accepts replies.
+export const replyClosedEventKinds: readonly TaskEvent['kind'][] = [
+  'settled',
+  'startupFailure',
+  'cleanup',
+  'cancelled',
+  'timeout',
+];
+
+// A worker this session does not own, with any of these events, still needs cleanup confirmed.
+export const unownedTerminalEventKinds: readonly TaskEvent['kind'][] = [
+  'settled',
+  'startupFailure',
+  'timeout',
+  'cancelled',
+  'stopping',
+];
+
 export interface Profile {
   name: string;
   role: 'investigation' | 'editing';
