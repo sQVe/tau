@@ -2,7 +2,9 @@
 
 - Status: Accepted; parent-user approval rules superseded by
   [ADR 0037](./0037-launch-native-workers-without-parent-approval.md); report area rule superseded
-  by [ADR 0045](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md)
+  by [ADR 0045](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md); the saved Pi
+  record shape (fingerprints, `noExtensions`, tree ancestry) superseded by
+  [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 - Date: 2026-09-19
 - Supersedes: [ADR 0032](./0032-run-claude-workers-through-a-parent-owned-channel.md)
 
