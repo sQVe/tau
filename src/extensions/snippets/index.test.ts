@@ -1,6 +1,7 @@
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionCommandContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
+import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import snippetsExtension from './index.js';
 import { openSnippetMenu } from './menu.js';
 import { loadSnippets } from './snippet.js';
@@ -23,30 +24,21 @@ const snippet: Snippet = {
 };
 
 const setup = async () => {
-  const handlers = new Map<string, (event: unknown, context: ExtensionContext) => unknown>();
-  const commands = new Map<string, (arguments_: string, context: ExtensionContext) => unknown>();
-  snippetsExtension({
-    on: (name: string, handler: (event: unknown, context: ExtensionContext) => unknown) =>
-      handlers.set(name, handler),
-    registerCommand: (
-      name: string,
-      command: { handler: (arguments_: string, context: ExtensionContext) => unknown },
-    ) => commands.set(name, command.handler),
-    registerShortcut: () => {},
-  } as unknown as ExtensionAPI);
+  const fake = fakeExtensionApi();
+  snippetsExtension(fake.pi);
   const ui = {
-    notify: vi.fn<ExtensionContext['ui']['notify']>(),
-    setEditorText: vi.fn<ExtensionContext['ui']['setEditorText']>(),
-    setWidget: vi.fn<ExtensionContext['ui']['setWidget']>(),
+    notify: vi.fn<ExtensionCommandContext['ui']['notify']>(),
+    setEditorText: vi.fn<ExtensionCommandContext['ui']['setEditorText']>(),
+    setWidget: vi.fn<ExtensionCommandContext['ui']['setWidget']>(),
     theme: { fg: (_color: string, text: string) => text },
   };
-  const context = { mode: 'tui', model: {}, ui } as unknown as ExtensionContext;
+  const context = { mode: 'tui', model: {}, ui } as unknown as ExtensionCommandContext;
 
   vi.mocked(loadSnippets).mockResolvedValueOnce([snippet]);
   vi.mocked(openSnippetMenu).mockResolvedValueOnce(new Set([snippet.id]));
-  await commands.get('snippets')?.('', context);
+  await fake.commands.get('snippets')?.handler('', context);
 
-  const send = (text: string) => handlers.get('input')?.({ text }, context);
+  const send = (text: string) => fake.handler('input')({ text }, context);
 
   return { ui, send };
 };

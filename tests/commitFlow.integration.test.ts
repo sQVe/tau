@@ -16,7 +16,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from './gitRepository.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
-import { createPiSession } from './piSession.js';
+import { createBoundSession } from './piSession.js';
 
 // Real Pi sessions and Git commands need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
@@ -91,24 +91,23 @@ const createHarness = async (
   isolateWebAccessConfig(agentDirectory, registerCleanup);
 
   const faux = fauxProvider({ provider: 'tau-test' });
-  const { session, extensionsResult } = await createPiSession(registerCleanup, {
-    cwd: repositoryDirectory,
-    agentDirectory,
-    providers: [faux],
-    tools: ['read', 'bash', 'edit', 'write', 'commit'],
-    extensionPaths: [
-      tauExtensionsPath,
-      bundledQuestionExtensionPath,
-      bundledWebAccessExtensionPath,
-    ],
-  });
-
-  expect(extensionsResult.errors).toEqual([]);
-
   const overlays: string[] = [];
   const { hasUI = true } = options;
-
-  await session.bindExtensions(hasUI ? { uiContext: createScriptedUI(overlays) } : {});
+  const { session } = await createBoundSession(
+    registerCleanup,
+    {
+      cwd: repositoryDirectory,
+      agentDirectory,
+      providers: [faux],
+      tools: ['read', 'bash', 'edit', 'write', 'commit'],
+      extensionPaths: [
+        tauExtensionsPath,
+        bundledQuestionExtensionPath,
+        bundledWebAccessExtensionPath,
+      ],
+    },
+    hasUI ? { uiContext: createScriptedUI(overlays) } : {},
+  );
 
   const events: AgentSessionEvent[] = [];
 

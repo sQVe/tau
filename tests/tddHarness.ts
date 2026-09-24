@@ -11,7 +11,7 @@ import { expect } from 'vitest';
 import type { ObservationResult } from '../src/extensions/tdd/types.js';
 import { initializeRepository } from './gitRepository.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
-import { createPiSession } from './piSession.js';
+import { createBoundSession } from './piSession.js';
 
 interface ToolResult {
   details: ObservationResult;
@@ -48,7 +48,7 @@ export const createHarness = async (
   counter += 1;
 
   const faux = fauxProvider({ provider: `tau-tdd-${counter}` });
-  const { session, extensionsResult } = await createPiSession(cleanup, {
+  const { session } = await createBoundSession(cleanup, {
     cwd,
     agentDirectory,
     providers: [faux],
@@ -60,9 +60,6 @@ export const createHarness = async (
     ],
     extensionFactories,
   });
-
-  expect(extensionsResult.errors).toEqual([]);
-  await session.bindExtensions({});
 
   const events: AgentSessionEvent[] = [];
   session.subscribe((event) => events.push(event));

@@ -2,15 +2,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type {
-  ExtensionAPI,
-  ExtensionContext,
-  ToolCallEventResult,
-  ToolDefinition,
-} from '@earendil-works/pi-coding-agent';
-import { createEventBus } from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
+import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { monotonicNow } from './admission.js';
 import { assignmentContract, handoffContract } from './handoff.js';
 import { checkWorkerRuntime } from './loadout.js';
@@ -72,10 +67,7 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
       instructions: 'Read only.',
     },
   });
-  const handlers = new Map<string, (event: unknown, context: ExtensionContext) => unknown>();
-  const tools = new Map<string, ToolDefinition>();
-  const sendUserMessage = vi.fn<ExtensionAPI['sendUserMessage']>();
-  const sendMessage = vi.fn<ExtensionAPI['sendMessage']>();
+  const fake = fakeExtensionApi();
   const shutdown = vi.fn<ExtensionContext['shutdown']>();
   const context = {
     sessionManager: {
@@ -85,18 +77,11 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
     shutdown,
     ui: { notify: vi.fn<ExtensionContext['ui']['notify']>() },
   } as unknown as ExtensionContext;
-  const events = createEventBus();
-  workerExtension({
-    events,
-    on: (name: string, handler: (event: unknown, context: ExtensionContext) => unknown) =>
-      handlers.set(name, handler),
-    registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-    sendUserMessage,
-    sendMessage,
-  } as unknown as ExtensionAPI);
-  const emit = (name: string, event: unknown = {}) => handlers.get(name)?.(event, context);
+  workerExtension(fake.pi);
+  const emit = (name: string, event: unknown = {}) =>
+    fake.handlers.has(name) ? fake.handler(name)(event, context) : undefined;
   const ask = () =>
-    tools
+    fake.tools
       .get('subagent_question')
       ?.execute('call', { question: 'Which file?' }, undefined, undefined, context);
 
@@ -105,11 +90,11 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
     createdAt,
     emit,
     ask,
-    sendUserMessage,
-    sendMessage,
+    sendUserMessage: fake.sendUserMessage,
+    sendMessage: fake.sendMessage,
     shutdown,
-    events,
-    tools,
+    events: fake.pi.events,
+    tools: fake.tools,
     context,
   };
 };

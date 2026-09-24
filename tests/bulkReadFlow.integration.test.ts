@@ -14,7 +14,7 @@ import {
 } from 'vitest';
 import type { TestContext } from 'vitest';
 
-import { createPiSession } from './piSession.js';
+import { createBoundSession } from './piSession.js';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -34,7 +34,7 @@ const createHarness = async (registerCleanup: TestContext['onTestFinished']) => 
 
   const sessionModel = fauxProvider({ provider: 'tau-test' });
   const delegate = fauxProvider({ provider: 'tau-delegate', models: [{ id: 'reader' }] });
-  const { session, extensionsResult } = await createPiSession(registerCleanup, {
+  const { session } = await createBoundSession(registerCleanup, {
     cwd,
     agentDirectory: agentDir,
     providers: [sessionModel, delegate],
@@ -42,8 +42,6 @@ const createHarness = async (registerCleanup: TestContext['onTestFinished']) => 
     extensionPaths: [resolve(import.meta.dirname, '../src/extensions/bulkRead/index.ts')],
     settings: { compaction: { enabled: false }, retry: { enabled: false } },
   });
-  expect(extensionsResult.errors).toEqual([]);
-  await session.bindExtensions({});
 
   return { session, sessionModel, delegate, content, cwd };
 };

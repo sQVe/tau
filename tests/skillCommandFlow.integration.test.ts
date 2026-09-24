@@ -6,7 +6,7 @@ import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
 import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
-import { createPiSession } from './piSession.js';
+import { createBoundSession } from './piSession.js';
 
 // Real Pi sessions need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
@@ -20,7 +20,7 @@ const createSession = async (registerCleanup: TestContext['onTestFinished']) => 
   registerCleanup(() => rm(agentDirectory, { recursive: true, force: true }));
 
   const faux = fauxProvider({ provider: 'tau-skill-command-test' });
-  const { session } = await createPiSession(registerCleanup, {
+  const { session } = await createBoundSession(registerCleanup, {
     cwd: directory,
     agentDirectory,
     providers: [faux],
@@ -28,8 +28,6 @@ const createSession = async (registerCleanup: TestContext['onTestFinished']) => 
     extensionPaths: [join(packageRoot, 'src/extensions')],
     skillPaths: [join(packageRoot, 'skills')],
   });
-
-  await session.bindExtensions({});
 
   return { session, faux };
 };

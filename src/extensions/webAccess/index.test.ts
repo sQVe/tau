@@ -1,11 +1,8 @@
 import { fauxProvider } from '@earendil-works/pi-ai';
-import type {
-  ExtensionAPI,
-  ExtensionContext,
-  ToolCallEvent,
-} from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext, ToolCallEvent } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, vi } from 'vitest';
 
+import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import webAccessExtension from './index.js';
 
 const setup = () => {
@@ -20,16 +17,13 @@ const setup = () => {
   );
   const getAvailable = vi.fn<ExtensionContext['modelRegistry']['getAvailable']>(() => available);
   const context = { modelRegistry: { find, getAvailable } } as unknown as ExtensionContext;
-  const handlers = new Map<string, (event: ToolCallEvent, context: ExtensionContext) => void>();
+  const fake = fakeExtensionApi();
 
-  webAccessExtension({
-    on: (name: string, handler: (event: ToolCallEvent, context: ExtensionContext) => void) =>
-      handlers.set(name, handler),
-  } as unknown as ExtensionAPI);
+  webAccessExtension(fake.pi);
 
   const emit = (input: Record<string, unknown>, toolName = 'fetch_content') => {
     const event: ToolCallEvent = { type: 'tool_call', toolCallId: 'fetch', toolName, input };
-    handlers.get('tool_call')?.(event, context);
+    fake.handler('tool_call')(event, context);
 
     return event.input;
   };

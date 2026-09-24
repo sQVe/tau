@@ -1,23 +1,15 @@
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it } from 'vitest';
 
+import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import broExtension from './index.js';
-
-type Command = Parameters<ExtensionAPI['registerCommand']>[1];
 
 describe('broExtension', () => {
   it('sends skill messages as follow-ups when idle and steering messages when busy', async () => {
-    const registeredCommands = new Map<string, Command>();
-    const sentUserMessages: unknown[] = [];
-    const fakePi = {
-      registerCommand: (name: string, command: Command) => registeredCommands.set(name, command),
-      sendUserMessage: (content: string, options: unknown) =>
-        sentUserMessages.push({ content, options }),
-    } as unknown as ExtensionAPI;
+    const fake = fakeExtensionApi();
 
-    broExtension(fakePi);
+    broExtension(fake.pi);
 
-    const broCommand = registeredCommands.get('bro');
+    const broCommand = fake.commands.get('bro');
 
     if (broCommand == null) {
       throw new Error('Expected bro command to be registered');
@@ -27,13 +19,10 @@ describe('broExtension', () => {
     await broCommand.handler('', { isIdle: () => true } as never);
     await broCommand.handler('', { isIdle: () => false } as never);
 
-    expect(sentUserMessages).toEqual([
-      {
-        content: '/skill:bro the test failure',
-        options: { deliverAs: 'followUp', expandPromptTemplates: true },
-      },
-      { content: '/skill:bro', options: { deliverAs: 'followUp', expandPromptTemplates: true } },
-      { content: '/skill:bro', options: { deliverAs: 'steer', expandPromptTemplates: true } },
+    expect(fake.sendUserMessage.mock.calls).toEqual([
+      ['/skill:bro the test failure', { deliverAs: 'followUp', expandPromptTemplates: true }],
+      ['/skill:bro', { deliverAs: 'followUp', expandPromptTemplates: true }],
+      ['/skill:bro', { deliverAs: 'steer', expandPromptTemplates: true }],
     ]);
   });
 });

@@ -75,3 +75,25 @@ export const createPiSession = async (
 
   return { session, extensionsResult };
 };
+
+type BindOptions = Parameters<
+  Awaited<ReturnType<typeof createPiSession>>['session']['bindExtensions']
+>[0];
+
+export const createBoundSession = async (
+  registerCleanup: TestContext['onTestFinished'],
+  options: PiSessionOptions,
+  bindOptions: BindOptions = {},
+) => {
+  const created = await createPiSession(registerCleanup, options);
+
+  if (created.extensionsResult.errors.length > 0) {
+    throw new Error(
+      `Extensions failed to load: ${JSON.stringify(created.extensionsResult.errors)}`,
+    );
+  }
+
+  await created.session.bindExtensions(bindOptions);
+
+  return created;
+};
