@@ -22,6 +22,7 @@
     "prepare": "vp config",
     "test": "vp test",
     "test:changed": "vp test --changed",
+    "test:coverage": "vp test --coverage",
     "test:unit": "vp test --exclude '**/*.integration.test.ts'",
     "typecheck": "pnpm exec tsc --noEmit",
     "release:github": "pnpm changeset tag"
@@ -42,6 +43,7 @@
     "@oxlint/plugins": "1.79.0",
     "@stylistic/eslint-plugin": "5.10.0",
     "@types/node": "24.13.3",
+    "@vitest/coverage-v8": "4.1.11",
     "jiti": "2.7.0",
     "knip": "6.37.0",
     "typescript": "7.0.2",
