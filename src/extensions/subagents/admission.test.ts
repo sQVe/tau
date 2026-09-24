@@ -197,25 +197,23 @@ it('rejects descendant authority changes and never lets descendants configure th
   reserveTask(root, child, 256);
 });
 
+it('refuses to list descendants through a reservation cycle', () => {
+  const { root, task } = setup();
+  const first = task('first', 'second');
+  const directory = admissionDirectory(root, first.tree);
+  mkdirSync(directory, { recursive: true });
+  publish(directory, 'first.json', first);
+  publish(directory, 'second.json', task('second', 'first'));
+
+  expect(() => descendantReservations(root, first)).toThrow('Cyclic reservation ancestry');
+});
+
 const savedPaths = (root: string) =>
   readdirSync(root, { recursive: true, encoding: 'utf8' }).toSorted((left, right) =>
     left.localeCompare(right),
   );
 
 it.each([
-  {
-    refusal: 'a reservation cycle',
-    expected: 'Cyclic reservation ancestry',
-    refuse: ({ root, task }: ReturnType<typeof setup>) => {
-      const first = task('first', 'second');
-      const directory = admissionDirectory(root, first.tree);
-      mkdirSync(directory, { recursive: true });
-      publish(directory, 'first.json', first);
-      publish(directory, 'second.json', task('second', 'first'));
-
-      return () => descendantReservations(root, first);
-    },
-  },
   {
     refusal: 'a saved task that differs from its reservation',
     expected: 'Task differs from its reservation',
