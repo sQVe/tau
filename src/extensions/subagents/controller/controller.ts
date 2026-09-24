@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage, isMissingFile } from '../../../errors/index.js';
+import { readWorkerActivity } from '../activity.js';
 import {
   descendantReservations,
   InactiveAncestryError,
@@ -44,6 +46,7 @@ import { resolveTerminal, text, requireObject, result } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
 import { isGenericLoadout, isPiLoadout } from '../types.js';
 import type { GenericLoadout, ReplyDelivery, SubmissionState, Task } from '../types.js';
+import type { WorkerWidgetRow } from '../widget.js';
 import {
   ensureReplyActive,
   workBudget,
@@ -84,11 +87,21 @@ import {
   handleRecovery,
   savedRecovery,
   taskStatus,
+  taskRecordStatus,
   cleanupDetail,
   recordNativeIssue,
 } from './record.js';
 import { closeUnstartedPane, stopOwnedWorker } from './stop.js';
 import type { Handle } from './types.js';
+
+const paneTitle = (task: Task): string => {
+  const harness = isGenericLoadout(task.loadout) ? task.loadout.kind : task.loadout.harness;
+  const model = isPiLoadout(task.loadout) ? task.loadout.model.split('/').at(-1) : undefined;
+  const identity = [harness, model].filter((value): value is string => value !== undefined);
+  const details = identity.map((value) => value.replace(/[^a-zA-Z0-9._-]/g, '-'));
+
+  return `${task.name ?? 'worker'} (${details.join(' / ')})`;
+};
 
 // The reply is saved before this read. A corrupt acknowledgement record must not make a saved reply
 // look failed, because a failure would invite a resend of the same identity.
@@ -202,6 +215,292 @@ interface CleanupOutcomeRequest {
   record: (operation: () => void) => void;
 }
 
+const readWidgetStatus = (
+  directory: string,
+  task: Task,
+  owner: { activeOwner: string | undefined; enforcing: boolean },
+) => {
+  try {
+    return taskRecordStatus(directory, task, owner.activeOwner, owner.enforcing);
+  } catch {
+    return undefined;
+  }
+};
+
+const currentActivity = (activity: ReturnType<typeof readWorkerActivity>, now: number): boolean =>
+  activity !== undefined && activity.updatedAt <= now && now - activity.updatedAt < 60_000;
+
+const phaseActivityText = (
+  activity: ReturnType<typeof readWorkerActivity>,
+  isCurrent: boolean,
+): string | undefined => {
+  if (activity?.description === undefined) {
+    return undefined;
+  }
+
+  if (isCurrent) {
+    return activity.description;
+  }
+
+  return `${activity.description} (stale)`;
+};
+
+const widgetActivity = (
+  task: Task,
+  activity: ReturnType<typeof readWorkerActivity>,
+  handle: Handle | undefined,
+  isCurrent: boolean,
+  showPhase: boolean,
+): string => {
+  const phase = showPhase ? phaseActivityText(activity, isCurrent) : undefined;
+
+  if (phase !== undefined) {
+    return phase;
+  }
+
+  if (isCurrent && activity?.label) {
+    return activity.label;
+  }
+
+  if (isGenericLoadout(task.loadout)) {
+    if (handle?.observationIssue) {
+      return 'herdr observation unavailable';
+    }
+
+    return `herdr ${handle?.nativeState ?? 'unavailable'}`;
+  }
+
+  return activity ? 'Pi activity stale' : 'Pi activity unavailable';
+};
+
+const widgetModel = (
+  task: Task,
+  activity: ReturnType<typeof readWorkerActivity>,
+  isCurrent: boolean,
+): string => {
+  if (isGenericLoadout(task.loadout)) {
+    return task.loadout.requestedModel
+      ? `requested ${task.loadout.requestedModel} · observed unavailable`
+      : 'model unavailable';
+  }
+
+  if (isCurrent && activity?.model) {
+    return `Pi-selected ${activity.model} · requested ${task.loadout.model}`;
+  }
+
+  return `requested ${task.loadout.model} · observed unavailable`;
+};
+
+const widgetUsage = (
+  task: Task,
+  activity: ReturnType<typeof readWorkerActivity>,
+): WorkerWidgetRow['usage'] => {
+  if (activity?.usage) {
+    return {
+      available: true,
+      label: `Pi active branch: ${activity.usage.input} input · cache read ${activity.usage.cacheRead} · cache write ${activity.usage.cacheWrite} · ${activity.usage.output} output`,
+    };
+  }
+
+  return {
+    available: false,
+    reason: isGenericLoadout(task.loadout)
+      ? 'herdr did not expose usage'
+      : 'Pi session usage was not recorded',
+  };
+};
+
+const widgetQuestion = (
+  status: ReturnType<typeof readWidgetStatus>,
+): Pick<WorkerWidgetRow, 'question' | 'questionId'> => {
+  const question = status?.pendingQuestion;
+
+  if (!question?.question) {
+    return {};
+  }
+
+  if ('replySaved' in question && question.replySaved) {
+    return {};
+  }
+
+  return { question: question.question, questionId: question.questionId };
+};
+
+const widgetRecordFields = (
+  status: ReturnType<typeof readWidgetStatus>,
+): Pick<
+  WorkerWidgetRow,
+  | 'outcome'
+  | 'question'
+  | 'questionId'
+  | 'terminal'
+  | 'cleanup'
+  | 'cleanupConfirmed'
+  | 'stoppedAt'
+  | 'report'
+> => {
+  const fields: Pick<
+    WorkerWidgetRow,
+    | 'outcome'
+    | 'question'
+    | 'questionId'
+    | 'terminal'
+    | 'cleanup'
+    | 'cleanupConfirmed'
+    | 'stoppedAt'
+    | 'report'
+  > = { ...widgetQuestion(status) };
+
+  if (status?.report) {
+    fields.outcome = status.report.outcome;
+    fields.report = { summary: status.report.summary, evidence: status.report.evidence };
+  }
+
+  if (status?.outcome) {
+    fields.terminal = status.outcome;
+  }
+
+  if (status?.cleanup !== undefined) {
+    fields.cleanup = status.cleanup;
+    fields.cleanupConfirmed = !status.capacityHeld;
+  }
+
+  if (status?.state === 'stopped' && status.stoppedAt !== undefined) {
+    fields.stoppedAt = status.stoppedAt;
+  }
+
+  return fields;
+};
+
+const widgetSafety = (task: Task): string =>
+  isGenericLoadout(task.loadout)
+    ? 'native-controls, not Tau-certified'
+    : 'Pi trusted tools + verified safety';
+
+const widgetManualCleanup = (status: ReturnType<typeof readWidgetStatus>): string => {
+  const needsManualCleanup = status?.state === 'cleanupUnconfirmed' || status?.state === 'notOwned';
+
+  if (!needsManualCleanup) {
+    return '';
+  }
+
+  return `manual cleanup ${status.recovery?.paneId ?? status.recovery?.directory ?? 'inspect status'}`;
+};
+
+const widgetEvidencePath = (
+  status: ReturnType<typeof readWidgetStatus>,
+  directory: string,
+): string => {
+  if (status?.report) {
+    return join(status.directory, 'report.json');
+  }
+
+  return join(status?.recovery?.directory ?? directory, 'task.json');
+};
+
+const widgetDetailFields = (
+  status: ReturnType<typeof readWidgetStatus>,
+  task: Task,
+  directory: string,
+): Pick<WorkerWidgetRow, 'details' | 'recovery' | 'workerType' | 'detailPath' | 'issue'> => {
+  const fields: Pick<
+    WorkerWidgetRow,
+    'details' | 'recovery' | 'workerType' | 'detailPath' | 'issue'
+  > = {
+    details: widgetSafety(task),
+    workerType: isGenericLoadout(task.loadout) ? `${task.loadout.kind} worker` : 'Pi worker',
+    detailPath: widgetEvidencePath(status, directory),
+  };
+  const recovery = widgetManualCleanup(status);
+
+  if (recovery) {
+    fields.recovery = recovery;
+  }
+
+  if (!status) {
+    fields.issue = 'saved status unavailable; inspect subagent_status';
+  }
+
+  return fields;
+};
+
+const widgetStatusFields = (
+  status: ReturnType<typeof readWidgetStatus>,
+  task: Task,
+  directory: string,
+): Pick<
+  WorkerWidgetRow,
+  | 'outcome'
+  | 'question'
+  | 'questionId'
+  | 'terminal'
+  | 'cleanup'
+  | 'cleanupConfirmed'
+  | 'stoppedAt'
+  | 'details'
+  | 'recovery'
+  | 'workerType'
+  | 'detailPath'
+  | 'issue'
+  | 'report'
+> => ({
+  ...widgetRecordFields(status),
+  ...widgetDetailFields(status, task, directory),
+});
+
+const widgetActivityTime = (
+  activity: ReturnType<typeof readWorkerActivity>,
+  isCurrent: boolean,
+): Pick<WorkerWidgetRow, 'activityAt'> =>
+  isCurrent && activity ? { activityAt: activity.updatedAt } : {};
+
+const widgetPhase = (
+  activity: ReturnType<typeof readWorkerActivity>,
+): Pick<WorkerWidgetRow, 'phaseDescription' | 'phaseDescriptionAt'> => {
+  if (activity?.description === undefined) {
+    return {};
+  }
+
+  if (activity.descriptionAt === undefined) {
+    return { phaseDescription: activity.description };
+  }
+
+  return {
+    phaseDescription: activity.description,
+    phaseDescriptionAt: activity.descriptionAt,
+  };
+};
+
+const buildWidgetRow = (
+  directory: string,
+  task: Task,
+  status: ReturnType<typeof readWidgetStatus>,
+  activity: ReturnType<typeof readWorkerActivity>,
+  handle: Handle | undefined,
+): WorkerWidgetRow => {
+  const isCurrent = currentActivity(activity, Date.now());
+  const state = status?.state ?? 'unknown';
+  const showPhase = state === 'starting' || state === 'running';
+
+  return {
+    name:
+      task.name ??
+      `${task.loadout.role === 'editing' ? 'worker' : 'investigator'}-${task.taskId.slice(0, 6)}`,
+    ...(task.label === undefined ? {} : { label: task.label }),
+    taskId: task.taskId,
+    task: task.task,
+    state,
+    deadline: task.deadline,
+    createdAt: task.createdAt,
+    activity: widgetActivity(task, activity, handle, isCurrent, showPhase),
+    model: widgetModel(task, activity, isCurrent),
+    usage: widgetUsage(task, activity),
+    ...widgetActivityTime(activity, isCurrent),
+    ...widgetPhase(activity),
+    ...widgetStatusFields(status, task, directory),
+  };
+};
+
 // Launch, replies, and cleanup share ownership state and one deadline. Keep their transitions together.
 export class WorkerController {
   readonly ownerId = randomUUID();
@@ -232,6 +531,53 @@ export class WorkerController {
       identity,
       locator,
     );
+  }
+
+  widgetRows(parentSessionId: string): WorkerWidgetRow[] {
+    let entries;
+
+    try {
+      entries = readdirSync(this.root, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+
+    const rows: WorkerWidgetRow[] = [];
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const row = this.widgetRow(join(this.root, entry.name), parentSessionId);
+
+      if (row) {
+        rows.push(row);
+      }
+    }
+
+    return rows.toSorted((left, right) => right.createdAt - left.createdAt);
+  }
+
+  private widgetRow(directory: string, parentSessionId: string): WorkerWidgetRow | undefined {
+    let task;
+
+    try {
+      task = readTask(directory);
+    } catch {
+      return undefined;
+    }
+
+    if (task.parentSessionId !== parentSessionId) {
+      return undefined;
+    }
+
+    const owner = this.ownership(task.taskId);
+    const status = readWidgetStatus(directory, task, owner);
+    const activity = readWorkerActivity(directory, task.taskId);
+    const handle = this.handles.get(task.taskId);
+
+    return buildWidgetRow(directory, task, status, activity, handle);
   }
 
   children() {
@@ -916,6 +1262,45 @@ export class WorkerController {
     }
   }
 
+  // The pane display title is cosmetic. Startup is already complete, so an unresponsive herdr call
+  // only delays the launch return by at most the short shared deadline below; it cannot block
+  // dispatch or extend the task's original deadline. A rejected or unresolved write leaves the
+  // saved pane unchanged.
+  private async renameWorkerPane(handle: Handle): Promise<void> {
+    if (handle.abort.signal.aborted || this.lifetime.signal.aborted) {
+      return;
+    }
+
+    const remainingWork = remainingWorkBudget(handle);
+
+    if (remainingWork <= 0) {
+      return;
+    }
+
+    const budget = Math.min(2_000, remainingWork);
+    const deadline = performance.now() + budget;
+    const limit = new AbortController();
+    const timer = setTimeout(() => {
+      limit.abort();
+    }, budget);
+    const signal = AbortSignal.any([this.lifetime.signal, handle.abort.signal, limit.signal]);
+    const call = (argumentsList: string[]) => {
+      const remaining = Math.max(1, Math.floor(deadline - performance.now()));
+
+      return this.client(argumentsList, remaining, signal);
+    };
+
+    try {
+      const ownedLocation = await resolveTerminal(text(handle.terminalId), call);
+
+      await call(['pane', 'rename', ownedLocation.paneId, paneTitle(handle.task)]);
+    } catch {
+      // Keep the saved pane as-is; the worker still launched with its unique agent key.
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   private async launchTask(
     input: LaunchInput,
     launchSignal: AbortSignal,
@@ -949,6 +1334,8 @@ export class WorkerController {
       await this.startWorker(handle, location.paneId, name, call);
       await this.finishStartup(handle, call);
       handle.removeLaunchAbort?.();
+
+      await this.renameWorkerPane(handle);
     } catch (error) {
       const reason = remainingWorkBudget(handle) <= 0 ? 'timeout' : 'failure';
 
@@ -1054,6 +1441,7 @@ export class WorkerController {
     return validateTask({
       version: isGenericLoadout(input.loadout) ? 2 : 1,
       name: `${namePrefix}-00`,
+      ...(input.label === undefined ? {} : { label: input.label }),
       taskId: plan.taskId,
       task: input.task,
       parentSession: input.parentSession,

@@ -14,6 +14,7 @@ import type { Loadout, Task } from '../types.js';
 
 export interface LaunchInput {
   task: string;
+  label?: string;
   loadout: Loadout;
   timeout: number;
   parentSession: string;

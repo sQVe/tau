@@ -1,4 +1,4 @@
-import type * as fileSystem from 'node:fs';
+import * as fileSystem from 'node:fs';
 import {
   fsyncSync,
   mkdirSync,
@@ -13,7 +13,8 @@ import { dirname, join } from 'node:path';
 
 import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
-import { inheritedInstructions } from '../admission.js';
+import { writeWorkerActivity } from '../activity.js';
+import { admissionDirectory, inheritedInstructions } from '../admission.js';
 import * as cancellationModule from '../cancellation.js';
 import { herdrFake } from '../fixtures/herdrFake.js';
 import { placementFixture } from '../fixtures/layout.js';
@@ -151,6 +152,16 @@ const setup = (
   };
 
   return { directory, controller, client, fake, calls, notifications, input };
+};
+
+const dispatchRecordedForWorker = (calls: string[][]): boolean => {
+  const recordDirectory = calls
+    .filter((call) => call[1] === 'split')
+    .map((call) => call.find((argument) => argument.startsWith('TAU_WORKER_RECORD=')))
+    .find((argument): argument is string => argument !== undefined)
+    ?.slice('TAU_WORKER_RECORD='.length);
+
+  return recordDirectory !== undefined && readdirSync(recordDirectory).includes('dispatch.json');
 };
 
 it.each(['missing', 'empty'] as const)(
@@ -1071,6 +1082,95 @@ it('refuses full-cap native follow-up before consuming its successor claim', asy
       .readTasks(fixture.directory)
       .some(({ task }) => task.predecessorTaskId === fixture.source.taskId),
   ).toBe(false);
+});
+
+it('dispatches the task before a stalled cosmetic pane rename can hold the launch', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  const renameStarted = Promise.withResolvers<undefined>();
+  let dispatchedWhenRenameStarted: boolean | undefined;
+  const { controller, input, calls } = setup(
+    onTestFinished,
+    0,
+    async (argumentsList, _budget, signal) => {
+      if (argumentsList[1] === 'rename') {
+        dispatchedWhenRenameStarted = dispatchRecordedForWorker(calls);
+        renameStarted.resolve(undefined);
+
+        return new Promise<string>((_resolve, reject) => {
+          signal?.addEventListener(
+            'abort',
+            () => {
+              reject(new Error('rename aborted'));
+            },
+            { once: true },
+          );
+        });
+      }
+
+      return '';
+    },
+  );
+  const launching = controller.launch(input);
+
+  await renameStarted.promise;
+  expect(dispatchedWhenRenameStarted).toBe(true);
+  await vi.advanceTimersByTimeAsync(2000);
+  const launched = await launching;
+
+  expect(launched.failure).toBeUndefined();
+  expect(readdirSync(launched.directory)).toContain('dispatch.json');
+  expect(calls.some((call) => call[1] === 'rename')).toBe(true);
+  expect(calls.filter((call) => call[1] === 'rename')).toHaveLength(1);
+});
+
+it('bounds a stalled cosmetic terminal resolution by the same short deadline', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  const resolutionStalled = Promise.withResolvers<undefined>();
+  let started = false;
+  let dispatchedWhenResolutionStalled: boolean | undefined;
+  const { controller, input, calls } = setup(
+    onTestFinished,
+    0,
+    async (argumentsList, _budget, signal) => {
+      if (argumentsList[1] === 'start') {
+        started = true;
+      }
+
+      const cosmeticResolution =
+        started && argumentsList[0] === 'pane' && argumentsList[1] === 'list';
+
+      if (cosmeticResolution && dispatchRecordedForWorker(calls)) {
+        dispatchedWhenResolutionStalled = dispatchRecordedForWorker(calls);
+        resolutionStalled.resolve(undefined);
+
+        return new Promise<string>((_resolve, reject) => {
+          signal?.addEventListener(
+            'abort',
+            () => {
+              reject(new Error('terminal resolution aborted'));
+            },
+            { once: true },
+          );
+        });
+      }
+
+      return '';
+    },
+  );
+  const launching = controller.launch(input);
+
+  await resolutionStalled.promise;
+  expect(dispatchedWhenResolutionStalled).toBe(true);
+  await vi.advanceTimersByTimeAsync(2000);
+  const launched = await launching;
+
+  expect(launched.failure).toBeUndefined();
+  expect(readdirSync(launched.directory)).toContain('dispatch.json');
+  expect(calls.some((call) => call[1] === 'rename')).toBe(false);
 });
 
 it('gives the worker pane its parent process identity', async ({ onTestFinished }) => {
@@ -2838,4 +2938,301 @@ it('keeps a confirmed stop when the shell changes before the pane closes', async
   expect(status.cleanup).not.toContain('Cleanup unconfirmed');
   expect(status.cleanup).toContain('pane closure refused');
   expect(calls.some((call) => call[1] === 'close')).toBe(false);
+});
+
+it('treats a busy-looking text error as an ordinary startup failure without a busy retry', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
+      throw new Error('Transport failed after agent_pane_busy text was logged.');
+    }
+
+    return '';
+  });
+  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('stopped');
+  expect(launched.failure).toContain('No automatic retry');
+  expect(fixture.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
+  expect(readdirSync(launched.directory)).not.toContain('startRetry.json');
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
+});
+
+it('exposes read-only widget rows without inferring success from worker readiness', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  const launched = await fixture.controller.launch(fixture.input);
+  writeFileSync(join(launched.directory, 'activity.json'), '{malformed');
+  const before = readdirSync(launched.directory).toSorted();
+  const [starting] = fixture.controller.widgetRows(fixture.input.parentSessionId);
+
+  if (!starting) {
+    throw new TypeError('Expected the launched worker in the widget.');
+  }
+
+  expect(starting.name).toMatch(/^(worker|investigator)-[a-z0-9]{2}$/);
+  expect(starting).toMatchObject({
+    state: 'starting',
+    model: 'requested faux/test · observed unavailable',
+    usage: { available: false, reason: 'Pi session usage was not recorded' },
+  });
+  expect(starting).not.toHaveProperty('outcome');
+  expect(readdirSync(launched.directory).toSorted()).toEqual(before);
+  expect(readEvent(launched.directory, launched.taskId, 'settled')).toBeUndefined();
+  writeWorkerActivity(launched.directory, {
+    taskId: launched.taskId,
+    sequence: 1,
+    updatedAt: Date.now() - 60_001,
+    phase: 'active',
+    label: 'tool: read',
+  });
+  expect(fixture.controller.widgetRows(fixture.input.parentSessionId)[0]).toMatchObject({
+    state: 'starting',
+    activity: 'Pi activity stale',
+  });
+  questions.acceptQuestion(launched.directory, launched.taskId, {
+    version: 1,
+    taskId: launched.taskId,
+    questionId: 'question-1',
+    question: 'Which behavior should the test cover?',
+  });
+  expect(fixture.controller.widgetRows(fixture.input.parentSessionId)[0]).toMatchObject({
+    state: 'awaitingReply',
+    question: 'Which behavior should the test cover?',
+  });
+  questions.acceptReply(launched.directory, launched.taskId, {
+    version: 1,
+    taskId: launched.taskId,
+    questionId: 'question-1',
+    replyId: 'reply-1',
+    reply: 'Cover the visible widget behavior.',
+  });
+  expect(fixture.controller.widgetRows(fixture.input.parentSessionId)[0]).not.toHaveProperty(
+    'question',
+  );
+
+  records.acceptReport(launched.directory, launched.taskId, {
+    taskId: launched.taskId,
+    outcome: 'success',
+    summary: 'Finished.',
+    evidence: [],
+  });
+  recordEvent(launched.directory, launched.taskId, 'cleanup', {
+    detail: 'Parent confirmed.',
+    stopped: true,
+  });
+  const stoppedRow = fixture.controller.widgetRows(fixture.input.parentSessionId)[0];
+  expect(stoppedRow).toMatchObject({
+    state: 'stopped',
+    outcome: 'success',
+    terminal: 'success',
+    cleanupConfirmed: true,
+  });
+
+  if (stoppedRow?.stoppedAt === undefined) {
+    throw new Error('Confirmed cleanup must preserve its terminal timestamp.');
+  }
+
+  expect(stoppedRow.stoppedAt).toBeGreaterThan(0);
+  expect(stoppedRow.detailPath).toBe(join(launched.directory, 'report.json'));
+});
+
+it('refreshes worker history without reopening reservation files for every row', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  const launched = await fixture.controller.launch(fixture.input);
+  const task = readTask(launched.directory);
+  const reservations = admissionDirectory(fixture.directory, task.tree);
+
+  for (let index = 0; index < 3; index++) {
+    const historical = { ...task, taskId: `history-${index}`, name: `worker-${index}0` };
+    const directory = join(fixture.directory, historical.taskId);
+    mkdirSync(directory);
+    records.publish(directory, 'task.json', historical);
+    records.publish(reservations, `${historical.taskId}.json`, historical);
+    recordEvent(directory, historical.taskId, 'cleanup', { stopped: true, detail: 'Stopped.' });
+  }
+
+  const opened = vi.spyOn(fileSystem, 'openSync');
+  const rows = fixture.controller.widgetRows(fixture.input.parentSessionId);
+
+  expect(rows).toHaveLength(4);
+  expect(rows.filter((row) => row.state === 'stopped')).toHaveLength(3);
+  expect(rows.find((row) => row.taskId === launched.taskId)?.state).toBe('starting');
+
+  recordEvent(launched.directory, launched.taskId, 'cleanup', {
+    stopped: true,
+    detail: 'Stopped.',
+  });
+  const refreshed = fixture.controller.widgetRows(fixture.input.parentSessionId);
+  const reservationReads = opened.mock.calls.filter(([path]) =>
+    String(path).startsWith(reservations),
+  );
+
+  expect(refreshed.filter((row) => row.state === 'stopped')).toHaveLength(4);
+  expect(reservationReads).toHaveLength(0);
+});
+
+it('saves and exposes a parent-provided short task label without changing the task text', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  const launched = await fixture.controller.launch({
+    ...fixture.input,
+    label: 'Fix status counts',
+  });
+  const [row] = fixture.controller.widgetRows(fixture.input.parentSessionId);
+  const saved = readTask(launched.directory);
+
+  expect(row?.label).toBe('Fix status counts');
+  expect(saved.label).toBe('Fix status counts');
+  expect(saved.task).toBe(fixture.input.task);
+});
+
+it('shows the latest worker-reported phase without waking the parent', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  const launched = await fixture.controller.launch(fixture.input);
+  const notificationsAfterLaunch = fixture.notifications.length;
+  const now = Date.now();
+
+  writeWorkerActivity(launched.directory, {
+    taskId: launched.taskId,
+    sequence: 2,
+    updatedAt: now,
+    phase: 'active',
+    label: 'tool: read',
+    description: 'Fixing status counts',
+    descriptionAt: now - 1000,
+  });
+  const [fresh] = fixture.controller.widgetRows(fixture.input.parentSessionId);
+
+  expect(fresh?.activity).toBe('Fixing status counts');
+  expect(fresh?.phaseDescription).toBe('Fixing status counts');
+  expect(fresh?.phaseDescriptionAt).toBe(now - 1000);
+  expect(fixture.notifications).toHaveLength(notificationsAfterLaunch);
+
+  writeWorkerActivity(launched.directory, {
+    taskId: launched.taskId,
+    sequence: 3,
+    updatedAt: now - 90_000,
+    phase: 'active',
+    label: 'tool: read',
+    description: 'Fixing status counts',
+    descriptionAt: now - 90_000,
+  });
+  const [stale] = fixture.controller.widgetRows(fixture.input.parentSessionId);
+
+  expect(stale?.activity).toContain('Fixing status counts');
+  expect(stale?.activity).toContain('stale');
+  expect(fixture.notifications).toHaveLength(notificationsAfterLaunch);
+});
+
+it('does not present a retained phase as current work after the worker stops', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  const launched = await fixture.controller.launch(fixture.input);
+
+  writeWorkerActivity(launched.directory, {
+    taskId: launched.taskId,
+    sequence: 2,
+    updatedAt: Date.now(),
+    phase: 'active',
+    label: 'tool: read',
+    description: 'Running focused tests',
+    descriptionAt: Date.now(),
+  });
+  records.acceptReport(launched.directory, launched.taskId, {
+    taskId: launched.taskId,
+    outcome: 'success',
+    summary: 'Finished.',
+    evidence: [],
+  });
+  recordEvent(launched.directory, launched.taskId, 'cleanup', {
+    detail: 'Parent confirmed.',
+    stopped: true,
+  });
+  const [stopped] = fixture.controller.widgetRows(fixture.input.parentSessionId);
+
+  expect(stopped?.state).toBe('stopped');
+  expect(stopped?.activity).not.toBe('Running focused tests');
+  expect(stopped?.phaseDescription).toBe('Running focused tests');
+});
+
+it('keeps historical tasks without saved names in the worker history', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  const launched = await fixture.controller.launch(fixture.input);
+  const task = records.readTask(launched.directory);
+
+  delete task.name;
+  writeFileSync(join(launched.directory, 'task.json'), JSON.stringify(task));
+
+  const [row] = fixture.controller.widgetRows(fixture.input.parentSessionId);
+
+  const roleName = task.loadout.role === 'editing' ? 'worker' : 'investigator';
+
+  expect(row?.taskId).toBe(launched.taskId);
+  expect(row?.name).toBe(`${roleName}-${launched.taskId.slice(0, 6)}`);
+});
+
+it('keeps cleanup failure unconfirmed even when its detail omits that wording', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  const launched = await fixture.controller.launch(fixture.input);
+  recordEvent(launched.directory, launched.taskId, 'cleanup', {
+    detail: 'Transport failed. Check pane worker manually.',
+    stopped: false,
+  });
+
+  const failedRow = fixture.controller.widgetRows(fixture.input.parentSessionId)[0];
+  expect(failedRow?.state).toBe('cleanupUnconfirmed');
+  expect(failedRow?.cleanupConfirmed).toBe(false);
+  expect(failedRow?.details).toBe('Pi trusted tools + verified safety');
+  expect(failedRow?.recovery).toContain('manual cleanup');
+});
+
+it('renames the owned worker pane with its name, harness, and known model', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'rename') {
+      return JSON.stringify({ result: { pane: {} } });
+    }
+
+    return '';
+  });
+
+  await controller.launch(input);
+
+  const rename = calls.find((call) => call[1] === 'rename');
+
+  expect(rename?.slice(0, 3)).toEqual(['pane', 'rename', 'worker-1']);
+  expect(rename?.[3]).toMatch(/^worker-[a-z0-9]{2} \(pi \/ test\)$/);
+});
+
+it('keeps a worker running when the pane display title write is rejected', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'rename') {
+      throw new Error('rename unsupported');
+    }
+
+    return '';
+  });
+
+  const launched = await controller.launch(input);
+
+  expect(calls.some((call) => call[1] === 'rename')).toBe(true);
+  expect(launched.state).not.toBe('cleanupUnconfirmed');
+  expect(launched.state).not.toBe('notOwned');
 });

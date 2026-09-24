@@ -2,10 +2,15 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { ExtensionContext, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionContext,
+  SessionEntry,
+  ToolCallEventResult,
+} from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { readWorkerActivity, writeWorkerActivity } from './activity.js';
 import { monotonicNow } from './admission.js';
 import { assignmentContract, handoffContract } from './handoff.js';
 import { checkWorkerRuntime } from './loadout.js';
@@ -69,8 +74,10 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
   });
   const fake = fakeExtensionApi();
   const shutdown = vi.fn<ExtensionContext['shutdown']>();
+  const branch: SessionEntry[] = [];
   const context = {
     sessionManager: {
+      getBranch: () => branch,
       getSessionId: () => 'native',
       getSessionFile: () => join(directory, 'native.jsonl'),
     },
@@ -96,6 +103,7 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
     events: fake.pi.events,
     tools: fake.tools,
     context,
+    branch,
   };
 };
 
@@ -153,6 +161,61 @@ it.each(['before readiness', 'before dispatch', 'before tool call'])(
     expect(vi.getTimerCount()).toBe(0);
   },
 );
+
+const assistantUsageEntry = (id: string, input: number, output: number): SessionEntry => ({
+  type: 'message',
+  id,
+  parentId: null,
+  timestamp: new Date().toISOString(),
+  message: {
+    role: 'assistant',
+    content: [],
+    api: 'openai-completions',
+    provider: 'openai',
+    model: 'fixture',
+    timestamp: Date.now(),
+    usage: {
+      input,
+      output,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: input + output,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: 'stop',
+  },
+});
+
+it('excludes earlier continuation history from the worker usage snapshot', async () => {
+  const worker = setup();
+  worker.branch.push(assistantUsageEntry('previous', 100, 30));
+  await worker.emit('session_start');
+  expect(readWorkerActivity(worker.directory, 'task')?.usage).toMatchObject({
+    input: 0,
+    output: 0,
+  });
+  worker.branch.push(assistantUsageEntry('current', 25, 5));
+  worker.emit('tool_execution_start', { toolName: 'read' });
+
+  expect(readWorkerActivity(worker.directory, 'task')?.usage).toMatchObject({
+    input: 25,
+    output: 5,
+  });
+  await worker.emit('session_shutdown');
+});
+
+it('records Pi activity and tool names without recording tool input', async () => {
+  const worker = setup();
+  await worker.emit('session_start');
+  worker.emit('tool_execution_start', { toolName: 'read', input: { path: '/private/file' } });
+
+  const activity = readWorkerActivity(worker.directory, 'task');
+
+  expect(activity?.phase).toBe('active');
+  expect(activity?.label).toBe('tool: read');
+  expect(JSON.stringify(activity)).not.toContain('/private/file');
+  await worker.emit('session_shutdown');
+});
 
 const waitingWorker = async (
   role: 'editing' | 'investigation' = 'investigation',
@@ -228,6 +291,172 @@ it.each(['deadline', 'parent stopped', 'question', 'reported', 'children'] as co
     expect(worker.sendMessage).not.toHaveBeenCalled();
   },
 );
+
+it('keeps settled activity when a streaming update was still pending', async () => {
+  const worker = await waitingWorker();
+  worker.emit('message_update');
+  await worker.emit('agent_settled');
+  const settled = readWorkerActivity(worker.directory, 'task');
+
+  await vi.advanceTimersByTimeAsync(500);
+
+  expect(settled?.phase).toBe('done');
+  expect(readWorkerActivity(worker.directory, 'task')).toEqual(settled);
+  expect(worker.shutdown).toHaveBeenCalledOnce();
+});
+
+it('leaves activity unchanged when a queued update outlives its Pi context', async () => {
+  const worker = await waitingWorker();
+  worker.emit('message_update');
+  const before = readWorkerActivity(worker.directory, 'task');
+  Object.defineProperty(worker.context, 'sessionManager', {
+    get() {
+      throw new Error('This extension ctx is stale after session replacement or reload.');
+    },
+  });
+
+  expect(() => vi.advanceTimersByTime(500)).not.toThrow();
+  expect(readWorkerActivity(worker.directory, 'task')).toEqual(before);
+  await worker.emit('session_shutdown');
+});
+
+it('leaves activity unchanged when Pi session usage is unavailable during a tool event', async () => {
+  const worker = await waitingWorker();
+  const before = readWorkerActivity(worker.directory, 'task');
+  vi.spyOn(worker.context.sessionManager, 'getBranch').mockImplementation(() => {
+    throw new Error('Session usage unavailable.');
+  });
+
+  expect(() => worker.emit('tool_execution_start', { toolName: 'read' })).not.toThrow();
+  expect(readWorkerActivity(worker.directory, 'task')).toEqual(before);
+  await worker.emit('session_shutdown');
+});
+
+it('publishes a worker phase description while keeping lifecycle, automatic activity, model, and usage', async () => {
+  const worker = await waitingWorker();
+  worker.branch.push(assistantUsageEntry('current', 25, 5));
+  worker.emit('tool_execution_start', { toolName: 'read' });
+  const progress = worker.tools.get('subagent_progress');
+
+  if (!progress) {
+    throw new Error('Missing progress tool.');
+  }
+
+  await progress.execute(
+    'progress',
+    { description: 'Running focused tests' },
+    undefined,
+    undefined,
+    worker.context,
+  );
+  const reported = readWorkerActivity(worker.directory, 'task');
+
+  expect(reported).toMatchObject({
+    description: 'Running focused tests',
+    descriptionAt: Date.now(),
+    phase: 'active',
+    label: 'tool: read',
+    usage: { input: 25, output: 5 },
+  });
+
+  worker.emit('tool_execution_end', { toolName: 'read' });
+  const afterAutomaticActivity = readWorkerActivity(worker.directory, 'task');
+
+  expect(afterAutomaticActivity).toMatchObject({
+    description: 'Running focused tests',
+    descriptionAt: Date.now(),
+    label: 'tool finished: read',
+  });
+  await worker.emit('session_shutdown');
+});
+
+it('refuses an invalid or empty phase description without changing the saved activity', async () => {
+  const worker = await waitingWorker();
+  worker.emit('tool_execution_start', { toolName: 'read' });
+  const before = readWorkerActivity(worker.directory, 'task');
+  const progress = worker.tools.get('subagent_progress');
+
+  if (!progress) {
+    throw new Error('Missing progress tool.');
+  }
+
+  for (const description of ['', '   ', 'line\nbreak', `x${'y'.repeat(200)}`]) {
+    expect(() =>
+      progress.execute('progress', { description }, undefined, undefined, worker.context),
+    ).toThrow('Progress description');
+  }
+
+  expect(readWorkerActivity(worker.directory, 'task')).toEqual(before);
+  await worker.emit('session_shutdown');
+});
+
+it('refuses progress without an active task and after the final handover', async () => {
+  const idle = setup();
+  const idleProgress = idle.tools.get('subagent_progress');
+
+  if (!idleProgress) {
+    throw new Error('Missing progress tool.');
+  }
+
+  expect(() =>
+    idleProgress.execute(
+      'progress',
+      { description: 'Inspecting' },
+      undefined,
+      undefined,
+      idle.context,
+    ),
+  ).toThrow('active task');
+
+  const worker = await waitingWorker();
+  const progress = worker.tools.get('subagent_progress');
+  const report = worker.tools.get('subagent_report');
+
+  if (!progress || !report) {
+    throw new Error('Missing worker tools.');
+  }
+
+  await report.execute(
+    'report',
+    { outcome: 'success', summary: 'Done.', evidence: [] },
+    undefined,
+    undefined,
+    worker.context,
+  );
+  const afterReport = readWorkerActivity(worker.directory, 'task');
+
+  expect(() =>
+    progress.execute(
+      'progress',
+      { description: 'Checking full suite' },
+      undefined,
+      undefined,
+      worker.context,
+    ),
+  ).toThrow('active task');
+  expect(readWorkerActivity(worker.directory, 'task')).toEqual(afterReport);
+  await worker.emit('session_shutdown');
+});
+
+it('does not attribute a predecessor phase to the current task', async () => {
+  const worker = setup();
+  writeWorkerActivity(worker.directory, {
+    taskId: 'previous',
+    sequence: 5,
+    updatedAt: Date.now() - 1000,
+    phase: 'active',
+    label: 'tool: bash',
+    description: 'Checking the predecessor suite',
+    descriptionAt: Date.now() - 1000,
+  });
+  await worker.emit('session_start');
+
+  const activity = readWorkerActivity(worker.directory, 'task');
+
+  expect(activity?.description).toBeUndefined();
+  expect(activity?.label).toBe('Pi worker starting');
+  await worker.emit('session_shutdown');
+});
 
 it('sends the autonomous assignment and handoff contract to a dispatched Pi editing worker', async () => {
   const worker = await waitingWorker('editing');
