@@ -365,7 +365,7 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
     name: 'subagent',
     label: 'Launch worker',
     description:
-      'Launch a bounded worker in herdr. Pi (default) requires trusted-full-tools and verified CC Safety Net; its model must be explicit or configured. Other herdr kinds use native-controls, which Tau does not certify. Their nativeArguments are a literal list, and they report to cwd/.tau/workers/<taskId>/report.md, so cwd must be writable. No native arguments by default; the harness selects its configured model. An exact native model request requires corresponding nativeArguments, but Tau cannot verify the model used. Native approval dialogs remain in force and need user action. Tau adds no bypass flags and never approves dialogs. Model translation and native resume are unavailable for non-Pi workers. Workers cannot launch workers; ask the parent instead. Reports are required from the start; assign the complete outcome with acceptance criteria, the baseline, and the worktree, give each worktree one editing worker, and expect a handoff with Changes, Evidence, Decisions, and Concerns. Each parent caps its own live workers. Each worker has one original deadline, including waits and cleanup. No uncertain retries or fallback. Built-in profiles: investigator and worker. States: starting (launched, not accepted yet); running (accepted and working); awaitingReply (waiting for a parent reply); reported (final report saved, cleanup pending); stopping (bounded cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (cleanup unconfirmed, capacity stays held); notOwned (no verified handle in this controller, worker may still be running). Notices are status snapshots taken when sent. A notice without a state means the parent could not read the task records; inspect recovery.',
+      'Launch a bounded worker in herdr. Pi (default) requires trusted-full-tools and verified CC Safety Net; its model must be explicit or configured. Other herdr kinds use native-controls, which Tau does not certify. Their nativeArguments are a literal list, and they report to cwd/.tau/workers/<taskId>/report.md, so cwd must be writable. No native arguments by default; the harness selects its configured model. An exact native model request requires corresponding nativeArguments, but Tau cannot verify the model used. Native approval dialogs remain in force and need user action. Tau adds no bypass flags and never approves dialogs. Model translation and native resume are unavailable for non-Pi workers. Workers cannot launch workers; ask the parent instead. Reports are required from the start; assign the complete outcome with acceptance criteria, the baseline, and the worktree, give each worktree one editing worker, and expect a handoff with Changes, Evidence, Decisions, and Concerns. Each parent caps its own live workers. Each worker has one original deadline, including waits and cleanup. No uncertain retries or fallback. Built-in profiles: investigator and worker. States: starting (launched, not accepted yet); running (accepted and working); awaitingReply (waiting for a parent reply); reported (final report saved, cleanup pending); stopping (bounded cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (cleanup unconfirmed, capacity stays held); notOwned (no verified handle in this controller, worker may still be running). Notices are status snapshots taken when sent. A notice starts a new parent turn when a worker asks, reports, or stops, but only after the current tool call finishes. To wait for a worker, end your turn. Do not sleep or poll. A notice without a state means the parent could not read the task records; inspect recovery.',
     parameters: launchParameters,
     renderCall(parameters, theme) {
       return callText(
@@ -497,6 +497,23 @@ const registerSubagentTools = (runtime: SubagentRuntime): void => {
   registerCancelTool(runtime);
 };
 
+const activeStates = new Set(['starting', 'running', 'awaitingReply', 'reported', 'stopping']);
+const unitSeconds: Record<string, number> = { '': 1, s: 1, m: 60, h: 3600, d: 86_400 };
+
+// A running tool call holds worker notices back, so a long sleep delays the notice it waits for.
+// Sleep sums its operands, and chained sleeps add up, so count every operand in the command.
+const totalSleepSeconds = (command: string): number => {
+  let total = 0;
+
+  for (const [, operands] of command.matchAll(/\bsleep((?:\s+\d+(?:\.\d+)?[smhd]?\b)+)/g)) {
+    for (const [, amount, unit] of (operands ?? '').matchAll(/(\d+(?:\.\d+)?)([smhd]?)/g)) {
+      total += Number(amount) * (unitSeconds[unit ?? ''] ?? 1);
+    }
+  }
+
+  return total;
+};
+
 export default function subagentsExtension(pi: ExtensionAPI): void {
   if (process.env.TAU_WORKER_RECORD) {
     return;
@@ -544,9 +561,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       );
     }
 
-    const hasActiveWorkers = rows.some((row) =>
-      ['starting', 'running', 'awaitingReply', 'reported', 'stopping'].includes(row.state),
-    );
+    const hasActiveWorkers = rows.some((row) => activeStates.has(row.state));
     const refreshIsNeeded = hasActiveWorkers || historyOpen;
 
     if (refreshIsNeeded) {
@@ -601,6 +616,25 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   });
   pi.on('tool_result', (_event, context) => {
     refreshWidget(context);
+  });
+  pi.on('tool_call', (event, context) => {
+    const command = event.toolName === 'bash' ? event.input.command : undefined;
+
+    if (typeof command !== 'string' || totalSleepSeconds(command) < 30) {
+      return undefined;
+    }
+
+    const rows = controller?.widgetRows(context.sessionManager.getSessionId()) ?? [];
+
+    if (!rows.some((row) => activeStates.has(row.state))) {
+      return undefined;
+    }
+
+    return {
+      block: true,
+      reason:
+        'A worker is active. Worker notices wait until the current tool call finishes, so a sleep delays them. End your turn to wait; a notice starts a new turn when the worker asks, reports, or stops.',
+    };
   });
   pi.registerMessageRenderer('tau-worker', (message, options, theme) =>
     renderNotice(message.details, options.expanded, theme),

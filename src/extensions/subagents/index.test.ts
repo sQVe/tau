@@ -109,6 +109,41 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
   expect(shutdownReason).toBe('reload');
 });
 
+it('blocks long parent sleeps only while this session has an active worker', async ({
+  onTestFinished,
+}) => {
+  const fake = fakeExtensionApi();
+  let state = 'running';
+  vi.spyOn(WorkerController.prototype, 'status').mockReturnValue(
+    fullWorkerStatus as unknown as ReturnType<WorkerController['status']>,
+  );
+  vi.spyOn(WorkerController.prototype, 'widgetRows').mockImplementation(
+    () => [{ state }] as unknown as WorkerWidgetRow[],
+  );
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
+  subagentsExtension(fake.pi);
+  const context = {
+    sessionManager: { getSessionId: () => 'parent' },
+  } as unknown as ExtensionContext;
+  const bash = (command: string) =>
+    fake.handler('tool_call')({ toolName: 'bash', input: { command } }, context);
+
+  expect(bash('sleep 900; git status --short')).toBeUndefined();
+  await fake.tools
+    .get('subagent_status')!
+    .execute('status', { taskId: 'task-1' }, undefined, undefined, context);
+
+  expect(bash('sleep 900; git status --short')).toMatchObject({ block: true });
+  expect(bash('sleep 2m')).toMatchObject({ block: true });
+  expect(bash('sleep 20 20')).toMatchObject({ block: true });
+  expect(bash('sleep 20; sleep 20')).toMatchObject({ block: true });
+  expect(bash('sleep 5 && ls')).toBeUndefined();
+  state = 'stopped';
+  expect(bash('sleep 900')).toBeUndefined();
+});
+
 it('updates the parent widget from live worker rows without a model turn', () => {
   vi.useFakeTimers();
   const handlers = new Map<string, (event: unknown, context: ExtensionContext) => void>();
