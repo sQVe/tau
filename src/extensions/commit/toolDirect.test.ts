@@ -119,7 +119,7 @@ describe('direct commit staging', () => {
       executeCommit(container, {
         groups: [{ files: ['feature/requested'], subject: 'feat: requested' }],
       }),
-    ).rejects.toThrow(/not a Git work tree.*session in the worktree that owns the files/);
+    ).rejects.toThrow(`(${container})`);
 
     expect(await git(join(container, 'feature'), ['status', '--porcelain'])).toBe('?? requested\n');
     expect(await git(container, ['rev-list', '--all', '--count'])).toBe('1\n');

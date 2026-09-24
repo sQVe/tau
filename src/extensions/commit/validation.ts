@@ -80,7 +80,7 @@ export const validatePaths = (files: string[]) => {
 
     if (isOutsideWorktree(file)) {
       throw new Error(
-        `Invalid path: ${rawFile}. Use a path relative to this worktree's root; commit other worktrees from a session there.`,
+        `Invalid path: ${rawFile}. Use a path inside this session's cwd, relative to it; commit other worktrees from a session there.`,
       );
     }
 

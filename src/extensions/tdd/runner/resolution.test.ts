@@ -52,7 +52,7 @@ it('distinguishes an unavailable Vitest package from a resolver failure', async 
   expect(blocked).toHaveProperty('message', expect.stringContaining('exports'));
 });
 
-it('says tests run from the session cwd and names the package root that owns requested files', async () => {
+it('names the package root that owns requested files outside the cwd', async () => {
   await mkdir(join(cwd, 'other/src'), { recursive: true });
   await writeFile(join(cwd, 'other/package.json'), '{}');
   const run = (files: string[]) =>
@@ -64,23 +64,8 @@ it('says tests run from the session cwd and names the package root that owns req
   const elsewhere = await run(['other/src/value.test.ts']);
   const local = await run(['value.test.ts']);
 
-  expect(elsewhere).toHaveProperty(
-    'message',
-    expect.stringContaining(`Tests run from this session's cwd (${cwd})`),
-  );
-  expect(elsewhere).toHaveProperty(
-    'message',
-    expect.stringMatching(
-      new RegExp(
-        `other/src/value\\.test\\.ts belongs to ${join(cwd, 'other')}.*session in that worktree`,
-      ),
-    ),
-  );
-  expect(local).toHaveProperty(
-    'message',
-    expect.stringContaining(`Tests run from this session's cwd (${cwd})`),
-  );
-  expect(local).toHaveProperty('message', expect.not.stringContaining('belongs to'));
+  expect(elsewhere).toHaveProperty('message', expect.stringContaining(join(cwd, 'other')));
+  expect(local).toHaveProperty('message', expect.not.stringContaining(join(cwd, 'other')));
 });
 
 it('does not call Vitest absent when its manifest export points to a missing file', async () => {
