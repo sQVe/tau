@@ -40,7 +40,7 @@ The owner replies once when done.
    - Several matches, such as two user panes: ask the user which pane.
    - No match: run `herdr pane list` and keep panes with that `cwd`. No pane means no workspace; ask
      the user. Otherwise take a pane at its shell prompt, or split one with
-     `herdr pane split <pane> --cwd <path>`, then run
+     `herdr pane split <pane> --direction right --cwd <path>`, then run
      `herdr agent start <unique-name> --kind pi --pane <pane>`. Names must be unique among live
      agents, so include the ticket or branch. A bare `pi` fails with `agent_name_taken`.
 2. Write the brief to `~/.cache/tau/handoffs/<sender-pane>-<timestamp>.md` with the file tool. Take
