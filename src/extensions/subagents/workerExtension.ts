@@ -56,7 +56,7 @@ type ReportInput = Static<typeof reportParameters>;
 
 type WorkerPhase = 'starting' | 'active' | 'waiting' | 'done';
 
-interface WorkerState {
+interface WorkerExtensionState {
   directory: string;
   task: Task | undefined;
   accepted: boolean;
@@ -101,7 +101,7 @@ const readPiSessionUsage = (
 
 const taskUsage = (
   current: ReturnType<typeof readPiSessionUsage>,
-  baseline: WorkerState['usageBaseline'],
+  baseline: WorkerExtensionState['usageBaseline'],
 ): WorkerActivity['usage'] => {
   if (!current) {
     return undefined;
@@ -117,14 +117,14 @@ const taskUsage = (
   };
 };
 
-const clearActivityTimer = (state: WorkerState): void => {
+const clearActivityTimer = (state: WorkerExtensionState): void => {
   clearTimeout(state.activityTimer);
 
   state.activityTimer = undefined;
 };
 
 const recordWorkerActivity = (
-  state: WorkerState,
+  state: WorkerExtensionState,
   context: ExtensionContext,
   phase: WorkerPhase,
   label?: string,
@@ -166,16 +166,19 @@ const recordWorkerActivity = (
   }
 };
 
-const hasRunningTask = (state: WorkerState): state is WorkerState & { task: Task } =>
+const hasRunningTask = (
+  state: WorkerExtensionState,
+): state is WorkerExtensionState & { task: Task } =>
   state.task !== undefined && state.accepted && !state.settled;
 
-const isTaskActive = (state: WorkerState): state is WorkerState & { task: Task } =>
-  hasRunningTask(state) && !state.reported;
+const isTaskActive = (
+  state: WorkerExtensionState,
+): state is WorkerExtensionState & { task: Task } => hasRunningTask(state) && !state.reported;
 
 // A worker-authored phase keeps its own timestamp and does not change lifecycle truth or the
 // automatic activity label, so unrelated Pi events cannot make an old phase look freshly reported.
 const recordPhaseDescription = (
-  state: WorkerState,
+  state: WorkerExtensionState,
   context: ExtensionContext,
   value: string,
 ): { description: string; descriptionAt: number } => {
@@ -195,7 +198,7 @@ const matchesNativeSession = (task: Task, context: ExtensionContext): boolean =>
   context.sessionManager.getSessionId() === task.nativeSessionId &&
   context.sessionManager.getSessionFile() === task.nativeSessionFile;
 
-const shouldEndParentWait = (state: WorkerState, task: Task): boolean => {
+const shouldEndParentWait = (state: WorkerExtensionState, task: Task): boolean => {
   if (!state.pendingQuestion || state.settled) {
     return false;
   }
@@ -205,7 +208,11 @@ const shouldEndParentWait = (state: WorkerState, task: Task): boolean => {
   );
 };
 
-const startParentWatch = (state: WorkerState, task: Task, context: ExtensionContext): void => {
+const startParentWatch = (
+  state: WorkerExtensionState,
+  task: Task,
+  context: ExtensionContext,
+): void => {
   // A restarted parent can reply until the deadline unless the previous parent closed cleanly.
   // Start watching before publication so an uncertain save still ends the wait.
   state.parentWatch = setInterval(() => {
@@ -228,7 +235,7 @@ const startParentWatch = (state: WorkerState, task: Task, context: ExtensionCont
 };
 
 const askParent = (
-  state: WorkerState,
+  state: WorkerExtensionState,
   questionText: string,
   context: ExtensionContext,
 ): Promise<AgentToolResult<Question>> => {
@@ -266,7 +273,7 @@ const askParent = (
 };
 
 const handleInput = (
-  state: WorkerState,
+  state: WorkerExtensionState,
   event: InputEvent,
   context: ExtensionContext,
 ): InputEventResult | undefined => {
@@ -322,7 +329,11 @@ const remainingWork = (task: Task): number =>
   task.monotonicDeadline - task.cancellationBudget - monotonicNow();
 
 // Refuse once so an early handback costs a named blocker, but never so late that the report is lost.
-const refuseEarlyIncomplete = (state: WorkerState, task: Task, blocker: string | undefined) => {
+const refuseEarlyIncomplete = (
+  state: WorkerExtensionState,
+  task: Task,
+  blocker: string | undefined,
+) => {
   if (blocker === undefined || blocker.trim() === '') {
     state.remindAfterRefusal = true;
     throw new Error(
@@ -356,7 +367,7 @@ const withBlocker = (summary: string, blocker: string | undefined): string => {
 };
 
 const reportToParent = (
-  state: WorkerState,
+  state: WorkerExtensionState,
   parameters: ReportInput,
 ): Promise<AgentToolResult<Report>> => {
   if (!isTaskActive(state)) {
@@ -392,7 +403,7 @@ const isDispatchForTask = (dispatch: unknown, taskId: string): boolean =>
 
 const startDispatchWatch = (
   pi: ExtensionAPI,
-  state: WorkerState,
+  state: WorkerExtensionState,
   task: Task,
   context: ExtensionContext,
 ): void => {
@@ -422,7 +433,11 @@ const startDispatchWatch = (
   }, 50);
 };
 
-const refuseAcceptedTask = (state: WorkerState, task: Task, context: ExtensionContext): void => {
+const refuseAcceptedTask = (
+  state: WorkerExtensionState,
+  task: Task,
+  context: ExtensionContext,
+): void => {
   if (!readEvent(state.directory, task.taskId, 'continuationRefused')) {
     recordEvent(
       state.directory,
@@ -435,7 +450,11 @@ const refuseAcceptedTask = (state: WorkerState, task: Task, context: ExtensionCo
   context.shutdown();
 };
 
-const startWorker = (pi: ExtensionAPI, state: WorkerState, context: ExtensionContext): void => {
+const startWorker = (
+  pi: ExtensionAPI,
+  state: WorkerExtensionState,
+  context: ExtensionContext,
+): void => {
   try {
     const task = readTask(state.directory);
     state.task = task;
@@ -483,7 +502,7 @@ const callsReportAlone = (
   assistant.message.content.filter((block) => block.type === 'toolCall').length === 1;
 
 const handleToolCall = (
-  state: WorkerState,
+  state: WorkerExtensionState,
   event: ToolCallEvent,
   context: ExtensionContext,
 ): ToolCallEventResult | undefined => {
@@ -519,7 +538,7 @@ const handleToolCall = (
   return undefined;
 };
 
-const registerQuestionTool = (pi: ExtensionAPI, state: WorkerState): void => {
+const registerQuestionTool = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.registerTool({
     name: 'subagent_question',
     label: 'Ask parent',
@@ -540,7 +559,7 @@ const progressParameters = Type.Object(
   { additionalProperties: false },
 );
 
-const registerProgressTool = (pi: ExtensionAPI, state: WorkerState): void => {
+const registerProgressTool = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.registerTool({
     name: 'subagent_progress',
     label: 'Report progress',
@@ -558,7 +577,7 @@ const registerProgressTool = (pi: ExtensionAPI, state: WorkerState): void => {
   });
 };
 
-const registerReportTool = (pi: ExtensionAPI, state: WorkerState): void => {
+const registerReportTool = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.registerTool({
     name: 'subagent_report',
     label: 'Worker report',
@@ -571,21 +590,21 @@ const registerReportTool = (pi: ExtensionAPI, state: WorkerState): void => {
   });
 };
 
-const registerInputHandler = (pi: ExtensionAPI, state: WorkerState): void => {
+const registerInputHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.on('input', (event, context) => handleInput(state, event, context));
 };
 
-const registerToolCallHandler = (pi: ExtensionAPI, state: WorkerState): void => {
+const registerToolCallHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.on('tool_call', (event, context) => handleToolCall(state, event, context));
 };
 
-const registerSessionStartHandler = (pi: ExtensionAPI, state: WorkerState): void => {
+const registerSessionStartHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.on('session_start', (_event, context) => {
     startWorker(pi, state, context);
   });
 };
 
-const registerActivityHandlers = (pi: ExtensionAPI, state: WorkerState): void => {
+const registerActivityHandlers = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.on('turn_start', (_event, context) => {
     recordWorkerActivity(state, context, 'active', 'Pi is thinking');
   });
@@ -610,7 +629,7 @@ const registerActivityHandlers = (pi: ExtensionAPI, state: WorkerState): void =>
   });
 };
 
-const registerSessionShutdownHandler = (pi: ExtensionAPI, state: WorkerState): void => {
+const registerSessionShutdownHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.on('session_shutdown', () => {
     clearActivityTimer(state);
 
@@ -619,7 +638,7 @@ const registerSessionShutdownHandler = (pi: ExtensionAPI, state: WorkerState): v
   });
 };
 
-const registerAgentStartHandler = (pi: ExtensionAPI, state: WorkerState): void => {
+const registerAgentStartHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.on('agent_start', (_event, context) => {
     if (!state.task || state.accepted) {
       return;
@@ -631,7 +650,7 @@ const registerAgentStartHandler = (pi: ExtensionAPI, state: WorkerState): void =
   });
 };
 
-const registerReportReminder = (pi: ExtensionAPI, state: WorkerState): void => {
+const registerReportReminder = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.on('agent_end', () => {
     if (!isTaskActive(state) || state.pendingQuestion) {
       return;
@@ -669,7 +688,7 @@ const registerReportReminder = (pi: ExtensionAPI, state: WorkerState): void => {
   });
 };
 
-const registerAgentSettledHandler = (pi: ExtensionAPI, state: WorkerState): void => {
+const registerAgentSettledHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.on('agent_settled', (_event, context) => {
     if (!hasRunningTask(state) || state.pendingQuestion) {
       return;
@@ -695,7 +714,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
     return;
   }
 
-  const state: WorkerState = {
+  const state: WorkerExtensionState = {
     directory,
     task: undefined,
     accepted: false,

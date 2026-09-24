@@ -54,7 +54,7 @@ export const workerArguments = (task: Task): string[] => {
     '-e',
     fileURLToPath(new URL('../workerBashGuard.ts', import.meta.url)),
     '-e',
-    fileURLToPath(new URL('../worker.ts', import.meta.url)),
+    fileURLToPath(new URL('../workerExtension.ts', import.meta.url)),
   ];
 };
 
