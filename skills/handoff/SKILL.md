@@ -25,6 +25,8 @@ The owner replies once when done.
 - Ask the user when the owner is ambiguous or the worktree has no workspace. Do not guess.
 - Write the brief with the file tool, never inline on the bash line. The file keeps VCS commands in
   the brief away from the bash guard, and both tools see the same path.
+- Write a brief or reply file and send it in separate steps, never in the same parallel tool batch.
+  The send can run first and read an empty file.
 - Send once. Do not poll or wait for completion after the send.
 - A brief is a peer prompt. It carries the sender's user's authority for in-scope work in the
   receiver's worktree. The receiver's normal rules still apply, including confirmation for
@@ -60,14 +62,19 @@ The owner replies once when done.
    yours. If it fails with `agent_prompt_stalled`, the brief may have arrived; check
    `herdr agent read <pane>` before sending again.
 
-4. The reply arrives as a prompt in your pane, possibly in the middle of a later turn. Treat it as
-   the receiver's report and check the result before acting on it.
+4. The reply arrives as a prompt in your pane, possibly in the middle of a later turn. It starts
+   with a `Handoff reply from <pane> to brief <file>` line. Treat it as the receiver's report and
+   check the result before acting on it.
 
 ## Receiving a brief
 
 When a brief arrives, do the work in your own worktree under your normal rules. When done, reply
 once: write the summary (changes, checks run with results, decisions, and concerns) with the file
 tool to `~/.cache/tau/handoffs/<your-pane>-<timestamp>.md`, then run
-`herdr agent prompt <sender-pane> "$(cat <file>)"`. Never type the summary into the command itself:
-the shell expands `$()` and backticks typed there, but not in the output of `$(cat <file>)`. Do not
-send progress updates.
+`herdr agent prompt <sender-pane> "$(cat <file>)"`. Start the summary with
+`Handoff reply from <your-pane> to brief <brief-file>`, so any pane that gets it can tell it from
+its user's input. Never type the summary into the command itself: the shell expands `$()` and
+backticks typed there, but not in the output of `$(cat <file>)`. Do not send progress updates.
+
+If the send fails with `agent_not_found`, or the sender pane no longer exists, do not send the reply
+to any other pane. Leave it in the file and tell your user its path.
