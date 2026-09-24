@@ -170,6 +170,7 @@ it('refuses worker startup without the saved model, cwd, or CC Safety Net and ac
     'edit',
     'write',
     'subagent',
+    'subagent_progress',
     'subagent_report',
     'subagent_question',
   ]);
