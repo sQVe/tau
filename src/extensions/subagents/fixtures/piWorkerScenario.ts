@@ -43,9 +43,15 @@ export const runPiWorkerScenario = async (scenario: PiWorkerScenario) => {
     join(root, 'parent.jsonl'),
     JSON.stringify({ type: 'session', version: 3, id: 'parent', cwd: root }) + '\n',
   );
+  const safetyPackage = dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json')));
+  // The worker accepts Safety Net only from its real file, so the package loads by path.
   writeFileSync(
     join(environment.PI_CODING_AGENT_DIR, 'settings.json'),
-    JSON.stringify({ defaultProjectTrust: 'trusted', retry: { enabled: false } }),
+    JSON.stringify({
+      defaultProjectTrust: 'trusted',
+      retry: { enabled: false },
+      packages: [safetyPackage],
+    }),
   );
   writeFileSync(join(root, 'source.txt'), 'before\n');
   mkdirSync(join(root, 'delete-fixture', '.git'), { recursive: true });
@@ -99,12 +105,7 @@ export default function (pi) {
     await client(['pane', 'move', paneId, '--new-workspace', '--no-focus']);
   }
 
-  const safety = join(
-    dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
-    'dist',
-    'pi',
-    'index.js',
-  );
+  const safety = join(safetyPackage, 'dist', 'pi', 'index.js');
   // A second entry point simulates duplicate package registration without disabling either handler.
   const secondSafety = join(root, 'second-safety.mjs');
   writeFileSync(secondSafety, `export { default } from ${JSON.stringify(safety)};`);
@@ -129,7 +130,7 @@ export default function (pi) {
 
   // Pi discovers only .ts and .js files in the agent extensions directory.
   for (const [index, extension] of extensions.entries()) {
-    if (extension !== integration) {
+    if (extension !== integration && extension !== safety) {
       writeFileSync(
         join(environment.PI_CODING_AGENT_DIR, 'extensions', `fixture-${index}.js`),
         `export { default } from ${JSON.stringify(extension)};\n`,

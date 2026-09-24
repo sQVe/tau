@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { fauxProvider, InMemoryCredentialStore, InMemoryModelsStore } from '@earendil-works/pi-ai';
 import { ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
@@ -145,10 +146,20 @@ it('refuses worker startup without the saved model, cwd, or CC Safety Net and ac
 }) => {
   const { directory, model, request } = await workerFixture(onTestFinished);
   const loadout = { ...fixtureLoadout(directory), model: request.model };
+  const safetyPath = join(
+    dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
+    'dist',
+    'pi',
+    'index.js',
+  );
+  const impostorPath = join(directory, 'cc-safety-net.js');
+  writeFileSync(impostorPath, 'export default () => {};\n');
   const setActiveTools = vi.fn<ExtensionAPI['setActiveTools']>();
   const pi = {
     getThinkingLevel: () => 'off',
-    getCommands: () => [{ name: 'cc-safety-net:2', source: 'extension' }],
+    getCommands: () => [
+      { name: 'cc-safety-net:2', source: 'extension', sourceInfo: { path: safetyPath } },
+    ],
     getAllTools: () => [
       { name: 'read', sourceInfo: { source: 'builtin' } },
       { name: 'ask_user_question', sourceInfo: { source: 'extension' } },
@@ -182,7 +193,13 @@ it('refuses worker startup without the saved model, cwd, or CC Safety Net and ac
   expect(
     startup(
       loadout,
-      { ...pi, getCommands: () => [{ name: 'cc-safety-net', source: 'skill' }] } as typeof pi,
+      {
+        ...pi,
+        getCommands: () => [
+          { name: 'cc-safety-net', source: 'skill', sourceInfo: { path: safetyPath } },
+          { name: 'cc-safety-net', source: 'extension', sourceInfo: { path: impostorPath } },
+        ],
+      } as typeof pi,
       worker,
     ),
   ).toThrow('CC Safety Net');

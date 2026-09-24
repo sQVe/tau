@@ -1,5 +1,6 @@
 import { realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join, resolve } from 'node:path';
 
 import { clampThinkingLevel } from '@earendil-works/pi-ai';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
@@ -18,6 +19,13 @@ import { harnessOf, isPiLoadout, loadoutSchema, textLimit } from './types.js';
 import type { Loadout, PiLoadout, Profile, Task } from './types.js';
 
 type ModelContext = Pick<ExtensionContext, 'modelRegistry' | 'scopedModels'>;
+
+const nodeRequire = createRequire(import.meta.url);
+// Tau's package loads this file; the worker accepts no other extension under the Safety Net name.
+const safetyExtension = (): string =>
+  realpathSync(
+    join(dirname(nodeRequire.resolve('cc-safety-net/package.json')), 'dist', 'pi', 'index.js'),
+  );
 
 const findModel = (registry: ModelRegistry, model: string) => {
   const separator = model.indexOf('/');
@@ -198,12 +206,15 @@ export const checkWorkerRuntime = (
 
   requireSavedWorkerDirectory(loadout, context);
 
-  // Pi suffixes duplicate command names. Accept those names only with extension provenance.
+  // Pi suffixes duplicate command names. Accept those names only from the bundled Safety Net file.
+  const expectedSafety = safetyExtension();
   const safetyActive = pi
     .getCommands()
     .some(
       (command) =>
-        command.source === 'extension' && /^cc-safety-net(?::[1-9]\d*)?$/.test(command.name),
+        command.source === 'extension' &&
+        /^cc-safety-net(?::[1-9]\d*)?$/.test(command.name) &&
+        realpathSync(command.sourceInfo.path) === expectedSafety,
     );
 
   if (!safetyActive) {
