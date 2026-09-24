@@ -221,7 +221,6 @@ export class WorkerController {
     private readonly notify: (notice: WorkerNotice) => void = () => undefined,
   ) {}
 
-  // Every herdr call for a worker is bounded by its work budget and stops with its abort signal.
   private herdrCall(handle: Handle): TerminalCall {
     return (argumentsList) => this.client(argumentsList, workBudget(handle), handle.abort.signal);
   }

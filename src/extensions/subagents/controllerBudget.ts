@@ -14,7 +14,6 @@ export const remainingWorkBudget = (handle: Handle): number =>
     cancellationBudget: handle.task.cancellationBudget,
   });
 
-// Cleanup may use the cancellation budget, but never past the task's own expiry.
 export const remainingCleanupBudget = (handle: Handle): number =>
   Math.floor(Math.min(handle.task.cancellationBudget, handle.expires - performance.now()));
 
