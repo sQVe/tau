@@ -7,5 +7,5 @@ one checkout never breaks another checkout's launch, history, or status. Tau no 
 in `<agentDir>/tau/workers/` and leaves them in place.
 
 Non-Pi workers now report to `<cwd>/.tau/workers/<taskId>/report.md`. The `subagent` tool no longer
-takes `reportDirectory`. Tau writes `.tau/.gitignore` with `*` so `.tau/` stays out of Git in any
-repository.
+takes `reportDirectory`. Tau makes sure `.tau/.gitignore` has a `*` line so `.tau/` stays out of Git
+in any repository, and refuses a symlinked `.tau/` or `.tau/workers/`.

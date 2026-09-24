@@ -5,6 +5,7 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readFileSync,
   readSync,
   realpathSync,
   writeFileSync,
@@ -44,34 +45,53 @@ const reportAreaIsIntact = (task: Task): boolean =>
 // A 10000-byte report always fits the 64000-byte receipt even when every byte JSON-escapes.
 const reportByteLimit = 10_000;
 
-// The .gitignore keeps .tau/ out of Git in any repository, whatever the repository ignores.
-const ensureTauFolder = (cwd: string): void => {
-  const folder = join(cwd, '.tau');
-  mkdirSync(folder, { recursive: true, mode: 0o700 });
-
+// A symlinked folder would make preparation write outside the worker's cwd.
+const ensureRealDirectory = (path: string): void => {
   try {
-    writeFileSync(join(folder, '.gitignore'), '*\n', { flag: 'wx' });
+    mkdirSync(path, { mode: 0o700 });
   } catch (error) {
     if (!hasErrorCode(error, 'EEXIST')) {
       throw error;
     }
   }
+
+  if (!lstatSync(path).isDirectory()) {
+    throw new Error(`${path} must be a directory, not a symbolic link or file.`);
+  }
+};
+
+// The * rule keeps .tau/ out of Git in any repository, whatever the repository ignores.
+const ensureIgnoreRule = (folder: string): void => {
+  const descriptor = openSync(
+    join(folder, '.gitignore'),
+    constants.O_RDWR | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW,
+    0o600,
+  );
+
+  try {
+    const content = readFileSync(descriptor, 'utf8');
+
+    if (!content.split('\n').some((line) => line.trim() === '*')) {
+      writeFileSync(descriptor, content === '' || content.endsWith('\n') ? '*\n' : '\n*\n');
+    }
+  } finally {
+    closeSync(descriptor);
+  }
 };
 
 export const prepareGenericReport = (task: Task): void => {
   const directory = reportDirectory(task);
+  const workers = dirname(directory);
+  const tau = dirname(workers);
 
   if (realpathSync(task.loadout.cwd) !== task.loadout.cwd) {
     throw new Error('The worker cwd changed.');
   }
 
-  ensureTauFolder(task.loadout.cwd);
-  mkdirSync(dirname(directory), { recursive: true, mode: 0o700 });
+  ensureRealDirectory(tau);
+  ensureIgnoreRule(tau);
+  ensureRealDirectory(workers);
   mkdirSync(directory, { mode: 0o700 });
-
-  if (!reportAreaIsIntact(task)) {
-    throw new Error('The report area changed.');
-  }
 };
 
 export const genericPrompt = (task: Task): string => {

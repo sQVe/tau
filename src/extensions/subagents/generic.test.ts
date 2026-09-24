@@ -103,6 +103,40 @@ it('publishes the report under the worker cwd .tau folder and keeps it out of Gi
   ).toBe('');
 });
 
+it('adds the ignore rule to an existing .tau/.gitignore and keeps its lines', async () => {
+  const setup = fixture();
+  const repository = await createTemporaryRepository(onTestFinished);
+  const task = { ...setup.task, loadout: fixtureGenericLoadout(repository) };
+  mkdirSync(join(repository, '.tau'));
+  writeFileSync(join(repository, '.tau', '.gitignore'), 'state.json');
+
+  prepareGenericReport(task);
+  writeFileSync(genericReportPath(task), setup.complete(), { flag: 'wx' });
+
+  expect(readFileSync(join(repository, '.tau', '.gitignore'), 'utf8')).toBe('state.json\n*\n');
+  expect(
+    execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], {
+      cwd: repository,
+      encoding: 'utf8',
+    }),
+  ).toBe('');
+});
+
+it.each(['.tau', '.tau/workers'])('refuses a symlinked %s without writing outside cwd', (link) => {
+  const setup = fixture();
+  const cwd = join(setup.directory, 'cwd');
+  const outside = join(setup.directory, 'outside');
+  mkdirSync(dirname(join(cwd, link)), { recursive: true });
+  mkdirSync(outside);
+  symlinkSync(outside, join(cwd, link));
+  const task = { ...setup.task, loadout: fixtureGenericLoadout(cwd) };
+
+  expect(() => {
+    prepareGenericReport(task);
+  }).toThrow('symbolic link');
+  expect(fileSystem.readdirSync(outside)).toEqual([]);
+});
+
 it.each(['failure', 'incomplete'])(
   'accepts a complete explicit %s outcome without calling it success',
   (outcome) => {

@@ -68,9 +68,11 @@ holds two things:
   another pane in the workspace. One reply reached an unrelated session and took the place of its
   user's message. Most handoffs need no reply.
 
-Whoever creates `.tau/` first writes `.tau/.gitignore` containing `*`. The folder then stays out of
-Git in any repository, without edits to the repository's `.gitignore`, `.git/info/exclude`, or the
-user's global excludes. Tau writes nothing else in a worktree and nothing under `~/.cache/tau/`.
+Before writing into `.tau/`, Tau and the handoff skill make sure `.tau/.gitignore` has a `*` line,
+and add it when missing. Tau refuses a `.tau/` or `.tau/workers/` that is a symbolic link, so it
+never writes outside the worktree. The folder stays out of Git in any repository, without edits to
+the repository's `.gitignore`, `.git/info/exclude`, or the user's global excludes. Tau writes
+nothing else in a worktree and nothing under `~/.cache/tau/`.
 
 ### Non-Pi worker sandboxes
 
