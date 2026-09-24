@@ -30,12 +30,6 @@ export const commitToolParameters = Type.Object({
       files: Type.Array(Type.String(), { minItems: 1 }),
       subject: Type.String(),
       body: Type.Optional(Type.String()),
-      commentDispute: Type.Optional(
-        Type.String({
-          maxLength: 4000,
-          description: 'Evidence for rechecking a comment finding. Review must still pass.',
-        }),
-      ),
     }),
     { minItems: 1 },
   ),

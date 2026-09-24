@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
-import { fauxAssistantMessage } from '@earendil-works/pi-ai';
 import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
@@ -48,11 +47,7 @@ it('rejects unformatted files in the real hook without rewriting them', async ({
 });
 
 it('runs commit hooks through Pi without approval or TDD notices', async ({ onTestFinished }) => {
-  const { cwd, session, call, faux } = await createHarness(onTestFinished);
-  vi.stubEnv('TAU_DELEGATE_MODEL', `${faux.getModel().provider}/${faux.getModel().id}`);
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
+  const { cwd, session, call } = await createHarness(onTestFinished);
   const git = (argumentsList: string[]) => promisify(execFile)('git', argumentsList, { cwd });
 
   await writeFile(join(cwd, '.git/info/exclude'), 'node_modules\n');
@@ -77,13 +72,9 @@ it('runs commit hooks through Pi without approval or TDD notices', async ({ onTe
     throw new Error('Unexpected approval UI');
   });
   await session.bindExtensions({ uiContext: { custom } as unknown as ExtensionUIContext });
-  const committed = await call(
-    'commit',
-    {
-      groups: [{ files: ['src/value.ts', 'package.json'], subject: 'feat: add formatted fixture' }],
-    },
-    [fauxAssistantMessage('{"findings":[]}')],
-  );
+  const committed = await call('commit', {
+    groups: [{ files: ['src/value.ts', 'package.json'], subject: 'feat: add formatted fixture' }],
+  });
 
   expect(committed.isError && JSON.stringify(committed.result)).toBe(false);
   expect(custom).not.toHaveBeenCalled();

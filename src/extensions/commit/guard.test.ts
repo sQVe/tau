@@ -8,7 +8,6 @@ import type { ExtensionAPI, ToolCallEvent, ToolDefinition } from '@earendil-work
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { initializeRepository } from '../../../tests/gitRepository.js';
-import * as commentReview from './commentReview.js';
 import { commitGuardReason, guardToolCall } from './guard.js';
 import commitExtension from './index.js';
 
@@ -258,7 +257,6 @@ describe('commitExtension', () => {
   });
 
   it('commits without registering or reading an approval flag', async () => {
-    const reviewer = vi.spyOn(commentReview, 'reviewComments').mockResolvedValue({ findings: [] });
     const repositoryDirectory = await createTemporaryRepository();
     const { fakePi, registeredTool } = createFakePi((command, commandArguments, options) =>
       runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
@@ -269,32 +267,25 @@ describe('commitExtension', () => {
 
     expect(fakePi.registerFlag).not.toHaveBeenCalled();
 
-    try {
-      for (const hasUI of [true, false]) {
-        const file = hasUI ? 'interactive.txt' : 'headless.txt';
+    for (const hasUI of [true, false]) {
+      const file = hasUI ? 'interactive.txt' : 'headless.txt';
 
-        await writeRepositoryFile(repositoryDirectory, file, 'hello\n');
+      await writeRepositoryFile(repositoryDirectory, file, 'hello\n');
 
-        const result = await registeredTool()!.execute(
-          'call',
-          { groups: [{ files: [file], subject: 'feat: add file' }] },
-          undefined,
-          undefined,
-          { cwd: repositoryDirectory, hasUI, ui: { custom } } as never,
-        );
+      const result = await registeredTool()!.execute(
+        'call',
+        { groups: [{ files: [file], subject: 'feat: add file' }] },
+        undefined,
+        undefined,
+        { cwd: repositoryDirectory, hasUI, ui: { custom } } as never,
+      );
 
-        expect(result.details).toMatchObject({
-          groups: [{ files: [file], commentReview: { status: 'passed' } }],
-        });
-      }
-
-      expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('2');
-      expect(reviewer).toHaveBeenCalledTimes(2);
-      expect(custom).not.toHaveBeenCalled();
-      expect(fakePi.getFlag).not.toHaveBeenCalled();
-    } finally {
-      reviewer.mockRestore();
+      expect(result.details).toMatchObject({ groups: [{ files: [file] }] });
     }
+
+    expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('2');
+    expect(custom).not.toHaveBeenCalled();
+    expect(fakePi.getFlag).not.toHaveBeenCalled();
   });
 
   it('sends skill messages as follow-ups when idle and steering messages when busy', async () => {
@@ -329,7 +320,6 @@ describe('commitExtension', () => {
   });
 
   it("does not affect the tool's own git invocations", async () => {
-    const reviewer = vi.spyOn(commentReview, 'reviewComments').mockResolvedValue({ findings: [] });
     const repositoryDirectory = await createTemporaryRepository();
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
 
@@ -371,7 +361,5 @@ describe('commitExtension', () => {
     expect(result.details).toMatchObject({
       groups: [{ files: ['README.md'], subject: 'feat: add thing' }],
     });
-
-    reviewer.mockRestore();
   });
 });

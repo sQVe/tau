@@ -23,8 +23,7 @@ make it pass, then verify the whole suite through the repository's full check or
   tests cannot establish RED.
 - Read why a test failed. A failure does not prove that the assertion is useful. Do not weaken an
   assertion just to make the implementation pass.
-- Hints never block work or need acknowledgment. Git hooks and comment review remain separate from
-  TDD observations.
+- Hints never block work or need acknowledgment. Git hooks remain separate from TDD observations.
 
 ## Procedure
 
