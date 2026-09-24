@@ -98,11 +98,13 @@ export class WorkerPlacement {
 
       return operation();
     });
+
     this.pending = pending.catch(() => undefined);
     const cancelled = Promise.withResolvers<never>();
     const abort = () => {
       cancelled.reject(new Error('Worker placement cancelled or its budget expired.'));
     };
+
     signal.addEventListener('abort', abort, { once: true });
 
     try {
@@ -121,6 +123,7 @@ export class WorkerPlacement {
     const readLayout: TerminalCall = async (argumentsList) => {
       signal.throwIfAborted();
       const response = await call(argumentsList);
+
       signal.throwIfAborted();
 
       return response;
@@ -339,6 +342,7 @@ export class WorkerPlacement {
         ]),
       ).root_pane,
     );
+
     this.owned.set(location.terminalId, { tabId: location.tabId, visibility: 'background' });
 
     return location;

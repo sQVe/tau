@@ -116,6 +116,7 @@ export const historyRegistry = (root: string) => {
   const scanDiagnostics: string[] = [];
   const entries = readTasks(root, scanDiagnostics);
   const { origins, diagnostics } = continuationOrigins(entries);
+
   diagnostics.push(...scanDiagnostics);
   const tasks = new Map<string, Task>();
 

@@ -4,6 +4,24 @@ import { defineConfig } from 'vite-plus';
 // eslint-disable-next-line node/no-process-env -- Scoped to the style command's child process.
 const styleEnabled = process.env.TAU_LINT_STYLE === '1';
 
+const blockStatements = ['if', 'for', 'while', 'do', 'switch', 'try'];
+const statementPadding = [
+  { blankLine: 'always', prev: '*', next: 'return' },
+  { blankLine: 'always', prev: '*', next: blockStatements },
+  { blankLine: 'always', prev: blockStatements, next: '*' },
+];
+// Production code separates a group of declarations from the steps that use it; tests keep their
+// arrange steps compact.
+const declarationPadding = [
+  { blankLine: 'always', prev: ['const', 'let'], next: '*' },
+  { blankLine: 'any', prev: ['const', 'let'], next: ['const', 'let'] },
+];
+const testHelperImports = {
+  group: ['**/tests/**'],
+  message: 'Production code must not import test helpers.',
+};
+const paddingRule = (...entries: object[]): ['error', ...object[]] => ['error', ...entries];
+
 export default defineConfig({
   test: {
     // Integration tests launch Git, Node, and nested Vitest processes. Limit competing workers.
@@ -36,26 +54,37 @@ export default defineConfig({
       ...(styleEnabled
         ? {
             'tau/naming-convention': 'error',
+            'tau/extension-boundary': 'error',
             'eslint/no-cond-assign': ['error', 'always'],
-            'eslint/id-denylist': ['error', 'btn', 'cb', 'errMsg'],
+            'eslint/id-denylist': [
+              'error',
+              'btn',
+              'cb',
+              'errMsg',
+              'ctx',
+              'cfg',
+              'msg',
+              'err',
+              'idx',
+              'res',
+              'req',
+              'tmp',
+              'fn',
+              'el',
+              'str',
+              'val',
+              'obj',
+              'arr',
+              'opts',
+            ],
             'eslint/one-var': ['error', 'never'],
             'tau/helper-before-use': 'error',
             'tau/max-condition-checks': 'error',
             'tau/no-enoent-literal': 'error',
-            '@stylistic/padding-line-between-statements': [
-              'error',
-              { blankLine: 'always', prev: '*', next: 'return' },
-              {
-                blankLine: 'always',
-                prev: '*',
-                next: ['if', 'for', 'while', 'do', 'switch', 'try'],
-              },
-              {
-                blankLine: 'always',
-                prev: ['if', 'for', 'while', 'do', 'switch', 'try'],
-                next: '*',
-              },
-            ],
+            '@stylistic/padding-line-between-statements': paddingRule(
+              ...statementPadding,
+              ...declarationPadding,
+            ),
           }
         : {}),
       'typescript/no-unnecessary-condition': 'error',
@@ -278,8 +307,54 @@ export default defineConfig({
     },
     overrides: [
       {
+        files: ['src/**/*.ts'],
+        rules: {
+          'eslint/no-restricted-imports': [
+            'error',
+            {
+              patterns: [testHelperImports],
+            },
+          ],
+        },
+      },
+      {
+        // Every module directory under src/ is shared; the next override restores extensions.
+        files: ['src/*/**/*.ts'],
+        rules: {
+          'eslint/no-restricted-imports': [
+            'error',
+            {
+              patterns: [
+                testHelperImports,
+                {
+                  group: ['**/extensions/**'],
+                  message: 'Shared modules must not depend on extensions.',
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        files: ['src/extensions/**/*.ts'],
+        rules: {
+          'eslint/no-restricted-imports': ['error', { patterns: [testHelperImports] }],
+        },
+      },
+      ...(styleEnabled
+        ? [
+            {
+              files: ['**/*.test.{ts,tsx}', '**/fixtures/**', 'tests/*.ts'],
+              rules: {
+                '@stylistic/padding-line-between-statements': paddingRule(...statementPadding),
+              },
+            },
+          ]
+        : []),
+      {
         files: ['**/*.test.{ts,tsx}', '**/fixtures/**', 'tests/*.ts'],
         rules: {
+          'eslint/no-restricted-imports': 'off',
           'typescript/no-explicit-any': 'off',
           'typescript/no-non-null-assertion': 'off',
           'typescript/no-unsafe-type-assertion': 'off',

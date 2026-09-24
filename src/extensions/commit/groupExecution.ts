@@ -128,6 +128,7 @@ const snapshotStagedTree = async (run: GroupRun): Promise<boolean> => {
   const tree = await writeTree(run.pi, run.context.cwd, run.signal);
   const index = await readIndex(run.pi, run.context.cwd);
   const head = await currentHead(run.pi, run.context.cwd);
+
   run.snapshot = { tree, index, head };
 
   if (run.signal?.aborted) {

@@ -252,6 +252,7 @@ export const genericStatus = (
 
 export const recordNativeIssue = (handle: Handle, filename: string, error: unknown): void => {
   const detail = String(error).slice(0, 4000);
+
   handle.observationIssue = detail;
 
   try {

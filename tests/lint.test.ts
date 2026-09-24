@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -383,4 +383,66 @@ it('rejects ENOENT literals outside the errors module and tests', async ({ onTes
   expect(result.status).toBe(1);
   expect(diagnostics).toHaveLength(1);
   expect(diagnostics[0]).toContain('/invalid.ts:');
+}, 30_000);
+
+it('rejects imports from one extension into another', async ({ onTestFinished }) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-style-boundary-'));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const extension = join(directory, 'src', 'extensions', 'probe');
+  await mkdir(extension, { recursive: true });
+  const files = {
+    'own.ts': 'export const own = 1;\n',
+    'valid.ts': "import { own } from './own.js';\n\nexport const value = own;\n",
+    'invalid.ts':
+      "import { errorMessage } from '../../errors/index.js';\nimport { bulkReadTool } from '../bulkRead/tool.js';\nimport tau from '../index.js';\n\nexport const value = [errorMessage, bulkReadTool, tau];\n",
+  };
+
+  for (const [name, source] of Object.entries(files)) {
+    await writeFile(join(extension, name), source);
+  }
+
+  const result = spawnSync(process.execPath, ['scripts/runStyle.ts', extension], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+  const diagnostics = result.stdout
+    .split('\n')
+    .filter((line) => line.includes('extension-boundary'));
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(diagnostics).toHaveLength(2);
+  expect(diagnostics.every((line) => line.includes('/invalid.ts:'))).toBe(true);
+}, 30_000);
+
+it('keeps test helpers out of production code and extensions out of shared modules', async ({
+  onTestFinished,
+}) => {
+  const directory = await mkdtemp(join(root, 'src', 'tau-lint-imports-'));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const helper = "import { initializeRepository } from '../../tests/gitRepository.js';\n";
+  const extension = "import { bulkReadTool } from '../extensions/bulkRead/tool.js';\n";
+  await writeFile(
+    join(directory, 'probe.ts'),
+    `${helper}${extension}\nexport const value = [initializeRepository, bulkReadTool];\n`,
+  );
+  await writeFile(
+    join(directory, 'probe.test.ts'),
+    `${helper}\nexport const value = initializeRepository;\n`,
+  );
+
+  const result = spawnSync('pnpm', ['lint', directory], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+  const diagnostics = result.stdout
+    .split('\n')
+    .filter((line) => line.includes('no-restricted-imports'));
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(diagnostics).toHaveLength(2);
+  expect(diagnostics.every((line) => line.includes('/probe.ts:'))).toBe(true);
 }, 30_000);

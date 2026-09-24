@@ -1,12 +1,12 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 export const requireRegisteredTools = (
-  extensionApi: ExtensionAPI,
+  pi: ExtensionAPI,
   packageName: string,
   requiredToolNames: readonly string[],
 ) => {
-  extensionApi.on('session_start', () => {
-    const registeredToolNames = new Set(extensionApi.getAllTools().map((tool) => tool.name));
+  pi.on('session_start', () => {
+    const registeredToolNames = new Set(pi.getAllTools().map((tool) => tool.name));
     const missingToolNames = requiredToolNames.filter((name) => !registeredToolNames.has(name));
 
     if (missingToolNames.length === 0) {

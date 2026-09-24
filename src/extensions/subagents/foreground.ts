@@ -279,6 +279,7 @@ const applyAdjustment = async (
     adjustment.branch.direction,
     difference > 0,
   );
+
   await ensureOwnedLayout(context, anchor, current);
   const direction = resizeDirection(adjustment, difference);
   const response = await context.call([
@@ -515,6 +516,7 @@ export class ForegroundShares {
     close: () => Promise<void>,
   ): Promise<void> {
     const group = this.groups.get(location.tabId);
+
     this.groups.delete(location.tabId);
     const captured = await captureCloseSnapshot(group, location, call);
 

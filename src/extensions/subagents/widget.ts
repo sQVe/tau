@@ -502,10 +502,12 @@ export const renderWorkerWidget = (
 
   if (eligibleRows.length > liveRows.length) {
     const overflow = eligibleRows.length - liveRows.length;
+
     lines.push(boxLine(`+ ${overflow} more workers`, boxWidth, theme));
   }
 
   const footerLeft = stoppedCount > 0 ? `${stoppedCount} stopped` : '';
+
   lines.push(bottomBorder(footerLeft, '', boxWidth, theme));
 
   return lines;
