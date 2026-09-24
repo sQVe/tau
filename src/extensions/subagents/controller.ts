@@ -548,7 +548,7 @@ export class WorkerController {
     try {
       await call(['agent', 'prompt', text(handle.paneId), prompt]);
     } catch (error) {
-      deliveryError = errorMessage(error);
+      deliveryError = errorMessage(error).slice(0, 4000);
     }
 
     return {
