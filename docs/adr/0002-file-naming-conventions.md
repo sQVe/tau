@@ -25,14 +25,19 @@ Use the following naming rules for TypeScript, tests, docs, special files, and c
   classes.
 - `index.ts` contains real implementation. Do not use files that only re-export other modules, also
   called barrel files. Change the module structure if callers need one entry point.
-- `types.ts` next to `index.ts` holds the module's types. Do not create a separate file for each
-  type.
+- `types.ts` next to `index.ts` holds the module's types, and the schemas those types come from. It
+  holds no runtime constants or logic. Do not create a separate file for each type.
 
 ### Tests
 
 - Name unit tests `foo.test.ts` next to `foo.ts`.
+- Split a large test file by behavior, and keep the source name first: `recordsClaims.test.ts` tests
+  claims in `records.ts`.
 - Cross-module integration and end-to-end tests live under `tests/` with the same suffix.
-- Mark the test type with a suffix, such as `.integration.test.ts`, not with a directory.
+- Mark the test type with a suffix, not with a directory. Tests that run a real Pi session or herdr
+  use `.integration.test.ts`; unit tests may still use a temporary Git repository.
+- Test helpers used by one extension live in its `fixtures/` directory. Helpers shared across
+  extensions live in `tests/`.
 
 ### Documentation
 
