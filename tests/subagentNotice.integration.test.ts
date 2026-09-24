@@ -107,7 +107,7 @@ it('wakes an idle manager and includes the notice in its first provider request'
   ]);
   const settled = waitForSettle(harness.session);
 
-  deliverWorkerNotice(harness.pi, fixtureNotice, false);
+  deliverWorkerNotice(harness.pi, fixtureNotice);
   await settled;
 
   expect(harness.contexts).toHaveLength(1);
@@ -129,7 +129,7 @@ it('delivers an active manager notice at the steering point before the final ans
   const running = harness.session.prompt('Begin.');
 
   await harness.toolEntered;
-  deliverWorkerNotice(harness.pi, fixtureNotice, false);
+  deliverWorkerNotice(harness.pi, fixtureNotice);
   harness.releaseTool();
   await running;
   await settled;

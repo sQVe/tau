@@ -10,7 +10,6 @@ import { herdrFake } from '../fixtures/herdrFake.js';
 import { fixtureGenericLoadout } from '../fixtures/loadout.js';
 import { assignmentContract, handoffContract } from '../handoff.js';
 import { searchHistory } from '../history.js';
-import * as identity from '../identity.js';
 import { handoffSections } from '../presentation.js';
 import type { WorkerNotice } from '../presentation.js';
 import { readEvent, readReport, readTask } from '../records.js';
@@ -18,11 +17,11 @@ import * as records from '../records.js';
 import { WorkerController } from './controller.js';
 import type { HerdrClient } from './inspect.js';
 
-const fixture = (kind = 'codex', intercept?: HerdrClient) => {
+const fixture = (kind = 'codex', intercept?: HerdrClient, capacity = 4) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-generic-controller-'));
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.stubEnv('TAU_WORKER_RECORD', '');
-  vi.stubEnv('TAU_SUBAGENT_CAP', '4');
+  vi.stubEnv('TAU_SUBAGENT_CAP', String(capacity));
   const root = join(directory, 'records');
   const parentSession = join(directory, 'parent.jsonl');
   writeFileSync(
@@ -61,10 +60,6 @@ const fixture = (kind = 'codex', intercept?: HerdrClient) => {
     return fakeClient(argumentsList, budget, signal);
   };
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
-  vi.spyOn(identity, 'currentProcessIdentity').mockResolvedValue({
-    processId: 300,
-    startedAt: 'parent-start',
-  });
   vi.spyOn(cancellation, 'runClient').mockImplementation(async (_executable, argumentsList) =>
     argumentsList[1] === String(state.shell) ? state.shellStart : state.processStart,
   );
@@ -947,9 +942,8 @@ it('keeps an unknown worker inside its original deadline and does not infer succ
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
 });
 
-it('retains shared capacity when generic interrupts cannot confirm a stop', async () => {
-  const setup = fixture();
-  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+it('retains controller capacity when generic interrupts cannot confirm a stop', async () => {
+  const setup = fixture('codex', undefined, 1);
   const started = await setup.controller.launch(setup.input);
   setup.state.ignoreInterrupt = true;
   const cancelling = setup.controller.cancel(started.taskId, 'parent');

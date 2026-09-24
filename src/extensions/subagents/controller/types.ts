@@ -24,6 +24,5 @@ export interface Handle {
   recordErrors: string[];
   shutdownReason?: SessionShutdownEvent['reason'];
   cleanupDetail?: string;
-  cleanupFinished?: boolean;
   notifiedQuestions: Set<string>;
 }

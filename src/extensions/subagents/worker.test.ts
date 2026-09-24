@@ -11,7 +11,7 @@ import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { readWorkerActivity, writeWorkerActivity } from './activity.js';
-import { monotonicNow } from './admission.js';
+import { monotonicNow } from './controller/budget.js';
 import { assignmentContract, handoffContract } from './handoff.js';
 import { checkWorkerRuntime } from './loadout.js';
 import * as questions from './questionRecords.js';
@@ -47,11 +47,7 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
     createdAt,
     deadline: createdAt + window,
     cancellationBudget: 2000,
-    tree: {
-      rootSession: join(directory, 'parent.jsonl'),
-      rootSessionId: 'parent',
-      monotonicDeadline: monotonicNow() + window,
-    },
+    monotonicDeadline: monotonicNow() + window,
     loadout: {
       harness: 'pi',
       profile: role === 'editing' ? 'worker' : 'investigator',
@@ -242,7 +238,7 @@ it('requests a missing report once before the worker settles', async () => {
   expect(worker.shutdown).toHaveBeenCalledOnce();
 });
 
-it.each(['deadline', 'parent stopped', 'question', 'reported', 'children'] as const)(
+it.each(['deadline', 'parent stopped', 'question', 'reported'] as const)(
   'does not request a report when blocked by %s',
   async (reason) => {
     const worker = await waitingWorker();
@@ -272,12 +268,6 @@ it.each(['deadline', 'parent stopped', 'question', 'reported', 'children'] as co
         undefined,
         worker.context,
       );
-    }
-
-    if (reason === 'children') {
-      worker.events.on('tau:worker-children', (state: unknown) => {
-        Object.assign(state as object, { active: 1 });
-      });
     }
 
     await worker.emit('agent_end');
@@ -507,50 +497,6 @@ it.each([
   },
 );
 
-it('refuses reports for active children but includes uncertain cleanup in the final handover', async () => {
-  const worker = await waitingWorker();
-  const children = { active: 1, uncertain: [] as string[] };
-  worker.events.on('tau:worker-children', (state: unknown) => {
-    Object.assign(state as object, children);
-  });
-  const report = worker.tools.get('subagent_report');
-
-  if (!report) {
-    throw new Error('Missing report tool.');
-  }
-
-  const handover = () =>
-    report.execute(
-      'report',
-      {
-        outcome: 'incomplete',
-        blocker: 'The parent must choose the storage format.',
-        summary: 'Task ended.'.padEnd(textLimit, '.'),
-        evidence: Array.from({ length: 100 }, (_value, index) => `Checked ${index}.`),
-      },
-      undefined,
-      undefined,
-      worker.context,
-    );
-
-  expect(handover).toThrow('Active children remain');
-  await worker.emit('agent_settled');
-  expect(worker.shutdown).not.toHaveBeenCalled();
-  children.active = 0;
-  children.uncertain.push(
-    'Child child-task: cleanup unconfirmed; inspect /saved/child-task manually.',
-  );
-  await handover();
-  await worker.emit('agent_settled');
-
-  expect(readReport(worker.directory, 'task')?.summary).toHaveLength(textLimit);
-  expect(readReport(worker.directory, 'task')?.evidence).toHaveLength(100);
-  expect(readReport(worker.directory, 'task')?.evidence.at(-1)).toContain('/saved/child-task');
-  expect(readReport(worker.directory, 'task')?.evidence.at(-1)).toContain('Dropped 1 evidence');
-  expect(worker.shutdown).toHaveBeenCalledOnce();
-  await worker.emit('session_shutdown');
-});
-
 it('saves the handoff sections and work reference from a Pi report', async () => {
   const worker = await waitingWorker('editing');
   const report = worker.tools.get('subagent_report');
@@ -717,26 +663,6 @@ it('accepts a success report after refusing an incomplete one', async () => {
 
   expect(readReport(worker.directory, 'task')?.outcome).toBe('success');
   expect(readReport(worker.directory, 'task')?.summary).toBe('All done.');
-});
-
-it('forwards child notice details to the worker session', async () => {
-  const worker = await waitingWorker();
-
-  worker.events.emit('tau:child-notification', {
-    message: '{"taskId":"child"}',
-    details: { taskId: 'child' },
-    question: false,
-  });
-
-  expect(worker.sendMessage).toHaveBeenCalledWith(
-    expect.objectContaining({
-      customType: 'tau-worker-child',
-      content: '{"taskId":"child"}',
-      details: { taskId: 'child' },
-    }),
-    { deliverAs: 'followUp', triggerTurn: true },
-  );
-  await worker.emit('session_shutdown');
 });
 
 it('stops waiting after uncertain question publication once the parent exits', async () => {

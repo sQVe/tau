@@ -421,12 +421,7 @@ export const waitForPiIdentity = async (
   }
 };
 
-export const prepareTaskDirectory = (
-  directory: string,
-  task: Task,
-  continued: boolean,
-  reservation: () => string,
-): void => {
+export const prepareTaskDirectory = (directory: string, task: Task, continued: boolean): void => {
   try {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     publish(directory, 'task.json', task);
@@ -439,7 +434,7 @@ export const prepareTaskDirectory = (
     }
   } catch (error) {
     throw new Error(
-      `Task preparation ${task.taskId} is uncertain at ${directory}. Capacity remains reserved at ${reservation()}. No automatic retry.`,
+      `Task preparation ${task.taskId} is uncertain at ${directory}. No automatic retry.`,
       { cause: error },
     );
   }

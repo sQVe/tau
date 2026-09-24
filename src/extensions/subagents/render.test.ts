@@ -511,27 +511,6 @@ it('renders through the registered tool definitions and the message renderer', (
   expect(plain(notice as Component)).toContain('asks');
 });
 
-it('renders the tau-worker-child notice with the same details', () => {
-  const subject = theme();
-  const { messageRenderers } = renderers();
-  const renderer = messageRenderers.get('tau-worker-child');
-  expect(renderer, 'tau-worker-child renderer must be registered').toBeTypeOf('function');
-  const notice = renderer?.(
-    {
-      role: 'custom',
-      customType: 'tau-worker-child',
-      content: '{}',
-      display: true,
-      details: statusFixture('stopped', false),
-      timestamp: 0,
-    },
-    { expanded: false, outputPad: 0 },
-    subject,
-  );
-
-  expect(plain(notice as Component)).toContain('reported success · stopped');
-});
-
 it('keeps generated paths, JSON, and full task IDs out of collapsed reply and history lines', () => {
   const subject = theme();
   const reply = collapsedReplyLines(replyFixture('sent'), subject).join('\n');
@@ -684,20 +663,6 @@ it('shows requested native output and receipts on ctrl+o', () => {
   expect(output).toContain('reply-7');
   expect(output).toContain('not-delivered');
   expect(output).toContain('question-9');
-});
-
-it('warns about a child whose cleanup is unconfirmed even when the parent stopped', () => {
-  const subject = theme();
-  const details = {
-    ...statusFixture('stopped', false),
-    unconfirmedChildren: [{ taskId: 'child-abcdef0123', directory: records }],
-  };
-  const collapsed = lines(renderStatusResult(details, false, subject)).join('\n');
-  const expanded = lines(renderStatusResult(details, true, subject)).join('\n');
-
-  expect(collapsed).toContain('child-ab');
-  expect(collapsed).not.toContain('child-abcdef0123');
-  expect(expanded).toContain('child-abcdef0123');
 });
 
 it('renders call lines while streaming arguments are still incomplete', () => {

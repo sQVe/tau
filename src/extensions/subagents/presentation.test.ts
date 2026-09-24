@@ -50,12 +50,9 @@ const fullStatus = (state: WorkerState, generic: boolean) => ({
     nativeSessionFile: '/abs/records/task-1/session.jsonl',
   },
   capacityHeld: true,
-  unconfirmedChildren: [{ taskId: 'child-1', directory: '/abs/records/child-1' }],
-  descendantEvidence: 'Descendant reservation evidence unavailable.',
   ...(generic ? { nativeState: 'blocked' } : {}),
   submissionReceipt: { intent: { id: 'reply-one', text: 'text' }, retry: 'Never resubmit.' },
   nativeOutput: { text: 'terminal text', truncated: false, format: 'native' },
-  reservationDirectory: '/abs/admission',
   usage: { available: false, reason: 'Pi reports worker usage in its own session totals.' },
   safety: 'Native controls; Tau does not certify runtime enforcement.',
   modelVerification: 'Unavailable.',
@@ -98,8 +95,6 @@ const expectKeys = (state: WorkerState, generic: boolean) => {
   if (generic) {
     expected.push('nativeState');
   }
-
-  expected.push('unconfirmedChildren', 'descendantEvidence');
 
   if (cleanup) {
     expected.push('recovery', 'capacityHeld');
@@ -354,20 +349,6 @@ it('builds the unreadable-evidence notice without state or outcome', () => {
   );
   expect(content).not.toHaveProperty('state');
   expect(content).not.toHaveProperty('outcome');
-});
-
-it('keeps unconfirmed descendants for the model even when the parent stopped', () => {
-  const content = modelStatus({
-    ...fullStatus('stopped', false),
-    unconfirmedChildren: [{ taskId: 'child-1', directory: '/records/child-1' }],
-    descendantEvidence: 'Descendant reservation evidence unavailable.',
-  });
-
-  expect(content).toMatchObject({
-    unconfirmedChildren: [{ taskId: 'child-1' }],
-    descendantEvidence: 'Descendant reservation evidence unavailable.',
-  });
-  expect(JSON.stringify(content)).not.toContain('/records/child-1');
 });
 
 it('labels a stopped worker with an inherited-key outcome as plain stopped', () => {

@@ -55,11 +55,7 @@ const questionFixture = () => {
     createdAt: 1000,
     deadline: 20000,
     cancellationBudget: 1000,
-    tree: {
-      rootSession: join(directory, 'parent.jsonl'),
-      rootSessionId: 'parent-one',
-      monotonicDeadline: 20000,
-    },
+    monotonicDeadline: 20000,
     loadout: {
       harness: 'pi',
       profile: 'investigator',
@@ -104,7 +100,7 @@ it.each([
   'claim',
   'report',
   'dangling task link',
-] as const)('keeps task scans fail closed for %s evidence', (failure) => {
+] as const)('skips unreadable tasks and diagnoses %s evidence', (failure) => {
   const { directory, task } = questionFixture();
   const root = join(directory, 'registry');
   const child = join(root, task.taskId);
@@ -130,7 +126,11 @@ it.each([
     }
   }
 
-  expect(() => records.readTasks(root)).toThrow(/JSON|property|Permission|identity|task.json/);
+  const diagnostics: string[] = [];
+
+  expect(records.readTasks(root, diagnostics)).toEqual([]);
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toContain(child);
 });
 
 it.for([
@@ -143,7 +143,33 @@ it.for([
   mkdirSync(child, { recursive: true });
   writeFileSync(join(child, 'task.json'), content);
 
-  expect(() => records.readTasks(root)).toThrow(task.taskId);
+  const diagnostics: string[] = [];
+
+  expect(records.readTasks(root, diagnostics)).toEqual([]);
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toContain(child);
+  expect(() => records.readTask(child)).toThrow(task.taskId);
+});
+
+it('skips an unknown task format without hiding a valid task', () => {
+  const { directory, task } = questionFixture();
+  const root = join(directory, 'registry');
+  const current = join(root, task.taskId);
+  const unknown = join(root, 'unknown');
+  mkdirSync(current, { recursive: true });
+  mkdirSync(unknown);
+  records.publish(current, 'task.json', task);
+  const saved = JSON.stringify({ ...task, taskId: 'unknown', futureField: 'another checkout' });
+  writeFileSync(join(unknown, 'task.json'), saved);
+  const diagnostics: string[] = [];
+
+  const scanned = records.readTasks(root, diagnostics);
+
+  expect(scanned).toEqual([{ directory: current, task }]);
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toContain(unknown);
+  expect(() => records.readTask(unknown)).toThrow('unknown');
+  expect(readFileSync(join(unknown, 'task.json'), 'utf8')).toBe(saved);
 });
 
 it('skips tasks saved in a retired format without blocking current tasks', () => {
@@ -155,6 +181,16 @@ it('skips tasks saved in a retired format without blocking current tasks', () =>
   const { harness: _harness, ...unversioned } = task.loadout;
   const retired = {
     unversioned: { ...task, taskId: 'unversioned', loadout: unversioned },
+    tree: {
+      ...task,
+      taskId: 'tree',
+      tree: {
+        rootSession: task.parentSession,
+        rootSessionId: task.parentSessionId,
+        monotonicDeadline: task.monotonicDeadline,
+      },
+    },
+    parent: { ...task, taskId: 'parent', parentTaskId: 'ancestor' },
     claude: { ...task, taskId: 'claude', loadout: { ...task.loadout, harness: 'claude' } },
     fingerprinted: {
       ...task,
@@ -174,13 +210,13 @@ it('skips tasks saved in a retired format without blocking current tasks', () =>
 
   expect(scanned).toEqual([{ directory: current, task }]);
   expect(diagnostics.toSorted()).toEqual(
-    ['claude', 'fingerprinted', 'unversioned'].map(
+    ['claude', 'fingerprinted', 'parent', 'tree', 'unversioned'].map(
       (taskId) => `Skipped task ${taskId} saved in a retired format; start a fresh task instead.`,
     ),
   );
 });
 
-it('fails a scan for an invalid task saved in the current format', () => {
+it('skips an invalid current-format task but refuses a direct read', () => {
   const { directory, task } = questionFixture();
   const root = join(directory, 'registry');
   const child = join(root, task.taskId);
@@ -190,21 +226,12 @@ it('fails a scan for an invalid task saved in the current format', () => {
     JSON.stringify({ ...task, loadout: { ...task.loadout, cwd: 'relative' } }),
   );
 
-  expect(() => records.readTasks(root)).toThrow('absolute');
-});
+  const diagnostics: string[] = [];
 
-it('fails a scan for a generic task saved without its tree', () => {
-  const { directory, task } = questionFixture();
-  const root = join(directory, 'registry');
-  const child = join(root, task.taskId);
-  mkdirSync(child, { recursive: true });
-  const { tree: _tree, ...treeLess } = task;
-  writeFileSync(
-    join(child, 'task.json'),
-    JSON.stringify({ ...treeLess, loadout: { harness: 'generic', kind: 'codex' } }),
-  );
-
-  expect(() => records.readTasks(root)).toThrow('Invalid saved worker task or loadout');
+  expect(records.readTasks(root, diagnostics)).toEqual([]);
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toContain(child);
+  expect(() => records.readTask(child)).toThrow(task.taskId);
 });
 
 it('reads a task published by another process during the scan', () => {
@@ -221,15 +248,15 @@ it('reads a task published by another process during the scan', () => {
 });
 
 it.each([
-  { successor: 'published late', result: ['predecessor', 'successor', 'task-one'] },
+  { successor: 'published late', result: ['predecessor', 'successor', 'task-one'], skipped: [] },
   {
     successor: 'still unpublished',
-    result:
-      'Error: Missing task.json for referenced continuation successor. Saved attempt or claim requires inspection.',
+    result: ['predecessor', 'task-one'],
+    skipped: ['successor'],
   },
 ])(
   'checks every late continuation reference when the successor is $successor',
-  async ({ successor: state, result }) => {
+  async ({ successor: state, result, skipped }) => {
     const { directory, task } = questionFixture();
     const root = join(directory, 'registry');
     const directories = {
@@ -280,18 +307,18 @@ it.each([
       return original.readdirSync(path, options);
     }) as typeof fileSystem.readdirSync);
 
-    const scan = () => {
-      try {
-        return records
-          .readTasks(root)
-          .map((entry) => entry.task.taskId)
-          .toSorted();
-      } catch (error) {
-        return String(error);
-      }
-    };
+    const diagnostics: string[] = [];
+    const scanned = records
+      .readTasks(root, diagnostics)
+      .map((entry) => entry.task.taskId)
+      .toSorted();
 
-    expect(scan()).toEqual(result);
+    expect(scanned).toEqual(result);
+
+    expect(diagnostics).toHaveLength(skipped.length);
+    expect(diagnostics).toEqual(
+      skipped.map((taskId): unknown => expect.stringContaining(join(root, taskId))),
+    );
   },
 );
 
@@ -312,7 +339,7 @@ it('reads the saved task once while finding the pending question', () => {
 });
 
 it.each(['claim', 'predecessor'] as const)(
-  'does not skip an unpublished directory referenced by a published %s',
+  'diagnoses an unpublished directory referenced by a published %s',
   (reference) => {
     const { directory, task } = questionFixture();
     const root = join(directory, 'registry');
@@ -332,7 +359,12 @@ it.each(['claim', 'predecessor'] as const)(
       );
     }
 
-    expect(() => records.readTasks(root)).toThrow('referenced continuation unpublished');
+    const diagnostics: string[] = [];
+    const scanned = records.readTasks(root, diagnostics);
+
+    expect(scanned.map((entry) => entry.task.taskId)).toEqual([task.taskId]);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toContain(pending);
     expect(readdirSync(pending)).toEqual([]);
   },
 );
@@ -812,11 +844,7 @@ const genericWorkerFixture = () => {
     createdAt: 1000,
     deadline: 20000,
     cancellationBudget: 1000,
-    tree: {
-      rootSession: join(directory, 'root.jsonl'),
-      rootSessionId: 'root-two',
-      monotonicDeadline: 20000,
-    },
+    monotonicDeadline: 20000,
     loadout: fixtureGenericLoadout(directory),
   };
   records.publish(directory, 'task.json', task);

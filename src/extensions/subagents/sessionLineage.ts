@@ -140,18 +140,3 @@ export const historyRegistry = (root: string) => {
     diagnostics,
   };
 };
-
-export const sessionLineage = (root: string, current: { file: string; id: string }) => {
-  const { tasks } = historyRegistry(root);
-  const ancestors = lineage(current.file, tasks, current.id);
-  const ancestor = ancestors.at(-1);
-
-  if (!ancestor) {
-    throw new Error('Current session ancestry is unavailable.');
-  }
-
-  return {
-    root: { rootSession: ancestor.file, rootSessionId: ancestor.header.id },
-    hasWorkerAncestor: ancestors.some((node) => node.task !== undefined),
-  };
-};

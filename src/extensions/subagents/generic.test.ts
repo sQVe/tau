@@ -48,11 +48,7 @@ const fixture = () => {
     createdAt: 1000,
     deadline: 20000,
     cancellationBudget: 1000,
-    tree: {
-      rootSession: join(directory, 'root.jsonl'),
-      rootSessionId: 'root',
-      monotonicDeadline: 20000,
-    },
+    monotonicDeadline: 20000,
     loadout: fixtureGenericLoadout(directory),
   };
   prepareGenericReport(task);

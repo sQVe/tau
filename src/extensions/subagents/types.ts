@@ -46,15 +46,6 @@ export const genericLoadoutSchema = Type.Object(
   { additionalProperties: false },
 );
 export const loadoutSchema = Type.Union([piLoadoutSchema, genericLoadoutSchema]);
-const treeSchema = Type.Object(
-  {
-    rootSession: text,
-    rootSessionId: text,
-    parentTaskId: Type.Optional(Type.String({ pattern: '^[a-zA-Z0-9-]+$' })),
-    monotonicDeadline: Type.Number({ minimum: 1 }),
-  },
-  { additionalProperties: false },
-);
 const taskProperties = {
   taskId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
   name: Type.Optional(Type.String({ pattern: '^(worker|investigator)-[a-z0-9]{2}$' })),
@@ -68,7 +59,7 @@ const taskProperties = {
   createdAt: Type.Integer({ minimum: 1 }),
   deadline: Type.Integer({ minimum: 1 }),
   cancellationBudget: Type.Integer({ minimum: 1, maximum: 30_000 }),
-  tree: treeSchema,
+  monotonicDeadline: Type.Number({ minimum: 1 }),
 };
 export const taskSchema = Type.Union([
   Type.Object(
@@ -200,7 +191,7 @@ export type SubmissionState = 'submitted' | 'not-delivered' | 'uncertain';
 
 export type ReplyDelivery = 'sent' | 'uncertain' | 'notResent' | 'notDelivered';
 
-// Any of these events ends a task for admission and ancestry checks.
+// These events end the task even when no report was saved.
 export const taskEndedEventKinds: readonly TaskEvent['kind'][] = [
   'cleanup',
   'cancelled',

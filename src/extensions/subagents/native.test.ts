@@ -33,11 +33,7 @@ const fixture = () => {
     createdAt: 1000,
     deadline: 20000,
     cancellationBudget: 1000,
-    tree: {
-      rootSession: join(directory, 'parent.jsonl'),
-      rootSessionId: 'parent',
-      monotonicDeadline: 20000,
-    },
+    monotonicDeadline: 20000,
     loadout: fixtureLoadout(directory),
   };
   const header = {

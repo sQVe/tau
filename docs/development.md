@@ -98,9 +98,9 @@ Set `TAU_SUBAGENT_MODEL=provider/model-id` to choose the worker model when neith
 the profile names one. Without any of the three, worker launch refuses; it never falls back to the
 parent's model.
 
-Set `TAU_SUBAGENT_CAP` to limit how many workers one root session's tree runs at once. It takes an
-integer from 1 to 256 and defaults to 4. The first launch in a root session saves the cap, so
-changing the variable affects only new root sessions.
+Set `TAU_SUBAGENT_CAP` to limit how many live workers each parent controller runs at once. It takes
+an integer from 1 to 256 and defaults to 4. Each controller reads the cap once when it starts.
+Workers cannot launch workers; they ask their parent instead.
 
 ### Web provider
 
