@@ -1661,6 +1661,8 @@ export class WorkerController {
 
     handle.stopping = Promise.allSettled([cleaned])
       .then(() => {
+        this.live.delete(handle.task.taskId);
+
         // Keep sharing intact until cleanup finishes, including its queued topology change.
         // Unconfirmed cleanup must still stop contributing placement candidates.
         if (handle.terminalId) {
@@ -1812,7 +1814,6 @@ export class WorkerController {
       releaseRejectedSuccessor(this.root, handle.directory, task);
     });
 
-    this.live.delete(task.taskId);
     this.notifyCleanup(handle, record);
   }
 

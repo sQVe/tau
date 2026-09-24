@@ -55,8 +55,8 @@ can be reproduced. A new contract requires a fresh task.
 - Existing native integrations stay under user control.
 - Cost: native permissions and model selection remain unverified by Tau.
 - Cost: non-Pi workers have no Tau nesting channel or structured question acknowledgement.
-- Cost: terminal interrupts are best-effort, not containment. Uncertain cleanup keeps capacity held
-  and requires manual inspection. Tau does not promise enforcement after parent exit.
+- Cost: terminal interrupts are best-effort, not containment. Uncertain cleanup requires manual
+  inspection. Tau does not promise enforcement after parent exit.
 - Cost: reports require an existing writable area and leave task files there. A saved receipt proves
   delivery, not answer correctness.
 
