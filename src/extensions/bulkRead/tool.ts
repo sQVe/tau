@@ -9,7 +9,10 @@ import { errorMessage } from '../../errors/index.js';
 
 export const bulkReadTool = 'bulk_read';
 
-export const bulkReadInputError = 'BulkReadInputError';
+// Failures that say nothing about whether the delegate is reachable, so read trimming stays on.
+export class BulkReadRecoverableError extends Error {
+  override name = 'BulkReadRecoverableError';
+}
 
 // The arrow prefix cannot collide with an answer line that opens with a number and a colon.
 export const buildPayload = (files: { path: string; content: string }[]): string =>
@@ -26,7 +29,7 @@ export const buildPayload = (files: { path: string; content: string }[]): string
 export const stripLinePrefixes = (text: string): string => text.replace(/^\d+→/gm, '');
 
 const inputError = (message: string, cause?: unknown) =>
-  Object.assign(new Error(message, { cause }), { name: bulkReadInputError });
+  new BulkReadRecoverableError(message, { cause });
 
 const loadPayload = async (
   cwd: string,
@@ -147,7 +150,10 @@ export const bulkRead = async (
       throw new Error(`${message}. Check pi --list-models.`);
     }
 
-    // Length limits are recoverable like cancellation, so they must not disable trimming.
+    if (response.stopReason === 'length') {
+      throw new BulkReadRecoverableError(message);
+    }
+
     throw new DOMException(message, 'AbortError');
   }
 
