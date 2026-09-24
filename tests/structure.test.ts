@@ -9,7 +9,9 @@ const sourceFiles = readdirSync(join(root, 'src'), { recursive: true, encoding: 
   .filter((path) => path.endsWith('.ts'))
   .map((path) => join('src', path));
 const isTest = (path: string) => path.endsWith('.test.ts');
-const isFixture = (path: string) => path.split('/').includes('fixtures');
+// A relative path through fixtures/, or the bare segment passed to join(); globs and prose do not load.
+const fixtureLoad = /['"`](?:\.{1,2}\/(?:[^'"`]*\/)?fixtures(?:\/[^'"`]*)?|fixtures)['"`]/;
+const isFixture = (path: string) => path.split(/[/\\]/).includes('fixtures');
 
 it('names each source test after the module beside it', () => {
   const unmatched = sourceFiles.filter(isTest).filter((test) => {
@@ -27,7 +29,7 @@ it('names each source test after the module beside it', () => {
 it('keeps fixtures out of production modules', () => {
   const importers = sourceFiles
     .filter((path) => !isTest(path) && !isFixture(path))
-    .filter((path) => /[/'"`]fixtures[/'"`]/.test(readFileSync(join(root, path), 'utf8')));
+    .filter((path) => fixtureLoad.test(readFileSync(join(root, path), 'utf8')));
 
   expect(importers).toEqual([]);
 });
