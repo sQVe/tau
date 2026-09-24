@@ -1,6 +1,6 @@
 # ADR 0022: Gate the clamped read hint on the remainder
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-13
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR 0024: Commit without human approval
 
-- Status: Proposed; preparation and check rules superseded by
+- Status: Accepted; preparation and check rules superseded by
   [ADR 0025](./0025-use-git-hooks-without-preparation.md); comment review removed by
   [ADR 0042](./0042-remove-commit-comment-review.md)
 - Date: 2026-09-15

@@ -1,6 +1,6 @@
 # ADR 0039: Reuse reported checks and run one full suite per work state
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-22
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR 0033: Use one generic native worker workflow
 
-- Status: Proposed; parent-user approval rules superseded by
+- Status: Accepted; parent-user approval rules superseded by
   [ADR 0037](./0037-launch-native-workers-without-parent-approval.md); report area rule superseded
   by [ADR 0045](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md)
 - Date: 2026-09-19

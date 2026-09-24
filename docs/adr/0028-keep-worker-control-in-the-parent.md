@@ -1,6 +1,6 @@
 # ADR 0028: Keep worker control in the parent
 
-- Status: Proposed; settings reproduction and evidence-only recovery rules superseded by
+- Status: Accepted; settings reproduction and evidence-only recovery rules superseded by
   [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 - Date: 2026-09-16
 
