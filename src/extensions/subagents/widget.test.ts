@@ -331,6 +331,25 @@ describe('worker widget', () => {
     expect(stoppedOnly.every((line) => visibleWidth(line) <= 16)).toBe(true);
   });
 
+  it('strips terminal controls from a task-derived label before truncation', () => {
+    const hostileRow: WorkerWidgetRow = {
+      ...row,
+      label: undefined,
+      task: `# ${'a'.repeat(10)}\u001b[2Jb\u0007c\td\r e\u0000f${'b'.repeat(80)}`,
+    };
+    const lines = renderWorkerWidget([hostileRow], 200, now, theme as never);
+    const text = lines.join('\n');
+
+    expect(text).not.toContain('\u001b[2J');
+    expect(text).not.toContain('\u001b');
+    expect(text).not.toContain('\u0007');
+    expect(text).not.toContain('\t');
+    expect(text).not.toContain('\r');
+    expect(text).not.toContain('\u0000');
+    expect(text).toContain('aaaaaaaaaa');
+    expect(lines.every((line) => visibleWidth(line) === 200)).toBe(true);
+  });
+
   it('pads the row after the last column instead of stretching the task column', () => {
     const lines = renderWorkerWidget([row], 72, now, theme as never);
     const rowLine = lines.find((line) => line.includes(row.name));

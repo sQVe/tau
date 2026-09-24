@@ -201,7 +201,8 @@ export const shortTaskLabelFromText = (text: string): string => {
 
   const withoutMarkers = firstLine.replace(/^(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+)+/u, '').trim();
   const sentence = withoutMarkers.split(/(?<=[.!?])\s+/u)[0] ?? withoutMarkers;
-  const label = sentence.length > 0 ? sentence : withoutMarkers;
+  const rawLabel = sentence.length > 0 ? sentence : withoutMarkers;
+  const label = safeText(rawLabel);
 
   return label.length > maxTaskLabelLength
     ? `${label.slice(0, maxTaskLabelLength - 1).trimEnd()}…`

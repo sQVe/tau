@@ -432,8 +432,7 @@ export class WorkerHistoryView implements Component {
   private readonly theme: Theme;
   private readonly keybindings: KeybindingsManager;
   private rows: WorkerWidgetRow[];
-  private readonly done: () => void;
-  private readonly pasteName: (name: string) => void;
+  private readonly done: (name?: string) => void;
   private readonly filterInput = new Input({ prompt: '/ ' });
   private selectedIndex = 0;
   private detail = false;
@@ -449,15 +448,13 @@ export class WorkerHistoryView implements Component {
     theme: Theme,
     keybindings: KeybindingsManager,
     rows: WorkerWidgetRow[],
-    done: () => void,
-    pasteName: (name: string) => void,
+    done: (name?: string) => void,
   ) {
     this.tui = tui;
     this.theme = theme;
     this.keybindings = keybindings;
     this.rows = sortedHistory(rows);
     this.done = done;
-    this.pasteName = pasteName;
   }
 
   setRows(rows: WorkerWidgetRow[]): void {
@@ -614,10 +611,12 @@ export class WorkerHistoryView implements Component {
       const row = this.filteredRows()[this.selectedIndex];
 
       if (row) {
-        this.pasteName(row.name);
+        // The editor restores its saved text when this view closes, so return the name and let the
+        // caller paste it after the close resolves.
+        this.done(row.name);
+      } else {
+        this.close();
       }
-
-      this.close();
     }
 
     this.tui.requestRender();
@@ -820,22 +819,19 @@ export const openWorkerHistory = async (
 ): Promise<void> => {
   // A non-overlay custom component replaces the editor area: the view stays in the bottom region
   // above the transcript, keeps keyboard focus, and restores the editor and its text on close.
-  await context.ui.custom<undefined>((tui, overlayTheme, overlayKeybindings, done) => {
-    const view = new WorkerHistoryView(
-      tui,
-      overlayTheme,
-      overlayKeybindings,
-      rows,
-      () => {
-        done(undefined);
-      },
-      (name) => {
-        context.ui.pasteToEditor(name);
-      },
-    );
+  const selectedName = await context.ui.custom<string | undefined>(
+    (tui, overlayTheme, overlayKeybindings, done) => {
+      const view = new WorkerHistoryView(tui, overlayTheme, overlayKeybindings, rows, done);
 
-    onView(view);
+      onView(view);
 
-    return view;
-  });
+      return view;
+    },
+  );
+
+  // Paste only after the custom UI closes and restores the saved editor text, or the restore would
+  // erase the insertion.
+  if (selectedName !== undefined) {
+    context.ui.pasteToEditor(selectedName);
+  }
 };

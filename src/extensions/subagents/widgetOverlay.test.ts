@@ -8,7 +8,7 @@ import type { Terminal } from '@earendil-works/pi-tui';
 import { expect, it } from 'vitest';
 
 import type { WorkerWidgetRow } from './widget.js';
-import { WorkerHistoryView } from './widgetOverlay.js';
+import { WorkerHistoryView, openWorkerHistory } from './widgetOverlay.js';
 
 const noOperation = (): void => undefined;
 const theme = {
@@ -104,7 +104,6 @@ it('filters history by task ID and clears the filter with escape', () => {
     keybindings as never,
     rows,
     noOperation,
-    noOperation,
   );
 
   view.handleInput('/');
@@ -135,7 +134,6 @@ it('filters history by the displayed short task label', () => {
     keybindings as never,
     labelled,
     noOperation,
-    noOperation,
   );
 
   view.handleInput('/');
@@ -163,7 +161,6 @@ it('marks cleanup-unconfirmed activity times as clock values', () => {
     keybindings as never,
     [cleanupRow],
     noOperation,
-    noOperation,
   );
   const rowLine = view.render(72).find((line) => line.includes('worker-clock')) ?? '';
 
@@ -186,7 +183,6 @@ it('keeps approved-width detail timing on one aligned value row', () => {
     keybindings as never,
     [detailRow],
     noOperation,
-    noOperation,
   );
 
   view.handleInput('\r');
@@ -201,7 +197,6 @@ it('uses the full available width for history rows and details', () => {
     theme as never,
     keybindings as never,
     [rows[10]!],
-    noOperation,
     noOperation,
   );
 
@@ -223,7 +218,6 @@ it('right-aligns live countdowns against the history border', () => {
     keybindings as never,
     [rows[10]!],
     noOperation,
-    noOperation,
   );
   const liveRow = liveView.render(72).find((line) => line.includes('worker-10')) ?? '';
 
@@ -244,7 +238,6 @@ it('does not claim run time from an unconfirmed stopped timestamp', () => {
       },
     ],
     noOperation,
-    noOperation,
   );
 
   view.handleInput('\r');
@@ -260,7 +253,6 @@ it('shows a distinct message for an empty unfiltered history', () => {
     theme as never,
     keybindings as never,
     [],
-    noOperation,
     noOperation,
   );
 
@@ -287,7 +279,6 @@ it('keeps details readable, aligned, sanitized, and within narrow and tiny width
     theme as never,
     keybindings as never,
     [detailedRow],
-    noOperation,
     noOperation,
   );
 
@@ -331,7 +322,6 @@ it('keeps the selected task when fresh rows resort after a worker stops', () => 
     keybindings as never,
     rows,
     noOperation,
-    noOperation,
   );
 
   expect(view).toHaveProperty('setRows');
@@ -370,7 +360,6 @@ it('shows the model column when width allows, hides it when narrow, and keeps fu
     keybindings as never,
     [rows[10]!],
     noOperation,
-    noOperation,
   );
   const wide = view.render(160).join('\n');
 
@@ -390,7 +379,6 @@ it('groups unresolved records under their exact state instead of a generic label
     theme as never,
     keybindings as never,
     [rows[0]!, rows[25]!],
-    noOperation,
     noOperation,
   );
   const rendered = view.render(120).join('\n');
@@ -429,7 +417,6 @@ it('keeps interleaved attention groups contiguous and every worker reachable', (
     theme as never,
     keybindings as never,
     interleaved,
-    noOperation,
     noOperation,
   );
   const lines = view.render(120);
@@ -474,7 +461,6 @@ it('shows the reported phase in the list and its update time in the selected det
     keybindings as never,
     [reported],
     noOperation,
-    noOperation,
   );
 
   expect(view.render(120).join('\n')).toContain('Running focused tests');
@@ -491,17 +477,11 @@ it('shows grouped bounded history and opens details through real TUI input', () 
   const terminal = createTerminal(inputHandler);
   const tui = new TuiMainScreen(terminal);
   let closed = false;
-  const pasted: string[] = [];
-  const view = new WorkerHistoryView(
-    tui,
-    theme as never,
-    keybindings as never,
-    rows,
-    () => {
-      closed = true;
-    },
-    (name) => pasted.push(name),
-  );
+  let selectedName: string | undefined;
+  const view = new WorkerHistoryView(tui, theme as never, keybindings as never, rows, (name) => {
+    closed = true;
+    selectedName = name;
+  });
   const editor = {
     render: () => ['Editor'],
     invalidate: () => undefined,
@@ -556,11 +536,107 @@ it('shows grouped bounded history and opens details through real TUI input', () 
     expect(view.render(72).join('\n')).toContain('Task ID');
     expect(view.render(72).join('\n')).toContain('task-full-29');
     inputHandler.current?.('i');
-    expect(pasted).toEqual(['worker-29']);
+    expect(selectedName).toBe('worker-29');
     expect(closed).toBe(true);
   } finally {
     tui.stop();
   }
+});
+
+it('keeps escape sequences out of a task-derived history label', () => {
+  const hostileRow: WorkerWidgetRow = {
+    ...rows[10]!,
+    label: undefined,
+    task: `# ${'a'.repeat(10)}\u001b[2Jb\u0007c\td\r e\u0000f${'b'.repeat(80)}`,
+  };
+  const view = new WorkerHistoryView(
+    { terminal: { rows: 24 }, requestRender: noOperation } as never,
+    theme as never,
+    keybindings as never,
+    [hostileRow],
+    noOperation,
+  );
+  const rendered = view.render(200).join('\n');
+
+  expect(rendered).not.toContain('\u001b[2J');
+  expect(rendered).not.toContain('\u001b');
+  expect(rendered).not.toContain('\u0007');
+  expect(rendered).not.toContain('\t');
+  expect(rendered).not.toContain('\r');
+  expect(rendered).not.toContain('\u0000');
+  expect(rendered).toContain('aaaaaaaaaa');
+});
+
+it('pastes the selected worker name after the custom UI closes so restored editor text survives', async () => {
+  const editorText = { value: 'existing draft' };
+  const pasted: string[] = [];
+  const fakeTui = { terminal: { rows: 24 }, requestRender: noOperation };
+  const context = {
+    ui: {
+      custom: async (
+        factory: (
+          tui: unknown,
+          uiTheme: unknown,
+          uiKeybindings: unknown,
+          done: (value: string | undefined) => void,
+        ) => WorkerHistoryView,
+      ): Promise<string | undefined> => {
+        let result: string | undefined;
+        const component = factory(fakeTui, theme, keybindings, (value) => {
+          // Pi restores the saved editor text before the custom promise resolves.
+          editorText.value = 'existing draft';
+          result = value;
+        });
+
+        component.handleInput('\r');
+        component.handleInput('i');
+
+        return result;
+      },
+      pasteToEditor: (name: string) => {
+        editorText.value += name;
+        pasted.push(name);
+      },
+    },
+  };
+
+  await openWorkerHistory(context as never, rows, noOperation);
+
+  expect(pasted).toEqual(['worker-00']);
+  expect(editorText.value).toBe('existing draftworker-00');
+});
+
+it('leaves editor text untouched when the history closes without a selection', async () => {
+  const editorText = { value: 'existing draft' };
+  const pasted: string[] = [];
+  const fakeTui = { terminal: { rows: 24 }, requestRender: noOperation };
+  const context = {
+    ui: {
+      custom: async (
+        factory: (
+          tui: unknown,
+          uiTheme: unknown,
+          uiKeybindings: unknown,
+          done: (value: string | undefined) => void,
+        ) => WorkerHistoryView,
+      ): Promise<string | undefined> => {
+        const component = factory(fakeTui, theme, keybindings, () => undefined);
+
+        component.handleInput('\u001b');
+
+        return undefined;
+      },
+      pasteToEditor: (name: string) => {
+        editorText.value += name;
+        pasted.push(name);
+      },
+    },
+  };
+
+  await openWorkerHistory(context as never, rows, noOperation);
+
+  expect(pasted).toEqual([]);
+  expect(editorText.value).toBe('existing draft');
 });
 
 const createView = (viewRows: WorkerWidgetRow[], terminalRows = 24): WorkerHistoryView =>
@@ -569,7 +645,6 @@ const createView = (viewRows: WorkerWidgetRow[], terminalRows = 24): WorkerHisto
     theme as never,
     keybindings as never,
     viewRows,
-    noOperation,
     noOperation,
   );
 
@@ -649,7 +724,6 @@ it('drives detail scroll through the real TUI input path', () => {
     theme as never,
     keybindings as never,
     [promptRow],
-    noOperation,
     noOperation,
   );
   const editor = {
