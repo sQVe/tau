@@ -63,3 +63,4 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0042: Remove commit comment review](./0042-remove-commit-comment-review.md)
 - [0043: Own only the worker guarantees herdr lacks](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 - [0044: Restore gpt-5.6-luna as the delegate default](./0044-restore-gpt-5-6-luna-as-the-delegate-default.md)
+- [0045: Keep worker records per Tau checkout and worktree files in `.tau/`](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md)
