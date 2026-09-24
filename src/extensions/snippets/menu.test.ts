@@ -222,6 +222,98 @@ describe('openSnippetMenu', () => {
     expect(body).toContain('> [ ]');
   });
 
+  it('filters the list by name and description while searching', () => {
+    const menu = openMenu([
+      createSnippet({ id: 'first.md', name: 'First', description: 'Review the tests' }),
+      createSnippet({ id: 'second.md', name: 'Second', description: 'Draft a reply' }),
+      createSnippet({ id: 'third.md', name: 'Reviewer', description: '' }),
+    ]);
+
+    menu.press('/');
+
+    for (const key of 'review') {
+      menu.press(key);
+    }
+
+    const body = menu.render(80).join('\n');
+
+    expect(body).toContain('First');
+    expect(body).toContain('Reviewer');
+    expect(body).not.toContain('Second');
+  });
+
+  it('starts searching when the terminal sends slash in the Kitty encoding', () => {
+    const menu = openMenu([
+      createSnippet({ id: 'first.md', name: 'First' }),
+      createSnippet({ id: 'second.md', name: 'Second' }),
+    ]);
+
+    menu.press('\u001B[47u');
+    menu.press('s');
+    menu.press('e');
+    menu.press('c');
+
+    expect(menu.render(80).join('\n')).not.toContain('First');
+  });
+
+  it('toggles a filtered snippet and keeps toggles on hidden snippets', async () => {
+    const menu = openMenu(
+      [
+        createSnippet({ id: 'first.md', name: 'First' }),
+        createSnippet({ id: 'second.md', name: 'Second' }),
+      ],
+      ['first.md'],
+    );
+
+    menu.press('/');
+    menu.press('s');
+    menu.press('e');
+    menu.press('c');
+    menu.press(enter);
+    menu.press(space);
+    menu.press(enter);
+
+    expect(await menu.selected).toEqual(new Set(['first.md', 'second.md']));
+  });
+
+  it('clears the filter on the first escape and cancels on the second', async () => {
+    const menu = openMenu([
+      createSnippet({ id: 'first.md', name: 'First' }),
+      createSnippet({ id: 'second.md', name: 'Second' }),
+    ]);
+
+    menu.press('/');
+    menu.press('s');
+    menu.press(escape);
+    menu.press(escape);
+
+    expect(menu.render(80).join('\n')).toContain('First');
+    expect(menu.isPending()).toBe(true);
+
+    menu.press(escape);
+
+    expect(await menu.selected).toBeNull();
+  });
+
+  it('stays open when no snippet matches and the user presses list keys', async () => {
+    const menu = openMenu([createSnippet({ id: 'first.md', name: 'First' })], ['first.md']);
+
+    menu.press('/');
+    menu.press('z');
+    menu.press(enter);
+
+    for (const key of ['j', 'k', 'g', 'G', space, tab]) {
+      menu.press(key);
+    }
+
+    expect(menu.render(80).join('\n')).not.toContain('First');
+    expect(menu.isPending()).toBe(true);
+
+    menu.press(enter);
+
+    expect(await menu.selected).toEqual(new Set(['first.md']));
+  });
+
   it('previews the selected snippet and returns to the list', () => {
     const menu = openMenu([
       createSnippet({ id: 'first.md', name: 'First', body: 'The full body text.' }),
