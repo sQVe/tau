@@ -11,7 +11,7 @@ import {
 import { expect, onTestFinished, vi } from 'vitest';
 
 import { runClient } from '../cancellation.js';
-import { WorkerController } from '../controller.js';
+import { WorkerController } from '../controller/controller.js';
 import { searchHistory } from '../history.js';
 import { resolveLoadout, validateSavedLoadout } from '../loadout.js';
 import { readAcknowledgement, readReply } from '../questionRecords.js';

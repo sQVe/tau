@@ -3,7 +3,8 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { agentPromptArguments, WorkerController } from '../src/extensions/subagents/controller.js';
+import { WorkerController } from '../src/extensions/subagents/controller/controller.js';
+import { agentPromptArguments } from '../src/extensions/subagents/controller/inspect.js';
 import { isolatedHerdr } from '../src/extensions/subagents/fixtures/isolatedHerdr.js';
 import { fixtureGenericLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
 import { toolAvailable } from '../src/extensions/subagents/fixtures/toolAvailable.js';

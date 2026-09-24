@@ -1,11 +1,11 @@
-import { cancelOwnedWorker, runClient, workerStopped } from './cancellation.js';
-import type { OwnedWorker } from './cancellation.js';
-import { verifyRejectedStart } from './controllerInspect.js';
-import type { HerdrClient } from './controllerInspect.js';
-import { cleanupDetail } from './controllerRecord.js';
-import type { Handle } from './controllerTypes.js';
-import type { WorkerPlacement } from './placement.js';
-import { requireObject, resolveTerminal, result, text } from './terminal.js';
+import { cancelOwnedWorker, runClient, workerStopped } from '../cancellation.js';
+import type { OwnedWorker } from '../cancellation.js';
+import type { WorkerPlacement } from '../placement.js';
+import { requireObject, resolveTerminal, result, text } from '../terminal.js';
+import { verifyRejectedStart } from './inspect.js';
+import type { HerdrClient } from './inspect.js';
+import { cleanupDetail } from './record.js';
+import type { Handle } from './types.js';
 
 export interface StopOwnedWorkerRequest {
   handle: Handle;

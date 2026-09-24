@@ -14,7 +14,7 @@ import { DefaultResourceLoader, SessionManager } from '@earendil-works/pi-coding
 import type { ExtensionContext, SessionInfo } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { WorkerController } from './controller.js';
+import { WorkerController } from './controller/controller.js';
 import { fixtureGenericLoadout, fixtureLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import subagentsExtension from './index.js';

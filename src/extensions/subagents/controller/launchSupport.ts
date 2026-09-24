@@ -2,15 +2,15 @@ import { existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
-import { requireHandover, refuseLiveNativeWriter } from './continuations.js';
-import { authorizeHistoryTask } from './history.js';
-import { validateNative } from './native.js';
-import type { Visibility } from './placement.js';
-import { nativeIdentity } from './profiles.js';
-import { readEvent, readReport, readSuccessor, readTask, readTasks } from './records.js';
-import { result } from './terminal.js';
-import { isGenericLoadout } from './types.js';
-import type { Loadout, Task } from './types.js';
+import { requireHandover, refuseLiveNativeWriter } from '../continuations.js';
+import { authorizeHistoryTask } from '../history.js';
+import { validateNative } from '../native.js';
+import type { Visibility } from '../placement.js';
+import { nativeIdentity } from '../profiles.js';
+import { readEvent, readReport, readSuccessor, readTask, readTasks } from '../records.js';
+import { result } from '../terminal.js';
+import { isGenericLoadout } from '../types.js';
+import type { Loadout, Task } from '../types.js';
 
 export interface LaunchInput {
   task: string;

@@ -22,7 +22,7 @@ import {
 import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
-import { workerArguments } from '../src/extensions/subagents/controllerInspect.js';
+import { workerArguments } from '../src/extensions/subagents/controller/inspect.js';
 import {
   integrationFingerprint,
   modelFingerprint,

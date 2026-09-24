@@ -1,8 +1,8 @@
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { monotonicNow } from './admission.js';
-import { boundedTiming } from './controllerBudget.js';
-import type { Task } from './types.js';
+import { monotonicNow } from '../admission.js';
+import type { Task } from '../types.js';
+import { boundedTiming } from './budget.js';
 
 it('refuses child work when the parent deadline leaves no work budget', () => {
   vi.useFakeTimers({ toFake: ['Date', 'performance', 'hrtime'] });

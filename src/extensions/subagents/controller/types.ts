@@ -1,7 +1,7 @@
 import type { SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
-import type { OwnedWorker } from './cancellation.js';
-import type { NativeAgentState, Task } from './types.js';
+import type { OwnedWorker } from '../cancellation.js';
+import type { NativeAgentState, Task } from '../types.js';
 
 export interface Handle {
   directory: string;

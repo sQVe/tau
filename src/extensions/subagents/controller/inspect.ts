@@ -7,16 +7,16 @@ import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { matchesWorker, processAbsent, runClient } from './cancellation.js';
-import type { OwnedWorker } from './cancellation.js';
-import { workBudget } from './controllerBudget.js';
-import type { Handle } from './controllerTypes.js';
-import { readGenericReference, prepareGenericReport } from './generic.js';
-import { seedSession } from './profiles.js';
-import { publish, readEvent } from './records.js';
-import { requireObject, resolveTerminal, result, text } from './terminal.js';
-import { isGenericLoadout, isPiLoadout, nativeAgentStates, requireNativeTask } from './types.js';
-import type { GenericLoadout, NativeAgentState, Task, TaskEvent } from './types.js';
+import { matchesWorker, processAbsent, runClient } from '../cancellation.js';
+import type { OwnedWorker } from '../cancellation.js';
+import { readGenericReference, prepareGenericReport } from '../generic.js';
+import { seedSession } from '../profiles.js';
+import { publish, readEvent } from '../records.js';
+import { requireObject, resolveTerminal, result, text } from '../terminal.js';
+import { isGenericLoadout, isPiLoadout, nativeAgentStates, requireNativeTask } from '../types.js';
+import type { GenericLoadout, NativeAgentState, Task, TaskEvent } from '../types.js';
+import { workBudget } from './budget.js';
+import type { Handle } from './types.js';
 
 const agentSessionSchema = Type.Object({ value: Type.String({ minLength: 1 }) });
 const missingPiIntegrationMessage =
@@ -103,10 +103,10 @@ export const workerArguments = (task: Task): string[] => {
     // Load the empty-command guard before the explicitly replayed integrations, including Safety Net.
     '--no-extensions',
     '-e',
-    fileURLToPath(new URL('./workerBashGuard.ts', import.meta.url)),
+    fileURLToPath(new URL('../workerBashGuard.ts', import.meta.url)),
     ...task.loadout.integrations.flatMap((path) => ['-e', path]),
     '-e',
-    fileURLToPath(new URL('./worker.ts', import.meta.url)),
+    fileURLToPath(new URL('../worker.ts', import.meta.url)),
   ];
 };
 

@@ -7,7 +7,8 @@ import { Value } from 'typebox/value';
 import { expect, it, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { WorkerController, EvidenceUnavailableError } from './controller.js';
+import { WorkerController } from './controller/controller.js';
+import { EvidenceUnavailableError } from './controller/record.js';
 import subagentsExtension, { deliverWorkerNotice } from './index.js';
 import type { WorkerNotice } from './presentation.js';
 

@@ -5,18 +5,18 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import * as cancellation from './cancellation.js';
+import * as cancellation from '../cancellation.js';
+import { herdrFake } from '../fixtures/herdrFake.js';
+import { fixtureGenericLoadout } from '../fixtures/loadout.js';
+import { assignmentContract, handoffContract } from '../handoff.js';
+import { searchHistory } from '../history.js';
+import * as identity from '../identity.js';
+import { handoffSections } from '../presentation.js';
+import type { WorkerNotice } from '../presentation.js';
+import { readEvent, readReport, readTask } from '../records.js';
+import * as records from '../records.js';
 import { WorkerController } from './controller.js';
-import type { HerdrClient } from './controller.js';
-import { herdrFake } from './fixtures/herdrFake.js';
-import { fixtureGenericLoadout } from './fixtures/loadout.js';
-import { assignmentContract, handoffContract } from './handoff.js';
-import { searchHistory } from './history.js';
-import * as identity from './identity.js';
-import { handoffSections } from './presentation.js';
-import type { WorkerNotice } from './presentation.js';
-import { readEvent, readReport, readTask } from './records.js';
-import * as records from './records.js';
+import type { HerdrClient } from './inspect.js';
 
 const fixture = (kind = 'codex', intercept?: HerdrClient) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-generic-controller-'));
