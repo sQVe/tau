@@ -5,29 +5,26 @@ import type { ExecResult, ExtensionAPI, ExtensionContext } from '@earendil-works
 
 import { delegateReference } from '../../delegateModel/index.js';
 import { errorMessage, isMissingFile } from '../../errors/index.js';
-import {
-  commentPolicyHash,
-  formatCommentReview,
-  isAdvisoryFinding,
-  reviewGit,
-} from './commentReview.js';
-import type { CommentReview } from './commentReview.js';
+import { commentPolicyHash, formatCommentReview, isAdvisoryFinding } from './commentReview.js';
 import {
   currentHead,
   listCommitPaths,
+  readIndex,
   listStagedPaths,
   repositoryPathPrefix,
+  runGit,
   stageFiles,
   unstageFiles,
   validateFileRequests,
+  writeTree,
 } from './gitCommands.js';
-import type { CommitSuccess, RequestReview, Reviews, ReviewState } from './types.js';
+import type { CommentReview, CommitSuccess, RequestReview, Reviews, ReviewState } from './types.js';
 import {
   buildCommitMessage,
   commitFailedError,
   normalizeBody,
   normalizeRepositoryPath,
-  sensitivePathDenylist,
+  isSensitivePath,
 } from './validation.js';
 import type { CommitInput } from './validation.js';
 
@@ -53,18 +50,23 @@ interface GroupRun extends GroupExecution {
   subject: string;
   body: string | null;
   requestedFiles: Set<string>;
-  snapshot: StagedSnapshot;
+  snapshot: StagedSnapshot | null;
   state: ReviewState;
   reviewGroup: string;
   reviewReport: string;
   commentReview: CommentReview | undefined;
 }
 
+export interface GroupOutcome {
+  kind: 'cancelled' | 'committed';
+  result: CommitSuccess;
+}
+
 interface CleanupCheck {
   pi: Pick<ExtensionAPI, 'exec'>;
   cwd: string;
   requestedFiles: Set<string>;
-  snapshot: StagedSnapshot;
+  snapshot: StagedSnapshot | null;
 }
 
 const buildCancelledResult = (
@@ -121,10 +123,21 @@ const stageAndVerifyRequest = async (run: GroupRun): Promise<boolean> => {
   return true;
 };
 
+// Every step after snapshotStagedTree reads the reviewed snapshot; reaching one without it is a bug.
+const requireSnapshot = (run: GroupRun): StagedSnapshot => {
+  if (run.snapshot === null) {
+    throw new Error('The staged snapshot was read before it was taken.');
+  }
+
+  return run.snapshot;
+};
+
 const prepareReviewState = (run: GroupRun): void => {
+  const snapshot = requireSnapshot(run);
+
   run.reviewGroup = JSON.stringify([
     run.context.cwd,
-    run.snapshot.reviewedHead,
+    snapshot.reviewedHead,
     [...run.requestedFiles].toSorted(),
   ]);
 
@@ -142,7 +155,7 @@ const prepareReviewState = (run: GroupRun): void => {
     }
   }
 
-  if (state.refusedTree === run.snapshot.reviewedTree) {
+  if (state.refusedTree === snapshot.reviewedTree) {
     const review = state.result ? formatCommentReview(state.result) : '';
 
     throw new Error(
@@ -152,19 +165,10 @@ const prepareReviewState = (run: GroupRun): void => {
 };
 
 const snapshotStagedTree = async (run: GroupRun): Promise<boolean> => {
-  const treeOutput = await reviewGit(run.pi, run.context.cwd, ['write-tree'], {
-    signal: run.signal,
-  });
-
-  run.snapshot.reviewedTree = treeOutput.trim();
-  run.snapshot.reviewedIndex = await reviewGit(run.pi, run.context.cwd, [
-    'ls-files',
-    '--stage',
-    '--debug',
-    '-v',
-    '-z',
-  ]);
-  run.snapshot.reviewedHead = await currentHead(run.pi, run.context.cwd);
+  const reviewedTree = await writeTree(run.pi, run.context.cwd, run.signal);
+  const reviewedIndex = await readIndex(run.pi, run.context.cwd);
+  const reviewedHead = await currentHead(run.pi, run.context.cwd);
+  run.snapshot = { reviewedTree, reviewedIndex, reviewedHead };
 
   if (run.signal?.aborted) {
     return false;
@@ -201,12 +205,14 @@ const buildDisputeReport = (run: GroupRun): string => {
 };
 
 const requestCommentReview = async (run: GroupRun): Promise<boolean> => {
+  const snapshot = requireSnapshot(run);
+
   const dispute = run.parameters.commentDispute;
 
   recordDispute(run);
 
   const reviewKey = JSON.stringify([
-    run.snapshot.reviewedTree,
+    snapshot.reviewedTree,
     commentPolicyHash,
     delegateReference(),
     dispute,
@@ -218,8 +224,8 @@ const requestCommentReview = async (run: GroupRun): Promise<boolean> => {
       run.state.key === reviewKey && run.state.result
         ? run.state.result
         : await run.requestReview({
-            tree: run.snapshot.reviewedTree,
-            head: run.snapshot.reviewedHead,
+            tree: snapshot.reviewedTree,
+            head: snapshot.reviewedHead,
             ...(dispute ? { dispute } : {}),
           });
   } catch (error) {
@@ -247,6 +253,8 @@ const requestCommentReview = async (run: GroupRun): Promise<boolean> => {
 };
 
 const enforceReviewGate = (run: GroupRun): void => {
+  const snapshot = requireSnapshot(run);
+
   const reviewBlocked =
     run.commentReview?.findings.some((finding) => !isAdvisoryFinding(finding)) ?? false;
 
@@ -255,7 +263,7 @@ const enforceReviewGate = (run: GroupRun): void => {
   }
 
   if (run.state.returns >= 2) {
-    run.state.refusedTree = run.snapshot.reviewedTree;
+    run.state.refusedTree = snapshot.reviewedTree;
 
     throw new Error(
       `Comment review refused after two automatic returns:\n${run.reviewReport}\nStop automatic retries and report the blocker. Review must pass before committing.`,
@@ -270,27 +278,20 @@ const enforceReviewGate = (run: GroupRun): void => {
 };
 
 const verifyUnchanged = async (run: GroupRun): Promise<void> => {
-  const currentIndex = await reviewGit(run.pi, run.context.cwd, [
-    'ls-files',
-    '--stage',
-    '--debug',
-    '-v',
-    '-z',
-  ]);
+  const snapshot = requireSnapshot(run);
 
-  if (currentIndex !== run.snapshot.reviewedIndex) {
+  const currentIndex = await readIndex(run.pi, run.context.cwd);
+
+  if (currentIndex !== snapshot.reviewedIndex) {
     throw new Error(
       'Staged content changed since comment review. Call commit again to review the changes.',
     );
   }
 
-  const currentTreeOutput = await reviewGit(run.pi, run.context.cwd, ['write-tree'], {
-    signal: run.signal,
-  });
-  const currentTree = currentTreeOutput.trim();
+  const currentTree = await writeTree(run.pi, run.context.cwd, run.signal);
   const changedSinceReview =
-    currentTree !== run.snapshot.reviewedTree ||
-    (await currentHead(run.pi, run.context.cwd)) !== run.snapshot.reviewedHead;
+    currentTree !== snapshot.reviewedTree ||
+    (await currentHead(run.pi, run.context.cwd)) !== snapshot.reviewedHead;
 
   if (changedSinceReview) {
     throw new Error(
@@ -312,31 +313,33 @@ const verifyUnchanged = async (run: GroupRun): Promise<void> => {
   }
 };
 
-const snapshotChanged = async (check: CleanupCheck, currentIndex: string): Promise<boolean> => {
-  if (currentIndex !== check.snapshot.reviewedIndex) {
+const snapshotChanged = async (
+  check: CleanupCheck,
+  snapshot: StagedSnapshot,
+  currentIndex: string,
+): Promise<boolean> => {
+  if (currentIndex !== snapshot.reviewedIndex) {
     return true;
   }
 
-  return (await currentHead(check.pi, check.cwd)) !== check.snapshot.reviewedHead;
+  return (await currentHead(check.pi, check.cwd)) !== snapshot.reviewedHead;
 };
 
 const assertCleanupOwnership = async (check: CleanupCheck): Promise<void> => {
-  // Before the candidate snapshot, unexpected entries may belong to another writer.
-  const staged = await listStagedPaths(check.pi, check.cwd);
+  if (check.snapshot === null) {
+    // Before the candidate snapshot, unexpected entries may belong to another writer.
+    const staged = await listStagedPaths(check.pi, check.cwd);
 
-  if (!check.snapshot.reviewedTree && staged.some((file) => !check.requestedFiles.has(file))) {
-    throw new Error('Concurrent staging was left untouched. Inspect the index before retrying.');
+    if (staged.some((file) => !check.requestedFiles.has(file))) {
+      throw new Error('Concurrent staging was left untouched. Inspect the index before retrying.');
+    }
+
+    return;
   }
 
-  const currentIndex = await reviewGit(check.pi, check.cwd, [
-    'ls-files',
-    '--stage',
-    '--debug',
-    '-v',
-    '-z',
-  ]);
+  const currentIndex = await readIndex(check.pi, check.cwd);
 
-  if (check.snapshot.reviewedTree && (await snapshotChanged(check, currentIndex))) {
+  if (await snapshotChanged(check, check.snapshot, currentIndex)) {
     throw new Error('Staged content or HEAD changed. Concurrent staging was left untouched.');
   }
 };
@@ -382,6 +385,8 @@ const runGroupPipeline = async (run: GroupRun): Promise<boolean> => {
 };
 
 const commitStaged = async (run: GroupRun): Promise<ExecResult> => {
+  const snapshot = requireSnapshot(run);
+
   const commitResult = await run.pi.exec(
     'git',
     ['commit', '--cleanup=verbatim', '-F', run.messagePath],
@@ -392,7 +397,7 @@ const commitStaged = async (run: GroupRun): Promise<ExecResult> => {
     const failure = commitFailedError(commitResult.stdout, commitResult.stderr);
 
     try {
-      if ((await currentHead(run.pi, run.context.cwd)) !== run.snapshot.reviewedHead) {
+      if ((await currentHead(run.pi, run.context.cwd)) !== snapshot.reviewedHead) {
         throw new Error(
           'HEAD changed during git commit. Staging was left untouched. Inspect the repository before retrying.',
         );
@@ -420,9 +425,7 @@ const buildHookReport = (
     files: changedPathsOutput.split('\0').filter(Boolean),
     message: storedMessage !== buildCommitMessage(run.subject, run.body),
   };
-  const sensitivePaths = committedPaths.filter((file) =>
-    sensitivePathDenylist.some((pattern) => pattern.test(file.replaceAll('\\', '/'))),
-  );
+  const sensitivePaths = committedPaths.filter((file) => isSensitivePath(file));
   const reportLines: string[] = [];
 
   if (sensitivePaths.length) {
@@ -448,6 +451,8 @@ const buildCommitReport = async (
   commitObject: string,
   messageOffset: number,
 ): Promise<CommitSuccess> => {
+  const snapshot = requireSnapshot(run);
+
   const committedPaths = await listCommitPaths(run.pi, run.context.cwd, commitHash);
   const storedMessage = commitObject.slice(messageOffset + 2);
   const firstNewline = storedMessage.indexOf('\n');
@@ -455,7 +460,7 @@ const buildCommitReport = async (
   const storedBody =
     firstNewline === -1 ? '' : storedMessage.slice(firstNewline + 1).replace(/^\n/, '');
 
-  const changedPathsOutput = await reviewGit(run.pi, run.context.cwd, [
+  const changedPathsOutput = await runGit(run.pi, run.context.cwd, [
     'diff',
     '--no-ext-diff',
     '--no-textconv',
@@ -463,7 +468,7 @@ const buildCommitReport = async (
     '--no-relative',
     '--name-only',
     '-z',
-    run.snapshot.reviewedTree,
+    snapshot.reviewedTree,
     `${commitHash}^{tree}`,
     '--',
   ]);
@@ -501,7 +506,7 @@ const buildCommitReport = async (
       hookChanges,
       commentReview: {
         status: 'passed',
-        tree: run.snapshot.reviewedTree,
+        tree: snapshot.reviewedTree,
         policy: commentPolicyHash,
         report: run.reviewReport,
       },
@@ -510,20 +515,22 @@ const buildCommitReport = async (
 };
 
 const reportCommit = async (run: GroupRun, commitResult: ExecResult): Promise<CommitSuccess> => {
+  const snapshot = requireSnapshot(run);
+
   run.reviews.delete(run.reviewGroup);
 
   let commitHash = '';
 
   // A reporting failure must not hide a successful commit or undo hooks' work.
   try {
-    const commitHashOutput = await reviewGit(run.pi, run.context.cwd, ['rev-parse', 'HEAD']);
+    const commitHashOutput = await runGit(run.pi, run.context.cwd, ['rev-parse', 'HEAD']);
     const capturedHead = commitHashOutput.trim();
-    const commitObject = await reviewGit(run.pi, run.context.cwd, ['cat-file', '-p', capturedHead]);
+    const commitObject = await runGit(run.pi, run.context.cwd, ['cat-file', '-p', capturedHead]);
     const messageOffset = commitObject.indexOf('\n\n');
     const firstParent = commitObject.slice(0, messageOffset).match(/^parent (.+)$/m)?.[1] ?? null;
 
     // First-parent matching detects an intervening commit, not rewrites sharing the same parent.
-    if (firstParent !== run.snapshot.reviewedHead) {
+    if (firstParent !== snapshot.reviewedHead) {
       throw new Error(
         "HEAD changed before commit reporting. The captured HEAD could not be verified as this group's commit. HEAD and staging were left untouched.",
       );
@@ -542,11 +549,14 @@ const reportCommit = async (run: GroupRun, commitResult: ExecResult): Promise<Co
   }
 };
 
-export const executeGroup = async (execution: GroupExecution): Promise<CommitSuccess> => {
+export const executeGroup = async (execution: GroupExecution): Promise<GroupOutcome> => {
   const subject = execution.parameters.subject;
   const body = normalizeBody(execution.parameters.body ?? null);
   const messagePath = join(execution.temporaryDirectory, 'message');
-  const cancelled = buildCancelledResult(execution.parameters.files, subject, body);
+  const cancelled = {
+    kind: 'cancelled',
+    result: buildCancelledResult(execution.parameters.files, subject, body),
+  } as const;
 
   if (execution.signal?.aborted) {
     return cancelled;
@@ -562,7 +572,7 @@ export const executeGroup = async (execution: GroupExecution): Promise<CommitSuc
     subject,
     body,
     requestedFiles,
-    snapshot: { reviewedTree: '', reviewedIndex: '', reviewedHead: null },
+    snapshot: null,
     state: { disputes: [], returns: 0 },
     reviewGroup: '',
     reviewReport: '',
@@ -599,5 +609,5 @@ export const executeGroup = async (execution: GroupExecution): Promise<CommitSuc
 
   const commitResult = await commitStaged(run);
 
-  return reportCommit(run, commitResult);
+  return { kind: 'committed', result: await reportCommit(run, commitResult) };
 };

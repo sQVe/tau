@@ -6,7 +6,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository, runCommand } from '../../../tests/commitTool.js';
-import { reviewComments, reviewGit } from './commentReview.js';
+import { reviewComments } from './commentReview.js';
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -378,23 +378,6 @@ describe('finding verification', () => {
     await app.execute();
 
     expect(verifierInput(app.complete.mock.calls[1]?.[1]).finding).toEqual(finding);
-  });
-});
-
-describe('reviewGit', () => {
-  it('identifies the failing command after global Git options', async () => {
-    const repositoryDirectory = await createTemporaryRepository();
-
-    await expect(
-      reviewGit(
-        {
-          exec: (command, commandArguments, options) =>
-            runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
-        },
-        repositoryDirectory,
-        ['--literal-pathspecs', 'ls-tree', 'missing-tree'],
-      ),
-    ).rejects.toThrow('git --literal-pathspecs ls-tree missing-tree failed');
   });
 });
 

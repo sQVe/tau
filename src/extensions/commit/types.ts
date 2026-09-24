@@ -1,4 +1,25 @@
-import type { CommentReview } from './commentReview.js';
+import { Type } from 'typebox';
+import type { Static } from 'typebox';
+
+export const reviewerFindingSchema = Type.Object(
+  {
+    path: Type.String({ minLength: 1 }),
+    line: Type.Integer({ minimum: 1 }),
+    kind: Type.Union([Type.Literal('inaccurate'), Type.Literal('policy'), Type.Literal('missing')]),
+    message: Type.String({ minLength: 1, maxLength: 2000 }),
+  },
+  { additionalProperties: false },
+);
+
+type ReviewerFinding = Static<typeof reviewerFindingSchema>;
+
+export type CommentFinding =
+  | ReviewerFinding
+  | (Omit<ReviewerFinding, 'kind'> & { kind: 'unverified' });
+
+export interface CommentReview {
+  findings: CommentFinding[];
+}
 
 export interface CommitSuccess {
   details: {

@@ -6,7 +6,7 @@ import { Type } from 'typebox';
 const conventionalCommitSubjectPattern =
   /^(feat|fix|chore|refactor|docs|test|style|perf|build|ci|revert)(\([a-z0-9-]+\))?!?: [^\r\n]+$/;
 
-export const sensitivePathDenylist = [
+const sensitivePathDenylist = [
   /(^|\/)\.env$/i,
   /(^|\/)\.env\..+$/i,
   /(^|\/)\.npmrc$/i,
@@ -20,6 +20,9 @@ export const sensitivePathDenylist = [
   /(^|\/)id_ed25519($|\.)/i,
   /(^|\/)\.ssh($|\/)/i,
 ] as const;
+
+export const isSensitivePath = (file: string) =>
+  sensitivePathDenylist.some((pattern) => pattern.test(file.replaceAll('\\', '/')));
 
 export const commitToolParameters = Type.Object({
   groups: Type.Array(
@@ -84,7 +87,7 @@ export const validatePaths = (files: string[]) => {
       );
     }
 
-    if (sensitivePathDenylist.some((pattern) => pattern.test(file))) {
+    if (isSensitivePath(file)) {
       throw new Error(`Invalid path: ${rawFile}`);
     }
   }

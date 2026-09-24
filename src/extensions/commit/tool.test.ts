@@ -16,8 +16,9 @@ import {
   fakeCommit,
 } from '../../../tests/commitTool.js';
 import { commentPolicyHash } from './commentReview.js';
-import type { CommentReview, reviewComments } from './commentReview.js';
+import type { reviewComments } from './commentReview.js';
 import { createCommitTool as createReviewedCommitTool } from './tool.js';
+import type { CommentReview } from './types.js';
 import { commitFailedError, validatePaths, validateSubject } from './validation.js';
 
 describe('validateSubject', () => {
@@ -1181,6 +1182,29 @@ describe('commit execution', () => {
 
     expect(exec).not.toHaveBeenCalled();
     expect(custom).not.toHaveBeenCalled();
+  });
+
+  it('unstages the requested files when the index cannot be read before a snapshot', async () => {
+    const { execute, exec } = fakeCommit();
+    const readGit = exec.getMockImplementation();
+
+    if (readGit === undefined) {
+      throw new Error('fakeCommit has no Git implementation');
+    }
+
+    exec.mockImplementation((command, commandArguments, options) =>
+      commandArguments[0] === 'ls-files'
+        ? Promise.resolve({ code: 1, killed: false, stdout: '', stderr: 'index locked' })
+        : readGit(command, commandArguments, options),
+    );
+
+    await expect(execute()).rejects.toThrow('index locked');
+
+    expect(exec).toHaveBeenLastCalledWith(
+      'git',
+      ['--literal-pathspecs', 'reset', '--', 'README.md'],
+      { cwd: '/repo' },
+    );
   });
 
   it('unstages without opening UI if cancelled while staging', async () => {
