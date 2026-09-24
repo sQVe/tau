@@ -29,7 +29,6 @@ import {
   readGenericSubmission,
   readTask,
   readTasks,
-  claimSuccessor,
   publish,
   validateTask,
   recordEvent,
@@ -59,13 +58,7 @@ import {
   workerArguments,
 } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
-import {
-  checkHandoff,
-  checkNativeWriterListing,
-  nativeReference,
-  requireUnclaimed,
-  releaseRejectedSuccessor,
-} from './launchSupport.js';
+import { checkHandoff, nativeReference, requireUnclaimed } from './launchSupport.js';
 import type { FollowUpPreparation, LaunchInput } from './launchSupport.js';
 import {
   EvidenceUnavailableError,
@@ -1002,11 +995,9 @@ export class WorkerController {
       throw new Error('Non-Pi native continuation is unsupported. Start a fresh task.');
     }
 
-    requireUnclaimed(this.root, source);
     const native = validateNative(source.task, source.origin);
     const loadout = validateSavedLoadout(source.task.loadout, context);
     validationSignal.throwIfAborted();
-    requireUnclaimed(this.root, source);
 
     // Validation expiry must not masquerade as caller cancellation during launch/readiness.
     return this.launchTask({ ...input, loadout, startedAt }, signal, {
@@ -1289,17 +1280,11 @@ export class WorkerController {
       launchSignal.throwIfAborted();
       workBudget(handle);
 
-      if (source) {
-        claimSuccessor(source.directory, handle.task);
-        checkHandoff(this.root, source, handle.task);
-      }
-
       const call = this.herdrCall(handle);
       const location = await this.placeWorker(input, handle, call);
 
       if (source) {
-        checkNativeWriterListing(await call(['agent', 'list']), handle.task);
-        checkHandoff(this.root, source, handle.task);
+        checkHandoff(source);
       }
 
       await this.startWorker(handle, location.paneId, name, call);
@@ -1743,7 +1728,6 @@ export class WorkerController {
     reason: 'timeout' | 'cancelled' | 'completion' | 'failure',
     failureDetail: string,
   ): Promise<void> {
-    const { task } = handle;
     // Receipt failures must never prevent the bounded stop attempt or hide later recording errors.
     const record = (operation: () => void) => {
       try {
@@ -1810,9 +1794,6 @@ export class WorkerController {
     const failure = this.cleanupFailureDetail(handle, failureDetail);
     handle.cleanupDetail = reason === 'failure' ? `${detail} ${failure}` : detail;
     this.recordCleanupEvents({ handle, reason, failureDetail: failure, detail, stopped, record });
-    record(() => {
-      releaseRejectedSuccessor(this.root, handle.directory, task);
-    });
 
     this.notifyCleanup(handle, record);
   }

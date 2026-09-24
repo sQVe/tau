@@ -6,7 +6,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { isMissingFile } from '../../errors/index.js';
-import { readEvent, readReport, readSuccessor } from './records.js';
+import { readEvent, readReport } from './records.js';
 import { requireNativeTask } from './types.js';
 import type { Task } from './types.js';
 
@@ -27,15 +27,11 @@ interface Entry {
   task: Task;
 }
 
-const isClaimedSuccessor = (entry: Entry, predecessor: Entry): boolean =>
-  readSuccessor(predecessor.directory)?.successorTaskId === entry.task.taskId;
-
 const sharesNativeSession = (entry: Entry, predecessor: Entry): boolean =>
   entry.task.nativeSessionId === predecessor.task.nativeSessionId &&
   entry.task.nativeSessionFile === predecessor.task.nativeSessionFile;
 
 const hasMatchingChain = (entry: Entry, predecessor: Entry): boolean =>
-  isClaimedSuccessor(entry, predecessor) &&
   sharesNativeSession(entry, predecessor) &&
   isDeepStrictEqual(entry.task.loadout, predecessor.task.loadout);
 
@@ -52,7 +48,7 @@ const walkToOrigin = (entry: Entry, byId: Map<string, Entry>): Task => {
     const predecessor = byId.get(current.task.predecessorTaskId);
 
     if (!predecessor || !hasMatchingChain(current, predecessor)) {
-      throw new Error('Unclaimed or mismatched continuation chain.');
+      throw new Error('Missing or mismatched continuation chain.');
     }
 
     requireHandover(predecessor.directory, predecessor.task);

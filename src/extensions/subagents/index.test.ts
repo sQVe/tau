@@ -636,7 +636,10 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
   onTestFinished,
 }) => {
   const tools = registerTools();
-  vi.spyOn(WorkerController.prototype, 'status').mockReturnValue(fullWorkerStatus as never);
+  vi.spyOn(WorkerController.prototype, 'status').mockReturnValue({
+    ...fullWorkerStatus,
+    successorTaskId: 'successor-1',
+  } as never);
   vi.spyOn(WorkerController.prototype, 'reply').mockResolvedValue({
     replyAccepted: true,
     name: 'worker-ab',
@@ -666,7 +669,11 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
     context,
   );
   const statusContent = textContent(statusResult);
-  expect(statusContent).toMatchObject({ taskId: 'task-1', state: 'stopped' });
+  expect(statusContent).toMatchObject({
+    taskId: 'task-1',
+    state: 'stopped',
+    successorTaskId: 'successor-1',
+  });
 
   for (const key of ['directory', 'usage', 'nativeSessionFile']) {
     expect(statusContent).not.toHaveProperty(key);

@@ -124,6 +124,8 @@ it.each(states)('builds the allowlisted model content for %s', (state) => {
     expect(Object.keys(content).toSorted()).toEqual(expected.toSorted());
     expect(content.taskId).toBe('task-1');
     expect(content.state).toBe(state);
+    expect(content.predecessorTaskId).toBe('predecessor-1');
+    expect(content.successorTaskId).toBe('successor-1');
   }
 });
 

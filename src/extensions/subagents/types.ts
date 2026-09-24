@@ -104,18 +104,6 @@ export const ownedWorkerSchema = Type.Union([
     { additionalProperties: false },
   ),
 ]);
-export const successorSchema = Type.Object(
-  {
-    version: Type.Literal(1),
-    predecessorTaskId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
-    successorTaskId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
-    nativeSessionId: text,
-    nativeSessionFile: text,
-  },
-  { additionalProperties: false },
-);
-export type Successor = Static<typeof successorSchema>;
-
 export const reportSchema = Type.Object(
   {
     taskId: text,

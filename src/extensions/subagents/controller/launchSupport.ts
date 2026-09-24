@@ -1,14 +1,10 @@
-import { existsSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
-import { requireHandover, refuseLiveNativeWriter } from '../continuations.js';
-import { authorizeHistoryTask } from '../history.js';
+import { requireHandover } from '../continuations.js';
 import { validateNative } from '../native.js';
 import type { Visibility } from '../placement.js';
 import { nativeIdentity } from '../profiles.js';
-import { readEvent, readReport, readSuccessor, readTask, readTasks } from '../records.js';
-import { result } from '../terminal.js';
+import { findSuccessor, readTask, readTasks } from '../records.js';
 import { isGenericLoadout } from '../types.js';
 import type { Loadout, Task } from '../types.js';
 
@@ -47,75 +43,29 @@ export const nativeReference = (
   return isGenericLoadout(loadout) ? {} : nativeIdentity(directory);
 };
 
-const rejectedBeforeDispatch = (directory: string, task: Task): boolean => {
-  if (readEvent(directory, task.taskId, 'cleanup')?.stopped !== true) {
-    return false;
-  }
-
-  const dispatched = existsSync(join(directory, 'dispatch.json'));
-  const accepted = readEvent(directory, task.taskId, 'accepted');
-  const reported = readReport(directory, task.taskId);
-
-  return !dispatched && !accepted && !reported;
-};
-
-export const releaseRejectedSuccessor = (root: string, directory: string, task: Task): void => {
-  if (!task.predecessorTaskId || !rejectedBeforeDispatch(directory, task)) {
-    return;
-  }
-
-  const predecessorDirectory = join(root, task.predecessorTaskId);
-
-  if (readSuccessor(predecessorDirectory)?.successorTaskId === task.taskId) {
-    unlinkSync(join(predecessorDirectory, 'successor.json'));
-  }
-};
-
 export const requireUnclaimed = (root: string, source: { directory: string; task: Task }): void => {
-  const claim = readSuccessor(source.directory);
-  const pending = readTasks(root).find(({ directory, task }) => {
-    const followsSource = task.predecessorTaskId === source.task.taskId;
-
-    return followsSource && !rejectedBeforeDispatch(directory, task);
-  });
-  const successor = claim?.successorTaskId ?? pending?.task.taskId;
+  const diagnostics: string[] = [];
+  const successor = findSuccessor(readTasks(root, diagnostics), source.task.taskId);
 
   if (successor) {
     throw new Error(
-      `Task ${source.task.taskId} already has successor attempt ${successor}. No retry or age-based reclaim.`,
+      `Task ${source.task.taskId} already has successor attempt ${successor.taskId}. No retry.`,
     );
   }
 
-  requireHandover(source.directory, source.task);
-};
-
-export const checkHandoff = (root: string, source: FollowUpPreparation, successor: Task): void => {
-  authorizeHistoryTask(
-    root,
-    { file: successor.parentSession, id: successor.parentSessionId },
-    source.task.taskId,
-  );
-
-  if (
-    !isDeepStrictEqual(readTask(source.directory), source.task) ||
-    readSuccessor(source.directory)?.successorTaskId !== successor.taskId
-  ) {
-    throw new Error(`Successor ${successor.taskId} no longer owns its predecessor claim.`);
+  if (diagnostics.length) {
+    throw new Error(`Cannot verify saved follow-up attempts: ${diagnostics.join(' ')}`);
   }
 
   requireHandover(source.directory, source.task);
+};
+
+export const checkHandoff = (source: FollowUpPreparation): void => {
+  if (!isDeepStrictEqual(readTask(source.directory), source.task)) {
+    throw new Error('Source task changed during follow-up validation.');
+  }
 
   if (!isDeepStrictEqual(validateNative(source.task, source.origin), source.native)) {
-    throw new Error('Native file changed during follow-up validation. Claim retained; no retry.');
+    throw new Error('Native file changed during follow-up validation.');
   }
-};
-
-export const checkNativeWriterListing = (response: string, task: Task): void => {
-  const live = result(response);
-
-  if (live.type !== 'agent_list') {
-    throw new Error('Malformed live native writer listing.');
-  }
-
-  refuseLiveNativeWriter(live.agents, task);
 };

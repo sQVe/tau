@@ -7,14 +7,15 @@ import type { OwnedWorker } from '../cancellation.js';
 import { genericReportPath, readGenericReference } from '../generic.js';
 import { readPendingQuestion, readReply } from '../questionRecords.js';
 import {
+  findSuccessor,
   publish,
   readEvent,
   readGenericSubmission,
   readPane,
   readOptionalRecord,
   readReport,
-  readSuccessor,
   readTask,
+  readTasks,
 } from '../records.js';
 import {
   harnessOf,
@@ -194,7 +195,7 @@ export const taskRecordStatus = (directory: string, task: Task, controlled = fal
     ...(outcome === undefined ? {} : { outcome }),
     predecessorTaskId: task.predecessorTaskId,
     predecessorName: predecessorName(dirname(directory), task),
-    successorTaskId: readSuccessor(directory)?.successorTaskId,
+    successorTaskId: findSuccessor(readTasks(dirname(directory)), task.taskId)?.taskId,
     deadline: task.deadline,
     ...(state === 'stopped'
       ? { stoppedAt: settled?.at ?? event('timeout')?.at ?? event('cancelled')?.at ?? cleanup?.at }
