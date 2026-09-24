@@ -47,11 +47,11 @@ Tau checkout. Files about one worktree live in that worktree's `.tau/`.
 Store records and Pi worker transcripts in `<agentDir>/tau/<checkout>/workers/<taskId>/`. Launch,
 history, status, and follow-up read only the current checkout's folder.
 
-Derive `<checkout>` from the Tau package root: the nearest directory above the realpath of the
-loaded extension module that holds Tau's `package.json`. Name the folder `<basename>-<hash>`, where
-the hash is the first 8 hex digits of the SHA-256 of that realpath. The `main` checkout keeps one
-folder because its path does not change when it pulls or switches commits. The hash separates two
-checkouts with the same basename and keeps the new folders apart from the old `workers/` folder.
+Derive `<checkout>` from the realpath of the Tau package root that holds the loaded extension
+module. Name the folder `<basename>-<hash>`, where the hash is the first 8 hex digits of the SHA-256
+of that realpath. The `main` checkout keeps one folder because its path does not change when it
+pulls or switches commits. The hash separates two checkouts with the same basename and keeps the new
+folders apart from the old `workers/` folder.
 
 Leave records in `<agentDir>/tau/workers/` in place. Tau does not read, migrate, or delete them.
 
