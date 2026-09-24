@@ -72,7 +72,8 @@ export const repositoryPathPrefix = async (
     ['rev-parse', '--is-inside-work-tree', '--show-prefix'],
     { timeout: null },
   );
-  const [insideWorkTree, prefix = ''] = output.split('\n');
+  // The prefix is a path, so only the first line break separates the two answers.
+  const [insideWorkTree, ...prefixLines] = output.split('\n');
 
   if (insideWorkTree !== 'true') {
     throw new Error(
@@ -80,7 +81,7 @@ export const repositoryPathPrefix = async (
     );
   }
 
-  return prefix;
+  return prefixLines.join('\n').replace(/\n$/, '');
 };
 
 // HEAD is unresolved before the first commit.
