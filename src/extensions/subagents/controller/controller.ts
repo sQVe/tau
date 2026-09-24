@@ -61,18 +61,14 @@ import {
   agentPromptArguments,
   herdrClient,
   inspectWorker,
-  waitForShell,
   waitForPiIdentity,
-  integer,
-  isBareShell,
   isHerdrError,
   prepareTaskDirectory,
-  readProcessStart,
   verifyRejectedStart,
   waitForWorkerReadiness,
   workerArguments,
 } from './inspect.js';
-import type { HerdrClient, InspectionBudget } from './inspect.js';
+import type { HerdrClient } from './inspect.js';
 import {
   checkHandoff,
   checkNativeWriterListing,
@@ -91,6 +87,8 @@ import {
   cleanupDetail,
   recordNativeIssue,
 } from './record.js';
+import { waitForShell, integer, isBareShell, readProcessStart } from './shellIdentity.js';
+import type { InspectionBudget } from './shellIdentity.js';
 import { closeUnstartedPane, stopOwnedWorker } from './stop.js';
 import type { Handle } from './types.js';
 
