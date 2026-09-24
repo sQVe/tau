@@ -183,7 +183,7 @@ export const fakeCommit = () => {
     }
 
     if (commandArguments.includes('--show-prefix')) {
-      stdout = '';
+      stdout = 'true\n\n';
     }
 
     return { code: 0, killed: false, stderr: '', stdout };
