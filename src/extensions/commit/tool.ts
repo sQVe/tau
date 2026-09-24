@@ -12,6 +12,7 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import { errorMessage } from '../../errors/index.js';
 import { reviewComments } from './commentReview.js';
 import { executeGroup } from './groupExecution.js';
+import type { GroupOutcome } from './groupExecution.js';
 import type { CommitSuccess, RequestReview, Reviews } from './types.js';
 import {
   commitToolParameters,
@@ -95,10 +96,10 @@ const runGroup = async (
   groupCount: number,
 ): Promise<CommitSuccess> => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), 'tau-commit-message-'));
-  let result: CommitSuccess;
+  let outcome: GroupOutcome;
 
   try {
-    result = await executeGroup({
+    outcome = await executeGroup({
       parameters: group,
       temporaryDirectory,
       pi: runtime.pi,
@@ -119,12 +120,13 @@ const runGroup = async (
   }
 
   const cleanupFailure = await cleanupTemporary(temporaryDirectory);
+  const { kind, result } = outcome;
 
   if (cleanupFailure !== null) {
     result.content.push({ type: 'text', text: cleanupFailure });
   }
 
-  if (!result.details.sha && groupCount > 1) {
+  if (kind === 'cancelled' && groupCount > 1) {
     throw new Error(
       cleanupFailure === null ? 'Commit cancelled' : `Commit cancelled\n${cleanupFailure}`,
     );

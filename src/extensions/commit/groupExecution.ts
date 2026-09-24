@@ -57,6 +57,11 @@ interface GroupRun extends GroupExecution {
   commentReview: CommentReview | undefined;
 }
 
+export interface GroupOutcome {
+  kind: 'cancelled' | 'committed';
+  result: CommitSuccess;
+}
+
 interface CleanupCheck {
   pi: Pick<ExtensionAPI, 'exec'>;
   cwd: string;
@@ -542,11 +547,14 @@ const reportCommit = async (run: GroupRun, commitResult: ExecResult): Promise<Co
   }
 };
 
-export const executeGroup = async (execution: GroupExecution): Promise<CommitSuccess> => {
+export const executeGroup = async (execution: GroupExecution): Promise<GroupOutcome> => {
   const subject = execution.parameters.subject;
   const body = normalizeBody(execution.parameters.body ?? null);
   const messagePath = join(execution.temporaryDirectory, 'message');
-  const cancelled = buildCancelledResult(execution.parameters.files, subject, body);
+  const cancelled = {
+    kind: 'cancelled',
+    result: buildCancelledResult(execution.parameters.files, subject, body),
+  } as const;
 
   if (execution.signal?.aborted) {
     return cancelled;
@@ -599,5 +607,5 @@ export const executeGroup = async (execution: GroupExecution): Promise<CommitSuc
 
   const commitResult = await commitStaged(run);
 
-  return reportCommit(run, commitResult);
+  return { kind: 'committed', result: await reportCommit(run, commitResult) };
 };
