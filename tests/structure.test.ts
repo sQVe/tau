@@ -27,7 +27,7 @@ it('names each source test after the module beside it', () => {
 it('keeps fixtures out of production modules', () => {
   const importers = sourceFiles
     .filter((path) => !isTest(path) && !isFixture(path))
-    .filter((path) => /['"]\.{1,2}\/[^'"]*fixtures\//.test(readFileSync(join(root, path), 'utf8')));
+    .filter((path) => /[/'"`]fixtures[/'"`]/.test(readFileSync(join(root, path), 'utf8')));
 
   expect(importers).toEqual([]);
 });
