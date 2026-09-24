@@ -59,3 +59,4 @@ ADR is not a feature summary, implementation plan, or acceptance checklist.
 - [0038: Block commits only on comment inaccuracies](./0038-block-commits-only-on-comment-inaccuracies.md)
 - [0039: Reuse reported checks and run one full suite per work state](./0039-reuse-reported-checks-and-run-one-full-suite.md)
 - [0040: Release undispatched follow-up claims after confirmed cleanup](./0040-release-undispatched-follow-up-claims-after-cleanup.md)
+- [0041: Default the delegate to gpt-6-luna](./0041-default-the-delegate-to-gpt-6-luna.md)

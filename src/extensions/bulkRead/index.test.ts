@@ -389,12 +389,12 @@ it('reads the shared reference and ignores the removed bulk-read setting', async
 
   await app.execute();
 
-  expect(app.find).toHaveBeenLastCalledWith('openai-codex', 'gpt-5.6-luna');
+  expect(app.find).toHaveBeenLastCalledWith('openai-codex', 'gpt-6-luna');
 
   vi.stubEnv('TAU_DELEGATE_MODEL', '');
   await app.execute();
 
-  expect(app.find).toHaveBeenLastCalledWith('openai-codex', 'gpt-5.6-luna');
+  expect(app.find).toHaveBeenLastCalledWith('openai-codex', 'gpt-6-luna');
 
   vi.stubEnv('TAU_DELEGATE_MODEL', 'openrouter/vendor/model');
   await app.execute();

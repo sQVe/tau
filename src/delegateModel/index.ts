@@ -4,7 +4,7 @@ export const delegateReference = (): string => {
   // eslint-disable-next-line node/no-process-env -- The delegate is selected independently of Pi's session model.
   const reference = process.env.TAU_DELEGATE_MODEL;
 
-  return reference == null || reference === '' ? 'openai-codex/gpt-5.6-luna' : reference;
+  return reference == null || reference === '' ? 'openai-codex/gpt-6-luna' : reference;
 };
 
 export const resolveDelegate = (context: ExtensionContext, reference = delegateReference()) => {
