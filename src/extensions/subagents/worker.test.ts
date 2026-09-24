@@ -292,6 +292,46 @@ it.each(['deadline', 'parent stopped', 'question', 'reported', 'children'] as co
   },
 );
 
+it('keeps settled activity when a streaming update was still pending', async () => {
+  const worker = await waitingWorker();
+  worker.emit('message_update');
+  await worker.emit('agent_settled');
+  const settled = readWorkerActivity(worker.directory, 'task');
+
+  await vi.advanceTimersByTimeAsync(500);
+
+  expect(settled?.phase).toBe('done');
+  expect(readWorkerActivity(worker.directory, 'task')).toEqual(settled);
+  expect(worker.shutdown).toHaveBeenCalledOnce();
+});
+
+it('leaves activity unchanged when a queued update outlives its Pi context', async () => {
+  const worker = await waitingWorker();
+  worker.emit('message_update');
+  const before = readWorkerActivity(worker.directory, 'task');
+  Object.defineProperty(worker.context, 'sessionManager', {
+    get() {
+      throw new Error('This extension ctx is stale after session replacement or reload.');
+    },
+  });
+
+  expect(() => vi.advanceTimersByTime(500)).not.toThrow();
+  expect(readWorkerActivity(worker.directory, 'task')).toEqual(before);
+  await worker.emit('session_shutdown');
+});
+
+it('leaves activity unchanged when Pi session usage is unavailable during a tool event', async () => {
+  const worker = await waitingWorker();
+  const before = readWorkerActivity(worker.directory, 'task');
+  vi.spyOn(worker.context.sessionManager, 'getBranch').mockImplementation(() => {
+    throw new Error('Session usage unavailable.');
+  });
+
+  expect(() => worker.emit('tool_execution_start', { toolName: 'read' })).not.toThrow();
+  expect(readWorkerActivity(worker.directory, 'task')).toEqual(before);
+  await worker.emit('session_shutdown');
+});
+
 it('publishes a worker phase description while keeping lifecycle, automatic activity, model, and usage', async () => {
   const worker = await waitingWorker();
   worker.branch.push(assistantUsageEntry('current', 25, 5));

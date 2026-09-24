@@ -112,23 +112,35 @@ const taskUsage = (
   };
 };
 
+const clearActivityTimer = (state: WorkerState): void => {
+  clearTimeout(state.activityTimer);
+
+  state.activityTimer = undefined;
+};
+
 const recordWorkerActivity = (
   state: WorkerState,
   context: ExtensionContext,
   phase: WorkerPhase,
   label?: string,
 ): void => {
+  clearActivityTimer(state);
+
   if (!state.task) {
     return;
   }
 
-  const usage = taskUsage(readPiSessionUsage(context), state.usageBaseline);
-
-  state.activitySequence += 1;
-  state.phase = phase;
-  state.phaseLabel = label;
+  if (state.settled && phase !== 'done') {
+    return;
+  }
 
   try {
+    const usage = taskUsage(readPiSessionUsage(context), state.usageBaseline);
+
+    state.activitySequence += 1;
+    state.phase = phase;
+    state.phaseLabel = label;
+
     writeWorkerActivity(state.directory, {
       taskId: state.task.taskId,
       sequence: state.activitySequence,
@@ -664,10 +676,7 @@ const registerActivityHandlers = (pi: ExtensionAPI, state: WorkerState): void =>
 
 const registerSessionShutdownHandler = (pi: ExtensionAPI, state: WorkerState): void => {
   pi.on('session_shutdown', () => {
-    if (state.activityTimer) {
-      clearTimeout(state.activityTimer);
-      state.activityTimer = undefined;
-    }
+    clearActivityTimer(state);
 
     state.removeNotificationListener?.();
     clearInterval(state.kickoff);
