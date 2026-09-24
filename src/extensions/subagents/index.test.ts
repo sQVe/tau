@@ -86,6 +86,8 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
   await shutdown;
   expect(cleanupFinished).toBe(true);
   expect(shutdownReason).toBe('reload');
+});
+
 it('updates the parent widget from live worker rows without a model turn', () => {
   vi.useFakeTimers();
   const handlers = new Map<string, (event: unknown, context: ExtensionContext) => void>();

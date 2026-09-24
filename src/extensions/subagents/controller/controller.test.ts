@@ -2939,7 +2939,8 @@ it('keeps a confirmed stop when the shell changes before the pane closes', async
   expect(status.cleanup).toContain('pane closure refused');
   expect(calls.some((call) => call[1] === 'close')).toBe(false);
 });
-it('keeps a busy-looking transport error uncertain instead of freeing its slot', async ({
+
+it('treats a busy-looking text error as an ordinary startup failure without a busy retry', async ({
   onTestFinished,
 }) => {
   const fixture = setup(onTestFinished, 0, async (argumentsList) => {
@@ -2952,11 +2953,11 @@ it('keeps a busy-looking transport error uncertain instead of freeing its slot',
   vi.stubEnv('TAU_SUBAGENT_CAP', '1');
   const launched = await fixture.controller.launch(fixture.input);
 
-  expect(launched.state).toBe('cleanupUnconfirmed');
-  expect(launched.failure).toContain('uncertain');
-  await expect(fixture.controller.launch(fixture.input)).rejects.toThrow('capacity full');
+  expect(launched.state).toBe('stopped');
+  expect(launched.failure).toContain('No automatic retry');
   expect(fixture.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
-  expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(false);
+  expect(readdirSync(launched.directory)).not.toContain('startRetry.json');
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
 });
 
 it('exposes read-only widget rows without inferring success from worker readiness', async ({

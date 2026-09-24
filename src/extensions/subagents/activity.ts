@@ -41,7 +41,7 @@ const activitySchema = Type.Object(
 
 export type WorkerActivity = Static<typeof activitySchema>;
 
-export const phaseDescriptionLimit = 200;
+const phaseDescriptionLimit = 200;
 
 // A worker-authored phase is plain single-line text. Reject empty, control-character, or oversized
 // input at the trust boundary before any activity is written.

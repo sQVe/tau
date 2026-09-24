@@ -79,7 +79,7 @@ export const workerGroup = (row: WorkerWidgetRow): WorkerGroup => {
   return 'active';
 };
 
-export const workerRowPriority = (row: WorkerWidgetRow): number => {
+const workerRowPriority = (row: WorkerWidgetRow): number => {
   const group = workerGroup(row);
 
   if (group === 'stopped') {
@@ -189,7 +189,7 @@ export const workerRightTime = (row: WorkerWidgetRow, now: number): string => {
 const maxTaskLabelLength = 80;
 
 // Older records have no saved label, so derive a stable human label from the task text.
-export const shortTaskLabelFromText = (text: string): string => {
+const shortTaskLabelFromText = (text: string): string => {
   const firstLine = text
     .split(/\r?\n/u)
     .map((line) => line.trim())
@@ -427,7 +427,7 @@ const bottomBorder = (
 export const renderWorkerWidget = (
   rows: WorkerWidgetRow[],
   width: number,
-  now: number,
+  _now: number,
   theme?: Theme,
 ): string[] => {
   if (width <= 0 || rows.length === 0) {
