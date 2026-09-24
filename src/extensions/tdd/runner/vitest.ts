@@ -4,7 +4,7 @@ import { isAbsolute, join, relative } from 'node:path';
 import { tddConfig } from '../config.js';
 import { saveDiagnostics } from './diagnostics.js';
 import { defaultSpawn } from './process.js';
-import { defaultResolveVitest, resolutionFailure } from './resolution.js';
+import { defaultResolveVitest, explainSessionCwd, resolutionFailure } from './resolution.js';
 import { createDiagnosticsDirectory } from './retention.js';
 import type {
   ResolveVitestFn,
@@ -438,11 +438,11 @@ const runInDirectory = async (
   try {
     runner = dependencies.resolveVitest(input.cwd);
   } catch (error) {
-    return { report: resolutionFailure(input.cwd, 'resolver', error) };
+    runner = resolutionFailure(input.cwd, 'resolver', error);
   }
 
   if ('kind' in runner) {
-    return { report: runner };
+    return { report: explainSessionCwd(runner, input.cwd, scopedPaths(input)) };
   }
 
   const result = await dependencies.spawn(runner.path, runnerArguments, {
