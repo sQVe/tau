@@ -18,10 +18,14 @@ import { writeRenderers } from '../../../node_modules/@earendil-works/pi-coding-
 import { ToolExecutionComponent } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js';
 import tddExtension from './index.js';
 import { runContext, summarize } from './render.js';
-import { runTests } from './runner/index.js';
 import type { RunnerResult } from './runner/types.js';
+import { runTests } from './runner/vitest.js';
+import type * as runnerModule from './runner/vitest.js';
 
-vi.mock('./runner/index.js', () => ({ runTests: vi.fn<typeof runTests>() }));
+vi.mock('./runner/vitest.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof runnerModule>()),
+  runTests: vi.fn<typeof runTests>(),
+}));
 
 type Handler = (event: Record<string, unknown>, context: ExtensionContext) => unknown;
 

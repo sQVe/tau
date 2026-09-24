@@ -4,12 +4,16 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { isMissingFile } from '../../errors/index.js';
 import { classifyPath, configurationGlobs, tddConfig } from './config.js';
-import { runTests } from './runner/index.js';
 import { finishDiagnostics } from './runner/retention.js';
 import type { RunDiagnostics, RunnerResult } from './runner/types.js';
-import type { Behavior } from './types.js';
-
-type Freshness = 'fresh' | 'stale' | 'unknown';
+import { runTests } from './runner/vitest.js';
+import type {
+  Behavior,
+  Freshness,
+  ObservationResult,
+  TestObservation,
+  TestScope,
+} from './types.js';
 
 const testNames = (behavior: Behavior) =>
   Array.isArray(behavior.testFullName) ? behavior.testFullName : [behavior.testFullName];
@@ -136,7 +140,7 @@ const selectedThrownErrorType = (cwd: string, behavior: Behavior, report: Runner
 
 interface LatestRun {
   behavior: Behavior;
-  scope: 'focused' | 'full';
+  scope: TestScope;
   kind: RunnerResult['kind'];
   fingerprint: string | null;
   freshness: Freshness;
@@ -163,7 +167,7 @@ interface ObservationState {
 
 interface RunRequest {
   requested: Behavior;
-  scope: 'focused' | 'full';
+  scope: TestScope;
   signal?: AbortSignal | undefined;
   onStart?: ((behavior: Behavior) => void) | undefined;
 }
@@ -241,7 +245,7 @@ const editHint = (state: ObservationState, current: string | null): string | und
 
 const runHint = (
   state: ObservationState,
-  scope: 'focused' | 'full',
+  scope: TestScope,
   report: RunnerResult,
   freshness: Freshness,
 ): 'stale' | 'unknown' | 'full' | undefined => {
@@ -324,14 +328,15 @@ const runTestsFor = (
           cwd: state.cwd,
           scope: 'changed',
           files: behavior.files,
-          filter: `^(?:${testNames(behavior)
-            .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-            .join('|')})$`,
+          testNames: testNames(behavior),
           signal: request.signal,
         },
   );
 
-const performRun = async (state: ObservationState, request: RunRequest) => {
+const performRun = async (
+  state: ObservationState,
+  request: RunRequest,
+): Promise<ObservationResult> => {
   const behavior = normalizeBehavior(state.cwd, request.requested);
   const key = identity(behavior);
 
@@ -408,7 +413,7 @@ const performRun = async (state: ObservationState, request: RunRequest) => {
 const runObservation = (state: ObservationState, request: RunRequest) =>
   enqueue(state, () => performRun(state, request));
 
-export const createTestObservation = (cwd: string) => {
+export const createTestObservation = (cwd: string): TestObservation => {
   const state: ObservationState = {
     cwd,
     active: null,
@@ -422,7 +427,7 @@ export const createTestObservation = (cwd: string) => {
   return {
     run: (
       requested: Behavior,
-      scope: 'focused' | 'full',
+      scope: TestScope,
       signal?: AbortSignal,
       onStart?: (behavior: Behavior) => void,
     ) => runObservation(state, { requested, scope, signal, onStart }),

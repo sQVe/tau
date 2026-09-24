@@ -1,16 +1,12 @@
 import { isAbsolute, relative } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
-import type { createTestObservation } from './observation.js';
 import { maximumRetainedRuns } from './runner/retention.js';
-import { maximumFailures } from './runner/types.js';
 import type { DiagnosticFile, RunnerResult } from './runner/types.js';
-import type { Behavior } from './types.js';
+import { maximumFailures } from './runner/vitest.js';
+import type { Behavior, ObservationResult } from './types.js';
 
-type Observation = Omit<
-  Awaited<ReturnType<ReturnType<typeof createTestObservation>['run']>>,
-  'hint'
->;
+type Observation = Omit<ObservationResult, 'hint'>;
 
 const maximumSummaryCharacters = 2000;
 

@@ -3,7 +3,8 @@ import type * as nodePath from 'node:path';
 import { expect, it, vi } from 'vitest';
 
 import { createTestObservation } from './observation.js';
-import { runTests } from './runner/index.js';
+import { runTests } from './runner/vitest.js';
+import type * as runnerModule from './runner/vitest.js';
 
 // Exercise Node's Windows path rules on every host, without claiming Windows runner coverage.
 vi.mock('node:path', async (importOriginal) => {
@@ -11,7 +12,10 @@ vi.mock('node:path', async (importOriginal) => {
 
   return { ...path, ...path.win32 };
 });
-vi.mock('./runner/index.js', () => ({ runTests: vi.fn<typeof runTests>() }));
+vi.mock('./runner/vitest.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof runnerModule>()),
+  runTests: vi.fn<typeof runTests>(),
+}));
 
 it('accepts native Windows separators in literal relative test paths', async () => {
   vi.mocked(runTests).mockResolvedValue({ kind: 'pass', tests: [] });

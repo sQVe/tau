@@ -15,12 +15,11 @@ import type {
   TestFailure,
   TestResult,
 } from './types.js';
-import {
-  defaultTimeoutMilliseconds,
-  fullTimeoutMilliseconds,
-  maximumFailures,
-  maximumMessageCharacters,
-} from './types.js';
+
+const defaultTimeoutMilliseconds = 30_000;
+const fullTimeoutMilliseconds = 120_000;
+export const maximumFailures = 10;
+export const maximumMessageCharacters = 300;
 
 interface VitestAssertionResult {
   fullName?: string;
@@ -92,21 +91,16 @@ const assertionFullName = (assertion: VitestAssertionResult, version: string): s
 };
 
 // A focused run reports every unselected test as skipped, which says nothing about it.
-const selects = (filter: string | undefined) => {
-  if (filter == null) {
+const selects = (testNames: readonly string[] | undefined) => {
+  if (testNames === undefined) {
     return () => true;
   }
 
-  let pattern: RegExp;
-
-  try {
-    pattern = new RegExp(filter);
-  } catch {
-    return () => true;
-  }
-
-  return (fullname: string) => pattern.test(fullname);
+  return (fullname: string) => testNames.includes(fullname);
 };
+
+const exactNamePattern = (testNames: readonly string[]) =>
+  `^(?:${testNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`;
 
 const toTestResult = (
   file: VitestTestFile,
@@ -295,8 +289,8 @@ const buildArguments = (input: RunTestsInput, outputFile: string): string[] | nu
     runnerArguments.push(...paths.map(toFilterArgument));
   }
 
-  if (input.filter != null) {
-    runnerArguments.push('-t', input.filter);
+  if (input.testNames !== undefined) {
+    runnerArguments.push('-t', exactNamePattern(input.testNames));
   }
 
   return runnerArguments;
@@ -368,7 +362,7 @@ const classifyReport = (
   report: VitestReport,
   version: string,
 ): RunnerResult => {
-  const tests = collectTests(report, selects(input.filter), version);
+  const tests = collectTests(report, selects(input.testNames), version);
   const total = report.numTotalTests ?? 0;
   const failed = report.numFailedTests ?? 0;
   const files = report.testResults ?? [];
@@ -388,7 +382,7 @@ const classifyReport = (
     return compileErrorResult(result, tests, 'vitest did not complete successfully');
   }
 
-  if (input.filter !== undefined && tests.length === 0) {
+  if (input.testNames !== undefined && tests.length === 0) {
     return noFilterMatchResult(input, report, tests, version);
   }
 
@@ -454,9 +448,9 @@ const runInDirectory = async (
   return { report: await classifyResult(input, result, outputFile, runner.version), result };
 };
 
-export const runVitest = async (
+export const runTests = async (
   input: RunTestsInput,
-  dependencies: RunnerDeps,
+  dependencies: RunnerDeps = defaultDeps(input.scope),
 ): Promise<RunnerResult> => {
   const directory = await createDiagnosticsDirectory();
   const started = performance.now();

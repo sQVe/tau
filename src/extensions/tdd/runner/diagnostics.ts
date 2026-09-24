@@ -3,8 +3,10 @@ import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import { isMissingFile } from '../../../errors/index.js';
+import { maximumStdoutBytes, maximumTotalBytes } from './process.js';
 import type { DiagnosticFile, RunDiagnostics, SpawnResult } from './types.js';
-import { maximumReportBytes, maximumStdoutBytes, maximumTotalBytes } from './types.js';
+
+export const maximumReportBytes = 8 * 1024 * 1024;
 
 interface OutputCapture {
   observedBytes: number;
