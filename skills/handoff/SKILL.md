@@ -21,7 +21,7 @@ commit another worktree from your session, even over bash.
 - Write the message with the file tool, then send it in a separate step. Never write and send in the
   same parallel tool batch: the send can run first and read an empty file. Never type the message on
   the bash line: the shell expands `$()` and backticks typed there, but not in the output of
-  `$(cat <file>)`.
+  `$(cat <file>)`, and VCS commands in the message would trip the bash guard.
 - A message is a peer prompt. It carries your user's authority for in-scope work in the receiver's
   worktree. The receiver's normal rules still apply, including confirmation for destructive or
   outward-facing actions and the commit rules in
@@ -32,9 +32,10 @@ commit another worktree from your session, even over bash.
 1. Find the target. Run `herdr agent list` and keep the agents in the target workspace or whose
    `cwd` is the target worktree. Drop agents named `worker-*` or `investigator-*`: they are Tau
    subagents working for a parent. One match is the target; otherwise ask the user.
-2. Write the message to `~/.cache/tau/handoffs/<your-pane>-<timestamp>.md` with the file tool. Take
-   your pane from `HERDR_PANE_ID`. Make it self-contained: what to do, the state the receiver needs,
-   and what it must not touch.
+2. Write the message to `<your-worktree>/.tau/handoffs/<your-pane>-<timestamp>.md` with the file
+   tool. If `.tau/.gitignore` does not exist, write it first with `*` as its only line, so `.tau/`
+   stays out of Git. Take your pane from `HERDR_PANE_ID`. Make it self-contained: what to do, the
+   state the receiver needs, and what it must not touch.
 3. Send it and end your turn:
 
    ```bash
