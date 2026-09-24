@@ -12,9 +12,10 @@ import { Type } from 'typebox';
 import { classifyPath } from './config.js';
 import { createTestObservation, observationDirectory } from './observation.js';
 import { runContext, selectionSummary, summarize } from './render.js';
+import type { TestObservation } from './types.js';
 
 interface ObservationTracker {
-  current: { cwd: string; observation: ReturnType<typeof createTestObservation> } | undefined;
+  current: { cwd: string; observation: TestObservation } | undefined;
 }
 
 const runTestsDescription =

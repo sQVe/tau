@@ -8,13 +8,13 @@ import type { AgentSessionEvent, ExtensionFactory } from '@earendil-works/pi-cod
 import type { TestContext } from 'vitest';
 import { expect } from 'vitest';
 
-import type { createTestObservation } from '../src/extensions/tdd/observation.js';
+import type { ObservationResult } from '../src/extensions/tdd/types.js';
 import { initializeRepository } from './gitRepository.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createPiSession } from './piSession.js';
 
 interface ToolResult {
-  details: Awaited<ReturnType<ReturnType<typeof createTestObservation>['run']>>;
+  details: ObservationResult;
   content: { type: 'text'; text: string }[];
 }
 
