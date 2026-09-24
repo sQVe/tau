@@ -8,7 +8,7 @@ import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { buildPayload, bulkRead, stripLinePrefixes } from './tool.js';
+import { bulkRead } from './tool.js';
 
 const execFile = promisify(execFileCallback);
 
@@ -28,13 +28,16 @@ const setup = async () => {
   return { cwd, model, response, complete, context };
 };
 
-it('numbers payload lines from 1 with a line prefix', () => {
-  expect(
-    buildPayload([
-      { path: 'a.ts', content: 'first\nsecond\n' },
-      { path: 'b.ts', content: 'next' },
-    ]),
-  ).toBe('a.ts\n1→first\n2→second\n3→\n\nb.ts\n1→next');
+it('numbers payload lines from 1 with a line prefix', async () => {
+  const { cwd, context, model, complete } = await setup();
+  await writeFile(join(cwd, 'a.ts'), 'first\nsecond\n');
+  await writeFile(join(cwd, 'b.ts'), 'next');
+
+  await bulkRead(context, model, { paths: ['a.ts', 'b.ts'], question: 'Why?' }, undefined);
+
+  expect(complete.mock.calls[0]?.[1].messages[0]?.content).toBe(
+    'Question: Why?\n\na.ts\n1→first\n2→second\n3→\n\nb.ts\n1→next',
+  );
 });
 
 it('sends all files in one call with the question and framing', async () => {
@@ -237,8 +240,15 @@ it.each(['error', 'aborted', 'length'] as const)(
   },
 );
 
-it('strips line-number prefixes from every line of the reply', () => {
-  expect(stripLinePrefixes('1→first\n20→second\nfile.ts:3\n 4→indented\n404: not found')).toBe(
-    'first\nsecond\nfile.ts:3\n 4→indented\n404: not found',
+it('strips line-number prefixes from every line of the reply', async () => {
+  const { context, model, complete } = await setup();
+  complete.mockResolvedValue(
+    fauxAssistantMessage('1→first\n20→second\nfile.ts:3\n 4→indented\n404: not found'),
   );
+
+  const result = await bulkRead(context, model, { paths: ['a.ts'], question: 'Why?' }, undefined);
+
+  expect(result.content).toEqual([
+    { type: 'text', text: 'first\nsecond\nfile.ts:3\n 4→indented\n404: not found' },
+  ]);
 });
