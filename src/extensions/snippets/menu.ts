@@ -1,11 +1,18 @@
 import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
-import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
+import {
+  fuzzyFilter,
+  Input,
+  Key,
+  matchesKey,
+  truncateToWidth,
+  wrapTextWithAnsi,
+} from '@earendil-works/pi-tui';
 import type { Component, TUI } from '@earendil-works/pi-tui';
 
 import { isBottom, isDown, isTop, isUp } from '../../keys/index.js';
 import type { Snippet } from './types.js';
 
-// Lines render() always emits: two borders, the title, two blanks, the hints.
+// Lines render() always emits: two borders, the title, the search line, a blank, the hints.
 const chromeHeight = 6;
 // Chrome plus room for the editor below, when the terminal is tall enough.
 const frameHeight = 10;
@@ -34,8 +41,12 @@ interface ViewportRequest {
 interface MenuModel {
   prepends: Snippet[];
   appends: Snippet[];
-  items: Snippet[];
   working: Set<string>;
+}
+
+interface Groups {
+  prepends: Snippet[];
+  appends: Snippet[];
 }
 
 /**
@@ -78,7 +89,7 @@ const clipToViewport = (request: ViewportRequest): Viewport => {
 };
 
 class SnippetMenuComponent implements Component {
-  private mode: 'list' | 'preview' = 'list';
+  private mode: 'list' | 'search' | 'preview' = 'list';
   private cursor = 0;
   private listScroll = 0;
   private previewScroll = 0;
@@ -87,12 +98,39 @@ class SnippetMenuComponent implements Component {
   private readonly theme: MenuTheme;
   private readonly terminal: TUI;
   private readonly done: (result: boolean) => void;
+  private readonly query = new Input({ prompt: ' / ' });
 
   constructor(model: MenuModel, theme: MenuTheme, terminal: TUI, done: (result: boolean) => void) {
     this.model = model;
     this.theme = theme;
     this.terminal = terminal;
     this.done = done;
+    this.query.onSubmit = () => {
+      this.leaveSearch();
+    };
+    this.query.onEscape = () => {
+      this.leaveSearch();
+    };
+  }
+
+  private leaveSearch(): void {
+    this.mode = 'list';
+    this.query.focused = false;
+  }
+
+  // Filter each group separately so matches keep their placement headers.
+  private groups(): Groups {
+    const text = this.query.getValue();
+    const match = (snippets: Snippet[]) =>
+      fuzzyFilter(snippets, text, (snippet) => `${snippet.name} ${snippet.description}`);
+
+    return { prepends: match(this.model.prepends), appends: match(this.model.appends) };
+  }
+
+  private items(): Snippet[] {
+    const { prepends, appends } = this.groups();
+
+    return [...prepends, ...appends];
   }
 
   private dim(text: string): string {
@@ -100,10 +138,11 @@ class SnippetMenuComponent implements Component {
   }
 
   private itemAt(index: number): Snippet {
-    const snippet = this.model.items[index];
+    const items = this.items();
+    const snippet = items[index];
 
     if (snippet === undefined) {
-      throw new Error(`No snippet at index ${index} of ${this.model.items.length}`);
+      throw new Error(`No snippet at index ${index} of ${items.length}`);
     }
 
     return snippet;
@@ -129,25 +168,28 @@ class SnippetMenuComponent implements Component {
   }
 
   private buildListRows(width: number): ListRow[] {
-    return [
-      {
-        text: this.header('↑ PREPEND - added before your message', width),
-        itemIndex: null,
-      },
-      ...this.model.prepends.map((snippet, index) => ({
-        text: this.itemRow(snippet, index, width),
-        itemIndex: index,
-      })),
-      { text: '', itemIndex: null },
-      {
-        text: this.header('↓ APPEND - added after your message', width),
-        itemIndex: null,
-      },
-      ...this.model.appends.map((snippet, index) => ({
-        text: this.itemRow(snippet, this.model.prepends.length + index, width),
-        itemIndex: this.model.prepends.length + index,
-      })),
-    ];
+    const { prepends, appends } = this.groups();
+
+    if (prepends.length === 0 && appends.length === 0) {
+      return [{ text: this.header('  No matching snippets', width), itemIndex: null }];
+    }
+
+    const group = (title: string, snippets: Snippet[], offset: number): ListRow[] =>
+      snippets.length === 0
+        ? []
+        : [
+            { text: this.header(title, width), itemIndex: null },
+            ...snippets.map((snippet, index) => ({
+              text: this.itemRow(snippet, offset + index, width),
+              itemIndex: offset + index,
+            })),
+          ];
+    const prependRows = group('↑ PREPEND - added before your message', prepends, 0);
+    const appendRows = group('↓ APPEND - added after your message', appends, prepends.length);
+    const gap =
+      prependRows.length > 0 && appendRows.length > 0 ? [{ text: '', itemIndex: null }] : [];
+
+    return [...prependRows, ...gap, ...appendRows];
   }
 
   private buildPreviewRows(snippet: Snippet, width: number): string[] {
@@ -175,11 +217,24 @@ class SnippetMenuComponent implements Component {
       focusRow: rows.findIndex((row) => row.itemIndex === this.cursor),
     });
     this.listScroll = view.scroll;
+    const searchLine = truncateToWidth(this.query.render(width)[0] ?? '', width);
+
+    if (this.mode === 'search') {
+      return {
+        content: view.lines,
+        title: 'Prompt snippets',
+        subtitle: searchLine,
+        hints: 'type to filter • Enter/Esc done',
+      };
+    }
+
+    const filtered = this.query.getValue() !== '';
 
     return {
       content: view.lines,
       title: 'Prompt snippets',
-      hints: 'j/k move • g/G ends • Space toggle • Tab preview • Enter apply • Esc cancel',
+      subtitle: filtered ? searchLine : '',
+      hints: `j/k move • g/G ends • Space toggle • Tab preview • / search • Enter apply • Esc ${filtered ? 'clear' : 'cancel'}`,
     };
   }
 
@@ -196,32 +251,59 @@ class SnippetMenuComponent implements Component {
     return {
       content: view.lines,
       title: `Preview: ${snippet.name}`,
+      subtitle: '',
       hints: 'j/k or ↑↓ scroll • g/G or Home/End • Tab/Esc back',
     };
   }
 
+  private handleSearchInput(data: string): void {
+    const before = this.query.getValue();
+
+    this.query.handleInput(data);
+
+    if (this.query.getValue() !== before) {
+      this.cursor = 0;
+    }
+
+    this.terminal.requestRender();
+  }
+
   private handleListInput(data: string): void {
-    if (isUp(data)) {
-      this.cursor = (this.cursor - 1 + this.model.items.length) % this.model.items.length;
+    const count = this.items().length;
+
+    if (matchesKey(data, Key.enter)) {
+      this.done(true);
+
+      return;
+    }
+
+    if (matchesKey(data, Key.escape)) {
+      if (this.query.getValue() === '') {
+        this.done(false);
+
+        return;
+      }
+
+      this.query.setValue('');
+      this.cursor = 0;
+    } else if (matchesKey(data, '/')) {
+      this.mode = 'search';
+      this.query.focused = true;
+    } else if (count === 0) {
+      // Nothing to move to, toggle, or preview until the filter changes.
+    } else if (isUp(data)) {
+      this.cursor = (this.cursor - 1 + count) % count;
     } else if (isDown(data)) {
-      this.cursor = (this.cursor + 1) % this.model.items.length;
+      this.cursor = (this.cursor + 1) % count;
     } else if (isTop(data)) {
       this.cursor = 0;
     } else if (isBottom(data)) {
-      this.cursor = this.model.items.length - 1;
+      this.cursor = count - 1;
     } else if (matchesKey(data, Key.space)) {
       this.toggle(this.itemAt(this.cursor).id);
     } else if (matchesKey(data, Key.tab)) {
       this.mode = 'preview';
       this.previewScroll = 0;
-    } else if (matchesKey(data, Key.enter)) {
-      this.done(true);
-
-      return;
-    } else if (matchesKey(data, Key.escape)) {
-      this.done(false);
-
-      return;
     }
 
     this.terminal.requestRender();
@@ -264,15 +346,15 @@ class SnippetMenuComponent implements Component {
 
   render(width: number): string[] {
     const maximumHeight = this.maximumHeight();
-    const { content, title, hints } =
-      this.mode === 'list'
-        ? this.renderList(width, maximumHeight)
-        : this.renderPreview(width, maximumHeight);
+    const { content, title, subtitle, hints } =
+      this.mode === 'preview'
+        ? this.renderPreview(width, maximumHeight)
+        : this.renderList(width, maximumHeight);
 
     return [
       this.theme.fg('accent', '─'.repeat(width)),
       truncateToWidth(` ${this.theme.fg('accent', this.theme.bold(title))}`, width),
-      '',
+      subtitle,
       ...content,
       '',
       truncateToWidth(this.dim(` ${hints}`), width),
@@ -287,6 +369,8 @@ class SnippetMenuComponent implements Component {
   handleInput(data: string): void {
     if (this.mode === 'list') {
       this.handleListInput(data);
+    } else if (this.mode === 'search') {
+      this.handleSearchInput(data);
     } else {
       this.handlePreviewInput(data);
     }
@@ -305,8 +389,7 @@ export const openSnippetMenu = async (
   const working = new Set(enabled);
   const prepends = snippets.filter((snippet) => snippet.placement === 'prepend');
   const appends = snippets.filter((snippet) => snippet.placement === 'append');
-  const items = [...prepends, ...appends];
-  const model: MenuModel = { prepends, appends, items, working };
+  const model: MenuModel = { prepends, appends, working };
 
   // Pi resolves this to undefined when no component ran, which counts as a cancel.
   const confirmed = await context.ui.custom<boolean | undefined>(

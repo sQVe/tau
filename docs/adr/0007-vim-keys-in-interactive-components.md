@@ -66,6 +66,10 @@ A component that gives single letters to actions may not use `j`, `k`, `g`, or `
 commit overlay's Skip action moved from `k` to `x` for this reason. A letter that means "up" in one
 component and an action in another is worse than an unfamiliar letter.
 
+The same applies to typed text. A component that filters by text, such as the snippet menu, takes
+the query only after the user presses `/`. Enter and `esc` end the query and return the letters to
+navigation. A query field that always listens would take `j`, `k`, `g`, and `G` as text.
+
 ### What this decision does not cover
 
 No half-page scrolling on `ctrl+d` and `ctrl+u`: `ctrl+d` is Pi's exit binding. No `q` to quit: a
