@@ -47,11 +47,11 @@ interface CommitToolResult {
   details: { groups: CommitSuccess['details'][] };
 }
 
-const cleanupTemporary = async (directory: string) => {
+const cleanupTemporary = async (directory: string): Promise<string | null> => {
   try {
     await rm(directory, { recursive: true, force: true });
 
-    return '';
+    return null;
   } catch (error) {
     return `Temporary cleanup failed at ${directory}: ${String(error)}`;
   }
@@ -94,13 +94,11 @@ const runGroup = async (
   committedGroups: CommitSuccess['details'][],
   groupCount: number,
 ): Promise<CommitSuccess> => {
-  let temporaryDirectory = '';
-  let temporaryCleanup = '';
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), 'tau-commit-message-'));
+  let result: CommitSuccess;
 
   try {
-    temporaryDirectory = await mkdtemp(join(tmpdir(), 'tau-commit-message-'));
-
-    const result = await executeGroup({
+    result = await executeGroup({
       parameters: group,
       temporaryDirectory,
       pi: runtime.pi,
@@ -110,30 +108,29 @@ const runGroup = async (
       requestReview: runtime.requestReview,
       committedFiles: new Set(committedGroups.flatMap((committedGroup) => committedGroup.files)),
     });
-
-    temporaryCleanup = await cleanupTemporary(temporaryDirectory);
-    temporaryDirectory = '';
-
-    if (temporaryCleanup) {
-      result.content.push({ type: 'text', text: temporaryCleanup });
-    }
-
-    if (!result.details.sha && groupCount > 1) {
-      throw new Error('Commit cancelled');
-    }
-
-    return result;
   } catch (error) {
-    const cleanupDiagnostic = temporaryDirectory
-      ? await cleanupTemporary(temporaryDirectory)
-      : temporaryCleanup;
+    const cleanupFailure = await cleanupTemporary(temporaryDirectory);
 
-    if (cleanupDiagnostic) {
-      throw new Error(`${errorMessage(error)}\n${cleanupDiagnostic}`, { cause: error });
+    if (cleanupFailure !== null) {
+      throw new Error(`${errorMessage(error)}\n${cleanupFailure}`, { cause: error });
     }
 
     throw error;
   }
+
+  const cleanupFailure = await cleanupTemporary(temporaryDirectory);
+
+  if (cleanupFailure !== null) {
+    result.content.push({ type: 'text', text: cleanupFailure });
+  }
+
+  if (!result.details.sha && groupCount > 1) {
+    throw new Error(
+      cleanupFailure === null ? 'Commit cancelled' : `Commit cancelled\n${cleanupFailure}`,
+    );
+  }
+
+  return result;
 };
 
 const executeCommitTool = async (
