@@ -12,7 +12,9 @@ import {
 } from '@earendil-works/pi-tui';
 import type { Component, TUI } from '@earendil-works/pi-tui';
 
+import { isBottom, isDown, isTop, isUp } from '../../keys/index.js';
 import { stateLabel } from './presentation.js';
+import { deadlineStates } from './render.js';
 import type { WorkerWidgetRow } from './widget.js';
 import {
   compactDuration,
@@ -322,8 +324,15 @@ const reportLines = (row: WorkerWidgetRow, width: number): string[] => {
     runtime = row.state === 'stopped' ? `ran ${elapsedMinutes}m` : `elapsed ${elapsedMinutes}m`;
   }
 
-  const deadline =
-    row.deadline <= now ? 'deadline passed' : `${compactDuration(row.deadline - now)} left`;
+  const deadlineIsLive = row.state !== 'unknown' && deadlineStates.has(row.state);
+  let deadline = 'deadline passed';
+
+  if (row.deadline > now) {
+    deadline = deadlineIsLive
+      ? `${compactDuration(row.deadline - now)} left`
+      : `deadline ${localTime(row.deadline)}`;
+  }
+
   const timing = `started ${localTime(row.createdAt).slice(1)} · ${runtime} · ${deadline}`;
 
   fields.push(['Task name', shortTaskLabel(row)]);
@@ -585,13 +594,13 @@ export class WorkerHistoryView implements Component {
       this.detailOffset += halfPage;
     } else if (matchesKey(data, 'ctrl+u')) {
       this.detailOffset = Math.max(0, this.detailOffset - halfPage);
-    } else if (this.keybindings.matches(data, 'tui.select.up') || data === 'k') {
+    } else if (this.keybindings.matches(data, 'tui.select.up') || isUp(data)) {
       this.detailOffset = Math.max(0, this.detailOffset - 1);
-    } else if (this.keybindings.matches(data, 'tui.select.down') || data === 'j') {
+    } else if (this.keybindings.matches(data, 'tui.select.down') || isDown(data)) {
       this.detailOffset += 1;
-    } else if (data === 'g') {
+    } else if (isTop(data)) {
       this.detailOffset = 0;
-    } else if (data === 'G') {
+    } else if (isBottom(data)) {
       this.detailOffset = Number.MAX_SAFE_INTEGER;
     } else if (data === 'p') {
       this.showFullPrompt = !this.showFullPrompt;
@@ -632,9 +641,9 @@ export class WorkerHistoryView implements Component {
     } else if (data === '/') {
       this.filterMode = true;
       this.filterInput.focused = true;
-    } else if (this.keybindings.matches(data, 'tui.select.up') || data === 'k') {
+    } else if (this.keybindings.matches(data, 'tui.select.up') || isUp(data)) {
       this.moveSelection(-1);
-    } else if (this.keybindings.matches(data, 'tui.select.down') || data === 'j') {
+    } else if (this.keybindings.matches(data, 'tui.select.down') || isDown(data)) {
       this.moveSelection(1);
     } else if (
       this.keybindings.matches(data, 'tui.select.confirm') &&
@@ -643,9 +652,9 @@ export class WorkerHistoryView implements Component {
       this.detail = true;
       this.detailOffset = 0;
       this.showFullPrompt = false;
-    } else if (data === 'g') {
+    } else if (isTop(data)) {
       this.selectedIndex = 0;
-    } else if (data === 'G') {
+    } else if (isBottom(data)) {
       this.selectedIndex = Math.max(0, this.filteredRows().length - 1);
     }
   }

@@ -204,10 +204,15 @@ it('uses the full available width for history rows and details', () => {
     const listLines = view.render(width);
 
     expect(listLines.every((line) => visibleWidth(line) === width)).toBe(true);
-    view.handleInput('\\r');
+    view.handleInput('\r');
     const detailLines = view.render(width);
+    const details = stripTerminalSequences(detailLines.join('\n'));
+
+    expect(details).toContain('Task name');
+    expect(details).toContain('State');
+    expect(details).not.toContain('Subagents ·');
     expect(detailLines.every((line) => visibleWidth(line) === width)).toBe(true);
-    view.handleInput('\\u001b');
+    view.handleInput('\u001b');
   }
 });
 
@@ -812,4 +817,105 @@ it('keeps the selected details scroll across an unchanged-selection refresh', ()
 
   view.handleInput('g');
   expect(view.render(72).join('\n')).toContain('reported');
+});
+
+it('labels a stopped worker future deadline as a clock fact instead of a countdown', () => {
+  const stoppedRow: WorkerWidgetRow = {
+    ...rows[29]!,
+    state: 'stopped',
+    stoppedAt: now - 60_000,
+    cleanupConfirmed: true,
+    deadline: now + 25 * 60_000 + 30_000,
+  };
+  const view = createView([stoppedRow]);
+
+  view.handleInput('\r');
+  const timeLine = stripTerminalSequences(
+    view.render(72).find((line) => line.includes('Time')) ?? '',
+  );
+
+  expect(timeLine).toMatch(/ran \d+m/u);
+  expect(timeLine).toMatch(/deadline @\d{2}:\d{2}/u);
+  expect(timeLine).not.toContain('left');
+});
+
+it('does not show a live countdown for unconfirmed or untracked worker deadlines', () => {
+  for (const state of ['cleanupUnconfirmed', 'notOwned', 'unknown'] as const) {
+    const unresolvedRow: WorkerWidgetRow = {
+      ...rows[10]!,
+      state,
+      stoppedAt: undefined,
+      activityAt: now - 20_000,
+      deadline: now + 25 * 60_000 + 30_000,
+    };
+    const view = createView([unresolvedRow]);
+
+    view.handleInput('\r');
+    const details = stripTerminalSequences(view.render(72).join('\n'));
+
+    expect(details).not.toContain('25m left');
+    expect(details).toMatch(/deadline @\d{2}:\d{2}/u);
+  }
+});
+
+it('keeps the deadline countdown for a genuinely live worker', () => {
+  const liveRow: WorkerWidgetRow = {
+    ...rows[10]!,
+    state: 'running',
+    deadline: now + 25 * 60_000 + 30_000,
+  };
+  const view = createView([liveRow]);
+
+  view.handleInput('\r');
+  const timeLine = stripTerminalSequences(
+    view.render(72).find((line) => line.includes('Time')) ?? '',
+  );
+
+  expect(timeLine).toContain('25m left');
+});
+
+it('jumps list selection with Home, End, and encoded Shift+G', () => {
+  const view = createView(rows);
+  const selectedName = (): string | undefined =>
+    view
+      .render(72)
+      .find((line) => line.includes('▶'))
+      ?.match(/worker-\d{2}/u)?.[0];
+
+  view.handleInput('\u001b[F');
+  expect(selectedName()).toBe('worker-29');
+
+  view.handleInput('\u001b[H');
+  expect(selectedName()).toBe('worker-00');
+
+  view.handleInput('\u001b[103;2u');
+  expect(selectedName()).toBe('worker-29');
+
+  view.handleInput('\u001b[H');
+  view.handleInput('\u001b[27;2;103~');
+  expect(selectedName()).toBe('worker-29');
+});
+
+it('jumps detail scroll with Home, End, and encoded Shift+G', () => {
+  const scrollRow: WorkerWidgetRow = {
+    ...rows[10]!,
+    task: Array.from({ length: 40 }, (_value, index) => `prompt line ${index}`).join('\n'),
+  };
+  const view = createView([scrollRow]);
+
+  view.handleInput('\r');
+  view.handleInput('p');
+
+  view.handleInput('\u001b[F');
+  expect(view.render(72).join('\n')).toContain('prompt line 39');
+
+  view.handleInput('\u001b[H');
+  expect(view.render(72).join('\n')).toContain('Task name');
+
+  view.handleInput('\u001b[103;2u');
+  expect(view.render(72).join('\n')).toContain('prompt line 39');
+
+  view.handleInput('\u001b[H');
+  view.handleInput('\u001b[27;2;103~');
+  expect(view.render(72).join('\n')).toContain('prompt line 39');
 });

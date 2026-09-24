@@ -435,7 +435,7 @@ const childParts = (details: StatusView): string[] => {
     : [];
 };
 
-const deadlineStates = new Set<WorkerState>(['starting', 'running', 'awaitingReply']);
+export const deadlineStates = new Set<WorkerState>(['starting', 'running', 'awaitingReply']);
 
 const lifecycleParts = (details: StatusView, state: WorkerState): string[] => {
   const parts: string[] = [];
