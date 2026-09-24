@@ -15,6 +15,7 @@ export const isolatedHerdr = async (
   extraEnvironment: Record<string, string> = {},
 ) => {
   const root = mkdtempSync(join(tmpdir(), 'tau-herdr-worker-'));
+  // Never inherit the active socket, caller IDs, or user configuration.
   const environment = {
     PATH: process.env.PATH,
     HOME: root,
