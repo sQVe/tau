@@ -294,6 +294,18 @@ const isRetiredRecord = (directory: string): boolean => {
   }
 };
 
+const diagnoseSkippedTask = (directory: string, error: unknown, diagnostics: string[]): void => {
+  if (isRetiredRecord(directory)) {
+    diagnostics.push(
+      `Skipped task ${basename(directory)} saved in a retired format; start a fresh task instead.`,
+    );
+
+    return;
+  }
+
+  diagnostics.push(`Skipped task at ${directory}: ${errorMessage(error)}`);
+};
+
 const readScannedTask = (directory: string): Task | undefined => {
   try {
     return readTask(directory);
@@ -314,11 +326,34 @@ const readScannedTask = (directory: string): Task | undefined => {
   return undefined;
 };
 
-// A published claim or predecessor must never point at a skipped directory.
+const readReferencedTask = (
+  directory: string,
+  taskId: string,
+  diagnostics: string[],
+): Task | undefined => {
+  try {
+    const task = readScannedTask(directory);
+
+    if (task?.taskId !== taskId) {
+      throw new Error(
+        `Missing task.json for referenced continuation ${taskId}. Saved attempt or claim requires inspection.`,
+      );
+    }
+
+    return task;
+  } catch (error) {
+    diagnoseSkippedTask(directory, error, diagnostics);
+
+    return undefined;
+  }
+};
+
+// Recheck late publications without letting broken references hide unrelated tasks.
 const addReferencedTasks = (
   root: string,
   tasks: { directory: string; task: Task }[],
   unpublished: Map<string, string>,
+  diagnostics: string[],
 ): void => {
   // Tasks published late are appended here and checked by this same loop.
   for (const { directory, task } of tasks) {
@@ -326,7 +361,17 @@ const addReferencedTasks = (
       return;
     }
 
-    const references = [task.predecessorTaskId, readSuccessor(directory)?.successorTaskId];
+    let successor: string | undefined;
+
+    try {
+      successor = readSuccessor(directory)?.successorTaskId;
+    } catch (error) {
+      diagnostics.push(
+        `Could not read continuation references at ${directory}: ${errorMessage(error)}`,
+      );
+    }
+
+    const references = [task.predecessorTaskId, successor];
 
     for (const referenced of references) {
       if (referenced === undefined || !unpublished.has(referenced)) {
@@ -335,29 +380,26 @@ const addReferencedTasks = (
 
       // A continuation may have been published after the scan read its directory.
       const referencedDirectory = join(root, referenced);
-      const late = readScannedTask(referencedDirectory);
-
-      if (late?.taskId !== referenced) {
-        throw new Error(
-          `Missing task.json for referenced continuation ${referenced}. Saved attempt or claim requires inspection.`,
-        );
-      }
-
       unpublished.delete(referenced);
-      tasks.push({ directory: referencedDirectory, task: late });
+
+      const late = readReferencedTask(referencedDirectory, referenced, diagnostics);
+
+      if (late) {
+        tasks.push({ directory: referencedDirectory, task: late });
+      }
     }
   }
 };
 
-const readTaskEntries = (root: string): Dirent[] | undefined => {
+const readTaskEntries = (root: string, diagnostics: string[]): Dirent[] | undefined => {
   try {
     return readdirSync(root, { withFileTypes: true });
   } catch (error) {
-    if (isMissingFile(error)) {
-      return undefined;
+    if (!isMissingFile(error)) {
+      diagnostics.push(`Could not scan tasks at ${root}: ${errorMessage(error)}`);
     }
 
-    throw error;
+    return undefined;
   }
 };
 
@@ -377,38 +419,31 @@ const scanTaskEntry = (
   diagnostics: string[],
 ): FoundTaskEntry | UnpublishedTaskEntry | undefined => {
   const directory = join(root, entry.name);
-  let task: Task | undefined;
 
   try {
-    task = readScannedTask(directory);
-  } catch (error) {
-    if (!isRetiredRecord(directory)) {
-      throw error;
+    const task = readScannedTask(directory);
+
+    if (!task) {
+      return { name: entry.name, directory };
     }
 
-    diagnostics.push(
-      `Skipped task ${entry.name} saved in a retired format; start a fresh task instead.`,
-    );
+    if (task.taskId !== entry.name) {
+      throw new Error('Saved task directory and identity do not match.');
+    }
+
+    return { directory, task };
+  } catch (error) {
+    diagnoseSkippedTask(directory, error, diagnostics);
 
     return undefined;
   }
-
-  if (!task) {
-    return { name: entry.name, directory };
-  }
-
-  if (task.taskId !== entry.name) {
-    throw new Error('Saved task directory and identity do not match.');
-  }
-
-  return { directory, task };
 };
 
 export const readTasks = (
   root: string,
   diagnostics: string[] = [],
 ): { directory: string; task: Task }[] => {
-  const entries = readTaskEntries(root);
+  const entries = readTaskEntries(root, diagnostics);
 
   if (!entries) {
     return [];
@@ -434,7 +469,7 @@ export const readTasks = (
     tasks.push({ directory: outcome.directory, task: outcome.task });
   }
 
-  addReferencedTasks(root, tasks, unpublished);
+  addReferencedTasks(root, tasks, unpublished, diagnostics);
 
   for (const [id, directory] of unpublished) {
     diagnostics.push(

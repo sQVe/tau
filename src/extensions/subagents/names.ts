@@ -18,7 +18,7 @@ const liveAgentsSchema = Type.Array(
   }),
 );
 
-// Names only label tasks, so an unreadable record must not block launches. History and follow-up still fail closed.
+// Names only label tasks, so an unreadable record must not block launches.
 const retainedNames = (root: string, parentSessionId: string): string[] => {
   let entries;
 
