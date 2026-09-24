@@ -13,27 +13,24 @@ import { dirname, join } from 'node:path';
 
 import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
-import { inheritedInstructions } from './admission.js';
-import * as cancellationModule from './cancellation.js';
-import {
-  EvidenceUnavailableError,
-  WorkerController,
-  taskStatus,
-  workerArguments,
-} from './controller.js';
-import type { HerdrClient } from './controller.js';
-import { herdrFake } from './fixtures/herdrFake.js';
-import { placementFixture } from './fixtures/layout.js';
-import { fixtureLoadout, readPiTask as readTask } from './fixtures/loadout.js';
-import { searchHistory } from './history.js';
-import * as identity from './identity.js';
-import * as loadoutModule from './loadout.js';
-import * as names from './names.js';
-import { WorkerPlacement } from './placement.js';
-import type { WorkerNotice } from './presentation.js';
-import * as questions from './questionRecords.js';
-import { acceptReport, readEvent, recordEvent } from './records.js';
-import * as records from './records.js';
+import { inheritedInstructions } from '../admission.js';
+import * as cancellationModule from '../cancellation.js';
+import { herdrFake } from '../fixtures/herdrFake.js';
+import { placementFixture } from '../fixtures/layout.js';
+import { fixtureLoadout, readPiTask as readTask } from '../fixtures/loadout.js';
+import { searchHistory } from '../history.js';
+import * as identity from '../identity.js';
+import * as loadoutModule from '../loadout.js';
+import * as names from '../names.js';
+import { WorkerPlacement } from '../placement.js';
+import type { WorkerNotice } from '../presentation.js';
+import * as questions from '../questionRecords.js';
+import { acceptReport, readEvent, recordEvent } from '../records.js';
+import * as records from '../records.js';
+import { WorkerController } from './controller.js';
+import { workerArguments } from './inspect.js';
+import type { HerdrClient } from './inspect.js';
+import { EvidenceUnavailableError, taskStatus } from './record.js';
 
 vi.mock('node:fs', async (importOriginal) => {
   const original = await importOriginal<typeof fileSystem>();

@@ -1,10 +1,9 @@
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { admissionDirectory, descendantReservations } from './admission.js';
-import type { Handle } from './controllerTypes.js';
-import { genericReportPath, readGenericReference } from './generic.js';
-import { readPendingQuestion, readReply } from './questionRecords.js';
+import { admissionDirectory, descendantReservations } from '../admission.js';
+import { genericReportPath, readGenericReference } from '../generic.js';
+import { readPendingQuestion, readReply } from '../questionRecords.js';
 import {
   publish,
   readEvent,
@@ -13,10 +12,11 @@ import {
   readReport,
   readSuccessor,
   readTask,
-} from './records.js';
-import { harnessOf, isGenericLoadout, isPiLoadout, requireNativeTask } from './types.js';
-import type { Report, Task, TaskEvent } from './types.js';
-import { workerState } from './workerState.js';
+} from '../records.js';
+import { harnessOf, isGenericLoadout, isPiLoadout, requireNativeTask } from '../types.js';
+import type { Report, Task, TaskEvent } from '../types.js';
+import { workerState } from '../workerState.js';
+import type { Handle } from './types.js';
 
 // Without a report, terminal event, or cleanup record there is no outcome to claim.
 const taskOutcome = (

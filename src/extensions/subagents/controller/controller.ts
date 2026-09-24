@@ -4,16 +4,46 @@ import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
-import { errorMessage, isMissingFile } from '../../errors/index.js';
+import { errorMessage, isMissingFile } from '../../../errors/index.js';
 import {
   descendantReservations,
   InactiveAncestryError,
   admissionDirectory,
   reserveTask,
   requireActiveAncestry,
-} from './admission.js';
-import { processAbsent } from './cancellation.js';
-import { refuseLiveNativeWriter } from './continuations.js';
+} from '../admission.js';
+import { processAbsent } from '../cancellation.js';
+import { refuseLiveNativeWriter } from '../continuations.js';
+import { submitGenericText, genericPrompt, acceptGenericReport } from '../generic.js';
+import { authorizeHistoryTask } from '../history.js';
+import { authenticateParent, currentProcessIdentity } from '../identity.js';
+import { validateSavedLoadout } from '../loadout.js';
+import { waitForResolution } from '../loadoutFingerprint.js';
+import { allocateName, nameSuffix } from '../names.js';
+import { validateNative } from '../native.js';
+import { WorkerPlacement } from '../placement.js';
+import { modelEvidenceNotice, modelStatus } from '../presentation.js';
+import type { WorkerNotice } from '../presentation.js';
+import {
+  acceptReply,
+  readAcknowledgement,
+  readPendingQuestion,
+  readQuestion,
+  readReply,
+} from '../questionRecords.js';
+import {
+  readEvent,
+  readGenericSubmission,
+  readTask,
+  claimSuccessor,
+  publish,
+  validateTask,
+  recordEvent,
+} from '../records.js';
+import { resolveTerminal, text, requireObject, result } from '../terminal.js';
+import type { TerminalCall } from '../terminal.js';
+import { isGenericLoadout, isPiLoadout } from '../types.js';
+import type { GenericLoadout, ReplyDelivery, SubmissionState, Task } from '../types.js';
 import {
   ensureReplyActive,
   workBudget,
@@ -23,7 +53,7 @@ import {
   remainingLaunchBudget,
   remainingWorkBudget,
   treeCapacity,
-} from './controllerBudget.js';
+} from './budget.js';
 import {
   agentPromptArguments,
   herdrClient,
@@ -38,16 +68,16 @@ import {
   verifyRejectedStart,
   waitForWorkerReadiness,
   workerArguments,
-} from './controllerInspect.js';
-import type { HerdrClient, InspectionBudget } from './controllerInspect.js';
+} from './inspect.js';
+import type { HerdrClient, InspectionBudget } from './inspect.js';
 import {
   checkHandoff,
   checkNativeWriterListing,
   nativeReference,
   requireUnclaimed,
   releaseRejectedSuccessor,
-} from './controllerLaunchSupport.js';
-import type { FollowUpPreparation, LaunchInput } from './controllerLaunchSupport.js';
+} from './launchSupport.js';
+import type { FollowUpPreparation, LaunchInput } from './launchSupport.js';
 import {
   EvidenceUnavailableError,
   genericStatus,
@@ -56,43 +86,9 @@ import {
   taskStatus,
   cleanupDetail,
   recordNativeIssue,
-} from './controllerRecord.js';
-import { closeUnstartedPane, stopOwnedWorker } from './controllerStop.js';
-import type { Handle } from './controllerTypes.js';
-import { submitGenericText, genericPrompt, acceptGenericReport } from './generic.js';
-import { authorizeHistoryTask } from './history.js';
-import { authenticateParent, currentProcessIdentity } from './identity.js';
-import { validateSavedLoadout } from './loadout.js';
-import { waitForResolution } from './loadoutFingerprint.js';
-import { allocateName, nameSuffix } from './names.js';
-import { validateNative } from './native.js';
-import { WorkerPlacement } from './placement.js';
-import { modelEvidenceNotice, modelStatus } from './presentation.js';
-import type { WorkerNotice } from './presentation.js';
-import {
-  acceptReply,
-  readAcknowledgement,
-  readPendingQuestion,
-  readQuestion,
-  readReply,
-} from './questionRecords.js';
-import {
-  readEvent,
-  readGenericSubmission,
-  readTask,
-  claimSuccessor,
-  publish,
-  validateTask,
-  recordEvent,
-} from './records.js';
-import { resolveTerminal, text, requireObject, result } from './terminal.js';
-import type { TerminalCall } from './terminal.js';
-import { isGenericLoadout, isPiLoadout } from './types.js';
-import type { GenericLoadout, ReplyDelivery, SubmissionState, Task } from './types.js';
-
-export { agentPromptArguments, workerArguments } from './controllerInspect.js';
-export type { HerdrClient } from './controllerInspect.js';
-export { EvidenceUnavailableError, taskStatus } from './controllerRecord.js';
+} from './record.js';
+import { closeUnstartedPane, stopOwnedWorker } from './stop.js';
+import type { Handle } from './types.js';
 
 // The reply is saved before this read. A corrupt acknowledgement record must not make a saved reply
 // look failed, because a failure would invite a resend of the same identity.

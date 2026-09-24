@@ -1,4 +1,4 @@
-import type { HerdrClient } from '../controller.js';
+import type { HerdrClient } from '../controller/inspect.js';
 import { placementFixture } from './layout.js';
 
 interface ProcessSnapshot {

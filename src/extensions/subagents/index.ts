@@ -7,7 +7,8 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { EvidenceUnavailableError, WorkerController } from './controller.js';
+import { WorkerController } from './controller/controller.js';
+import { EvidenceUnavailableError } from './controller/record.js';
 import { historyPage, searchHistory } from './history.js';
 import { resolveInheritedLoadout, resolveLoadout } from './loadout.js';
 import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
