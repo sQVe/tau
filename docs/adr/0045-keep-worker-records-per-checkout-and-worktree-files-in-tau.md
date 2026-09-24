@@ -63,7 +63,10 @@ holds two things:
 - `.tau/workers/<taskId>/report.md`: the report of a non-Pi worker, at a fixed path under the
   worker's cwd. Tau creates the folder before launch. The `subagent` tool no longer takes
   `reportDirectory`.
-- `.tau/handoffs/`: the briefs and replies this worktree's agent sends with the handoff skill.
+- `.tau/handoffs/`: the messages this worktree's agent sends with the handoff skill. Messages are
+  one-way. Replies went to the sender's pane, and when that pane had closed, the receiver guessed
+  another pane in the workspace. One reply reached an unrelated session and took the place of its
+  user's message. Most handoffs need no reply.
 
 Whoever creates `.tau/` first writes `.tau/.gitignore` containing `*`. The folder then stays out of
 Git in any repository, without edits to the repository's `.gitignore`, `.git/info/exclude`, or the
