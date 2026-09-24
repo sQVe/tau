@@ -44,7 +44,6 @@ const fullWorkerStatus = {
   usage: { available: false, reason: 'native' },
   nativeSessionId: 'native-1',
   nativeSessionFile: '/abs/records/task-1/session.jsonl',
-  capacityHeld: false,
   harness: 'pi',
 };
 

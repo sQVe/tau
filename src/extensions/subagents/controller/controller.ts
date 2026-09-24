@@ -363,7 +363,7 @@ const widgetRecordFields = (
 
   if (status?.cleanup !== undefined) {
     fields.cleanup = status.cleanup;
-    fields.cleanupConfirmed = !status.capacityHeld;
+    fields.cleanupConfirmed = status.cleanupConfirmed;
   }
 
   if (status?.state === 'stopped' && status.stoppedAt !== undefined) {
@@ -1661,6 +1661,8 @@ export class WorkerController {
 
     handle.stopping = Promise.allSettled([cleaned])
       .then(() => {
+        this.live.delete(handle.task.taskId);
+
         // Keep sharing intact until cleanup finishes, including its queued topology change.
         // Unconfirmed cleanup must still stop contributing placement candidates.
         if (handle.terminalId) {
@@ -1811,10 +1813,6 @@ export class WorkerController {
     record(() => {
       releaseRejectedSuccessor(this.root, handle.directory, task);
     });
-
-    if (stopped) {
-      this.live.delete(task.taskId);
-    }
 
     this.notifyCleanup(handle, record);
   }

@@ -199,7 +199,7 @@ export const taskRecordStatus = (directory: string, task: Task, controlled = fal
     ...(state === 'stopped'
       ? { stoppedAt: settled?.at ?? event('timeout')?.at ?? event('cancelled')?.at ?? cleanup?.at }
       : {}),
-    capacityHeld: cleanup?.stopped !== true,
+    cleanupConfirmed: cleanup?.stopped === true,
     harness: harnessOf(task.loadout),
     nativeSessionId: task.nativeSessionId,
     nativeSessionFile: task.nativeSessionFile,

@@ -197,7 +197,6 @@ it.each(['start', 'get'])(
     expect(setup.state.stopped).toBe(true);
     expect(setup.controller.status(launched.taskId, 'parent')).toMatchObject({
       state: 'stopped',
-      capacityHeld: false,
     });
     expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
     expect(setup.calls.filter((call) => call[1] === 'prompt')).toEqual([]);
@@ -230,7 +229,6 @@ it('retains a pending generic worker when shutdown cannot verify its identity', 
 
   expect(setup.controller.status(launched.taskId, 'parent')).toMatchObject({
     state: 'cleanupUnconfirmed',
-    capacityHeld: true,
   });
   expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.detail).toContain(
     'identity changed',
@@ -295,7 +293,6 @@ it.each(['claude', 'codex', 'gemini'])(
     expect(setup.controller.status(task.taskId, 'parent')).toMatchObject({
       outcome: 'success',
       state: 'stopped',
-      capacityHeld: false,
     });
     expect(setup.calls).toContainEqual(['agent', 'send-keys', 'worker-1', 'ctrl+c']);
     expect(setup.calls).toContainEqual(['pane', 'close', 'worker-1']);
@@ -438,7 +435,6 @@ it('retains ownership through transient inspection and partial reports without u
 
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     state: 'running',
-    capacityHeld: true,
     nativeState: 'unknown',
   });
   expect(setup.calls.filter((call) => call[1] === 'send-keys')).toHaveLength(0);
@@ -491,7 +487,7 @@ it('cancels an identity-checked generic worker before a native reference is avai
 
   const status = await setup.controller.cancel(started.taskId, 'parent');
 
-  expect(status).toMatchObject({ outcome: 'cancelled', state: 'stopped', capacityHeld: false });
+  expect(status).toMatchObject({ outcome: 'cancelled', state: 'stopped' });
   expect(setup.calls).toContainEqual(['agent', 'send-keys', 'worker-1', 'ctrl+c']);
   expect(setup.calls).toContainEqual(['pane', 'close', 'worker-1']);
 });
@@ -571,7 +567,7 @@ it('keeps blocked startup visible and inside the original deadline without submi
 
   const started = await setup.controller.launch(setup.input);
 
-  expect(started).toMatchObject({ state: 'starting', capacityHeld: true });
+  expect(started).toMatchObject({ state: 'starting' });
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
   expect(JSON.stringify(setup.notices)).toContain('blocked');
   setup.state.status = 'idle';
@@ -691,7 +687,7 @@ it('returns uncertain startup for inspection without waiting out or resetting th
 
   await vi.advanceTimersByTimeAsync(100);
 
-  expect(outcome).toMatchObject({ state: 'starting', capacityHeld: true });
+  expect(outcome).toMatchObject({ state: 'starting' });
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
   setup.state.inspectionError = '';
   await vi.advanceTimersByTimeAsync(1500);
@@ -729,7 +725,7 @@ it.each(['unsupported kind', 'missing executable'])(
 
     const started = await setup.controller.launch(setup.input);
 
-    expect(started).toMatchObject({ outcome: 'failure', state: 'stopped', capacityHeld: false });
+    expect(started).toMatchObject({ outcome: 'failure', state: 'stopped' });
     expect(started.failure).toContain('rejected');
     expect(readEvent(started.directory, started.taskId, 'cleanup')?.stopped).toBe(true);
     expect(setup.calls.filter((call) => call[1] === 'close')).toEqual([
@@ -749,7 +745,7 @@ it('keeps a lost start response uncertain when absence inspection fails', async 
 
   const started = await setup.controller.launch(setup.input);
 
-  expect(started).toMatchObject({ state: 'starting', capacityHeld: true });
+  expect(started).toMatchObject({ state: 'starting' });
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     nativeState: 'unknown',
   });
@@ -918,7 +914,6 @@ it('marks process exit without a report incomplete and releases capacity only af
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     outcome: 'incomplete',
     state: 'stopped',
-    capacityHeld: false,
   });
 });
 
@@ -980,7 +975,7 @@ it('keeps an unknown worker inside its original deadline and does not infer succ
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
 });
 
-it('retains controller capacity when generic interrupts cannot confirm a stop', async () => {
+it('releases controller capacity when generic interrupts cannot confirm a stop', async () => {
   const setup = fixture('codex', undefined, 1);
   const started = await setup.controller.launch(setup.input);
   setup.state.ignoreInterrupt = true;
@@ -992,11 +987,11 @@ it('retains controller capacity when generic interrupts cannot confirm a stop', 
   expect(status).toMatchObject({
     outcome: 'cancelled',
     state: 'cleanupUnconfirmed',
-    capacityHeld: true,
+    recovery: {
+      directory: started.directory,
+      nativeReference: { kind: 'id', value: setup.state.session },
+    },
   });
-  await expect(setup.controller.launch({ ...setup.input, task: 'Another task.' })).rejects.toThrow(
-    'capacity full',
-  );
   expect(setup.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(setup.calls.filter((call) => call[1] === 'close')).toHaveLength(0);
   expect(
@@ -1004,6 +999,14 @@ it('retains controller capacity when generic interrupts cannot confirm a stop', 
       .filter((call) => call[1] === 'send-keys')
       .every((call) => call[0] === 'agent' && call.slice(3).join(' ') === 'ctrl+c'),
   ).toBe(true);
+
+  const replacement = await setup.controller.launch({ ...setup.input, task: 'Another task.' });
+
+  expect(replacement.state).toBe('running');
+  expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
+    state: 'cleanupUnconfirmed',
+    recovery: status.recovery,
+  });
 });
 
 it('bounds native polling without reading terminal text in the background', async () => {

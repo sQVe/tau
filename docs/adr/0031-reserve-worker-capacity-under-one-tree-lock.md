@@ -1,6 +1,7 @@
 # ADR 0031: Reserve worker capacity under one tree lock
 
-- Status: Superseded by [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
+- Status: Superseded by [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md), which also
+  ends holding capacity after unconfirmed cleanup
 - Date: 2026-09-17
 
 ## Context

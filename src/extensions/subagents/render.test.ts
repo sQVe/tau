@@ -88,7 +88,6 @@ const statusFixture = (state: WorkerState, generic: boolean) => ({
     directory: records,
     nativeSessionFile: join(records, 'session.jsonl'),
   },
-  capacityHeld: true,
   directory: records,
   nativeSessionId: 'native-abcdef01',
   nativeSessionFile: join(records, 'session.jsonl'),
