@@ -6,7 +6,7 @@ import { isMissingFile } from '../../../errors/index.js';
 import { maximumStdoutBytes, maximumTotalBytes } from './process.js';
 import type { DiagnosticFile, RunDiagnostics, SpawnResult } from './types.js';
 
-export const maximumReportBytes = 8 * 1024 * 1024;
+const maximumReportBytes = 8 * 1024 * 1024;
 
 interface OutputCapture {
   observedBytes: number;

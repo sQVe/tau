@@ -19,7 +19,6 @@ import {
 import { expect, it } from 'vitest';
 
 import manifest from '../package.json' with { type: 'json' };
-import { webAccessTools } from '../src/extensions/webAccess/index.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 
 it('ships Safety Net as a runtime dependency and explicit extension', () => {
@@ -71,9 +70,12 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     const webAccessExtension = extensions.find((extension) => extension.tools.has('web_search'));
 
     expect(webAccessExtension).toBeDefined();
-    expect([...(webAccessExtension?.tools.keys() ?? [])].toSorted()).toEqual(
-      [...webAccessTools].toSorted(),
-    );
+    expect([...(webAccessExtension?.tools.keys() ?? [])].toSorted()).toEqual([
+      'fetch_content',
+      'get_search_content',
+      'source_check',
+      'web_search',
+    ]);
     expect(
       loader
         .getSkills()

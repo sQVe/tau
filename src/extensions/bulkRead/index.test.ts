@@ -8,7 +8,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import bulkReadExtension, { bulkReadLineThreshold, rewriteContinuationNotice } from './index.js';
+import bulkReadExtension, { rewriteContinuationNotice } from './index.js';
 
 const setup = () => {
   const fake = fakeExtensionApi();
@@ -81,7 +81,7 @@ it('clamps a read without limit to the threshold and leaves an explicit limit un
   expect(app.emit('tool_call', unbounded)).toBeUndefined();
   app.emit('tool_call', bounded);
 
-  expect(unbounded.input).toHaveProperty('limit', bulkReadLineThreshold);
+  expect(unbounded.input).toHaveProperty('limit', 400);
   expect(bounded.input.limit).toBe(600);
   expect(app.find).toHaveBeenCalledOnce();
 });
@@ -312,7 +312,7 @@ it('keeps trimming and accepts a smaller request after exceeding the model cap',
   const read = readCall();
   app.emit('tool_call', read);
 
-  expect(read.input.limit).toBe(bulkReadLineThreshold);
+  expect(read.input.limit).toBe(400);
   await writeFile(path, 'small');
 
   await expect(app.execute(undefined, [path])).resolves.toMatchObject({
@@ -332,7 +332,7 @@ it.each(['session_start', 'session_before_switch', 'session_before_fork'] as con
     const later = readCall('later');
     app.emit('tool_call', later);
 
-    expect(later.input).toHaveProperty('limit', bulkReadLineThreshold);
+    expect(later.input).toHaveProperty('limit', 400);
   },
 );
 

@@ -10,7 +10,7 @@ import { resolveDelegate } from '../../delegateModel/index.js';
 import { BulkReadRecoverableError, bulkReadTool, bulkRead, isCancellation } from './tool.js';
 
 // ADR 0014 records the measurement behind this threshold.
-export const bulkReadLineThreshold = 400;
+const bulkReadLineThreshold = 400;
 
 // Cancellations and timeouts, like recoverable bulk read failures, say nothing about the delegate.
 const isRecoverable = (error: unknown): boolean =>

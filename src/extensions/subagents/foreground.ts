@@ -23,7 +23,7 @@ export interface Rectangle {
 }
 
 // Leave room for pane borders and status rows around 80 columns and 20 useful rows.
-export const minimumPane = { width: 82, height: 24 };
+const minimumPane = { width: 82, height: 24 };
 
 export const rectangle = (value: unknown): Rectangle => {
   const bounds = requireObject(value);
