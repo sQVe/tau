@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   closeSync,
+  existsSync,
   fsyncSync,
   linkSync,
   lstatSync,
@@ -25,11 +26,10 @@ import {
   eventSchema,
   reportSchema,
   taskSchema,
-  successorSchema,
   isGenericLoadout,
   taskEndedEventKinds,
 } from './types.js';
-import type { GenericLoadout, Report, Successor, Task, TaskEvent } from './types.js';
+import type { GenericLoadout, Report, Task, TaskEvent } from './types.js';
 
 const recordByteLimit = 128_000;
 
@@ -208,36 +208,6 @@ export const readTask = (directory: string): Task => {
   }
 };
 
-const claimSessionMatchesTask = (claim: Successor, task: Task): boolean =>
-  claim.successorTaskId !== task.taskId &&
-  claim.nativeSessionId === task.nativeSessionId &&
-  claim.nativeSessionFile === task.nativeSessionFile;
-
-const claimMatchesTask = (claim: Successor, task: Task): boolean =>
-  claim.predecessorTaskId === task.taskId && claimSessionMatchesTask(claim, task);
-
-export const readSuccessor = (directory: string): Successor | undefined => {
-  let value: unknown;
-
-  try {
-    value = readRecord(directory, 'successor.json');
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return undefined;
-    }
-
-    throw error;
-  }
-
-  const task = readTask(directory);
-
-  if (!Value.Check(successorSchema, value) || !claimMatchesTask(value, task)) {
-    throw new Error('Invalid saved successor claim.');
-  }
-
-  return value;
-};
-
 const isUnpublishedDirectory = (directory: string): boolean =>
   readdirSync(directory, { withFileTypes: true }).every(
     (entry) => entry.isFile() && /^\.receipt-[a-f0-9-]+$/.test(entry.name),
@@ -269,7 +239,7 @@ const isRetiredHarness = (
 };
 
 // Records from before the current saved format are never read, but they must not block unrelated tasks.
-export const isRetiredTask = (value: unknown): boolean => {
+const isRetiredTask = (value: unknown): boolean => {
   if (!isObjectRecord(value) || !('loadout' in value)) {
     return false;
   }
@@ -297,9 +267,14 @@ const isRetiredRecord = (directory: string): boolean => {
   }
 };
 
-const diagnoseSkippedTask = (directory: string, error: unknown, diagnostics: string[]): void => {
+const diagnoseSkippedTask = (
+  directory: string,
+  error: unknown,
+  diagnostics: string[],
+  skipped: string[],
+): void => {
   if (isRetiredRecord(directory)) {
-    diagnostics.push(
+    skipped.push(
       `Skipped task ${basename(directory)} saved in a retired format; start a fresh task instead.`,
     );
 
@@ -333,19 +308,20 @@ const readReferencedTask = (
   directory: string,
   taskId: string,
   diagnostics: string[],
+  skipped: string[],
 ): Task | undefined => {
   try {
     const task = readScannedTask(directory);
 
     if (task?.taskId !== taskId) {
       throw new Error(
-        `Missing task.json for referenced continuation ${taskId}. Saved attempt or claim requires inspection.`,
+        `Missing task.json for referenced continuation ${taskId}. Saved attempt requires inspection.`,
       );
     }
 
     return task;
   } catch (error) {
-    diagnoseSkippedTask(directory, error, diagnostics);
+    diagnoseSkippedTask(directory, error, diagnostics, skipped);
 
     return undefined;
   }
@@ -357,39 +333,28 @@ const addReferencedTasks = (
   tasks: { directory: string; task: Task }[],
   unpublished: Map<string, string>,
   diagnostics: string[],
+  skipped: string[],
 ): void => {
   // Tasks published late are appended here and checked by this same loop.
-  for (const { directory, task } of tasks) {
+  for (const { task } of tasks) {
     if (!unpublished.size) {
       return;
     }
 
-    let successor: string | undefined;
+    const referenced = task.predecessorTaskId;
 
-    try {
-      successor = readSuccessor(directory)?.successorTaskId;
-    } catch (error) {
-      diagnostics.push(
-        `Could not read continuation references at ${directory}: ${errorMessage(error)}`,
-      );
+    if (referenced === undefined || !unpublished.has(referenced)) {
+      continue;
     }
 
-    const references = [task.predecessorTaskId, successor];
+    // A continuation may have been published after the scan read its directory.
+    const referencedDirectory = join(root, referenced);
+    unpublished.delete(referenced);
 
-    for (const referenced of references) {
-      if (referenced === undefined || !unpublished.has(referenced)) {
-        continue;
-      }
+    const late = readReferencedTask(referencedDirectory, referenced, diagnostics, skipped);
 
-      // A continuation may have been published after the scan read its directory.
-      const referencedDirectory = join(root, referenced);
-      unpublished.delete(referenced);
-
-      const late = readReferencedTask(referencedDirectory, referenced, diagnostics);
-
-      if (late) {
-        tasks.push({ directory: referencedDirectory, task: late });
-      }
+    if (late) {
+      tasks.push({ directory: referencedDirectory, task: late });
     }
   }
 };
@@ -420,6 +385,7 @@ const scanTaskEntry = (
   root: string,
   entry: Dirent,
   diagnostics: string[],
+  skipped: string[],
 ): FoundTaskEntry | UnpublishedTaskEntry | undefined => {
   const directory = join(root, entry.name);
 
@@ -436,7 +402,7 @@ const scanTaskEntry = (
 
     return { directory, task };
   } catch (error) {
-    diagnoseSkippedTask(directory, error, diagnostics);
+    diagnoseSkippedTask(directory, error, diagnostics, skipped);
 
     return undefined;
   }
@@ -445,6 +411,8 @@ const scanTaskEntry = (
 export const readTasks = (
   root: string,
   diagnostics: string[] = [],
+  // Callers that only care about readable records pass a separate array for skipped notices.
+  skipped: string[] = diagnostics,
 ): { directory: string; task: Task }[] => {
   const entries = readTaskEntries(root, diagnostics);
 
@@ -458,7 +426,7 @@ export const readTasks = (
   for (const entry of entries.filter(
     (candidate) => candidate.isDirectory() && candidate.name !== '.admission',
   )) {
-    const outcome = scanTaskEntry(root, entry, diagnostics);
+    const outcome = scanTaskEntry(root, entry, diagnostics, skipped);
 
     if (!outcome) {
       continue;
@@ -472,53 +440,13 @@ export const readTasks = (
     tasks.push({ directory: outcome.directory, task: outcome.task });
   }
 
-  addReferencedTasks(root, tasks, unpublished, diagnostics);
+  addReferencedTasks(root, tasks, unpublished, diagnostics, skipped);
 
   for (const [id, directory] of unpublished) {
-    diagnostics.push(
-      `Skipped unpublished task ${id}; preparation evidence remains at ${directory}.`,
-    );
+    skipped.push(`Skipped unpublished task ${id}; preparation evidence remains at ${directory}.`);
   }
 
   return tasks;
-};
-
-const successorMatchesPredecessor = (successor: Task, predecessor: Task): boolean =>
-  successor.taskId !== predecessor.taskId &&
-  successor.nativeSessionId === predecessor.nativeSessionId &&
-  successor.nativeSessionFile === predecessor.nativeSessionFile;
-
-export const claimSuccessor = (directory: string, successor: Task): void => {
-  const predecessor = readTask(directory);
-  const existing = readSuccessor(directory);
-
-  if (existing) {
-    throw new Error(
-      `Task ${predecessor.taskId} already claimed by successor ${existing.successorTaskId}. No retry.`,
-    );
-  }
-
-  if (
-    successor.predecessorTaskId !== predecessor.taskId ||
-    !successorMatchesPredecessor(successor, predecessor)
-  ) {
-    throw new Error('Successor identity does not match its predecessor.');
-  }
-
-  try {
-    publish(directory, 'successor.json', {
-      version: 1,
-      predecessorTaskId: predecessor.taskId,
-      successorTaskId: successor.taskId,
-      nativeSessionId: successor.nativeSessionId,
-      nativeSessionFile: successor.nativeSessionFile,
-    });
-  } catch (error) {
-    throw new Error(
-      `Claim for successor ${successor.taskId} is uncertain or another successor won. Inspect successor.json; never retry or reclaim by age.`,
-      { cause: error },
-    );
-  }
 };
 
 const validReport = (value: unknown, taskId: string): value is Report =>
@@ -598,6 +526,29 @@ export const readEvent = (
 
     throw error;
   }
+};
+
+const rejectedBeforeDispatch = (directory: string, task: Task): boolean => {
+  if (readEvent(directory, task.taskId, 'cleanup')?.stopped !== true) {
+    return false;
+  }
+
+  const dispatched = existsSync(join(directory, 'dispatch.json'));
+  const accepted = readEvent(directory, task.taskId, 'accepted');
+  const reported = readReport(directory, task.taskId);
+
+  return !dispatched && !accepted && !reported;
+};
+
+export const findSuccessor = (
+  entries: { directory: string; task: Task }[],
+  sourceTaskId: string,
+): Task | undefined => {
+  return entries.find(({ directory, task }) => {
+    const followsSource = task.predecessorTaskId === sourceTaskId;
+
+    return followsSource && !rejectedBeforeDispatch(directory, task);
+  })?.task;
 };
 
 export const taskEnded = (directory: string, task: Task): boolean =>

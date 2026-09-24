@@ -96,7 +96,6 @@ it.each([
   'permission',
   'identity',
   'accepted',
-  'claim',
   'report',
   'dangling task link',
 ] as const)('skips unreadable tasks and diagnoses %s evidence', (failure) => {
@@ -120,7 +119,7 @@ it.each([
     if (failure === 'dangling task link') {
       symlinkSync(join(child, 'missing'), join(child, 'task.json'));
     } else {
-      const marker = failure === 'claim' ? 'successor.json' : `${failure}.json`;
+      const marker = `${failure}.json`;
       writeFileSync(join(child, marker), '{}');
     }
   }
@@ -248,21 +247,21 @@ it('reads a task published by another process during the scan', () => {
 });
 
 it.each([
-  { successor: 'published late', result: ['predecessor', 'successor', 'task-one'], skipped: [] },
+  { predecessor: 'published late', result: ['origin', 'predecessor', 'task-one'], skipped: [] },
   {
-    successor: 'still unpublished',
-    result: ['predecessor', 'task-one'],
-    skipped: ['successor'],
+    predecessor: 'still unpublished',
+    result: ['origin', 'task-one'],
+    skipped: ['predecessor'],
   },
 ])(
-  'checks every late continuation reference when the successor is $successor',
-  async ({ successor: state, result, skipped }) => {
+  'checks every late continuation reference when the predecessor is $predecessor',
+  async ({ predecessor: state, result, skipped }) => {
     const { directory, task } = questionFixture();
     const root = join(directory, 'registry');
     const directories = {
       middle: join(root, task.taskId),
       predecessor: join(root, 'predecessor'),
-      successor: join(root, 'successor'),
+      origin: join(root, 'origin'),
     };
 
     for (const path of Object.values(directories)) {
@@ -270,22 +269,21 @@ it.each([
     }
 
     const middle = records.validateTask({ ...task, predecessorTaskId: 'predecessor' });
-    const successor = records.validateTask({
+    const predecessor = records.validateTask({
       ...task,
-      taskId: 'successor',
-      predecessorTaskId: task.taskId,
+      taskId: 'predecessor',
+      predecessorTaskId: 'origin',
     });
     records.publish(directories.middle, 'task.json', middle);
-    records.publish(directories.predecessor, 'task.json', { ...task, taskId: 'predecessor' });
+    records.publish(directories.origin, 'task.json', { ...task, taskId: 'origin' });
 
     if (state === 'published late') {
-      records.publish(directories.successor, 'task.json', successor);
+      records.publish(directories.predecessor, 'task.json', predecessor);
     }
 
-    records.claimSuccessor(directories.middle, successor);
     const original = await vi.importActual<typeof fileSystem>('node:fs');
     // Each continuation looks unpublished until the scan lists its directory, then another process publishes it.
-    const hidden = new Set([directories.predecessor, directories.successor]);
+    const hidden = new Set([directories.predecessor]);
     const isHidden = (path: unknown) =>
       [...hidden].some((hiddenDirectory) => path === join(hiddenDirectory, 'task.json'));
     vi.mocked(fileSystem.openSync).mockImplementation((path, ...rest) => {
@@ -338,63 +336,25 @@ it('reads the saved task once while finding the pending question', () => {
   expect(taskReads).toHaveLength(1);
 });
 
-it.each(['claim', 'predecessor'] as const)(
-  'diagnoses an unpublished directory referenced by a published %s',
-  (reference) => {
-    const { directory, task } = questionFixture();
-    const root = join(directory, 'registry');
-    const source = join(root, task.taskId);
-    const pending = join(root, 'unpublished');
-    mkdirSync(source, { recursive: true });
-    mkdirSync(pending);
-    records.publish(source, 'task.json', {
-      ...task,
-      ...(reference === 'predecessor' ? { predecessorTaskId: 'unpublished' } : {}),
-    });
-
-    if (reference === 'claim') {
-      records.claimSuccessor(
-        source,
-        records.validateTask({ ...task, taskId: 'unpublished', predecessorTaskId: task.taskId }),
-      );
-    }
-
-    const diagnostics: string[] = [];
-    const scanned = records.readTasks(root, diagnostics);
-
-    expect(scanned.map((entry) => entry.task.taskId)).toEqual([task.taskId]);
-    expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0]).toContain(pending);
-    expect(readdirSync(pending)).toEqual([]);
-  },
-);
-
-it('retains an exclusive successor claim after directory sync uncertainty and never republishes it', async () => {
+it('diagnoses an unpublished predecessor referenced by a published task', () => {
   const { directory, task } = questionFixture();
-  const successor = records.validateTask({
+  const root = join(directory, 'registry');
+  const source = join(root, task.taskId);
+  const pending = join(root, 'unpublished');
+  mkdirSync(source, { recursive: true });
+  mkdirSync(pending);
+  records.publish(source, 'task.json', {
     ...task,
-    taskId: 'successor',
-    predecessorTaskId: task.taskId,
+    predecessorTaskId: 'unpublished',
   });
-  const original = await vi.importActual<typeof fileSystem>('node:fs');
-  vi.mocked(fsyncSync).mockImplementation((descriptor) => {
-    if (fstatSync(descriptor).isDirectory()) {
-      throw new Error('Directory sync failed.');
-    }
 
-    original.fsyncSync(descriptor);
-  });
-  expect(() => {
-    records.claimSuccessor(directory, successor);
-  }).toThrow('successor');
-  const bytes = readFileSync(join(directory, 'successor.json'));
-  expect(records.readSuccessor(directory)?.successorTaskId).toBe('successor');
-  vi.mocked(fsyncSync).mockImplementation(original.fsyncSync);
+  const diagnostics: string[] = [];
+  const scanned = records.readTasks(root, diagnostics);
 
-  expect(() => {
-    records.claimSuccessor(directory, successor);
-  }).toThrow('already claimed');
-  expect(readFileSync(join(directory, 'successor.json'))).toEqual(bytes);
+  expect(scanned.map((entry) => entry.task.taskId)).toEqual([task.taskId]);
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toContain(pending);
+  expect(readdirSync(pending)).toEqual([]);
 });
 
 it('requires directory sync on identical question reply and acknowledgement recovery', async () => {

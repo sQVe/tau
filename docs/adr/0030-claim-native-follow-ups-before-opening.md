@@ -1,7 +1,6 @@
 # ADR 0030: Claim native follow-ups before opening
 
-- Status: Proposed; claim rules superseded by
-  [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
+- Status: Superseded by [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 - Date: 2026-09-17
 
 ## Context

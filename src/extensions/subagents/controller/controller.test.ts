@@ -789,7 +789,7 @@ it('waits for the split shell before starting Pi', async ({ onTestFinished }) =>
   expect(fixture.fake.state.busyShellPolls).toBe(0);
 });
 
-it('skips unpublished preparation debris while published attempts and claims remain exclusive', async ({
+it('skips unpublished preparation debris while published attempts remain exclusive', async ({
   onTestFinished,
 }) => {
   vi.stubEnv('TAU_SUBAGENT_CAP', '1');
@@ -884,12 +884,24 @@ it('skips unpublished preparation debris while published attempts and claims rem
     WorkerController['followUp']
   >[1];
 
+  vi.spyOn(loadoutModule, 'validateSavedLoadout').mockImplementation(
+    (value) => value as ReturnType<typeof readTask>['loadout'],
+  );
+
   await expect(controller.followUp(input, context)).rejects.toThrow('published-attempt');
-  records.claimSuccessor(launched.directory, attempt);
-  await expect(controller.followUp(input, context)).rejects.toThrow('published-attempt');
-  expect(records.readSuccessor(launched.directory)?.successorTaskId).toBe(attempt.taskId);
   expect(readdirSync(abandonedDirectory)).toEqual(receiptFiles);
 });
+
+const savedFiles = (directory: string) => {
+  const entries = readdirSync(directory, { recursive: true, withFileTypes: true });
+
+  return entries.map((entry) => {
+    const path = join(entry.parentPath, entry.name);
+    const bytes = entry.isFile() ? readFileSync(path) : undefined;
+
+    return { path, bytes };
+  });
+};
 
 const completed = async (intercept?: HerdrClient) => {
   const fixture = setup(afterTest, 0, intercept);
@@ -949,7 +961,100 @@ const completed = async (intercept?: HerdrClient) => {
   };
 };
 
-it('retains the follow-up claim when final absence verification fails', async () => {
+it.each(['pending', 'uncertain cleanup', 'dispatch', 'accepted', 'report'] as const)(
+  'refuses follow-up without writes when a successor has %s evidence',
+  async (evidence) => {
+    const fixture = await completed();
+    const directory = join(fixture.directory, 'successor');
+    mkdirSync(directory);
+    records.publish(directory, 'task.json', {
+      ...fixture.source,
+      taskId: 'successor',
+      predecessorTaskId: fixture.source.taskId,
+    });
+
+    if (evidence !== 'pending') {
+      recordEvent(directory, 'successor', 'cleanup', {
+        detail: 'Cleanup result.',
+        stopped: evidence !== 'uncertain cleanup',
+      });
+    }
+
+    if (evidence === 'dispatch') {
+      records.publish(directory, 'dispatch.json', { taskId: 'successor' });
+    }
+
+    if (evidence === 'accepted') {
+      recordEvent(directory, 'successor', 'accepted', 'Accepted.');
+    }
+
+    if (evidence === 'report') {
+      acceptReport(directory, 'successor', {
+        taskId: 'successor',
+        outcome: 'success',
+        summary: 'Done.',
+        evidence: [],
+      });
+    }
+
+    const saved = savedFiles(fixture.directory);
+    fixture.calls.length = 0;
+
+    await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+      'successor',
+    );
+    expect(savedFiles(fixture.directory)).toEqual(saved);
+    expect(fixture.calls).toEqual([['agent', 'list']]);
+  },
+);
+
+it('admits follow-up with retired records and an unpublished directory', async () => {
+  const fixture = await completed();
+  const retiredRecords = [
+    { ...fixture.source, taskId: 'retired-tree', tree: {} },
+    { ...fixture.source, taskId: 'retired-owner', ownerId: 'old-controller' },
+    {
+      ...fixture.source,
+      taskId: 'retired-fingerprint',
+      loadout: { ...fixture.source.loadout, modelFingerprint: '0'.repeat(64) },
+    },
+  ];
+
+  for (const record of retiredRecords) {
+    const directory = join(fixture.directory, record.taskId);
+    mkdirSync(directory);
+    records.publish(directory, 'task.json', record);
+  }
+
+  const unpublished = join(fixture.directory, 'unpublished');
+  mkdirSync(unpublished);
+  const saved = savedFiles(fixture.directory);
+  const result = fixture.controller.followUp(fixture.input, fixture.context);
+
+  await expect(result).resolves.toMatchObject({
+    state: 'starting',
+    predecessorTaskId: fixture.source.taskId,
+  });
+  expect(savedFiles(fixture.directory)).toEqual(expect.arrayContaining(saved));
+  expect(readdirSync(unpublished)).toEqual([]);
+});
+
+it('reports unreadable successor records and refuses follow-up without writes', async () => {
+  const fixture = await completed();
+  const directory = join(fixture.directory, 'unreadable');
+  mkdirSync(directory);
+  writeFileSync(join(directory, 'task.json'), '{');
+  const saved = savedFiles(fixture.directory);
+  fixture.calls.length = 0;
+
+  await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+    'unreadable',
+  );
+  expect(savedFiles(fixture.directory)).toEqual(saved);
+  expect(fixture.calls).toEqual([['agent', 'list']]);
+});
+
+it('refuses another follow-up when final absence verification fails', async () => {
   let following = false;
   let absenceChecks = 0;
   const fixture = await completed(async (argumentsList) => {
@@ -984,17 +1089,15 @@ it('retains the follow-up claim when final absence verification fails', async ()
 
   expect(failed.state).toBe('cleanupUnconfirmed');
   expect(readEvent(failed.directory, failed.taskId, 'cleanup')?.stopped).toBe(false);
-  expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(failed.taskId);
+  expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBe(failed.taskId);
   expect(fixture.calls.some((call) => call[1] === 'close')).toBe(false);
-  const calls = fixture.calls.length;
-  const claim = readFileSync(join(fixture.sourceDirectory, 'successor.json'));
+  const saved = savedFiles(fixture.directory);
 
   await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
     failed.taskId,
   );
 
-  expect(fixture.calls).toHaveLength(calls);
-  expect(readFileSync(join(fixture.sourceDirectory, 'successor.json'))).toEqual(claim);
+  expect(savedFiles(fixture.directory)).toEqual(saved);
 });
 
 it('allows follow-up retry after a rejected start and confirmed cleanup', async () => {
@@ -1005,14 +1108,18 @@ it('allows follow-up retry after a rejected start and confirmed cleanup', async 
   const failed = await fixture.controller.followUp(fixture.input, fixture.context);
 
   expect(failed.state).toBe('stopped');
-  expect(records.readSuccessor(fixture.sourceDirectory)).toBeUndefined();
+  expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBeUndefined();
+  expect(readdirSync(failed.directory)).not.toContain('dispatch.json');
+  expect(readEvent(failed.directory, failed.taskId, 'accepted')).toBeUndefined();
+  expect(records.readReport(failed.directory, failed.taskId)).toBeUndefined();
+  expect(readEvent(failed.directory, failed.taskId, 'cleanup')?.stopped).toBe(true);
   fixture.fake.state.startError = '';
   fixture.fake.state.rejectStart = false;
   const retried = await fixture.controller.followUp(fixture.input, fixture.context);
 
   expect(retried.state).toBe('starting');
   expect(retried.taskId).not.toBe(failed.taskId);
-  expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(retried.taskId);
+  expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBe(retried.taskId);
 });
 
 it('follows up a completed native task with new identity and unchanged saved evidence', async () => {
@@ -1041,13 +1148,30 @@ it('follows up a completed native task with new identity and unchanged saved evi
     predecessorTaskId: fixture.source.taskId,
     predecessorName: fixture.source.name,
   });
-  expect(fixture.validation).toHaveBeenCalledOnce();
+  expect(
+    fixture.controller.status(fixture.source.taskId, fixture.input.parentSessionId),
+  ).toMatchObject({
+    successorTaskId: next.taskId,
+  });
+  const history = await searchHistory(fixture.directory, {
+    file: fixture.input.parentSession,
+    id: fixture.input.parentSessionId,
+    sessionDirectory: fixture.directory,
+  });
+  expect(
+    history.candidates.find((candidate) => candidate.taskId === fixture.source.taskId),
+  ).toMatchObject({
+    successorTaskId: next.taskId,
+  });
   expect(readFileSync(join(fixture.sourceDirectory, 'task.json'))).toEqual(taskBytes);
   expect(readFileSync(join(fixture.sourceDirectory, 'report.json'))).toEqual(reportBytes);
   expect(readFileSync(fixture.source.nativeSessionFile)).toEqual(nativeBytes);
+  const saved = savedFiles(fixture.directory);
+
   await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
     task.taskId,
   );
+  expect(savedFiles(fixture.directory)).toEqual(saved);
 });
 
 it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'out of tree'] as const)(
@@ -1078,13 +1202,12 @@ it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'out of t
       );
     }
 
-    fixture.calls.length = 0;
-    expect(fixture.controller).toHaveProperty('followUp');
+    const saved = savedFiles(fixture.directory);
 
     await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
       /cleanup|handover|native|tree/i,
     );
-    expect(fixture.calls).toEqual([]);
+    expect(savedFiles(fixture.directory)).toEqual(saved);
   },
 );
 
@@ -1129,15 +1252,11 @@ it('allows only one competing follow-up and preserves lineage across parents and
       parentSession: fixture.input.parentSession,
     }) + '\n',
   );
-  const parallel = new WorkerController(fixture.directory, fixture.client);
-  afterTest(() => {
-    parallel.close();
-  });
   fixture.calls.length = 0;
   const request = { ...fixture.input, parentSession: sibling, parentSessionId: 'sibling' };
   const attempts = await Promise.allSettled([
     fixture.controller.followUp(request, fixture.context),
-    parallel.followUp(request, fixture.context),
+    fixture.controller.followUp(request, fixture.context),
   ]);
   const successes = attempts.filter((entry) => entry.status === 'fulfilled');
   expect(successes).toHaveLength(1);
@@ -1148,9 +1267,9 @@ it('allows only one competing follow-up and preserves lineage across parents and
   }
 
   expect(fixture.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
-  expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(next.taskId);
+  expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBe(next.taskId);
   await expect(
-    parallel.followUp({ ...request, sourceTaskId: next.taskId }, fixture.context),
+    fixture.controller.followUp({ ...request, sourceTaskId: next.taskId }, fixture.context),
   ).rejects.toThrow('handover');
   records.acceptReport(next.directory, next.taskId, {
     taskId: next.taskId,
@@ -1163,7 +1282,6 @@ it('allows only one competing follow-up and preserves lineage across parents and
     stopped: true,
   });
   fixture.controller.close();
-  parallel.close();
   const latestController = new WorkerController(fixture.directory, fixture.client);
   afterTest(() => {
     latestController.close();
@@ -1195,14 +1313,14 @@ it('allows only one competing follow-up and preserves lineage across parents and
   ).rejects.toThrow(latest.taskId);
 });
 
-it.each(['cancelled', 'missing after claim', 'failed startup', 'sync uncertain'] as const)(
-  'releases a native claim after confirmed pre-start %s failure',
+it.each(['cancelled', 'missing after placement', 'failed startup'] as const)(
+  'allows another follow-up after confirmed pre-start %s failure',
   async (failure) => {
     let following = false;
     const abort = new AbortController();
     let nativeFile = '';
     const fixture = await completed(async (argumentsList) => {
-      if (following && argumentsList[1] === 'split' && failure === 'missing after claim') {
+      if (following && argumentsList[1] === 'split' && failure === 'missing after placement') {
         rmSync(nativeFile);
       }
 
@@ -1220,55 +1338,43 @@ it.each(['cancelled', 'missing after claim', 'failed startup', 'sync uncertain']
     const nativeContents = readFileSync(nativeFile);
     following = true;
 
-    if (failure === 'sync uncertain') {
-      const claim = records.claimSuccessor;
-      vi.spyOn(records, 'claimSuccessor').mockImplementation((directory, successor) => {
-        claim(directory, successor);
-        throw new Error('Directory sync uncertain.');
-      });
-    }
-
     const next = await fixture.controller.followUp(fixture.input, fixture.context, abort.signal);
     expect(next.outcome).toBe(failure === 'cancelled' ? 'cancelled' : 'failure');
     expect(next.state).toBe('stopped');
-    expect(records.readSuccessor(fixture.sourceDirectory)).toBeUndefined();
+    expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBeUndefined();
     expect(records.readReport(next.directory, next.taskId)).toBeUndefined();
     following = false;
 
-    if (failure === 'sync uncertain') {
-      vi.mocked(records.claimSuccessor).mockRestore();
-    }
-
     const validationFailures: unknown[] = [];
 
-    if (failure === 'missing after claim') {
+    if (failure === 'missing after placement') {
       await fixture.controller.followUp(fixture.input, fixture.context).catch((error: unknown) => {
         validationFailures.push(error);
       });
       writeFileSync(nativeFile, nativeContents);
     }
 
-    expect(validationFailures).toHaveLength(failure === 'missing after claim' ? 1 : 0);
+    expect(validationFailures).toHaveLength(failure === 'missing after placement' ? 1 : 0);
     const retry = await fixture.controller.followUp(fixture.input, fixture.context);
 
     expect(retry.state).toBe('starting');
-    expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(retry.taskId);
+    expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBe(retry.taskId);
   },
 );
 
-it('retains the follow-up claim when a failed start leaves an unconfirmed worker', async () => {
+it('refuses another follow-up when a failed start leaves an unconfirmed worker', async () => {
   const fixture = await completed();
   fixture.fake.state.startError = 'Response lost after launch';
 
   const failed = await fixture.controller.followUp(fixture.input, fixture.context);
-  const calls = fixture.calls.length;
+  const saved = savedFiles(fixture.directory);
 
   expect(failed.state).toBe('cleanupUnconfirmed');
   await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
     failed.taskId,
   );
-  expect(fixture.calls).toHaveLength(calls);
-  expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(failed.taskId);
+  expect(savedFiles(fixture.directory)).toEqual(saved);
+  expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBe(failed.taskId);
 });
 
 it('refuses known live native writers and preserves validation time in the original follow-up budget', async () => {
@@ -1285,10 +1391,14 @@ it('refuses known live native writers and preserves validation time in the origi
       agent_session: { kind: 'path', value: fixture.source.nativeSessionFile },
     },
   ];
+  const saved = savedFiles(fixture.directory);
+  fixture.calls.length = 0;
+
   await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
     'already live',
   );
-  expect(records.readSuccessor(fixture.sourceDirectory)).toBeUndefined();
+  expect(savedFiles(fixture.directory)).toEqual(saved);
+  expect(fixture.calls).toEqual([['agent', 'list']]);
   live = [];
   const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
   fixture.validation.mockImplementation((value) => {
@@ -1302,7 +1412,7 @@ it('refuses known live native writers and preserves validation time in the origi
     'budget expired',
   );
   expect(fixture.calls).toEqual([]);
-  expect(records.readSuccessor(fixture.sourceDirectory)).toBeUndefined();
+  expect(savedFiles(fixture.directory)).toEqual(saved);
 });
 
 it('retains friendly names and avoids retained and live collisions', async ({ onTestFinished }) => {
@@ -1339,7 +1449,7 @@ it('retains friendly names and avoids retained and live collisions', async ({ on
   recovered.close();
 });
 
-it('refuses full-cap native follow-up before consuming its successor claim', async () => {
+it('refuses full-cap native follow-up before publishing an attempt', async () => {
   const fixture = await completed();
 
   for (let index = 0; index < 4; index++) {
@@ -1350,7 +1460,7 @@ it('refuses full-cap native follow-up before consuming its successor claim', asy
   await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
     'capacity full',
   );
-  expect(records.readSuccessor(fixture.sourceDirectory)).toBeUndefined();
+  expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBeUndefined();
   expect(
     records
       .readTasks(fixture.directory)

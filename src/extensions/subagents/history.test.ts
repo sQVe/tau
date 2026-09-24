@@ -16,6 +16,7 @@ import type { ExtensionContext, SessionInfo } from '@earendil-works/pi-coding-ag
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { WorkerController } from './controller/controller.js';
+import { taskStatus } from './controller/record.js';
 import { fixtureGenericLoadout, fixtureLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import subagentsExtension from './index.js';
@@ -295,13 +296,43 @@ it('keeps the named current session out of history while checking its discovered
   expect(history.diagnostics).toEqual([]);
 });
 
-it('reports corrupt saved reports and claims as diagnostics without hiding other tasks', async () => {
+it('derives successor status and history from task records', async () => {
+  const fixture = setup();
+  const source = fixture.task('source', fixture.child, 'child');
+  const rejectedDirectory = join(fixture.workers, 'rejected');
+  const successorDirectory = join(fixture.workers, 'successor');
+  mkdirSync(rejectedDirectory);
+  mkdirSync(successorDirectory);
+  const successor = {
+    ...source.record,
+    taskId: 'successor',
+    predecessorTaskId: source.record.taskId,
+  };
+  publish(rejectedDirectory, 'task.json', { ...successor, taskId: 'rejected' });
+  recordEvent(rejectedDirectory, 'rejected', 'cleanup', { detail: 'Rejected.', stopped: true });
+  publish(successorDirectory, 'task.json', successor);
+
+  const history = await searchHistory(fixture.workers, {
+    file: fixture.child,
+    id: 'child',
+    sessionDirectory: fixture.sessions,
+  });
+
+  expect(taskStatus(source.taskDirectory).successorTaskId).toBe('successor');
+  expect(history.candidates.find((candidate) => candidate.taskId === 'source')).toMatchObject({
+    successorTaskId: 'successor',
+  });
+  expect(history.candidates.find((candidate) => candidate.taskId === 'successor')).toMatchObject({
+    predecessorTaskId: 'source',
+  });
+  expect(history.diagnostics).toEqual([]);
+});
+
+it('reports corrupt saved reports as diagnostics without hiding other tasks', async () => {
   const fixture = setup();
   const corruptReport = fixture.task('corrupt-report', fixture.child, 'child');
-  const corruptClaim = fixture.task('corrupt-claim', fixture.child, 'child');
   fixture.task('intact', fixture.child, 'child');
   writeFileSync(join(corruptReport.taskDirectory, 'report.json'), '{}');
-  writeFileSync(join(corruptClaim.taskDirectory, 'successor.json'), '{}');
 
   const history = await searchHistory(fixture.workers, {
     file: fixture.child,
@@ -313,12 +344,11 @@ it('reports corrupt saved reports and claims as diagnostics without hiding other
     history.candidates
       .flatMap((candidate) => (candidate.taskId ? [candidate.taskId] : []))
       .toSorted(),
-  ).toEqual(['corrupt-claim', 'corrupt-report', 'intact']);
+  ).toEqual(['corrupt-report', 'intact']);
   expect(
     history.candidates.find((candidate) => candidate.taskId === 'corrupt-report'),
   ).not.toHaveProperty('report');
   expect(history.diagnostics.join(' ')).toContain('Task corrupt-report');
-  expect(history.diagnostics.join(' ')).toContain('Task corrupt-claim');
 });
 
 it('scopes history to the validated root and descendants including siblings and missing native refs', async () => {

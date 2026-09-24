@@ -614,8 +614,12 @@ it('offers follow-up only to Pi workers', () => {
     '\n',
   );
 
+  const followedUp = expandedStatusLines(statusFixture('stopped', false), subject).join('\n');
+
   expect(pi).toMatch(/Follow-up available/);
   expect(generic).not.toMatch(/Follow-up available/);
+  expect(followedUp).not.toMatch(/Follow-up available/);
+  expect(followedUp).toContain('successor-abcdef01');
 });
 
 it('shows which handoff sections the saved report is missing', () => {

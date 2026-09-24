@@ -4,7 +4,7 @@ import { SessionManager, truncateLine } from '@earendil-works/pi-coding-agent';
 import type { SessionInfo } from '@earendil-works/pi-coding-agent';
 
 import { readGenericReference } from './generic.js';
-import { readReport, readSuccessor } from './records.js';
+import { findSuccessor, readReport } from './records.js';
 import { canonical, historyRegistry, lineage, readNode, sameRoot } from './sessionLineage.js';
 import type { LineageNode } from './sessionLineage.js';
 import { isGenericLoadout, requireNativeTask } from './types.js';
@@ -178,18 +178,12 @@ const taskCandidate = (
     `Task ${task.taskId} report`,
     diagnostics,
   );
-  const successor = readOrDiagnose(
-    () => readSuccessor(directory),
-    `Task ${task.taskId} successor claim`,
-    diagnostics,
-  );
   const state = candidateState(directory, task, ownership, diagnostics);
 
   return {
     sourceFile: join(directory, 'task.json'),
     taskId: task.taskId,
     ...(task.predecessorTaskId ? { predecessorTaskId: task.predecessorTaskId } : {}),
-    ...(successor ? { successorTaskId: successor.successorTaskId } : {}),
     ...(task.name ? { name: task.name } : {}),
     description: task.task,
     nativeSessionId: native.nativeSessionId,
@@ -251,6 +245,16 @@ const taskCandidates = (
     const candidate = taskCandidate(entry, tasks, inScope, ownership, diagnostics);
 
     if (candidate) {
+      const successor = readOrDiagnose(
+        () => findSuccessor(saved, entry.task.taskId),
+        `Task ${entry.task.taskId} successor`,
+        diagnostics,
+      );
+
+      if (successor) {
+        candidate.successorTaskId = successor.taskId;
+      }
+
       candidates.push(candidate);
     }
   }
