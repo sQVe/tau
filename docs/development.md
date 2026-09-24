@@ -88,8 +88,9 @@ Set `TAU_DELEGATE_MODEL=provider/model-id` before launching Pi to choose the del
 `bulk_read`, answer-mode `fetch_content`, and commit comment review. It uses Pi's credentials and
 does not change the session model. Use the exact provider and model ID from `pi --list-models`,
 including router prefixes such as `openrouter/anthropic/model-id`. The model needs working
-credentials. See the [shared-delegate decision](adr/0027-share-one-delegate-model.md) for the
-default and its comparison.
+credentials. See the [shared-delegate decision](adr/0027-share-one-delegate-model.md) for why the
+tasks share one model, and the [default decision](adr/0041-default-the-delegate-to-gpt-6-luna.md)
+for the default.
 
 ### Workers
 
