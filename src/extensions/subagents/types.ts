@@ -203,6 +203,14 @@ export const requireNativeTask = (task: Task): NativeTask => {
 export type Report = Static<typeof reportSchema>;
 export type TaskEvent = Static<typeof eventSchema>;
 
+export const nativeAgentStates = ['idle', 'done', 'working', 'blocked', 'unknown'] as const;
+
+export type NativeAgentState = (typeof nativeAgentStates)[number];
+
+export type SubmissionState = 'submitted' | 'not-delivered' | 'uncertain';
+
+export type ReplyDelivery = 'sent' | 'uncertain' | 'notResent' | 'notDelivered';
+
 // Any of these events ends a task for admission and ancestry checks.
 export const taskEndedEventKinds: readonly TaskEvent['kind'][] = [
   'cleanup',

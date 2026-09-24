@@ -1,7 +1,7 @@
 import type { SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
 import type { OwnedWorker } from './cancellation.js';
-import type { Task } from './types.js';
+import type { NativeAgentState, Task } from './types.js';
 
 export interface Handle {
   directory: string;
@@ -19,7 +19,7 @@ export interface Handle {
   workerObserved?: boolean;
   shell?: { processId: number; startedAt: string };
   startError?: string;
-  nativeState?: string;
+  nativeState?: NativeAgentState;
   observationIssue?: string;
   recordErrors: string[];
   shutdownReason?: SessionShutdownEvent['reason'];

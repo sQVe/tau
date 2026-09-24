@@ -25,7 +25,7 @@ import {
   submissionName,
 } from './records.js';
 import { isGenericLoadout } from './types.js';
-import type { Task } from './types.js';
+import type { SubmissionState, Task } from './types.js';
 
 export const genericReportPath = (task: Task): string => {
   if (!isGenericLoadout(task.loadout)) {
@@ -271,7 +271,7 @@ export const submitGenericText = async (
   }
 
   publish(directory, submissionName(id, 'intent'), { taskId: task.taskId, id, text });
-  let state: 'submitted' | 'not-delivered' | 'uncertain' = 'submitted';
+  let state: SubmissionState = 'submitted';
   let detail =
     'Herdr submitted text. Task acceptance, acknowledgement, and model selection are not verified.';
 
