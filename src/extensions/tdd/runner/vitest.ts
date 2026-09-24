@@ -99,7 +99,7 @@ const selects = (testNames: readonly string[] | undefined) => {
   return (fullname: string) => testNames.includes(fullname);
 };
 
-const exactNamePattern = (testNames: readonly string[]): string =>
+const exactNamePattern = (testNames: readonly string[]) =>
   `^(?:${testNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`;
 
 const toTestResult = (
