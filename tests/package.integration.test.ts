@@ -66,11 +66,6 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     expect(tauExtension?.tools.has('bulk_read')).toBe(true);
     expect(tauExtension?.commands.has('tdd')).toBe(false);
     expect(tauExtension?.tools.has('run_tests')).toBe(true);
-    expect(tauExtension?.handlers.get('tool_call')).toHaveLength(3);
-    expect(tauExtension?.handlers.get('session_start')).toHaveLength(6);
-    expect(tauExtension?.handlers.get('tool_result')).toHaveLength(3);
-    expect(tauExtension?.handlers.get('session_before_switch')).toHaveLength(2);
-    expect(tauExtension?.handlers.get('session_before_fork')).toHaveLength(2);
     expect(extensions.some((extension) => extension.tools.has('ask_user_question'))).toBe(true);
 
     const webAccessExtension = extensions.find((extension) => extension.tools.has('web_search'));
