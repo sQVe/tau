@@ -278,8 +278,45 @@ export default defineConfig({
     },
     overrides: [
       {
+        files: ['src/**/*.ts'],
+        rules: {
+          'eslint/no-restricted-imports': [
+            'error',
+            {
+              patterns: [
+                {
+                  group: ['**/tests/**'],
+                  message: 'Production code must not import test helpers.',
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        files: ['src/{bundledTools,delegateModel,errors,keys}/**/*.ts'],
+        rules: {
+          'eslint/no-restricted-imports': [
+            'error',
+            {
+              patterns: [
+                {
+                  group: ['**/tests/**'],
+                  message: 'Production code must not import test helpers.',
+                },
+                {
+                  group: ['**/extensions/**'],
+                  message: 'Shared modules must not depend on extensions.',
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
         files: ['**/*.test.{ts,tsx}', '**/fixtures/**', 'tests/*.ts'],
         rules: {
+          'eslint/no-restricted-imports': 'off',
           'typescript/no-explicit-any': 'off',
           'typescript/no-non-null-assertion': 'off',
           'typescript/no-unsafe-type-assertion': 'off',
