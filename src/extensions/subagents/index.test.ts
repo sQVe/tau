@@ -430,7 +430,6 @@ it('routes approved native tool arguments through the generic resolver without P
     harness: 'gemini',
     permissions: 'native-controls',
     nativeArguments: ['--native-setting', 'literal value'],
-    reportDirectory: directory,
     task: 'Inspect fixture.',
     timeoutSeconds: 10,
   };
@@ -457,7 +456,6 @@ it('routes approved native tool arguments through the generic resolver without P
     kind: 'gemini',
     permissions: 'native-controls',
     arguments: input.nativeArguments,
-    reportDirectory: directory,
   });
   expect(launch.mock.calls[0]?.[0].loadout).not.toHaveProperty('safetyExtension');
   await expect(
@@ -818,7 +816,6 @@ it('returns the unreadable-evidence object when launch records fail', async ({
       harness: 'gemini',
       permissions: 'native-controls',
       nativeArguments: ['--native-setting'],
-      reportDirectory: directory,
       task: 'Inspect fixture.',
       timeoutSeconds: 10,
     },

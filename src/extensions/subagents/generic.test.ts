@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import * as fileSystem from 'node:fs';
 import {
   linkSync,
@@ -13,6 +14,7 @@ import { dirname, join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { fixtureGenericLoadout } from './fixtures/loadout.js';
 import {
   acceptGenericReport,
@@ -79,6 +81,26 @@ it('requires complete publication and keeps an immutable parent report receipt',
     summary: setup.complete(),
     evidence: [setup.path],
   });
+});
+
+it('publishes the report under the worker cwd .tau folder and keeps it out of Git', async () => {
+  const setup = fixture();
+  const repository = await createTemporaryRepository(onTestFinished);
+  const task = { ...setup.task, loadout: fixtureGenericLoadout(repository) };
+
+  prepareGenericReport(task);
+  writeFileSync(genericReportPath(task), setup.complete(), { flag: 'wx' });
+
+  expect(acceptGenericReport(setup.records, task)).toBe(true);
+  expect(readReport(setup.records, task.taskId)?.evidence).toEqual([
+    join(repository, '.tau', 'workers', task.taskId, 'report.md'),
+  ]);
+  expect(
+    execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], {
+      cwd: repository,
+      encoding: 'utf8',
+    }),
+  ).toBe('');
 });
 
 it.each(['failure', 'incomplete'])(

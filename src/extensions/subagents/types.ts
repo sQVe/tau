@@ -39,7 +39,6 @@ export const genericLoadoutSchema = Type.Object(
       maxItems: 100,
     }),
     requestedModel: Type.Optional(text),
-    reportDirectory: text,
     configurationApproved: Type.Optional(Type.Literal(true)),
     instructions: text,
   },

@@ -81,8 +81,8 @@ const requirePiPermissions = (input: NativeLaunchInput): void => {
     throw new Error('Workers require explicit trusted-full-tools permission.');
   }
 
-  if (input.nativeArguments !== undefined || input.reportDirectory !== undefined) {
-    throw new Error('Pi workers do not accept native launch arguments or report directories.');
+  if (input.nativeArguments !== undefined) {
+    throw new Error('Pi workers do not accept native launch arguments.');
   }
 };
 

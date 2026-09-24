@@ -7,14 +7,15 @@ import {
   openSync,
   readSync,
   realpathSync,
+  writeFileSync,
 } from 'node:fs';
 import type { BigIntStats } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isMissingFile } from '../../errors/index.js';
+import { hasErrorCode, isMissingFile } from '../../errors/index.js';
 import { assignmentContractFor, handoffContract } from './handoff.js';
 import {
   acceptReport,
@@ -27,26 +28,50 @@ import {
 import { isGenericLoadout } from './types.js';
 import type { SubmissionState, Task } from './types.js';
 
-export const genericReportPath = (task: Task): string => {
+const reportDirectory = (task: Task): string => {
   if (!isGenericLoadout(task.loadout)) {
     throw new Error('Only generic workers use report files.');
   }
 
-  return join(task.loadout.reportDirectory, `.tau-worker-${task.taskId}`, 'report.md');
+  return join(task.loadout.cwd, '.tau', 'workers', task.taskId);
 };
+
+export const genericReportPath = (task: Task): string => join(reportDirectory(task), 'report.md');
+
+const reportAreaIsIntact = (task: Task): boolean =>
+  [task.loadout.cwd, reportDirectory(task)].every((path) => realpathSync(path) === path);
 
 // A 10000-byte report always fits the 64000-byte receipt even when every byte JSON-escapes.
 const reportByteLimit = 10_000;
 
+// The .gitignore keeps .tau/ out of Git in any repository, whatever the repository ignores.
+const ensureTauFolder = (cwd: string): void => {
+  const folder = join(cwd, '.tau');
+  mkdirSync(folder, { recursive: true, mode: 0o700 });
+
+  try {
+    writeFileSync(join(folder, '.gitignore'), '*\n', { flag: 'wx' });
+  } catch (error) {
+    if (!hasErrorCode(error, 'EEXIST')) {
+      throw error;
+    }
+  }
+};
+
 export const prepareGenericReport = (task: Task): void => {
-  if (
-    !isGenericLoadout(task.loadout) ||
-    realpathSync(task.loadout.reportDirectory) !== task.loadout.reportDirectory
-  ) {
-    throw new Error('The approved report area changed.');
+  const directory = reportDirectory(task);
+
+  if (realpathSync(task.loadout.cwd) !== task.loadout.cwd) {
+    throw new Error('The worker cwd changed.');
   }
 
-  mkdirSync(join(task.loadout.reportDirectory, `.tau-worker-${task.taskId}`), { mode: 0o700 });
+  ensureTauFolder(task.loadout.cwd);
+  mkdirSync(dirname(directory), { recursive: true, mode: 0o700 });
+  mkdirSync(directory, { mode: 0o700 });
+
+  if (!reportAreaIsIntact(task)) {
+    throw new Error('The report area changed.');
+  }
 };
 
 export const genericPrompt = (task: Task): string => {
@@ -168,12 +193,7 @@ export const acceptGenericReport = (directory: string, task: Task): boolean => {
 
   const path = genericReportPath(task);
 
-  if (
-    !isGenericLoadout(task.loadout) ||
-    realpathSync(task.loadout.reportDirectory) !== task.loadout.reportDirectory ||
-    realpathSync(join(task.loadout.reportDirectory, `.tau-worker-${task.taskId}`)) !==
-      join(task.loadout.reportDirectory, `.tau-worker-${task.taskId}`)
-  ) {
+  if (!reportAreaIsIntact(task)) {
     throw new Error('The report area changed.');
   }
 

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   closeSync,
   fsyncSync,
@@ -7,12 +7,15 @@ import {
   openSync,
   readSync,
   readdirSync,
+  realpathSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import type { Dirent } from 'node:fs';
-import { basename, isAbsolute, join, relative } from 'node:path';
+import { basename, isAbsolute, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
@@ -29,6 +32,14 @@ import {
 import type { GenericLoadout, Report, Successor, Task, TaskEvent } from './types.js';
 
 const recordByteLimit = 128_000;
+
+// Each Tau checkout keeps its own records, so a branch that changes the record format never
+// breaks another checkout. This module sits three directories below the package root.
+const checkoutRoot = realpathSync(fileURLToPath(new URL('../../../', import.meta.url)));
+const checkoutFolder = `${basename(checkoutRoot)}-${createHash('sha256').update(checkoutRoot).digest('hex').slice(0, 8)}`;
+
+export const workerRecordsDirectory = (): string =>
+  join(getAgentDir(), 'tau', checkoutFolder, 'workers');
 
 const serializeRecord = (value: unknown): string => {
   const serialized = `${JSON.stringify(value)}\n`;
@@ -120,16 +131,8 @@ const modelArgumentsAreConsistent = (loadout: GenericLoadout): boolean =>
 const genericOptionsAreConsistent = (task: Task, loadout: GenericLoadout): boolean =>
   nameMatchesRole(task) && modelArgumentsAreConsistent(loadout);
 
-const isOutsideDirectory = (path: string): boolean => path === '..' || path.startsWith('../');
-
-const reportAreaIsValid = (loadout: GenericLoadout): boolean => {
-  const reportRelative = relative(loadout.cwd, loadout.reportDirectory);
-
-  return !isAbsolute(reportRelative) && !isOutsideDirectory(reportRelative);
-};
-
 const hasAbsoluteGenericPaths = (task: Task, loadout: GenericLoadout): boolean =>
-  [task.parentSession, loadout.cwd, loadout.reportDirectory].every(isAbsolute);
+  [task.parentSession, loadout.cwd].every(isAbsolute);
 
 const hasGenericTaskIdentity = (task: Task, loadout: GenericLoadout): boolean =>
   task.version === 2 &&
@@ -139,10 +142,9 @@ const hasGenericTaskIdentity = (task: Task, loadout: GenericLoadout): boolean =>
 const validateGenericTask = (task: Task, loadout: GenericLoadout): void => {
   const identityIsValid =
     hasGenericTaskIdentity(task, loadout) && hasAbsoluteGenericPaths(task, loadout);
-  const optionsAreValid = reportAreaIsValid(loadout) && genericOptionsAreConsistent(task, loadout);
 
-  if (!identityIsValid || !optionsAreValid) {
-    throw new Error('Invalid generic worker identity, report area, or native configuration.');
+  if (!identityIsValid || !genericOptionsAreConsistent(task, loadout)) {
+    throw new Error('Invalid generic worker identity or native configuration.');
   }
 };
 

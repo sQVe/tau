@@ -40,7 +40,6 @@ it.each(['claude', 'codex', 'gemini'])(
       cwd: setup.directory,
       permissions: 'native-controls',
       arguments: [],
-      reportDirectory: setup.directory,
       instructions: resolved.instructions,
     });
     expect(resolved.instructions).toBeTypeOf('string');
@@ -83,12 +82,9 @@ it('copies native arguments literally and never takes configuration authority fr
   expect(() => resolveLoadout(setup.request, setup.context)).toThrow('native arguments');
 });
 
-it('refuses report scope expansion, invalid native arguments, and profile thinking translation', async () => {
+it('refuses invalid native arguments and profile thinking translation', async () => {
   const setup = fixture();
 
-  expect(() => resolveLoadout({ ...setup.request, reportDirectory: '..' }, setup.context)).toThrow(
-    'inside the authorized cwd',
-  );
   expect(() =>
     resolveLoadout({ ...setup.request, nativeArguments: ['unsafe\u0000argument'] }, setup.context),
   ).toThrow('Invalid or oversized');
