@@ -61,11 +61,12 @@ export const normalizeRepositoryPath = (file: string) =>
 
 const isInvalidPath = (rawFile: string, file: string): boolean => {
   const invalidName = rawFile.includes('\0') || file === '' || file === '.';
-  const reservedOrAbsolute = rawFile.startsWith(':') || posix.isAbsolute(file);
-  const escapesRepository = file === '..' || file.startsWith('../');
 
-  return invalidName || reservedOrAbsolute || escapesRepository;
+  return invalidName || rawFile.startsWith(':');
 };
+
+const isOutsideWorktree = (file: string): boolean =>
+  posix.isAbsolute(file) || file === '..' || file.startsWith('../');
 
 export const validatePaths = (files: string[]) => {
   for (const rawFile of files) {
@@ -75,6 +76,12 @@ export const validatePaths = (files: string[]) => {
 
     if (isInvalidPath(rawFile, file)) {
       throw new Error(`Invalid path: ${rawFile}`);
+    }
+
+    if (isOutsideWorktree(file)) {
+      throw new Error(
+        `Invalid path: ${rawFile}. Use a path relative to this worktree's root; commit other worktrees from a session there.`,
+      );
     }
 
     if (sensitivePathDenylist.some((pattern) => pattern.test(file))) {

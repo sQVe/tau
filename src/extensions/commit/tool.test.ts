@@ -129,6 +129,14 @@ describe('validatePaths', () => {
     }).toThrow(/Invalid path/);
   });
 
+  it('explains that absolute and escaping paths belong to another worktree', () => {
+    for (const path of ['/other/worktree/src/a.ts', '../other/src/a.ts']) {
+      expect(() => {
+        validatePaths([path]);
+      }).toThrow(/relative to this worktree.*from a session there/);
+    }
+  });
+
   it('keeps backslash traversal and sensitive path validation', () => {
     for (const path of [
       '..\\private',

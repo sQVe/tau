@@ -201,7 +201,9 @@ const resolveLaunchPlan = (
 
   // A different project needs its own trust decision, not the parent's inherited approval.
   if (cwd !== realpathSync(context.cwd)) {
-    throw new Error('Launch from the target cwd after trusting that project.');
+    throw new Error(
+      `Workers launch only in this session's cwd (${context.cwd}). For ${cwd}, send the task to the agent already running there (herdr agent list, herdr agent prompt) or start a session there.`,
+    );
   }
 
   const agentDirectory = realpathSync(getAgentDir());
