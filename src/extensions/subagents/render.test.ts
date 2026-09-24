@@ -511,27 +511,6 @@ it('renders through the registered tool definitions and the message renderer', (
   expect(plain(notice as Component)).toContain('asks');
 });
 
-it('renders the tau-worker-child notice with the same details', () => {
-  const subject = theme();
-  const { messageRenderers } = renderers();
-  const renderer = messageRenderers.get('tau-worker-child');
-  expect(renderer, 'tau-worker-child renderer must be registered').toBeTypeOf('function');
-  const notice = renderer?.(
-    {
-      role: 'custom',
-      customType: 'tau-worker-child',
-      content: '{}',
-      display: true,
-      details: statusFixture('stopped', false),
-      timestamp: 0,
-    },
-    { expanded: false, outputPad: 0 },
-    subject,
-  );
-
-  expect(plain(notice as Component)).toContain('reported success · stopped');
-});
-
 it('keeps generated paths, JSON, and full task IDs out of collapsed reply and history lines', () => {
   const subject = theme();
   const reply = collapsedReplyLines(replyFixture('sent'), subject).join('\n');

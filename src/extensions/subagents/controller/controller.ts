@@ -8,7 +8,6 @@ import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-
 
 import { errorMessage, isMissingFile } from '../../../errors/index.js';
 import { readWorkerActivity } from '../activity.js';
-import { workerCapacity } from '../admission.js';
 import { processAbsent } from '../cancellation.js';
 import { refuseLiveNativeWriter } from '../continuations.js';
 import { submitGenericText, genericPrompt, acceptGenericReport } from '../generic.js';
@@ -43,7 +42,6 @@ import type { WorkerWidgetRow } from '../widget.js';
 import {
   ensureReplyActive,
   workBudget,
-  boundedTiming,
   launchTiming,
   remainingCleanupBudget,
   remainingLaunchBudget,
@@ -89,6 +87,17 @@ import {
 import type { InspectionBudget } from './shellIdentity.js';
 import { closeUnstartedPane, stopOwnedWorker } from './stop.js';
 import type { Handle } from './types.js';
+
+const workerCapacity = (): number => {
+  // oxlint-disable-next-line node/no-process-env -- Each controller reads its capacity once at construction.
+  const capacity = Number(process.env.TAU_SUBAGENT_CAP ?? 4);
+
+  if (!Number.isInteger(capacity) || capacity < 1 || capacity > 256) {
+    throw new Error('TAU_SUBAGENT_CAP must be an integer from 1 to 256.');
+  }
+
+  return capacity;
+};
 
 const paneTitle = (task: Task): string => {
   const harness = isGenericLoadout(task.loadout) ? task.loadout.kind : task.loadout.harness;
@@ -1296,18 +1305,17 @@ export class WorkerController {
     const taskId = randomUUID();
     const directory = join(this.root, taskId);
     const timing = launchTiming(input.timeout, input.startedAt);
-    const bounded = boundedTiming(timing);
 
     const task = this.buildTask(input, {
       taskId,
       directory,
-      createdAt: bounded.createdAt,
-      deadline: bounded.deadline,
-      cancellationBudget: bounded.cancellationBudget,
-      monotonicDeadline: bounded.monotonicDeadline,
+      createdAt: timing.createdAt,
+      deadline: timing.deadline,
+      cancellationBudget: timing.cancellationBudget,
+      monotonicDeadline: timing.monotonicDeadline,
       ...(source ? { source } : {}),
     });
-    const listing = await this.readAgentListing(launchSignal, bounded);
+    const listing = await this.readAgentListing(launchSignal, timing);
 
     if (this.closed) {
       throw new Error('Parent controller stopped.');
@@ -1332,10 +1340,10 @@ export class WorkerController {
     task.name = name;
     validateTask(task);
 
-    this.live.add(taskId);
     prepareTaskDirectory(directory, task, Boolean(source));
+    this.live.add(taskId);
 
-    const handle = this.createHandle(directory, task, bounded.expires);
+    const handle = this.createHandle(directory, task, timing.expires);
     this.handles.set(taskId, handle);
     this.armHandle(handle, launchSignal);
 
@@ -1344,9 +1352,9 @@ export class WorkerController {
 
   private async readAgentListing(
     launchSignal: AbortSignal,
-    bounded: ReturnType<typeof boundedTiming>,
+    timing: ReturnType<typeof launchTiming>,
   ) {
-    const remaining = remainingLaunchBudget(bounded);
+    const remaining = remainingLaunchBudget(timing);
     const listingSignal = AbortSignal.any([
       launchSignal,
       this.lifetime.signal,
@@ -1357,7 +1365,7 @@ export class WorkerController {
     );
     listingSignal.throwIfAborted();
 
-    if (listing.type !== 'agent_list' || remainingLaunchBudget(bounded) <= 0) {
+    if (listing.type !== 'agent_list' || remainingLaunchBudget(timing) <= 0) {
       throw new Error('Invalid live agent listing or original startup budget expired.');
     }
 

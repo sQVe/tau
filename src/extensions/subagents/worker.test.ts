@@ -11,7 +11,7 @@ import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { readWorkerActivity, writeWorkerActivity } from './activity.js';
-import { monotonicNow } from './admission.js';
+import { monotonicNow } from './controller/budget.js';
 import { assignmentContract, handoffContract } from './handoff.js';
 import { checkWorkerRuntime } from './loadout.js';
 import * as questions from './questionRecords.js';

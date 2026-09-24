@@ -17,8 +17,8 @@ import type { Static } from 'typebox';
 
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
-import { monotonicNow, taskEnded } from './admission.js';
 import { processAbsent } from './cancellation.js';
+import { monotonicNow } from './controller/budget.js';
 import { checkWorkerRuntime } from './loadout.js';
 import { workerPrompt } from './profiles.js';
 import {
@@ -27,7 +27,15 @@ import {
   readReply,
   validateQuestion,
 } from './questionRecords.js';
-import { acceptReport, publish, readEvent, readRecord, readTask, recordEvent } from './records.js';
+import {
+  acceptReport,
+  publish,
+  readEvent,
+  readRecord,
+  readTask,
+  recordEvent,
+  taskEnded,
+} from './records.js';
 import { textLimit } from './types.js';
 import type { Question, Report, Task } from './types.js';
 

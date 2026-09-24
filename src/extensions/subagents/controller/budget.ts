@@ -1,7 +1,8 @@
-import { monotonicNow } from '../admission.js';
 import { readEvent, readReport } from '../records.js';
 import { isGenericLoadout, replyClosedEventKinds } from '../types.js';
 import type { Handle } from './types.js';
+
+export const monotonicNow = (): number => Number(process.hrtime.bigint()) / 1_000_000;
 
 // One remainder for every budget question; two clocks disagree within a millisecond.
 export const remainingLaunchBudget = (timing: { expires: number; cancellationBudget: number }) =>
@@ -55,10 +56,6 @@ export const launchTiming = (timeout: number, startedAt?: { wall: number; monoto
     deadline: createdAt + timeout,
     expires,
     cancellationBudget,
+    monotonicDeadline: monotonicNow() + expires - performance.now(),
   };
 };
-
-export const boundedTiming = (timing: ReturnType<typeof launchTiming>) => ({
-  ...timing,
-  monotonicDeadline: monotonicNow() + timing.expires - performance.now(),
-});

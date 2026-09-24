@@ -602,10 +602,6 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     renderNotice(message.details, options.expanded, theme),
   );
 
-  pi.registerMessageRenderer('tau-worker-child', (message, options, theme) =>
-    renderNotice(message.details, options.expanded, theme),
-  );
-
   pi.on('session_shutdown', async (event) => {
     shuttingDown = true;
     historyOpen = false;

@@ -368,6 +368,10 @@ it('waits for the split shell before starting Pi', async ({ onTestFinished }) =>
 it('skips unpublished preparation debris while published attempts and claims remain exclusive', async ({
   onTestFinished,
 }) => {
+  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
   const fixture = setup(onTestFinished);
   writeFileSync(
     fixture.input.parentSession,
@@ -390,6 +394,9 @@ it('skips unpublished preparation debris while published attempts and claims rem
     originalPublish(directory, name, value);
   });
   await expect(fixture.controller.launch(fixture.input)).rejects.toThrow('Task preparation');
+  expect(fixture.calls.some((call) => ['start', 'split', 'create'].includes(call[1] ?? ''))).toBe(
+    false,
+  );
   const abandoned = readdirSync(fixture.directory, { withFileTypes: true }).find((entry) =>
     entry.isDirectory(),
   );

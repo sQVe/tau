@@ -24,6 +24,7 @@ import {
   taskSchema,
   successorSchema,
   isGenericLoadout,
+  taskEndedEventKinds,
 } from './types.js';
 import type { GenericLoadout, Report, Successor, Task, TaskEvent } from './types.js';
 
@@ -596,6 +597,10 @@ export const readEvent = (
     throw error;
   }
 };
+
+export const taskEnded = (directory: string, task: Task): boolean =>
+  taskEndedEventKinds.some((kind) => readEvent(directory, task.taskId, kind)) ||
+  Boolean(readReport(directory, task.taskId));
 
 const submissionIntentSchema = Type.Object(
   {

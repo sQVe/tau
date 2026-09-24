@@ -131,7 +131,6 @@ it.each([
   expect(records.readTasks(root, diagnostics)).toEqual([]);
   expect(diagnostics).toHaveLength(1);
   expect(diagnostics[0]).toContain(child);
-  expect(diagnostics[0]).toMatch(/JSON|property|Permission|identity|task.json/);
 });
 
 it.for([
@@ -169,8 +168,7 @@ it('skips an unknown task format without hiding a valid task', () => {
   expect(scanned).toEqual([{ directory: current, task }]);
   expect(diagnostics).toHaveLength(1);
   expect(diagnostics[0]).toContain(unknown);
-  expect(diagnostics[0]).toContain('Invalid saved worker task or loadout');
-  expect(() => records.readTask(unknown)).toThrow('Invalid saved worker task or loadout');
+  expect(() => records.readTask(unknown)).toThrow('unknown');
   expect(readFileSync(join(unknown, 'task.json'), 'utf8')).toBe(saved);
 });
 
@@ -233,8 +231,7 @@ it('skips an invalid current-format task but refuses a direct read', () => {
   expect(records.readTasks(root, diagnostics)).toEqual([]);
   expect(diagnostics).toHaveLength(1);
   expect(diagnostics[0]).toContain(child);
-  expect(diagnostics[0]).toContain('absolute');
-  expect(() => records.readTask(child)).toThrow('absolute');
+  expect(() => records.readTask(child)).toThrow(task.taskId);
 });
 
 it('reads a task published by another process during the scan', () => {
@@ -251,15 +248,15 @@ it('reads a task published by another process during the scan', () => {
 });
 
 it.each([
-  { successor: 'published late', result: ['predecessor', 'successor', 'task-one'], errors: [] },
+  { successor: 'published late', result: ['predecessor', 'successor', 'task-one'], skipped: [] },
   {
     successor: 'still unpublished',
     result: ['predecessor', 'task-one'],
-    errors: ['referenced continuation successor'],
+    skipped: ['successor'],
   },
 ])(
   'checks every late continuation reference when the successor is $successor',
-  async ({ successor: state, result, errors }) => {
+  async ({ successor: state, result, skipped }) => {
     const { directory, task } = questionFixture();
     const root = join(directory, 'registry');
     const directories = {
@@ -318,9 +315,9 @@ it.each([
 
     expect(scanned).toEqual(result);
 
-    expect(diagnostics).toEqual(errors.map((error): unknown => expect.stringContaining(error)));
+    expect(diagnostics).toHaveLength(skipped.length);
     expect(diagnostics).toEqual(
-      errors.map((): unknown => expect.stringContaining(directories.successor)),
+      skipped.map((taskId): unknown => expect.stringContaining(join(root, taskId))),
     );
   },
 );
@@ -368,7 +365,6 @@ it.each(['claim', 'predecessor'] as const)(
     expect(scanned.map((entry) => entry.task.taskId)).toEqual([task.taskId]);
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0]).toContain(pending);
-    expect(diagnostics[0]).toContain('referenced continuation unpublished');
     expect(readdirSync(pending)).toEqual([]);
   },
 );

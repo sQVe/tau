@@ -434,7 +434,7 @@ export const prepareTaskDirectory = (directory: string, task: Task, continued: b
     }
   } catch (error) {
     throw new Error(
-      `Task preparation ${task.taskId} is uncertain at ${directory}. Capacity remains held by this controller. No automatic retry.`,
+      `Task preparation ${task.taskId} is uncertain at ${directory}. No automatic retry.`,
       { cause: error },
     );
   }
