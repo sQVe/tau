@@ -638,7 +638,6 @@ it('does not close a rejected-start pane after its foreground changes', async ({
 
   expect(launched.cleanup).toContain('pane closure refused');
   expect(launched.state).toBe('cleanupUnconfirmed');
-  expect(launched.capacityHeld).toBe(true);
   expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(false);
   expect(fixture.calls.some((call) => call[1] === 'close')).toBe(false);
   expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toContain('worker-1');
@@ -663,7 +662,6 @@ it('keeps confirmed cleanup when placement fails after the rejected-start pane c
   const launched = await fixture.controller.launch(fixture.input);
 
   expect(launched.state).toBe('stopped');
-  expect(launched.capacityHeld).toBe(false);
   expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
   expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
 });
@@ -985,7 +983,6 @@ it('retains the follow-up claim when final absence verification fails', async ()
   const failed = await fixture.controller.followUp(fixture.input, fixture.context);
 
   expect(failed.state).toBe('cleanupUnconfirmed');
-  expect(failed.capacityHeld).toBe(true);
   expect(readEvent(failed.directory, failed.taskId, 'cleanup')?.stopped).toBe(false);
   expect(records.readSuccessor(fixture.sourceDirectory)?.successorTaskId).toBe(failed.taskId);
   expect(fixture.calls.some((call) => call[1] === 'close')).toBe(false);
@@ -1590,7 +1587,6 @@ it('retains the chosen name but never retries a late live collision', async ({
   expect(status).toMatchObject({
     name: 'investigator-xy',
     outcome: 'failure',
-    capacityHeld: false,
   });
   expect(readTask(status.directory).name).toBe('investigator-xy');
   expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
@@ -2234,7 +2230,6 @@ it('retains confirmed terminal evidence when cancelled during the cosmetic place
   expect(status).toMatchObject({
     outcome: 'cancelled',
     state: 'stopped',
-    capacityHeld: false,
   });
   expect(status.cleanup).toContain('worker-1');
   expect(release).toHaveBeenCalledWith('terminal-1');
@@ -2469,7 +2464,6 @@ it('preserves incomplete output and malformed evidence without retrying startup'
   expect(status).toMatchObject({
     outcome: 'failure',
     state: 'stopped',
-    capacityHeld: false,
   });
   expect(calls.map((call) => call[1])).toEqual(['list', 'current']);
   expect(readdirSync(status.directory)).toContain('task.json');
@@ -2555,7 +2549,6 @@ it('waits for an in-flight start before confirming shutdown cleanup', async ({
   const launched = await launching;
 
   expect(fixture.fake.state.stopped).toBe(true);
-  expect(launched.capacityHeld).toBe(false);
   expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
   expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
 });
@@ -2645,6 +2638,43 @@ it('caps live workers per controller and admits again after confirmed cleanup', 
   expect(fixture.calls.filter((call) => call[1] === 'start')).toHaveLength(2);
 });
 
+it('admits another worker after cleanup fails its terminal identity check', async ({
+  onTestFinished,
+}) => {
+  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  const fixture = setup(onTestFinished);
+  const launched = await fixture.controller.launch(fixture.input);
+  fixture.fake.layout.panes[1]!.terminal_id = 'replacement-terminal';
+  const callsBefore = fixture.calls.length;
+
+  const cancelled = await fixture.controller.cancel(launched.taskId, fixture.input.parentSessionId);
+
+  expect(cancelled).toMatchObject({
+    state: 'cleanupUnconfirmed',
+    recovery: {
+      directory: launched.directory,
+      nativeSessionFile: launched.nativeSessionFile,
+      paneId: 'worker-1',
+    },
+  });
+  expect(
+    fixture.calls
+      .slice(callsBefore)
+      .filter((call) => ['send-keys', 'close'].includes(call[1] ?? '')),
+  ).toEqual([]);
+
+  const replacement = await fixture.controller.launch(fixture.input);
+
+  expect(replacement.state).toBe('starting');
+  expect(fixture.controller.status(launched.taskId, fixture.input.parentSessionId)).toMatchObject({
+    state: 'cleanupUnconfirmed',
+    recovery: cancelled.recovery,
+  });
+});
+
 it('stops running workers and frees their slots on reload', async ({ onTestFinished }) => {
   const fixture = setup(onTestFinished);
   fixture.fake.state.sendKeysError = '';
@@ -2698,9 +2728,6 @@ it('bounds reload cleanup by the remaining cancellation budget', async ({ onTest
   const cleanup = readEvent(launched.directory, launched.taskId, 'cleanup');
   expect(cleanup?.stopped).toBe(false);
   expect(cleanup?.detail).toContain('Parent session reload');
-  expect(
-    fixture.controller.status(launched.taskId, fixture.input.parentSessionId).capacityHeld,
-  ).toBe(true);
 });
 
 it('ends enforcement on parent shutdown without claiming cleanup', async ({ onTestFinished }) => {
@@ -2824,7 +2851,6 @@ it.each([true, false])(
     expect(status).toMatchObject({
       outcome: 'failure',
       state: 'cleanupUnconfirmed',
-      capacityHeld: true,
     });
     expect(status.failure).toContain(
       absent ? 'exited before readiness' : 'Process inspection failed.',

@@ -88,7 +88,6 @@ export interface StatusInput {
   submissionReceipt?: SubmissionReceiptInput | undefined;
   nativeOutput?: unknown;
   recovery?: unknown;
-  capacityHeld?: boolean | undefined;
 }
 
 export interface ReplyReceiptInput {
@@ -230,7 +229,6 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
 
   if (status.state === 'cleanupUnconfirmed' || status.state === 'notOwned') {
     addField(result, 'recovery', status.recovery);
-    addField(result, 'capacityHeld', status.capacityHeld);
   }
 
   return result;

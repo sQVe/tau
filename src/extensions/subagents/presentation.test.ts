@@ -49,7 +49,6 @@ const fullStatus = (state: WorkerState, generic: boolean) => ({
     directory: '/abs/records/task-1',
     nativeSessionFile: '/abs/records/task-1/session.jsonl',
   },
-  capacityHeld: true,
   ...(generic ? { nativeState: 'blocked' } : {}),
   submissionReceipt: { intent: { id: 'reply-one', text: 'text' }, retry: 'Never resubmit.' },
   nativeOutput: { text: 'terminal text', truncated: false, format: 'native' },
@@ -97,7 +96,7 @@ const expectKeys = (state: WorkerState, generic: boolean) => {
   }
 
   if (cleanup) {
-    expected.push('recovery', 'capacityHeld');
+    expected.push('recovery');
   }
 
   return { content, expected };
@@ -128,14 +127,12 @@ it.each(states)('builds the allowlisted model content for %s', (state) => {
   }
 });
 
-it('keeps recovery and capacity fields only for unconfirmed or unowned states', () => {
+it('keeps recovery only for unconfirmed or unowned states', () => {
   for (const state of states) {
     const content = modelStatus(fullStatus(state, false));
     const cleanup = cleanupStates.has(state);
 
-    for (const key of ['recovery', 'capacityHeld']) {
-      expect(key in content).toBe(cleanup);
-    }
+    expect('recovery' in content).toBe(cleanup);
   }
 });
 

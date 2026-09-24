@@ -363,7 +363,7 @@ const widgetRecordFields = (
 
   if (status?.cleanup !== undefined) {
     fields.cleanup = status.cleanup;
-    fields.cleanupConfirmed = !status.capacityHeld;
+    fields.cleanupConfirmed = status.cleanupConfirmed;
   }
 
   if (status?.state === 'stopped' && status.stoppedAt !== undefined) {
@@ -1812,10 +1812,7 @@ export class WorkerController {
       releaseRejectedSuccessor(this.root, handle.directory, task);
     });
 
-    if (stopped) {
-      this.live.delete(task.taskId);
-    }
-
+    this.live.delete(task.taskId);
     this.notifyCleanup(handle, record);
   }
 
