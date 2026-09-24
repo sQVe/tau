@@ -79,7 +79,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
         .getSkills()
         .skills.map((skill) => skill.name)
         .toSorted(),
-    ).toEqual(['bro', 'commit', 'tdd']);
+    ).toEqual(['bro', 'commit', 'handoff', 'tdd']);
     expect(loader.getSkills().diagnostics).toEqual([]);
 
     const scriptedProvider = fauxProvider({ provider: 'tau-package-writing' });

@@ -10,6 +10,7 @@ and repository conventions when they differ from these defaults.
   and no `btn`, `cb`, or `errMsg`.
 - Search for an existing helper before you write one. Reuse or extend it when it serves the same
   purpose.
+- Never edit, test, or commit another worktree. Hand the work to its owner with the handoff skill.
 - Reject invalid states where they enter the system. Report the error at that point.
 - Check each reason to reject in its own guard, with its own error message.
 
