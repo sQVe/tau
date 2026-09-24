@@ -525,6 +525,7 @@ export class WorkerController {
       const status = readWidgetStatus(directory, task, this.owns(task.taskId));
       const activity = readWorkerActivity(directory, task.taskId);
       const handle = this.handles.get(task.taskId);
+
       rows.push(buildWidgetRow(directory, task, status, activity, handle));
     }
 
@@ -641,6 +642,7 @@ export class WorkerController {
     const owned = readOwnedWorker(directory, task);
     const remaining = Math.max(task.deadline - Date.now(), task.cancellationBudget);
     const handle = this.createHandle(directory, task, performance.now() + remaining);
+
     handle.owned = owned;
     handle.paneId = owned.paneId;
     handle.terminalId = owned.terminalId;
@@ -729,6 +731,7 @@ export class WorkerController {
     handle.nativeState = 'unknown';
     const worker = await inspectWorker(handle, call);
     const location = await resolveTerminal(worker.terminalId, call);
+
     ensureReplyActive(handle);
 
     if (
@@ -879,6 +882,7 @@ export class WorkerController {
     }
 
     const handle = this.handles.get(taskId) ?? this.savedHandle(directory, readTask(directory));
+
     this.handles.set(taskId, handle);
     this.live.add(taskId);
     await this.stop(handle, 'cancelled');
@@ -979,6 +983,7 @@ export class WorkerController {
       this.lifetime.signal,
       AbortSignal.timeout(Math.max(1, remainingLaunchBudget(timing))),
     ]);
+
     validationSignal.throwIfAborted();
 
     if (this.closed || !input.settingsUnchanged) {
@@ -997,6 +1002,7 @@ export class WorkerController {
 
     const native = validateNative(source.task, source.origin);
     const loadout = validateSavedLoadout(source.task.loadout, context);
+
     validationSignal.throwIfAborted();
 
     // Validation expiry must not masquerade as caller cancellation during launch/readiness.
@@ -1037,6 +1043,7 @@ export class WorkerController {
   ): Promise<void> {
     const { task } = handle;
     const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
+
     handle.workerNeverStarted = false;
 
     handle.starting = Promise.resolve().then(() =>
@@ -1341,6 +1348,7 @@ export class WorkerController {
       live: listing.agents,
       suffix: nameSuffix,
     });
+
     task.name = name;
     validateTask(task);
 
@@ -1348,6 +1356,7 @@ export class WorkerController {
     this.live.add(taskId);
 
     const handle = this.createHandle(directory, task, timing.expires);
+
     this.handles.set(taskId, handle);
     this.armHandle(handle, launchSignal);
 
@@ -1367,6 +1376,7 @@ export class WorkerController {
     const listing = result(
       await this.client(['agent', 'list'], Math.min(30_000, remaining), listingSignal),
     );
+
     listingSignal.throwIfAborted();
 
     if (listing.type !== 'agent_list' || remainingLaunchBudget(timing) <= 0) {
@@ -1768,6 +1778,7 @@ export class WorkerController {
         signal,
         placement: this.placement,
       });
+
       stopped = closedPane.stopped;
       handle.workerNeverStarted = stopped;
       detail = closedPane.detail;
@@ -1783,6 +1794,7 @@ export class WorkerController {
         placement: this.placement,
         client: this.client,
       });
+
       stopped = stoppedWorker.stopped;
       detail = stoppedWorker.detail;
     }
@@ -1792,6 +1804,7 @@ export class WorkerController {
     }
 
     const failure = this.cleanupFailureDetail(handle, failureDetail);
+
     handle.cleanupDetail = reason === 'failure' ? `${detail} ${failure}` : detail;
     this.recordCleanupEvents({ handle, reason, failureDetail: failure, detail, stopped, record });
 

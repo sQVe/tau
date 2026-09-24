@@ -95,6 +95,7 @@ export const closeUnstartedPane = async (
 
   try {
     const location = await resolveTerminal(text(handle.terminalId), call);
+
     await placement.close(
       location,
       call,
@@ -157,6 +158,7 @@ export const stopOwnedWorker = async (
         (argumentsList, remaining, attempt) => client(argumentsList, remaining, attempt),
         signal,
       );
+
       stopped = cancellation.cleanup === 'confirmed';
       detail = cancellation.detail;
     }

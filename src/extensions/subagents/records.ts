@@ -349,6 +349,7 @@ const addReferencedTasks = (
 
     // A continuation may have been published after the scan read its directory.
     const referencedDirectory = join(root, referenced);
+
     unpublished.delete(referenced);
 
     const late = readReferencedTask(referencedDirectory, referenced, diagnostics, skipped);

@@ -4,6 +4,20 @@ import { defineConfig } from 'vite-plus';
 // eslint-disable-next-line node/no-process-env -- Scoped to the style command's child process.
 const styleEnabled = process.env.TAU_LINT_STYLE === '1';
 
+const blockStatements = ['if', 'for', 'while', 'do', 'switch', 'try'];
+const statementPadding = [
+  { blankLine: 'always', prev: '*', next: 'return' },
+  { blankLine: 'always', prev: '*', next: blockStatements },
+  { blankLine: 'always', prev: blockStatements, next: '*' },
+];
+// Production code separates a group of declarations from the steps that use it; tests keep their
+// arrange steps compact.
+const declarationPadding = [
+  { blankLine: 'always', prev: ['const', 'let'], next: '*' },
+  { blankLine: 'any', prev: ['const', 'let'], next: ['const', 'let'] },
+];
+const paddingRule = (...entries: object[]): ['error', ...object[]] => ['error', ...entries];
+
 export default defineConfig({
   test: {
     // Integration tests launch Git, Node, and nested Vitest processes. Limit competing workers.
@@ -63,20 +77,10 @@ export default defineConfig({
             'tau/helper-before-use': 'error',
             'tau/max-condition-checks': 'error',
             'tau/no-enoent-literal': 'error',
-            '@stylistic/padding-line-between-statements': [
-              'error',
-              { blankLine: 'always', prev: '*', next: 'return' },
-              {
-                blankLine: 'always',
-                prev: '*',
-                next: ['if', 'for', 'while', 'do', 'switch', 'try'],
-              },
-              {
-                blankLine: 'always',
-                prev: ['if', 'for', 'while', 'do', 'switch', 'try'],
-                next: '*',
-              },
-            ],
+            '@stylistic/padding-line-between-statements': paddingRule(
+              ...statementPadding,
+              ...declarationPadding,
+            ),
           }
         : {}),
       'typescript/no-unnecessary-condition': 'error',
@@ -334,6 +338,16 @@ export default defineConfig({
           ],
         },
       },
+      ...(styleEnabled
+        ? [
+            {
+              files: ['**/*.test.{ts,tsx}', '**/fixtures/**', 'tests/*.ts'],
+              rules: {
+                '@stylistic/padding-line-between-statements': paddingRule(...statementPadding),
+              },
+            },
+          ]
+        : []),
       {
         files: ['**/*.test.{ts,tsx}', '**/fixtures/**', 'tests/*.ts'],
         rules: {

@@ -89,6 +89,7 @@ const readPiSessionUsage = (
     }
 
     const messageUsage = entry.message.usage;
+
     usage.input += messageUsage.input;
     usage.output += messageUsage.output;
     usage.cacheRead += messageUsage.cacheRead;
@@ -386,6 +387,7 @@ const reportToParent = (
     summary: withBlocker(handover.summary, handover.outcome === 'incomplete' ? blocker : undefined),
     taskId: task.taskId,
   });
+
   state.reported = true;
 
   return Promise.resolve({
@@ -457,6 +459,7 @@ const startWorker = (
 ): void => {
   try {
     const task = readTask(state.directory);
+
     state.task = task;
     state.usageBaseline = readPiSessionUsage(context);
     state.phaseDescription = undefined;

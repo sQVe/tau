@@ -4,6 +4,7 @@ import type { Static } from 'typebox';
 
 export const textLimit = 32_000;
 const text = Type.String({ minLength: 1, maxLength: textLimit });
+
 export const thinkingSchema = StringEnum([
   'off',
   'minimal',
@@ -27,6 +28,7 @@ const piLoadoutSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
 export const genericLoadoutSchema = Type.Object(
   {
     harness: Type.Literal('generic'),
@@ -59,6 +61,7 @@ const taskProperties = {
   cancellationBudget: Type.Integer({ minimum: 1, maximum: 30_000 }),
   monotonicDeadline: Type.Number({ minimum: 1 }),
 };
+
 export const taskSchema = Type.Union([
   Type.Object(
     {
@@ -89,6 +92,7 @@ const ownedWorkerProperties = {
   startedAt: text,
   nativeReference: Type.Optional(Type.Object({ kind: text, value: text })),
 };
+
 export const ownedWorkerSchema = Type.Union([
   Type.Object(
     { ...ownedWorkerProperties, kind: Type.Literal('pi'), token: text },
@@ -146,6 +150,7 @@ const questionIdentity = {
   taskId: text,
   questionId: questionIdentitySchema,
 };
+
 export const questionSchema = Type.Object(
   { ...questionIdentity, question: text },
   { additionalProperties: false },

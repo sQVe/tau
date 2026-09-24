@@ -60,6 +60,7 @@ export const runClient = (
 
         if (error) {
           const failure = new Error(error.message, { cause: error });
+
           Object.assign(failure, { stderr });
           reject(failure);
         } else {
@@ -82,6 +83,7 @@ export const runClient = (
     const timer = setTimeout(() => {
       stop(new Error('Client attempt budget expired; delivery and cleanup are unconfirmed.'));
     }, budget);
+
     signal?.addEventListener('abort', abort, { once: true });
   });
 };
@@ -222,6 +224,7 @@ const hasStopped = async (
   signal: AbortSignal,
 ) => {
   const location = await resolveTerminal(worker.terminalId, call);
+
   worker.paneId = location.paneId;
   const after = processInfo(await call(['pane', 'process-info', '--pane', worker.paneId]));
 
@@ -388,6 +391,7 @@ const verifyWorkerState = async (run: CancellationRun): Promise<CleanupResult | 
   }
 
   const checkedPane = run.owned.paneId;
+
   await refreshTerminal(run);
 
   if (run.owned.paneId !== checkedPane) {
@@ -430,6 +434,7 @@ const createCancellationRun = (
   const call = (argumentsList: string[]) => {
     signal.throwIfAborted();
     const remaining = Math.ceil(expires - performance.now());
+
     validateBudget(remaining);
 
     return client(argumentsList, remaining, signal);
@@ -458,6 +463,7 @@ export const cancelOwnedWorker = async (
 ): Promise<CleanupResult> => {
   validateBudget(budget);
   const owned = { ...worker };
+
   validateWorker(owned);
 
   const run = createCancellationRun(owned, budget, client, parent);

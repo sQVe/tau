@@ -204,6 +204,7 @@ const renderHistoryRow = (
   }
 
   const spareWidth = Math.max(0, innerWidth - used());
+
   shownLabelWidth += spareWidth;
 
   const label = row.state === 'unknown' ? undefined : stateLabel(row.state, row.outcome);
@@ -682,6 +683,7 @@ export class WorkerHistoryView implements Component {
       : '↑↓ j/k move · enter open · / filter · esc close';
     const visibleHeight = Math.max(2, Math.min(22, this.tui.terminal.rows - 7));
     const bodyHeight = visibleHeight - Number(!this.detail && this.filterMode);
+
     this.viewportHeight = bodyHeight;
     this.lastWidth = width;
     const body =
@@ -689,6 +691,7 @@ export class WorkerHistoryView implements Component {
         ? this.renderDetails(selected, boxWidth)
         : this.renderRows(rows, selected, innerWidth, bodyHeight);
     const detailMaxOffset = Math.max(0, body.length - bodyHeight);
+
     this.detailOffset = Math.min(this.detailOffset, detailMaxOffset);
     const viewport = this.detail
       ? body.slice(this.detailOffset, this.detailOffset + bodyHeight)

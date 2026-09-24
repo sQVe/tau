@@ -121,6 +121,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
 const handoffSectionNames = ['Changes', 'Evidence', 'Decisions', 'Concerns'] as const;
+
 type HandoffSection = (typeof handoffSectionNames)[number];
 
 export interface HandoffSections {
@@ -170,6 +171,7 @@ const modelQuestion = (
   }
 
   const result: Record<string, unknown> = {};
+
   addField(result, 'questionId', question.questionId);
   addField(result, 'question', question.question);
   addField(result, 'replySaved', question.replySaved);
@@ -199,6 +201,7 @@ const modelSubmissionReceipt = (
   }
 
   const result: Record<string, unknown> = { id: receipt.intent?.id };
+
   addField(result, 'state', receipt.observation?.state);
   addField(result, 'detail', receipt.observation?.detail);
 
@@ -211,6 +214,7 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
     state: status.state,
     deadline: status.deadline,
   };
+
   addField(result, 'name', status.name);
   addField(result, 'outcome', status.outcome);
   addField(result, 'predecessorTaskId', status.predecessorTaskId);
@@ -236,6 +240,7 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
 
 export const modelReply = (taskId: string, receipt: ReplyReceiptInput): Record<string, unknown> => {
   const result: Record<string, unknown> = { taskId };
+
   addField(result, 'questionId', receipt.questionId);
   result.replyAccepted = receipt.replyAccepted;
   addField(result, 'workerAcknowledged', receipt.workerAcknowledged);
@@ -247,6 +252,7 @@ export const modelReply = (taskId: string, receipt: ReplyReceiptInput): Record<s
 
 export const modelEvidenceNotice = (input: EvidenceNoticeInput): Record<string, unknown> => {
   const result: Record<string, unknown> = { taskId: input.taskId };
+
   addField(result, 'name', input.name);
   result.evidenceError = input.evidenceError;
   result.recovery = input.recovery;

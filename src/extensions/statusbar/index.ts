@@ -75,6 +75,7 @@ const refreshDirty = async (state: StatusbarState, context: ExtensionContext): P
   try {
     while (state.pendingContext !== undefined) {
       const current = state.pendingContext;
+
       state.pendingContext = undefined;
       const generation = state.footerGeneration;
       // oxlint-disable-next-line eslint/no-await-in-loop -- Serial reruns are the point.

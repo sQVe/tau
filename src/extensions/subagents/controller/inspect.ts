@@ -222,6 +222,7 @@ export const shellUnchanged = async (
   }
 
   const location = await resolveTerminal(text(handle.terminalId), call);
+
   handle.paneId = location.paneId;
   const information = requireObject(
     result(await call(['pane', 'process-info', '--pane', location.paneId])).process_info,
@@ -354,6 +355,7 @@ export const inspectWorker = async (
   const previous = handle.owned ? { ...handle.owned, paneId } : undefined;
   // Ownership is unestablished until a started process reports the expected session to herdr.
   const starting = Boolean(generic) && !previous;
+
   checkForeground(information, paneId, previous, starting && !handle.workerObserved);
 
   handle.workerObserved = true;
@@ -410,6 +412,7 @@ export const waitForPiIdentity = async (
 
       try {
         const remaining = cleanup ? cleanup.remainingBudget() : workBudget(handle);
+
         // oxlint-disable-next-line eslint/no-await-in-loop -- Session discovery uses the existing work or cleanup deadline.
         await delay(Math.min(250, remaining), undefined, {
           signal: cleanup?.signal ?? handle.abort.signal,

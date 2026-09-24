@@ -18,6 +18,7 @@ import type {
 
 const defaultTimeoutMilliseconds = 30_000;
 const fullTimeoutMilliseconds = 120_000;
+
 export const maximumFailures = 10;
 export const maximumMessageCharacters = 300;
 

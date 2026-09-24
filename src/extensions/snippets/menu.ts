@@ -216,6 +216,7 @@ class SnippetMenuComponent implements Component {
       indicator: (text) => this.header(text, width),
       focusRow: rows.findIndex((row) => row.itemIndex === this.cursor),
     });
+
     this.listScroll = view.scroll;
     const searchLine = truncateToWidth(this.query.render(width)[0] ?? '', width);
 
@@ -246,6 +247,7 @@ class SnippetMenuComponent implements Component {
       maximumHeight,
       indicator: (text) => this.header(text, width),
     });
+
     this.previewScroll = view.scroll;
 
     return {

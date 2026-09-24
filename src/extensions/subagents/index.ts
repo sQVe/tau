@@ -191,6 +191,7 @@ const launchWorker = async (
 
   const controller = runtime.getController();
   const loadout = resolveLoadout(parameters, context, resolutionSignal);
+
   signal?.throwIfAborted();
 
   let status: Awaited<ReturnType<WorkerController['launch']>>;
@@ -281,6 +282,7 @@ const searchWorkerHistory = async (
     parameters.query,
     (taskId) => controller?.owns(taskId) ?? false,
   );
+
   signal?.throwIfAborted();
 
   const page = historyPage(history, parameters.offset, parameters.limit);

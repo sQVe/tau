@@ -123,6 +123,7 @@ const topologyAfterRemoval = (layout: Record<string, unknown>, removed?: string)
         const paneBounds = requireObject(pane.rect);
         const center = Number(paneBounds[position]) + Number(paneBounds[dimension]) / 2;
         const side = center < boundary ? first : second;
+
         side.push(text(pane.pane_id));
       }
 

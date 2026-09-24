@@ -112,6 +112,7 @@ export const validateQuestion = (value: unknown, taskId: string): Question => {
 export const acceptQuestion = (directory: string, taskId: string, value: unknown): Question => {
   const question = validateQuestion(value, taskId);
   const name = questionRecordName(question.questionId, 'question');
+
   requireSavedTask(directory, taskId);
 
   publishQuestionRecord(directory, name, question);
@@ -161,6 +162,7 @@ export const acceptReply = (directory: string, taskId: string, value: unknown): 
   }
 
   const name = questionRecordName(value.questionId, 'reply');
+
   requireSavedTask(directory, taskId);
 
   if (!savedQuestion(directory, taskId, value.questionId)) {
@@ -227,6 +229,7 @@ export const acceptAcknowledgement = (
   }
 
   const name = questionRecordName(value.questionId, 'acknowledgement');
+
   requireSavedTask(directory, taskId);
   const reply = savedReply(directory, taskId, value.questionId);
 

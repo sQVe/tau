@@ -118,6 +118,7 @@ export const bulkRead = async (
   }
 
   const delegateSignal = AbortSignal.any(signals);
+
   delegateSignal.throwIfAborted();
 
   const response = await context.modelRegistry
@@ -143,6 +144,7 @@ export const bulkRead = async (
         cause: error,
       });
     });
+
   delegateSignal.throwIfAborted();
 
   if (['error', 'aborted', 'length'].includes(response.stopReason)) {
