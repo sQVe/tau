@@ -52,7 +52,7 @@ it('distinguishes an unavailable Vitest package from a resolver failure', async 
   expect(blocked).toHaveProperty('message', expect.stringContaining('exports'));
 });
 
-it('names the package root that owns requested files outside the cwd', async () => {
+it('names the package root when requested files belong to another package, such as a nested worktree', async () => {
   await mkdir(join(cwd, 'other/src'), { recursive: true });
   await writeFile(join(cwd, 'other/package.json'), '{}');
   const run = (files: string[]) =>
