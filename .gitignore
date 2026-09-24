@@ -8,5 +8,6 @@ coverage/
 
 *.tsbuildinfo
 
-/.pi/*review-reports/
+/.pi/*-reports/
+/.pi/*-review/
 /.pi/settings.json
