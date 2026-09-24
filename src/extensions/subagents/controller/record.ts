@@ -195,6 +195,7 @@ export const taskRecordStatus = (directory: string, task: Task, controlled = fal
     ...(outcome === undefined ? {} : { outcome }),
     predecessorTaskId: task.predecessorTaskId,
     predecessorName: predecessorName(dirname(directory), task),
+    // ponytail: full scan (~10 ms/100 records in review); index successors once per scan if status calls become hot.
     successorTaskId: findSuccessor(readTasks(dirname(directory)), task.taskId)?.taskId,
     deadline: task.deadline,
     ...(state === 'stopped'

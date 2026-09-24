@@ -411,6 +411,7 @@ const scanTaskEntry = (
 export const readTasks = (
   root: string,
   diagnostics: string[] = [],
+  // Callers that only care about readable records pass a separate array for skipped notices.
   skipped: string[] = diagnostics,
 ): { directory: string; task: Task }[] => {
   const entries = readTaskEntries(root, diagnostics);
