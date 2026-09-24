@@ -2,29 +2,20 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type {
-  ExtensionAPI,
-  ExtensionContext,
-  ToolDefinition,
-} from '@earendil-works/pi-coding-agent';
-import { createEventBus } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Value } from 'typebox/value';
 import { expect, it, vi } from 'vitest';
 
+import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { WorkerController, EvidenceUnavailableError } from './controller.js';
 import subagentsExtension, { deliverWorkerNotice } from './index.js';
 import type { WorkerNotice } from './presentation.js';
 
 const registerTools = () => {
-  const tools = new Map<string, ToolDefinition>();
-  subagentsExtension({
-    events: createEventBus(),
-    on: () => undefined,
-    registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-    registerMessageRenderer: () => undefined,
-  } as unknown as ExtensionAPI);
+  const fake = fakeExtensionApi();
+  subagentsExtension(fake.pi);
 
-  return tools;
+  return fake.tools;
 };
 
 const textContent = (result: unknown): Record<string, unknown> => {
@@ -51,8 +42,7 @@ const fullWorkerStatus = {
 };
 
 it('waits for bounded worker cleanup during session shutdown', async ({ onTestFinished }) => {
-  const handlers = new Map<string, (event: { reason: string }) => Promise<void>>();
-  const tools = new Map<string, ToolDefinition>();
+  const fake = fakeExtensionApi();
   const released = Promise.withResolvers<undefined>();
   let cleanupFinished = false;
   let shutdownReason: string | undefined;
@@ -67,13 +57,8 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
   onTestFinished(() => {
     vi.restoreAllMocks();
   });
-  subagentsExtension({
-    events: createEventBus(),
-    on: (name: string, handler: (event: { reason: string }) => Promise<void>) =>
-      handlers.set(name, handler),
-    registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-    registerMessageRenderer: () => undefined,
-  } as unknown as ExtensionAPI);
+  subagentsExtension(fake.pi);
+  const tools = fake.tools;
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionContext;
@@ -81,11 +66,11 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
     .get('subagent_status')!
     .execute('status', { taskId: 'task-1' }, undefined, undefined, context);
   let shutdownFinished = false;
-  const shutdown = Promise.resolve(handlers.get('session_shutdown')!({ reason: 'reload' })).then(
-    () => {
-      shutdownFinished = true;
-    },
-  );
+  const shutdown = Promise.resolve(
+    fake.handler('session_shutdown')({ reason: 'reload' }, context),
+  ).then(() => {
+    shutdownFinished = true;
+  });
   await Promise.resolve();
 
   expect(shutdownFinished).toBe(false);
@@ -98,13 +83,9 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
 it('places follow-ups with explicit visibility and the current parent terminal', async ({
   onTestFinished,
 }) => {
-  const tools = new Map<string, ToolDefinition>();
-  subagentsExtension({
-    events: createEventBus(),
-    on: () => undefined,
-    registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-    registerMessageRenderer: () => undefined,
-  } as unknown as ExtensionAPI);
+  const fake = fakeExtensionApi();
+  subagentsExtension(fake.pi);
+  const tools = fake.tools;
   const tool = tools.get('subagent_follow_up');
 
   if (!tool) {
@@ -170,13 +151,9 @@ it('routes approved native tool arguments through the generic resolver without P
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
-  const tools = new Map<string, ToolDefinition>();
-  subagentsExtension({
-    events: createEventBus(),
-    on: () => undefined,
-    registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-    registerMessageRenderer: () => undefined,
-  } as unknown as ExtensionAPI);
+  const fake = fakeExtensionApi();
+  subagentsExtension(fake.pi);
+  const tools = fake.tools;
   const launch = vi
     .spyOn(WorkerController.prototype, 'launch')
     .mockResolvedValue({} as Awaited<ReturnType<WorkerController['launch']>>);
@@ -248,7 +225,7 @@ it('routes approved native tool arguments through the generic resolver without P
 
 it('delivers a question notice as a steer that wakes the idle parent', () => {
   const sendMessage = vi.fn<() => void>();
-  const pi = { sendMessage, events: { emit: vi.fn<() => void>() } } as unknown as ExtensionAPI;
+  const pi = fakeExtensionApi({ sendMessage }).pi;
   const content = {
     taskId: 'task-1',
     state: 'awaitingReply',
@@ -274,7 +251,7 @@ it.each(['success', 'incomplete', 'failure'])(
   '%s report notices steer to the parent',
   (outcome) => {
     const sendMessage = vi.fn<() => void>();
-    const pi = { sendMessage, events: { emit: vi.fn<() => void>() } } as unknown as ExtensionAPI;
+    const pi = fakeExtensionApi({ sendMessage }).pi;
     const content = { taskId: 'task-1', state: 'stopped', deadline: 1, outcome };
 
     deliverWorkerNotice(pi, { content, details: {}, question: false }, false);
@@ -289,7 +266,10 @@ it.each(['success', 'incomplete', 'failure'])(
 it('routes nested worker notices to the parent event bus instead of the root session', () => {
   const sendMessage = vi.fn<() => void>();
   const emit = vi.fn<() => void>();
-  const pi = { sendMessage, events: { emit } } as unknown as ExtensionAPI;
+  const pi = fakeExtensionApi({
+    sendMessage,
+    events: { emit } as unknown as ExtensionAPI['events'],
+  }).pi;
   const content = { taskId: 'task-1', state: 'stopped', deadline: 1, outcome: 'success' };
 
   deliverWorkerNotice(pi, { content, details: { full: true }, question: false }, true);
@@ -305,13 +285,9 @@ it('routes nested worker notices to the parent event bus instead of the root ses
 it('returns allowlisted model content for a follow-up successor and keeps full details', async ({
   onTestFinished,
 }) => {
-  const tools = new Map<string, ToolDefinition>();
-  subagentsExtension({
-    events: createEventBus(),
-    on: () => undefined,
-    registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-    registerMessageRenderer: () => undefined,
-  } as unknown as ExtensionAPI);
+  const fake = fakeExtensionApi();
+  subagentsExtension(fake.pi);
+  const tools = fake.tools;
   const tool = tools.get('subagent_follow_up');
 
   if (!tool) {

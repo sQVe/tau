@@ -4,9 +4,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
-import type { ExtensionAPI, ToolCallEvent, ToolDefinition } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ToolCallEvent } from '@earendil-works/pi-coding-agent';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
 import { commitGuardReason, guardToolCall } from './guard.js';
 import commitExtension from './index.js';
@@ -205,54 +206,29 @@ describe('guardToolCall', () => {
   });
 });
 
-describe('commitExtension', () => {
-  interface CommandEntry {
-    description?: string;
-    handler: (commandArguments: string, context: { isIdle(): boolean }) => Promise<void>;
-  }
+const createFakePi = (executeCommand?: ExtensionAPI['exec']) => {
+  const fake = fakeExtensionApi({
+    exec: executeCommand ?? (() => Promise.reject(new Error('not wired'))),
+    registerFlag: vi.fn<ExtensionAPI['registerFlag']>(),
+    getFlag: vi.fn<ExtensionAPI['getFlag']>().mockReturnValue(false),
+  });
 
-  const createFakePi = (executeCommand?: ExtensionAPI['exec']) => {
-    let registeredTool: ToolDefinition | undefined;
-    const registeredHandlers: Record<string, ((...commandArguments: never[]) => unknown)[]> = {};
-    const registeredCommands = new Map<string, CommandEntry>();
-    const sentUserMessages: { content: string; options?: { deliverAs?: string } }[] = [];
-
-    const fakePi = {
-      exec: executeCommand ?? (() => Promise.reject(new Error('not wired'))),
-      registerFlag: vi.fn<ExtensionAPI['registerFlag']>(),
-      getFlag: vi.fn<ExtensionAPI['getFlag']>().mockReturnValue(false),
-      on(eventName: string, handler: (...commandArguments: never[]) => unknown) {
-        registeredHandlers[eventName] ??= [];
-        registeredHandlers[eventName].push(handler);
-      },
-      registerTool(tool: ToolDefinition) {
-        registeredTool = tool;
-      },
-      registerCommand(name: string, command: CommandEntry) {
-        registeredCommands.set(name, command);
-      },
-      sendUserMessage(content: string, options?: { deliverAs?: string }) {
-        sentUserMessages.push(options == null ? { content } : { content, options });
-      },
-    } as unknown as ExtensionAPI;
-
-    return {
-      fakePi,
-      registeredTool: () => registeredTool,
-      registeredHandlers,
-      registeredCommands,
-      sentUserMessages,
-    };
+  return {
+    fakePi: fake.pi,
+    registeredTool: () => fake.tools.get('commit'),
+    registeredHandlers: fake.handlers,
+    registeredCommands: fake.commands,
+    sendUserMessage: fake.sendUserMessage,
   };
-
+};
+describe('commitExtension', () => {
   it('registers the guard, tool, and command', () => {
     const { fakePi, registeredTool, registeredHandlers, registeredCommands } = createFakePi();
 
     commitExtension(fakePi);
 
     expect(registeredTool()).toBeDefined();
-    expect(registeredHandlers.tool_call).toHaveLength(1);
-    expect(registeredHandlers.tool_call?.[0]).toBe(guardToolCall);
+    expect(registeredHandlers.get('tool_call')).toEqual([guardToolCall]);
     expect(registeredCommands.has('commit')).toBe(true);
   });
 
@@ -289,7 +265,7 @@ describe('commitExtension', () => {
   });
 
   it('sends skill messages as follow-ups when idle and steering messages when busy', async () => {
-    const { fakePi, registeredCommands, sentUserMessages } = createFakePi();
+    const { fakePi, registeredCommands, sendUserMessage } = createFakePi();
 
     commitExtension(fakePi);
 
@@ -299,23 +275,14 @@ describe('commitExtension', () => {
       throw new Error('Expected commit command to be registered');
     }
 
-    await commitCommand.handler('--scope auth', { isIdle: () => true });
-    await commitCommand.handler('', { isIdle: () => true });
-    await commitCommand.handler('--scope auth', { isIdle: () => false });
+    await commitCommand.handler('--scope auth', { isIdle: () => true } as never);
+    await commitCommand.handler('', { isIdle: () => true } as never);
+    await commitCommand.handler('--scope auth', { isIdle: () => false } as never);
 
-    expect(sentUserMessages).toEqual([
-      {
-        content: '/skill:commit --scope auth',
-        options: { deliverAs: 'followUp', expandPromptTemplates: true },
-      },
-      {
-        content: '/skill:commit',
-        options: { deliverAs: 'followUp', expandPromptTemplates: true },
-      },
-      {
-        content: '/skill:commit --scope auth',
-        options: { deliverAs: 'steer', expandPromptTemplates: true },
-      },
+    expect(sendUserMessage.mock.calls).toEqual([
+      ['/skill:commit --scope auth', { deliverAs: 'followUp', expandPromptTemplates: true }],
+      ['/skill:commit', { deliverAs: 'followUp', expandPromptTemplates: true }],
+      ['/skill:commit --scope auth', { deliverAs: 'steer', expandPromptTemplates: true }],
     ]);
   });
 

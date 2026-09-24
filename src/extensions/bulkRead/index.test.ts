@@ -4,24 +4,14 @@ import { join } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
 import { createReadTool } from '@earendil-works/pi-coding-agent';
-import type {
-  ExtensionAPI,
-  ExtensionContext,
-  ToolDefinition,
-  ToolResultEvent,
-} from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import bulkReadExtension, { bulkReadLineThreshold, rewriteContinuationNotice } from './index.js';
 
-type ToolResultEventResult = Partial<Pick<ToolResultEvent, 'content' | 'isError'>>;
-
 const setup = () => {
-  const handlers = new Map<
-    string,
-    (event: unknown, context: ExtensionContext) => ToolResultEventResult | undefined
-  >();
-  const registerTool = vi.fn<(tool: ToolDefinition) => void>();
+  const fake = fakeExtensionApi();
   const find = vi
     .fn<ExtensionContext['modelRegistry']['find']>()
     .mockReturnValue(fauxProvider().getModel());
@@ -30,25 +20,14 @@ const setup = () => {
     .mockResolvedValue(fauxAssistantMessage('answer'));
   const context = { cwd: '/tmp', modelRegistry: { find, complete } } as unknown as ExtensionContext;
 
-  bulkReadExtension({
-    on: (
-      name: string,
-      handler: (event: unknown, context: ExtensionContext) => ToolResultEventResult | undefined,
-    ) => handlers.set(name, handler),
-    registerTool,
-  } as unknown as ExtensionAPI);
+  bulkReadExtension(fake.pi);
+  const tool = fake.tools.get('bulk_read')!;
 
   const execute = (signal?: AbortSignal, paths = [import.meta.filename]) =>
-    registerTool.mock.calls[0]![0].execute(
-      'bulk',
-      { paths, question: 'Why?' },
-      signal,
-      undefined,
-      context,
-    );
-  const emit = (name: string, event: unknown) => handlers.get(name)?.(event, context);
+    tool.execute('bulk', { paths, question: 'Why?' }, signal, undefined, context);
+  const emit = (name: string, event: unknown) => fake.handler(name)(event, context);
 
-  return { find, complete, execute, emit, registerTool };
+  return { find, complete, execute, emit, tool };
 };
 
 afterEach(() => vi.unstubAllEnvs());
@@ -64,8 +43,7 @@ const notice = '[Showing lines 1-400 of 450. Use offset=401 to continue.]';
 const hint = 'Lines 401-450 remain. Read with offset=401 and limit=50 to continue.';
 
 it('describes bulk reads as evidence gathering rather than review judgments', () => {
-  const { registerTool } = setup();
-  const tool = registerTool.mock.calls[0]![0];
+  const { tool } = setup();
 
   expect(tool.description).toContain('supplied files');
   expect(tool.description).toContain(
@@ -76,8 +54,8 @@ it('describes bulk reads as evidence gathering rather than review judgments', ()
 });
 
 it('keeps selective verification guidance on the bulk-read tool', () => {
-  const { registerTool } = setup();
-  const guidelines = registerTool.mock.calls[0]![0].promptGuidelines?.join(' ') ?? '';
+  const { tool } = setup();
+  const guidelines = tool.promptGuidelines?.join(' ') ?? '';
 
   expect(guidelines).toContain('bulk_read');
   expect(guidelines).toContain('navigation without rereading');
@@ -174,7 +152,7 @@ it('uses the continuation offset in the hint for an offset read', () => {
   });
 
   expect(read.input).toHaveProperty('limit', 400);
-  expect(result?.content).toEqual([
+  expect(result).toHaveProperty('content', [
     {
       type: 'text',
       text: 'head\n\nLines 801-1000 remain. Read with offset=801 and limit=200 to continue.',

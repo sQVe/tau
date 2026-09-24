@@ -4,18 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify, stripVTControlCharacters } from 'node:util';
 
-import type { ExtensionAPI, ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, vi } from 'vitest';
 
+import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
 import statusbarExtension from './index.js';
 
 const executeFile = promisify(execFile);
 
-type EventHandler = (event: unknown, context: ExtensionContext) => void | Promise<void>;
-
 const setup = (directory: string, mode = 'tui') => {
-  const handlers = new Map<string, EventHandler>();
+  const fake = fakeExtensionApi({ getThinkingLevel: () => 'high' });
   const setFooter = vi.fn<ExtensionContext['ui']['setFooter']>();
   const context = {
     cwd: directory,
@@ -26,7 +25,9 @@ const setup = (directory: string, mode = 'tui') => {
   } as unknown as ExtensionContext;
 
   const emit = async (name: string) => {
-    await handlers.get(name)?.({}, context);
+    if (fake.handlers.has(name)) {
+      await fake.handler(name)({}, context);
+    }
   };
 
   const mount = () => {
@@ -68,10 +69,7 @@ const setup = (directory: string, mode = 'tui') => {
     };
   };
 
-  statusbarExtension({
-    on: (name: string, handler: EventHandler) => handlers.set(name, handler),
-    getThinkingLevel: () => 'high',
-  } as unknown as ExtensionAPI);
+  statusbarExtension(fake.pi);
 
   return { context, emit, mount, setFooter };
 };

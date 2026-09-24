@@ -2,18 +2,14 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
-import type {
-  ExtensionAPI,
-  MessageRenderer,
-  ToolDefinition,
-  ToolRenderResultOptions,
-} from '@earendil-works/pi-coding-agent';
-import { createEventBus, initTheme, ToolExecutionComponent } from '@earendil-works/pi-coding-agent';
+import type { ToolDefinition, ToolRenderResultOptions } from '@earendil-works/pi-coding-agent';
+import { initTheme, ToolExecutionComponent } from '@earendil-works/pi-coding-agent';
 import type { Component, TUI } from '@earendil-works/pi-tui';
 import { expect, it, vi } from 'vitest';
 
 /** Pi does not export getThemeByName through the public package API. */
 import { getThemeByName } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js';
+import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import subagentsExtension from './index.js';
 import {
   DefaultRenderingRequiredError,
@@ -129,18 +125,10 @@ const historyFixture = (count: number) => ({
 });
 
 const renderers = () => {
-  const tools = new Map<string, ToolDefinition>();
-  const messageRenderers = new Map<string, MessageRenderer>();
-  subagentsExtension({
-    events: createEventBus(),
-    on: () => undefined,
-    registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-    registerMessageRenderer: (customType: string, renderer: MessageRenderer) => {
-      messageRenderers.set(customType, renderer);
-    },
-  } as unknown as ExtensionAPI);
+  const fake = fakeExtensionApi();
+  subagentsExtension(fake.pi);
 
-  return { tools, messageRenderers };
+  return { tools: fake.tools, messageRenderers: fake.messageRenderers };
 };
 
 const options: ToolRenderResultOptions = { expanded: false, isPartial: false };

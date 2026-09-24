@@ -3,11 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
-import type {
-  ExtensionAPI,
-  ExtensionContext,
-  ToolDefinition,
-} from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { initTheme } from '@earendil-works/pi-coding-agent';
 import type { TUI } from '@earendil-works/pi-tui';
 import { expect, it, vi } from 'vitest';
@@ -16,6 +12,7 @@ import { expect, it, vi } from 'vitest';
 import { editRenderers } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/core/tools/renderers/edit.js';
 import { writeRenderers } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/core/tools/renderers/write.js';
 import { ToolExecutionComponent } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js';
+import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import tddExtension from './index.js';
 import { runContext, summarize } from './render.js';
 import type { RunnerResult } from './runner/types.js';
@@ -27,29 +24,20 @@ vi.mock('./runner/vitest.js', async (importOriginal) => ({
   runTests: vi.fn<typeof runTests>(),
 }));
 
-type Handler = (event: Record<string, unknown>, context: ExtensionContext) => unknown;
-
 const redHint =
   'Hint: No RED observed for this behavior; start the next behavior with a failing focused test.';
 
 const setup = (hasUI = false) => {
   const notify = vi.fn<ExtensionContext['ui']['notify']>();
-  const handlers = new Map<string, Handler>();
-  const registerCommand = vi.fn<ExtensionAPI['registerCommand']>();
-  let tool: ToolDefinition | undefined;
+  const fake = fakeExtensionApi();
 
-  tddExtension({
-    on: (name: string, handler: Handler) => handlers.set(name, handler),
-    registerCommand,
-    registerTool: (definition: ToolDefinition) => {
-      tool = definition;
-    },
-  } as unknown as ExtensionAPI);
+  tddExtension(fake.pi);
+  const tool = fake.tools.get('run_tests');
 
   const contextFor = (cwd: string) =>
     ({ cwd, hasUI, ui: { notify } }) as unknown as ExtensionContext;
   const emit = (name: string, cwd: string, event: Record<string, unknown> = {}) =>
-    handlers.get(name)?.(event, contextFor(cwd));
+    fake.handlers.has(name) ? fake.handler(name)(event, contextFor(cwd)) : undefined;
   const edit = (cwd: string) =>
     emit('tool_result', cwd, {
       toolName: 'write',
@@ -72,7 +60,7 @@ const setup = (hasUI = false) => {
     );
   };
 
-  return { handlers, registerCommand, emit, edit, run, tool, notify };
+  return { handlers: fake.handlers, commands: fake.commands, emit, edit, run, tool, notify };
 };
 
 it.for(['edit', 'write'] as const)(
@@ -353,7 +341,7 @@ it('resets hints on session boundaries but not turns, compaction, or model chang
   const application = setup();
 
   expect(application.handlers.has('tool_call')).toBe(false);
-  expect(application.registerCommand).not.toHaveBeenCalled();
+  expect(application.commands.size).toBe(0);
   expect(await application.edit(cwd)).toMatchObject({
     content: [{ text: 'Original result' }, { text: redHint }],
   });
