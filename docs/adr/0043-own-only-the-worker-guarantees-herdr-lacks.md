@@ -22,6 +22,11 @@ Session logs since 2026-09-15 show where the cost falls:
   memory and is lost on restart.
 - Cleanup ended unconfirmed 15 times against 33 confirmed stops. Each unconfirmed worker kept its
   capacity slot until the user repaired it by hand.
+- Settings replay refuses valid launches. It reloads the parent's extensions inside the parent
+  process. pi-claude-bridge registers its provider only on the first load per process, so the reload
+  finds no `claude-bridge` models. Every Pi worker on the user's default provider fails with "Worker
+  cannot reproduce the parent model configuration", though a fresh worker process would register the
+  provider normally.
 - No saved task out of 87 was launched by another worker.
 - Follow-ups ran 32 times. No claim conflict ever occurred.
 
