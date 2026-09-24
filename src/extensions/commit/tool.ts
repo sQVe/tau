@@ -36,7 +36,6 @@ const commitToolGuidelines = [
 
 interface CommitToolRuntime {
   pi: Pick<ExtensionAPI, 'exec'>;
-  review: typeof reviewComments;
   reviews: Reviews;
   context: ExtensionContext;
   signal: AbortSignal | undefined;
@@ -199,7 +198,7 @@ export const createCommitTool = (
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       const requestReview: RequestReview = (snapshot) => review(pi, context, signal, snapshot);
 
-      return executeCommitTool({ pi, review, reviews, context, signal, requestReview }, parameters);
+      return executeCommitTool({ pi, reviews, context, signal, requestReview }, parameters);
     },
   });
 };
