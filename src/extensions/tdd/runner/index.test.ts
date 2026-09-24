@@ -1,4 +1,14 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -91,6 +101,7 @@ describe('runTests', () => {
     );
 
     await expect(run).rejects.toThrow('spawn exploded');
+    expect(await readdir(root)).toEqual([expect.stringMatching(/^run-/)]);
   });
 
   it.for(['4.1.11', '5.0.1'])(
