@@ -18,7 +18,9 @@ type FooterFactory = NonNullable<Parameters<ExtensionContext['ui']['setFooter']>
 interface StatusbarState {
   dirty: boolean;
   requestRender: (() => void) | undefined;
-  refreshId: number;
+  footerGeneration: number;
+  refreshing: boolean;
+  pendingContext: ExtensionContext | undefined;
 }
 
 const getSessionCost = (context: ExtensionContext): number => {
@@ -37,12 +39,7 @@ const getSessionCost = (context: ExtensionContext): number => {
   return cost;
 };
 
-const refreshDirty = async (state: StatusbarState, context: ExtensionContext): Promise<void> => {
-  state.refreshId += 1;
-  const currentRefreshId = state.refreshId;
-
-  let nextDirty = false;
-
+const readDirty = async (context: ExtensionContext): Promise<boolean> => {
   try {
     // Override status.showUntrackedFiles so new files always count as dirty.
     const { stdout } = await executeFile(
@@ -56,18 +53,42 @@ const refreshDirty = async (state: StatusbarState, context: ExtensionContext): P
         maxBuffer: gitMaximumBufferBytes,
       },
     );
-    nextDirty = stdout.length > 0;
+
+    return stdout.length > 0;
   } catch {
     // Outside a repository, or when git fails, show no dirty marker.
+    return false;
   }
+};
 
-  // Ignore results from older requests and disposed footers.
-  if (currentRefreshId !== state.refreshId) {
+// Tool results arrive in bursts. Run one git status at a time and fold the requests that arrive
+// meanwhile into a single rerun with the newest context.
+const refreshDirty = async (state: StatusbarState, context: ExtensionContext): Promise<void> => {
+  state.pendingContext = context;
+
+  if (state.refreshing) {
     return;
   }
 
-  state.dirty = nextDirty;
-  state.requestRender?.();
+  state.refreshing = true;
+
+  try {
+    while (state.pendingContext !== undefined) {
+      const current = state.pendingContext;
+      state.pendingContext = undefined;
+      const generation = state.footerGeneration;
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Serial reruns are the point.
+      const nextDirty = await readDirty(current);
+
+      // Runs finish in order, so only a disposed footer makes a result stale.
+      if (generation === state.footerGeneration) {
+        state.dirty = nextDirty;
+        state.requestRender?.();
+      }
+    }
+  } finally {
+    state.refreshing = false;
+  }
 };
 
 const createFooter = (
@@ -94,7 +115,7 @@ const createFooter = (
         unsubscribe();
 
         state.requestRender = undefined;
-        state.refreshId += 1;
+        state.footerGeneration += 1;
       },
       invalidate() {
         // No render cache: session values are read on every render.
@@ -124,7 +145,13 @@ const createFooter = (
 };
 
 export default function statusbarExtension(pi: ExtensionAPI) {
-  const state: StatusbarState = { dirty: false, requestRender: undefined, refreshId: 0 };
+  const state: StatusbarState = {
+    dirty: false,
+    requestRender: undefined,
+    footerGeneration: 0,
+    refreshing: false,
+    pendingContext: undefined,
+  };
 
   pi.on('session_start', (_event, context) => {
     if (context.mode !== 'tui') {
