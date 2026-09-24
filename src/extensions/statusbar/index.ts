@@ -61,9 +61,6 @@ const readDirty = async (context: ExtensionContext): Promise<boolean> => {
   }
 };
 
-// A request can arrive while git status runs; a function call keeps TypeScript from narrowing it away.
-const hasNewerRequest = (state: StatusbarState): boolean => state.pendingContext !== undefined;
-
 // Tool results arrive in bursts. Run one git status at a time and fold the requests that arrive
 // meanwhile into a single rerun with the newest context.
 const refreshDirty = async (state: StatusbarState, context: ExtensionContext): Promise<void> => {
@@ -82,10 +79,9 @@ const refreshDirty = async (state: StatusbarState, context: ExtensionContext): P
       const generation = state.footerGeneration;
       // oxlint-disable-next-line eslint/no-await-in-loop -- Serial reruns are the point.
       const nextDirty = await readDirty(current);
-      const superseded = hasNewerRequest(state);
 
-      // A disposed footer or a newer request makes this result stale.
-      if (generation === state.footerGeneration && !superseded) {
+      // Runs finish in order, so only a disposed footer makes a result stale.
+      if (generation === state.footerGeneration) {
         state.dirty = nextDirty;
         state.requestRender?.();
       }

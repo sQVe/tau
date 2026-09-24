@@ -267,11 +267,12 @@ describe('statusbar extension', () => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
     const log = join(directory, 'git.log');
+    const release = join(directory, 'release');
     const bin = join(directory, 'bin');
     await mkdir(bin);
     await writeFile(
       join(bin, 'git'),
-      `#!/bin/sh\necho start >> '${log}'\nsleep 0.2\necho end >> '${log}'\n`,
+      `#!/bin/sh\necho start >> '${log}'\nwhile [ ! -f '${release}' ]; do sleep 0.01; done\necho end >> '${log}'\n`,
       { mode: 0o755 },
     );
     vi.stubEnv('PATH', `${bin}:${process.env.PATH ?? ''}`);
@@ -283,17 +284,19 @@ describe('statusbar extension', () => {
     const footer = application.mount();
     onTestFinished(() => footer.component.dispose?.());
 
+    await vi.waitFor(async () => {
+      expect(await readFile(log, 'utf8')).toBe('start\n');
+    });
+
     for (let index = 0; index < 4; index += 1) {
       await application.emit('tool_result');
     }
 
-    await vi.waitFor(
-      async () => {
-        expect(await readFile(log, 'utf8')).toBe('start\nend\nstart\nend\n');
-      },
-      { timeout: 3000 },
-    );
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await writeFile(release, '');
+
+    await vi.waitFor(() => {
+      expect(footer.requestRender).toHaveBeenCalledTimes(2);
+    });
 
     expect(await readFile(log, 'utf8')).toBe('start\nend\nstart\nend\n');
   });
