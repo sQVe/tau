@@ -21,7 +21,7 @@ const readOrder = (value: string | undefined) => {
 };
 
 /** Returns null when the file has no frontmatter block or no body text. */
-export const parseSnippet = (filename: string, raw: string): Snippet | null => {
+const parseSnippet = (filename: string, raw: string): Snippet | null => {
   const frontmatter = frontmatterPattern.exec(raw);
 
   if (frontmatter === null) {

@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished as afterThisTest } from 'vitest';
 
-import { acceptsSnippets, buildSnippetMessage, loadSnippets, parseSnippet } from './snippet.js';
+import { acceptsSnippets, buildSnippetMessage, loadSnippets } from './snippet.js';
 import type { Snippet } from './types.js';
 
 const snippetFile = (name: string, placement: string, order: number, body: string) =>
@@ -21,8 +21,18 @@ const createSnippet = (overrides: Partial<Snippet> = {}): Snippet => ({
   ...overrides,
 });
 
-describe('parseSnippet', () => {
-  it('reads the frontmatter fields and the trimmed body', () => {
+// Each case loads one file the way the extension does, so it covers the parser and the loader together.
+const loadOne = async (filename: string, content: string) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-snippet-parse-'));
+  afterThisTest(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, filename), content);
+  const [snippet] = await loadSnippets(directory);
+
+  return snippet ?? null;
+};
+
+describe('parsing a snippet file', () => {
+  it('reads the frontmatter fields and the trimmed body', async () => {
     const raw = [
       '---',
       'name: Ask questions',
@@ -35,7 +45,7 @@ describe('parseSnippet', () => {
       '',
     ].join('\n');
 
-    expect(parseSnippet('ask-questions.md', raw)).toEqual({
+    expect(await loadOne('ask-questions.md', raw)).toEqual({
       id: 'ask-questions.md',
       name: 'Ask questions',
       description: 'Ask until we agree',
@@ -45,8 +55,8 @@ describe('parseSnippet', () => {
     });
   });
 
-  it('falls back to the filename, append placement, and a last-place order', () => {
-    const snippet = parseSnippet(
+  it('falls back to the filename, append placement, and a last-place order', async () => {
+    const snippet = await loadOne(
       'bare-snippet.md',
       '---\nunrelated: value\n---\nVerify the facts.\n',
     );
@@ -61,7 +71,7 @@ describe('parseSnippet', () => {
     });
   });
 
-  it('strips quotes and ignores blank fields, unknown fields, and letter case', () => {
+  it('strips quotes and ignores blank fields, unknown fields, and letter case', async () => {
     const raw = [
       '---',
       'NAME: "Quoted name"',
@@ -73,32 +83,32 @@ describe('parseSnippet', () => {
       'Body.',
     ].join('\n');
 
-    expect(parseSnippet('quoted.md', raw)).toMatchObject({
+    expect(await loadOne('quoted.md', raw)).toMatchObject({
       name: 'Quoted name',
       description: 'Quoted description',
       placement: 'append',
     });
   });
 
-  it('reads a file that uses carriage returns and drops them from the body', () => {
+  it('reads a file that uses carriage returns and drops them from the body', async () => {
     const raw =
       '---\r\nname: Windows\r\nplacement: prepend\r\n---\r\nFirst line.\r\nSecond line.\r\n';
 
-    expect(parseSnippet('windows.md', raw)).toMatchObject({
+    expect(await loadOne('windows.md', raw)).toMatchObject({
       name: 'Windows',
       placement: 'prepend',
       body: 'First line.\nSecond line.',
     });
   });
 
-  it.for(['Prepend', 'PREPEND'])('reads %s as the prepend placement', (placement) => {
-    expect(parseSnippet('cased.md', `---\nplacement: ${placement}\n---\nBody.`)).toMatchObject({
+  it.for(['Prepend', 'PREPEND'])('reads %s as the prepend placement', async (placement) => {
+    expect(await loadOne('cased.md', `---\nplacement: ${placement}\n---\nBody.`)).toMatchObject({
       placement: 'prepend',
     });
   });
 
-  it('accepts an empty frontmatter block, since every field is optional', () => {
-    expect(parseSnippet('bare.md', '---\n---\nJust a body.\n')).toEqual({
+  it('accepts an empty frontmatter block, since every field is optional', async () => {
+    expect(await loadOne('bare.md', '---\n---\nJust a body.\n')).toEqual({
       id: 'bare.md',
       name: 'bare',
       description: '',
@@ -108,16 +118,16 @@ describe('parseSnippet', () => {
     });
   });
 
-  it('treats an unparsable order as a last-place order', () => {
-    expect(parseSnippet('bad.md', '---\norder: soon\n---\nBody.')).toMatchObject({ order: 9999 });
+  it('treats an unparsable order as a last-place order', async () => {
+    expect(await loadOne('bad.md', '---\norder: soon\n---\nBody.')).toMatchObject({ order: 9999 });
   });
 
   it.for([
     ['no frontmatter', 'Just a body with no frontmatter.'],
     ['an unterminated frontmatter block', '---\nname: Broken\nBody.'],
     ['an empty body', '---\nname: Empty\n---\n   \n'],
-  ])('returns null for %s', ([, raw]) => {
-    expect(parseSnippet('invalid.md', raw!)).toBeNull();
+  ])('returns null for %s', async ([, raw]) => {
+    expect(await loadOne('invalid.md', raw!)).toBeNull();
   });
 });
 
