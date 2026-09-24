@@ -180,27 +180,14 @@ export const validateTask = (value: unknown): Task => {
       value.parentSession,
       value.loadout.cwd,
       value.loadout.agentDirectory,
-      value.loadout.safetyExtension,
-      ...value.loadout.integrations,
       value.tree.rootSession,
     ].every(isAbsolute)
   ) {
     throw new Error('Worker paths must be absolute.');
   }
 
-  if (
-    !nameMatchesRole(value) ||
-    !identityIsSelfConsistent(value) ||
-    !value.loadout.integrations.includes(value.loadout.safetyExtension)
-  ) {
-    throw new Error('Invalid worker identity or missing safety integration.');
-  }
-
-  const required = ['read', 'bash', 'edit', 'write', 'subagent_report'];
-  const tools = value.loadout.tools;
-
-  if (!required.every((tool) => tools.includes(tool))) {
-    throw new Error('A trusted worker requires the coding and report tools.');
+  if (!nameMatchesRole(value) || !identityIsSelfConsistent(value)) {
+    throw new Error('Invalid worker identity.');
   }
 
   return value;
@@ -259,24 +246,11 @@ const isUnpublishedDirectory = (directory: string): boolean =>
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
+// Earlier Pi formats lacked the tree or saved replay fingerprints instead of explicit settings.
 const isRetiredPiTask = (
   value: Record<string, unknown>,
   loadout: Record<string, unknown>,
-): boolean => {
-  if (!('tree' in value)) {
-    return true;
-  }
-
-  if (!('providerFingerprintVersion' in loadout)) {
-    return true;
-  }
-
-  if (loadout.providerFingerprintVersion !== 2) {
-    return true;
-  }
-
-  return !('noExtensions' in loadout);
-};
+): boolean => !('tree' in value) || 'modelFingerprint' in loadout;
 
 const isRetiredHarness = (
   harness: unknown,

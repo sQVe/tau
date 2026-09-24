@@ -16,7 +16,7 @@ import { requireObject, resolveTerminal, result, text } from '../terminal.js';
 import { isGenericLoadout, isPiLoadout, nativeAgentStates, requireNativeTask } from '../types.js';
 import type { GenericLoadout, NativeAgentState, Task, TaskEvent } from '../types.js';
 import { workBudget } from './budget.js';
-import { integer, isBareShell, readProcessStart } from './shellIdentity.js';
+import { integer, isBareShell, readProcessStart, WorkerExitedError } from './shellIdentity.js';
 import type { InspectionBudget } from './shellIdentity.js';
 import type { Handle } from './types.js';
 
@@ -50,11 +50,9 @@ export const workerArguments = (task: Task): string[] => {
     task.loadout.model.slice(separator + 1),
     '--thinking',
     task.loadout.thinking,
-    // Load the empty-command guard before the explicitly replayed integrations, including Safety Net.
-    '--no-extensions',
+    // Pi loads these command-line extensions before the saved configuration's, so the guard is active before CC Safety Net.
     '-e',
     fileURLToPath(new URL('../workerBashGuard.ts', import.meta.url)),
-    ...task.loadout.integrations.flatMap((path) => ['-e', path]),
     '-e',
     fileURLToPath(new URL('../worker.ts', import.meta.url)),
   ];
@@ -81,7 +79,7 @@ const checkForeground = (
     throw new Error('Native worker has not reached its own process yet.');
   }
 
-  throw new Error('Worker exited before readiness. No task dispatch or retry.');
+  throw new WorkerExitedError();
 };
 
 export const isHerdrError = (error: unknown, code: string): boolean => {
@@ -211,7 +209,8 @@ const checkGenericAgent = async (
   return reference;
 };
 
-export const verifyRejectedStart = async (
+// The placed shell is still the bare foreground process, so no worker runs in the pane.
+export const shellUnchanged = async (
   handle: Handle,
   call: (argumentsList: string[]) => Promise<string>,
   cleanup?: InspectionBudget,
@@ -234,16 +233,23 @@ export const verifyRejectedStart = async (
     return false;
   }
 
-  const changedShell =
-    !isBareShell(information) ||
-    (await readProcessStart(handle, shell.processId, cleanup)) !== shell.startedAt;
+  return (
+    isBareShell(information) &&
+    (await readProcessStart(handle, shell.processId, cleanup)) === shell.startedAt
+  );
+};
 
-  if (changedShell) {
+export const verifyRejectedStart = async (
+  handle: Handle,
+  call: (argumentsList: string[]) => Promise<string>,
+  cleanup?: InspectionBudget,
+): Promise<boolean> => {
+  if (!(await shellUnchanged(handle, call, cleanup))) {
     return false;
   }
 
   try {
-    if (Object.keys(await readAgent(call, location.paneId, true)).length > 0) {
+    if (Object.keys(await readAgent(call, text(handle.paneId), true)).length > 0) {
       return false;
     }
   } catch (error) {

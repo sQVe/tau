@@ -1,6 +1,6 @@
 # ADR 0029: Version worker provider fingerprints
 
-- Status: Proposed
+- Status: Superseded by [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 - Date: 2026-09-16
 
 ## Context

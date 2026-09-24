@@ -18,7 +18,7 @@ import { readAcknowledgement, readReply } from '../questionRecords.js';
 import { requireObject, result, terminalLocation } from '../terminal.js';
 import { fixtureModel } from './controlledProvider.js';
 import { isolatedHerdr } from './isolatedHerdr.js';
-import { asPiLoadout, readPiTask as readTask } from './loadout.js';
+import { readPiTask as readTask } from './loadout.js';
 import { toolAvailable } from './toolAvailable.js';
 
 export type PiWorkerScenario =
@@ -43,18 +43,14 @@ export const runPiWorkerScenario = async (scenario: PiWorkerScenario) => {
     join(root, 'parent.jsonl'),
     JSON.stringify({ type: 'session', version: 3, id: 'parent', cwd: root }) + '\n',
   );
-  const disabledExtension = join(root, 'disabled-package.js');
-  const rediscovered = join(root, 'rediscovered');
-  writeFileSync(
-    disabledExtension,
-    `import { writeFileSync } from 'node:fs';\nexport default function () { writeFileSync(${JSON.stringify(rediscovered)}, 'unexpected discovery'); }`,
-  );
+  const safetyPackage = dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json')));
+  // The worker accepts Safety Net only from its real file, so the package loads by path.
   writeFileSync(
     join(environment.PI_CODING_AGENT_DIR, 'settings.json'),
     JSON.stringify({
       defaultProjectTrust: 'trusted',
       retry: { enabled: false },
-      packages: [disabledExtension],
+      packages: [safetyPackage],
     }),
   );
   writeFileSync(join(root, 'source.txt'), 'before\n');
@@ -73,16 +69,11 @@ export default function (pi) {
   });
 }`,
   );
-  let taskDirectory = '';
   const observations: string[] = [];
   const deliveryEntered = Promise.withResolvers<undefined>();
   const releaseDelivery = Promise.withResolvers<undefined>();
   let promptCount = 0;
   const client = async (argumentsList: string[], budget = 5000, signal?: AbortSignal) => {
-    if (argumentsList[1] === 'start') {
-      taskDirectory = dirname(argumentsList[argumentsList.indexOf('--session') + 1] ?? '');
-    }
-
     if (argumentsList[1] === 'prompt') {
       promptCount += 1;
       deliveryEntered.resolve(undefined);
@@ -92,11 +83,8 @@ export default function (pi) {
     const response = await isolatedClient(argumentsList, budget, signal);
     observations.push(response);
 
-    if (
-      scenario === 'early exit' &&
-      argumentsList[1] === 'process-info' &&
-      existsSync(join(taskDirectory, 'owned.json'))
-    ) {
+    // The early-exit fixture leaves during startup, before herdr reports the worker session.
+    if (scenario === 'early exit' && argumentsList[1] === 'start') {
       writeFileSync(exitSignal, 'exit');
     }
 
@@ -117,12 +105,7 @@ export default function (pi) {
     await client(['pane', 'move', paneId, '--new-workspace', '--no-focus']);
   }
 
-  const safety = join(
-    dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
-    'dist',
-    'pi',
-    'index.js',
-  );
+  const safety = join(safetyPackage, 'dist', 'pi', 'index.js');
   // A second entry point simulates duplicate package registration without disabling either handler.
   const secondSafety = join(root, 'second-safety.mjs');
   writeFileSync(secondSafety, `export { default } from ${JSON.stringify(safety)};`);
@@ -145,6 +128,16 @@ export default function (pi) {
     extensions.push(earlyExitExtension);
   }
 
+  // Pi discovers only .ts and .js files in the agent extensions directory.
+  for (const [index, extension] of extensions.entries()) {
+    if (extension !== integration && extension !== safety) {
+      writeFileSync(
+        join(environment.PI_CODING_AGENT_DIR, 'extensions', `fixture-${index}.js`),
+        `export { default } from ${JSON.stringify(extension)};\n`,
+      );
+    }
+  }
+
   const parentLoader = new DefaultResourceLoader({
     cwd: root,
     agentDir: environment.PI_CODING_AGENT_DIR,
@@ -159,16 +152,8 @@ export default function (pi) {
   }
 
   await runtime.getAvailable();
-  const originalArguments = process.argv;
-  process.argv = [
-    process.execPath,
-    'pi',
-    '--no-extensions',
-    ...extensions.flatMap((path) => ['-e', path]),
-  ];
   vi.stubEnv('PI_CODING_AGENT_DIR', environment.PI_CODING_AGENT_DIR);
   onTestFinished(() => {
-    process.argv = originalArguments;
     vi.unstubAllEnvs();
   });
   mkdirSync(join(root, '.pi', 'agents'), { recursive: true });
@@ -176,28 +161,17 @@ export default function (pi) {
     join(root, '.pi', 'agents', 'worker.md'),
     '---\nname: worker\nrole: editing\nthinking: off\n---\nComplete only the fixture task.\n',
   );
-  const loadout = await resolveLoadout(
+  const loadout = resolveLoadout(
     {
       profile: 'worker',
       model: `${fixtureModel.provider}/${fixtureModel.id}`,
       permissions: 'trusted-full-tools',
     },
-    { cwd: root, modelRegistry: new ModelRegistry(runtime), isProjectTrusted: () => true },
     {
-      getAllTools: () => [],
-      getCommands: () => [
-        {
-          name: 'fixture-skill',
-          description: 'Not an extension',
-          source: 'skill',
-          sourceInfo: {
-            path: join(root, 'SKILL.md'),
-            source: 'test',
-            scope: 'temporary',
-            origin: 'top-level',
-          },
-        },
-      ],
+      cwd: root,
+      modelRegistry: new ModelRegistry(runtime),
+      scopedModels: [],
+      isProjectTrusted: () => true,
     },
   );
   let done = Promise.withResolvers<string>();
@@ -337,8 +311,6 @@ export default function (pi) {
   );
   expect(readTask(launched.directory)).toEqual(savedTask);
   expect(status.failure ?? '').toMatch(failure);
-  expect(existsSync(rediscovered)).toBe(false);
-  expect(asPiLoadout(loadout).noExtensions).toBe(true);
   expect({ status, observations }).toMatchObject({
     status: {
       outcome: {
@@ -369,7 +341,7 @@ export default function (pi) {
     const transcript = readFileSync(savedTask.nativeSessionFile, 'utf8');
     const profilePath = join(root, '.pi', 'agents', 'worker.md');
     writeFileSync(profilePath, 'Changed invalid profile.');
-    const replayed = await validateSavedLoadout(savedTask.loadout, {
+    const replayed = validateSavedLoadout(savedTask.loadout, {
       cwd: root,
       modelRegistry: new ModelRegistry(runtime),
       isProjectTrusted: () => true,

@@ -4,7 +4,6 @@ import type { Static } from 'typebox';
 
 export const textLimit = 32_000;
 const text = Type.String({ minLength: 1, maxLength: textLimit });
-const strings = Type.Array(text, { maxItems: 200, uniqueItems: true });
 export const thinkingSchema = StringEnum([
   'off',
   'minimal',
@@ -14,28 +13,17 @@ export const thinkingSchema = StringEnum([
   'xhigh',
   'max',
 ] as const);
-const sharedLoadout = {
-  profile: text,
-  role: Type.Union([Type.Literal('investigation'), Type.Literal('editing')]),
-  thinking: thinkingSchema,
-  cwd: text,
-  agentDirectory: text,
-  permissions: Type.Literal('trusted-full-tools'),
-  tools: strings,
-  integrations: strings,
-  integrationFingerprint: Type.String({ minLength: 64, maxLength: 64 }),
-  safetyExtension: text,
-  instructions: text,
-};
 const piLoadoutSchema = Type.Object(
   {
-    ...sharedLoadout,
     harness: Type.Literal('pi'),
+    profile: text,
+    role: Type.Union([Type.Literal('investigation'), Type.Literal('editing')]),
     model: Type.String({ pattern: '^[^/\\s]+/[^\\s]+$' }),
-    modelFingerprint: Type.String({ minLength: 64, maxLength: 64 }),
-    providerFingerprint: Type.String({ minLength: 64, maxLength: 64 }),
-    providerFingerprintVersion: Type.Literal(2),
-    noExtensions: Type.Boolean(),
+    thinking: thinkingSchema,
+    cwd: text,
+    agentDirectory: text,
+    permissions: Type.Literal('trusted-full-tools'),
+    instructions: text,
   },
   { additionalProperties: false },
 );

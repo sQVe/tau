@@ -1,6 +1,7 @@
 # ADR 0028: Keep worker control in the parent
 
-- Status: Proposed
+- Status: Proposed; settings reproduction rule superseded by
+  [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 - Date: 2026-09-16
 
 ## Context
