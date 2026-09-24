@@ -3,11 +3,6 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { requireRegisteredTools } from '../../bundledTools/index.js';
 import { delegateReference, resolveDelegate } from '../../delegateModel/index.js';
 
-// Every tool the package registers, including get_search_content, which fetch_content uses to page
-// through oversized results. The package's `toolNames` option cannot rename tools under Tau: renamed
-// tools still register, but the session-start check then reports the default names as missing.
-export const webAccessTools = ['web_search', 'source_check', 'fetch_content', 'get_search_content'];
-
 const requiredWebAccessTools = ['web_search', 'fetch_content'];
 
 export default function webAccessExtension(pi: ExtensionAPI) {

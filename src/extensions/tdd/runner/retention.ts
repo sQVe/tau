@@ -8,7 +8,7 @@ import { isMissingFile } from '../../../errors/index.js';
 import type { RunDiagnostics } from './types.js';
 
 export const maximumRetainedRuns = 32;
-export const retentionMilliseconds = 7 * 24 * 60 * 60 * 1000;
+const retentionMilliseconds = 7 * 24 * 60 * 60 * 1000;
 
 const diagnosticsRoot = () => join(getAgentDir(), 'test-runs');
 const runDirectoryName = /^run-[a-zA-Z0-9]{6}$/;

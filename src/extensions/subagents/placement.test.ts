@@ -1,7 +1,9 @@
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { placementFixture as fixture } from './fixtures/layout.js';
-import { minimumPane, splitDirection } from './foreground.js';
+import { splitDirection } from './foreground.js';
+
+const minimumPane = { width: 82, height: 24 };
 
 it.each([
   [100, 100, 'down'],

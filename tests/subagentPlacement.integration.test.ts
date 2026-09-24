@@ -2,7 +2,6 @@ import { expect, it } from 'vitest';
 
 import { isolatedHerdr } from '../src/extensions/subagents/fixtures/isolatedHerdr.js';
 import { toolAvailable } from '../src/extensions/subagents/fixtures/toolAvailable.js';
-import { minimumPane } from '../src/extensions/subagents/foreground.js';
 import { WorkerPlacement } from '../src/extensions/subagents/placement.js';
 import {
   listTerminals,
@@ -11,6 +10,8 @@ import {
   result,
   terminalLocation,
 } from '../src/extensions/subagents/terminal.js';
+
+const minimumPane = { width: 82, height: 24 };
 
 const hasHerdr = toolAvailable('herdr');
 

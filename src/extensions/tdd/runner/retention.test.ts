@@ -4,12 +4,7 @@ import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
-import {
-  createDiagnosticsDirectory,
-  maximumRetainedRuns,
-  pruneDiagnostics,
-  retentionMilliseconds,
-} from './retention.js';
+import { createDiagnosticsDirectory, maximumRetainedRuns, pruneDiagnostics } from './retention.js';
 
 it('retains recent completed runs while pruning old and excess diagnostics without touching active runs', async ({
   onTestFinished,
@@ -43,7 +38,7 @@ it('retains recent completed runs while pruning old and excess diagnostics witho
   }
 
   await writeFile(join(expired, 'completed'), '');
-  const old = new Date(now - retentionMilliseconds - 1);
+  const old = new Date(now - 7 * 24 * 60 * 60 * 1000 - 1);
   await utimes(join(expired, 'completed'), old, old);
   await utimes(abandoned, old, old);
   await writeFile(join(unrelated, 'keep'), 'user data');

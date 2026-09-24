@@ -18,7 +18,7 @@ export class BulkReadRecoverableError extends Error {
 }
 
 // The arrow prefix cannot collide with an answer line that opens with a number and a colon.
-export const buildPayload = (files: { path: string; content: string }[]): string =>
+const buildPayload = (files: { path: string; content: string }[]): string =>
   files
     .map(
       ({ path, content }) =>
@@ -29,7 +29,7 @@ export const buildPayload = (files: { path: string; content: string }[]): string
     )
     .join('\n\n');
 
-export const stripLinePrefixes = (text: string): string => text.replace(/^\d+→/gm, '');
+const stripLinePrefixes = (text: string): string => text.replace(/^\d+→/gm, '');
 
 const inputError = (message: string, cause?: unknown) =>
   new BulkReadRecoverableError(message, { cause });

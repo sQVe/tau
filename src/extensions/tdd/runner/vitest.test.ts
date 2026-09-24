@@ -14,16 +14,13 @@ import { join } from 'node:path';
 
 import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
-import { maximumReportBytes } from './diagnostics.js';
 import { defaultSpawn, maximumStdoutBytes, maximumTotalBytes, nodeExecutable } from './process.js';
 import { defaultResolveVitest, extractBinPath } from './resolution.js';
 import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js';
-import {
-  defaultDeps,
-  maximumFailures,
-  maximumMessageCharacters,
-  runTests as runTestsWithDiagnostics,
-} from './vitest.js';
+import { defaultDeps, maximumFailures, runTests as runTestsWithDiagnostics } from './vitest.js';
+
+const reportLimit = 8 * 1024 * 1024;
+const messageLimit = 300;
 
 const runTests = async (...argumentsList: Parameters<typeof runTestsWithDiagnostics>) => {
   const result = await runTestsWithDiagnostics(...argumentsList);
@@ -494,7 +491,7 @@ describe('runTests', () => {
     const rawReport = {
       numTotalTests: 1,
       numPassedTests: 1,
-      padding: 'x'.repeat(maximumReportBytes),
+      padding: 'x'.repeat(reportLimit),
       testResults: [
         {
           name: '/repo/value.test.ts',
@@ -529,10 +526,10 @@ describe('runTests', () => {
       bytes: maximumTotalBytes + 1,
       truncated: true,
     });
-    expect(diagnostics.report).toMatchObject({ savedBytes: maximumReportBytes, truncated: true });
+    expect(diagnostics.report).toMatchObject({ savedBytes: reportLimit, truncated: true });
     expect((await stat(diagnostics.stdout!.path)).size).toBe(maximumStdoutBytes);
     expect((await stat(diagnostics.stderr!.path)).size).toBe(maximumTotalBytes);
-    expect((await stat(diagnostics.report!.path)).size).toBe(maximumReportBytes);
+    expect((await stat(diagnostics.report!.path)).size).toBe(reportLimit);
   });
 
   it('keeps the verdict and reports artifact write failures without overwriting files', async () => {
@@ -1075,7 +1072,7 @@ describe('runTests', () => {
             {
               fullName: 'case',
               status: 'failed',
-              failureMessages: [`a${'é'.repeat(maximumMessageCharacters)}`],
+              failureMessages: [`a${'é'.repeat(messageLimit)}`],
             },
           ],
         },
@@ -1140,7 +1137,7 @@ describe('runTests', () => {
   });
 
   it('caps failures to 10 entries and truncates each assertion message to 300 characters', async () => {
-    const longMessage = 'x'.repeat(maximumMessageCharacters * 2);
+    const longMessage = 'x'.repeat(messageLimit * 2);
 
     const assertionResults = Array.from({ length: 15 }, (_, index) => ({
       fullName: `case ${index}`,
@@ -1171,7 +1168,7 @@ describe('runTests', () => {
     expect(result.truncated).toBe(true);
 
     for (const failure of result.failures) {
-      expect(failure.message.length).toBeLessThanOrEqual(maximumMessageCharacters + 1);
+      expect(failure.message.length).toBeLessThanOrEqual(messageLimit + 1);
     }
   });
 
