@@ -1197,6 +1197,8 @@ describe('commit execution', () => {
         stdout = `${gitDirectory}\n`;
       } else if (commandArguments.includes('--show-toplevel')) {
         stdout = '/repo\n';
+      } else if (commandArguments.includes('--show-prefix')) {
+        stdout = 'true\n\n';
       }
 
       return Promise.resolve({ code: 0, killed: false, stdout, stderr: '' });

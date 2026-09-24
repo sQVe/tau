@@ -1,6 +1,6 @@
-import { readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
 import type {
@@ -125,7 +125,7 @@ export const resolutionFailure = (
   const lines = [
     `${explanation} Stage: ${stage}; ${errorType}${errorCodeSuffix}.`,
     'Inspect this once, then fix resolution or use the repository runner. Bash tests do not update Tau observations.',
-    `Lookup directory: ${resolution.cwd}; request: ${resolution.request}`,
+    `Tests run from this session's cwd (${resolution.cwd}); request: ${resolution.request}`,
   ];
 
   if (resolution.manifestPath !== undefined) {
@@ -139,6 +139,39 @@ export const resolutionFailure = (
   const message = lines.join('\n');
 
   return { kind: missing ? 'runner-missing' : 'runner-resolution-error', message, resolution };
+};
+
+const packageRoot = (path: string): string | undefined => {
+  for (let directory = dirname(path); ; directory = dirname(directory)) {
+    if (existsSync(join(directory, 'package.json'))) {
+      return directory;
+    }
+
+    if (dirname(directory) === directory) {
+      return undefined;
+    }
+  }
+};
+
+// Name the package root when a requested file lies outside the cwd's package, such as in a sibling
+// worktree, so the lookup failure does not read as a broken install.
+export const explainSessionCwd = (
+  failure: VitestResolutionFailure,
+  cwd: string,
+  files: string[],
+): VitestResolutionFailure => {
+  const foreign = files
+    .map((file) => ({ file, root: packageRoot(resolvePath(cwd, file)) }))
+    .find(({ root }) => root !== undefined && root !== resolvePath(cwd));
+
+  if (foreign?.root === undefined) {
+    return failure;
+  }
+
+  return {
+    ...failure,
+    message: `${failure.message}\n${diagnosticPath(foreign.file)} belongs to ${diagnosticPath(foreign.root)}; run it from a session in that worktree.`,
+  };
 };
 
 const manifestVersion = (manifest: unknown): unknown =>

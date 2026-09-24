@@ -555,6 +555,9 @@ it('reproduces CLI provider integrations but refuses runtime headers and invalid
   await expect(
     resolveLoadout(request, { ...context, isProjectTrusted: () => false }, pi),
   ).rejects.toThrow('trusted project');
+  const otherCwd = resolveLoadout({ ...request, cwd: tmpdir() }, context, pi);
+  await expect(otherCwd).rejects.toThrow(context.cwd);
+  await expect(otherCwd).rejects.toThrow('herdr agent prompt');
   await expect(resolveLoadout({ ...request, profile: 'missing' }, context, pi)).rejects.toThrow(
     'not found',
   );

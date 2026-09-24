@@ -52,6 +52,22 @@ it('distinguishes an unavailable Vitest package from a resolver failure', async 
   expect(blocked).toHaveProperty('message', expect.stringContaining('exports'));
 });
 
+it('names the package root when requested files belong to another package, such as a nested worktree', async () => {
+  await mkdir(join(cwd, 'other/src'), { recursive: true });
+  await writeFile(join(cwd, 'other/package.json'), '{}');
+  const run = (files: string[]) =>
+    runTests(
+      { scope: 'changed', cwd, files },
+      { resolveVitest: defaultResolveVitest, spawn: vi.fn<SpawnFn>(), timeoutMs: 30_000 },
+    );
+
+  const elsewhere = await run(['other/src/value.test.ts']);
+  const local = await run(['value.test.ts']);
+
+  expect(elsewhere).toHaveProperty('message', expect.stringContaining(join(cwd, 'other')));
+  expect(local).toHaveProperty('message', expect.not.stringContaining(join(cwd, 'other')));
+});
+
 it('does not call Vitest absent when its manifest export points to a missing file', async () => {
   await manifest(
     JSON.stringify({

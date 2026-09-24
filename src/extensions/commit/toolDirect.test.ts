@@ -1,4 +1,4 @@
-import { chmod, readFile, readdir } from 'node:fs/promises';
+import { chmod, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -101,6 +101,41 @@ describe('direct commit staging', () => {
     expect(await git(directory, ['show', ':other'])).toBe('staged bytes');
     expect(await readFile(join(directory, 'other'), 'utf8')).toBe('working bytes');
     expect(await git(directory, ['rev-list', '--all', '--count'])).toBe('0\n');
+  });
+
+  it('commits from a cwd whose name contains a newline', async () => {
+    const directory = await createTemporaryRepository();
+    await writeRepositoryFile(directory, 'part\nrest/requested', 'requested');
+
+    await executeCommit(join(directory, 'part\nrest'), {
+      groups: [{ files: ['requested'], subject: 'feat: requested' }],
+    });
+
+    expect(await git(directory, ['ls-tree', '-r', '-z', '--name-only', 'HEAD'])).toBe(
+      'part\nrest/requested\0',
+    );
+  });
+
+  it('refuses early when the session cwd is not a work tree', async () => {
+    const source = await createTemporaryRepository();
+    await writeRepositoryFile(source, 'tracked', 'tracked');
+    await git(source, ['add', 'tracked']);
+    await git(source, ['commit', '--quiet', '-m', 'initial']);
+    const container = await createTemporaryRepository();
+    await git(container, ['clone', '--quiet', '--bare', source, '.bare']);
+    await rm(join(container, '.git'), { recursive: true });
+    await writeFile(join(container, '.git'), 'gitdir: .bare\n');
+    await git(container, ['worktree', 'add', '--quiet', 'feature']);
+    await writeRepositoryFile(join(container, 'feature'), 'requested', 'requested');
+
+    await expect(
+      executeCommit(container, {
+        groups: [{ files: ['feature/requested'], subject: 'feat: requested' }],
+      }),
+    ).rejects.toThrow(`(${container})`);
+
+    expect(await git(join(container, 'feature'), ['status', '--porcelain'])).toBe('?? requested\n');
+    expect(await git(container, ['rev-list', '--all', '--count'])).toBe('1\n');
   });
 
   it('preserves concurrent staging before the candidate snapshot', async () => {

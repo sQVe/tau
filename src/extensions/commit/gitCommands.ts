@@ -61,15 +61,27 @@ export const unstageFiles = (
   });
 
 // Staged paths are repository-relative; requested paths are relative to the working directory.
+// Outside a work tree, such as a bare repository's folder, the index lists unrelated paths.
 export const repositoryPathPrefix = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
 ) => {
-  const output = await reviewGit(pi, workingDirectory, ['rev-parse', '--show-prefix'], {
-    timeout: null,
-  });
+  const output = await reviewGit(
+    pi,
+    workingDirectory,
+    ['rev-parse', '--is-inside-work-tree', '--show-prefix'],
+    { timeout: null },
+  );
+  // The prefix is a path, so only the first line break separates the two answers.
+  const [insideWorkTree, ...prefixLines] = output.split('\n');
 
-  return output.replace(/\n$/, '');
+  if (insideWorkTree !== 'true') {
+    throw new Error(
+      `The session cwd (${workingDirectory}) is not a Git work tree. Commit from a session in the worktree that owns the files.`,
+    );
+  }
+
+  return prefixLines.join('\n').replace(/\n$/, '');
 };
 
 // HEAD is unresolved before the first commit.
