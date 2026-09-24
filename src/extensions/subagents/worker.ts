@@ -16,6 +16,8 @@ import type {
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
+import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
+import type { WorkerActivity } from './activity.js';
 import { monotonicNow, taskEnded } from './admission.js';
 import { processAbsent } from './cancellation.js';
 import { checkWorkerRuntime } from './loadout.js';
@@ -46,6 +48,8 @@ const reportParameters = Type.Object({
 
 type ReportInput = Static<typeof reportParameters>;
 
+type WorkerPhase = 'starting' | 'active' | 'waiting' | 'done';
+
 interface WorkerState {
   directory: string;
   task: Task | undefined;
@@ -58,7 +62,92 @@ interface WorkerState {
   pendingQuestion: Question | undefined;
   parentWatch: ReturnType<typeof setInterval> | undefined;
   removeNotificationListener: (() => void) | undefined;
+  activitySequence: number;
+  activityTimer: ReturnType<typeof setTimeout> | undefined;
+  phase: WorkerPhase;
+  phaseLabel: string | undefined;
+  phaseDescription: { text: string; at: number } | undefined;
+  usageBaseline:
+    | { input: number; output: number; cacheRead: number; cacheWrite: number }
+    | undefined;
 }
+
+const readPiSessionUsage = (
+  context: ExtensionContext,
+): { input: number; output: number; cacheRead: number; cacheWrite: number } | undefined => {
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  let hasUsage = false;
+
+  for (const entry of context.sessionManager.getBranch()) {
+    if (entry.type !== 'message' || entry.message.role !== 'assistant') {
+      continue;
+    }
+
+    const messageUsage = entry.message.usage;
+    usage.input += messageUsage.input;
+    usage.output += messageUsage.output;
+    usage.cacheRead += messageUsage.cacheRead;
+    usage.cacheWrite += messageUsage.cacheWrite;
+    hasUsage = true;
+  }
+
+  return hasUsage ? usage : undefined;
+};
+
+const taskUsage = (
+  current: ReturnType<typeof readPiSessionUsage>,
+  baseline: WorkerState['usageBaseline'],
+): WorkerActivity['usage'] => {
+  if (!current) {
+    return undefined;
+  }
+
+  const start = baseline ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+  return {
+    input: Math.max(0, current.input - start.input),
+    output: Math.max(0, current.output - start.output),
+    cacheRead: Math.max(0, current.cacheRead - start.cacheRead),
+    cacheWrite: Math.max(0, current.cacheWrite - start.cacheWrite),
+  };
+};
+
+const recordWorkerActivity = (
+  state: WorkerState,
+  context: ExtensionContext,
+  phase: WorkerPhase,
+  label?: string,
+): void => {
+  if (!state.task) {
+    return;
+  }
+
+  const usage = taskUsage(readPiSessionUsage(context), state.usageBaseline);
+
+  state.activitySequence += 1;
+  state.phase = phase;
+  state.phaseLabel = label;
+
+  try {
+    writeWorkerActivity(state.directory, {
+      taskId: state.task.taskId,
+      sequence: state.activitySequence,
+      updatedAt: Date.now(),
+      phase,
+      ...(label ? { label } : {}),
+      ...(state.phaseDescription
+        ? {
+            description: state.phaseDescription.text,
+            descriptionAt: state.phaseDescription.at,
+          }
+        : {}),
+      ...(context.model ? { model: `${context.model.provider}/${context.model.id}` } : {}),
+      ...(usage ? { usage } : {}),
+    });
+  } catch {
+    // Activity is optional UI evidence and cannot affect worker execution.
+  }
+};
 
 const hasRunningTask = (state: WorkerState): state is WorkerState & { task: Task } =>
   state.task !== undefined && state.accepted && !state.settled;
@@ -66,6 +155,25 @@ const hasRunningTask = (state: WorkerState): state is WorkerState & { task: Task
 const isTaskActive = (state: WorkerState): state is WorkerState & { task: Task } =>
   hasRunningTask(state) && !state.reported;
 
+// A worker-authored phase keeps its own timestamp and does not change lifecycle truth or the
+// automatic activity label, so unrelated Pi events cannot make an old phase look freshly reported.
+const recordPhaseDescription = (
+  state: WorkerState,
+  context: ExtensionContext,
+  value: string,
+): { description: string; descriptionAt: number } => {
+  if (!isTaskActive(state)) {
+    throw new Error('This worker has no accepted active task for progress.');
+  }
+
+  const text = parsePhaseDescription(value);
+  const at = Date.now();
+
+  state.phaseDescription = { text, at };
+  recordWorkerActivity(state, context, state.phase, state.phaseLabel);
+
+  return { description: text, descriptionAt: at };
+};
 const matchesNativeSession = (task: Task, context: ExtensionContext): boolean =>
   context.sessionManager.getSessionId() === task.nativeSessionId &&
   context.sessionManager.getSessionFile() === task.nativeSessionFile;
@@ -166,6 +274,7 @@ const askParent = (
 
   // Keep waiting after uncertain publication rather than generate another question identity.
   state.pendingQuestion = question;
+  recordWorkerActivity(state, context, 'waiting', 'Waiting for parent question reply');
   startParentWatch(state, task, parentProcess, context);
   acceptQuestion(state.directory, task.taskId, question);
 
@@ -384,6 +493,9 @@ const startWorker = async (
   try {
     const task = readTask(state.directory);
     state.task = task;
+    state.usageBaseline = readPiSessionUsage(context);
+    state.phaseDescription = undefined;
+    recordWorkerActivity(state, context, 'starting', 'Pi worker starting');
 
     if (
       context.sessionManager.getSessionId() !== task.nativeSessionId ||
@@ -477,6 +589,29 @@ const registerQuestionTool = (pi: ExtensionAPI, state: WorkerState): void => {
   });
 };
 
+const progressParameters = Type.Object(
+  { description: Type.String({ minLength: 1, maxLength: 200 }) },
+  { additionalProperties: false },
+);
+
+const registerProgressTool = (pi: ExtensionAPI, state: WorkerState): void => {
+  pi.registerTool({
+    name: 'subagent_progress',
+    label: 'Report progress',
+    description:
+      'Publish one short single-line phase description when the work phase changes, for example "Inspecting launch code" or "Running focused tests". Update it on phase changes only, not for every tool call and not for reassurance. It is passive: it never wakes the parent and never extends the deadline.',
+    parameters: progressParameters,
+    execute(...argumentsList) {
+      const saved = recordPhaseDescription(state, argumentsList[4], argumentsList[1].description);
+
+      return Promise.resolve({
+        content: [{ type: 'text' as const, text: 'Progress saved for the parent widget.' }],
+        details: saved,
+      });
+    },
+  });
+};
+
 const registerReportTool = (pi: ExtensionAPI, state: WorkerState): void => {
   pi.registerTool({
     name: 'subagent_report',
@@ -502,8 +637,38 @@ const registerSessionStartHandler = (pi: ExtensionAPI, state: WorkerState): void
   pi.on('session_start', (_event, context) => startWorker(pi, state, context));
 };
 
+const registerActivityHandlers = (pi: ExtensionAPI, state: WorkerState): void => {
+  pi.on('turn_start', (_event, context) => {
+    recordWorkerActivity(state, context, 'active', 'Pi is thinking');
+  });
+  pi.on('turn_end', (_event, context) => {
+    recordWorkerActivity(state, context, 'waiting', 'Pi is between turns');
+  });
+  pi.on('message_update', (_event, context) => {
+    if (state.activityTimer) {
+      return;
+    }
+
+    state.activityTimer = setTimeout(() => {
+      state.activityTimer = undefined;
+      recordWorkerActivity(state, context, 'active', 'Pi response streaming');
+    }, 500);
+  });
+  pi.on('tool_execution_start', (event, context) => {
+    recordWorkerActivity(state, context, 'active', `tool: ${event.toolName}`);
+  });
+  pi.on('tool_execution_end', (event, context) => {
+    recordWorkerActivity(state, context, 'active', `tool finished: ${event.toolName}`);
+  });
+};
+
 const registerSessionShutdownHandler = (pi: ExtensionAPI, state: WorkerState): void => {
   pi.on('session_shutdown', () => {
+    if (state.activityTimer) {
+      clearTimeout(state.activityTimer);
+      state.activityTimer = undefined;
+    }
+
     state.removeNotificationListener?.();
     clearInterval(state.kickoff);
     clearInterval(state.parentWatch);
@@ -511,13 +676,14 @@ const registerSessionShutdownHandler = (pi: ExtensionAPI, state: WorkerState): v
 };
 
 const registerAgentStartHandler = (pi: ExtensionAPI, state: WorkerState): void => {
-  pi.on('agent_start', () => {
+  pi.on('agent_start', (_event, context) => {
     if (!state.task || state.accepted) {
       return;
     }
 
     recordEvent(state.directory, state.task.taskId, 'accepted', 'Pi started the assigned task.');
     state.accepted = true;
+    recordWorkerActivity(state, context, 'active', 'Pi task accepted');
   });
 };
 
@@ -576,6 +742,7 @@ const registerAgentSettledHandler = (pi: ExtensionAPI, state: WorkerState): void
       detail: 'Pi has no active run or queued continuation.',
       stopped: true,
     });
+    recordWorkerActivity(state, context, 'done', 'Pi run settled');
     context.shutdown();
   });
 };
@@ -600,6 +767,12 @@ export default function workerExtension(pi: ExtensionAPI): void {
     pendingQuestion: undefined,
     parentWatch: undefined,
     removeNotificationListener: undefined,
+    activitySequence: 0,
+    activityTimer: undefined,
+    phase: 'starting',
+    phaseLabel: undefined,
+    phaseDescription: undefined,
+    usageBaseline: undefined,
   };
 
   state.removeNotificationListener = pi.events.on('tau:child-notification', (value: unknown) => {
@@ -608,8 +781,10 @@ export default function workerExtension(pi: ExtensionAPI): void {
 
   registerQuestionTool(pi, state);
   registerInputHandler(pi, state);
+  registerProgressTool(pi, state);
   registerReportTool(pi, state);
   registerSessionStartHandler(pi, state);
+  registerActivityHandlers(pi, state);
   registerSessionShutdownHandler(pi, state);
   registerAgentStartHandler(pi, state);
   registerToolCallHandler(pi, state);

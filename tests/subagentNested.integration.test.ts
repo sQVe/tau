@@ -137,6 +137,7 @@ const nestedScenario = async (waitForParentReply: boolean) => {
         'subagent_reply',
         'subagent_report',
         'subagent_question',
+        'subagent_progress',
       ],
       noExtensions: true,
       integrations: [safety],

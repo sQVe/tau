@@ -140,6 +140,7 @@ const piWorkerTools = (extensionTools: Iterable<string>): string[] =>
       'edit',
       'write',
       ...extensionTools,
+      'subagent_progress',
       'subagent_report',
       'subagent_question',
     ]),
