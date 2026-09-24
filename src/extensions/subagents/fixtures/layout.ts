@@ -1,4 +1,3 @@
-/* oxlint-disable typescript/no-non-null-assertion, typescript/require-await -- Test layout state is constructed by this fake; async client calls need not suspend. */
 import { WorkerPlacement } from '../placement.js';
 import type { Visibility } from '../placement.js';
 
