@@ -39,6 +39,14 @@ vi.mock('node:fs', async (importOriginal) => {
 
 const originalRunClient = cancellationModule.runClient;
 
+// herdr 0.9.1 reported this while zsh ran a prompt hook: another foreground group, no process list.
+const promptHookSample = (paneId: string | undefined) =>
+  JSON.stringify({
+    result: {
+      process_info: { pane_id: paneId, shell_pid: 100, foreground_process_group_id: 300 },
+    },
+  });
+
 const captureError = (action: () => unknown): unknown => {
   try {
     action();
@@ -812,6 +820,89 @@ it('gives herdr a valid start timeout inside the client budget', async ({ onTest
   // herdr 0.9.1 rejects start timeouts of 3000 ms or less.
   expect(herdrTimeout).toBeGreaterThan(3000);
   expect(herdrTimeout).toBeLessThan(clientBudget);
+});
+
+it('retries a pane-busy start when a prompt hook briefly occupies the shell', async ({
+  onTestFinished,
+}) => {
+  let attempts = 0;
+  let samples = 0;
+  const fixture = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
+      attempts += 1;
+
+      if (attempts === 1) {
+        throw Object.assign(new Error('Busy shell'), {
+          stderr: JSON.stringify({ error: { code: 'agent_pane_busy' } }),
+        });
+      }
+    }
+
+    if (argumentsList[1] === 'process-info' && attempts === 1) {
+      samples += 1;
+
+      // Samples 1-3 prove absence and wait for the shell; sample 4 rechecks before the retry.
+      return samples === 4 ? promptHookSample(argumentsList[3]) : '';
+    }
+
+    return '';
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('starting');
+  expect(attempts).toBe(2);
+});
+
+it('closes a never-started pane when a prompt hook briefly occupies the shell', async ({
+  onTestFinished,
+}) => {
+  let samples = 0;
+  const fixture = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] !== 'process-info') {
+      return '';
+    }
+
+    samples += 1;
+
+    // Sample 1 proves absence after the rejected start; sample 2 rechecks before the close.
+    return samples === 2 ? promptHookSample(argumentsList[3]) : '';
+  });
+  fixture.fake.state.startError = 'Start rejected';
+  fixture.fake.state.rejectStart = true;
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('stopped');
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+});
+
+it.each([
+  ['for several samples after the worker exits', [1, 2, 3]],
+  ['again before the pane closes', [2]],
+])('closes the pane of an exited worker when a prompt hook runs %s', async (_case, hookSamples) => {
+  let exited = false;
+  let samples = 0;
+  const fixture = setup(afterTest, 0, async (argumentsList) => {
+    if (!exited || argumentsList[1] !== 'process-info') {
+      return '';
+    }
+
+    samples += 1;
+
+    return hookSamples.includes(samples) ? promptHookSample(argumentsList[3]) : '';
+  });
+  const launched = await fixture.controller.launch(fixture.input);
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+  });
+  fixture.fake.state.stopped = true;
+  exited = true;
+
+  const status = await fixture.controller.cancel(launched.taskId, 'parent-id');
+
+  expect(status.state).toBe('stopped');
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
 });
 
 it('refuses to start a worker when too little budget is left for herdr', async ({

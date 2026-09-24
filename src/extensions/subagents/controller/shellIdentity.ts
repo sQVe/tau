@@ -58,6 +58,34 @@ export const waitForShell = async (
   }
 };
 
+// herdr 0.9.1 showed zsh prompt hooks inside the shell's process group, or as another group with no
+// listed processes. A real job lists its group leader.
+export const runsForegroundJob = (information: Record<string, unknown>): boolean => {
+  const group = information.foreground_process_group_id;
+  const processes = information.foreground_processes;
+
+  return (
+    group !== information.shell_pid &&
+    Array.isArray(processes) &&
+    processes.some((process) => requireObject(process).pid === group)
+  );
+};
+
+// A shell briefly runs prompt hooks after startup and after each command. Resample it for about a
+// second until sample returns true: the shell is settled, runs a real job, or has changed. The
+// caller judges the last sample.
+// ponytail: fixed window; derive it from the remaining budget if slow hooks outlast it.
+export const settledShell = async (
+  sample: () => Promise<boolean>,
+  signal: AbortSignal,
+): Promise<void> => {
+  // oxlint-disable-next-line eslint/no-await-in-loop -- Samples must observe the shell in order.
+  for (let attempt = 1; attempt < 20 && !(await sample()); attempt += 1) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Resampling shares the caller's budget.
+    await delay(50, undefined, { signal });
+  }
+};
+
 export class WorkerExitedError extends Error {
   override name = 'WorkerExitedError';
 

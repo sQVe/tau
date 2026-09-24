@@ -1,10 +1,11 @@
-import { cancelOwnedWorker, runClient, workerStopped } from '../cancellation.js';
+import { cancelOwnedWorker, processAbsent, runClient, workerStopped } from '../cancellation.js';
 import type { OwnedWorker } from '../cancellation.js';
 import type { WorkerPlacement } from '../placement.js';
 import { requireObject, resolveTerminal, result, text } from '../terminal.js';
 import { shellUnchanged } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
 import { cleanupDetail } from './record.js';
+import { runsForegroundJob, settledShell } from './shellIdentity.js';
 import type { Handle } from './types.js';
 
 export interface StopOwnedWorkerRequest {
@@ -34,11 +35,23 @@ const checkShellOwned = async (
 
   handle.paneId = location.paneId;
   handle.owned = owned;
-  const information = requireObject(
-    result(await call(['pane', 'process-info', '--pane', owned.paneId])).process_info,
-  );
+  const seen = { changedShell: false, stopped: false };
+  const sampleStopped = async () => {
+    const information = requireObject(
+      result(await call(['pane', 'process-info', '--pane', owned.paneId])).process_info,
+    );
 
-  if (!workerStopped(information, owned)) {
+    seen.changedShell =
+      information.pane_id !== owned.paneId || information.shell_pid !== owned.shellPid;
+    seen.stopped = workerStopped(information, owned);
+
+    return seen.changedShell || seen.stopped || runsForegroundJob(information);
+  };
+
+  // Once the worker is gone, its shell may still be running prompt hooks.
+  await (processAbsent(owned.processId) ? settledShell(sampleStopped, signal) : sampleStopped());
+
+  if (!seen.stopped) {
     return { owned, shellOwned: false };
   }
 

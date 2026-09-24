@@ -16,7 +16,14 @@ import { requireObject, resolveTerminal, result, text } from '../terminal.js';
 import { isGenericLoadout, isPiLoadout, nativeAgentStates, requireNativeTask } from '../types.js';
 import type { GenericLoadout, NativeAgentState, Task, TaskEvent } from '../types.js';
 import { workBudget } from './budget.js';
-import { integer, isBareShell, readProcessStart, WorkerExitedError } from './shellIdentity.js';
+import {
+  integer,
+  isBareShell,
+  readProcessStart,
+  runsForegroundJob,
+  settledShell,
+  WorkerExitedError,
+} from './shellIdentity.js';
 import type { InspectionBudget } from './shellIdentity.js';
 import type { Handle } from './types.js';
 
@@ -221,23 +228,29 @@ export const shellUnchanged = async (
     return false;
   }
 
-  const location = await resolveTerminal(text(handle.terminalId), call);
+  const seen = { changedPane: false, bare: false };
 
-  handle.paneId = location.paneId;
-  const information = requireObject(
-    result(await call(['pane', 'process-info', '--pane', location.paneId])).process_info,
-  );
-  const changedPane =
-    information.pane_id !== location.paneId || integer(information.shell_pid) !== shell.processId;
+  await settledShell(async () => {
+    const location = await resolveTerminal(text(handle.terminalId), call);
 
-  if (changedPane) {
+    handle.paneId = location.paneId;
+    const information = requireObject(
+      result(await call(['pane', 'process-info', '--pane', location.paneId])).process_info,
+    );
+
+    seen.changedPane =
+      information.pane_id !== location.paneId || integer(information.shell_pid) !== shell.processId;
+
+    seen.bare = isBareShell(information);
+
+    return seen.changedPane || seen.bare || runsForegroundJob(information);
+  }, cleanup?.signal ?? handle.abort.signal);
+
+  if (seen.changedPane || !seen.bare) {
     return false;
   }
 
-  return (
-    isBareShell(information) &&
-    (await readProcessStart(handle, shell.processId, cleanup)) === shell.startedAt
-  );
+  return (await readProcessStart(handle, shell.processId, cleanup)) === shell.startedAt;
 };
 
 export const verifyRejectedStart = async (
