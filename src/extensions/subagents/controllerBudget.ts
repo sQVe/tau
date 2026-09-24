@@ -5,8 +5,18 @@ import { isGenericLoadout, replyClosedEventKinds } from './types.js';
 import type { Task } from './types.js';
 
 // One remainder for every budget question; two clocks disagree within a millisecond.
+export const remainingLaunchBudget = (timing: { expires: number; cancellationBudget: number }) =>
+  Math.floor(timing.expires - timing.cancellationBudget - performance.now());
+
 export const remainingWorkBudget = (handle: Handle): number =>
-  Math.floor(handle.expires - handle.task.cancellationBudget - performance.now());
+  remainingLaunchBudget({
+    expires: handle.expires,
+    cancellationBudget: handle.task.cancellationBudget,
+  });
+
+// Cleanup may use the cancellation budget, but never past the task's own expiry.
+export const remainingCleanupBudget = (handle: Handle): number =>
+  Math.floor(Math.min(handle.task.cancellationBudget, handle.expires - performance.now()));
 
 export const workBudget = (handle: Handle, maximum = 30_000): number => {
   handle.abort.signal.throwIfAborted();

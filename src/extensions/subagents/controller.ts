@@ -19,6 +19,8 @@ import {
   workBudget,
   boundedTiming,
   launchTiming,
+  remainingCleanupBudget,
+  remainingLaunchBudget,
   remainingWorkBudget,
   treeCapacity,
 } from './controllerBudget.js';
@@ -667,9 +669,7 @@ export class WorkerController {
     const validationSignal = AbortSignal.any([
       signal,
       this.lifetime.signal,
-      AbortSignal.timeout(
-        Math.max(1, Math.floor(timing.expires - timing.cancellationBudget - performance.now())),
-      ),
+      AbortSignal.timeout(Math.max(1, remainingLaunchBudget(timing))),
     ]);
     validationSignal.throwIfAborted();
 
@@ -1033,7 +1033,7 @@ export class WorkerController {
     launchSignal: AbortSignal,
     bounded: ReturnType<typeof boundedTiming>,
   ) {
-    const remaining = Math.floor(bounded.expires - bounded.cancellationBudget - performance.now());
+    const remaining = remainingLaunchBudget(bounded);
     const listingSignal = AbortSignal.any([
       launchSignal,
       this.lifetime.signal,
@@ -1044,10 +1044,7 @@ export class WorkerController {
     );
     listingSignal.throwIfAborted();
 
-    if (
-      listing.type !== 'agent_list' ||
-      performance.now() >= bounded.expires - bounded.cancellationBudget
-    ) {
+    if (listing.type !== 'agent_list' || remainingLaunchBudget(bounded) <= 0) {
       throw new Error('Invalid live agent listing or original startup budget expired.');
     }
 
@@ -1107,7 +1104,7 @@ export class WorkerController {
       () => {
         void this.stop(handle, 'timeout');
       },
-      Math.max(1, handle.expires - handle.task.cancellationBudget - performance.now()),
+      Math.max(1, remainingWorkBudget(handle)),
     );
   }
 
@@ -1163,10 +1160,7 @@ export class WorkerController {
       },
       Math.max(
         1,
-        Math.min(
-          isGenericLoadout(handle.task.loadout) ? 1500 : 250,
-          handle.expires - handle.task.cancellationBudget - performance.now(),
-        ),
+        Math.min(isGenericLoadout(handle.task.loadout) ? 1500 : 250, remainingWorkBudget(handle)),
       ),
     );
   }
@@ -1446,10 +1440,7 @@ export class WorkerController {
         handle.recordErrors.push(String(error));
       }
     };
-    const budget = Math.max(
-      1,
-      Math.floor(Math.min(task.cancellationBudget, handle.expires - performance.now())),
-    );
+    const budget = Math.max(1, remainingCleanupBudget(handle));
     const expires = Math.min(handle.expires, performance.now() + budget);
     const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(budget)]);
     const remainingBudget = () => {
