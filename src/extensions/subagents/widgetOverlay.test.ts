@@ -66,7 +66,7 @@ const rows: WorkerWidgetRow[] = Array.from({ length: 30 }, (_value, index) => {
     recovery:
       state === 'cleanupUnconfirmed' ? 'Pane worker-01 may still exist. No retry.' : undefined,
     workerType: 'Pi worker',
-    model: 'Pi-selected openai-codex/gpt-6-luna · requested openai-codex/gpt-6-luna',
+    model: 'Pi-selected openai-codex/gpt-5.6-luna · requested openai-codex/gpt-5.6-luna',
     usage: { available: false, reason: 'Pi session usage was not recorded' },
   };
 });
@@ -276,7 +276,7 @@ it('keeps details readable, aligned, sanitized, and within narrow and tiny width
     details: 'Pi trusted tools + verified safety',
     recovery: 'No recovery action required.',
     workerType: 'Pi worker',
-    model: 'Pi-selected openai-codex/gpt-6-luna · requested openai-codex/gpt-6-luna',
+    model: 'Pi-selected openai-codex/gpt-5.6-luna · requested openai-codex/gpt-5.6-luna',
     detailPath: `/records/${'very-long-path-'.repeat(8)}task.json`,
   };
   const view = new WorkerHistoryView(
@@ -310,8 +310,8 @@ it('keeps details readable, aligned, sanitized, and within narrow and tiny width
   expect(compactText).toContain('Inspectthisunicodeworkerhistoryrowandpreserveeveryword.漢字');
   expect(text).toContain('Safety');
   expect(text).toContain('No recovery action required.');
-  expect(compactText).toContain('requestedopenai-codex/gpt-6-luna');
-  expect(compactText).toContain('observedPi-selectedopenai-codex/gpt-6-luna');
+  expect(compactText).toContain('requestedopenai-codex/gpt-5.6-luna');
+  expect(compactText).toContain('observedPi-selectedopenai-codex/gpt-5.6-luna');
   expect(text).toMatch(/started \d{2}:\d{2} · ran 227m · deadline passed/u);
   expect(stateValue.indexOf('stopped')).toBe(safetyValue.indexOf('Pi trusted'));
 
@@ -368,14 +368,14 @@ it('shows the model column when width allows, hides it when narrow, and keeps fu
   );
   const wide = view.render(160).join('\n');
 
-  expect(wide).toContain('openai-codex/gpt-6-luna');
+  expect(wide).toContain('openai-codex/gpt-5.6-luna');
 
   const narrow = view.render(60).join('\n');
 
-  expect(narrow).not.toContain('openai-codex/gpt-6-luna');
+  expect(narrow).not.toContain('openai-codex/gpt-5.6-luna');
 
   view.handleInput('\r');
-  expect(view.render(60).join('\n')).toContain('openai-codex/gpt-6-luna');
+  expect(view.render(60).join('\n')).toContain('openai-codex/gpt-5.6-luna');
 });
 
 it('groups unresolved records under their exact state instead of a generic label', () => {

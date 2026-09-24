@@ -89,7 +89,8 @@ Set `TAU_DELEGATE_MODEL=provider/model-id` before launching Pi to choose the del
 session model. Use the exact provider and model ID from `pi --list-models`, including router
 prefixes such as `openrouter/anthropic/model-id`. The model needs working credentials. See the
 [shared-delegate decision](adr/0027-share-one-delegate-model.md) for why the tasks share one model,
-and the [default decision](adr/0041-default-the-delegate-to-gpt-6-luna.md) for the default.
+and the [default decision](adr/0044-restore-gpt-5-6-luna-as-the-delegate-default.md) for the
+default.
 
 ### Workers
 

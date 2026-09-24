@@ -23,7 +23,7 @@ describe('worker widget', () => {
     const labelledRow: WorkerWidgetRow = {
       ...row,
       label: 'Inspect worker',
-      model: 'Pi-selected openai-codex/gpt-6-luna · requested openai-codex/gpt-6-luna',
+      model: 'Pi-selected openai-codex/gpt-5.6-luna · requested openai-codex/gpt-5.6-luna',
     };
     const lines = renderWorkerWidget([labelledRow], 80, now, theme as never);
     const text = lines.join('\n');
@@ -31,7 +31,7 @@ describe('worker widget', () => {
     expect(text).toContain('1 live');
     expect(text).toContain('worker-ab');
     expect(text).toContain('Inspect worker');
-    expect(text).toContain('openai-codex/gpt-6-luna');
+    expect(text).toContain('openai-codex/gpt-5.6-luna');
     expect(text).toContain('running');
     expect(lines.at(-1)).toMatch(/╰─+╯$/u);
     expect(lines).toHaveLength(3);
@@ -45,14 +45,14 @@ describe('worker widget', () => {
       name: 'investigator-abcdef',
       label: 'Reading the subagent controller source',
       state: 'running',
-      model: 'Pi-selected openai-codex/gpt-6-luna · requested openai-codex/gpt-6-luna',
+      model: 'Pi-selected openai-codex/gpt-5.6-luna · requested openai-codex/gpt-5.6-luna',
     };
     const lines = renderWorkerWidget([longRow], 160, now, theme as never);
     const text = stripTerminalSequences(lines.join('\n'));
 
     expect(text).toContain('investigator-abcdef');
     expect(text).toContain('Reading the subagent controller source');
-    expect(text).toContain('openai-codex/gpt-6-luna');
+    expect(text).toContain('openai-codex/gpt-5.6-luna');
     expect(text).not.toContain('…');
     expect(text).not.toContain('/subagents');
   });
@@ -61,7 +61,7 @@ describe('worker widget', () => {
     const modelRow: WorkerWidgetRow = {
       ...row,
       label: 'Inspect a worker',
-      model: 'Pi-selected openai-codex/gpt-6-luna · requested openai-codex/gpt-6-luna',
+      model: 'Pi-selected openai-codex/gpt-5.6-luna · requested openai-codex/gpt-5.6-luna',
     };
 
     for (const width of [160, 300]) {
@@ -70,7 +70,7 @@ describe('worker widget', () => {
       const content = stripTerminalSequences(rowLine).slice(2, -2).trimEnd();
 
       expect(lines.every((line) => visibleWidth(line) === width)).toBe(true);
-      expect(content).toBe('worker-ab running Inspect a worker openai-codex/gpt-6-luna');
+      expect(content).toBe('worker-ab running Inspect a worker openai-codex/gpt-5.6-luna');
     }
   });
 
