@@ -1778,9 +1778,10 @@ export class WorkerController {
 
     try {
       if (handle.starting) {
+        // The start usually settles first; an unreferenced timer never holds the process open.
         await Promise.race([
           handle.starting.catch(() => undefined),
-          delay(budget.remainingBudget(), undefined, { signal: budget.signal }),
+          delay(budget.remainingBudget(), undefined, { signal: budget.signal, ref: false }),
         ]);
       }
 
