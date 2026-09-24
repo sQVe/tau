@@ -153,7 +153,7 @@ describe('runTests', () => {
         }),
       );
       const result = await runTests(
-        { scope: 'changed', cwd: '/repo', files: ['value.test.ts'], filter },
+        { scope: 'changed', cwd: '/repo', files: ['value.test.ts'], testNames: [fullname] },
         makeDeps({ resolveVitest: () => ({ path: '/fake/vitest.js', version }), spawn }),
       );
 
@@ -180,7 +180,6 @@ describe('runTests', () => {
   it.for(['4.1.11', '5.0.1'])(
     'explains unmatched Vitest %s names without retrying or broadening selection',
     async (version) => {
-      const filter = '^wrong nested name$';
       const spawn = vi.fn<SpawnFn>(
         fakeSpawn({
           report: {
@@ -204,7 +203,12 @@ describe('runTests', () => {
         }),
       );
       const result = await runTests(
-        { scope: 'changed', cwd: '/repo', files: ['value.test.ts'], filter },
+        {
+          scope: 'changed',
+          cwd: '/repo',
+          files: ['value.test.ts'],
+          testNames: ['wrong nested name'],
+        },
         makeDeps({ resolveVitest: () => ({ path: '/fake/vitest.js', version }), spawn }),
       );
 
@@ -218,7 +222,7 @@ describe('runTests', () => {
       );
       expect(result).toHaveProperty('message', expect.stringContaining('Do not restructure tests'));
       expect(spawn).toHaveBeenCalledTimes(1);
-      expect(spawn.mock.calls[0]?.[1]).toContain(filter);
+      expect(spawn.mock.calls[0]?.[1]).toContain('^(?:wrong nested name)$');
     },
   );
 
@@ -339,7 +343,7 @@ describe('runTests', () => {
       scope: 'changed',
       cwd,
       files: ['nested.test.ts'],
-      filter: '^outer suite inner \\[group\\] works \\(exact\\)$',
+      testNames: ['outer suite inner [group] works (exact)'],
     });
 
     expect(result).toMatchObject({
@@ -358,7 +362,7 @@ describe('runTests', () => {
       scope: 'changed',
       cwd,
       files: ['nested.test.ts'],
-      filter: '^outer suite > inner \\[group\\] > works \\(exact\\)$',
+      testNames: ['outer suite > inner [group] > works (exact)'],
     });
 
     expect(unmatched).toMatchObject({ kind: 'no-tests-collected', tests: [] });
@@ -634,12 +638,12 @@ describe('runTests', () => {
       }),
     });
 
-    expect(await runTests({ scope: 'all', cwd: '/repo', filter: 'unmatched' }, deps)).toMatchObject(
-      {
-        kind: 'no-tests-collected',
-        tests: [],
-      },
-    );
+    expect(
+      await runTests({ scope: 'all', cwd: '/repo', testNames: ['unmatched'] }, deps),
+    ).toMatchObject({
+      kind: 'no-tests-collected',
+      tests: [],
+    });
   });
 
   it('rejects a nonzero exit even when every reported test passed', async () => {
@@ -1197,7 +1201,7 @@ describe('runTests', () => {
         scope: 'changed',
         cwd: '/repo',
         files: ['a.test.ts'],
-        filter: '^(selected|also selected)$',
+        testNames: ['selected', 'also selected'],
       },
       deps,
     );
@@ -1396,7 +1400,7 @@ describe('runTests', () => {
     expect(result.failures[0]?.message).toBe('');
   });
 
-  it('passes the changed files list and filter through to vitest', async () => {
+  it('passes the changed files and an exact test name pattern to vitest', async () => {
     let captured: string[] = [];
     const report = {
       numTotalTests: 1,
@@ -1418,7 +1422,7 @@ describe('runTests', () => {
         scope: 'changed',
         cwd: '/repo',
         files: ['src/a.test.ts', 'src/b.test.ts'],
-        filter: 'adds item',
+        testNames: ['adds item'],
       },
       deps,
     );
@@ -1426,7 +1430,7 @@ describe('runTests', () => {
     expect(captured).toContain('src/a.test.ts');
     expect(captured).toContain('src/b.test.ts');
     expect(captured).toContain('-t');
-    expect(captured).toContain('adds item');
+    expect(captured).toContain('^(?:adds item)$');
   });
 
   it('passes only fixed reporter arguments plus scoped paths', async () => {

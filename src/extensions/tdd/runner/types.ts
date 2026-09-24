@@ -4,7 +4,7 @@ export interface RunTestsInput {
   scope: RunTestsScope;
   cwd: string;
   path?: string;
-  filter?: string;
+  testNames?: string[];
   files?: string[];
   signal?: AbortSignal | undefined;
 }

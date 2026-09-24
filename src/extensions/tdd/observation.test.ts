@@ -254,7 +254,7 @@ it('keeps Vitest 5 exact names literal and observes unique nested failures', asy
   expect(runTests).toHaveBeenCalledWith(
     expect.objectContaining({
       files: ['value.test.ts'],
-      filter: '^(?:outer suite > inner \\[group\\] > works \\(exact\\))$',
+      testNames: ['outer suite > inner [group] > works (exact)'],
     }),
   );
   await writeFile(join(cwd, 'src/value.ts'), 'implementation after unique failure');

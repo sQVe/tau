@@ -324,9 +324,7 @@ const runTestsFor = (
           cwd: state.cwd,
           scope: 'changed',
           files: behavior.files,
-          filter: `^(?:${testNames(behavior)
-            .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-            .join('|')})$`,
+          testNames: testNames(behavior),
           signal: request.signal,
         },
   );
