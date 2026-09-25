@@ -63,7 +63,9 @@ const statPaths = async (cwd: string, paths: string[]) => {
   if (failures.length > 0) {
     const message = failures.map((failure) => failure.problem).join('\n');
 
-    throw inputError(message, failures.length === 1 ? failures[0]?.error : undefined);
+    const cause = failures.length === 1 ? failures[0]?.error : undefined;
+
+    throw inputError(message, cause);
   }
 
   return files;
