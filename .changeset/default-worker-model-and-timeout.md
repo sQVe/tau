@@ -1,4 +1,5 @@
 ---
+'tau': minor
 ---
 
 Bundled subagent profiles default to `claude-bridge/claude-opus-5-5`, and `TAU_SUBAGENT_MODEL`
