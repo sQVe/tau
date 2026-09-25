@@ -4,25 +4,31 @@ import type { OwnedWorker } from '../cancellation.js';
 import type { NativeAgentState, Task } from '../types.js';
 
 export interface Handle {
+  // The handle's own task and lifetime.
   directory: string;
   task: Task;
-  owned?: OwnedWorker;
-  paneId?: string;
-  terminalId?: string;
-  timer?: ReturnType<typeof setTimeout>;
-  starting?: Promise<string>;
-  stopping?: Promise<void>;
   abort: AbortController;
   expires: number;
+  timer?: ReturnType<typeof setTimeout>;
   removeLaunchAbort?: () => void;
-  workerNeverStarted: boolean;
-  workerObserved?: boolean;
-  shell?: { processId: number; startedAt: string };
-  startError?: string;
-  nativeState?: NativeAgentState;
-  observationIssue?: string;
-  recordErrors: string[];
-  shutdownReason?: SessionShutdownEvent['reason'];
-  cleanupDetail?: string;
-  notifiedQuestions: Set<string>;
+  // Where the worker runs and the evidence that it is the same worker.
+  identity: {
+    owned?: OwnedWorker;
+    paneId?: string;
+    terminalId?: string;
+    shell?: { processId: number; startedAt: string };
+  };
+  startup: { neverStarted: boolean; starting?: Promise<string>; error?: string };
+  observation: {
+    workerObserved?: boolean;
+    nativeState?: NativeAgentState;
+    issue?: string;
+    notifiedQuestions: Set<string>;
+  };
+  cleanup: {
+    stopping?: Promise<void>;
+    recordErrors: string[];
+    shutdownReason?: SessionShutdownEvent['reason'];
+    detail?: string;
+  };
 }

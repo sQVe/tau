@@ -27,7 +27,7 @@ import {
   submissionName,
 } from './records.js';
 import { isGenericLoadout } from './types.js';
-import type { SubmissionState, Task } from './types.js';
+import type { ReplyDelivery, SubmissionState, Task } from './types.js';
 
 export interface GenericSubmission {
   id: string;
@@ -324,6 +324,20 @@ const blockedSubmission = (error: unknown): boolean => {
   } catch {
     return false;
   }
+};
+
+export const deliveryFromSubmission = (
+  state: SubmissionState | undefined,
+): Exclude<ReplyDelivery, 'notResent'> => {
+  if (state === 'submitted') {
+    return 'sent';
+  }
+
+  if (state === 'not-delivered') {
+    return 'notDelivered';
+  }
+
+  return 'uncertain';
 };
 
 export const submitGenericText = async (

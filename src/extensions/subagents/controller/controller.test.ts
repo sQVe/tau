@@ -361,6 +361,58 @@ it('stops a saved worker while its resume inspection is pending', async ({ onTes
   expect(vi.getTimerCount()).toBe(0);
 });
 
+it('keeps a saved worker owned while cancel stops it during resume inspection', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers();
+  const fixture = setup(onTestFinished);
+  fixture.fake.state.sendKeysError = '';
+
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    if (fixture.fake.state.stopped) {
+      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+    }
+
+    return true;
+  });
+
+  const saved = await fixture.controller.launch(fixture.input);
+  fixture.controller.close();
+  const entered = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  let paused = false;
+
+  const recovered = new WorkerController(
+    fixture.directory,
+    async (argumentsList, budget, signal) => {
+      if (argumentsList[1] === 'get' && !paused) {
+        paused = true;
+        entered.resolve(undefined);
+        await release.promise;
+      }
+
+      return fixture.client(argumentsList, budget, signal);
+    },
+  );
+
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  const resuming = recovered.resume('parent-id');
+  await entered.promise;
+  const cancelling = recovered.cancel(saved.taskId, 'parent-id');
+  release.resolve(undefined);
+  await resuming;
+  const ownedDuringCleanup = recovered.owns(saved.taskId);
+  const repeated = recovered.cancel(saved.taskId, 'parent-id');
+  await Promise.all([cancelling, repeated]);
+
+  expect(ownedDuringCleanup).toBe(true);
+  expect(fixture.fake.calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
+  expect(readEvent(saved.directory, saved.taskId, 'cleanup')?.stopped).toBe(true);
+});
+
 it('releases the handle and capacity after failed reattach verification', async ({
   onTestFinished,
 }) => {
