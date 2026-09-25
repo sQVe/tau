@@ -66,8 +66,10 @@ const setup = (
   onTestFinished(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     rmSync(directory, { recursive: true, force: true });
   });
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   writeFileSync(
     join(directory, 'parent.jsonl'),
     `${JSON.stringify({ type: 'session', version: 3, id: 'parent-id', cwd: directory })}\n`,

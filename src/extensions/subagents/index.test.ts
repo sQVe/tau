@@ -47,6 +47,21 @@ const fullWorkerStatus = {
   harness: 'pi',
 };
 
+it('keeps parent tools and handlers unavailable when a test chooses a worker environment', ({
+  onTestFinished,
+}) => {
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  vi.stubEnv('TAU_WORKER_RECORD', '/fixture/worker');
+  const fake = fakeExtensionApi();
+
+  subagentsExtension(fake.pi);
+
+  expect(fake.tools.size).toBe(0);
+  expect(fake.handlers.size).toBe(0);
+});
+
 it('returns from session start while worker reattachment is still pending', async ({
   onTestFinished,
 }) => {

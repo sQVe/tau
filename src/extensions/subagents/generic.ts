@@ -103,7 +103,7 @@ export const genericPrompt = (task: Task): string => {
     `${assignmentContractFor(task.loadout.role)}${handoffContract}`,
     [
       `Deadline: ${new Date(task.deadline).toISOString()}. Work only within the assigned scope.`,
-      'Preserve unrelated work. Do not commit, merge, reset, or run extra model trials.',
+      'Preserve unrelated work. Do not commit, merge, or reset unless the task says so, and never run extra model trials.',
       'Do not resume old conversations. Ask your manager for clarification or additional help in plain text.',
       'Waiting for answers or native approvals does not extend this deadline. Do not answer approval dialogs automatically.',
     ].join(' '),
