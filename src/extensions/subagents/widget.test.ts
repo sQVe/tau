@@ -41,6 +41,21 @@ describe('worker widget', () => {
     expect(text).not.toContain('left');
   });
 
+  it('keeps the suffix of truncated names saved before investigators were renamed', () => {
+    const rows = [
+      { ...row, name: 'investigator-ab', taskId: 'ab' },
+      { ...row, name: 'investigator-cd', taskId: 'cd' },
+    ];
+
+    const text = stripTerminalSequences(
+      renderWorkerWidget(rows, 28, now, theme as never).join('\n'),
+    );
+
+    expect(text).not.toContain('investigator-ab');
+    expect(text).toContain('…-ab');
+    expect(text).toContain('…-cd');
+  });
+
   it('keeps long names, task labels, models, and status readable when width allows', () => {
     const longRow: WorkerWidgetRow = {
       ...row,
