@@ -150,10 +150,12 @@ const renderHistoryRow = (
 ): string => {
   const markerWidth = 1;
   const glyphWidth = 1;
+
   const timeWidth = Math.min(
     16,
     Math.max(6, ...allRows.map((item) => visibleWidth(historyTime(item, now)))),
   );
+
   const nameWidth = Math.max(4, ...allRows.map((item) => visibleWidth(item.name)));
   const stateWidth = Math.max(8, ...allRows.map((item) => visibleWidth(rowState(item))));
   const labelWidth = Math.max(4, ...allRows.map((item) => visibleWidth(shortTaskLabel(item))));
@@ -165,6 +167,7 @@ const renderHistoryRow = (
   let shownLabelWidth = labelWidth;
   let shownTimeWidth = timeWidth;
   const gaps = (): number => (showModel ? 6 : 5);
+
   const used = (): number =>
     markerWidth +
     glyphWidth +
@@ -208,6 +211,7 @@ const renderHistoryRow = (
   shownLabelWidth += spareWidth;
 
   const label = row.state === 'unknown' ? undefined : stateLabel(row.state, row.outcome);
+
   const fields = [
     selected ? '▶' : ' ',
     label?.icon ?? '?',
@@ -217,6 +221,7 @@ const renderHistoryRow = (
     ...(showModel ? [truncateToWidth(safeText(workerModelLabel(row)), modelWidth, '…')] : []),
     historyTime(row, now),
   ];
+
   const widths = [
     markerWidth,
     glyphWidth,
@@ -226,10 +231,12 @@ const renderHistoryRow = (
     ...(showModel ? [modelWidth] : []),
     shownTimeWidth,
   ];
+
   const cells = fields.map((field, index) => {
     const fieldWidth = widths[index] ?? 0;
     const fitted = truncateToWidth(field, fieldWidth, '…');
     const padding = Math.max(0, fieldWidth - visibleWidth(fitted));
+
     const text =
       index === fields.length - 1
         ? `${' '.repeat(padding)}${fitted}`
@@ -249,6 +256,7 @@ const renderHistoryRow = (
 
     return index === 2 ? theme.bold(text) : text;
   });
+
   const content = cells.join(' ');
 
   return content;
@@ -260,6 +268,7 @@ const wrapDetailValue = (value: string, contentWidth: number): string[] => {
   for (const paragraph of safeMultilineText(value).split('\n')) {
     if (paragraph.trim().length === 0) {
       lines.push('');
+
       continue;
     }
 
@@ -299,6 +308,7 @@ const promptLines = (row: WorkerWidgetRow, width: number): string[] => {
   for (const paragraph of paragraphs) {
     if (paragraph.trim().length === 0) {
       lines.push('');
+
       continue;
     }
 
@@ -315,8 +325,10 @@ const promptLines = (row: WorkerWidgetRow, width: number): string[] => {
 const reportLines = (row: WorkerWidgetRow, width: number): string[] => {
   const fields: [string, string][] = [];
   const now = Date.now();
+
   const label =
     row.state === 'unknown' ? 'status unavailable' : stateLabel(row.state, row.outcome).text;
+
   const elapsed = workerElapsed(row, now);
   const elapsedMinutes = Number.parseInt(elapsed.split(':')[0] ?? '0', 10);
   let runtime = 'run time unknown';
@@ -350,6 +362,7 @@ const reportLines = (row: WorkerWidgetRow, width: number): string[] => {
 
   if (row.phaseDescription !== undefined) {
     fields.push(['Progress', row.phaseDescription]);
+
     fields.push([
       'Updated',
       row.phaseDescriptionAt === undefined
@@ -398,12 +411,14 @@ const reportLines = (row: WorkerWidgetRow, width: number): string[] => {
   if (row.model !== undefined) {
     const modelParts = row.model.split(' · ');
     const requested = modelParts.find((part) => part.startsWith('requested '));
+
     const observed = modelParts.find(
       (part) => part.startsWith('observed ') || part.startsWith('Pi-selected '),
     );
 
     if (requested != null && observed != null) {
       fields.push(['Model', requested]);
+
       const observedValue = observed.startsWith('Pi-selected ')
         ? `observed Pi-selected ${observed.slice('Pi-selected '.length)}`
         : observed;
@@ -418,6 +433,7 @@ const reportLines = (row: WorkerWidgetRow, width: number): string[] => {
     'Usage',
     row.usage.available ? row.usage.label : `unavailable · ${row.usage.reason}`,
   ]);
+
   fields.push(['Cost', 'not estimated · catalog cost is not subscription allowance']);
   fields.push(['Time', timing]);
   fields.push(['Task ID', row.taskId]);
@@ -473,6 +489,7 @@ export class WorkerHistoryView implements Component {
 
     this.rows = sortedHistory(rows);
     const filteredRows = this.filteredRows();
+
     const selectedIndex =
       selectedTaskId != null ? filteredRows.findIndex((row) => row.taskId === selectedTaskId) : -1;
 
@@ -480,6 +497,7 @@ export class WorkerHistoryView implements Component {
       selectedIndex >= 0
         ? selectedIndex
         : Math.min(previousIndex, Math.max(0, filteredRows.length - 1));
+
     const nextSelectedTaskId = filteredRows[this.selectedIndex]?.taskId;
 
     if (nextSelectedTaskId !== selectedTaskId) {
@@ -670,35 +688,45 @@ export class WorkerHistoryView implements Component {
     const innerWidth = Math.max(1, boxWidth - 4);
     const rows = this.filteredRows();
     const selected = rows[this.selectedIndex];
+
     const title =
       this.detail && selected
         ? `${selected.name} · ${selected.workerType ?? 'worker'}`
         : `Subagents · ${rows.length} workers`;
+
     const topRight =
       this.detail && selected ? ` ${this.detailPosition(rows.length)} ─` : ' / to filter ─';
+
     const topLine = this.roundBorder('╭', `─ ${title} `, topRight, '╮', boxWidth);
+
     const footer = this.detail
       ? '↑↓ ctrl+d/u scroll · p prompt · [ ] · i · esc'
       : '↑↓ j/k move · enter open · / filter · esc close';
+
     const visibleHeight = Math.max(2, Math.min(22, this.tui.terminal.rows - 7));
     const bodyHeight = visibleHeight - Number(!this.detail && this.filterMode);
 
     this.viewportHeight = bodyHeight;
     this.lastWidth = width;
+
     const body =
       this.detail && selected
         ? this.renderDetails(selected, boxWidth)
         : this.renderRows(rows, selected, innerWidth, bodyHeight);
+
     const detailMaxOffset = Math.max(0, body.length - bodyHeight);
 
     this.detailOffset = Math.min(this.detailOffset, detailMaxOffset);
+
     const viewport = this.detail
       ? body.slice(this.detailOffset, this.detailOffset + bodyHeight)
       : body;
+
     const page =
       rows.length === 0
         ? '0/0'
         : `${this.visibleRange[0] + 1}–${this.visibleRange[1]}/${rows.length}`;
+
     const lines = [topLine];
 
     if (!this.detail && this.filterMode) {
@@ -810,6 +838,7 @@ export class WorkerHistoryView implements Component {
     const fittedRight = truncateToWidth(right, inside, '…');
     const titleWidth = Math.max(0, inside - visibleWidth(fittedRight));
     const fittedTitle = truncateToWidth(title, titleWidth, '…');
+
     const fill = Math.max(
       0,
       width -

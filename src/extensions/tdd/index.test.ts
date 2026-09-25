@@ -36,8 +36,10 @@ const setup = (hasUI = false) => {
 
   const contextFor = (cwd: string) =>
     ({ cwd, hasUI, ui: { notify } }) as unknown as ExtensionContext;
+
   const emit = (name: string, cwd: string, event: Record<string, unknown> = {}) =>
     fake.handlers.has(name) ? fake.handler(name)(event, contextFor(cwd)) : undefined;
+
   const edit = (cwd: string) =>
     emit('tool_result', cwd, {
       toolName: 'write',
@@ -46,6 +48,7 @@ const setup = (hasUI = false) => {
       content: [{ type: 'text', text: 'Original result' }],
       details: { original: true },
     });
+
   const run = (cwd: string) => {
     if (tool === undefined) {
       throw new Error('Missing test tool');
@@ -69,10 +72,12 @@ it.for(['edit', 'write'] as const)(
     const cwd = await mkdtemp(join(tmpdir(), 'tau-edit-notify-'));
     onTestFinished(() => rm(cwd, { recursive: true, force: true }));
     const application = setup(true);
+
     const content = [
       { type: 'image', data: 'original', mimeType: 'image/png' },
       { type: 'text', text: 'Original result' },
     ];
+
     const event = {
       toolName,
       input: { path: 'src/value.ts' },
@@ -96,6 +101,7 @@ it.for(['edit', 'write'] as const)(
     const patch = await application.emit('tool_result', cwd, event);
 
     expect(patch).toEqual({ content: [...content, { type: 'text', text: redHint }] });
+
     expect(event).toEqual({
       toolName,
       input: { path: 'src/value.ts' },
@@ -103,6 +109,7 @@ it.for(['edit', 'write'] as const)(
       content,
       details: { original: true },
     });
+
     expect(application.notify).toHaveBeenCalledExactlyOnceWith(redHint, 'info');
     expect(await application.emit('tool_result', cwd, event)).toBeUndefined();
     expect(application.notify).toHaveBeenCalledTimes(1);
@@ -111,6 +118,7 @@ it.for(['edit', 'write'] as const)(
       kind: 'pass',
       tests: [{ file: 'value.test.ts', fullname: 'works', status: 'passed' }],
     });
+
     const tested = await application.run(cwd);
 
     expect(JSON.stringify(tested.content)).toContain('Hint:');
@@ -129,6 +137,7 @@ it('keeps headless edit hints in agent content without notifying', async ({ onTe
       { type: 'text', text: redHint },
     ],
   });
+
   expect(application.notify).not.toHaveBeenCalled();
 });
 
@@ -136,11 +145,14 @@ it.for(['edit', 'write'] as const)(
   'confirms the installed successful %s renderer omits appended hint text',
   (toolName) => {
     initTheme('dark', false);
+
     const args =
       toolName === 'edit'
         ? { path: 'src/value.ts', edits: [{ oldText: '1', newText: '2' }] }
         : { path: 'src/value.ts', content: 'export const value = 2;' };
+
     const renderers = toolName === 'edit' ? editRenderers : writeRenderers;
+
     const component = new ToolExecutionComponent(
       toolName,
       'change',
@@ -150,6 +162,7 @@ it.for(['edit', 'write'] as const)(
       { requestRender: vi.fn<TUI['requestRender']>() } as unknown as TUI,
       '/repo',
     );
+
     component.updateResult({
       content: [
         { type: 'text', text: 'Successful change' },
@@ -182,6 +195,7 @@ it.for(['ordinary', 'long'] as const)(
     const directory = join(cwd, 'diagnostics');
     await mkdir(directory);
     const application = setup();
+
     const diagnostics = {
       directory,
       durationMs: 10,
@@ -190,6 +204,7 @@ it.for(['ordinary', 'long'] as const)(
       stdout: { path: join(directory, 'stdout.txt'), bytes: 12, savedBytes: 12, truncated: false },
       excerpt: 'Runner diagnostic output',
     };
+
     const report: RunnerResult =
       size === 'ordinary'
         ? {
@@ -208,6 +223,7 @@ it.for(['ordinary', 'long'] as const)(
             truncated: false,
             diagnostics,
           };
+
     vi.mocked(runTests).mockImplementationOnce(async () => {
       if (size === 'long') {
         await writeFile(join(cwd, 'value.test.ts'), 'changed during run');
@@ -217,16 +233,19 @@ it.for(['ordinary', 'long'] as const)(
     });
 
     const result = await application.run(cwd);
+
     const hint =
       size === 'ordinary'
         ? 'Hint: Focused tests passed; verify the full suite with the repository full check or run_tests scope "full".'
         : 'Hint: Test results are stale; rerun run_tests on the current inputs.';
+
     const parameters = {
       behavior: 'value',
       testFullName: 'works',
       files: ['value.test.ts'],
       scope: 'focused',
     };
+
     const details = result.details as Parameters<typeof summarize>[1];
 
     expect(details).toMatchObject({
@@ -236,9 +255,11 @@ it.for(['ordinary', 'long'] as const)(
       runPath: join(directory, 'run.json'),
       report,
     });
+
     expect(details.inputs.before).toMatch(/^[a-f0-9]{64}$/);
     expect(details.inputs.after).toMatch(/^[a-f0-9]{64}$/);
     expect(details.report).toBe(report);
+
     expect(result.content).toEqual(
       expect.arrayContaining([
         { type: 'text', text: hint },
@@ -246,9 +267,11 @@ it.for(['ordinary', 'long'] as const)(
         { type: 'text', text: runContext(parameters, details) },
       ]),
     );
+
     expect(result.content).toHaveLength(3);
     expect(application.tool?.renderResult).toBeUndefined();
     initTheme('dark', false);
+
     const component = new ToolExecutionComponent(
       'run_tests',
       'run',
@@ -258,6 +281,7 @@ it.for(['ordinary', 'long'] as const)(
       { requestRender: vi.fn<TUI['requestRender']>() } as unknown as TUI,
       cwd,
     );
+
     component.updateResult({ ...result, isError: false });
 
     for (const width of [80, 160]) {
@@ -276,6 +300,7 @@ it.for(['ordinary', 'long'] as const)(
     }
 
     component.setExpanded(true);
+
     const expanded = component
       .render(500)
       .map(stripVTControlCharacters)
@@ -309,6 +334,7 @@ it('emits advisory edit hints for supported layouts but not generated or depende
     'infra/stack.ts',
   ]) {
     const application = setup();
+
     const event = {
       toolName: 'write',
       input: { path },
@@ -329,6 +355,7 @@ it('emits advisory edit hints for supported layouts but not generated or depende
     expect(await application.emit('tool_result', cwd, event)).toEqual({
       content: [...event.content, { type: 'text', text: redHint }],
     });
+
     expect(await application.emit('tool_result', cwd, event)).toBeUndefined();
   }
 });
@@ -342,6 +369,7 @@ it('resets hints on session boundaries but not turns, compaction, or model chang
 
   expect(application.handlers.has('tool_call')).toBe(false);
   expect(application.commands.size).toBe(0);
+
   expect(await application.edit(cwd)).toMatchObject({
     content: [{ text: 'Original result' }, { text: redHint }],
   });
@@ -361,9 +389,11 @@ it('resets hints on session boundaries but not turns, compaction, or model chang
   for (const reason of ['new', 'resume', 'fork', 'reload']) {
     await application.emit('session_shutdown', cwd, { reason });
     await application.emit('session_start', cwd, { reason });
+
     expect(await application.edit(cwd)).toMatchObject({
       content: [{ text: 'Original result' }, { text: redHint }],
     });
+
     expect(await application.edit(cwd)).toBeUndefined();
   }
 });
@@ -374,10 +404,12 @@ it('isolates cwd and preserves arbitrary tool content, details, and errors', asy
   const cwd = await mkdtemp(join(tmpdir(), 'tau-hint-cwd-'));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
   const application = setup();
+
   const content = [
     { type: 'image', data: 'original', mimeType: 'image/png' },
     { type: 'text', text: 'custom output' },
   ];
+
   const event = {
     toolName: 'edit',
     input: { path: 'src/value.ts' },
@@ -387,14 +419,17 @@ it('isolates cwd and preserves arbitrary tool content, details, and errors', asy
   };
 
   expect(await application.emit('tool_result', cwd, { ...event, isError: true })).toBeUndefined();
+
   expect(
     await application.emit('tool_result', cwd, { ...event, toolName: 'custom_write' }),
   ).toBeUndefined();
+
   const patch = await application.emit('tool_result', cwd, event);
 
   expect(patch).toEqual({
     content: [...content, { type: 'text', text: redHint }],
   });
+
   expect(await application.edit(cwd)).toBeUndefined();
   await mkdir(join(cwd, 'second'));
   expect(await application.edit(join(cwd, 'second'))).not.toBeUndefined();
@@ -409,6 +444,7 @@ it('does not let a late run completion restore observations after a session rese
   const application = setup();
   const started = Promise.withResolvers<undefined>();
   const finished = Promise.withResolvers<Awaited<ReturnType<typeof runTests>>>();
+
   vi.mocked(runTests).mockImplementationOnce(() => {
     started.resolve(undefined);
 
@@ -419,12 +455,14 @@ it('does not let a late run completion restore observations after a session rese
   await started.promise;
   await application.emit('session_shutdown', cwd, { reason: 'new' });
   await application.emit('session_start', cwd, { reason: 'new' });
+
   finished.resolve({
     kind: 'fail',
     failures: [],
     truncated: false,
     tests: [{ file: 'value.test.ts', fullname: 'works', status: 'failed' }],
   });
+
   await running;
 
   expect(await application.edit(cwd)).toMatchObject({

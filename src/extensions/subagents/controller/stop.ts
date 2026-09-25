@@ -36,6 +36,7 @@ const checkShellOwned = async (
   handle.paneId = location.paneId;
   handle.owned = owned;
   const seen = { changedShell: false, stopped: false };
+
   const sampleStopped = async () => {
     const information = requireObject(
       result(await call(['pane', 'process-info', '--pane', owned.paneId])).process_info,
@@ -43,6 +44,7 @@ const checkShellOwned = async (
 
     seen.changedShell =
       information.pane_id !== owned.paneId || information.shell_pid !== owned.shellPid;
+
     seen.stopped = workerStopped(information, owned);
 
     return seen.changedShell || seen.stopped || runsForegroundJob(information);
@@ -76,6 +78,7 @@ const closeStoppedShell = async (
   paneConfirmed: { confirmed: boolean },
 ): Promise<string> => {
   const { handle, call, remainingBudget, signal } = request;
+
   const { shellOwned } = await checkShellOwned({
     handle,
     worker,

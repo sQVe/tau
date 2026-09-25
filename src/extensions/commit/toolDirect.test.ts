@@ -24,6 +24,7 @@ describe('direct commit staging', () => {
     const untimedCalls = exec.mock.calls.filter(([, argumentsList]) => {
       const queryFlags =
         argumentsList.includes('--show-prefix') || argumentsList.includes('--cached');
+
       const commands = argumentsList.includes('add') || argumentsList[0] === 'diff-tree';
 
       return queryFlags || commands;
@@ -52,6 +53,7 @@ describe('direct commit staging', () => {
     const headCalls = exec.mock.calls.filter(
       ([, argumentsList]) => argumentsList[0] === 'rev-parse' && argumentsList[1] === 'HEAD',
     );
+
     const hookDiff = exec.mock.calls.find(
       ([, argumentsList]) => argumentsList[0] === 'diff' && !argumentsList.includes('--cached'),
     );
@@ -75,6 +77,7 @@ describe('direct commit staging', () => {
     await expect(execute()).rejects.toThrow('staging interrupted');
 
     expect(exec.mock.calls.some((call) => call[1][0] === 'commit')).toBe(false);
+
     expect(exec).toHaveBeenLastCalledWith(
       'git',
       ['--literal-pathspecs', 'reset', '--', 'README.md'],
@@ -141,6 +144,7 @@ describe('direct commit staging', () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'requested');
     await writeRepositoryFile(directory, 'other', 'working bytes');
+
     const tool = createCommitTool({
       exec: async (command, argumentsList, options) => {
         const result = await runCommand(command, argumentsList, options?.cwd ?? directory);
@@ -184,12 +188,15 @@ describe('direct commit staging', () => {
     await writeRepositoryFile(directory, 'root.txt', 'root');
     await writeRepositoryFile(directory, 'sibling/extra', 'sibling');
     await writeRepositoryFile(directory, 'sub/extra', 'local');
+
     await writeRepositoryFile(
       directory,
       '.git/hooks/pre-commit',
       '#!/bin/sh\ngit add -- root.txt sibling/extra sub/extra\n',
     );
+
     await chmod(join(directory, '.git/hooks/pre-commit'), 0o755);
+
     const tool = createCommitTool({
       exec: (command, argumentsList, options) =>
         runCommand(command, argumentsList, options?.cwd ?? directory),
@@ -205,13 +212,16 @@ describe('direct commit staging', () => {
 
     expect((await git(directory, ['rev-parse', 'HEAD^'])).trim()).toBe(head);
     expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
+
     expect(result.details.groups[0]).toMatchObject({
       files: ['root.txt', 'sibling/extra', 'sub/extra', 'sub/requested'],
       hookChanges: { files: ['root.txt', 'sibling/extra', 'sub/extra'], message: false },
     });
+
     expect(JSON.stringify(result.content)).toContain(
       'Hook changed paths: root.txt, sibling/extra, sub/extra',
     );
+
     expect(await git(directory, ['show', 'HEAD:root.txt'])).toBe('root');
     expect(await git(directory, ['show', 'HEAD:sibling/extra'])).toBe('sibling');
     expect(await git(directory, ['show', 'HEAD:sub/extra'])).toBe('local');
@@ -240,6 +250,7 @@ describe('direct commit staging', () => {
   it('keeps the group error when unstaging after it also fails', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'working');
+
     const tool = createCommitTool({
       exec: async (command, argumentsList, options) => {
         if (argumentsList.includes('reset')) {
@@ -276,6 +287,7 @@ describe('direct commit staging', () => {
     await writeRepositoryFile(directory, 'other', 'working edit\n');
     await writeRepositoryFile(directory, 'untracked', 'keep me\n');
     await writeRepositoryFile(directory, 'requested', 'requested bytes\n');
+
     await writeRepositoryFile(
       directory,
       'tau.json',
@@ -285,6 +297,7 @@ describe('direct commit staging', () => {
         checkMessage: ['sh', '-c', 'exit 83'],
       }),
     );
+
     const before = await readdir(join(directory, '.git'));
 
     const result = await executeCommit(directory, {
@@ -294,6 +307,7 @@ describe('direct commit staging', () => {
     expect(result.details.groups[0]?.sha).toBe(
       (await git(directory, ['rev-parse', 'HEAD'])).trim(),
     );
+
     expect(await git(directory, ['show', 'HEAD:requested'])).toBe('requested bytes\n');
     expect(await readFile(join(directory, 'other'), 'utf8')).toBe('working edit\n');
     expect(await readFile(join(directory, 'untracked'), 'utf8')).toBe('keep me\n');
@@ -307,11 +321,13 @@ describe('direct commit staging', () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'tau.json', '{"hooks":"skip"}');
     await writeRepositoryFile(directory, 'requested', 'value');
+
     await writeRepositoryFile(
       directory,
       '.git/hooks/pre-commit',
       '#!/bin/sh\necho hook diagnostic >&2\nexit 1\n',
     );
+
     await chmod(join(directory, '.git/hooks/pre-commit'), 0o755);
 
     await expect(

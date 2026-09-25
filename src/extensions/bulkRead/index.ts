@@ -27,9 +27,12 @@ interface BulkReadState {
 const buildContinuationNotice = (_match: string, ...groups: (string | undefined)[]): string => {
   const [remainingCount, nextOffset, shownEnd, totalLines] = groups;
   const start = remainingCount === undefined ? Number(shownEnd) + 1 : Number(nextOffset);
+
   const end =
     remainingCount === undefined ? Number(totalLines) : start + Number(remainingCount) - 1;
+
   const remaining = end - start + 1;
+
   const guidance =
     remaining > bulkReadLineThreshold
       ? 'For questions, call bulk_read with paths and question. To edit, use a bounded read with offset and limit.'
@@ -131,11 +134,13 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
   };
 
   pi.on('session_start', resetSession);
+
   pi.on('session_before_switch', () => {
     resetSession();
 
     return undefined;
   });
+
   pi.on('session_before_fork', () => {
     resetSession();
 

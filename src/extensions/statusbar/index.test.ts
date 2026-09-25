@@ -16,6 +16,7 @@ const executeFile = promisify(execFile);
 const setup = (directory: string, mode = 'tui') => {
   const fake = fakeExtensionApi({ getThinkingLevel: () => 'high' });
   const setFooter = vi.fn<ExtensionContext['ui']['setFooter']>();
+
   const context = {
     cwd: directory,
     mode,
@@ -40,6 +41,7 @@ const setup = (directory: string, mode = 'tui') => {
     const requestRender = vi.fn<() => void>();
     let branchChange: (() => void) | undefined;
     const unsubscribe = vi.fn<() => void>();
+
     const component = factory(
       { requestRender } as never,
       { fg: (_color: string, text: string) => text } as Theme,
@@ -81,6 +83,7 @@ describe('statusbar extension', () => {
     await initializeRepository(directory);
     await writeFile(join(directory, 'tracked'), 'same bytes');
     await executeFile('git', ['add', 'tracked'], { cwd: directory });
+
     await executeFile(
       'git',
       [
@@ -96,6 +99,7 @@ describe('statusbar extension', () => {
       ],
       { cwd: directory },
     );
+
     const index = await readFile(join(directory, '.git/index'));
     await writeFile(join(directory, 'replacement'), 'same bytes');
     await rename(join(directory, 'replacement'), join(directory, 'tracked'));
@@ -119,6 +123,7 @@ describe('statusbar extension', () => {
 
     await initializeRepository(directory);
     await mkdir(join(directory, '.tau'));
+
     await writeFile(
       join(directory, '.tau/state.json'),
       JSON.stringify({ tdd: { reds: [], gateOff: { since: '2026-05-01T00:00:00.000Z' } } }),
@@ -172,6 +177,7 @@ describe('statusbar extension', () => {
   it('uses the Latte colors without a background', async () => {
     const application = setup('/missing/tau/abu-347');
     application.context.model = { id: 'model', reasoning: true, contextWindow: 200000 } as never;
+
     application.context.getContextUsage = () => ({
       tokens: 46800,
       percent: 23.4,
@@ -268,15 +274,19 @@ describe('statusbar extension', () => {
     const release = join(directory, 'release');
     const bin = join(directory, 'bin');
     await mkdir(bin);
+
     await writeFile(
       join(bin, 'git'),
       `#!/bin/sh\necho start >> '${log}'\nwhile [ ! -f '${release}' ]; do sleep 0.01; done\necho end >> '${log}'\n`,
       { mode: 0o755 },
     );
+
     vi.stubEnv('PATH', `${bin}:${process.env.PATH ?? ''}`);
+
     onTestFinished(() => {
       vi.unstubAllEnvs();
     });
+
     const application = setup(directory);
     await application.emit('session_start');
     const footer = application.mount();
@@ -354,6 +364,7 @@ describe('statusbar extension', () => {
   it('reads all usage categories and live model context and thinking state', async () => {
     const application = setup('/missing/tau/abu-347');
     const usage = { cost: { total: 0.103 } };
+
     application.context.sessionManager.getEntries = () =>
       [
         { type: 'message', message: { role: 'assistant', usage } },
@@ -364,7 +375,9 @@ describe('statusbar extension', () => {
         { type: 'compaction' },
         { type: 'message', message: { role: 'user' } },
       ] as never;
+
     application.context.model = { id: 'model', reasoning: true, contextWindow: 200000 } as never;
+
     application.context.getContextUsage = () => ({
       tokens: 23400,
       percent: 23.4,

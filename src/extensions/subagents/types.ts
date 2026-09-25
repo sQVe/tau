@@ -14,6 +14,7 @@ export const thinkingSchema = StringEnum([
   'xhigh',
   'max',
 ] as const);
+
 const piLoadoutSchema = Type.Object(
   {
     harness: Type.Literal('pi'),
@@ -46,7 +47,9 @@ export const genericLoadoutSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
 export const loadoutSchema = Type.Union([piLoadoutSchema, genericLoadoutSchema]);
+
 const taskProperties = {
   taskId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
   name: Type.Optional(Type.String({ pattern: '^(worker|investigator)-[a-z0-9]{2}$' })),
@@ -84,6 +87,7 @@ export const taskSchema = Type.Union([
     { additionalProperties: false },
   ),
 ]);
+
 const ownedWorkerProperties = {
   paneId: text,
   terminalId: text,
@@ -108,6 +112,7 @@ export const ownedWorkerSchema = Type.Union([
     { additionalProperties: false },
   ),
 ]);
+
 export const reportSchema = Type.Object(
   {
     taskId: text,
@@ -121,6 +126,7 @@ export const reportSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
 export const eventSchema = Type.Object(
   {
     taskId: text,
@@ -144,7 +150,9 @@ export const eventSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
 export const questionIdentitySchema = Type.String({ pattern: '^[a-zA-Z0-9-]{1,128}$' });
+
 const questionIdentity = {
   version: Type.Literal(1),
   taskId: text,
@@ -155,15 +163,18 @@ export const questionSchema = Type.Object(
   { ...questionIdentity, question: text },
   { additionalProperties: false },
 );
+
 export const replySchema = Type.Object(
   { ...questionIdentity, replyId: questionIdentitySchema, reply: text },
   { additionalProperties: false },
 );
+
 // Acknowledgement records worker receipt, not successful application of arbitrary side effects.
 export const acknowledgementSchema = Type.Object(
   { ...questionIdentity, replyId: questionIdentitySchema },
   { additionalProperties: false },
 );
+
 export type WorkerState =
   | 'starting'
   | 'running'
@@ -173,6 +184,7 @@ export type WorkerState =
   | 'stopped'
   | 'cleanupUnconfirmed'
   | 'notOwned';
+
 export type Question = Static<typeof questionSchema>;
 export type Reply = Static<typeof replySchema>;
 export type Acknowledgement = Static<typeof acknowledgementSchema>;
@@ -180,13 +192,18 @@ export type Loadout = Static<typeof loadoutSchema>;
 export type PiLoadout = Static<typeof piLoadoutSchema>;
 export type GenericLoadout = Static<typeof genericLoadoutSchema>;
 export type Harness = string;
+
 export const isGenericLoadout = (loadout: Loadout): loadout is GenericLoadout =>
   loadout.harness === 'generic';
+
 export const isPiLoadout = (loadout: Loadout): loadout is PiLoadout => loadout.harness === 'pi';
+
 export const harnessOf = (loadout: Loadout): Harness =>
   isGenericLoadout(loadout) ? loadout.kind : loadout.harness;
+
 export type Task = Static<typeof taskSchema>;
 export type NativeTask = Extract<Task, { version: 1 }>;
+
 export const requireNativeTask = (task: Task): NativeTask => {
   if (task.version !== 1) {
     throw new Error('This task has no reproducible Pi native session.');
@@ -194,6 +211,7 @@ export const requireNativeTask = (task: Task): NativeTask => {
 
   return task;
 };
+
 export type Report = Static<typeof reportSchema>;
 export type TaskEvent = Static<typeof eventSchema>;
 

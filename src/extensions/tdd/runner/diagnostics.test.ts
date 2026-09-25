@@ -20,10 +20,12 @@ it('reports decoded byte counts and truncation without splitting UTF-8 character
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
     const decoder = new StringDecoder('utf8');
     const text = decoder.write(raw) + decoder.end();
+
     const result = await saveDiagnostics(
       { directory, durationMs: 1, timeoutMs: 30_000, exitCode: 0 },
       { stdout: '', stderr: text, stderrBytes: raw.length, code: 0, timedOut: false },
     );
+
     const saved = await readFile(result.stderr!.path);
 
     expect(result.stderr?.bytes).toBe(raw.length);

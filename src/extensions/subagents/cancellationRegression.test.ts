@@ -15,6 +15,7 @@ const owned = {
   processId: 101,
   token: '/tmp/owned-session.jsonl',
 };
+
 const snapshot = (processId = owned.processId, token = owned.token) =>
   processInfoResponse({
     paneId: owned.paneId,
@@ -67,6 +68,7 @@ const shellSnapshot = (worker: { paneId: string; shellPid: number }) =>
       },
     },
   });
+
 const withInventory =
   (client: Client): Client =>
   async (argumentsList, budget, signal) => {
@@ -90,6 +92,7 @@ describe('owned worker cancellation', () => {
       throw Object.assign(new Error('Process absent'), { code: 'ESRCH' });
     });
   });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -101,12 +104,14 @@ describe('owned worker cancellation', () => {
       agent: 'pi',
       agent_session: { value: owned.token },
     });
+
     const client = vi
       .fn<Client>()
       .mockResolvedValueOnce(recognized)
       .mockResolvedValueOnce(snapshot())
       .mockResolvedValueOnce('{}')
       .mockResolvedValue(shell());
+
     const result = await timeout.cancelOwnedWorker(
       { ...owned, kind: 'pi' },
       200,
@@ -115,6 +120,7 @@ describe('owned worker cancellation', () => {
     );
 
     expect(result.cleanup).toBe('confirmed');
+
     expect(client).toHaveBeenCalledWith(
       ['agent', 'send-keys', owned.paneId, 'escape', 'ctrl+c', 'ctrl+d'],
       expect.any(Number),
@@ -134,12 +140,14 @@ describe('owned worker cancellation', () => {
     const startedAt = (
       await timeout.runClient('ps', ['-p', String(process.pid), '-o', 'lstart='], 1000)
     ).trim();
+
     const piOwned = {
       ...owned,
       kind: 'pi' as const,
       processId: process.pid,
       startedAt: scenario === 'changed start' ? 'previous process' : startedAt,
     };
+
     const client = vi.fn<Client>(async (argumentsList) => {
       if (argumentsList[1] === 'get') {
         return JSON.stringify({
@@ -186,6 +194,7 @@ describe('owned worker cancellation', () => {
       withInventory(client),
       new AbortController().signal,
     );
+
     const sent = client.mock.calls.filter(([argumentsList]) => argumentsList[1] === 'send-keys');
 
     expect(result.cleanup).toBe(scenario === 'rewritten argv' ? 'confirmed' : 'refused');
@@ -196,11 +205,14 @@ describe('owned worker cancellation', () => {
     'stops repeated generic interrupts after %s identity changes',
     async (changed) => {
       const shellProcess = spawnShell();
+
       onTestFinished(() => {
         shellProcess.kill('SIGKILL');
       });
+
       const generic = await genericOwned(shellProcess.pid as number);
       const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+
       const client = vi.fn<Client>(async (argumentsList): Promise<string> => {
         const sent = client.mock.calls.filter(([call]) => call[1] === 'send-keys').length;
 
@@ -234,6 +246,7 @@ describe('owned worker cancellation', () => {
 
         return genericSnapshot(generic, sent && changed === 'foreground' ? 102 : generic.processId);
       });
+
       const result = timeout.cancelOwnedWorker(
         generic,
         1200,
@@ -248,12 +261,15 @@ describe('owned worker cancellation', () => {
 
   it('confirms a generic stop when the agent session ends before the process does', async () => {
     const shellProcess = spawnShell();
+
     onTestFinished(() => {
       shellProcess.kill('SIGKILL');
     });
+
     const generic = await genericOwned(shellProcess.pid as number);
     const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
     let polls = 0;
+
     const client = vi.fn<Client>(async (argumentsList): Promise<string> => {
       const sent = client.mock.calls.filter(([call]) => call[1] === 'send-keys').length;
 
@@ -303,6 +319,7 @@ describe('owned worker cancellation', () => {
     vi.mocked(process.kill).mockImplementation(() => {
       throw Object.assign(new Error('Permission denied'), { code: 'EPERM' });
     });
+
     const client = vi
       .fn<Client>()
       .mockResolvedValueOnce(snapshot())
@@ -325,6 +342,7 @@ describe('owned worker cancellation', () => {
     'refuses a mismatched or missing worker identity: %s',
     async (response) => {
       const client = vi.fn<Client>().mockResolvedValue(response);
+
       const result = await timeout.cancelOwnedWorker(
         owned,
         200,
@@ -333,6 +351,7 @@ describe('owned worker cancellation', () => {
       );
 
       expect(result.cleanup).toBe('refused');
+
       expect(client.mock.calls.map(([call]) => call.slice(0, 2))).toEqual([
         ['pane', 'process-info'],
         ['pane', 'process-info'],
@@ -342,6 +361,7 @@ describe('owned worker cancellation', () => {
 
   it('reports failed cleanup with a manual cleanup target', async () => {
     const client = vi.fn<Client>().mockRejectedValue(new Error('injected unavailable client'));
+
     const result = await timeout.cancelOwnedWorker(
       owned,
       200,
@@ -358,6 +378,7 @@ describe('owned worker cancellation', () => {
   it('does not count input delivery as stopped work', async () => {
     vi.useFakeTimers();
     const client = vi.fn<Client>().mockResolvedValue(snapshot());
+
     const result = timeout.cancelOwnedWorker(
       owned,
       200,
@@ -367,6 +388,7 @@ describe('owned worker cancellation', () => {
 
     await vi.advanceTimersByTimeAsync(200);
     await expect(result).resolves.toMatchObject({ cleanup: 'unconfirmed' });
+
     expect(
       client.mock.calls.filter(([argumentsList]) => argumentsList[1] === 'send-keys'),
     ).toHaveLength(1);
@@ -375,11 +397,13 @@ describe('owned worker cancellation', () => {
   it('does not call a surviving background process stopped when the shell returns', async () => {
     vi.useFakeTimers();
     vi.mocked(process.kill).mockReturnValue(true);
+
     const client = vi
       .fn<Client>()
       .mockResolvedValueOnce(snapshot())
       .mockResolvedValueOnce('{}')
       .mockResolvedValue(shell());
+
     const result = timeout.cancelOwnedWorker(
       owned,
       200,
@@ -400,6 +424,7 @@ describe('owned worker cancellation', () => {
       await expect(
         timeout.cancelOwnedWorker(owned, budget, client, new AbortController().signal),
       ).rejects.toThrow('integer');
+
       expect(client).not.toHaveBeenCalled();
     },
   );
@@ -412,6 +437,7 @@ describe('bounded client', () => {
     await expect(
       timeout.runClient(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], 150),
     ).rejects.toThrow('budget');
+
     expect(performance.now() - started).toBeLessThan(1500);
   });
 

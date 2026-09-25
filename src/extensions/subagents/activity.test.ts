@@ -17,6 +17,7 @@ afterEach(() => {
 it('round-trips a worker phase description with its own update time', () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-activity-'));
   directories.push(directory);
+
   const activity = {
     taskId: 'task-a',
     sequence: 2,
@@ -35,6 +36,7 @@ it('round-trips a worker phase description with its own update time', () => {
 it('reads the latest activity only for the matching task identity', () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-activity-'));
   directories.push(directory);
+
   const activity = {
     taskId: 'task-a',
     sequence: 1,

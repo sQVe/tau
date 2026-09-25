@@ -152,6 +152,7 @@ const submissionSummary = (value: unknown): string | undefined => {
 
   const intent = isRecord(value.intent) ? value.intent : {};
   const observation = isRecord(value.observation) ? value.observation : {};
+
   const parts = [
     stringField(intent, 'id'),
     stringField(observation, 'state') ?? 'no observation',
@@ -168,8 +169,10 @@ const questionReceiptSummary = (value: unknown): string | undefined => {
 
   const question = isRecord(value.question) ? value.question : {};
   const id = stringField(question, 'questionId') ?? 'unknown question';
+
   const saved =
     value.reply === undefined || value.reply === null ? 'no reply saved' : 'reply saved';
+
   const acknowledged = isRecord(value.acknowledgement) ? 'acknowledged' : 'not acknowledged yet';
 
   return `${id} · ${saved} · ${acknowledged}`;
@@ -613,12 +616,15 @@ const matchCount = (count: number): string => {
 
 const historyRow = (candidate: HistoryCandidate, theme: Theme): string => {
   const name = displayName(candidate);
+
   const label = candidate.state
     ? stateLabel(candidate.state, candidate.report?.outcome)
     : undefined;
+
   const state = label
     ? `${theme.fg(label.color, label.icon)} ${label.text}`
     : theme.fg('muted', 'state unknown');
+
   const description = firstLine(candidate.description ?? '').slice(0, historyRowWidth);
 
   return `${theme.bold(name)}  ${state}  ${description}`;
@@ -631,6 +637,7 @@ export const collapsedHistoryLines = (details: HistoryView, theme: Theme): strin
   const total = historyTotal(details);
   const shown = details.candidates.slice(0, historyCollapsedRows);
   const hidden = details.candidates.length - shown.length;
+
   const lines = [
     `${theme.fg('toolTitle', theme.bold('History'))} · ${matchCount(total)}`,
     ...shown.map((entry) => historyRow(entry, theme)),
@@ -743,6 +750,7 @@ const expandedReplyLines = (details: ReplyView, theme: Theme): string[] => [
 
 const collapsedEvidenceLines = (details: EvidenceView, theme: Theme): string[] => {
   const name = displayName(details);
+
   const pane =
     details.paneId != null && details.paneId !== ''
       ? `check pane ${details.paneId}`

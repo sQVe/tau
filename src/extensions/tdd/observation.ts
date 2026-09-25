@@ -384,6 +384,7 @@ const performRun = async (
   }
 
   const inputs = { before, after };
+
   const runPath = await saveRunRecord(report.diagnostics, {
     cwd: state.cwd,
     ...behavior,

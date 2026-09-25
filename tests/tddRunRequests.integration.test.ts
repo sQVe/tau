@@ -17,6 +17,7 @@ it('keeps actual test failures when a sibling bash edits inputs during the run',
     join(cwd, 'behavior.test.ts'),
     "import { it, expect } from 'vitest'; import { writeFile } from 'node:fs/promises'; it('required behavior', async () => { await writeFile('started', ''); await new Promise(r => setTimeout(r, 500)); expect(1).toBe(2); });",
   );
+
   faux.setResponses([
     fauxAssistantMessage([
       fauxToolCall('run_tests', {
@@ -58,12 +59,14 @@ it('serializes overlapping calls through pi', async ({ onTestFinished }) => {
     join(cwd, 'behavior.test.ts'),
     "import { it } from 'vitest'; import { appendFile } from 'node:fs/promises'; it('required behavior', async () => { await appendFile('order', 'start\\n'); await new Promise(r => setTimeout(r, 100)); await appendFile('order', 'end\\n'); });",
   );
+
   const parameters = {
     behavior: 'required behavior',
     testFullName: 'required behavior',
     files: ['behavior.test.ts'],
     scope: 'focused',
   };
+
   faux.setResponses([
     fauxAssistantMessage([
       fauxToolCall('run_tests', parameters),
@@ -77,6 +80,7 @@ it('serializes overlapping calls through pi', async ({ onTestFinished }) => {
   expect(
     events.filter((event) => event.type === 'tool_execution_end' && event.toolName === 'run_tests'),
   ).toHaveLength(2);
+
   expect(await readFile(join(cwd, 'order'), 'utf8')).toBe('start\nend\nstart\nend\n');
 });
 
@@ -84,6 +88,7 @@ it.each(['../outside.test.ts', 'src/value.ts', '/absolute.test.ts', '*.test.ts']
   'rejects invalid test paths through Pi: %s',
   async (file) => {
     const { call } = await createHarness(registerCleanup);
+
     const result = await call('run_tests', {
       behavior: 'behavior',
       testFullName: 'required',
@@ -103,6 +108,7 @@ it('selects exact nested names including regular expression characters through a
 
   await symlink(cwd, alias, 'dir');
   onTestFinished(() => rm(alias, { force: true }));
+
   await writeFile(
     join(cwd, 'behavior.test.ts'),
     "import { describe, it } from 'vitest'; describe('outer', () => { it('works (1)+', () => {}); it('works 11', () => { throw Error('not selected'); }); });",
@@ -115,5 +121,6 @@ it('selects exact nested names including regular expression characters through a
     kind: 'pass',
     tests: [{ fullname: 'outer works (1)+', status: 'passed' }],
   });
+
   expect(result.details.report).toHaveProperty('tests.length', 1);
 });

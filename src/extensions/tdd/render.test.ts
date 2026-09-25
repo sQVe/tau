@@ -21,9 +21,11 @@ const observation = (
 it('shows bounded selection context and distinguishes full-suite scope', () => {
   expect(selectionSummary(behavior, 'focused')).toContain('value.test.ts');
   expect(selectionSummary(behavior, 'focused')).toContain('value works');
+
   expect(selectionSummary(behavior, 'full')).toBe(
     'Scope: full suite (no file or test-name filter)',
   );
+
   expect(selectionSummary(behavior, 'full')).not.toContain('value works');
   expect(selectionSummary({})).toBe('Waiting for test selection');
 
@@ -44,15 +46,18 @@ it('separates file failures and unexecuted selections from test failures', () =>
     failures: [{ file: 'value.test.ts', fullname: '<file>', message: 'setup failed' }],
     truncated: false,
   });
+
   const skipped = observation({
     kind: 'no-tests-collected',
     tests: [{ file: 'value.test.ts', fullname: 'value works', status: 'skipped' }],
   });
+
   const missing = observation({ kind: 'no-tests-collected', tests: [] });
 
   expect(summarize('/repo', failure)).toContain(
     '1 file/setup failures (separate from failed tests)',
   );
+
   expect(summarize('/repo', skipped)).toContain('1 skipped');
   expect(summarize('/repo', skipped)).toContain('No tests ran successfully');
   expect(summarize('/repo', missing)).toContain('No matching tests in the report');
@@ -67,6 +72,7 @@ it('keeps run scope outcome and input freshness distinct', () => {
   expect(stale).toContain(
     'Full suite passed; inputs changed during this run; rerun on current inputs',
   );
+
   expect(unknown).toContain('input freshness could not be checked');
   expect(failed).toContain('Full suite did not pass');
   expect(failed).not.toContain('Full suite passed');
@@ -85,6 +91,7 @@ it('distinguishes an execution that did not start from a completed run', () => {
     },
     diagnostics: { directory: '/tmp/run', durationMs: 0, timeoutMs: 30_000, exitCode: null },
   };
+
   const text = runContext(behavior, observation(report));
 
   expect(text).toContain('Execution did not start');
@@ -104,6 +111,7 @@ it('shows bounded process diagnostics and readable artifact paths', () => {
       excerpt: '\u001b[31mSetup failed\u001b[0m\u0007',
     },
   };
+
   const text = runContext(
     behavior,
     observation(report, { scope: 'full', runPath: '/tmp/run/run.json' }),
@@ -200,6 +208,7 @@ it('omits the slow test heading when none of its entries fit', () => {
     fullname: `value fails ${index}`,
     message: 'x'.repeat(160),
   }));
+
   const tests = [
     ...failures.map((failure) => ({
       ...timed(failure.file, failure.fullname, 1),
@@ -222,6 +231,7 @@ it('shows failure messages before durations when both do not fit', () => {
     ...timed('/repo/value.test.ts', `value fails ${'x'.repeat(200)} ${index}`, index),
     status: 'failed' as const,
   }));
+
   const failures = tests.map((test, index) => ({
     file: test.file,
     fullname: test.fullname,

@@ -43,6 +43,7 @@ const herdrError = (message: string, code?: string) =>
 // workers that differ.
 export const herdrFake = (kind: string, width = 200, height = 60) => {
   const layout = placementFixture(width, height);
+
   const state = {
     busyShellPolls: 0,
     started: false,
@@ -61,12 +62,16 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
     shell: process.ppid,
     process: process.pid,
   };
+
   const calls: string[][] = [];
   // Agents follow their terminal when herdr moves it to another pane.
   const agentTerminals = new Set<string>();
+
   const terminalOf = (paneId: string | undefined) =>
     layout.panes.find((pane) => pane.pane_id === paneId)?.terminal_id;
+
   const hasAgent = (paneId: string | undefined) => agentTerminals.has(terminalOf(paneId) ?? '');
+
   const addAgent = (argumentsList: string[]) => {
     const terminal = terminalOf(paneArgument(argumentsList));
 

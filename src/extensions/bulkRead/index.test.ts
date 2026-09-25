@@ -12,12 +12,15 @@ import bulkReadExtension, { rewriteContinuationNotice } from './index.js';
 
 const setup = () => {
   const fake = fakeExtensionApi();
+
   const find = vi
     .fn<ExtensionContext['modelRegistry']['find']>()
     .mockReturnValue(fauxProvider().getModel());
+
   const complete = vi
     .fn<ExtensionContext['modelRegistry']['complete']>()
     .mockResolvedValue(fauxAssistantMessage('answer'));
+
   const context = { cwd: '/tmp', modelRegistry: { find, complete } } as unknown as ExtensionContext;
 
   bulkReadExtension(fake.pi);
@@ -29,6 +32,7 @@ const setup = () => {
 
   const execute = (signal?: AbortSignal, paths = [import.meta.filename]) =>
     tool.execute('bulk', { paths, question: 'Why?' }, signal, undefined, context);
+
   const emit = (name: string, event: unknown) => fake.handler(name)(event, context);
 
   return { find, complete, execute, emit, tool };
@@ -50,9 +54,11 @@ it('describes bulk reads as evidence gathering rather than review judgments', ()
   const { tool } = setup();
 
   expect(tool.description).toContain('supplied files');
+
   expect(tool.description).toContain(
     'focused summaries, test inventories, and line-cited evidence',
   );
+
   expect(tool.description).toContain('not correctness or branch review judgments');
   expect(tool.promptSnippet).toBe(tool.description);
 });
@@ -90,6 +96,7 @@ it('rewrites the trailing continuation notice of a clamped read into the hint', 
   const app = setup();
   app.emit('tool_call', readCall());
   const image = { type: 'image', data: 'image', mimeType: 'image/png' };
+
   const event = {
     toolCallId: 'read',
     content: [{ type: 'text', text: 'first' }, { type: 'text', text: `head\n\n${notice}` }, image],
@@ -98,6 +105,7 @@ it('rewrites the trailing continuation notice of a clamped read into the hint', 
   expect(app.emit('tool_result', event)).toEqual({
     content: [{ type: 'text', text: 'first' }, { type: 'text', text: `head\n\n${hint}` }, image],
   });
+
   expect(app.emit('tool_result', event)).toBeUndefined();
 });
 
@@ -156,6 +164,7 @@ it('uses the continuation offset in the hint for an offset read', () => {
   });
 
   expect(read.input).toHaveProperty('limit', 400);
+
   expect(result).toHaveProperty('content', [
     {
       type: 'text',
@@ -171,9 +180,11 @@ it('leaves an unclamped read result and other tool results untouched', () => {
   app.emit('tool_call', bash);
 
   expect(bash.input).not.toHaveProperty('limit');
+
   expect(
     app.emit('tool_result', { toolCallId: 'bounded', content: [{ type: 'text', text: notice }] }),
   ).toBeUndefined();
+
   expect(
     app.emit('tool_result', { toolCallId: 'bash', content: [{ type: 'text', text: notice }] }),
   ).toBeUndefined();
@@ -191,6 +202,7 @@ it('documents the extra notice for a threshold-length file with a trailing newli
 
   await writeFile(join(cwd, 'file'), `${content}\n`);
   const trailing = await tool.execute('trailing', { path: 'file', limit: 400 });
+
   expect(trailing.content).toEqual([
     { type: 'text', text: `${content}\n\n[1 more lines in file. Use offset=401 to continue.]` },
   ]);
@@ -212,9 +224,11 @@ it('turns trimming off after a registry miss at the first clamp', () => {
 
 it('turns trimming off when the registry throws at the first clamp', () => {
   const app = setup();
+
   app.find.mockImplementationOnce(() => {
     throw new Error('denied');
   });
+
   const first = readCall();
   const second = readCall('second');
 
@@ -234,6 +248,7 @@ it('throws a registry miss and leaves later reads untouched', async () => {
   await expect(app.execute()).rejects.toThrow(
     'Delegate missing/reader failed: model not found. Check pi --list-models.',
   );
+
   const read = readCall();
   app.emit('tool_call', read);
 
@@ -263,6 +278,7 @@ it.each(['error', 'aborted', 'length', 'throw', 'abort', 'timeout', 'file', 'loo
       const timeout = vi
         .spyOn(AbortSignal, 'timeout')
         .mockReturnValue(AbortSignal.abort(new DOMException('timed out', 'TimeoutError')));
+
       onTestFinished(() => {
         timeout.mockRestore();
       });
@@ -282,6 +298,7 @@ it.each(['error', 'aborted', 'length', 'throw', 'abort', 'timeout', 'file', 'loo
       file: { name: 'BulkReadRecoverableError', message: '/missing/tau-bulk-file' },
       lookup: { name: 'Error', message: 'denied' },
     }[reason];
+
     const failure = app.execute(signal, paths);
 
     await expect(failure).rejects.toThrow(expected.message);
@@ -308,6 +325,7 @@ it('keeps trimming and accepts a smaller request after exceeding the model cap',
     name: 'BulkReadRecoverableError',
     message: 'Input is too large. Split the request',
   });
+
   expect(app.complete).not.toHaveBeenCalled();
   const read = readCall();
   app.emit('tool_call', read);
@@ -318,6 +336,7 @@ it('keeps trimming and accepts a smaller request after exceeding the model cap',
   await expect(app.execute(undefined, [path])).resolves.toMatchObject({
     content: [{ type: 'text', text: 'answer' }],
   });
+
   expect(app.complete).toHaveBeenCalledOnce();
 });
 

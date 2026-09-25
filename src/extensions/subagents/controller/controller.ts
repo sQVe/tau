@@ -409,6 +409,7 @@ const widgetDetailFields = (
     workerType: isGenericLoadout(task.loadout) ? `${task.loadout.kind} worker` : 'Pi worker',
     detailPath: widgetEvidencePath(status, directory),
   };
+
   const recovery = widgetManualCleanup(status);
 
   if (recovery) {
@@ -820,6 +821,7 @@ export class WorkerController {
     answer: { replyId: string; reply: string },
   ) {
     const { taskId } = handle.task;
+
     const value = {
       version: 1,
       taskId,
@@ -968,6 +970,7 @@ export class WorkerController {
       const evidenceError = [String(error), handle.cleanupDetail]
         .filter((value): value is string => value !== undefined && value !== '')
         .join(' ');
+
       const details = {
         taskId: handle.task.taskId,
         ...(handle.task.name === undefined ? {} : { name: handle.task.name }),
@@ -993,6 +996,7 @@ export class WorkerController {
   ) {
     const startedAt = { wall: Date.now(), monotonic: performance.now() };
     const timing = launchTiming(input.timeout, startedAt);
+
     const validationSignal = AbortSignal.any([
       signal,
       this.lifetime.signal,
@@ -1087,6 +1091,7 @@ export class WorkerController {
         ...(generic?.arguments ?? workerArguments(task)),
       ]),
     );
+
     await handle.starting;
   }
 
@@ -1122,6 +1127,7 @@ export class WorkerController {
         reason: 'agent_pane_busy',
         detail: 'One retry after unchanged-shell and agent-absence verification.',
       });
+
       await this.startAgent(handle, paneId, name, call);
     }
   }
@@ -1251,6 +1257,7 @@ export class WorkerController {
 
     workBudget(handle);
     const prompt = genericPrompt(task);
+
     const submission = await submitGenericText(directory, task, {
       id: 'assignment',
       text: prompt,
@@ -1290,10 +1297,13 @@ export class WorkerController {
     const budget = Math.min(2_000, remainingWork);
     const deadline = performance.now() + budget;
     const limit = new AbortController();
+
     const timer = setTimeout(() => {
       limit.abort();
     }, budget);
+
     const signal = AbortSignal.any([this.lifetime.signal, handle.abort.signal, limit.signal]);
+
     const call = (argumentsList: string[]) => {
       const remaining = Math.max(1, Math.floor(deadline - performance.now()));
 
@@ -1367,6 +1377,7 @@ export class WorkerController {
       monotonicDeadline: timing.monotonicDeadline,
       ...(source ? { source } : {}),
     });
+
     const listing = await this.readAgentListing(launchSignal, timing);
 
     if (this.closed) {
@@ -1380,6 +1391,7 @@ export class WorkerController {
     }
 
     this.checkFollowUpSource(input.loadout, listing.agents, source);
+
     // Synchronous allocation and publication after listing coordinate launches in this process's event loop,
     // not launches in independent processes.
     const name = allocateName({
@@ -1409,11 +1421,13 @@ export class WorkerController {
     timing: ReturnType<typeof launchTiming>,
   ) {
     const remaining = remainingLaunchBudget(timing);
+
     const listingSignal = AbortSignal.any([
       launchSignal,
       this.lifetime.signal,
       AbortSignal.timeout(Math.max(1, remaining)),
     ]);
+
     const listing = result(
       await this.client(['agent', 'list'], Math.min(30_000, remaining), listingSignal),
     );
@@ -1465,9 +1479,11 @@ export class WorkerController {
     };
 
     launchSignal.addEventListener('abort', abortLaunch, { once: true });
+
     handle.removeLaunchAbort = () => {
       launchSignal.removeEventListener('abort', abortLaunch);
     };
+
     handle.timer = setTimeout(
       () => {
         void this.stop(handle, 'timeout');
@@ -1551,6 +1567,7 @@ export class WorkerController {
       const settled =
         readEvent(handle.directory, handle.task.taskId, 'settled') !== undefined ||
         readEvent(handle.directory, handle.task.taskId, 'startupFailure') !== undefined;
+
       const absent = handle.owned !== undefined && processAbsent(handle.owned.processId);
 
       if (settled || absent) {
@@ -1757,6 +1774,7 @@ export class WorkerController {
       if (!handle.workerNeverStarted) {
         if (isPiLoadout(handle.task.loadout)) {
           handle.owned = await waitForPiIdentity(handle, call, budget);
+
           record(() => {
             publish(handle.directory, 'owned.json', handle.owned);
           });
@@ -1791,9 +1809,11 @@ export class WorkerController {
         handle.recordErrors.push(String(error));
       }
     };
+
     const budget = Math.max(1, remainingCleanupBudget(handle));
     const expires = Math.min(handle.expires, performance.now() + budget);
     const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(budget)]);
+
     const remainingBudget = () => {
       signal.throwIfAborted();
       const remaining = Math.floor(expires - performance.now());
@@ -1804,7 +1824,9 @@ export class WorkerController {
 
       return remaining;
     };
+
     const call = (argumentsList: string[]) => this.client(argumentsList, remainingBudget(), signal);
+
     const inspectionFailure = await this.recoverStartup(
       handle,
       call,
@@ -1872,6 +1894,7 @@ export class WorkerController {
         recordEvent(directory, task.taskId, 'startupFailure', failureDetail);
       }
     });
+
     record(() => {
       recordEvent(directory, task.taskId, 'cleanup', { detail, stopped });
     });
@@ -1887,6 +1910,7 @@ export class WorkerController {
     record(() => {
       recordEvent(directory, task.taskId, 'notified', 'Parent notification attempted once.');
     });
+
     this.notifySnapshot(handle);
   }
 
@@ -1901,6 +1925,7 @@ export class WorkerController {
     await Promise.allSettled(
       [...this.handles.values()].map((handle) => this.stop(handle, 'cancelled')),
     );
+
     this.close();
   }
 

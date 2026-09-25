@@ -18,13 +18,16 @@ export default function webAccessExtension(pi: ExtensionAPI) {
       typeof event.input.answerModel === 'string' && event.input.answerModel.trim() !== ''
         ? event.input.answerModel.trim()
         : delegateReference();
+
     const model = resolveDelegate(context, reference);
     // pi-web-access prefers an available router over a native model missing from its availability
     // snapshot. Block that route, but let native models resolve credentials at execution time.
     const available = context.modelRegistry.getAvailable();
+
     const nativeAvailable = available.some(
       (candidate) => candidate.provider === model.provider && candidate.id === model.id,
     );
+
     const routedAvailable = available.some((candidate) => candidate.id === reference);
 
     if (!nativeAvailable && routedAvailable) {

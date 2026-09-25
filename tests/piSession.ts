@@ -30,6 +30,7 @@ export const createPiSession = async (
   options: PiSessionOptions,
 ) => {
   const { cwd, agentDirectory, providers } = options;
+
   const settingsManager = SettingsManager.inMemory(
     options.settings ?? { compaction: { enabled: false } },
   );
@@ -46,6 +47,7 @@ export const createPiSession = async (
     noPromptTemplates: true,
     noThemes: true,
   });
+
   await loader.reload();
 
   const modelRuntime = await ModelRuntime.create({
@@ -69,6 +71,7 @@ export const createPiSession = async (
     settingsManager,
     tools: options.tools,
   });
+
   registerCleanup(() => {
     session.dispose();
   });

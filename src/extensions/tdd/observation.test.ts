@@ -16,6 +16,7 @@ vi.mock('./runner/vitest.js', async (importOriginal) => ({
 }));
 
 const behavior = { behavior: 'value', testFullName: 'value works', files: ['value.test.ts'] };
+
 const result = (status: 'passed' | 'failed', fullname = 'value works'): RunnerResult => {
   const tests = [{ file: 'value.test.ts', fullname, status }];
 
@@ -47,6 +48,7 @@ it('saves stale input fingerprints and preserves the outcome when the run record
   const directory = join(cwd, 'diagnostics');
 
   await mkdir(directory);
+
   vi.mocked(runTests).mockImplementationOnce(async () => {
     await writeFile(join(cwd, 'src/value.ts'), 'changed during tests');
 
@@ -55,6 +57,7 @@ it('saves stale input fingerprints and preserves the outcome when the run record
       diagnostics: { directory, durationMs: 10, timeoutMs: 30_000, exitCode: 0 },
     };
   });
+
   const stale = await observation.run(behavior, 'full');
   const record: unknown = JSON.parse(await readFile(join(directory, 'run.json'), 'utf8'));
 
@@ -63,10 +66,12 @@ it('saves stale input fingerprints and preserves the outcome when the run record
   expect(record).toMatchObject({ cwd, scope: 'full', freshness: 'stale', inputs: stale.inputs });
 
   const existing = await readFile(join(directory, 'run.json'), 'utf8');
+
   vi.mocked(runTests).mockResolvedValueOnce({
     ...result('passed'),
     diagnostics: { directory, durationMs: 10, timeoutMs: 30_000, exitCode: 0 },
   });
+
   const passed = await observation.run(behavior, 'full');
 
   expect(passed).toMatchObject({ kind: 'pass', freshness: 'fresh' });
@@ -81,6 +86,7 @@ it('rejects nonliteral test selection before running tests', async ({ onTestFini
   await expect(observation.run({ ...behavior, files: ['*.test.ts'] }, 'focused')).rejects.toThrow(
     'Expected a test file',
   );
+
   expect(runTests).not.toHaveBeenCalled();
 });
 
@@ -110,6 +116,7 @@ it.skipIf(process.platform === 'win32')(
     await expect(
       observation.run({ ...behavior, files: ['tests\\value.test.ts'] }, 'focused'),
     ).rejects.toThrow('Expected a test file');
+
     expect(runTests).not.toHaveBeenCalled();
   },
 );
@@ -124,9 +131,11 @@ it('recommends full verification without RED and deduplicates until the next cyc
   expect(passed).toMatchObject({ kind: 'pass', freshness: 'fresh' });
   expect(passed.hint).toContain('scope "full"');
   expect(passed.hint).not.toContain('RED');
+
   expect(
     (await observation.run({ ...regression, behavior: 'handoff verification' }, 'focused')).hint,
   ).toBeUndefined();
+
   expect(await observation.checkpoint(false)).toBeUndefined();
   await writeFile(join(cwd, 'src/value.ts'), 'formatted');
   const full = await observation.run(regression, 'full');
@@ -140,6 +149,7 @@ it.for(['stale', 'unknown'] as const)(
   async (freshness, { onTestFinished }) => {
     const { cwd, observation } = await setup(onTestFinished);
     const report = result('passed');
+
     vi.mocked(runTests).mockImplementationOnce(async () => {
       if (freshness === 'stale') {
         await writeFile(join(cwd, 'src/value.ts'), 'changed during tests');
@@ -149,6 +159,7 @@ it.for(['stale', 'unknown'] as const)(
 
       return report;
     });
+
     const passed = await observation.run(behavior, 'focused');
 
     expect(passed).toMatchObject({ kind: 'pass', freshness });
@@ -175,9 +186,11 @@ it('deduplicates edit reminders and full-suite advice by behavior', async ({ onT
   const first = await observation.run(behavior, 'focused');
 
   expect(first.hint).toContain('scope "full"');
+
   expect(
     (await observation.run({ ...behavior, behavior: 'new label' }, 'focused')).hint,
   ).toBeUndefined();
+
   expect(
     (await observation.run({ ...behavior, testFullName: 'another behavior' }, 'focused')).hint,
   ).toContain('scope "full"');
@@ -233,6 +246,7 @@ it.each(['duplicate', 'skipped', 'missing', 'load error'])(
         tests: [],
       },
     };
+
     vi.mocked(runTests).mockResolvedValueOnce(reports[invalid]!);
 
     await observation.run(behavior, 'focused');
@@ -261,6 +275,7 @@ it('keeps Vitest 5 exact names literal and observes unique nested failures', asy
       testNames: ['outer suite > inner [group] > works (exact)'],
     }),
   );
+
   await writeFile(join(cwd, 'src/value.ts'), 'implementation after unique failure');
   expect(await observation.checkpoint(true)).toBeUndefined();
   vi.mocked(runTests).mockResolvedValueOnce(result('passed', fullname));
@@ -274,6 +289,7 @@ it.for(['duplicate', 'skipped', 'missing', 'load error'])(
     const fullname = 'outer > inner > works';
     const selected = { ...behavior, testFullName: fullname };
     const failed = { file: 'value.test.ts', fullname, status: 'failed' as const };
+
     const reports: Record<string, RunnerResult> = {
       duplicate: { kind: 'fail', tests: [failed, failed], failures: [], truncated: false },
       skipped: { kind: 'no-tests-collected', tests: [{ ...failed, status: 'skipped' }] },
@@ -290,6 +306,7 @@ it.for(['duplicate', 'skipped', 'missing', 'load error'])(
         truncated: false,
       },
     };
+
     vi.mocked(runTests).mockResolvedValueOnce(reports[invalid]!);
 
     await observation.run(selected, 'focused');
@@ -357,6 +374,7 @@ it('does not blame a thrown error from a test outside the selection', async ({
   onTestFinished,
 }) => {
   const { observation } = await setup(onTestFinished);
+
   vi.mocked(runTests).mockResolvedValue({
     kind: 'fail',
     tests: [{ file: 'value.test.ts', fullname: 'value works', status: 'failed' }],
@@ -417,6 +435,7 @@ it.each(['timeout', 'cancelled', 'compile-error', 'runner-missing', 'runner-reso
     await observation.run(behavior, 'focused');
     await writeFile(join(cwd, 'src/value.ts'), 'implementation');
     expect(await observation.checkpoint(true)).toBeUndefined();
+
     const report = {
       kind,
       message: 'diagnostic',
@@ -424,6 +443,7 @@ it.each(['timeout', 'cancelled', 'compile-error', 'runner-missing', 'runner-reso
       stdout: '',
       stderr: '',
     } as RunnerResult;
+
     vi.mocked(runTests).mockResolvedValueOnce(report);
 
     const observed = await observation.run(behavior, 'focused');
@@ -478,12 +498,15 @@ it('keeps stale then next-behavior RED advice after a focused pass', async ({ on
 
 it('records RED when each name fails once across the listed files', async ({ onTestFinished }) => {
   const { cwd, observation } = await setup(onTestFinished);
+
   const multiple = {
     ...behavior,
     files: ['value.test.ts', 'second.test.ts'],
     testFullName: ['value works', 'second works'],
   };
+
   await writeFile(join(cwd, 'second.test.ts'), 'test');
+
   vi.mocked(runTests).mockResolvedValueOnce({
     kind: 'fail',
     failures: [],
@@ -507,6 +530,7 @@ it('does not record RED when a name fails in more than one listed file', async (
   const { cwd, observation } = await setup(onTestFinished);
   const multiple = { ...behavior, files: ['value.test.ts', 'second.test.ts'] };
   await writeFile(join(cwd, 'second.test.ts'), 'test');
+
   vi.mocked(runTests).mockResolvedValueOnce({
     kind: 'fail',
     failures: [],
@@ -565,16 +589,19 @@ it.each([
     kind: 'pass',
     freshness: 'fresh',
   });
+
   await writeFile(join(cwd, file), 'changed');
   expect(await observation.checkpoint(false)).toBeUndefined();
   expect(await observation.checkpoint(true)).toContain('stale');
   await writeFile(join(cwd, file), 'changed again');
   expect(await observation.checkpoint(true)).toContain('RED');
   expect(await observation.checkpoint(true)).toBeUndefined();
+
   expect(await observation.run(behavior, 'full')).toMatchObject({
     kind: 'pass',
     freshness: 'fresh',
   });
+
   await writeFile(join(cwd, file), 'next change');
   expect(await observation.checkpoint(true)).toContain('stale');
 });
@@ -639,11 +666,13 @@ it('keeps actual reports when layout code and nested configuration change during
     const file = join(cwd, path);
     await mkdir(dirname(file), { recursive: true });
     const report = result('passed');
+
     vi.mocked(runTests).mockImplementationOnce(async () => {
       await writeFile(file, 'changed during tests');
 
       return report;
     });
+
     const observed = await observation.run(behavior, 'full');
 
     expect(observed).toMatchObject({ kind: 'pass', freshness: 'stale' });
@@ -657,6 +686,7 @@ it('ignores dependencies generated output and unrelated files in fingerprints', 
 }) => {
   const { cwd, observation } = await setup(onTestFinished);
   const before = await observation.run(behavior, 'full');
+
   const paths = [
     ...[
       'node_modules',
@@ -750,11 +780,13 @@ it('fingerprints test-support additions, edits, and deletions between and during
 
   await writeFile(helper, 'before');
   const report = result('failed');
+
   vi.mocked(runTests).mockImplementationOnce(async () => {
     await writeFile(helper, 'during run');
 
     return report;
   });
+
   const observed = await observation.run(behavior, 'focused');
 
   expect(observed).toMatchObject({ kind: 'fail', freshness: 'stale' });
@@ -765,6 +797,7 @@ it('fingerprints test-support additions, edits, and deletions between and during
 it('keeps the actual report when inputs change during the run', async ({ onTestFinished }) => {
   const { cwd, observation } = await setup(onTestFinished);
   const report = result('failed');
+
   vi.mocked(runTests).mockImplementationOnce(async () => {
     await writeFile(join(cwd, 'src/value.ts'), 'during run');
 
@@ -817,6 +850,7 @@ it.each([
   'no-tests-collected',
 ])('preserves runner outcome %s', async (kind) => {
   const { observation } = await setup(registerCleanup);
+
   const report = {
     kind,
     message: 'diagnostic',
@@ -824,6 +858,7 @@ it.each([
     stdout: '',
     stderr: '',
   } as RunnerResult;
+
   vi.mocked(runTests).mockResolvedValue(report);
 
   const observed = await observation.run(behavior, 'full');
@@ -838,6 +873,7 @@ it('orders run completion and queued edit checkpoints without marking later edit
   const { cwd, observation } = await setup(onTestFinished);
   const started = Promise.withResolvers<undefined>();
   const finish = Promise.withResolvers<RunnerResult>();
+
   vi.mocked(runTests).mockImplementationOnce(() => {
     started.resolve(undefined);
 

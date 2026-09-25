@@ -17,6 +17,7 @@ export const integer = (value: unknown): number => {
 export const isBareShell = (information: Record<string, unknown>): boolean => {
   const processes = information.foreground_processes;
   const shellPid = integer(information.shell_pid);
+
   const shellAlone =
     Array.isArray(processes) &&
     processes.length === 1 &&

@@ -34,6 +34,7 @@ export const rectangle = (value: unknown): Rectangle => {
 
   return { width: Number(bounds.width), height: Number(bounds.height) };
 };
+
 export const isUseful = (bounds: Rectangle): boolean =>
   bounds.width >= minimumPane.width && bounds.height >= minimumPane.height;
 
@@ -68,6 +69,7 @@ const branchSplit = (tree: Branch, layout: Record<string, unknown>) => {
   const children = leaves(tree).map((paneId) =>
     panes(layout).find((pane) => pane.pane_id === paneId),
   );
+
   const candidates = splits(layout)
     .filter(
       (split) =>
@@ -82,6 +84,7 @@ const branchSplit = (tree: Branch, layout: Record<string, unknown>) => {
         Number(requireObject(left.rect).width) * Number(requireObject(left.rect).height) -
         Number(requireObject(right.rect).width) * Number(requireObject(right.rect).height),
     );
+
   const split = candidates[0];
 
   if (!split) {
@@ -95,11 +98,13 @@ interface Adjustment {
   branch: Branch;
   ratio: number;
 }
+
 export interface ForegroundPlan {
   tree: Tree;
   target: string;
   adjustments: Adjustment[];
 }
+
 const distribute = (
   tree: Tree,
   bounds: Rectangle,
@@ -247,11 +252,13 @@ const splitsAfterResizeMatch = (
 
 const resizeResultIsExpected = (snapshot: ResizeSnapshot, ratio: number): boolean => {
   const frameIsUnchanged = framesAreEqual(snapshot.before, snapshot.after);
+
   const panesArePreserved = layoutsPreservePanes(
     panes(snapshot.before),
     panes(snapshot.after),
     snapshot.members,
   );
+
   const splitsAreExpected = splitsAfterResizeMatch(
     splits(snapshot.before),
     splits(snapshot.after),
@@ -283,6 +290,7 @@ const applyAdjustment = async (
 
   await ensureOwnedLayout(context, anchor, current);
   const direction = resizeDirection(adjustment, difference);
+
   const response = await context.call([
     'pane',
     'resize',
@@ -293,7 +301,9 @@ const applyAdjustment = async (
     '--amount',
     String(Math.abs(difference)),
   ]);
+
   const resized = requireObject(requireObject(result(response).resize).layout);
+
   const snapshot: ResizeSnapshot = {
     before: current,
     after: resized,
@@ -327,7 +337,9 @@ const captureCloseSnapshot = async (
     const layout = requireObject(
       result(await call(['pane', 'layout', '--pane', location.paneId])).layout,
     );
+
     const terminals = await listTerminals(call);
+
     const stillOwned = terminals.some(
       (pane) => pane.paneId === location.paneId && pane.terminalId === location.terminalId,
     );
@@ -441,10 +453,12 @@ const layoutRemembersPane = (
   const nextPanes = panes(after);
   const previousSplits = splits(request.before);
   const nextSplits = splits(after);
+
   const layoutShapeIncreased =
     framesAreEqual(request.before, after) &&
     nextPanes.length === previousPanes.length + 1 &&
     nextSplits.length === previousSplits.length + 1;
+
   const paneSetIsExpected =
     created.length === 1 &&
     createdSplitIsExpected(created[0], request.direction) &&
@@ -537,8 +551,10 @@ export class ForegroundShares {
       const after = requireObject(
         result(await request.call(['pane', 'layout', '--pane', request.added.paneId])).layout,
       );
+
       const previousSplits = splits(request.before);
       const nextSplits = splits(after);
+
       const created = nextSplits.filter(
         (split) => !previousSplits.some((previous) => splitShape(previous) === splitShape(split)),
       );

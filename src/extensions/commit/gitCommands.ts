@@ -108,6 +108,7 @@ export const repositoryPathPrefix = async (
     ['rev-parse', '--is-inside-work-tree', '--show-prefix'],
     { timeout: null },
   );
+
   // The prefix is a path, so only the first line break separates the two answers.
   const [insideWorkTree, ...prefixLines] = output.split('\n');
 

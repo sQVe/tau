@@ -175,6 +175,7 @@ it('keeps generated paths, JSON, and full task IDs out of collapsed status lines
 // Raw error text is unbounded; collapsed lines flag it and ctrl+o shows it.
 const rawFailure =
   'Error: Command failed: herdr agent start codex --pane w-1 -- --arg\nline two\nagent_not_ready: trust prompt';
+
 const rawObservation = `SyntaxError: Unexpected token 'o', ..."","beta":nope,"gamma"... is not valid JSON at ${records}`;
 
 it('keeps raw failure and observation text off collapsed lines and shows it on ctrl+o', () => {
@@ -187,6 +188,7 @@ it('keeps raw failure and observation text off collapsed lines and shows it on c
       nativeState: 'unknown',
       observationIssue: rawObservation,
     };
+
     const collapsed = lines(renderStatusResult(details, false, subject)).join('\n');
     const expanded = lines(renderStatusResult(details, true, subject)).join('\n');
 
@@ -210,6 +212,7 @@ it('uses the check mark only for a stopped success and shows the deadline only f
           { ...statusFixture(state, generic), outcome },
           subject,
         ).join('\n');
+
         const check = state === 'stopped' && outcome === 'success';
         expect(output.includes('✓'), `${state}/${outcome} check mark`).toBe(check);
         const deadline = ['starting', 'running', 'awaitingReply'].includes(state);
@@ -231,6 +234,7 @@ it('claims a stop only for stopped workers and always names the worker', () => {
         const output = lines(
           renderStatusResult({ ...statusFixture(state, generic), outcome }, false, subject),
         ).join('\n');
+
         const label = `${state}/${String(outcome)}/${generic ? 'generic' : 'pi'}`;
 
         expect(claimsStop(output), `${label} stop claim`).toBe(state === 'stopped');
@@ -242,6 +246,7 @@ it('claims a stop only for stopped workers and always names the worker', () => {
 
 it('shows the question, the report summary, and the pane where the pilot needs them', () => {
   const subject = theme();
+
   const render = (state: WorkerState) =>
     lines(renderStatusResult(statusFixture(state, false), false, subject)).join('\n');
 
@@ -254,10 +259,12 @@ it('shows the question, the report summary, and the pane where the pilot needs t
 
 it('shows an undelivered or uncertain assignment delivery on the collapsed line', () => {
   const subject = theme();
+
   const notDelivered = collapsedStatusLines(
     { ...statusFixture('running', true), delivery: 'notDelivered' },
     subject,
   ).join('\n');
+
   const uncertain = collapsedStatusLines(
     { ...statusFixture('running', true), delivery: 'uncertain' },
     subject,
@@ -276,6 +283,7 @@ it('shows a blocked or unknown native state for every live state', () => {
       { ...statusFixture(state, true), nativeState: 'blocked' },
       subject,
     ).join('\n');
+
     expect(blocked, `${state} blocked`).toContain('blocked');
 
     const unknown = collapsedStatusLines(
@@ -287,6 +295,7 @@ it('shows a blocked or unknown native state for every live state', () => {
       },
       subject,
     ).join('\n');
+
     expect(unknown, `${state} unknown`).toContain('unknown');
     expect(unknown, `${state} ctrl+o hint`).toContain('ctrl+o');
     expect(unknown, `${state} raw reason`).not.toContain('herdr observation failed.');
@@ -295,6 +304,7 @@ it('shows a blocked or unknown native state for every live state', () => {
       { ...statusFixture(state, true), nativeState: 'unknown', observationIssue: 'observed.' },
       subject,
     ).join('\n');
+
     expect(both.split('ctrl+o').length - 1, `${state} one hint`).toBe(1);
   }
 });
@@ -306,6 +316,7 @@ it('marks the deadline as enforced only for owned live states', () => {
     const output = expandedStatusLines(statusFixture(state, false), subject)
       .map(stripVTControlCharacters)
       .join('\n');
+
     const live = ['starting', 'running', 'awaitingReply', 'reported', 'stopping'].includes(state);
 
     expect(/\bnot enforced\b/.test(output), `${state} enforcement`).toBe(!live);
@@ -320,6 +331,7 @@ it('shows the worker name on a reply line and falls back to the short ID', () =>
   const unnamed = lines(
     renderReplyResult({ ...replyFixture('sent'), name: undefined }, false, subject),
   ).join('\n');
+
   expect(unnamed).toContain(taskId.slice(0, 8));
   expect(unnamed).not.toContain(taskId);
 });
@@ -329,6 +341,7 @@ it('shows why an uncertain reply delivery failed in the expanded view', () => {
   const reply = { ...replyFixture('uncertain'), deliveryError: 'herdr timed out' };
 
   expect(lines(renderReplyResult(reply, true, subject)).join('\n')).toContain('herdr timed out');
+
   expect(lines(renderReplyResult(reply, false, subject)).join('\n')).not.toContain(
     'herdr timed out',
   );
@@ -336,9 +349,11 @@ it('shows why an uncertain reply delivery failed in the expanded view', () => {
 
 it('shows the predecessor name on a follow-up line and falls back to the short ID', () => {
   const subject = theme();
+
   const named = lines(renderStatusResult(statusFixture('starting', false), false, subject)).join(
     '\n',
   );
+
   expect(named).toContain('worker-up');
 
   const unnamed = lines(
@@ -348,6 +363,7 @@ it('shows the predecessor name on a follow-up line and falls back to the short I
       subject,
     ),
   ).join('\n');
+
   expect(unnamed).not.toContain('worker-up');
   expect(unnamed).toContain('predeces');
 });
@@ -355,9 +371,11 @@ it('shows the predecessor name on a follow-up line and falls back to the short I
 it('never claims an acknowledgement and renders each delivery value differently', () => {
   const subject = theme();
   const deliveries = ['sent', 'uncertain', 'notResent', 'notDelivered'];
+
   const outputs = deliveries.map((delivery) =>
     collapsedReplyLines(replyFixture(delivery), subject).join('\n'),
   );
+
   const acknowledged = collapsedReplyLines(replyFixture('sent', true), subject).join('\n');
 
   expect(new Set(outputs).size).toBe(deliveries.length);
@@ -413,12 +431,14 @@ it('renders every history candidate in the expanded view', () => {
 
 it('renders the evidence notice line with the pane ID', () => {
   const subject = theme();
+
   const details = {
     taskId,
     name: 'worker-ab',
     evidenceError: 'Invalid worker lifecycle record.',
     recovery: { paneId: 'pane-7', directory: records },
   };
+
   const collapsed = plain(renderStatusResult(details, false, subject));
   expect(collapsed).toContain('pane-7');
   expect(claimsStop(collapsed)).toBe(false);
@@ -430,12 +450,15 @@ it('renders the evidence notice line with the pane ID', () => {
 
 it('rejects results without a worker state so Pi renders its default', () => {
   const subject = theme();
+
   expect(() => renderStatusResult({ taskId }, false, subject)).toThrow(
     DefaultRenderingRequiredError,
   );
+
   expect(() => renderReplyResult({ taskId }, false, subject)).toThrow(
     DefaultRenderingRequiredError,
   );
+
   expect(() => renderHistoryResult({ outcome: 'list' }, false, subject)).toThrow(
     DefaultRenderingRequiredError,
   );
@@ -443,6 +466,7 @@ it('rejects results without a worker state so Pi renders its default', () => {
 
 it('falls back to Pi rendering for a legacy prose reply delivery', () => {
   const subject = theme();
+
   const legacy = {
     ...replyFixture('sent'),
     delivery: 'Herdr accepted the reply text; saved on disk.',
@@ -470,6 +494,7 @@ it('renders through the registered tool definitions and the message renderer', (
       context,
     ),
   );
+
   expect(statusOutput).toContain('running');
 
   const replyOutput = plain(
@@ -480,6 +505,7 @@ it('renders through the registered tool definitions and the message renderer', (
       context,
     ),
   );
+
   expect(replyOutput).toContain('reply saved');
 
   const historyOutput = plain(
@@ -490,10 +516,12 @@ it('renders through the registered tool definitions and the message renderer', (
       context,
     ),
   );
+
   expect(historyOutput).toContain('3 matches');
 
   const renderer = messageRenderers.get('tau-worker');
   expect(renderer, 'tau-worker renderer must be registered').toBeTypeOf('function');
+
   const notice = renderer?.(
     {
       role: 'custom',
@@ -506,6 +534,7 @@ it('renders through the registered tool definitions and the message renderer', (
     { expanded: false, outputPad: 0 },
     subject,
   );
+
   expect(notice, 'notice must render').toBeDefined();
   expect(plain(notice as Component)).toContain('asks');
 });
@@ -542,6 +571,7 @@ it('wires a call and a result renderer into every subagent tool', () => {
   }
 
   const launch = tools.get('subagent');
+
   const call = launch?.renderCall?.(
     {
       task: 'Do the thing.\nSecond line.',
@@ -552,6 +582,7 @@ it('wires a call and a result renderer into every subagent tool', () => {
     subject,
     context,
   );
+
   const text = plain(call as Component);
   expect(text).toContain('Launch worker');
   expect(text).toContain('worker');
@@ -569,6 +600,7 @@ it('uses Pi default rendering for a state-less result through the tool component
   }
 
   const content = '{"taskId":"legacy-task"}';
+
   const component = new ToolExecutionComponent(
     'subagent_status',
     'call',
@@ -578,6 +610,7 @@ it('uses Pi default rendering for a state-less result through the tool component
     { requestRender: vi.fn<TUI['requestRender']>() } as unknown as TUI,
     '/repo',
   );
+
   component.updateResult({
     content: [{ type: 'text', text: content }],
     details: { taskId: 'legacy-task' },
@@ -596,6 +629,7 @@ it('shortens the home directory in the expanded records and session rows', () =>
 it('keeps a sibling of the home directory unshortened', () => {
   const subject = theme();
   const sibling = `${homedir()}-other/records`;
+
   const output = expandedStatusLines(
     { ...statusFixture('stopped', false), directory: sibling },
     subject,
@@ -607,9 +641,11 @@ it('keeps a sibling of the home directory unshortened', () => {
 it('offers follow-up only to Pi workers', () => {
   const subject = theme();
   const done = { successorTaskId: undefined };
+
   const pi = expandedStatusLines({ ...statusFixture('stopped', false), ...done }, subject).join(
     '\n',
   );
+
   const generic = expandedStatusLines({ ...statusFixture('stopped', true), ...done }, subject).join(
     '\n',
   );
@@ -624,6 +660,7 @@ it('offers follow-up only to Pi workers', () => {
 
 it('shows which handoff sections the saved report is missing', () => {
   const subject = theme();
+
   const legacy = stripVTControlCharacters(
     expandedStatusLines(statusFixture('stopped', false), subject).join('\n'),
   );
@@ -638,6 +675,7 @@ it('shows which handoff sections the saved report is missing', () => {
       evidence: [],
     },
   };
+
   const complete = stripVTControlCharacters(
     expandedStatusLines(completeReport, subject).join('\n'),
   );
@@ -647,6 +685,7 @@ it('shows which handoff sections the saved report is missing', () => {
 
 it('shows requested native output and receipts on ctrl+o', () => {
   const subject = theme();
+
   const details = {
     ...statusFixture('running', true),
     nativeOutput: { text: 'Approve the edit? [y/n]' },
@@ -660,6 +699,7 @@ it('shows requested native output and receipts on ctrl+o', () => {
       acknowledgement: undefined,
     },
   };
+
   const output = lines(renderStatusResult(details, true, subject)).join('\n');
 
   expect(output).toContain('Approve the edit? [y/n]');
@@ -685,6 +725,7 @@ it('renders call lines while streaming arguments are still incomplete', () => {
 it('shows only a short task ID on task call lines', () => {
   const subject = theme();
   const { tools } = renderers();
+
   const calls: [string, Record<string, unknown>][] = [
     ['subagent_status', { taskId }],
     ['subagent_reply', { taskId, replyId: 'reply', reply: 'Scoped text.', scopeUnchanged: true }],

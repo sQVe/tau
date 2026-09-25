@@ -42,11 +42,13 @@ describe('message policy', () => {
   it('commits and reports the actual hook-rewritten message', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'value');
+
     await writeRepositoryFile(
       directory,
       '.git/hooks/commit-msg',
       '#!/bin/sh\nprintf "fix: rewritten\\n\\nHook body  \\n" > "$1"\n',
     );
+
     await chmod(join(directory, '.git/hooks/commit-msg'), 0o755);
 
     const result = await executeCommit(directory, {
@@ -55,6 +57,7 @@ describe('message policy', () => {
 
     expect(await git(directory, ['rev-list', '--all', '--count'])).toBe('1\n');
     expect(await getStoredCommitMessage(directory)).toBe('fix: rewritten\n\nHook body  \n');
+
     expect(result.details.groups[0]).toMatchObject({
       subject: 'fix: rewritten',
       body: 'Hook body  \n',
@@ -62,6 +65,7 @@ describe('message policy', () => {
       files: ['requested'],
       hookChanges: { files: [], message: true },
     });
+
     expect(JSON.stringify(result.content)).toContain('Hook changed the commit message');
   });
 
@@ -69,11 +73,13 @@ describe('message policy', () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'first', 'value');
     await writeRepositoryFile(directory, 'second', 'value');
+
     await writeRepositoryFile(
       directory,
       '.git/hooks/commit-msg',
       '#!/bin/sh\nif grep -q second "$1"; then echo invalid message >&2; exit 1; fi\n',
     );
+
     await chmod(join(directory, '.git/hooks/commit-msg'), 0o755);
 
     const failure = await executeCommit(directory, {
@@ -99,6 +105,7 @@ describe('message policy', () => {
       const original = await vi.importActual<typeof fileSystem>('node:fs/promises');
       const controller = new AbortController();
       let stagings = 0;
+
       vi.mocked(rm).mockImplementation(async (path, options) => {
         if (String(path).includes('tau-commit-message-')) {
           temporaryDirectories.push(String(path));
@@ -108,6 +115,7 @@ describe('message policy', () => {
 
         await original.rm(path, options);
       });
+
       const tool = createCommitTool({
         exec: (command, argumentsList, options) => {
           if (argumentsList.includes('add')) {
@@ -141,6 +149,7 @@ describe('message policy', () => {
           undefined,
           commitContext(directory),
         );
+
         const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
 
         expect(first.details.groups[0]?.sha).toBe(head);
@@ -163,6 +172,7 @@ describe('message policy', () => {
         expect(report).toContain(
           outcome === 'group failure' ? 'primary group failure' : 'Commit cancelled',
         );
+
         expect(report).toContain('cleanup denied');
         expect((await git(directory, ['rev-parse', 'HEAD'])).trim()).toBe(head);
         expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');

@@ -19,6 +19,7 @@ export const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   vi.restoreAllMocks();
+
   await Promise.all([
     ...temporaryDirectories
       .splice(0)
@@ -141,12 +142,14 @@ export const fakeCommit = () => {
   const custom = vi.fn<() => never>(() => {
     throw new Error('Unexpected approval UI');
   });
+
   const editor = vi.fn<() => never>(() => {
     throw new Error('Unexpected message editor');
   });
 
   let storedMessage = '';
   let stagedFiles: string[] = [];
+
   const exec = vi.fn<ExtensionAPI['exec']>(async (_command, commandArguments) => {
     let stdout = '';
 
@@ -181,8 +184,10 @@ export const fakeCommit = () => {
 
     return { code: 0, killed: false, stderr: '', stdout };
   });
+
   const tool = createCommitTool({ exec });
   const context = { cwd: '/repo', hasUI: true, ui: { custom, editor } };
+
   const input = {
     groups: [
       {

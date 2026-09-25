@@ -14,6 +14,7 @@ export const requireRegisteredTools = (
     }
 
     const quotedToolNames = missingToolNames.map((name) => `"${name}"`).join(', ');
+
     const subject =
       missingToolNames.length === 1 ? `Tool ${quotedToolNames} is` : `Tools ${quotedToolNames} are`;
 

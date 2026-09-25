@@ -20,6 +20,7 @@ import type { Loadout, PiLoadout } from './types.js';
 type ModelContext = Pick<ExtensionContext, 'modelRegistry' | 'scopedModels'>;
 
 const nodeRequire = createRequire(import.meta.url);
+
 // Tau's package loads this file; the worker accepts no other extension under the Safety Net name.
 const safetyExtension = (): string =>
   realpathSync(
@@ -207,6 +208,7 @@ export const checkWorkerRuntime = (
 
   // Pi suffixes duplicate command names. Accept those names only from the bundled Safety Net file.
   const expectedSafety = safetyExtension();
+
   const safetyActive = pi
     .getCommands()
     .some(

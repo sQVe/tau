@@ -8,18 +8,22 @@ import { resolveLoadout } from './loadout.js';
 
 const fixture = () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-native-loadout-'));
+
   onTestFinished(() => {
     vi.unstubAllEnvs();
     rmSync(directory, { recursive: true, force: true });
   });
+
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.stubEnv('TAU_SUBAGENT_MODEL', 'ignored/environment');
+
   const context = {
     cwd: directory,
     isProjectTrusted: () => true,
     modelRegistry: undefined as never,
     scopedModels: [],
   };
+
   const request = { profile: 'worker', harness: 'codex', permissions: 'native-controls' };
 
   return { directory, context, request };
@@ -42,12 +46,14 @@ it.each(['claude', 'codex', 'gemini'])(
       arguments: [],
       instructions: resolved.instructions,
     });
+
     expect(resolved.instructions).toBeTypeOf('string');
   },
 );
 
 it('refuses unsupported verified guarantees and bare model requests before launch', async () => {
   const setup = fixture();
+
   const request = {
     ...setup.request,
     nativeArguments: ['--model', 'requested'],
@@ -57,6 +63,7 @@ it('refuses unsupported verified guarantees and bare model requests before launc
   expect(() =>
     resolveLoadout({ ...request, permissions: 'trusted-full-tools' }, setup.context),
   ).toThrow('native-controls');
+
   expect(() => resolveLoadout({ ...setup.request, model: 'requested' }, setup.context)).toThrow(
     'native arguments',
   );
@@ -74,11 +81,14 @@ it('copies native arguments literally and never takes configuration authority fr
     arguments: ['--model', 'requested; not shell text'],
     requestedModel: 'requested',
   });
+
   mkdirSync(join(setup.directory, 'agents'));
+
   writeFileSync(
     join(setup.directory, 'agents', 'worker.md'),
     '---\nname: worker\nrole: editing\ncli: codex\nmodel: profile-model\n---\nTask guidance.\n',
   );
+
   expect(() => resolveLoadout(setup.request, setup.context)).toThrow('native arguments');
 });
 
@@ -88,11 +98,14 @@ it('refuses invalid native arguments and profile thinking translation', async ()
   expect(() =>
     resolveLoadout({ ...setup.request, nativeArguments: ['unsafe\u0000argument'] }, setup.context),
   ).toThrow('Invalid or oversized');
+
   mkdirSync(join(setup.directory, 'agents'));
+
   writeFileSync(
     join(setup.directory, 'agents', 'worker.md'),
     '---\nname: worker\nrole: editing\ncli: codex\nthinking: high\n---\nTask guidance.\n',
   );
+
   expect(() => resolveLoadout(setup.request, setup.context)).toThrow('Native thinking settings');
 });
 

@@ -9,11 +9,13 @@ import { readTask } from '../records.js';
 const directory = process.env.TAU_WORKER_RECORD;
 const savedTask = directory != null && directory !== '' ? readTask(directory) : undefined;
 const activeCancellation = savedTask?.task.includes('active cancellation') === true;
+
 const provider = fauxProvider({
   provider: 'tau-worker-fixture',
   api: 'tau-worker-fixture',
   ...(activeCancellation ? { tokensPerSecond: 100 } : {}),
 });
+
 export const fixtureModel = provider.getModel();
 
 export const fixtureAuth = {
@@ -32,11 +34,13 @@ const registerFollowUpProvider = (pi: ExtensionAPI): void => {
           message.role === 'user' &&
           JSON.stringify(message.content).includes(savedTask?.predecessorTaskId ?? 'missing'),
       );
+
       const blocked = JSON.stringify(
         context.messages.findLast(
           (message) => message.role === 'toolResult' && message.toolName === 'bash',
         ),
       ).includes('BLOCKED by CC Safety Net');
+
       const instructions = JSON.stringify(
         context.messages.findLast((message) => message.role === 'user'),
       ).includes(savedTask?.loadout.instructions ?? '');
@@ -54,14 +58,17 @@ const registerFollowUpProvider = (pi: ExtensionAPI): void => {
       ]);
     },
   ]);
+
   pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
 };
 
 const registerCancellationProvider = (pi: ExtensionAPI): void => {
   provider.setResponses([fauxAssistantMessage('Active streaming fixture. '.repeat(1000))]);
+
   pi.on('message_update', () => {
     writeFileSync(join(process.cwd(), 'streaming'), 'active');
   });
+
   pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
 };
 
@@ -98,6 +105,7 @@ const registerDefaultProvider = (pi: ExtensionAPI): void => {
           message.role === 'toolResult' &&
           JSON.stringify(message.content).includes('BLOCKED by CC Safety Net'),
       );
+
       const edited = readFileSync(join(process.cwd(), 'source.txt'), 'utf8') === 'after\n';
 
       return fauxAssistantMessage([
@@ -109,6 +117,7 @@ const registerDefaultProvider = (pi: ExtensionAPI): void => {
       ]);
     },
   );
+
   provider.setResponses(responses);
   pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
 };

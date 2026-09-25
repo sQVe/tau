@@ -435,6 +435,7 @@ export const readTasks = (
 
     if ('name' in outcome) {
       unpublished.set(outcome.name, outcome.directory);
+
       continue;
     }
 

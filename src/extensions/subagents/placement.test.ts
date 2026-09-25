@@ -32,6 +32,7 @@ it.each([
     await Promise.all(
       Array.from({ length: 10 }, () => placement.place(input('background'), client)),
     );
+
     const counts = new Map<string, number>();
 
     for (const pane of panes.slice(1)) {
@@ -43,11 +44,13 @@ it.each([
 
     expect([...counts.values()]).toEqual(expected);
     expect(dimensions.get('parent')).toEqual({ width, height });
+
     expect(
       calls
         .filter((call) => ['split', 'create'].includes(call[1]!))
         .every((call) => call.includes('--no-focus')),
     ).toBe(true);
+
     expect(calls.some((call) => ['resize', 'apply', 'focus', 'move'].includes(call[1]!))).toBe(
       false,
     );
@@ -60,6 +63,7 @@ it.each([2, 4])('shares approximately equal foreground area with %s workers', as
   await Promise.all(
     Array.from({ length: workers }, () => placement.place(input('foreground'), client)),
   );
+
   const areas = [...dimensions.values()].map((bounds) => bounds.width * bounds.height);
   expect(panes.every((pane) => pane.tab_id === 'working')).toBe(true);
   expect(Math.max(...areas) / Math.min(...areas)).toBeLessThan(1.1);
@@ -112,9 +116,11 @@ it('keeps equal foreground shares after confirmed owned cleanup and replacement'
   const first = await placement.place(input('foreground'), client);
   await placement.place(input('foreground'), client);
   placement.release(first.terminalId);
+
   await placement.close(first, client, async () => {
     await client(['pane', 'close', first.paneId]);
   });
+
   await placement.place(input('foreground'), client);
 
   expect(panes.map((pane) => pane.tab_id)).toEqual(['working', 'working', 'working']);
@@ -132,6 +138,7 @@ it.each([
   const first = await placement.place(input('foreground'), client);
   await placement.place(input('foreground'), client);
   placement.release(first.terminalId);
+
   const close = async () => {
     await client(['pane', 'close', first.paneId]);
 
@@ -191,6 +198,7 @@ it('releases a confirmed terminal after abort even if its cosmetic snapshot comp
   const snapshot = Promise.withResolvers<undefined>();
   const snapshotReturned = Promise.withResolvers<undefined>();
   let created: { paneId: string; terminalId: string } | undefined;
+
   const delayed = async (argumentsList: string[]) => {
     if (created && argumentsList[1] === 'layout') {
       abort.abort();
@@ -200,6 +208,7 @@ it('releases a confirmed terminal after abort even if its cosmetic snapshot comp
 
     return client(argumentsList);
   };
+
   await expect(
     placement.place(
       {
@@ -212,6 +221,7 @@ it('releases a confirmed terminal after abort even if its cosmetic snapshot comp
       abort.signal,
     ),
   ).rejects.toThrow(/cancelled/);
+
   snapshot.resolve(undefined);
   await snapshotReturned.promise;
   dimensions.set('parent', { width: 100, height: 30 });
@@ -220,6 +230,7 @@ it('releases a confirmed terminal after abort even if its cosmetic snapshot comp
 
   expect(created).toBeDefined();
   expect(replacement.tabId).not.toBe('working');
+
   expect(calls.slice(previousCalls).some((call) => ['resize', 'split'].includes(call[1]!))).toBe(
     false,
   );
@@ -249,6 +260,7 @@ it.each(['resize', 'insert', 'move', 'close'] as const)(
   async (change) => {
     const { placement, client, input, panes, dimensions, calls } = fixture(340, 100);
     let layouts = 0;
+
     const changedClient = async (argumentsList: string[]) => {
       const response = await client(argumentsList);
 
@@ -271,6 +283,7 @@ it.each(['resize', 'insert', 'move', 'close'] as const)(
     await expect(placement.place(input('foreground'), changedClient)).rejects.toThrow(
       /changed|moved|closed/,
     );
+
     expect(calls.some((call) => ['split', 'create'].includes(call[1]!))).toBe(false);
   },
 );
@@ -278,12 +291,14 @@ it.each(['resize', 'insert', 'move', 'close'] as const)(
 it('does not reclaim a background tab after an unrelated pane joins it', async () => {
   const { placement, client, input, panes, dimensions } = fixture(340, 100);
   const first = await placement.place(input('background'), client);
+
   panes.push({
     pane_id: 'unrelated',
     terminal_id: 'unrelated',
     tab_id: first.tabId,
     workspace_id: first.workspaceId,
   });
+
   dimensions.set('unrelated', { width: 100, height: 50 });
   const second = await placement.place(input('background'), client);
 
@@ -296,18 +311,21 @@ it('does not rebalance manual sizes or touch an unrelated foreground pane', asyn
   const worker = await placement.place(input('foreground'), client);
   dimensions.set('parent', { width: 100, height: 100 });
   dimensions.set(worker.paneId, { width: 239, height: 100 });
+
   panes.push({
     pane_id: 'unrelated',
     terminal_id: 'unrelated',
     workspace_id: 'workspace',
     tab_id: 'working',
   });
+
   dimensions.set('unrelated', { width: 500, height: 500 });
   await placement.place(input('foreground'), client);
 
   expect(dimensions.get('parent')).toEqual({ width: 100, height: 100 });
   expect(dimensions.get('unrelated')).toEqual({ width: 500, height: 500 });
   expect(calls.some((call) => call[1] === 'resize')).toBe(false);
+
   expect(calls.findLast((call) => call[1] === 'split')).toEqual(
     expect.arrayContaining(['--pane', worker.paneId]),
   );
@@ -320,6 +338,7 @@ it.each(['resize', 'insert', 'move', 'close'] as const)(
     const first = await placement.place(input('foreground'), client);
     const previousCalls = calls.length;
     let checked = false;
+
     const changedClient = async (argumentsList: string[]) => {
       const response = await client(argumentsList);
 
@@ -347,6 +366,7 @@ it.each(['resize', 'insert', 'move', 'close'] as const)(
     await expect(placement.place(input('foreground'), changedClient)).rejects.toThrow(
       /changed|moved/,
     );
+
     expect(
       calls.slice(previousCalls).some((call) => ['split', 'resize', 'create'].includes(call[1]!)),
     ).toBe(false);
@@ -357,6 +377,7 @@ it('does not retry or restore ratios after uncertain resize delivery', async () 
   const { placement, client, input, calls } = fixture(340, 100);
   await placement.place(input('foreground'), client);
   const previousCalls = calls.length;
+
   const failedClient = async (argumentsList: string[]) => {
     const response = await client(argumentsList);
 
@@ -370,21 +391,26 @@ it('does not retry or restore ratios after uncertain resize delivery', async () 
   await expect(placement.place(input('foreground'), failedClient)).rejects.toThrow(
     'Resize delivery uncertain',
   );
+
   const mutations = calls
     .slice(previousCalls)
     .filter((call) => ['split', 'resize', 'create', 'apply'].includes(call[1]!));
+
   expect(mutations).toHaveLength(1);
   expect(mutations[0]![1]).toBe('resize');
 });
 
 it('cancels queued placement within its own budget without waiting for another launch', async () => {
   vi.useFakeTimers();
+
   onTestFinished(() => {
     vi.useRealTimers();
   });
+
   const { placement, client, input, calls } = fixture(340, 100);
   const entered = Promise.withResolvers<undefined>();
   const release = Promise.withResolvers<undefined>();
+
   const first = placement.place(input('background'), async (argumentsList) => {
     if (argumentsList[1] === 'current') {
       entered.resolve(undefined);
@@ -393,12 +419,15 @@ it('cancels queued placement within its own budget without waiting for another l
 
     return client(argumentsList);
   });
+
   await entered.promise;
   const abort = new AbortController();
   let rejected = false;
+
   const second = placement.place(input('background'), client, abort.signal).catch(() => {
     rejected = true;
   });
+
   abort.abort();
   await vi.runAllTimersAsync();
   const rejectedBeforeRelease = rejected;
@@ -416,6 +445,7 @@ it('does not split a released terminal or retry uncertain creation', async () =>
   const second = await placement.place(input('background'), client);
 
   expect(second.tabId).not.toBe(first.tabId);
+
   const failingClient = async (argumentsList: string[]) => {
     if (argumentsList[1] === 'split') {
       calls.push(argumentsList);
@@ -424,8 +454,10 @@ it('does not split a released terminal or retry uncertain creation', async () =>
 
     return client(argumentsList);
   };
+
   await expect(placement.place(input('background'), failingClient)).rejects.toThrow(
     'Delivery uncertain',
   );
+
   expect(calls.filter((call) => call[1] === 'split')).toHaveLength(1);
 });

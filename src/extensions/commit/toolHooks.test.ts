@@ -49,6 +49,7 @@ describe('hook outcomes', () => {
     });
 
     expect(result.details.groups[0]!.files).toEqual(['first', 'second']);
+
     expect(
       (await git(directory, ['show', '-s', '--format=%P', 'HEAD'])).trim().split(' '),
     ).toHaveLength(2);
@@ -56,6 +57,7 @@ describe('hook outcomes', () => {
 
   it('stops a later group consumed by a merge hook', async () => {
     const directory = await createPendingMerge();
+
     await installHook(
       directory,
       'pre-commit',
@@ -107,6 +109,7 @@ describe('hook outcomes', () => {
 
       await writeRepositoryFile(directory, 'requested', 'value');
       let concurrentHead = '';
+
       const tool = createCommitTool({
         exec: async (command, argumentsList, options) => {
           const result = await runCommand(command, argumentsList, options?.cwd ?? directory);
@@ -144,14 +147,17 @@ describe('hook outcomes', () => {
       expect(await git(directory, ['show', 'HEAD^:requested'])).toBe('value');
     },
   );
+
   it('preserves raw hook output when unstaging fails', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'value');
+
     await installHook(
       directory,
       'commit-msg',
       'printf "  subject-empty  \\n"; printf "  commitlint rejected  \\n" >&2; exit 1',
     );
+
     const tool = createCommitTool({
       exec: (command, argumentsList, options) =>
         argumentsList.includes('reset')
@@ -180,6 +186,7 @@ describe('hook outcomes', () => {
   it('unstages only requested paths after a hook edits and stages files then fails', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'value');
+
     await installHook(
       directory,
       'pre-commit',
@@ -202,6 +209,7 @@ describe('hook outcomes', () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'value');
     await writeRepositoryFile(directory, 'other', 'other');
+
     const tool = createCommitTool({
       exec: async (command, argumentsList, options) => {
         if (argumentsList[0] === 'commit') {
@@ -239,6 +247,7 @@ describe('hook outcomes', () => {
       const directory = await createTemporaryRepository();
       await writeRepositoryFile(directory, 'requested', 'value');
       let committed = false;
+
       const tool = createCommitTool({
         exec: async (command, argumentsList, options) => {
           if (committed && argumentsList[0] === failingCommand) {
@@ -266,14 +275,17 @@ describe('hook outcomes', () => {
           commitContext(directory),
         )
         .catch((error: unknown) => String(error));
+
       const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
 
       expect(failure).toContain('Git commit succeeded');
       expect(failure).toContain('report unavailable');
       expect(failure).toContain('Do not retry this group');
+
       expect(failure).toContain(
         failingCommand === 'rev-parse' || failingCommand === 'cat-file' ? head.slice(0, 7) : head,
       );
+
       expect(await git(directory, ['show', 'HEAD:requested'])).toBe('value');
       expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
     },
@@ -297,6 +309,7 @@ describe('hook outcomes', () => {
   it('reports files removed from the candidate and added by a hook', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'value');
+
     await installHook(
       directory,
       'pre-commit',
@@ -311,6 +324,7 @@ describe('hook outcomes', () => {
       files: ['extra'],
       hookChanges: { files: ['extra', 'requested'], message: false },
     });
+
     expect(await git(directory, ['show', 'HEAD:extra'])).toBe('generated');
     expect(await readFile(join(directory, 'requested'), 'utf8')).toBe('value');
     expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
@@ -322,6 +336,7 @@ describe('hook outcomes', () => {
     await writeRepositoryFile(directory, 'other', 'other');
     let commitHash = '';
     let concurrentHead = '';
+
     const tool = createCommitTool({
       exec: async (command, argumentsList, options) => {
         if (argumentsList[0] === 'diff-tree') {
@@ -353,6 +368,7 @@ describe('hook outcomes', () => {
       files: ['requested'],
       hookChanges: { files: [], message: false },
     });
+
     expect(await git(directory, ['rev-parse', 'HEAD'])).toBe(`${concurrentHead}\n`);
     expect(await git(directory, ['show', ':other'])).toBe('staged edit');
   });
@@ -362,6 +378,7 @@ describe('hook outcomes', () => {
     await writeRepositoryFile(directory, 'first', 'first');
     await writeRepositoryFile(directory, 'second', 'second');
     await writeRepositoryFile(directory, 'third', 'third');
+
     await installHook(
       directory,
       'pre-commit',
@@ -375,6 +392,7 @@ describe('hook outcomes', () => {
         { files: ['third'], subject: 'feat: third' },
       ],
     }).catch((error: unknown) => String(error));
+
     const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
 
     expect(failure).toContain('already committed by an earlier hook');
@@ -396,6 +414,7 @@ describe('hook outcomes', () => {
     await writeRepositoryFile(directory, 'first', 'first');
     await writeRepositoryFile(directory, 'second', 'second');
     await writeRepositoryFile(directory, 'third', 'third');
+
     await installHook(
       directory,
       'pre-commit',
@@ -409,6 +428,7 @@ describe('hook outcomes', () => {
         { files: ['third'], subject: 'feat: third' },
       ],
     }).catch((error: unknown) => String(error));
+
     const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
 
     expect(failure).toContain('Requested changes were already committed by an earlier hook');
@@ -429,6 +449,7 @@ describe('hook outcomes', () => {
       await writeRepositoryFile(directory, 'first', 'first');
       await writeRepositoryFile(directory, 'second', 'second');
       await writeRepositoryFile(directory, 'third', 'third');
+
       await installHook(
         directory,
         'pre-commit',
@@ -448,6 +469,7 @@ describe('hook outcomes', () => {
       expect(result.details.groups).toHaveLength(2);
       expect(await git(directory, ['show', 'HEAD:second'])).toBe('new');
       expect(await git(directory, ['show', 'HEAD^:second'])).toBe('second');
+
       expect(result.details.groups[1]!.files).toEqual(
         partialOverlap ? ['second', 'third'] : ['second'],
       );
@@ -455,6 +477,7 @@ describe('hook outcomes', () => {
       expect(await git(directory, ['ls-tree', '--name-only', 'HEAD', '--', 'third'])).toBe(
         partialOverlap ? 'third\n' : '',
       );
+
       expect(await readFile(join(directory, 'third'), 'utf8')).toBe('third');
 
       expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
@@ -466,6 +489,7 @@ describe('hook outcomes', () => {
     await writeRepositoryFile(directory, 'first', 'first');
     await writeRepositoryFile(directory, 'second', 'second');
     await installHook(directory, 'pre-commit', 'printf generated > extra; git add extra');
+
     await installHook(
       directory,
       'commit-msg',
@@ -478,6 +502,7 @@ describe('hook outcomes', () => {
         { files: ['second'], subject: 'feat: second' },
       ],
     }).catch((error: unknown) => String(error));
+
     const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
 
     expect(failure).toContain(`Group 1/2: ${head} feat: first`);

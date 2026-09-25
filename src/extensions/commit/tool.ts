@@ -137,6 +137,7 @@ const executeCommitTool = async (
 
   const groups: CommitSuccess['details'][] = [];
   const content: CommitSuccess['content'] = [];
+
   const finish = (items: CommitSuccess['content']): CommitToolResult => ({
     content: items,
     details: { groups },

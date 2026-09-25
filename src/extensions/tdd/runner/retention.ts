@@ -70,14 +70,18 @@ export const pruneDiagnostics = async (
   currentDirectory?: string,
 ): Promise<void> => {
   const entries = await readdir(root, { withFileTypes: true });
+
   const directories = entries
     .filter((entry) => entry.isDirectory() && runDirectoryName.test(entry.name))
     .map((entry) => join(root, entry.name))
     .filter((directory) => directory !== currentDirectory);
+
   const collected = await Promise.all(directories.map(readCandidate));
+
   const candidates = collected
     .filter((candidate) => candidate !== undefined)
     .toSorted((left, right) => right.timestamp - left.timestamp);
+
   const expiredDirectories: string[] = [];
   let retained = currentDirectory === undefined ? 0 : 1;
 

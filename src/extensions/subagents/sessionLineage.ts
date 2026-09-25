@@ -58,6 +58,7 @@ export const readNode = (file: string, tasks: Map<string, Task>) => {
     }
 
     unavailable = true;
+
     header = {
       type: 'session' as const,
       version: 3 as const,

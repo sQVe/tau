@@ -148,6 +148,7 @@ const reportIdentityChanged = (
 ): boolean => {
   const limit = BigInt(reportByteLimit);
   const oversized = length > reportByteLimit || after.size > limit || current.size > limit;
+
   const replaced =
     current.isSymbolicLink() || current.dev !== before.dev || current.ino !== before.ino;
 
@@ -345,6 +346,7 @@ export const submitGenericText = async (
 
   publish(directory, submissionName(id, 'intent'), { taskId: task.taskId, id, text });
   let state: SubmissionState = 'submitted';
+
   let detail =
     'Herdr submitted text. Task acceptance, acknowledgement, and model selection are not verified.';
 

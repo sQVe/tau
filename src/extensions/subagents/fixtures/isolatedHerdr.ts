@@ -15,6 +15,7 @@ export const isolatedHerdr = async (
   extraEnvironment: Record<string, string> = {},
 ) => {
   const root = mkdtempSync(join(tmpdir(), 'tau-herdr-worker-'));
+
   // Never inherit the active socket, caller IDs, or user configuration.
   const environment = {
     PATH: process.env.PATH,
@@ -26,21 +27,27 @@ export const isolatedHerdr = async (
     TERM: 'xterm-256color',
     ...extraEnvironment,
   };
+
   mkdirSync(environment.PI_CODING_AGENT_DIR);
+
   writeFileSync(
     environment.HERDR_CONFIG_PATH,
     `onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\n${configuration}`,
   );
+
   const server = spawn('herdr', ['--session', 'tau-worker-test', 'server'], {
     env: environment,
     stdio: 'ignore',
   });
+
   const exited = once(server, 'exit');
+
   onTestFinished(async () => {
     server.kill('SIGTERM');
     await exited;
     rmSync(root, { recursive: true, force: true });
   });
+
   const readyDeadline = performance.now() + 10_000;
 
   while (!existsSync(join(root, 'config', 'herdr', 'sessions', 'tau-worker-test', 'herdr.sock'))) {

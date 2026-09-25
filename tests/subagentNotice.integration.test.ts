@@ -24,6 +24,7 @@ const contextHasNotice = (messages: Message[]): boolean =>
 
 const waitForSettle = (session: AgentSession): Promise<undefined> => {
   const settled = Promise.withResolvers<undefined>();
+
   const unsubscribe = session.subscribe((event) => {
     if (event.type === 'agent_settled') {
       unsubscribe();
@@ -49,6 +50,7 @@ const createHarness = async (
 
   const fixtureExtension = (pi: ExtensionAPI) => {
     capturedPi = pi;
+
     pi.registerTool({
       name: 'subagent_status',
       label: 'subagent_status',
@@ -102,9 +104,11 @@ it('wakes an idle manager and includes the notice in its first provider request'
   onTestFinished,
 }) => {
   const harness = await createHarness(onTestFinished, { blockTool: false });
+
   harness.faux.setResponses([
     recordResponse(harness.contexts, () => fauxAssistantMessage('Done.')),
   ]);
+
   const settled = waitForSettle(harness.session);
 
   deliverWorkerNotice(harness.pi, fixtureNotice);
@@ -118,6 +122,7 @@ it('delivers an active manager notice at the steering point before the final ans
   onTestFinished,
 }) => {
   const harness = await createHarness(onTestFinished, { blockTool: true });
+
   harness.faux.setResponses([
     recordResponse(harness.contexts, () =>
       fauxAssistantMessage([fauxToolCall('subagent_status', {})]),
@@ -125,6 +130,7 @@ it('delivers an active manager notice at the steering point before the final ans
     recordResponse(harness.contexts, () => fauxAssistantMessage('Final answer.')),
     recordResponse(harness.contexts, () => fauxAssistantMessage('Notice handled.')),
   ]);
+
   const settled = waitForSettle(harness.session);
   const running = harness.session.prompt('Begin.');
 

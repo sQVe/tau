@@ -14,6 +14,7 @@ const asPiTask = (task: Task) => ({
   ...requireNativeTask(task),
   loadout: asPiLoadout(task.loadout),
 });
+
 export const readPiTask = (directory: string) => asPiTask(readTask(directory));
 
 export const fixtureGenericLoadout = (directory: string, kind = 'codex'): GenericLoadout => ({

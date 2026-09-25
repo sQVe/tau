@@ -83,8 +83,10 @@ const handleToolResult = async (
   const path = typeof event.input.path === 'string' ? event.input.path.replace(/^@/, '') : '';
   const target = await observationDirectory(resolve(context.cwd, path));
   const editablePath = event.toolName !== 'bash' && path.length > 0;
+
   const productionEdit =
     !event.isError && editablePath && classifyPath(relative(cwd, target)) === 'production';
+
   const hint = await observation.checkpoint(productionEdit);
 
   if (hint === undefined) {
@@ -124,6 +126,7 @@ const registerRunTestsTool = (pi: ExtensionAPI, tracker: ObservationTracker): vo
         });
 
         const { cwd, observation } = await observationFor(tracker, context.cwd);
+
         const { hint, ...details } = await observation.run(behavior, scope, signal, (selected) => {
           onUpdate?.({
             content: [
@@ -132,6 +135,7 @@ const registerRunTestsTool = (pi: ExtensionAPI, tracker: ObservationTracker): vo
             details: undefined,
           });
         });
+
         const content = [
           { type: 'text' as const, text: summarize(cwd, details) },
           { type: 'text' as const, text: runContext(behavior, details) },

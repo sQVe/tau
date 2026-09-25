@@ -129,6 +129,7 @@ export class EvidenceUnavailableError extends Error {
       `Worker ${input.taskId}: saved evidence is unavailable: ${input.evidenceError}. ${input.cleanupDetail ?? 'Cleanup unconfirmed.'} Check pane ${input.paneId ?? 'unknown'} manually.`,
       { cause: input.cause },
     );
+
     this.name = 'EvidenceUnavailableError';
     this.taskId = input.taskId;
     this.taskName = input.name;
@@ -179,11 +180,13 @@ export const taskRecordStatus = (directory: string, task: Task, controlled = fal
   const cleanup = event('cleanup');
   const settled = event('settled');
   const state = workerState(directory, task, controlled);
+
   const outcome = taskOutcome(
     [event('timeout'), event('cancelled'), failure],
     report,
     Boolean(event('settled') ?? cleanup),
   );
+
   const needsRecovery = state === 'cleanupUnconfirmed' || state === 'notOwned';
   const pendingQuestion = pendingQuestionStatus(directory, task.taskId);
   const recovery = needsRecovery ? taskRecovery(task, directory) : undefined;

@@ -27,6 +27,7 @@ const updateWidget = (state: SnippetsState, context: ExtensionContext): void => 
   }
 
   const active = state.snippets.filter((snippet) => state.enabled.has(snippet.id));
+
   const namesForPlacement = (placement: SnippetPlacement) =>
     active
       .filter((snippet) => snippet.placement === placement)
@@ -104,9 +105,11 @@ const installEditor = (pi: ExtensionAPI, state: SnippetsState, context: Extensio
     const editor =
       previous?.(terminalUI, theme, keybindings) ??
       new CustomEditor(terminalUI, theme, keybindings, { embedWorkingStatus: true });
+
     const earlier = Object.getOwnPropertyDescriptor(editor, 'onSubmit');
     const readEarlier: (() => typeof onSubmit) | undefined = earlier?.get?.bind(editor);
     let onSubmit = editor.onSubmit;
+
     const submit = (text: string) => {
       if (text.trim() === '' && state.enabled.size > 0) {
         pi.sendUserMessage('', { deliverAs: 'steer' });

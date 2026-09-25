@@ -31,8 +31,10 @@ export const workBudget = (handle: Handle, maximum = 30_000): number => {
 export const ensureReplyActive = (handle: Handle): void => {
   workBudget(handle);
   const { directory, task } = handle;
+
   const missingPiAcceptance =
     !isGenericLoadout(task.loadout) && !readEvent(directory, task.taskId, 'accepted');
+
   const ended =
     replyClosedEventKinds.some((kind) => readEvent(directory, task.taskId, kind)) ||
     readReport(directory, task.taskId) !== undefined;

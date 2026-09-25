@@ -92,6 +92,7 @@ export class WorkerPlacement {
     signal: AbortSignal,
   ): Promise<Result> {
     signal.throwIfAborted();
+
     // Serialize owned topology changes, not worker startup. Waiting retains each task's original budget.
     const pending = this.pending.then(() => {
       signal.throwIfAborted();
@@ -101,6 +102,7 @@ export class WorkerPlacement {
 
     this.pending = pending.catch(() => undefined);
     const cancelled = Promise.withResolvers<never>();
+
     const abort = () => {
       cancelled.reject(new Error('Worker placement cancelled or its budget expired.'));
     };
@@ -145,6 +147,7 @@ export class WorkerPlacement {
     signal: AbortSignal = new AbortController().signal,
   ): Promise<TerminalLocation> {
     let location: TerminalLocation | undefined;
+
     const onCreated = (created: TerminalLocation) => {
       location = created;
       // Deliver confirmed identity synchronously, before any cosmetic snapshot can yield or abort.
@@ -155,6 +158,7 @@ export class WorkerPlacement {
         signal.throwIfAborted();
       }
     };
+
     const checkedCall: TerminalCall = (argumentsList) => {
       signal.throwIfAborted();
 
@@ -200,6 +204,7 @@ export class WorkerPlacement {
     call: TerminalCall,
   ): Promise<void> {
     const current = await listTerminals(call);
+
     const present = current.some(
       (pane) =>
         pane.terminalId === target.terminalId &&
@@ -231,6 +236,7 @@ export class WorkerPlacement {
     let layout = requireObject(
       result(await call(['pane', 'layout', '--pane', first.paneId])).layout,
     );
+
     const plan = visibility === 'foreground' ? this.foreground.plan(layout, eligible) : undefined;
 
     if (plan) {
@@ -261,6 +267,7 @@ export class WorkerPlacement {
       '0.5',
       ...options,
     ]);
+
     const location = terminalLocation(result(created).pane);
 
     this.owned.set(location.terminalId, { tabId: location.tabId, visibility });
@@ -321,6 +328,7 @@ export class WorkerPlacement {
     const parentLayout = requireObject(
       result(await call(['pane', 'layout', '--pane', currentParent.paneId])).layout,
     );
+
     const area = rectangle(parentLayout.area);
 
     if (!isUseful(area)) {
@@ -353,6 +361,7 @@ export class WorkerPlacement {
       input.parentPane != null && input.parentPane !== ''
         ? ['--pane', input.parentPane]
         : ['--current'];
+
     const parent = terminalLocation(result(await call(['pane', 'current', ...paneTarget])).pane);
     const locations = await listTerminals(call);
 
@@ -367,6 +376,7 @@ export class WorkerPlacement {
     const backgroundTabs = locations
       .filter((pane) => this.ownsBackgroundTab(pane, parent))
       .map((pane) => pane.tabId);
+
     const candidateTabs = [...backgroundTabs];
 
     if (input.visibility === 'foreground') {
@@ -376,6 +386,7 @@ export class WorkerPlacement {
     const tabs = [...new Set(candidateTabs)];
     const environment = input.environment.flatMap((value) => ['--env', value]);
     const options = ['--cwd', input.cwd, '--no-focus', ...environment];
+
     const placed = await this.placeInTabs({
       tabs,
       parent,

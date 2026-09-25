@@ -113,9 +113,11 @@ const topologyAfterRemoval = (layout: Record<string, unknown>, removed?: string)
       const position = split.direction === 'right' ? 'x' : 'y';
       const dimension = split.direction === 'right' ? 'width' : 'height';
       const boundary = Number(bounds[position]) + Number(bounds[dimension]) * Number(split.ratio);
+
       const children = panes(layout).filter(
         (pane) => pane.pane_id !== removed && contains(bounds, requireObject(pane.rect)),
       );
+
       const first: string[] = [];
       const second: string[] = [];
 
@@ -166,6 +168,7 @@ export const matchesOwnClose = (
     .map((pane) => text(pane.pane_id))
     .filter((id) => id !== paneId)
     .toSorted();
+
   const actual = panes(after)
     .map((pane) => text(pane.pane_id))
     .toSorted();

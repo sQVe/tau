@@ -75,6 +75,7 @@ const updateLayout = (state: FixtureState, node: LayoutNode, bounds: Bounds): vo
   // Measured against herdr 0.9.1: the first child rounds, the second takes the rest, no divider cell.
   const firstLength = Math.round(bounds[axis] * node.ratio);
   updateLayout(state, node.first, { ...bounds, [axis]: firstLength });
+
   updateLayout(state, node.second, {
     ...bounds,
     [axis]: bounds[axis] - firstLength,
@@ -148,6 +149,7 @@ const handleResize = (state: FixtureState, value: (flag: string) => string | und
   const direction = value('--direction');
   const increasing = direction === 'right' || direction === 'down';
   const axis = direction === 'left' || direction === 'right' ? 'right' : 'down';
+
   const branch = branches(state.trees.get(tabId)!).findLast(
     (node) =>
       node.direction === axis && ids(increasing ? node.first : node.second).includes(target),
@@ -163,6 +165,7 @@ const handleResize = (state: FixtureState, value: (flag: string) => string | und
 
 const handleCreate = (state: FixtureState, value: (flag: string) => string | undefined) => {
   const source = state.panes.find((pane) => pane.pane_id === value('--pane'));
+
   const pane: FixturePane = {
     ...state.parent,
     pane_id: `worker-${state.created + 1}`,
@@ -171,6 +174,7 @@ const handleCreate = (state: FixtureState, value: (flag: string) => string | und
   };
 
   state.created += 1;
+
   const bounds = source
     ? { ...state.positions.get(source.pane_id)!, ...state.dimensions.get(source.pane_id)! }
     : { x: 0, y: 0, width: state.width, height: state.height };
@@ -249,6 +253,7 @@ export const placementFixture = (width: number, height: number) => {
     workspace_id: 'workspace',
     tab_id: 'working',
   };
+
   const state: FixtureState = {
     width,
     height,

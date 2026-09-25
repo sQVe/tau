@@ -24,15 +24,19 @@ it('rejects unformatted files in the real hook without rewriting them', async ({
   await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
   await git(['config', 'core.hooksPath', '.vite-hooks']);
   await mkdir(join(cwd, '.vite-hooks'));
+
   await writeFile(
     join(cwd, '.vite-hooks/pre-commit'),
     `#!/bin/sh\n${await readFile(join(repositoryRoot, '.vite-hooks/pre-commit'), 'utf8')}`,
   );
+
   await chmod(join(cwd, '.vite-hooks/pre-commit'), 0o755);
+
   await writeFile(
     join(cwd, 'vite.config.ts'),
     await readFile(join(repositoryRoot, 'vite.config.ts'), 'utf8'),
   );
+
   await writeFile(join(cwd, 'value.json'), '{"value":1}');
   await git(['add', '--', 'value.json']);
 
@@ -42,6 +46,7 @@ it('rejects unformatted files in the real hook without rewriting them', async ({
     'stderr',
     expect.stringMatching(/vp fmt --check.*\[FAILED\]/),
   );
+
   expect(await readFile(join(cwd, 'value.json'), 'utf8')).toBe('{"value":1}');
   expect((await git(['rev-list', '--all', '--count'])).stdout.trim()).toBe('0');
 });
@@ -56,22 +61,28 @@ it('runs commit hooks through Pi without approval or TDD notices', async ({ onTe
   await git(['config', 'commit.gpgsign', 'false']);
   await git(['config', 'core.hooksPath', '.vite-hooks']);
   await mkdir(join(cwd, '.vite-hooks'));
+
   await writeFile(
     join(cwd, '.vite-hooks/pre-commit'),
     `#!/bin/sh\n${await readFile(join(repositoryRoot, '.vite-hooks/pre-commit'), 'utf8')}`,
   );
+
   await chmod(join(cwd, '.vite-hooks/pre-commit'), 0o755);
+
   await writeFile(
     join(cwd, 'vite.config.ts'),
     "export default { staged: { '*.ts': 'vp fmt --check' } };",
   );
+
   await mkdir(join(cwd, 'src'));
   await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;\n');
 
   const custom = vi.fn<() => never>(() => {
     throw new Error('Unexpected approval UI');
   });
+
   await session.bindExtensions({ uiContext: { custom } as unknown as ExtensionUIContext });
+
   const committed = await call('commit', {
     groups: [{ files: ['src/value.ts', 'package.json'], subject: 'feat: add formatted fixture' }],
   });

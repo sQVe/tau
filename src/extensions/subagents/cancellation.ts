@@ -49,6 +49,7 @@ export const runClient = (
 
   return new Promise((resolve, reject) => {
     signal?.throwIfAborted();
+
     const child = execFile(
       executable,
       argumentsList,
@@ -68,6 +69,7 @@ export const runClient = (
         }
       },
     );
+
     const stop = (error: Error) => {
       reject(error);
       child.kill('SIGKILL');
@@ -77,9 +79,11 @@ export const runClient = (
       // eslint-disable-next-line tau/helper-before-use -- stop and abort need each other for listener cleanup.
       signal?.removeEventListener('abort', abort);
     };
+
     const abort = () => {
       stop(new Error('Client call cancelled; delivery and cleanup are unconfirmed.'));
     };
+
     const timer = setTimeout(() => {
       stop(new Error('Client attempt budget expired; delivery and cleanup are unconfirmed.'));
     }, budget);
@@ -355,6 +359,7 @@ const verifyProcessStart = async (run: CancellationRun): Promise<CleanupResult |
     Math.max(1, Math.ceil(run.expires - performance.now())),
     { signal: run.signal },
   );
+
   const startedAt = processStart.trim();
 
   if (startedAt !== run.owned.startedAt) {
@@ -403,6 +408,7 @@ const verifyWorkerState = async (run: CancellationRun): Promise<CleanupResult | 
 
 const interruptWorker = async (run: CancellationRun): Promise<CleanupResult | undefined> => {
   await refreshTerminal(run);
+
   const refusal =
     (await verifyAgentSession(run)) ??
     (await verifyProcessStart(run)) ??
@@ -428,9 +434,11 @@ const createCancellationRun = (
   const expires = performance.now() + budget;
   const controller = new AbortController();
   const signal = AbortSignal.any([parent, controller.signal]);
+
   const timer = setTimeout(() => {
     controller.abort();
   }, budget);
+
   const call = (argumentsList: string[]) => {
     signal.throwIfAborted();
     const remaining = Math.ceil(expires - performance.now());
@@ -439,6 +447,7 @@ const createCancellationRun = (
 
     return client(argumentsList, remaining, signal);
   };
+
   const manual = `Check terminal ${owned.terminalId} (last pane ${owned.paneId}) and worker ${owned.processId} (${owned.token ?? owned.agentKind}) for manual cleanup.`;
 
   return { owned, call, signal, expires, manual, shutdown: { inputAttempted: false }, timer };

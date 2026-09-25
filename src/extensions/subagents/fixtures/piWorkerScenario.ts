@@ -40,11 +40,14 @@ export const piWorkerTimeout = 40_000;
 export const runPiWorkerScenario = async (scenario: PiWorkerScenario) => {
   const { root, environment, client: isolatedClient } = await isolatedHerdr();
   const completes = ['completion', 'question completion', 'follow-up'].includes(scenario);
+
   writeFileSync(
     join(root, 'parent.jsonl'),
     JSON.stringify({ type: 'session', version: 3, id: 'parent', cwd: root }) + '\n',
   );
+
   const safetyPackage = dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json')));
+
   // The worker accepts Safety Net only from its real file, so the package loads by path.
   writeFileSync(
     join(environment.PI_CODING_AGENT_DIR, 'settings.json'),
@@ -54,11 +57,13 @@ export const runPiWorkerScenario = async (scenario: PiWorkerScenario) => {
       packages: [safetyPackage],
     }),
   );
+
   writeFileSync(join(root, 'source.txt'), 'before\n');
   mkdirSync(join(root, 'delete-fixture', '.git'), { recursive: true });
   writeFileSync(join(root, 'delete-fixture', '.git', 'keep'), 'preserve');
   const exitSignal = join(root, 'exit-before-ready');
   const earlyExitExtension = join(root, 'early-exit.js');
+
   writeFileSync(
     earlyExitExtension,
     `import { existsSync } from 'node:fs';
@@ -70,10 +75,12 @@ export default function (pi) {
   });
 }`,
   );
+
   const observations: string[] = [];
   const deliveryEntered = Promise.withResolvers<undefined>();
   const releaseDelivery = Promise.withResolvers<undefined>();
   let promptCount = 0;
+
   const client = async (argumentsList: string[], budget = 5000, signal?: AbortSignal) => {
     if (argumentsList[1] === 'prompt') {
       promptCount += 1;
@@ -91,10 +98,13 @@ export default function (pi) {
 
     return response;
   };
+
   await runClient('herdr', ['integration', 'install', 'pi'], 5000, { environment });
+
   const workspace: unknown = JSON.parse(
     await client(['workspace', 'create', '--cwd', root, '--no-focus']),
   );
+
   const workspaceText = JSON.stringify(workspace);
   const paneId = workspaceText.match(/"root_pane":\{[^}]*"pane_id":"([^"]+)"/)?.[1];
 
@@ -112,17 +122,20 @@ export default function (pi) {
   writeFileSync(secondSafety, `export { default } from ${JSON.stringify(safety)};`);
   const provider = fileURLToPath(new URL('./controlledProvider.ts', import.meta.url));
   const integration = join(environment.PI_CODING_AGENT_DIR, 'extensions', 'herdr-agent-state.ts');
+
   writeFileSync(
     join(environment.PI_CODING_AGENT_DIR, 'auth.json'),
     JSON.stringify({
       'tau-worker-fixture': { type: 'api_key', key: 'fixture-key-not-a-secret' },
     }),
   );
+
   const runtime = await ModelRuntime.create({
     authPath: join(environment.PI_CODING_AGENT_DIR, 'auth.json'),
     modelsPath: null,
     refreshOnCreate: false,
   });
+
   const extensions = [provider, safety, secondSafety, integration];
 
   if (scenario === 'early exit') {
@@ -145,6 +158,7 @@ export default function (pi) {
     noExtensions: true,
     additionalExtensionPaths: extensions,
   });
+
   await parentLoader.reload();
 
   for (const registration of parentLoader.getExtensions().runtime
@@ -154,14 +168,18 @@ export default function (pi) {
 
   await runtime.getAvailable();
   vi.stubEnv('PI_CODING_AGENT_DIR', environment.PI_CODING_AGENT_DIR);
+
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });
+
   mkdirSync(join(root, '.pi', 'agents'), { recursive: true });
+
   writeFileSync(
     join(root, '.pi', 'agents', 'worker.md'),
     '---\nname: worker\nrole: editing\nthinking: off\n---\nComplete only the fixture task.\n',
   );
+
   const loadout = resolveLoadout(
     {
       profile: 'worker',
@@ -175,8 +193,10 @@ export default function (pi) {
       isProjectTrusted: () => true,
     },
   );
+
   let done = Promise.withResolvers<string>();
   const questionAsked = Promise.withResolvers<undefined>();
+
   const notify = (notice: { question: boolean; content: unknown }) => {
     if (notice.question) {
       questionAsked.resolve(undefined);
@@ -184,10 +204,13 @@ export default function (pi) {
       done.resolve(JSON.stringify(notice.content));
     }
   };
+
   let controller = new WorkerController(join(root, 'records'), client, notify);
+
   onTestFinished(() => {
     controller.close();
   });
+
   let taskText =
     scenario === 'completion' || scenario === 'follow-up'
       ? 'Edit and check only the fixture.'
@@ -198,6 +221,7 @@ export default function (pi) {
   }
 
   const launchedAt = performance.now();
+
   const launched = await controller.launch({
     task: taskText,
     timeout: scenario === 'early exit' ? 60_000 : 10_000,
@@ -206,6 +230,7 @@ export default function (pi) {
     parentPane: paneId,
     loadout,
   });
+
   const failure = scenario === 'early exit' ? /exited before readiness/ : /^$/;
   expect(performance.now() - launchedAt).toBeLessThan(10_000);
   expect(launched.failure ?? '').toMatch(failure);
@@ -227,11 +252,13 @@ export default function (pi) {
       const owned = requireObject(
         JSON.parse(readFileSync(join(launched.directory, 'owned.json'), 'utf8')),
       );
+
       const moved = requireObject(
         result(
           await client(['pane', 'move', String(owned.paneId), '--new-workspace', '--no-focus']),
         ).move_result,
       );
+
       const location = terminalLocation(moved.pane);
 
       movement = {
@@ -266,11 +293,13 @@ export default function (pi) {
     }
 
     askedQuestionId = question.questionId;
+
     questionObservations.push(
       waiting.state,
       readFileSync(join(root, 'source.txt'), 'utf8'),
       waiting.deadline,
     );
+
     const answer = {
       questionId: question.questionId,
       replyId: 'reply-one',
@@ -293,6 +322,7 @@ export default function (pi) {
         repeated.workerAcknowledged,
         promptCount,
       );
+
       releaseDelivery.resolve(undefined);
       await delivering;
     } else if (scenario === 'question cancellation') {
@@ -303,24 +333,30 @@ export default function (pi) {
   expect(movement).toEqual(
     scenario === 'moved cancellation' ? { sameTerminal: true, newPane: true } : undefined,
   );
+
   await done.promise;
   const status = controller.status(launched.taskId, 'parent');
 
   expect(questionObservations).toEqual(
     scenario.startsWith('question') ? ['awaitingReply', 'before\n', launched.deadline] : [],
   );
+
   expect(replyObservations).toEqual(
     scenario === 'question completion' ? ['reply-one', undefined, false, 1] : [],
   );
+
   const acknowledgement =
     askedQuestionId != null
       ? readAcknowledgement(launched.directory, launched.taskId, askedQuestionId)
       : undefined;
+
   expect(acknowledgement?.replyId).toBe(
     scenario === 'question completion' ? 'reply-one' : undefined,
   );
+
   expect(readTask(launched.directory)).toEqual(savedTask);
   expect(status.failure ?? '').toMatch(failure);
+
   expect({ status, observations }).toMatchObject({
     status: {
       outcome: {
@@ -338,10 +374,13 @@ export default function (pi) {
       state: 'stopped',
     },
   });
+
   expect(status.cleanup).toContain('pane closed');
+
   expect(status.report?.evidence ?? []).toEqual(
     completes ? ['edit checked', 'Safety Net block: true'] : [],
   );
+
   expect(readFileSync(join(root, 'source.txt'), 'utf8')).toBe(completes ? 'after\n' : 'before\n');
   expect(readFileSync(join(root, 'delete-fixture', '.git', 'keep'), 'utf8')).toBe('preserve');
   const followUpObservations: unknown[] = [];
@@ -352,13 +391,16 @@ export default function (pi) {
     const transcript = readFileSync(savedTask.nativeSessionFile, 'utf8');
     const profilePath = join(root, '.pi', 'agents', 'worker.md');
     writeFileSync(profilePath, 'Changed invalid profile.');
+
     const replayed = validateSavedLoadout(savedTask.loadout, {
       cwd: root,
       modelRegistry: new ModelRegistry(runtime),
       isProjectTrusted: () => true,
     });
+
     rmSync(profilePath);
     done = Promise.withResolvers<string>();
+
     const next = await controller.followUp(
       {
         sourceTaskId: savedTask.taskId,
@@ -371,9 +413,11 @@ export default function (pi) {
       },
       { cwd: root, modelRegistry: new ModelRegistry(runtime), isProjectTrusted: () => true },
     );
+
     await done.promise;
     const final = controller.status(next.taskId, 'parent');
     const nextTask = readTask(next.directory);
+
     const history = await searchHistory(join(root, 'records'), {
       file: savedTask.parentSession,
       id: 'parent',

@@ -28,6 +28,7 @@ import type { InspectionBudget } from './shellIdentity.js';
 import type { Handle } from './types.js';
 
 const agentSessionSchema = Type.Object({ value: Type.String({ minLength: 1 }) });
+
 const missingPiIntegrationMessage =
   "herdr reported no Pi agent session. herdr's Pi integration must be loaded in Pi; install it with `herdr integration install pi`.";
 
@@ -189,10 +190,12 @@ const checkGenericAgent = async (
   cleanup?: InspectionBudget,
 ) => {
   const expectedShell = handle.shell;
+
   const wrongAgent =
     agent.pane_id !== expected.paneId ||
     agent.agent !== expected.kind ||
     expected.shellPid === expected.processId;
+
   const wrongShell = expected.shellPid !== expectedShell?.processId;
 
   if (wrongAgent || wrongShell) {
@@ -206,6 +209,7 @@ const checkGenericAgent = async (
   }
 
   const reference = opaqueAgentReference(agent);
+
   const savedReference =
     handle.owned?.nativeReference ?? readGenericReference(handle.directory, handle.task.taskId);
 
@@ -234,6 +238,7 @@ export const shellUnchanged = async (
     const location = await resolveTerminal(text(handle.terminalId), call);
 
     handle.paneId = location.paneId;
+
     const information = requireObject(
       result(await call(['pane', 'process-info', '--pane', location.paneId])).process_info,
     );
@@ -365,6 +370,7 @@ export const inspectWorker = async (
   const information = requireObject(
     result(await call(['pane', 'process-info', '--pane', paneId])).process_info,
   );
+
   const previous = handle.owned ? { ...handle.owned, paneId } : undefined;
   // Ownership is unestablished until a started process reports the expected session to herdr.
   const starting = Boolean(generic) && !previous;
@@ -376,6 +382,7 @@ export const inspectWorker = async (
   const agent = await readAgent(call, paneId, starting);
   const processId = integer(information.foreground_process_group_id);
   const shellPid = integer(information.shell_pid);
+
   const nativeReference = await verifyWorkerAgent(
     handle,
     agent,
@@ -386,7 +393,9 @@ export const inspectWorker = async (
     },
     cleanup,
   );
+
   const startedAt = await readProcessStart(handle, processId, cleanup);
+
   const owned = buildOwnedWorker(handle, previous, generic, {
     paneId,
     terminalId: location.terminalId,

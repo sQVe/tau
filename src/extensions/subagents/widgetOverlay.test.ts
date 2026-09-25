@@ -11,10 +11,12 @@ import type { WorkerWidgetRow } from './widget.js';
 import { WorkerHistoryView, openWorkerHistory } from './widgetOverlay.js';
 
 const noOperation = (): void => undefined;
+
 const theme = {
   fg: (_color: string, text: string) => text,
   bold: (text: string) => text,
 };
+
 const keybindings = {
   matches: (data: string, action: string): boolean => {
     if (action === 'tui.select.cancel') {
@@ -38,6 +40,7 @@ const keybindings = {
 };
 
 const now = Date.now();
+
 const rows: WorkerWidgetRow[] = Array.from({ length: 30 }, (_value, index) => {
   let state: WorkerWidgetRow['state'] = 'stopped';
 
@@ -128,6 +131,7 @@ it('filters history by the displayed short task label', () => {
     { ...rows[10]!, label: 'Rename pane titles', task: 'Implement the complete outcome.' },
     { ...rows[11]!, label: 'Fix status counts', task: 'Implement the complete outcome.' },
   ];
+
   const view = new WorkerHistoryView(
     { terminal: { rows: 24 }, requestRender: noOperation } as never,
     theme as never,
@@ -155,6 +159,7 @@ it('marks cleanup-unconfirmed activity times as clock values', () => {
     name: 'worker-clock',
     activityAt: now,
   };
+
   const view = new WorkerHistoryView(
     { terminal: { rows: 24 }, requestRender: noOperation } as never,
     theme as never,
@@ -162,6 +167,7 @@ it('marks cleanup-unconfirmed activity times as clock values', () => {
     [cleanupRow],
     noOperation,
   );
+
   const rowLine = view.render(72).find((line) => line.includes('worker-clock')) ?? '';
 
   expect(rowLine).toMatch(/@\d{2}:\d{2}/u);
@@ -177,6 +183,7 @@ it('keeps approved-width detail timing on one aligned value row', () => {
     questionId: undefined,
     issue: undefined,
   };
+
   const view = new WorkerHistoryView(
     { terminal: { rows: 24 }, requestRender: noOperation } as never,
     theme as never,
@@ -224,6 +231,7 @@ it('right-aligns live countdowns against the history border', () => {
     [rows[10]!],
     noOperation,
   );
+
   const liveRow = liveView.render(72).find((line) => line.includes('worker-10')) ?? '';
 
   expect(stripTerminalSequences(liveRow)).toMatch(/21m left │$/u);
@@ -279,6 +287,7 @@ it('keeps details readable, aligned, sanitized, and within narrow and tiny width
     model: 'Pi-selected openai-codex/gpt-5.6-luna · requested openai-codex/gpt-5.6-luna',
     detailPath: `/records/${'very-long-path-'.repeat(8)}task.json`,
   };
+
   const view = new WorkerHistoryView(
     { terminal: { rows: 24 }, requestRender: noOperation } as never,
     theme as never,
@@ -298,9 +307,11 @@ it('keeps details readable, aligned, sanitized, and within narrow and tiny width
   }
 
   const lines = renderedPages.flat();
+
   const text = stripTerminalSequences(lines.join('\n'))
     .replace(/[│╭╮╰─]/gu, ' ')
     .replace(/\s+/gu, ' ');
+
   const stateValue = lines.find((line) => line.includes('State')) ?? '';
   const safetyValue = lines.find((line) => line.includes('Safety')) ?? '';
 
@@ -344,10 +355,12 @@ it('keeps the selected task when fresh rows resort after a worker stops', () => 
       ? { ...row, state: 'stopped' as const, outcome: 'failure', stoppedAt: now }
       : row,
   );
+
   const changedRows = [
     ...refreshedRows,
     { ...rows[0]!, taskId: 'task-new-attention', name: 'worker-new', question: 'Choose a tool.' },
   ];
+
   const mutableView = view as unknown as { setRows(nextRows: WorkerWidgetRow[]): void };
 
   mutableView.setRows(changedRows);
@@ -366,6 +379,7 @@ it('shows the model column when width allows, hides it when narrow, and keeps fu
     [rows[10]!],
     noOperation,
   );
+
   const wide = view.render(160).join('\n');
 
   expect(wide).toContain('openai-codex/gpt-5.6-luna');
@@ -386,6 +400,7 @@ it('groups unresolved records under their exact state instead of a generic label
     [rows[0]!, rows[25]!],
     noOperation,
   );
+
   const rendered = view.render(120).join('\n');
 
   expect(rendered).toContain('CLEANUP UNCONFIRMED');
@@ -395,6 +410,7 @@ it('groups unresolved records under their exact state instead of a generic label
 
 it('keeps interleaved attention groups contiguous and every worker reachable', () => {
   const base = rows[0]!;
+
   const interleaved: WorkerWidgetRow[] = [
     { ...base, name: 'worker-c1', taskId: 't-c1', state: 'cleanupUnconfirmed', createdAt: 50 },
     { ...base, name: 'worker-u1', taskId: 't-u1', state: 'unknown', createdAt: 40 },
@@ -417,6 +433,7 @@ it('keeps interleaved attention groups contiguous and every worker reachable', (
       question: 'Another decision',
     },
   ];
+
   const view = new WorkerHistoryView(
     { terminal: { rows: 40 }, requestRender: noOperation } as never,
     theme as never,
@@ -424,8 +441,10 @@ it('keeps interleaved attention groups contiguous and every worker reachable', (
     interleaved,
     noOperation,
   );
+
   const lines = view.render(120);
   const text = lines.join('\n');
+
   const headingCount = (heading: string): number =>
     lines.filter((line) => {
       const plain = stripTerminalSequences(line);
@@ -460,6 +479,7 @@ it('shows the reported phase in the list and its update time in the selected det
     phaseDescription: 'Running focused tests',
     phaseDescriptionAt: now - 30_000,
   };
+
   const view = new WorkerHistoryView(
     { terminal: { rows: 24 }, requestRender: noOperation } as never,
     theme as never,
@@ -483,15 +503,18 @@ it('shows grouped bounded history and opens details through real TUI input', () 
   const tui = new TuiMainScreen(terminal);
   let closed = false;
   let selectedName: string | undefined;
+
   const view = new WorkerHistoryView(tui, theme as never, keybindings as never, rows, (name) => {
     closed = true;
     selectedName = name;
   });
+
   const editor = {
     render: () => ['Editor'],
     invalidate: () => undefined,
     handleInput: () => undefined,
   };
+
   tui.addChild(new VStack([view, editor]));
   tui.setFocus(view);
   tui.start();
@@ -554,6 +577,7 @@ it('keeps escape sequences out of a task-derived history label', () => {
     label: undefined,
     task: `# ${'a'.repeat(10)}\u001b[2Jb\u0007c\td\r e\u0000f${'b'.repeat(80)}`,
   };
+
   const view = new WorkerHistoryView(
     { terminal: { rows: 24 }, requestRender: noOperation } as never,
     theme as never,
@@ -561,6 +585,7 @@ it('keeps escape sequences out of a task-derived history label', () => {
     [hostileRow],
     noOperation,
   );
+
   const rendered = view.render(200).join('\n');
 
   expect(rendered).not.toContain('\u001b[2J');
@@ -576,6 +601,7 @@ it('pastes the selected worker name after the custom UI closes so restored edito
   const editorText = { value: 'existing draft' };
   const pasted: string[] = [];
   const fakeTui = { terminal: { rows: 24 }, requestRender: noOperation };
+
   const context = {
     ui: {
       custom: async (
@@ -587,6 +613,7 @@ it('pastes the selected worker name after the custom UI closes so restored edito
         ) => WorkerHistoryView,
       ): Promise<string | undefined> => {
         let result: string | undefined;
+
         const component = factory(fakeTui, theme, keybindings, (value) => {
           // Pi restores the saved editor text before the custom promise resolves.
           editorText.value = 'existing draft';
@@ -615,6 +642,7 @@ it('leaves editor text untouched when the history closes without a selection', a
   const editorText = { value: 'existing draft' };
   const pasted: string[] = [];
   const fakeTui = { terminal: { rows: 24 }, requestRender: noOperation };
+
   const context = {
     ui: {
       custom: async (
@@ -659,6 +687,7 @@ it('shows key facts first and reveals the full prompt with paragraph breaks on d
     label: 'Fix status counts',
     task: 'First paragraph line one.\nline two.\n\nSecond paragraph after a blank line.',
   };
+
   const view = createView([promptRow]);
 
   view.handleInput('\r');
@@ -680,6 +709,7 @@ it('scrolls the details half a page with ctrl+d and ctrl+u and clamps at the top
   const longPrompt = Array.from({ length: 60 }, (_value, index) => `paragraph line ${index}`).join(
     '\n',
   );
+
   const view = createView([{ ...rows[10]!, task: longPrompt }]);
 
   view.handleInput('\r');
@@ -719,11 +749,13 @@ it('drives detail scroll through the real TUI input path', () => {
   const inputHandler: { current?: (input: string) => void } = {};
   const terminal = createTerminal(inputHandler);
   const tui = new TuiMainScreen(terminal);
+
   const promptRow: WorkerWidgetRow = {
     ...rows[10]!,
     label: 'Fix status counts',
     task: Array.from({ length: 40 }, (_value, index) => `prompt line ${index}`).join('\n'),
   };
+
   const view = new WorkerHistoryView(
     tui,
     theme as never,
@@ -731,11 +763,13 @@ it('drives detail scroll through the real TUI input path', () => {
     [promptRow],
     noOperation,
   );
+
   const editor = {
     render: () => ['Editor'],
     invalidate: () => undefined,
     handleInput: () => undefined,
   };
+
   tui.addChild(new VStack([view, editor]));
   tui.setFocus(view);
   tui.start();
@@ -764,6 +798,7 @@ it('drives detail scroll through the real TUI input path', () => {
 
 it('clamps ctrl+d and ctrl+u at list ends without losing the selection', () => {
   const view = createView(rows.slice(0, 3));
+
   const selectedName = (): string | undefined =>
     view
       .render(72)
@@ -800,6 +835,7 @@ it('keeps the selected details scroll across an unchanged-selection refresh', ()
     ...rows[10]!,
     task: Array.from({ length: 40 }, (_value, index) => `prompt line ${index}`).join('\n'),
   };
+
   const view = createView([scrollRow]);
 
   view.handleInput('\r');
@@ -827,9 +863,11 @@ it('labels a stopped worker future deadline as a clock fact instead of a countdo
     cleanupConfirmed: true,
     deadline: now + 25 * 60_000 + 30_000,
   };
+
   const view = createView([stoppedRow]);
 
   view.handleInput('\r');
+
   const timeLine = stripTerminalSequences(
     view.render(72).find((line) => line.includes('Time')) ?? '',
   );
@@ -848,6 +886,7 @@ it('does not show a live countdown for unconfirmed or untracked worker deadlines
       activityAt: now - 20_000,
       deadline: now + 25 * 60_000 + 30_000,
     };
+
     const view = createView([unresolvedRow]);
 
     view.handleInput('\r');
@@ -864,9 +903,11 @@ it('keeps the deadline countdown for a genuinely live worker', () => {
     state: 'running',
     deadline: now + 25 * 60_000 + 30_000,
   };
+
   const view = createView([liveRow]);
 
   view.handleInput('\r');
+
   const timeLine = stripTerminalSequences(
     view.render(72).find((line) => line.includes('Time')) ?? '',
   );
@@ -876,6 +917,7 @@ it('keeps the deadline countdown for a genuinely live worker', () => {
 
 it('jumps list selection with Home, End, and encoded Shift+G', () => {
   const view = createView(rows);
+
   const selectedName = (): string | undefined =>
     view
       .render(72)
@@ -901,6 +943,7 @@ it('jumps detail scroll with Home, End, and encoded Shift+G', () => {
     ...rows[10]!,
     task: Array.from({ length: 40 }, (_value, index) => `prompt line ${index}`).join('\n'),
   };
+
   const view = createView([scrollRow]);
 
   view.handleInput('\r');

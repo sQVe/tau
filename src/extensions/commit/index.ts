@@ -16,6 +16,7 @@ const buildCommitSkillMessage = (argumentsText: string) => {
 export default function commitExtension(pi: ExtensionAPI) {
   pi.on('tool_call', guardToolCall);
   pi.registerTool(createCommitTool(pi));
+
   pi.registerCommand('commit', {
     description: 'Run the commit skill.',
     handler: (argumentsText, context) => {

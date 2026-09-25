@@ -12,6 +12,7 @@ vi.mock('node:path', async (importOriginal) => {
 
   return { ...path, ...path.win32 };
 });
+
 vi.mock('./runner/vitest.js', async (importOriginal) => ({
   ...(await importOriginal<typeof runnerModule>()),
   runTests: vi.fn<typeof runTests>(),
@@ -34,6 +35,7 @@ it('accepts native Windows separators in literal relative test paths', async () 
 it('retains literal path and worktree restrictions with Windows path rules', async () => {
   vi.mocked(runTests).mockReset().mockResolvedValue({ kind: 'pass', tests: [] });
   const observation = createTestObservation('C:\\work');
+
   const invalidPaths = [
     '..\\value.test.ts',
     'tests\\..\\..\\value.test.ts',

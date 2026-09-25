@@ -183,12 +183,15 @@ const launchWorker = async (
   const startedAt = { wall: Date.now(), monotonic: performance.now() };
   const timeout = parameters.timeoutSeconds * 1000;
   const workBudget = timeout - Math.min(5000, Math.floor(timeout / 4));
+
   const resolutionSignal = AbortSignal.any([
     signal ?? new AbortController().signal,
     AbortSignal.timeout(workBudget),
   ]);
+
   const parentPane = process.env.HERDR_PANE_ID;
   const session = context.sessionManager.getSessionFile();
+
   const parentSession = requireHerdrParent(
     parentPane,
     session,
@@ -234,6 +237,7 @@ const followUpWorker = async (
 ) => {
   const parentPane = process.env.HERDR_PANE_ID;
   const session = context.sessionManager.getSessionFile();
+
   const parentSession = requireHerdrParent(
     parentPane,
     session,
@@ -306,18 +310,22 @@ const readWorkerStatus = async (
 
   try {
     const current = active.status(parameters.taskId, parentSessionId);
+
     const receipt =
       parameters.questionId != null && parameters.questionId !== ''
         ? active.questionReceipt(parameters.taskId, parentSessionId, parameters.questionId)
         : undefined;
+
     const submissionReceipt =
       parameters.submissionId != null && parameters.submissionId !== ''
         ? active.submissionReceipt(parameters.taskId, parentSessionId, parameters.submissionId)
         : undefined;
+
     const nativeOutput =
       parameters.readOutput === true
         ? await active.nativeOutput(parameters.taskId, parentSessionId)
         : undefined;
+
     const status = { ...current, questionReceipt: receipt, submissionReceipt, nativeOutput };
 
     return {
@@ -340,6 +348,7 @@ const replyToWorker = async (
 
   const questionId =
     parameters.questionId === undefined ? {} : { questionId: parameters.questionId };
+
   const content = modelReply(parameters.taskId, { ...receipt, ...questionId });
 
   return {
@@ -565,6 +574,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   let historyView: WorkerHistoryView | undefined;
   let historyOpen = false;
   let shuttingDown = false;
+
   const runtime: SubagentRuntime = {
     pi,
     getController: () => {
@@ -576,6 +586,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   };
 
   registerSubagentTools(runtime);
+
   const refreshWidget = (context: ExtensionContext, currentRows?: WorkerWidgetRow[]): void => {
     if (shuttingDown || !context.hasUI || context.mode !== 'tui') {
       return;
@@ -628,6 +639,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
         const rows = runtime.getController().widgetRows(context.sessionManager.getSessionId());
 
         refreshWidget(context, rows);
+
         await openWorkerHistory(context, rows, (view) => {
           historyView = view;
         });
@@ -653,11 +665,14 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       .then(() => {
         refreshWidget(context);
       });
+
     refreshWidget(context);
   });
+
   pi.on('tool_result', (_event, context) => {
     refreshWidget(context);
   });
+
   pi.on('tool_call', (event, context) => {
     const command = event.toolName === 'bash' ? event.input.command : undefined;
 
@@ -679,6 +694,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       ].join(' '),
     };
   });
+
   pi.registerMessageRenderer('tau-worker', (message, options, theme) =>
     renderNotice(message.details, options.expanded, theme),
   );

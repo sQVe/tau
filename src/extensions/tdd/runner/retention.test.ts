@@ -20,11 +20,13 @@ it('retains recent completed runs while pruning old and excess diagnostics witho
 
     await mkdir(directory);
     await writeFile(join(directory, 'completed'), '');
+
     await utimes(
       join(directory, 'completed'),
       new Date(now - index * 1000),
       new Date(now - index * 1000),
     );
+
     completed.push(name);
   }
 
@@ -54,6 +56,7 @@ it('retains recent completed runs while pruning old and excess diagnostics witho
       'other-directory',
     ].toSorted(),
   );
+
   expect(await readdir(unrelated)).toEqual(['keep']);
 
   const current = join(root, 'run-curren');
@@ -78,16 +81,19 @@ it('rejects a symlink at the diagnostic storage root', async ({ onTestFinished }
   const agentDirectory = await mkdtemp(join(tmpdir(), 'tau-retention-root-'));
   const target = join(agentDirectory, 'other');
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+
   onTestFinished(async () => {
     vi.unstubAllEnvs();
 
     await rm(agentDirectory, { recursive: true, force: true });
   });
+
   await mkdir(target);
   await symlink(target, join(agentDirectory, 'test-runs'), 'dir');
 
   await expect(createDiagnosticsDirectory()).rejects.toThrow(
     'Expected a private diagnostic directory',
   );
+
   expect(await readdir(target)).toEqual([]);
 });

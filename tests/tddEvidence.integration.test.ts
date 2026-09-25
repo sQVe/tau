@@ -22,6 +22,7 @@ it('shows the selected tests before completion and saves full-suite input eviden
     join(cwd, 'behavior.test.ts'),
     "import { it } from 'vitest'; it('required behavior', () => { console.warn('warning remains'); });",
   );
+
   const full = await run({ scope: 'full' });
   const text = full.content.map((block) => block.text).join('\n');
 
@@ -32,6 +33,7 @@ it('shows the selected tests before completion and saves full-suite input eviden
   expect(text).toContain('stdout.txt');
   expect(text).toContain('stderr.txt');
   const diagnostics = full.details.report.diagnostics!;
+
   const manifest: unknown = JSON.parse(
     await readFile(join(diagnostics.directory, 'run.json'), 'utf8'),
   );
@@ -43,6 +45,7 @@ it('shows the selected tests before completion and saves full-suite input eviden
     freshness: 'fresh',
     inputs: full.details.inputs,
   });
+
   expect(full.details.inputs.before).toMatch(/^[a-f0-9]{64}$/);
   expect(full.details.inputs.before).toBe(full.details.inputs.after);
   expect(await readFile(diagnostics.stderr!.path, 'utf8')).toContain('warning remains');
@@ -62,6 +65,7 @@ it('observes RED and focused passes, then accepts full verification after format
   expect(red.content[0]!.text).not.toMatch(/\n\s+at /);
   expect(red.details).not.toHaveProperty('phase');
   expect(red.details).not.toHaveProperty('implementationAllowed');
+
   expect(session.getAllTools().find((tool) => tool.name === 'run_tests')?.description).toContain(
     'never edit permissions',
   );
@@ -70,6 +74,7 @@ it('observes RED and focused passes, then accepts full verification after format
     join(cwd, 'behavior.test.ts'),
     "import { it } from 'vitest'; it('required behavior', () => {});",
   );
+
   const green = await run();
 
   expect(green.details.kind).toBe('pass');
@@ -114,6 +119,7 @@ it.for([
     const { cwd, run, call } = await createHarness(onTestFinished);
     await mkdir(join(cwd, 'src'));
     await writeFile(join(cwd, 'src/value.js'), `export function run() { ${implementation} }`);
+
     await writeFile(
       join(cwd, 'behavior.test.ts'),
       `import { it, expect } from 'vitest'; import { run } from './src/value.js'; it('required behavior', async () => { ${body}; });`,
@@ -145,10 +151,12 @@ it('recommends full verification for regression checks across Pi session handoff
   onTestFinished,
 }) => {
   const first = await createHarness(onTestFinished);
+
   await writeFile(
     join(first.cwd, 'behavior.test.ts'),
     "import { it } from 'vitest'; it('required behavior', () => {});",
   );
+
   const regression = await first.run();
 
   expect(regression.details).toMatchObject({ kind: 'pass', freshness: 'fresh' });
@@ -170,6 +178,7 @@ it('keeps the full report while shortening displayed output', async ({ onTestFin
     join(cwd, 'behavior.test.ts'),
     `import { it } from 'vitest'; it('required behavior', () => {}); ${Array.from({ length: 100 }, (_, index) => `it('${index} ${'long name '.repeat(20)}', () => {});`).join('\n')}`,
   );
+
   const result = await run({ scope: 'full' });
 
   expect(result.details.report).toHaveProperty('tests.length', 101);

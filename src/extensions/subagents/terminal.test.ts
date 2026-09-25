@@ -16,6 +16,7 @@ it('resolves stable terminal identity across workspace-qualified pane changes', 
     workspaceId: 'new',
     tabId: 'new:tab',
   });
+
   expect(call).toHaveBeenCalledExactlyOnceWith(['pane', 'list']);
 });
 

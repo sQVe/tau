@@ -9,10 +9,12 @@ describe('TDD config', () => {
     expect(tddConfig.productionGlobs).toEqual([
       '{src,apps,packages,functions,infra}/**/*.{ts,tsx,js,jsx,mjs,cjs}',
     ]);
+
     expect(tddConfig.testGlobs).toEqual([
       '**/*.test.{ts,tsx,js,jsx,mjs,cjs}',
       '**/*.spec.{ts,tsx,js,jsx,mjs,cjs}',
     ]);
+
     expect(tddConfig.verificationArgv).toEqual([
       'vitest',
       'run',

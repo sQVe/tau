@@ -31,9 +31,11 @@ export const authorizeHistoryTask = (
   }
 
   const currentRoot = lineage(current.file, tasks, current.id).at(-1);
+
   const parentRoot = lineage(selected.task.parentSession, tasks, selected.task.parentSessionId).at(
     -1,
   );
+
   const nativeRoot = lineage(origin.parentSession, tasks, origin.parentSessionId).at(-1);
 
   if (!currentRoot || !sameRoot(parentRoot, currentRoot) || !sameRoot(nativeRoot, currentRoot)) {
@@ -109,11 +111,13 @@ const genericTaskCandidate = (
     `Task ${task.taskId} report`,
     diagnostics,
   );
+
   const reference = readOrDiagnose(
     () => readGenericReference(directory, task.taskId),
     `Task ${task.taskId} native reference`,
     diagnostics,
   );
+
   const state = candidateState(directory, task, ownership, diagnostics);
 
   return {
@@ -173,11 +177,13 @@ const taskCandidate = (
   }
 
   const nativeEvidence = readNativeEvidence(task, native.nativeSessionFile, tasks, diagnostics);
+
   const report = readOrDiagnose(
     () => readReport(directory, task.taskId),
     `Task ${task.taskId} report`,
     diagnostics,
   );
+
   const state = candidateState(directory, task, ownership, diagnostics);
 
   return {
@@ -307,6 +313,7 @@ const mergeDiscoveredSessions = (
 
     if (seeded && seeded.id !== session.id) {
       diagnostics.push('Discovered metadata disagrees with a validated session identity.');
+
       continue;
     }
 
@@ -393,10 +400,12 @@ export const searchHistory = async (
 
   // Ancestors stay seeded above so discovered metadata is still checked, but they are never candidates.
   const ancestorFiles = new Set(ancestors.map((node) => node.file));
+
   const candidates = [
     ...taskCandidates(saved, tasks, inScope, ancestorFiles, ownership, diagnostics),
     ...nativeSessionCandidates(sessions, tasks, ancestorFiles, inScope, diagnostics),
   ];
+
   const needle = query.trim().toLowerCase();
   const matches = matchCandidates(candidates, needle);
 
@@ -458,6 +467,7 @@ const candidatePreview = (candidate: Candidate) => {
   const truncatedFields: string[] = [];
   const report = candidate.report;
   const summary = report ? preview(report.summary, 'report.summary', truncatedFields) : undefined;
+
   const evidence = report?.evidence
     .slice(0, 3)
     .map((entry) => preview(entry, 'report.evidence', truncatedFields, 200));
@@ -468,6 +478,7 @@ const candidatePreview = (candidate: Candidate) => {
 
   const reportTruncated = truncatedFields.length > 0;
   const nativeOnly = candidate.taskId === undefined || candidate.nativeEvidence !== 'available';
+
   const result = {
     ...previewOptionalText(candidate.taskId, 'taskId', truncatedFields),
     ...previewOptionalText(candidate.predecessorTaskId, 'predecessorTaskId', truncatedFields),
@@ -506,10 +517,13 @@ export const historyPage = (
   }
 
   const diagnosticFields: string[] = [];
+
   const diagnostics = history.diagnostics
     .slice(0, 5)
     .map((entry) => preview(entry, 'diagnostics', diagnosticFields));
+
   const candidates: ReturnType<typeof candidatePreview>[] = [];
+
   const page = (nextOffset?: number) => ({
     outcome: history.outcome,
     totalMatches: history.candidates.length,

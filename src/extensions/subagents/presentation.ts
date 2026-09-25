@@ -27,6 +27,7 @@ const stoppedOutcomeLabels: Record<string, StateLabel> = {
   failure: { icon: '✗', color: 'error', text: 'stopped · failure' },
   incomplete: { icon: '◐', color: 'warning', text: 'stopped · incomplete' },
 };
+
 const stoppedUnknownLabel: StateLabel = { icon: '◐', color: 'warning', text: 'stopped' };
 
 export const stateLabel = (state: WorkerState, outcome?: string): StateLabel => {

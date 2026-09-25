@@ -76,6 +76,7 @@ export const saveDiagnostics = async (
   result: SpawnResult | undefined,
 ): Promise<RunDiagnostics> => {
   const errors: string[] = [];
+
   const retain = async (save: () => Promise<DiagnosticFile | undefined>) => {
     try {
       return await save();
@@ -91,12 +92,14 @@ export const saveDiagnostics = async (
 
   if (result !== undefined) {
     diagnostics.excerpt = (result.stderr || result.stdout).slice(0, 800);
+
     diagnostics.stdout = await retain(() =>
       saveOutput(join(diagnostics.directory, 'stdout.txt'), result.stdout, maximumStdoutBytes, {
         observedBytes: result.stdoutBytes ?? Buffer.byteLength(result.stdout),
         truncated: result.stdoutTruncated ?? false,
       }),
     );
+
     diagnostics.stderr = await retain(() =>
       saveOutput(join(diagnostics.directory, 'stderr.txt'), result.stderr, maximumTotalBytes, {
         observedBytes: result.stderrBytes ?? Buffer.byteLength(result.stderr),

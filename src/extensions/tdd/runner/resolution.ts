@@ -55,8 +55,10 @@ const diagnosticPath = (path: string) => {
 const resolutionErrorDetails = (error: unknown) => {
   const code =
     error !== null && typeof error === 'object' && 'code' in error ? error.code : undefined;
+
   const errorCode =
     typeof code === 'string' && Object.hasOwn(resolutionMessages, code) ? code : undefined;
+
   let errorType = 'UnknownError';
 
   // Never copy error.message, stack, or custom names: JSON parse errors can quote credentials.
@@ -105,6 +107,7 @@ export const resolutionFailure = (
   paths: { manifestPath?: string; binaryPath?: string } = {},
 ): VitestResolutionFailure => {
   const { errorCode, errorType } = resolutionErrorDetails(error);
+
   const resolution: VitestResolutionDiagnostic = {
     cwd: diagnosticPath(cwd),
     request: 'vitest/package.json',
@@ -116,12 +119,15 @@ export const resolutionFailure = (
       : { manifestPath: diagnosticPath(paths.manifestPath) }),
     ...(paths.binaryPath === undefined ? {} : { binaryPath: diagnosticPath(paths.binaryPath) }),
   };
+
   // MODULE_NOT_FOUND can also refer to a broken export target inside an installed package.
   const missing =
     stage === 'lookup' && errorCode === 'MODULE_NOT_FOUND' && declaresMissingRequest(error);
+
   const explanation = resolutionExplanation(stage, errorType, errorCode, missing);
 
   const errorCodeSuffix = errorCode === undefined ? '' : ` (${errorCode})`;
+
   const lines = [
     `${explanation} Stage: ${stage}; ${errorType}${errorCodeSuffix}.`,
     'Inspect this once, then fix resolution or use the repository runner. Bash tests do not update Tau observations.',

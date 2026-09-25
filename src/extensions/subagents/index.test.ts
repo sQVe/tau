@@ -53,6 +53,7 @@ it('keeps parent tools and handlers unavailable when a test chooses a worker env
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });
+
   vi.stubEnv('TAU_WORKER_RECORD', '/fixture/worker');
   const fake = fakeExtensionApi();
 
@@ -69,9 +70,11 @@ it('returns from session start while worker reattachment is still pending', asyn
   const released = Promise.withResolvers<undefined>();
   vi.spyOn(WorkerController.prototype, 'resume').mockReturnValue(released.promise);
   subagentsExtension(fake.pi);
+
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionContext;
+
   onTestFinished(async () => {
     released.resolve(undefined);
     await released.promise;
@@ -89,31 +92,40 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
   const released = Promise.withResolvers<undefined>();
   let cleanupFinished = false;
   let shutdownReason: string | undefined;
+
   vi.spyOn(WorkerController.prototype, 'status').mockReturnValue(
     fullWorkerStatus as unknown as ReturnType<WorkerController['status']>,
   );
+
   vi.spyOn(WorkerController.prototype, 'stopAll').mockImplementation(async (reason) => {
     await released.promise;
     shutdownReason = reason;
     cleanupFinished = true;
   });
+
   onTestFinished(() => {
     vi.restoreAllMocks();
   });
+
   subagentsExtension(fake.pi);
   const tools = fake.tools;
+
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionContext;
+
   await tools
     .get('subagent_status')!
     .execute('status', { taskId: 'task-1' }, undefined, undefined, context);
+
   let shutdownFinished = false;
+
   const shutdown = Promise.resolve(
     fake.handler('session_shutdown')({ reason: 'reload' }, context),
   ).then(() => {
     shutdownFinished = true;
   });
+
   await Promise.resolve();
 
   expect(shutdownFinished).toBe(false);
@@ -128,23 +140,30 @@ it('blocks long parent sleeps only while this session has an active worker', asy
 }) => {
   const fake = fakeExtensionApi();
   let state = 'running';
+
   vi.spyOn(WorkerController.prototype, 'status').mockReturnValue(
     fullWorkerStatus as unknown as ReturnType<WorkerController['status']>,
   );
+
   vi.spyOn(WorkerController.prototype, 'widgetRows').mockImplementation(
     () => [{ state }] as unknown as WorkerWidgetRow[],
   );
+
   onTestFinished(() => {
     vi.restoreAllMocks();
   });
+
   subagentsExtension(fake.pi);
+
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionContext;
+
   const bash = (command: string) =>
     fake.handler('tool_call')({ toolName: 'bash', input: { command } }, context);
 
   expect(bash('sleep 900; git status --short')).toBeUndefined();
+
   await fake.tools
     .get('subagent_status')!
     .execute('status', { taskId: 'task-1' }, undefined, undefined, context);
@@ -164,6 +183,7 @@ it('updates the parent widget from live worker rows without a model turn', () =>
   const setWidget = vi.fn<ExtensionContext['ui']['setWidget']>();
   const sendMessage = vi.fn<ExtensionAPI['sendMessage']>();
   const sendUserMessage = vi.fn<ExtensionAPI['sendUserMessage']>();
+
   const extension = {
     events: createEventBus(),
     on: (name: string, handler: (event: unknown, context: ExtensionContext) => void) =>
@@ -174,6 +194,7 @@ it('updates the parent widget from live worker rows without a model turn', () =>
     sendMessage,
     sendUserMessage,
   } as unknown as ExtensionAPI;
+
   vi.spyOn(WorkerController.prototype, 'widgetRows').mockReturnValue([
     {
       name: 'investigator-ab',
@@ -185,14 +206,18 @@ it('updates the parent widget from live worker rows without a model turn', () =>
       usage: { available: false, reason: 'Pi session usage was not recorded' },
     },
   ]);
+
   subagentsExtension(extension);
+
   const context = {
     mode: 'tui',
     hasUI: true,
     ui: { setWidget },
     sessionManager: { getSessionId: () => 'parent-session' },
   } as unknown as ExtensionContext;
+
   handlers.get('session_start')?.({}, context);
+
   finishTest(() => {
     handlers.get('session_shutdown')?.({}, context);
     vi.useRealTimers();
@@ -225,12 +250,14 @@ it('refreshes history while open, then stops polling after close without a model
   const sendMessage = vi.fn<ExtensionAPI['sendMessage']>();
   const sendUserMessage = vi.fn<ExtensionAPI['sendUserMessage']>();
   let finishOverlay: () => void = noOperation;
+
   const custom = vi.fn<(factory: unknown, options: unknown) => Promise<void>>(
     () =>
       new Promise((resolve) => {
         finishOverlay = resolve;
       }),
   );
+
   const extension = {
     events: createEventBus(),
     on: (name: string, handler: (event: unknown, context: ExtensionContext) => void) =>
@@ -244,6 +271,7 @@ it('refreshes history while open, then stops polling after close without a model
     sendMessage,
     sendUserMessage,
   } as unknown as ExtensionAPI;
+
   let historyRows: WorkerWidgetRow[] = [
     {
       name: 'worker-c2',
@@ -259,17 +287,22 @@ it('refreshes history while open, then stops polling after close without a model
       report: { summary: 'Partial handoff', evidence: ['output.log'] },
     },
   ];
+
   const readHistoryRows = vi
     .spyOn(WorkerController.prototype, 'widgetRows')
     .mockImplementation(() => historyRows);
+
   subagentsExtension(extension);
+
   const context = {
     mode: 'tui',
     hasUI: true,
     ui: { setWidget, custom },
     sessionManager: { getSessionId: () => 'parent-session' },
   } as unknown as ExtensionContext;
+
   handlers.get('session_start')?.({}, context);
+
   finishTest(() => {
     handlers.get('session_shutdown')?.({}, context);
     finishOverlay();
@@ -295,6 +328,7 @@ it('refreshes history while open, then stops polling after close without a model
   historyRows = [
     { ...historyRows[0]!, state: 'stopped', stoppedAt: Date.now(), cleanupConfirmed: true },
   ];
+
   vi.advanceTimersByTime(1000);
 
   expect(readHistoryRows.mock.calls.length).toBeGreaterThan(pollsBeforeRefresh);
@@ -328,6 +362,7 @@ it('refreshes history while open, then stops polling after close without a model
 
 it('keeps editor focus and typing after a click on the passive fullscreen widget', () => {
   const deliverInput = vi.fn<(input: string) => void>();
+
   const terminal = {
     start: (onInput: (input: string) => void) => {
       deliverInput.mockImplementation(onInput);
@@ -353,8 +388,10 @@ it('keeps editor focus and typing after a click on the passive fullscreen widget
     setTitle: () => undefined,
     setProgress: () => undefined,
   } as Terminal;
+
   const handlers = new Map<string, (event: unknown, context: ExtensionContext) => void>();
   const setWidget = vi.fn<ExtensionContext['ui']['setWidget']>();
+
   const extension = {
     events: createEventBus(),
     on: (name: string, handler: (event: unknown, context: ExtensionContext) => void) =>
@@ -363,6 +400,7 @@ it('keeps editor focus and typing after a click on the passive fullscreen widget
     registerCommand: () => undefined,
     registerMessageRenderer: () => undefined,
   } as unknown as ExtensionAPI;
+
   vi.spyOn(WorkerController.prototype, 'widgetRows').mockReturnValue([
     {
       name: 'worker-ab',
@@ -373,15 +411,19 @@ it('keeps editor focus and typing after a click on the passive fullscreen widget
       usage: { available: false, reason: 'Pi session usage was not recorded' },
     },
   ]);
+
   subagentsExtension(extension);
+
   const context = {
     mode: 'tui',
     hasUI: true,
     ui: { setWidget },
     sessionManager: { getSessionId: () => 'parent-session' },
   } as unknown as ExtensionContext;
+
   handlers.get('session_start')?.({}, context);
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+
   finishTest(() => {
     tui.stop();
     handlers.get('session_shutdown')?.({}, context);
@@ -396,11 +438,13 @@ it('keeps editor focus and typing after a click on the passive fullscreen widget
 
   const widget = widgetFactory({} as never, testTheme as never);
   const typedInput: string[] = [];
+
   const editor = {
     render: () => ['Editor:'],
     invalidate: () => undefined,
     handleInput: (input: string) => typedInput.push(input),
   };
+
   tui.setLayoutRoot(new VStack([widget, editor]));
   tui.setFocus(editor);
   tui.start();
@@ -434,13 +478,16 @@ it('places follow-ups with explicit visibility and the current parent terminal',
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'stale-pane-before-movement');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
+
   const followUp = vi
     .spyOn(WorkerController.prototype, 'followUp')
     .mockResolvedValue({} as Awaited<ReturnType<WorkerController['followUp']>>);
+
   onTestFinished(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
+
   const context = {
     sessionManager: { getSessionFile: () => '/fixture/parent.jsonl', getSessionId: () => 'parent' },
   } as unknown as ExtensionContext;
@@ -460,11 +507,13 @@ it('places follow-ups with explicit visibility and the current parent terminal',
   );
 
   expect(tool.parameters).toHaveProperty('properties.visibility');
+
   expect(followUp).toHaveBeenCalledWith(
     expect.objectContaining({ visibility: 'background' }),
     context,
     undefined,
   );
+
   expect(followUp.mock.calls[0]?.[0]).not.toHaveProperty('parentPane');
 });
 
@@ -472,11 +521,13 @@ it('routes approved native tool arguments through the generic resolver without P
   onTestFinished,
 }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-native-tool-'));
+
   onTestFinished(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
     rmSync(directory, { recursive: true, force: true });
   });
+
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.stubEnv('TAU_WORKER_RECORD', '');
   vi.stubEnv('HERDR_ENV', '1');
@@ -485,9 +536,11 @@ it('routes approved native tool arguments through the generic resolver without P
   const fake = fakeExtensionApi();
   subagentsExtension(fake.pi);
   const tools = fake.tools;
+
   const launch = vi
     .spyOn(WorkerController.prototype, 'launch')
     .mockResolvedValue({} as Awaited<ReturnType<WorkerController['launch']>>);
+
   const context = {
     cwd: directory,
     isProjectTrusted: () => true,
@@ -496,6 +549,7 @@ it('routes approved native tool arguments through the generic resolver without P
       getSessionId: () => 'parent',
     },
   } as unknown as ExtensionContext;
+
   const input = {
     profile: 'worker',
     harness: 'gemini',
@@ -504,6 +558,7 @@ it('routes approved native tool arguments through the generic resolver without P
     task: 'Inspect fixture.',
     timeoutSeconds: 10,
   };
+
   const tool = tools.get('subagent');
   const reply = tools.get('subagent_reply');
 
@@ -512,6 +567,7 @@ it('routes approved native tool arguments through the generic resolver without P
   }
 
   expect(Value.Check(tool.parameters, input)).toBe(true);
+
   expect(
     Value.Check(reply.parameters, {
       taskId: 'task',
@@ -520,6 +576,7 @@ it('routes approved native tool arguments through the generic resolver without P
       scopeUnchanged: true,
     }),
   ).toBe(true);
+
   await tool.execute('native-call', input, undefined, undefined, context);
 
   expect(launch.mock.calls[0]?.[0].loadout).toMatchObject({
@@ -528,7 +585,9 @@ it('routes approved native tool arguments through the generic resolver without P
     permissions: 'native-controls',
     arguments: input.nativeArguments,
   });
+
   expect(launch.mock.calls[0]?.[0].loadout).not.toHaveProperty('safetyExtension');
+
   await expect(
     tool.execute(
       'unsupported-guarantee',
@@ -538,22 +597,27 @@ it('routes approved native tool arguments through the generic resolver without P
       context,
     ),
   ).rejects.toThrow('native-controls');
+
   vi.stubEnv('HERDR_ENV', '0');
+
   await expect(tool.execute('outside-herdr', input, undefined, undefined, context)).rejects.toThrow(
     'inside local herdr',
   );
+
   expect(launch).toHaveBeenCalledTimes(1);
 });
 
 it('delivers a question notice as a steer that wakes the idle parent', () => {
   const sendMessage = vi.fn<() => void>();
   const pi = fakeExtensionApi({ sendMessage }).pi;
+
   const content = {
     taskId: 'task-1',
     state: 'awaitingReply',
     deadline: 1,
     pendingQuestion: { questionId: 'question-1', question: 'Which file?' },
   };
+
   const notice: WorkerNotice = { content, details: { full: true }, question: true };
 
   deliverWorkerNotice(pi, notice);
@@ -601,6 +665,7 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent-pane');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
+
   vi.spyOn(WorkerController.prototype, 'followUp').mockResolvedValue({
     taskId: 'successor-1',
     name: 'worker-ab',
@@ -612,10 +677,12 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
     nativeSessionId: 'native-1',
     nativeSessionFile: '/abs/records/successor-1/session.jsonl',
   } as unknown as Awaited<ReturnType<WorkerController['followUp']>>);
+
   onTestFinished(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
+
   const context = {
     sessionManager: { getSessionFile: () => '/fixture/parent.jsonl', getSessionId: () => 'parent' },
   } as unknown as ExtensionContext;
@@ -632,6 +699,7 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
     undefined,
     context,
   )) as unknown as { content: { type: string; text?: string }[]; details: unknown };
+
   const text = result.content.find((part) => part.type === 'text')?.text ?? '';
 
   expect(JSON.parse(text)).toEqual({
@@ -641,6 +709,7 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
     deadline: 1234,
     predecessorTaskId: 'source-1',
   });
+
   expect(result.details).toMatchObject({
     directory: '/abs/records/successor-1',
     usage: { available: false },
@@ -651,23 +720,29 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
   onTestFinished,
 }) => {
   const tools = registerTools();
+
   vi.spyOn(WorkerController.prototype, 'status').mockReturnValue({
     ...fullWorkerStatus,
     successorTaskId: 'successor-1',
   } as never);
+
   vi.spyOn(WorkerController.prototype, 'reply').mockResolvedValue({
     replyAccepted: true,
     name: 'worker-ab',
     workerAcknowledged: false,
     delivery: 'sent',
   });
+
   vi.spyOn(WorkerController.prototype, 'cancel').mockResolvedValue(fullWorkerStatus as never);
+
   onTestFinished(() => {
     vi.restoreAllMocks();
   });
+
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionContext;
+
   const statusTool = tools.get('subagent_status');
   const replyTool = tools.get('subagent_reply');
   const cancelTool = tools.get('subagent_cancel');
@@ -683,7 +758,9 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
     undefined,
     context,
   );
+
   const statusContent = textContent(statusResult);
+
   expect(statusContent).toMatchObject({
     taskId: 'task-1',
     state: 'stopped',
@@ -708,6 +785,7 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
     undefined,
     context,
   );
+
   expect(textContent(replyResult)).toEqual({
     taskId: 'task-1',
     questionId: 'question-1',
@@ -715,10 +793,12 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
     workerAcknowledged: false,
     delivery: 'sent',
   });
+
   expect((replyResult as { details: Record<string, unknown> }).details).toHaveProperty(
     'taskId',
     'task-1',
   );
+
   expect((replyResult as { details: Record<string, unknown> }).details).toHaveProperty(
     'questionId',
     'question-1',
@@ -731,7 +811,9 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
     undefined,
     context,
   );
+
   expect(textContent(cancelResult)).not.toHaveProperty('directory');
+
   expect((cancelResult as { details: Record<string, unknown> }).details).toHaveProperty(
     'directory',
   );
@@ -741,6 +823,7 @@ it('returns the unreadable-evidence object when status records fail', async ({
   onTestFinished,
 }) => {
   const tools = registerTools();
+
   vi.spyOn(WorkerController.prototype, 'status').mockImplementation(() => {
     throw new EvidenceUnavailableError({
       taskId: 'task-1',
@@ -752,12 +835,15 @@ it('returns the unreadable-evidence object when status records fail', async ({
       },
     });
   });
+
   onTestFinished(() => {
     vi.restoreAllMocks();
   });
+
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionContext;
+
   const tool = tools.get('subagent_status');
 
   if (!tool) {
@@ -796,15 +882,19 @@ it('returns the unreadable-evidence object before reading an unknown question re
   onTestFinished,
 }) => {
   const tools = registerTools();
+
   vi.spyOn(WorkerController.prototype, 'status').mockImplementation(() => {
     throw evidenceError('task-1');
   });
+
   vi.spyOn(WorkerController.prototype, 'questionReceipt').mockImplementation(() => {
     throw new Error('Unknown worker question.');
   });
+
   onTestFinished(() => {
     vi.restoreAllMocks();
   });
+
   const tool = tools.get('subagent_status');
 
   if (!tool) {
@@ -814,6 +904,7 @@ it('returns the unreadable-evidence object before reading an unknown question re
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionContext;
+
   const result = await tool.execute(
     'call',
     { taskId: 'task-1', questionId: 'missing' },
@@ -829,12 +920,15 @@ it('returns the unreadable-evidence object when cancel records fail', async ({
   onTestFinished,
 }) => {
   const tools = registerTools();
+
   vi.spyOn(WorkerController.prototype, 'cancel').mockImplementation(() => {
     throw evidenceError('task-1');
   });
+
   onTestFinished(() => {
     vi.restoreAllMocks();
   });
+
   const tool = tools.get('subagent_cancel');
 
   if (!tool) {
@@ -844,6 +938,7 @@ it('returns the unreadable-evidence object when cancel records fail', async ({
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionContext;
+
   const result = await tool.execute('call', { taskId: 'task-1' }, undefined, undefined, context);
   const content = textContent(result);
 
@@ -859,13 +954,16 @@ it('returns the unreadable-evidence object when follow-up records fail', async (
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
+
   vi.spyOn(WorkerController.prototype, 'followUp').mockImplementation(() => {
     throw evidenceError('task-1');
   });
+
   onTestFinished(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
+
   const tool = tools.get('subagent_follow_up');
 
   if (!tool) {
@@ -875,6 +973,7 @@ it('returns the unreadable-evidence object when follow-up records fail', async (
   const context = {
     sessionManager: { getSessionFile: () => '/fixture/parent.jsonl', getSessionId: () => 'parent' },
   } as unknown as ExtensionContext;
+
   const result = await tool.execute(
     'call',
     { sourceTaskId: 'source', task: 'Continue.', timeoutSeconds: 10, settingsUnchanged: true },
@@ -882,6 +981,7 @@ it('returns the unreadable-evidence object when follow-up records fail', async (
     undefined,
     context,
   );
+
   const content = textContent(result);
 
   expect(content).toEqual(evidenceContent('task-1'));
@@ -892,20 +992,24 @@ it('returns the unreadable-evidence object when launch records fail', async ({
   onTestFinished,
 }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-evidence-launch-'));
+
   onTestFinished(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
     rmSync(directory, { recursive: true, force: true });
   });
+
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.stubEnv('TAU_WORKER_RECORD', '');
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
   const tools = registerTools();
+
   vi.spyOn(WorkerController.prototype, 'launch').mockImplementation(() => {
     throw evidenceError('task-1');
   });
+
   const tool = tools.get('subagent');
 
   if (!tool) {
@@ -920,6 +1024,7 @@ it('returns the unreadable-evidence object when launch records fail', async ({
       getSessionId: () => 'parent',
     },
   } as unknown as ExtensionContext;
+
   const result = await tool.execute(
     'call',
     {
@@ -934,6 +1039,7 @@ it('returns the unreadable-evidence object when launch records fail', async ({
     undefined,
     context,
   );
+
   const content = textContent(result);
 
   expect(content).toEqual(evidenceContent('task-1'));

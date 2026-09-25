@@ -179,6 +179,7 @@ export const workerRightTime = (row: WorkerWidgetRow, now: number): string => {
   }
 
   const remainingMilliseconds = row.deadline - now;
+
   const remainingTime =
     remainingMilliseconds < 60_000
       ? compactDuration(remainingMilliseconds)
@@ -268,6 +269,7 @@ const alignedColumns = (rows: WorkerWidgetRow[], availableWidth: number) => {
       width: Math.max(1, ...rows.map((row) => visibleWidth(workerModelLabel(row)))),
     },
   ];
+
   const totalWidth = (): number =>
     columns.reduce((sum, column) => sum + column.width, 0) + Math.max(0, columns.length - 1);
 
@@ -288,6 +290,7 @@ const alignedColumns = (rows: WorkerWidgetRow[], availableWidth: number) => {
 
     column.width -= 1;
   };
+
   const shrinkSteps: [string, number][] = [
     ['task', 12],
     ['name', 4],
@@ -327,6 +330,7 @@ const alignRow = (
 ): string => {
   const columns = alignedColumns(rows, width);
   const label = row.state === 'unknown' ? undefined : stateLabel(row.state, row.outcome);
+
   const values: Record<string, string> = {
     name: truncateWorkerName(
       row.name,
@@ -336,6 +340,7 @@ const alignRow = (
     task: shortTaskLabel(row),
     model: safeText(workerModelLabel(row)),
   };
+
   const cells = columns.map((column) => {
     const value = truncateToWidth(values[column.name] ?? '', column.width, '…');
     const padding = Math.max(0, column.width - visibleWidth(value));
@@ -440,12 +445,15 @@ export const renderWorkerWidget = (
   }
 
   const liveCount = rows.filter((row) => workerGroup(row) === 'active').length;
+
   const unknownCount = rows.filter(
     (row) => row.state === 'unknown' || row.state === 'notOwned',
   ).length;
+
   const cleanupCount = rows.filter((row) => row.state === 'cleanupUnconfirmed').length;
   const waitingCount = rows.filter((row) => workerGroup(row) === 'waiting').length;
   const stoppedCount = rows.filter((row) => workerGroup(row) === 'stopped').length;
+
   // Only work that can still change gets a row. Unresolved records from earlier processes stay in
   // history and remain visible as counts, so capacity-held records never disappear from the view.
   const eligibleRows = rows
@@ -458,6 +466,7 @@ export const renderWorkerWidget = (
       (left, right) =>
         workerRowPriority(left) - workerRowPriority(right) || right.createdAt - left.createdAt,
     );
+
   const liveRows = eligibleRows
     .slice(0, 4)
     .toSorted(
@@ -465,6 +474,7 @@ export const renderWorkerWidget = (
         widgetDisplayPriority(left) - widgetDisplayPriority(right) ||
         right.createdAt - left.createdAt,
     );
+
   const boxWidth = width;
 
   if (liveRows.length === 0) {
@@ -491,14 +501,18 @@ export const renderWorkerWidget = (
     ]
       .filter(Boolean)
       .join(' · ');
+
   const liveLabel = (compactNames: boolean): string => {
     const attention = attentionParts(compactNames);
 
     return `${liveCount} live${attention ? ` · ${attention}` : ''}`;
   };
+
   const headerBudget = Math.max(0, boxWidth - 2 - visibleWidth('─ Subagents '));
+
   const shownLiveLabel =
     visibleWidth(liveLabel(false)) <= headerBudget ? liveLabel(false) : liveLabel(true);
+
   const lines = [fitBorder('─ Subagents ', ` ${shownLiveLabel} `, boxWidth, theme)];
 
   for (const row of liveRows) {

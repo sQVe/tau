@@ -26,6 +26,7 @@ vi.mock('./loadout.js', () => ({
 const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_000) => {
   vi.useFakeTimers();
   const directory = mkdtempSync(join(tmpdir(), 'tau-worker-clock-'));
+
   onTestFinished(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
@@ -33,8 +34,10 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
     vi.clearAllMocks();
     rmSync(directory, { recursive: true, force: true });
   });
+
   vi.stubEnv('TAU_WORKER_RECORD', directory);
   const createdAt = Date.now();
+
   publish(directory, 'task.json', {
     version: 1,
     taskId: 'task',
@@ -59,9 +62,11 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
       instructions: 'Read only.',
     },
   });
+
   const fake = fakeExtensionApi();
   const shutdown = vi.fn<ExtensionContext['shutdown']>();
   const branch: SessionEntry[] = [];
+
   const context = {
     sessionManager: {
       getBranch: () => branch,
@@ -71,9 +76,12 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
     shutdown,
     ui: { notify: vi.fn<ExtensionContext['ui']['notify']>() },
   } as unknown as ExtensionContext;
+
   workerExtension(fake.pi);
+
   const emit = (name: string, event: unknown = {}) =>
     fake.handlers.has(name) ? fake.handler(name)(event, context) : undefined;
+
   const ask = () =>
     fake.tools
       .get('subagent_question')
@@ -96,6 +104,7 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
 
 it('records a startup failure and shuts down when the worker runtime is refused', async () => {
   const { directory, emit, shutdown, context } = setup();
+
   vi.mocked(checkWorkerRuntime).mockImplementationOnce(() => {
     throw new Error('Saved model changed.');
   });
@@ -103,14 +112,17 @@ it('records a startup failure and shuts down when the worker runtime is refused'
   await emit('session_start');
 
   expect(readEvent(directory, 'task', 'ready')).toBeUndefined();
+
   expect(readEvent(directory, 'task', 'startupFailure')).toHaveProperty(
     'detail',
     expect.stringContaining('Saved model changed.'),
   );
+
   expect(context.ui.notify).toHaveBeenCalledWith(
     expect.stringContaining('Worker refused'),
     'error',
   );
+
   expect(shutdown).toHaveBeenCalledOnce();
 });
 
@@ -179,10 +191,12 @@ it('excludes earlier continuation history from the worker usage snapshot', async
   const worker = setup();
   worker.branch.push(assistantUsageEntry('previous', 100, 30));
   await worker.emit('session_start');
+
   expect(readWorkerActivity(worker.directory, 'task')?.usage).toMatchObject({
     input: 0,
     output: 0,
   });
+
   worker.branch.push(assistantUsageEntry('current', 25, 5));
   worker.emit('tool_execution_start', { toolName: 'read' });
 
@@ -190,6 +204,7 @@ it('excludes earlier continuation history from the worker usage snapshot', async
     input: 25,
     output: 5,
   });
+
   await worker.emit('session_shutdown');
 });
 
@@ -227,10 +242,12 @@ it('requests a missing report once before the worker settles', async () => {
 
   expect(worker.sendMessage).toHaveBeenCalledOnce();
   expect(worker.sendMessage.mock.calls[0]?.[0].content).toContain('subagent_report');
+
   expect(worker.sendMessage.mock.calls[0]?.[1]).toMatchObject({
     triggerTurn: true,
     deliverAs: 'followUp',
   });
+
   expect(worker.shutdown).not.toHaveBeenCalled();
   expect(readEvent(worker.directory, 'task', 'settled')).toBeUndefined();
   await worker.emit('agent_settled');
@@ -291,6 +308,7 @@ it('leaves activity unchanged when a queued update outlives its Pi context', asy
   const worker = await waitingWorker();
   worker.emit('message_update');
   const before = readWorkerActivity(worker.directory, 'task');
+
   Object.defineProperty(worker.context, 'sessionManager', {
     get() {
       throw new Error('This extension ctx is stale after session replacement or reload.');
@@ -305,6 +323,7 @@ it('leaves activity unchanged when a queued update outlives its Pi context', asy
 it('leaves activity unchanged when Pi session usage is unavailable during a tool event', async () => {
   const worker = await waitingWorker();
   const before = readWorkerActivity(worker.directory, 'task');
+
   vi.spyOn(worker.context.sessionManager, 'getBranch').mockImplementation(() => {
     throw new Error('Session usage unavailable.');
   });
@@ -331,6 +350,7 @@ it('publishes a worker phase description while keeping lifecycle, automatic acti
     undefined,
     worker.context,
   );
+
   const reported = readWorkerActivity(worker.directory, 'task');
 
   expect(reported).toMatchObject({
@@ -349,6 +369,7 @@ it('publishes a worker phase description while keeping lifecycle, automatic acti
     descriptionAt: Date.now(),
     label: 'tool finished: read',
   });
+
   await worker.emit('session_shutdown');
 });
 
@@ -405,6 +426,7 @@ it('refuses progress without an active task and after the final handover', async
     undefined,
     worker.context,
   );
+
   const afterReport = readWorkerActivity(worker.directory, 'task');
 
   expect(() =>
@@ -416,12 +438,14 @@ it('refuses progress without an active task and after the final handover', async
       worker.context,
     ),
   ).toThrow('active task');
+
   expect(readWorkerActivity(worker.directory, 'task')).toEqual(afterReport);
   await worker.emit('session_shutdown');
 });
 
 it('does not attribute a predecessor phase to the current task', async () => {
   const worker = setup();
+
   writeWorkerActivity(worker.directory, {
     taskId: 'previous',
     sequence: 5,
@@ -431,6 +455,7 @@ it('does not attribute a predecessor phase to the current task', async () => {
     description: 'Checking the predecessor suite',
     descriptionAt: Date.now() - 1000,
   });
+
   await worker.emit('session_start');
 
   const activity = readWorkerActivity(worker.directory, 'task');
@@ -474,6 +499,7 @@ it.each([
   'ends the reply wait only on closure or expiry when $condition',
   async ({ closed, expired, stopped, shutdowns }) => {
     const { directory, createdAt, emit, ask, shutdown } = await waitingWorker();
+
     vi.spyOn(process, 'kill').mockImplementation(() => {
       throw Object.assign(new Error('No such process.'), { code: 'ESRCH' });
     });
@@ -512,6 +538,7 @@ it('saves the handoff sections and work reference from a Pi report', async () =>
     'Decisions: none',
     'Concerns: none',
   ].join('\n');
+
   const evidence = ['git diff --stat: src/value.ts | 2 +-'];
 
   await report.execute(
@@ -574,6 +601,7 @@ it('refuses the first incomplete report while meaningful time remains', async ()
   await reportIncomplete(worker, 'The parent must choose the storage format.');
 
   expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
+
   expect(readReport(worker.directory, 'task')?.summary).toContain(
     'The parent must choose the storage format.',
   );
@@ -668,9 +696,11 @@ it('accepts a success report after refusing an incomplete one', async () => {
 
 it('stops waiting after uncertain question publication once the deadline passes', async () => {
   const { directory, createdAt, emit, ask, shutdown } = await waitingWorker();
+
   vi.spyOn(questions, 'acceptQuestion').mockImplementation(() => {
     throw new Error('Directory sync failed.');
   });
+
   expect(ask).toThrow('Directory sync failed.');
   await vi.advanceTimersByTimeAsync(1000);
   expect(shutdown).not.toHaveBeenCalled();

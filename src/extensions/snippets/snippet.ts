@@ -78,6 +78,7 @@ const compareSnippets = (first: Snippet, second: Snippet) =>
 export const loadSnippets = async (directory: string): Promise<Snippet[]> => {
   // A directory named `draft.md` would otherwise reach readFile and throw.
   const entries = await readdir(directory, { withFileTypes: true });
+
   const filenames = entries
     .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.md'))
     .map((entry) => entry.name);
@@ -89,6 +90,7 @@ export const loadSnippets = async (directory: string): Promise<Snippet[]> => {
       return parseSnippet(filename, content);
     }),
   );
+
   const snippets = parsed.filter((snippet) => snippet !== null);
 
   return [

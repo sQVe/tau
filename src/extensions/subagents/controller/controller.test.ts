@@ -63,19 +63,24 @@ const setup = (
   intercept?: HerdrClient,
 ) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-controller-'));
+
   onTestFinished(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
     rmSync(directory, { recursive: true, force: true });
   });
+
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+
   writeFileSync(
     join(directory, 'parent.jsonl'),
     `${JSON.stringify({ type: 'session', version: 3, id: 'parent-id', cwd: directory })}\n`,
   );
+
   const fake = herdrFake('pi');
   fake.state.shell = 100;
+
   vi.spyOn(cancellationModule, 'runClient').mockImplementation(
     (executable, argumentsList, budget, options) => {
       if (executable === 'ps' && ['100', '101'].includes(argumentsList[1] ?? '')) {
@@ -85,12 +90,14 @@ const setup = (
       return originalRunClient(executable, argumentsList, budget, options);
     },
   );
+
   // Input delivery fails in these tests, so the worker process stays alive after cancellation.
   fake.state.sendKeysError = 'Injected herdr failure; active process remains alive.';
   fake.state.promptError = 'Injected herdr failure; active process remains alive.';
   let recordDirectory = '';
   const calls: string[][] = [];
   let startAttempted = false;
+
   const client: HerdrClient = async (argumentsList, budget, signal) => {
     calls.push(argumentsList);
 
@@ -122,6 +129,7 @@ const setup = (
       fake.state.session = token;
       fake.state.processArguments = ['pi', token];
       const task = readTask(recordDirectory);
+
       const ready = () => {
         recordEvent(recordDirectory, task.taskId, 'ready', {
           detail: 'Ready.',
@@ -138,13 +146,17 @@ const setup = (
 
     return fake.client(argumentsList, budget, signal);
   };
+
   const notifications: WorkerNotice[] = [];
+
   const controller = new WorkerController(directory, client, (notice) =>
     notifications.push(notice),
   );
+
   onTestFinished(() => {
     controller.close();
   });
+
   const input = {
     task: 'Edit fixture and test it.',
     loadout: fixtureLoadout(directory),
@@ -163,6 +175,7 @@ it('reattaches accepted work and cancels it without replacing saved records', as
   vi.useFakeTimers();
   const fixture = setup(onTestFinished);
   fixture.fake.state.sendKeysError = '';
+
   vi.spyOn(process, 'kill').mockImplementation(() => {
     if (fixture.fake.state.stopped) {
       throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
@@ -170,13 +183,17 @@ it('reattaches accepted work and cancels it without replacing saved records', as
 
     return true;
   });
+
   const launched = await fixture.controller.launch(fixture.input);
   recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
+
   const saved = readdirSync(launched.directory).map((name) => ({
     name,
     bytes: readFileSync(join(launched.directory, name)),
   }));
+
   const recovered = new WorkerController(fixture.directory, fixture.client);
+
   onTestFinished(() => {
     recovered.close();
   });
@@ -207,16 +224,20 @@ it('skips saved workers without herdr calls when the reattach capacity is full',
 }) => {
   vi.useFakeTimers();
   vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });
+
   const fixture = setup(onTestFinished);
   const saved = await fixture.controller.launch(fixture.input);
   fixture.controller.close();
   const recovered = new WorkerController(fixture.directory, fixture.client);
+
   onTestFinished(() => {
     recovered.close();
   });
+
   const live = await recovered.launch(fixture.input);
   const callsBefore = fixture.calls.length;
   const recordsBefore = readdirSync(saved.directory);
@@ -232,15 +253,18 @@ it('skips saved workers without herdr calls when the reattach capacity is full',
 it('reserves capacity while a saved worker inspection is pending', async ({ onTestFinished }) => {
   vi.useFakeTimers();
   vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });
+
   const fixture = setup(onTestFinished);
   const saved = await fixture.controller.launch(fixture.input);
   fixture.controller.close();
   const entered = Promise.withResolvers<undefined>();
   const release = Promise.withResolvers<undefined>();
   let paused = false;
+
   const recovered = new WorkerController(
     fixture.directory,
     async (argumentsList, budget, signal) => {
@@ -253,9 +277,11 @@ it('reserves capacity while a saved worker inspection is pending', async ({ onTe
       return fixture.client(argumentsList, budget, signal);
     },
   );
+
   onTestFinished(() => {
     recovered.close();
   });
+
   const resuming = recovered.resume('parent-id');
   await entered.promise;
   const recordsBefore = readdirSync(fixture.directory);
@@ -275,6 +301,7 @@ it('stops a saved worker while its resume inspection is pending', async ({ onTes
   vi.useFakeTimers();
   const fixture = setup(onTestFinished);
   fixture.fake.state.sendKeysError = '';
+
   vi.spyOn(process, 'kill').mockImplementation(() => {
     if (fixture.fake.state.stopped) {
       throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
@@ -282,11 +309,13 @@ it('stops a saved worker while its resume inspection is pending', async ({ onTes
 
     return true;
   });
+
   const saved = await fixture.controller.launch(fixture.input);
   fixture.controller.close();
   const entered = Promise.withResolvers<undefined>();
   const release = Promise.withResolvers<undefined>();
   let paused = false;
+
   const recovered = new WorkerController(
     fixture.directory,
     async (argumentsList, budget, signal) => {
@@ -299,9 +328,11 @@ it('stops a saved worker while its resume inspection is pending', async ({ onTes
       return fixture.client(argumentsList, budget, signal);
     },
   );
+
   onTestFinished(() => {
     recovered.close();
   });
+
   const resuming = recovered.resume('parent-id');
   await entered.promise;
 
@@ -317,6 +348,7 @@ it('stops a saved worker while its resume inspection is pending', async ({ onTes
     'ctrl+c',
     'ctrl+d',
   ]);
+
   expect(readEvent(saved.directory, saved.taskId, 'cleanup')?.stopped).toBe(true);
   expect(recovered.status(saved.taskId, 'parent-id').state).toBe('stopped');
   expect(vi.getTimerCount()).toBe(0);
@@ -327,15 +359,18 @@ it('releases the handle and capacity after failed reattach verification', async 
 }) => {
   vi.useFakeTimers();
   vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });
+
   const fixture = setup(onTestFinished);
   const saved = await fixture.controller.launch(fixture.input);
   fixture.controller.close();
   fixture.fake.state.session = 'different-session';
   const recordsBefore = readdirSync(saved.directory);
   const recovered = new WorkerController(fixture.directory, fixture.client);
+
   onTestFinished(() => {
     recovered.close();
   });
@@ -358,6 +393,7 @@ it.each(['stopping', 'cancelled', 'timeout'])(
     vi.useFakeTimers();
     const fixture = setup(afterTest);
     fixture.fake.state.sendKeysError = '';
+
     vi.spyOn(process, 'kill').mockImplementation(() => {
       if (fixture.fake.state.stopped) {
         throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
@@ -365,15 +401,18 @@ it.each(['stopping', 'cancelled', 'timeout'])(
 
       return true;
     });
+
     const launched = await fixture.controller.launch(fixture.input);
     recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
     recordEvent(launched.directory, launched.taskId, kind, 'Cleanup interrupted.');
     fixture.controller.close();
     const originalEvent = readEvent(launched.directory, launched.taskId, kind);
     const finished = Promise.withResolvers<undefined>();
+
     const recovered = new WorkerController(fixture.directory, fixture.client, () => {
       finished.resolve(undefined);
     });
+
     afterTest(() => {
       recovered.close();
     });
@@ -409,6 +448,7 @@ it('refuses cancellation without saved ownership without exposing paths or chang
   const saved = readdirSync(launched.directory);
   const callsBefore = fixture.calls.length;
   const recovered = new WorkerController(fixture.directory, fixture.client);
+
   onTestFinished(() => {
     recovered.close();
   });
@@ -435,6 +475,7 @@ it('resumes the remaining workers when one saved task has no ownership record', 
   fixture.controller.close();
   rmSync(join(unowned.directory, 'owned.json'));
   const recovered = new WorkerController(fixture.directory, fixture.client);
+
   onTestFinished(() => {
     recovered.close();
   });
@@ -454,12 +495,15 @@ it('closes an unchanged shell once after the saved deadline has expired', async 
   const launched = await fixture.controller.launch(fixture.input);
   fixture.controller.close();
   fixture.fake.state.stopped = true;
+
   vi.spyOn(process, 'kill').mockImplementation(() => {
     throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
   });
+
   await vi.advanceTimersByTimeAsync(20_000);
   const callsBefore = fixture.calls.length;
   const recovered = new WorkerController(fixture.directory, fixture.client);
+
   onTestFinished(() => {
     recovered.close();
   });
@@ -485,11 +529,14 @@ it.each(['before resume', 'during inspection'])(
   async (expiry) => {
     vi.useFakeTimers();
     vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+
     afterTest(() => {
       vi.unstubAllEnvs();
     });
+
     const fixture = setup(afterTest);
     fixture.fake.state.sendKeysError = '';
+
     vi.spyOn(process, 'kill').mockImplementation(() => {
       if (fixture.fake.state.stopped) {
         throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
@@ -497,6 +544,7 @@ it.each(['before resume', 'during inspection'])(
 
       return true;
     });
+
     const launched = await fixture.controller.launch(fixture.input);
     fixture.controller.close();
     const elapsed = expiry === 'before resume' ? 20_000 : 7000;
@@ -505,6 +553,7 @@ it.each(['before resume', 'during inspection'])(
     const release = Promise.withResolvers<undefined>();
     let paused = false;
     const notifications: WorkerNotice[] = [];
+
     const recovered = new WorkerController(
       fixture.directory,
       async (argumentsList, budget, signal) => {
@@ -518,6 +567,7 @@ it.each(['before resume', 'during inspection'])(
       },
       (notice) => notifications.push(notice),
     );
+
     afterTest(() => {
       recovered.close();
     });
@@ -540,12 +590,15 @@ it.each(['before resume', 'during inspection'])(
       'ctrl+c',
       'ctrl+d',
     ]);
+
     expect(readEvent(launched.directory, launched.taskId, 'timeout')).toBeDefined();
     expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
+
     expect(recovered.status(launched.taskId, 'parent-id')).toMatchObject({
       state: 'stopped',
       outcome: 'timeout',
     });
+
     expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
     expect(notifications).toHaveLength(1);
     fixture.fake.state.stopped = false;
@@ -560,6 +613,7 @@ it('resumes polling with the remaining wall-clock deadline', async ({ onTestFini
   vi.useFakeTimers();
   const fixture = setup(onTestFinished);
   fixture.fake.state.sendKeysError = '';
+
   vi.spyOn(process, 'kill').mockImplementation(() => {
     if (fixture.fake.state.stopped) {
       throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
@@ -567,16 +621,20 @@ it('resumes polling with the remaining wall-clock deadline', async ({ onTestFini
 
     return true;
   });
+
   const launched = await fixture.controller.launch(fixture.input);
   recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
   fixture.controller.close();
   const task = readTask(launched.directory);
+
   writeFileSync(
     join(launched.directory, 'task.json'),
     JSON.stringify({ ...task, monotonicDeadline: 1 }),
   );
+
   await vi.advanceTimersByTimeAsync(2000);
   const recovered = new WorkerController(fixture.directory, fixture.client);
+
   onTestFinished(() => {
     recovered.close();
   });
@@ -586,14 +644,17 @@ it('resumes polling with the remaining wall-clock deadline', async ({ onTestFini
 
   expect(recovered.status(launched.taskId, 'parent-id').state).toBe('running');
   await vi.advanceTimersByTimeAsync(1);
+
   await vi.waitFor(() => {
     expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
   });
+
   expect(recovered.status(launched.taskId, 'parent-id')).toMatchObject({
     state: 'stopped',
     outcome: 'timeout',
     deadline: task.deadline,
   });
+
   expect(readTask(launched.directory).monotonicDeadline).toBe(1);
 });
 
@@ -608,6 +669,7 @@ it.each(['changed session', 'absent process'])(
 
     if (failure === 'absent process') {
       fixture.fake.state.stopped = true;
+
       vi.spyOn(process, 'kill').mockImplementation(() => {
         throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
       });
@@ -615,6 +677,7 @@ it.each(['changed session', 'absent process'])(
 
     const saved = readdirSync(launched.directory);
     const recovered = new WorkerController(fixture.directory, fixture.client);
+
     afterTest(() => {
       recovered.close();
     });
@@ -623,17 +686,22 @@ it.each(['changed session', 'absent process'])(
 
     expect(recovered.owns(launched.taskId)).toBe(false);
     expect(readdirSync(launched.directory)).toEqual(saved);
+
     expect(recovered.status(launched.taskId, 'parent-id')).toMatchObject({
       state: 'notOwned',
       recovery: { paneId: 'worker-1' },
     });
+
     const stopped = await recovered.cancel(launched.taskId, 'parent-id');
 
     expect(stopped.state).toBe(failure === 'absent process' ? 'stopped' : 'cleanupUnconfirmed');
+
     expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(
       failure === 'absent process',
     );
+
     expect(fixture.calls.filter((call) => call[1] === 'send-keys')).toEqual([]);
+
     expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(
       failure === 'absent process' ? ['parent'] : ['parent', 'worker-1'],
     );
@@ -649,6 +717,7 @@ it.each([true, false])('does not reattach work with cleanup stopped %s', async (
   const saved = readdirSync(launched.directory);
   const callsBefore = fixture.calls.length;
   const recovered = new WorkerController(fixture.directory, fixture.client);
+
   afterTest(() => {
     recovered.close();
   });
@@ -668,6 +737,7 @@ it('does not reattach or cancel work from another parent session', async ({ onTe
   const callsBefore = fixture.calls.length;
   const recordsBefore = readdirSync(launched.directory);
   const recovered = new WorkerController(fixture.directory, fixture.client);
+
   onTestFinished(() => {
     recovered.close();
   });
@@ -675,9 +745,11 @@ it('does not reattach or cancel work from another parent session', async ({ onTe
   await recovered.resume('another-parent');
 
   expect(recovered.owns(launched.taskId)).toBe(false);
+
   await expect(recovered.cancel(launched.taskId, 'another-parent')).rejects.toThrow(
     'another parent',
   );
+
   expect(fixture.calls).toHaveLength(callsBefore);
   expect(readdirSync(launched.directory)).toEqual(recordsBefore);
 });
@@ -702,6 +774,7 @@ it.each(['missing', 'empty'] as const)(
 
       return '';
     });
+
     fixture.fake.state.startError = 'agent_pane_busy';
     fixture.fake.state.rejectStart = true;
 
@@ -710,6 +783,7 @@ it.each(['missing', 'empty'] as const)(
     expect(launched.state).toBe('stopped');
     expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
     expect(fixture.calls.some((call) => call[1] === 'send-keys')).toBe(false);
+
     expect(fixture.calls.filter((call) => call[1] === 'close')).toEqual([
       ['pane', 'close', 'worker-1'],
     ]);
@@ -720,6 +794,7 @@ it('does not close a rejected-start pane after its foreground changes', async ({
   onTestFinished,
 }) => {
   let absenceChecks = 0;
+
   const fixture = setup(onTestFinished, -1, async (argumentsList) => {
     if (argumentsList[1] === 'get') {
       absenceChecks += 1;
@@ -740,6 +815,7 @@ it('does not close a rejected-start pane after its foreground changes', async ({
 
     return '';
   });
+
   fixture.fake.state.startError = 'agent_pane_busy';
   fixture.fake.state.rejectStart = true;
 
@@ -759,6 +835,7 @@ it('keeps confirmed cleanup when placement fails after the rejected-start pane c
   fixture.fake.state.startError = 'Start rejected';
   fixture.fake.state.rejectStart = true;
   const close = WorkerPlacement.prototype.close;
+
   vi.spyOn(WorkerPlacement.prototype, 'close').mockImplementation(async function (
     this: WorkerPlacement,
     ...argumentsList
@@ -781,6 +858,7 @@ it.each(['fails', 'aborts', 'times out'] as const)(
     const abort = new AbortController();
     const fixture = setup(afterTest, -1);
     const client = fixture.fake.client;
+
     vi.spyOn(fixture.fake, 'client').mockImplementation(async (argumentsList, budget, signal) => {
       try {
         return await client(argumentsList, budget, signal);
@@ -790,11 +868,14 @@ it.each(['fails', 'aborts', 'times out'] as const)(
         }
       }
     });
+
     fixture.fake.state.startError =
       outcome === 'times out'
         ? 'Client attempt budget expired; delivery and cleanup are unconfirmed.'
         : 'Start response lost';
+
     fixture.fake.state.sendKeysError = '';
+
     vi.spyOn(process, 'kill').mockImplementation(() => {
       if (fixture.fake.state.stopped) {
         throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
@@ -818,6 +899,7 @@ it('requires two matching bare-shell samples after transient startup children', 
   const client = fixture.fake.client;
   let samples = 0;
   let samplesAtStart = 0;
+
   vi.spyOn(fixture.fake, 'client').mockImplementation((argumentsList, budget, signal) => {
     if (!fixture.fake.state.started && argumentsList[1] === 'process-info') {
       samples += 1;
@@ -846,6 +928,7 @@ it('waits again when a startup child appears after the shell looked stable', asy
   const fixture = setup(onTestFinished);
   const client = fixture.fake.client;
   let samples = 0;
+
   vi.spyOn(fixture.fake, 'client').mockImplementation((argumentsList, budget, signal) => {
     if (!fixture.fake.state.started && argumentsList[1] === 'process-info') {
       samples += 1;
@@ -885,6 +968,7 @@ it('refuses to start when the shell process changes during startup checks', asyn
   const fixture = setup(onTestFinished, -1);
   const client = fixture.fake.client;
   let samples = 0;
+
   vi.spyOn(fixture.fake, 'client').mockImplementation((argumentsList, budget, signal) => {
     if (!fixture.fake.state.started && argumentsList[1] === 'process-info') {
       samples += 1;
@@ -907,6 +991,7 @@ it('refuses to start when the shell process changes during startup checks', asyn
 it('gives herdr a valid start timeout inside the client budget', async ({ onTestFinished }) => {
   let herdrTimeout = 0;
   let clientBudget = 0;
+
   const fixture = setup(onTestFinished, 0, async (argumentsList, budget) => {
     if (argumentsList[1] === 'start') {
       herdrTimeout = Number(argumentsList[argumentsList.indexOf('--timeout') + 1]);
@@ -928,6 +1013,7 @@ it('retries a pane-busy start when a prompt hook briefly occupies the shell', as
 }) => {
   let attempts = 0;
   let samples = 0;
+
   const fixture = setup(onTestFinished, 0, async (argumentsList) => {
     if (argumentsList[1] === 'start') {
       attempts += 1;
@@ -964,6 +1050,7 @@ it.each([
   ],
 ])('closes a never-started pane when a prompt hook %s', async (_case, hookSamples) => {
   let samples = 0;
+
   const fixture = setup(afterTest, 0, async (argumentsList) => {
     if (argumentsList[1] !== 'process-info') {
       return '';
@@ -974,6 +1061,7 @@ it.each([
     // Sample 1 proves absence after the rejected start; later samples recheck before the close.
     return hookSamples.includes(samples) ? promptHookSample(argumentsList[3]) : '';
   });
+
   fixture.fake.state.startError = 'Start rejected';
   fixture.fake.state.rejectStart = true;
 
@@ -989,6 +1077,7 @@ it.each([
 ])('closes the pane of an exited worker when a prompt hook runs %s', async (_case, hookSamples) => {
   let exited = false;
   let samples = 0;
+
   const fixture = setup(afterTest, 0, async (argumentsList) => {
     if (!exited || argumentsList[1] !== 'process-info') {
       return '';
@@ -998,10 +1087,13 @@ it.each([
 
     return hookSamples.includes(samples) ? promptHookSample(argumentsList[3]) : '';
   });
+
   const launched = await fixture.controller.launch(fixture.input);
+
   vi.spyOn(process, 'kill').mockImplementation(() => {
     throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
   });
+
   fixture.fake.state.stopped = true;
   exited = true;
 
@@ -1028,6 +1120,7 @@ it('retries a structured pane-busy rejection once after proving absence', async 
   onTestFinished,
 }) => {
   let attempts = 0;
+
   const fixture = setup(onTestFinished, 0, async (argumentsList) => {
     if (argumentsList[1] === 'start') {
       attempts += 1;
@@ -1046,6 +1139,7 @@ it('retries a structured pane-busy rejection once after proving absence', async 
 
   expect(launched.state).toBe('starting');
   expect(attempts).toBe(2);
+
   expect(records.readRecord(launched.directory, 'startRetry.json')).toMatchObject({
     taskId: launched.taskId,
   });
@@ -1053,6 +1147,7 @@ it('retries a structured pane-busy rejection once after proving absence', async 
 
 it('does not repeat a second structured pane-busy rejection', async ({ onTestFinished }) => {
   let attempts = 0;
+
   const fixture = setup(onTestFinished, -1, async (argumentsList) => {
     if (argumentsList[1] === 'start') {
       attempts += 1;
@@ -1086,10 +1181,13 @@ it('skips unpublished preparation debris while published attempts remain exclusi
   onTestFinished,
 }) => {
   vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });
+
   const fixture = setup(onTestFinished);
+
   writeFileSync(
     fixture.input.parentSession,
     JSON.stringify({
@@ -1099,21 +1197,27 @@ it('skips unpublished preparation debris while published attempts remain exclusi
       cwd: fixture.directory,
     }) + '\n',
   );
+
   const originalPublish = records.publish;
+
   const preparation = vi.spyOn(records, 'publish').mockImplementation((directory, name, value) => {
     if (name === 'task.json') {
       vi.mocked(fsyncSync).mockImplementationOnce(() => {
         throw new Error('Initial task file sync failed.');
       });
+
       preparation.mockRestore();
     }
 
     originalPublish(directory, name, value);
   });
+
   await expect(fixture.controller.launch(fixture.input)).rejects.toThrow('Task preparation');
+
   expect(fixture.calls.some((call) => ['start', 'split', 'create'].includes(call[1] ?? ''))).toBe(
     false,
   );
+
   const abandoned = readdirSync(fixture.directory, { withFileTypes: true }).find((entry) =>
     entry.isDirectory(),
   );
@@ -1131,39 +1235,49 @@ it('skips unpublished preparation debris while published attempts remain exclusi
   const launched = await fixture.controller.launch(fixture.input);
   expect(launched.state).toBe('starting');
   expect(launched).not.toHaveProperty('outcome');
+
   const current = {
     file: fixture.input.parentSession,
     id: fixture.input.parentSessionId,
     sessionDirectory: fixture.directory,
   };
+
   const history = await searchHistory(fixture.directory, current);
   expect(history.candidates.some((candidate) => candidate.taskId === launched.taskId)).toBe(true);
   expect(history.diagnostics.join(' ')).toContain(abandoned.name);
   expect(readFileSync(join(abandonedDirectory, receiptFiles[0] ?? ''))).toEqual(receipt);
+
   records.acceptReport(launched.directory, launched.taskId, {
     taskId: launched.taskId,
     outcome: 'success',
     summary: 'Finished.',
     evidence: [],
   });
+
   recordEvent(launched.directory, launched.taskId, 'cleanup', {
     detail: 'Parent confirmed.',
     stopped: true,
   });
+
   fixture.controller.close();
   const controller = new WorkerController(fixture.directory, fixture.client);
+
   onTestFinished(() => {
     controller.close();
   });
+
   const attemptDirectory = join(fixture.directory, 'published-attempt');
   mkdirSync(attemptDirectory);
+
   const attempt = records.validateTask({
     ...readTask(launched.directory),
     taskId: 'published-attempt',
     predecessorTaskId: launched.taskId,
   });
+
   records.publish(attemptDirectory, 'task.json', attempt);
   recordEvent(attemptDirectory, attempt.taskId, 'accepted', 'Accepted attempt.');
+
   const input = {
     task: 'Follow up.',
     sourceTaskId: launched.taskId,
@@ -1173,6 +1287,7 @@ it('skips unpublished preparation debris while published attempts remain exclusi
     parentSessionId: current.id,
     parentPane: 'parent',
   };
+
   const context = { cwd: fixture.directory, isProjectTrusted: () => true } as Parameters<
     WorkerController['followUp']
   >[1];
@@ -1198,6 +1313,7 @@ const savedFiles = (directory: string) => {
 
 const completed = async (intercept?: HerdrClient) => {
   const fixture = setup(afterTest, 0, intercept);
+
   writeFileSync(
     fixture.input.parentSession,
     JSON.stringify({
@@ -1207,32 +1323,41 @@ const completed = async (intercept?: HerdrClient) => {
       cwd: fixture.directory,
     }) + '\n',
   );
+
   const status = await fixture.controller.launch(fixture.input);
+
   records.acceptReport(status.directory, status.taskId, {
     taskId: status.taskId,
     outcome: 'success',
     summary: 'Finished.',
     evidence: ['Checked.'],
   });
+
   recordEvent(status.directory, status.taskId, 'settled', {
     detail: 'Worker settled.',
     stopped: true,
   });
+
   recordEvent(status.directory, status.taskId, 'cleanup', {
     detail: 'Parent confirmed exit.',
     stopped: true,
   });
+
   fixture.controller.close();
   const controller = new WorkerController(fixture.directory, fixture.client);
+
   afterTest(() => {
     controller.close();
   });
+
   const validation = vi
     .spyOn(loadoutModule, 'validateSavedLoadout')
     .mockImplementation((value) => value as ReturnType<typeof readTask>['loadout']);
+
   const context = { cwd: fixture.directory, isProjectTrusted: () => true } as Parameters<
     typeof loadoutModule.validateSavedLoadout
   >[1];
+
   const input = {
     task: 'Follow up within saved settings.',
     sourceTaskId: status.taskId,
@@ -1260,6 +1385,7 @@ it.each(['pending', 'uncertain cleanup', 'dispatch', 'accepted', 'report'] as co
     const fixture = await completed();
     const directory = join(fixture.directory, 'successor');
     mkdirSync(directory);
+
     records.publish(directory, 'task.json', {
       ...fixture.source,
       taskId: 'successor',
@@ -1296,6 +1422,7 @@ it.each(['pending', 'uncertain cleanup', 'dispatch', 'accepted', 'report'] as co
     await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
       'successor',
     );
+
     expect(savedFiles(fixture.directory)).toEqual(saved);
     expect(fixture.calls).toEqual([['agent', 'list']]);
   },
@@ -1303,6 +1430,7 @@ it.each(['pending', 'uncertain cleanup', 'dispatch', 'accepted', 'report'] as co
 
 it('admits follow-up with retired records and an unpublished directory', async () => {
   const fixture = await completed();
+
   const retiredRecords = [
     { ...fixture.source, taskId: 'retired-tree', tree: {} },
     { ...fixture.source, taskId: 'retired-owner', ownerId: 'old-controller' },
@@ -1328,6 +1456,7 @@ it('admits follow-up with retired records and an unpublished directory', async (
     state: 'starting',
     predecessorTaskId: fixture.source.taskId,
   });
+
   expect(savedFiles(fixture.directory)).toEqual(expect.arrayContaining(saved));
   expect(readdirSync(unpublished)).toEqual([]);
 });
@@ -1343,6 +1472,7 @@ it('reports unreadable successor records and refuses follow-up without writes', 
   await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
     'unreadable',
   );
+
   expect(savedFiles(fixture.directory)).toEqual(saved);
   expect(fixture.calls).toEqual([['agent', 'list']]);
 });
@@ -1350,6 +1480,7 @@ it('reports unreadable successor records and refuses follow-up without writes', 
 it('refuses another follow-up when final absence verification fails', async () => {
   let following = false;
   let absenceChecks = 0;
+
   const fixture = await completed(async (argumentsList) => {
     if (!following) {
       return '';
@@ -1374,6 +1505,7 @@ it('refuses another follow-up when final absence verification fails', async () =
 
     return '';
   });
+
   following = true;
   fixture.fake.state.startError = 'Start rejected';
   fixture.fake.state.rejectStart = true;
@@ -1426,36 +1558,44 @@ it('follows up a completed native task with new identity and unchanged saved evi
 
   expect(task.taskId).not.toBe(fixture.source.taskId);
   expect(task.deadline).not.toBe(fixture.source.deadline);
+
   expect(task).toMatchObject({
     predecessorTaskId: fixture.source.taskId,
     nativeSessionId: fixture.source.nativeSessionId,
     nativeSessionFile: fixture.source.nativeSessionFile,
     loadout: fixture.source.loadout,
   });
+
   expect(task.name).not.toBe(fixture.source.name);
+
   expect(next).toMatchObject({
     predecessorTaskId: fixture.source.taskId,
     predecessorName: fixture.source.name,
   });
+
   expect(taskStatus(next.directory)).toMatchObject({
     predecessorTaskId: fixture.source.taskId,
     predecessorName: fixture.source.name,
   });
+
   expect(
     fixture.controller.status(fixture.source.taskId, fixture.input.parentSessionId),
   ).toMatchObject({
     successorTaskId: next.taskId,
   });
+
   const history = await searchHistory(fixture.directory, {
     file: fixture.input.parentSession,
     id: fixture.input.parentSessionId,
     sessionDirectory: fixture.directory,
   });
+
   expect(
     history.candidates.find((candidate) => candidate.taskId === fixture.source.taskId),
   ).toMatchObject({
     successorTaskId: next.taskId,
   });
+
   expect(readFileSync(join(fixture.sourceDirectory, 'task.json'))).toEqual(taskBytes);
   expect(readFileSync(join(fixture.sourceDirectory, 'report.json'))).toEqual(reportBytes);
   expect(readFileSync(fixture.source.nativeSessionFile)).toEqual(nativeBytes);
@@ -1464,6 +1604,7 @@ it('follows up a completed native task with new identity and unchanged saved evi
   await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
     task.taskId,
   );
+
   expect(savedFiles(fixture.directory)).toEqual(saved);
 });
 
@@ -1488,6 +1629,7 @@ it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'out of t
     } else {
       fixture.input.parentSession = join(fixture.directory, 'unrelated.jsonl');
       fixture.input.parentSessionId = 'unrelated';
+
       writeFileSync(
         fixture.input.parentSession,
         JSON.stringify({ type: 'session', version: 3, id: 'unrelated', cwd: fixture.directory }) +
@@ -1500,6 +1642,7 @@ it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'out of t
     await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
       /cleanup|handover|native|tree/i,
     );
+
     expect(savedFiles(fixture.directory)).toEqual(saved);
   },
 );
@@ -1507,6 +1650,7 @@ it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'out of t
 it('classifies follow-up readiness deadline expiry as timeout rather than caller cancellation', async () => {
   let following = false;
   const started = Promise.withResolvers<undefined>();
+
   const fixture = await completed(async (argumentsList, budget, signal) => {
     if (following && argumentsList[1] === 'start') {
       started.resolve(undefined);
@@ -1516,16 +1660,19 @@ it('classifies follow-up readiness deadline expiry as timeout rather than caller
 
     return '';
   });
+
   following = true;
   const validationDeadline = new AbortController();
   vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(validationDeadline.signal);
   // Leave slow runners room to reach start; an early rejection fails here instead of hanging.
   vi.spyOn(cancellationModule, 'runClient').mockResolvedValue('fixture shell start');
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
   const pending = fixture.controller.followUp(
     { ...fixture.input, timeout: 10_000 },
     fixture.context,
   );
+
   await Promise.race([started.promise, pending]);
   validationDeadline.abort(new DOMException('Validation deadline expired.', 'TimeoutError'));
   await vi.advanceTimersByTimeAsync(10_000);
@@ -1541,6 +1688,7 @@ it('classifies follow-up readiness deadline expiry as timeout rather than caller
 it('allows only one competing follow-up and preserves lineage across parents and successive tasks', async () => {
   const fixture = await completed();
   const sibling = join(fixture.directory, 'sibling.jsonl');
+
   writeFileSync(
     sibling,
     JSON.stringify({
@@ -1551,12 +1699,15 @@ it('allows only one competing follow-up and preserves lineage across parents and
       parentSession: fixture.input.parentSession,
     }) + '\n',
   );
+
   fixture.calls.length = 0;
   const request = { ...fixture.input, parentSession: sibling, parentSessionId: 'sibling' };
+
   const attempts = await Promise.allSettled([
     fixture.controller.followUp(request, fixture.context),
     fixture.controller.followUp(request, fixture.context),
   ]);
+
   const successes = attempts.filter((entry) => entry.status === 'fulfilled');
   expect(successes).toHaveLength(1);
   const next = successes[0]?.value;
@@ -1567,28 +1718,35 @@ it('allows only one competing follow-up and preserves lineage across parents and
 
   expect(fixture.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBe(next.taskId);
+
   await expect(
     fixture.controller.followUp({ ...request, sourceTaskId: next.taskId }, fixture.context),
   ).rejects.toThrow('handover');
+
   records.acceptReport(next.directory, next.taskId, {
     taskId: next.taskId,
     outcome: 'success',
     summary: 'Second done.',
     evidence: [],
   });
+
   recordEvent(next.directory, next.taskId, 'cleanup', {
     detail: 'Parent confirmed.',
     stopped: true,
   });
+
   fixture.controller.close();
   const latestController = new WorkerController(fixture.directory, fixture.client);
+
   afterTest(() => {
     latestController.close();
   });
+
   const latest = await latestController.followUp(
     { ...fixture.input, sourceTaskId: next.taskId },
     fixture.context,
   );
+
   const history = await searchHistory(
     fixture.directory,
     { file: sibling, id: 'sibling', sessionDirectory: fixture.directory },
@@ -1596,17 +1754,22 @@ it('allows only one competing follow-up and preserves lineage across parents and
   );
 
   expect(history.outcome).toBe('clarification');
+
   expect(history.candidates.map((candidate) => candidate.taskId)).toEqual(
     expect.arrayContaining([fixture.source.taskId, next.taskId, latest.taskId]),
   );
+
   expect(history.candidates).toHaveLength(3);
   expect(readTask(latest.directory).nativeSessionFile).toBe(fixture.source.nativeSessionFile);
+
   expect(JSON.parse(readFileSync(fixture.source.nativeSessionFile, 'utf8'))).toMatchObject({
     parentSession: fixture.source.parentSession,
   });
+
   await expect(latestController.followUp(fixture.input, fixture.context)).rejects.toThrow(
     next.taskId,
   );
+
   await expect(
     latestController.followUp({ ...fixture.input, sourceTaskId: next.taskId }, fixture.context),
   ).rejects.toThrow(latest.taskId);
@@ -1618,6 +1781,7 @@ it.each(['cancelled', 'missing after placement', 'failed startup'] as const)(
     let following = false;
     const abort = new AbortController();
     let nativeFile = '';
+
     const fixture = await completed(async (argumentsList) => {
       if (following && argumentsList[1] === 'split' && failure === 'missing after placement') {
         rmSync(nativeFile);
@@ -1633,6 +1797,7 @@ it.each(['cancelled', 'missing after placement', 'failed startup'] as const)(
 
       return '';
     });
+
     nativeFile = fixture.source.nativeSessionFile;
     const nativeContents = readFileSync(nativeFile);
     following = true;
@@ -1650,6 +1815,7 @@ it.each(['cancelled', 'missing after placement', 'failed startup'] as const)(
       await fixture.controller.followUp(fixture.input, fixture.context).catch((error: unknown) => {
         validationFailures.push(error);
       });
+
       writeFileSync(nativeFile, nativeContents);
     }
 
@@ -1669,20 +1835,24 @@ it('refuses another follow-up when a failed start leaves an unconfirmed worker',
   const saved = savedFiles(fixture.directory);
 
   expect(failed.state).toBe('cleanupUnconfirmed');
+
   await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
     failed.taskId,
   );
+
   expect(savedFiles(fixture.directory)).toEqual(saved);
   expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBe(failed.taskId);
 });
 
 it('refuses known live native writers and preserves validation time in the original follow-up budget', async () => {
   let live: unknown[] = [];
+
   const fixture = await completed(async (argumentsList) =>
     argumentsList[0] === 'agent' && argumentsList[1] === 'list'
       ? JSON.stringify({ result: { type: 'agent_list', agents: live } })
       : '',
   );
+
   live = [
     {
       pane_id: 'manual',
@@ -1690,26 +1860,31 @@ it('refuses known live native writers and preserves validation time in the origi
       agent_session: { kind: 'path', value: fixture.source.nativeSessionFile },
     },
   ];
+
   const saved = savedFiles(fixture.directory);
   fixture.calls.length = 0;
 
   await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
     'already live',
   );
+
   expect(savedFiles(fixture.directory)).toEqual(saved);
   expect(fixture.calls).toEqual([['agent', 'list']]);
   live = [];
   const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+
   fixture.validation.mockImplementation((value) => {
     clock.mockReturnValue(20000);
 
     return value as ReturnType<typeof readTask>['loadout'];
   });
+
   fixture.calls.length = 0;
 
   await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
     'budget expired',
   );
+
   expect(fixture.calls).toEqual([]);
   expect(savedFiles(fixture.directory)).toEqual(saved);
 });
@@ -1717,34 +1892,43 @@ it('refuses known live native writers and preserves validation time in the origi
 it('retains friendly names and avoids retained and live collisions', async ({ onTestFinished }) => {
   const suffix = vi.spyOn(names, 'nameSuffix').mockReturnValue('aa');
   let live: unknown[] = [];
+
   const { controller, input, directory, calls } = setup(onTestFinished, 0, async (argumentsList) =>
     argumentsList[0] === 'agent' && argumentsList[1] === 'list'
       ? JSON.stringify({ result: { type: 'agent_list', agents: live } })
       : '',
   );
+
   const first = await controller.launch(input);
   expect(readTask(first.directory)).toMatchObject({ name: 'worker-aa' });
+
   recordEvent(first.directory, first.taskId, 'cleanup', {
     detail: 'Pane removed.',
     stopped: true,
   });
+
   live = [
     { pane_id: 'elsewhere', name: 'worker-bb' },
     { pane_id: 'unnamed', name: null },
   ];
+
   suffix.mockReturnValueOnce('aa').mockReturnValueOnce('bb').mockReturnValue('cc');
   const second = await controller.launch(input);
 
   expect(readTask(second.directory)).toMatchObject({ name: 'worker-cc' });
+
   expect(calls.filter((call) => call[1] === 'start').map((call) => call[2])).toEqual([
     'worker-aa',
     'worker-cc',
   ]);
+
   controller.close();
   const recovered = new WorkerController(directory);
+
   expect(recovered.status(first.taskId, input.parentSessionId)).toMatchObject({
     name: 'worker-aa',
   });
+
   recovered.close();
 });
 
@@ -1759,7 +1943,9 @@ it('refuses full-cap native follow-up before publishing an attempt', async () =>
   await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
     'capacity full',
   );
+
   expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBeUndefined();
+
   expect(
     records
       .readTasks(fixture.directory)
@@ -1773,6 +1959,7 @@ it('dispatches the task before a stalled cosmetic pane rename can hold the launc
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   const renameStarted = Promise.withResolvers<undefined>();
   let dispatchedWhenRenameStarted: boolean | undefined;
+
   const { controller, input, calls } = setup(
     onTestFinished,
     0,
@@ -1795,6 +1982,7 @@ it('dispatches the task before a stalled cosmetic pane rename can hold the launc
       return '';
     },
   );
+
   const launching = controller.launch(input);
 
   await renameStarted.promise;
@@ -1815,6 +2003,7 @@ it('bounds a stalled cosmetic terminal resolution by the same short deadline', a
   const resolutionStalled = Promise.withResolvers<undefined>();
   let started = false;
   let dispatchedWhenResolutionStalled: boolean | undefined;
+
   const { controller, input, calls } = setup(
     onTestFinished,
     0,
@@ -1844,6 +2033,7 @@ it('bounds a stalled cosmetic terminal resolution by the same short deadline', a
       return '';
     },
   );
+
   const launching = controller.launch(input);
 
   await resolutionStalled.promise;
@@ -1861,12 +2051,15 @@ it('reports stopped without recovery once the parent confirmed the worker stoppe
 }) => {
   const { controller, input, directory } = setup(onTestFinished);
   const status = await controller.launch(input);
+
   recordEvent(status.directory, status.taskId, 'cleanup', {
     detail: 'Owned process stopped.',
     stopped: true,
   });
+
   controller.close();
   const recovered = new WorkerController(directory);
+
   onTestFinished(() => {
     recovered.close();
   });
@@ -1897,17 +2090,22 @@ it('allocates distinct names for parallel launches and refuses bounded exhaustio
     .mockReturnValueOnce('aa')
     .mockReturnValueOnce('aa')
     .mockReturnValue('bb');
+
   const { controller, client, directory, input, calls } = setup(onTestFinished);
   const parallel = new WorkerController(directory, client);
+
   onTestFinished(() => {
     parallel.close();
   });
+
   const launched = await Promise.all([controller.launch(input), parallel.launch(input)]);
+
   expect(
     launched
       .map((status) => readTask(status.directory).name)
       .toSorted((left, right) => String(left).localeCompare(String(right))),
   ).toEqual(['worker-aa', 'worker-bb']);
+
   suffix.mockClear().mockReturnValue('aa');
   const starts = calls.filter((call) => call[1] === 'start').length;
 
@@ -1945,6 +2143,7 @@ it.each(['cancelled', 'expired', 'closed'] as const)(
     const listed = Promise.withResolvers<number>();
     const release = Promise.withResolvers<string>();
     const abort = new AbortController();
+
     const { controller, input, calls, directory } = setup(
       afterTest,
       0,
@@ -1958,6 +2157,7 @@ it.each(['cancelled', 'expired', 'closed'] as const)(
         return '';
       },
     );
+
     const pending = controller.launch(input, abort.signal);
     expect(await listed.promise).toBeLessThanOrEqual(7500);
 
@@ -1981,6 +2181,7 @@ it('retains the chosen name but never retries a late live collision', async ({
   onTestFinished,
 }) => {
   vi.spyOn(names, 'nameSuffix').mockReturnValue('xy');
+
   const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
     if (argumentsList[1] === 'start') {
       throw new Error('agent_name_taken');
@@ -1988,6 +2189,7 @@ it('retains the chosen name but never retries a late live collision', async ({
 
     return '';
   });
+
   const status = await controller.launch({
     ...input,
     loadout: { ...input.loadout, role: 'investigation' },
@@ -1997,6 +2199,7 @@ it('retains the chosen name but never retries a late live collision', async ({
     name: 'investigator-xy',
     outcome: 'failure',
   });
+
   expect(readTask(status.directory).name).toBe('investigator-xy');
   expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(calls.some((call) => ['prompt', 'send-keys'].includes(call[1] ?? ''))).toBe(false);
@@ -2006,39 +2209,48 @@ it('delivers a clarification once without treating herdr delivery as acknowledge
   onTestFinished,
 }) => {
   vi.useFakeTimers();
+
   const { controller, input, calls, notifications, directory } = setup(
     onTestFinished,
     0,
     async (argumentsList) => (argumentsList[1] === 'prompt' ? JSON.stringify({ result: {} }) : ''),
   );
+
   const launched = await controller.launch(input);
   const task = readTask(launched.directory);
   recordEvent(launched.directory, task.taskId, 'accepted', 'Accepted.');
+
   const question = {
     version: 1,
     taskId: task.taskId,
     questionId: 'question-one',
     question: 'Which file?',
   };
+
   questions.acceptQuestion(launched.directory, task.taskId, question);
 
   expect(controller).toHaveProperty('reply');
   expect(controller.status(task.taskId, 'parent-id').pendingQuestion).toEqual(question);
+
   const answer = {
     questionId: question.questionId,
     replyId: 'reply-one',
     reply: 'source.txt',
     scopeUnchanged: true,
   };
+
   await expect(controller.reply(task.taskId, 'wrong-parent', answer)).rejects.toThrow(
     'another parent',
   );
+
   await expect(
     controller.reply(task.taskId, 'parent-id', { ...answer, scopeUnchanged: false }),
   ).rejects.toThrow('scope');
+
   await expect(
     controller.reply(task.taskId, 'parent-id', { ...answer, questionId: 'wrong' }),
   ).rejects.toThrow('pending question');
+
   const result = await controller.reply(task.taskId, 'parent-id', answer);
   expect(result).toMatchObject({ replyAccepted: true });
   expect(result).toMatchObject({ workerAcknowledged: false });
@@ -2047,17 +2259,21 @@ it('delivers a clarification once without treating herdr delivery as acknowledge
   expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
   expect(calls.find((call) => call[1] === 'prompt')?.[2]).toBe('worker-1');
   expect(records.readTask(launched.directory)).toEqual(task);
+
   expect(
     questions.readAcknowledgement(launched.directory, task.taskId, question.questionId),
   ).toBeUndefined();
+
   expect(notifications).toEqual([]);
 
   controller.close();
   const recovered = new WorkerController(directory);
+
   expect(recovered.status(task.taskId, 'parent-id').pendingQuestion).toEqual({
     ...question,
     replySaved: true,
   });
+
   await expect(recovered.reply(task.taskId, 'parent-id', answer)).rejects.toThrow('active');
   recovered.close();
 });
@@ -2066,6 +2282,7 @@ it('treats an unreadable acknowledgement as unacknowledged after saving the Pi r
   onTestFinished,
 }) => {
   let taskDirectory = '';
+
   const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
     if (argumentsList[1] === 'prompt') {
       writeFileSync(join(taskDirectory, 'acknowledgement-question-one.json'), '{}');
@@ -2075,10 +2292,12 @@ it('treats an unreadable acknowledgement as unacknowledged after saving the Pi r
 
     return '';
   });
+
   const launched = await controller.launch(input);
   taskDirectory = launched.directory;
   const task = readTask(launched.directory);
   recordEvent(launched.directory, task.taskId, 'accepted', 'Accepted.');
+
   questions.acceptQuestion(launched.directory, task.taskId, {
     version: 1,
     taskId: task.taskId,
@@ -2098,6 +2317,7 @@ it('treats an unreadable acknowledgement as unacknowledged after saving the Pi r
     workerAcknowledged: false,
     delivery: 'sent',
   });
+
   expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
 });
 
@@ -2107,21 +2327,25 @@ it('treats an unreadable acknowledgement as unacknowledged on a repeated Pi repl
   const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) =>
     argumentsList[1] === 'prompt' ? JSON.stringify({ result: {} }) : '',
   );
+
   const launched = await controller.launch(input);
   const task = readTask(launched.directory);
   recordEvent(launched.directory, task.taskId, 'accepted', 'Accepted.');
+
   questions.acceptQuestion(launched.directory, task.taskId, {
     version: 1,
     taskId: task.taskId,
     questionId: 'question-one',
     question: 'Which file?',
   });
+
   const answer = {
     questionId: 'question-one',
     replyId: 'reply-one',
     reply: 'source.txt',
     scopeUnchanged: true,
   };
+
   await controller.reply(task.taskId, 'parent-id', answer);
   writeFileSync(join(launched.directory, 'acknowledgement-question-one.json'), '{}');
 
@@ -2132,6 +2356,7 @@ it('treats an unreadable acknowledgement as unacknowledged on a repeated Pi repl
     workerAcknowledged: false,
     delivery: 'notResent',
   });
+
   expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
 });
 
@@ -2142,6 +2367,7 @@ it.each(['before', 'during'] as const)(
     let moved = false;
     let token = '';
     const movedPane = 'other-workspace:worker';
+
     const { controller, input, calls } = setup(afterTest, 0, async (argumentsList) => {
       if (argumentsList[1] === 'start') {
         token = argumentsList[argumentsList.indexOf('--session') + 1]!;
@@ -2194,16 +2420,20 @@ it.each(['before', 'during'] as const)(
 
       return '';
     });
+
     const launched = await controller.launch(input);
     recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
+
     questions.acceptQuestion(launched.directory, launched.taskId, {
       version: 1,
       taskId: launched.taskId,
       questionId: 'question-one',
       question: 'Which file?',
     });
+
     replying = true;
     moved = movement === 'before';
+
     const reply = controller.reply(launched.taskId, 'parent-id', {
       questionId: 'question-one',
       replyId: 'reply-one',
@@ -2217,10 +2447,13 @@ it.each(['before', 'during'] as const)(
       before: expect.objectContaining({ replyAccepted: true, workerAcknowledged: false }),
       during: expect.stringContaining('moved'),
     };
+
     expect(outcome).toEqual(expected[movement]);
+
     expect(calls.filter((call) => call[1] === 'prompt').map((call) => call[2])).toEqual(
       movement === 'before' ? [movedPane] : [],
     );
+
     expect(questions.readReply(launched.directory, launched.taskId, 'question-one')?.replyId).toBe(
       movement === 'before' ? 'reply-one' : undefined,
     );
@@ -2233,12 +2466,14 @@ it('retains uncertain reply delivery without resending or acknowledging it', asy
   const { controller, input, calls } = setup(onTestFinished);
   const launched = await controller.launch(input);
   recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
+
   questions.acceptQuestion(launched.directory, launched.taskId, {
     version: 1,
     taskId: launched.taskId,
     questionId: 'question-one',
     question: 'Which file?',
   });
+
   const answer = {
     questionId: 'question-one',
     replyId: 'reply-one',
@@ -2249,19 +2484,24 @@ it('retains uncertain reply delivery without resending or acknowledging it', asy
   const uncertain = await controller.reply(launched.taskId, 'parent-id', answer);
 
   expect(uncertain).toMatchObject({ replyAccepted: true, delivery: 'uncertain' });
+
   expect(uncertain).toHaveProperty(
     'deliveryError',
     expect.stringContaining('Injected herdr failure'),
   );
+
   await expect(controller.reply(launched.taskId, 'parent-id', answer)).resolves.toMatchObject({
     workerAcknowledged: false,
     delivery: 'notResent',
   });
+
   expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
+
   expect(controller.questionReceipt(launched.taskId, 'parent-id', 'question-one')).toMatchObject({
     reply: { replyId: 'reply-one' },
     acknowledgement: undefined,
   });
+
   await expect(
     controller.reply(launched.taskId, 'parent-id', { ...answer, reply: 'changed' }),
   ).rejects.toThrow('Conflicting');
@@ -2274,6 +2514,7 @@ it('notifies the parent once while waiting and refuses replies after the origina
   const { controller, input, notifications, calls } = setup(onTestFinished);
   const launched = await controller.launch(input);
   recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
+
   questions.acceptQuestion(launched.directory, launched.taskId, {
     version: 1,
     taskId: launched.taskId,
@@ -2283,13 +2524,16 @@ it('notifies the parent once while waiting and refuses replies after the origina
 
   await vi.advanceTimersByTimeAsync(500);
   expect(notifications).toHaveLength(1);
+
   expect(notifications[0]?.content).toMatchObject({
     state: 'awaitingReply',
     pendingQuestion: { questionId: 'question-one', question: 'Which file?' },
   });
+
   expect(notifications[0]?.question).toBe(true);
   expect(controller.status(launched.taskId, 'parent-id').deadline).toBe(launched.deadline);
   await vi.advanceTimersByTimeAsync(7500);
+
   await expect(
     controller.reply(launched.taskId, 'parent-id', {
       questionId: 'question-one',
@@ -2298,6 +2542,7 @@ it('notifies the parent once while waiting and refuses replies after the origina
       scopeUnchanged: true,
     }),
   ).rejects.toThrow('active');
+
   expect(calls.some((call) => call[1] === 'prompt')).toBe(false);
   expect(questions.readReply(launched.directory, launched.taskId, 'question-one')).toBeUndefined();
 });
@@ -2306,6 +2551,7 @@ it('refuses reply delivery when the original native worker identity changes', as
   onTestFinished,
 }) => {
   let changed = false;
+
   const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) =>
     changed && argumentsList[1] === 'get'
       ? JSON.stringify({
@@ -2315,14 +2561,17 @@ it('refuses reply delivery when the original native worker identity changes', as
         })
       : '',
   );
+
   const launched = await controller.launch(input);
   recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
+
   questions.acceptQuestion(launched.directory, launched.taskId, {
     version: 1,
     taskId: launched.taskId,
     questionId: 'question-one',
     question: 'Which file?',
   });
+
   changed = true;
 
   await expect(
@@ -2333,12 +2582,14 @@ it('refuses reply delivery when the original native worker identity changes', as
       scopeUnchanged: true,
     }),
   ).rejects.toThrow('identity');
+
   expect(calls.some((call) => call[1] === 'prompt')).toBe(false);
   expect(questions.readReply(launched.directory, launched.taskId, 'question-one')).toBeUndefined();
 });
 
 it('waits for Pi integration session identity before dispatch', async ({ onTestFinished }) => {
   let missingSessionResponses = 0;
+
   const fixture = setup(onTestFinished, 0, async (argumentsList) => {
     if (argumentsList[1] === 'get' && missingSessionResponses < 2) {
       missingSessionResponses += 1;
@@ -2354,9 +2605,11 @@ it('waits for Pi integration session identity before dispatch', async ({ onTestF
   const launched = await fixture.controller.launch(fixture.input);
 
   expect(launched.state).toBe('starting');
+
   expect(readFileSync(join(launched.directory, 'dispatch.json'), 'utf8')).toContain(
     launched.taskId,
   );
+
   expect(missingSessionResponses).toBe(2);
 });
 
@@ -2392,6 +2645,7 @@ it.each(['confirmed', 'unconfirmed'] as const)(
     const release = vi.spyOn(WorkerPlacement.prototype, 'release');
     let cleaning = false;
     let held = false;
+
     const { controller, input } = setup(afterTest, 0, async (argumentsList) => {
       if (cleaning && !held && argumentsList[1] === 'list') {
         held = true;
@@ -2409,6 +2663,7 @@ it.each(['confirmed', 'unconfirmed'] as const)(
         const token = argumentsList[argumentsList.indexOf('--session') + 1]!;
         tokens.set(paneId, token);
         const task = readTask(dirname(token));
+
         recordEvent(dirname(token), task.taskId, 'ready', {
           detail: 'Ready.',
           processId: process.pid,
@@ -2452,12 +2707,15 @@ it.each(['confirmed', 'unconfirmed'] as const)(
 
       return terminal.client(argumentsList);
     });
+
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const first = await controller.launch(input);
     expect(first.state).toBe('starting');
+
     vi.spyOn(process, 'kill').mockImplementation(() => {
       throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
     });
+
     cleaning = true;
     const cancellation = controller.cancel(first.taskId, input.parentSessionId);
     await entered.promise;
@@ -2474,6 +2732,7 @@ it.each(['confirmed', 'unconfirmed'] as const)(
     }
 
     expect(release).toHaveBeenCalledWith('terminal-1');
+
     expect(terminal.panes.some((pane) => pane.pane_id === 'worker-1')).toBe(
       outcome === 'unconfirmed',
     );
@@ -2534,12 +2793,15 @@ it('chooses a down split for a narrow tall parent without changing focus', async
 
     return '';
   });
+
   const launched = await controller.launch(input);
 
   expect(launched.failure).toBeUndefined();
+
   expect(calls.find((call) => call[1] === 'split')).toEqual(
     expect.arrayContaining(['--direction', 'down', '--no-focus']),
   );
+
   expect(calls.some((call) => call[1] === 'resize' || call[1] === 'focus')).toBe(false);
 });
 
@@ -2547,6 +2809,7 @@ it.each(['moved', 'duplicate', 'missing', 'replacement job'] as const)(
   'protects terminal ownership during %s cleanup',
   async (scenario) => {
     let cleaning = false;
+
     const { controller, input, calls } = setup(afterTest, 0, async (argumentsList) => {
       if (!cleaning) {
         return '';
@@ -2559,6 +2822,7 @@ it.each(['moved', 'duplicate', 'missing', 'replacement job'] as const)(
           workspace_id: 'other-workspace',
           tab_id: 'other-workspace:tab',
         };
+
         const panes = scenario === 'missing' ? [] : [pane];
 
         if (scenario === 'duplicate') {
@@ -2587,10 +2851,13 @@ it.each(['moved', 'duplicate', 'missing', 'replacement job'] as const)(
 
       return '';
     });
+
     const launched = await controller.launch(input);
+
     vi.spyOn(process, 'kill').mockImplementation(() => {
       throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
     });
+
     cleaning = true;
     const previousCalls = calls.length;
     const cancelled = await controller.cancel(launched.taskId, 'parent-id');
@@ -2599,6 +2866,7 @@ it.each(['moved', 'duplicate', 'missing', 'replacement job'] as const)(
     expect(cleanupCalls.filter((call) => call[1] === 'close')).toEqual(
       scenario === 'moved' ? [['pane', 'close', 'other-workspace:pane']] : [],
     );
+
     expect(cleanupCalls.some((call) => call[1] === 'send-keys')).toBe(false);
     expect(cleanupCalls.flat()).not.toContain('worker-1');
     expect(cancelled.state).toBe(scenario === 'moved' ? 'stopped' : 'cleanupUnconfirmed');
@@ -2614,9 +2882,11 @@ it('retains confirmed terminal evidence when cancelled during the cosmetic place
   let created = false;
   let recordDirectory = '';
   const release = vi.spyOn(WorkerPlacement.prototype, 'release');
+
   const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
     if (argumentsList[1] === 'split') {
       created = true;
+
       recordDirectory = argumentsList
         .find((argument) => argument.startsWith('TAU_WORKER_RECORD='))!
         .slice('TAU_WORKER_RECORD='.length);
@@ -2627,19 +2897,23 @@ it('retains confirmed terminal evidence when cancelled during the cosmetic place
 
     return '';
   });
+
   const status = await controller.launch(input, abort.signal);
   const evidence = readdirSync(recordDirectory);
   snapshot.resolve(undefined);
 
   expect(evidence).toContain('pane.json');
+
   expect(JSON.parse(readFileSync(join(recordDirectory, 'pane.json'), 'utf8'))).toMatchObject({
     paneId: 'worker-1',
     terminalId: 'terminal-1',
   });
+
   expect(status).toMatchObject({
     outcome: 'cancelled',
     state: 'stopped',
   });
+
   expect(status.cleanup).toContain('worker-1');
   expect(release).toHaveBeenCalledWith('terminal-1');
   expect(calls.some((call) => ['start', 'close', 'send-keys'].includes(call[1]!))).toBe(false);
@@ -2655,10 +2929,13 @@ it('rejects aggregate Unicode tasks before publishing records or creating a pane
   await expect(controller.launch({ ...input, task, loadout })).rejects.toThrow(
     'Worker record exceeds 128 KB.',
   );
+
   expect(calls).toEqual([]);
+
   const directories = readdirSync(directory, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
+
   expect(directories).toHaveLength(0);
   expect(directories.map((name) => readdirSync(join(directory, name)))).toEqual([]);
 });
@@ -2676,8 +2953,10 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
     id: task.nativeSessionId,
     type: 'session',
   });
+
   expect(task.nativeSessionId).not.toBe(task.taskId);
   expect(task.loadout).toEqual(input.loadout);
+
   expect(workerArguments(task).slice(3, 9)).toEqual([
     '--provider',
     'faux',
@@ -2686,9 +2965,11 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
     '--thinking',
     'off',
   ]);
+
   expect(workerArguments(task)).not.toContain('--no-extensions');
   expect(launched.state).toBe('starting');
   recordEvent(launched.directory, task.taskId, 'accepted', 'Accepted.');
+
   acceptReport(launched.directory, task.taskId, {
     taskId: task.taskId,
     outcome: 'success',
@@ -2701,13 +2982,16 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
     outcome: 'success',
     deadline: task.deadline,
   });
+
   expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(calls.find((call) => call[1] === 'start')?.[2]).toMatch(/^[a-z][a-z0-9_-]{0,31}$/);
   controller.close();
   const recovered = new WorkerController(directory, client);
+
   onTestFinished(() => {
     recovered.close();
   });
+
   expect(recovered.status(task.taskId, 'parent-id')).toMatchObject({
     state: 'cleanupUnconfirmed',
     recovery: {
@@ -2716,6 +3000,7 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
       nativeSessionFile: task.nativeSessionFile,
     },
   });
+
   expect(recovered.status(task.taskId, 'parent-id').report?.summary).toBe('Edited fixture.');
   expect(() => recovered.status(task.taskId, 'wrong-parent')).toThrow('another parent');
 
@@ -2749,14 +3034,17 @@ it('recovers reports and native references without extension discovery metadata'
   const { controller, input, directory } = setup(onTestFinished);
   const launched = await controller.launch(input);
   const task = readTask(launched.directory);
+
   acceptReport(launched.directory, task.taskId, {
     taskId: task.taskId,
     outcome: 'success',
     summary: 'Saved HEAD handover.',
     evidence: ['existing evidence'],
   });
+
   controller.close();
   const recovered = new WorkerController(directory);
+
   onTestFinished(() => {
     recovered.close();
   });
@@ -2768,6 +3056,7 @@ it('recovers reports and native references without extension discovery metadata'
     nativeSessionFile: task.nativeSessionFile,
     report: { summary: 'Saved HEAD handover.' },
   });
+
   expect(workerArguments(readTask(launched.directory))).toEqual(workerArguments(task));
 });
 
@@ -2775,6 +3064,7 @@ it('stops dispatched work when the launch status finds corrupt report evidence',
   onTestFinished,
 }) => {
   let recordDirectory = '';
+
   const { controller, input, calls, notifications } = setup(
     onTestFinished,
     0,
@@ -2790,9 +3080,11 @@ it('stops dispatched work when the launch status finds corrupt report evidence',
 
   await expect(controller.launch(input)).rejects.toThrow('saved evidence is unavailable');
   expect(readdirSync(recordDirectory)).toContain('dispatch.json');
+
   await vi.waitFor(() => {
     expect(notifications).toHaveLength(1);
   });
+
   expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
   expect(JSON.stringify(notifications[0]?.content)).toContain('worker-1');
   expect(readFileSync(join(recordDirectory, 'report.json'), 'utf8')).toBe('{');
@@ -2806,23 +3098,29 @@ it('only lets the owning parent stop work after a status evidence failure', asyn
   writeFileSync(join(launched.directory, 'report.json'), '{');
 
   const callCount = calls.length;
+
   expect(() => controller.status(launched.taskId, 'another-parent')).toThrow(
     'another parent session',
   );
+
   expect(calls).toHaveLength(callCount);
   const evidenceFailure = captureError(() => controller.status(launched.taskId, 'parent-id'));
 
   expect(String(evidenceFailure)).toContain('saved evidence is unavailable');
   expect(String(evidenceFailure)).not.toContain(launched.nativeSessionFile);
   expect(evidenceFailure).toBeInstanceOf(EvidenceUnavailableError);
+
   expect((evidenceFailure as EvidenceUnavailableError).recovery).toMatchObject({
     directory: launched.directory,
     nativeSessionFile: launched.nativeSessionFile,
   });
+
   expect((evidenceFailure as Error).message).not.toContain(launched.directory);
+
   await vi.waitFor(() => {
     expect(notifications).toHaveLength(1);
   });
+
   expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
   expect(JSON.stringify(notifications[0]?.content)).toContain(launched.nativeSessionId);
 });
@@ -2856,6 +3154,7 @@ it('preserves incomplete output and malformed evidence without retrying startup'
 }) => {
   const { directory, input } = setup(onTestFinished);
   const calls: string[][] = [];
+
   const controller = new WorkerController(directory, async (argumentsList) => {
     calls.push(argumentsList);
 
@@ -2865,15 +3164,18 @@ it('preserves incomplete output and malformed evidence without retrying startup'
 
     throw new Error('Startup unavailable');
   });
+
   onTestFinished(() => {
     controller.close();
   });
+
   const status = await controller.launch(input);
 
   expect(status).toMatchObject({
     outcome: 'failure',
     state: 'stopped',
   });
+
   expect(calls.map((call) => call[1])).toEqual(['list', 'current']);
   expect(readdirSync(status.directory)).toContain('task.json');
   writeFileSync(join(status.directory, 'report.json'), '{');
@@ -2885,6 +3187,7 @@ it('distinguishes settled missing handover and cancellation from success', async
 }) => {
   const { controller, input } = setup(onTestFinished);
   const launched = await controller.launch(input);
+
   recordEvent(launched.directory, launched.taskId, 'settled', {
     detail: 'Stopped without report.',
     stopped: true,
@@ -2894,6 +3197,7 @@ it('distinguishes settled missing handover and cancellation from success', async
     outcome: 'incomplete',
     state: 'cleanupUnconfirmed',
   });
+
   const cancelled = await controller.cancel(launched.taskId, 'parent-id');
   expect(cancelled.outcome).toBe('cancelled');
 });
@@ -2917,13 +3221,16 @@ it('waits for an in-flight start before confirming shutdown cleanup', async ({
 }) => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   const fixture = setup(onTestFinished, -1);
+
   const processStart = await originalRunClient(
     'ps',
     ['-p', String(process.pid), '-o', 'lstart='],
     1000,
   );
+
   vi.spyOn(cancellationModule, 'runClient').mockResolvedValue(processStart);
   fixture.fake.state.sendKeysError = '';
+
   vi.spyOn(process, 'kill').mockImplementation(() => {
     if (fixture.fake.state.stopped) {
       throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
@@ -2931,8 +3238,10 @@ it('waits for an in-flight start before confirming shutdown cleanup', async ({
 
     return true;
   });
+
   const enteredStart = Promise.withResolvers<undefined>();
   const client = fixture.fake.client;
+
   vi.spyOn(fixture.fake, 'client').mockImplementation(async (argumentsList, budget, signal) => {
     if (argumentsList[1] === 'start') {
       enteredStart.resolve(undefined);
@@ -2950,6 +3259,7 @@ it('waits for an in-flight start before confirming shutdown cleanup', async ({
 
     return client(argumentsList, budget, signal);
   });
+
   const launching = fixture.controller.launch(fixture.input);
   await enteredStart.promise;
   const shutdown = fixture.controller.stopAll('reload');
@@ -2971,6 +3281,7 @@ it('refuses a prepared launch while shutdown is still draining workers', async (
   const releaseCleanup = Promise.withResolvers<undefined>();
   let pauseListing = false;
   let pauseCleanup = false;
+
   const fixture = setup(onTestFinished, 0, async (argumentsList) => {
     if (pauseListing && argumentsList[0] === 'agent' && argumentsList[1] === 'list') {
       pauseListing = false;
@@ -2986,10 +3297,12 @@ it('refuses a prepared launch while shutdown is still draining workers', async (
 
     return '';
   });
+
   onTestFinished(() => {
     releaseListing.resolve(undefined);
     releaseCleanup.resolve(undefined);
   });
+
   await fixture.controller.launch(fixture.input);
   const recordsBefore = readdirSync(fixture.directory);
   const panesBefore = structuredClone(fixture.fake.layout.panes);
@@ -3017,12 +3330,15 @@ it('caps live workers per controller and admits again after confirmed cleanup', 
   onTestFinished,
 }) => {
   vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });
+
   const fixture = setup(onTestFinished);
   vi.stubEnv('TAU_SUBAGENT_CAP', '2');
   fixture.fake.state.sendKeysError = '';
+
   vi.spyOn(process, 'kill').mockImplementation(() => {
     if (fixture.fake.state.stopped) {
       throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
@@ -3030,6 +3346,7 @@ it('caps live workers per controller and admits again after confirmed cleanup', 
 
     return true;
   });
+
   const launched = await fixture.controller.launch(fixture.input);
   const recordsBefore = readdirSync(fixture.directory);
   const panesBefore = structuredClone(fixture.fake.layout.panes);
@@ -3051,9 +3368,11 @@ it('admits another worker after cleanup fails its terminal identity check', asyn
   onTestFinished,
 }) => {
   vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });
+
   const fixture = setup(onTestFinished);
   const launched = await fixture.controller.launch(fixture.input);
   fixture.fake.layout.panes[1]!.terminal_id = 'replacement-terminal';
@@ -3069,6 +3388,7 @@ it('admits another worker after cleanup fails its terminal identity check', asyn
       paneId: 'worker-1',
     },
   });
+
   expect(
     fixture.calls
       .slice(callsBefore)
@@ -3078,6 +3398,7 @@ it('admits another worker after cleanup fails its terminal identity check', asyn
   const replacement = await fixture.controller.launch(fixture.input);
 
   expect(replacement.state).toBe('starting');
+
   expect(fixture.controller.status(launched.taskId, fixture.input.parentSessionId)).toMatchObject({
     state: 'cleanupUnconfirmed',
     recovery: cancelled.recovery,
@@ -3087,6 +3408,7 @@ it('admits another worker after cleanup fails its terminal identity check', asyn
 it('stops running workers and frees their slots on reload', async ({ onTestFinished }) => {
   const fixture = setup(onTestFinished);
   fixture.fake.state.sendKeysError = '';
+
   vi.spyOn(process, 'kill').mockImplementation(() => {
     if (fixture.fake.state.stopped) {
       throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
@@ -3094,6 +3416,7 @@ it('stops running workers and frees their slots on reload', async ({ onTestFinis
 
     return true;
   });
+
   const launched = await fixture.controller.launch(fixture.input);
 
   await fixture.controller.stopAll('reload');
@@ -3101,10 +3424,13 @@ it('stops running workers and frees their slots on reload', async ({ onTestFinis
   expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.detail).toContain(
     'Parent session reload',
   );
+
   expect(fixture.controller.status(launched.taskId, fixture.input.parentSessionId).state).toBe(
     'stopped',
   );
+
   expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+
   await expect(fixture.controller.launch(fixture.input)).rejects.toThrow(
     'Parent controller stopped',
   );
@@ -3112,6 +3438,7 @@ it('stops running workers and frees their slots on reload', async ({ onTestFinis
 
 it('bounds reload cleanup by the remaining cancellation budget', async ({ onTestFinished }) => {
   let cleaning = false;
+
   const fixture = setup(onTestFinished, 0, async (argumentsList, _budget, signal) => {
     if (cleaning && argumentsList[0] === 'pane' && argumentsList[1] === 'list') {
       return new Promise<string>((_resolve, reject) => {
@@ -3127,6 +3454,7 @@ it('bounds reload cleanup by the remaining cancellation budget', async ({ onTest
 
     return '';
   });
+
   // The smallest task that still leaves herdr a valid start timeout has a 1500 ms cleanup budget.
   const launched = await fixture.controller.launch({ ...fixture.input, timeout: 6000 });
   cleaning = true;
@@ -3163,6 +3491,7 @@ it('ends in-flight cleanup on parent shutdown without further calls or notificat
   const entered = Promise.withResolvers<AbortSignal>();
   const released = Promise.withResolvers<string>();
   let cleaning = false;
+
   const { controller, input, calls, notifications } = setup(
     onTestFinished,
     0,
@@ -3176,6 +3505,7 @@ it('ends in-flight cleanup on parent shutdown without further calls or notificat
       return released.promise;
     },
   );
+
   const launched = await controller.launch(input);
   cleaning = true;
   const cancellation = controller.cancel(launched.taskId, 'parent-id');
@@ -3191,10 +3521,12 @@ it('ends in-flight cleanup on parent shutdown without further calls or notificat
   expect(calls).toHaveLength(callCount);
   expect(notifications).toEqual([]);
   expect(readdirSync(launched.directory)).not.toContain('notified.json');
+
   expect(controller.status(launched.taskId, 'parent-id')).toMatchObject({
     outcome: 'cancelled',
     state: 'cleanupUnconfirmed',
   });
+
   expect(controller.status(launched.taskId, 'parent-id').cleanup).toContain('manually');
 });
 
@@ -3202,6 +3534,7 @@ it('refuses expired work and invalid deadlines before creating a pane', async ({
   onTestFinished,
 }) => {
   const { controller, input, calls } = setup(onTestFinished);
+
   const startedAt = {
     wall: Date.now() - input.timeout,
     monotonic: performance.now() - input.timeout,
@@ -3239,6 +3572,7 @@ it.each([true, false])(
   'preserves uncertain launch ownership when process inspection fails with absent process %s',
   async (absent) => {
     const { controller, input, calls } = setup(afterTest, -1);
+
     vi.spyOn(cancellationModule, 'runClient').mockImplementation(
       async (_executable, argumentsList) => {
         if (argumentsList[1] === '100') {
@@ -3248,6 +3582,7 @@ it.each([true, false])(
         throw new Error('Process inspection failed.');
       },
     );
+
     vi.spyOn(process, 'kill').mockImplementation(() => {
       if (absent) {
         throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
@@ -3262,9 +3597,11 @@ it.each([true, false])(
       outcome: 'failure',
       state: 'cleanupUnconfirmed',
     });
+
     expect(status.failure).toContain(
       absent ? 'exited before readiness' : 'Process inspection failed.',
     );
+
     expect(readEvent(status.directory, status.taskId, 'cleanup')?.stopped).toBe(false);
     expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
     expect(calls.some((call) => ['send-keys', 'close'].includes(call[1] ?? ''))).toBe(false);
@@ -3277,7 +3614,9 @@ it('detects an owned worker exiting before readiness without waiting for the tas
   vi.spyOn(process, 'kill').mockImplementation(() => {
     throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
   });
+
   let inspections = 0;
+
   const { controller, input, calls } = setup(onTestFinished, -1, async (argumentsList) => {
     if (argumentsList[1] === 'process-info' && ++inspections > 1) {
       return JSON.stringify({
@@ -3294,6 +3633,7 @@ it('detects an owned worker exiting before readiness without waiting for the tas
 
     return argumentsList[1] === 'close' ? '{}' : '';
   });
+
   const started = performance.now();
   const status = await controller.launch({ ...input, timeout: 60_000 });
 
@@ -3309,6 +3649,7 @@ it.each(['missing report', 'accepted report'])(
   async (reportState) => {
     vi.useFakeTimers();
     let exited = false;
+
     const { controller, input, calls, notifications } = setup(
       afterTest,
       0,
@@ -3328,8 +3669,10 @@ it.each(['missing report', 'accepted report'])(
         return argumentsList[1] === 'close' ? '{}' : '';
       },
     );
+
     const launched = await controller.launch({ ...input, timeout: 60_000 });
     recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
+
     const report = {
       taskId: launched.taskId,
       outcome: 'success',
@@ -3344,6 +3687,7 @@ it.each(['missing report', 'accepted report'])(
     vi.spyOn(process, 'kill').mockImplementation(() => {
       throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
     });
+
     exited = true;
 
     await vi.advanceTimersByTimeAsync(250);
@@ -3353,6 +3697,7 @@ it.each(['missing report', 'accepted report'])(
       state: 'stopped',
       report: reportState === 'accepted report' ? report : undefined,
     });
+
     expect(notifications).toHaveLength(1);
     expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
     expect(calls.filter((call) => call[1] === 'close')).toHaveLength(1);
@@ -3364,6 +3709,7 @@ it('cleans up an owned live pane even when startup failure evidence is corrupt',
   onTestFinished,
 }) => {
   let recordDirectory = '';
+
   const { controller, input, calls, notifications } = setup(
     onTestFinished,
     0,
@@ -3390,9 +3736,11 @@ it('cleans up an owned live pane even when startup failure evidence is corrupt',
   expect(JSON.stringify(notifications)).toMatch(/records|evidence/i);
   const evidence = notifications.find((notice) => 'evidenceError' in notice.content);
   expect(evidence).toBeDefined();
+
   expect(Object.keys(evidence?.content ?? {}).toSorted()).toEqual(
     ['taskId', 'name', 'evidenceError', 'recovery'].toSorted(),
   );
+
   expect(evidence?.content).not.toHaveProperty('state');
   expect(evidence?.content).not.toHaveProperty('outcome');
 });
@@ -3401,6 +3749,7 @@ it('reports both startup and receipt failures after attempting owned pane cleanu
   onTestFinished,
 }) => {
   let inspections = 0;
+
   const { controller, input, calls, notifications } = setup(
     onTestFinished,
     -1,
@@ -3412,7 +3761,9 @@ it('reports both startup and receipt failures after attempting owned pane cleanu
       return '';
     },
   );
+
   const original = records.recordEvent;
+
   vi.spyOn(records, 'recordEvent').mockImplementation((...argumentsList) => {
     if (argumentsList[2] === 'startupFailure') {
       throw new Error('Injected startup receipt write failure');
@@ -3420,6 +3771,7 @@ it('reports both startup and receipt failures after attempting owned pane cleanu
 
     original(...argumentsList);
   });
+
   const launch = controller.launch(input);
 
   await expect(launch).rejects.toThrow('Injected startup receipt write failure');
@@ -3438,6 +3790,7 @@ it.each(['cancelled', 'timeout'] as const)(
     const launched = await controller.launch(input);
     writeFileSync(join(launched.directory, 'report.json'), '{');
     const original = records.recordEvent;
+
     vi.spyOn(records, 'recordEvent').mockImplementation((...argumentsList) => {
       if (argumentsList[2] === reason) {
         throw new Error('Injected receipt write failure');
@@ -3453,6 +3806,7 @@ it.each(['cancelled', 'timeout'] as const)(
     await expect(controller.cancel(launched.taskId, 'parent-id')).rejects.toThrow(
       /records|evidence/i,
     );
+
     expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
     expect(calls.some((call) => call[1] === 'close')).toBe(false);
     expect(JSON.stringify(notifications)).toContain('Injected receipt write failure');
@@ -3483,6 +3837,7 @@ it('distinguishes missing readiness timeout from startup failure inside the orig
   const monitoring = Promise.withResolvers<undefined>();
   const budgets: number[] = [];
   let inspections = 0;
+
   const { controller, input, calls } = setup(
     onTestFinished,
     -1,
@@ -3506,6 +3861,7 @@ it('distinguishes missing readiness timeout from startup failure inside the orig
       return '';
     },
   );
+
   const launch = controller.launch(input);
   await monitoring.promise;
   await vi.advanceTimersByTimeAsync(7600);
@@ -3523,6 +3879,7 @@ it('distinguishes missing readiness timeout from startup failure inside the orig
     state: 'cleanupUnconfirmed',
     failure: undefined,
   });
+
   expect(calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(readdirSync(status.directory)).not.toContain('dispatch.json');
 });
@@ -3531,6 +3888,7 @@ it('polls slow worker readiness at 250 ms intervals', async ({ onTestFinished })
   vi.spyOn(cancellationModule, 'runClient').mockResolvedValue('fixture start');
   const polled = Promise.withResolvers<undefined>();
   const inspections: number[] = [];
+
   const { controller, input } = setup(onTestFinished, -1, async (argumentsList) => {
     if (argumentsList[1] === 'process-info') {
       inspections.push(performance.now());
@@ -3542,6 +3900,7 @@ it('polls slow worker readiness at 250 ms intervals', async ({ onTestFinished })
 
     return '';
   });
+
   const launch = controller.launch(input);
   await polled.promise;
   controller.close();
@@ -3560,6 +3919,7 @@ it('reports recovered corrupt task evidence without its directory or native iden
   controller.close();
   writeFileSync(join(launched.directory, 'task.json'), '{');
   const recovered = new WorkerController(directory);
+
   onTestFinished(() => {
     recovered.close();
   });
@@ -3581,6 +3941,7 @@ it('carries saved recovery when a handle-free status finds corrupt report eviden
   controller.close();
   writeFileSync(join(launched.directory, 'report.json'), '{');
   const recovered = new WorkerController(directory);
+
   onTestFinished(() => {
     recovered.close();
   });
@@ -3588,10 +3949,12 @@ it('carries saved recovery when a handle-free status finds corrupt report eviden
   const evidenceFailure = captureError(() => recovered.status(launched.taskId, 'parent-id'));
 
   expect(evidenceFailure).toBeInstanceOf(EvidenceUnavailableError);
+
   expect((evidenceFailure as EvidenceUnavailableError).recovery).toEqual({
     directory: launched.directory,
     nativeSessionFile: task.nativeSessionFile,
   });
+
   expect((evidenceFailure as Error).message).not.toContain(launched.directory);
   expect((evidenceFailure as Error).message).not.toContain(task.nativeSessionFile);
 });
@@ -3601,6 +3964,7 @@ it('waits for worker readiness after herdr readiness without a new startup budge
 }) => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   const started = Promise.withResolvers<undefined>();
+
   const { controller, input, calls } = setup(onTestFinished, 100, async (argumentsList) => {
     if (argumentsList[1] === 'start') {
       started.resolve(undefined);
@@ -3608,6 +3972,7 @@ it('waits for worker readiness after herdr readiness without a new startup budge
 
     return '';
   });
+
   const launch = controller.launch(input);
   await started.promise;
   await vi.advanceTimersByTimeAsync(150);
@@ -3624,6 +3989,7 @@ it('keeps a confirmed stop when the shell changes before the pane closes', async
 }) => {
   let checks = 0;
   let exited = false;
+
   const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
     if (!exited || argumentsList[1] !== 'process-info') {
       return '';
@@ -3641,10 +4007,13 @@ it('keeps a confirmed stop when the shell changes before the pane closes', async
       },
     });
   });
+
   const launched = await controller.launch(input);
+
   vi.spyOn(process, 'kill').mockImplementation(() => {
     throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
   });
+
   exited = true;
 
   const status = await controller.cancel(launched.taskId, 'parent-id');
@@ -3665,6 +4034,7 @@ it('treats a busy-looking text error as an ordinary startup failure without a bu
 
     return '';
   });
+
   vi.stubEnv('TAU_SUBAGENT_CAP', '1');
   const launched = await fixture.controller.launch(fixture.input);
 
@@ -3689,14 +4059,17 @@ it('exposes read-only widget rows without inferring success from worker readines
   }
 
   expect(starting.name).toMatch(/^(worker|investigator)-[a-z0-9]{2}$/);
+
   expect(starting).toMatchObject({
     state: 'starting',
     model: 'requested faux/test · observed unavailable',
     usage: { available: false, reason: 'Pi session usage was not recorded' },
   });
+
   expect(starting).not.toHaveProperty('outcome');
   expect(readdirSync(launched.directory).toSorted()).toEqual(before);
   expect(readEvent(launched.directory, launched.taskId, 'settled')).toBeUndefined();
+
   writeWorkerActivity(launched.directory, {
     taskId: launched.taskId,
     sequence: 1,
@@ -3704,20 +4077,24 @@ it('exposes read-only widget rows without inferring success from worker readines
     phase: 'active',
     label: 'tool: read',
   });
+
   expect(fixture.controller.widgetRows(fixture.input.parentSessionId)[0]).toMatchObject({
     state: 'starting',
     activity: 'Pi activity stale',
   });
+
   questions.acceptQuestion(launched.directory, launched.taskId, {
     version: 1,
     taskId: launched.taskId,
     questionId: 'question-1',
     question: 'Which behavior should the test cover?',
   });
+
   expect(fixture.controller.widgetRows(fixture.input.parentSessionId)[0]).toMatchObject({
     state: 'awaitingReply',
     question: 'Which behavior should the test cover?',
   });
+
   questions.acceptReply(launched.directory, launched.taskId, {
     version: 1,
     taskId: launched.taskId,
@@ -3725,6 +4102,7 @@ it('exposes read-only widget rows without inferring success from worker readines
     replyId: 'reply-1',
     reply: 'Cover the visible widget behavior.',
   });
+
   expect(fixture.controller.widgetRows(fixture.input.parentSessionId)[0]).not.toHaveProperty(
     'question',
   );
@@ -3735,11 +4113,14 @@ it('exposes read-only widget rows without inferring success from worker readines
     summary: 'Finished.',
     evidence: [],
   });
+
   recordEvent(launched.directory, launched.taskId, 'cleanup', {
     detail: 'Parent confirmed.',
     stopped: true,
   });
+
   const stoppedRow = fixture.controller.widgetRows(fixture.input.parentSessionId)[0];
+
   expect(stoppedRow).toMatchObject({
     state: 'stopped',
     outcome: 'success',
@@ -3778,6 +4159,7 @@ it('refreshes worker history after cleanup', async ({ onTestFinished }) => {
     stopped: true,
     detail: 'Stopped.',
   });
+
   const refreshed = fixture.controller.widgetRows(fixture.input.parentSessionId);
 
   expect(refreshed.filter((row) => row.state === 'stopped')).toHaveLength(4);
@@ -3787,10 +4169,12 @@ it('saves and exposes a parent-provided short task label without changing the ta
   onTestFinished,
 }) => {
   const fixture = setup(onTestFinished);
+
   const launched = await fixture.controller.launch({
     ...fixture.input,
     label: 'Fix status counts',
   });
+
   const [row] = fixture.controller.widgetRows(fixture.input.parentSessionId);
   const saved = readTask(launched.directory);
 
@@ -3816,6 +4200,7 @@ it('shows the latest worker-reported phase without waking the parent', async ({
     description: 'Fixing status counts',
     descriptionAt: now - 1000,
   });
+
   const [fresh] = fixture.controller.widgetRows(fixture.input.parentSessionId);
 
   expect(fresh?.activity).toBe('Fixing status counts');
@@ -3832,6 +4217,7 @@ it('shows the latest worker-reported phase without waking the parent', async ({
     description: 'Fixing status counts',
     descriptionAt: now - 90_000,
   });
+
   const [stale] = fixture.controller.widgetRows(fixture.input.parentSessionId);
 
   expect(stale?.activity).toContain('Fixing status counts');
@@ -3854,16 +4240,19 @@ it('does not present a retained phase as current work after the worker stops', a
     description: 'Running focused tests',
     descriptionAt: Date.now(),
   });
+
   records.acceptReport(launched.directory, launched.taskId, {
     taskId: launched.taskId,
     outcome: 'success',
     summary: 'Finished.',
     evidence: [],
   });
+
   recordEvent(launched.directory, launched.taskId, 'cleanup', {
     detail: 'Parent confirmed.',
     stopped: true,
   });
+
   const [stopped] = fixture.controller.widgetRows(fixture.input.parentSessionId);
 
   expect(stopped?.state).toBe('stopped');
@@ -3894,6 +4283,7 @@ it('keeps cleanup failure unconfirmed even when its detail omits that wording', 
 }) => {
   const fixture = setup(onTestFinished);
   const launched = await fixture.controller.launch(fixture.input);
+
   recordEvent(launched.directory, launched.taskId, 'cleanup', {
     detail: 'Transport failed. Check pane worker manually.',
     stopped: false,

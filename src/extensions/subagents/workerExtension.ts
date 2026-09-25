@@ -195,6 +195,7 @@ const recordPhaseDescription = (
 
   return { description: text, descriptionAt: at };
 };
+
 const matchesNativeSession = (task: Task, context: ExtensionContext): boolean =>
   context.sessionManager.getSessionId() === task.nativeSessionId &&
   context.sessionManager.getSessionFile() === task.nativeSessionFile;
@@ -245,6 +246,7 @@ const askParent = (
   }
 
   const task = state.task;
+
   const question = validateQuestion(
     {
       version: 1,
@@ -480,10 +482,12 @@ const startWorker = (
 
     // The parent enforces active work deadlines; the reply wait uses the saved wall-clock deadline.
     checkWorkerRuntime(task.loadout, pi, context);
+
     recordEvent(state.directory, task.taskId, 'ready', {
       detail: 'Saved model, cwd, and CC Safety Net checked.',
       processId: process.pid,
     });
+
     startDispatchWatch(pi, state, task, context);
   } catch (error) {
     const task = state.task;
@@ -617,9 +621,11 @@ const registerActivityHandlers = (pi: ExtensionAPI, state: WorkerExtensionState)
   pi.on('turn_start', (_event, context) => {
     recordWorkerActivity(state, context, 'active', 'Pi is thinking');
   });
+
   pi.on('turn_end', (_event, context) => {
     recordWorkerActivity(state, context, 'waiting', 'Pi is between turns');
   });
+
   pi.on('message_update', (_event, context) => {
     if (state.activityTimer) {
       return;
@@ -630,9 +636,11 @@ const registerActivityHandlers = (pi: ExtensionAPI, state: WorkerExtensionState)
       recordWorkerActivity(state, context, 'active', 'Pi response streaming');
     }, 500);
   });
+
   pi.on('tool_execution_start', (event, context) => {
     recordWorkerActivity(state, context, 'active', `tool: ${event.toolName}`);
   });
+
   pi.on('tool_execution_end', (event, context) => {
     recordWorkerActivity(state, context, 'active', `tool finished: ${event.toolName}`);
   });
@@ -708,10 +716,12 @@ const registerAgentSettledHandler = (pi: ExtensionAPI, state: WorkerExtensionSta
     const task = state.task;
 
     state.settled = true;
+
     recordEvent(state.directory, task.taskId, 'settled', {
       detail: 'Pi has no active run or queued continuation.',
       stopped: true,
     });
+
     recordWorkerActivity(state, context, 'done', 'Pi run settled');
     context.shutdown();
   });

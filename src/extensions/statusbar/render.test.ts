@@ -17,6 +17,7 @@ const input = {
   modelId: 'model',
   thinkingLevel: undefined,
 };
+
 const foreground = vi.fn<Theme['fg']>((_color, text) => text);
 const theme = { fg: foreground };
 
@@ -32,6 +33,7 @@ describe('statusbar rendering', () => {
       100,
       footerTheme,
     );
+
     const text = stripVTControlCharacters(line);
 
     expect(text).toContain('tau/line break  main');
@@ -49,9 +51,11 @@ describe('statusbar rendering', () => {
     expect(renderFooterLine(input, 80, theme)).toBe(
       left + ' '.repeat(80 - left.length - right.length) + right,
     );
+
     expect(renderFooterLine(input, 24, theme)).toBe(
       left + '  ' + truncateToWidth(right, 24 - left.length - 2),
     );
+
     expect(renderFooterLine(input, 8, theme)).toBe(truncateToWidth(left, 8));
     expect(renderFooterLine(input, 0, theme)).toBe('');
     expect(visibleWidth(renderFooterLine({ ...input, directory: '界/界' }, 25, theme))).toBe(25);
@@ -75,6 +79,7 @@ describe('statusbar rendering', () => {
     expect(foreground).toHaveBeenCalledWith('dim', 'tau/abu-347');
     expect(foreground).toHaveBeenCalledWith('accent', 'main');
     expect(foreground).toHaveBeenCalledWith('warning', '*');
+
     expect(renderFooterLine({ ...input, branch: null, dirty: true }, 80, theme)).not.toMatch(
       /main|\*/,
     );
@@ -124,6 +129,7 @@ describe('statusbar rendering', () => {
       expect(renderFooterLine({ ...input, thinkingLevel }, 80, theme)).toContain(
         `model • ${thinkingLevel}`,
       );
+
       expect(foreground).toHaveBeenCalledWith(color, `• ${thinkingLevel}`);
     }
 

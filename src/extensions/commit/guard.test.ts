@@ -221,6 +221,7 @@ const createFakePi = (executeCommand?: ExtensionAPI['exec']) => {
     sendUserMessage: fake.sendUserMessage,
   };
 };
+
 describe('commitExtension', () => {
   it('registers the guard, tool, and command', () => {
     const { fakePi, registeredTool, registeredHandlers, registeredCommands } = createFakePi();
@@ -234,9 +235,11 @@ describe('commitExtension', () => {
 
   it('commits without registering or reading an approval flag', async () => {
     const repositoryDirectory = await createTemporaryRepository();
+
     const { fakePi, registeredTool } = createFakePi((command, commandArguments, options) =>
       runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
     );
+
     const custom = vi.fn<() => Promise<string>>().mockResolvedValue('abort');
 
     commitExtension(fakePi);
@@ -295,6 +298,7 @@ describe('commitExtension', () => {
       commandArguments: string[],
       options?: { cwd?: string },
     ) => runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory);
+
     const { fakePi, registeredTool } = createFakePi(executeCommand);
 
     commitExtension(fakePi);
@@ -325,6 +329,7 @@ describe('commitExtension', () => {
     const commitCount = commitCountOutput.trim();
 
     expect(commitCount).toBe('1');
+
     expect(result.details).toMatchObject({
       groups: [{ files: ['README.md'], subject: 'feat: add thing' }],
     });

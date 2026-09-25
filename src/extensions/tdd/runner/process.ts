@@ -113,6 +113,7 @@ const captureStdout = (state: SpawnState, chunk: Buffer): void => {
     state.stdout,
     maximumStdoutBytes - state.stdoutBytes,
   );
+
   state.stdoutBytes += chunk.length;
 };
 
@@ -123,6 +124,7 @@ const captureStderr = (state: SpawnState, chunk: Buffer): void => {
     state.stderr,
     maximumTotalBytes - state.stderrBytes,
   );
+
   state.stderrBytes += chunk.length;
 };
 
@@ -135,6 +137,7 @@ const captureSpawnError = (state: SpawnState, error: Error): void => {
     state.stderr,
     maximumTotalBytes - state.stderrBytes,
   );
+
   state.stderrBytes += message.length;
 };
 
@@ -145,11 +148,13 @@ export const defaultSpawn: SpawnFn = (command, argumentsList, options) =>
     const useProcessGroup = process.platform !== 'win32';
     const executable = nodeExecutable();
     const commandLine = [executable, command, ...argumentsList];
+
     const child = nodeSpawn(executable, [command, ...argumentsList], {
       cwd: options.cwd,
       detached: useProcessGroup,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+
     const state: SpawnState = {
       stdout: '',
       stderr: '',
@@ -198,6 +203,7 @@ export const defaultSpawn: SpawnFn = (command, argumentsList, options) =>
     timer.unref();
 
     child.on('close', settle);
+
     child.on('error', (error) => {
       captureSpawnError(state, error);
       settle(null);
