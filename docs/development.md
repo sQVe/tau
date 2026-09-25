@@ -22,6 +22,7 @@ Pi loads the TypeScript source directly; there is no build step.
 | `pnpm test:changed`                            | Run tests affected by uncommitted changes. Add `origin/main` to include branch commits.      |
 | `pnpm test src/extensions/commit/tool.test.ts` | Run one test file.                                                                           |
 | `pnpm test:unit`                               | Skip `*.integration.test.ts` files.                                                          |
+| `pnpm test:coverage`                           | Run the full test suite and report coverage.                                                 |
 | `pnpm test`                                    | Run the full test suite, including package loading through Pi.                               |
 | `pnpm style:check`                             | Check all lint rules, including house style.                                                 |
 | `pnpm style:fix`                               | Apply safe lint fixes, then format.                                                          |

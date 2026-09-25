@@ -38,6 +38,11 @@ export default defineConfig({
       GIT_COMMITTER_DATE: '2005-04-07T22:13:13Z',
       TZ: 'UTC',
     },
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: ['**/*.test.ts', '**/fixtures/**', 'src/extensions/index.ts'],
+    },
   },
   lint: {
     plugins: ['typescript', 'unicorn', 'oxc', 'import', 'vitest', 'node'],
