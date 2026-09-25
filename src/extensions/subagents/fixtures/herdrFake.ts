@@ -6,17 +6,24 @@ interface ProcessSnapshot {
   shellPid: number;
   processId: number;
   argv: string[];
+  foregroundProcesses?: { pid: number; argv: string[] }[];
 }
 
 // Response shapes were checked against herdr 0.9.1.
-export const processInfoResponse = ({ paneId, shellPid, processId, argv }: ProcessSnapshot) =>
+export const processInfoResponse = ({
+  paneId,
+  shellPid,
+  processId,
+  argv,
+  foregroundProcesses,
+}: ProcessSnapshot) =>
   JSON.stringify({
     result: {
       process_info: {
         pane_id: paneId,
         shell_pid: shellPid,
         foreground_process_group_id: processId,
-        foreground_processes: [{ pid: processId, argv }],
+        foreground_processes: foregroundProcesses ?? [{ pid: processId, argv }],
       },
     },
   });
@@ -59,6 +66,10 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
     ignoreInterrupt: false,
     session: 'opaque-reference',
     processArguments: [kind],
+    nextReportedPaneId: undefined as string | undefined,
+    foregroundProcessSamples: 0,
+    foregroundProcessSamplesSeen: 0,
+    lastForegroundProcessSampleCallIndex: -1,
     shell: process.ppid,
     process: process.pid,
   };
@@ -84,24 +95,43 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
 
   const processInfo = (argumentsList: string[]) => {
     const paneId = paneArgument(argumentsList);
+    const reportedPaneId = state.nextReportedPaneId ?? paneId;
+    state.nextReportedPaneId = undefined;
+
+    const foregroundProcesses =
+      state.foregroundProcessSamples > 0
+        ? [
+            { pid: state.shell, argv: ['shell'] },
+            { pid: state.process, argv: ['startup-hook'] },
+          ]
+        : undefined;
+
+    if (foregroundProcesses !== undefined) {
+      state.foregroundProcessSamples -= 1;
+      state.foregroundProcessSamplesSeen += 1;
+      state.lastForegroundProcessSampleCallIndex = calls.length - 1;
+    }
+
     const running = hasAgent(paneId) && state.started && !state.stopped;
 
     if (!state.started && state.busyShellPolls > 0) {
       state.busyShellPolls -= 1;
 
       return processInfoResponse({
-        paneId,
+        paneId: reportedPaneId,
         shellPid: state.shell,
         processId: state.process,
         argv: ['shell-startup'],
+        ...(foregroundProcesses === undefined ? {} : { foregroundProcesses }),
       });
     }
 
     return processInfoResponse({
-      paneId,
+      paneId: reportedPaneId,
       shellPid: state.shell,
       processId: running ? state.process : state.shell,
       argv: state.processArguments,
+      ...(foregroundProcesses === undefined ? {} : { foregroundProcesses }),
     });
   };
 
