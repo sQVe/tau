@@ -268,6 +268,11 @@ export class WorkerController {
       this.lifetime.signal.throwIfAborted();
       worker.poll();
     } catch {
+      // A cancel or shutdown during inspection owns cleanup and releases capacity when it finishes.
+      if (handle.cleanup.stopping) {
+        return;
+      }
+
       // An expired budget fails the first herdr call; the reserved cleanup budget still stops the worker.
       if (remainingWorkBudget(handle) <= 0) {
         await worker.stop('timeout');
