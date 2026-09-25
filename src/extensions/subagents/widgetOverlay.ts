@@ -387,11 +387,6 @@ const reportLines = (row: WorkerWidgetRow, width: number): string[] => {
     fields.push(['Evidence', row.report.evidence.join(' · ')]);
   }
 
-  if (row.report) {
-    fields.push(['Decisions', 'not recorded separately in the saved report']);
-    fields.push(['Concerns', 'not recorded separately in the saved report']);
-  }
-
   if (row.terminal !== undefined) {
     fields.push(['Observed', row.terminal]);
   }

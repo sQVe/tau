@@ -242,27 +242,32 @@ export const workerModelLabel = (row: WorkerWidgetRow): string => {
   return requested ?? row.model;
 };
 
-const statusText = (row: WorkerWidgetRow): string => {
+const statusText = (row: WorkerWidgetRow, now: number): string => {
+  let status = stateText(row);
+
   if (row.state === 'running' && row.activity?.startsWith('herdr ') === true) {
-    return safeText(row.activity);
+    status = safeText(row.activity);
+  } else if (workerGroup(row) === 'waiting') {
+    status = 'asks · waiting';
   }
 
-  if (workerGroup(row) === 'waiting') {
-    return 'asks · waiting';
-  }
+  const elapsed = workerElapsed(row, now);
 
-  return stateText(row);
+  return `${status} ${elapsed}`;
 };
 
 // Column removal and shrinking must use the same total-width calculation. The model column is
 // dropped first because the full model stays reachable in the details view.
 // eslint-disable-next-line eslint/complexity
-const alignedColumns = (rows: WorkerWidgetRow[], availableWidth: number) => {
+const alignedColumns = (rows: WorkerWidgetRow[], availableWidth: number, now: number) => {
   // Name and status stay adjacent so the row reads as one fact. The model is last because the
   // full value stays reachable in the details view.
   const columns = [
     { name: 'name', width: Math.max(4, ...rows.map((row) => visibleWidth(row.name))) },
-    { name: 'status', width: Math.max(6, ...rows.map((row) => visibleWidth(statusText(row)))) },
+    {
+      name: 'status',
+      width: Math.max(6, ...rows.map((row) => visibleWidth(statusText(row, now)))),
+    },
     { name: 'task', width: Math.max(4, ...rows.map((row) => visibleWidth(shortTaskLabel(row)))) },
     {
       name: 'model',
@@ -324,11 +329,10 @@ const alignedColumns = (rows: WorkerWidgetRow[], availableWidth: number) => {
 // Keep column sizing and styling in one place so every compact row stays aligned.
 const alignRow = (
   row: WorkerWidgetRow,
-  rows: WorkerWidgetRow[],
-  width: number,
+  columns: ReturnType<typeof alignedColumns>,
+  now: number,
   theme: Theme | undefined,
 ): string => {
-  const columns = alignedColumns(rows, width);
   const label = row.state === 'unknown' ? undefined : stateLabel(row.state, row.outcome);
 
   const values: Record<string, string> = {
@@ -336,7 +340,7 @@ const alignRow = (
       row.name,
       columns.find((column) => column.name === 'name')?.width ?? 4,
     ),
-    status: statusText(row),
+    status: statusText(row, now),
     task: shortTaskLabel(row),
     model: safeText(workerModelLabel(row)),
   };
@@ -437,7 +441,7 @@ const bottomBorder = (
 export const renderWorkerWidget = (
   rows: WorkerWidgetRow[],
   width: number,
-  _now: number,
+  now: number,
   theme?: Theme,
 ): string[] => {
   if (width <= 0 || rows.length === 0) {
@@ -515,8 +519,10 @@ export const renderWorkerWidget = (
 
   const lines = [fitBorder('─ Subagents ', ` ${shownLiveLabel} `, boxWidth, theme)];
 
+  const columns = alignedColumns(liveRows, boxWidth - 4, now);
+
   for (const row of liveRows) {
-    lines.push(boxLine(alignRow(row, liveRows, boxWidth - 4, theme), boxWidth, theme));
+    lines.push(boxLine(alignRow(row, columns, now, theme), boxWidth, theme));
   }
 
   if (eligibleRows.length > liveRows.length) {
