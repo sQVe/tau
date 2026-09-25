@@ -607,6 +607,64 @@ it('routes approved native tool arguments through the generic resolver without P
   expect(launch).toHaveBeenCalledTimes(1);
 });
 
+it('defaults the launch timeout by profile role and keeps an explicit timeout', async ({
+  onTestFinished,
+}) => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-timeout-tool-'));
+
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('HERDR_ENV', '1');
+  vi.stubEnv('HERDR_PANE_ID', 'parent');
+  vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
+  const tool = registerTools().get('subagent');
+
+  const launch = vi
+    .spyOn(WorkerController.prototype, 'launch')
+    .mockResolvedValue({} as Awaited<ReturnType<WorkerController['launch']>>);
+
+  if (!tool) {
+    throw new Error('Missing launch tool.');
+  }
+
+  const context = {
+    cwd: directory,
+    isProjectTrusted: () => true,
+    sessionManager: {
+      getSessionFile: () => join(directory, 'parent.jsonl'),
+      getSessionId: () => 'parent',
+    },
+  } as unknown as ExtensionContext;
+
+  const input = {
+    harness: 'gemini',
+    permissions: 'native-controls',
+    task: 'Inspect fixture.',
+  };
+
+  expect(Value.Check(tool.parameters, { ...input, profile: 'scout' })).toBe(true);
+
+  for (const launchInput of [
+    { ...input, profile: 'scout' },
+    { ...input, profile: 'reviewer' },
+    { ...input, profile: 'worker' },
+    { ...input, profile: 'worker', timeoutSeconds: 10 },
+  ]) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Each launch reads the spy's next call.
+    await tool.execute('call', launchInput, undefined, undefined, context);
+  }
+
+  expect(launch.mock.calls.map(([launchInput]) => launchInput.timeout)).toEqual([
+    1_800_000, 1_800_000, 3_600_000, 10_000,
+  ]);
+});
+
 it('delivers a question notice as a steer that wakes the idle parent', () => {
   const sendMessage = vi.fn<() => void>();
   const pi = fakeExtensionApi({ sendMessage }).pi;
