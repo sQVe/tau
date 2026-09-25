@@ -69,6 +69,57 @@ it.each([2, 4])('shares approximately equal foreground area with %s workers', as
   expect(Math.max(...areas) / Math.min(...areas)).toBeLessThan(1.1);
 });
 
+it('places the first foreground worker beside the parent in 193 columns and 60 rows', async () => {
+  const { placement, client, input, dimensions } = fixture(193, 60);
+
+  await placement.place(input('foreground'), client);
+
+  expect([...dimensions.values()].map((bounds) => bounds.height)).toEqual([60, 60]);
+});
+
+it('keeps five foreground workers in the parent tab in 164 columns and 73 rows', async () => {
+  const { placement, client, input, panes } = fixture(164, 73);
+
+  for (let index = 0; index < 5; index++) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Each placement plans from the previous layout.
+    await placement.place(input('foreground'), client);
+  }
+
+  expect(panes.every((pane) => pane.tab_id === 'working')).toBe(true);
+});
+
+it('keeps thirteen foreground workers in the parent tab in 344 columns and 106 rows', async () => {
+  const { placement, client, input, panes } = fixture(344, 106);
+
+  for (let index = 0; index < 13; index++) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Each placement plans from the previous layout.
+    await placement.place(input('foreground'), client);
+  }
+
+  expect(panes.every((pane) => pane.tab_id === 'working')).toBe(true);
+});
+
+it('shares 230 columns and 74 rows equally between the parent and three workers', async () => {
+  const { placement, client, input, dimensions } = fixture(230, 74);
+
+  for (let index = 0; index < 3; index++) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Each placement plans from the previous layout.
+    await placement.place(input('foreground'), client);
+  }
+
+  const areas = [...dimensions.values()].map((bounds) => bounds.width * bounds.height);
+  expect(Math.max(...areas) / Math.min(...areas)).toBeLessThan(1.1);
+});
+
+it('stacks the second background worker below the first in 193 columns and 60 rows', async () => {
+  const { placement, client, input, dimensions } = fixture(193, 60);
+
+  await placement.place(input('background'), client);
+  const second = await placement.place(input('background'), client);
+
+  expect(dimensions.get(second.paneId)).toEqual({ width: 193, height: 30 });
+});
+
 it('fits two foreground workers beside the parent in 250 columns and 30 rows', async () => {
   const { placement, client, input, panes, dimensions } = fixture(250, 30);
 
@@ -134,7 +185,7 @@ it.each([
   'manual resize before close',
   'manual resize after close',
 ] as const)('does not infer surviving split ownership after %s', async (scenario) => {
-  const { placement, client, input, calls } = fixture(340, 100);
+  const { placement, client, input, calls } = fixture(340, 120);
   const first = await placement.place(input('foreground'), client);
   await placement.place(input('foreground'), client);
   placement.release(first.terminalId);

@@ -78,14 +78,22 @@ export const rectangle = (value: unknown): Rectangle => {
 export const isUseful = (bounds: Rectangle): boolean =>
   bounds.width >= minimumPane.width && bounds.height >= minimumPane.height;
 
-const preferRight = (bounds: Rectangle, down: boolean): boolean =>
-  !down || bounds.width / minimumPane.width >= bounds.height / minimumPane.height;
+// A parent alone in its foreground tab slightly favors a worker beside it, but only when a worker
+// below it could not keep a useful third of the height. Where it can, stacking first lets later
+// workers share the tab equally.
+const preferRight = (bounds: Rectangle, down: boolean, alone: boolean): boolean => {
+  const columns = bounds.width / minimumPane.width;
+  const rows = bounds.height / minimumPane.height;
+  const short = splitLengths(bounds.height, 2 / 3).second < minimumPane.height;
 
-export const splitDirection = (bounds: Rectangle): 'right' | 'down' | undefined => {
+  return !down || (alone && short ? 1.1 : 1) * columns >= rows;
+};
+
+export const splitDirection = (bounds: Rectangle, alone = false): 'right' | 'down' | undefined => {
   const right = isUseful({ width: splitLengths(bounds.width, 0.5).second, height: bounds.height });
   const down = isUseful({ width: bounds.width, height: splitLengths(bounds.height, 0.5).second });
 
-  if (right && preferRight(bounds, down)) {
+  if (right && preferRight(bounds, down, alone)) {
     return 'right';
   }
 
