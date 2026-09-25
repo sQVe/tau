@@ -21,6 +21,7 @@ vi.setConfig({ testTimeout: 60_000 });
 beforeEach(() => {
   vi.stubEnv('TAU_DELEGATE_MODEL', 'tau-delegate/reader');
 });
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
@@ -34,6 +35,7 @@ const createHarness = async (registerCleanup: TestContext['onTestFinished']) => 
 
   const sessionModel = fauxProvider({ provider: 'tau-test' });
   const delegate = fauxProvider({ provider: 'tau-delegate', models: [{ id: 'reader' }] });
+
   const { session } = await createBoundSession(registerCleanup, {
     cwd,
     agentDirectory: agentDir,
@@ -74,6 +76,7 @@ it('clamps a real Pi read and records delegate usage in the session ledger', asy
 }) => {
   const { session, sessionModel, delegate } = await createHarness(onTestFinished);
   let sessionPrompt = '';
+
   sessionModel.setResponses([
     (context) => {
       sessionPrompt = context.systemPrompt ?? '';
@@ -85,6 +88,7 @@ it('clamps a real Pi read and records delegate usage in the session ledger', asy
     ]),
     fauxAssistantMessage('Done.'),
   ]);
+
   delegate.setResponses([fauxAssistantMessage('- large.txt:450 ends with line 450.')]);
 
   await session.prompt('Explain the large file.');
@@ -112,6 +116,7 @@ it.each([400, 401])(
     const head = Array.from({ length: 50 }, () => 'x'.repeat(1023)).join('\n');
     const tail = Array.from({ length: remaining }, (_, index) => `line ${index + 51}`).join('\n');
     await writeFile(join(cwd, 'byte-limited.txt'), `${head}\n${tail}`);
+
     sessionModel.setResponses([
       fauxAssistantMessage([fauxToolCall('read', { path: 'byte-limited.txt' })]),
       fauxAssistantMessage([
@@ -131,7 +136,9 @@ it.each([400, 401])(
           ? [entry.message]
           : [],
       );
+
     expect(reads).toHaveLength(2);
+
     expect(reads[0]!.details).toMatchObject({
       truncation: {
         truncated: true,
@@ -147,9 +154,11 @@ it.each([400, 401])(
       remaining > 400
         ? 'For questions, call bulk_read with paths and question. To edit, use a bounded read with offset and limit.'
         : 'Read with offset=51 and limit=400 to continue.';
+
     expect(textOf(reads[0]!.content)).toBe(
       `${head}\n\nLines 51-${50 + remaining} remain. ${guidance}`,
     );
+
     expect(textOf(reads[0]!.content).includes('bulk_read')).toBe(remaining > 400);
     expect(reads.every((read) => !read.isError)).toBe(true);
     expect(textOf(reads[1]!.content)).toBe(tail);

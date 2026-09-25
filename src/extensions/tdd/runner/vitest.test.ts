@@ -73,6 +73,7 @@ describe('runTests', () => {
   beforeEach(async () => {
     const agentDirectory = await mkdtemp(join(tmpdir(), 'tau-runner-agent-'));
     vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+
     onTestFinished(async () => {
       vi.unstubAllEnvs();
 
@@ -105,6 +106,7 @@ describe('runTests', () => {
       const separator = version.startsWith('5.') ? ' > ' : ' ';
       const fullname = ['outer suite', 'inner [group]', 'works (exact)'].join(separator);
       const filter = `^(?:${fullname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})$`;
+
       // Vitest 5.0.1 still joins JSON fullName with spaces; CLI filtering uses " > ".
       // https://github.com/vitest-dev/vitest/blob/v5.0.1/packages/vitest/src/node/reporters/json.ts
       const assertion = {
@@ -114,6 +116,7 @@ describe('runTests', () => {
         status: 'failed',
         failureMessages: ['expected 1 to be 2'],
       };
+
       const spawn = vi.fn<SpawnFn>(
         fakeSpawn({
           code: 1,
@@ -147,6 +150,7 @@ describe('runTests', () => {
           },
         }),
       );
+
       const result = await runTests(
         { scope: 'changed', cwd: '/repo', files: ['value.test.ts'], testNames: [fullname] },
         makeDeps({ resolveVitest: () => ({ path: '/fake/vitest.js', version }), spawn }),
@@ -157,10 +161,12 @@ describe('runTests', () => {
         expect.arrayContaining(['-t', filter]),
         expect.objectContaining({ cwd: '/repo' }),
       );
+
       expect(result).toMatchObject({
         kind: 'fail',
         failures: [{ fullname, message: 'expected 1 to be 2' }],
       });
+
       // V4 cannot distinguish a top-level name containing spaces from the same nested name.
       const expected = [{ file: '/repo/value.test.ts', fullname, status: 'failed' }];
 
@@ -197,6 +203,7 @@ describe('runTests', () => {
           },
         }),
       );
+
       const result = await runTests(
         {
           scope: 'changed',
@@ -209,12 +216,14 @@ describe('runTests', () => {
 
       expect(result).toMatchObject({ kind: 'no-tests-collected', tests: [] });
       expect(result).toHaveProperty('message', expect.stringContaining(`Vitest ${version}`));
+
       expect(result).toHaveProperty(
         'message',
         expect.stringContaining(
           version.startsWith('5.') ? 'outer > inner > works' : 'outer inner works',
         ),
       );
+
       expect(result).toHaveProperty('message', expect.stringContaining('Do not restructure tests'));
       expect(spawn).toHaveBeenCalledTimes(1);
       expect(spawn.mock.calls[0]?.[1]).toContain('^(?:wrong nested name)$');
@@ -226,6 +235,7 @@ describe('runTests', () => {
     onTestFinished(() => rm(cwd, { recursive: true, force: true }));
     const directory = join(cwd, 'node_modules/vitest');
     await mkdir(directory, { recursive: true });
+
     await writeFile(
       join(directory, 'package.json'),
       JSON.stringify({
@@ -289,6 +299,7 @@ describe('runTests', () => {
       { ancestorTitles: ['outer'], title: 'skipped', fullName: 'outer skipped', status: 'pending' },
       { ancestorTitles: ['outer'], title: 'todo', fullName: 'outer todo', status: 'todo' },
     ];
+
     const result = await runTests(
       { scope: 'all', cwd: '/repo' },
       makeDeps({
@@ -323,6 +334,7 @@ describe('runTests', () => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-nested-selection-'));
     onTestFinished(() => rm(cwd, { recursive: true, force: true }));
     await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
+
     await writeFile(
       join(cwd, 'nested.test.ts'),
       `
@@ -334,6 +346,7 @@ describe('runTests', () => {
       it('works (exact)', () => { throw new Error('must not run'); });
     `,
     );
+
     const result = await runTests({
       scope: 'changed',
       cwd,
@@ -351,6 +364,7 @@ describe('runTests', () => {
         },
       ],
     });
+
     expect('failures' in result && result.failures).toHaveLength(1);
 
     const unmatched = await runTests({
@@ -361,6 +375,7 @@ describe('runTests', () => {
     });
 
     expect(unmatched).toMatchObject({ kind: 'no-tests-collected', tests: [] });
+
     expect(unmatched).toHaveProperty(
       'message',
       expect.stringContaining('outer suite inner [group] works (exact)'),
@@ -379,12 +394,14 @@ describe('runTests', () => {
         },
       ],
     };
+
     const failingReport = {
       numTotalTests: 0,
       testResults: [
         { name: '/repo/value.test.ts', status: 'failed', message: '', assertionResults: [] },
       ],
     };
+
     const cases = [
       { kind: 'pass', report: passingReport, code: 0, timedOut: false },
       { kind: 'fail', report: failingReport, code: 1, timedOut: false },
@@ -400,15 +417,18 @@ describe('runTests', () => {
         stdoutTruncated: true,
       },
     ];
+
     const directories = new Set<string>();
 
     for (const fixture of cases) {
       const controller = new AbortController();
+
       const spawn = fakeSpawn({
         ...fixture,
         stdout: 'test console output\n',
         stderr: 'setup warning\n',
       });
+
       const result = await runTests(
         { scope: 'all', cwd: '/repo', signal: controller.signal },
         makeDeps({
@@ -430,15 +450,18 @@ describe('runTests', () => {
       directories.add(diagnostics.directory);
 
       expect(diagnostics.durationMs).toBeGreaterThanOrEqual(0);
+
       expect(diagnostics.command).toEqual(
         expect.arrayContaining(['/fake/vitest.js', 'run', '--reporter=json', '--reporter=default']),
       );
+
       expect(diagnostics).toMatchObject({
         timeoutMs: 30_000,
         exitCode: fixture.code,
         stdout: { bytes: 20, truncated: fixture.stdoutTruncated ?? false },
         stderr: { bytes: 14, truncated: false },
       });
+
       expect(await readFile(diagnostics.stdout!.path, 'utf8')).toBe('test console output\n');
       expect(await readFile(diagnostics.stderr!.path, 'utf8')).toBe('setup warning\n');
 
@@ -448,6 +471,7 @@ describe('runTests', () => {
           : JSON.parse(await readFile(diagnostics.report.path, 'utf8'));
 
       expect(savedReport).toEqual(fixture.report);
+
       expect(
         process.platform === 'win32' ||
           ((await stat(diagnostics.directory)).mode & 0o777) === 0o700,
@@ -481,6 +505,7 @@ describe('runTests', () => {
     );
 
     expect(result).toMatchObject({ kind: 'pass' });
+
     expect(result).toHaveProperty('tests', [
       { file: '/repo/value.test.ts', fullname: 'timed', status: 'passed', durationMs: 13 },
       { file: '/repo/value.test.ts', fullname: 'untimed', status: 'passed' },
@@ -500,6 +525,7 @@ describe('runTests', () => {
         },
       ],
     };
+
     const result = await runTests(
       { scope: 'all', cwd: '/repo' },
       makeDeps({
@@ -510,22 +536,26 @@ describe('runTests', () => {
         }),
       }),
     );
+
     const diagnostics = result.diagnostics!;
 
     expect(result).toMatchObject({
       kind: 'pass',
       tests: [{ fullname: 'works', status: 'passed' }],
     });
+
     expect(diagnostics.stdout).toMatchObject({
       savedBytes: maximumStdoutBytes,
       bytes: maximumStdoutBytes + 1,
       truncated: true,
     });
+
     expect(diagnostics.stderr).toMatchObject({
       savedBytes: maximumTotalBytes,
       bytes: maximumTotalBytes + 1,
       truncated: true,
     });
+
     expect(diagnostics.report).toMatchObject({ savedBytes: reportLimit, truncated: true });
     expect((await stat(diagnostics.stdout!.path)).size).toBe(maximumStdoutBytes);
     expect((await stat(diagnostics.stderr!.path)).size).toBe(maximumTotalBytes);
@@ -549,6 +579,7 @@ describe('runTests', () => {
 
     expect(result.kind).toBe('pass');
     expect(result.diagnostics?.error).toContain('Could not save all diagnostics');
+
     expect(await readFile(join(result.diagnostics!.directory, 'stdout.txt'), 'utf8')).toBe(
       'keep this content',
     );
@@ -560,6 +591,7 @@ describe('runTests', () => {
 
     try {
       await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
+
       await writeFile(
         file,
         `
@@ -605,6 +637,7 @@ describe('runTests', () => {
         },
       }),
     });
+
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
     if (result.kind !== 'fail') {
@@ -649,6 +682,7 @@ describe('runTests', () => {
         report: { numTotalTests: 1, numPassedTests: 1, numFailedTests: 0 },
       }),
     });
+
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
 
     expect(result.kind).toBe('compile-error');
@@ -675,6 +709,7 @@ describe('runTests', () => {
 
     try {
       const script = join(cwd, 'report.cjs');
+
       const report = {
         numTotalTests: 1,
         numFailedTests: 0,
@@ -721,6 +756,7 @@ describe('runTests', () => {
         join(cwd, 'noise.test.ts'),
         `import { it, expect } from 'vitest'; it('noisy test', () => { for (let index = 0; index < 100; index++) console.log('x'.repeat(100 * 1024)); expect(1).toBe(${expected}); });`,
       );
+
       const result = await runTests({ scope: 'all', cwd });
 
       expect(result.kind).toBe(expected === 1 ? 'pass' : 'fail');
@@ -762,6 +798,7 @@ describe('runTests', () => {
   it('records a spawn error as an execution that did not start', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-unstarted-runner-'));
     onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+
     const result = await runTests(
       { scope: 'all', cwd: join(cwd, 'missing') },
       makeDeps({ spawn: defaultSpawn }),
@@ -775,6 +812,7 @@ describe('runTests', () => {
 
   it('records the injected spawn command without inventing an executable', async () => {
     const command = ['remote-node', '/remote/vitest.mjs', 'run'];
+
     const result = await runTests(
       { scope: 'all', cwd: '/repo' },
       makeDeps({ spawn: fakeSpawn({ command, report: { numTotalTests: 1, numPassedTests: 1 } }) }),
@@ -820,6 +858,7 @@ describe('runTests', () => {
         },
       ],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -853,6 +892,7 @@ describe('runTests', () => {
         },
       ],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -868,6 +908,7 @@ describe('runTests', () => {
         message: 'AssertionError: expected 1 to equal 2',
       },
     ]);
+
     expect(result.tests).toEqual([
       { file: '/repo/b.test.ts', fullname: 'b ok', status: 'passed' },
       { file: '/repo/b.test.ts', fullname: 'b broken', status: 'failed' },
@@ -910,6 +951,7 @@ describe('runTests', () => {
         },
       ],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -933,6 +975,7 @@ describe('runTests', () => {
       numFailedTests: 0,
       testResults: [{ name: '/repo/empty.test.ts', status: 'passed', assertionResults: [] }],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -961,6 +1004,7 @@ describe('runTests', () => {
         },
       ],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(forged), code: 0 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -986,6 +1030,7 @@ describe('runTests', () => {
 
       const started = Date.now();
       const pending = runTests({ scope: 'all', cwd, signal: controller.signal }, deps);
+
       setTimeout(() => {
         controller.abort();
       }, 50);
@@ -1019,6 +1064,7 @@ describe('runTests', () => {
         },
       ],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -1046,6 +1092,7 @@ describe('runTests', () => {
         },
       ],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -1078,6 +1125,7 @@ describe('runTests', () => {
         },
       ],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -1107,12 +1155,14 @@ describe('runTests', () => {
 
   it('prefixes dash-leading scoped paths so vitest reads them as filters, not options', async () => {
     let captured: string[] = [];
+
     const report = {
       numTotalTests: 1,
       numFailedTests: 0,
       numPassedTests: 1,
       testResults: [{ name: '/repo/-a.test.ts', status: 'passed', assertionResults: [] }],
     };
+
     const deps = makeDeps({
       spawn: async (_cmd, args) => {
         captured = args;
@@ -1144,11 +1194,13 @@ describe('runTests', () => {
       status: 'failed',
       failureMessages: [longMessage],
     }));
+
     const report = {
       numTotalTests: 15,
       numFailedTests: 15,
       testResults: [{ name: '/repo/big.test.ts', status: 'failed', assertionResults }],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -1164,6 +1216,7 @@ describe('runTests', () => {
         status: 'failed',
       })),
     );
+
     expect(result.failures).toHaveLength(maximumFailures);
     expect(result.truncated).toBe(true);
 
@@ -1189,6 +1242,7 @@ describe('runTests', () => {
         },
       ],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
 
     const result = await runTests(
@@ -1237,6 +1291,7 @@ describe('runTests', () => {
         },
       ],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -1274,6 +1329,7 @@ describe('runTests', () => {
         },
       ],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -1301,6 +1357,7 @@ describe('runTests', () => {
         },
       ],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -1351,6 +1408,7 @@ describe('runTests', () => {
         },
       ],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo/' }, deps);
@@ -1384,6 +1442,7 @@ describe('runTests', () => {
         },
       ],
     };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
     const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
@@ -1397,12 +1456,14 @@ describe('runTests', () => {
 
   it('passes the changed files and an exact test name pattern to vitest', async () => {
     let captured: string[] = [];
+
     const report = {
       numTotalTests: 1,
       numFailedTests: 0,
       numPassedTests: 1,
       testResults: [{ name: '/repo/a.test.ts', status: 'passed', assertionResults: [] }],
     };
+
     const deps = makeDeps({
       spawn: async (_cmd, args) => {
         captured = args;
@@ -1430,12 +1491,14 @@ describe('runTests', () => {
 
   it('passes only fixed reporter arguments plus scoped paths', async () => {
     let captured: string[] = [];
+
     const report = {
       numTotalTests: 1,
       numFailedTests: 0,
       numPassedTests: 1,
       testResults: [{ name: '/repo/a.test.ts', status: 'passed', assertionResults: [] }],
     };
+
     const deps = makeDeps({
       spawn: async (_cmd, args) => {
         captured = args;
@@ -1453,6 +1516,7 @@ describe('runTests', () => {
       '--reporter=default',
       '--no-color',
     ]);
+
     expect(captured).toContain('src/a.test.ts');
 
     const disallowed = captured.filter(
@@ -1469,9 +1533,11 @@ describe('runTests', () => {
 describe('extractBinPath', () => {
   it('resolves string, object-keyed, and missing bin entries', () => {
     expect(extractBinPath({ bin: './bin/vitest.mjs' })).toBe('./bin/vitest.mjs');
+
     expect(extractBinPath({ bin: { vitest: './dist/cli.js', other: './o.js' } })).toBe(
       './dist/cli.js',
     );
+
     expect(extractBinPath({ bin: { other: './o.js' } })).toBeNull();
     expect(extractBinPath({})).toBeNull();
     expect(extractBinPath(null)).toBeNull();
@@ -1487,6 +1553,7 @@ it('allows two minutes for full verification and thirty seconds for focused runs
 describe('nodeExecutable', () => {
   it('ignores a directory named node on PATH', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-node-'));
+
     onTestFinished(async () => {
       vi.unstubAllEnvs();
 
@@ -1503,6 +1570,7 @@ describe('nodeExecutable', () => {
     'finds %s on PATH for a compiled agent',
     async (name) => {
       const directory = await mkdtemp(join(tmpdir(), 'tau-node-'));
+
       onTestFinished(async () => {
         vi.unstubAllEnvs();
 
@@ -1523,6 +1591,7 @@ describe('nodeExecutable', () => {
 
   it('keeps a node executable regardless of PATH', () => {
     expect(nodeExecutable('/usr/bin/node')).toBe('/usr/bin/node');
+
     expect(nodeExecutable('C:\\Program Files\\nodejs\\node.exe')).toBe(
       'C:\\Program Files\\nodejs\\node.exe',
     );
@@ -1530,6 +1599,7 @@ describe('nodeExecutable', () => {
 
   it('keeps a nonstandard node name when no node command resolves', () => {
     vi.stubEnv('PATH', '');
+
     onTestFinished(() => {
       vi.unstubAllEnvs();
     });

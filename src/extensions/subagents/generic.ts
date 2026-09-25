@@ -29,6 +29,12 @@ import {
 import { isGenericLoadout } from './types.js';
 import type { SubmissionState, Task } from './types.js';
 
+export interface GenericSubmission {
+  id: string;
+  text: string;
+  send: () => Promise<string>;
+}
+
 const reportDirectory = (task: Task): string => {
   if (!isGenericLoadout(task.loadout)) {
     throw new Error('Only generic workers use report files.');
@@ -148,6 +154,7 @@ const reportIdentityChanged = (
 ): boolean => {
   const limit = BigInt(reportByteLimit);
   const oversized = length > reportByteLimit || after.size > limit || current.size > limit;
+
   const replaced =
     current.isSymbolicLink() || current.dev !== before.dev || current.ino !== before.ino;
 
@@ -319,12 +326,6 @@ const blockedSubmission = (error: unknown): boolean => {
   }
 };
 
-export interface GenericSubmission {
-  id: string;
-  text: string;
-  send: () => Promise<string>;
-}
-
 export const submitGenericText = async (
   directory: string,
   task: Task,
@@ -345,6 +346,7 @@ export const submitGenericText = async (
 
   publish(directory, submissionName(id, 'intent'), { taskId: task.taskId, id, text });
   let state: SubmissionState = 'submitted';
+
   let detail =
     'Herdr submitted text. Task acceptance, acknowledgement, and model selection are not verified.';
 

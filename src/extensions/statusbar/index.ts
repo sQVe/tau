@@ -7,12 +7,6 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { footerTheme } from './colors.js';
 import { renderFooterLine } from './render.js';
 
-const executeFile = promisify(execFile);
-
-// Bound background Git work. Failures leave the dirty marker hidden.
-const gitTimeoutMilliseconds = 5000;
-const gitMaximumBufferBytes = 10 * 1024 * 1024;
-
 type FooterFactory = NonNullable<Parameters<ExtensionContext['ui']['setFooter']>[0]>;
 
 interface StatusbarState {
@@ -22,6 +16,12 @@ interface StatusbarState {
   refreshing: boolean;
   pendingContext: ExtensionContext | undefined;
 }
+
+const executeFile = promisify(execFile);
+
+// Bound background Git work. Failures leave the dirty marker hidden.
+const gitTimeoutMilliseconds = 5000;
+const gitMaximumBufferBytes = 10 * 1024 * 1024;
 
 const getSessionCost = (context: ExtensionContext): number => {
   let cost = 0;

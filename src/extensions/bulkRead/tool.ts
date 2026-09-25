@@ -74,6 +74,7 @@ const loadPayload = async (
 
     if (content.includes('\0')) {
       skipped.push(path);
+
       continue;
     }
 
@@ -168,6 +169,7 @@ export const bulkRead = async (
       .map((part) => part.text)
       .join(''),
   );
+
   const skipped = input.skipped.length
     ? `\n\nSkipped binary files: ${input.skipped.join(', ')}`
     : '';

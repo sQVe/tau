@@ -27,6 +27,7 @@ export const workerState = (directory: string, task: Task, controlled = false): 
     const terminal = taskEndedEventKinds.some(
       (kind) => kind !== 'parentClosed' && event(kind) !== undefined,
     );
+
     const reported = readReport(directory, task.taskId) !== undefined;
 
     return terminal || reported ? 'cleanupUnconfirmed' : 'notOwned';

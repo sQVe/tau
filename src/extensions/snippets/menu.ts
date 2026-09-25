@@ -12,12 +12,6 @@ import type { Component, TUI } from '@earendil-works/pi-tui';
 import { isBottom, isDown, isTop, isUp } from '../../keys/index.js';
 import type { Snippet } from './types.js';
 
-// Lines render() always emits: two borders, the title, the search line, a blank, the hints.
-const chromeHeight = 6;
-// Chrome plus room for the editor below, when the terminal is tall enough.
-const frameHeight = 10;
-const minimumViewHeight = 5;
-
 type MenuTheme = Pick<Theme, 'fg' | 'bold'>;
 
 interface ListRow {
@@ -48,6 +42,12 @@ interface Groups {
   prepends: Snippet[];
   appends: Snippet[];
 }
+
+// Lines render() always emits: two borders, the title, the search line, a blank, the hints.
+const chromeHeight = 6;
+// Chrome plus room for the editor below, when the terminal is tall enough.
+const frameHeight = 10;
+const minimumViewHeight = 5;
 
 /**
  * Clips `lines` to at most `maximumHeight` lines and scrolls `focusRow` into view.
@@ -105,9 +105,11 @@ class SnippetMenuComponent implements Component {
     this.theme = theme;
     this.terminal = terminal;
     this.done = done;
+
     this.query.onSubmit = () => {
       this.leaveSearch();
     };
+
     this.query.onEscape = () => {
       this.leaveSearch();
     };
@@ -121,6 +123,7 @@ class SnippetMenuComponent implements Component {
   // Filter each group separately so matches keep their placement headers.
   private groups(): Groups {
     const text = this.query.getValue();
+
     const match = (snippets: Snippet[]) =>
       fuzzyFilter(snippets, text, (snippet) => `${snippet.name} ${snippet.description}`);
 
@@ -150,9 +153,11 @@ class SnippetMenuComponent implements Component {
 
   private itemRow(snippet: Snippet, index: number, width: number): string {
     const pointer = index === this.cursor ? this.theme.fg('accent', '> ') : '  ';
+
     const checkbox = this.model.working.has(snippet.id)
       ? this.theme.fg('success', '[x]')
       : this.dim('[ ]');
+
     const description = snippet.description === '' ? '' : this.dim(` - ${snippet.description}`);
 
     return truncateToWidth(
@@ -184,8 +189,10 @@ class SnippetMenuComponent implements Component {
               itemIndex: offset + index,
             })),
           ];
+
     const prependRows = group('↑ PREPEND - added before your message', prepends, 0);
     const appendRows = group('↓ APPEND - added after your message', appends, prepends.length);
+
     const gap =
       prependRows.length > 0 && appendRows.length > 0 ? [{ text: '', itemIndex: null }] : [];
 
@@ -209,6 +216,7 @@ class SnippetMenuComponent implements Component {
 
   private renderList(width: number, maximumHeight: number) {
     const rows = this.buildListRows(width);
+
     const view = clipToViewport({
       lines: rows.map((row) => row.text),
       scroll: this.listScroll,
@@ -241,6 +249,7 @@ class SnippetMenuComponent implements Component {
 
   private renderPreview(width: number, maximumHeight: number) {
     const snippet = this.itemAt(this.cursor);
+
     const view = clipToViewport({
       lines: this.buildPreviewRows(snippet, width),
       scroll: this.previewScroll,
@@ -348,6 +357,7 @@ class SnippetMenuComponent implements Component {
 
   render(width: number): string[] {
     const maximumHeight = this.maximumHeight();
+
     const { content, title, subtitle, hints } =
       this.mode === 'preview'
         ? this.renderPreview(width, maximumHeight)

@@ -72,6 +72,7 @@ const fullStatus = (state: WorkerState, generic: boolean) => ({
 const expectKeys = (state: WorkerState, generic: boolean) => {
   const content = modelStatus(fullStatus(state, generic));
   const cleanup = cleanupStates.has(state);
+
   const expected = [
     'taskId',
     'name',
@@ -142,6 +143,7 @@ it('never leaks an absolute path outside recovery and report text', () => {
   for (const state of states) {
     for (const generic of [false, true]) {
       const content = modelStatus(fullStatus(state, generic));
+
       const values = stringValues(content).filter(
         ({ path }) => !path.startsWith('recovery') && !path.startsWith('report'),
       );
@@ -264,6 +266,7 @@ it('carries a bounded native observation reason into model content', () => {
     deadline: 10,
     observationIssue: 'herdr observation failed.',
   });
+
   expect(short.observationIssue).toBe('herdr observation failed.');
 
   const long = modelStatus({
@@ -272,6 +275,7 @@ it('carries a bounded native observation reason into model content', () => {
     deadline: 10,
     observationIssue: '界'.repeat(1000),
   });
+
   const reason = String(long.observationIssue);
   expect(reason.length).toBeLessThan(1000);
   expect(reason.startsWith('界'.repeat(200))).toBe(true);
@@ -309,6 +313,7 @@ it('shapes a submission receipt to its identity, state, and detail', () => {
     state: 'uncertain',
     detail: 'lost',
   });
+
   expect(JSON.stringify(content)).not.toContain('Private reply text.');
   expect(JSON.stringify(content)).not.toContain('Never resubmit');
 });
@@ -328,6 +333,7 @@ it('builds reply content with and without a Pi question identity', () => {
     workerAcknowledged: false,
     delivery: 'sent',
   });
+
   expect(modelReply('task-1', { replyAccepted: true, delivery: 'notDelivered' })).toEqual({
     taskId: 'task-1',
     replyAccepted: true,
@@ -346,6 +352,7 @@ it('builds the unreadable-evidence notice without state or outcome', () => {
   expect(Object.keys(content).toSorted()).toEqual(
     ['taskId', 'name', 'evidenceError', 'recovery'].toSorted(),
   );
+
   expect(content).not.toHaveProperty('state');
   expect(content).not.toHaveProperty('outcome');
 });

@@ -6,6 +6,11 @@ import type { TerminalCall } from '../terminal.js';
 import { workBudget } from './budget.js';
 import type { Handle } from './types.js';
 
+export interface InspectionBudget {
+  remainingBudget: () => number;
+  signal: AbortSignal;
+}
+
 export const integer = (value: unknown): number => {
   if (!Number.isSafeInteger(value) || Number(value) <= 0) {
     throw new Error('Invalid herdr process identity.');
@@ -17,6 +22,7 @@ export const integer = (value: unknown): number => {
 export const isBareShell = (information: Record<string, unknown>): boolean => {
   const processes = information.foreground_processes;
   const shellPid = integer(information.shell_pid);
+
   const shellAlone =
     Array.isArray(processes) &&
     processes.length === 1 &&
@@ -92,11 +98,6 @@ export class WorkerExitedError extends Error {
   constructor(options?: ErrorOptions) {
     super('Worker exited before readiness. No task dispatch or retry.', options);
   }
-}
-
-export interface InspectionBudget {
-  remainingBudget: () => number;
-  signal: AbortSignal;
 }
 
 export const readProcessStart = async (

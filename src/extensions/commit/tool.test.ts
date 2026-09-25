@@ -30,9 +30,11 @@ describe('validateSubject', () => {
     expect(() => {
       validateSubject('feat: add thing');
     }).not.toThrow();
+
     expect(() => {
       validateSubject('fix(scope): do it');
     }).not.toThrow();
+
     expect(() => {
       validateSubject('chore!: breaking');
     }).not.toThrow();
@@ -44,12 +46,15 @@ describe('validatePaths', () => {
     expect(() => {
       validatePaths(['.env']);
     }).toThrow(/\.env/);
+
     expect(() => {
       validatePaths(['db/credentials.json']);
     }).toThrow(/db\/credentials\.json/);
+
     expect(() => {
       validatePaths(['keys/id_rsa']);
     }).toThrow(/keys\/id_rsa/);
+
     expect(() => {
       validatePaths(['.ssh/config']);
     }).toThrow(/\.ssh\/config/);
@@ -65,6 +70,7 @@ describe('validatePaths', () => {
     expect(() => {
       validatePaths(['.//id_rsa']);
     }).toThrow(/id_rsa/);
+
     expect(() => {
       validatePaths(['./././id_rsa']);
     }).toThrow(/id_rsa/);
@@ -74,9 +80,11 @@ describe('validatePaths', () => {
     expect(() => {
       validatePaths(['config/.env']);
     }).toThrow(/config\/\.env/);
+
     expect(() => {
       validatePaths(['packages/app/.npmrc']);
     }).toThrow(/\.npmrc/);
+
     expect(() => {
       validatePaths(['home/.ssh/config']);
     }).toThrow(/\.ssh/);
@@ -86,6 +94,7 @@ describe('validatePaths', () => {
     expect(() => {
       validatePaths(['.ENV']);
     }).toThrow(/\.ENV/);
+
     expect(() => {
       validatePaths(['.Env.production']);
     }).toThrow(/\.Env\.production/);
@@ -103,6 +112,7 @@ describe('validatePaths', () => {
     expect(() => {
       validatePaths(['.ssh']);
     }).toThrow(/\.ssh/);
+
     expect(() => {
       validatePaths(['home/.ssh']);
     }).toThrow(/\.ssh/);
@@ -118,9 +128,11 @@ describe('validatePaths', () => {
     expect(() => {
       validatePaths([':(glob)*.ts']);
     }).toThrow(/Invalid path/);
+
     expect(() => {
       validatePaths(['../etc/passwd']);
     }).toThrow(/Invalid path/);
+
     expect(() => {
       validatePaths(['/etc/passwd']);
     }).toThrow(/Invalid path/);
@@ -144,6 +156,7 @@ describe('validatePaths', () => {
     expect(() => {
       validatePaths(['src/../../etc/passwd']);
     }).toThrow(/Invalid path/);
+
     expect(() => {
       validatePaths(['src/..']);
     }).toThrow(/Invalid path/);
@@ -178,6 +191,7 @@ const createPrefetchRepository = async () => {
 describe('commitTool.execute', () => {
   it('commits later files changed by an earlier hook', async () => {
     const { repositoryDirectory, groups } = await createPrefetchRepository();
+
     const tool = createCommitTool({
       exec: async (command, commandArguments, options) => {
         const result = await runCommand(
@@ -249,12 +263,14 @@ describe('commitTool.execute', () => {
             '.git/hooks/pre-commit',
             '#!/bin/sh\necho hook said no >&2\nexit 1\n',
           );
+
           await chmod(join(repositoryDirectory, '.git/hooks/pre-commit'), 0o755);
         }
 
         return runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory);
       },
     });
+
     const failureError = await tool
       .execute(
         'batch',
@@ -267,6 +283,7 @@ describe('commitTool.execute', () => {
         () => undefined,
         (error: unknown) => error,
       );
+
     const commitHashes = (await git(repositoryDirectory, ['log', '--reverse', '--format=%H']))
       .trim()
       .split('\n');
@@ -279,6 +296,7 @@ describe('commitTool.execute', () => {
     }
 
     expect((failureError as Error).message).toContain('Group 3/4');
+
     expect((failureError as Error).message).toContain(
       {
         cancel: 'cancelled',
@@ -303,6 +321,7 @@ describe('commitTool.execute', () => {
     );
 
     expect(result.details.groups[0]!.sha).not.toBe('');
+
     expect(
       (await git(repositoryDirectory, ['show', '--name-only', '--format=', 'HEAD'])).trim(),
     ).toBe('four.txt');
@@ -321,6 +340,7 @@ describe('commitTool.execute', () => {
       hookPath,
       '#!/bin/sh\nprintf "// Hook comment\\n" >> retry.ts\ngit add retry.ts\n',
     );
+
     await chmod(hookPath, 0o755);
 
     const result = await executeCommit(repositoryDirectory, {
@@ -329,10 +349,12 @@ describe('commitTool.execute', () => {
 
     expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('1');
     expect(await git(repositoryDirectory, ['show', 'HEAD:retry.ts'])).toContain('// Hook comment');
+
     expect(result.details.groups[0]).toMatchObject({
       files: ['retry.ts'],
       hookChanges: { files: ['retry.ts'], message: false },
     });
+
     expect(JSON.stringify(result.content)).toContain('Hook changed paths: retry.ts');
   });
 
@@ -361,6 +383,7 @@ describe('commitTool.execute', () => {
 
     expect(logLines).toHaveLength(1);
     expect(latestSubject).toBe('feat: add thing');
+
     expect(result.details.groups[0]).toEqual({
       sha: commitHash,
       files: ['README.md'],
@@ -455,6 +478,7 @@ describe('commitTool.execute', () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     await writeRepositoryFile(repositoryDirectory, 'sub/a.txt', 'hello\n');
+
     await writeRepositoryFile(
       repositoryDirectory,
       'sub/tau.json',
@@ -463,6 +487,7 @@ describe('commitTool.execute', () => {
         check: ['sh', '-c', 'exit 82'],
       }),
     );
+
     await writeRepositoryFile(
       repositoryDirectory,
       'tau.json',
@@ -471,6 +496,7 @@ describe('commitTool.execute', () => {
         check: ['grep', '-qx', 'prepared', 'sub/a.txt'],
       }),
     );
+
     await git(repositoryDirectory, ['add', 'tau.json', 'sub/tau.json']);
     await git(repositoryDirectory, ['commit', '-m', 'chore: configure commands']);
 
@@ -491,6 +517,7 @@ describe('commitTool.execute', () => {
     expect(result.details.groups[0]?.files).toEqual(['sub/a.txt']);
     expect(await git(repositoryDirectory, ['show', 'HEAD:sub/a.txt'])).toBe('hello\n');
     expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('2');
+
     expect(
       (await git(repositoryDirectory, ['show', '--name-only', '--format=', 'HEAD'])).trim(),
     ).toBe('sub/a.txt');
@@ -598,11 +625,13 @@ describe('commitTool.execute', () => {
 
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
     await writeRepositoryFile(repositoryDirectory, 'sneaky.txt', 'not requested\n');
+
     await writeRepositoryFile(
       repositoryDirectory,
       '.git/hooks/pre-commit',
       '#!/bin/sh\ngit add -- sneaky.txt\n',
     );
+
     await chmod(join(repositoryDirectory, '.git/hooks/pre-commit'), 0o755);
 
     const result = await executeCommit(repositoryDirectory, {
@@ -613,6 +642,7 @@ describe('commitTool.execute', () => {
       files: ['README.md', 'sneaky.txt'],
       hookChanges: { files: ['sneaky.txt'], message: false },
     });
+
     expect(await git(repositoryDirectory, ['show', 'HEAD:sneaky.txt'])).toBe('not requested\n');
 
     const revListResult = await runCommand(
@@ -636,11 +666,13 @@ describe('commitTool.execute', () => {
 
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
     await writeRepositoryFile(repositoryDirectory, 'sneaky.txt', 'not requested\n');
+
     await writeRepositoryFile(
       repositoryDirectory,
       '.git/hooks/pre-commit',
       '#!/bin/sh\ngit add -- sneaky.txt\n',
     );
+
     await chmod(join(repositoryDirectory, '.git/hooks/pre-commit'), 0o755);
 
     const result = await executeCommit(repositoryDirectory, {
@@ -648,9 +680,11 @@ describe('commitTool.execute', () => {
     });
 
     expect((await git(repositoryDirectory, ['rev-parse', 'HEAD^'])).trim()).toBe(baseCommitHash);
+
     expect(result.details.groups[0]!.sha).toBe(
       (await git(repositoryDirectory, ['rev-parse', 'HEAD'])).trim(),
     );
+
     expect(await git(repositoryDirectory, ['show', 'HEAD:sneaky.txt'])).toBe('not requested\n');
   });
 
@@ -658,11 +692,13 @@ describe('commitTool.execute', () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
+
     await writeRepositoryFile(
       repositoryDirectory,
       '.git/hooks/pre-commit',
       '#!/bin/sh\necho hook output\necho hook said no >&2\nexit 1\n',
     );
+
     await chmod(join(repositoryDirectory, '.git/hooks/pre-commit'), 0o755);
 
     let thrown: unknown;
@@ -712,6 +748,7 @@ describe('commits without approvals', () => {
   it('commits every group without opening the overlay', async () => {
     const { exec, context, custom } = fakeCommit();
     const tool = createCommitTool({ exec });
+
     const groups = [
       { files: ['one.txt'], subject: 'feat: add one' },
       { files: ['two.txt'], subject: 'feat: add two' },
@@ -722,12 +759,14 @@ describe('commits without approvals', () => {
     expect(result.details.groups.map((group) => group.subject)).toEqual(
       groups.map((group) => group.subject),
     );
+
     expect(exec.mock.calls.filter((call) => call[1][0] === 'commit')).toHaveLength(2);
     expect(custom).not.toHaveBeenCalled();
   });
 
   it('ignores obsolete project checks without a UI', async () => {
     const repositoryDirectory = await createTemporaryRepository();
+
     const tool = createCommitTool({
       exec: (command, commandArguments, options) =>
         runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
@@ -792,6 +831,7 @@ describe('commit execution', () => {
   it('unstages without opening UI if cancelled while staging', async () => {
     const controller = new AbortController();
     const { execute, exec, custom, gitDirectory } = fakeCommit();
+
     exec.mockImplementation((_command, commandArguments) => {
       if (commandArguments.includes('add')) {
         controller.abort();
@@ -813,6 +853,7 @@ describe('commit execution', () => {
     await execute(controller.signal);
 
     expect(custom).not.toHaveBeenCalled();
+
     expect(exec).toHaveBeenLastCalledWith(
       'git',
       ['--literal-pathspecs', 'reset', '--', 'README.md'],

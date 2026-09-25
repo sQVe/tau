@@ -10,11 +10,14 @@ const setup = () => {
     provider: 'test-provider',
     models: [{ id: 'delegate' }],
   }).getModel();
+
   const override = fauxProvider({ provider: 'custom', models: [{ id: 'model' }] }).getModel();
   const available = [delegate, override];
+
   const find = vi.fn<ExtensionContext['modelRegistry']['find']>((provider, id) =>
     available.find((model) => model.provider === provider && model.id === id),
   );
+
   const getAvailable = vi.fn<ExtensionContext['modelRegistry']['getAvailable']>(() => available);
   const context = { modelRegistry: { find, getAvailable } } as unknown as ExtensionContext;
   const fake = fakeExtensionApi();
@@ -36,6 +39,7 @@ afterEach(() => vi.unstubAllEnvs());
 it('sets the delegate only for answer fetches without an explicit answerModel', () => {
   vi.stubEnv('TAU_DELEGATE_MODEL', 'test-provider/delegate');
   const app = setup();
+
   const cases = [
     { toolName: 'fetch_content', input: { mode: 'answer' }, answerModel: 'test-provider/delegate' },
     { toolName: 'fetch_content', input: { mode: 'answer', answerModel: 'custom/model' } },
@@ -86,6 +90,7 @@ it.each(['invalid', 'missing/model'])(
     expect(() => app.emit({ mode: 'answer' })).toThrow(
       reference === 'invalid' ? 'Invalid delegate model' : 'model not found',
     );
+
     expect(app.emit({ mode: 'raw' })).toEqual({ mode: 'raw' });
   },
 );
@@ -93,10 +98,12 @@ it.each(['invalid', 'missing/model'])(
 it('blocks unavailable web delegates instead of letting the package route to another provider', () => {
   vi.stubEnv('TAU_DELEGATE_MODEL', 'test-provider/delegate');
   const app = setup();
+
   const routed = fauxProvider({
     provider: 'router',
     models: [{ id: 'test-provider/delegate' }],
   }).getModel();
+
   app.getAvailable.mockReturnValue([routed]);
 
   expect(() => app.emit({ mode: 'answer' })).toThrow('not available');

@@ -12,11 +12,12 @@ import { expect, it, vi } from 'vitest';
 
 import { createPiSession } from './piSession.js';
 
+type RegisterCleanup = TestContext['onTestFinished'];
+
+type EditorFactory = NonNullable<ReturnType<ExtensionUIContext['getEditorComponent']>>;
+
 // Real Pi sessions need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
-
-type RegisterCleanup = TestContext['onTestFinished'];
-type EditorFactory = NonNullable<ReturnType<ExtensionUIContext['getEditorComponent']>>;
 
 const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
 
@@ -33,19 +34,23 @@ const createScriptedUI = (
   const keybindings = new KeybindingsManager(
     TUI_KEYBINDINGS,
   ) as unknown as Parameters<EditorFactory>[2];
+
   const terminalUI = {
     requestRender: () => {},
     getKeybindings: () => keybindings,
   } as unknown as TUI;
+
   const editorTheme = {
     borderColor: (text: string) => text,
     selectList: {},
   } as Parameters<EditorFactory>[1];
+
   let editor: EditorComponent = new CustomEditor(terminalUI, editorTheme, keybindings);
   let editorFactory = previousFactory;
   editor.onSubmit = submit;
 
   const widgets = new Map<string, string[] | undefined>();
+
   const target: Record<string | symbol, unknown> = {
     theme: { fg: (_color: string, text: string) => text, bold: (text: string) => text },
     setWidget: (key: string, content: string[] | undefined) => {
@@ -64,6 +69,7 @@ const createScriptedUI = (
     },
     custom: async (factory: Parameters<ExtensionUIContext['custom']>[0]) => {
       let result: boolean | undefined;
+
       const component = await factory(
         { requestRender: () => {}, terminal: { rows: 60 } } as never,
         { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
@@ -127,6 +133,7 @@ const createHarness = async (
   const overlays: string[] = [];
 
   const submissions: Promise<void>[] = [];
+
   const { uiContext, press } = createScriptedUI(
     overlays,
     keys,
@@ -138,6 +145,7 @@ const createHarness = async (
     },
     previousFactory,
   );
+
   await session.bindExtensions({ uiContext, mode: 'tui' });
 
   const commandNames = extensionsResult.extensions.flatMap((extension) =>
@@ -178,6 +186,7 @@ it('prepends a toggled snippet to the next message and then resets', async ({ on
   expect(overlays[0]).toContain('Prompt snippets');
 
   const sent: string[] = [];
+
   faux.setResponses([
     (context) => {
       sent.push(promptTextOf(context));
@@ -210,6 +219,7 @@ it('sends selected snippets on empty Enter and resets the toggles', async ({ onT
   expect(uiContext.getEditorComponent()).toBeTypeOf('function');
 
   const sent: string[] = [];
+
   const finished = new Promise<void>((complete) => {
     session.subscribe((event) => {
       if (event.type === 'agent_settled') {
@@ -217,6 +227,7 @@ it('sends selected snippets on empty Enter and resets the toggles', async ({ onT
       }
     });
   });
+
   faux.setResponses([
     (context) => {
       sent.push(promptTextOf(context));
@@ -252,6 +263,7 @@ it('passes submissions through an earlier editor that wraps onSubmit', async ({
   onTestFinished,
 }) => {
   const seenByEarlierEditor: string[] = [];
+
   const earlierFactory: EditorFactory = (terminalUI, theme, keybindings) => {
     const editor = new CustomEditor(terminalUI, theme, keybindings);
     let onSubmit = editor.onSubmit;
@@ -269,6 +281,7 @@ it('passes submissions through an earlier editor that wraps onSubmit', async ({
 
     return editor;
   };
+
   const { uiContext, press, submissions } = await createHarness(onTestFinished, [], earlierFactory);
 
   uiContext.setEditorText('Ship it.');
@@ -287,6 +300,7 @@ it('keeps a slash command at the start of the text and keeps the toggle on', asy
   await session.prompt('/snippets');
 
   const sent: string[] = [];
+
   const record = (context: Parameters<typeof promptTextOf>[0]) => {
     sent.push(promptTextOf(context));
 
@@ -309,6 +323,7 @@ it('leaves the message unchanged when the user cancels the menu', async ({ onTes
   await session.prompt('/snippets');
 
   const sent: string[] = [];
+
   faux.setResponses([
     (context) => {
       sent.push(promptTextOf(context));

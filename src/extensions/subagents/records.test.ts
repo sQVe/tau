@@ -40,9 +40,11 @@ afterEach(() => vi.resetAllMocks());
 
 const questionFixture = () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-worker-questions-'));
+
   afterTest(() => {
     rmSync(directory, { recursive: true, force: true });
   });
+
   const task = {
     version: 1,
     taskId: 'task-one',
@@ -67,12 +69,14 @@ const questionFixture = () => {
       instructions: 'Inspect the assigned source.',
     },
   };
+
   const question = {
     version: 1,
     taskId: task.taskId,
     questionId: 'question-one',
     question: 'Which source file?',
   };
+
   const reply = {
     version: 1,
     taskId: task.taskId,
@@ -80,12 +84,14 @@ const questionFixture = () => {
     replyId: 'reply-one',
     reply: 'Inspect source.ts.',
   };
+
   const acknowledgement = {
     version: 1,
     taskId: task.taskId,
     questionId: question.questionId,
     replyId: reply.replyId,
   };
+
   records.publish(directory, 'task.json', task);
 
   return { directory, task, question, reply, acknowledgement };
@@ -177,6 +183,7 @@ it('skips tasks saved in a retired format without blocking current tasks', () =>
   mkdirSync(current, { recursive: true });
   records.publish(current, 'task.json', task);
   const { harness: _harness, ...unversioned } = task.loadout;
+
   const retired = {
     unversioned: { ...task, taskId: 'unversioned', loadout: unversioned },
     tree: {
@@ -208,6 +215,7 @@ it('skips tasks saved in a retired format without blocking current tasks', () =>
   const scanned = records.readTasks(root, diagnostics);
 
   expect(scanned).toEqual([{ directory: current, task }]);
+
   expect(diagnostics.toSorted()).toEqual(
     ['claude', 'fingerprinted', 'owned', 'parent', 'tree', 'unversioned'].map(
       (taskId) => `Skipped task ${taskId} saved in a retired format; start a fresh task instead.`,
@@ -220,6 +228,7 @@ it('skips an invalid current-format task but refuses a direct read', () => {
   const root = join(directory, 'registry');
   const child = join(root, task.taskId);
   mkdirSync(child, { recursive: true });
+
   writeFileSync(
     join(child, 'task.json'),
     JSON.stringify({ ...task, loadout: { ...task.loadout, cwd: 'relative' } }),
@@ -239,6 +248,7 @@ it('reads a task published by another process during the scan', () => {
   const child = join(root, task.taskId);
   mkdirSync(child, { recursive: true });
   records.publish(child, 'task.json', task);
+
   vi.mocked(fileSystem.openSync).mockImplementationOnce(() => {
     throw Object.assign(new Error('Not yet published.'), { code: 'ENOENT' });
   });
@@ -258,6 +268,7 @@ it.each([
   async ({ predecessor: state, result, skipped }) => {
     const { directory, task } = questionFixture();
     const root = join(directory, 'registry');
+
     const directories = {
       middle: join(root, task.taskId),
       predecessor: join(root, 'predecessor'),
@@ -269,11 +280,13 @@ it.each([
     }
 
     const middle = records.validateTask({ ...task, predecessorTaskId: 'predecessor' });
+
     const predecessor = records.validateTask({
       ...task,
       taskId: 'predecessor',
       predecessorTaskId: 'origin',
     });
+
     records.publish(directories.middle, 'task.json', middle);
     records.publish(directories.origin, 'task.json', { ...task, taskId: 'origin' });
 
@@ -284,8 +297,10 @@ it.each([
     const original = await vi.importActual<typeof fileSystem>('node:fs');
     // Each continuation looks unpublished until the scan lists its directory, then another process publishes it.
     const hidden = new Set([directories.predecessor]);
+
     const isHidden = (path: unknown) =>
       [...hidden].some((hiddenDirectory) => path === join(hiddenDirectory, 'task.json'));
+
     vi.mocked(fileSystem.openSync).mockImplementation((path, ...rest) => {
       if (isHidden(path)) {
         throw Object.assign(new Error('Not yet published.'), { code: 'ENOENT' });
@@ -293,10 +308,12 @@ it.each([
 
       return original.openSync(path, ...rest);
     });
+
     vi.mocked(fileSystem.lstatSync).mockImplementation(((path: string, options: object) =>
       isHidden(path)
         ? undefined
         : original.lstatSync(path, options)) as typeof fileSystem.lstatSync);
+
     vi.mocked(fileSystem.readdirSync).mockImplementation(((path: string, options: object) => {
       if (typeof path === 'string' && hidden.delete(path)) {
         return [];
@@ -306,6 +323,7 @@ it.each([
     }) as typeof fileSystem.readdirSync);
 
     const diagnostics: string[] = [];
+
     const scanned = records
       .readTasks(root, diagnostics)
       .map((entry) => entry.task.taskId)
@@ -314,6 +332,7 @@ it.each([
     expect(scanned).toEqual(result);
 
     expect(diagnostics).toHaveLength(skipped.length);
+
     expect(diagnostics).toEqual(
       skipped.map((taskId): unknown => expect.stringContaining(join(root, taskId))),
     );
@@ -330,9 +349,11 @@ it('reads the saved task once while finding the pending question', () => {
   vi.mocked(fileSystem.openSync).mockClear();
 
   expect(questions.readPendingQuestion(directory, task.taskId)).toEqual(pending);
+
   const taskReads = vi
     .mocked(fileSystem.openSync)
     .mock.calls.filter(([path]) => String(path).endsWith('task.json'));
+
   expect(taskReads).toHaveLength(1);
 });
 
@@ -343,6 +364,7 @@ it('diagnoses an unpublished predecessor referenced by a published task', () => 
   const pending = join(root, 'unpublished');
   mkdirSync(source, { recursive: true });
   mkdirSync(pending);
+
   records.publish(source, 'task.json', {
     ...task,
     predecessorTaskId: 'unpublished',
@@ -363,6 +385,7 @@ it('requires directory sync on identical question reply and acknowledgement reco
   const syncFailure = Object.assign(new Error('Directory sync failed.'), { code: 'EIO' });
   let failDirectorySync = true;
   let directorySyncAttempts = 0;
+
   vi.mocked(fsyncSync).mockImplementation((descriptor) => {
     if (fstatSync(descriptor).isDirectory()) {
       directorySyncAttempts += 1;
@@ -374,9 +397,11 @@ it('requires directory sync on identical question reply and acknowledgement reco
 
     original.fsyncSync(descriptor);
   });
+
   afterTest(() => {
     vi.mocked(fsyncSync).mockImplementation(original.fsyncSync);
   });
+
   const submissions = [
     ['question', question, () => questions.acceptQuestion(directory, task.taskId, question)],
     ['reply', reply, () => questions.acceptReply(directory, task.taskId, reply)],
@@ -421,30 +446,37 @@ it('recovers immutable questions and replies separately from worker acknowledgem
   expect(questions.readReply(directory, task.taskId, question.questionId)).toBeUndefined();
   expect(questions.acceptReply(directory, task.taskId, reply)).toEqual(reply);
   expect(questions.acceptReply(directory, task.taskId, { ...reply })).toEqual(reply);
+
   expect(
     questions.readAcknowledgement(directory, task.taskId, question.questionId),
   ).toBeUndefined();
+
   expect(questions.acceptAcknowledgement(directory, task.taskId, acknowledgement)).toEqual(
     acknowledgement,
   );
+
   expect(questions.acceptAcknowledgement(directory, task.taskId, { ...acknowledgement })).toEqual(
     acknowledgement,
   );
 
   expect(questions.readQuestion(directory, task.taskId, question.questionId)).toEqual(question);
   expect(questions.readReply(directory, task.taskId, question.questionId)).toEqual(reply);
+
   expect(questions.readAcknowledgement(directory, task.taskId, question.questionId)).toEqual(
     acknowledgement,
   );
+
   const saved = readdirSync(directory).map(
     (name) => [name, readFileSync(join(directory, name), 'utf8')] as const,
   );
+
   questions.acceptQuestion(directory, task.taskId, {
     question: question.question,
     questionId: question.questionId,
     taskId: task.taskId,
     version: 1,
   });
+
   questions.acceptReply(directory, task.taskId, reply);
   questions.acceptAcknowledgement(directory, task.taskId, acknowledgement);
 
@@ -455,9 +487,11 @@ it('recovers immutable questions and replies separately from worker acknowledgem
   const secondQuestion = { ...question, questionId: 'question-two' };
   questions.acceptQuestion(directory, task.taskId, secondQuestion);
   expect(questions.readReply(directory, task.taskId, secondQuestion.questionId)).toBeUndefined();
+
   expect(
     questions.readAcknowledgement(directory, task.taskId, secondQuestion.questionId),
   ).toBeUndefined();
+
   expect(readFileSync(join(directory, 'task.json'), 'utf8')).toBe(originalTask);
   expect(records.readTask(directory)).toEqual(task);
 });
@@ -466,9 +500,11 @@ it('rejects wrong-task malformed mismatched and conflicting question records', (
   const { directory, task, question, reply, acknowledgement } = questionFixture();
 
   expect(questions).toHaveProperty('acceptQuestion');
+
   expect(() => questions.acceptReply(directory, task.taskId, reply)).toThrow(
     'Reply has no accepted question.',
   );
+
   expect(() => questions.acceptAcknowledgement(directory, task.taskId, acknowledgement)).toThrow(
     'Acknowledgement does not match the accepted reply.',
   );
@@ -489,10 +525,13 @@ it('rejects wrong-task malformed mismatched and conflicting question records', (
   expect(() =>
     questions.acceptQuestion(directory, 'wrong', { ...question, taskId: 'wrong' }),
   ).toThrow('wrong saved task');
+
   questions.acceptQuestion(directory, task.taskId, question);
+
   expect(() =>
     questions.acceptQuestion(directory, task.taskId, { ...question, question: 'Changed?' }),
   ).toThrow('Conflicting saved question record.');
+
   expect(() => questions.acceptAcknowledgement(directory, task.taskId, acknowledgement)).toThrow(
     'Acknowledgement does not match the accepted reply.',
   );
@@ -511,9 +550,11 @@ it('rejects wrong-task malformed mismatched and conflicting question records', (
   }
 
   questions.acceptReply(directory, task.taskId, reply);
+
   expect(() =>
     questions.acceptReply(directory, task.taskId, { ...reply, replyId: 'reply-two' }),
   ).toThrow('Conflicting saved question record.');
+
   expect(() =>
     questions.acceptReply(directory, task.taskId, { ...reply, reply: 'Changed.' }),
   ).toThrow('Conflicting saved question record.');
@@ -531,6 +572,7 @@ it('rejects wrong-task malformed mismatched and conflicting question records', (
 
   expect(questions.readQuestion(directory, task.taskId, question.questionId)).toEqual(question);
   expect(questions.readReply(directory, task.taskId, question.questionId)).toEqual(reply);
+
   expect(
     questions.readAcknowledgement(directory, task.taskId, question.questionId),
   ).toBeUndefined();
@@ -543,6 +585,7 @@ it('validates saved question reply and acknowledgement chains during recovery', 
   questions.acceptQuestion(directory, task.taskId, question);
   questions.acceptReply(directory, task.taskId, reply);
   questions.acceptAcknowledgement(directory, task.taskId, acknowledgement);
+
   const files = [
     [
       'question',
@@ -567,6 +610,7 @@ it('validates saved question reply and acknowledgement chains during recovery', 
     ]) {
       writeFileSync(path, JSON.stringify(invalid));
       expect(recover).toThrow('Invalid saved worker');
+
       expect(() =>
         questions.readAcknowledgement(directory, task.taskId, question.questionId),
       ).toThrow('Invalid saved worker');
@@ -582,9 +626,11 @@ it('validates saved question reply and acknowledgement chains during recovery', 
     writeFileSync(path, JSON.stringify({ ...value, [kind]: '界'.repeat(32000) }));
     expect(recover).toThrow('Invalid saved worker');
     rmSync(path);
+
     expect(() =>
       questions.readAcknowledgement(directory, task.taskId, question.questionId),
     ).toThrow('Invalid saved worker');
+
     writeFileSync(path, JSON.stringify(value));
   }
 
@@ -592,12 +638,15 @@ it('validates saved question reply and acknowledgement chains during recovery', 
     join(directory, `acknowledgement-${question.questionId}.json`),
     JSON.stringify({ ...acknowledgement, replyId: 'wrong' }),
   );
+
   expect(() => questions.readAcknowledgement(directory, task.taskId, question.questionId)).toThrow(
     'Invalid saved worker acknowledgement.',
   );
+
   expect(() => questions.readQuestion(directory, task.taskId, '../escape')).toThrow(
     'Invalid question identity',
   );
+
   expect(() => questions.readQuestion(directory, 'wrong', question.questionId)).toThrow(
     'wrong saved task',
   );
@@ -607,30 +656,37 @@ it('bounds serialized UTF-8 records including the trailing newline before public
   onTestFinished,
 }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-worker-size-'));
+
   onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });
+
   const value = { text: '界'.repeat(42_660) };
   value.text += 'x'.repeat(128_000 - Buffer.byteLength(`${JSON.stringify(value)}\n`, 'utf8'));
 
   records.publish(directory, 'record.json', value);
   expect(records.readRecord(directory, 'record.json')).toEqual(value);
   expect(readFileSync(join(directory, 'record.json'))).toHaveLength(128_000);
+
   expect(() => {
     records.publish(directory, 'oversized.json', { text: `${value.text}x` });
   }).toThrow('Worker record exceeds 128 KB.');
+
   expect(readdirSync(directory)).toEqual(['record.json']);
   expect(records.readRecord(directory, 'record.json')).toEqual(value);
 });
 
 it('reads records across short descriptor reads', async ({ onTestFinished }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-worker-size-'));
+
   onTestFinished(() => {
     vi.resetAllMocks();
     rmSync(directory, { recursive: true, force: true });
   });
+
   writeFileSync(join(directory, 'record.json'), '{"text":"short read"}');
   const actual = await vi.importActual<typeof fileSystem>('node:fs');
+
   vi.mocked(fileSystem.readSync).mockImplementation((descriptor, buffer, options) => {
     return actual.readSync(descriptor, buffer, {
       ...options,
@@ -640,6 +696,7 @@ it('reads records across short descriptor reads', async ({ onTestFinished }) => 
 
   expect(records.readRecord(directory, 'record.json')).toEqual({ text: 'short read' });
   expect(fileSystem.readSync).toHaveBeenCalledTimes(8);
+
   expect(fileSystem.closeSync).toHaveBeenCalledWith(
     vi.mocked(fileSystem.openSync).mock.results.at(-1)?.value,
   );
@@ -647,23 +704,29 @@ it('reads records across short descriptor reads', async ({ onTestFinished }) => 
 
 it('bounds descriptor reads when a record grows during reading', async ({ onTestFinished }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-worker-size-'));
+
   onTestFinished(() => {
     vi.resetAllMocks();
     rmSync(directory, { recursive: true, force: true });
   });
+
   const path = join(directory, 'record.json');
   writeFileSync(path, '{"text":"small"}');
   const actual = await vi.importActual<typeof fileSystem>('node:fs');
+
   const grow = () => {
     writeFileSync(path, JSON.stringify({ text: 'x'.repeat(256_000) }));
   };
+
   vi.mocked(fileSystem.statSync).mockImplementationOnce((...argumentsList) => {
     const result = actual.statSync(...argumentsList);
     grow();
 
     return result;
   });
+
   let totalRead = 0;
+
   vi.mocked(fileSystem.readSync).mockImplementation((descriptor, buffer, options) => {
     const count = actual.readSync(descriptor, buffer, {
       ...options,
@@ -682,8 +745,10 @@ it('bounds descriptor reads when a record grows during reading', async ({ onTest
   expect(() => records.readRecord(directory, 'record.json')).toThrow(
     'Worker record exceeds 128 KB.',
   );
+
   expect(totalRead).toBe(128_001);
   expect(fileSystem.openSync).toHaveBeenCalledTimes(1);
+
   expect(fileSystem.closeSync).toHaveBeenCalledWith(
     vi.mocked(fileSystem.openSync).mock.results[0]?.value,
   );
@@ -691,10 +756,12 @@ it('bounds descriptor reads when a record grows during reading', async ({ onTest
 
 it.each(['invalid JSON', 'read failure'])('closes the record descriptor after %s', (failure) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-worker-size-'));
+
   afterTest(() => {
     vi.resetAllMocks();
     rmSync(directory, { recursive: true, force: true });
   });
+
   writeFileSync(join(directory, 'record.json'), '{');
 
   if (failure === 'read failure') {
@@ -706,6 +773,7 @@ it.each(['invalid JSON', 'read failure'])('closes the record descriptor after %s
   expect(() => records.readRecord(directory, 'record.json')).toThrow(
     failure === 'read failure' ? 'Injected read failure' : /JSON|property/,
   );
+
   expect(fileSystem.closeSync).toHaveBeenCalledWith(
     vi.mocked(fileSystem.openSync).mock.results[0]?.value,
   );
@@ -713,9 +781,11 @@ it.each(['invalid JSON', 'read failure'])('closes the record descriptor after %s
 
 it('keeps report and event publication within their existing byte limits', ({ onTestFinished }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-worker-size-'));
+
   onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });
+
   const report = {
     taskId: 'task-one',
     outcome: 'success',
@@ -726,9 +796,11 @@ it('keeps report and event publication within their existing byte limits', ({ on
   expect(() => records.acceptReport(directory, 'task-one', report)).toThrow(
     'Invalid, oversized, or wrong-task report.',
   );
+
   expect(() => {
     records.recordEvent(directory, '界'.repeat(32_000), 'ready', '界'.repeat(32_000));
   }).toThrow('Worker record exceeds 128 KB.');
+
   expect(readdirSync(directory)).toEqual([]);
 
   const accepted = { ...report, summary: '界'.repeat(10_000) };
@@ -742,15 +814,18 @@ it('rejects oversized Unicode reports during recovery without replacing evidence
   onTestFinished,
 }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-report-recovery-'));
+
   onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });
+
   const report = {
     taskId: 'task-one',
     outcome: 'success',
     summary: '界'.repeat(22_000),
     evidence: [],
   };
+
   records.publish(directory, 'report.json', report);
   const original = readFileSync(join(directory, 'report.json'), 'utf8');
 
@@ -762,9 +837,11 @@ it('rejects oversized Unicode reports during recovery without replacing evidence
 
 it('accepts one validated report without replacing durable evidence', ({ onTestFinished }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-worker-records-'));
+
   onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });
+
   const report = {
     taskId: 'task-one',
     outcome: 'success',
@@ -777,23 +854,29 @@ it('accepts one validated report without replacing durable evidence', ({ onTestF
   const accepted = readFileSync(join(directory, 'report.json'), 'utf8');
 
   expect(() => records.acceptReport(directory, 'task-one', report)).toThrow('EEXIST');
+
   expect(() => records.acceptReport(directory, 'task-one', { ...report, taskId: 'wrong' })).toThrow(
     'Invalid',
   );
+
   expect(() => records.acceptReport(directory, 'task-one', { taskId: 'task-one' })).toThrow(
     'Invalid',
   );
+
   expect(() =>
     records.acceptReport(directory, 'task-one', { ...report, summary: 'x'.repeat(40_000) }),
   ).toThrow('Invalid');
+
   expect(readFileSync(join(directory, 'report.json'), 'utf8')).toBe(accepted);
 });
 
 const genericWorkerFixture = () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-worker-generic-'));
+
   afterTest(() => {
     rmSync(directory, { recursive: true, force: true });
   });
+
   const task = {
     version: 2,
     taskId: 'task-two',
@@ -806,6 +889,7 @@ const genericWorkerFixture = () => {
     monotonicDeadline: 20000,
     loadout: fixtureGenericLoadout(directory),
   };
+
   records.publish(directory, 'task.json', task);
 
   return { directory, task };
@@ -913,12 +997,14 @@ it.each([
   'derives $state from $records for $harness with control $controlled',
   ({ harness, records: saved, controlled, state }) => {
     const { directory, task } = harness === 'pi' ? questionFixture() : genericWorkerFixture();
+
     const publishAssignment = (observationState: string) => {
       records.publish(directory, records.submissionName('assignment', 'intent'), {
         taskId: task.taskId,
         id: 'assignment',
         text: 'Work.',
       });
+
       records.publish(directory, records.submissionName('assignment', 'observation'), {
         taskId: task.taskId,
         id: 'assignment',
@@ -926,6 +1012,7 @@ it.each([
         detail: 'Saved.',
       });
     };
+
     const write: Record<string, () => void> = {
       question: () =>
         questions.acceptQuestion(directory, task.taskId, {

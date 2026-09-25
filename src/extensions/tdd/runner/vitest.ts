@@ -16,12 +16,6 @@ import type {
   TestResult,
 } from './types.js';
 
-const defaultTimeoutMilliseconds = 30_000;
-const fullTimeoutMilliseconds = 120_000;
-
-export const maximumFailures = 10;
-const maximumMessageCharacters = 300;
-
 interface VitestAssertionResult {
   fullName?: string;
   title?: string;
@@ -47,6 +41,12 @@ interface VitestReport {
   success?: boolean;
   testResults?: VitestTestFile[];
 }
+
+const defaultTimeoutMilliseconds = 30_000;
+const fullTimeoutMilliseconds = 120_000;
+
+export const maximumFailures = 10;
+const maximumMessageCharacters = 300;
 
 // Vitest reports always include at least one of these top-level keys.
 const isVitestReport = (value: unknown): value is VitestReport => {
@@ -164,10 +164,12 @@ const capMessage = (text: string) =>
 // Keep the assertion and its worktree location. Omit the rest of the stack to limit output.
 const assertionMessage = (messages: string[], cwd: string): string => {
   const raw = messages[0] ?? '';
+
   const frame = raw
     .split('\n')
     .map((line) => frameLocation(line, cwd))
     .find((location) => location != null);
+
   const headline = raw.split('\n')[0]?.trim() ?? '';
 
   if (headline.length === 0 || headline.includes('STACK_TRACE_ERROR')) {
@@ -345,6 +347,7 @@ const noFilterMatchResult = (
   const candidates = collectTests(report, () => true, version)
     .slice(0, 5)
     .map((test) => `${relative(input.cwd, test.file)}: ${capMessage(test.fullname)}`);
+
   const message = [
     `No tests matched the exact name filter. Vitest ${version} joins nested names with ${JSON.stringify(nameSeparator(version))}.`,
     'Use the complete describe and test names. Do not restructure tests or broaden the filter.',
@@ -462,6 +465,7 @@ export const runTests = async (
       dependencies,
       join(directory, 'report.json'),
     );
+
     const diagnostics = await saveDiagnostics(
       {
         directory,

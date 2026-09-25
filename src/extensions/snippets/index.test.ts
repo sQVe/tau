@@ -12,6 +12,7 @@ vi.mock('./snippet.js', async (importOriginal) => ({
   ...(await importOriginal<typeof snippetModule>()),
   loadSnippets: vi.fn<typeof loadSnippets>(),
 }));
+
 vi.mock('./menu.js', () => ({ openSnippetMenu: vi.fn<typeof openSnippetMenu>() }));
 
 const snippet: Snippet = {
@@ -26,12 +27,14 @@ const snippet: Snippet = {
 const setup = async () => {
   const fake = fakeExtensionApi();
   snippetsExtension(fake.pi);
+
   const ui = {
     notify: vi.fn<ExtensionCommandContext['ui']['notify']>(),
     setEditorText: vi.fn<ExtensionCommandContext['ui']['setEditorText']>(),
     setWidget: vi.fn<ExtensionCommandContext['ui']['setWidget']>(),
     theme: { fg: (_color: string, text: string) => text },
   };
+
   const context = { mode: 'tui', model: {}, ui } as unknown as ExtensionCommandContext;
 
   vi.mocked(loadSnippets).mockResolvedValueOnce([snippet]);

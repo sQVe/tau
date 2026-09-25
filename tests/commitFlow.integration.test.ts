@@ -18,22 +18,7 @@ import { createTemporaryRepository } from './gitRepository.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
 
-// Real Pi sessions and Git commands need extra time on slow CI.
-vi.setConfig({ testTimeout: 60_000 });
-
 type RegisterCleanup = TestContext['onTestFinished'];
-
-const execFileAsync = promisify(execFile);
-
-const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
-const bundledQuestionExtensionPath = resolve(
-  import.meta.dirname,
-  '../node_modules/@juicesharp/rpiv-ask-user-question/index.ts',
-);
-const bundledWebAccessExtensionPath = resolve(
-  import.meta.dirname,
-  '../node_modules/pi-web-access/index.ts',
-);
 
 interface Harness {
   session: AgentSession;
@@ -42,6 +27,23 @@ interface Harness {
   events: AgentSessionEvent[];
   overlays: string[];
 }
+
+// Real Pi sessions and Git commands need extra time on slow CI.
+vi.setConfig({ testTimeout: 60_000 });
+
+const execFileAsync = promisify(execFile);
+
+const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
+
+const bundledQuestionExtensionPath = resolve(
+  import.meta.dirname,
+  '../node_modules/@juicesharp/rpiv-ask-user-question/index.ts',
+);
+
+const bundledWebAccessExtensionPath = resolve(
+  import.meta.dirname,
+  '../node_modules/pi-web-access/index.ts',
+);
 
 const git = async (repositoryDirectory: string, commandArguments: string[]): Promise<string> => {
   const { stdout } = await execFileAsync('git', commandArguments, {
@@ -93,6 +95,7 @@ const createHarness = async (
   const faux = fauxProvider({ provider: 'tau-test' });
   const overlays: string[] = [];
   const { hasUI = true } = options;
+
   const { session } = await createBoundSession(
     registerCleanup,
     {
@@ -134,13 +137,17 @@ describe('commit flow', () => {
   it('returns a message hook failure as a tool error without UI', async ({ onTestFinished }) => {
     const { session, faux, repositoryDirectory, events, overlays } =
       await createHarness(onTestFinished);
+
     await git(repositoryDirectory, ['config', 'core.hooksPath', '.git/hooks']);
+
     await writeFile(
       join(repositoryDirectory, '.git/hooks/commit-msg'),
       '#!/bin/sh\necho invalid message >&2\nexit 1\n',
     );
+
     await chmod(join(repositoryDirectory, '.git/hooks/commit-msg'), 0o755);
     await writeFile(join(repositoryDirectory, 'message.txt'), 'value\n');
+
     faux.setResponses([
       fauxAssistantMessage([
         fauxToolCall('commit', {
@@ -158,6 +165,7 @@ describe('commit flow', () => {
     expect(JSON.stringify(result.result)).toContain('invalid message');
     expect(overlays).toHaveLength(0);
     expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
+
     expect((await git(repositoryDirectory, ['log', '-1', '--pretty=%s'])).trim()).toBe(
       'chore: initial commit',
     );

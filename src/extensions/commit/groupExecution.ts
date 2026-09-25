@@ -236,6 +236,7 @@ const buildHookReport = (
     files: changedPathsOutput.split('\0').filter(Boolean),
     message: storedMessage !== buildCommitMessage(run.subject, run.body),
   };
+
   const sensitivePaths = committedPaths.filter((file) => isSensitivePath(file));
   const reportLines: string[] = [];
 
@@ -268,6 +269,7 @@ const buildCommitReport = async (
   const storedMessage = commitObject.slice(messageOffset + 2);
   const firstNewline = storedMessage.indexOf('\n');
   const storedSubject = firstNewline === -1 ? storedMessage : storedMessage.slice(0, firstNewline);
+
   const storedBody =
     firstNewline === -1 ? '' : storedMessage.slice(firstNewline + 1).replace(/^\n/, '');
 
@@ -283,6 +285,7 @@ const buildCommitReport = async (
     `${commitHash}^{tree}`,
     '--',
   ]);
+
   const { hookChanges, hookReport } = buildHookReport(
     run,
     committedPaths,
@@ -351,6 +354,7 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
   const subject = execution.parameters.subject;
   const body = normalizeBody(execution.parameters.body ?? null);
   const messagePath = join(execution.temporaryDirectory, 'message');
+
   const cancelled = {
     kind: 'cancelled',
     result: buildCancelledResult(execution.parameters.files, subject, body),
@@ -361,9 +365,11 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
   }
 
   const prefix = await repositoryPathPrefix(execution.pi, execution.context.cwd);
+
   const requestedFiles = new Set(
     execution.parameters.files.map((file) => normalizeRepositoryPath(`${prefix}${file}`)),
   );
+
   const run: GroupRun = {
     ...execution,
     messagePath,
@@ -372,6 +378,7 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
     requestedFiles,
     snapshot: null,
   };
+
   let groupError: unknown;
   let readyToCommit = false;
 

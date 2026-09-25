@@ -5,6 +5,18 @@ import { describe, expect, it } from 'vitest';
 import { openSnippetMenu } from './menu.js';
 import type { Snippet } from './types.js';
 
+interface Menu {
+  render: (width: number) => string[];
+  press: (key: string) => void;
+  selected: Promise<Set<string> | null>;
+  isPending: () => boolean;
+}
+
+interface MenuComponent {
+  render: (width: number) => string[];
+  handleInput?: (data: string) => void;
+}
+
 const escape = '';
 const enter = '\r';
 const space = ' ';
@@ -20,18 +32,6 @@ const createSnippet = (overrides: Partial<Snippet> = {}): Snippet => ({
   body: 'Example body.',
   ...overrides,
 });
-
-interface Menu {
-  render: (width: number) => string[];
-  press: (key: string) => void;
-  selected: Promise<Set<string> | null>;
-  isPending: () => boolean;
-}
-
-interface MenuComponent {
-  render: (width: number) => string[];
-  handleInput?: (data: string) => void;
-}
 
 /**
  * The `custom` promise settles only when the component calls `done`, as in Pi.

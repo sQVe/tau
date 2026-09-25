@@ -18,9 +18,11 @@ import type { NativeTask } from './types.js';
 
 const fixture = () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-native-'));
+
   onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });
+
   const task: NativeTask = {
     version: 1,
     taskId: 'task',
@@ -35,6 +37,7 @@ const fixture = () => {
     monotonicDeadline: 20000,
     loadout: fixtureLoadout(directory),
   };
+
   const header = {
     type: 'session',
     version: 3,
@@ -42,6 +45,7 @@ const fixture = () => {
     cwd: directory,
     parentSession: task.parentSession,
   };
+
   writeFileSync(task.nativeSessionFile, JSON.stringify(header));
 
   return { directory, task, header };
@@ -68,6 +72,7 @@ it.each([
   'lineage',
 ] as const)('refuses %s native files without creating fresh work', (failure) => {
   const { directory, task, header } = fixture();
+
   const modifications = {
     version: { version: 99 },
     identity: { id: 'wrong' },

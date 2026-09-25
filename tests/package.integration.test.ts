@@ -38,6 +38,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     isolateWebAccessConfig(agentDirectory, onTestFinished);
 
     const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
+
     const loader = new DefaultResourceLoader({
       cwd: workingDirectory,
       agentDir: agentDirectory,
@@ -48,6 +49,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
       noPromptTemplates: true,
       noThemes: true,
     });
+
     await loader.reload();
 
     const { extensions, errors } = loader.getExtensions();
@@ -70,27 +72,32 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     const webAccessExtension = extensions.find((extension) => extension.tools.has('web_search'));
 
     expect(webAccessExtension).toBeDefined();
+
     expect([...(webAccessExtension?.tools.keys() ?? [])].toSorted()).toEqual([
       'fetch_content',
       'get_search_content',
       'source_check',
       'web_search',
     ]);
+
     expect(
       loader
         .getSkills()
         .skills.map((skill) => skill.name)
         .toSorted(),
     ).toEqual(['bro', 'commit', 'handoff', 'tdd', 'update-branch', 'worktree']);
+
     expect(loader.getSkills().diagnostics).toEqual([]);
 
     const scriptedProvider = fauxProvider({ provider: 'tau-package-writing' });
+
     const modelRuntime = await ModelRuntime.create({
       credentials: new InMemoryCredentialStore(),
       modelsStore: new InMemoryModelsStore(),
       modelsPath: null,
       refreshOnCreate: false,
     });
+
     modelRuntime.registerNativeProvider(scriptedProvider.provider);
 
     const { session } = await createAgentSession({
@@ -103,13 +110,16 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
       settingsManager,
       tools: [],
     });
+
     onTestFinished(() => {
       session.dispose();
     });
+
     await session.bindExtensions({});
 
     const basePrompt = session.systemPrompt;
     const prompts: string[] = [];
+
     scriptedProvider.setResponses(
       [0, 1].map(() => (context) => {
         prompts.push(context.systemPrompt ?? '');
@@ -127,6 +137,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
       join(packageRoot, 'src/extensions/writing/instructions.md'),
       'utf8',
     );
+
     const codingInstructions = await readFile(
       join(packageRoot, 'src/extensions/coding/instructions.md'),
       'utf8',
@@ -135,9 +146,11 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     expect(writingInstructions).toContain(
       'Write for readers who use English as a second language.',
     );
+
     expect(codingInstructions).toContain(
       'Separate the logical steps inside a function with a blank line.',
     );
+
     expect(codingInstructions).not.toContain('bulk_read');
     expect(prompts[0]?.startsWith(basePrompt)).toBe(true);
 
@@ -158,6 +171,7 @@ it('reports extension errors for missing bundled question and web extensions', a
 
   const agentDirectory = join(workingDirectory, 'agent');
   const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
+
   const loader = new DefaultResourceLoader({
     cwd: workingDirectory,
     agentDir: agentDirectory,
@@ -168,15 +182,18 @@ it('reports extension errors for missing bundled question and web extensions', a
     noPromptTemplates: true,
     noThemes: true,
   });
+
   await loader.reload();
 
   const scriptedProvider = fauxProvider({ provider: 'tau-package-missing' });
+
   const modelRuntime = await ModelRuntime.create({
     credentials: new InMemoryCredentialStore(),
     modelsStore: new InMemoryModelsStore(),
     modelsPath: null,
     refreshOnCreate: false,
   });
+
   modelRuntime.registerNativeProvider(scriptedProvider.provider);
 
   const { session } = await createAgentSession({
@@ -189,11 +206,13 @@ it('reports extension errors for missing bundled question and web extensions', a
     settingsManager,
     tools: [],
   });
+
   onTestFinished(() => {
     session.dispose();
   });
 
   const errors: string[] = [];
+
   await session.bindExtensions({
     onError: (error) => {
       errors.push(error.error);

@@ -17,6 +17,7 @@ beforeEach(async () => {
   cwd = await mkdtemp(join(tmpdir(), 'tau-resolution-'));
   manifestPath = join(cwd, 'node_modules/vitest/package.json');
   vi.stubEnv('PI_CODING_AGENT_DIR', join(cwd, 'agent'));
+
   onTestFinished(async () => {
     vi.unstubAllEnvs();
     await rm(cwd, { recursive: true, force: true });
@@ -40,21 +41,25 @@ it('distinguishes an unavailable Vitest package from a resolver failure', async 
       errorCode: 'MODULE_NOT_FOUND',
     },
   });
+
   await manifest(
     JSON.stringify({ name: 'vitest', version: '5.0.1', exports: { '.': './index.js' } }),
   );
+
   const blocked = defaultResolveVitest(cwd);
 
   expect(blocked).toMatchObject({
     kind: 'runner-resolution-error',
     resolution: { stage: 'lookup', cwd, errorCode: 'ERR_PACKAGE_PATH_NOT_EXPORTED' },
   });
+
   expect(blocked).toHaveProperty('message', expect.stringContaining('exports'));
 });
 
 it('names the package root when requested files belong to another package, such as a nested worktree', async () => {
   await mkdir(join(cwd, 'other/src'), { recursive: true });
   await writeFile(join(cwd, 'other/package.json'), '{}');
+
   const run = (files: string[]) =>
     runTests(
       { scope: 'changed', cwd, files },
@@ -76,12 +81,14 @@ it('does not call Vitest absent when its manifest export points to a missing fil
       exports: { './package.json': './missing.json' },
     }),
   );
+
   const result = defaultResolveVitest(cwd);
 
   expect(result).toMatchObject({
     kind: 'runner-resolution-error',
     resolution: { stage: 'lookup', errorCode: 'MODULE_NOT_FOUND' },
   });
+
   expect(result).toHaveProperty(
     'message',
     expect.stringContaining('does not establish that Vitest is absent'),
@@ -103,12 +110,14 @@ it('distinguishes a missing bin declaration from a missing binary file', async (
   await manifest(
     JSON.stringify({ name: 'vitest', version: '5.0.1', token: 'private-manifest-value' }),
   );
+
   const missingEntry = defaultResolveVitest(cwd);
 
   expect(missingEntry).toMatchObject({
     kind: 'runner-resolution-error',
     resolution: { stage: 'binary', manifestPath, errorCode: 'INVALID_BIN' },
   });
+
   expect(JSON.stringify(missingEntry)).not.toContain('private-manifest-value');
   await manifest(JSON.stringify({ name: 'vitest', version: '5.0.1', bin: './missing.mjs' }));
   const missingFile = defaultResolveVitest(cwd);
@@ -154,19 +163,23 @@ it('does not classify a throwing resolver dependency error as an absent Vitest p
     kind: 'runner-resolution-error',
     resolution: { stage: 'resolver', errorCode: 'MODULE_NOT_FOUND' },
   });
+
   expect(result).toHaveProperty(
     'message',
     expect.stringContaining('does not establish that Vitest is absent'),
   );
+
   expect(JSON.stringify(result)).not.toContain('private dependency');
 });
 
 it('retains safe diagnostics when an injected resolver throws without starting execution', async () => {
   const spawn = vi.fn<SpawnFn>();
   const secret = 'https://user:credential@example.invalid/token';
+
   const error = Object.assign(new TypeError(`\u001b[31m${secret}\n${'x'.repeat(10_000)}`), {
     code: 'EACCES',
   });
+
   const result = await runTests(
     { scope: 'all', cwd },
     {
@@ -183,6 +196,7 @@ it('retains safe diagnostics when an injected resolver throws without starting e
     resolution: { stage: 'resolver', cwd, errorCode: 'EACCES', errorType: 'TypeError' },
     diagnostics: { started: false, exitCode: null, resolution: { errorCode: 'EACCES' } },
   });
+
   expect(JSON.stringify(result)).not.toContain(secret);
   expect(JSON.stringify(result)).not.toContain('\\u001b');
   expect(JSON.stringify(result).length).toBeLessThan(4000);
@@ -232,6 +246,7 @@ it('does not echo arbitrary resolver error names codes or thrown values', async 
       kind: 'runner-resolution-error',
       diagnostics: { started: false },
     });
+
     expect(JSON.stringify(result)).not.toMatch(/private|PRIVATE_CREDENTIAL/);
   }
 });
@@ -240,6 +255,7 @@ it('persists and presents resolution evidence through the production observation
   await manifest(
     JSON.stringify({ name: 'vitest', version: '5.0.1', credentials: 'secret-manifest-field' }),
   );
+
   await writeFile(join(cwd, 'value.test.ts'), 'test');
   const behavior = { behavior: 'value', files: ['value.test.ts'], testFullName: 'works' };
   const observed = await createTestObservation(cwd).run(behavior, 'focused');
@@ -249,6 +265,7 @@ it('persists and presents resolution evidence through the production observation
   const context = runContext(behavior, observed);
 
   expect(observed).toMatchObject({ kind: 'runner-resolution-error', freshness: 'fresh' });
+
   expect(saved).toMatchObject({
     kind: 'runner-resolution-error',
     diagnostics: {
@@ -256,6 +273,7 @@ it('persists and presents resolution evidence through the production observation
       resolution: { cwd, manifestPath, stage: 'binary', errorCode: 'INVALID_BIN' },
     },
   });
+
   expect(record).not.toContain('secret-manifest-field');
   expect(summary).toContain('Inspect this once');
   expect(summary).toContain('repository runner');

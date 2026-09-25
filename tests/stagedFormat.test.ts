@@ -32,6 +32,7 @@ const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)
 const runStagedFormatter = (pattern: string, paths: string[]): number => {
   const command = stagedFormatterCommand(pattern);
   const appended = paths.map(shellQuote).join(' ');
+
   const result = spawnSync(`${command} ${appended}`, {
     cwd: root,
     encoding: 'utf8',
@@ -67,6 +68,7 @@ const createTemporaryFixture = async (name: string, contents: string) => {
 it('accepts staged paths that the formatter ignores', async ({ onTestFinished }) => {
   const ignoredJson = await createIgnoredFixture('ignored.json', '{"alpha":   1}\n');
   const ignoredScript = await createIgnoredFixture('ignored.ts', 'const alpha   = 1\n');
+
   onTestFinished(async () => {
     await rm(ignoredJson.directory, { recursive: true, force: true });
     await rm(ignoredScript.directory, { recursive: true, force: true });
@@ -81,6 +83,7 @@ it('rejects a supported unformatted staged file even when another target is igno
 }) => {
   const ignored = await createIgnoredFixture('ignored.json', '{"alpha":   1}\n');
   const unformatted = await createTemporaryFixture('unformatted.json', '{"alpha":   1}\n');
+
   onTestFinished(async () => {
     await rm(ignored.directory, { recursive: true, force: true });
     await rm(unformatted.directory, { recursive: true, force: true });

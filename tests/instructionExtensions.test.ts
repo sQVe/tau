@@ -21,6 +21,7 @@ for (const extension of instructionExtensions) {
       new URL(`../src/extensions/${extension}/index.ts`, import.meta.url),
       extensionPath,
     );
+
     await writeFile(instructionsPath, ' \n\t');
 
     const loader = new DefaultResourceLoader({
@@ -33,6 +34,7 @@ for (const extension of instructionExtensions) {
       noPromptTemplates: true,
       noThemes: true,
     });
+
     await loader.reload();
 
     const { extensions, errors } = loader.getExtensions();

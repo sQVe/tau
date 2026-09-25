@@ -24,12 +24,15 @@ const fixture = (kind = 'codex', intercept?: HerdrClient, capacity = 4) => {
   vi.stubEnv('TAU_SUBAGENT_CAP', String(capacity));
   const root = join(directory, 'records');
   const parentSession = join(directory, 'parent.jsonl');
+
   writeFileSync(
     parentSession,
     `${JSON.stringify({ type: 'session', version: 3, id: 'parent', cwd: directory })}\n`,
   );
+
   const { client: fakeClient, state: herdrState, calls, layout } = herdrFake(kind);
   const budgets: number[] = [];
+
   const state = Object.assign(herdrState, {
     shellExitsOnStart: false,
     processStart: execFileSync('ps', ['-p', String(process.pid), '-o', 'lstart='], {
@@ -39,6 +42,7 @@ const fixture = (kind = 'codex', intercept?: HerdrClient, capacity = 4) => {
       encoding: 'utf8',
     }).trim(),
   });
+
   const client: HerdrClient = async (argumentsList, budget, signal) => {
     budgets.push(budget);
 
@@ -59,10 +63,13 @@ const fixture = (kind = 'codex', intercept?: HerdrClient, capacity = 4) => {
 
     return fakeClient(argumentsList, budget, signal);
   };
+
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
   vi.spyOn(cancellation, 'runClient').mockImplementation(async (_executable, argumentsList) =>
     argumentsList[1] === String(state.shell) ? state.shellStart : state.processStart,
   );
+
   vi.spyOn(process, 'kill').mockImplementation((processId) => {
     if (processId === state.process && state.stopped) {
       throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
@@ -70,8 +77,10 @@ const fixture = (kind = 'codex', intercept?: HerdrClient, capacity = 4) => {
 
     return true;
   });
+
   const notices: WorkerNotice[] = [];
   const finished = Promise.withResolvers<undefined>();
+
   const controller = new WorkerController(root, client, (notice) => {
     notices.push(notice);
 
@@ -79,7 +88,9 @@ const fixture = (kind = 'codex', intercept?: HerdrClient, capacity = 4) => {
       finished.resolve(undefined);
     }
   });
+
   const loadout = fixtureGenericLoadout(directory, kind);
+
   const input = {
     task: 'Inspect the fixture.',
     loadout,
@@ -88,16 +99,20 @@ const fixture = (kind = 'codex', intercept?: HerdrClient, capacity = 4) => {
     parentSessionId: 'parent',
     parentPane: 'parent',
   };
+
   const report = (taskId: string, body = 'Completed fixture evidence.', outcome = 'success') => {
     const reportDirectory = join(directory, '.tau', 'workers', taskId);
     const temporary = join(reportDirectory, 'report.partial');
+
     writeFileSync(
       temporary,
       `Task: ${taskId}\nOutcome: ${outcome}\n\n${body}\n\nEnd task: ${taskId}\n`,
       { flag: 'wx' },
     );
+
     linkSync(temporary, join(reportDirectory, 'report.md'));
   };
+
   onTestFinished(() => {
     controller.close();
     vi.useRealTimers();
@@ -139,6 +154,7 @@ it.each(['same', 'changed', 'missing'])(
     }
 
     const recovered = new WorkerController(setup.root, setup.client);
+
     onTestFinished(() => {
       recovered.close();
     });
@@ -146,9 +162,11 @@ it.each(['same', 'changed', 'missing'])(
     await recovered.resume('parent');
 
     expect(recovered.owns(launched.taskId)).toBe(reference === 'same');
+
     expect(recovered.status(launched.taskId, 'parent').state).toBe(
       reference === 'same' ? 'running' : 'notOwned',
     );
+
     expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
 
     const stopped =
@@ -165,6 +183,7 @@ it.each(['start', 'get'])(
     const entered = Promise.withResolvers<undefined>();
     const released = Promise.withResolvers<undefined>();
     let pause = true;
+
     const setup = fixture('codex', async (argumentsList) => {
       if (pause && argumentsList[1] === pendingAction) {
         pause = false;
@@ -174,9 +193,11 @@ it.each(['start', 'get'])(
 
       return '';
     });
+
     onTestFinished(() => {
       released.resolve(undefined);
     });
+
     vi.mocked(cancellation.runClient).mockImplementation(
       async (_executable, argumentsList, _budget, options) => {
         options?.signal?.throwIfAborted();
@@ -186,6 +207,7 @@ it.each(['start', 'get'])(
           : setup.state.processStart;
       },
     );
+
     const launching = setup.controller.launch(setup.input);
     await vi.advanceTimersByTimeAsync(100);
     await entered.promise;
@@ -195,9 +217,11 @@ it.each(['start', 'get'])(
     const launched = await launching;
 
     expect(setup.state.stopped).toBe(true);
+
     expect(setup.controller.status(launched.taskId, 'parent')).toMatchObject({
       state: 'stopped',
     });
+
     expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
     expect(setup.calls.filter((call) => call[1] === 'prompt')).toEqual([]);
     expect(setup.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
@@ -207,6 +231,7 @@ it.each(['start', 'get'])(
 it('retains a pending generic worker when shutdown cannot verify its identity', async () => {
   const entered = Promise.withResolvers<undefined>();
   const released = Promise.withResolvers<undefined>();
+
   const setup = fixture('codex', async (argumentsList) => {
     if (argumentsList[1] === 'start') {
       entered.resolve(undefined);
@@ -215,9 +240,11 @@ it('retains a pending generic worker when shutdown cannot verify its identity', 
 
     return '';
   });
+
   onTestFinished(() => {
     released.resolve(undefined);
   });
+
   const launching = setup.controller.launch(setup.input);
   await vi.advanceTimersByTimeAsync(100);
   await entered.promise;
@@ -230,14 +257,18 @@ it('retains a pending generic worker when shutdown cannot verify its identity', 
   expect(setup.controller.status(launched.taskId, 'parent')).toMatchObject({
     state: 'cleanupUnconfirmed',
   });
+
   expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.detail).toContain(
     'identity changed',
   );
+
   expect(setup.state.started).toBe(true);
   expect(setup.state.stopped).toBe(false);
+
   expect(setup.calls.some((call) => ['send-keys', 'close', 'prompt'].includes(call[1] ?? ''))).toBe(
     false,
   );
+
   expect(setup.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent', 'worker-1']);
 });
 
@@ -262,6 +293,7 @@ it.each(['claude', 'codex', 'gemini'])(
     const started = await setup.controller.launch(setup.input);
 
     expect(started.state).toBe('running');
+
     expect(setup.calls.find((call) => call[1] === 'start')).toEqual([
       'agent',
       'start',
@@ -274,6 +306,7 @@ it.each(['claude', 'codex', 'gemini'])(
       expect.any(String),
       '--',
     ]);
+
     expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
     expect(setup.calls.filter((call) => call[1] === 'read')).toHaveLength(0);
     const taskDirectory = join(setup.root, started.taskId);
@@ -290,10 +323,12 @@ it.each(['claude', 'codex', 'gemini'])(
     expect(readReport(taskDirectory, task.taskId)?.summary).toContain(
       'Completed fixture evidence.',
     );
+
     expect(setup.controller.status(task.taskId, 'parent')).toMatchObject({
       outcome: 'success',
       state: 'stopped',
     });
+
     expect(setup.calls).toContainEqual(['agent', 'send-keys', 'worker-1', 'ctrl+c']);
     expect(setup.calls).toContainEqual(['pane', 'close', 'worker-1']);
   },
@@ -303,6 +338,7 @@ it('saves the handoff sections and work reference from a generic Markdown report
   const setup = fixture();
   const started = await setup.controller.launch(setup.input);
   const taskDirectory = join(setup.root, started.taskId);
+
   const body = [
     'Changes: edited src/value.ts against baseline 3ee3d7a; untracked notes.md',
     'Evidence: pnpm check passed (1019 tests); record at /saved/run.json',
@@ -319,6 +355,7 @@ it('saves the handoff sections and work reference from a generic Markdown report
   expect(saved?.summary).toContain('baseline 3ee3d7a');
   expect(saved?.summary).toContain('untracked notes.md');
   expect(saved?.evidence).toEqual([reportPath]);
+
   expect(handoffSections(saved)).toEqual({
     present: ['Changes', 'Evidence', 'Decisions', 'Concerns'],
     missing: [],
@@ -335,6 +372,7 @@ it('marks a generic report with no Evidence section as missing Evidence', async 
   await setup.finished;
 
   const saved = readReport(join(setup.root, started.taskId), started.taskId);
+
   expect(handoffSections(saved)).toEqual({
     present: ['Changes', 'Decisions', 'Concerns'],
     missing: ['Evidence'],
@@ -387,11 +425,13 @@ it('sends the autonomous assignment and handoff contract to a generic worker', a
 
 it('keeps the editing assignment out of a generic investigator prompt', async () => {
   const setup = fixture();
+
   setup.input.loadout = {
     ...setup.input.loadout,
     profile: 'investigator',
     role: 'investigation',
   };
+
   await setup.controller.launch(setup.input);
   const promptCall = setup.calls.find((call) => call[1] === 'prompt');
   const prompt = promptCall?.[3];
@@ -437,15 +477,19 @@ it('retains ownership through transient inspection and partial reports without u
     state: 'running',
     nativeState: 'unknown',
   });
+
   expect(setup.calls.filter((call) => call[1] === 'send-keys')).toHaveLength(0);
   expect(readReport(join(setup.root, started.taskId), started.taskId)).toBeUndefined();
   setup.state.inspectionError = '';
+
   writeFileSync(
     reportPath,
     `Task: ${started.taskId}\nOutcome: success\n\nComplete evidence.\n\nEnd task: ${started.taskId}\n`,
   );
+
   await vi.advanceTimersByTimeAsync(1500);
   await setup.finished;
+
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     outcome: 'success',
     state: 'stopped',
@@ -467,6 +511,7 @@ it('notifies once per unresolved observation-error episode and again after recov
   setup.state.inspectionError = 'Second inspection failure.';
   await vi.advanceTimersByTimeAsync(1500);
   expect(setup.notices).toHaveLength(1);
+
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     observationIssue: 'Error: Second inspection failure.',
   });
@@ -503,15 +548,19 @@ it('persists a late native reference and refuses input after that reference chan
   const receipt: unknown = JSON.parse(
     readFileSync(join(setup.root, started.taskId, 'nativeReference.json'), 'utf8'),
   );
+
   expect(receipt).toEqual({
     taskId: started.taskId,
     reference: { kind: 'id', value: 'late-reference' },
   });
+
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     nativeReference: { kind: 'id', value: 'late-reference' },
   });
+
   setup.state.session = 'different-reference';
   await vi.advanceTimersByTimeAsync(1500);
+
   await expect(
     setup.controller.reply(started.taskId, 'parent', {
       replyId: 'reply',
@@ -519,19 +568,25 @@ it('persists a late native reference and refuses input after that reference chan
       scopeUnchanged: true,
     }),
   ).rejects.toThrow('reference changed');
+
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
   expect(setup.calls.filter((call) => call[1] === 'send-keys')).toHaveLength(0);
+
   const recovered = new WorkerController(setup.root, async () => {
     throw new Error('Recovery cannot send input.');
   });
+
   const recoveredStatus = recovered.status(started.taskId, 'parent');
+
   expect(recoveredStatus).toMatchObject({
     nativeReference: { kind: 'id', value: 'late-reference' },
     state: 'notOwned',
   });
+
   expect(recoveredStatus.recovery).toMatchObject({
     nativeReference: { kind: 'id', value: 'late-reference' },
   });
+
   expect(recoveredStatus.recovery).not.toHaveProperty('nativeSessionFile');
 });
 
@@ -550,12 +605,14 @@ it('finds saved native references and reports after pane cleanup without inventi
 
   expect(history.outcome).toBe('match');
   expect(history.candidates).toHaveLength(1);
+
   expect(history.candidates[0]).toMatchObject({
     taskId: started.taskId,
     nativeEvidence: 'opaque',
     nativeReference: { kind: 'id', value: 'opaque-reference' },
     report: { outcome: 'success' },
   });
+
   expect(history.candidates[0]).not.toHaveProperty('nativeSessionId');
   expect(history.candidates[0]).not.toHaveProperty('nativeSessionFile');
 });
@@ -581,6 +638,7 @@ it('passes approved native arguments literally and keeps native submission separ
   setup.input.loadout.arguments = ['--model', 'model with spaces; $HOME'];
   setup.input.loadout.requestedModel = 'model with spaces; $HOME';
   const started = await setup.controller.launch(setup.input);
+
   const answer = {
     replyId: 'reply-one',
     reply: 'Stay within the assigned scope.',
@@ -595,21 +653,28 @@ it('passes approved native arguments literally and keeps native submission separ
     '--model',
     'model with spaces; $HOME',
   ]);
+
   expect(receipt).toMatchObject({ replyAccepted: true, delivery: 'sent' });
   expect(repeated).toEqual({ replyAccepted: true, name: started.name, delivery: 'notResent' });
+
   expect(
     setup.controller.submissionReceipt(started.taskId, 'parent', answer.replyId),
   ).toMatchObject({ observation: { state: 'submitted' } });
+
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(2);
+
   await expect(
     setup.controller.reply(started.taskId, 'parent', { ...answer, reply: 'Changed answer text.' }),
   ).rejects.toThrow('Conflicting native submission identity');
+
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(2);
+
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     state: 'running',
     requestedModel: setup.input.loadout.requestedModel,
     observedModel: null,
   });
+
   await expect(
     setup.controller.reply(started.taskId, 'parent', {
       ...answer,
@@ -617,6 +682,7 @@ it('passes approved native arguments literally and keeps native submission separ
       scopeUnchanged: false,
     }),
   ).rejects.toThrow('increase scope');
+
   await expect(setup.controller.reply(started.taskId, 'another-parent', answer)).rejects.toThrow(
     'another parent session',
   );
@@ -625,11 +691,13 @@ it('passes approved native arguments literally and keeps native submission separ
 it('returns notResent for a repeated generic reply while the worker is blocked', async () => {
   const setup = fixture();
   const started = await setup.controller.launch(setup.input);
+
   const answer = {
     replyId: 'repeat-reply',
     reply: 'Stay within the assigned scope.',
     scopeUnchanged: true,
   };
+
   const first = await setup.controller.reply(started.taskId, 'parent', answer);
   expect(first).toMatchObject({ delivery: 'sent' });
   setup.state.status = 'blocked';
@@ -654,6 +722,7 @@ it('reports a blocked generic reply as notDelivered without claiming acknowledge
 
   expect(receipt).toEqual({ replyAccepted: true, name: started.name, delivery: 'notDelivered' });
   expect(receipt).not.toHaveProperty('workerAcknowledged');
+
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     assignment: { observation: { state: 'submitted' } },
   });
@@ -718,6 +787,7 @@ it.each(['unsupported kind', 'missing executable'])(
   async (scenario) => {
     const setup = fixture();
     setup.state.rejectStart = true;
+
     setup.state.startError =
       scenario === 'unsupported kind'
         ? 'error: invalid value notakind for --kind'
@@ -728,9 +798,11 @@ it.each(['unsupported kind', 'missing executable'])(
     expect(started).toMatchObject({ outcome: 'failure', state: 'stopped' });
     expect(started.failure).toContain('rejected');
     expect(readEvent(started.directory, started.taskId, 'cleanup')?.stopped).toBe(true);
+
     expect(setup.calls.filter((call) => call[1] === 'close')).toEqual([
       ['pane', 'close', 'worker-1'],
     ]);
+
     expect(setup.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
     expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
     expect(setup.calls.filter((call) => call[1] === 'get')).toHaveLength(1);
@@ -746,15 +818,18 @@ it('keeps a lost start response uncertain when absence inspection fails', async 
   const started = await setup.controller.launch(setup.input);
 
   expect(started).toMatchObject({ state: 'starting' });
+
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     nativeState: 'unknown',
   });
+
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
 });
 
 it('does not claim nondelivery when only the submission receipt write fails', async () => {
   const setup = fixture();
   const publish = records.publish;
+
   vi.spyOn(records, 'publish').mockImplementation((directory, name, value) => {
     if (name === 'submission-assignment-observation.json') {
       throw new Error('Receipt write failed.');
@@ -769,6 +844,7 @@ it('does not claim nondelivery when only the submission receipt write fails', as
   expect(
     setup.controller.submissionReceipt(started.taskId, 'parent', 'assignment')?.observation,
   ).toBeUndefined();
+
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
   expect(setup.notices.at(-1)?.content).toMatchObject({ nativeState: 'unknown' });
   expect(JSON.stringify(setup.notices)).not.toContain('no input sent');
@@ -786,9 +862,11 @@ it.each([
   await vi.advanceTimersByTimeAsync(4500);
 
   const expectedDelivery = state === 'not-delivered' ? 'notDelivered' : 'uncertain';
+
   expect(
     setup.notices.filter((notice) => notice.content.delivery === expectedDelivery),
   ).toHaveLength(1);
+
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
 });
 
@@ -815,8 +893,10 @@ it('keeps uncertain startup and text delivery visible without repeating either o
     assignment: { observation: { state: 'uncertain' } },
     deadline: started.deadline,
   });
+
   expect(setup.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
+
   await expect(
     setup.controller.reply(started.taskId, 'parent', {
       replyId: 'reply',
@@ -837,6 +917,7 @@ it.each(['blocked', 'unknown'])(
 
     expect(output.text).toContain('bounded native question');
     expect(setup.calls.filter((call) => call[1] === 'read')).toHaveLength(1);
+
     await expect(
       setup.controller.reply(started.taskId, 'parent', {
         replyId: 'reply',
@@ -844,6 +925,7 @@ it.each(['blocked', 'unknown'])(
         scopeUnchanged: true,
       }),
     ).rejects.toThrow('blocked, or has unknown state');
+
     expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
     expect(setup.controller.status(started.taskId, 'parent').deadline).toBe(started.deadline);
   },
@@ -937,6 +1019,7 @@ it.each(['cancelled', 'timeout'] as const)(
       outcome: reason,
       state: 'stopped',
     });
+
     expect(readReport(join(setup.root, started.taskId), started.taskId)?.summary).toContain(
       'Completed fixture evidence.',
     );
@@ -954,6 +1037,7 @@ it('keeps status readable after a report too large to accept', async () => {
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     state: 'stopped',
   });
+
   expect(readFileSync(join(setup.root, started.taskId, 'nativeFailure.json'), 'utf8')).toContain(
     'at most 10000 bytes',
   );
@@ -972,6 +1056,7 @@ it('keeps an unknown worker inside its original deadline and does not infer succ
     state: 'stopped',
     deadline: started.deadline,
   });
+
   expect(setup.calls.filter((call) => call[1] === 'prompt')).toHaveLength(0);
 });
 
@@ -992,8 +1077,10 @@ it('releases controller capacity when generic interrupts cannot confirm a stop',
       nativeReference: { kind: 'id', value: setup.state.session },
     },
   });
+
   expect(setup.calls.filter((call) => call[1] === 'start')).toHaveLength(1);
   expect(setup.calls.filter((call) => call[1] === 'close')).toHaveLength(0);
+
   expect(
     setup.calls
       .filter((call) => call[1] === 'send-keys')
@@ -1003,6 +1090,7 @@ it('releases controller capacity when generic interrupts cannot confirm a stop',
   const replacement = await setup.controller.launch({ ...setup.input, task: 'Another task.' });
 
   expect(replacement.state).toBe('running');
+
   expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({
     state: 'cleanupUnconfirmed',
     recovery: status.recovery,

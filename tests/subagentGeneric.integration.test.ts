@@ -16,13 +16,16 @@ it.runIf(hasHerdr)(
   async () => {
     const { root, client } = await isolatedHerdr();
     const parentSession = join(root, 'parent.jsonl');
+
     writeFileSync(
       parentSession,
       `${JSON.stringify({ type: 'session', version: 3, id: 'parent', cwd: root })}\n`,
     );
+
     const workspace = JSON.stringify(
       JSON.parse(await client(['workspace', 'create', '--cwd', root, '--no-focus'])),
     );
+
     const paneId = workspace.match(/"root_pane":\{[^}]*"pane_id":"([^"]+)"/)?.[1];
 
     if (paneId == null) {
@@ -30,9 +33,11 @@ it.runIf(hasHerdr)(
     }
 
     const controller = new WorkerController(join(root, 'records'), client);
+
     onTestFinished(() => {
       controller.close();
     });
+
     const started = await controller.launch({
       task: 'Exercise rejected generic startup.',
       loadout: fixtureGenericLoadout(root, 'notakind'),
@@ -53,6 +58,7 @@ it.runIf(hasHerdr)(
 
       return typeof error.stderr === 'string' ? error.stderr : '';
     });
+
     expect(promptFailure).toContain('agent_not_found');
     expect(promptFailure).not.toContain('unknown option');
   },

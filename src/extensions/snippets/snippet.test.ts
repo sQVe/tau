@@ -208,6 +208,7 @@ describe('the shipped snippets', () => {
       "Verify, don't assume",
       'Check the agreed plan',
     ]);
+
     expect(prepends.at(-1)).toMatchObject({
       id: 'check-agreed-plan.md',
       order: 50,

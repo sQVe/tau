@@ -6,6 +6,7 @@ import type { WorkerWidgetRow } from './widget.js';
 
 const now = 120_000;
 const theme = { fg: (_color: string, text: string) => text };
+
 const row: WorkerWidgetRow = {
   name: 'worker-ab',
   taskId: 'task-full-id',
@@ -25,6 +26,7 @@ describe('worker widget', () => {
       label: 'Inspect worker',
       model: 'Pi-selected openai-codex/gpt-5.6-luna · requested openai-codex/gpt-5.6-luna',
     };
+
     const lines = renderWorkerWidget([labelledRow], 80, now, theme as never);
     const text = lines.join('\n');
 
@@ -47,6 +49,7 @@ describe('worker widget', () => {
       state: 'running',
       model: 'Pi-selected openai-codex/gpt-5.6-luna · requested openai-codex/gpt-5.6-luna',
     };
+
     const lines = renderWorkerWidget([longRow], 160, now, theme as never);
     const text = stripTerminalSequences(lines.join('\n'));
 
@@ -111,6 +114,7 @@ describe('worker widget', () => {
         stoppedAt: 110_000,
       })),
     ];
+
     const wide = renderWorkerWidget(rows, 72, now, theme as never);
     const narrow = renderWorkerWidget(rows, 45, now, theme as never);
 
@@ -158,6 +162,7 @@ describe('worker widget', () => {
       { ...row, name: 'investigator-cc', taskId: 'active-1' },
       { ...row, name: 'worker-dd', taskId: 'recovery', state: 'notOwned' },
     ];
+
     const lines = renderWorkerWidget(rows, 80, now, theme as never);
     const text = lines.join('\n');
 
@@ -176,6 +181,7 @@ describe('worker widget', () => {
       { ...row, name: 'worker-q8', taskId: 'cleanup-1', state: 'cleanupUnconfirmed' },
       { ...row, name: 'worker-ge', taskId: 'cleanup-2', state: 'cleanupUnconfirmed' },
     ];
+
     const lines = renderWorkerWidget(unresolved, 200, now, theme as never);
     const text = lines.join('\n');
 
@@ -215,6 +221,7 @@ describe('worker widget', () => {
         questionId: 'q-c',
       },
     ];
+
     const text = renderWorkerWidget(retained, 200, now, theme as never).join('\n');
 
     expect(text).toContain('2 status unknown');
@@ -241,6 +248,7 @@ describe('worker widget', () => {
         stoppedAt: 90_000,
       })),
     ];
+
     const text = renderWorkerWidget(rows, 160, now, theme as never).join('\n');
 
     expect(text).toContain('worker-aa');
@@ -261,6 +269,7 @@ describe('worker widget', () => {
         issue: 'parent needs a decision',
       },
     ];
+
     const text = renderWorkerWidget(active, 160, now, theme as never).join('\n');
 
     expect(text).toContain('2 live');
@@ -297,6 +306,7 @@ describe('worker widget', () => {
       createdAt: index,
       state: index < 3 ? 'stopped' : 'running',
     }));
+
     const lines = renderWorkerWidget(rows, 80, now, theme as never);
 
     expect(lines.at(-1)).toContain('3 stopped');
@@ -309,6 +319,7 @@ describe('worker widget', () => {
       ...row,
       activity: 'herdr working\u001b[2J\u0007',
     };
+
     const wideLines = renderWorkerWidget([hostileRow], 72, now, theme as never);
 
     expect(wideLines.join('\n')).not.toContain('\u001b[2J');
@@ -337,6 +348,7 @@ describe('worker widget', () => {
       label: undefined,
       task: `# ${'a'.repeat(10)}\u001b[2Jb\u0007c\td\r e\u0000f${'b'.repeat(80)}`,
     };
+
     const lines = renderWorkerWidget([hostileRow], 200, now, theme as never);
     const text = lines.join('\n');
 
@@ -367,6 +379,7 @@ describe('worker widget', () => {
   it('does not claim run time or a live countdown for uncertain states', () => {
     const uncertain = { ...row, state: 'cleanupUnconfirmed' as const };
     const unknown = { ...row, state: 'unknown' as const };
+
     const stopped = {
       ...row,
       state: 'stopped' as const,

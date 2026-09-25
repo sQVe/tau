@@ -10,37 +10,6 @@ export interface StateLabel {
   text: string;
 }
 
-export const stateLabels: Record<WorkerState, StateLabel> = {
-  starting: { icon: '○', color: 'muted', text: 'starting' },
-  running: { icon: '●', color: 'accent', text: 'running' },
-  awaitingReply: { icon: '?', color: 'accent', text: 'asks' },
-  reported: { icon: '◐', color: 'warning', text: 'reported' },
-  stopping: { icon: '◐', color: 'warning', text: 'stopping' },
-  stopped: { icon: '◐', color: 'warning', text: 'stopped' },
-  cleanupUnconfirmed: { icon: '!', color: 'error', text: 'cleanup unconfirmed' },
-  notOwned: { icon: '◇', color: 'muted', text: 'may still be running' },
-};
-
-// Only a saved report outcome tells a stopped worker apart. Only success earns the check mark.
-const stoppedOutcomeLabels: Record<string, StateLabel> = {
-  success: { icon: '✓', color: 'success', text: 'reported success · stopped' },
-  failure: { icon: '✗', color: 'error', text: 'stopped · failure' },
-  incomplete: { icon: '◐', color: 'warning', text: 'stopped · incomplete' },
-};
-const stoppedUnknownLabel: StateLabel = { icon: '◐', color: 'warning', text: 'stopped' };
-
-export const stateLabel = (state: WorkerState, outcome?: string): StateLabel => {
-  if (state !== 'stopped') {
-    return stateLabels[state];
-  }
-
-  if (outcome === undefined || !Object.hasOwn(stoppedOutcomeLabels, outcome)) {
-    return stoppedUnknownLabel;
-  }
-
-  return stoppedOutcomeLabels[outcome] ?? stoppedUnknownLabel;
-};
-
 // Model content copies named fields. Never filter, delete, or infer fields from a full record.
 interface StatusQuestion {
   questionId?: string | undefined;
@@ -111,6 +80,43 @@ export interface WorkerNotice {
   question: boolean;
 }
 
+export interface HandoffSections {
+  present: HandoffSection[];
+  missing: HandoffSection[];
+}
+
+export const stateLabels: Record<WorkerState, StateLabel> = {
+  starting: { icon: '○', color: 'muted', text: 'starting' },
+  running: { icon: '●', color: 'accent', text: 'running' },
+  awaitingReply: { icon: '?', color: 'accent', text: 'asks' },
+  reported: { icon: '◐', color: 'warning', text: 'reported' },
+  stopping: { icon: '◐', color: 'warning', text: 'stopping' },
+  stopped: { icon: '◐', color: 'warning', text: 'stopped' },
+  cleanupUnconfirmed: { icon: '!', color: 'error', text: 'cleanup unconfirmed' },
+  notOwned: { icon: '◇', color: 'muted', text: 'may still be running' },
+};
+
+// Only a saved report outcome tells a stopped worker apart. Only success earns the check mark.
+const stoppedOutcomeLabels: Record<string, StateLabel> = {
+  success: { icon: '✓', color: 'success', text: 'reported success · stopped' },
+  failure: { icon: '✗', color: 'error', text: 'stopped · failure' },
+  incomplete: { icon: '◐', color: 'warning', text: 'stopped · incomplete' },
+};
+
+const stoppedUnknownLabel: StateLabel = { icon: '◐', color: 'warning', text: 'stopped' };
+
+export const stateLabel = (state: WorkerState, outcome?: string): StateLabel => {
+  if (state !== 'stopped') {
+    return stateLabels[state];
+  }
+
+  if (outcome === undefined || !Object.hasOwn(stoppedOutcomeLabels, outcome)) {
+    return stoppedUnknownLabel;
+  }
+
+  return stoppedOutcomeLabels[outcome] ?? stoppedUnknownLabel;
+};
+
 const addField = (target: Record<string, unknown>, key: string, value: unknown): void => {
   if (value !== undefined && value !== null) {
     target[key] = value;
@@ -123,11 +129,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const handoffSectionNames = ['Changes', 'Evidence', 'Decisions', 'Concerns'] as const;
 
 type HandoffSection = (typeof handoffSectionNames)[number];
-
-export interface HandoffSections {
-  present: HandoffSection[];
-  missing: HandoffSection[];
-}
 
 const summaryHasHeading = (summary: string, name: string): boolean =>
   new RegExp(`^\\s*(?:#+\\s*|[-*]\\s*)?(?:\\*\\*)?${name}(?:\\*\\*)?\\s*(?::|$)`, 'im').test(

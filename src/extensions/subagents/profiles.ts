@@ -135,6 +135,7 @@ export const resolveProfile = (
   requestedName: string,
 ): Profile | undefined => {
   let winner: { content: string; fallbackName: string; source: string } | undefined;
+
   const directories = [
     fileURLToPath(new URL('./profiles/', import.meta.url)),
     join(agentDirectory, 'agents'),
@@ -155,10 +156,12 @@ export const resolveProfile = (
       const source = join(directory, file);
       const content = readFileSync(source, 'utf8');
       const fallbackName = file.slice(0, -3);
+
       // Read only identity before selection. A malformed winner must still reach strict validation.
       const frontmatter = content
         .replaceAll('\r\n', '\n')
         .match(/^---\n([\s\S]*?)(?:\n---(?:\n|$)|$)/)?.[1];
+
       const name =
         frontmatter
           ?.split('\n')

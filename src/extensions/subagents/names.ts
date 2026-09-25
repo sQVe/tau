@@ -9,6 +9,14 @@ import { isMissingFile } from '../../errors/index.js';
 import { readTask } from './records.js';
 import type { Loadout } from './types.js';
 
+export interface NameAllocation {
+  root: string;
+  parentSessionId: string;
+  role: Loadout['role'];
+  live: unknown;
+  suffix: () => string;
+}
+
 export const nameSuffix = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 2);
 
 const liveAgentsSchema = Type.Array(
@@ -46,14 +54,6 @@ const retainedNames = (root: string, parentSessionId: string): string[] => {
     }
   });
 };
-
-export interface NameAllocation {
-  root: string;
-  parentSessionId: string;
-  role: Loadout['role'];
-  live: unknown;
-  suffix: () => string;
-}
 
 export const allocateName = (allocation: NameAllocation): string => {
   if (!Value.Check(liveAgentsSchema, allocation.live)) {

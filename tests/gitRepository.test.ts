@@ -15,6 +15,7 @@ it('ignores a hostile user Git configuration, also for Git calls the code under 
 }) => {
   const home = await mkdtemp(join(tmpdir(), 'tau-hostile-home-'));
   onTestFinished(() => rm(home, { recursive: true, force: true }));
+
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });
@@ -22,10 +23,12 @@ it('ignores a hostile user Git configuration, also for Git calls the code under 
   await mkdir(join(home, 'hooks'));
   await writeFile(join(home, 'hooks/pre-commit'), '#!/bin/sh\nexit 1\n');
   await chmod(join(home, 'hooks/pre-commit'), 0o755);
+
   await writeFile(
     join(home, '.gitconfig'),
     `[init]\n\tdefaultBranch = hostile\n[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = false\n[core]\n\thooksPath = ${join(home, 'hooks')}\n`,
   );
+
   vi.stubEnv('HOME', home);
   vi.stubEnv('XDG_CONFIG_HOME', join(home, '.config'));
 
@@ -34,6 +37,7 @@ it('ignores a hostile user Git configuration, also for Git calls the code under 
   // No explicit environment: production code calls Git the same way.
   await executeFile('git', ['add', 'file.txt'], { cwd: repositoryDirectory });
   await executeFile('git', ['commit', '-m', 'test: commit'], { cwd: repositoryDirectory });
+
   const { stdout } = await executeFile('git', ['log', '-1', '--format=%D|%an|%ae|%aI|%G?'], {
     cwd: repositoryDirectory,
   });

@@ -19,6 +19,7 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
     const agentDirectory = join(directory, 'agent');
     await mkdir(agentDirectory);
     isolateWebAccessConfig(agentDirectory, onTestFinished);
+
     // Tau's shared setting takes precedence over the upstream persistent answer setting.
     await writeFile(
       join(agentDirectory, 'web-search.json'),
@@ -29,13 +30,16 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
         ssrf: { allowRanges: ['127.0.0.1/32'] },
       }),
     );
+
     vi.stubEnv('TAU_DELEGATE_MODEL', 'web-delegate/reader');
+
     onTestFinished(() => {
       vi.unstubAllEnvs();
     });
 
     const server = createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/html' });
+
       const paragraphs =
         '<p>Requests retry once after a transient failure. Authentication failures are never retried.</p>'.repeat(
           8,
@@ -45,6 +49,7 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
         `<html><body><article><h1>Retry policy</h1>${paragraphs}</article></body></html>`,
       );
     });
+
     onTestFinished(
       () =>
         new Promise<void>((resolveClose, reject) => {
@@ -55,9 +60,11 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
               resolveClose();
             }
           });
+
           server.closeAllConnections();
         }),
     );
+
     await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
     const address = server.address();
 
@@ -94,6 +101,7 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
       const authentication = vi
         .spyOn(delegate.provider.auth.apiKey!, 'resolve')
         .mockRejectedValue(new Error('credentials expired'));
+
       onTestFinished(() => {
         authentication.mockRestore();
       });
@@ -105,15 +113,18 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
       prompt: 'How many times are requests retried?',
       ...(scenario === 'override' ? { answerModel: 'web-override/reader' } : {}),
     };
+
     sessionModel.setResponses([
       fauxAssistantMessage([fauxToolCall('fetch_content', call)]),
       fauxAssistantMessage('Done.'),
     ]);
+
     delegate.setResponses([
       scenario === 'provider'
         ? fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'provider unavailable' })
         : fauxAssistantMessage('Requests retry once.'),
     ]);
+
     override.setResponses([fauxAssistantMessage('Override: requests retry once.')]);
 
     await session.prompt('Read the retry policy.');

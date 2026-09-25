@@ -28,6 +28,7 @@ export const createWorktree = async (cleanup: TestContext['onTestFinished']) => 
   await symlink(resolve(import.meta.dirname, '../node_modules'), join(cwd, 'node_modules'), 'dir');
   await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
   await writeFile(join(cwd, 'vite.config.ts'), 'export default {};');
+
   await writeFile(
     join(cwd, 'behavior.test.ts'),
     "import { it, expect } from 'vitest'; it('required behavior', () => expect(1).toBe(2));",
@@ -48,6 +49,7 @@ export const createHarness = async (
   counter += 1;
 
   const faux = fauxProvider({ provider: `tau-tdd-${counter}` });
+
   const { session } = await createBoundSession(cleanup, {
     cwd,
     agentDirectory,
@@ -70,6 +72,7 @@ export const createHarness = async (
     between: FauxResponseStep[] = [],
   ) => {
     events.length = 0;
+
     faux.setResponses([
       fauxAssistantMessage([fauxToolCall(toolName, input)]),
       ...between,

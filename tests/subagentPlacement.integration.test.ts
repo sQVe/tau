@@ -25,10 +25,13 @@ it.runIf(hasHerdr).each([
     const { root, client } = await isolatedHerdr(
       `[server]\nheadless_cols = ${width}\nheadless_rows = ${height}\n[ui]\nsidebar_start_collapsed = true\nsidebar_collapsed_mode = "hidden"\nhide_tab_bar_when_single_tab = true\n`,
     );
+
     const parent = terminalLocation(
       result(await client(['workspace', 'create', '--cwd', root, '--focus'])).root_pane,
     );
+
     const placement = new WorkerPlacement();
+
     const workers = await Promise.all(
       Array.from({ length: count }, () =>
         placement.place(
@@ -37,12 +40,15 @@ it.runIf(hasHerdr).each([
         ),
       ),
     );
+
     const layout = requireObject(
       result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,
     );
+
     const entries = (layout.panes as Record<string, unknown>[]).map((pane) =>
       requireObject(pane.rect),
     );
+
     const areas = entries.map((bounds) => Number(bounds.width) * Number(bounds.height));
 
     expect(layout.area).toMatchObject({ width, height });
@@ -65,32 +71,42 @@ it.runIf(hasHerdr).each([0, 1])(
     const { root, client } = await isolatedHerdr(
       '[server]\nheadless_cols = 340\nheadless_rows = 100\n[ui]\nsidebar_start_collapsed = true\nsidebar_collapsed_mode = "hidden"\nhide_tab_bar_when_single_tab = true\n',
     );
+
     const parent = terminalLocation(
       result(await client(['workspace', 'create', '--cwd', root, '--focus'])).root_pane,
     );
+
     const placement = new WorkerPlacement();
+
     const input = {
       parentPane: parent.paneId,
       visibility: 'foreground' as const,
       cwd: root,
       environment: [],
     };
+
     const workers = await Promise.all([
       placement.place(input, client),
       placement.place(input, client),
     ]);
+
     const closing = workers[index]!;
     placement.release(closing.terminalId);
+
     await placement.close(closing, client, async () => {
       await client(['pane', 'close', closing.paneId]);
     });
+
     const replacement = await placement.place(input, client);
+
     const layout = requireObject(
       result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,
     );
+
     const entries = (layout.panes as Record<string, unknown>[]).map((pane) =>
       requireObject(pane.rect),
     );
+
     const areas = entries.map((bounds) => Number(bounds.width) * Number(bounds.height));
     const terminals = await listTerminals(client);
 
@@ -110,9 +126,11 @@ it.runIf(hasHerdr)(
     const { root, client } = await isolatedHerdr(
       '[server]\nheadless_cols = 600\nheadless_rows = 120\n[ui]\nsidebar_start_collapsed = true\nsidebar_collapsed_mode = "hidden"\nhide_tab_bar_when_single_tab = true\n',
     );
+
     const parent = terminalLocation(
       result(await client(['workspace', 'create', '--cwd', root, '--focus'])).root_pane,
     );
+
     const unrelated = terminalLocation(
       result(
         await client([
@@ -130,14 +148,18 @@ it.runIf(hasHerdr)(
         ]),
       ).pane,
     );
+
     const placement = new WorkerPlacement();
+
     const input = {
       parentPane: parent.paneId,
       visibility: 'foreground' as const,
       cwd: root,
       environment: [],
     };
+
     await placement.place(input, client);
+
     await client([
       'pane',
       'resize',
@@ -148,15 +170,20 @@ it.runIf(hasHerdr)(
       '--amount',
       '0.1',
     ]);
+
     await client(['pane', 'focus', '--pane', parent.paneId, '--direction', 'right']);
+
     const before = requireObject(
       result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,
     );
+
     await placement.place(input, client);
     await placement.place(input, client);
+
     const after = requireObject(
       result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,
     );
+
     const beforeSplits = before.splits as Record<string, unknown>[];
     const afterSplits = after.splits as Record<string, unknown>[];
     const beforePanes = before.panes as Record<string, unknown>[];
@@ -175,6 +202,7 @@ it.runIf(hasHerdr)(
     expect(afterPanes.find((pane) => pane.pane_id === unrelated.paneId)).toEqual(
       beforePanes.find((pane) => pane.pane_id === unrelated.paneId),
     );
+
     expect(before.focused_pane_id).toBe(unrelated.paneId);
     expect(after.focused_pane_id).toBe(unrelated.paneId);
   },
@@ -185,9 +213,11 @@ it.runIf(hasHerdr)(
   'places ten inspectable dummy terminals without changing manual layout or focus in isolated herdr',
   async () => {
     const { root, client } = await isolatedHerdr();
+
     const parent = terminalLocation(
       result(await client(['workspace', 'create', '--cwd', root, '--focus'])).root_pane,
     );
+
     const unrelated = terminalLocation(
       result(
         await client([
@@ -205,6 +235,7 @@ it.runIf(hasHerdr)(
         ]),
       ).pane,
     );
+
     await client([
       'pane',
       'resize',
@@ -215,11 +246,14 @@ it.runIf(hasHerdr)(
       '--amount',
       '0.05',
     ]);
+
     const before = requireObject(
       result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,
     );
+
     const focusBefore = requireObject(result(await client(['api', 'snapshot'])).snapshot);
     const placement = new WorkerPlacement();
+
     const workers = await Promise.all(
       Array.from({ length: 10 }, () =>
         placement.place(
@@ -233,9 +267,11 @@ it.runIf(hasHerdr)(
         ),
       ),
     );
+
     const after = requireObject(
       result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,
     );
+
     const focusAfter = requireObject(result(await client(['api', 'snapshot'])).snapshot);
 
     expect(after).toEqual(before);
@@ -251,6 +287,7 @@ it.runIf(hasHerdr)(
       const layout = requireObject(
         result(await client(['pane', 'layout', '--pane', worker.paneId])).layout,
       );
+
       const panes = layout.panes as { pane_id: string; rect: { width: number; height: number } }[];
       const bounds = panes.find((pane) => pane.pane_id === worker.paneId)!.rect;
 
@@ -262,6 +299,7 @@ it.runIf(hasHerdr)(
       result(await client(['pane', 'move', workers[0]!.paneId, '--new-workspace', '--no-focus']))
         .move_result,
     );
+
     const movedPane = terminalLocation(moved.pane);
     const resolved = await resolveTerminal(workers[0]!.terminalId, client);
 
@@ -271,6 +309,7 @@ it.runIf(hasHerdr)(
     const remaining = await listTerminals(client);
     expect(remaining.some((pane) => pane.terminalId === resolved.terminalId)).toBe(false);
     expect(remaining.some((pane) => pane.terminalId === unrelated.terminalId)).toBe(true);
+
     expect(
       requireObject(result(await client(['pane', 'layout', '--pane', parent.paneId])).layout),
     ).toEqual(before);

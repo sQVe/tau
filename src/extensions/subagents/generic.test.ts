@@ -34,12 +34,15 @@ vi.mock('node:fs', async (importOriginal) => {
 
 const fixture = () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-native-report-'));
+
   onTestFinished(() => {
     vi.resetAllMocks();
     rmSync(directory, { recursive: true, force: true });
   });
+
   const records = join(directory, 'records');
   mkdirSync(records);
+
   const task: Task = {
     version: 2,
     taskId: 'full-task-id',
@@ -52,8 +55,10 @@ const fixture = () => {
     monotonicDeadline: 20000,
     loadout: fixtureGenericLoadout(directory),
   };
+
   prepareGenericReport(task);
   const path = genericReportPath(task);
+
   const complete = (outcome = 'success') =>
     `Task: ${task.taskId}\nOutcome: ${outcome}\n\nObserved evidence.\n\nEnd task: ${task.taskId}\n`;
 
@@ -75,6 +80,7 @@ it('requires complete publication and keeps an immutable parent report receipt',
   writeFileSync(setup.path, 'Replacement is not a second report.');
   expect(acceptGenericReport(setup.records, setup.task)).toBe(true);
   expect(readFileSync(join(setup.records, 'report.json'))).toEqual(original);
+
   expect(readReport(setup.records, setup.task.taskId)).toMatchObject({
     outcome: 'success',
     summary: setup.complete(),
@@ -91,9 +97,11 @@ it('publishes the report under the worker cwd .tau folder and keeps it out of Gi
   writeFileSync(genericReportPath(task), setup.complete(), { flag: 'wx' });
 
   expect(acceptGenericReport(setup.records, task)).toBe(true);
+
   expect(readReport(setup.records, task.taskId)?.evidence).toEqual([
     join(repository, '.tau', 'workers', task.taskId, 'report.md'),
   ]);
+
   expect(
     execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], {
       cwd: repository,
@@ -113,6 +121,7 @@ it('adds the ignore rule to an existing .tau/.gitignore and keeps its lines', as
   writeFileSync(genericReportPath(task), setup.complete(), { flag: 'wx' });
 
   expect(readFileSync(join(repository, '.tau', '.gitignore'), 'utf8')).toBe('state.json\n*\n');
+
   expect(
     execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], {
       cwd: repository,
@@ -133,6 +142,7 @@ it.each(['.tau', '.tau/workers'])('refuses a symlinked %s without writing outsid
   expect(() => {
     prepareGenericReport(task);
   }).toThrow('symbolic link');
+
   expect(fileSystem.readdirSync(outside)).toEqual([]);
 });
 
@@ -169,6 +179,7 @@ it.each([
   'symlink',
 ] as const)('rejects an invalid %s report without a receipt', (failure) => {
   const setup = fixture();
+
   const contents = {
     identity: setup.complete().replace('Task: full-task-id', 'Task: another-task'),
     outcome: setup.complete('maybe'),
@@ -196,6 +207,7 @@ it.each([
     directory: 'regular file',
     symlink: 'ELOOP',
   };
+
   expect(() => acceptGenericReport(setup.records, setup.task)).toThrow(errors[failure]);
   expect(readReport(setup.records, setup.task.taskId)).toBeUndefined();
 });
@@ -203,6 +215,7 @@ it.each([
 it('accepts an escape-heavy report within the bounded receipt size', () => {
   const setup = fixture();
   const escapedBody = '\u0000'.repeat(9000);
+
   writeFileSync(
     setup.path,
     `Task: ${setup.task.taskId}\nOutcome: success\n\n${escapedBody}\n\nEnd task: ${setup.task.taskId}\n`,
@@ -218,6 +231,7 @@ it('waits for an in-progress native write instead of accepting or terminating it
   const setup = fixture();
   writeFileSync(setup.path, `Task: ${setup.task.taskId}\nOutcome: success\n\nPartial evidence.`);
   const actual = await vi.importActual<typeof fileSystem>('node:fs');
+
   vi.mocked(fileSystem.readSync).mockImplementationOnce((descriptor, buffer, options) => {
     writeFileSync(setup.path, setup.complete());
 
@@ -236,6 +250,7 @@ it('refuses report-area reuse without overwriting files', () => {
   expect(() => {
     prepareGenericReport(setup.task);
   }).toThrow('EEXIST');
+
   expect(readFileSync(setup.path, 'utf8')).toBe('User evidence.');
 });
 
@@ -243,6 +258,7 @@ it.each(['submitted', 'not-delivered', 'uncertain'] as const)(
   'records %s text delivery separately and never resends a saved identity',
   async (state) => {
     const setup = fixture();
+
     const send = vi.fn<() => Promise<string>>(async () => {
       expect(readGenericSubmission(setup.records, setup.task.taskId, 'reply-one')?.intent).toEqual({
         taskId: setup.task.taskId,
@@ -265,6 +281,7 @@ it.each(['submitted', 'not-delivered', 'uncertain'] as const)(
       text: 'Scoped answer.',
       send,
     });
+
     const repeated = await submitGenericText(setup.records, setup.task, {
       id: 'reply-one',
       text: 'Scoped answer.',
@@ -274,6 +291,7 @@ it.each(['submitted', 'not-delivered', 'uncertain'] as const)(
     expect(first?.observation?.state).toBe(state);
     expect(repeated).toEqual(first);
     expect(send).toHaveBeenCalledTimes(1);
+
     await expect(
       submitGenericText(setup.records, setup.task, {
         id: 'reply-one',
@@ -286,11 +304,13 @@ it.each(['submitted', 'not-delivered', 'uncertain'] as const)(
 
 it('retains a crash between intent and observation as uncertain without a retry', async () => {
   const setup = fixture();
+
   publish(setup.records, 'submission-crash-intent.json', {
     taskId: setup.task.taskId,
     id: 'crash',
     text: 'Scoped answer.',
   });
+
   const send = vi.fn<() => Promise<string>>(async () => '{}');
 
   const receipt = await submitGenericText(setup.records, setup.task, {
@@ -306,6 +326,7 @@ it('retains a crash between intent and observation as uncertain without a retry'
 
 it('refuses a saved submission intent belonging to another task', () => {
   const setup = fixture();
+
   publish(setup.records, 'submission-reply-intent.json', {
     taskId: 'another-task',
     id: 'reply',

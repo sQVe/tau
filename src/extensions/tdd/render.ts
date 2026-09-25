@@ -8,6 +8,12 @@ import type { Behavior, ObservationResult } from './types.js';
 
 type Observation = Omit<ObservationResult, 'hint'>;
 
+interface DurationList {
+  header: string | null;
+  entries: string[];
+  limit: number;
+}
+
 const maximumSummaryCharacters = 2000;
 
 const printable = (text: string) =>
@@ -30,6 +36,7 @@ export const selectionSummary = (behavior: Partial<Behavior>, scope?: string): s
   const names = Array.isArray(behavior.testFullName)
     ? behavior.testFullName
     : [behavior.testFullName ?? ''];
+
   const files = behavior.files ?? [];
 
   return [
@@ -46,6 +53,7 @@ const testSummary = (report: RunnerResult): string[] => {
 
   const count = (...statuses: string[]) =>
     report.tests.filter((test) => statuses.includes(test.status)).length;
+
   const lines = [
     `${count('passed')} passed, ${count('failed')} failed, ${count('skipped', 'todo')} skipped`,
   ];
@@ -67,12 +75,6 @@ const maximumSlowTests = 3;
 const maximumFocusedDurations = 10;
 
 const moreLine = (hidden: number) => (hidden > 0 ? [`  +${hidden} more`] : []);
-
-interface DurationList {
-  header: string | null;
-  entries: string[];
-  limit: number;
-}
 
 const focusedDurations = (report: RunnerResult): DurationList => {
   const timed = 'tests' in report ? report.tests.filter((test) => test.durationMs != null) : [];
@@ -144,6 +146,7 @@ const fileFailureLines = (report: RunnerResult): string[] => {
 export const summarize = (cwd: string, observation: Observation): string => {
   const { report, scope, freshness } = observation;
   const scopeLabel = scope === 'full' ? 'full suite' : 'focused';
+
   const lines = [
     `${report.kind} · ${scopeLabel} · ${freshness}`,
     ...messageLines(report),
@@ -261,6 +264,7 @@ export const runContext = (behavior: Behavior, observation: Observation): string
   }
 
   lines.push(...savedFileLines(diagnostics));
+
   lines.push(
     `Saved diagnostics are not reusable verification. Cleanup keeps up to ${maximumRetainedRuns} completed runs for seven days.`,
   );

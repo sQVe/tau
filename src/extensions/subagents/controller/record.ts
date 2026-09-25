@@ -28,6 +28,16 @@ import type { Report, Task, TaskEvent } from '../types.js';
 import { workerState } from '../workerState.js';
 import type { Handle } from './types.js';
 
+export interface EvidenceUnavailableInput {
+  taskId: string;
+  name?: string | undefined;
+  evidenceError: string;
+  recovery: unknown;
+  cleanupDetail?: string | undefined;
+  paneId?: string | undefined;
+  cause?: unknown;
+}
+
 export const readOwnedWorker = (directory: string, task: Task): OwnedWorker => {
   const value = readOptionalRecord(directory, 'owned.json');
 
@@ -107,16 +117,6 @@ export const savedRecovery = (task: Task | undefined, directory: string) => {
   return { directory };
 };
 
-export interface EvidenceUnavailableInput {
-  taskId: string;
-  name?: string | undefined;
-  evidenceError: string;
-  recovery: unknown;
-  cleanupDetail?: string | undefined;
-  paneId?: string | undefined;
-  cause?: unknown;
-}
-
 // The message stays free of record paths; recovery carries them for manual cleanup.
 export class EvidenceUnavailableError extends Error {
   readonly taskId: string;
@@ -129,6 +129,7 @@ export class EvidenceUnavailableError extends Error {
       `Worker ${input.taskId}: saved evidence is unavailable: ${input.evidenceError}. ${input.cleanupDetail ?? 'Cleanup unconfirmed.'} Check pane ${input.paneId ?? 'unknown'} manually.`,
       { cause: input.cause },
     );
+
     this.name = 'EvidenceUnavailableError';
     this.taskId = input.taskId;
     this.taskName = input.name;
@@ -179,11 +180,13 @@ export const taskRecordStatus = (directory: string, task: Task, controlled = fal
   const cleanup = event('cleanup');
   const settled = event('settled');
   const state = workerState(directory, task, controlled);
+
   const outcome = taskOutcome(
     [event('timeout'), event('cancelled'), failure],
     report,
     Boolean(event('settled') ?? cleanup),
   );
+
   const needsRecovery = state === 'cleanupUnconfirmed' || state === 'notOwned';
   const pendingQuestion = pendingQuestionStatus(directory, task.taskId);
   const recovery = needsRecovery ? taskRecovery(task, directory) : undefined;

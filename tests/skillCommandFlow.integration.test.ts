@@ -20,6 +20,7 @@ const createSession = async (registerCleanup: TestContext['onTestFinished']) => 
   registerCleanup(() => rm(agentDirectory, { recursive: true, force: true }));
 
   const faux = fauxProvider({ provider: 'tau-skill-command-test' });
+
   const { session } = await createBoundSession(registerCleanup, {
     cwd: directory,
     agentDirectory,

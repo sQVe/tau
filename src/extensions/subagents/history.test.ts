@@ -32,16 +32,19 @@ import { requireNativeTask } from './types.js';
 
 const setup = () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-history-'));
+
   onTestFinished(() => {
     vi.unstubAllEnvs();
     rmSync(directory, { recursive: true, force: true });
   });
+
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.stubEnv('TAU_WORKER_RECORD', '');
   const sessions = join(directory, 'custom-sessions');
   const workers = workerRecordsDirectory();
   mkdirSync(sessions, { recursive: true });
   mkdirSync(workers, { recursive: true });
+
   const session = (id: string, parentSession?: string, path = join(sessions, `${id}.jsonl`)) => {
     writeFileSync(
       path,
@@ -50,10 +53,12 @@ const setup = () => {
 
     return path;
   };
+
   const root = session('root');
   const child = session('child', root);
   const sibling = session('sibling', root);
   const unrelated = session('unrelated');
+
   const task = (
     id: string,
     parentSession: string,
@@ -64,11 +69,13 @@ const setup = () => {
     const taskDirectory = join(workers, id);
     mkdirSync(taskDirectory);
     const nativeSessionId = `native-${id}`;
+
     const nativeSessionFile = session(
       nativeSessionId,
       parentSession,
       join(taskDirectory, 'native.jsonl'),
     );
+
     const record = validateTask({
       version: 1,
       taskId: id,
@@ -84,8 +91,10 @@ const setup = () => {
       monotonicDeadline: 20000,
       loadout: fixtureLoadout(directory),
     });
+
     publish(taskDirectory, 'task.json', record);
     recordEvent(taskDirectory, id, 'cleanup', { detail: 'Pane removed.', stopped: true });
+
     acceptReport(taskDirectory, id, {
       taskId: id,
       outcome: 'success',
@@ -109,7 +118,9 @@ const historyTool = async (fixture: ReturnType<typeof setup>, file: string, id: 
     noThemes: true,
     extensionFactories: [subagentsExtension],
   });
+
   await loader.reload();
+
   const tool = loader
     .getExtensions()
     .extensions.flatMap((extension) => Array.from(extension.tools.values()))
@@ -148,6 +159,7 @@ it('bounds production history output while paging all matches and retaining reco
   }
 
   expect(Buffer.byteLength(text.text, 'utf8')).toBeLessThanOrEqual(48000);
+
   const page = JSON.parse(text.text) as {
     outcome: string;
     totalMatches: number;
@@ -163,9 +175,11 @@ it('bounds production history output while paging all matches and retaining reco
 
   expect(page).toMatchObject({ outcome: 'clarification', totalMatches: 20, nextOffset: 1 });
   expect(page.candidates).toHaveLength(1);
+
   expect(page.candidates[0]?.truncatedFields).toEqual(
     expect.arrayContaining(['description', 'report.summary', 'report.evidence']),
   );
+
   expect(page.candidates[0]?.description.length).toBeLessThan(1000);
   expect(page.candidates[0]?.report.summary.length).toBeLessThan(1000);
   expect(page.candidates[0]?.state).toBe('stopped');
@@ -192,17 +206,20 @@ it('bounds production history output while paging all matches and retaining reco
   expect(text.text).not.toContain('reportFileRelativeToSource');
   const fullPage = await execute({ query: 'needle-tail' });
   const fullPageText = fullPage.content.find((part) => part.type === 'text')?.text ?? '';
+
   const bounded = JSON.parse(fullPageText) as {
     totalMatches: number;
     candidates: unknown[];
     nextOffset: number;
   };
+
   expect(Buffer.byteLength(fullPageText, 'utf8')).toBeLessThanOrEqual(48000);
   expect(bounded.totalMatches).toBe(20);
   expect(bounded.candidates.length).toBeLessThan(10);
   expect(bounded.nextOffset).toBe(bounded.candidates.length);
   const last = await execute({ query: 'needle-tail', offset: 18 });
   expect(last.details).not.toHaveProperty('nextOffset');
+
   expect(last.details).toMatchObject({
     totalMatches: 20,
     candidates: [
@@ -210,6 +227,7 @@ it('bounds production history output while paging all matches and retaining reco
       expect.objectContaining({ taskId: 'task-19' }),
     ],
   });
+
   const second = await execute({ query: 'needle-tail', offset: page.nextOffset, limit: 1 });
   expect(JSON.stringify(second)).toContain('task-01');
   const empty = await execute({ query: 'needle-tail', offset: 20 });
@@ -218,6 +236,7 @@ it('bounds production history output while paging all matches and retaining reco
 
 it('reads history only from the records of the running Tau checkout', async () => {
   const fixture = setup();
+
   const otherFolders = [
     join(fixture.directory, 'tau', 'workers'),
     join(fixture.directory, 'tau', 'abu-400-0123abcd', 'workers'),
@@ -243,11 +262,13 @@ it('reads history only from the records of the running Tau checkout', async () =
 it('excludes explicit custom-extension current and root sessions from the production history tool', async () => {
   const fixture = setup();
   const root = fixture.session('explicit-root', undefined, join(fixture.sessions, 'root.session'));
+
   const current = fixture.session(
     'explicit-current',
     root,
     join(fixture.sessions, 'current.session'),
   );
+
   const execute = await historyTool(fixture, current, 'explicit-current');
   const result = await execute({ query: 'explicit-' });
 
@@ -256,6 +277,7 @@ it('excludes explicit custom-extension current and root sessions from the produc
 
 it('keeps the named current session out of history while checking its discovered metadata', async () => {
   const fixture = setup();
+
   writeFileSync(
     fixture.root,
     readFileSync(fixture.root, 'utf8') +
@@ -283,15 +305,18 @@ it('keeps the named current session out of history while checking its discovered
         .join('\n') +
       '\n',
   );
+
   const execute = await historyTool(fixture, fixture.root, 'root');
   const result = await execute({ query: 'root' });
 
   expect(result.details).toEqual({ outcome: 'notFound', totalMatches: 0, candidates: [] });
+
   const history = await searchHistory(fixture.workers, {
     file: fixture.child,
     id: 'child',
     sessionDirectory: fixture.sessions,
   });
+
   expect(history.candidates.some((candidate) => candidate.name === 'Named root')).toBe(false);
   expect(history.diagnostics).toEqual([]);
 });
@@ -303,11 +328,13 @@ it('derives successor status and history from task records', async () => {
   const successorDirectory = join(fixture.workers, 'successor');
   mkdirSync(rejectedDirectory);
   mkdirSync(successorDirectory);
+
   const successor = {
     ...source.record,
     taskId: 'successor',
     predecessorTaskId: source.record.taskId,
   };
+
   publish(rejectedDirectory, 'task.json', { ...successor, taskId: 'rejected' });
   recordEvent(rejectedDirectory, 'rejected', 'cleanup', { detail: 'Rejected.', stopped: true });
   publish(successorDirectory, 'task.json', successor);
@@ -319,12 +346,15 @@ it('derives successor status and history from task records', async () => {
   });
 
   expect(taskStatus(source.taskDirectory).successorTaskId).toBe('successor');
+
   expect(history.candidates.find((candidate) => candidate.taskId === 'source')).toMatchObject({
     successorTaskId: 'successor',
   });
+
   expect(history.candidates.find((candidate) => candidate.taskId === 'successor')).toMatchObject({
     predecessorTaskId: 'source',
   });
+
   expect(history.diagnostics).toEqual([]);
 });
 
@@ -345,9 +375,11 @@ it('reports corrupt saved reports as diagnostics without hiding other tasks', as
       .flatMap((candidate) => (candidate.taskId != null ? [candidate.taskId] : []))
       .toSorted(),
   ).toEqual(['corrupt-report', 'intact']);
+
   expect(
     history.candidates.find((candidate) => candidate.taskId === 'corrupt-report'),
   ).not.toHaveProperty('report');
+
   expect(history.diagnostics.join(' ')).toContain('Task corrupt-report');
 });
 
@@ -356,12 +388,14 @@ it('scopes history to the validated root and descendants including siblings and 
   const first = fixture.task('first', fixture.child, 'child', 'worker-aa');
   const second = fixture.task('second', fixture.sibling, 'sibling');
   fixture.task('outside', fixture.unrelated, 'unrelated', 'worker-aa');
+
   const nested = fixture.task(
     'nested',
     first.record.nativeSessionFile,
     first.record.nativeSessionId,
     'worker-bb',
   );
+
   rmSync(first.record.nativeSessionFile);
   const current = { file: fixture.child, id: 'child', sessionDirectory: fixture.sessions };
   const history = await searchHistory(fixture.workers, current);
@@ -372,29 +406,37 @@ it('scopes history to the validated root and descendants including siblings and 
       .map((candidate) => candidate.taskId)
       .toSorted((left, right) => String(left).localeCompare(String(right))),
   ).toEqual(['first', 'nested', 'second']);
+
   const sessionIds = history.candidates.map((candidate) => candidate.nativeSessionId);
   expect(sessionIds).toEqual(expect.arrayContaining(['sibling', nested.record.nativeSessionId]));
   expect(sessionIds).not.toContain('root');
   expect(sessionIds).not.toContain('child');
+
   expect(history.candidates.find((candidate) => candidate.taskId === 'first')).toMatchObject({
     name: 'worker-aa',
     state: 'stopped',
     nativeEvidence: 'missing',
     report: { summary: 'Saved evidence.' },
   });
+
   expect(history.candidates.find((candidate) => candidate.taskId === 'second')).not.toHaveProperty(
     'name',
   );
+
   expect(readTask(second.taskDirectory)).not.toHaveProperty('name');
+
   const fromRoot = await searchHistory(fixture.workers, {
     ...current,
     file: fixture.root,
     id: 'root',
   });
+
   expect(fromRoot.candidates.map((candidate) => candidate.nativeSessionId)).toEqual(
     expect.arrayContaining([...sessionIds, 'child']),
   );
+
   expect(fromRoot.candidates.some((candidate) => candidate.nativeSessionId === 'root')).toBe(false);
+
   expect(history.candidates.some((candidate) => candidate.nativeSessionId === 'unrelated')).toBe(
     false,
   );
@@ -403,17 +445,21 @@ it('scopes history to the validated root and descendants including siblings and 
 it('excludes the calling task and its parent task from history', async () => {
   const fixture = setup();
   const parent = fixture.task('parent-task', fixture.child, 'child');
+
   const nested = fixture.task(
     'nested-task',
     parent.record.nativeSessionFile,
     parent.record.nativeSessionId,
   );
+
   const current = {
     file: nested.record.nativeSessionFile,
     id: nested.record.nativeSessionId,
     sessionDirectory: fixture.sessions,
   };
+
   const history = await searchHistory(fixture.workers, current);
+
   const taskIds = history.candidates.flatMap((candidate) =>
     candidate.taskId != null ? [candidate.taskId] : [],
   );
@@ -426,10 +472,12 @@ it('returns clarification for ambiguous names and descriptions without writing o
   const fixture = setup();
   const first = fixture.task('first', fixture.child, 'child', 'worker-aa');
   fixture.task('second', fixture.sibling, 'sibling', 'worker-aa');
+
   const snapshot = () =>
     readdirSync(fixture.directory, { recursive: true })
       .filter((path) => statSync(join(fixture.directory, String(path))).isFile())
       .map((path) => [path, readFileSync(join(fixture.directory, String(path)), 'utf8')]);
+
   const before = snapshot();
   const current = { file: fixture.root, id: 'root', sessionDirectory: fixture.sessions };
   const named = await searchHistory(fixture.workers, current, 'worker-aa');
@@ -437,11 +485,13 @@ it('returns clarification for ambiguous names and descriptions without writing o
   const prefix = await searchHistory(fixture.workers, current, 'native-');
 
   expect(named.outcome).toBe('clarification');
+
   expect(
     named.candidates
       .map((candidate) => candidate.taskId)
       .toSorted((left, right) => String(left).localeCompare(String(right))),
   ).toEqual(['first', 'second']);
+
   expect(described.outcome).toBe('clarification');
   expect(prefix.outcome).toBe('clarification');
   expect(prefix.candidates).toHaveLength(2);
@@ -449,6 +499,7 @@ it('returns clarification for ambiguous names and descriptions without writing o
   const controller = new WorkerController(fixture.workers);
   expect(() => controller.status(first.record.taskId, 'root')).toThrow('another parent');
   await expect(controller.cancel(first.record.taskId, 'root')).rejects.toThrow('another parent');
+
   await expect(
     controller.reply(first.record.taskId, 'root', {
       questionId: 'question',
@@ -457,6 +508,7 @@ it('returns clarification for ambiguous names and descriptions without writing o
       scopeUnchanged: true,
     }),
   ).rejects.toThrow('another parent');
+
   controller.close();
   expect(snapshot()).toEqual(before);
 });
@@ -465,6 +517,7 @@ it.each(['broken', 'cyclic', 'mismatched'] as const)(
   'refuses %s current ancestry',
   async (kind) => {
     const fixture = setup();
+
     const current = {
       file: fixture.child,
       id: kind === 'mismatched' ? 'wrong-id' : 'child',
@@ -491,6 +544,7 @@ it('excludes broken and cyclic discovered sessions and mismatched saved parent i
   const cycle = fixture.session('cycle-one', join(fixture.sessions, 'cycle-two.jsonl'));
   fixture.session('cycle-two', cycle);
   fixture.task('bad-parent', fixture.root, 'wrong-root', 'worker-zz');
+
   const history = await searchHistory(fixture.workers, {
     file: fixture.root,
     id: 'root',
@@ -502,6 +556,7 @@ it('excludes broken and cyclic discovered sessions and mismatched saved parent i
       .map((candidate) => candidate.nativeSessionId)
       .toSorted((left, right) => String(left).localeCompare(String(right))),
   ).toEqual(['child', 'sibling']);
+
   expect(history.diagnostics.length).toBeGreaterThanOrEqual(3);
 });
 
@@ -521,6 +576,7 @@ it('carries derived state for generic task candidates without inventing native s
   const fixture = setup();
   const taskDirectory = join(fixture.workers, 'generic-one');
   mkdirSync(taskDirectory);
+
   const record = validateTask({
     version: 2,
     taskId: 'generic-one',
@@ -533,6 +589,7 @@ it('carries derived state for generic task candidates without inventing native s
     monotonicDeadline: 20000,
     loadout: fixtureGenericLoadout(fixture.directory),
   });
+
   publish(taskDirectory, 'task.json', record);
   recordEvent(taskDirectory, 'generic-one', 'cleanup', { detail: 'Pane removed.', stopped: true });
 
@@ -541,6 +598,7 @@ it('carries derived state for generic task candidates without inventing native s
     id: 'root',
     sessionDirectory: fixture.sessions,
   });
+
   const candidate = history.candidates.find((entry) => entry.taskId === 'generic-one');
 
   expect(candidate).toMatchObject({ state: 'stopped', nativeEvidence: 'opaque' });
@@ -555,6 +613,7 @@ it('derives candidate state with ownership from the live controller', async () =
   const current = { file: fixture.root, id: 'root', sessionDirectory: fixture.sessions };
 
   const untracked = await searchHistory(fixture.workers, current, 'worker-aa');
+
   const owned = await searchHistory(
     fixture.workers,
     current,
@@ -569,9 +628,11 @@ it('derives candidate state with ownership from the live controller', async () =
 it('diagnoses discovered metadata that disagrees with a seeded ancestor identity', async () => {
   const fixture = setup();
   const [discovered] = await SessionManager.listAll(fixture.sessions);
+
   vi.spyOn(SessionManager, 'listAll').mockResolvedValue([
     { ...discovered, path: fixture.root, id: 'impostor' } as SessionInfo,
   ]);
+
   onTestFinished(() => {
     vi.restoreAllMocks();
   });
@@ -585,6 +646,7 @@ it('diagnoses discovered metadata that disagrees with a seeded ancestor identity
   expect(history.diagnostics).toContain(
     'Discovered metadata disagrees with a validated session identity.',
   );
+
   expect(history.candidates.some((candidate) => candidate.nativeSessionId === 'impostor')).toBe(
     false,
   );

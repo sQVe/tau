@@ -22,27 +22,33 @@ const startup =
 
 const workerFixture = async (onTestFinished: (callback: () => void) => void) => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'tau-pi-loadout-')));
+
   onTestFinished(() => {
     vi.unstubAllEnvs();
     rmSync(directory, { recursive: true, force: true });
   });
+
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.stubEnv('TAU_SUBAGENT_MODEL', '');
   const provider = fauxProvider({ provider: 'tau-worker-fixture' });
+
   const runtime = await ModelRuntime.create({
     credentials: new InMemoryCredentialStore(),
     modelsStore: new InMemoryModelsStore(),
     modelsPath: null,
     refreshOnCreate: false,
   });
+
   runtime.registerNativeProvider(provider.provider);
   const model = provider.getModel();
+
   const context = {
     cwd: directory,
     modelRegistry: new ModelRegistry(runtime),
     scopedModels: [{ model }],
     isProjectTrusted: () => true,
   };
+
   const request = {
     profile: 'worker',
     permissions: 'trusted-full-tools',
@@ -70,38 +76,48 @@ it('resolves an explicit worker model and names the configured models when none 
     permissions: 'trusted-full-tools',
     instructions: resolved.instructions,
   });
+
   const withoutModel = { profile: 'worker', permissions: 'trusted-full-tools' };
   const missing = () => resolveLoadout(withoutModel, context);
   expect(missing).toThrow('no fallback');
   expect(missing).toThrow(`Configured models: ${request.model}.`);
+
   expect(() => resolveLoadout(withoutModel, { ...context, scopedModels: [] })).toThrow(
     /no fallback\.$/,
   );
+
   expect(() => resolveLoadout({ ...request, model: 'invalid model' }, context)).toThrow(
     'no fallback',
   );
+
   const unavailable = () => resolveLoadout({ ...request, model: 'missing/model' }, context);
   expect(unavailable).toThrow('unavailable: missing/model');
   expect(unavailable).toThrow(request.model);
   vi.stubEnv('TAU_SUBAGENT_MODEL', request.model);
   expect(asPiLoadout(resolveLoadout(withoutModel, context)).model).toBe(request.model);
   mkdirSync(join(directory, 'agents'));
+
   writeFileSync(
     join(directory, 'agents', 'worker.md'),
     profile('Custom task.').replace('role: editing', 'role: editing\nmodel: missing/profile'),
   );
+
   vi.stubEnv('TAU_SUBAGENT_MODEL', 'missing/environment');
   expect(() => resolveLoadout(withoutModel, context)).toThrow('missing/profile');
   expect(asPiLoadout(resolveLoadout(request, context)).model).toBe(request.model);
+
   expect(() => resolveLoadout({ ...request, harness: 'codex' }, context)).toThrow(
     'native-controls',
   );
+
   expect(() => resolveLoadout({ ...request, permissions: 'read-only' }, context)).toThrow(
     'trusted-full-tools',
   );
+
   expect(() => resolveLoadout(request, { ...context, isProjectTrusted: () => false })).toThrow(
     'trusted project',
   );
+
   const otherCwd = () => resolveLoadout({ ...request, cwd: tmpdir() }, context);
   expect(otherCwd).toThrow(context.cwd);
   expect(otherCwd).toThrow('herdr agent prompt');
@@ -115,22 +131,29 @@ it('replays a saved loadout only under the same trust, directories, model, and t
   const saved = asPiLoadout(resolveLoadout(request, context));
 
   expect(validateSavedLoadout(saved, context)).toEqual(saved);
+
   expect(() => validateSavedLoadout({ ...saved, providerFingerprint: 'f' }, context)).toThrow(
     'Invalid saved',
   );
+
   expect(() => validateSavedLoadout(fixtureGenericLoadout(directory), context)).toThrow('Non-Pi');
+
   expect(() => validateSavedLoadout(saved, { ...context, isProjectTrusted: () => false })).toThrow(
     'trusted',
   );
+
   expect(() => validateSavedLoadout({ ...saved, cwd: join(directory, 'wrong') }, context)).toThrow(
     'cwd',
   );
+
   expect(() =>
     validateSavedLoadout({ ...saved, agentDirectory: join(directory, 'wrong') }, context),
   ).toThrow('directory');
+
   expect(() => validateSavedLoadout({ ...saved, model: 'missing/model' }, context)).toThrow(
     'no fallback',
   );
+
   expect(() => validateSavedLoadout({ ...saved, thinking: 'high' }, context)).toThrow('thinking');
 });
 
@@ -139,15 +162,18 @@ it('refuses worker startup without the saved model, cwd, or CC Safety Net and ac
 }) => {
   const { directory, model, request } = await workerFixture(onTestFinished);
   const loadout = { ...fixtureLoadout(directory), model: request.model };
+
   const safetyPath = join(
     dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
     'dist',
     'pi',
     'index.js',
   );
+
   const impostorPath = join(directory, 'cc-safety-net.js');
   writeFileSync(impostorPath, 'export default () => {};\n');
   const setActiveTools = vi.fn<ExtensionAPI['setActiveTools']>();
+
   const pi = {
     getThinkingLevel: () => 'off',
     getCommands: () => [
@@ -160,6 +186,7 @@ it('refuses worker startup without the saved model, cwd, or CC Safety Net and ac
     ],
     setActiveTools,
   } as unknown as Parameters<typeof checkWorkerRuntime>[1];
+
   const worker: Parameters<typeof checkWorkerRuntime>[2] = {
     model,
     cwd: directory,
@@ -178,11 +205,13 @@ it('refuses worker startup without the saved model, cwd, or CC Safety Net and ac
     'subagent_report',
     'subagent_question',
   ]);
+
   expect(startup(loadout, pi, { ...worker, isProjectTrusted: () => false })).toThrow('trust');
   expect(startup(loadout, pi, { ...worker, model: undefined })).toThrow('no fallback');
   expect(startup({ ...loadout, model: 'other/model' }, pi, worker)).toThrow('no fallback');
   expect(startup({ ...loadout, thinking: 'high' }, pi, worker)).toThrow('no fallback');
   expect(startup({ ...loadout, cwd: join(directory, 'wrong') }, pi, worker)).toThrow('cwd');
+
   expect(
     startup(
       loadout,
@@ -196,6 +225,7 @@ it('refuses worker startup without the saved model, cwd, or CC Safety Net and ac
       worker,
     ),
   ).toThrow('CC Safety Net');
+
   expect(setActiveTools).toHaveBeenCalledOnce();
 });
 
@@ -205,6 +235,7 @@ it('defaults bundled roles to medium effort without model or effort settings in 
     const content = readFileSync(source, 'utf8');
 
     expect(content).not.toMatch(/^(?:model|thinking|effort):/m);
+
     expect(parseProfile(content, name, source.pathname)).toMatchObject({
       name,
       model: undefined,
@@ -224,6 +255,7 @@ it('accepts blank and comment frontmatter lines without relaxing selected profil
     role: 'editing',
     thinking: 'off',
   });
+
   expect(() => parseProfile('---\nrole: editing\nname:\n---\nTask', 'worker', 'fixture')).toThrow(
     'Malformed profile setting',
   );
@@ -254,9 +286,11 @@ it('selects a valid named winner using the strict parser whitespace syntax', ({
   onTestFinished,
 }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-profile-whitespace-'));
+
   onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });
+
   const project = join(directory, '.pi', 'agents');
   mkdirSync(project, { recursive: true });
   const source = join(project, 'custom.md');
@@ -264,6 +298,7 @@ it('selects a valid named winner using the strict parser whitespace syntax', ({
   writeFileSync(source, content);
 
   expect(parseProfile(content, 'custom', source).name).toBe('worker');
+
   expect(resolveProfile(directory, directory, true, 'worker')).toMatchObject({
     source,
     name: 'worker',
@@ -275,14 +310,18 @@ it('rejects an invalid named winner using the strict parser whitespace syntax', 
   onTestFinished,
 }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-profile-whitespace-'));
+
   onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });
+
   const project = join(directory, '.pi', 'agents');
   mkdirSync(project, { recursive: true });
+
   const content = profile('Invalid winning instructions.')
     .replace('name: worker', 'name:\rworker')
     .replace('thinking: off', 'thinking: invalid');
+
   writeFileSync(join(project, 'custom.md'), content);
 
   expect(() => resolveProfile(directory, directory, true, 'worker')).toThrow(
@@ -294,9 +333,11 @@ it('validates only the requested winning profile and rejects malformed overrides
   onTestFinished,
 }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-profile-selection-'));
+
   onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });
+
   const user = join(directory, 'agents');
   const project = join(directory, '.pi', 'agents');
   mkdirSync(user);
@@ -338,9 +379,11 @@ it('validates only the requested winning profile and rejects malformed overrides
     join(project, 'worker.md'),
     profile('Renamed instructions.').replace('name: worker', 'name: custom'),
   );
+
   expect(resolveProfile(directory, directory, true, 'custom')?.instructions).toBe(
     'Renamed instructions.',
   );
+
   expect(selected).toThrow('Profile requires');
   expect(resolveProfile(directory, directory, true, 'missing')).toBeUndefined();
 });
@@ -349,9 +392,11 @@ it('resolves profile precedence and refuses discarded isolation and transcript s
   onTestFinished,
 }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-profiles-'));
+
   onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });
+
   mkdirSync(join(directory, 'agents'));
   mkdirSync(join(directory, '.pi', 'agents'), { recursive: true });
   writeFileSync(join(directory, 'agents', 'worker.md'), profile('User instructions.'));
@@ -360,12 +405,15 @@ it('resolves profile precedence and refuses discarded isolation and transcript s
   expect(resolveProfile(directory, directory, true, 'worker')?.instructions).toBe(
     'Project instructions.',
   );
+
   expect(resolveProfile(directory, directory, false, 'worker')?.instructions).toBe(
     'User instructions.',
   );
+
   expect(() =>
     parseProfile('---\nrole: editing\nsession-mode: fork\n---\nTask', 'worker', 'fixture'),
   ).toThrow('lineage-only');
+
   expect(() =>
     parseProfile('---\nrole: editing\ntools: read\n---\nTask', 'worker', 'fixture'),
   ).toThrow('Unsupported');

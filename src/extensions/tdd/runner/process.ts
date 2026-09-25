@@ -6,6 +6,26 @@ import { StringDecoder } from 'node:string_decoder';
 
 import type { SpawnFn, SpawnResult } from './types.js';
 
+interface SpawnState {
+  stdout: string;
+  stderr: string;
+  stdoutBytes: number;
+  stderrBytes: number;
+  timedOut: boolean;
+  settled: boolean;
+  stdoutDecoder: StringDecoder;
+  stderrDecoder: StringDecoder;
+}
+
+interface SettleRequest {
+  state: SpawnState;
+  child: ChildProcess;
+  resolve: (result: SpawnResult) => void;
+  code: number | null;
+  command: string[];
+  clearTimer: () => void;
+}
+
 export const maximumTotalBytes = 32 * 1024;
 // Bound captured process output separately from the shorter diagnostic messages.
 export const maximumStdoutBytes = 8 * 1024 * 1024;
@@ -48,17 +68,6 @@ const appendChunk = (
   return current + decoder.write(chunk.subarray(0, remaining));
 };
 
-interface SpawnState {
-  stdout: string;
-  stderr: string;
-  stdoutBytes: number;
-  stderrBytes: number;
-  timedOut: boolean;
-  settled: boolean;
-  stdoutDecoder: StringDecoder;
-  stderrDecoder: StringDecoder;
-}
-
 const killChild = (child: ChildProcess, useProcessGroup: boolean): void => {
   try {
     if (useProcessGroup && child.pid != null) {
@@ -70,15 +79,6 @@ const killChild = (child: ChildProcess, useProcessGroup: boolean): void => {
     child.kill('SIGKILL');
   }
 };
-
-interface SettleRequest {
-  state: SpawnState;
-  child: ChildProcess;
-  resolve: (result: SpawnResult) => void;
-  code: number | null;
-  command: string[];
-  clearTimer: () => void;
-}
 
 const settleSpawn = (request: SettleRequest): void => {
   const { state, child, resolve, code, command, clearTimer } = request;
@@ -113,6 +113,7 @@ const captureStdout = (state: SpawnState, chunk: Buffer): void => {
     state.stdout,
     maximumStdoutBytes - state.stdoutBytes,
   );
+
   state.stdoutBytes += chunk.length;
 };
 
@@ -123,6 +124,7 @@ const captureStderr = (state: SpawnState, chunk: Buffer): void => {
     state.stderr,
     maximumTotalBytes - state.stderrBytes,
   );
+
   state.stderrBytes += chunk.length;
 };
 
@@ -135,6 +137,7 @@ const captureSpawnError = (state: SpawnState, error: Error): void => {
     state.stderr,
     maximumTotalBytes - state.stderrBytes,
   );
+
   state.stderrBytes += message.length;
 };
 
@@ -145,11 +148,13 @@ export const defaultSpawn: SpawnFn = (command, argumentsList, options) =>
     const useProcessGroup = process.platform !== 'win32';
     const executable = nodeExecutable();
     const commandLine = [executable, command, ...argumentsList];
+
     const child = nodeSpawn(executable, [command, ...argumentsList], {
       cwd: options.cwd,
       detached: useProcessGroup,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+
     const state: SpawnState = {
       stdout: '',
       stderr: '',
@@ -198,6 +203,7 @@ export const defaultSpawn: SpawnFn = (command, argumentsList, options) =>
     timer.unref();
 
     child.on('close', settle);
+
     child.on('error', (error) => {
       captureSpawnError(state, error);
       settle(null);
