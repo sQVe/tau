@@ -7,8 +7,6 @@ import type { AgentToolResult, ExtensionContext } from '@earendil-works/pi-codin
 
 import { errorMessage } from '../../errors/index.js';
 
-type PathStat = { path: string; size: number } | { problem: string; error?: unknown };
-
 export const bulkReadTool = 'bulk_read';
 
 export const isCancellation = (error: unknown): boolean =>
@@ -41,28 +39,30 @@ const resolvePath = (cwd: string, path: string): string =>
   resolve(cwd, path.replace(/^@/, '').replace(/^~(?=\/|$)/, homedir()));
 
 // One refusal names every bad path, so a guessed path does not cost a retry per file.
-const statPaths = async (cwd: string, paths: string[]) => {
-  const results = await Promise.all(
-    paths.map(async (path): Promise<PathStat> => {
-      try {
-        const stats = await stat(resolvePath(cwd, path));
+const statPaths = async (cwd: string, paths: string[], signal: AbortSignal | undefined) => {
+  const files: { path: string; size: number }[] = [];
+  const failures: { problem: string; error?: unknown }[] = [];
 
-        // A FIFO reports size 0 and then blocks the read until a writer appears, past every timeout.
-        return stats.isFile()
-          ? { path, size: stats.size }
-          : { problem: `Not a regular file: ${path}` };
-      } catch (error) {
-        return { problem: errorMessage(error), error };
+  for (const path of paths) {
+    signal?.throwIfAborted();
+
+    try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Serial stats keep the work bounded for long path lists.
+      const stats = await stat(resolvePath(cwd, path));
+
+      // A FIFO reports size 0 and then blocks the read until a writer appears, past every timeout.
+      if (stats.isFile()) {
+        files.push({ path, size: stats.size });
+      } else {
+        failures.push({ problem: `Not a regular file: ${path}` });
       }
-    }),
-  );
-
-  const files = results.flatMap((result) => ('size' in result ? [result] : []));
-  const failures = results.flatMap((result) => ('problem' in result ? [result] : []));
+    } catch (error) {
+      failures.push({ problem: errorMessage(error), error });
+    }
+  }
 
   if (failures.length > 0) {
     const message = failures.map((failure) => failure.problem).join('\n');
-
     const cause = failures.length === 1 ? failures[0]?.error : undefined;
 
     throw inputError(message, cause);
@@ -81,10 +81,8 @@ const loadPayload = async (
   const skipped: string[] = [];
   let remaining = maxCharacters;
 
-  signal?.throwIfAborted();
-
   // The per-file cap is measured before reading, so one oversized file never allocates its content.
-  for (const { path, size } of await statPaths(cwd, paths)) {
+  for (const { path, size } of await statPaths(cwd, paths, signal)) {
     signal?.throwIfAborted();
 
     if (size > 400_000) {
