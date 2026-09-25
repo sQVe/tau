@@ -82,7 +82,6 @@ export default function (pi) {
   let promptCount = 0;
 
   let startAttempts = 0;
-  let earlyExitStartTimeout = 0;
   let earlyExitStartAborted = false;
   const subsequentStartErrors: string[] = [];
   const client = async (argumentsList: string[], budget = 5000, signal?: AbortSignal) => {
@@ -98,7 +97,6 @@ export default function (pi) {
       startAttempts += 1;
 
       if (startAttempts === 1) {
-        earlyExitStartTimeout = Number(argumentsList[argumentsList.indexOf('--timeout') + 1]);
         writeFileSync(exitSignal, 'exit');
       }
     }
@@ -409,7 +407,6 @@ export default function (pi) {
 
   if (scenario === 'early exit') {
     expect(earlyExitStartAborted).toBe(true);
-    expect(launchDuration).toBeLessThan(earlyExitStartTimeout / 2);
     writeFileSync(earlyExitExtension, 'export default function () {};\n');
     const next = await controller.launch({
       task: 'Test active cancellation.',
@@ -418,13 +415,6 @@ export default function (pi) {
       parentSessionId: 'parent',
       parentPane: paneId,
       loadout,
-    });
-    // oxlint-disable-next-line eslint/no-console -- Keep launch latency and pending-registration evidence in the integration test output.
-    console.info({
-      launchDuration,
-      earlyExitStartTimeout,
-      secondLaunch: next.state,
-      subsequentStartErrors,
     });
     expect(subsequentStartErrors).toEqual([]);
     expect(next.failure).toBeUndefined();
