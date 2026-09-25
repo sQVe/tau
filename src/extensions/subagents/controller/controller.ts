@@ -1044,6 +1044,15 @@ export class WorkerController {
     const { task } = handle;
     const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
 
+    // herdr must time out before the client budget kills it, so its structured error survives.
+    const budget = workBudget(handle);
+    const herdrTimeout = budget - Math.min(3000, Math.ceil(budget / 4));
+
+    // herdr 0.9.1 rejects start timeouts of 3000 ms or less.
+    if (herdrTimeout <= 3000) {
+      throw new Error('Too little startup budget is left for herdr agent start.');
+    }
+
     handle.workerNeverStarted = false;
 
     handle.starting = Promise.resolve().then(() =>
@@ -1056,7 +1065,7 @@ export class WorkerController {
         '--pane',
         paneId,
         '--timeout',
-        String(workBudget(handle)),
+        String(herdrTimeout),
         '--',
         ...(generic?.arguments ?? workerArguments(task)),
       ]),
@@ -1109,11 +1118,13 @@ export class WorkerController {
     const { task } = handle;
     const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
 
-    await waitForShell(handle, paneId, call);
-
     await this.prepareStart(handle, paneId, call, generic);
 
     await this.startWithBusyRetry(handle, paneId, name, call).catch((error: unknown) => {
+      if (handle.starting === undefined) {
+        throw error;
+      }
+
       handle.startError = String(error).slice(0, 4000);
 
       if (!generic) {
@@ -1131,13 +1142,26 @@ export class WorkerController {
     call: TerminalCall,
     generic?: GenericLoadout,
   ): Promise<void> {
-    const information = requireObject(
-      result(await call(['pane', 'process-info', '--pane', paneId])).process_info,
-    );
-    const shellPid = integer(information.shell_pid);
+    const shellPid = await waitForShell(handle, paneId, call);
 
-    if (information.pane_id !== paneId || !isBareShell(information)) {
-      throw new Error('Native start requires an unchanged foreground shell.');
+    // A new shell briefly starts prompt-hook children; wait again instead of failing on one.
+    for (;;) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Rechecks share the original startup budget.
+      const response = await call(['pane', 'process-info', '--pane', paneId]);
+      const information = requireObject(result(response).process_info);
+
+      if (information.pane_id !== paneId || integer(information.shell_pid) !== shellPid) {
+        throw new Error('Native start requires an unchanged foreground shell.');
+      }
+
+      if (isBareShell(information)) {
+        break;
+      }
+
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Rechecks share the original startup budget.
+      if ((await waitForShell(handle, paneId, call)) !== shellPid) {
+        throw new Error('Native start requires an unchanged foreground shell.');
+      }
     }
 
     handle.shell = { processId: shellPid, startedAt: await readProcessStart(handle, shellPid) };
@@ -1464,6 +1488,10 @@ export class WorkerController {
   }
 
   private startupFailureDetail(handle: Handle, error: unknown): string {
+    if (handle.starting === undefined) {
+      return `No worker was started; no automatic retry. ${String(error)}`;
+    }
+
     return handle.startError !== undefined && handle.workerNeverStarted
       ? `Native startup was rejected by herdr absence evidence; no retry. ${String(error)}`
       : `Startup delivery is uncertain; no automatic retry. ${String(error)}`;

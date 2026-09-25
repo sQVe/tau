@@ -39,6 +39,14 @@ vi.mock('node:fs', async (importOriginal) => {
 
 const originalRunClient = cancellationModule.runClient;
 
+// herdr 0.9.1 reported this while zsh ran a prompt hook: another foreground group, no process list.
+const promptHookSample = (paneId: string | undefined) =>
+  JSON.stringify({
+    result: {
+      process_info: { pane_id: paneId, shell_pid: 100, foreground_process_group_id: 300 },
+    },
+  });
+
 const captureError = (action: () => unknown): unknown => {
   try {
     action();
@@ -68,7 +76,7 @@ const setup = (
   fake.state.shell = 100;
   vi.spyOn(cancellationModule, 'runClient').mockImplementation(
     (executable, argumentsList, budget, options) => {
-      if (executable === 'ps' && argumentsList[1] === '100') {
+      if (executable === 'ps' && ['100', '101'].includes(argumentsList[1] ?? '')) {
         return Promise.resolve('fixture shell start');
       }
 
@@ -731,6 +739,190 @@ it('requires two matching bare-shell samples after transient startup children', 
   expect(samplesAtStart).toBeGreaterThanOrEqual(5);
 });
 
+it('waits again when a startup child appears after the shell looked stable', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+  const client = fixture.fake.client;
+  let samples = 0;
+  vi.spyOn(fixture.fake, 'client').mockImplementation((argumentsList, budget, signal) => {
+    if (!fixture.fake.state.started && argumentsList[1] === 'process-info') {
+      samples += 1;
+
+      if (samples === 3) {
+        fixture.fake.state.busyShellPolls = 1;
+      }
+
+      if (samples === 4) {
+        return Promise.resolve(
+          JSON.stringify({
+            result: {
+              process_info: {
+                pane_id: argumentsList[3],
+                shell_pid: fixture.fake.state.shell,
+                foreground_process_group_id: fixture.fake.state.shell,
+              },
+            },
+          }),
+        );
+      }
+    }
+
+    return client(argumentsList, budget, signal);
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('starting');
+  expect(fixture.fake.state.started).toBe(true);
+  expect(records.readRecord(launched.directory, 'shell.json')).toMatchObject({ processId: 100 });
+});
+
+it('refuses to start when the shell process changes during startup checks', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished, -1);
+  const client = fixture.fake.client;
+  let samples = 0;
+  vi.spyOn(fixture.fake, 'client').mockImplementation((argumentsList, budget, signal) => {
+    if (!fixture.fake.state.started && argumentsList[1] === 'process-info') {
+      samples += 1;
+
+      if (samples === 3) {
+        fixture.fake.state.shell = 101;
+      }
+    }
+
+    return client(argumentsList, budget, signal);
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.failure).toContain('unchanged foreground shell');
+  expect(launched.state).toBe('stopped');
+  expect(fixture.fake.state.started).toBe(false);
+});
+
+it('gives herdr a valid start timeout inside the client budget', async ({ onTestFinished }) => {
+  let herdrTimeout = 0;
+  let clientBudget = 0;
+  const fixture = setup(onTestFinished, 0, async (argumentsList, budget) => {
+    if (argumentsList[1] === 'start') {
+      herdrTimeout = Number(argumentsList[argumentsList.indexOf('--timeout') + 1]);
+      clientBudget = budget;
+    }
+
+    return '';
+  });
+
+  await fixture.controller.launch(fixture.input);
+
+  // herdr 0.9.1 rejects start timeouts of 3000 ms or less.
+  expect(herdrTimeout).toBeGreaterThan(3000);
+  expect(herdrTimeout).toBeLessThan(clientBudget);
+});
+
+it('retries a pane-busy start when a prompt hook briefly occupies the shell', async ({
+  onTestFinished,
+}) => {
+  let attempts = 0;
+  let samples = 0;
+  const fixture = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
+      attempts += 1;
+
+      if (attempts === 1) {
+        throw Object.assign(new Error('Busy shell'), {
+          stderr: JSON.stringify({ error: { code: 'agent_pane_busy' } }),
+        });
+      }
+    }
+
+    if (argumentsList[1] === 'process-info' && attempts === 1) {
+      samples += 1;
+
+      // Samples 1-3 prove absence and wait for the shell; sample 4 rechecks before the retry.
+      return samples === 4 ? promptHookSample(argumentsList[3]) : '';
+    }
+
+    return '';
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('starting');
+  expect(attempts).toBe(2);
+});
+
+it.each([
+  ['briefly occupies the shell', [2]],
+  // The close check takes 20 samples; only its last one sees the bare shell.
+  [
+    'clears at the last sample of the settling window',
+    Array.from({ length: 19 }, (_, index) => index + 2),
+  ],
+])('closes a never-started pane when a prompt hook %s', async (_case, hookSamples) => {
+  let samples = 0;
+  const fixture = setup(afterTest, 0, async (argumentsList) => {
+    if (argumentsList[1] !== 'process-info') {
+      return '';
+    }
+
+    samples += 1;
+
+    // Sample 1 proves absence after the rejected start; later samples recheck before the close.
+    return hookSamples.includes(samples) ? promptHookSample(argumentsList[3]) : '';
+  });
+  fixture.fake.state.startError = 'Start rejected';
+  fixture.fake.state.rejectStart = true;
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.state).toBe('stopped');
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+});
+
+it.each([
+  ['for several samples after the worker exits', [1, 2, 3]],
+  ['again before the pane closes', [2]],
+])('closes the pane of an exited worker when a prompt hook runs %s', async (_case, hookSamples) => {
+  let exited = false;
+  let samples = 0;
+  const fixture = setup(afterTest, 0, async (argumentsList) => {
+    if (!exited || argumentsList[1] !== 'process-info') {
+      return '';
+    }
+
+    samples += 1;
+
+    return hookSamples.includes(samples) ? promptHookSample(argumentsList[3]) : '';
+  });
+  const launched = await fixture.controller.launch(fixture.input);
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+  });
+  fixture.fake.state.stopped = true;
+  exited = true;
+
+  const status = await fixture.controller.cancel(launched.taskId, 'parent-id');
+
+  expect(status.state).toBe('stopped');
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+});
+
+it('refuses to start a worker when too little budget is left for herdr', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished);
+
+  const launched = await fixture.controller.launch({ ...fixture.input, timeout: 4000 });
+
+  expect(launched).toMatchObject({ outcome: 'failure', state: 'stopped' });
+  expect(launched.failure).toContain('No worker was started');
+  expect(fixture.calls.some((call) => call[1] === 'start')).toBe(false);
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+});
+
 it('retries a structured pane-busy rejection once after proving absence', async ({
   onTestFinished,
 }) => {
@@ -1227,16 +1419,22 @@ it('classifies follow-up readiness deadline expiry as timeout rather than caller
   const validationDeadline = new AbortController();
   vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(validationDeadline.signal);
   // Leave slow runners room to reach start; an early rejection fails here instead of hanging.
-  const pending = fixture.controller.followUp({ ...fixture.input, timeout: 1200 }, fixture.context);
+  vi.spyOn(cancellationModule, 'runClient').mockResolvedValue('fixture shell start');
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  const pending = fixture.controller.followUp(
+    { ...fixture.input, timeout: 10_000 },
+    fixture.context,
+  );
   await Promise.race([started.promise, pending]);
   validationDeadline.abort(new DOMException('Validation deadline expired.', 'TimeoutError'));
+  await vi.advanceTimersByTimeAsync(10_000);
   const status = await pending;
 
   expect(status.outcome).toBe('timeout');
   expect(records.readEvent(status.directory, status.taskId, 'cancelled')).toBeUndefined();
   expect(records.readEvent(status.directory, status.taskId, 'timeout')).toBeDefined();
   const task = readTask(status.directory);
-  expect(task.deadline - task.createdAt).toBe(1200);
+  expect(task.deadline - task.createdAt).toBe(10_000);
 });
 
 it('allows only one competing follow-up and preserves lineage across parents and successive tasks', async () => {
@@ -2604,11 +2802,11 @@ it('includes prior loadout resolution in the original task deadline', async ({
 }) => {
   vi.useFakeTimers();
   const { controller, input } = setup(onTestFinished);
-  const startedAt = { wall: Date.now() - 4000, monotonic: performance.now() - 4000 };
+  const startedAt = { wall: Date.now() - 2000, monotonic: performance.now() - 2000 };
   const launched = await controller.launch({ ...input, startedAt });
 
   expect(launched.deadline).toBe(startedAt.wall + input.timeout);
-  await vi.advanceTimersByTimeAsync(3600);
+  await vi.advanceTimersByTimeAsync(5600);
   await controller.cancel(launched.taskId, 'parent-id');
   expect(controller.status(launched.taskId, 'parent-id').outcome).toBe('timeout');
 });
@@ -2828,13 +3026,14 @@ it('bounds reload cleanup by the remaining cancellation budget', async ({ onTest
 
     return '';
   });
-  const launched = await fixture.controller.launch({ ...fixture.input, timeout: 1200 });
+  // The smallest task that still leaves herdr a valid start timeout has a 1500 ms cleanup budget.
+  const launched = await fixture.controller.launch({ ...fixture.input, timeout: 6000 });
   cleaning = true;
   const began = performance.now();
 
   await fixture.controller.stopAll('reload');
 
-  expect(performance.now() - began).toBeLessThan(1000);
+  expect(performance.now() - began).toBeLessThan(2500);
   const cleanup = readEvent(launched.directory, launched.taskId, 'cleanup');
   expect(cleanup?.stopped).toBe(false);
   expect(cleanup?.detail).toContain('Parent session reload');
