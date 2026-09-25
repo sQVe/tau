@@ -92,7 +92,7 @@ const taskRecovery = (task: Task, directory: string) => {
 // Evidence notices read only handle memory; a corrupt record cannot build this recovery hint.
 export const handleRecovery = (handle: Handle) => {
   const base = {
-    ...(handle.paneId === undefined ? {} : { paneId: handle.paneId }),
+    ...(handle.identity.paneId === undefined ? {} : { paneId: handle.identity.paneId }),
     directory: handle.directory,
   };
 
@@ -100,7 +100,7 @@ export const handleRecovery = (handle: Handle) => {
     return { ...base, nativeSessionFile: requireNativeTask(handle.task).nativeSessionFile };
   }
 
-  const reference = handle.owned?.nativeReference;
+  const reference = handle.identity.owned?.nativeReference;
 
   return { ...base, ...(reference === undefined ? {} : { nativeReference: reference }) };
 };
@@ -223,8 +223,10 @@ export const genericStatus = (
     // Keep the generic harness separate from the native kind name in status.
     harness: 'generic' as const,
     nativeKind: task.loadout.kind,
-    ...(ownedLive && handle?.nativeState !== undefined ? { nativeState: handle.nativeState } : {}),
-    observationIssue: handle?.observationIssue,
+    ...(ownedLive && handle?.observation.nativeState !== undefined
+      ? { nativeState: handle.observation.nativeState }
+      : {}),
+    observationIssue: handle?.observation.issue,
     nativeReference: readGenericReference(directory, task.taskId),
     nativeConfiguration: task.loadout,
     requestedModel: task.loadout.requestedModel,
@@ -241,26 +243,26 @@ export const genericStatus = (
 export const recordNativeIssue = (handle: Handle, filename: string, error: unknown): void => {
   const detail = String(error).slice(0, 4000);
 
-  handle.observationIssue = detail;
+  handle.observation.issue = detail;
 
   try {
     if (!existsSync(join(handle.directory, filename))) {
       publish(handle.directory, filename, { taskId: handle.task.taskId, detail });
     }
   } catch (recordError) {
-    handle.recordErrors.push(String(recordError));
+    handle.cleanup.recordErrors.push(String(recordError));
   }
 };
 
 // Absence evidence proves no live process remains; it does not prove the start never ran.
 export const cleanupDetail = (handle: Handle, stopped: boolean): string => {
-  const pane = handle.paneId ?? 'none';
+  const pane = handle.identity.paneId ?? 'none';
 
-  if (handle.startError !== undefined && handle.workerNeverStarted) {
+  if (handle.startup.error !== undefined && handle.startup.neverStarted) {
     return `Native startup was rejected by herdr absence evidence; a worker may have started briefly and exited. Pane ${pane} is left as placed.`;
   }
 
   return stopped
     ? `No worker process was ever started for this task. Pane ${pane} is left as placed.`
-    : `Cleanup unconfirmed. Check pane ${handle.paneId ?? 'unknown'} manually. No automatic retry.`;
+    : `Cleanup unconfirmed. Check pane ${handle.identity.paneId ?? 'unknown'} manually. No automatic retry.`;
 };

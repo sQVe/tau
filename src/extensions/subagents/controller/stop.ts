@@ -33,8 +33,8 @@ const checkShellOwned = async (
   const location = await resolveTerminal(text(worker.terminalId), call);
   const owned = { ...worker, paneId: location.paneId };
 
-  handle.paneId = location.paneId;
-  handle.owned = owned;
+  handle.identity.paneId = location.paneId;
+  handle.identity.owned = owned;
   const seen = { changedShell: false, stopped: false };
 
   const sampleStopped = async () => {
@@ -78,9 +78,9 @@ const closeCheckedShell = async (
 ): Promise<void> => {
   const { handle, call } = request;
   // Catch a terminal move during the awaited shell checks.
-  const location = await resolveTerminal(text(handle.terminalId), call);
+  const location = await resolveTerminal(text(handle.identity.terminalId), call);
 
-  if (location.paneId !== handle.paneId || location.paneId !== expectedPaneId) {
+  if (location.paneId !== handle.identity.paneId || location.paneId !== expectedPaneId) {
     throw new Error('Worker moved after the shell check; pane closure refused.');
   }
 
@@ -120,7 +120,7 @@ export const closeUnstartedPane = async (
   const paneClosed = { confirmed: false };
 
   try {
-    const location = await resolveTerminal(text(handle.terminalId), call);
+    const location = await resolveTerminal(text(handle.identity.terminalId), call);
 
     await placement.close(async () => {
       const absent = await shellUnchanged(handle, call, { remainingBudget, signal });
@@ -139,7 +139,7 @@ export const closeUnstartedPane = async (
   } catch (error) {
     const detail = paneClosed.confirmed
       ? `Worker pane closed; placement cleanup failed: ${String(error)}`
-      : `Pane ${handle.paneId} left open: ${String(error)}`;
+      : `Pane ${handle.identity.paneId} left open: ${String(error)}`;
 
     return { stopped: paneClosed.confirmed, detail };
   }
@@ -151,7 +151,7 @@ export const stopOwnedWorker = async (
   const { handle, call, remainingBudget, signal, placement, client } = request;
   const worker = request.owned;
   let owned = worker;
-  let stopped = handle.workerNeverStarted;
+  let stopped = handle.startup.neverStarted;
   let detail = cleanupDetail(handle, stopped);
   const paneConfirmed = { confirmed: false };
 
@@ -194,8 +194,8 @@ export const stopOwnedWorker = async (
   } catch (error) {
     if (!paneConfirmed.confirmed) {
       detail = stopped
-        ? `${detail} Pane ${handle.paneId} left open: ${String(error)}`
-        : `${String(error)} Check pane ${handle.paneId} manually. Detached descendants are not covered.`;
+        ? `${detail} Pane ${handle.identity.paneId} left open: ${String(error)}`
+        : `${String(error)} Check pane ${handle.identity.paneId} manually. Detached descendants are not covered.`;
     }
   }
 

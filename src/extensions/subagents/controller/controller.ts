@@ -244,11 +244,11 @@ const phaseActivityText = (
 };
 
 const genericActivity = (handle: Handle | undefined): string => {
-  if (handle?.observationIssue != null && handle.observationIssue !== '') {
+  if (handle?.observation.issue != null && handle.observation.issue !== '') {
     return 'herdr observation unavailable';
   }
 
-  return `herdr ${handle?.nativeState ?? 'unavailable'}`;
+  return `herdr ${handle?.observation.nativeState ?? 'unavailable'}`;
 };
 
 const widgetActivity = (
@@ -548,8 +548,8 @@ export class WorkerController {
       handle = this.handles.get(taskId);
       task = handle ? handle.task : readTask(directory);
 
-      if (handle != null && handle.recordErrors.length > 0) {
-        throw new Error(handle.recordErrors.join('; '));
+      if (handle != null && handle.cleanup.recordErrors.length > 0) {
+        throw new Error(handle.cleanup.recordErrors.join('; '));
       }
 
       return {
@@ -585,10 +585,10 @@ export class WorkerController {
     // Status only reports; subagent_cancel stops a worker whose evidence is unreadable.
     const { taskId, directory, handle, task, error } = request;
     const recovery = handle ? handleRecovery(handle) : savedRecovery(task, directory);
-    const running = handle !== undefined && handle.stopping === undefined;
+    const running = handle !== undefined && handle.cleanup.stopping === undefined;
 
     const detail =
-      handle?.cleanupDetail ??
+      handle?.cleanup.detail ??
       (running ? 'The worker may still run; subagent_cancel stops it.' : undefined);
 
     throw new EvidenceUnavailableError({
@@ -597,7 +597,7 @@ export class WorkerController {
       evidenceError: String(error),
       recovery,
       ...(detail === undefined ? {} : { cleanupDetail: detail }),
-      ...(handle?.paneId === undefined ? {} : { paneId: handle.paneId }),
+      ...(handle?.identity.paneId === undefined ? {} : { paneId: handle.identity.paneId }),
       cause: error,
     });
   }
@@ -620,7 +620,7 @@ export class WorkerController {
       throw new Error('Native output requires an active owned generic worker.');
     }
 
-    if (this.closed || handle.stopping) {
+    if (this.closed || handle.cleanup.stopping) {
       throw new Error('Native output requires an active owned generic worker.');
     }
 
@@ -651,13 +651,13 @@ export class WorkerController {
     const remaining = Math.max(task.deadline - Date.now(), task.cancellationBudget);
     const handle = this.createHandle(directory, task, performance.now() + remaining);
 
-    handle.owned = owned;
-    handle.paneId = owned.paneId;
-    handle.terminalId = owned.terminalId;
-    handle.workerNeverStarted = false;
+    handle.identity.owned = owned;
+    handle.identity.paneId = owned.paneId;
+    handle.identity.terminalId = owned.terminalId;
+    handle.startup.neverStarted = false;
 
     if (owned.shellStartedAt != null && owned.shellStartedAt !== '') {
-      handle.shell = { processId: owned.shellPid, startedAt: owned.shellStartedAt };
+      handle.identity.shell = { processId: owned.shellPid, startedAt: owned.shellStartedAt };
     }
 
     return handle;
@@ -684,12 +684,16 @@ export class WorkerController {
   private async resumeSaved(directory: string, task: Task): Promise<void> {
     const handle = this.savedHandle(directory, task);
 
-    if (isGenericLoadout(task.loadout) && !handle.owned?.nativeReference) {
+    if (isGenericLoadout(task.loadout) && !handle.identity.owned?.nativeReference) {
       return;
     }
 
     // ponytail: PID reuse can make an exited worker look present, costing one identity-checked stop attempt.
-    if (remainingWorkBudget(handle) <= 0 && handle.owned && processAbsent(handle.owned.processId)) {
+    if (
+      remainingWorkBudget(handle) <= 0 &&
+      handle.identity.owned &&
+      processAbsent(handle.identity.owned.processId)
+    ) {
       return;
     }
 
@@ -699,7 +703,7 @@ export class WorkerController {
     this.live.add(task.taskId);
 
     try {
-      handle.owned = await inspectWorker(handle, this.herdrCall(handle));
+      handle.identity.owned = await inspectWorker(handle, this.herdrCall(handle));
       this.lifetime.signal.throwIfAborted();
       this.poll(handle);
     } catch {
@@ -747,7 +751,7 @@ export class WorkerController {
       return repeated;
     }
 
-    handle.nativeState = 'unknown';
+    handle.observation.nativeState = 'unknown';
     const worker = await inspectWorker(handle, call);
     const location = await resolveTerminal(worker.terminalId, call);
 
@@ -755,7 +759,7 @@ export class WorkerController {
 
     if (
       location.paneId !== worker.paneId ||
-      !['idle', 'working', 'done'].includes(handle.nativeState)
+      !['idle', 'working', 'done'].includes(handle.observation.nativeState)
     ) {
       throw new Error(
         'Native worker moved, is blocked, or has unknown state. No text or approval sent.',
@@ -796,7 +800,7 @@ export class WorkerController {
     const directory = this.directory(taskId, parentSessionId);
     const handle = this.handles.get(taskId);
 
-    if (!handle || this.closed || handle.stopping) {
+    if (!handle || this.closed || handle.cleanup.stopping) {
       throw new Error('No active owned worker for this reply.');
     }
 
@@ -876,7 +880,7 @@ export class WorkerController {
     let deliveryError: string | undefined;
 
     try {
-      await call(['agent', 'prompt', text(handle.paneId), prompt]);
+      await call(['agent', 'prompt', text(handle.identity.paneId), prompt]);
     } catch (error) {
       deliveryError = errorMessage(error).slice(0, 4000);
     }
@@ -900,8 +904,8 @@ export class WorkerController {
     const live = this.handles.get(taskId);
 
     // A settled stop already released capacity; reserving it again would leak the slot.
-    if (live?.stopping) {
-      await live.stopping;
+    if (live?.cleanup.stopping) {
+      await live.cleanup.stopping;
 
       return this.status(taskId, parentSessionId);
     }
@@ -949,8 +953,8 @@ export class WorkerController {
   }
 
   private noticeStatus(handle: Handle) {
-    if (handle.recordErrors.length) {
-      throw new Error(handle.recordErrors.join('; '));
+    if (handle.cleanup.recordErrors.length) {
+      throw new Error(handle.cleanup.recordErrors.join('; '));
     }
 
     const status = {
@@ -958,8 +962,8 @@ export class WorkerController {
       ...genericStatus(handle.directory, handle.task, handle, !this.closed),
     };
 
-    if (handle.cleanupDetail !== undefined) {
-      status.cleanup = handle.cleanupDetail;
+    if (handle.cleanup.detail !== undefined) {
+      status.cleanup = handle.cleanup.detail;
     }
 
     return status;
@@ -980,7 +984,7 @@ export class WorkerController {
 
       this.notify({ content: modelStatus(status), details: status, question });
     } catch (error) {
-      const evidenceError = [String(error), handle.cleanupDetail]
+      const evidenceError = [String(error), handle.cleanup.detail]
         .filter((value): value is string => value !== undefined && value !== '')
         .join(' ');
 
@@ -1052,8 +1056,8 @@ export class WorkerController {
           : {}),
         visibility: input.visibility ?? 'foreground',
         onCreated: (created) => {
-          handle.paneId = created.paneId;
-          handle.terminalId = created.terminalId;
+          handle.identity.paneId = created.paneId;
+          handle.identity.terminalId = created.terminalId;
           publish(handle.directory, 'pane.json', created);
         },
         cwd: handle.task.loadout.cwd,
@@ -1082,12 +1086,12 @@ export class WorkerController {
       throw new Error('Too little startup budget is left for herdr agent start.');
     }
 
-    handle.workerNeverStarted = false;
+    handle.startup.neverStarted = false;
     const pending = new AbortController();
     const signal = AbortSignal.any([handle.abort.signal, pending.signal]);
     const call = this.herdrCall(handle, signal);
 
-    handle.starting = Promise.resolve().then(() =>
+    handle.startup.starting = Promise.resolve().then(() =>
       call([
         'agent',
         'start',
@@ -1104,7 +1108,7 @@ export class WorkerController {
     );
 
     try {
-      await Promise.race([handle.starting, waitForWorkerExit(handle, call, signal)]);
+      await Promise.race([handle.startup.starting, waitForWorkerExit(handle, call, signal)]);
     } finally {
       pending.abort();
     }
@@ -1127,7 +1131,7 @@ export class WorkerController {
         throw error;
       }
 
-      handle.workerNeverStarted = true;
+      handle.startup.neverStarted = true;
       await waitForShell(handle, paneId, call);
 
       if (!(await verifyRejectedStart(handle, call))) {
@@ -1159,18 +1163,18 @@ export class WorkerController {
     await this.prepareStart(handle, paneId, call, generic);
 
     await this.startWithBusyRetry(handle, paneId, name, call).catch((error: unknown) => {
-      if (handle.starting === undefined) {
+      if (handle.startup.starting === undefined) {
         throw error;
       }
 
-      handle.startError = String(error).slice(0, 4000);
+      handle.startup.error = String(error).slice(0, 4000);
 
       if (!generic) {
         throw error;
       }
 
-      publish(handle.directory, 'nativeStart-error.json', { detail: handle.startError });
-      this.notifySnapshot(handle, { failure: handle.startError });
+      publish(handle.directory, 'nativeStart-error.json', { detail: handle.startup.error });
+      this.notifySnapshot(handle, { failure: handle.startup.error });
     });
   }
 
@@ -1202,20 +1206,23 @@ export class WorkerController {
       }
     }
 
-    handle.shell = { processId: shellPid, startedAt: await readProcessStart(handle, shellPid) };
+    handle.identity.shell = {
+      processId: shellPid,
+      startedAt: await readProcessStart(handle, shellPid),
+    };
 
-    if (!handle.shell.startedAt) {
+    if (!handle.identity.shell.startedAt) {
       throw new Error('Shell start identity is unavailable.');
     }
 
-    publish(handle.directory, 'shell.json', handle.shell);
+    publish(handle.directory, 'shell.json', handle.identity.shell);
 
     if (generic) {
       publish(handle.directory, 'nativeStart-intent.json', {
         taskId: handle.task.taskId,
         kind: generic.kind,
         arguments: generic.arguments,
-        terminalId: handle.terminalId,
+        terminalId: handle.identity.terminalId,
       });
     }
   }
@@ -1247,7 +1254,7 @@ export class WorkerController {
   }
 
   private nativeReady(handle: Handle): boolean {
-    return ['idle', 'done'].includes(handle.nativeState ?? 'unknown');
+    return ['idle', 'done'].includes(handle.observation.nativeState ?? 'unknown');
   }
 
   private async dispatch(handle: Handle, call: TerminalCall): Promise<void> {
@@ -1283,7 +1290,7 @@ export class WorkerController {
   }
 
   private notifyUndelivered(handle: Handle, state: SubmissionState | undefined): void {
-    if (state === undefined || handle.stopping || this.closed) {
+    if (state === undefined || handle.cleanup.stopping || this.closed) {
       return;
     }
 
@@ -1326,7 +1333,7 @@ export class WorkerController {
     };
 
     try {
-      const ownedLocation = await resolveTerminal(text(handle.terminalId), call);
+      const ownedLocation = await resolveTerminal(text(handle.identity.terminalId), call);
 
       await call(['pane', 'rename', ownedLocation.paneId, paneTitle(handle.task)]);
     } catch {
@@ -1486,9 +1493,10 @@ export class WorkerController {
       task,
       abort: new AbortController(),
       expires,
-      workerNeverStarted: true,
-      recordErrors: [],
-      notifiedQuestions: new Set(),
+      identity: {},
+      startup: { neverStarted: true },
+      observation: { notifiedQuestions: new Set() },
+      cleanup: { recordErrors: [] },
     };
   }
 
@@ -1513,10 +1521,10 @@ export class WorkerController {
 
   private async finishStartup(handle: Handle, call: TerminalCall): Promise<void> {
     if (!isPiLoadout(handle.task.loadout)) {
-      if (handle.startError !== undefined && (await verifyRejectedStart(handle, call))) {
-        handle.workerNeverStarted = true;
+      if (handle.startup.error !== undefined && (await verifyRejectedStart(handle, call))) {
+        handle.startup.neverStarted = true;
         throw new Error(
-          `Native startup was rejected by herdr absence evidence. No retry. ${handle.startError}`,
+          `Native startup was rejected by herdr absence evidence. No retry. ${handle.startup.error}`,
         );
       }
 
@@ -1525,8 +1533,8 @@ export class WorkerController {
       return;
     }
 
-    handle.owned = await waitForPiIdentity(handle, call);
-    publish(handle.directory, 'owned.json', handle.owned);
+    handle.identity.owned = await waitForPiIdentity(handle, call);
+    publish(handle.directory, 'owned.json', handle.identity.owned);
     const ready = await waitForWorkerReadiness(handle, call);
     const current = await inspectWorker(handle, call);
 
@@ -1540,17 +1548,17 @@ export class WorkerController {
   }
 
   private startupFailureDetail(handle: Handle, error: unknown): string {
-    if (handle.starting === undefined) {
+    if (handle.startup.starting === undefined) {
       return `No worker was started; no automatic retry. ${String(error)}`;
     }
 
-    return handle.startError !== undefined && handle.workerNeverStarted
+    return handle.startup.error !== undefined && handle.startup.neverStarted
       ? `Native startup was rejected by herdr absence evidence; no retry. ${String(error)}`
       : `Startup delivery is uncertain; no automatic retry. ${String(error)}`;
   }
 
   private poll(handle: Handle): void {
-    if (this.closed || handle.stopping) {
+    if (this.closed || handle.cleanup.stopping) {
       return;
     }
 
@@ -1587,7 +1595,8 @@ export class WorkerController {
         readEvent(handle.directory, handle.task.taskId, 'settled') !== undefined ||
         readEvent(handle.directory, handle.task.taskId, 'startupFailure') !== undefined;
 
-      const absent = handle.owned !== undefined && processAbsent(handle.owned.processId);
+      const absent =
+        handle.identity.owned !== undefined && processAbsent(handle.identity.owned.processId);
 
       if (settled || absent) {
         void this.stop(handle, 'completion');
@@ -1605,14 +1614,14 @@ export class WorkerController {
   private notifyPendingQuestion(handle: Handle): void {
     const question = readPendingQuestion(handle.directory, handle.task.taskId);
 
-    if (question && !handle.notifiedQuestions.has(question.questionId)) {
-      handle.notifiedQuestions.add(question.questionId);
+    if (question && !handle.observation.notifiedQuestions.has(question.questionId)) {
+      handle.observation.notifiedQuestions.add(question.questionId);
       this.notifySnapshot(handle, { question: true });
     }
   }
 
   private async pollGeneric(handle: Handle): Promise<void> {
-    if (this.closed || handle.stopping) {
+    if (this.closed || handle.cleanup.stopping) {
       return;
     }
 
@@ -1620,7 +1629,7 @@ export class WorkerController {
       await this.pollGenericOnce(handle);
     } catch (error) {
       // oxlint-disable-next-line typescript/no-unnecessary-condition -- Awaited calls can stop the handle or controller before this catch runs.
-      if (handle.stopping !== undefined || this.closed) {
+      if (handle.cleanup.stopping !== undefined || this.closed) {
         return;
       }
 
@@ -1640,17 +1649,17 @@ export class WorkerController {
       return;
     }
 
-    if (handle.owned && processAbsent(handle.owned.processId)) {
+    if (handle.identity.owned && processAbsent(handle.identity.owned.processId)) {
       await this.stop(handle, 'completion');
 
       return;
     }
 
     const call = this.herdrCall(handle);
-    const previousState = handle.nativeState;
+    const previousState = handle.observation.nativeState;
 
-    handle.owned = await inspectWorker(handle, call);
-    delete handle.observationIssue;
+    handle.identity.owned = await inspectWorker(handle, call);
+    delete handle.observation.issue;
     this.notifyNativeState(handle, previousState);
 
     await this.dispatch(handle, call);
@@ -1675,20 +1684,20 @@ export class WorkerController {
   }
 
   private notifyNativeState(handle: Handle, previousState: string | undefined): void {
-    const blocked = ['blocked', 'unknown'].includes(handle.nativeState ?? 'unknown');
+    const blocked = ['blocked', 'unknown'].includes(handle.observation.nativeState ?? 'unknown');
 
-    if (handle.nativeState !== previousState && blocked) {
+    if (handle.observation.nativeState !== previousState && blocked) {
       this.notifySnapshot(handle);
     }
   }
 
   private reportNativeObservationIssue(handle: Handle, error: unknown): void {
-    // One notice per unresolved observation episode. A successful inspection deletes observationIssue,
+    // One notice per unresolved observation episode. A successful inspection deletes the issue,
     // so the next genuine failure notifies again while changing diagnostics stay quiet.
-    const firstIssue = handle.observationIssue === undefined;
+    const firstIssue = handle.observation.issue === undefined;
 
     recordNativeIssue(handle, 'nativeObservation-error.json', error);
-    handle.nativeState = 'unknown';
+    handle.observation.nativeState = 'unknown';
 
     if (firstIssue) {
       this.notifySnapshot(handle);
@@ -1700,8 +1709,8 @@ export class WorkerController {
     reason: 'timeout' | 'cancelled' | 'completion' | 'failure',
     failureDetail = 'Worker lifecycle failed; saved evidence may be incomplete. No retry.',
   ): Promise<void> {
-    if (handle.stopping) {
-      return handle.stopping;
+    if (handle.cleanup.stopping) {
+      return handle.cleanup.stopping;
     }
 
     if (handle.timer) {
@@ -1730,26 +1739,26 @@ export class WorkerController {
         );
       }
     } catch (error) {
-      handle.recordErrors.push(String(error));
+      handle.cleanup.recordErrors.push(String(error));
     }
 
     const cleaned = this.cleanup(handle, reason, failureDetail);
 
-    handle.stopping = Promise.allSettled([cleaned])
+    handle.cleanup.stopping = Promise.allSettled([cleaned])
       .then(() => {
         this.live.delete(handle.task.taskId);
 
         // Keep sharing intact until cleanup finishes, including its queued topology change.
         // Unconfirmed cleanup must still stop contributing placement candidates.
-        if (handle.terminalId != null) {
-          this.placement.release(handle.terminalId);
+        if (handle.identity.terminalId != null) {
+          this.placement.release(handle.identity.terminalId);
         }
 
         // Report the cleanup failure only once placement cleanup finishes.
         return cleaned;
       })
       .catch((error: unknown) => {
-        handle.recordErrors.push(String(error));
+        handle.cleanup.recordErrors.push(String(error));
 
         if (this.closed) {
           return;
@@ -1758,12 +1767,12 @@ export class WorkerController {
         this.notifySnapshot(handle);
       });
 
-    return handle.stopping;
+    return handle.cleanup.stopping;
   }
 
   private cleanupFailureDetail(handle: Handle, failureDetail: string): string {
-    if (handle.workerNeverStarted && handle.startError !== undefined) {
-      return `Startup was rejected or exited before dispatch; worker absence confirmed. No automatic retry. ${handle.startError}`;
+    if (handle.startup.neverStarted && handle.startup.error !== undefined) {
+      return `Startup was rejected or exited before dispatch; worker absence confirmed. No automatic retry. ${handle.startup.error}`;
     }
 
     return failureDetail;
@@ -1775,30 +1784,30 @@ export class WorkerController {
     budget: InspectionBudget,
     record: (operation: () => void) => void,
   ): Promise<string> {
-    if (handle.workerNeverStarted || handle.owned) {
+    if (handle.startup.neverStarted || handle.identity.owned) {
       return '';
     }
 
     try {
-      if (handle.starting) {
+      if (handle.startup.starting) {
         // The start usually settles first; an unreferenced timer never holds the process open.
         await Promise.race([
-          handle.starting.catch(() => undefined),
+          handle.startup.starting.catch(() => undefined),
           delay(budget.remainingBudget(), undefined, { signal: budget.signal, ref: false }),
         ]);
       }
 
-      handle.workerNeverStarted = await verifyRejectedStart(handle, call, budget);
+      handle.startup.neverStarted = await verifyRejectedStart(handle, call, budget);
 
-      if (!handle.workerNeverStarted) {
+      if (!handle.startup.neverStarted) {
         if (isPiLoadout(handle.task.loadout)) {
-          handle.owned = await waitForPiIdentity(handle, call, budget);
+          handle.identity.owned = await waitForPiIdentity(handle, call, budget);
 
           record(() => {
-            publish(handle.directory, 'owned.json', handle.owned);
+            publish(handle.directory, 'owned.json', handle.identity.owned);
           });
         } else {
-          handle.owned = await inspectWorker(handle, call, budget);
+          handle.identity.owned = await inspectWorker(handle, call, budget);
         }
       }
 
@@ -1806,7 +1815,7 @@ export class WorkerController {
     } catch (error) {
       // A worker that left its bare shell before herdr reported its session has nothing left to stop.
       if (error instanceof WorkerExitedError) {
-        handle.workerNeverStarted = true;
+        handle.startup.neverStarted = true;
 
         return '';
       }
@@ -1825,7 +1834,7 @@ export class WorkerController {
       try {
         operation();
       } catch (error) {
-        handle.recordErrors.push(String(error));
+        handle.cleanup.recordErrors.push(String(error));
       }
     };
 
@@ -1853,10 +1862,10 @@ export class WorkerController {
       record,
     );
 
-    let stopped = handle.workerNeverStarted;
+    let stopped = handle.startup.neverStarted;
     let detail = cleanupDetail(handle, stopped) + inspectionFailure;
 
-    if (stopped && handle.shell && handle.terminalId != null) {
+    if (stopped && handle.identity.shell && handle.identity.terminalId != null) {
       const closedPane = await closeUnstartedPane({
         handle,
         call,
@@ -1866,14 +1875,14 @@ export class WorkerController {
       });
 
       stopped = closedPane.stopped;
-      handle.workerNeverStarted = stopped;
+      handle.startup.neverStarted = stopped;
       detail = closedPane.detail;
     }
 
-    if (handle.owned) {
+    if (handle.identity.owned) {
       const stoppedWorker = await stopOwnedWorker({
         handle,
-        owned: handle.owned,
+        owned: handle.identity.owned,
         call,
         remainingBudget,
         signal,
@@ -1885,13 +1894,13 @@ export class WorkerController {
       detail = stoppedWorker.detail;
     }
 
-    if (handle.shutdownReason) {
-      detail = `Parent session ${handle.shutdownReason}. ${detail}`;
+    if (handle.cleanup.shutdownReason) {
+      detail = `Parent session ${handle.cleanup.shutdownReason}. ${detail}`;
     }
 
     const failure = this.cleanupFailureDetail(handle, failureDetail);
 
-    handle.cleanupDetail = reason === 'failure' ? `${detail} ${failure}` : detail;
+    handle.cleanup.detail = reason === 'failure' ? `${detail} ${failure}` : detail;
     this.recordCleanupEvents({ handle, reason, failureDetail: failure, detail, stopped, record });
 
     this.notifyCleanup(handle, record);
@@ -1938,7 +1947,7 @@ export class WorkerController {
     this.closed = true;
 
     for (const handle of this.handles.values()) {
-      handle.shutdownReason = reason;
+      handle.cleanup.shutdownReason = reason;
     }
 
     await Promise.allSettled(
@@ -1961,7 +1970,7 @@ export class WorkerController {
       handle.removeLaunchAbort?.();
       handle.abort.abort();
 
-      if (handle.stopping) {
+      if (handle.cleanup.stopping) {
         continue;
       }
 
@@ -1974,7 +1983,7 @@ export class WorkerController {
           'Parent controller closed. Replies are no longer possible.',
         );
       } catch (error) {
-        handle.recordErrors.push(String(error));
+        handle.cleanup.recordErrors.push(String(error));
       }
     }
   }

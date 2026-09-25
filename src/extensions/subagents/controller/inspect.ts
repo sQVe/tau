@@ -194,7 +194,7 @@ const checkGenericAgent = async (
   expected: { kind: string; paneId: string; shellPid: number; processId: number },
   cleanup?: InspectionBudget,
 ) => {
-  const expectedShell = handle.shell;
+  const expectedShell = handle.identity.shell;
 
   const wrongAgent =
     agent.pane_id !== expected.paneId ||
@@ -216,7 +216,8 @@ const checkGenericAgent = async (
   const reference = opaqueAgentReference(agent);
 
   const savedReference =
-    handle.owned?.nativeReference ?? readGenericReference(handle.directory, handle.task.taskId);
+    handle.identity.owned?.nativeReference ??
+    readGenericReference(handle.directory, handle.task.taskId);
 
   if (savedReference && !isDeepStrictEqual(savedReference, reference)) {
     throw new Error('Opaque native reference changed.');
@@ -231,18 +232,18 @@ export const shellUnchanged = async (
   call: (argumentsList: string[]) => Promise<string>,
   cleanup?: InspectionBudget,
 ): Promise<boolean> => {
-  const shell = handle.shell;
+  const shell = handle.identity.shell;
 
-  if (!shell || handle.terminalId == null) {
+  if (!shell || handle.identity.terminalId == null) {
     return false;
   }
 
   const seen = { changedPane: false, bare: false };
 
   await settledShell(async () => {
-    const location = await resolveTerminal(text(handle.terminalId), call);
+    const location = await resolveTerminal(text(handle.identity.terminalId), call);
 
-    handle.paneId = location.paneId;
+    handle.identity.paneId = location.paneId;
 
     const information = requireObject(
       result(await call(['pane', 'process-info', '--pane', location.paneId])).process_info,
@@ -273,7 +274,7 @@ export const verifyRejectedStart = async (
   }
 
   try {
-    if (Object.keys(await readAgent(call, text(handle.paneId), true)).length > 0) {
+    if (Object.keys(await readAgent(call, text(handle.identity.paneId), true)).length > 0) {
       return false;
     }
   } catch (error) {
@@ -355,11 +356,13 @@ const buildOwnedWorker = (
     ...(generic
       ? {
           agentKind: generic.kind,
-          shellStartedAt: text(handle.shell?.startedAt),
+          shellStartedAt: text(handle.identity.shell?.startedAt),
         }
       : { token: text(handle.task.nativeSessionFile) }),
     startedAt: identity.startedAt,
   };
+
+const unrecordedProgress = () => ({ identity: {}, observation: {} });
 
 // Verifies the worker without changing the handle or saving records. Progress receives the pane and
 // first observation as they are established, so a later failed check still leaves them behind.
@@ -367,25 +370,33 @@ export const observeWorker = async (
   handle: Handle,
   call: (argumentsList: string[]) => Promise<string>,
   cleanup?: InspectionBudget,
-  progress: Pick<Handle, 'paneId' | 'workerObserved'> = {},
+  progress: {
+    identity: Pick<Handle['identity'], 'paneId'>;
+    observation: Pick<Handle['observation'], 'workerObserved'>;
+  } = unrecordedProgress(),
 ): Promise<{ worker: OwnedWorker; nativeState: NativeAgentState }> => {
   const generic = isGenericLoadout(handle.task.loadout) ? handle.task.loadout : undefined;
-  const location = await resolveTerminal(text(handle.terminalId), call);
+  const location = await resolveTerminal(text(handle.identity.terminalId), call);
   const paneId = location.paneId;
 
-  progress.paneId = paneId;
+  progress.identity.paneId = paneId;
 
   const information = requireObject(
     result(await call(['pane', 'process-info', '--pane', paneId])).process_info,
   );
 
-  const previous = handle.owned ? { ...handle.owned, paneId } : undefined;
+  const previous = handle.identity.owned ? { ...handle.identity.owned, paneId } : undefined;
   // Ownership is unestablished until a started process reports the expected session to herdr.
   const starting = Boolean(generic) && !previous;
 
-  checkForeground(information, paneId, previous, starting && handle.workerObserved !== true);
+  checkForeground(
+    information,
+    paneId,
+    previous,
+    starting && handle.observation.workerObserved !== true,
+  );
 
-  progress.workerObserved = true;
+  progress.observation.workerObserved = true;
 
   const agent = await readAgent(call, paneId, starting);
   const processId = integer(information.foreground_process_group_id);
@@ -430,7 +441,7 @@ export const inspectWorker = async (
 
   if (isGenericLoadout(handle.task.loadout)) {
     saveGenericOwnership(handle, worker);
-    handle.nativeState = nativeState;
+    handle.observation.nativeState = nativeState;
   }
 
   return worker;
