@@ -77,6 +77,7 @@ const closeCheckedShell = async (
   paneConfirmed: { confirmed: boolean },
 ): Promise<void> => {
   const { handle, call } = request;
+  // Catch a terminal move during the awaited shell checks.
   const location = await resolveTerminal(text(handle.terminalId), call);
 
   if (location.paneId !== handle.paneId || location.paneId !== expectedPaneId) {

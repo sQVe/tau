@@ -36,6 +36,8 @@ interface TabSearch {
   onCreated: PlacementInput['onCreated'];
 }
 
+type PaneLayout = Record<string, unknown> & { panes: unknown[] };
+
 interface Rectangle {
   width: number;
   height: number;
@@ -83,7 +85,9 @@ export const splitDirection = (bounds: Rectangle, alone = false): 'right' | 'dow
   return down ? 'down' : undefined;
 };
 
-const layoutShape = (layout: Record<string, unknown>): string => {
+const readLayout = async (paneId: string, call: TerminalCall): Promise<PaneLayout> => {
+  const layout = requireObject(result(await call(['pane', 'layout', '--pane', paneId])).layout);
+
   if (typeof layout.zoomed !== 'boolean') {
     throw new TypeError('Missing herdr zoom state.');
   }
@@ -92,6 +96,10 @@ const layoutShape = (layout: Record<string, unknown>): string => {
     throw new TypeError('Missing herdr layout panes.');
   }
 
+  return { ...layout, panes: layout.panes };
+};
+
+const layoutShape = (layout: PaneLayout): string => {
   return JSON.stringify({
     workspace: layout.workspace_id,
     tab: layout.tab_id,
@@ -107,7 +115,7 @@ const layoutShape = (layout: Record<string, unknown>): string => {
 };
 
 const splitCandidate = (
-  layout: Record<string, unknown>,
+  layout: PaneLayout,
   eligible: TerminalLocation[],
   workspaceId: string,
   tabId: string,
@@ -115,10 +123,6 @@ const splitCandidate = (
 ) => {
   if (layout.tab_id !== tabId || layout.workspace_id !== workspaceId) {
     throw new Error('Placement target moved; no layout changes.');
-  }
-
-  if (!Array.isArray(layout.panes)) {
-    throw new TypeError('Missing herdr layout panes.');
   }
 
   if (layout.zoomed === true) {
@@ -263,9 +267,7 @@ export class WorkerPlacement {
       throw new Error('Placement target moved or closed; no layout changes.');
     }
 
-    const latest = requireObject(
-      result(await call(['pane', 'layout', '--pane', target.paneId])).layout,
-    );
+    const latest = await readLayout(target.paneId, call);
 
     if (layoutShape(latest) !== shape) {
       throw new Error('Layout changed during placement; no layout changes.');
@@ -280,9 +282,7 @@ export class WorkerPlacement {
       return undefined;
     }
 
-    const layout = requireObject(
-      result(await call(['pane', 'layout', '--pane', first.paneId])).layout,
-    );
+    const layout = await readLayout(first.paneId, call);
 
     const shape = layoutShape(layout);
     const candidate = splitCandidate(layout, eligible, first.workspaceId, first.tabId, visibility);

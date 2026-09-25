@@ -213,6 +213,40 @@ it.each(['resize', 'insert', 'move', 'close'] as const)(
   },
 );
 
+it.each([1, 2])(
+  'refuses malformed pane inventory on layout read %s without creating a worker',
+  async (invalidRead) => {
+    const { placement, client, input, panes, calls } = fixture(340, 100);
+    let reads = 0;
+
+    const malformedClient = async (argumentsList: string[]) => {
+      const response = await client(argumentsList);
+
+      if (argumentsList[1] !== 'layout') {
+        return response;
+      }
+
+      reads += 1;
+
+      if (reads !== invalidRead) {
+        return response;
+      }
+
+      const parsed = result(response);
+      const layout = requireObject(parsed.layout);
+
+      return JSON.stringify({ result: { ...parsed, layout: { ...layout, panes: null } } });
+    };
+
+    await expect(placement.place(input('foreground'), malformedClient)).rejects.toThrow(
+      'Missing herdr layout panes.',
+    );
+
+    expect(panes).toHaveLength(1);
+    expect(calls.some((call) => ['split', 'create'].includes(call[1]!))).toBe(false);
+  },
+);
+
 it('does not reclaim a background tab after an unrelated pane joins it', async () => {
   const { placement, client, input, panes, dimensions } = fixture(340, 100);
   const first = await placement.place(input('background'), client);

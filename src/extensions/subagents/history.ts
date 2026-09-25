@@ -136,18 +136,11 @@ const genericTaskCandidate = (
 const readNativeEvidence = (
   task: Task,
   nativeSessionFile: string,
-  tasks: Map<string, Task>,
+  origin: Task,
   diagnostics: string[],
 ): Candidate['nativeEvidence'] => {
   try {
-    const file = canonical(nativeSessionFile);
-    const origin = tasks.get(file);
-
-    if (!origin) {
-      throw new Error('Saved native session origin is missing.');
-    }
-
-    const header = nativeHeader(file);
+    const header = nativeHeader(canonical(nativeSessionFile));
 
     if (header.id !== origin.nativeSessionId || header.cwd !== origin.loadout.cwd) {
       throw new Error('Saved native session identity does not match its task.');
@@ -185,9 +178,10 @@ const taskCandidate = (
   }
 
   const native = requireNativeTask(task);
+  let origin: Task | undefined;
 
   try {
-    const origin = tasks.get(canonical(native.nativeSessionFile));
+    origin = tasks.get(canonical(native.nativeSessionFile));
 
     if (
       !origin ||
@@ -202,7 +196,7 @@ const taskCandidate = (
     return undefined;
   }
 
-  const nativeEvidence = readNativeEvidence(task, native.nativeSessionFile, tasks, diagnostics);
+  const nativeEvidence = readNativeEvidence(task, native.nativeSessionFile, origin, diagnostics);
 
   const report = readOrDiagnose(
     () => readReport(directory, task.taskId),
