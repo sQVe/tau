@@ -2277,6 +2277,31 @@ it('retains friendly names and avoids retained and live collisions', async ({ on
   recovered.close();
 });
 
+it('names a reviewer launch after its profile', async ({ onTestFinished }) => {
+  vi.spyOn(names, 'nameSuffix').mockReturnValue('aa');
+  const { controller, input, calls } = setup(onTestFinished);
+
+  const status = await controller.launch({
+    ...input,
+    loadout: { ...input.loadout, profile: 'reviewer', role: 'investigation' },
+  });
+
+  expect(readTask(status.directory).name).toBe('reviewer-aa');
+  expect(calls.find((call) => call[1] === 'start')?.[2]).toBe('reviewer-aa');
+});
+
+it('names a custom profile launch after its role', async ({ onTestFinished }) => {
+  vi.spyOn(names, 'nameSuffix').mockReturnValue('aa');
+  const { controller, input } = setup(onTestFinished);
+
+  const status = await controller.launch({
+    ...input,
+    loadout: { ...input.loadout, profile: 'researcher', role: 'investigation' },
+  });
+
+  expect(readTask(status.directory).name).toBe('scout-aa');
+});
+
 it('refuses full-cap native follow-up before publishing an attempt', async () => {
   const fixture = await completed();
 
@@ -2537,7 +2562,7 @@ it('retains the chosen name but never retries a late live collision', async ({
 
   const status = await controller.launch({
     ...input,
-    loadout: { ...input.loadout, role: 'investigation' },
+    loadout: { ...input.loadout, profile: 'scout', role: 'investigation' },
   });
 
   expect(status).toMatchObject({

@@ -29,6 +29,7 @@ import {
   readGenericSubmission,
   readTask,
   readTasks,
+  namePrefix,
   publish,
   validateTask,
   recordEvent,
@@ -483,9 +484,7 @@ const buildWidgetRow = (
   const showPhase = state === 'starting' || state === 'running';
 
   return {
-    name:
-      task.name ??
-      `${task.loadout.role === 'editing' ? 'worker' : 'scout'}-${task.taskId.slice(0, 6)}`,
+    name: task.name ?? `${namePrefix(task.loadout)}-${task.taskId.slice(0, 6)}`,
     ...(task.label === undefined ? {} : { label: task.label }),
     taskId: task.taskId,
     task: task.task,
@@ -1406,7 +1405,7 @@ export class WorkerController {
     const name = allocateName({
       root: this.root,
       parentSessionId: input.parentSessionId,
-      role: input.loadout.role,
+      loadout: input.loadout,
       live: listing.agents,
       suffix: nameSuffix,
     });
@@ -1451,11 +1450,9 @@ export class WorkerController {
   }
 
   private buildTask(input: LaunchInput, plan: LaunchTaskPlan): Task {
-    const namePrefix = input.loadout.role === 'editing' ? 'worker' : 'scout';
-
     return validateTask({
       version: isGenericLoadout(input.loadout) ? 2 : 1,
-      name: `${namePrefix}-00`,
+      name: `${namePrefix(input.loadout)}-00`,
       ...(input.label === undefined ? {} : { label: input.label }),
       taskId: plan.taskId,
       task: input.task,
