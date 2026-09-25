@@ -400,6 +400,91 @@ it('pads loop exits and multiline statements in a form the formatter keeps', asy
   expect(recheck.status).toBe(0);
 }, 60_000);
 
+it('moves types above unrelated values but leaves types derived from a value beside it', async ({
+  onTestFinished,
+}) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-style-types-'));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+  const fixture = join(directory, 'types.ts');
+  await writeFile(join(directory, 'home.ts'), "export const home = '/tau';\n");
+
+  await writeFile(
+    fixture,
+    [
+      "import { home } from './home.ts';",
+      '',
+      'export const root = home.trim();',
+      '',
+      '// Describes one request.',
+      'export interface Request {',
+      '  path: string;',
+      '}',
+      '',
+      'const defaults = { path: root };',
+      '',
+      'export type Defaults = typeof defaults;',
+      '',
+      'const build = (path: string): Request => ({ path });',
+      '',
+      'export type Built = ReturnType<typeof build>;',
+      '',
+      'type Paths = string[];',
+      '',
+      'export const paths: Paths = [build(root).path, defaults.path];',
+      '',
+    ].join('\n'),
+  );
+
+  const check = spawnSync(process.execPath, ['scripts/runStyle.ts', fixture], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+
+  const diagnostics = check.stdout.split('\n').filter((line) => line.includes('type-placement'));
+
+  expect(check.error).toBeUndefined();
+  expect(check.status).toBe(1);
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toContain('/types.ts:6:');
+
+  const fix = spawnSync(process.execPath, ['scripts/runStyle.ts', '--fix', fixture], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+
+  expect(fix.error).toBeUndefined();
+  expect(fix.status).toBe(0);
+
+  expect(await readFile(fixture, 'utf8')).toBe(
+    [
+      "import { home } from './home.ts';",
+      '',
+      '// Describes one request.',
+      'export interface Request {',
+      '  path: string;',
+      '}',
+      '',
+      'type Paths = string[];',
+      '',
+      'export const root = home.trim();',
+      '',
+      'const defaults = { path: root };',
+      '',
+      'export type Defaults = typeof defaults;',
+      '',
+      'const build = (path: string): Request => ({ path });',
+      '',
+      'export type Built = ReturnType<typeof build>;',
+      '',
+      'export const paths: Paths = [build(root).path, defaults.path];',
+      '',
+    ].join('\n'),
+  );
+}, 60_000);
+
 it('keeps size thresholds advisory without weakening other lint checks', async ({
   onTestFinished,
 }) => {

@@ -110,6 +110,7 @@ export default defineConfig({
             'tau/helper-before-use': 'error',
             'tau/max-condition-checks': 'error',
             'tau/no-enoent-literal': 'error',
+            'tau/type-placement': 'error',
             '@stylistic/padding-line-between-statements': paddingRule(
               ...statementPadding,
               ...declarationPadding,
