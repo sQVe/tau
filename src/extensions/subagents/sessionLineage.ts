@@ -8,12 +8,6 @@ import { readTasks } from './records.js';
 import { isGenericLoadout, requireNativeTask } from './types.js';
 import type { Task } from './types.js';
 
-interface SessionHeaderView {
-  id: string;
-  parentSession?: string;
-  cwd?: string;
-}
-
 export const canonical = (path: string): string => {
   if (!isAbsolute(path)) {
     throw new Error('Session lineage requires absolute paths.');
@@ -30,56 +24,18 @@ export const canonical = (path: string): string => {
   }
 };
 
-const headerMatchesTask = (header: SessionHeaderView, task: Task): boolean => {
-  if (header.id !== task.nativeSessionId) {
-    return false;
-  }
-
-  if (header.parentSession == null || header.parentSession === '') {
-    return false;
-  }
-
-  return (
-    canonical(header.parentSession) === canonical(task.parentSession) &&
-    header.cwd === task.loadout.cwd
-  );
-};
-
-export const readNode = (file: string, tasks: Map<string, Task>) => {
-  const task = tasks.get(file);
-  let header;
-  let unavailable = false;
-
+const readNode = (file: string) => {
   try {
-    header = nativeHeader(file);
+    return { file, header: nativeHeader(file) };
   } catch (error) {
-    if (!isMissingFile(error) || !task) {
-      throw new Error(`Session ancestry is unavailable: ${String(error)}`, { cause: error });
-    }
-
-    unavailable = true;
-
-    header = {
-      type: 'session' as const,
-      version: 3 as const,
-      id: requireNativeTask(task).nativeSessionId,
-      cwd: task.loadout.cwd,
-      parentSession: task.parentSession,
-    };
+    throw new Error(`Session ancestry is unavailable: ${String(error)}`, { cause: error });
   }
-
-  if (task && !headerMatchesTask(header, task)) {
-    throw new Error('Saved native session identity or ancestry does not match its task.');
-  }
-
-  return { file, header, unavailable, task };
 };
 
-export const lineage = (file: string, tasks: Map<string, Task>, expectedId?: string) => {
+export const lineage = (file: string, expectedId?: string) => {
   const nodes = [];
   const seen = new Set<string>();
   let next: string | undefined = file;
-  let expected = expectedId;
 
   while (next != null && next !== '') {
     const path = canonical(next);
@@ -89,15 +45,14 @@ export const lineage = (file: string, tasks: Map<string, Task>, expectedId?: str
     }
 
     seen.add(path);
-    const node = readNode(path, tasks);
+    const node = readNode(path);
 
-    if (expected !== undefined && node.header.id !== expected) {
+    if (nodes.length === 0 && expectedId !== undefined && node.header.id !== expectedId) {
       throw new Error('Session lineage identity mismatch.');
     }
 
     nodes.push(node);
     next = node.header.parentSession;
-    expected = node.task?.parentSessionId;
   }
 
   return nodes;

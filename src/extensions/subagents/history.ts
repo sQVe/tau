@@ -1,11 +1,12 @@
 import { dirname, join } from 'node:path';
 
-import { SessionManager, truncateLine } from '@earendil-works/pi-coding-agent';
-import type { SessionInfo } from '@earendil-works/pi-coding-agent';
+import { truncateLine } from '@earendil-works/pi-coding-agent';
 
+import { isMissingFile } from '../../errors/index.js';
 import { readGenericReference } from './generic.js';
+import { nativeHeader } from './native.js';
 import { findSuccessor, readReport } from './records.js';
-import { canonical, historyRegistry, lineage, readNode, sameRoot } from './sessionLineage.js';
+import { canonical, historyRegistry, lineage, sameRoot } from './sessionLineage.js';
 import type { LineageNode } from './sessionLineage.js';
 import { isGenericLoadout, requireNativeTask } from './types.js';
 import type { Report, Task, WorkerState } from './types.js';
@@ -39,7 +40,7 @@ export const authorizeHistoryTask = (
     throw new Error('Follow-up requires an exact saved task ID.');
   }
 
-  const { saved, origins, tasks } = historyRegistry(root);
+  const { saved, origins } = historyRegistry(root);
   const selected = saved.find(({ task }) => task.taskId === taskId);
   const origin = origins.get(taskId);
 
@@ -49,13 +50,11 @@ export const authorizeHistoryTask = (
     );
   }
 
-  const currentRoot = lineage(current.file, tasks, current.id).at(-1);
+  const currentRoot = lineage(current.file, current.id).at(-1);
 
-  const parentRoot = lineage(selected.task.parentSession, tasks, selected.task.parentSessionId).at(
-    -1,
-  );
+  const parentRoot = lineage(selected.task.parentSession, selected.task.parentSessionId).at(-1);
 
-  const nativeRoot = lineage(origin.parentSession, tasks, origin.parentSessionId).at(-1);
+  const nativeRoot = lineage(origin.parentSession, origin.parentSessionId).at(-1);
 
   if (!currentRoot || !sameRoot(parentRoot, currentRoot) || !sameRoot(nativeRoot, currentRoot)) {
     throw new Error('Task is outside the authorized current-root tree.');
@@ -141,8 +140,33 @@ const readNativeEvidence = (
   diagnostics: string[],
 ): Candidate['nativeEvidence'] => {
   try {
-    return readNode(canonical(nativeSessionFile), tasks).unavailable ? 'missing' : 'available';
+    const file = canonical(nativeSessionFile);
+    const origin = tasks.get(file);
+
+    if (!origin) {
+      throw new Error('Saved native session origin is missing.');
+    }
+
+    const header = nativeHeader(file);
+
+    if (header.id !== origin.nativeSessionId || header.cwd !== origin.loadout.cwd) {
+      throw new Error('Saved native session identity does not match its task.');
+    }
+
+    if (header.parentSession == null || header.parentSession === '') {
+      throw new Error('Saved native session parent is missing.');
+    }
+
+    if (canonical(header.parentSession) !== canonical(origin.parentSession)) {
+      throw new Error('Saved native session ancestry does not match its task.');
+    }
+
+    return 'available';
   } catch (error) {
+    if (isMissingFile(error)) {
+      return 'missing';
+    }
+
     diagnostics.push(`Task ${task.taskId}: ${String(error)}`);
 
     return 'invalid';
@@ -224,9 +248,9 @@ const ownsAncestorSession = (task: Task, ancestorFiles: Set<string>): boolean =>
   return ancestorFiles.has(canonical(requireNativeTask(task).nativeSessionFile));
 };
 
-const createScopeTest = (origin: LineageNode, tasks: Map<string, Task>): InScope => {
+const createScopeTest = (origin: LineageNode): InScope => {
   return (file: string, id?: string) => {
-    const chain = lineage(file, tasks, id);
+    const chain = lineage(file, id);
     const ancestor = chain.at(-1);
 
     return ancestor?.file === origin.file && ancestor.header.id === origin.header.id;
@@ -268,92 +292,6 @@ const taskCandidates = (
   return candidates;
 };
 
-const sessionDirectories = (
-  current: { sessionDirectory: string },
-  ancestors: LineageNode[],
-  saved: { directory: string; task: Task }[],
-): Set<string> =>
-  new Set([
-    current.sessionDirectory,
-    ...ancestors.map((node) => dirname(node.file)),
-    ...saved.flatMap(({ task }) =>
-      task.nativeSessionFile != null
-        ? [dirname(task.parentSession), dirname(task.nativeSessionFile)]
-        : [dirname(task.parentSession)],
-    ),
-  ]);
-
-const discoverSessions = async (directories: Set<string>): Promise<SessionInfo[]> => {
-  const listed = await Promise.all([
-    SessionManager.listAll(),
-    ...Array.from(directories, (directory) => SessionManager.listAll(directory)),
-  ]);
-
-  return listed.flat();
-};
-
-const seedSessions = (
-  ancestors: LineageNode[],
-): Map<string, Pick<SessionInfo, 'id' | 'name' | 'firstMessage'>> =>
-  new Map(
-    ancestors.map((node) => [
-      node.file,
-      { id: node.header.id, firstMessage: '(Native session header; no discovered description.)' },
-    ]),
-  );
-
-const mergeDiscoveredSessions = (
-  sessions: Map<string, Pick<SessionInfo, 'id' | 'name' | 'firstMessage'>>,
-  discovered: SessionInfo[],
-  diagnostics: string[],
-): void => {
-  for (const session of discovered) {
-    const path = canonical(session.path);
-    const seeded = sessions.get(path);
-
-    if (seeded && seeded.id !== session.id) {
-      diagnostics.push('Discovered metadata disagrees with a validated session identity.');
-
-      continue;
-    }
-
-    sessions.set(path, session);
-  }
-};
-
-const nativeSessionCandidates = (
-  sessions: Map<string, Pick<SessionInfo, 'id' | 'name' | 'firstMessage'>>,
-  tasks: Map<string, Task>,
-  ancestorFiles: Set<string>,
-  inScope: InScope,
-  diagnostics: string[],
-): Candidate[] => {
-  const candidates: Candidate[] = [];
-
-  for (const [path, session] of sessions) {
-    if (tasks.has(path) || ancestorFiles.has(path)) {
-      continue;
-    }
-
-    try {
-      if (inScope(path, session.id)) {
-        candidates.push({
-          sourceFile: path,
-          ...(session.name != null && session.name !== '' ? { name: session.name } : {}),
-          description: session.firstMessage,
-          nativeSessionId: session.id,
-          nativeSessionFile: path,
-          nativeEvidence: 'available',
-        });
-      }
-    } catch {
-      diagnostics.push('Excluded a native session with unverified ancestry.');
-    }
-  }
-
-  return candidates;
-};
-
 const candidateMatches = (candidate: Candidate, needle: string): boolean => {
   if (!needle) {
     return true;
@@ -376,6 +314,7 @@ const matchCandidates = (candidates: Candidate[], needle: string): Candidate[] =
     .filter((candidate) => candidateMatches(candidate, needle))
     .toSorted((left, right) => candidateSortKey(left).localeCompare(candidateSortKey(right)));
 
+/* oxlint-disable typescript/require-await -- Keep the asynchronous history API for callers. */
 export const searchHistory = async (
   root: string,
   current: { file: string; id: string; sessionDirectory: string },
@@ -383,28 +322,16 @@ export const searchHistory = async (
   ownership: Ownership = () => false,
 ) => {
   const { saved, tasks, diagnostics } = historyRegistry(root);
-  const ancestors = lineage(current.file, tasks, current.id);
+  const ancestors = lineage(current.file, current.id);
   const origin = ancestors.at(-1);
 
   if (!origin) {
     throw new Error('Current session ancestry is unavailable.');
   }
 
-  const inScope = createScopeTest(origin, tasks);
-  const sessions = seedSessions(ancestors);
-
-  // ponytail: scan retained metadata per query; add an index only if retained history makes this slow.
-  const discovered = await discoverSessions(sessionDirectories(current, ancestors, saved));
-
-  mergeDiscoveredSessions(sessions, discovered, diagnostics);
-
-  // Ancestors stay seeded above so discovered metadata is still checked, but they are never candidates.
+  const inScope = createScopeTest(origin);
   const ancestorFiles = new Set(ancestors.map((node) => node.file));
-
-  const candidates = [
-    ...taskCandidates(saved, tasks, inScope, ancestorFiles, ownership, diagnostics),
-    ...nativeSessionCandidates(sessions, tasks, ancestorFiles, inScope, diagnostics),
-  ];
+  const candidates = taskCandidates(saved, tasks, inScope, ancestorFiles, ownership, diagnostics);
 
   const needle = query.trim().toLowerCase();
   const matches = matchCandidates(candidates, needle);
@@ -415,6 +342,8 @@ export const searchHistory = async (
     diagnostics,
   };
 };
+
+/* oxlint-enable typescript/require-await */
 
 const preview = (value: string, field: string, truncatedFields: string[], length = 500): string => {
   const result = truncateLine(value, length);
