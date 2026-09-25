@@ -3668,8 +3668,11 @@ it('caps live workers per controller and admits again after confirmed cleanup', 
   const launched = await fixture.controller.launch(fixture.input);
   const recordsBefore = readdirSync(fixture.directory);
   const panesBefore = structuredClone(fixture.fake.layout.panes);
+  const refused = fixture.controller.launch(fixture.input);
 
-  await expect(fixture.controller.launch(fixture.input)).rejects.toThrow('capacity full');
+  await expect(refused).rejects.toThrow('capacity full');
+  await expect(refused).rejects.toThrow(launched.name);
+  await expect(refused).rejects.toThrow(new Date(launched.deadline).toISOString());
 
   expect(readdirSync(fixture.directory)).toEqual(recordsBefore);
   expect(fixture.fake.layout.panes).toEqual(panesBefore);

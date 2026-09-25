@@ -61,8 +61,16 @@ const launchParameters = Type.Object({
   ),
   visibility,
   permissions: StringEnum(['trusted-full-tools', 'native-controls'] as const),
-  timeoutSeconds: Type.Integer({ minimum: 10, maximum: 86_400 }),
+  timeoutSeconds: Type.Optional(
+    Type.Integer({
+      minimum: 10,
+      maximum: 86_400,
+      description: 'Defaults to 1800 for investigation profiles and 3600 for editing profiles.',
+    }),
+  ),
 });
+
+const defaultTimeoutSeconds = { investigation: 1800, editing: 3600 };
 
 const followUpParameters = Type.Object(
   {
@@ -181,13 +189,6 @@ const launchWorker = async (
 ) => {
   signal?.throwIfAborted();
   const startedAt = { wall: Date.now(), monotonic: performance.now() };
-  const timeout = parameters.timeoutSeconds * 1000;
-  const workBudget = timeout - Math.min(5000, Math.floor(timeout / 4));
-
-  const resolutionSignal = AbortSignal.any([
-    signal ?? new AbortController().signal,
-    AbortSignal.timeout(workBudget),
-  ]);
 
   const parentPane = process.env.HERDR_PANE_ID;
   const session = context.sessionManager.getSessionFile();
@@ -199,7 +200,9 @@ const launchWorker = async (
   );
 
   const controller = runtime.getController();
-  const loadout = resolveLoadout(parameters, context, resolutionSignal);
+  const loadout = resolveLoadout(parameters, context, signal);
+
+  const timeout = (parameters.timeoutSeconds ?? defaultTimeoutSeconds[loadout.role]) * 1000;
 
   signal?.throwIfAborted();
 
@@ -383,9 +386,9 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
     name: 'subagent',
     label: 'Launch worker',
     description: [
-      'Launch a herdr worker. Requires task, profile, permissions, timeoutSeconds; cwd must match this session.',
-      'Built-in profiles: scout, worker, reviewer. Pi is the default harness.',
-      'Pi needs trusted-full-tools, CC Safety Net, and an explicit or configured provider/id model.',
+      'Launch a herdr worker. Requires task, profile, permissions; cwd must match this session.',
+      'Built-in profiles: scout, worker, reviewer, each with a default Pi model. Pi is the default harness.',
+      'Pi needs trusted-full-tools and CC Safety Net.',
       'Set harness for a non-Pi kind; Pi workers refuse nativeArguments.',
       'Other harnesses need native-controls and writable cwd/.tau/workers/<taskId>/report.md.',
       'Literal nativeArguments default empty; model requests need native flags. Tau neither verifies native models or controls nor approves dialogs.',

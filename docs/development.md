@@ -95,13 +95,20 @@ default.
 
 ### Workers
 
-Set `TAU_SUBAGENT_MODEL=provider/model-id` to choose the worker model when neither the launch nor
-the profile names one. Without any of the three, worker launch refuses; it never falls back to the
-parent's model.
+The bundled `scout`, `worker`, and `reviewer` profiles default to `claude-bridge/claude-opus-5-5`.
+Set `TAU_SUBAGENT_MODEL=provider/model-id` to replace that default, or to choose the model for a
+user or project profile that names none. A launch `model` overrides both, and a model in a user or
+project profile overrides the setting. Without any model, worker launch refuses; it never falls back
+to the parent's model. See the
+[default decision](adr/0047-default-bundled-worker-profiles-to-opus-5-5.md).
+
+A launch without `timeoutSeconds` gets 30 minutes for investigation profiles and 60 minutes for
+editing profiles.
 
 Set `TAU_SUBAGENT_CAP` to limit how many live workers each parent controller runs at once. It takes
-an integer from 1 to 256 and defaults to 4. Each controller reads the cap once when it starts.
-Workers cannot launch workers; they ask their parent instead.
+an integer from 1 to 256 and defaults to 4. Each controller reads the cap once when it starts. A
+launch at the cap refuses and lists the live workers with their deadlines; retry after a stop
+notice. Workers cannot launch workers; they ask their parent instead.
 
 ### Web provider
 

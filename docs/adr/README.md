@@ -68,3 +68,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0044: Restore gpt-5.6-luna as the delegate default](./0044-restore-gpt-5-6-luna-as-the-delegate-default.md)
 - [0045: Keep worker records per Tau checkout and worktree files in `.tau/`](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md)
 - [0046: Declare types before values, except types derived with `typeof`](./0046-declare-types-before-values.md)
+- [0047: Default bundled worker profiles to Opus 5.5](./0047-default-bundled-worker-profiles-to-opus-5-5.md)

@@ -1,6 +1,7 @@
 ---
 name: reviewer
 role: investigation
+model: claude-bridge/claude-opus-5-5
 ---
 
 Review the assigned change or finding, and do not edit the worktree under review. Read the worker's

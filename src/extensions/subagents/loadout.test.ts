@@ -77,7 +77,14 @@ it('resolves an explicit worker model and names the configured models when none 
     instructions: resolved.instructions,
   });
 
-  const withoutModel = { profile: 'worker', permissions: 'trusted-full-tools' };
+  mkdirSync(join(directory, 'agents'));
+
+  writeFileSync(
+    join(directory, 'agents', 'bare.md'),
+    profile('Bare task.').replace('worker', 'bare'),
+  );
+
+  const withoutModel = { profile: 'bare', permissions: 'trusted-full-tools' };
   const missing = () => resolveLoadout(withoutModel, context);
   expect(missing).toThrow('no fallback');
   expect(missing).toThrow(`Configured models: ${request.model}.`);
@@ -95,7 +102,6 @@ it('resolves an explicit worker model and names the configured models when none 
   expect(unavailable).toThrow(request.model);
   vi.stubEnv('TAU_SUBAGENT_MODEL', request.model);
   expect(asPiLoadout(resolveLoadout(withoutModel, context)).model).toBe(request.model);
-  mkdirSync(join(directory, 'agents'));
 
   writeFileSync(
     join(directory, 'agents', 'worker.md'),
@@ -103,7 +109,11 @@ it('resolves an explicit worker model and names the configured models when none 
   );
 
   vi.stubEnv('TAU_SUBAGENT_MODEL', 'missing/environment');
-  expect(() => resolveLoadout(withoutModel, context)).toThrow('missing/profile');
+
+  expect(() => resolveLoadout({ ...withoutModel, profile: 'worker' }, context)).toThrow(
+    'missing/profile',
+  );
+
   expect(asPiLoadout(resolveLoadout(request, context)).model).toBe(request.model);
 
   expect(() => resolveLoadout({ ...request, harness: 'codex' }, context)).toThrow(
@@ -122,6 +132,44 @@ it('resolves an explicit worker model and names the configured models when none 
   expect(otherCwd).toThrow(context.cwd);
   expect(otherCwd).toThrow('herdr agent prompt');
   expect(() => resolveLoadout({ ...request, profile: 'missing' }, context)).toThrow('not found');
+});
+
+it('defaults bundled profiles to a model that the environment and custom profiles override', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, request } = await workerFixture(onTestFinished);
+  const bundled = fauxProvider({ provider: 'claude-bridge', models: [{ id: 'claude-opus-5-5' }] });
+
+  const runtime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsStore: new InMemoryModelsStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+
+  runtime.registerNativeProvider(bundled.provider);
+  runtime.registerNativeProvider(fauxProvider({ provider: 'tau-worker-fixture' }).provider);
+  const withBundled = { ...context, modelRegistry: new ModelRegistry(runtime) };
+
+  for (const name of ['scout', 'worker', 'reviewer']) {
+    const launch = { profile: name, permissions: 'trusted-full-tools' };
+
+    expect(asPiLoadout(resolveLoadout(launch, withBundled)).model).toBe(
+      'claude-bridge/claude-opus-5-5',
+    );
+  }
+
+  const withoutModel = { profile: 'worker', permissions: 'trusted-full-tools' };
+  vi.stubEnv('TAU_SUBAGENT_MODEL', request.model);
+  expect(asPiLoadout(resolveLoadout(withoutModel, withBundled)).model).toBe(request.model);
+  mkdirSync(join(directory, 'agents'));
+
+  writeFileSync(
+    join(directory, 'agents', 'worker.md'),
+    profile('Custom task.').replace('role: editing', 'role: editing\nmodel: missing/profile'),
+  );
+
+  expect(() => resolveLoadout(withoutModel, withBundled)).toThrow('missing/profile');
 });
 
 it('replays a saved loadout only under the same trust, directories, model, and thinking', async ({
@@ -238,16 +286,15 @@ it('launches the bundled reviewer without editing responsibility', async ({ onTe
   });
 });
 
-it('defaults bundled roles to medium effort without model or effort settings in markdown', () => {
+it('defaults bundled roles to medium effort without effort settings in markdown', () => {
   for (const name of ['scout', 'worker', 'reviewer']) {
     const source = new URL(`./profiles/${name}.md`, import.meta.url);
     const content = readFileSync(source, 'utf8');
 
-    expect(content).not.toMatch(/^(?:model|thinking|effort):/m);
+    expect(content).not.toMatch(/^(?:thinking|effort):/m);
 
     expect(parseProfile(content, name, source.pathname)).toMatchObject({
       name,
-      model: undefined,
       thinking: 'medium',
     });
   }

@@ -1388,8 +1388,14 @@ export class WorkerController {
     }
 
     if (this.live.size >= this.capacity) {
+      const workers = [...this.live].map((id) => {
+        const live = this.handles.get(id)?.task;
+
+        return live ? `${live.name ?? id} until ${new Date(live.deadline).toISOString()}` : id;
+      });
+
       throw new Error(
-        `Worker capacity full (${this.live.size}/${this.capacity}). No queue or retry.`,
+        `Worker capacity full (${this.live.size}/${this.capacity}): ${workers.join(', ')}. No queue. End your turn and retry after a notice reports a worker stopped or cleanupUnconfirmed.`,
       );
     }
 
