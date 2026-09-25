@@ -1,6 +1,9 @@
 import { StringEnum } from '@earendil-works/pi-ai';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
+import { Value } from 'typebox/value';
+
+import { modelReferencePattern } from '../../delegateModel/index.js';
 
 export type WorkerState =
   | 'starting'
@@ -32,6 +35,10 @@ export interface Profile {
   source: string;
 }
 
+export const taskIdSchema = Type.String({ pattern: '^[a-zA-Z0-9-]+$' });
+
+export const isTaskId = (value: string): boolean => Value.Check(taskIdSchema, value);
+
 export const textLimit = 32_000;
 const text = Type.String({ minLength: 1, maxLength: textLimit });
 
@@ -50,7 +57,7 @@ const piLoadoutSchema = Type.Object(
     harness: Type.Literal('pi'),
     profile: text,
     role: Type.Union([Type.Literal('investigation'), Type.Literal('editing')]),
-    model: Type.String({ pattern: '^[^/\\s]+/[^\\s]+$' }),
+    model: Type.String({ pattern: modelReferencePattern }),
     thinking: thinkingSchema,
     cwd: text,
     agentDirectory: text,
@@ -81,12 +88,12 @@ export const genericLoadoutSchema = Type.Object(
 export const loadoutSchema = Type.Union([piLoadoutSchema, genericLoadoutSchema]);
 
 const taskProperties = {
-  taskId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
+  taskId: taskIdSchema,
   name: Type.Optional(
     Type.String({ pattern: '^(worker|scout|reviewer|investigator)-[a-z0-9]{2}$' }),
   ),
   label: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
-  predecessorTaskId: Type.Optional(Type.String({ pattern: '^[a-zA-Z0-9-]+$' })),
+  predecessorTaskId: Type.Optional(taskIdSchema),
   task: text,
   parentSession: text,
   parentSessionId: text,

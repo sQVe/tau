@@ -11,6 +11,7 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { Value } from 'typebox/value';
 
+import { parseModelReference } from '../../delegateModel/index.js';
 import { resolveGenericLoadout } from './genericLoadout.js';
 import type { NativeLaunchInput } from './genericLoadout.js';
 import { bundledProfileDirectory, resolveProfile } from './profiles.js';
@@ -27,12 +28,9 @@ const safetyExtension = (): string =>
     join(dirname(nodeRequire.resolve('cc-safety-net/package.json')), 'dist', 'pi', 'index.js'),
   );
 
-const findModel = (registry: ModelRegistry, model: string) => {
-  const separator = model.indexOf('/');
-
+const findModel = (registry: ModelRegistry, model: { provider: string; id: string }) =>
   // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model IDs, not an array predicate.
-  return registry.find(model.slice(0, separator), model.slice(separator + 1));
-};
+  registry.find(model.provider, model.id);
 
 const configuredModels = (context: ModelContext): string => {
   const models = context.scopedModels.map(({ model }) => `${model.provider}/${model.id}`);
@@ -52,13 +50,15 @@ const resolveModel = (explicit: string | undefined, profile: Profile, context: M
     ? (explicit ?? environment ?? profile.model)
     : (explicit ?? profile.model ?? environment);
 
-  if (model == null || model === '' || !/^[^/\s]+\/[^\s]+$/.test(model)) {
+  const reference = model === undefined ? undefined : parseModelReference(model);
+
+  if (!reference) {
     throw new Error(
       `Set an exact worker model as provider/id; there is no fallback.${configuredModels(context)}`,
     );
   }
 
-  const selectedModel = findModel(context.modelRegistry, model);
+  const selectedModel = findModel(context.modelRegistry, reference);
 
   if (!selectedModel) {
     throw new Error(`Worker model unavailable: ${model}.${configuredModels(context)}`);
@@ -181,7 +181,8 @@ export const validateSavedLoadout = (
   }
 
   requireSavedWorkerDirectory(value, context);
-  const model = findModel(context.modelRegistry, value.model);
+  const reference = parseModelReference(value.model);
+  const model = reference && findModel(context.modelRegistry, reference);
 
   if (!model || clampThinkingLevel(model, value.thinking) !== value.thinking) {
     throw new Error('Saved worker model or thinking cannot be reproduced; no fallback allowed.');

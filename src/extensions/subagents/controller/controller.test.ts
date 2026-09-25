@@ -1822,6 +1822,19 @@ it('reports unreadable successor records and refuses follow-up without writes', 
   expect(fixture.calls).toEqual([['agent', 'list']]);
 });
 
+it('refuses follow-up of a malformed source task ID without writes', async () => {
+  const fixture = await completed();
+  const saved = savedFiles(fixture.directory);
+  fixture.calls.length = 0;
+
+  await expect(
+    fixture.controller.followUp({ ...fixture.input, sourceTaskId: '../escape' }, fixture.context),
+  ).rejects.toThrow('Follow-up requires an exact saved task ID.');
+
+  expect(savedFiles(fixture.directory)).toEqual(saved);
+  expect(fixture.calls).toEqual([]);
+});
+
 it('refuses another follow-up when final absence verification fails', async () => {
   let following = false;
   let absenceChecks = 0;
@@ -4659,6 +4672,31 @@ it('renames the owned worker pane with its name, harness, and known model', asyn
 
   expect(rename?.slice(0, 3)).toEqual(['pane', 'rename', 'worker-1']);
   expect(rename?.[3]).toMatch(/^worker-[a-z0-9]{2} \(pi \/ test\)$/);
+});
+
+it('titles the worker pane with the full model ID after the provider', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'rename') {
+      return JSON.stringify({ result: { pane: {} } });
+    }
+
+    return '';
+  });
+
+  const loadout = { ...input.loadout, model: 'openrouter/meta/llama' };
+  const launched = await controller.launch({ ...input, loadout });
+  const rename = calls.find((call) => call[1] === 'rename');
+
+  expect(rename?.[3]).toMatch(/^worker-[a-z0-9]{2} \(pi \/ meta-llama\)$/);
+
+  expect(workerArguments(readTask(launched.directory)).slice(3, 7)).toEqual([
+    '--provider',
+    'openrouter',
+    '--model',
+    'meta/llama',
+  ]);
 });
 
 it('keeps a worker running when the pane display title write is rejected', async ({

@@ -7,6 +7,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { parseModelReference } from '../../../delegateModel/index.js';
 import { matchesWorker, processAbsent, runClient } from '../cancellation.js';
 import type { OwnedWorker } from '../cancellation.js';
 import { readGenericReference, prepareGenericReport } from '../generic.js';
@@ -46,16 +47,20 @@ export const workerArguments = (task: Task): string[] => {
     throw new Error('Only Pi workers use Pi launch arguments.');
   }
 
-  const separator = task.loadout.model.indexOf('/');
+  const model = parseModelReference(task.loadout.model);
+
+  if (!model) {
+    throw new Error('Pi workers need a provider/id model.');
+  }
 
   return [
     '--approve',
     '--session',
     requireNativeTask(task).nativeSessionFile,
     '--provider',
-    task.loadout.model.slice(0, separator),
+    model.provider,
     '--model',
-    task.loadout.model.slice(separator + 1),
+    model.id,
     '--thinking',
     task.loadout.thinking,
     // Pi loads these command-line extensions before the saved configuration's, so the guard is active before CC Safety Net.

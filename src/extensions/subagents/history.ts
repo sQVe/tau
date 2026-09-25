@@ -8,7 +8,7 @@ import { nativeHeader } from './native.js';
 import { findSuccessor, readReport } from './records.js';
 import { canonical, historyRegistry, lineage, sameRoot } from './sessionLineage.js';
 import type { LineageNode } from './sessionLineage.js';
-import { isGenericLoadout, requireNativeTask } from './types.js';
+import { isGenericLoadout, isTaskId, requireNativeTask } from './types.js';
 import type { Report, Task, WorkerState } from './types.js';
 import { workerState } from './workerState.js';
 
@@ -36,7 +36,7 @@ export const authorizeHistoryTask = (
   current: { file: string; id: string },
   taskId: string,
 ) => {
-  if (!/^[a-zA-Z0-9-]+$/.test(taskId)) {
+  if (!isTaskId(taskId)) {
     throw new Error('Follow-up requires an exact saved task ID.');
   }
 
