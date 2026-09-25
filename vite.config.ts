@@ -391,7 +391,7 @@ export default defineConfig({
         },
       },
       {
-        // Subagents migrates in its own change; its 92 sites would swamp this one.
+        // Subagents is not migrated yet.
         files: ['src/extensions/subagents/**'],
         rules: { 'typescript/strict-boolean-expressions': 'off' },
       },
