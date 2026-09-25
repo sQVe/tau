@@ -61,6 +61,9 @@ const runsGitCommit = ({ words }: ShellCommand) => {
 const runsShell = ({ words }: ShellCommand) =>
   words.some((word) => shellRunnerNames.has(commandName(word)));
 
+// Git runs some quoted arguments as shell code, as in `git rebase -x` and `git submodule foreach`.
+const runsGit = ({ words }: ShellCommand) => words.some((word) => commandName(word) === 'git');
+
 const scriptsOf = (commands: ShellCommand[]) =>
   commands.flatMap(({ words, heredocs }) => [
     ...words.filter((word) => shellSyntaxPattern.test(word)),
@@ -85,7 +88,8 @@ const createsCommit = (source: string, depth = 0): boolean => {
     return true;
   }
 
-  const scripts = commands.some(runsShell) ? scriptsOf(commands) : [];
+  const scriptCommands = commands.some(runsShell) ? commands : commands.filter(runsGit);
+  const scripts = scriptsOf(scriptCommands);
 
   return scripts.some((script) => createsCommit(script, depth + 1));
 };

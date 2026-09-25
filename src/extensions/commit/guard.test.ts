@@ -232,6 +232,8 @@ describe('guardToolCall', () => {
     'bash $(bash)',
     'git -c alias.x=commit x -m y',
     "git -c alias.ci='commit -m y' ci",
+    "git rebase -x 'git commit --amend --no-edit' HEAD~1",
+    "git submodule foreach 'git commit -m y'",
   ])('blocks commit commands the shell executes: %s', (command) => {
     expect(guardToolCall(makeBashEvent(command))).toEqual({
       block: true,
@@ -247,6 +249,7 @@ describe('guardToolCall', () => {
     'gh pr create --title x --body "$(cat <<\'EOF\'\nNever run git commit here.\nEOF\n)"',
     "python3 - <<'EOF'\nsource = source.replace('git commit', 'the commit tool')\nEOF",
     'cat <<EOF > notes.md\nRun git commit -m x later.\nEOF',
+    'git add src/a.ts && gh pr create --title x --body "Use the commit tool, not git commit."',
   ])('allows commands that only mention git commit in data: %s', (command) => {
     expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
   });
