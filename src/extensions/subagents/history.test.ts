@@ -45,7 +45,7 @@ const setup = () => {
   const session = (id: string, parentSession?: string, path = join(sessions, `${id}.jsonl`)) => {
     writeFileSync(
       path,
-      `${JSON.stringify({ type: 'session', version: 3, id, timestamp: new Date(0).toISOString(), cwd: directory, ...(parentSession ? { parentSession } : {}) })}\n`,
+      `${JSON.stringify({ type: 'session', version: 3, id, timestamp: new Date(0).toISOString(), cwd: directory, ...(parentSession != null ? { parentSession } : {}) })}\n`,
     );
 
     return path;
@@ -73,7 +73,7 @@ const setup = () => {
       version: 1,
       taskId: id,
       task: large ? `${'界'.repeat(10000)} needle-tail` : 'Inspect shared source.',
-      ...(name ? { name } : {}),
+      ...(name != null ? { name } : {}),
       parentSession,
       parentSessionId,
       nativeSessionId,
@@ -235,9 +235,9 @@ it('reads history only from the records of the running Tau checkout', async () =
 
   const { candidates } = response.details as { candidates: { taskId?: string }[] };
 
-  expect(candidates.flatMap((candidate) => (candidate.taskId ? [candidate.taskId] : []))).toEqual([
-    'own',
-  ]);
+  expect(
+    candidates.flatMap((candidate) => (candidate.taskId != null ? [candidate.taskId] : [])),
+  ).toEqual(['own']);
 });
 
 it('excludes explicit custom-extension current and root sessions from the production history tool', async () => {
@@ -342,7 +342,7 @@ it('reports corrupt saved reports as diagnostics without hiding other tasks', as
 
   expect(
     history.candidates
-      .flatMap((candidate) => (candidate.taskId ? [candidate.taskId] : []))
+      .flatMap((candidate) => (candidate.taskId != null ? [candidate.taskId] : []))
       .toSorted(),
   ).toEqual(['corrupt-report', 'intact']);
   expect(
@@ -368,7 +368,7 @@ it('scopes history to the validated root and descendants including siblings and 
 
   expect(
     history.candidates
-      .filter((candidate) => candidate.taskId)
+      .filter((candidate) => candidate.taskId != null)
       .map((candidate) => candidate.taskId)
       .toSorted((left, right) => String(left).localeCompare(String(right))),
   ).toEqual(['first', 'nested', 'second']);
@@ -415,7 +415,7 @@ it('excludes the calling task and its parent task from history', async () => {
   };
   const history = await searchHistory(fixture.workers, current);
   const taskIds = history.candidates.flatMap((candidate) =>
-    candidate.taskId ? [candidate.taskId] : [],
+    candidate.taskId != null ? [candidate.taskId] : [],
   );
 
   expect(taskIds).not.toContain('nested-task');

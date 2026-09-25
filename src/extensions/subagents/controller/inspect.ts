@@ -224,7 +224,7 @@ export const shellUnchanged = async (
 ): Promise<boolean> => {
   const shell = handle.shell;
 
-  if (!shell || !handle.terminalId) {
+  if (!shell || handle.terminalId == null) {
     return false;
   }
 
@@ -369,7 +369,7 @@ export const inspectWorker = async (
   // Ownership is unestablished until a started process reports the expected session to herdr.
   const starting = Boolean(generic) && !previous;
 
-  checkForeground(information, paneId, previous, starting && !handle.workerObserved);
+  checkForeground(information, paneId, previous, starting && handle.workerObserved !== true);
 
   handle.workerObserved = true;
 

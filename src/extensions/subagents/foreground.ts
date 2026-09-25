@@ -73,7 +73,8 @@ const branchSplit = (tree: Branch, layout: Record<string, unknown>) => {
       (split) =>
         split.direction === tree.direction &&
         children.every(
-          (child) => child && contains(requireObject(split.rect), requireObject(child.rect)),
+          (child) =>
+            child !== undefined && contains(requireObject(split.rect), requireObject(child.rect)),
         ),
     )
     .toSorted(
@@ -381,7 +382,7 @@ const restoreGroupsAfterClose = async (
 
     const survivor = leaves(tree)[0];
 
-    if (!survivor) {
+    if (survivor == null || survivor === '') {
       return;
     }
 

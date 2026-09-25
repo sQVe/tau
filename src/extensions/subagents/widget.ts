@@ -117,7 +117,7 @@ const stateText = (row: WorkerWidgetRow): string =>
 export const truncateWorkerName = (name: string, width: number): string => {
   const suffix = name.match(/^(?:worker|investigator)-[a-z0-9]{2}$/)?.[0].slice(-3);
 
-  if (!suffix || visibleWidth(name) <= width || width <= visibleWidth(suffix)) {
+  if (suffix == null || visibleWidth(name) <= width || width <= visibleWidth(suffix)) {
     return truncateToWidth(name, width);
   }
 
@@ -146,7 +146,8 @@ export const workerElapsed = (row: WorkerWidgetRow, now: number): string => {
     return '--:--';
   }
 
-  const endedAt = row.state === 'stopped' && row.cleanupConfirmed ? row.stoppedAt : undefined;
+  const endedAt =
+    row.state === 'stopped' && row.cleanupConfirmed === true ? row.stoppedAt : undefined;
 
   if (row.state === 'stopped' && endedAt === undefined) {
     return '--:--';
@@ -231,7 +232,7 @@ export const workerModelLabel = (row: WorkerWidgetRow): string => {
   const parts = row.model.split(' · ');
   const observed = parts.find((part) => part.startsWith('Pi-selected '));
 
-  if (observed) {
+  if (observed != null) {
     return observed.slice('Pi-selected '.length);
   }
 
@@ -241,7 +242,7 @@ export const workerModelLabel = (row: WorkerWidgetRow): string => {
 };
 
 const statusText = (row: WorkerWidgetRow): string => {
-  if (row.state === 'running' && row.activity?.startsWith('herdr ')) {
+  if (row.state === 'running' && row.activity?.startsWith('herdr ') === true) {
     return safeText(row.activity);
   }
 

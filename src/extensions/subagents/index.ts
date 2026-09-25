@@ -137,7 +137,10 @@ const requireHerdrParent = (
   parentSession: string | undefined,
   message: string,
 ): string => {
-  if (!hasHerdrEnvironment() || !parentPane || !parentSession) {
+  const paneMissing = parentPane == null || parentPane === '';
+  const sessionMissing = parentSession == null || parentSession === '';
+
+  if (!hasHerdrEnvironment() || paneMissing || sessionMissing) {
     throw new Error(message);
   }
 
@@ -271,7 +274,7 @@ const searchWorkerHistory = async (
   signal?.throwIfAborted();
   const file = context.sessionManager.getSessionFile();
 
-  if (!file) {
+  if (file == null || file === '') {
     throw new Error('History requires a saved current session.');
   }
 
@@ -302,18 +305,21 @@ const readWorkerStatus = async (
   const active = runtime.getController();
 
   try {
-    const receipt = parameters.questionId
-      ? active.questionReceipt(parameters.taskId, parentSessionId, parameters.questionId)
-      : undefined;
+    const receipt =
+      parameters.questionId != null && parameters.questionId !== ''
+        ? active.questionReceipt(parameters.taskId, parentSessionId, parameters.questionId)
+        : undefined;
     const status = {
       ...active.status(parameters.taskId, parentSessionId),
       questionReceipt: receipt,
-      submissionReceipt: parameters.submissionId
-        ? active.submissionReceipt(parameters.taskId, parentSessionId, parameters.submissionId)
-        : undefined,
-      nativeOutput: parameters.readOutput
-        ? await active.nativeOutput(parameters.taskId, parentSessionId)
-        : undefined,
+      submissionReceipt:
+        parameters.submissionId != null && parameters.submissionId !== ''
+          ? active.submissionReceipt(parameters.taskId, parentSessionId, parameters.submissionId)
+          : undefined,
+      nativeOutput:
+        parameters.readOutput === true
+          ? await active.nativeOutput(parameters.taskId, parentSessionId)
+          : undefined,
     };
 
     return {
@@ -552,7 +558,7 @@ const totalSleepSeconds = (command: string): number => {
 };
 
 export default function subagentsExtension(pi: ExtensionAPI): void {
-  if (process.env.TAU_WORKER_RECORD) {
+  if (process.env.TAU_WORKER_RECORD != null && process.env.TAU_WORKER_RECORD !== '') {
     return;
   }
 

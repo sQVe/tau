@@ -39,7 +39,7 @@ const walkToOrigin = (entry: Entry, byId: Map<string, Entry>): Task => {
   let current = entry;
   const seen = new Set<string>();
 
-  while (current.task.predecessorTaskId) {
+  while (current.task.predecessorTaskId != null) {
     if (seen.has(current.task.taskId) || seen.size >= 1024) {
       throw new Error('Cyclic or excessive continuation chain.');
     }

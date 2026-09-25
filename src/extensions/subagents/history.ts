@@ -100,7 +100,7 @@ const genericTaskCandidate = (
     diagnostics,
   );
 
-  if (!scoped) {
+  if (scoped !== true) {
     return undefined;
   }
 
@@ -119,7 +119,7 @@ const genericTaskCandidate = (
   return {
     sourceFile: join(directory, 'task.json'),
     taskId: task.taskId,
-    ...(task.name ? { name: task.name } : {}),
+    ...(task.name != null ? { name: task.name } : {}),
     description: task.task,
     nativeEvidence: 'opaque',
     ...(state ? { state } : {}),
@@ -183,8 +183,8 @@ const taskCandidate = (
   return {
     sourceFile: join(directory, 'task.json'),
     taskId: task.taskId,
-    ...(task.predecessorTaskId ? { predecessorTaskId: task.predecessorTaskId } : {}),
-    ...(task.name ? { name: task.name } : {}),
+    ...(task.predecessorTaskId != null ? { predecessorTaskId: task.predecessorTaskId } : {}),
+    ...(task.name != null ? { name: task.name } : {}),
     description: task.task,
     nativeSessionId: native.nativeSessionId,
     nativeSessionFile: native.nativeSessionFile,
@@ -271,7 +271,7 @@ const sessionDirectories = (
     current.sessionDirectory,
     ...ancestors.map((node) => dirname(node.file)),
     ...saved.flatMap(({ task }) =>
-      task.nativeSessionFile
+      task.nativeSessionFile != null
         ? [dirname(task.parentSession), dirname(task.nativeSessionFile)]
         : [dirname(task.parentSession)],
     ),
@@ -332,7 +332,7 @@ const nativeSessionCandidates = (
       if (inScope(path, session.id)) {
         candidates.push({
           sourceFile: path,
-          ...(session.name ? { name: session.name } : {}),
+          ...(session.name != null && session.name !== '' ? { name: session.name } : {}),
           description: session.firstMessage,
           nativeSessionId: session.id,
           nativeSessionFile: path,
@@ -358,7 +358,7 @@ const candidateMatches = (candidate: Candidate, needle: string): boolean => {
     candidate.description,
     candidate.nativeSessionId,
     candidate.nativeReference?.value,
-  ].some((value) => value?.toLowerCase().includes(needle));
+  ].some((value) => value?.toLowerCase().includes(needle) === true);
 };
 
 const candidateSortKey = (candidate: Candidate): string =>
@@ -421,7 +421,8 @@ const previewOptionalText = (
   value: string | undefined,
   field: string,
   truncatedFields: string[],
-): Record<string, unknown> => (value ? { [field]: preview(value, field, truncatedFields) } : {});
+): Record<string, unknown> =>
+  value != null && value !== '' ? { [field]: preview(value, field, truncatedFields) } : {};
 
 const candidateNativeReference = (candidate: Candidate, truncatedFields: string[]) => {
   const reference = candidate.nativeReference;

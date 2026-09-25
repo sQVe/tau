@@ -7,8 +7,8 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { readTask } from '../records.js';
 
 const directory = process.env.TAU_WORKER_RECORD;
-const savedTask = directory ? readTask(directory) : undefined;
-const activeCancellation = savedTask?.task.includes('active cancellation');
+const savedTask = directory != null && directory !== '' ? readTask(directory) : undefined;
+const activeCancellation = savedTask?.task.includes('active cancellation') === true;
 const provider = fauxProvider({
   provider: 'tau-worker-fixture',
   api: 'tau-worker-fixture',
@@ -66,7 +66,8 @@ const registerCancellationProvider = (pi: ExtensionAPI): void => {
 };
 
 const registerDefaultProvider = (pi: ExtensionAPI): void => {
-  const asking = directory ? readTask(directory).task.includes('question') : false;
+  const asking =
+    directory != null && directory !== '' ? readTask(directory).task.includes('question') : false;
 
   const responses: Parameters<typeof provider.setResponses>[0] = [];
 
@@ -113,7 +114,7 @@ const registerDefaultProvider = (pi: ExtensionAPI): void => {
 };
 
 export default function controlledProvider(pi: ExtensionAPI) {
-  if (savedTask?.predecessorTaskId) {
+  if (savedTask?.predecessorTaskId != null) {
     registerFollowUpProvider(pi);
 
     return;

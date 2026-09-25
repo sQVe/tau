@@ -349,7 +349,10 @@ export class WorkerPlacement {
   }
 
   private async create(input: PlacementInput, call: TerminalCall): Promise<TerminalLocation> {
-    const paneTarget = input.parentPane ? ['--pane', input.parentPane] : ['--current'];
+    const paneTarget =
+      input.parentPane != null && input.parentPane !== ''
+        ? ['--pane', input.parentPane]
+        : ['--current'];
     const parent = terminalLocation(result(await call(['pane', 'current', ...paneTarget])).pane);
     const locations = await listTerminals(call);
 
