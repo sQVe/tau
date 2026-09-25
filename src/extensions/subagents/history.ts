@@ -10,7 +10,7 @@ import { canonical, historyRegistry, lineage, sameRoot } from './sessionLineage.
 import type { LineageNode } from './sessionLineage.js';
 import { isGenericLoadout, isTaskId, requireNativeTask } from './types.js';
 import type { Report, Task, WorkerState } from './types.js';
-import { workerState } from './workerState.js';
+import { deriveWorkerState, readWorkerFacts } from './workerState.js';
 
 interface Candidate {
   sourceFile: string;
@@ -84,7 +84,7 @@ const candidateState = (
   diagnostics: string[],
 ): WorkerState | undefined => {
   return readOrDiagnose(
-    () => workerState(directory, task, ownership(task.taskId)),
+    () => deriveWorkerState(readWorkerFacts(directory, task.taskId), task, ownership(task.taskId)),
     `Task ${task.taskId} state`,
     diagnostics,
   );

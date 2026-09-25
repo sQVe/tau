@@ -5,15 +5,12 @@ import { Value } from 'typebox/value';
 
 import type { OwnedWorker } from '../cancellation.js';
 import { genericReportPath, readGenericReference } from '../generic.js';
-import { readPendingQuestion, readReply } from '../questionRecords.js';
 import {
   findSuccessor,
   publish,
-  readEvent,
   readGenericSubmission,
   readPane,
   readOptionalRecord,
-  readReport,
   readTask,
   readTasks,
 } from '../records.js';
@@ -25,7 +22,7 @@ import {
   requireNativeTask,
 } from '../types.js';
 import type { Report, Task, TaskEvent } from '../types.js';
-import { workerState } from '../workerState.js';
+import { deriveWorkerState, readWorkerFacts } from '../workerState.js';
 import type { Handle } from './types.js';
 
 export interface EvidenceUnavailableInput {
@@ -159,36 +156,21 @@ const predecessorName = (root: string, task: Task): string | undefined => {
   }
 };
 
-// A pending question keeps its identity; only a saved reply adds the delivery flag.
-const pendingQuestionStatus = (directory: string, taskId: string) => {
-  const question = readPendingQuestion(directory, taskId);
-
-  if (question === undefined) {
-    return undefined;
-  }
-
-  const replySaved = readReply(directory, taskId, question.questionId) !== undefined;
-
-  return replySaved ? { ...question, replySaved: true } : question;
-};
-
 // oxlint-disable-next-line eslint/complexity -- Status fields must reflect one consistent read of the task records.
 export const taskRecordStatus = (directory: string, task: Task, controlled = false) => {
-  const report = readReport(directory, task.taskId);
-  const event = (kind: TaskEvent['kind']) => readEvent(directory, task.taskId, kind);
-  const failure = event('startupFailure');
-  const cleanup = event('cleanup');
-  const settled = event('settled');
-  const state = workerState(directory, task, controlled);
+  const facts = readWorkerFacts(directory, task.taskId);
+  const { events, report } = facts;
+  const failure = events.startupFailure;
+  const cleanup = events.cleanup;
+  const state = deriveWorkerState(facts, task, controlled);
 
   const outcome = taskOutcome(
-    [event('timeout'), event('cancelled'), failure],
+    [events.timeout, events.cancelled, failure],
     report,
-    Boolean(event('settled') ?? cleanup),
+    Boolean(events.settled ?? cleanup),
   );
 
   const needsRecovery = state === 'cleanupUnconfirmed' || state === 'notOwned';
-  const pendingQuestion = pendingQuestionStatus(directory, task.taskId);
   const recovery = needsRecovery ? taskRecovery(task, directory) : undefined;
 
   return {
@@ -202,7 +184,10 @@ export const taskRecordStatus = (directory: string, task: Task, controlled = fal
     successorTaskId: findSuccessor(readTasks(dirname(directory)), task.taskId)?.taskId,
     deadline: task.deadline,
     ...(state === 'stopped'
-      ? { stoppedAt: settled?.at ?? event('timeout')?.at ?? event('cancelled')?.at ?? cleanup?.at }
+      ? {
+          stoppedAt:
+            events.settled?.at ?? events.timeout?.at ?? events.cancelled?.at ?? cleanup?.at,
+        }
       : {}),
     cleanupConfirmed: cleanup?.stopped === true,
     harness: harnessOf(task.loadout),
@@ -211,7 +196,7 @@ export const taskRecordStatus = (directory: string, task: Task, controlled = fal
     usage: nativeUsage(task),
     directory,
     report,
-    pendingQuestion,
+    pendingQuestion: facts.pendingQuestion,
     failure: failure?.detail,
     cleanup: cleanup?.detail,
     ...(recovery ? { recovery } : {}),
