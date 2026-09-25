@@ -41,10 +41,25 @@ describe('worker widget', () => {
     expect(text).not.toContain('left');
   });
 
+  it('keeps the suffix of truncated names saved before investigators were renamed', () => {
+    const rows = [
+      { ...row, name: 'investigator-ab', taskId: 'ab' },
+      { ...row, name: 'investigator-cd', taskId: 'cd' },
+    ];
+
+    const text = stripTerminalSequences(
+      renderWorkerWidget(rows, 28, now, theme as never).join('\n'),
+    );
+
+    expect(text).not.toContain('investigator-ab');
+    expect(text).toContain('…-ab');
+    expect(text).toContain('…-cd');
+  });
+
   it('keeps long names, task labels, models, and status readable when width allows', () => {
     const longRow: WorkerWidgetRow = {
       ...row,
-      name: 'investigator-abcdef',
+      name: 'scout-abcdef',
       label: 'Reading the subagent controller source',
       state: 'running',
       model: 'Pi-selected openai-codex/gpt-5.6-luna · requested openai-codex/gpt-5.6-luna',
@@ -53,7 +68,7 @@ describe('worker widget', () => {
     const lines = renderWorkerWidget([longRow], 160, now, theme as never);
     const text = stripTerminalSequences(lines.join('\n'));
 
-    expect(text).toContain('investigator-abcdef');
+    expect(text).toContain('scout-abcdef');
     expect(text).toContain('Reading the subagent controller source');
     expect(text).toContain('openai-codex/gpt-5.6-luna');
     expect(text).not.toContain('…');
@@ -82,7 +97,7 @@ describe('worker widget', () => {
       { ...row, name: 'worker-k7', label: 'Read config', model: 'Pi-selected gpt-6' },
       {
         ...row,
-        name: 'investigator-p2',
+        name: 'scout-p2',
         label: 'Trace herdr',
         model: 'Pi-selected gpt-6',
       },
@@ -133,7 +148,7 @@ describe('worker widget', () => {
     expect(wide.join('\n')).not.toContain('worker-ge');
 
     const firstPosition = wide.findIndex((line) => line.includes('worker-k7'));
-    const secondPosition = wide.findIndex((line) => line.includes('investigator-p2'));
+    const secondPosition = wide.findIndex((line) => line.includes('scout-p2'));
     const thirdPosition = wide.findIndex((line) => line.includes('worker-c2'));
 
     expect(firstPosition).toBeLessThan(secondPosition);
@@ -159,7 +174,7 @@ describe('worker widget', () => {
         stoppedAt: 90_000,
         issue: 'Parent exited',
       },
-      { ...row, name: 'investigator-cc', taskId: 'active-1' },
+      { ...row, name: 'scout-cc', taskId: 'active-1' },
       { ...row, name: 'worker-dd', taskId: 'recovery', state: 'notOwned' },
     ];
 
@@ -168,7 +183,7 @@ describe('worker widget', () => {
 
     expect(lines[0]).toContain('1 live · 1 status unknown');
     expect(lines.at(-1)).toContain('2 stopped');
-    expect(text).toContain('investigator-cc');
+    expect(text).toContain('scout-cc');
     expect(text).not.toContain('worker-dd');
     expect(text).not.toContain('worker-aa');
     expect(text).not.toContain('worker-bb');

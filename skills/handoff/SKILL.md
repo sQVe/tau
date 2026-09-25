@@ -31,8 +31,8 @@ commit another worktree from your session, even over bash.
 ## Procedure
 
 1. Find the target. Run `herdr agent list` and keep the agents in the target workspace or whose
-   `cwd` is the target worktree. Drop agents named `worker-*` or `investigator-*`: they are Tau
-   subagents working for a parent. One match is the target; otherwise ask the user.
+   `cwd` is the target worktree. Drop agents named `worker-*`, `scout-*`, or `investigator-*`: they
+   are Tau subagents working for a parent. One match is the target; otherwise ask the user.
 2. Write the message to `<your-worktree>/.tau/handoffs/<your-pane>-<timestamp>.md` with the file
    tool. First make sure `.tau/.gitignore` has a `*` line, adding it if needed, so `.tau/` stays out
    of Git. Take your pane from `HERDR_PANE_ID`. Make it self-contained: what to do, the state the

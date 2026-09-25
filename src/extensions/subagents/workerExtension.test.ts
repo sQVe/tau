@@ -52,7 +52,7 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
     monotonicDeadline: monotonicNow() + window,
     loadout: {
       harness: 'pi',
-      profile: role === 'editing' ? 'worker' : 'investigator',
+      profile: role === 'editing' ? 'worker' : 'scout',
       role,
       model: 'faux/test',
       thinking: 'off',
@@ -475,7 +475,7 @@ it('sends the autonomous assignment and handoff contract to a dispatched Pi edit
   await worker.emit('session_shutdown');
 });
 
-it('keeps the editing assignment out of a dispatched Pi investigator prompt', async () => {
+it('keeps the editing assignment out of a dispatched Pi scout prompt', async () => {
   const worker = await waitingWorker('investigation');
   const prompt = worker.sendUserMessage.mock.calls[0]?.[0];
 
