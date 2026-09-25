@@ -61,7 +61,7 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
     await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
     const address = server.address();
 
-    if (!address || typeof address === 'string') {
+    if (address == null || typeof address === 'string') {
       throw new Error('Missing fixture server address');
     }
 

@@ -16,9 +16,9 @@ const stagedFormatterCommand = (pattern: string): string => {
   const staged = (viteConfig as { staged?: Record<string, string | string[]> }).staged;
   const configured = staged?.[pattern];
   const commands = Array.isArray(configured) ? configured : [configured];
-  const formatter = commands.find((command) => command?.includes('fmt'));
+  const formatter = commands.find((command) => command?.includes('fmt') === true);
 
-  if (!formatter) {
+  if (formatter == null) {
     throw new Error(`No staged formatter command configured for ${pattern}.`);
   }
 
