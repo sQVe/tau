@@ -204,6 +204,55 @@ describe('guardToolCall', () => {
       reason: commitGuardReason,
     });
   });
+
+  it.each([
+    'git status; git commit -m x',
+    'git status\ngit commit -m x',
+    'git diff | git commit -F -',
+    'false || git commit -m x',
+    '(cd repo && git commit -m x)',
+    '{ git commit -m x; }',
+    'env GIT_AUTHOR_NAME=x git commit -m x',
+    'sudo -u me /usr/bin/git commit -m x',
+    '2>/dev/null git commit -m x',
+    'git &>/dev/null commit -m x',
+    '"git" "commit" -m x',
+    'echo "$(git commit -m x)"',
+    'echo `git commit -m x`',
+    `echo "\${x:-$(git commit -m x)}"`,
+    'cat <(git commit -m x)',
+    'git $(echo commit) -m x',
+    'git commit -m "$(cat <<\'EOF\'\nfeat: add\nEOF\n)"',
+    'cat <<EOF\n$(git commit -m x)\nEOF',
+    "bash <<'EOF'\ngit commit -m x\nEOF",
+    "echo 'git commit -m x' | sh",
+    "bash -c $'git\\x20commit -m x'",
+    'bash -c "echo \\"\\$(git commit -m x)\\""',
+    "git commit -m 'unterminated",
+    'bash $(bash)',
+    'git -c alias.x=commit x -m y',
+    "git -c alias.ci='commit -m y' ci",
+    "git rebase -x 'git commit --amend --no-edit' HEAD~1",
+    "git submodule foreach 'git commit -m y'",
+  ])('blocks commit commands the shell executes: %s', (command) => {
+    expect(guardToolCall(makeBashEvent(command))).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it.each([
+    'gh pr create --title x --body "Use the commit tool, not git commit."',
+    "echo 'git commit -m x'",
+    'grep -rn "git commit" src',
+    'git status # then git commit',
+    'gh pr create --title x --body "$(cat <<\'EOF\'\nNever run git commit here.\nEOF\n)"',
+    "python3 - <<'EOF'\nsource = source.replace('git commit', 'the commit tool')\nEOF",
+    'cat <<EOF > notes.md\nRun git commit -m x later.\nEOF',
+    'git add src/a.ts && gh pr create --title x --body "Use the commit tool, not git commit."',
+  ])('allows commands that only mention git commit in data: %s', (command) => {
+    expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
+  });
 });
 
 const createFakePi = (executeCommand?: ExtensionAPI['exec']) => {

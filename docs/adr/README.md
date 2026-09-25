@@ -70,3 +70,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0046: Declare types before values, except types derived with `typeof`](./0046-declare-types-before-values.md)
 - [0047: Default bundled worker profiles to Opus 5.5](./0047-default-bundled-worker-profiles-to-opus-5-5.md)
 - [0048: Keep the bare repository root read-only for agents](./0048-keep-the-bare-repository-root-read-only-for-agents.md)
+- [0049: Treat the bash commit guard as guidance](./0049-treat-the-bash-commit-guard-as-guidance.md)
