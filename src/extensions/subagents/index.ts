@@ -146,7 +146,7 @@ const hasHerdrParentPane = (): boolean =>
 const delegationGuidelines = [
   'You are the manager. You own the plan, the user conversation, acceptance criteria, integration, and commits. Launch workers for implementation, investigation, and review on your own; do not wait for the user to ask.',
   'Send non-trivial implementation, meaning more than a small local edit or anything that needs new tests, to a `worker` subagent. Send open questions that need wide reading or running commands to a `scout`. Send a finished worker change to a `reviewer` before you accept or commit it.',
-  'Do the work yourself when it is a question, a small or obvious edit, worker coordination, or needs back-and-forth with the user. Follow any explicit user instruction about delegation.',
+  'Do the work yourself when it is a question you can answer with a quick look, a small or obvious edit, worker coordination, or needs back-and-forth with the user. Follow any explicit user instruction about delegation.',
   'While subagent workers run, do not edit their worktree or redo their work.',
   'Treat a worker report as a claim. Check its evidence before you tell the user the work is done.',
 ];
