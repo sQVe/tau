@@ -309,18 +309,16 @@ const readWorkerStatus = async (
       parameters.questionId != null && parameters.questionId !== ''
         ? active.questionReceipt(parameters.taskId, parentSessionId, parameters.questionId)
         : undefined;
-    const status = {
-      ...active.status(parameters.taskId, parentSessionId),
-      questionReceipt: receipt,
-      submissionReceipt:
-        parameters.submissionId != null && parameters.submissionId !== ''
-          ? active.submissionReceipt(parameters.taskId, parentSessionId, parameters.submissionId)
-          : undefined,
-      nativeOutput:
-        parameters.readOutput === true
-          ? await active.nativeOutput(parameters.taskId, parentSessionId)
-          : undefined,
-    };
+    const current = active.status(parameters.taskId, parentSessionId);
+    const submissionReceipt =
+      parameters.submissionId != null && parameters.submissionId !== ''
+        ? active.submissionReceipt(parameters.taskId, parentSessionId, parameters.submissionId)
+        : undefined;
+    const nativeOutput =
+      parameters.readOutput === true
+        ? await active.nativeOutput(parameters.taskId, parentSessionId)
+        : undefined;
+    const status = { ...current, questionReceipt: receipt, submissionReceipt, nativeOutput };
 
     return {
       content: [{ type: 'text' as const, text: JSON.stringify(modelStatus(status)) }],

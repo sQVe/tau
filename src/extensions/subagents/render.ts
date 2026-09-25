@@ -93,11 +93,9 @@ export const firstLine = (value: string | undefined): string => (value ?? '').sp
 export const callText = (title: string, detail: string | undefined, theme: Theme): Text => {
   const head = theme.fg('toolTitle', theme.bold(title));
 
-  return new Text(
-    detail != null && detail !== '' ? `${head}\n${theme.fg('dim', detail)}` : head,
-    0,
-    0,
-  );
+  const body = detail != null && detail !== '' ? `${head}\n${theme.fg('dim', detail)}` : head;
+
+  return new Text(body, 0, 0);
 };
 
 const historyCollapsedRows = 5;
