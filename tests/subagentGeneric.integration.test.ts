@@ -25,7 +25,7 @@ it.runIf(hasHerdr)(
     );
     const paneId = workspace.match(/"root_pane":\{[^}]*"pane_id":"([^"]+)"/)?.[1];
 
-    if (!paneId) {
+    if (paneId == null) {
       throw new Error(`Missing isolated herdr root pane: ${workspace}`);
     }
 

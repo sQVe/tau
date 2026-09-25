@@ -53,7 +53,7 @@ export const createDiagnosticsDirectory = async (): Promise<string> => {
 const readCandidate = async (directory: string) => {
   const metadata = await metadataIfPresent(directory);
 
-  if (!metadata?.isDirectory()) {
+  if (metadata?.isDirectory() !== true) {
     return undefined;
   }
 

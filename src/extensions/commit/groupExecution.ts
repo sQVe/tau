@@ -98,7 +98,7 @@ const stageAndVerifyRequest = async (run: GroupRun): Promise<boolean> => {
     );
   }
 
-  if (run.signal?.aborted) {
+  if (run.signal?.aborted === true) {
     return false;
   }
 
@@ -131,7 +131,7 @@ const snapshotStagedTree = async (run: GroupRun): Promise<boolean> => {
 
   run.snapshot = { tree, index, head };
 
-  if (run.signal?.aborted) {
+  if (run.signal?.aborted === true) {
     return false;
   }
 
@@ -356,7 +356,7 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
     result: buildCancelledResult(execution.parameters.files, subject, body),
   } as const;
 
-  if (execution.signal?.aborted) {
+  if (execution.signal?.aborted === true) {
     return cancelled;
   }
 

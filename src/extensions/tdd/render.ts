@@ -265,7 +265,7 @@ export const runContext = (behavior: Behavior, observation: Observation): string
     `Saved diagnostics are not reusable verification. Cleanup keeps up to ${maximumRetainedRuns} completed runs for seven days.`,
   );
 
-  if (report.kind !== 'pass' && diagnostics.excerpt) {
+  if (report.kind !== 'pass' && diagnostics.excerpt != null && diagnostics.excerpt !== '') {
     lines.push(`Runner output excerpt (not a test verdict):\n${printable(diagnostics.excerpt)}`);
   }
 

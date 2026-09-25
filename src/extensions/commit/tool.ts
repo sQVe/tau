@@ -142,7 +142,7 @@ const executeCommitTool = async (
     details: { groups },
   });
 
-  if (runtime.signal?.aborted) {
+  if (runtime.signal?.aborted === true) {
     return finish([{ type: 'text', text: 'Commit cancelled' }]);
   }
 

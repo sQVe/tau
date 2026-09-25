@@ -103,6 +103,15 @@ export default defineConfig({
       'typescript/no-base-to-string': 'error',
       'typescript/require-array-sort-compare': 'error',
       'typescript/no-mixed-enums': 'error',
+      'typescript/strict-boolean-expressions': [
+        'error',
+        {
+          allowNullableString: false,
+          allowNullableBoolean: false,
+          allowNullableObject: true,
+          allowNumber: true,
+        },
+      ],
       'unicorn/prefer-top-level-await': 'error',
       'eslint/no-warning-comments': 'error',
       'typescript/unbound-method': 'off',
@@ -380,6 +389,11 @@ export default defineConfig({
             { assertFunctionNames: ['expect', 'runPiWorkerScenario'] },
           ],
         },
+      },
+      {
+        // Subagents migrates in its own change; its 92 sites would swamp this one.
+        files: ['src/extensions/subagents/**'],
+        rules: { 'typescript/strict-boolean-expressions': 'off' },
       },
     ],
   },

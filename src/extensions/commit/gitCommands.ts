@@ -68,7 +68,7 @@ export const validateFileRequests = async (workingDirectory: string, files: stri
         throw error;
       });
 
-      if (status?.isDirectory()) {
+      if (status?.isDirectory() === true) {
         throw new Error(
           `Directory requests are not supported: ${file}. Name each file explicitly.`,
         );

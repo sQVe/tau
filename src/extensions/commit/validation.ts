@@ -88,14 +88,18 @@ export const validatePaths = (files: string[]) => {
 };
 
 export const normalizeBody = (body: string | null) => {
-  if (body?.includes('\0')) {
+  if (body == null || body === '') {
+    return body;
+  }
+
+  if (body.includes('\0')) {
     throw new Error('Invalid body: NUL is not allowed.');
   }
 
-  const normalized = body?.replaceAll(/\r\n?/g, '\n') ?? null;
+  const normalized = body.replaceAll(/\r\n?/g, '\n');
 
-  return normalized && !normalized.endsWith('\n') ? `${normalized}\n` : normalized;
+  return normalized.endsWith('\n') ? normalized : `${normalized}\n`;
 };
 
 export const buildCommitMessage = (subject: string, body: string | null) =>
-  body ? `${subject}\n\n${body}` : `${subject}\n`;
+  body == null || body === '' ? `${subject}\n` : `${subject}\n\n${body}`;

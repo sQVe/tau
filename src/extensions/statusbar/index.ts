@@ -134,7 +134,7 @@ const createFooter = (
               contextPercent: usage?.percent ?? null,
               contextWindow: usage?.contextWindow ?? context.model?.contextWindow ?? 0,
               modelId: context.model?.id ?? 'no-model',
-              thinkingLevel: context.model?.reasoning ? pi.getThinkingLevel() : undefined,
+              thinkingLevel: context.model?.reasoning === true ? pi.getThinkingLevel() : undefined,
             },
             width,
             footerTheme,
