@@ -1,6 +1,6 @@
 # ADR 0003: Stability of externally observable identifiers
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-04-10
 
 ## Context

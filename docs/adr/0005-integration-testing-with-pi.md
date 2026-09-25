@@ -1,6 +1,6 @@
 # ADR 0005: Integration testing against a real Pi session
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-05
 
 ## Context

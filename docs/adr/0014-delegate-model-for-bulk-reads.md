@@ -1,6 +1,7 @@
 # ADR 0014: Delegate model for bulk reads
 
-- Status: Accepted
+- Status: Accepted; the `TAU_BULK_READ_MODEL` setting was replaced by the shared delegate setting in
+  [ADR 0027](./0027-share-one-delegate-model.md)
 - Date: 2026-09-10
 
 ## Context

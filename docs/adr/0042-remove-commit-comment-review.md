@@ -1,6 +1,6 @@
 # ADR 0042: Remove commit comment review
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-24
 - Supersedes: [ADR 0038](./0038-block-commits-only-on-comment-inaccuracies.md) and the review rules
   in [ADR 0026](./0026-let-git-hooks-own-commit-checks.md)

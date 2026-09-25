@@ -1,11 +1,11 @@
 # ADR NNNN: Short title naming the choice
 
-- Status: Proposed
+- Status: Accepted
 - Date: YYYY-MM-DD
 
 <!-- Draft only after identifying a choice, its lasting reason, and a credible alternative.
-Use Accepted only after explicit project owner approval; use Superseded or Rejected when applicable.
-Preserve historical reasoning when superseding a decision and link to its replacement. -->
+Merging the PR is the approval, so a new ADR is Accepted. Use Superseded or Rejected when
+applicable. Preserve historical reasoning when superseding a decision and link to its replacement. -->
 
 ## Context
 

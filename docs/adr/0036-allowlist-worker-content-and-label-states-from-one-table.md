@@ -1,6 +1,6 @@
 # ADR 0036: Allowlist worker content and label states from one table
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-21
 
 ## Context

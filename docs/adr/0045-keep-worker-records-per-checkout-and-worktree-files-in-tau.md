@@ -1,6 +1,6 @@
 # ADR 0045: Keep worker records per Tau checkout and worktree files in `.tau/`
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-24
 - Supersedes: the report area rules in [ADR 0033](./0033-use-one-generic-native-worker-workflow.md)
   and [ADR 0037](./0037-launch-native-workers-without-parent-approval.md)
