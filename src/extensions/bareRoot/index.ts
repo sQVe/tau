@@ -9,7 +9,7 @@ const rule =
   'the worktree skill. For work that belongs to an existing worktree, pass it on with the handoff ' +
   'skill.';
 
-const blockedTools = new Set(['write', 'edit', 'subagent']);
+const blockedTools = new Set(['write', 'edit', 'subagent', 'subagent_follow_up']);
 
 const isBareRoot = async (cwd: string) => {
   try {

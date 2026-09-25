@@ -20,9 +20,9 @@ worker launched from the root would also work there.
 ## Decision
 
 When `git rev-parse --is-bare-repository` prints `true` in the session directory at session start,
-Tau appends a rule to the system prompt and refuses the `write`, `edit`, and `subagent` tools. The
-rule and the refusal point to the worktree skill for new work and the handoff skill for work that
-belongs to an existing worktree.
+Tau appends a rule to the system prompt and refuses the `write`, `edit`, `subagent`, and
+`subagent_follow_up` tools. The rule and the refusal point to the worktree skill for new work and
+the handoff skill for work that belongs to an existing worktree.
 
 Tau checks once per session start, not on every prompt. The refusal overrides any guideline that
 asks the agent to delegate to workers.

@@ -43,7 +43,7 @@ describe('bare repository root guard', () => {
 
     expect(session.systemPrompt).toMatch(/^base\n\n.*worktree skill.*handoff skill/s);
 
-    for (const toolName of ['write', 'edit', 'subagent']) {
+    for (const toolName of ['write', 'edit', 'subagent', 'subagent_follow_up']) {
       expect(session.callTool(toolName)).toMatchObject({
         block: true,
         reason: expect.stringMatching(/worktree skill.*handoff skill/s) as string,
