@@ -1822,6 +1822,51 @@ it('reports unreadable successor records and refuses follow-up without writes', 
   expect(fixture.calls).toEqual([['agent', 'list']]);
 });
 
+const newerTauRecord = (source: ReturnType<typeof readTask>, predecessorTaskId: string) => ({
+  ...source,
+  taskId: 'newer',
+  name: 'critic-ab',
+  predecessorTaskId,
+  loadout: { ...source.loadout, profile: 'critic' },
+  futureField: 'written by a newer Tau',
+});
+
+it('lists a newer Tau record as unreadable and still follows up an unrelated task', async () => {
+  const fixture = await completed();
+  const directory = join(fixture.directory, 'newer');
+  mkdirSync(directory);
+  records.publish(directory, 'task.json', newerTauRecord(fixture.source, 'unrelated'));
+
+  const history = await searchHistory(fixture.directory, {
+    file: fixture.input.parentSession,
+    id: fixture.input.parentSessionId,
+    sessionDirectory: fixture.directory,
+  });
+
+  expect(history.diagnostics.join(' ')).toContain(directory);
+
+  await expect(fixture.controller.followUp(fixture.input, fixture.context)).resolves.toMatchObject({
+    state: 'starting',
+    predecessorTaskId: fixture.source.taskId,
+  });
+});
+
+it('refuses follow-up without writes when a newer Tau record names the same predecessor', async () => {
+  const fixture = await completed();
+  const directory = join(fixture.directory, 'newer');
+  mkdirSync(directory);
+  records.publish(directory, 'task.json', newerTauRecord(fixture.source, fixture.source.taskId));
+  const saved = savedFiles(fixture.directory);
+  fixture.calls.length = 0;
+
+  await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+    'Cannot verify saved follow-up attempts',
+  );
+
+  expect(savedFiles(fixture.directory)).toEqual(saved);
+  expect(fixture.calls).toEqual([['agent', 'list']]);
+});
+
 it('refuses follow-up of a malformed source task ID without writes', async () => {
   const fixture = await completed();
   const saved = savedFiles(fixture.directory);

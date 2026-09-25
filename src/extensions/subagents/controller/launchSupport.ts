@@ -4,7 +4,8 @@ import { requireHandover } from '../continuations.js';
 import { validateNative } from '../native.js';
 import type { Visibility } from '../placement.js';
 import { nativeIdentity } from '../profiles.js';
-import { findSuccessor, readTask, readTasks } from '../records.js';
+import { findSuccessor, mayFollow, readTask, readTasks } from '../records.js';
+import type { UnreadableTask } from '../records.js';
 import { isGenericLoadout } from '../types.js';
 import type { Loadout, Task } from '../types.js';
 
@@ -45,12 +46,20 @@ export const nativeReference = (
 
 export const requireUnclaimed = (root: string, source: { directory: string; task: Task }): void => {
   const diagnostics: string[] = [];
-  const successor = findSuccessor(readTasks(root, diagnostics, []), source.task.taskId);
+  const unreadable: UnreadableTask[] = [];
+  const tasks = readTasks(root, diagnostics, [], unreadable);
+  const successor = findSuccessor(tasks, source.task.taskId);
 
   if (successor) {
     throw new Error(
       `Task ${source.task.taskId} already has successor attempt ${successor.taskId}. No retry.`,
     );
+  }
+
+  for (const { directory, diagnostic } of unreadable) {
+    if (mayFollow(directory, source.task.taskId)) {
+      diagnostics.push(diagnostic);
+    }
   }
 
   if (diagnostics.length) {
