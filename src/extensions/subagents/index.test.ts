@@ -47,7 +47,16 @@ const fullWorkerStatus = {
   harness: 'pi',
 };
 
-it('keeps parent tools and handlers unavailable when a test chooses a worker environment', ({
+it('guides the manager to delegate through the subagent tool prompt guidelines', () => {
+  const guidelines = registerTools().get('subagent')?.promptGuidelines?.join('\n') ?? '';
+
+  expect(guidelines).toContain('without being asked');
+  expect(guidelines).toContain('`worker`');
+  expect(guidelines).toContain('`scout`');
+  expect(guidelines).toContain('`reviewer`');
+});
+
+it('keeps parent tools, delegation guidelines, and handlers unavailable when a test chooses a worker environment', ({
   onTestFinished,
 }) => {
   onTestFinished(() => {

@@ -401,6 +401,14 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
       'End your turn to wait; never sleep or poll.',
       'No state means unreadable records; inspect recovery.',
     ].join(' '),
+    promptSnippet: 'Launch Tau workers to scout, implement, or review work',
+    promptGuidelines: [
+      'You are the manager. You own the plan, the user conversation, acceptance criteria, integration, and commits. Delegate execution to subagent workers without being asked.',
+      'Send non-trivial implementation, meaning more than a small local edit or anything that needs new tests, to a `worker` subagent. Send open questions that need wide reading or running commands to a `scout`. Send a finished worker change to a `reviewer` before you accept or commit it.',
+      'Do the work yourself when it is a question, a small or obvious edit, worker coordination, or needs back-and-forth with the user. Follow any explicit user instruction about delegation.',
+      'While subagent workers run, do not edit their worktree or redo their work.',
+      'Treat a worker report as a claim. Check its evidence before you tell the user the work is done.',
+    ],
     parameters: launchParameters,
     renderCall(parameters, theme) {
       return callText(

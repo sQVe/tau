@@ -108,7 +108,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
       resourceLoader: loader,
       sessionManager: SessionManager.inMemory(workingDirectory),
       settingsManager,
-      tools: [],
+      tools: ['subagent'],
     });
 
     onTestFinished(() => {
@@ -157,6 +157,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     for (const prompt of prompts) {
       expect(prompt.split(writingInstructions)).toHaveLength(2);
       expect(prompt.split(codingInstructions)).toHaveLength(2);
+      expect(prompt).toContain('Delegate execution to subagent workers without being asked.');
     }
   } finally {
     await rm(workingDirectory, { recursive: true, force: true });
