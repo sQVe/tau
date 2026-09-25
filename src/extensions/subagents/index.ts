@@ -26,6 +26,12 @@ import type { WorkerWidgetRow } from './widget.js';
 import { openWorkerHistory } from './widgetOverlay.js';
 import type { WorkerHistoryView } from './widgetOverlay.js';
 
+interface SubagentRuntime {
+  pi: ExtensionAPI;
+  getController: () => WorkerController;
+  peekController: () => WorkerController | undefined;
+}
+
 const visibility = Type.Optional(
   StringEnum(['foreground', 'background'] as const, {
     description: [
@@ -108,12 +114,6 @@ type HistoryParameters = Static<typeof historyParameters>;
 type StatusParameters = Static<typeof statusParameters>;
 type ReplyParameters = Static<typeof replyParameters>;
 type CancelParameters = Static<typeof cancelParameters>;
-
-interface SubagentRuntime {
-  pi: ExtensionAPI;
-  getController: () => WorkerController;
-  peekController: () => WorkerController | undefined;
-}
 
 export const deliverWorkerNotice = (pi: ExtensionAPI, notice: WorkerNotice): void => {
   const message = JSON.stringify(notice.content);

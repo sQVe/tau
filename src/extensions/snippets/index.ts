@@ -13,13 +13,13 @@ import { openSnippetMenu } from './menu.js';
 import { acceptsSnippets, buildSnippetMessage, loadSnippets } from './snippet.js';
 import type { Snippet, SnippetPlacement } from './types.js';
 
-const snippetsDirectory = fileURLToPath(new URL('./snippets/', import.meta.url));
-const widgetKey = 'prompt-snippets';
-
 interface SnippetsState {
   snippets: Snippet[];
   enabled: Set<string>;
 }
+
+const snippetsDirectory = fileURLToPath(new URL('./snippets/', import.meta.url));
+const widgetKey = 'prompt-snippets';
 
 const updateWidget = (state: SnippetsState, context: ExtensionContext): void => {
   if (context.mode !== 'tui') {

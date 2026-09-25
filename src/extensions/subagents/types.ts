@@ -2,6 +2,36 @@ import { StringEnum } from '@earendil-works/pi-ai';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
+export type WorkerState =
+  | 'starting'
+  | 'running'
+  | 'awaitingReply'
+  | 'reported'
+  | 'stopping'
+  | 'stopped'
+  | 'cleanupUnconfirmed'
+  | 'notOwned';
+
+export type Harness = string;
+
+export type NativeTask = Extract<Task, { version: 1 }>;
+
+export type SubmissionState = 'submitted' | 'not-delivered' | 'uncertain';
+
+export type ReplyDelivery = 'sent' | 'uncertain' | 'notResent' | 'notDelivered';
+
+export interface Profile {
+  name: string;
+  role: 'investigation' | 'editing';
+  harness: Harness;
+  harnessSpecified?: boolean;
+  model: string | undefined;
+  thinking: PiLoadout['thinking'];
+  thinkingSpecified?: boolean;
+  instructions: string;
+  source: string;
+}
+
 export const textLimit = 32_000;
 const text = Type.String({ minLength: 1, maxLength: textLimit });
 
@@ -175,23 +205,12 @@ export const acknowledgementSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export type WorkerState =
-  | 'starting'
-  | 'running'
-  | 'awaitingReply'
-  | 'reported'
-  | 'stopping'
-  | 'stopped'
-  | 'cleanupUnconfirmed'
-  | 'notOwned';
-
 export type Question = Static<typeof questionSchema>;
 export type Reply = Static<typeof replySchema>;
 export type Acknowledgement = Static<typeof acknowledgementSchema>;
 export type Loadout = Static<typeof loadoutSchema>;
 export type PiLoadout = Static<typeof piLoadoutSchema>;
 export type GenericLoadout = Static<typeof genericLoadoutSchema>;
-export type Harness = string;
 
 export const isGenericLoadout = (loadout: Loadout): loadout is GenericLoadout =>
   loadout.harness === 'generic';
@@ -202,7 +221,6 @@ export const harnessOf = (loadout: Loadout): Harness =>
   isGenericLoadout(loadout) ? loadout.kind : loadout.harness;
 
 export type Task = Static<typeof taskSchema>;
-export type NativeTask = Extract<Task, { version: 1 }>;
 
 export const requireNativeTask = (task: Task): NativeTask => {
   if (task.version !== 1) {
@@ -218,10 +236,6 @@ export type TaskEvent = Static<typeof eventSchema>;
 export const nativeAgentStates = ['idle', 'done', 'working', 'blocked', 'unknown'] as const;
 
 export type NativeAgentState = (typeof nativeAgentStates)[number];
-
-export type SubmissionState = 'submitted' | 'not-delivered' | 'uncertain';
-
-export type ReplyDelivery = 'sent' | 'uncertain' | 'notResent' | 'notDelivered';
 
 // These events end the task even when no report was saved.
 export const taskEndedEventKinds: readonly TaskEvent['kind'][] = [
@@ -242,15 +256,3 @@ export const replyClosedEventKinds: readonly TaskEvent['kind'][] = [
   'cancelled',
   'timeout',
 ];
-
-export interface Profile {
-  name: string;
-  role: 'investigation' | 'editing';
-  harness: Harness;
-  harnessSpecified?: boolean;
-  model: string | undefined;
-  thinking: PiLoadout['thinking'];
-  thinkingSpecified?: boolean;
-  instructions: string;
-  source: string;
-}

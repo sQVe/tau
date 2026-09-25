@@ -12,11 +12,12 @@ import { expect, it, vi } from 'vitest';
 
 import { createPiSession } from './piSession.js';
 
+type RegisterCleanup = TestContext['onTestFinished'];
+
+type EditorFactory = NonNullable<ReturnType<ExtensionUIContext['getEditorComponent']>>;
+
 // Real Pi sessions need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
-
-type RegisterCleanup = TestContext['onTestFinished'];
-type EditorFactory = NonNullable<ReturnType<ExtensionUIContext['getEditorComponent']>>;
 
 const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
 

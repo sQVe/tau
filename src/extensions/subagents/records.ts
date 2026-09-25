@@ -31,6 +31,22 @@ import {
 } from './types.js';
 import type { GenericLoadout, Report, Task, TaskEvent } from './types.js';
 
+interface FoundTaskEntry {
+  directory: string;
+  task: Task;
+}
+
+interface UnpublishedTaskEntry {
+  name: string;
+  directory: string;
+}
+
+export interface EventDetails {
+  detail: string;
+  stopped?: boolean;
+  processId?: number;
+}
+
 const recordByteLimit = 128_000;
 
 // Each Tau checkout keeps its own records, so a branch that changes the record format never
@@ -372,16 +388,6 @@ const readTaskEntries = (root: string, diagnostics: string[]): Dirent[] | undefi
   }
 };
 
-interface FoundTaskEntry {
-  directory: string;
-  task: Task;
-}
-
-interface UnpublishedTaskEntry {
-  name: string;
-  directory: string;
-}
-
 const scanTaskEntry = (
   root: string,
   entry: Dirent,
@@ -483,12 +489,6 @@ export const readReport = (directory: string, taskId: string): Report | undefine
     throw error;
   }
 };
-
-export interface EventDetails {
-  detail: string;
-  stopped?: boolean;
-  processId?: number;
-}
 
 export const recordEvent = (
   directory: string,

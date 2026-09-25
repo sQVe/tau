@@ -16,12 +16,6 @@ import type {
   TestResult,
 } from './types.js';
 
-const defaultTimeoutMilliseconds = 30_000;
-const fullTimeoutMilliseconds = 120_000;
-
-export const maximumFailures = 10;
-const maximumMessageCharacters = 300;
-
 interface VitestAssertionResult {
   fullName?: string;
   title?: string;
@@ -47,6 +41,12 @@ interface VitestReport {
   success?: boolean;
   testResults?: VitestTestFile[];
 }
+
+const defaultTimeoutMilliseconds = 30_000;
+const fullTimeoutMilliseconds = 120_000;
+
+export const maximumFailures = 10;
+const maximumMessageCharacters = 300;
 
 // Vitest reports always include at least one of these top-level keys.
 const isVitestReport = (value: unknown): value is VitestReport => {

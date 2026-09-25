@@ -29,6 +29,12 @@ import {
 import { isGenericLoadout } from './types.js';
 import type { SubmissionState, Task } from './types.js';
 
+export interface GenericSubmission {
+  id: string;
+  text: string;
+  send: () => Promise<string>;
+}
+
 const reportDirectory = (task: Task): string => {
   if (!isGenericLoadout(task.loadout)) {
     throw new Error('Only generic workers use report files.');
@@ -319,12 +325,6 @@ const blockedSubmission = (error: unknown): boolean => {
     return false;
   }
 };
-
-export interface GenericSubmission {
-  id: string;
-  text: string;
-  send: () => Promise<string>;
-}
 
 export const submitGenericText = async (
   directory: string,

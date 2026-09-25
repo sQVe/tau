@@ -11,6 +11,25 @@ import { isGenericLoadout, requireNativeTask } from './types.js';
 import type { Report, Task, WorkerState } from './types.js';
 import { workerState } from './workerState.js';
 
+interface Candidate {
+  sourceFile: string;
+  taskId?: string;
+  predecessorTaskId?: string;
+  successorTaskId?: string;
+  name?: string;
+  description: string;
+  nativeSessionId?: string;
+  nativeSessionFile?: string;
+  nativeReference?: { kind: string; value: string };
+  nativeEvidence: 'available' | 'missing' | 'invalid' | 'opaque';
+  state?: WorkerState;
+  report?: Report;
+}
+
+type Ownership = (taskId: string) => boolean;
+
+type InScope = (file: string, id?: string) => boolean;
+
 export const authorizeHistoryTask = (
   root: string,
   current: { file: string; id: string },
@@ -44,23 +63,6 @@ export const authorizeHistoryTask = (
 
   return { ...selected, origin };
 };
-
-interface Candidate {
-  sourceFile: string;
-  taskId?: string;
-  predecessorTaskId?: string;
-  successorTaskId?: string;
-  name?: string;
-  description: string;
-  nativeSessionId?: string;
-  nativeSessionFile?: string;
-  nativeReference?: { kind: string; value: string };
-  nativeEvidence: 'available' | 'missing' | 'invalid' | 'opaque';
-  state?: WorkerState;
-  report?: Report;
-}
-
-type Ownership = (taskId: string) => boolean;
 
 // Internal display budget for one history page.
 const historyByteBudget = 48_000;
@@ -211,8 +213,6 @@ const searchOutcome = (query: string, count: number): string => {
 
   return count === 1 ? 'match' : 'clarification';
 };
-
-type InScope = (file: string, id?: string) => boolean;
 
 // The caller's own task names the current native session, so its own task and every task that owns
 // an ancestor session are not history candidates for that caller.

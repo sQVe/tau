@@ -8,15 +8,6 @@ import { handoffSections, stateLabel, stateLabels } from './presentation.js';
 import type { StateLabel } from './presentation.js';
 import type { WorkerState } from './types.js';
 
-// Pi renders its default result only when a tool renderer throws. This sentinel makes the fallback
-// for results saved before the state field deliberate instead of an accident.
-export class DefaultRenderingRequiredError extends Error {
-  constructor() {
-    super('This result has no renderable worker state.');
-    this.name = 'DefaultRenderingRequiredError';
-  }
-}
-
 interface ReportView {
   outcome?: string | undefined;
   summary?: string | undefined;
@@ -86,6 +77,15 @@ interface HistoryView {
   nextOffset?: number | undefined;
   candidates: HistoryCandidate[];
   diagnostics?: string[] | undefined;
+}
+
+// Pi renders its default result only when a tool renderer throws. This sentinel makes the fallback
+// for results saved before the state field deliberate instead of an accident.
+export class DefaultRenderingRequiredError extends Error {
+  constructor() {
+    super('This result has no renderable worker state.');
+    this.name = 'DefaultRenderingRequiredError';
+  }
 }
 
 export const firstLine = (value: string | undefined): string => (value ?? '').split('\n')[0] ?? '';

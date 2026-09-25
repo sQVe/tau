@@ -38,22 +38,6 @@ import {
 import { textLimit } from './types.js';
 import type { Question, Report, Task } from './types.js';
 
-const reportParameters = Type.Object({
-  outcome: StringEnum(['success', 'failure', 'incomplete']),
-  summary: Type.String({ minLength: 1, maxLength: 32_000 }),
-  evidence: Type.Array(Type.String({ minLength: 1, maxLength: 32_000 }), { maxItems: 100 }),
-  blocker: Type.Optional(
-    Type.String({
-      minLength: 1,
-      maxLength: 4000,
-      description:
-        'Required for incomplete: the external dependency, exhausted limit, or parent decision that stops you.',
-    }),
-  ),
-});
-
-type ReportInput = Static<typeof reportParameters>;
-
 type WorkerPhase = 'starting' | 'active' | 'waiting' | 'done';
 
 interface WorkerExtensionState {
@@ -76,6 +60,22 @@ interface WorkerExtensionState {
     | { input: number; output: number; cacheRead: number; cacheWrite: number }
     | undefined;
 }
+
+const reportParameters = Type.Object({
+  outcome: StringEnum(['success', 'failure', 'incomplete']),
+  summary: Type.String({ minLength: 1, maxLength: 32_000 }),
+  evidence: Type.Array(Type.String({ minLength: 1, maxLength: 32_000 }), { maxItems: 100 }),
+  blocker: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 4000,
+      description:
+        'Required for incomplete: the external dependency, exhausted limit, or parent decision that stops you.',
+    }),
+  ),
+});
+
+type ReportInput = Static<typeof reportParameters>;
 
 const readPiSessionUsage = (
   context: ExtensionContext,

@@ -8,6 +8,12 @@ import { readTasks } from './records.js';
 import { isGenericLoadout, requireNativeTask } from './types.js';
 import type { Task } from './types.js';
 
+interface SessionHeaderView {
+  id: string;
+  parentSession?: string;
+  cwd?: string;
+}
+
 export const canonical = (path: string): string => {
   if (!isAbsolute(path)) {
     throw new Error('Session lineage requires absolute paths.');
@@ -23,12 +29,6 @@ export const canonical = (path: string): string => {
     return resolve(path);
   }
 };
-
-interface SessionHeaderView {
-  id: string;
-  parentSession?: string;
-  cwd?: string;
-}
 
 const headerMatchesTask = (header: SessionHeaderView, task: Task): boolean => {
   if (header.id !== task.nativeSessionId) {

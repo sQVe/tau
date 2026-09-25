@@ -10,6 +10,11 @@ import { readEvent, readReport } from './records.js';
 import { requireNativeTask } from './types.js';
 import type { Task } from './types.js';
 
+interface Entry {
+  directory: string;
+  task: Task;
+}
+
 export const requireHandover = (directory: string, task: Task): void => {
   if (!readReport(directory, task.taskId)) {
     throw new Error(`Task ${task.taskId} has no valid final handover. Follow-up refused.`);
@@ -21,11 +26,6 @@ export const requireHandover = (directory: string, task: Task): void => {
     );
   }
 };
-
-interface Entry {
-  directory: string;
-  task: Task;
-}
 
 const sharesNativeSession = (entry: Entry, predecessor: Entry): boolean =>
   entry.task.nativeSessionId === predecessor.task.nativeSessionId &&

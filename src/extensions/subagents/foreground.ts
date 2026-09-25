@@ -22,6 +22,46 @@ export interface Rectangle {
   height: number;
 }
 
+interface Adjustment {
+  branch: Branch;
+  ratio: number;
+}
+
+export interface ForegroundPlan {
+  tree: Tree;
+  target: string;
+  adjustments: Adjustment[];
+}
+
+interface BalanceContext {
+  plan: ForegroundPlan;
+  eligible: TerminalLocation[];
+  call: TerminalCall;
+}
+
+interface ResizeSnapshot {
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  split: Record<string, unknown>;
+  members: string[];
+}
+
+interface CloseCapture {
+  layout: Record<string, unknown>;
+  terminals: TerminalLocation[];
+  tree: Tree;
+}
+
+interface RememberRequest {
+  before: Record<string, unknown>;
+  target: string;
+  added: TerminalLocation;
+  direction: 'right' | 'down';
+  call: TerminalCall;
+  tree: Tree | undefined;
+  isOwned: () => boolean;
+}
+
 // Leave room for pane borders and status rows around 80 columns and 20 useful rows.
 const minimumPane = { width: 82, height: 24 };
 
@@ -94,17 +134,6 @@ const branchSplit = (tree: Branch, layout: Record<string, unknown>) => {
   return split;
 };
 
-interface Adjustment {
-  branch: Branch;
-  ratio: number;
-}
-
-export interface ForegroundPlan {
-  tree: Tree;
-  target: string;
-  adjustments: Adjustment[];
-}
-
 const distribute = (
   tree: Tree,
   bounds: Rectangle,
@@ -135,19 +164,6 @@ const distribute = (
     distribute(tree.second, { ...bounds, [axis]: secondLength }, target, adjustments)
   );
 };
-
-interface BalanceContext {
-  plan: ForegroundPlan;
-  eligible: TerminalLocation[];
-  call: TerminalCall;
-}
-
-interface ResizeSnapshot {
-  before: Record<string, unknown>;
-  after: Record<string, unknown>;
-  split: Record<string, unknown>;
-  members: string[];
-}
 
 const isOwnedTerminal = (
   pane: TerminalLocation,
@@ -318,12 +334,6 @@ const applyAdjustment = async (
   return resized;
 };
 
-interface CloseCapture {
-  layout: Record<string, unknown>;
-  terminals: TerminalLocation[];
-  tree: Tree;
-}
-
 const captureCloseSnapshot = async (
   group: { tree: Tree; shape: string } | undefined,
   location: TerminalLocation,
@@ -407,16 +417,6 @@ const restoreGroupsAfterClose = async (
     // A confirmed close stays confirmed even when its cosmetic snapshot is unavailable.
   }
 };
-
-interface RememberRequest {
-  before: Record<string, unknown>;
-  target: string;
-  added: TerminalLocation;
-  direction: 'right' | 'down';
-  call: TerminalCall;
-  tree: Tree | undefined;
-  isOwned: () => boolean;
-}
 
 const createdSplitIsExpected = (
   created: Record<string, unknown> | undefined,

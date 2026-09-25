@@ -9,6 +9,11 @@ import { Type } from 'typebox';
 import { resolveDelegate } from '../../delegateModel/index.js';
 import { BulkReadRecoverableError, bulkReadTool, bulkRead, isCancellation } from './tool.js';
 
+interface BulkReadState {
+  trimming: boolean;
+  clamped: Set<string>;
+}
+
 // ADR 0014 records the measurement behind this threshold.
 const bulkReadLineThreshold = 400;
 
@@ -18,11 +23,6 @@ const isRecoverable = (error: unknown): boolean =>
 
 const bulkReadDescription =
   'Ask a cheaper model for focused summaries, test inventories, and line-cited evidence from supplied files, not correctness or branch review judgments.';
-
-interface BulkReadState {
-  trimming: boolean;
-  clamped: Set<string>;
-}
 
 const buildContinuationNotice = (_match: string, ...groups: (string | undefined)[]): string => {
   const [remainingCount, nextOffset, shownEnd, totalLines] = groups;

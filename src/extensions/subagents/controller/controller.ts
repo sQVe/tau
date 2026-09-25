@@ -82,6 +82,41 @@ import type { InspectionBudget } from './shellIdentity.js';
 import { closeUnstartedPane, stopOwnedWorker } from './stop.js';
 import type { Handle } from './types.js';
 
+interface PiReplyRequest {
+  directory: string;
+  handle: Handle;
+  questionId: string;
+  answer: { replyId: string };
+  value: unknown;
+}
+
+interface StatusFailureRequest {
+  taskId: string;
+  directory: string;
+  handle: Handle | undefined;
+  task: Task | undefined;
+  error: unknown;
+}
+
+interface LaunchTaskPlan {
+  taskId: string;
+  directory: string;
+  createdAt: number;
+  deadline: number;
+  cancellationBudget: number;
+  monotonicDeadline: number;
+  source?: FollowUpPreparation;
+}
+
+interface CleanupOutcomeRequest {
+  handle: Handle;
+  reason: 'timeout' | 'cancelled' | 'completion' | 'failure';
+  failureDetail: string;
+  detail: string;
+  stopped: boolean;
+  record: (operation: () => void) => void;
+}
+
 const workerCapacity = (): number => {
   // oxlint-disable-next-line node/no-process-env -- Each controller reads its capacity once at construction.
   const capacity = Number(process.env.TAU_SUBAGENT_CAP ?? 4);
@@ -177,41 +212,6 @@ const repeatedGenericReply = (
 
   return { replyAccepted: true as const, name: task.name, delivery };
 };
-
-interface PiReplyRequest {
-  directory: string;
-  handle: Handle;
-  questionId: string;
-  answer: { replyId: string };
-  value: unknown;
-}
-
-interface StatusFailureRequest {
-  taskId: string;
-  directory: string;
-  handle: Handle | undefined;
-  task: Task | undefined;
-  error: unknown;
-}
-
-interface LaunchTaskPlan {
-  taskId: string;
-  directory: string;
-  createdAt: number;
-  deadline: number;
-  cancellationBudget: number;
-  monotonicDeadline: number;
-  source?: FollowUpPreparation;
-}
-
-interface CleanupOutcomeRequest {
-  handle: Handle;
-  reason: 'timeout' | 'cancelled' | 'completion' | 'failure';
-  failureDetail: string;
-  detail: string;
-  stopped: boolean;
-  record: (operation: () => void) => void;
-}
 
 const readWidgetStatus = (directory: string, task: Task, controlled: boolean) => {
   try {

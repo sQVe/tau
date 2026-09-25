@@ -12,12 +12,6 @@ import type { Component, TUI } from '@earendil-works/pi-tui';
 import { isBottom, isDown, isTop, isUp } from '../../keys/index.js';
 import type { Snippet } from './types.js';
 
-// Lines render() always emits: two borders, the title, the search line, a blank, the hints.
-const chromeHeight = 6;
-// Chrome plus room for the editor below, when the terminal is tall enough.
-const frameHeight = 10;
-const minimumViewHeight = 5;
-
 type MenuTheme = Pick<Theme, 'fg' | 'bold'>;
 
 interface ListRow {
@@ -48,6 +42,12 @@ interface Groups {
   prepends: Snippet[];
   appends: Snippet[];
 }
+
+// Lines render() always emits: two borders, the title, the search line, a blank, the hints.
+const chromeHeight = 6;
+// Chrome plus room for the editor below, when the terminal is tall enough.
+const frameHeight = 10;
+const minimumViewHeight = 5;
 
 /**
  * Clips `lines` to at most `maximumHeight` lines and scrolls `focusRow` into view.

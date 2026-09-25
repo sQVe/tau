@@ -30,6 +30,18 @@ interface ClientOptions {
 
 type Client = (argumentsList: string[], budget: number, signal: AbortSignal) => Promise<string>;
 
+type MutableOwnedWorker = Omit<OwnedWorker, 'paneId'> & { paneId: string };
+
+interface CancellationRun {
+  owned: MutableOwnedWorker;
+  call: (argumentsList: string[]) => Promise<string>;
+  signal: AbortSignal;
+  expires: number;
+  manual: string;
+  shutdown: { inputAttempted: boolean };
+  timer: ReturnType<typeof setTimeout>;
+}
+
 const validateBudget = (budget: number) => {
   if (!Number.isSafeInteger(budget) || budget <= 0 || budget > 2_147_483_647) {
     throw new Error('The budget must be a positive timer-safe integer in milliseconds.');
@@ -281,18 +293,6 @@ const waitForStop = async (
     await delay(25, undefined, { signal });
   }
 };
-
-type MutableOwnedWorker = Omit<OwnedWorker, 'paneId'> & { paneId: string };
-
-interface CancellationRun {
-  owned: MutableOwnedWorker;
-  call: (argumentsList: string[]) => Promise<string>;
-  signal: AbortSignal;
-  expires: number;
-  manual: string;
-  shutdown: { inputAttempted: boolean };
-  timer: ReturnType<typeof setTimeout>;
-}
 
 const refreshTerminal = async (run: CancellationRun): Promise<void> => {
   const location = await resolveTerminal(run.owned.terminalId, run.call);

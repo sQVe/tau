@@ -15,6 +15,21 @@ import type {
   TestScope,
 } from './types.js';
 
+interface LatestRun {
+  behavior: Behavior;
+  scope: TestScope;
+  kind: RunnerResult['kind'];
+  fingerprint: string | null;
+  freshness: Freshness;
+}
+
+interface RunRequest {
+  requested: Behavior;
+  scope: TestScope;
+  signal?: AbortSignal | undefined;
+  onStart?: ((behavior: Behavior) => void) | undefined;
+}
+
 const testNames = (behavior: Behavior) =>
   Array.isArray(behavior.testFullName) ? behavior.testFullName : [behavior.testFullName];
 
@@ -138,14 +153,6 @@ const selectedThrownErrorType = (cwd: string, behavior: Behavior, report: Runner
   return selectedFailures.map((failure) => thrownErrorType(failure.message)).find(Boolean) ?? null;
 };
 
-interface LatestRun {
-  behavior: Behavior;
-  scope: TestScope;
-  kind: RunnerResult['kind'];
-  fingerprint: string | null;
-  freshness: Freshness;
-}
-
 const hints = {
   red: 'No RED observed for this behavior; start the next behavior with a failing focused test.',
   full: 'Focused tests passed; verify the full suite with the repository full check or run_tests scope "full".',
@@ -163,13 +170,6 @@ interface ObservationState {
   shownHints: Set<keyof typeof hints>;
   staleHintInput: string | null;
   pending: Promise<unknown>;
-}
-
-interface RunRequest {
-  requested: Behavior;
-  scope: TestScope;
-  signal?: AbortSignal | undefined;
-  onStart?: ((behavior: Behavior) => void) | undefined;
 }
 
 const enqueue = <Result>(state: ObservationState, work: () => Promise<Result>): Promise<Result> => {

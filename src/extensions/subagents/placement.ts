@@ -18,6 +18,31 @@ import type { TerminalCall, TerminalLocation } from './terminal.js';
 
 export type Visibility = 'foreground' | 'background';
 
+interface PlacementInput {
+  parentPane?: string;
+  visibility: Visibility;
+  cwd: string;
+  environment: string[];
+  onCreated?: (location: TerminalLocation) => void;
+}
+
+interface SplitRequest {
+  eligible: TerminalLocation[];
+  visibility: Visibility;
+  options: string[];
+  call: TerminalCall;
+  onCreated: PlacementInput['onCreated'];
+}
+
+interface TabSearch {
+  tabs: string[];
+  parent: TerminalLocation;
+  locations: TerminalLocation[];
+  options: string[];
+  call: TerminalCall;
+  onCreated: PlacementInput['onCreated'];
+}
+
 const splitCandidate = (
   layout: Record<string, unknown>,
   eligible: TerminalLocation[],
@@ -52,31 +77,6 @@ const splitCandidate = (
 
   return candidates[0];
 };
-
-interface PlacementInput {
-  parentPane?: string;
-  visibility: Visibility;
-  cwd: string;
-  environment: string[];
-  onCreated?: (location: TerminalLocation) => void;
-}
-
-interface SplitRequest {
-  eligible: TerminalLocation[];
-  visibility: Visibility;
-  options: string[];
-  call: TerminalCall;
-  onCreated: PlacementInput['onCreated'];
-}
-
-interface TabSearch {
-  tabs: string[];
-  parent: TerminalLocation;
-  locations: TerminalLocation[];
-  options: string[];
-  call: TerminalCall;
-  onCreated: PlacementInput['onCreated'];
-}
 
 export class WorkerPlacement {
   private readonly owned = new Map<string, { tabId: string; visibility: Visibility }>();

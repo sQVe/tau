@@ -18,10 +18,18 @@ import { createTemporaryRepository } from './gitRepository.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
 
+type RegisterCleanup = TestContext['onTestFinished'];
+
+interface Harness {
+  session: AgentSession;
+  faux: FauxProviderHandle;
+  repositoryDirectory: string;
+  events: AgentSessionEvent[];
+  overlays: string[];
+}
+
 // Real Pi sessions and Git commands need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
-
-type RegisterCleanup = TestContext['onTestFinished'];
 
 const execFileAsync = promisify(execFile);
 
@@ -36,14 +44,6 @@ const bundledWebAccessExtensionPath = resolve(
   import.meta.dirname,
   '../node_modules/pi-web-access/index.ts',
 );
-
-interface Harness {
-  session: AgentSession;
-  faux: FauxProviderHandle;
-  repositoryDirectory: string;
-  events: AgentSessionEvent[];
-  overlays: string[];
-}
 
 const git = async (repositoryDirectory: string, commandArguments: string[]): Promise<string> => {
   const { stdout } = await execFileAsync('git', commandArguments, {

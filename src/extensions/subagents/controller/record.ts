@@ -28,6 +28,16 @@ import type { Report, Task, TaskEvent } from '../types.js';
 import { workerState } from '../workerState.js';
 import type { Handle } from './types.js';
 
+export interface EvidenceUnavailableInput {
+  taskId: string;
+  name?: string | undefined;
+  evidenceError: string;
+  recovery: unknown;
+  cleanupDetail?: string | undefined;
+  paneId?: string | undefined;
+  cause?: unknown;
+}
+
 export const readOwnedWorker = (directory: string, task: Task): OwnedWorker => {
   const value = readOptionalRecord(directory, 'owned.json');
 
@@ -106,16 +116,6 @@ export const savedRecovery = (task: Task | undefined, directory: string) => {
 
   return { directory };
 };
-
-export interface EvidenceUnavailableInput {
-  taskId: string;
-  name?: string | undefined;
-  evidenceError: string;
-  recovery: unknown;
-  cleanupDetail?: string | undefined;
-  paneId?: string | undefined;
-  cause?: unknown;
-}
 
 // The message stays free of record paths; recovery carries them for manual cleanup.
 export class EvidenceUnavailableError extends Error {

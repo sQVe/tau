@@ -6,12 +6,12 @@ import { isMissingFile } from '../../../errors/index.js';
 import { maximumStdoutBytes, maximumTotalBytes } from './process.js';
 import type { DiagnosticFile, RunDiagnostics, SpawnResult } from './types.js';
 
-const maximumReportBytes = 8 * 1024 * 1024;
-
 interface OutputCapture {
   observedBytes: number;
   truncated: boolean;
 }
+
+const maximumReportBytes = 8 * 1024 * 1024;
 
 const saveOutput = async (
   path: string,

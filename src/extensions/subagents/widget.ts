@@ -33,6 +33,8 @@ export interface WorkerWidgetRow {
   report?: { summary: string; evidence: string[] } | undefined;
 }
 
+export type WorkerGroup = 'stopped' | 'unresolved' | 'waiting' | 'active';
+
 export const safeText = (value: string): string =>
   stripTerminalSequences(value).replace(/\p{Cc}/gu, ' ');
 
@@ -51,8 +53,6 @@ const duration = (milliseconds: number): string => {
 
   return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
 };
-
-export type WorkerGroup = 'stopped' | 'unresolved' | 'waiting' | 'active';
 
 const unresolvedStates = new Set<WorkerWidgetRow['state']>([
   'cleanupUnconfirmed',

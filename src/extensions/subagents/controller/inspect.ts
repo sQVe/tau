@@ -27,16 +27,16 @@ import {
 import type { InspectionBudget } from './shellIdentity.js';
 import type { Handle } from './types.js';
 
-const agentSessionSchema = Type.Object({ value: Type.String({ minLength: 1 }) });
-
-const missingPiIntegrationMessage =
-  "herdr reported no Pi agent session. herdr's Pi integration must be loaded in Pi; install it with `herdr integration install pi`.";
-
 export type HerdrClient = (
   argumentsList: string[],
   budget: number,
   signal?: AbortSignal,
 ) => Promise<string>;
+
+const agentSessionSchema = Type.Object({ value: Type.String({ minLength: 1 }) });
+
+const missingPiIntegrationMessage =
+  "herdr reported no Pi agent session. herdr's Pi integration must be loaded in Pi; install it with `herdr integration install pi`.";
 
 export const herdrClient: HerdrClient = (argumentsList, budget, signal) =>
   runClient('herdr', argumentsList, budget, signal ? { signal } : {});

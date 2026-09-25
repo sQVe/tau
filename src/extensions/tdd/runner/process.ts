@@ -6,6 +6,26 @@ import { StringDecoder } from 'node:string_decoder';
 
 import type { SpawnFn, SpawnResult } from './types.js';
 
+interface SpawnState {
+  stdout: string;
+  stderr: string;
+  stdoutBytes: number;
+  stderrBytes: number;
+  timedOut: boolean;
+  settled: boolean;
+  stdoutDecoder: StringDecoder;
+  stderrDecoder: StringDecoder;
+}
+
+interface SettleRequest {
+  state: SpawnState;
+  child: ChildProcess;
+  resolve: (result: SpawnResult) => void;
+  code: number | null;
+  command: string[];
+  clearTimer: () => void;
+}
+
 export const maximumTotalBytes = 32 * 1024;
 // Bound captured process output separately from the shorter diagnostic messages.
 export const maximumStdoutBytes = 8 * 1024 * 1024;
@@ -48,17 +68,6 @@ const appendChunk = (
   return current + decoder.write(chunk.subarray(0, remaining));
 };
 
-interface SpawnState {
-  stdout: string;
-  stderr: string;
-  stdoutBytes: number;
-  stderrBytes: number;
-  timedOut: boolean;
-  settled: boolean;
-  stdoutDecoder: StringDecoder;
-  stderrDecoder: StringDecoder;
-}
-
 const killChild = (child: ChildProcess, useProcessGroup: boolean): void => {
   try {
     if (useProcessGroup && child.pid != null) {
@@ -70,15 +79,6 @@ const killChild = (child: ChildProcess, useProcessGroup: boolean): void => {
     child.kill('SIGKILL');
   }
 };
-
-interface SettleRequest {
-  state: SpawnState;
-  child: ChildProcess;
-  resolve: (result: SpawnResult) => void;
-  code: number | null;
-  command: string[];
-  clearTimer: () => void;
-}
 
 const settleSpawn = (request: SettleRequest): void => {
   const { state, child, resolve, code, command, clearTimer } = request;

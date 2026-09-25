@@ -8,6 +8,12 @@ import type { Behavior, ObservationResult } from './types.js';
 
 type Observation = Omit<ObservationResult, 'hint'>;
 
+interface DurationList {
+  header: string | null;
+  entries: string[];
+  limit: number;
+}
+
 const maximumSummaryCharacters = 2000;
 
 const printable = (text: string) =>
@@ -69,12 +75,6 @@ const maximumSlowTests = 3;
 const maximumFocusedDurations = 10;
 
 const moreLine = (hidden: number) => (hidden > 0 ? [`  +${hidden} more`] : []);
-
-interface DurationList {
-  header: string | null;
-  entries: string[];
-  limit: number;
-}
 
 const focusedDurations = (report: RunnerResult): DurationList => {
   const timed = 'tests' in report ? report.tests.filter((test) => test.durationMs != null) : [];

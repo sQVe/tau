@@ -1,12 +1,6 @@
 import { WorkerPlacement } from '../placement.js';
 import type { Visibility } from '../placement.js';
 
-const placementInput = (visibility: Visibility) => ({
-  visibility,
-  cwd: '/work',
-  environment: ['TASK=fixture'],
-});
-
 interface Bounds {
   x: number;
   y: number;
@@ -43,6 +37,12 @@ interface FixtureState {
   calls: string[][];
   created: number;
 }
+
+const placementInput = (visibility: Visibility) => ({
+  visibility,
+  cwd: '/work',
+  environment: ['TASK=fixture'],
+});
 
 const ids = (node: LayoutNode): string[] =>
   typeof node === 'string' ? [node] : [...ids(node.first), ...ids(node.second)];
