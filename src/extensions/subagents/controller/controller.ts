@@ -52,6 +52,7 @@ import {
   agentPromptArguments,
   herdrClient,
   inspectWorker,
+  observeWorker,
   waitForPiIdentity,
   isHerdrError,
   prepareTaskDirectory,
@@ -581,13 +582,8 @@ export class WorkerController {
   }
 
   private statusFailure(request: StatusFailureRequest): never {
-    // The handle is assigned only after the parent-session check; rejected callers cannot stop work.
+    // Status only reports; subagent_cancel stops a worker whose evidence is unreadable.
     const { taskId, directory, handle, task, error } = request;
-
-    if (handle && !this.closed) {
-      void this.stop(handle, 'failure', `Worker evidence unavailable: ${String(error)}. No retry.`);
-    }
-
     const recovery = handle ? handleRecovery(handle) : savedRecovery(task, directory);
 
     throw new EvidenceUnavailableError({
@@ -624,7 +620,8 @@ export class WorkerController {
     }
 
     const call = this.herdrCall(handle);
-    const worker = await inspectWorker(handle, call);
+    // Reading output only verifies identity; the poll loop owns the handle and saved records.
+    const { worker } = await observeWorker(handle, call);
     const location = await resolveTerminal(worker.terminalId, call);
 
     if (location.paneId !== worker.paneId) {
@@ -895,11 +892,14 @@ export class WorkerController {
       throw new Error('Parent controller stopped.');
     }
 
-    if (readEvent(directory, taskId, 'cleanup')) {
+    const live = this.handles.get(taskId);
+
+    // A live handle is stopped even when its saved cleanup record is unreadable.
+    if (!live && readEvent(directory, taskId, 'cleanup')) {
       return this.status(taskId, parentSessionId);
     }
 
-    const handle = this.handles.get(taskId) ?? this.savedHandle(directory, readTask(directory));
+    const handle = live ?? this.savedHandle(directory, readTask(directory));
 
     this.handles.set(taskId, handle);
     this.live.add(taskId);
