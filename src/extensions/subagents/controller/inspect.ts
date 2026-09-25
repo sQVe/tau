@@ -465,6 +465,34 @@ export const prepareTaskDirectory = (directory: string, task: Task, continued: b
   }
 };
 
+export const waitForWorkerExit = async (
+  handle: Handle,
+  call: (argumentsList: string[]) => Promise<string>,
+  signal: AbortSignal,
+): Promise<never> => {
+  const budget = { signal, remainingBudget: () => workBudget(handle) };
+
+  for (;;) {
+    // Give agent start time to leave the placed shell before checking for an early exit.
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Exit polling shares the startup deadline and ends when agent start settles.
+    await delay(Math.min(250, workBudget(handle)), undefined, { signal });
+    const failure = readEvent(handle.directory, handle.task.taskId, 'startupFailure');
+
+    if (failure) {
+      throw new Error(failure.detail);
+    }
+
+    if (readEvent(handle.directory, handle.task.taskId, 'settled')) {
+      throw new WorkerExitedError();
+    }
+
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Generic workers have no startup record; the unchanged bare shell proves exit.
+    if (await shellUnchanged(handle, call, budget)) {
+      throw new WorkerExitedError();
+    }
+  }
+};
+
 export const waitForWorkerReadiness = async (
   handle: Handle,
   call: (argumentsList: string[]) => Promise<string>,

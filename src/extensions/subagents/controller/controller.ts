@@ -55,6 +55,7 @@ import {
   prepareTaskDirectory,
   verifyRejectedStart,
   waitForWorkerReadiness,
+  waitForWorkerExit,
   workerArguments,
 } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
@@ -515,8 +516,8 @@ export class WorkerController {
     private readonly notify: (notice: WorkerNotice) => void = () => undefined,
   ) {}
 
-  private herdrCall(handle: Handle): TerminalCall {
-    return (argumentsList) => this.client(argumentsList, workBudget(handle), handle.abort.signal);
+  private herdrCall(handle: Handle, signal = handle.abort.signal): TerminalCall {
+    return (argumentsList) => this.client(argumentsList, workBudget(handle), signal);
   }
 
   widgetRows(parentSessionId: string): WorkerWidgetRow[] {
@@ -1056,12 +1057,7 @@ export class WorkerController {
     );
   }
 
-  private async startAgent(
-    handle: Handle,
-    paneId: string,
-    name: string,
-    call: TerminalCall,
-  ): Promise<void> {
+  private async startAgent(handle: Handle, paneId: string, name: string): Promise<void> {
     const { task } = handle;
     const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
 
@@ -1075,6 +1071,9 @@ export class WorkerController {
     }
 
     handle.workerNeverStarted = false;
+    const pending = new AbortController();
+    const signal = AbortSignal.any([handle.abort.signal, pending.signal]);
+    const call = this.herdrCall(handle, signal);
 
     handle.starting = Promise.resolve().then(() =>
       call([
@@ -1092,7 +1091,11 @@ export class WorkerController {
       ]),
     );
 
-    await handle.starting;
+    try {
+      await Promise.race([handle.starting, waitForWorkerExit(handle, call, signal)]);
+    } finally {
+      pending.abort();
+    }
   }
 
   private async startWithBusyRetry(
@@ -1102,7 +1105,7 @@ export class WorkerController {
     call: TerminalCall,
   ): Promise<void> {
     try {
-      await this.startAgent(handle, paneId, name, call);
+      await this.startAgent(handle, paneId, name);
     } catch (error) {
       if (!isHerdrError(error, 'agent_pane_busy')) {
         throw error;
@@ -1128,7 +1131,7 @@ export class WorkerController {
         detail: 'One retry after unchanged-shell and agent-absence verification.',
       });
 
-      await this.startAgent(handle, paneId, name, call);
+      await this.startAgent(handle, paneId, name);
     }
   }
 
