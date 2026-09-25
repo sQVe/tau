@@ -361,16 +361,19 @@ const buildOwnedWorker = (
     startedAt: identity.startedAt,
   };
 
-export const inspectWorker = async (
+// Verifies the worker without changing the handle or saving records. Progress receives the pane and
+// first observation as they are established, so a later failed check still leaves them behind.
+export const observeWorker = async (
   handle: Handle,
   call: (argumentsList: string[]) => Promise<string>,
   cleanup?: InspectionBudget,
-): Promise<OwnedWorker> => {
+  progress: Pick<Handle, 'paneId' | 'workerObserved'> = {},
+): Promise<{ worker: OwnedWorker; nativeState: NativeAgentState }> => {
   const generic = isGenericLoadout(handle.task.loadout) ? handle.task.loadout : undefined;
   const location = await resolveTerminal(text(handle.terminalId), call);
   const paneId = location.paneId;
 
-  handle.paneId = paneId;
+  progress.paneId = paneId;
 
   const information = requireObject(
     result(await call(['pane', 'process-info', '--pane', paneId])).process_info,
@@ -382,7 +385,7 @@ export const inspectWorker = async (
 
   checkForeground(information, paneId, previous, starting && handle.workerObserved !== true);
 
-  handle.workerObserved = true;
+  progress.workerObserved = true;
 
   const agent = await readAgent(call, paneId, starting);
   const processId = integer(information.foreground_process_group_id);
@@ -413,14 +416,24 @@ export const inspectWorker = async (
     throw new Error('Worker process start or pane identity changed or is unavailable.');
   }
 
-  const verified = nativeReference ? { ...owned, nativeReference } : owned;
+  const worker = nativeReference ? { ...owned, nativeReference } : owned;
 
-  if (generic) {
-    saveGenericOwnership(handle, verified);
-    handle.nativeState = observedNativeState(agent);
+  return { worker, nativeState: observedNativeState(agent) };
+};
+
+export const inspectWorker = async (
+  handle: Handle,
+  call: (argumentsList: string[]) => Promise<string>,
+  cleanup?: InspectionBudget,
+): Promise<OwnedWorker> => {
+  const { worker, nativeState } = await observeWorker(handle, call, cleanup, handle);
+
+  if (isGenericLoadout(handle.task.loadout)) {
+    saveGenericOwnership(handle, worker);
+    handle.nativeState = nativeState;
   }
 
-  return verified;
+  return worker;
 };
 
 export const waitForPiIdentity = async (

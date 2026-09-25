@@ -3416,37 +3416,38 @@ it('recovers reports and native references without extension discovery metadata'
   expect(workerArguments(readTask(launched.directory))).toEqual(workerArguments(task));
 });
 
-it('stops dispatched work when the launch status finds corrupt report evidence', async ({
+it('reports corrupt launch evidence without stopping dispatched work until cancelled', async ({
   onTestFinished,
 }) => {
   let recordDirectory = '';
 
-  const { controller, input, calls, notifications } = setup(
-    onTestFinished,
-    0,
-    async (argumentsList) => {
-      if (argumentsList[1] === 'start') {
-        recordDirectory = dirname(argumentsList[argumentsList.indexOf('--session') + 1] ?? '');
-        writeFileSync(join(recordDirectory, 'report.json'), '{');
-      }
+  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
+      recordDirectory = dirname(argumentsList[argumentsList.indexOf('--session') + 1] ?? '');
+      writeFileSync(join(recordDirectory, 'report.json'), '{');
+    }
 
-      return '';
-    },
-  );
-
-  await expect(controller.launch(input)).rejects.toThrow('saved evidence is unavailable');
-  expect(readdirSync(recordDirectory)).toContain('dispatch.json');
-
-  await vi.waitFor(() => {
-    expect(notifications).toHaveLength(1);
+    return '';
   });
 
+  await expect(controller.launch(input)).rejects.toThrow('saved evidence is unavailable');
+  const taskId = readTask(recordDirectory).taskId;
+
+  expect(readdirSync(recordDirectory)).toContain('dispatch.json');
+  expect(readdirSync(recordDirectory)).not.toContain('stopping.json');
+  expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(0);
+  expect(controller.owns(taskId)).toBe(true);
+
+  await expect(controller.cancel(taskId, 'parent-id')).rejects.toBeInstanceOf(
+    EvidenceUnavailableError,
+  );
+
   expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
-  expect(JSON.stringify(notifications[0]?.content)).toContain('worker-1');
+  expect(readEvent(recordDirectory, taskId, 'cleanup')).toBeDefined();
   expect(readFileSync(join(recordDirectory, 'report.json'), 'utf8')).toBe('{');
 });
 
-it('only lets the owning parent stop work after a status evidence failure', async ({
+it('only lets the owning parent cancel work after a status evidence failure', async ({
   onTestFinished,
 }) => {
   const { controller, input, calls, notifications } = setup(onTestFinished);
@@ -3472,13 +3473,85 @@ it('only lets the owning parent stop work after a status evidence failure', asyn
   });
 
   expect((evidenceFailure as Error).message).not.toContain(launched.directory);
+  expect(readdirSync(launched.directory)).not.toContain('stopping.json');
+  expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(0);
 
-  await vi.waitFor(() => {
-    expect(notifications).toHaveLength(1);
-  });
+  await expect(controller.cancel(launched.taskId, 'another-parent')).rejects.toThrow(
+    'another parent session',
+  );
+
+  expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(0);
+
+  await expect(controller.cancel(launched.taskId, 'parent-id')).rejects.toBeInstanceOf(
+    EvidenceUnavailableError,
+  );
 
   expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
+  expect(readEvent(launched.directory, launched.taskId, 'cleanup')).toBeDefined();
   expect(JSON.stringify(notifications[0]?.content)).toContain(launched.nativeSessionId);
+});
+
+it('cancels a live owned worker whose saved cleanup record is corrupt', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, calls } = setup(onTestFinished);
+  const launched = await controller.launch(input);
+  writeFileSync(join(launched.directory, 'cleanup.json'), '{');
+
+  await expect(controller.cancel(launched.taskId, 'parent-id')).rejects.toBeInstanceOf(
+    EvidenceUnavailableError,
+  );
+
+  expect(calls.filter((call) => call[1] === 'send-keys')).toHaveLength(1);
+  expect(readdirSync(launched.directory)).toContain('stopping.json');
+});
+
+it('keeps capacity free when a stopped worker is cancelled again', async ({ onTestFinished }) => {
+  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+  const { controller, input } = setup(onTestFinished);
+  const first = await controller.launch(input);
+
+  await controller.cancel(first.taskId, 'parent-id');
+  await controller.cancel(first.taskId, 'parent-id');
+  const next = await controller.launch(input);
+
+  expect(controller.owns(next.taskId)).toBe(true);
+});
+
+it('reads status, history, and widget rows without writing records or stopping workers', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, calls, directory } = setup(onTestFinished);
+  const launched = await controller.launch(input);
+
+  const snapshot = () =>
+    readdirSync(launched.directory)
+      .toSorted()
+      .map((name) => [name, readFileSync(join(launched.directory, name), 'utf8')]);
+
+  const before = snapshot();
+  const callCount = calls.length;
+
+  controller.status(launched.taskId, 'parent-id');
+  controller.widgetRows('parent-id');
+
+  await searchHistory(
+    directory,
+    { file: join(directory, 'parent.jsonl'), id: 'parent-id', sessionDirectory: directory },
+    '',
+    (taskId) => controller.owns(taskId),
+  );
+
+  expect(snapshot()).toEqual(before);
+
+  writeFileSync(join(launched.directory, 'report.json'), '{');
+  const corrupt = snapshot();
+
+  expect(() => controller.status(launched.taskId, 'parent-id')).toThrow(EvidenceUnavailableError);
+  controller.widgetRows('parent-id');
+
+  expect(snapshot()).toEqual(corrupt);
+  expect(calls.slice(callCount).filter((call) => call[1] === 'send-keys')).toHaveLength(0);
 });
 
 it('keeps the original deadline and reports active-work cancellation failure honestly', async ({

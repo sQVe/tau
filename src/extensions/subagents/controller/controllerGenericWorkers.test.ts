@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { linkSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -930,6 +930,25 @@ it.each(['blocked', 'unknown'])(
     expect(setup.controller.status(started.taskId, 'parent').deadline).toBe(started.deadline);
   },
 );
+
+it('reads native output without saving a late reference or changing reported native state', async () => {
+  const setup = fixture();
+  setup.state.session = '';
+  const started = await setup.controller.launch(setup.input);
+  const directory = join(setup.root, started.taskId);
+  const savedFiles = readdirSync(directory).toSorted();
+
+  expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({ nativeState: 'idle' });
+  setup.state.session = 'late-reference';
+  setup.state.status = 'blocked';
+
+  const output = await setup.controller.nativeOutput(started.taskId, 'parent');
+
+  expect(output.text).toContain('bounded native question');
+  expect(readdirSync(directory).toSorted()).toEqual(savedFiles);
+  expect(savedFiles).not.toContain('nativeReference.json');
+  expect(setup.controller.status(started.taskId, 'parent')).toMatchObject({ nativeState: 'idle' });
+});
 
 it('follows the owned terminal after a pane move without touching the old pane', async () => {
   const setup = fixture();

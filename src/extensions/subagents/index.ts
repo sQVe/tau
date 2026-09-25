@@ -411,7 +411,7 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
       'stopping (cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (manual cleanup, references kept); notOwned (no verified handle, may still run).',
       'When a worker asks, reports, or stops, a status notice starts a new parent turn after the current tool call finishes.',
       'End your turn to wait; never sleep or poll.',
-      'No state means unreadable records; inspect recovery.',
+      'No state means unreadable records; inspect recovery. subagent_cancel stops such a worker this session owns.',
     ].join(' '),
     promptSnippet: 'Launch Tau workers to scout, implement, or review work',
     // Launch needs herdr and a parent pane, so a manager outside herdr must not be told to delegate.
@@ -493,7 +493,7 @@ const registerStatusTool = (runtime: SubagentRuntime): void => {
       'Read a direct child task. Requires taskId; questionId selects Pi reply and acknowledgement, submissionId selects native delivery, readOutput reads active native terminal text.',
       'Returns state, saved references, and report evidence for the work it names, not proof of correctness. Missing delivery observation means uncertain; do not resend.',
       'The same parent session reattaches after restart when herdr confirms worker identity, without redispatch or a new deadline.',
-      'No state means unreadable records; inspect recovery.',
+      'No state means unreadable records; inspect recovery. subagent_cancel stops such a worker this session owns.',
     ].join(' '),
     parameters: statusParameters,
     renderCall(parameters, theme) {

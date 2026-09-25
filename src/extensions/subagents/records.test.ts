@@ -19,7 +19,7 @@ import { afterEach, expect, it, onTestFinished as afterTest, vi } from 'vitest';
 import { fixtureGenericLoadout } from './fixtures/loadout.js';
 import * as questions from './questionRecords.js';
 import * as records from './records.js';
-import { workerState } from './workerState.js';
+import { readWorkerFacts } from './workerState.js';
 
 vi.mock('node:fs', async (importOriginal) => {
   const original = await importOriginal<typeof fileSystem>();
@@ -932,186 +932,44 @@ const genericWorkerFixture = () => {
   return { directory, task };
 };
 
-it.each([
-  { harness: 'pi', records: ['ready'], controlled: false, state: 'notOwned' },
-  { harness: 'pi', records: ['parentClosed'], controlled: false, state: 'notOwned' },
-  { harness: 'pi', records: ['ready'], controlled: true, state: 'starting' },
-  { harness: 'pi', records: ['ready', 'accepted'], controlled: true, state: 'running' },
-  { harness: 'pi', records: ['accepted', 'question'], controlled: true, state: 'awaitingReply' },
-  { harness: 'pi', records: ['accepted', 'question', 'reply'], controlled: true, state: 'running' },
-  { harness: 'pi', records: ['accepted', 'report'], controlled: true, state: 'reported' },
-  {
-    harness: 'pi',
-    records: ['accepted', 'report'],
-    controlled: false,
-    state: 'cleanupUnconfirmed',
-  },
-  {
-    harness: 'pi',
-    records: ['accepted', 'report', 'stopping'],
-    controlled: true,
-    state: 'stopping',
-  },
-  {
-    harness: 'pi',
-    records: ['accepted', 'stopping'],
-    controlled: false,
-    state: 'cleanupUnconfirmed',
-  },
-  {
-    harness: 'pi',
-    records: ['accepted', 'report', 'cleanupStopped'],
-    controlled: true,
-    state: 'stopped',
-  },
-  {
-    harness: 'pi',
-    records: ['accepted', 'settledStopped'],
-    controlled: false,
-    state: 'cleanupUnconfirmed',
-  },
-  { harness: 'pi', records: ['accepted', 'settled'], controlled: true, state: 'running' },
-  {
-    harness: 'pi',
-    records: ['accepted', 'startupFailure'],
-    controlled: false,
-    state: 'cleanupUnconfirmed',
-  },
-  {
-    harness: 'pi',
-    records: ['accepted', 'timeoutStopped'],
-    controlled: false,
-    state: 'cleanupUnconfirmed',
-  },
-  {
-    harness: 'pi',
-    records: ['accepted', 'timeout'],
-    controlled: true,
-    state: 'cleanupUnconfirmed',
-  },
-  {
-    harness: 'pi',
-    records: ['accepted', 'cancelled'],
-    controlled: true,
-    state: 'cleanupUnconfirmed',
-  },
-  {
-    harness: 'pi',
-    records: ['accepted', 'cleanup'],
-    controlled: true,
-    state: 'cleanupUnconfirmed',
-  },
-  { harness: 'generic', records: ['ready'], controlled: true, state: 'starting' },
-  { harness: 'generic', records: ['assignment'], controlled: true, state: 'running' },
-  { harness: 'generic', records: ['assignmentUncertain'], controlled: true, state: 'starting' },
-  { harness: 'generic', records: ['assignment', 'report'], controlled: true, state: 'reported' },
-  {
-    harness: 'generic',
-    records: ['assignment', 'report'],
-    controlled: false,
-    state: 'cleanupUnconfirmed',
-  },
-  {
-    harness: 'generic',
-    records: ['assignment', 'settledStopped'],
-    controlled: false,
-    state: 'cleanupUnconfirmed',
-  },
-  {
-    harness: 'generic',
-    records: ['assignment', 'timeoutStopped'],
-    controlled: false,
-    state: 'cleanupUnconfirmed',
-  },
-  { harness: 'generic', records: ['assignment', 'stopping'], controlled: true, state: 'stopping' },
-  {
-    harness: 'generic',
-    records: ['assignment', 'cleanupStopped'],
-    controlled: false,
-    state: 'stopped',
-  },
-])(
-  'derives $state from $records for $harness with control $controlled',
-  ({ harness, records: saved, controlled, state }) => {
-    const { directory, task } = harness === 'pi' ? questionFixture() : genericWorkerFixture();
+it('reads saved worker facts once for state and status', () => {
+  const { directory, task, question, reply } = questionFixture();
+  records.recordEvent(directory, task.taskId, 'accepted', 'Accepted.');
+  records.recordEvent(directory, task.taskId, 'cleanup', { detail: 'Stopped.', stopped: true });
+  questions.acceptQuestion(directory, task.taskId, question);
+  questions.acceptReply(directory, task.taskId, reply);
 
-    const publishAssignment = (observationState: string) => {
-      records.publish(directory, records.submissionName('assignment', 'intent'), {
-        taskId: task.taskId,
-        id: 'assignment',
-        text: 'Work.',
-      });
+  const report = { taskId: task.taskId, outcome: 'success', summary: 'Done.', evidence: [] };
+  records.acceptReport(directory, task.taskId, report);
 
-      records.publish(directory, records.submissionName('assignment', 'observation'), {
-        taskId: task.taskId,
-        id: 'assignment',
-        state: observationState,
-        detail: 'Saved.',
-      });
-    };
+  records.publish(directory, records.submissionName('assignment', 'intent'), {
+    taskId: task.taskId,
+    id: 'assignment',
+    text: 'Work.',
+  });
 
-    const write: Record<string, () => void> = {
-      question: () =>
-        questions.acceptQuestion(directory, task.taskId, {
-          version: 1,
-          taskId: task.taskId,
-          questionId: 'question-one',
-          question: 'Which source file?',
-        }),
-      reply: () =>
-        questions.acceptReply(directory, task.taskId, {
-          version: 1,
-          taskId: task.taskId,
-          questionId: 'question-one',
-          replyId: 'reply-one',
-          reply: 'Inspect source.ts.',
-        }),
-      report: () =>
-        records.acceptReport(directory, task.taskId, {
-          taskId: task.taskId,
-          outcome: 'success',
-          summary: 'Done.',
-          evidence: [],
-        }),
-      assignment: () => {
-        publishAssignment('submitted');
-      },
-      assignmentUncertain: () => {
-        publishAssignment('uncertain');
-      },
-      timeoutStopped: () => {
-        records.recordEvent(directory, task.taskId, 'timeout', {
-          detail: 'Timed out.',
-          stopped: true,
-        });
-      },
-      settledStopped: () => {
-        records.recordEvent(directory, task.taskId, 'settled', {
-          detail: 'Settled.',
-          stopped: true,
-        });
-      },
-      cleanupStopped: () => {
-        records.recordEvent(directory, task.taskId, 'cleanup', {
-          detail: 'Stopped.',
-          stopped: true,
-        });
-      },
-    };
+  const facts = readWorkerFacts(directory, task.taskId);
 
-    for (const name of saved) {
-      const recordWrite = write[name];
+  expect(Object.keys(facts.events).toSorted()).toEqual(['accepted', 'cleanup']);
+  expect(facts.events.cleanup).toMatchObject({ kind: 'cleanup', stopped: true });
+  expect(facts.report).toEqual(report);
 
-      if (recordWrite) {
-        recordWrite();
-      } else {
-        records.recordEvent(directory, task.taskId, name, name);
-      }
-    }
+  expect(facts.assignment?.intent).toEqual({
+    taskId: task.taskId,
+    id: 'assignment',
+    text: 'Work.',
+  });
 
-    expect(workerState(directory, records.readTask(directory), controlled)).toBe(state);
-  },
-);
+  expect(facts.pendingQuestion).toEqual({ ...question, replySaved: true });
+});
+
+it('refuses worker facts with a malformed lifecycle record', () => {
+  const { directory, task } = genericWorkerFixture();
+  records.recordEvent(directory, task.taskId, 'cleanup', { detail: 'Stopped.', stopped: true });
+  writeFileSync(join(directory, 'stopping.json'), '{');
+
+  expect(() => readWorkerFacts(directory, task.taskId)).toThrow(SyntaxError);
+});
 
 it('reads a saved pane identity and fails closed on invalid pane evidence', () => {
   const { directory } = questionFixture();
