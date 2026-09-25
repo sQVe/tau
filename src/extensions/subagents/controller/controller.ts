@@ -668,8 +668,12 @@ export class WorkerController {
         continue;
       }
 
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Reattach or stop one saved worker at a time so capacity stays exact.
-      await this.resumeSaved(directory, task);
+      try {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- Reattach or stop one saved worker at a time so capacity stays exact.
+        await this.resumeSaved(directory, task);
+      } catch {
+        // A task without readable ownership stays as saved evidence; the other tasks still resume.
+      }
     }
   }
 

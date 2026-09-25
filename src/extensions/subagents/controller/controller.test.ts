@@ -423,6 +423,29 @@ it('refuses cancellation without saved ownership without exposing paths or chang
   expect(fixture.calls).toHaveLength(callsBefore);
 });
 
+it('resumes the remaining workers when one saved task has no ownership record', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers();
+  const fixture = setup(onTestFinished);
+  fixture.fake.state.sendKeysError = '';
+  vi.spyOn(process, 'kill').mockReturnValue(true);
+  const unowned = await fixture.controller.launch(fixture.input);
+  const owned = await fixture.controller.launch(fixture.input);
+  fixture.controller.close();
+  rmSync(join(unowned.directory, 'owned.json'));
+  const recovered = new WorkerController(fixture.directory, fixture.client);
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  await recovered.resume('parent-id');
+
+  expect(recovered.owns(unowned.taskId)).toBe(false);
+  expect(recovered.owns(owned.taskId)).toBe(true);
+  expect(recovered.status(owned.taskId, 'parent-id').state).toBe('starting');
+});
+
 it('closes an unchanged shell once after the saved deadline has expired', async ({
   onTestFinished,
 }) => {
