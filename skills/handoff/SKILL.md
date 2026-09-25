@@ -39,10 +39,11 @@ commit another worktree from your session, even over bash.
    shows by `tab_id`. Other tabs hold workers and servers. If that tab has exactly one pane, run
    `herdr agent start <worktree-name> --kind pi --pane <pane>` and use the `pane_id` it returns;
    otherwise ask the user. The pane must be at its shell prompt.
-2. Write the message to `<your-worktree>/.tau/handoffs/<your-pane>-<timestamp>.md` with the file
-   tool. First make sure `.tau/.gitignore` has a `*` line, adding it if needed, so `.tau/` stays out
-   of Git. Take your pane from `HERDR_PANE_ID`. Make it self-contained: what to do, the state the
-   receiver needs, and what it must not touch.
+2. Write the message to `<session-directory>/.tau/handoffs/<your-pane>-<timestamp>.md` with the file
+   tool, where the session directory is your worktree or the bare repository root. First make sure
+   `.tau/.gitignore` has a `*` line, adding it if needed, so `.tau/` stays out of Git. Take your
+   pane from `HERDR_PANE_ID`. Make it self-contained: what to do, the state the receiver needs, and
+   what it must not touch.
 3. Send it and end your turn:
 
    ```bash
