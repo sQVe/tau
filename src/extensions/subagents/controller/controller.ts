@@ -659,6 +659,7 @@ export class WorkerController {
     return handle;
   }
 
+  // oxlint-disable-next-line eslint/complexity -- Keep saved ownership, timeout cleanup, and failed-inspection release in one transition.
   async resume(parentSessionId: string): Promise<void> {
     for (const { directory, task } of readTasks(this.root)) {
       if (
@@ -684,16 +685,37 @@ export class WorkerController {
           continue;
         }
 
+        const expired = remainingWorkBudget(handle) <= 0;
+
+        // ponytail: PID reuse can make an exited worker look present, costing one identity-checked stop attempt.
+        if (expired && handle.owned && processAbsent(handle.owned.processId)) {
+          continue;
+        }
+
         // Reserve capacity and expose saved ownership to shutdown before inspection can yield.
         // ponytail: one Pi process per parent session; add cross-process exclusion if concurrent resumes become supported.
         this.handles.set(task.taskId, handle);
         this.live.add(task.taskId);
+
+        if (expired) {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- Finish bounded cleanup before admitting another saved worker.
+          await this.stop(handle, 'timeout');
+          continue;
+        }
 
         // oxlint-disable-next-line eslint/no-await-in-loop -- Reattach each task only after its saved identity passes the existing verifier.
         handle.owned = await inspectWorker(handle, this.herdrCall(handle));
         this.lifetime.signal.throwIfAborted();
         this.poll(handle);
       } catch {
+        const handle = this.handles.get(task.taskId);
+
+        if (handle && remainingWorkBudget(handle) <= 0) {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- Inspection may consume the last work budget; use the reserved cleanup budget.
+          await this.stop(handle, 'timeout');
+          continue;
+        }
+
         this.handles.delete(task.taskId);
         this.live.delete(task.taskId);
         // Saved evidence remains available; cancellation can still check the saved shell and pane.
