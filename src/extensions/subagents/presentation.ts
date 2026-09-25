@@ -130,10 +130,9 @@ const handoffSectionNames = ['Changes', 'Evidence', 'Decisions', 'Concerns'] as 
 
 type HandoffSection = (typeof handoffSectionNames)[number];
 
+// A heading starts its line, may carry Markdown marks, and ends at a colon, parenthesis, or line end.
 const summaryHasHeading = (summary: string, name: string): boolean =>
-  new RegExp(`^\\s*(?:#+\\s*|[-*]\\s*)?(?:\\*\\*)?${name}(?:\\*\\*)?\\s*(?::|$)`, 'im').test(
-    summary,
-  );
+  new RegExp(`^[\\s#*>-]*${name}\\**\\s*(?::|\\(|$)`, 'im').test(summary);
 
 // Presence means the saved summary contains a section heading with that name. The scan reports the
 // missing handoff sections; it does not read evidence strings, verify content, or claim freshness.

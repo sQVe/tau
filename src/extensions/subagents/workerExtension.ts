@@ -19,6 +19,7 @@ import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
 import { checkWorkerRuntime } from './loadout.js';
+import { handoffSections } from './presentation.js';
 import { workerPrompt } from './profiles.js';
 import {
   acceptAcknowledgement,
@@ -358,13 +359,8 @@ const refuseEarlyIncomplete = (
   );
 };
 
-const handoffSections = ['Changes', 'Evidence', 'Decisions', 'Concerns'];
-
-// A heading starts its line, may carry Markdown marks, and ends at a colon, parenthesis, or line end.
 const refuseMissingSections = (state: WorkerExtensionState, summary: string) => {
-  const missing = handoffSections.filter(
-    (section) => !new RegExp(`^[\\s#*>-]*${section}\\**\\s*(?::|\\(|$)`, 'im').test(summary),
-  );
+  const missing = handoffSections({ summary })?.missing ?? [];
 
   if (missing.length === 0) {
     return;
