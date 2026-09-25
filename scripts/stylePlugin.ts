@@ -80,8 +80,17 @@ const extensionOf = (path: string): string | undefined => {
 const isCompositionRoot = (path: string): boolean =>
   /(^|\/)src\/extensions(\/index(\.[jt]s)?)?$/.test(path);
 
-const declarationOf = (statement: ESTree.Node): ESTree.Node =>
-  statement.type === 'ExportNamedDeclaration' ? (statement.declaration ?? statement) : statement;
+const declarationOf = (statement: ESTree.Node): ESTree.Node => {
+  if (statement.type === 'ExportNamedDeclaration') {
+    return statement.declaration ?? statement;
+  }
+
+  const defaultInterface =
+    statement.type === 'ExportDefaultDeclaration' &&
+    statement.declaration.type === 'TSInterfaceDeclaration';
+
+  return defaultInterface ? statement.declaration : statement;
+};
 
 const typeDeclarationOf = (statement: ESTree.Node): TypeDeclaration | undefined => {
   const declaration = declarationOf(statement);
@@ -180,10 +189,16 @@ const misplacedTypes = (
       continue;
     }
 
+    // Code after the type on its line stays put; otherwise the whole line goes.
+    const next = sourceCode.getTokenAfter(statement);
     const lineEnd = sourceCode.text.indexOf('\n', statement.range[1]);
+    const sharesLine = next !== null && next.loc.start.line === statement.loc.end.line;
     const end = lineEnd === -1 ? sourceCode.text.length : lineEnd + 1;
 
-    types.push({ declaration, range: [lineStartWithComments(statement, sourceCode), end] });
+    types.push({
+      declaration,
+      range: [lineStartWithComments(statement, sourceCode), sharesLine ? next.range[0] : end],
+    });
   }
 
   return { insertAt, types };
