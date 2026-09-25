@@ -7,6 +7,8 @@ import type { AgentToolResult, ExtensionContext } from '@earendil-works/pi-codin
 
 import { errorMessage } from '../../errors/index.js';
 
+type PathStat = { path: string; size: number } | { problem: string; error?: unknown };
+
 export const bulkReadTool = 'bulk_read';
 
 export const isCancellation = (error: unknown): boolean =>
@@ -34,6 +36,39 @@ const stripLinePrefixes = (text: string): string => text.replace(/^\d+→/gm, ''
 const inputError = (message: string, cause?: unknown) =>
   new BulkReadRecoverableError(message, { cause });
 
+// Pi's unexported read helper strips @ and expands ~, so bulk_read accepts the same spellings.
+const resolvePath = (cwd: string, path: string): string =>
+  resolve(cwd, path.replace(/^@/, '').replace(/^~(?=\/|$)/, homedir()));
+
+// One refusal names every bad path, so a guessed path does not cost a retry per file.
+const statPaths = async (cwd: string, paths: string[]) => {
+  const results = await Promise.all(
+    paths.map(async (path): Promise<PathStat> => {
+      try {
+        const stats = await stat(resolvePath(cwd, path));
+
+        // A FIFO reports size 0 and then blocks the read until a writer appears, past every timeout.
+        return stats.isFile()
+          ? { path, size: stats.size }
+          : { problem: `Not a regular file: ${path}` };
+      } catch (error) {
+        return { problem: errorMessage(error), error };
+      }
+    }),
+  );
+
+  const files = results.flatMap((result) => ('size' in result ? [result] : []));
+  const failures = results.flatMap((result) => ('problem' in result ? [result] : []));
+
+  if (failures.length > 0) {
+    const message = failures.map((failure) => failure.problem).join('\n');
+
+    throw inputError(message, failures.length === 1 ? failures[0]?.error : undefined);
+  }
+
+  return files;
+};
+
 const loadPayload = async (
   cwd: string,
   paths: string[],
@@ -44,31 +79,18 @@ const loadPayload = async (
   const skipped: string[] = [];
   let remaining = maxCharacters;
 
-  for (const path of paths) {
+  signal?.throwIfAborted();
+
+  // The per-file cap is measured before reading, so one oversized file never allocates its content.
+  for (const { path, size } of await statPaths(cwd, paths)) {
     signal?.throwIfAborted();
-
-    // Pi's unexported read helper strips @ and expands ~, so bulk_read accepts the same spellings.
-    const absolutePath = resolve(cwd, path.replace(/^@/, '').replace(/^~(?=\/|$)/, homedir()));
-
-    // The per-file cap is measured before reading, so one oversized file never allocates its content.
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Validate each file before reading it and stop at the first invalid input.
-    const stats = await stat(absolutePath).catch((error: unknown) => {
-      throw inputError(errorMessage(error), error);
-    });
-
-    // A FIFO reports size 0 and then blocks the read until a writer appears, past every timeout.
-    if (!stats.isFile()) {
-      throw inputError(`Not a regular file: ${path}`);
-    }
-
-    const { size } = stats;
 
     if (size > 400_000) {
       throw inputError(`Input is too large: ${path}. Split the request`);
     }
 
     // oxlint-disable-next-line eslint/no-await-in-loop -- Serial reads preserve request order and stop at the first invalid input.
-    const content = await readFile(absolutePath, 'utf8').catch((error: unknown) => {
+    const content = await readFile(resolvePath(cwd, path), 'utf8').catch((error: unknown) => {
       throw inputError(errorMessage(error), error);
     });
 
