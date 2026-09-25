@@ -1,6 +1,6 @@
 # ADR 0048: Keep the bare repository root read-only for agents
 
-- Status: Accepted
+- Status: Superseded by [ADR 0050](./0050-note-the-bare-root-rule-instead-of-enforcing-it.md)
 - Date: 2026-09-25
 
 ## Context

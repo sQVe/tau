@@ -4,12 +4,10 @@ import { promisify } from 'node:util';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 const rule =
-  'This session runs in the bare repository root, not a worktree. Read and answer questions here, ' +
-  'but do not edit files, run tests, commit, or launch workers. For new work, open a worktree with ' +
-  'the worktree skill. For work that belongs to an existing worktree, pass it on with the handoff ' +
-  'skill.';
-
-const blockedTools = new Set(['write', 'edit', 'subagent', 'subagent_follow_up']);
+  'This session runs in the bare repository root, not a worktree. Use it to read, answer ' +
+  'questions, open worktrees, and hand off work. Do development in a worktree: open one with the ' +
+  'worktree skill for new work, and pass work that belongs to an existing worktree on with the ' +
+  'handoff skill. Writing handoff messages under .tau/handoffs in the root is fine.';
 
 const isBareRoot = async (cwd: string) => {
   // oxlint-disable-next-line node/no-process-env -- An inherited repository selector would make Git check that repository instead of cwd.
@@ -43,9 +41,5 @@ export default function bareRootExtension(pi: ExtensionAPI) {
 
   pi.on('before_agent_start', (event) =>
     bareRoot ? { systemPrompt: `${event.systemPrompt}\n\n${rule}` } : undefined,
-  );
-
-  pi.on('tool_call', (event) =>
-    bareRoot && blockedTools.has(event.toolName) ? { block: true, reason: rule } : undefined,
   );
 }
