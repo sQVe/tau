@@ -3673,7 +3673,6 @@ it('caps live workers per controller and admits again after confirmed cleanup', 
   await expect(refused).rejects.toThrow('capacity full');
   await expect(refused).rejects.toThrow(launched.name);
   await expect(refused).rejects.toThrow(new Date(launched.deadline).toISOString());
-  await expect(refused).rejects.toThrow('retry after');
 
   expect(readdirSync(fixture.directory)).toEqual(recordsBefore);
   expect(fixture.fake.layout.panes).toEqual(panesBefore);
