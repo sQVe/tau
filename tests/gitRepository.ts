@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -24,4 +24,17 @@ export const createTemporaryRepository = async (
   await initializeRepository(repositoryDirectory);
 
   return repositoryDirectory;
+};
+
+// Builds the layout Tau checkouts use: a `.git` file pointing at `.bare`, with worktrees beside it.
+export const createTemporaryBareRoot = async (
+  registerCleanup: RegisterCleanup,
+): Promise<string> => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), 'tau-bare-root-'));
+  registerCleanup(() => rm(rootDirectory, { recursive: true, force: true }));
+
+  await promisify(execFile)('git', ['init', '--quiet', '--bare', '.bare'], { cwd: rootDirectory });
+  await writeFile(join(rootDirectory, '.git'), 'gitdir: .bare\n');
+
+  return rootDirectory;
 };

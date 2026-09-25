@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import askUserQuestionExtension from './askUserQuestion/index.js';
+import bareRootExtension from './bareRoot/index.js';
 import broExtension from './bro/index.js';
 import bulkReadExtension from './bulkRead/index.js';
 import codingExtension from './coding/index.js';
@@ -25,4 +26,5 @@ export default async function tauExtension(pi: ExtensionAPI) {
   snippetsExtension(pi);
   statusbarExtension(pi);
   subagentsExtension(pi);
+  bareRootExtension(pi);
 }
