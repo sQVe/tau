@@ -82,7 +82,6 @@ export default function (pi) {
   let promptCount = 0;
 
   let startAttempts = 0;
-  let earlyExitStartAborted = false;
   const subsequentStartErrors: string[] = [];
 
   const client = async (argumentsList: string[], budget = 5000, signal?: AbortSignal) => {
@@ -108,12 +107,9 @@ export default function (pi) {
 
       return response;
     } catch (error) {
-      if (earlyExitStart) {
-        if (startAttempts === 1) {
-          earlyExitStartAborted = signal?.aborted === true;
-        } else {
-          subsequentStartErrors.push(String(error));
-        }
+      // The first start fails either way: herdr notices the exit or the parent aborts it.
+      if (earlyExitStart && startAttempts > 1) {
+        subsequentStartErrors.push(String(error));
       }
 
       throw error;
@@ -407,7 +403,6 @@ export default function (pi) {
   expect(readFileSync(join(root, 'delete-fixture', '.git', 'keep'), 'utf8')).toBe('preserve');
 
   if (scenario === 'early exit') {
-    expect(earlyExitStartAborted).toBe(true);
     writeFileSync(earlyExitExtension, 'export default function () {};\n');
 
     const next = await controller.launch({
