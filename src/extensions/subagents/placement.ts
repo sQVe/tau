@@ -61,11 +61,13 @@ const splitCandidate = (
     return undefined;
   }
 
+  const alone = layout.panes.length === 1;
+
   const candidates = layout.panes
     .flatMap((value) => {
       const pane = requireObject(value);
       const bounds = rectangle(pane.rect);
-      const direction = splitDirection(bounds);
+      const direction = splitDirection(bounds, alone);
       const location = eligible.find((entry) => entry.paneId === text(pane.pane_id));
 
       return direction && location ? [{ location, bounds, direction }] : [];
@@ -244,11 +246,7 @@ export class WorkerPlacement {
     }
 
     const shape = layoutShape(layout);
-
-    const candidates = plan
-      ? eligible.filter((pane) => plan.targets.includes(pane.paneId))
-      : eligible;
-
+    const candidates = plan ? eligible.filter((pane) => pane.paneId === plan.target) : eligible;
     const candidate = splitCandidate(layout, candidates, first.workspaceId, first.tabId);
 
     if (!candidate) {

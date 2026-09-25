@@ -2,5 +2,5 @@
 'tau': patch
 ---
 
-Foreground workers open beside the parent on wide terminals instead of stacking below it. Clearly
-tall panes still stack, so the parent and workers stay roughly equal in size.
+The first foreground worker opens beside the parent on laptop-sized terminals, such as 193 columns
+by 60 rows, instead of stacking below it. Later workers are placed as before.

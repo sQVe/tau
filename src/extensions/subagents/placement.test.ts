@@ -10,8 +10,6 @@ it.each([
   [400, 30, 'right'],
   [400, 100, 'right'],
   [164, 48, 'right'],
-  [193, 60, 'right'],
-  [164, 200, 'down'],
   [163, 47, undefined],
   [165, 24, 'right'],
   [82, 49, 'down'],
@@ -71,16 +69,23 @@ it.each([2, 4])('shares approximately equal foreground area with %s workers', as
   expect(Math.max(...areas) / Math.min(...areas)).toBeLessThan(1.1);
 });
 
-it('rebalances every foreground worker after a placement that could not share equally', async () => {
-  const { placement, client, input, dimensions } = fixture(230, 72);
+it('places the first foreground worker beside the parent in 193 columns and 60 rows', async () => {
+  const { placement, client, input, dimensions } = fixture(193, 60);
 
-  for (let index = 0; index < 3; index++) {
+  await placement.place(input('foreground'), client);
+
+  expect([...dimensions.values()].map((bounds) => bounds.height)).toEqual([60, 60]);
+});
+
+it('keeps five foreground workers in the parent tab in 164 columns and 73 rows', async () => {
+  const { placement, client, input, panes } = fixture(164, 73);
+
+  for (let index = 0; index < 5; index++) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- Each placement plans from the previous layout.
     await placement.place(input('foreground'), client);
   }
 
-  const areas = [...dimensions.values()].map((bounds) => bounds.width * bounds.height);
-  expect(Math.max(...areas) / Math.min(...areas)).toBeLessThan(1.1);
+  expect(panes.every((pane) => pane.tab_id === 'working')).toBe(true);
 });
 
 it('fits two foreground workers beside the parent in 250 columns and 30 rows', async () => {
