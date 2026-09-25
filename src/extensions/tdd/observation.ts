@@ -53,11 +53,11 @@ const normalizeTestFile = async (cwd: string, file: string): Promise<string> => 
       () => false,
     );
 
-  if (/[[\]]/.test(literalPath) && !(await exists())) {
+  if (path.startsWith('../') || classifyPath(path) !== 'test') {
     throw new Error(`Expected a test file inside the worktree: ${file}`);
   }
 
-  if (path.startsWith('../') || classifyPath(path) !== 'test') {
+  if (/[[\]]/.test(literalPath) && !(await exists())) {
     throw new Error(`Expected a test file inside the worktree: ${file}`);
   }
 
