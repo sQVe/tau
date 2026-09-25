@@ -29,7 +29,7 @@ interface Adjustment {
 
 export interface ForegroundPlan {
   tree: Tree;
-  target: string;
+  targets: string[];
   adjustments: Adjustment[];
 }
 
@@ -78,9 +78,9 @@ export const rectangle = (value: unknown): Rectangle => {
 export const isUseful = (bounds: Rectangle): boolean =>
   bounds.width >= minimumPane.width && bounds.height >= minimumPane.height;
 
-// Favor side-by-side workers, but stack clearly tall panes so workers keep similar areas.
+// Slightly favor side-by-side workers. A stronger bias leaves columns that later workers cannot share equally.
 const preferRight = (bounds: Rectangle, down: boolean): boolean =>
-  !down || (1.5 * bounds.width) / minimumPane.width >= bounds.height / minimumPane.height;
+  !down || (1.1 * bounds.width) / minimumPane.width >= bounds.height / minimumPane.height;
 
 export const splitDirection = (bounds: Rectangle): 'right' | 'down' | undefined => {
   const right = isUseful({ width: splitLengths(bounds.width, 0.5).second, height: bounds.height });
@@ -502,11 +502,20 @@ export class ForegroundShares {
       const adjustments: Adjustment[] = [];
 
       if (distribute(group.tree, bounds, target, adjustments)) {
-        return { tree: group.tree, target, adjustments };
+        return { tree: group.tree, targets: [target], adjustments };
       }
     }
 
-    return undefined;
+    // Keep the group when no equal share fits yet, so a later placement can still balance all of it.
+    const splittable = members.filter((paneId) => {
+      const pane = panes(layout).find((entry) => entry.pane_id === paneId);
+
+      return pane !== undefined && splitDirection(rectangle(pane.rect)) !== undefined;
+    });
+
+    return splittable.length > 0
+      ? { tree: group.tree, targets: splittable, adjustments: [] }
+      : undefined;
   }
 
   async balance(

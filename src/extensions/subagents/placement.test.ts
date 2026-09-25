@@ -71,6 +71,18 @@ it.each([2, 4])('shares approximately equal foreground area with %s workers', as
   expect(Math.max(...areas) / Math.min(...areas)).toBeLessThan(1.1);
 });
 
+it('rebalances every foreground worker after a placement that could not share equally', async () => {
+  const { placement, client, input, dimensions } = fixture(230, 72);
+
+  for (let index = 0; index < 3; index++) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Each placement plans from the previous layout.
+    await placement.place(input('foreground'), client);
+  }
+
+  const areas = [...dimensions.values()].map((bounds) => bounds.width * bounds.height);
+  expect(Math.max(...areas) / Math.min(...areas)).toBeLessThan(1.1);
+});
+
 it('fits two foreground workers beside the parent in 250 columns and 30 rows', async () => {
   const { placement, client, input, panes, dimensions } = fixture(250, 30);
 
@@ -136,7 +148,7 @@ it.each([
   'manual resize before close',
   'manual resize after close',
 ] as const)('does not infer surviving split ownership after %s', async (scenario) => {
-  const { placement, client, input, calls } = fixture(200, 100);
+  const { placement, client, input, calls } = fixture(240, 100);
   const first = await placement.place(input('foreground'), client);
   await placement.place(input('foreground'), client);
   placement.release(first.terminalId);

@@ -244,7 +244,9 @@ export class WorkerPlacement {
     }
 
     const shape = layoutShape(layout);
-    const candidates = plan ? eligible.filter((pane) => pane.paneId === plan.target) : eligible;
+    const candidates = plan
+      ? eligible.filter((pane) => plan.targets.includes(pane.paneId))
+      : eligible;
     const candidate = splitCandidate(layout, candidates, first.workspaceId, first.tabId);
 
     if (!candidate) {
