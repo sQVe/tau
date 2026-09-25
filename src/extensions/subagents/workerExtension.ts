@@ -19,6 +19,7 @@ import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
 import { checkWorkerRuntime } from './loadout.js';
+import { handoffSections } from './presentation.js';
 import { workerPrompt } from './profiles.js';
 import {
   acceptAcknowledgement,
@@ -358,6 +359,19 @@ const refuseEarlyIncomplete = (
   );
 };
 
+const refuseMissingSections = (state: WorkerExtensionState, summary: string) => {
+  const missing = handoffSections({ summary })?.missing ?? [];
+
+  if (missing.length === 0) {
+    return;
+  }
+
+  state.remindAfterRefusal = true;
+  throw new Error(
+    `Report refused: summary is missing the ${missing.join(', ')} section headings. Resend a compact summary with all four sections, writing None under any that is empty.`,
+  );
+};
+
 // Concerns come last and matter most, so trim the blocker first and cut the summary only to fit a short one.
 const withBlocker = (summary: string, blocker: string | undefined): string => {
   if (blocker === undefined) {
@@ -380,13 +394,21 @@ const reportToParent = (
   const task = state.task;
   const { blocker, ...handover } = parameters;
 
+  // Check what will be saved: a blocker can push the last section past the size limit.
+  const summary = withBlocker(
+    handover.summary,
+    handover.outcome === 'incomplete' ? blocker : undefined,
+  );
+
+  refuseMissingSections(state, summary);
+
   if (handover.outcome === 'incomplete') {
     refuseEarlyIncomplete(state, task, blocker);
   }
 
   const report = acceptReport(state.directory, task.taskId, {
     ...handover,
-    summary: withBlocker(handover.summary, handover.outcome === 'incomplete' ? blocker : undefined),
+    summary,
     taskId: task.taskId,
   });
 

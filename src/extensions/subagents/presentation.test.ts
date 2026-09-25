@@ -259,6 +259,26 @@ it('counts only real handoff headings, including a generic report without an Evi
   });
 });
 
+it('counts parenthesized and quoted headings that the report tool accepts', () => {
+  const status = modelStatus({
+    taskId: 'task-1',
+    state: 'stopped',
+    deadline: 10,
+    outcome: 'success',
+    report: {
+      taskId: 'task-1',
+      outcome: 'success',
+      summary: '## Changes\nNone\n> Evidence: none\nDECISIONS: None\n### Concerns (open)\nNone',
+      evidence: [],
+    },
+  });
+
+  expect(status.handoffSections).toEqual({
+    present: ['Changes', 'Evidence', 'Decisions', 'Concerns'],
+    missing: [],
+  });
+});
+
 it('carries a bounded native observation reason into model content', () => {
   const short = modelStatus({
     taskId: 'task-1',

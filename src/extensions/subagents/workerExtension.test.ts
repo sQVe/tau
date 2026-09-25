@@ -23,6 +23,8 @@ vi.mock('./loadout.js', () => ({
   checkWorkerRuntime: vi.fn<typeof checkWorkerRuntime>(),
 }));
 
+const sections = '\n\nChanges: None\nEvidence: None\nDecisions: None\nConcerns: None';
+
 const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_000) => {
   vi.useFakeTimers();
   const directory = mkdtempSync(join(tmpdir(), 'tau-worker-clock-'));
@@ -276,7 +278,7 @@ it.each(['deadline', 'parent stopped', 'question', 'reported'] as const)(
         'report',
         {
           outcome: 'success',
-          summary: 'Done.',
+          summary: `Done.${sections}`,
           evidence: [],
         },
         undefined,
@@ -421,7 +423,7 @@ it('refuses progress without an active task and after the final handover', async
 
   await report.execute(
     'report',
-    { outcome: 'success', summary: 'Done.', evidence: [] },
+    { outcome: 'success', summary: `Done.${sections}`, evidence: [] },
     undefined,
     undefined,
     worker.context,
@@ -555,6 +557,36 @@ it('saves the handoff sections and work reference from a Pi report', async () =>
   await worker.emit('session_shutdown');
 });
 
+it('refuses a report that misses handoff sections until the worker resends them', async () => {
+  const worker = await waitingWorker('editing');
+  const report = worker.tools.get('subagent_report');
+
+  if (!report) {
+    throw new Error('Missing report tool.');
+  }
+
+  const send = (summary: string) =>
+    report.execute(
+      'report',
+      { outcome: 'success', summary, evidence: [] },
+      undefined,
+      undefined,
+      worker.context,
+    );
+
+  expect(() => send('## Changes\n- src/value.ts\n\nEvidence: pnpm check passed')).toThrow(
+    'Decisions, Concerns',
+  );
+
+  expect(readReport(worker.directory, 'task')).toBeUndefined();
+
+  await send(
+    '## Changes\n- src/value.ts\n**Evidence**\n- pnpm check passed\nDECISIONS: None\n### Concerns (open)\nNone',
+  );
+
+  expect(readReport(worker.directory, 'task')?.outcome).toBe('success');
+});
+
 const hour = 3_600_000;
 
 const reportIncomplete = (worker: Awaited<ReturnType<typeof waitingWorker>>, blocker?: string) => {
@@ -568,7 +600,7 @@ const reportIncomplete = (worker: Awaited<ReturnType<typeof waitingWorker>>, blo
     'report',
     {
       outcome: 'incomplete',
-      summary: 'Implementation done. Regression tests remain.',
+      summary: `Implementation done. Regression tests remain.${sections}`,
       evidence: [],
       ...(blocker === undefined ? {} : { blocker }),
     },
@@ -658,7 +690,7 @@ it('keeps the blocker when the summary is at the size limit', async () => {
     'report',
     {
       outcome: 'incomplete',
-      summary: 'Task ended.'.padEnd(textLimit, '.'),
+      summary: `Task ended.${sections}`.padEnd(textLimit, '.'),
       evidence: [],
       blocker: 'The parent must choose the storage format.',
     },
@@ -670,6 +702,34 @@ it('keeps the blocker when the summary is at the size limit', async () => {
   const summary = readReport(worker.directory, 'task')?.summary;
   expect(summary).toHaveLength(textLimit);
   expect(summary).toContain('Blocker: The parent must choose the storage format.\n\nTask ended.');
+});
+
+it('refuses a full-size report whose blocker would push out a section', async () => {
+  const worker = await waitingWorker('editing');
+  const report = worker.tools.get('subagent_report');
+
+  if (!report) {
+    throw new Error('Missing report tool.');
+  }
+
+  const body = 'Changes: None\nEvidence: None\nDecisions: None\n';
+
+  expect(() =>
+    report.execute(
+      'report',
+      {
+        outcome: 'incomplete',
+        summary: `${body.padEnd(textLimit - '\nConcerns: None'.length, '.')}\nConcerns: None`,
+        evidence: [],
+        blocker: 'The parent must choose the storage format.',
+      },
+      undefined,
+      undefined,
+      worker.context,
+    ),
+  ).toThrow('Concerns');
+
+  expect(readReport(worker.directory, 'task')).toBeUndefined();
 });
 
 it('accepts a success report after refusing an incomplete one', async () => {
@@ -684,14 +744,14 @@ it('accepts a success report after refusing an incomplete one', async () => {
 
   await report.execute(
     'report',
-    { outcome: 'success', summary: 'All done.', evidence: [], blocker: 'None.' },
+    { outcome: 'success', summary: `All done.${sections}`, evidence: [], blocker: 'None.' },
     undefined,
     undefined,
     worker.context,
   );
 
   expect(readReport(worker.directory, 'task')?.outcome).toBe('success');
-  expect(readReport(worker.directory, 'task')?.summary).toBe('All done.');
+  expect(readReport(worker.directory, 'task')?.summary).toBe(`All done.${sections}`);
 });
 
 it('stops waiting after uncertain question publication once the deadline passes', async () => {

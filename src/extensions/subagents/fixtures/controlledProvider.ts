@@ -48,7 +48,8 @@ const registerFollowUpProvider = (pi: ExtensionAPI): void => {
       return fauxAssistantMessage([
         fauxToolCall('subagent_report', {
           outcome: prior && blocked && instructions ? 'success' : 'failure',
-          summary: 'Native follow-up checked.',
+          summary:
+            'Native follow-up checked.\n\nChanges: None\nEvidence: None\nDecisions: None\nConcerns: None',
           evidence: [
             `prior context: ${prior}`,
             `Safety Net block: ${blocked}`,
@@ -111,7 +112,8 @@ const registerDefaultProvider = (pi: ExtensionAPI): void => {
       return fauxAssistantMessage([
         fauxToolCall('subagent_report', {
           outcome: blocked && edited ? 'success' : 'failure',
-          summary: 'Model-free CLI fixture completed.',
+          summary:
+            'Model-free CLI fixture completed.\n\nChanges: None\nEvidence: None\nDecisions: None\nConcerns: None',
           evidence: ['edit checked', `Safety Net block: ${blocked}`],
         }),
       ]);

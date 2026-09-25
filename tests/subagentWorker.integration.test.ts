@@ -39,6 +39,9 @@ import {
 import { requireNativeTask } from '../src/extensions/subagents/types.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 
+const handoff =
+  'Changes: edited source.txt\nEvidence: command-ok\nDecisions: None\nConcerns: Safety Net blocked deletion';
+
 it('keeps the real bundled questionnaire available to the parent', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-parent-questionnaire-'));
 
@@ -320,7 +323,7 @@ it.each(['editing', 'investigation'] as const)(
       fauxAssistantMessage([
         fauxToolCall('subagent_report', {
           outcome: 'success',
-          summary: 'Edited and checked the fixture.',
+          summary: handoff,
           evidence: ['source.txt', 'command-ok', 'Safety Net blocked deletion'],
         }),
       ]),
@@ -451,7 +454,7 @@ it.each(['editing', 'investigation'] as const)(
       ),
     ).toBe(true);
 
-    expect(readReport(taskDirectory, task.taskId)?.summary).toBe('Edited and checked the fixture.');
+    expect(readReport(taskDirectory, task.taskId)?.summary).toBe(handoff);
     expect(readEvent(taskDirectory, task.taskId, 'accepted')).toBeDefined();
     expect(readEvent(taskDirectory, task.taskId, 'settled')?.stopped).toBe(true);
 
