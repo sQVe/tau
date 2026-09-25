@@ -250,6 +250,16 @@ it('reads a reviewer task named after its profile', () => {
   expect(records.readTask(join(directory, 'new'))).toEqual(saved);
 });
 
+it('refuses a reviewer task saved with a worker name', () => {
+  const { directory, task } = questionFixture();
+  const saved = { ...task, name: 'worker-ab', loadout: { ...task.loadout, profile: 'reviewer' } };
+  mkdirSync(join(directory, 'wrong'));
+  writeFileSync(join(directory, 'wrong', 'task.json'), JSON.stringify(saved));
+
+  expect(() => records.readTask(join(directory, 'wrong'))).toThrow('Invalid worker identity.');
+  expect(JSON.parse(readFileSync(join(directory, 'wrong', 'task.json'), 'utf8'))).toEqual(saved);
+});
+
 it('skips an invalid current-format task but refuses a direct read', () => {
   const { directory, task } = questionFixture();
   const root = join(directory, 'registry');
