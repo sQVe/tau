@@ -471,24 +471,21 @@ export const waitForWorkerExit = async (
   signal: AbortSignal,
 ): Promise<never> => {
   const budget = { signal, remainingBudget: () => workBudget(handle) };
+  let bareSamples = 0;
 
   for (;;) {
-    // Give agent start time to leave the placed shell before checking for an early exit.
+    // ponytail: two 250 ms bare-shell polls debounce slow starts; use a start acknowledgement if that window is insufficient.
     // oxlint-disable-next-line eslint/no-await-in-loop -- Exit polling shares the startup deadline and ends when agent start settles.
     await delay(Math.min(250, workBudget(handle)), undefined, { signal });
     const failure = readEvent(handle.directory, handle.task.taskId, 'startupFailure');
 
-    if (failure) {
-      throw new Error(failure.detail);
-    }
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Records precede shutdown; only the unchanged bare shell proves exit.
+    const bare = await shellUnchanged(handle, call, budget);
 
-    if (readEvent(handle.directory, handle.task.taskId, 'settled')) {
-      throw new WorkerExitedError();
-    }
+    bareSamples = bare ? bareSamples + 1 : 0;
 
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Generic workers have no startup record; the unchanged bare shell proves exit.
-    if (await shellUnchanged(handle, call, budget)) {
-      throw new WorkerExitedError();
+    if (bareSamples === 2) {
+      throw failure ? new Error(failure.detail) : new WorkerExitedError();
     }
   }
 };

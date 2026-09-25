@@ -2,5 +2,5 @@
 'tau': patch
 ---
 
-Fail worker launches promptly when the worker records a startup failure or exits before herdr
-reports readiness.
+Fail worker launches promptly after startup exits instead of waiting for herdr's timeout. Preserve
+the worker's failure detail and confirm the shell is bare before cleanup.

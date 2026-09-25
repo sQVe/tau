@@ -81,6 +81,10 @@ export default function (pi) {
   const releaseDelivery = Promise.withResolvers<undefined>();
   let promptCount = 0;
 
+  let startAttempts = 0;
+  let earlyExitStartTimeout = 0;
+  let earlyExitStartAborted = false;
+  const subsequentStartErrors: string[] = [];
   const client = async (argumentsList: string[], budget = 5000, signal?: AbortSignal) => {
     if (argumentsList[1] === 'prompt') {
       promptCount += 1;
@@ -88,15 +92,33 @@ export default function (pi) {
       await releaseDelivery.promise;
     }
 
-    const response = await isolatedClient(argumentsList, budget, signal);
-    observations.push(response);
+    const earlyExitStart = scenario === 'early exit' && argumentsList[1] === 'start';
 
-    // The early-exit fixture leaves during startup, before herdr reports the worker session.
-    if (scenario === 'early exit' && argumentsList[1] === 'start') {
-      writeFileSync(exitSignal, 'exit');
+    if (earlyExitStart) {
+      startAttempts += 1;
+
+      if (startAttempts === 1) {
+        earlyExitStartTimeout = Number(argumentsList[argumentsList.indexOf('--timeout') + 1]);
+        writeFileSync(exitSignal, 'exit');
+      }
     }
 
-    return response;
+    try {
+      const response = await isolatedClient(argumentsList, budget, signal);
+      observations.push(response);
+
+      return response;
+    } catch (error) {
+      if (earlyExitStart) {
+        if (startAttempts === 1) {
+          earlyExitStartAborted = signal?.aborted === true;
+        } else {
+          subsequentStartErrors.push(String(error));
+        }
+      }
+
+      throw error;
+    }
   };
 
   await runClient('herdr', ['integration', 'install', 'pi'], 5000, { environment });
@@ -231,8 +253,9 @@ export default function (pi) {
     loadout,
   });
 
+  const launchDuration = performance.now() - launchedAt;
   const failure = scenario === 'early exit' ? /exited before readiness/ : /^$/;
-  expect(performance.now() - launchedAt).toBeLessThan(10_000);
+  expect(launchDuration).toBeLessThan(10_000);
   expect(launched.failure ?? '').toMatch(failure);
   expect(existsSync(join(launched.directory, 'dispatch.json'))).toBe(scenario !== 'early exit');
   let movement: { sameTerminal: boolean; newPane: boolean } | undefined;
@@ -383,6 +406,34 @@ export default function (pi) {
 
   expect(readFileSync(join(root, 'source.txt'), 'utf8')).toBe(completes ? 'after\n' : 'before\n');
   expect(readFileSync(join(root, 'delete-fixture', '.git', 'keep'), 'utf8')).toBe('preserve');
+
+  if (scenario === 'early exit') {
+    expect(earlyExitStartAborted).toBe(true);
+    expect(launchDuration).toBeLessThan(earlyExitStartTimeout / 2);
+    writeFileSync(earlyExitExtension, 'export default function () {};\n');
+    const next = await controller.launch({
+      task: 'Test active cancellation.',
+      timeout: 10_000,
+      parentSession: join(root, 'parent.jsonl'),
+      parentSessionId: 'parent',
+      parentPane: paneId,
+      loadout,
+    });
+    // oxlint-disable-next-line eslint/no-console -- Keep launch latency and pending-registration evidence in the integration test output.
+    console.info({
+      launchDuration,
+      earlyExitStartTimeout,
+      secondLaunch: next.state,
+      subsequentStartErrors,
+    });
+    expect(subsequentStartErrors).toEqual([]);
+    expect(next.failure).toBeUndefined();
+    expect(existsSync(join(next.directory, 'dispatch.json'))).toBe(true);
+    expect(controller.owns(next.taskId)).toBe(true);
+    const cancelled = await controller.cancel(next.taskId, 'parent');
+    expect(cancelled.state).toBe('stopped');
+  }
+
   const followUpObservations: unknown[] = [];
 
   if (scenario === 'follow-up') {
