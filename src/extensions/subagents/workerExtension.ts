@@ -358,6 +358,24 @@ const refuseEarlyIncomplete = (
   );
 };
 
+const handoffSections = ['Changes', 'Evidence', 'Decisions', 'Concerns'];
+
+// A heading starts its line, may carry Markdown marks, and ends at a colon, parenthesis, or line end.
+const refuseMissingSections = (state: WorkerExtensionState, summary: string) => {
+  const missing = handoffSections.filter(
+    (section) => !new RegExp(`^[\\s#*>-]*${section}\\**\\s*(?::|\\(|$)`, 'im').test(summary),
+  );
+
+  if (missing.length === 0) {
+    return;
+  }
+
+  state.remindAfterRefusal = true;
+  throw new Error(
+    `Report refused: summary is missing the ${missing.join(', ')} section headings. Resend it with all four sections, writing None under any that is empty.`,
+  );
+};
+
 // Concerns come last and matter most, so trim the blocker first and cut the summary only to fit a short one.
 const withBlocker = (summary: string, blocker: string | undefined): string => {
   if (blocker === undefined) {
@@ -379,6 +397,8 @@ const reportToParent = (
 
   const task = state.task;
   const { blocker, ...handover } = parameters;
+
+  refuseMissingSections(state, handover.summary);
 
   if (handover.outcome === 'incomplete') {
     refuseEarlyIncomplete(state, task, blocker);
