@@ -56,7 +56,7 @@ const rowState = (row: WorkerWidgetRow): string => {
   const label =
     row.state === 'unknown' ? 'status unavailable' : stateLabel(row.state, row.outcome).text;
 
-  if (row.activity?.startsWith('herdr ') && row.state === 'running') {
+  if (row.activity?.startsWith('herdr ') === true && row.state === 'running') {
     return safeText(row.activity);
   }
 
@@ -370,7 +370,7 @@ const reportLines = (row: WorkerWidgetRow, width: number): string[] => {
     fields.push(['Report', row.report.summary]);
   }
 
-  if (row.report?.evidence.length) {
+  if (row.report != null && row.report.evidence.length > 0) {
     fields.push(['Evidence', row.report.evidence.join(' · ')]);
   }
 
@@ -402,7 +402,7 @@ const reportLines = (row: WorkerWidgetRow, width: number): string[] => {
       (part) => part.startsWith('observed ') || part.startsWith('Pi-selected '),
     );
 
-    if (requested && observed) {
+    if (requested != null && observed != null) {
       fields.push(['Model', requested]);
       const observedValue = observed.startsWith('Pi-selected ')
         ? `observed Pi-selected ${observed.slice('Pi-selected '.length)}`
@@ -473,9 +473,8 @@ export class WorkerHistoryView implements Component {
 
     this.rows = sortedHistory(rows);
     const filteredRows = this.filteredRows();
-    const selectedIndex = selectedTaskId
-      ? filteredRows.findIndex((row) => row.taskId === selectedTaskId)
-      : -1;
+    const selectedIndex =
+      selectedTaskId != null ? filteredRows.findIndex((row) => row.taskId === selectedTaskId) : -1;
 
     this.selectedIndex =
       selectedIndex >= 0

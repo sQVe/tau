@@ -239,6 +239,14 @@ const phaseActivityText = (
   return `${activity.description} (stale)`;
 };
 
+const genericActivity = (handle: Handle | undefined): string => {
+  if (handle?.observationIssue != null && handle.observationIssue !== '') {
+    return 'herdr observation unavailable';
+  }
+
+  return `herdr ${handle?.nativeState ?? 'unavailable'}`;
+};
+
 const widgetActivity = (
   task: Task,
   activity: ReturnType<typeof readWorkerActivity>,
@@ -252,16 +260,12 @@ const widgetActivity = (
     return phase;
   }
 
-  if (isCurrent && activity?.label) {
+  if (isCurrent && activity?.label != null && activity.label !== '') {
     return activity.label;
   }
 
   if (isGenericLoadout(task.loadout)) {
-    if (handle?.observationIssue) {
-      return 'herdr observation unavailable';
-    }
-
-    return `herdr ${handle?.nativeState ?? 'unavailable'}`;
+    return genericActivity(handle);
   }
 
   return activity ? 'Pi activity stale' : 'Pi activity unavailable';
@@ -273,12 +277,12 @@ const widgetModel = (
   isCurrent: boolean,
 ): string => {
   if (isGenericLoadout(task.loadout)) {
-    return task.loadout.requestedModel
+    return task.loadout.requestedModel != null
       ? `requested ${task.loadout.requestedModel} · observed unavailable`
       : 'model unavailable';
   }
 
-  if (isCurrent && activity?.model) {
+  if (isCurrent && activity?.model != null && activity.model !== '') {
     return `Pi-selected ${activity.model} · requested ${task.loadout.model}`;
   }
 
@@ -309,7 +313,7 @@ const widgetQuestion = (
 ): Pick<WorkerWidgetRow, 'question' | 'questionId'> => {
   const question = status?.pendingQuestion;
 
-  if (!question?.question) {
+  if (question?.question == null) {
     return {};
   }
 
@@ -350,7 +354,7 @@ const widgetRecordFields = (
     fields.report = { summary: status.report.summary, evidence: status.report.evidence };
   }
 
-  if (status?.outcome) {
+  if (status?.outcome != null) {
     fields.terminal = status.outcome;
   }
 
@@ -541,7 +545,7 @@ export class WorkerController {
       handle = this.handles.get(taskId);
       task = handle ? handle.task : readTask(directory);
 
-      if (handle?.recordErrors.length) {
+      if (handle != null && handle.recordErrors.length > 0) {
         throw new Error(handle.recordErrors.join('; '));
       }
 
@@ -648,7 +652,7 @@ export class WorkerController {
     handle.terminalId = owned.terminalId;
     handle.workerNeverStarted = false;
 
-    if (owned.shellStartedAt) {
+    if (owned.shellStartedAt != null && owned.shellStartedAt !== '') {
       handle.shell = { processId: owned.shellPid, startedAt: owned.shellStartedAt };
     }
 
@@ -791,7 +795,7 @@ export class WorkerController {
       return this.replyGeneric(handle, answer);
     }
 
-    if (!answer.questionId) {
+    if (answer.questionId == null || answer.questionId === '') {
       throw new Error('Pi replies require a structured questionId.');
     }
 
@@ -1015,7 +1019,9 @@ export class WorkerController {
   private placeWorker(input: LaunchInput, handle: Handle, call: TerminalCall) {
     return this.placement.place(
       {
-        ...(input.parentPane ? { parentPane: input.parentPane } : {}),
+        ...(input.parentPane != null && input.parentPane !== ''
+          ? { parentPane: input.parentPane }
+          : {}),
         visibility: input.visibility ?? 'foreground',
         onCreated: (created) => {
           handle.paneId = created.paneId;
@@ -1567,7 +1573,7 @@ export class WorkerController {
       await this.pollGenericOnce(handle);
     } catch (error) {
       // oxlint-disable-next-line typescript/no-unnecessary-condition -- Awaited calls can stop the handle or controller before this catch runs.
-      if (handle.stopping || this.closed) {
+      if (handle.stopping !== undefined || this.closed) {
         return;
       }
 
@@ -1688,7 +1694,7 @@ export class WorkerController {
 
         // Keep sharing intact until cleanup finishes, including its queued topology change.
         // Unconfirmed cleanup must still stop contributing placement candidates.
-        if (handle.terminalId) {
+        if (handle.terminalId != null) {
           this.placement.release(handle.terminalId);
         }
 
@@ -1798,7 +1804,7 @@ export class WorkerController {
     let stopped = handle.workerNeverStarted;
     let detail = cleanupDetail(handle, stopped) + inspectionFailure;
 
-    if (stopped && handle.shell && handle.terminalId) {
+    if (stopped && handle.shell && handle.terminalId != null) {
       const closedPane = await closeUnstartedPane({
         handle,
         call,

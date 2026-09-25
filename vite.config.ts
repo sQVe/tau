@@ -390,11 +390,6 @@ export default defineConfig({
           ],
         },
       },
-      {
-        // Subagents is not migrated yet.
-        files: ['src/extensions/subagents/**'],
-        rules: { 'typescript/strict-boolean-expressions': 'off' },
-      },
     ],
   },
   fmt: {

@@ -37,7 +37,7 @@ const captureConfiguration = (
 
   requireSupportedKind(kind);
 
-  if (profile.thinkingSpecified) {
+  if (profile.thinkingSpecified === true) {
     throw new Error(
       'Native thinking settings require explicit native arguments, not a profile setting.',
     );
@@ -46,7 +46,7 @@ const captureConfiguration = (
   const nativeArguments = [...(input.nativeArguments ?? [])];
   const requestedModel = input.model ?? profile.model;
 
-  if (requestedModel && !nativeArguments.length) {
+  if (requestedModel != null && requestedModel !== '' && !nativeArguments.length) {
     throw new Error(
       'An exact model request requires corresponding native arguments. Tau does not translate or verify native model selection.',
     );

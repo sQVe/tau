@@ -147,7 +147,7 @@ const nativeUsage = (task: Task) => ({
 // A missing or unreadable predecessor must not fail the status; the renderer falls back to the
 // short task ID when the name is absent.
 const predecessorName = (root: string, task: Task): string | undefined => {
-  if (!task.predecessorTaskId) {
+  if (task.predecessorTaskId == null) {
     return undefined;
   }
 

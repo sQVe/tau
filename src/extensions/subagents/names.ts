@@ -40,7 +40,7 @@ const retainedNames = (root: string, parentSessionId: string): string[] => {
     try {
       const task = readTask(join(root, entry.name));
 
-      return task.parentSessionId === parentSessionId && task.name ? [task.name] : [];
+      return task.parentSessionId === parentSessionId && task.name != null ? [task.name] : [];
     } catch {
       return [];
     }
@@ -60,7 +60,9 @@ export const allocateName = (allocation: NameAllocation): string => {
     throw new Error('Malformed live agent listing.');
   }
 
-  const taken = new Set(allocation.live.flatMap((agent) => (agent.name ? [agent.name] : [])));
+  const taken = new Set(
+    allocation.live.flatMap((agent) => (agent.name != null ? [agent.name] : [])),
+  );
 
   for (const name of retainedNames(allocation.root, allocation.parentSessionId)) {
     taken.add(name);

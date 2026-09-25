@@ -152,7 +152,7 @@ const recordWorkerActivity = (
       sequence: state.activitySequence,
       updatedAt: Date.now(),
       phase,
-      ...(label ? { label } : {}),
+      ...(label != null && label !== '' ? { label } : {}),
       ...(state.phaseDescription
         ? {
             description: state.phaseDescription.text,
@@ -721,7 +721,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
   // oxlint-disable-next-line node/no-process-env -- The parent binds this process to its saved task through the pane environment.
   const directory = process.env.TAU_WORKER_RECORD;
 
-  if (!directory) {
+  if (directory == null || directory === '') {
     return;
   }
 

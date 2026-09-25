@@ -40,7 +40,7 @@ const parseFields = (frontmatter: string) => {
     const key = match[1];
     const value = match[2];
 
-    if (!key || !value) {
+    if (key == null || value == null) {
       throw new Error(`Unsupported or duplicate profile setting: ${line}`);
     }
 

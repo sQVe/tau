@@ -93,7 +93,9 @@ export const firstLine = (value: string | undefined): string => (value ?? '').sp
 export const callText = (title: string, detail: string | undefined, theme: Theme): Text => {
   const head = theme.fg('toolTitle', theme.bold(title));
 
-  return new Text(detail ? `${head}\n${theme.fg('dim', detail)}` : head, 0, 0);
+  const body = detail != null && detail !== '' ? `${head}\n${theme.fg('dim', detail)}` : head;
+
+  return new Text(body, 0, 0);
 };
 
 const historyCollapsedRows = 5;
@@ -314,7 +316,8 @@ const historyView = (details: unknown): HistoryView | undefined => {
 export const shortId = (taskId: string | undefined): string => (taskId ?? '').slice(0, 8);
 
 const displayName = (details: { taskId?: string | undefined; name?: string | undefined }): string =>
-  details.name ?? (details.taskId ? shortId(details.taskId) : 'worker');
+  details.name ??
+  (details.taskId != null && details.taskId !== '' ? shortId(details.taskId) : 'worker');
 
 const localClock = (deadline: number): string => {
   const date = new Date(deadline);
@@ -325,7 +328,7 @@ const localClock = (deadline: number): string => {
 };
 
 const shortenHome = (path: string | undefined): string => {
-  if (!path) {
+  if (path == null || path === '') {
     return 'unknown';
   }
 
@@ -417,20 +420,25 @@ const lifecycleParts = (details: StatusView, state: WorkerState): string[] => {
     parts.push('not stopped yet');
   }
 
-  if (state === 'starting' && details.predecessorTaskId) {
+  if (
+    state === 'starting' &&
+    details.predecessorTaskId != null &&
+    details.predecessorTaskId !== ''
+  ) {
     parts.push(`follows ${details.predecessorName ?? shortId(details.predecessorTaskId)}`);
-  }
-
-  if (state === 'notOwned') {
-    parts.push('not tracked by this session');
   }
 
   if (deadlineStates.has(state) && typeof details.deadline === 'number') {
     parts.push(`deadline ${localClock(details.deadline)}`);
   }
 
-  if (state === 'notOwned' && details.recovery?.paneId) {
-    parts.push(`pane ${details.recovery.paneId}`);
+  if (state === 'notOwned') {
+    parts.push('not tracked by this session');
+    const paneId = details.recovery?.paneId;
+
+    if (paneId != null && paneId !== '') {
+      parts.push(`pane ${paneId}`);
+    }
   }
 
   return parts;
@@ -446,7 +454,7 @@ const hasHiddenReason = (details: StatusView): boolean => {
 const statusParts = (details: StatusView): string[] => {
   const parts = [basePart(details)];
 
-  if (details.failure) {
+  if (details.failure != null && details.failure !== '') {
     parts.push('failed');
   }
 
@@ -465,27 +473,34 @@ const statusParts = (details: StatusView): string[] => {
 
 const statusStatement = (details: StatusView, name: string, theme: Theme): string => {
   const label = stateLabel(details.state, details.outcome);
+  const question = details.pendingQuestion?.question ?? '';
 
-  if (details.state === 'awaitingReply' && !details.pendingQuestion?.question) {
+  if (details.state === 'awaitingReply' && question === '') {
     return `${head(label, name, theme)} awaiting reply`;
   }
 
   return `${head(label, name, theme)} ${joinParts(statusParts(details))}`;
 };
 
+const stopByHandHint = (paneId: string | undefined): string =>
+  paneId != null && paneId !== ''
+    ? `Check pane ${paneId} and stop it by hand.`
+    : 'Check the pane and stop it by hand.';
+
 const collapsedSecondLine = (details: StatusView): string | undefined => {
-  if (details.state === 'awaitingReply' && details.pendingQuestion?.question) {
-    return firstLine(details.pendingQuestion.question);
+  const question = details.pendingQuestion?.question ?? '';
+  const summary = details.report?.summary ?? '';
+
+  if (details.state === 'awaitingReply' && question !== '') {
+    return firstLine(question);
   }
 
-  if (details.state === 'stopped' && details.report?.summary) {
-    return firstLine(details.report.summary);
+  if (details.state === 'stopped' && summary !== '') {
+    return firstLine(summary);
   }
 
   if (details.state === 'cleanupUnconfirmed') {
-    return details.recovery?.paneId
-      ? `Check pane ${details.recovery.paneId} and stop it by hand.`
-      : 'Check the pane and stop it by hand.';
+    return stopByHandHint(details.recovery?.paneId);
   }
 
   return undefined;
@@ -509,7 +524,7 @@ const followUpHint = (details: StatusView): string => {
     return 'Follow-up unavailable: no report is saved.';
   }
 
-  if (details.successorTaskId) {
+  if (details.successorTaskId != null && details.successorTaskId !== '') {
     return `Follow-up unavailable: already followed up by ${details.successorTaskId}.`;
   }
 
@@ -544,11 +559,11 @@ const identityRows = (details: StatusView, theme: Theme): string[] => [
 ];
 
 const sessionRows = (details: StatusView, theme: Theme): string[] => {
-  if (details.nativeSessionFile) {
+  if (details.nativeSessionFile != null && details.nativeSessionFile !== '') {
     return [row('Session', shortenHome(details.nativeSessionFile), theme)];
   }
 
-  if (details.nativeSessionId) {
+  if (details.nativeSessionId != null && details.nativeSessionId !== '') {
     return [row('Native session ID', details.nativeSessionId, theme)];
   }
 
@@ -694,7 +709,7 @@ const replyStatement = (details: ReplyView, name: string, theme: Theme): string 
 
   switch (details.delivery) {
     case 'sent':
-      return details.workerAcknowledged
+      return details.workerAcknowledged === true
         ? `${headText} ${label.text} · sent to its pane`
         : `${headText} ${label.text} · sent to its pane · not acknowledged yet`;
     case 'notResent':
@@ -728,13 +743,19 @@ const expandedReplyLines = (details: ReplyView, theme: Theme): string[] => [
 
 const collapsedEvidenceLines = (details: EvidenceView, theme: Theme): string[] => {
   const name = displayName(details);
-  const pane = details.paneId ? `check pane ${details.paneId}` : 'check the pane';
+  const pane =
+    details.paneId != null && details.paneId !== ''
+      ? `check pane ${details.paneId}`
+      : 'check the pane';
 
   return [`${theme.fg('error', '!')} ${theme.bold(name)} evidence unreadable · ${pane}`];
 };
 
 const expandedEvidenceLines = (details: EvidenceView, theme: Theme): string[] => {
-  const directory = details.directory ? shortenHome(details.directory) : undefined;
+  const directory =
+    details.directory != null && details.directory !== ''
+      ? shortenHome(details.directory)
+      : undefined;
 
   return [
     row('Task', details.taskId ?? 'unknown', theme),

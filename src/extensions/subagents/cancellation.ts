@@ -345,7 +345,7 @@ const verifyAgentSession = async (run: CancellationRun): Promise<CleanupResult |
 };
 
 const verifyProcessStart = async (run: CancellationRun): Promise<CleanupResult | undefined> => {
-  if (!run.owned.startedAt) {
+  if (run.owned.startedAt == null || run.owned.startedAt === '') {
     return undefined;
   }
 

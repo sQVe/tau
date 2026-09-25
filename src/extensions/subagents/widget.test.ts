@@ -354,7 +354,7 @@ describe('worker widget', () => {
     const lines = renderWorkerWidget([row], 72, now, theme as never);
     const rowLine = lines.find((line) => line.includes(row.name));
 
-    if (!rowLine) {
+    if (rowLine == null) {
       throw new TypeError('Expected a live worker row.');
     }
 

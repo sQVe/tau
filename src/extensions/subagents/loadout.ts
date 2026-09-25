@@ -47,7 +47,7 @@ const resolveModel = (
   // oxlint-disable-next-line node/no-process-env -- Explicit worker model configuration has no implicit parent-model fallback.
   const model = explicit ?? configured ?? process.env.TAU_SUBAGENT_MODEL;
 
-  if (!model || !/^[^/\s]+\/[^\s]+$/.test(model)) {
+  if (model == null || model === '' || !/^[^/\s]+\/[^\s]+$/.test(model)) {
     throw new Error(
       `Set an exact worker model as provider/id; there is no fallback.${configuredModels(context)}`,
     );
@@ -112,7 +112,7 @@ const resolveLaunchPlan = (
 
   const kind = input.harness ?? profile.harness;
 
-  if (profile.harnessSpecified && profile.harness !== kind) {
+  if (profile.harnessSpecified === true && profile.harness !== kind) {
     throw new Error(`Profile ${profile.name} is a ${profile.harness} profile, not a ${kind} one.`);
   }
 

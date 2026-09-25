@@ -258,7 +258,7 @@ export const acceptGenericReport = (directory: string, task: Task): boolean => {
 
   const outcome = reportOutcome(content, task.taskId);
 
-  if (!outcome) {
+  if (outcome == null) {
     return false;
   }
 

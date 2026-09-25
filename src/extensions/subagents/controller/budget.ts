@@ -35,7 +35,7 @@ export const ensureReplyActive = (handle: Handle): void => {
     !isGenericLoadout(task.loadout) && !readEvent(directory, task.taskId, 'accepted');
   const ended =
     replyClosedEventKinds.some((kind) => readEvent(directory, task.taskId, kind)) ||
-    readReport(directory, task.taskId);
+    readReport(directory, task.taskId) !== undefined;
 
   if (missingPiAcceptance || ended) {
     throw new Error('Worker task is inactive.');

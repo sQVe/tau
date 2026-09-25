@@ -35,7 +35,7 @@ const headerMatchesTask = (header: SessionHeaderView, task: Task): boolean => {
     return false;
   }
 
-  if (!header.parentSession) {
+  if (header.parentSession == null || header.parentSession === '') {
     return false;
   }
 
@@ -80,7 +80,7 @@ export const lineage = (file: string, tasks: Map<string, Task>, expectedId?: str
   let next: string | undefined = file;
   let expected = expectedId;
 
-  while (next) {
+  while (next != null && next !== '') {
     const path = canonical(next);
 
     if (seen.has(path) || seen.size >= 1024) {

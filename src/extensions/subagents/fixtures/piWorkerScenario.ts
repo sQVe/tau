@@ -98,7 +98,7 @@ export default function (pi) {
   const workspaceText = JSON.stringify(workspace);
   const paneId = workspaceText.match(/"root_pane":\{[^}]*"pane_id":"([^"]+)"/)?.[1];
 
-  if (!paneId) {
+  if (paneId == null) {
     throw new Error(`Missing parent pane: ${workspaceText}`);
   }
 
@@ -312,9 +312,10 @@ export default function (pi) {
   expect(replyObservations).toEqual(
     scenario === 'question completion' ? ['reply-one', undefined, false, 1] : [],
   );
-  const acknowledgement = askedQuestionId
-    ? readAcknowledgement(launched.directory, launched.taskId, askedQuestionId)
-    : undefined;
+  const acknowledgement =
+    askedQuestionId != null
+      ? readAcknowledgement(launched.directory, launched.taskId, askedQuestionId)
+      : undefined;
   expect(acknowledgement?.replyId).toBe(
     scenario === 'question completion' ? 'reply-one' : undefined,
   );

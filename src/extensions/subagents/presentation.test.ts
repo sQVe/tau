@@ -111,7 +111,7 @@ const stringValues = (value: unknown, at: string[] = []): { path: string; text: 
     return value.flatMap((entry, index) => stringValues(entry, [...at, String(index)]));
   }
 
-  if (value && typeof value === 'object') {
+  if (value !== null && typeof value === 'object') {
     return Object.entries(value).flatMap(([key, entry]) => stringValues(entry, [...at, key]));
   }
 
