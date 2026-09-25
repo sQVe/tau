@@ -172,6 +172,26 @@ it('defaults bundled profiles to a model that the environment and custom profile
   expect(() => resolveLoadout(withoutModel, withBundled)).toThrow('missing/profile');
 });
 
+it('resolves and replays a worker model whose ID contains a slash', async ({ onTestFinished }) => {
+  const { context, request } = await workerFixture(onTestFinished);
+  const nested = fauxProvider({ provider: 'openrouter', models: [{ id: 'meta/llama' }] });
+
+  const runtime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsStore: new InMemoryModelsStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+
+  runtime.registerNativeProvider(nested.provider);
+  const withNested = { ...context, modelRegistry: new ModelRegistry(runtime) };
+  const launch = { ...request, model: 'openrouter/meta/llama' };
+  const saved = asPiLoadout(resolveLoadout(launch, withNested));
+
+  expect(saved.model).toBe('openrouter/meta/llama');
+  expect(validateSavedLoadout(saved, withNested)).toEqual(saved);
+});
+
 it('replays a saved loadout only under the same trust, directories, model, and thinking', async ({
   onTestFinished,
 }) => {

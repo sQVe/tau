@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
+import { parseModelReference } from '../../../delegateModel/index.js';
 import { errorMessage, isMissingFile } from '../../../errors/index.js';
 import { readWorkerActivity } from '../activity.js';
 import { processAbsent } from '../cancellation.js';
@@ -36,7 +37,7 @@ import {
 } from '../records.js';
 import { resolveTerminal, text, requireObject, result } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
-import { isGenericLoadout, isPiLoadout } from '../types.js';
+import { isGenericLoadout, isPiLoadout, isTaskId } from '../types.js';
 import type { GenericLoadout, ReplyDelivery, SubmissionState, Task } from '../types.js';
 import type { WorkerWidgetRow } from '../widget.js';
 import {
@@ -132,7 +133,7 @@ const workerCapacity = (): number => {
 
 const paneTitle = (task: Task): string => {
   const harness = isGenericLoadout(task.loadout) ? task.loadout.kind : task.loadout.harness;
-  const model = isPiLoadout(task.loadout) ? task.loadout.model.split('/').at(-1) : undefined;
+  const model = isPiLoadout(task.loadout) ? parseModelReference(task.loadout.model)?.id : undefined;
   const identity = [harness, model].filter((value): value is string => value !== undefined);
   const details = identity.map((value) => value.replace(/[^a-zA-Z0-9._-]/g, '-'));
 
@@ -921,7 +922,7 @@ export class WorkerController {
   }
 
   private directory(taskId: string, parentSessionId: string): string {
-    if (!/^[a-zA-Z0-9-]+$/.test(taskId)) {
+    if (!isTaskId(taskId)) {
       throw new TaskAccessError('Invalid task identity.');
     }
 

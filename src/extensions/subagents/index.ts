@@ -21,6 +21,7 @@ import {
   renderStatusResult,
   shortId,
 } from './render.js';
+import { taskIdSchema } from './types.js';
 import { renderWorkerWidget } from './widget.js';
 import type { WorkerWidgetRow } from './widget.js';
 import { openWorkerHistory } from './widgetOverlay.js';
@@ -74,7 +75,7 @@ const defaultTimeoutSeconds = { investigation: 1800, editing: 3600 };
 
 const followUpParameters = Type.Object(
   {
-    sourceTaskId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
+    sourceTaskId: taskIdSchema,
     task: Type.String({ minLength: 1, maxLength: 32000 }),
     label: Type.Optional(
       Type.String({
