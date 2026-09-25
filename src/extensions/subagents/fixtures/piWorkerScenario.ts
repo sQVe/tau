@@ -84,6 +84,7 @@ export default function (pi) {
   let startAttempts = 0;
   let earlyExitStartAborted = false;
   const subsequentStartErrors: string[] = [];
+
   const client = async (argumentsList: string[], budget = 5000, signal?: AbortSignal) => {
     if (argumentsList[1] === 'prompt') {
       promptCount += 1;
@@ -408,6 +409,7 @@ export default function (pi) {
   if (scenario === 'early exit') {
     expect(earlyExitStartAborted).toBe(true);
     writeFileSync(earlyExitExtension, 'export default function () {};\n');
+
     const next = await controller.launch({
       task: 'Test active cancellation.',
       timeout: 10_000,
@@ -416,6 +418,7 @@ export default function (pi) {
       parentPane: paneId,
       loadout,
     });
+
     expect(subsequentStartErrors).toEqual([]);
     expect(next.failure).toBeUndefined();
     expect(existsSync(join(next.directory, 'dispatch.json'))).toBe(true);

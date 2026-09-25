@@ -799,18 +799,22 @@ it.each(['missing', 'empty'] as const)(
 
 const useFakeDelays = () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
   vi.spyOn(timers, 'setTimeout').mockImplementation(async (duration, value, options) => {
     await new Promise<void>((resolve, reject) => {
       const signal = options?.signal;
       signal?.throwIfAborted();
+
       const abort = () => {
         clearTimeout(timer);
         reject(new Error('Delay aborted.', { cause: signal?.reason }));
       };
+
       const timer = setTimeout(() => {
         signal?.removeEventListener('abort', abort);
         resolve();
       }, duration);
+
       signal?.addEventListener('abort', abort, { once: true });
     });
 
@@ -822,6 +826,7 @@ const stallWorkerStart = (fixture: ReturnType<typeof setup>) => {
   const entered = Promise.withResolvers<AbortSignal | undefined>();
   const released = Promise.withResolvers<string>();
   const client = fixture.fake.client;
+
   vi.spyOn(fixture.fake, 'client').mockImplementation(async (argumentsList, budget, signal) => {
     const response = await client(argumentsList, budget, signal);
 
@@ -836,6 +841,7 @@ const stallWorkerStart = (fixture: ReturnType<typeof setup>) => {
       },
       { once: true },
     );
+
     entered.resolve(signal);
 
     return released.promise;
@@ -849,16 +855,20 @@ it.each(['startupFailure', 'settled', 'bare shell'] as const)(
   async (evidence) => {
     useFakeDelays();
     vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+
     afterTest(() => {
       vi.unstubAllEnvs();
     });
+
     const fixture = setup(afterTest, -1);
     const { entered, released, client } = stallWorkerStart(fixture);
     const launching = fixture.controller.launch(fixture.input);
     let returned = false;
+
     void launching.then(() => {
       returned = true;
     });
+
     await vi.advanceTimersByTimeAsync(100);
     const signal = await entered;
     const [saved] = records.readTasks(fixture.directory);
@@ -886,9 +896,11 @@ it.each(['startupFailure', 'settled', 'bare shell'] as const)(
     expect(abortedBeforeExit).toBe(false);
     expect(returnedWithinPoll).toBe(true);
     expect(launched).toMatchObject({ state: 'stopped', outcome: 'failure' });
+
     expect(fixture.notifications.at(-1)?.content.cleanup).toContain(
       evidence === 'startupFailure' ? detail : 'Worker exited before readiness',
     );
+
     expect(startAborted).toBe(true);
     expect(readEvent(directory, task.taskId, 'cleanup')?.stopped).toBe(true);
     expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
@@ -899,14 +911,18 @@ it.each(['startupFailure', 'settled', 'bare shell'] as const)(
     fixture.fake.state.rejectStart = false;
     const nextLaunch = fixture.controller.launch(fixture.input);
     await vi.advanceTimersByTimeAsync(100);
+
     const next = records
       .readTasks(fixture.directory)
       .find((entry) => entry.task.taskId !== task.taskId);
+
     expect(next).toBeDefined();
+
     recordEvent(next!.directory, next!.task.taskId, 'ready', {
       detail: 'Ready.',
       processId: process.pid,
     });
+
     await vi.advanceTimersByTimeAsync(500);
     expect((await nextLaunch).state).toBe('starting');
   },
@@ -935,10 +951,12 @@ it.each([
     const abortedAfterBusySamples = signal?.aborted;
     const [saved] = records.readTasks(fixture.directory);
     expect(saved).toBeDefined();
+
     recordEvent(saved!.directory, saved!.task.taskId, 'ready', {
       detail: 'Ready.',
       processId: process.pid,
     });
+
     released.resolve(JSON.stringify({ result: {} }));
     const launched = await launching;
 
