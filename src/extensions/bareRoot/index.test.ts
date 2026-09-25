@@ -57,14 +57,17 @@ describe('bare repository root guard', () => {
     expect(session.callTool('read')).toBeUndefined();
   });
 
-  it('checks the session directory even when Pi inherits GIT_DIR for another repository', async () => {
-    const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
-    const other = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
-    vi.stubEnv('GIT_DIR', join(other, '.git'));
-    const session = await startSession(root);
+  it.for(['GIT_DIR', 'GIT_COMMON_DIR'])(
+    'checks the session directory even when Pi inherits %s for another repository',
+    async (variable) => {
+      const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
+      const other = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+      vi.stubEnv(variable, join(other, '.git'));
+      const session = await startSession(root);
 
-    expect(session.callTool('write')).toMatchObject({ block: true });
-  });
+      expect(session.callTool('write')).toMatchObject({ block: true });
+    },
+  );
 
   it('leaves sessions in a worktree of a bare repository alone', async () => {
     const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
