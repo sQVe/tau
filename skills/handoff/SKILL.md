@@ -16,7 +16,8 @@ commit another worktree from your session, even over bash.
 ## Hard rules
 
 - Requires `HERDR_ENV=1`. Otherwise tell the user you cannot reach the other workspace and stop.
-- Ask the user when the target pane is ambiguous. Do not guess.
+- Ask the user when the target is ambiguous. Do not guess. A workspace without an agent is not
+  ambiguous: start Pi there.
 - The message is one-way. Do not ask for a reply, poll, or wait for the receiver to finish. The send
   only waits until the receiver starts working.
 - Write the message with the file tool, then send it in a separate step. Never write and send in the
@@ -32,7 +33,12 @@ commit another worktree from your session, even over bash.
 
 1. Find the target. Run `herdr agent list` and keep the agents in the target workspace or whose
    `cwd` is the target worktree. Drop agents named `worker-*`, `scout-*`, or `investigator-*`: they
-   are Tau subagents working for a parent. One match is the target; otherwise ask the user.
+   are Tau subagents working for a parent. One match is the target; several matches, ask the user.
+   With none, start Pi in the workspace's manager pane: the pane in its first tab, the lowest
+   `number` in `herdr tab list --workspace <workspace>`, which `herdr pane list` shows by `tab_id`.
+   Other tabs hold workers and servers. If that tab has exactly one pane, run
+   `herdr agent start <worktree-name> --kind pi --pane <pane>` and use the `pane_id` it returns;
+   otherwise ask the user. The pane must be at its shell prompt.
 2. Write the message to `<your-worktree>/.tau/handoffs/<your-pane>-<timestamp>.md` with the file
    tool. First make sure `.tau/.gitignore` has a `*` line, adding it if needed, so `.tau/` stays out
    of Git. Take your pane from `HERDR_PANE_ID`. Make it self-contained: what to do, the state the
