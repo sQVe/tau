@@ -20,7 +20,7 @@ import { recordNativeIssue } from './record.js';
 import type { TaskController } from './task.js';
 import type { Handle } from './types.js';
 
-// Generic worker steps. TaskController routes to them; Pi keeps its own steps in the controller.
+// Generic worker steps. TaskController routes to them; Pi keeps its own steps in TaskController.
 
 const requireGenericReplyShape = (answer: {
   questionId?: string;

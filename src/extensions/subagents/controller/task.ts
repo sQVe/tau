@@ -81,7 +81,6 @@ interface PiReplyRequest {
 }
 
 interface CleanupOutcomeRequest {
-  handle: Handle;
   reason: StopReason;
   failureDetail: string;
   detail: string;
@@ -500,7 +499,7 @@ export class TaskController {
 
     const status = {
       ...taskStatus(handle.directory, this.context.owns(handle.task.taskId)),
-      ...genericStatus(handle.directory, handle.task, handle, !this.context.closed()),
+      ...genericStatus(handle.directory, handle.task, handle, !this.closed),
     };
 
     if (handle.cleanup.detail !== undefined) {
@@ -554,7 +553,7 @@ export class TaskController {
   poll(): void {
     const { handle } = this;
 
-    if (this.context.closed() || handle.cleanup.stopping) {
+    if (this.closed || handle.cleanup.stopping) {
       return;
     }
 
@@ -671,7 +670,7 @@ export class TaskController {
       .catch((error: unknown) => {
         handle.cleanup.recordErrors.push(String(error));
 
-        if (this.context.closed()) {
+        if (this.closed) {
           return;
         }
 
@@ -809,14 +808,14 @@ export class TaskController {
     const failure = this.cleanupFailureDetail(failureDetail);
 
     handle.cleanup.detail = reason === 'failure' ? `${detail} ${failure}` : detail;
-    this.recordCleanupEvents({ handle, reason, failureDetail: failure, detail, stopped, record });
+    this.recordCleanupEvents({ reason, failureDetail: failure, detail, stopped, record });
 
     this.notifyCleanup(record);
   }
 
   private recordCleanupEvents(request: CleanupOutcomeRequest): void {
-    const { handle, reason, failureDetail, detail, stopped, record } = request;
-    const { directory, task } = handle;
+    const { reason, failureDetail, detail, stopped, record } = request;
+    const { directory, task } = this.handle;
 
     record(() => {
       if (reason === 'timeout' || reason === 'cancelled') {
@@ -837,7 +836,7 @@ export class TaskController {
   }
 
   private notifyCleanup(record: (operation: () => void) => void): void {
-    if (this.context.closed()) {
+    if (this.closed) {
       return;
     }
 
