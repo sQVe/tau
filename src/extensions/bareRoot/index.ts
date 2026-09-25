@@ -12,9 +12,13 @@ const rule =
 const blockedTools = new Set(['write', 'edit', 'subagent', 'subagent_follow_up']);
 
 const isBareRoot = async (cwd: string) => {
+  // oxlint-disable-next-line node/no-process-env -- An inherited repository selector would make Git check that repository instead of cwd.
+  const { GIT_DIR: _gitDir, GIT_WORK_TREE: _gitWorkTree, ...env } = process.env;
+
   try {
     const { stdout } = await promisify(execFile)('git', ['rev-parse', '--is-bare-repository'], {
       cwd,
+      env,
     });
 
     return stdout.trim() === 'true';

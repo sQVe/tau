@@ -3,15 +3,19 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { createTemporaryBareRoot } from '../../../tests/gitRepository.js';
+import {
+  createTemporaryBareRoot,
+  createTemporaryRepository,
+} from '../../../tests/gitRepository.js';
 import bareRootExtension from './index.js';
 
 const cleanups: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
@@ -51,6 +55,15 @@ describe('bare repository root guard', () => {
     }
 
     expect(session.callTool('read')).toBeUndefined();
+  });
+
+  it('checks the session directory even when Pi inherits GIT_DIR for another repository', async () => {
+    const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
+    const other = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+    vi.stubEnv('GIT_DIR', join(other, '.git'));
+    const session = await startSession(root);
+
+    expect(session.callTool('write')).toMatchObject({ block: true });
   });
 
   it('leaves sessions in a worktree of a bare repository alone', async () => {
