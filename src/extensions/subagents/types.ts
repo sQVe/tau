@@ -35,6 +35,8 @@ export interface Profile {
   source: string;
 }
 
+export const workerNamePattern = '^[a-z][a-z0-9-]{0,31}-[a-z0-9]{2}$';
+
 export const taskIdSchema = Type.String({ pattern: '^[a-zA-Z0-9-]+$' });
 
 export const isTaskId = (value: string): boolean => Value.Check(taskIdSchema, value);
@@ -89,9 +91,8 @@ export const loadoutSchema = Type.Union([piLoadoutSchema, genericLoadoutSchema])
 
 const taskProperties = {
   taskId: taskIdSchema,
-  name: Type.Optional(
-    Type.String({ pattern: '^(worker|scout|reviewer|investigator)-[a-z0-9]{2}$' }),
-  ),
+  // Display only. Newer Taus add profiles, so any prefix is accepted.
+  name: Type.Optional(Type.String({ pattern: workerNamePattern })),
   label: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
   predecessorTaskId: Type.Optional(taskIdSchema),
   task: text,

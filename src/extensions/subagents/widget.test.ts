@@ -41,17 +41,17 @@ describe('worker widget', () => {
     expect(text).not.toContain('left');
   });
 
-  it('keeps the suffix of truncated names saved before investigators were renamed', () => {
+  it.each(['investigator', 'code-critic'])('keeps the suffix of truncated %s names', (prefix) => {
     const rows = [
-      { ...row, name: 'investigator-ab', taskId: 'ab' },
-      { ...row, name: 'investigator-cd', taskId: 'cd' },
+      { ...row, name: `${prefix}-ab`, taskId: 'ab' },
+      { ...row, name: `${prefix}-cd`, taskId: 'cd' },
     ];
 
     const text = stripTerminalSequences(
       renderWorkerWidget(rows, 28, now, theme as never).join('\n'),
     );
 
-    expect(text).not.toContain('investigator-ab');
+    expect(text).not.toContain(`${prefix}-ab`);
     expect(text).toContain('…-ab');
     expect(text).toContain('…-cd');
   });
