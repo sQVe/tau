@@ -1187,6 +1187,61 @@ it('gives herdr a valid start timeout inside the client budget', async ({ onTest
   expect(herdrTimeout).toBeLessThan(clientBudget);
 });
 
+it('does not retry a pane-busy start while the shell runs a foreground hook', async ({
+  onTestFinished,
+}) => {
+  useFakeDelays();
+  let attempts = 0;
+  let inspectionsAfterStart = 0;
+
+  const fixture = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
+      attempts += 1;
+
+      if (attempts === 1) {
+        throw Object.assign(new Error('Busy shell'), {
+          stderr: JSON.stringify({ error: { code: 'agent_pane_busy' } }),
+        });
+      }
+    }
+
+    if (argumentsList[1] === 'process-info' && attempts === 1) {
+      inspectionsAfterStart += 1;
+
+      if (inspectionsAfterStart <= 20) {
+        return promptHookSample(argumentsList[3]);
+      }
+    }
+
+    return '';
+  });
+
+  const launchState: { settled: boolean } = { settled: false };
+  const launching = fixture.controller.launch(fixture.input);
+
+  void launching.then(
+    () => {
+      launchState.settled = true;
+    },
+    () => {
+      launchState.settled = true;
+    },
+  );
+
+  for (let tick = 0; !launchState.settled && tick < 100; tick += 1) {
+    // Advance bounded fake time until launch completes; elapsed time is not under test.
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Each poll schedules the next fake delay.
+    await vi.advanceTimersByTimeAsync(50);
+  }
+
+  expect(launchState.settled).toBe(true);
+  const launched = await launching;
+
+  expect(attempts).toBe(1);
+  expect(launched.state).toBe('stopped');
+  expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
+});
+
 it('retries a pane-busy start when a prompt hook briefly occupies the shell', async ({
   onTestFinished,
 }) => {
@@ -1282,6 +1337,18 @@ it.each([
   expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
 });
 
+it('waitForShell refuses a pane whose reported identity changes', async ({ onTestFinished }) => {
+  const fixture = setup(onTestFinished, 0);
+  fixture.fake.state.nextReportedPaneId = 'replacement-pane';
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.outcome).toBe('failure');
+  expect(launched.failure).toContain('Shell pane identity changed before startup');
+  expect(fixture.calls.some((call) => call[1] === 'start')).toBe(false);
+  expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
+});
+
 it('refuses to start a worker when too little budget is left for herdr', async ({
   onTestFinished,
 }) => {
@@ -1293,6 +1360,50 @@ it('refuses to start a worker when too little budget is left for herdr', async (
   expect(launched.failure).toContain('No worker was started');
   expect(fixture.calls.some((call) => call[1] === 'start')).toBe(false);
   expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+});
+
+it('does not retry when a worker appears after the pane-busy response', async ({
+  onTestFinished,
+}) => {
+  let attempts = 0;
+  let processInspections = 0;
+
+  const fixture = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'process-info') {
+      processInspections += 1;
+    }
+
+    if (argumentsList[1] === 'start') {
+      attempts += 1;
+
+      if (attempts === 1) {
+        throw Object.assign(new Error('Busy shell'), {
+          stderr: JSON.stringify({ error: { code: 'agent_pane_busy' } }),
+        });
+      }
+    }
+
+    if (argumentsList[1] === 'get' && processInspections === 1) {
+      return JSON.stringify({
+        result: {
+          agent: {
+            pane_id: argumentsList[2],
+            agent: 'pi',
+            agent_session: { kind: 'id', value: 'unexpected-worker' },
+          },
+        },
+      });
+    }
+
+    return '';
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.outcome).toBe('failure');
+  expect(launched.failure).toContain('Busy shell');
+  expect(attempts).toBe(1);
+  expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
 });
 
 it('retries a structured pane-busy rejection once after proving absence', async ({
@@ -1324,6 +1435,47 @@ it('retries a structured pane-busy rejection once after proving absence', async 
   });
 });
 
+it('does not retry when a worker appears during the second absence check', async ({
+  onTestFinished,
+}) => {
+  let attempts = 0;
+  let absenceChecks = 0;
+
+  const fixture = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'start') {
+      attempts += 1;
+
+      if (attempts === 1) {
+        throw Object.assign(new Error('Busy shell'), {
+          stderr: JSON.stringify({ error: { code: 'agent_pane_busy' } }),
+        });
+      }
+    }
+
+    if (argumentsList[1] === 'get' && ++absenceChecks === 2) {
+      return JSON.stringify({
+        result: {
+          agent: {
+            pane_id: argumentsList[2],
+            agent: 'pi',
+            agent_session: { kind: 'id', value: 'unexpected-worker' },
+          },
+        },
+      });
+    }
+
+    return '';
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.outcome).toBe('failure');
+  expect(launched.failure).toContain('Shell identity changed before the rejected-start retry');
+  expect(attempts).toBe(1);
+  expect(absenceChecks).toBe(2);
+  expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
+});
+
 it('does not repeat a second structured pane-busy rejection', async ({ onTestFinished }) => {
   let attempts = 0;
 
@@ -1343,6 +1495,20 @@ it('does not repeat a second structured pane-busy rejection', async ({ onTestFin
   expect(attempts).toBe(2);
   expect(launched.state).toBe('stopped');
   expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+});
+
+it('waits for a child process to leave before starting Pi', async ({ onTestFinished }) => {
+  const fixture = setup(onTestFinished);
+
+  fixture.fake.state.foregroundProcessSamples = 4;
+
+  const launched = await fixture.controller.launch(fixture.input);
+  const startCallIndex = fixture.fake.calls.findIndex((call) => call[1] === 'start');
+
+  expect(launched.state).toBe('starting');
+  expect(fixture.fake.state.started).toBe(true);
+  expect(fixture.fake.state.foregroundProcessSamplesSeen).toBe(4);
+  expect(startCallIndex).toBeGreaterThan(fixture.fake.state.lastForegroundProcessSampleCallIndex);
 });
 
 it('waits for the split shell before starting Pi', async ({ onTestFinished }) => {
@@ -2790,6 +2956,25 @@ it('waits for Pi integration session identity before dispatch', async ({ onTestF
   );
 
   expect(missingSessionResponses).toBe(2);
+});
+
+it('refuses readiness when the worker process identity differs from the ready event', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished, 0, async (argumentsList) => {
+    if (argumentsList[1] === 'process-info' && fixture.fake.state.started) {
+      fixture.fake.state.process = 101;
+    }
+
+    return '';
+  });
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(launched.outcome).toBe('failure');
+  expect(launched.failure).toContain('readiness identities did not match');
+  expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
+  expect(fixture.calls.some((call) => call[1] === 'send-keys')).toBe(false);
 });
 
 it("names herdr's Pi integration when a started Pi worker reports no agent session", async ({
