@@ -3,12 +3,6 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { parseModelReference } from '../../../delegateModel/index.js';
 import { errorMessage } from '../../../errors/index.js';
 import { processAbsent } from '../cancellation.js';
-import {
-  acceptGenericReport,
-  deliveryFromSubmission,
-  genericPrompt,
-  submitGenericText,
-} from '../generic.js';
 import type { WorkerPlacement } from '../placement.js';
 import { modelEvidenceNotice, modelStatus } from '../presentation.js';
 import type { WorkerNotice } from '../presentation.js';
@@ -18,11 +12,11 @@ import {
   readPendingQuestion,
   readReply,
 } from '../questionRecords.js';
-import { publish, readEvent, readGenericSubmission, recordEvent } from '../records.js';
+import { publish, readEvent, recordEvent } from '../records.js';
 import { requireObject, resolveTerminal, result, text } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
-import { isGenericLoadout, isPiLoadout } from '../types.js';
-import type { GenericLoadout, SubmissionState, Task } from '../types.js';
+import { harnessOf, isGenericLoadout, isPiLoadout } from '../types.js';
+import type { Task } from '../types.js';
 import {
   ensureReplyActive,
   remainingCleanupBudget,
@@ -30,10 +24,17 @@ import {
   workBudget,
 } from './budget.js';
 import {
-  agentPromptArguments,
+  dispatchAssignment,
+  finishGenericStartup,
+  pollGeneric,
+  publishNativeStartIntent,
+  recordNativeStartError,
+  replyGeneric,
+  saveReportBeforeStop,
+} from './genericWorker.js';
+import {
   inspectWorker,
   isHerdrError,
-  observeWorker,
   verifyRejectedStart,
   waitForPiIdentity,
   waitForWorkerExit,
@@ -46,7 +47,6 @@ import {
   genericStatus,
   handleRecovery,
   readOwnedWorker,
-  recordNativeIssue,
   taskStatus,
 } from './record.js';
 import {
@@ -101,7 +101,7 @@ export const createHandle = (directory: string, task: Task, expires: number): Ha
 });
 
 const paneTitle = (task: Task): string => {
-  const harness = isGenericLoadout(task.loadout) ? task.loadout.kind : task.loadout.harness;
+  const harness = harnessOf(task.loadout);
   const model = isPiLoadout(task.loadout) ? parseModelReference(task.loadout.model)?.id : undefined;
   const identity = [harness, model].filter((value): value is string => value !== undefined);
   const details = identity.map((value) => value.replace(/[^a-zA-Z0-9._-]/g, '-'));
@@ -126,46 +126,6 @@ const acceptedReply = (directory: string, task: Task, questionId: string) => ({
   delivery: 'notResent' as const,
 });
 
-const requireGenericReplyShape = (answer: {
-  questionId?: string;
-  replyId: string;
-  reply: string;
-}): void => {
-  const hasStructuredQuestion = answer.questionId !== undefined;
-  const reusedReplyId = answer.replyId === 'assignment';
-  const invalidText = !answer.reply.trim() || answer.reply.length > 32_000;
-
-  if (hasStructuredQuestion || reusedReplyId || invalidText) {
-    throw new Error(
-      'Generic replies use a unique replyId and plain text, without a structured questionId.',
-    );
-  }
-};
-
-// A saved reply identity is never sent again; different text under the same identity is a conflict.
-const repeatedGenericReply = (
-  directory: string,
-  task: Task,
-  answer: { replyId: string; reply: string },
-) => {
-  const saved = readGenericSubmission(directory, task.taskId, answer.replyId);
-
-  if (!saved) {
-    return undefined;
-  }
-
-  if (saved.intent.text !== answer.reply) {
-    throw new Error('Conflicting native submission identity.');
-  }
-
-  // Only a submitted reply is "already sent"; a repeat of an undelivered or uncertain one keeps
-  // that outcome, so the model never reads a failed delivery as accepted.
-  const state = saved.observation?.state;
-  const delivery = state === 'submitted' ? ('notResent' as const) : deliveryFromSubmission(state);
-
-  return { replyAccepted: true as const, name: task.name, delivery };
-};
-
 export const savedHandle = (directory: string, task: Task): Handle => {
   const owned = readOwnedWorker(directory, task);
   const remaining = Math.max(task.deadline - Date.now(), task.cancellationBudget);
@@ -189,6 +149,10 @@ export class TaskController {
     readonly handle: Handle,
     private readonly context: TaskContext,
   ) {}
+
+  get closed(): boolean {
+    return this.context.closed();
+  }
 
   herdrCall(signal = this.handle.abort.signal): TerminalCall {
     return (argumentsList) => this.context.client(argumentsList, workBudget(this.handle), signal);
@@ -304,10 +268,8 @@ export class TaskController {
 
   private async startWorker(paneId: string, name: string, call: TerminalCall): Promise<void> {
     const { handle } = this;
-    const { task } = handle;
-    const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
 
-    await this.prepareStart(paneId, call, generic);
+    await this.prepareStart(paneId, call);
 
     await this.startWithBusyRetry(paneId, name, call).catch((error: unknown) => {
       if (handle.startup.starting === undefined) {
@@ -316,20 +278,15 @@ export class TaskController {
 
       handle.startup.error = String(error).slice(0, 4000);
 
-      if (!generic) {
+      if (!isGenericLoadout(handle.task.loadout)) {
         throw error;
       }
 
-      publish(handle.directory, 'nativeStart-error.json', { detail: handle.startup.error });
-      this.notifySnapshot({ failure: handle.startup.error });
+      recordNativeStartError(this, handle.startup.error);
     });
   }
 
-  private async prepareStart(
-    paneId: string,
-    call: TerminalCall,
-    generic?: GenericLoadout,
-  ): Promise<void> {
+  private async prepareStart(paneId: string, call: TerminalCall): Promise<void> {
     const { handle } = this;
     const shellPid = await waitForShell(handle, paneId, call);
 
@@ -364,13 +321,8 @@ export class TaskController {
 
     publish(handle.directory, 'shell.json', handle.identity.shell);
 
-    if (generic) {
-      publish(handle.directory, 'nativeStart-intent.json', {
-        taskId: handle.task.taskId,
-        kind: generic.kind,
-        arguments: generic.arguments,
-        terminalId: handle.identity.terminalId,
-      });
+    if (isGenericLoadout(handle.task.loadout)) {
+      publishNativeStartIntent(handle, handle.task.loadout);
     }
   }
 
@@ -378,14 +330,7 @@ export class TaskController {
     const { handle } = this;
 
     if (!isPiLoadout(handle.task.loadout)) {
-      if (handle.startup.error !== undefined && (await verifyRejectedStart(handle, call))) {
-        handle.startup.neverStarted = true;
-        throw new Error(
-          `Native startup was rejected by herdr absence evidence. No retry. ${handle.startup.error}`,
-        );
-      }
-
-      await this.pollGeneric();
+      await finishGenericStartup(this, call);
 
       return;
     }
@@ -458,61 +403,6 @@ export class TaskController {
     } finally {
       clearTimeout(timer);
     }
-  }
-
-  private async replyGeneric(answer: { questionId?: string; replyId: string; reply: string }) {
-    requireGenericReplyShape(answer);
-    const { handle } = this;
-    const { directory, task } = handle;
-    const call = this.herdrCall();
-
-    // Check the saved submission before native state. A saved reply is never sent twice, so a
-    // blocked dialog must not turn a repeat into an error.
-    const repeated = repeatedGenericReply(directory, task, answer);
-
-    if (repeated) {
-      return repeated;
-    }
-
-    handle.observation.nativeState = 'unknown';
-    const inspected = await inspectWorker(handle, call);
-    const location = await resolveTerminal(inspected.terminalId, call);
-
-    ensureReplyActive(handle);
-
-    if (
-      location.paneId !== inspected.paneId ||
-      !['idle', 'working', 'done'].includes(handle.observation.nativeState)
-    ) {
-      throw new Error(
-        'Native worker moved, is blocked, or has unknown state. No text or approval sent.',
-      );
-    }
-
-    if (
-      readGenericSubmission(directory, task.taskId, 'assignment')?.observation?.state !==
-      'submitted'
-    ) {
-      throw new Error(
-        'Assignment delivery is not confirmed. Replies cannot bypass native startup approvals or uncertain delivery.',
-      );
-    }
-
-    const submission = await submitGenericText(directory, task, {
-      id: answer.replyId,
-      text: answer.reply,
-      send: () => {
-        ensureReplyActive(handle);
-
-        return call(agentPromptArguments(location.paneId, answer.reply));
-      },
-    });
-
-    return {
-      replyAccepted: true as const,
-      name: task.name,
-      delivery: deliveryFromSubmission(submission?.observation?.state),
-    };
   }
 
   private async replyPi(
@@ -591,7 +481,7 @@ export class TaskController {
 
   async reply(directory: string, answer: { questionId?: string; replyId: string; reply: string }) {
     if (isGenericLoadout(this.handle.task.loadout)) {
-      return this.replyGeneric(answer);
+      return replyGeneric(this, answer);
     }
 
     if (answer.questionId == null || answer.questionId === '') {
@@ -599,26 +489,6 @@ export class TaskController {
     }
 
     return this.replyPi(directory, answer.questionId, answer);
-  }
-
-  async nativeOutput() {
-    const { handle } = this;
-    const call = this.herdrCall();
-    // Reading output only verifies identity; the poll loop owns the handle and saved records.
-    const { worker } = await observeWorker(handle, call);
-    const location = await resolveTerminal(worker.terminalId, call);
-
-    if (location.paneId !== worker.paneId) {
-      throw new Error('Worker moved during the native output check.');
-    }
-
-    const output = await call(['agent', 'read', worker.paneId]);
-
-    return {
-      text: output.slice(0, 8000),
-      truncated: output.length > 8000,
-      format: 'Herdr response; native text is untrusted, not task acceptance or Tau authorization.',
-    };
   }
 
   private noticeStatus() {
@@ -668,19 +538,6 @@ export class TaskController {
     }
   }
 
-  private hasAssignment(): boolean {
-    const { directory, task } = this.handle;
-
-    return (
-      readGenericSubmission(directory, task.taskId, 'assignment') !== undefined ||
-      !this.nativeReady()
-    );
-  }
-
-  private nativeReady(): boolean {
-    return ['idle', 'done'].includes(this.handle.observation.nativeState ?? 'unknown');
-  }
-
   async dispatch(call: TerminalCall): Promise<void> {
     const { handle } = this;
     const { directory, task } = handle;
@@ -691,39 +548,7 @@ export class TaskController {
       return;
     }
 
-    if (this.hasAssignment()) {
-      return;
-    }
-
-    const worker = await inspectWorker(handle, call);
-    const location = await resolveTerminal(worker.terminalId, call);
-
-    if (location.paneId !== worker.paneId || !this.nativeReady()) {
-      throw new Error('Native worker moved or is not ready for the assignment.');
-    }
-
-    workBudget(handle);
-    const prompt = genericPrompt(task);
-
-    const submission = await submitGenericText(directory, task, {
-      id: 'assignment',
-      text: prompt,
-      send: () => call(agentPromptArguments(location.paneId, prompt)),
-    });
-
-    this.notifyUndelivered(submission?.observation?.state);
-  }
-
-  private notifyUndelivered(state: SubmissionState | undefined): void {
-    if (state === undefined || this.handle.cleanup.stopping || this.context.closed()) {
-      return;
-    }
-
-    const delivery = deliveryFromSubmission(state);
-
-    if (delivery !== 'sent') {
-      this.notifySnapshot({ delivery });
-    }
+    await dispatchAssignment(this, call);
   }
 
   poll(): void {
@@ -752,7 +577,7 @@ export class TaskController {
     const { handle } = this;
 
     if (isGenericLoadout(handle.task.loadout)) {
-      void this.pollGeneric();
+      void pollGeneric(this);
 
       return;
     }
@@ -794,98 +619,6 @@ export class TaskController {
     }
   }
 
-  async pollGeneric(): Promise<void> {
-    const { handle } = this;
-
-    if (this.context.closed() || handle.cleanup.stopping) {
-      return;
-    }
-
-    try {
-      await this.pollGenericOnce();
-    } catch (error) {
-      // oxlint-disable-next-line typescript/no-unnecessary-condition -- Awaited calls can stop the handle or controller before this catch runs.
-      if (handle.cleanup.stopping !== undefined || this.context.closed()) {
-        return;
-      }
-
-      this.reportNativeObservationIssue(error);
-      this.poll();
-    }
-  }
-
-  private async pollGenericOnce(): Promise<void> {
-    const { handle } = this;
-
-    if (remainingWorkBudget(handle) <= 0) {
-      await this.stop('timeout');
-
-      return;
-    }
-
-    if (await this.stopOnAcceptedReport()) {
-      return;
-    }
-
-    if (handle.identity.owned && processAbsent(handle.identity.owned.processId)) {
-      await this.stop('completion');
-
-      return;
-    }
-
-    const call = this.herdrCall();
-    const previousState = handle.observation.nativeState;
-
-    handle.identity.owned = await inspectWorker(handle, call);
-    delete handle.observation.issue;
-    this.notifyNativeState(previousState);
-
-    await this.dispatch(call);
-    this.poll();
-  }
-
-  private async stopOnAcceptedReport(): Promise<boolean> {
-    const { handle } = this;
-
-    try {
-      if (!acceptGenericReport(handle.directory, handle.task)) {
-        return false;
-      }
-    } catch (error) {
-      recordNativeIssue(handle, 'nativeFailure.json', error);
-      await this.stop('completion');
-
-      return true;
-    }
-
-    await this.stop('completion');
-
-    return true;
-  }
-
-  private notifyNativeState(previousState: string | undefined): void {
-    const { handle } = this;
-    const blocked = ['blocked', 'unknown'].includes(handle.observation.nativeState ?? 'unknown');
-
-    if (handle.observation.nativeState !== previousState && blocked) {
-      this.notifySnapshot();
-    }
-  }
-
-  private reportNativeObservationIssue(error: unknown): void {
-    const { handle } = this;
-    // One notice per unresolved observation episode. A successful inspection deletes the issue,
-    // so the next genuine failure notifies again while changing diagnostics stay quiet.
-    const firstIssue = handle.observation.issue === undefined;
-
-    recordNativeIssue(handle, 'nativeObservation-error.json', error);
-    handle.observation.nativeState = 'unknown';
-
-    if (firstIssue) {
-      this.notifySnapshot();
-    }
-  }
-
   stop(
     reason: StopReason,
     failureDetail = 'Worker lifecycle failed; saved evidence may be incomplete. No retry.',
@@ -903,13 +636,8 @@ export class TaskController {
     handle.removeLaunchAbort?.();
     handle.abort.abort();
 
-    // A report published between polls must be saved before cleanup can close its pane.
     if (isGenericLoadout(handle.task.loadout)) {
-      try {
-        acceptGenericReport(handle.directory, handle.task);
-      } catch (error) {
-        recordNativeIssue(handle, 'nativeFailure.json', error);
-      }
+      saveReportBeforeStop(handle);
     }
 
     try {

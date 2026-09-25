@@ -35,6 +35,7 @@ import {
   remainingLaunchBudget,
   remainingWorkBudget,
 } from './budget.js';
+import { nativeOutput } from './genericWorker.js';
 import { herdrClient, inspectWorker, prepareTaskDirectory } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
 import { checkHandoff, nativeReference, requireUnclaimed } from './launchSupport.js';
@@ -214,7 +215,7 @@ export class WorkerController {
       throw new Error('Native output requires an active owned generic worker.');
     }
 
-    return live.nativeOutput();
+    return nativeOutput(live);
   }
 
   owns(taskId: string): boolean {
