@@ -50,7 +50,7 @@ const fullWorkerStatus = {
 it('guides the manager to delegate through the subagent tool prompt guidelines', () => {
   const guidelines = registerTools().get('subagent')?.promptGuidelines?.join('\n') ?? '';
 
-  expect(guidelines).toContain('without being asked');
+  expect(guidelines).toContain('on your own; do not wait for the user to ask');
   expect(guidelines).toContain('`worker`');
   expect(guidelines).toContain('`scout`');
   expect(guidelines).toContain('`reviewer`');
