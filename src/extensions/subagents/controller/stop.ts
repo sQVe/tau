@@ -71,6 +71,23 @@ const checkShellOwned = async (
   return { owned, shellOwned: true };
 };
 
+const closeCheckedShell = async (
+  request: Pick<StopOwnedWorkerRequest, 'handle' | 'call'>,
+  expectedPaneId: string,
+  paneConfirmed: { confirmed: boolean },
+): Promise<void> => {
+  const { handle, call } = request;
+  // Catch a terminal move during the awaited shell checks.
+  const location = await resolveTerminal(text(handle.terminalId), call);
+
+  if (location.paneId !== handle.paneId || location.paneId !== expectedPaneId) {
+    throw new Error('Worker moved after the shell check; pane closure refused.');
+  }
+
+  await call(['pane', 'close', location.paneId]);
+  paneConfirmed.confirmed = true;
+};
+
 const closeStoppedShell = async (
   request: StopOwnedWorkerRequest,
   worker: OwnedWorker,
@@ -91,14 +108,7 @@ const closeStoppedShell = async (
     throw new Error('Stopped shell identity changed; pane closure refused.');
   }
 
-  const location = await resolveTerminal(worker.terminalId, call);
-
-  if (location.paneId !== handle.paneId || location.paneId !== expectedPaneId) {
-    throw new Error('Worker moved after the stopped-shell check; pane closure refused.');
-  }
-
-  await call(['pane', 'close', location.paneId]);
-  paneConfirmed.confirmed = true;
+  await closeCheckedShell(request, expectedPaneId, paneConfirmed);
 
   return 'Owned process stopped and pane closed. Detached descendants are not covered.';
 };
@@ -112,21 +122,15 @@ export const closeUnstartedPane = async (
   try {
     const location = await resolveTerminal(text(handle.terminalId), call);
 
-    await placement.close(
-      location,
-      call,
-      async () => {
-        const absent = await shellUnchanged(handle, call, { remainingBudget, signal });
+    await placement.close(async () => {
+      const absent = await shellUnchanged(handle, call, { remainingBudget, signal });
 
-        if (!absent || handle.paneId !== location.paneId) {
-          throw new Error('Worker shell identity changed; pane closure refused.');
-        }
+      if (!absent) {
+        throw new Error('Worker shell identity changed; pane closure refused.');
+      }
 
-        await call(['pane', 'close', location.paneId]);
-        paneClosed.confirmed = true;
-      },
-      signal,
-    );
+      await closeCheckedShell(request, location.paneId, paneClosed);
+    }, signal);
 
     return {
       stopped: true,
@@ -183,14 +187,9 @@ export const stopOwnedWorker = async (
     if (stopped) {
       const location = await resolveTerminal(worker.terminalId, call);
 
-      await placement.close(
-        location,
-        call,
-        async () => {
-          detail = await closeStoppedShell(request, worker, location.paneId, paneConfirmed);
-        },
-        signal,
-      );
+      await placement.close(async () => {
+        detail = await closeStoppedShell(request, worker, location.paneId, paneConfirmed);
+      }, signal);
     }
   } catch (error) {
     if (!paneConfirmed.confirmed) {

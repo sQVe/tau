@@ -1,7 +1,8 @@
 import { expect, it, vi, onTestFinished } from 'vitest';
 
-import { placementFixture as fixture } from './fixtures/layout.js';
-import { splitDirection } from './foreground.js';
+import { placementFixture as fixture } from './fixtures/placement.js';
+import { splitDirection } from './placement.js';
+import { requireObject, result } from './terminal.js';
 
 const minimumPane = { width: 82, height: 24 };
 
@@ -50,85 +51,36 @@ it.each([
         .filter((call) => ['split', 'create'].includes(call[1]!))
         .every((call) => call.includes('--no-focus')),
     ).toBe(true);
-
-    expect(calls.some((call) => ['resize', 'apply', 'focus', 'move'].includes(call[1]!))).toBe(
-      false,
-    );
   },
 );
 
-it.each([2, 4])('shares approximately equal foreground area with %s workers', async (workers) => {
-  const { placement, client, input, panes, dimensions } = fixture(340, 100);
-
-  await Promise.all(
-    Array.from({ length: workers }, () => placement.place(input('foreground'), client)),
-  );
-
-  const areas = [...dimensions.values()].map((bounds) => bounds.width * bounds.height);
-  expect(panes.every((pane) => pane.tab_id === 'working')).toBe(true);
-  expect(Math.max(...areas) / Math.min(...areas)).toBeLessThan(1.1);
-});
-
-it('places the first foreground worker beside the parent in 193 columns and 60 rows', async () => {
-  const { placement, client, input, dimensions } = fixture(193, 60);
-
-  await placement.place(input('foreground'), client);
-
-  expect([...dimensions.values()].map((bounds) => bounds.height)).toEqual([60, 60]);
-});
-
-it('keeps five foreground workers in the parent tab in 164 columns and 73 rows', async () => {
-  const { placement, client, input, panes } = fixture(164, 73);
-
-  for (let index = 0; index < 5; index++) {
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Each placement plans from the previous layout.
-    await placement.place(input('foreground'), client);
-  }
-
-  expect(panes.every((pane) => pane.tab_id === 'working')).toBe(true);
-});
-
-it('keeps thirteen foreground workers in the parent tab in 344 columns and 106 rows', async () => {
-  const { placement, client, input, panes } = fixture(344, 106);
-
-  for (let index = 0; index < 13; index++) {
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Each placement plans from the previous layout.
-    await placement.place(input('foreground'), client);
-  }
-
-  expect(panes.every((pane) => pane.tab_id === 'working')).toBe(true);
-});
-
-it('shares 230 columns and 74 rows equally between the parent and three workers', async () => {
-  const { placement, client, input, dimensions } = fixture(230, 74);
-
-  for (let index = 0; index < 3; index++) {
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Each placement plans from the previous layout.
-    await placement.place(input('foreground'), client);
-  }
-
-  const areas = [...dimensions.values()].map((bounds) => bounds.width * bounds.height);
-  expect(Math.max(...areas) / Math.min(...areas)).toBeLessThan(1.1);
-});
-
-it('stacks the second background worker below the first in 193 columns and 60 rows', async () => {
-  const { placement, client, input, dimensions } = fixture(193, 60);
-
-  await placement.place(input('background'), client);
-  const second = await placement.place(input('background'), client);
-
-  expect(dimensions.get(second.paneId)).toEqual({ width: 193, height: 30 });
-});
-
-it('fits two foreground workers beside the parent in 250 columns and 30 rows', async () => {
+it('serializes concurrent launches instead of splitting below the useful floor', async () => {
   const { placement, client, input, panes, dimensions } = fixture(250, 30);
+  const entered = Promise.withResolvers<undefined>();
+  const resume = Promise.withResolvers<undefined>();
 
-  await Promise.all(Array.from({ length: 2 }, () => placement.place(input('foreground'), client)));
-  expect(panes.map((pane) => pane.tab_id)).toEqual(['working', 'working', 'working']);
+  const delayed = async (argumentsList: string[]) => {
+    if (argumentsList[1] === 'split') {
+      entered.resolve(undefined);
+      await resume.promise;
+    }
+
+    return client(argumentsList);
+  };
+
+  const first = placement.place(input('foreground'), delayed);
+  await entered.promise;
+  const second = placement.place(input('foreground'), client);
+  resume.resolve(undefined);
+  const workers = await Promise.all([first, second]);
+
+  expect(workers[0].tabId).toBe('working');
+  expect(workers[1].tabId).not.toBe('working');
+  expect(panes).toHaveLength(3);
 
   for (const bounds of dimensions.values()) {
-    expect(bounds.width).toBeGreaterThanOrEqual(82);
-    expect(bounds.height).toBe(30);
+    expect(bounds.width).toBeGreaterThanOrEqual(minimumPane.width);
+    expect(bounds.height).toBeGreaterThanOrEqual(minimumPane.height);
   }
 });
 
@@ -140,12 +92,11 @@ it.each([
   async (width, height, workers) => {
     const { placement, client, input, panes, dimensions } = fixture(width, height);
 
-    for (let index = 0; index < workers; index++) {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Each placement plans from the previous layout.
-      await placement.place(input('foreground'), client);
-    }
+    await Promise.all(
+      Array.from({ length: workers }, () => placement.place(input('foreground'), client)),
+    );
 
-    for (const pane of panes.filter((entry) => entry.tab_id === 'working')) {
+    for (const pane of panes) {
       const bounds = dimensions.get(pane.pane_id)!;
       expect(bounds.width).toBeGreaterThanOrEqual(minimumPane.width);
       expect(bounds.height).toBeGreaterThanOrEqual(minimumPane.height);
@@ -153,138 +104,30 @@ it.each([
   },
 );
 
-it('shares foreground space with the parent instead of repeatedly halving it', async () => {
-  const { placement, client, input, panes, dimensions } = fixture(340, 100);
-
-  await Promise.all(Array.from({ length: 3 }, () => placement.place(input('foreground'), client)));
-  expect(panes.every((pane) => pane.tab_id === 'working')).toBe(true);
-  const areas = [...dimensions.values()].map((bounds) => bounds.width * bounds.height);
-  expect(Math.max(...areas) / Math.min(...areas)).toBeLessThan(1.05);
-});
-
-it('keeps equal foreground shares after confirmed owned cleanup and replacement', async () => {
-  const { placement, client, input, panes, dimensions } = fixture(340, 100);
-  const first = await placement.place(input('foreground'), client);
-  await placement.place(input('foreground'), client);
-  placement.release(first.terminalId);
-
-  await placement.close(first, client, async () => {
-    await client(['pane', 'close', first.paneId]);
-  });
-
-  await placement.place(input('foreground'), client);
-
-  expect(panes.map((pane) => pane.tab_id)).toEqual(['working', 'working', 'working']);
-  const areas = [...dimensions.values()].map((bounds) => bounds.width * bounds.height);
-  expect(Math.max(...areas) / Math.min(...areas)).toBeLessThan(1.1);
-});
-
-it.each([
-  'external close',
-  'uncertain close',
-  'manual resize before close',
-  'manual resize after close',
-] as const)('does not infer surviving split ownership after %s', async (scenario) => {
-  const { placement, client, input, calls } = fixture(340, 120);
-  const first = await placement.place(input('foreground'), client);
-  await placement.place(input('foreground'), client);
-  placement.release(first.terminalId);
-
-  const close = async () => {
-    await client(['pane', 'close', first.paneId]);
-
-    if (scenario === 'uncertain close') {
-      throw new Error('Closure delivery uncertain');
-    }
-
-    if (scenario === 'manual resize after close') {
-      await client([
-        'pane',
-        'resize',
-        '--pane',
-        'parent',
-        '--direction',
-        'right',
-        '--amount',
-        '0.1',
-      ]);
-    }
-  };
-
-  if (scenario === 'manual resize before close') {
-    await client([
-      'pane',
-      'resize',
-      '--pane',
-      first.paneId,
-      '--direction',
-      'up',
-      '--amount',
-      '0.1',
-    ]);
-  }
-
-  let failure: unknown;
-
-  try {
-    if (scenario === 'external close') {
-      await close();
-    } else {
-      await placement.close(first, client, close);
-    }
-  } catch (error) {
-    failure = error;
-  }
-
-  const previousCalls = calls.length;
-  await placement.place(input('foreground'), client);
-
-  expect(failure instanceof Error).toBe(scenario === 'uncertain close');
-  expect(calls.slice(previousCalls).some((call) => call[1] === 'resize')).toBe(false);
-});
-
-it('releases a confirmed terminal after abort even if its cosmetic snapshot completes late', async () => {
-  const { placement, client, input, calls, dimensions } = fixture(340, 100);
+it('releases a confirmed terminal when creation is cancelled', async () => {
+  const { placement, client, input, dimensions } = fixture(340, 100);
   const abort = new AbortController();
-  const snapshot = Promise.withResolvers<undefined>();
-  const snapshotReturned = Promise.withResolvers<undefined>();
-  let created: { paneId: string; terminalId: string } | undefined;
-
-  const delayed = async (argumentsList: string[]) => {
-    if (created && argumentsList[1] === 'layout') {
-      abort.abort();
-      await snapshot.promise;
-      snapshotReturned.resolve(undefined);
-    }
-
-    return client(argumentsList);
-  };
+  let created: string | undefined;
 
   await expect(
     placement.place(
       {
         ...input('foreground'),
         onCreated: (location) => {
-          created = location;
+          created = location.terminalId;
+          abort.abort();
         },
       },
-      delayed,
+      client,
       abort.signal,
     ),
-  ).rejects.toThrow(/cancelled/);
+  ).rejects.toThrow(/aborted|cancelled/);
 
-  snapshot.resolve(undefined);
-  await snapshotReturned.promise;
   dimensions.set('parent', { width: 100, height: 30 });
-  const previousCalls = calls.length;
   const replacement = await placement.place(input('foreground'), client);
 
   expect(created).toBeDefined();
   expect(replacement.tabId).not.toBe('working');
-
-  expect(calls.slice(previousCalls).some((call) => ['resize', 'split'].includes(call[1]!))).toBe(
-    false,
-  );
 });
 
 it('groups foreground overflow by useful space instead of creating a tab per worker', async () => {
@@ -304,6 +147,37 @@ it('uses a background tab when the parent cannot split usefully', async () => {
   expect(location.tabId).not.toBe('working');
   expect(dimensions.get('parent')).toEqual({ width: 100, height: 30 });
   expect(calls.some((call) => call[1] === 'split')).toBe(false);
+});
+
+it('uses a background tab without unzooming the parent', async () => {
+  const { placement, client, input, calls } = fixture(340, 100);
+
+  const zoomedClient = async (argumentsList: string[]) => {
+    const response = await client(argumentsList);
+
+    if (argumentsList[1] === 'layout') {
+      const parsed = result(response);
+      const layout = requireObject(parsed.layout);
+
+      return JSON.stringify({ result: { ...parsed, layout: { ...layout, zoomed: true } } });
+    }
+
+    return response;
+  };
+
+  const location = await placement.place(input('foreground'), zoomedClient);
+
+  expect(location.tabId).not.toBe('working');
+  expect(calls.some((call) => call[1] === 'split')).toBe(false);
+});
+
+it('refuses a worker tab below the useful floor without changing panes', async () => {
+  const { placement, client, input, panes, calls } = fixture(81, 23);
+
+  await expect(placement.place(input('background'), client)).rejects.toThrow('too small');
+
+  expect(panes).toHaveLength(1);
+  expect(calls.some((call) => ['split', 'create'].includes(call[1]!))).toBe(false);
 });
 
 it.each(['resize', 'insert', 'move', 'close'] as const)(
@@ -339,6 +213,40 @@ it.each(['resize', 'insert', 'move', 'close'] as const)(
   },
 );
 
+it.each([1, 2])(
+  'refuses malformed pane inventory on layout read %s without creating a worker',
+  async (invalidRead) => {
+    const { placement, client, input, panes, calls } = fixture(340, 100);
+    let reads = 0;
+
+    const malformedClient = async (argumentsList: string[]) => {
+      const response = await client(argumentsList);
+
+      if (argumentsList[1] !== 'layout') {
+        return response;
+      }
+
+      reads += 1;
+
+      if (reads !== invalidRead) {
+        return response;
+      }
+
+      const parsed = result(response);
+      const layout = requireObject(parsed.layout);
+
+      return JSON.stringify({ result: { ...parsed, layout: { ...layout, panes: null } } });
+    };
+
+    await expect(placement.place(input('foreground'), malformedClient)).rejects.toThrow(
+      'Missing herdr layout panes.',
+    );
+
+    expect(panes).toHaveLength(1);
+    expect(calls.some((call) => ['split', 'create'].includes(call[1]!))).toBe(false);
+  },
+);
+
 it('does not reclaim a background tab after an unrelated pane joins it', async () => {
   const { placement, client, input, panes, dimensions } = fixture(340, 100);
   const first = await placement.place(input('background'), client);
@@ -357,7 +265,7 @@ it('does not reclaim a background tab after an unrelated pane joins it', async (
   expect(dimensions.get(first.paneId)).toEqual({ width: 340, height: 100 });
 });
 
-it('does not rebalance manual sizes or touch an unrelated foreground pane', async () => {
+it('splits the largest eligible pane without touching unrelated panes', async () => {
   const { placement, client, input, panes, dimensions, calls } = fixture(340, 100);
   const worker = await placement.place(input('foreground'), client);
   dimensions.set('parent', { width: 100, height: 100 });
@@ -371,84 +279,15 @@ it('does not rebalance manual sizes or touch an unrelated foreground pane', asyn
   });
 
   dimensions.set('unrelated', { width: 500, height: 500 });
+
   await placement.place(input('foreground'), client);
 
   expect(dimensions.get('parent')).toEqual({ width: 100, height: 100 });
   expect(dimensions.get('unrelated')).toEqual({ width: 500, height: 500 });
-  expect(calls.some((call) => call[1] === 'resize')).toBe(false);
 
   expect(calls.findLast((call) => call[1] === 'split')).toEqual(
     expect.arrayContaining(['--pane', worker.paneId]),
   );
-});
-
-it.each(['resize', 'insert', 'move', 'close'] as const)(
-  'refuses an external %s before rebalancing Tau splits',
-  async (change) => {
-    const { placement, client, input, panes, dimensions, calls } = fixture(340, 100);
-    const first = await placement.place(input('foreground'), client);
-    const previousCalls = calls.length;
-    let checked = false;
-
-    const changedClient = async (argumentsList: string[]) => {
-      const response = await client(argumentsList);
-
-      if (argumentsList[1] === 'layout' && !checked) {
-        checked = true;
-
-        if (change === 'resize') {
-          dimensions.set('parent', { width: 200, height: 100 });
-        } else if (change === 'insert') {
-          panes.push({ ...panes[0]!, pane_id: 'unrelated', terminal_id: 'unrelated' });
-          dimensions.set('unrelated', { width: 100, height: 100 });
-        } else if (change === 'move') {
-          panes.find((pane) => pane.pane_id === first.paneId)!.pane_id = 'moved';
-        } else {
-          panes.splice(
-            panes.findIndex((pane) => pane.pane_id === first.paneId),
-            1,
-          );
-        }
-      }
-
-      return response;
-    };
-
-    await expect(placement.place(input('foreground'), changedClient)).rejects.toThrow(
-      /changed|moved/,
-    );
-
-    expect(
-      calls.slice(previousCalls).some((call) => ['split', 'resize', 'create'].includes(call[1]!)),
-    ).toBe(false);
-  },
-);
-
-it('does not retry or restore ratios after uncertain resize delivery', async () => {
-  const { placement, client, input, calls } = fixture(340, 100);
-  await placement.place(input('foreground'), client);
-  const previousCalls = calls.length;
-
-  const failedClient = async (argumentsList: string[]) => {
-    const response = await client(argumentsList);
-
-    if (argumentsList[1] === 'resize') {
-      throw new Error('Resize delivery uncertain');
-    }
-
-    return response;
-  };
-
-  await expect(placement.place(input('foreground'), failedClient)).rejects.toThrow(
-    'Resize delivery uncertain',
-  );
-
-  const mutations = calls
-    .slice(previousCalls)
-    .filter((call) => ['split', 'resize', 'create', 'apply'].includes(call[1]!));
-
-  expect(mutations).toHaveLength(1);
-  expect(mutations[0]![1]).toBe('resize');
 });
 
 it('cancels queued placement within its own budget without waiting for another launch', async () => {
@@ -511,4 +350,21 @@ it('does not split a released terminal or retry uncertain creation', async () =>
   );
 
   expect(calls.filter((call) => call[1] === 'split')).toHaveLength(1);
+});
+
+it('places the first foreground worker beside the parent in 193 columns and 60 rows', async () => {
+  const { placement, client, input, dimensions } = fixture(193, 60);
+
+  await placement.place(input('foreground'), client);
+
+  expect([...dimensions.values()].map((bounds) => bounds.height)).toEqual([60, 60]);
+});
+
+it('stacks the second background worker below the first in 193 columns and 60 rows', async () => {
+  const { placement, client, input, dimensions } = fixture(193, 60);
+
+  await placement.place(input('background'), client);
+  const second = await placement.place(input('background'), client);
+
+  expect(dimensions.get(second.paneId)).toEqual({ width: 193, height: 30 });
 });

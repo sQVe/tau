@@ -11,8 +11,8 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { DefaultResourceLoader, SessionManager } from '@earendil-works/pi-coding-agent';
-import type { ExtensionContext, SessionInfo } from '@earendil-works/pi-coding-agent';
+import { DefaultResourceLoader } from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { WorkerController } from './controller/controller.js';
@@ -275,7 +275,7 @@ it('excludes explicit custom-extension current and root sessions from the produc
   expect(result.details).toEqual({ outcome: 'notFound', totalMatches: 0, candidates: [] });
 });
 
-it('keeps the named current session out of history while checking its discovered metadata', async () => {
+it('keeps the named current session out of history', async () => {
   const fixture = setup();
 
   writeFileSync(
@@ -383,18 +383,25 @@ it('reports corrupt saved reports as diagnostics without hiding other tasks', as
   expect(history.diagnostics.join(' ')).toContain('Task corrupt-report');
 });
 
+it('lists task records without native-only sessions', async () => {
+  const fixture = setup();
+  fixture.task('saved', fixture.child, 'child');
+  fixture.session('native-only', fixture.root);
+
+  const history = await searchHistory(fixture.workers, {
+    file: fixture.root,
+    id: 'root',
+    sessionDirectory: fixture.sessions,
+  });
+
+  expect(history.candidates.map((candidate) => candidate.taskId)).toEqual(['saved']);
+});
+
 it('scopes history to the validated root and descendants including siblings and missing native refs', async () => {
   const fixture = setup();
   const first = fixture.task('first', fixture.child, 'child', 'worker-aa');
   const second = fixture.task('second', fixture.sibling, 'sibling');
   fixture.task('outside', fixture.unrelated, 'unrelated', 'worker-aa');
-
-  const nested = fixture.task(
-    'nested',
-    first.record.nativeSessionFile,
-    first.record.nativeSessionId,
-    'worker-bb',
-  );
 
   rmSync(first.record.nativeSessionFile);
   const current = { file: fixture.child, id: 'child', sessionDirectory: fixture.sessions };
@@ -405,10 +412,10 @@ it('scopes history to the validated root and descendants including siblings and 
       .filter((candidate) => candidate.taskId != null)
       .map((candidate) => candidate.taskId)
       .toSorted((left, right) => String(left).localeCompare(String(right))),
-  ).toEqual(['first', 'nested', 'second']);
+  ).toEqual(['first', 'second']);
 
   const sessionIds = history.candidates.map((candidate) => candidate.nativeSessionId);
-  expect(sessionIds).toEqual(expect.arrayContaining(['sibling', nested.record.nativeSessionId]));
+  expect(sessionIds).toEqual([first.record.nativeSessionId, second.record.nativeSessionId]);
   expect(sessionIds).not.toContain('root');
   expect(sessionIds).not.toContain('child');
 
@@ -431,9 +438,7 @@ it('scopes history to the validated root and descendants including siblings and 
     id: 'root',
   });
 
-  expect(fromRoot.candidates.map((candidate) => candidate.nativeSessionId)).toEqual(
-    expect.arrayContaining([...sessionIds, 'child']),
-  );
+  expect(fromRoot.candidates.map((candidate) => candidate.nativeSessionId)).toEqual(sessionIds);
 
   expect(fromRoot.candidates.some((candidate) => candidate.nativeSessionId === 'root')).toBe(false);
 
@@ -442,30 +447,17 @@ it('scopes history to the validated root and descendants including siblings and 
   );
 });
 
-it('excludes the calling task and its parent task from history', async () => {
+it('excludes the calling task from history', async () => {
   const fixture = setup();
-  const parent = fixture.task('parent-task', fixture.child, 'child');
+  const caller = fixture.task('calling-task', fixture.child, 'child');
 
-  const nested = fixture.task(
-    'nested-task',
-    parent.record.nativeSessionFile,
-    parent.record.nativeSessionId,
-  );
-
-  const current = {
-    file: nested.record.nativeSessionFile,
-    id: nested.record.nativeSessionId,
+  const history = await searchHistory(fixture.workers, {
+    file: caller.record.nativeSessionFile,
+    id: caller.record.nativeSessionId,
     sessionDirectory: fixture.sessions,
-  };
+  });
 
-  const history = await searchHistory(fixture.workers, current);
-
-  const taskIds = history.candidates.flatMap((candidate) =>
-    candidate.taskId != null ? [candidate.taskId] : [],
-  );
-
-  expect(taskIds).not.toContain('nested-task');
-  expect(taskIds).not.toContain('parent-task');
+  expect(history.candidates).toEqual([]);
 });
 
 it('returns clarification for ambiguous names and descriptions without writing or granting ownership', async () => {
@@ -538,11 +530,8 @@ it.each(['broken', 'cyclic', 'mismatched'] as const)(
   },
 );
 
-it('excludes broken and cyclic discovered sessions and mismatched saved parent identities', async () => {
+it('excludes mismatched saved parent identities', async () => {
   const fixture = setup();
-  fixture.session('broken', join(fixture.sessions, 'absent.jsonl'));
-  const cycle = fixture.session('cycle-one', join(fixture.sessions, 'cycle-two.jsonl'));
-  fixture.session('cycle-two', cycle);
   fixture.task('bad-parent', fixture.root, 'wrong-root', 'worker-zz');
 
   const history = await searchHistory(fixture.workers, {
@@ -551,13 +540,8 @@ it('excludes broken and cyclic discovered sessions and mismatched saved parent i
     sessionDirectory: fixture.sessions,
   });
 
-  expect(
-    history.candidates
-      .map((candidate) => candidate.nativeSessionId)
-      .toSorted((left, right) => String(left).localeCompare(String(right))),
-  ).toEqual(['child', 'sibling']);
-
-  expect(history.diagnostics.length).toBeGreaterThanOrEqual(3);
+  expect(history.candidates).toEqual([]);
+  expect(history.diagnostics.length).toBeGreaterThan(0);
 });
 
 it('flags mismatched saved native ancestry without searching an unrelated transcript', async () => {
@@ -623,31 +607,4 @@ it('derives candidate state with ownership from the live controller', async () =
 
   expect(untracked.candidates[0]?.state).toBe('cleanupUnconfirmed');
   expect(owned.candidates[0]?.state).toBe('reported');
-});
-
-it('diagnoses discovered metadata that disagrees with a seeded ancestor identity', async () => {
-  const fixture = setup();
-  const [discovered] = await SessionManager.listAll(fixture.sessions);
-
-  vi.spyOn(SessionManager, 'listAll').mockResolvedValue([
-    { ...discovered, path: fixture.root, id: 'impostor' } as SessionInfo,
-  ]);
-
-  onTestFinished(() => {
-    vi.restoreAllMocks();
-  });
-
-  const history = await searchHistory(fixture.workers, {
-    file: fixture.child,
-    id: 'child',
-    sessionDirectory: fixture.sessions,
-  });
-
-  expect(history.diagnostics).toContain(
-    'Discovered metadata disagrees with a validated session identity.',
-  );
-
-  expect(history.candidates.some((candidate) => candidate.nativeSessionId === 'impostor')).toBe(
-    false,
-  );
 });

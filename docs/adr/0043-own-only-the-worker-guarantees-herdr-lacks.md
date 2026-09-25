@@ -67,6 +67,12 @@ Save ownership in the task record. A controller for the same root session may re
 worker after herdr reports the recorded agent session identity. Sessions in other trees cannot act
 on it. Keep one controller per task.
 
+### Placement
+
+Keep serialized, size-aware placement and terminal identity checks. Split the largest eligible pane
+with herdr's default ratio, or use a background tab when the pane is zoomed or too small. Herdr owns
+layout after placement. Do not rebalance splits or track layout collapse after an owned close.
+
 ### Cleanup
 
 Keep the terminal identity check before input or closure. When cleanup cannot be confirmed, show the

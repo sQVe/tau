@@ -20,7 +20,7 @@ const row: WorkerWidgetRow = {
 };
 
 describe('worker widget', () => {
-  it('shows worker name, short task name, model, and status in the compact widget', () => {
+  it('shows worker name, short task name, model, status, and elapsed time in the compact widget', () => {
     const labelledRow: WorkerWidgetRow = {
       ...row,
       label: 'Inspect worker',
@@ -37,7 +37,7 @@ describe('worker widget', () => {
     expect(text).toContain('running');
     expect(lines.at(-1)).toMatch(/╰─+╯$/u);
     expect(lines).toHaveLength(3);
-    expect(text).not.toContain('01:00');
+    expect(text).toContain('01:00');
     expect(text).not.toContain('left');
   });
 
@@ -88,7 +88,7 @@ describe('worker widget', () => {
       const content = stripTerminalSequences(rowLine).slice(2, -2).trimEnd();
 
       expect(lines.every((line) => visibleWidth(line) === width)).toBe(true);
-      expect(content).toBe('worker-ab running Inspect a worker openai-codex/gpt-5.6-luna');
+      expect(content).toBe('worker-ab running 01:00 Inspect a worker openai-codex/gpt-5.6-luna');
     }
   });
 
@@ -388,7 +388,7 @@ describe('worker widget', () => {
     const content = stripTerminalSequences(rowLine).slice(2, -2);
 
     expect(content.endsWith(' ')).toBe(true);
-    expect(content.trimEnd()).toBe('worker-ab running Inspect a worker. —');
+    expect(content.trimEnd()).toBe('worker-ab running 01:00 Inspect a worker. —');
   });
 
   it('does not claim run time or a live countdown for uncertain states', () => {
