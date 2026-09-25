@@ -48,6 +48,7 @@ const splitCandidate = (
   eligible: TerminalLocation[],
   workspaceId: string,
   tabId: string,
+  visibility: Visibility,
 ) => {
   if (layout.tab_id !== tabId || layout.workspace_id !== workspaceId) {
     throw new Error('Placement target moved; no layout changes.');
@@ -61,7 +62,7 @@ const splitCandidate = (
     return undefined;
   }
 
-  const alone = layout.panes.length === 1;
+  const alone = visibility === 'foreground' && layout.panes.length === 1;
 
   const candidates = layout.panes
     .flatMap((value) => {
@@ -247,7 +248,14 @@ export class WorkerPlacement {
 
     const shape = layoutShape(layout);
     const candidates = plan ? eligible.filter((pane) => pane.paneId === plan.target) : eligible;
-    const candidate = splitCandidate(layout, candidates, first.workspaceId, first.tabId);
+
+    const candidate = splitCandidate(
+      layout,
+      candidates,
+      first.workspaceId,
+      first.tabId,
+      visibility,
+    );
 
     if (!candidate) {
       return undefined;

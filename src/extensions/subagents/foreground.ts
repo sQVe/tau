@@ -78,11 +78,15 @@ export const rectangle = (value: unknown): Rectangle => {
 export const isUseful = (bounds: Rectangle): boolean =>
   bounds.width >= minimumPane.width && bounds.height >= minimumPane.height;
 
-// A parent alone in its tab slightly favors a worker beside it. Later splits keep the neutral
-// comparison, because a stronger bias leaves columns that later workers cannot share or split.
-const preferRight = (bounds: Rectangle, down: boolean, alone: boolean): boolean =>
-  !down ||
-  ((alone ? 1.1 : 1) * bounds.width) / minimumPane.width >= bounds.height / minimumPane.height;
+// A parent alone in a small foreground tab slightly favors a worker beside it. Other splits keep
+// the neutral comparison, because the bias costs capacity when later workers fill a larger area.
+const preferRight = (bounds: Rectangle, down: boolean, alone: boolean): boolean => {
+  const columns = bounds.width / minimumPane.width;
+  const rows = bounds.height / minimumPane.height;
+  const small = Math.floor(columns) * Math.floor(rows) <= 6;
+
+  return !down || (alone && small ? 1.1 : 1) * columns >= rows;
+};
 
 export const splitDirection = (bounds: Rectangle, alone = false): 'right' | 'down' | undefined => {
   const right = isUseful({ width: splitLengths(bounds.width, 0.5).second, height: bounds.height });

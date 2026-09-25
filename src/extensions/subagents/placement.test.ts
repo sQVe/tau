@@ -88,6 +88,26 @@ it('keeps five foreground workers in the parent tab in 164 columns and 73 rows',
   expect(panes.every((pane) => pane.tab_id === 'working')).toBe(true);
 });
 
+it('keeps thirteen foreground workers in the parent tab in 344 columns and 106 rows', async () => {
+  const { placement, client, input, panes } = fixture(344, 106);
+
+  for (let index = 0; index < 13; index++) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Each placement plans from the previous layout.
+    await placement.place(input('foreground'), client);
+  }
+
+  expect(panes.every((pane) => pane.tab_id === 'working')).toBe(true);
+});
+
+it('stacks the second background worker below the first in 193 columns and 60 rows', async () => {
+  const { placement, client, input, dimensions } = fixture(193, 60);
+
+  await placement.place(input('background'), client);
+  const second = await placement.place(input('background'), client);
+
+  expect(dimensions.get(second.paneId)).toEqual({ width: 193, height: 30 });
+});
+
 it('fits two foreground workers beside the parent in 250 columns and 30 rows', async () => {
   const { placement, client, input, panes, dimensions } = fixture(250, 30);
 
