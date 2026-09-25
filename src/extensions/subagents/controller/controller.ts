@@ -4,24 +4,16 @@ import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
-import { parseModelReference } from '../../../delegateModel/index.js';
-import { errorMessage, isMissingFile } from '../../../errors/index.js';
+import { isMissingFile } from '../../../errors/index.js';
 import { processAbsent } from '../cancellation.js';
 import { refuseLiveNativeWriter } from '../continuations.js';
-import { submitGenericText, deliveryFromSubmission } from '../generic.js';
 import { authorizeHistoryTask } from '../history.js';
 import { validateSavedLoadout } from '../loadout.js';
 import { allocateName, nameSuffix } from '../names.js';
 import { validateNative } from '../native.js';
 import { WorkerPlacement } from '../placement.js';
 import type { WorkerNotice } from '../presentation.js';
-import {
-  acceptReply,
-  readAcknowledgement,
-  readPendingQuestion,
-  readQuestion,
-  readReply,
-} from '../questionRecords.js';
+import { readAcknowledgement, readQuestion, readReply } from '../questionRecords.js';
 import {
   readEvent,
   readGenericSubmission,
@@ -31,10 +23,10 @@ import {
   publish,
   validateTask,
 } from '../records.js';
-import { resolveTerminal, text, requireObject, result } from '../terminal.js';
+import { result } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
 import { isGenericLoadout, isPiLoadout, isTaskId } from '../types.js';
-import type { GenericLoadout, Task } from '../types.js';
+import type { Task } from '../types.js';
 import type { WorkerWidgetRow } from '../widget.js';
 import {
   ensureReplyActive,
@@ -43,19 +35,7 @@ import {
   remainingLaunchBudget,
   remainingWorkBudget,
 } from './budget.js';
-import {
-  agentPromptArguments,
-  herdrClient,
-  inspectWorker,
-  observeWorker,
-  waitForPiIdentity,
-  isHerdrError,
-  prepareTaskDirectory,
-  verifyRejectedStart,
-  waitForWorkerReadiness,
-  waitForWorkerExit,
-  workerArguments,
-} from './inspect.js';
+import { herdrClient, inspectWorker, prepareTaskDirectory } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
 import { checkHandoff, nativeReference, requireUnclaimed } from './launchSupport.js';
 import type { FollowUpPreparation, LaunchInput } from './launchSupport.js';
@@ -65,21 +45,11 @@ import {
   handleRecovery,
   savedRecovery,
   taskStatus,
-  readOwnedWorker,
 } from './record.js';
-import { waitForShell, integer, isBareShell, readProcessStart } from './shellIdentity.js';
-import { createHandle, TaskController } from './task.js';
+import { createHandle, savedHandle, TaskController } from './task.js';
 import type { TaskContext } from './task.js';
 import type { Handle } from './types.js';
 import { widgetRow } from './widgetRows.js';
-
-interface PiReplyRequest {
-  directory: string;
-  worker: TaskController;
-  questionId: string;
-  answer: { replyId: string };
-  value: unknown;
-}
 
 interface StatusFailureRequest {
   taskId: string;
@@ -110,78 +80,12 @@ const workerCapacity = (): number => {
   return capacity;
 };
 
-const paneTitle = (task: Task): string => {
-  const harness = isGenericLoadout(task.loadout) ? task.loadout.kind : task.loadout.harness;
-  const model = isPiLoadout(task.loadout) ? parseModelReference(task.loadout.model)?.id : undefined;
-  const identity = [harness, model].filter((value): value is string => value !== undefined);
-  const details = identity.map((value) => value.replace(/[^a-zA-Z0-9._-]/g, '-'));
-
-  return `${task.name ?? 'worker'} (${details.join(' / ')})`;
-};
-
-// The reply is saved before this read. A corrupt acknowledgement record must not make a saved reply
-// look failed, because a failure would invite a resend of the same identity.
-const replyAcknowledged = (directory: string, taskId: string, questionId: string): boolean => {
-  try {
-    return Boolean(readAcknowledgement(directory, taskId, questionId));
-  } catch {
-    return false;
-  }
-};
-
-const acceptedReply = (directory: string, task: Task, questionId: string) => ({
-  replyAccepted: true,
-  name: task.name,
-  workerAcknowledged: replyAcknowledged(directory, task.taskId, questionId),
-  delivery: 'notResent' as const,
-});
-
-const requireGenericReplyShape = (answer: {
-  questionId?: string;
-  replyId: string;
-  reply: string;
-}): void => {
-  const hasStructuredQuestion = answer.questionId !== undefined;
-  const reusedReplyId = answer.replyId === 'assignment';
-  const invalidText = !answer.reply.trim() || answer.reply.length > 32_000;
-
-  if (hasStructuredQuestion || reusedReplyId || invalidText) {
-    throw new Error(
-      'Generic replies use a unique replyId and plain text, without a structured questionId.',
-    );
-  }
-};
-
 // A caller asked for a task it may not read; this is a refusal, never unreadable evidence.
 class TaskAccessError extends Error {
   override name = 'TaskAccessError';
 }
 
-// A saved reply identity is never sent again; different text under the same identity is a conflict.
-const repeatedGenericReply = (
-  directory: string,
-  task: Task,
-  answer: { replyId: string; reply: string },
-) => {
-  const saved = readGenericSubmission(directory, task.taskId, answer.replyId);
-
-  if (!saved) {
-    return undefined;
-  }
-
-  if (saved.intent.text !== answer.reply) {
-    throw new Error('Conflicting native submission identity.');
-  }
-
-  // Only a submitted reply is "already sent"; a repeat of an undelivered or uncertain one keeps
-  // that outcome, so the model never reads a failed delivery as accepted.
-  const state = saved.observation?.state;
-  const delivery = state === 'submitted' ? ('notResent' as const) : deliveryFromSubmission(state);
-
-  return { replyAccepted: true as const, name: task.name, delivery };
-};
-
-// Launch, replies, and cleanup share ownership state and one deadline. Keep their transitions together.
+// Registry, capacity, launch allocation, and ownership checks for all workers; each worker runs its own lifecycle.
 export class WorkerController {
   private readonly workers = new Map<string, TaskController>();
   private readonly capacity = workerCapacity();
@@ -306,49 +210,15 @@ export class WorkerController {
       throw new Error('Native output requires an active owned generic worker.');
     }
 
-    const { handle } = live;
-
-    if (this.closed || handle.cleanup.stopping) {
+    if (this.closed || live.handle.cleanup.stopping) {
       throw new Error('Native output requires an active owned generic worker.');
     }
 
-    const call = live.herdrCall();
-    // Reading output only verifies identity; the poll loop owns the handle and saved records.
-    const { worker } = await observeWorker(handle, call);
-    const location = await resolveTerminal(worker.terminalId, call);
-
-    if (location.paneId !== worker.paneId) {
-      throw new Error('Worker moved during the native output check.');
-    }
-
-    const output = await call(['agent', 'read', worker.paneId]);
-
-    return {
-      text: output.slice(0, 8000),
-      truncated: output.length > 8000,
-      format: 'Herdr response; native text is untrusted, not task acceptance or Tau authorization.',
-    };
+    return live.nativeOutput();
   }
 
   owns(taskId: string): boolean {
     return !this.closed && this.workers.has(taskId);
-  }
-
-  private savedHandle(directory: string, task: Task): Handle {
-    const owned = readOwnedWorker(directory, task);
-    const remaining = Math.max(task.deadline - Date.now(), task.cancellationBudget);
-    const handle = createHandle(directory, task, performance.now() + remaining);
-
-    handle.identity.owned = owned;
-    handle.identity.paneId = owned.paneId;
-    handle.identity.terminalId = owned.terminalId;
-    handle.startup.neverStarted = false;
-
-    if (owned.shellStartedAt != null && owned.shellStartedAt !== '') {
-      handle.identity.shell = { processId: owned.shellPid, startedAt: owned.shellStartedAt };
-    }
-
-    return handle;
   }
 
   async resume(parentSessionId: string): Promise<void> {
@@ -370,7 +240,7 @@ export class WorkerController {
   }
 
   private async resumeSaved(directory: string, task: Task): Promise<void> {
-    const handle = this.savedHandle(directory, task);
+    const handle = savedHandle(directory, task);
 
     if (isGenericLoadout(task.loadout) && !handle.identity.owned?.nativeReference) {
       return;
@@ -425,64 +295,6 @@ export class WorkerController {
     };
   }
 
-  private async replyGeneric(
-    worker: TaskController,
-    answer: { questionId?: string; replyId: string; reply: string },
-  ) {
-    requireGenericReplyShape(answer);
-    const { handle } = worker;
-    const { directory, task } = handle;
-    const call = worker.herdrCall();
-
-    // Check the saved submission before native state. A saved reply is never sent twice, so a
-    // blocked dialog must not turn a repeat into an error.
-    const repeated = repeatedGenericReply(directory, task, answer);
-
-    if (repeated) {
-      return repeated;
-    }
-
-    handle.observation.nativeState = 'unknown';
-    const inspected = await inspectWorker(handle, call);
-    const location = await resolveTerminal(inspected.terminalId, call);
-
-    ensureReplyActive(handle);
-
-    if (
-      location.paneId !== inspected.paneId ||
-      !['idle', 'working', 'done'].includes(handle.observation.nativeState)
-    ) {
-      throw new Error(
-        'Native worker moved, is blocked, or has unknown state. No text or approval sent.',
-      );
-    }
-
-    if (
-      readGenericSubmission(directory, task.taskId, 'assignment')?.observation?.state !==
-      'submitted'
-    ) {
-      throw new Error(
-        'Assignment delivery is not confirmed. Replies cannot bypass native startup approvals or uncertain delivery.',
-      );
-    }
-
-    const submission = await submitGenericText(directory, task, {
-      id: answer.replyId,
-      text: answer.reply,
-      send: () => {
-        ensureReplyActive(handle);
-
-        return call(agentPromptArguments(location.paneId, answer.reply));
-      },
-    });
-
-    return {
-      replyAccepted: true as const,
-      name: task.name,
-      delivery: deliveryFromSubmission(submission?.observation?.state),
-    };
-  }
-
   async reply(
     taskId: string,
     parentSessionId: string,
@@ -503,90 +315,7 @@ export class WorkerController {
 
     ensureReplyActive(handle);
 
-    if (isGenericLoadout(handle.task.loadout)) {
-      return this.replyGeneric(worker, answer);
-    }
-
-    if (answer.questionId == null || answer.questionId === '') {
-      throw new Error('Pi replies require a structured questionId.');
-    }
-
-    return this.replyPi(directory, worker, answer.questionId, answer);
-  }
-
-  private async replyPi(
-    directory: string,
-    worker: TaskController,
-    questionId: string,
-    answer: { replyId: string; reply: string },
-  ) {
-    const { handle } = worker;
-    const { taskId } = handle.task;
-
-    const value = {
-      version: 1,
-      taskId,
-      questionId,
-      replyId: answer.replyId,
-      reply: answer.reply,
-    };
-
-    if (readReply(directory, taskId, questionId)) {
-      acceptReply(directory, taskId, value);
-
-      return acceptedReply(directory, handle.task, questionId);
-    }
-
-    if (readPendingQuestion(directory, taskId)?.questionId !== questionId) {
-      throw new Error('Reply does not match the pending question.');
-    }
-
-    const call = worker.herdrCall();
-    const inspected = await inspectWorker(handle, call);
-    const location = await resolveTerminal(inspected.terminalId, call);
-
-    if (location.paneId !== inspected.paneId) {
-      throw new Error('Worker moved during identity checks; no input sent.');
-    }
-
-    ensureReplyActive(handle);
-
-    // Another caller may have accepted this reply during the identity check. Never send it twice.
-    if (readReply(directory, taskId, questionId)) {
-      acceptReply(directory, taskId, value);
-
-      return acceptedReply(directory, handle.task, questionId);
-    }
-
-    return this.sendPiReply({ directory, worker, questionId, answer, value });
-  }
-
-  private async sendPiReply(request: PiReplyRequest) {
-    const { directory, worker, questionId, answer, value } = request;
-    const { handle } = worker;
-    const { taskId } = handle.task;
-    const reference = { version: 1, taskId, questionId, replyId: answer.replyId };
-    const prompt = `TAU_REPLY ${JSON.stringify(reference)}`;
-    const call = worker.herdrCall();
-
-    acceptReply(directory, taskId, value);
-
-    // The reply is saved; a throw here would read as a failed reply and invite a resend.
-    let deliveryError: string | undefined;
-
-    try {
-      await call(['agent', 'prompt', text(handle.identity.paneId), prompt]);
-    } catch (error) {
-      deliveryError = errorMessage(error).slice(0, 4000);
-    }
-
-    return {
-      replyAccepted: true,
-      name: handle.task.name,
-      workerAcknowledged: replyAcknowledged(directory, taskId, questionId),
-      delivery: deliveryError === undefined ? 'sent' : 'uncertain',
-      ...(deliveryError === undefined ? {} : { deliveryError }),
-    };
+    return worker.reply(directory, answer);
   }
 
   async cancel(taskId: string, parentSessionId: string) {
@@ -611,8 +340,7 @@ export class WorkerController {
     }
 
     const worker =
-      live ??
-      new TaskController(this.savedHandle(directory, readTask(directory)), this.taskContext);
+      live ?? new TaskController(savedHandle(directory, readTask(directory)), this.taskContext);
 
     this.workers.set(taskId, worker);
     this.live.add(taskId);
@@ -723,164 +451,6 @@ export class WorkerController {
     );
   }
 
-  private async startAgent(worker: TaskController, paneId: string, name: string): Promise<void> {
-    const { handle } = worker;
-    const { task } = handle;
-    const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
-
-    // herdr must time out before the client budget kills it, so its structured error survives.
-    const budget = workBudget(handle);
-    const herdrTimeout = budget - Math.min(3000, Math.ceil(budget / 4));
-
-    // herdr 0.9.1 rejects start timeouts of 3000 ms or less.
-    if (herdrTimeout <= 3000) {
-      throw new Error('Too little startup budget is left for herdr agent start.');
-    }
-
-    handle.startup.neverStarted = false;
-    const pending = new AbortController();
-    const signal = AbortSignal.any([handle.abort.signal, pending.signal]);
-    const call = worker.herdrCall(signal);
-
-    handle.startup.starting = Promise.resolve().then(() =>
-      call([
-        'agent',
-        'start',
-        name,
-        '--kind',
-        generic?.kind ?? 'pi',
-        '--pane',
-        paneId,
-        '--timeout',
-        String(herdrTimeout),
-        '--',
-        ...(generic?.arguments ?? workerArguments(task)),
-      ]),
-    );
-
-    try {
-      await Promise.race([handle.startup.starting, waitForWorkerExit(handle, call, signal)]);
-    } finally {
-      pending.abort();
-    }
-  }
-
-  private async startWithBusyRetry(
-    worker: TaskController,
-    paneId: string,
-    name: string,
-    call: TerminalCall,
-  ): Promise<void> {
-    const { handle } = worker;
-
-    try {
-      await this.startAgent(worker, paneId, name);
-    } catch (error) {
-      if (!isHerdrError(error, 'agent_pane_busy')) {
-        throw error;
-      }
-
-      if (!(await verifyRejectedStart(handle, call))) {
-        throw error;
-      }
-
-      handle.startup.neverStarted = true;
-      await waitForShell(handle, paneId, call);
-
-      if (!(await verifyRejectedStart(handle, call))) {
-        throw new Error('Shell identity changed before the rejected-start retry.', {
-          cause: error,
-        });
-      }
-
-      publish(handle.directory, 'startRetry.json', {
-        taskId: handle.task.taskId,
-        at: Date.now(),
-        reason: 'agent_pane_busy',
-        detail: 'One retry after unchanged-shell and agent-absence verification.',
-      });
-
-      await this.startAgent(worker, paneId, name);
-    }
-  }
-
-  private async startWorker(
-    worker: TaskController,
-    paneId: string,
-    name: string,
-    call: TerminalCall,
-  ): Promise<void> {
-    const { handle } = worker;
-    const { task } = handle;
-    const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
-
-    await this.prepareStart(handle, paneId, call, generic);
-
-    await this.startWithBusyRetry(worker, paneId, name, call).catch((error: unknown) => {
-      if (handle.startup.starting === undefined) {
-        throw error;
-      }
-
-      handle.startup.error = String(error).slice(0, 4000);
-
-      if (!generic) {
-        throw error;
-      }
-
-      publish(handle.directory, 'nativeStart-error.json', { detail: handle.startup.error });
-      worker.notifySnapshot({ failure: handle.startup.error });
-    });
-  }
-
-  private async prepareStart(
-    handle: Handle,
-    paneId: string,
-    call: TerminalCall,
-    generic?: GenericLoadout,
-  ): Promise<void> {
-    const shellPid = await waitForShell(handle, paneId, call);
-
-    // A new shell briefly starts prompt-hook children; wait again instead of failing on one.
-    for (;;) {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Rechecks share the original startup budget.
-      const response = await call(['pane', 'process-info', '--pane', paneId]);
-      const information = requireObject(result(response).process_info);
-
-      if (information.pane_id !== paneId || integer(information.shell_pid) !== shellPid) {
-        throw new Error('Native start requires an unchanged foreground shell.');
-      }
-
-      if (isBareShell(information)) {
-        break;
-      }
-
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Rechecks share the original startup budget.
-      if ((await waitForShell(handle, paneId, call)) !== shellPid) {
-        throw new Error('Native start requires an unchanged foreground shell.');
-      }
-    }
-
-    handle.identity.shell = {
-      processId: shellPid,
-      startedAt: await readProcessStart(handle, shellPid),
-    };
-
-    if (!handle.identity.shell.startedAt) {
-      throw new Error('Shell start identity is unavailable.');
-    }
-
-    publish(handle.directory, 'shell.json', handle.identity.shell);
-
-    if (generic) {
-      publish(handle.directory, 'nativeStart-intent.json', {
-        taskId: handle.task.taskId,
-        kind: generic.kind,
-        arguments: generic.arguments,
-        terminalId: handle.identity.terminalId,
-      });
-    }
-  }
-
   private checkFollowUpSource(
     loadout: LaunchInput['loadout'],
     agents: unknown,
@@ -895,48 +465,6 @@ export class WorkerController {
 
     if (!isDeepStrictEqual(loadout, source.task.loadout)) {
       throw new Error('Follow-up cannot change saved worker settings.');
-    }
-  }
-
-  // The pane display title is cosmetic. Startup is already complete, so an unresponsive herdr call
-  // only delays the launch return by at most the short shared deadline below; it cannot block
-  // dispatch or extend the task's original deadline. A rejected or unresolved write leaves the
-  // saved pane unchanged.
-  private async renameWorkerPane(handle: Handle): Promise<void> {
-    if (handle.abort.signal.aborted || this.lifetime.signal.aborted) {
-      return;
-    }
-
-    const remainingWork = remainingWorkBudget(handle);
-
-    if (remainingWork <= 0) {
-      return;
-    }
-
-    const budget = Math.min(2_000, remainingWork);
-    const deadline = performance.now() + budget;
-    const limit = new AbortController();
-
-    const timer = setTimeout(() => {
-      limit.abort();
-    }, budget);
-
-    const signal = AbortSignal.any([this.lifetime.signal, handle.abort.signal, limit.signal]);
-
-    const call = (argumentsList: string[]) => {
-      const remaining = Math.max(1, Math.floor(deadline - performance.now()));
-
-      return this.client(argumentsList, remaining, signal);
-    };
-
-    try {
-      const ownedLocation = await resolveTerminal(text(handle.identity.terminalId), call);
-
-      await call(['pane', 'rename', ownedLocation.paneId, paneTitle(handle.task)]);
-    } catch {
-      // Keep the saved pane as-is; the worker still launched with its unique agent key.
-    } finally {
-      clearTimeout(timer);
     }
   }
 
@@ -965,15 +493,11 @@ export class WorkerController {
         checkHandoff(source);
       }
 
-      await this.startWorker(worker, location.paneId, name, call);
-      await this.finishStartup(worker, call);
-      handle.removeLaunchAbort?.();
-
-      await this.renameWorkerPane(handle);
+      await worker.start(location.paneId, name, call);
     } catch (error) {
       const reason = remainingWorkBudget(handle) <= 0 ? 'timeout' : 'failure';
 
-      await worker.stop(reason, this.startupFailureDetail(handle, error));
+      await worker.stop(reason, worker.startupFailureDetail(error));
     }
 
     return this.status(prepared.taskId, input.parentSessionId);
@@ -1086,46 +610,6 @@ export class WorkerController {
       monotonicDeadline: plan.monotonicDeadline,
       loadout: input.loadout,
     });
-  }
-
-  private async finishStartup(worker: TaskController, call: TerminalCall): Promise<void> {
-    const { handle } = worker;
-
-    if (!isPiLoadout(handle.task.loadout)) {
-      if (handle.startup.error !== undefined && (await verifyRejectedStart(handle, call))) {
-        handle.startup.neverStarted = true;
-        throw new Error(
-          `Native startup was rejected by herdr absence evidence. No retry. ${handle.startup.error}`,
-        );
-      }
-
-      await worker.pollGeneric();
-
-      return;
-    }
-
-    handle.identity.owned = await waitForPiIdentity(handle, call);
-    publish(handle.directory, 'owned.json', handle.identity.owned);
-    const ready = await waitForWorkerReadiness(handle, call);
-    const current = await inspectWorker(handle, call);
-
-    if (ready.processId !== current.processId) {
-      throw new Error('Native session and worker readiness identities did not match.');
-    }
-
-    handle.abort.signal.throwIfAborted();
-    await worker.dispatch(call);
-    worker.poll();
-  }
-
-  private startupFailureDetail(handle: Handle, error: unknown): string {
-    if (handle.startup.starting === undefined) {
-      return `No worker was started; no automatic retry. ${String(error)}`;
-    }
-
-    return handle.startup.error !== undefined && handle.startup.neverStarted
-      ? `Native startup was rejected by herdr absence evidence; no retry. ${String(error)}`
-      : `Startup delivery is uncertain; no automatic retry. ${String(error)}`;
   }
 
   // Freeze admission before snapshotting handles, but keep cleanup's lifetime signal active.
