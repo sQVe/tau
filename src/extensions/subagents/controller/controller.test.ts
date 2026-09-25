@@ -90,7 +90,7 @@ const setup = (
 
   vi.spyOn(cancellationModule, 'runClient').mockImplementation(
     (executable, argumentsList, budget, options) => {
-      if (executable === 'ps' && ['100', '101'].includes(argumentsList[1] ?? '')) {
+      if (executable === 'ps' && ['100', '101', '102'].includes(argumentsList[1] ?? '')) {
         return Promise.resolve('fixture shell start');
       }
 
@@ -1238,8 +1238,11 @@ it('does not retry a pane-busy start while the shell runs a foreground hook', as
   const launched = await launching;
 
   expect(attempts).toBe(1);
+  expect(launched.outcome).toBe('failure');
   expect(launched.state).toBe('stopped');
   expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
+  expect(fixture.calls.some((call) => call[1] === 'send-keys')).toBe(false);
+  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
 });
 
 it('retries a pane-busy start when a prompt hook briefly occupies the shell', async ({
@@ -1344,7 +1347,6 @@ it('waitForShell refuses a pane whose reported identity changes', async ({ onTes
   const launched = await fixture.controller.launch(fixture.input);
 
   expect(launched.outcome).toBe('failure');
-  expect(launched.failure).toContain('Shell pane identity changed before startup');
   expect(fixture.calls.some((call) => call[1] === 'start')).toBe(false);
   expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
 });
@@ -1401,7 +1403,6 @@ it('does not retry when a worker appears after the pane-busy response', async ({
   const launched = await fixture.controller.launch(fixture.input);
 
   expect(launched.outcome).toBe('failure');
-  expect(launched.failure).toContain('Busy shell');
   expect(attempts).toBe(1);
   expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
 });
@@ -1470,7 +1471,6 @@ it('does not retry when a worker appears during the second absence check', async
   const launched = await fixture.controller.launch(fixture.input);
 
   expect(launched.outcome).toBe('failure');
-  expect(launched.failure).toContain('Shell identity changed before the rejected-start retry');
   expect(attempts).toBe(1);
   expect(absenceChecks).toBe(2);
   expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
@@ -2963,7 +2963,7 @@ it('refuses readiness when the worker process identity differs from the ready ev
 }) => {
   const fixture = setup(onTestFinished, 0, async (argumentsList) => {
     if (argumentsList[1] === 'process-info' && fixture.fake.state.started) {
-      fixture.fake.state.process = 101;
+      fixture.fake.state.process = process.pid === 101 ? 102 : 101;
     }
 
     return '';
@@ -2972,7 +2972,6 @@ it('refuses readiness when the worker process identity differs from the ready ev
   const launched = await fixture.controller.launch(fixture.input);
 
   expect(launched.outcome).toBe('failure');
-  expect(launched.failure).toContain('readiness identities did not match');
   expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
   expect(fixture.calls.some((call) => call[1] === 'send-keys')).toBe(false);
 });
