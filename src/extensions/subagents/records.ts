@@ -27,6 +27,7 @@ import {
   reportSchema,
   taskSchema,
   isGenericLoadout,
+  isTaskId,
   taskEndedEventKinds,
 } from './types.js';
 import type { GenericLoadout, Loadout, Report, Task, TaskEvent } from './types.js';
@@ -39,6 +40,17 @@ interface FoundTaskEntry {
 interface UnpublishedTaskEntry {
   name: string;
   directory: string;
+}
+
+export interface UnreadableTask {
+  directory: string;
+  diagnostic: string;
+}
+
+interface ScanNotices {
+  diagnostics: string[];
+  skipped: string[];
+  unreadable: UnreadableTask[] | undefined;
 }
 
 export interface EventDetails {
@@ -148,19 +160,8 @@ export const namePrefix = (loadout: Loadout): string => {
   return loadout.role === 'editing' ? 'worker' : 'scout';
 };
 
-// Older records used the role prefix, and those saved before the rename name scouts `investigator-`.
-const nameMatchesRole = ({ name, loadout }: Task): boolean =>
-  name === undefined ||
-  [
-    namePrefix(loadout),
-    ...(loadout.role === 'editing' ? ['worker'] : ['scout', 'investigator']),
-  ].some((prefix) => name.startsWith(`${prefix}-`));
-
 const modelArgumentsAreConsistent = (loadout: GenericLoadout): boolean =>
   loadout.requestedModel === undefined || Boolean(loadout.arguments.length);
-
-const genericOptionsAreConsistent = (task: Task, loadout: GenericLoadout): boolean =>
-  nameMatchesRole(task) && modelArgumentsAreConsistent(loadout);
 
 const hasAbsoluteGenericPaths = (task: Task, loadout: GenericLoadout): boolean =>
   [task.parentSession, loadout.cwd].every(isAbsolute);
@@ -174,7 +175,7 @@ const validateGenericTask = (task: Task, loadout: GenericLoadout): void => {
   const identityIsValid =
     hasGenericTaskIdentity(task, loadout) && hasAbsoluteGenericPaths(task, loadout);
 
-  if (!identityIsValid || !genericOptionsAreConsistent(task, loadout)) {
+  if (!identityIsValid || !modelArgumentsAreConsistent(loadout)) {
     throw new Error('Invalid generic worker identity or native configuration.');
   }
 };
@@ -217,7 +218,7 @@ export const validateTask = (value: unknown): Task => {
     throw new Error('Worker paths must be absolute.');
   }
 
-  if (!nameMatchesRole(value) || !identityIsSelfConsistent(value)) {
+  if (!identityIsSelfConsistent(value)) {
     throw new Error('Invalid worker identity.');
   }
 
@@ -298,21 +299,46 @@ const isRetiredRecord = (directory: string): boolean => {
   }
 };
 
-const diagnoseSkippedTask = (
-  directory: string,
-  error: unknown,
-  diagnostics: string[],
-  skipped: string[],
-): void => {
+const diagnoseSkippedTask = (directory: string, error: unknown, notices: ScanNotices): void => {
   if (isRetiredRecord(directory)) {
-    skipped.push(
+    notices.skipped.push(
       `Skipped task ${basename(directory)} saved in a retired format; start a fresh task instead.`,
     );
 
     return;
   }
 
-  diagnostics.push(`Skipped task at ${directory}: ${errorMessage(error)}`);
+  const diagnostic = `Skipped task at ${directory}: ${errorMessage(error)}`;
+
+  if (notices.unreadable) {
+    notices.unreadable.push({ directory, diagnostic });
+  } else {
+    notices.diagnostics.push(diagnostic);
+  }
+};
+
+// A newer Tau may save tasks this reader rejects. Only the claimed predecessor is decoded, so such a
+// task still blocks a second follow-up of the same source.
+export const mayFollow = (directory: string, sourceTaskId: string): boolean => {
+  try {
+    const value = readRecord(directory, 'task.json');
+
+    if (!isObjectRecord(value)) {
+      return true;
+    }
+
+    const predecessor = value.predecessorTaskId;
+
+    if (predecessor === undefined) {
+      return false;
+    }
+
+    return (
+      typeof predecessor !== 'string' || !isTaskId(predecessor) || predecessor === sourceTaskId
+    );
+  } catch {
+    return true;
+  }
 };
 
 const readScannedTask = (directory: string): Task | undefined => {
@@ -338,8 +364,7 @@ const readScannedTask = (directory: string): Task | undefined => {
 const readReferencedTask = (
   directory: string,
   taskId: string,
-  diagnostics: string[],
-  skipped: string[],
+  notices: ScanNotices,
 ): Task | undefined => {
   try {
     const task = readScannedTask(directory);
@@ -352,7 +377,7 @@ const readReferencedTask = (
 
     return task;
   } catch (error) {
-    diagnoseSkippedTask(directory, error, diagnostics, skipped);
+    diagnoseSkippedTask(directory, error, notices);
 
     return undefined;
   }
@@ -363,8 +388,7 @@ const addReferencedTasks = (
   root: string,
   tasks: { directory: string; task: Task }[],
   unpublished: Map<string, string>,
-  diagnostics: string[],
-  skipped: string[],
+  notices: ScanNotices,
 ): void => {
   // Tasks published late are appended here and checked by this same loop.
   for (const { task } of tasks) {
@@ -383,7 +407,7 @@ const addReferencedTasks = (
 
     unpublished.delete(referenced);
 
-    const late = readReferencedTask(referencedDirectory, referenced, diagnostics, skipped);
+    const late = readReferencedTask(referencedDirectory, referenced, notices);
 
     if (late) {
       tasks.push({ directory: referencedDirectory, task: late });
@@ -406,8 +430,7 @@ const readTaskEntries = (root: string, diagnostics: string[]): Dirent[] | undefi
 const scanTaskEntry = (
   root: string,
   entry: Dirent,
-  diagnostics: string[],
-  skipped: string[],
+  notices: ScanNotices,
 ): FoundTaskEntry | UnpublishedTaskEntry | undefined => {
   const directory = join(root, entry.name);
 
@@ -424,7 +447,7 @@ const scanTaskEntry = (
 
     return { directory, task };
   } catch (error) {
-    diagnoseSkippedTask(directory, error, diagnostics, skipped);
+    diagnoseSkippedTask(directory, error, notices);
 
     return undefined;
   }
@@ -435,7 +458,10 @@ export const readTasks = (
   diagnostics: string[] = [],
   // Callers that only care about readable records pass a separate array for skipped notices.
   skipped: string[] = diagnostics,
+  // When given, unreadable task records go here instead of diagnostics.
+  unreadable?: UnreadableTask[],
 ): { directory: string; task: Task }[] => {
+  const notices = { diagnostics, skipped, unreadable };
   const entries = readTaskEntries(root, diagnostics);
 
   if (!entries) {
@@ -448,7 +474,7 @@ export const readTasks = (
   for (const entry of entries.filter(
     (candidate) => candidate.isDirectory() && candidate.name !== '.admission',
   )) {
-    const outcome = scanTaskEntry(root, entry, diagnostics, skipped);
+    const outcome = scanTaskEntry(root, entry, notices);
 
     if (!outcome) {
       continue;
@@ -463,7 +489,7 @@ export const readTasks = (
     tasks.push({ directory: outcome.directory, task: outcome.task });
   }
 
-  addReferencedTasks(root, tasks, unpublished, diagnostics, skipped);
+  addReferencedTasks(root, tasks, unpublished, notices);
 
   for (const [id, directory] of unpublished) {
     skipped.push(`Skipped unpublished task ${id}; preparation evidence remains at ${directory}.`);
