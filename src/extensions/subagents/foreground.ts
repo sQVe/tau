@@ -78,8 +78,9 @@ export const rectangle = (value: unknown): Rectangle => {
 export const isUseful = (bounds: Rectangle): boolean =>
   bounds.width >= minimumPane.width && bounds.height >= minimumPane.height;
 
-// A parent alone in its foreground tab slightly favors a worker beside it, but only when the
-// height cannot stack three useful panes. Where it can, stacking first keeps later workers equal.
+// A parent alone in its foreground tab slightly favors a worker beside it, but only when a worker
+// below it could not keep a useful third of the height. Where it can, stacking first lets later
+// workers share the tab equally.
 const preferRight = (bounds: Rectangle, down: boolean, alone: boolean): boolean => {
   const columns = bounds.width / minimumPane.width;
   const rows = bounds.height / minimumPane.height;
