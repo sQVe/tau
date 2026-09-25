@@ -90,6 +90,26 @@ it('rejects nonliteral test selection before running tests', async ({ onTestFini
   expect(runTests).not.toHaveBeenCalled();
 });
 
+it('accepts an existing literal path with brackets and rejects a missing one', async ({
+  onTestFinished,
+}) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  const file = 'app/[teamId]/page.test.tsx';
+
+  await mkdir(join(cwd, 'app/[teamId]'), { recursive: true });
+  await writeFile(join(cwd, file), 'test');
+
+  await expect(
+    observation.run({ ...behavior, files: ['app/[t]/page.test.tsx'] }, 'focused'),
+  ).rejects.toThrow('Expected a test file');
+
+  expect(runTests).not.toHaveBeenCalled();
+
+  await observation.run({ ...behavior, files: [file] }, 'focused');
+
+  expect(runTests).toHaveBeenCalledWith(expect.objectContaining({ files: [file] }));
+});
+
 it('rejects excluded test selections instead of hashing generated or dependency files', async ({
   onTestFinished,
 }) => {

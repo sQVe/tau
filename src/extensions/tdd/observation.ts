@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { glob, readFile, realpath, writeFile } from 'node:fs/promises';
+import { access, glob, readFile, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { isMissingFile } from '../../errors/index.js';
@@ -33,7 +33,7 @@ interface RunRequest {
 const testNames = (behavior: Behavior) =>
   Array.isArray(behavior.testFullName) ? behavior.testFullName : [behavior.testFullName];
 
-const normalizeTestFile = (cwd: string, file: string): string => {
+const normalizeTestFile = async (cwd: string, file: string): Promise<string> => {
   const literalPath = file.replaceAll(sep, '/');
   const path = relative(cwd, resolve(cwd, file)).replaceAll(sep, '/');
 
@@ -41,7 +41,19 @@ const normalizeTestFile = (cwd: string, file: string): string => {
     throw new Error(`Expected a test file inside the worktree: ${file}`);
   }
 
-  if (/[*?[\]{}\\\0]/.test(literalPath) || file.startsWith('@')) {
+  if (/[*?{}\\\0]/.test(literalPath) || file.startsWith('@')) {
+    throw new Error(`Expected a test file inside the worktree: ${file}`);
+  }
+
+  // Vitest matches file filters as literal substrings, so brackets are safe in an existing path,
+  // such as a Next.js route. A missing one is more likely a glob.
+  const exists = () =>
+    access(resolve(cwd, file)).then(
+      () => true,
+      () => false,
+    );
+
+  if (/[[\]]/.test(literalPath) && !(await exists())) {
     throw new Error(`Expected a test file inside the worktree: ${file}`);
   }
 
@@ -52,8 +64,9 @@ const normalizeTestFile = (cwd: string, file: string): string => {
   return path;
 };
 
-const normalizeBehavior = (cwd: string, behavior: Behavior): Behavior => {
-  const files = [...new Set(behavior.files.map((file) => normalizeTestFile(cwd, file)))].toSorted();
+const normalizeBehavior = async (cwd: string, behavior: Behavior): Promise<Behavior> => {
+  const normalized = await Promise.all(behavior.files.map((file) => normalizeTestFile(cwd, file)));
+  const files = [...new Set(normalized)].toSorted();
 
   return { ...behavior, files, testFullName: [...new Set(testNames(behavior))].toSorted() };
 };
@@ -337,7 +350,7 @@ const performRun = async (
   state: ObservationState,
   request: RunRequest,
 ): Promise<ObservationResult> => {
-  const behavior = normalizeBehavior(state.cwd, request.requested);
+  const behavior = await normalizeBehavior(state.cwd, request.requested);
   const key = identity(behavior);
 
   if (state.active !== key && !sameAsLatest(state, key)) {

@@ -19,7 +19,7 @@ interface ObservationTracker {
 }
 
 const runTestsDescription =
-  'Run focused tests for a behavior, then the full suite. Use exact names for the installed Vitest version: join describe names and the it name with spaces in Vitest 4 ("outer inner works") or " > " in Vitest 5 ("outer > inner > works"). ' +
+  'Runs Vitest only; use the project runner for Go, Jest, pytest, or other test runners. Run focused tests for a behavior, then the full suite. Use exact names for the installed Vitest version: join describe names and the it name with spaces in Vitest 4 ("outer inner works") or " > " in Vitest 5 ("outer > inner > works"). ' +
   'Names are literal, not regexes. On no match, use the reported collected names; do not restructure tests or broaden selection. ' +
   'Start with a failing focused test (RED), implement the behavior, then rerun focused (GREEN) and verify the full suite through the repository full check or scope "full". These are observations, never edit permissions. ' +
   'Returns kind, scope, freshness (fresh, stale, or unknown), and the actual runner report, even when inputs changed during the run. ' +
