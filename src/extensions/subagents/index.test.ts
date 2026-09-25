@@ -792,6 +792,39 @@ const evidenceContent = (taskId: string) => ({
   recovery: { directory: `/abs/records/${taskId}` },
 });
 
+it('returns the unreadable-evidence object before reading an unknown question receipt', async ({
+  onTestFinished,
+}) => {
+  const tools = registerTools();
+  vi.spyOn(WorkerController.prototype, 'status').mockImplementation(() => {
+    throw evidenceError('task-1');
+  });
+  vi.spyOn(WorkerController.prototype, 'questionReceipt').mockImplementation(() => {
+    throw new Error('Unknown worker question.');
+  });
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
+  const tool = tools.get('subagent_status');
+
+  if (!tool) {
+    throw new Error('Missing status tool.');
+  }
+
+  const context = {
+    sessionManager: { getSessionId: () => 'parent' },
+  } as unknown as ExtensionContext;
+  const result = await tool.execute(
+    'call',
+    { taskId: 'task-1', questionId: 'missing' },
+    undefined,
+    undefined,
+    context,
+  );
+
+  expect(textContent(result)).toEqual(evidenceContent('task-1'));
+});
+
 it('returns the unreadable-evidence object when cancel records fail', async ({
   onTestFinished,
 }) => {

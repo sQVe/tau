@@ -305,11 +305,11 @@ const readWorkerStatus = async (
   const active = runtime.getController();
 
   try {
+    const current = active.status(parameters.taskId, parentSessionId);
     const receipt =
       parameters.questionId != null && parameters.questionId !== ''
         ? active.questionReceipt(parameters.taskId, parentSessionId, parameters.questionId)
         : undefined;
-    const current = active.status(parameters.taskId, parentSessionId);
     const submissionReceipt =
       parameters.submissionId != null && parameters.submissionId !== ''
         ? active.submissionReceipt(parameters.taskId, parentSessionId, parameters.submissionId)
