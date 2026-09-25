@@ -32,6 +32,7 @@ it('enforces house style only when explicitly enabled', async ({ onTestFinished 
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
   const fixture = join(directory, 'style.ts');
+
   await writeFile(
     fixture,
     [
@@ -54,12 +55,14 @@ it('enforces house style only when explicitly enabled', async ({ onTestFinished 
   );
 
   const environment = { ...process.env, TAU_LINT_STYLE: '0' };
+
   const ordinary = spawnSync('pnpm', ['lint', fixture], {
     cwd: root,
     env: environment,
     encoding: 'utf8',
     timeout: 20_000,
   });
+
   const style = spawnSync(process.execPath, ['scripts/runStyle.ts', fixture], {
     cwd: root,
     env: environment,
@@ -163,27 +166,32 @@ it('checks binding names and helper order without rejecting external fields or r
     encoding: 'utf8',
     timeout: 20_000,
   });
+
   const diagnostics = result.stdout.split('\n').filter((line) => line.includes('tau('));
 
   expect(result.error).toBeUndefined();
   expect(result.status).toBe(1);
   expect(diagnostics.filter((line) => line.includes('/valid.ts:'))).toEqual([]);
   expect(diagnostics.filter((line) => line.includes('/cycle.ts:'))).toEqual([]);
+
   expect(
     diagnostics.filter(
       (line) => line.includes('/wrapped.ts:') && line.includes('helper-before-use'),
     ),
   ).toHaveLength(3);
+
   expect(
     diagnostics.filter(
       (line) => line.includes('/invalid.ts:') && line.includes('naming-convention'),
     ),
   ).toHaveLength(9);
+
   expect(
     diagnostics.filter(
       (line) => line.includes('/invalid.ts:') && line.includes('helper-before-use'),
     ),
   ).toHaveLength(1);
+
   expect(
     diagnostics.filter(
       (line) => line.includes('/shadowing.ts:') && line.includes('helper-before-use'),
@@ -196,6 +204,7 @@ it('fixes house spacing without changing comments or names', async ({ onTestFini
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
   const fixture = join(directory, 'spacing.ts');
+
   await writeFile(
     fixture,
     [
@@ -220,6 +229,7 @@ it('fixes house spacing without changing comments or names', async ({ onTestFini
   expect(result.error).toBeUndefined();
   expect(result.stdout + result.stderr).not.toMatch(/\berror\b/);
   expect(result.status).toBe(0);
+
   expect(await readFile(fixture, 'utf8')).toBe(
     [
       'export const normalize = (name: string) => {',
@@ -239,6 +249,7 @@ it('fixes house spacing without changing comments or names', async ({ onTestFini
   );
 
   const fixed = await readFile(fixture, 'utf8');
+
   const repeated = spawnSync(process.execPath, ['scripts/runStyle.ts', '--fix', fixture], {
     cwd: root,
     encoding: 'utf8',
@@ -250,6 +261,7 @@ it('fixes house spacing without changing comments or names', async ({ onTestFini
   expect(await readFile(fixture, 'utf8')).toBe(fixed);
 
   const manual = join(directory, 'manual.ts');
+
   await writeFile(
     manual,
     'export const MAX_RETRIES=3;\nexport const caller=()=>helper();\nconst helper=()=>1;\n',
@@ -263,9 +275,129 @@ it('fixes house spacing without changing comments or names', async ({ onTestFini
 
   expect(manualResult.error).toBeUndefined();
   expect(manualResult.status).toBe(1);
+
   expect(await readFile(manual, 'utf8')).toBe(
     'export const MAX_RETRIES = 3;\nexport const caller = () => helper();\nconst helper = () => 1;\n',
   );
+}, 60_000);
+
+it('pads loop exits and multiline statements in a form the formatter keeps', async ({
+  onTestFinished,
+}) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-style-multiline-'));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+  const fixture = join(directory, 'multiline.ts');
+
+  await writeFile(
+    fixture,
+    [
+      'export const limit = 9;',
+      'export const options = {',
+      '  limit,',
+      '};',
+      '',
+      'export const collect = (values: number[]) => {',
+      '  const collected: number[] = [];',
+      '',
+      '  for (const value of values) {',
+      '    if (value < 0) {',
+      '      collected.push(0);',
+      '      continue;',
+      '    }',
+      '',
+      '    if (value > limit) {',
+      '      collected.push(limit);',
+      '      break;',
+      '    }',
+      '',
+      '    collected.push(value);',
+      '  }',
+      '',
+      '  collected.sort((left, right) => left - right);',
+      '  Object.assign(collected, {',
+      '    total: collected.length,',
+      '  });',
+      '  collected.reverse();',
+      '',
+      '  return collected;',
+      '};',
+      '',
+    ].join('\n'),
+  );
+
+  const check = spawnSync(process.execPath, ['scripts/runStyle.ts', fixture], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+
+  const diagnostics = check.stdout
+    .split('\n')
+    .filter((line) => line.includes('padding-line-between-statements'));
+
+  expect(check.error).toBeUndefined();
+  expect(check.status).toBe(1);
+  expect(diagnostics).toHaveLength(5);
+
+  const fix = spawnSync(process.execPath, ['scripts/runStyle.ts', '--fix', fixture], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+
+  expect(fix.error).toBeUndefined();
+  expect(fix.status).toBe(0);
+
+  expect(await readFile(fixture, 'utf8')).toBe(
+    [
+      'export const limit = 9;',
+      '',
+      'export const options = {',
+      '  limit,',
+      '};',
+      '',
+      'export const collect = (values: number[]) => {',
+      '  const collected: number[] = [];',
+      '',
+      '  for (const value of values) {',
+      '    if (value < 0) {',
+      '      collected.push(0);',
+      '',
+      '      continue;',
+      '    }',
+      '',
+      '    if (value > limit) {',
+      '      collected.push(limit);',
+      '',
+      '      break;',
+      '    }',
+      '',
+      '    collected.push(value);',
+      '  }',
+      '',
+      '  collected.sort((left, right) => left - right);',
+      '',
+      '  Object.assign(collected, {',
+      '    total: collected.length,',
+      '  });',
+      '',
+      '  collected.reverse();',
+      '',
+      '  return collected;',
+      '};',
+      '',
+    ].join('\n'),
+  );
+
+  const recheck = spawnSync(process.execPath, ['scripts/runStyle.ts', fixture], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+
+  expect(recheck.error).toBeUndefined();
+  expect(recheck.status).toBe(0);
 }, 60_000);
 
 it('keeps size thresholds advisory without weakening other lint checks', async ({
@@ -275,6 +407,7 @@ it('keeps size thresholds advisory without weakening other lint checks', async (
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
   const fixture = join(directory, 'large.ts');
+
   await writeFile(
     fixture,
     [
@@ -340,6 +473,7 @@ it('limits the checks joined in one condition and rejects mixed operators', asyn
     encoding: 'utf8',
     timeout: 20_000,
   });
+
   const diagnostics = result.stdout
     .split('\n')
     .filter((line) => line.includes('max-condition-checks'));
@@ -375,6 +509,7 @@ it('rejects ENOENT literals outside the errors module and tests', async ({ onTes
     encoding: 'utf8',
     timeout: 20_000,
   });
+
   const diagnostics = result.stdout
     .split('\n')
     .filter((line) => line.includes('no-enoent-literal'));
@@ -390,6 +525,7 @@ it('rejects imports from one extension into another', async ({ onTestFinished })
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
   const extension = join(directory, 'src', 'extensions', 'probe');
   await mkdir(extension, { recursive: true });
+
   const files = {
     'own.ts': 'export const own = 1;\n',
     'valid.ts': "import { own } from './own.js';\n\nexport const value = own;\n",
@@ -406,6 +542,7 @@ it('rejects imports from one extension into another', async ({ onTestFinished })
     encoding: 'utf8',
     timeout: 20_000,
   });
+
   const diagnostics = result.stdout
     .split('\n')
     .filter((line) => line.includes('extension-boundary'));
@@ -423,10 +560,12 @@ it('keeps test helpers out of production code and extensions out of shared modul
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
   const helper = "import { initializeRepository } from '../../tests/gitRepository.js';\n";
   const extension = "import { bulkReadTool } from '../extensions/bulkRead/tool.js';\n";
+
   await writeFile(
     join(directory, 'probe.ts'),
     `${helper}${extension}\nexport const value = [initializeRepository, bulkReadTool];\n`,
   );
+
   await writeFile(
     join(directory, 'probe.test.ts'),
     `${helper}\nexport const value = initializeRepository;\n`,
@@ -437,6 +576,7 @@ it('keeps test helpers out of production code and extensions out of shared modul
     encoding: 'utf8',
     timeout: 20_000,
   });
+
   const diagnostics = result.stdout
     .split('\n')
     .filter((line) => line.includes('no-restricted-imports'));

@@ -5,21 +5,42 @@ import { defineConfig } from 'vite-plus';
 const styleEnabled = process.env.TAU_LINT_STYLE === '1';
 
 const blockStatements = ['if', 'for', 'while', 'do', 'switch', 'try'];
+
+const multilineStatements = [
+  'multiline-block-like',
+  'multiline-const',
+  'multiline-export',
+  'multiline-expression',
+  'multiline-let',
+  'multiline-return',
+  'multiline-type',
+  { selector: 'ClassDeclaration, TSInterfaceDeclaration', lineMode: 'multiline' },
+];
+
 const statementPadding = [
-  { blankLine: 'always', prev: '*', next: 'return' },
+  { blankLine: 'always', prev: '*', next: ['return', 'break', 'continue'] },
   { blankLine: 'always', prev: '*', next: blockStatements },
   { blankLine: 'always', prev: blockStatements, next: '*' },
 ];
+
+// Spread last: later entries win, so a multiline declaration is padded inside a declaration group.
+const multilinePadding = [
+  { blankLine: 'always', prev: '*', next: multilineStatements },
+  { blankLine: 'always', prev: multilineStatements, next: '*' },
+];
+
 // Production code separates a group of declarations from the steps that use it; tests keep their
 // arrange steps compact.
 const declarationPadding = [
   { blankLine: 'always', prev: ['const', 'let'], next: '*' },
   { blankLine: 'any', prev: ['const', 'let'], next: ['const', 'let'] },
 ];
+
 const testHelperImports = {
   group: ['**/tests/**'],
   message: 'Production code must not import test helpers.',
 };
+
 const paddingRule = (...entries: object[]): ['error', ...object[]] => ['error', ...entries];
 
 export default defineConfig({
@@ -92,6 +113,7 @@ export default defineConfig({
             '@stylistic/padding-line-between-statements': paddingRule(
               ...statementPadding,
               ...declarationPadding,
+              ...multilinePadding,
             ),
           }
         : {}),
@@ -363,7 +385,10 @@ export default defineConfig({
             {
               files: ['**/*.test.{ts,tsx}', '**/fixtures/**', 'tests/*.ts'],
               rules: {
-                '@stylistic/padding-line-between-statements': paddingRule(...statementPadding),
+                '@stylistic/padding-line-between-statements': paddingRule(
+                  ...statementPadding,
+                  ...multilinePadding,
+                ),
               },
             },
           ]
