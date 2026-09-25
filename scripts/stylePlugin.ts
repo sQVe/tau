@@ -128,7 +128,8 @@ const rootNameOf = (name: ESTree.TSTypeQueryExprName): string | undefined => {
   return name.type === 'Identifier' ? name.name : undefined;
 };
 
-// Where a statement starts once the comment lines directly above it are counted with it.
+// Where a statement starts once the comment lines directly above it are counted with it. Code
+// before it on the same line stays out.
 const lineStartWithComments = (statement: ESTree.Node, sourceCode: SourceCode): number => {
   let first: ESTree.Span = statement;
   const comments = sourceCode.getCommentsBefore(statement);
@@ -144,7 +145,9 @@ const lineStartWithComments = (statement: ESTree.Node, sourceCode: SourceCode): 
     first = comment;
   }
 
-  return first.range[0] - first.loc.start.column;
+  const sharesLine = sourceCode.getTokenBefore(first)?.loc.end.line === first.loc.start.line;
+
+  return sharesLine ? first.range[0] : first.range[0] - first.loc.start.column;
 };
 
 const moduleValues = (program: ESTree.Program, sourceCode: SourceCode) => {

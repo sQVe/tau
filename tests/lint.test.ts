@@ -440,6 +440,8 @@ it('moves types above unrelated values but leaves types derived from a value bes
       '  name: Name;',
       '}',
       '',
+      'paths.pop(); export type Label = Name;',
+      '',
     ].join('\n'),
   );
 
@@ -482,6 +484,8 @@ it('moves types above unrelated values but leaves types derived from a value bes
       '  name: Name;',
       '}',
       '',
+      'export type Label = Name;',
+      '',
       'export const root = home.trim();',
       '',
       'const defaults = { path: root };',
@@ -495,6 +499,8 @@ it('moves types above unrelated values but leaves types derived from a value bes
       'export const paths: Paths = [build(root).path, defaults.path];',
       '',
       'paths.push(root);',
+      '',
+      'paths.pop();',
       '',
     ].join('\n'),
   );
