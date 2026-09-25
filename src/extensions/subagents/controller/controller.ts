@@ -585,13 +585,18 @@ export class WorkerController {
     // Status only reports; subagent_cancel stops a worker whose evidence is unreadable.
     const { taskId, directory, handle, task, error } = request;
     const recovery = handle ? handleRecovery(handle) : savedRecovery(task, directory);
+    const running = handle !== undefined && handle.stopping === undefined;
+
+    const detail =
+      handle?.cleanupDetail ??
+      (running ? 'The worker may still run; subagent_cancel stops it.' : undefined);
 
     throw new EvidenceUnavailableError({
       taskId,
       ...(task?.name === undefined ? {} : { name: task.name }),
       evidenceError: String(error),
       recovery,
-      ...(handle?.cleanupDetail === undefined ? {} : { cleanupDetail: handle.cleanupDetail }),
+      ...(detail === undefined ? {} : { cleanupDetail: detail }),
       ...(handle?.paneId === undefined ? {} : { paneId: handle.paneId }),
       cause: error,
     });
@@ -893,6 +898,13 @@ export class WorkerController {
     }
 
     const live = this.handles.get(taskId);
+
+    // A settled stop already released capacity; reserving it again would leak the slot.
+    if (live?.stopping) {
+      await live.stopping;
+
+      return this.status(taskId, parentSessionId);
+    }
 
     // A live handle is stopped even when its saved cleanup record is unreadable.
     if (!live && readEvent(directory, taskId, 'cleanup')) {

@@ -3506,6 +3506,18 @@ it('cancels a live owned worker whose saved cleanup record is corrupt', async ({
   expect(readdirSync(launched.directory)).toContain('stopping.json');
 });
 
+it('keeps capacity free when a stopped worker is cancelled again', async ({ onTestFinished }) => {
+  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+  const { controller, input } = setup(onTestFinished);
+  const first = await controller.launch(input);
+
+  await controller.cancel(first.taskId, 'parent-id');
+  await controller.cancel(first.taskId, 'parent-id');
+  const next = await controller.launch(input);
+
+  expect(controller.owns(next.taskId)).toBe(true);
+});
+
 it('reads status, history, and widget rows without writing records or stopping workers', async ({
   onTestFinished,
 }) => {
