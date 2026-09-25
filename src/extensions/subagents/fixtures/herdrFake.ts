@@ -1,5 +1,5 @@
 import type { HerdrClient } from '../controller/inspect.js';
-import { placementFixture } from './layout.js';
+import { placementFixture } from './placement.js';
 
 interface ProcessSnapshot {
   paneId: string | undefined;
@@ -36,7 +36,7 @@ const herdrError = (message: string, code?: string) =>
   });
 
 /**
- * One stateful herdr fake: real pane layout from placementFixture plus agent state. Tests change
+ * One stateful herdr fake: placement geometry plus agent state. Tests change
  * `state` to inject faults.
  */
 // ponytail: every worker pane shares one agent state. Keep state per pane when a test needs two

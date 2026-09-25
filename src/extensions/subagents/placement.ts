@@ -1,10 +1,3 @@
-import {
-  ForegroundShares,
-  isUseful,
-  layoutShape,
-  rectangle,
-  splitDirection,
-} from './foreground.js';
 // Replaces tmux.ts surface placement from pi-interactive-subagents c3e8b53.
 import {
   listTerminals,
@@ -42,6 +35,76 @@ interface TabSearch {
   call: TerminalCall;
   onCreated: PlacementInput['onCreated'];
 }
+
+interface Rectangle {
+  width: number;
+  height: number;
+}
+
+// Leave room for pane borders and status rows around 80 columns and 20 useful rows.
+const minimumPane = { width: 82, height: 24 };
+
+const isPositiveInteger = (value: unknown): boolean =>
+  Number.isSafeInteger(value) && Number(value) > 0;
+
+const rectangle = (value: unknown): Rectangle => {
+  const bounds = requireObject(value);
+
+  if (!isPositiveInteger(bounds.width) || !isPositiveInteger(bounds.height)) {
+    throw new Error('Invalid herdr pane dimensions.');
+  }
+
+  return { width: Number(bounds.width), height: Number(bounds.height) };
+};
+
+const isUseful = (bounds: Rectangle): boolean =>
+  bounds.width >= minimumPane.width && bounds.height >= minimumPane.height;
+
+// A parent alone in its foreground tab slightly favors a worker beside it, but only when a worker
+// below it could not keep a useful third of the height. Where it can, stacking first lets later
+// workers share the tab.
+const preferRight = (bounds: Rectangle, down: boolean, alone: boolean): boolean => {
+  const columns = bounds.width / minimumPane.width;
+  const rows = bounds.height / minimumPane.height;
+  const short = bounds.height - Math.round((bounds.height * 2) / 3) < minimumPane.height;
+
+  return !down || (alone && short ? 1.1 : 1) * columns >= rows;
+};
+
+export const splitDirection = (bounds: Rectangle, alone = false): 'right' | 'down' | undefined => {
+  // Herdr rounds the first half up and gives the second half the remaining cells.
+  const right = isUseful({ width: Math.floor(bounds.width / 2), height: bounds.height });
+  const down = isUseful({ width: bounds.width, height: Math.floor(bounds.height / 2) });
+
+  if (right && preferRight(bounds, down, alone)) {
+    return 'right';
+  }
+
+  return down ? 'down' : undefined;
+};
+
+const layoutShape = (layout: Record<string, unknown>): string => {
+  if (typeof layout.zoomed !== 'boolean') {
+    throw new TypeError('Missing herdr zoom state.');
+  }
+
+  if (!Array.isArray(layout.panes)) {
+    throw new TypeError('Missing herdr layout panes.');
+  }
+
+  return JSON.stringify({
+    workspace: layout.workspace_id,
+    tab: layout.tab_id,
+    area: layout.area,
+    zoomed: layout.zoomed,
+    splits: layout.splits,
+    panes: layout.panes.map((value) => {
+      const pane = requireObject(value);
+
+      return { paneId: text(pane.pane_id), rectangle: pane.rect };
+    }),
+  });
+};
 
 const splitCandidate = (
   layout: Record<string, unknown>,
@@ -84,7 +147,6 @@ const splitCandidate = (
 export class WorkerPlacement {
   private readonly owned = new Map<string, { tabId: string; visibility: Visibility }>();
   private pending: Promise<unknown> = Promise.resolve();
-  private readonly foreground = new ForegroundShares();
 
   release(terminalId: string): void {
     this.owned.delete(terminalId);
@@ -120,28 +182,10 @@ export class WorkerPlacement {
   }
 
   async close(
-    location: TerminalLocation,
-    call: TerminalCall,
     close: () => Promise<void>,
     signal: AbortSignal = new AbortController().signal,
   ): Promise<void> {
-    const readLayout: TerminalCall = async (argumentsList) => {
-      signal.throwIfAborted();
-      const response = await call(argumentsList);
-
-      signal.throwIfAborted();
-
-      return response;
-    };
-
-    await this.enqueue(
-      () =>
-        this.foreground.close(location, readLayout, async () => {
-          signal.throwIfAborted();
-          await close();
-        }),
-      signal,
-    );
+    await this.enqueue(close, signal);
   }
 
   async place(
@@ -153,7 +197,7 @@ export class WorkerPlacement {
 
     const onCreated = (created: TerminalLocation) => {
       location = created;
-      // Deliver confirmed identity synchronously, before any cosmetic snapshot can yield or abort.
+      // Deliver confirmed identity before cancellation can release placement ownership.
       input.onCreated?.(created);
 
       if (signal.aborted) {
@@ -236,26 +280,12 @@ export class WorkerPlacement {
       return undefined;
     }
 
-    let layout = requireObject(
+    const layout = requireObject(
       result(await call(['pane', 'layout', '--pane', first.paneId])).layout,
     );
 
-    const plan = visibility === 'foreground' ? this.foreground.plan(layout, eligible) : undefined;
-
-    if (plan) {
-      layout = await this.foreground.balance(plan, layout, eligible, call);
-    }
-
     const shape = layoutShape(layout);
-    const candidates = plan ? eligible.filter((pane) => pane.paneId === plan.target) : eligible;
-
-    const candidate = splitCandidate(
-      layout,
-      candidates,
-      first.workspaceId,
-      first.tabId,
-      visibility,
-    );
+    const candidate = splitCandidate(layout, eligible, first.workspaceId, first.tabId, visibility);
 
     if (!candidate) {
       return undefined;
@@ -273,8 +303,6 @@ export class WorkerPlacement {
       target.paneId,
       '--direction',
       candidate.direction,
-      '--ratio',
-      '0.5',
       ...options,
     ]);
 
@@ -282,18 +310,6 @@ export class WorkerPlacement {
 
     this.owned.set(location.terminalId, { tabId: location.tabId, visibility });
     onCreated?.(location);
-
-    if (visibility === 'foreground') {
-      await this.foreground.remember({
-        before: layout,
-        target: target.paneId,
-        added: location,
-        direction: candidate.direction,
-        call,
-        tree: plan?.tree,
-        isOwned: () => this.owned.has(location.terminalId),
-      });
-    }
 
     return location;
   }

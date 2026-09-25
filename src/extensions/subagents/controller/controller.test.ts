@@ -17,8 +17,8 @@ import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 import { writeWorkerActivity } from '../activity.js';
 import * as cancellationModule from '../cancellation.js';
 import { herdrFake } from '../fixtures/herdrFake.js';
-import { placementFixture } from '../fixtures/layout.js';
 import { fixtureLoadout, readPiTask as readTask } from '../fixtures/loadout.js';
+import { placementFixture } from '../fixtures/placement.js';
 import { searchHistory } from '../history.js';
 import * as loadoutModule from '../loadout.js';
 import * as names from '../names.js';
@@ -2815,9 +2815,9 @@ it("names herdr's Pi integration when a started Pi worker reports no agent sessi
 });
 
 it.each(['confirmed', 'unconfirmed'] as const)(
-  'preserves foreground sharing during %s cleanup and releases ownership afterward',
+  'keeps terminal ownership during %s cleanup and releases it afterward',
   async (outcome) => {
-    const terminal = placementFixture(250, 30);
+    const terminal = placementFixture(340, 100);
     const tokens = new Map<string, string>();
     const entered = Promise.withResolvers<undefined>();
     const resume = Promise.withResolvers<undefined>();
@@ -3052,51 +3052,6 @@ it.each(['moved', 'duplicate', 'missing', 'replacement job'] as const)(
     expect(cancelled.deadline).toBe(launched.deadline);
   },
 );
-
-it('retains confirmed terminal evidence when cancelled during the cosmetic placement snapshot', async ({
-  onTestFinished,
-}) => {
-  const abort = new AbortController();
-  const snapshot = Promise.withResolvers<undefined>();
-  let created = false;
-  let recordDirectory = '';
-  const release = vi.spyOn(WorkerPlacement.prototype, 'release');
-
-  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
-    if (argumentsList[1] === 'split') {
-      created = true;
-
-      recordDirectory = argumentsList
-        .find((argument) => argument.startsWith('TAU_WORKER_RECORD='))!
-        .slice('TAU_WORKER_RECORD='.length);
-    } else if (created && argumentsList[1] === 'layout') {
-      abort.abort();
-      await snapshot.promise;
-    }
-
-    return '';
-  });
-
-  const status = await controller.launch(input, abort.signal);
-  const evidence = readdirSync(recordDirectory);
-  snapshot.resolve(undefined);
-
-  expect(evidence).toContain('pane.json');
-
-  expect(JSON.parse(readFileSync(join(recordDirectory, 'pane.json'), 'utf8'))).toMatchObject({
-    paneId: 'worker-1',
-    terminalId: 'terminal-1',
-  });
-
-  expect(status).toMatchObject({
-    outcome: 'cancelled',
-    state: 'stopped',
-  });
-
-  expect(status.cleanup).toContain('worker-1');
-  expect(release).toHaveBeenCalledWith('terminal-1');
-  expect(calls.some((call) => ['start', 'close', 'send-keys'].includes(call[1]!))).toBe(false);
-});
 
 it('rejects aggregate Unicode tasks before publishing records or creating a pane', async ({
   onTestFinished,

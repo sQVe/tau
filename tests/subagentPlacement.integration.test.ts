@@ -16,12 +16,12 @@ const minimumPane = { width: 82, height: 24 };
 const hasHerdr = toolAvailable('herdr');
 
 it.runIf(hasHerdr).each([
-  [340, 100, 2],
-  [340, 100, 4],
-  [250, 30, 2],
+  [340, 100, 2, 2],
+  [340, 100, 4, 4],
+  [250, 30, 2, 1],
 ])(
-  'shares real foreground space at %s x %s with %s workers using native resize',
-  async (width, height, count) => {
+  'keeps useful real panes at %s x %s with %s workers and %s foreground workers',
+  async (width, height, count, foregroundCount) => {
     const { root, client } = await isolatedHerdr(
       `[server]\nheadless_cols = ${width}\nheadless_rows = ${height}\n[ui]\nsidebar_start_collapsed = true\nsidebar_collapsed_mode = "hidden"\nhide_tab_bar_when_single_tab = true\n`,
     );
@@ -49,12 +49,9 @@ it.runIf(hasHerdr).each([
       requireObject(pane.rect),
     );
 
-    const areas = entries.map((bounds) => Number(bounds.width) * Number(bounds.height));
-
     expect(layout.area).toMatchObject({ width, height });
-    expect(workers.every((worker) => worker.tabId === parent.tabId)).toBe(true);
-    expect(entries).toHaveLength(count + 1);
-    expect(Math.max(...areas) / Math.min(...areas)).toBeLessThan(1.1);
+    expect(workers.filter((worker) => worker.tabId === parent.tabId)).toHaveLength(foregroundCount);
+    expect(entries).toHaveLength(foregroundCount + 1);
     expect(layout.focused_pane_id).toBe(parent.paneId);
 
     for (const bounds of entries) {
@@ -66,7 +63,7 @@ it.runIf(hasHerdr).each([
 );
 
 it.runIf(hasHerdr).each([0, 1])(
-  'keeps native foreground shares after owned worker %s closes and is replaced',
+  'replaces owned worker %s after herdr closes its pane',
   async (index) => {
     const { root, client } = await isolatedHerdr(
       '[server]\nheadless_cols = 340\nheadless_rows = 100\n[ui]\nsidebar_start_collapsed = true\nsidebar_collapsed_mode = "hidden"\nhide_tab_bar_when_single_tab = true\n',
@@ -93,7 +90,7 @@ it.runIf(hasHerdr).each([0, 1])(
     const closing = workers[index]!;
     placement.release(closing.terminalId);
 
-    await placement.close(closing, client, async () => {
+    await placement.close(async () => {
       await client(['pane', 'close', closing.paneId]);
     });
 
@@ -107,12 +104,10 @@ it.runIf(hasHerdr).each([0, 1])(
       requireObject(pane.rect),
     );
 
-    const areas = entries.map((bounds) => Number(bounds.width) * Number(bounds.height));
     const terminals = await listTerminals(client);
 
     expect(replacement.tabId).toBe(parent.tabId);
     expect(entries).toHaveLength(3);
-    expect(Math.max(...areas) / Math.min(...areas)).toBeLessThan(1.1);
     expect(layout.focused_pane_id).toBe(parent.paneId);
     expect(terminals.some((pane) => pane.terminalId === closing.terminalId)).toBe(false);
     expect(terminals.some((pane) => pane.terminalId === workers[1 - index]!.terminalId)).toBe(true);

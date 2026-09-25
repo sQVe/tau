@@ -1,7 +1,8 @@
 # ADR 0028: Keep worker control in the parent
 
-- Status: Accepted; settings reproduction and evidence-only recovery rules superseded by
-  [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
+- Status: Accepted; settings reproduction, evidence-only recovery, and foreground placement
+  rebalancing rules superseded by [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md).
+  Herdr owns layout after placement.
 - Date: 2026-09-16
 
 ## Context
