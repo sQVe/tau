@@ -10,8 +10,8 @@ Tau guides test-driven development, or TDD, with test results and nonblocking hi
 - prove the pass
 - optionally refactor safely
 
-Pi runs the agent and its tools. Tau stages, reviews comments, and commits with installed Git hooks
-without a prompt. Test results never control edit permission. Tau is not a general agent framework.
+Pi runs the agent and its tools. Tau stages and commits with installed Git hooks without a prompt.
+Test results never control edit permission. Tau is not a general agent framework.
 
 <!-- prettier-ignore -->
 > [!IMPORTANT]

@@ -123,9 +123,15 @@ it('rejects aggregate file sizes above the model cap before loading later paths'
   model.contextWindow = 200;
   model.maxTokens = 100;
   await writeFile(join(cwd, 'large'), 'x'.repeat(151));
+  await writeFile(join(cwd, 'oversized'), 'x'.repeat(400_001));
 
   await expect(
-    bulkRead(context, model, { paths: ['large', 'large', 'missing'], question: 'Why?' }, undefined),
+    bulkRead(
+      context,
+      model,
+      { paths: ['large', 'large', 'oversized'], question: 'Why?' },
+      undefined,
+    ),
   ).rejects.toMatchObject({
     name: 'BulkReadRecoverableError',
     message: 'Input is too large. Split the request',
@@ -191,6 +197,21 @@ it('throws a file error naming a path that cannot be read', async () => {
     bulkRead(context, model, { paths: ['missing'], question: 'Why?' }, undefined),
   ).rejects.toThrow('missing');
 
+  expect(complete).not.toHaveBeenCalled();
+});
+
+it('reports every missing or non-file path in one refusal', async () => {
+  const { cwd, context, model, complete } = await setup();
+  await execFile('mkfifo', [join(cwd, 'pipe')]);
+
+  const refusal = bulkRead(
+    context,
+    model,
+    { paths: ['a.ts', 'missing', 'b.ts', 'pipe', 'absent'], question: 'Why?' },
+    undefined,
+  );
+
+  await expect(refusal).rejects.toThrow(/missing'?\n.*Not a regular file: pipe\n.*absent/u);
   expect(complete).not.toHaveBeenCalled();
 });
 
