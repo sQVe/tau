@@ -128,6 +128,8 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
   };
 };
 
+export const bundledProfileDirectory = fileURLToPath(new URL('./profiles/', import.meta.url));
+
 export const resolveProfile = (
   cwd: string,
   agentDirectory: string,
@@ -136,10 +138,7 @@ export const resolveProfile = (
 ): Profile | undefined => {
   let winner: { content: string; fallbackName: string; source: string } | undefined;
 
-  const directories = [
-    fileURLToPath(new URL('./profiles/', import.meta.url)),
-    join(agentDirectory, 'agents'),
-  ];
+  const directories = [bundledProfileDirectory, join(agentDirectory, 'agents')];
 
   if (trusted) {
     directories.push(join(cwd, '.pi', 'agents'));

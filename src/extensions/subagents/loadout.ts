@@ -13,9 +13,9 @@ import { Value } from 'typebox/value';
 
 import { resolveGenericLoadout } from './genericLoadout.js';
 import type { NativeLaunchInput } from './genericLoadout.js';
-import { resolveProfile } from './profiles.js';
+import { bundledProfileDirectory, resolveProfile } from './profiles.js';
 import { isPiLoadout, loadoutSchema } from './types.js';
-import type { Loadout, PiLoadout } from './types.js';
+import type { Loadout, PiLoadout, Profile } from './types.js';
 
 type ModelContext = Pick<ExtensionContext, 'modelRegistry' | 'scopedModels'>;
 
@@ -40,13 +40,17 @@ const configuredModels = (context: ModelContext): string => {
   return models.length ? ` Configured models: ${models.join(', ')}.` : '';
 };
 
-const resolveModel = (
-  explicit: string | undefined,
-  configured: string | undefined,
-  context: ModelContext,
-) => {
+const isBundled = (profile: Profile): boolean => profile.source.startsWith(bundledProfileDirectory);
+
+const resolveModel = (explicit: string | undefined, profile: Profile, context: ModelContext) => {
   // oxlint-disable-next-line node/no-process-env -- Explicit worker model configuration has no implicit parent-model fallback.
-  const model = explicit ?? configured ?? process.env.TAU_SUBAGENT_MODEL;
+  const configured = process.env.TAU_SUBAGENT_MODEL;
+  const environment = configured === '' ? undefined : configured;
+
+  // The environment overrides only bundled defaults; a user or project profile's model is a choice.
+  const model = isBundled(profile)
+    ? (explicit ?? environment ?? profile.model)
+    : (explicit ?? profile.model ?? environment);
 
   if (model == null || model === '' || !/^[^/\s]+\/[^\s]+$/.test(model)) {
     throw new Error(
@@ -129,11 +133,14 @@ export const resolveLoadout = (
   const { cwd, agentDirectory, profile, kind } = resolveLaunchPlan(input, context);
 
   if (kind !== 'pi') {
-    return resolveGenericLoadout({ input, profile, kind, cwd, signal });
+    // Bundled models name Pi providers; native harnesses select models through their own arguments.
+    const nativeProfile = isBundled(profile) ? { ...profile, model: undefined } : profile;
+
+    return resolveGenericLoadout({ input, profile: nativeProfile, kind, cwd, signal });
   }
 
   requirePiPermissions(input);
-  const model = resolveModel(input.model, profile.model, context);
+  const model = resolveModel(input.model, profile, context);
 
   return {
     harness: 'pi',

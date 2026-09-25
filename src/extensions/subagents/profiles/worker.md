@@ -1,6 +1,7 @@
 ---
 name: worker
 role: editing
+model: claude-bridge/claude-opus-5-5
 ---
 
 Implement the assigned change. Read the source, callers, tests, and project rules before you edit.
