@@ -47,13 +47,32 @@ const fullWorkerStatus = {
   harness: 'pi',
 };
 
-it('guides the manager to delegate through the subagent tool prompt guidelines', () => {
-  const guidelines = registerTools().get('subagent')?.promptGuidelines?.join('\n') ?? '';
+it('guides a manager inside herdr to delegate through the subagent tool prompt guidelines', ({
+  onTestFinished,
+}) => {
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
 
-  expect(guidelines).toContain('on your own; do not wait for the user to ask');
-  expect(guidelines).toContain('`worker`');
-  expect(guidelines).toContain('`scout`');
-  expect(guidelines).toContain('`reviewer`');
+  vi.stubEnv('HERDR_ENV', '1');
+  vi.stubEnv('HERDR_PANE_ID', 'parent');
+  vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
+
+  expect(registerTools().get('subagent')?.promptGuidelines?.length).toBeGreaterThan(0);
+});
+
+it('leaves delegation guidelines out when a manager runs outside herdr', ({ onTestFinished }) => {
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  vi.stubEnv('HERDR_ENV', '0');
+  vi.stubEnv('HERDR_PANE_ID', '');
+
+  const tool = registerTools().get('subagent');
+
+  expect(tool).toBeDefined();
+  expect(tool?.promptGuidelines ?? []).toEqual([]);
 });
 
 it('keeps parent tools, delegation guidelines, and handlers unavailable when a test chooses a worker environment', ({

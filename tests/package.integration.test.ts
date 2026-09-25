@@ -16,7 +16,7 @@ import {
   SettingsManager,
   createAgentSession,
 } from '@earendil-works/pi-coding-agent';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import manifest from '../package.json' with { type: 'json' };
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
@@ -36,6 +36,15 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
   try {
     const agentDirectory = join(workingDirectory, 'agent');
     isolateWebAccessConfig(agentDirectory, onTestFinished);
+
+    // Delegation guidelines load only for a manager inside herdr.
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    vi.stubEnv('HERDR_ENV', '1');
+    vi.stubEnv('HERDR_PANE_ID', 'parent');
+    vi.stubEnv('HERDR_SOCKET_PATH', join(workingDirectory, 'herdr.sock'));
 
     const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
 
@@ -61,6 +70,9 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     expect(safetyExtension?.handlers.has('tool_call')).toBe(true);
 
     const tauExtension = extensions.find((extension) => extension.tools.has('commit'));
+    const delegationGuidelines = tauExtension?.tools.get('subagent')?.definition.promptGuidelines;
+
+    expect(delegationGuidelines?.length).toBeGreaterThan(0);
 
     expect(tauExtension?.commands.has('bro')).toBe(true);
     expect(tauExtension?.commands.has('commit')).toBe(true);
@@ -157,7 +169,10 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     for (const prompt of prompts) {
       expect(prompt.split(writingInstructions)).toHaveLength(2);
       expect(prompt.split(codingInstructions)).toHaveLength(2);
-      expect(prompt).toContain('on your own; do not wait for the user to ask.');
+
+      for (const guideline of delegationGuidelines ?? []) {
+        expect(prompt.split(guideline)).toHaveLength(2);
+      }
     }
   } finally {
     await rm(workingDirectory, { recursive: true, force: true });
