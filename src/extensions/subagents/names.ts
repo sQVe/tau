@@ -6,13 +6,13 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { isMissingFile } from '../../errors/index.js';
-import { readTask } from './records.js';
+import { namePrefix, readTask } from './records.js';
 import type { Loadout } from './types.js';
 
 export interface NameAllocation {
   root: string;
   parentSessionId: string;
-  role: Loadout['role'];
+  loadout: Loadout;
   live: unknown;
   suffix: () => string;
 }
@@ -68,7 +68,7 @@ export const allocateName = (allocation: NameAllocation): string => {
     taken.add(name);
   }
 
-  const prefix = allocation.role === 'editing' ? 'worker' : 'scout';
+  const prefix = namePrefix(allocation.loadout);
 
   for (let attempt = 0; attempt < 32; attempt++) {
     const name = `${prefix}-${allocation.suffix()}`;

@@ -29,7 +29,7 @@ import {
   isGenericLoadout,
   taskEndedEventKinds,
 } from './types.js';
-import type { GenericLoadout, Report, Task, TaskEvent } from './types.js';
+import type { GenericLoadout, Loadout, Report, Task, TaskEvent } from './types.js';
 
 interface FoundTaskEntry {
   directory: string;
@@ -137,10 +137,24 @@ export const readOptionalRecord = (directory: string, name: string): unknown => 
   }
 };
 
-// Records saved before the rename name scouts `investigator-`.
-const nameMatchesRole = (task: Task): boolean =>
-  task.name === undefined ||
-  (task.loadout.role === 'editing' ? /^worker-/ : /^(scout|investigator)-/).test(task.name);
+const builtInProfiles = new Set(['worker', 'scout', 'reviewer']);
+
+// Custom profiles can have any name, so they fall back to the role prefix.
+export const namePrefix = (loadout: Loadout): string => {
+  if (builtInProfiles.has(loadout.profile)) {
+    return loadout.profile;
+  }
+
+  return loadout.role === 'editing' ? 'worker' : 'scout';
+};
+
+// Older records used the role prefix, and those saved before the rename name scouts `investigator-`.
+const nameMatchesRole = ({ name, loadout }: Task): boolean =>
+  name === undefined ||
+  [
+    namePrefix(loadout),
+    ...(loadout.role === 'editing' ? ['worker'] : ['scout', 'investigator']),
+  ].some((prefix) => name.startsWith(`${prefix}-`));
 
 const modelArgumentsAreConsistent = (loadout: GenericLoadout): boolean =>
   loadout.requestedModel === undefined || Boolean(loadout.arguments.length);

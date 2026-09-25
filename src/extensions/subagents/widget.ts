@@ -115,7 +115,7 @@ const stateText = (row: WorkerWidgetRow): string =>
   row.state === 'unknown' ? 'status unavailable' : stateLabel(row.state, row.outcome).text;
 
 export const truncateWorkerName = (name: string, width: number): string => {
-  const suffix = name.match(/^(?:worker|scout|investigator)-[a-z0-9]{2}$/)?.[0].slice(-3);
+  const suffix = name.match(/^(?:worker|scout|reviewer|investigator)-[a-z0-9]{2}$/)?.[0].slice(-3);
 
   if (suffix == null || visibleWidth(name) <= width || width <= visibleWidth(suffix)) {
     return truncateToWidth(name, width);
