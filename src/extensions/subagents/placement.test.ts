@@ -153,7 +153,7 @@ it.each([
   'manual resize before close',
   'manual resize after close',
 ] as const)('does not infer surviving split ownership after %s', async (scenario) => {
-  const { placement, client, input, calls } = fixture(240, 100);
+  const { placement, client, input, calls } = fixture(340, 120);
   const first = await placement.place(input('foreground'), client);
   await placement.place(input('foreground'), client);
   placement.release(first.terminalId);
