@@ -704,6 +704,34 @@ it('keeps the blocker when the summary is at the size limit', async () => {
   expect(summary).toContain('Blocker: The parent must choose the storage format.\n\nTask ended.');
 });
 
+it('refuses a full-size report whose blocker would push out a section', async () => {
+  const worker = await waitingWorker('editing');
+  const report = worker.tools.get('subagent_report');
+
+  if (!report) {
+    throw new Error('Missing report tool.');
+  }
+
+  const body = 'Changes: None\nEvidence: None\nDecisions: None\n';
+
+  expect(() =>
+    report.execute(
+      'report',
+      {
+        outcome: 'incomplete',
+        summary: `${body.padEnd(textLimit - '\nConcerns: None'.length, '.')}\nConcerns: None`,
+        evidence: [],
+        blocker: 'The parent must choose the storage format.',
+      },
+      undefined,
+      undefined,
+      worker.context,
+    ),
+  ).toThrow('Concerns');
+
+  expect(readReport(worker.directory, 'task')).toBeUndefined();
+});
+
 it('accepts a success report after refusing an incomplete one', async () => {
   const worker = await waitingWorker('editing', hour);
   expect(() => reportIncomplete(worker, 'Tests remain.')).toThrow('minutes remain');

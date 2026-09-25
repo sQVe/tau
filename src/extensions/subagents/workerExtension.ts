@@ -372,7 +372,7 @@ const refuseMissingSections = (state: WorkerExtensionState, summary: string) => 
 
   state.remindAfterRefusal = true;
   throw new Error(
-    `Report refused: summary is missing the ${missing.join(', ')} section headings. Resend it with all four sections, writing None under any that is empty.`,
+    `Report refused: summary is missing the ${missing.join(', ')} section headings. Resend a compact summary with all four sections, writing None under any that is empty.`,
   );
 };
 
@@ -398,7 +398,13 @@ const reportToParent = (
   const task = state.task;
   const { blocker, ...handover } = parameters;
 
-  refuseMissingSections(state, handover.summary);
+  // Check what will be saved: a blocker can push the last section past the size limit.
+  const summary = withBlocker(
+    handover.summary,
+    handover.outcome === 'incomplete' ? blocker : undefined,
+  );
+
+  refuseMissingSections(state, summary);
 
   if (handover.outcome === 'incomplete') {
     refuseEarlyIncomplete(state, task, blocker);
@@ -406,7 +412,7 @@ const reportToParent = (
 
   const report = acceptReport(state.directory, task.taskId, {
     ...handover,
-    summary: withBlocker(handover.summary, handover.outcome === 'incomplete' ? blocker : undefined),
+    summary,
     taskId: task.taskId,
   });
 
