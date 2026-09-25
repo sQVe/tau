@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import * as timers from 'node:timers/promises';
 
 import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
@@ -35,6 +36,12 @@ vi.mock('node:fs', async (importOriginal) => {
   const original = await importOriginal<typeof fileSystem>();
 
   return { ...original, fsyncSync: vi.fn<typeof fsyncSync>(original.fsyncSync) };
+});
+
+vi.mock('node:timers/promises', async (importOriginal) => {
+  const original = await importOriginal<typeof timers>();
+
+  return { ...original };
 });
 
 const originalRunClient = cancellationModule.runClient;
@@ -787,6 +794,178 @@ it.each(['missing', 'empty'] as const)(
     expect(fixture.calls.filter((call) => call[1] === 'close')).toEqual([
       ['pane', 'close', 'worker-1'],
     ]);
+  },
+);
+
+const useFakeDelays = () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  vi.spyOn(timers, 'setTimeout').mockImplementation(async (duration, value, options) => {
+    await new Promise<void>((resolve, reject) => {
+      const signal = options?.signal;
+      signal?.throwIfAborted();
+
+      const abort = () => {
+        clearTimeout(timer);
+        reject(new Error('Delay aborted.', { cause: signal?.reason }));
+      };
+
+      const timer = setTimeout(() => {
+        signal?.removeEventListener('abort', abort);
+        resolve();
+      }, duration);
+
+      signal?.addEventListener('abort', abort, { once: true });
+    });
+
+    return value!;
+  });
+};
+
+const stallWorkerStart = (fixture: ReturnType<typeof setup>) => {
+  const entered = Promise.withResolvers<AbortSignal | undefined>();
+  const released = Promise.withResolvers<string>();
+  const client = fixture.fake.client;
+
+  vi.spyOn(fixture.fake, 'client').mockImplementation(async (argumentsList, budget, signal) => {
+    const response = await client(argumentsList, budget, signal);
+
+    if (argumentsList[1] !== 'start') {
+      return response;
+    }
+
+    signal?.addEventListener(
+      'abort',
+      () => {
+        released.reject(signal.reason);
+      },
+      { once: true },
+    );
+
+    entered.resolve(signal);
+
+    return released.promise;
+  });
+
+  return { entered: entered.promise, released, client };
+};
+
+it.each(['startupFailure', 'settled', 'bare shell'] as const)(
+  'waits for worker exit before failing a pending Pi start with %s evidence',
+  async (evidence) => {
+    useFakeDelays();
+    vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+
+    afterTest(() => {
+      vi.unstubAllEnvs();
+    });
+
+    const fixture = setup(afterTest, -1);
+    const { entered, released, client } = stallWorkerStart(fixture);
+    const launching = fixture.controller.launch(fixture.input);
+    let returned = false;
+
+    void launching.then(() => {
+      returned = true;
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+    const signal = await entered;
+    const [saved] = records.readTasks(fixture.directory);
+    expect(saved).toBeDefined();
+    const { directory, task } = saved!;
+    const detail = 'Worker model differs from the saved loadout; no fallback allowed.';
+
+    fixture.fake.state.rejectStart = true;
+
+    if (evidence !== 'bare shell') {
+      recordEvent(directory, task.taskId, evidence, detail);
+    }
+
+    await vi.advanceTimersByTimeAsync(300);
+    const abortedBeforeExit = signal?.aborted;
+    fixture.fake.state.stopped = true;
+    await vi.advanceTimersByTimeAsync(500);
+
+    const returnedWithinPoll = returned;
+    const startAborted = signal?.aborted;
+    fixture.fake.state.stopped = true;
+    fixture.fake.state.rejectStart = true;
+    released.reject(new Error('Test released the stalled start.'));
+    const launched = await launching;
+    expect(abortedBeforeExit).toBe(false);
+    expect(returnedWithinPoll).toBe(true);
+    expect(launched).toMatchObject({ state: 'stopped', outcome: 'failure' });
+
+    expect(fixture.notifications.at(-1)?.content.cleanup).toContain(
+      evidence === 'startupFailure' ? detail : 'Worker exited before readiness',
+    );
+
+    expect(startAborted).toBe(true);
+    expect(readEvent(directory, task.taskId, 'cleanup')?.stopped).toBe(true);
+    expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+    expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
+
+    fixture.fake.client = client;
+    fixture.fake.state.stopped = false;
+    fixture.fake.state.rejectStart = false;
+    const nextLaunch = fixture.controller.launch(fixture.input);
+    await vi.advanceTimersByTimeAsync(100);
+
+    const next = records
+      .readTasks(fixture.directory)
+      .find((entry) => entry.task.taskId !== task.taskId);
+
+    expect(next).toBeDefined();
+
+    recordEvent(next!.directory, next!.task.taskId, 'ready', {
+      detail: 'Ready.',
+      processId: process.pid,
+    });
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect((await nextLaunch).state).toBe('starting');
+  },
+);
+
+it.each([
+  ['one bare-shell poll', 300],
+  ['four bare-shell polls', 1000],
+] as const)(
+  'keeps a pending Pi start after %s followed by a foreground job',
+  async (_case, delay) => {
+    useFakeDelays();
+    const fixture = setup(afterTest, -1);
+    const { entered, released } = stallWorkerStart(fixture);
+    const launching = fixture.controller.launch(fixture.input);
+    await vi.advanceTimersByTimeAsync(100);
+    const signal = await entered;
+    fixture.fake.state.stopped = true;
+    fixture.fake.state.rejectStart = true;
+
+    await vi.advanceTimersByTimeAsync(delay);
+    const abortedAfterBareSamples = signal?.aborted;
+    fixture.fake.state.stopped = false;
+    fixture.fake.state.rejectStart = false;
+    await vi.advanceTimersByTimeAsync(500);
+    const abortedAfterBusySamples = signal?.aborted;
+    const [saved] = records.readTasks(fixture.directory);
+    expect(saved).toBeDefined();
+
+    recordEvent(saved!.directory, saved!.task.taskId, 'ready', {
+      detail: 'Ready.',
+      processId: process.pid,
+    });
+
+    released.resolve(JSON.stringify({ result: {} }));
+    const launched = await launching;
+
+    expect(abortedAfterBareSamples).toBe(false);
+    expect(abortedAfterBusySamples).toBe(false);
+    expect(launched.state).toBe('starting');
+    expect(launched.failure).toBeUndefined();
+    expect(readEvent(launched.directory, launched.taskId, 'cleanup')).toBeUndefined();
+    expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toContain('worker-1');
   },
 );
 
