@@ -472,17 +472,20 @@ export const waitForWorkerExit = async (
 ): Promise<never> => {
   const budget = { signal, remainingBudget: () => workBudget(handle) };
   let bareSamples = 0;
+  let workerObserved = false;
 
   for (;;) {
-    // ponytail: two 250 ms bare-shell polls debounce slow starts; use a start acknowledgement if that window is insufficient.
+    // ponytail: require a worker record or foreground sample; exits missed between polls fall back to herdr's timeout.
     // oxlint-disable-next-line eslint/no-await-in-loop -- Exit polling shares the startup deadline and ends when agent start settles.
     await delay(Math.min(250, workBudget(handle)), undefined, { signal });
     const failure = readEvent(handle.directory, handle.task.taskId, 'startupFailure');
+    const ended = failure ?? readEvent(handle.directory, handle.task.taskId, 'settled');
 
     // oxlint-disable-next-line eslint/no-await-in-loop -- Records precede shutdown; only the unchanged bare shell proves exit.
     const bare = await shellUnchanged(handle, call, budget);
 
-    bareSamples = bare ? bareSamples + 1 : 0;
+    workerObserved ||= ended !== undefined || !bare;
+    bareSamples = workerObserved && bare ? bareSamples + 1 : 0;
 
     if (bareSamples === 2) {
       throw failure ? new Error(failure.detail) : new WorkerExitedError();

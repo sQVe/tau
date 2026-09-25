@@ -912,38 +912,44 @@ it.each(['startupFailure', 'settled', 'bare shell'] as const)(
   },
 );
 
-it('keeps a pending Pi start after one bare-shell poll followed by a foreground job', async () => {
-  useFakeDelays();
-  const fixture = setup(afterTest, -1);
-  const { entered, released } = stallWorkerStart(fixture);
-  const launching = fixture.controller.launch(fixture.input);
-  await vi.advanceTimersByTimeAsync(100);
-  const signal = await entered;
-  fixture.fake.state.stopped = true;
-  fixture.fake.state.rejectStart = true;
+it.each([
+  ['one bare-shell poll', 300],
+  ['four bare-shell polls', 1000],
+] as const)(
+  'keeps a pending Pi start after %s followed by a foreground job',
+  async (_case, delay) => {
+    useFakeDelays();
+    const fixture = setup(afterTest, -1);
+    const { entered, released } = stallWorkerStart(fixture);
+    const launching = fixture.controller.launch(fixture.input);
+    await vi.advanceTimersByTimeAsync(100);
+    const signal = await entered;
+    fixture.fake.state.stopped = true;
+    fixture.fake.state.rejectStart = true;
 
-  await vi.advanceTimersByTimeAsync(300);
-  const abortedAfterBareSample = signal?.aborted;
-  fixture.fake.state.stopped = false;
-  fixture.fake.state.rejectStart = false;
-  await vi.advanceTimersByTimeAsync(500);
-  const abortedAfterBusySamples = signal?.aborted;
-  const [saved] = records.readTasks(fixture.directory);
-  expect(saved).toBeDefined();
-  recordEvent(saved!.directory, saved!.task.taskId, 'ready', {
-    detail: 'Ready.',
-    processId: process.pid,
-  });
-  released.resolve(JSON.stringify({ result: {} }));
-  const launched = await launching;
+    await vi.advanceTimersByTimeAsync(delay);
+    const abortedAfterBareSamples = signal?.aborted;
+    fixture.fake.state.stopped = false;
+    fixture.fake.state.rejectStart = false;
+    await vi.advanceTimersByTimeAsync(500);
+    const abortedAfterBusySamples = signal?.aborted;
+    const [saved] = records.readTasks(fixture.directory);
+    expect(saved).toBeDefined();
+    recordEvent(saved!.directory, saved!.task.taskId, 'ready', {
+      detail: 'Ready.',
+      processId: process.pid,
+    });
+    released.resolve(JSON.stringify({ result: {} }));
+    const launched = await launching;
 
-  expect(abortedAfterBareSample).toBe(false);
-  expect(abortedAfterBusySamples).toBe(false);
-  expect(launched.state).toBe('starting');
-  expect(launched.failure).toBeUndefined();
-  expect(readEvent(launched.directory, launched.taskId, 'cleanup')).toBeUndefined();
-  expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toContain('worker-1');
-});
+    expect(abortedAfterBareSamples).toBe(false);
+    expect(abortedAfterBusySamples).toBe(false);
+    expect(launched.state).toBe('starting');
+    expect(launched.failure).toBeUndefined();
+    expect(readEvent(launched.directory, launched.taskId, 'cleanup')).toBeUndefined();
+    expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toContain('worker-1');
+  },
+);
 
 it('does not close a rejected-start pane after its foreground changes', async ({
   onTestFinished,
