@@ -32,11 +32,11 @@ commit another worktree from your session, even over bash.
 ## Procedure
 
 1. Find the target. Run `herdr agent list` and keep the agents in the target workspace or whose
-   `cwd` is the target worktree. Drop agents named `worker-*`, `scout-*`, or `investigator-*`: they
-   are Tau subagents working for a parent. One match is the target; several matches, ask the user.
-   With none, start Pi in the workspace's manager pane: the pane in its first tab, the lowest
-   `number` in `herdr tab list --workspace <workspace>`, which `herdr pane list` shows by `tab_id`.
-   Other tabs hold workers and servers. If that tab has exactly one pane, run
+   `cwd` is the target worktree. Drop agents named `worker-*`, `scout-*`, `reviewer-*`, or
+   `investigator-*`: they are Tau subagents working for a parent. One match is the target; several
+   matches, ask the user. With none, start Pi in the workspace's manager pane: the pane in its first
+   tab, the lowest `number` in `herdr tab list --workspace <workspace>`, which `herdr pane list`
+   shows by `tab_id`. Other tabs hold workers and servers. If that tab has exactly one pane, run
    `herdr agent start <worktree-name> --kind pi --pane <pane>` and use the `pane_id` it returns;
    otherwise ask the user. The pane must be at its shell prompt.
 2. Write the message to `<your-worktree>/.tau/handoffs/<your-pane>-<timestamp>.md` with the file
