@@ -387,7 +387,7 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
     label: 'Launch worker',
     description: [
       'Launch a herdr worker. Requires task, profile, permissions; cwd must match this session.',
-      'Built-in profiles: scout, worker, reviewer, each with a default model. Pi is the default harness.',
+      'Built-in profiles: scout, worker, reviewer, each with a default Pi model. Pi is the default harness.',
       'Pi needs trusted-full-tools and CC Safety Net.',
       'Set harness for a non-Pi kind; Pi workers refuse nativeArguments.',
       'Other harnesses need native-controls and writable cwd/.tau/workers/<taskId>/report.md.',
