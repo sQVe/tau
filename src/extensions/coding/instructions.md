@@ -12,7 +12,7 @@ and repository conventions when they differ from these defaults.
   purpose.
 - Never edit, test, or commit another worktree. Send the work to that workspace with the handoff
   skill.
-- Run a command that CC Safety Net may block in its own bash call, apart from safe reads.
+- Run a command that CC Safety Net may block in its own bash call, not bundled with safe reads.
 - Append `|| true` only to probes where no match is expected, such as `rg` searches, never to
   checks.
 - Reject invalid states where they enter the system. Report the error at that point.
