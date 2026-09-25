@@ -242,6 +242,7 @@ it('fixes house spacing without changing comments or names', async ({ onTestFini
       '',
       '  return trimmed;',
       '};',
+      '',
       'export const width = 80;',
       'export const height = 24;',
       '',
@@ -497,9 +498,11 @@ it('keeps size thresholds advisory without weakening other lint checks', async (
     fixture,
     [
       'export const sum = (first: number, second: number, third: number, fourth: number, fifth: number) => first + second + third + fourth + fifth;',
+      '',
       'export const longFunction = (values: number[]) => {',
       ...Array.from({ length: 61 }, (_, index) => `  values.push(${index});`),
       '};',
+      '',
       ...Array.from({ length: 501 }, (_, index) => `export const value${index} = ${index};`),
     ].join('\n'),
   );
