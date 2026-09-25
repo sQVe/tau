@@ -28,6 +28,9 @@ export default defineConfig({
     maxWorkers: 6,
     // Git in tests, and in the code under test, must ignore the developer's configuration.
     env: {
+      // Tests must choose the worker environment themselves.
+      TAU_WORKER_RECORD: '',
+      HERDR_PANE_ID: '',
       GIT_CONFIG_GLOBAL: '/dev/null',
       GIT_CONFIG_NOSYSTEM: '1',
       GIT_AUTHOR_NAME: 'Tau Test',

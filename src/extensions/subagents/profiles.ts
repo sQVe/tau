@@ -209,7 +209,7 @@ export const workerPrompt = (task: Task): string => {
     [
       `Deadline: ${new Date(task.deadline).toISOString()}. Work only within this task.`,
       'Full tools and CC Safety Net are not a sandbox.',
-      'Do not commit, merge, reset, or run extra model trials. Do not launch workers.',
+      'Do not commit, merge, or reset unless the task says so, and never run extra model trials. Do not launch workers.',
       'Ask the parent through subagent_question if the task needs delegation.',
       'Preserve unrelated edits. Do not resume arbitrary conversations.',
       'Ask the parent for clarification with subagent_question, never ask_user_question.',
