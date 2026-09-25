@@ -141,7 +141,7 @@ it.runIf(hasHerdr)(
           '--direction',
           'right',
           '--ratio',
-          '0.6',
+          '0.4',
           '--cwd',
           root,
           '--no-focus',

@@ -78,8 +78,9 @@ export const rectangle = (value: unknown): Rectangle => {
 export const isUseful = (bounds: Rectangle): boolean =>
   bounds.width >= minimumPane.width && bounds.height >= minimumPane.height;
 
+// Favor side-by-side workers, but stack clearly tall panes so workers keep similar areas.
 const preferRight = (bounds: Rectangle, down: boolean): boolean =>
-  !down || bounds.width / minimumPane.width >= bounds.height / minimumPane.height;
+  !down || (1.5 * bounds.width) / minimumPane.width >= bounds.height / minimumPane.height;
 
 export const splitDirection = (bounds: Rectangle): 'right' | 'down' | undefined => {
   const right = isUseful({ width: splitLengths(bounds.width, 0.5).second, height: bounds.height });
