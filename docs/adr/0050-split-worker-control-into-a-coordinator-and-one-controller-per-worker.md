@@ -5,11 +5,11 @@
 
 ## Context
 
-`WorkerController` held every worker concern in one 1,981-line class: registry, capacity, launch,
-follow-up, status, replies, polling, timeouts, cleanup, notifications, recovery, and widget data.
-Nearly every subagents change touched it, and parallel branches collided there. Pi and generic steps
-interleaved through `isGenericLoadout` branches inside shared methods, and the worker handle had 22
-ungrouped fields.
+- `WorkerController` held every worker concern in one 1,981-line class: registry, capacity, launch,
+  follow-up, status, replies, polling, timeouts, cleanup, notifications, recovery, and widget data.
+- Nearly every subagents change touched it, and parallel branches collided there.
+- Pi and generic steps interleaved through `isGenericLoadout` branches inside shared methods.
+- The worker handle had 22 ungrouped fields.
 
 ## Options considered
 
