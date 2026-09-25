@@ -423,6 +423,29 @@ it('refuses cancellation without saved ownership without exposing paths or chang
   expect(fixture.calls).toHaveLength(callsBefore);
 });
 
+it('resumes the remaining workers when one saved task has no ownership record', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers();
+  const fixture = setup(onTestFinished);
+  fixture.fake.state.sendKeysError = '';
+  vi.spyOn(process, 'kill').mockReturnValue(true);
+  const unowned = await fixture.controller.launch(fixture.input);
+  const owned = await fixture.controller.launch(fixture.input);
+  fixture.controller.close();
+  rmSync(join(unowned.directory, 'owned.json'));
+  const recovered = new WorkerController(fixture.directory, fixture.client);
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  await recovered.resume('parent-id');
+
+  expect(recovered.owns(unowned.taskId)).toBe(false);
+  expect(recovered.owns(owned.taskId)).toBe(true);
+  expect(recovered.status(owned.taskId, 'parent-id').state).toBe('starting');
+});
+
 it('closes an unchanged shell once after the saved deadline has expired', async ({
   onTestFinished,
 }) => {
@@ -456,6 +479,82 @@ it('closes an unchanged shell once after the saved deadline has expired', async 
   expect(fixture.calls).toHaveLength(cleanupCalls);
   expect(readEvent(launched.directory, launched.taskId, 'cleanup')).toEqual(cleanup);
 });
+
+it.each(['before resume', 'during inspection'])(
+  'stops a saved running worker when its work budget expires %s',
+  async (expiry) => {
+    vi.useFakeTimers();
+    vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+    afterTest(() => {
+      vi.unstubAllEnvs();
+    });
+    const fixture = setup(afterTest);
+    fixture.fake.state.sendKeysError = '';
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      if (fixture.fake.state.stopped) {
+        throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
+      }
+
+      return true;
+    });
+    const launched = await fixture.controller.launch(fixture.input);
+    fixture.controller.close();
+    const elapsed = expiry === 'before resume' ? 20_000 : 7000;
+    await vi.advanceTimersByTimeAsync(elapsed);
+    const entered = Promise.withResolvers<undefined>();
+    const release = Promise.withResolvers<undefined>();
+    let paused = false;
+    const notifications: WorkerNotice[] = [];
+    const recovered = new WorkerController(
+      fixture.directory,
+      async (argumentsList, budget, signal) => {
+        if (expiry === 'during inspection' && argumentsList[1] === 'get' && !paused) {
+          paused = true;
+          entered.resolve(undefined);
+          await release.promise;
+        }
+
+        return fixture.client(argumentsList, budget, signal);
+      },
+      (notice) => notifications.push(notice),
+    );
+    afterTest(() => {
+      recovered.close();
+    });
+
+    const resuming = recovered.resume('parent-id');
+
+    if (expiry === 'during inspection') {
+      await entered.promise;
+      await vi.advanceTimersByTimeAsync(1000);
+      release.resolve(undefined);
+    }
+
+    await resuming;
+
+    expect(fixture.fake.calls).toContainEqual([
+      'agent',
+      'send-keys',
+      'worker-1',
+      'escape',
+      'ctrl+c',
+      'ctrl+d',
+    ]);
+    expect(readEvent(launched.directory, launched.taskId, 'timeout')).toBeDefined();
+    expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
+    expect(recovered.status(launched.taskId, 'parent-id')).toMatchObject({
+      state: 'stopped',
+      outcome: 'timeout',
+    });
+    expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
+    expect(notifications).toHaveLength(1);
+    fixture.fake.state.stopped = false;
+    const next = await recovered.launch(fixture.input);
+
+    expect(next.state).toBe('starting');
+    expect(recovered.owns(next.taskId)).toBe(true);
+  },
+);
 
 it('resumes polling with the remaining wall-clock deadline', async ({ onTestFinished }) => {
   vi.useFakeTimers();
