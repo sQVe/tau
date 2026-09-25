@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
@@ -9,13 +8,12 @@ import { parseModelReference } from '../../../delegateModel/index.js';
 import { errorMessage, isMissingFile } from '../../../errors/index.js';
 import { processAbsent } from '../cancellation.js';
 import { refuseLiveNativeWriter } from '../continuations.js';
-import { submitGenericText, genericPrompt, acceptGenericReport } from '../generic.js';
+import { submitGenericText, deliveryFromSubmission } from '../generic.js';
 import { authorizeHistoryTask } from '../history.js';
 import { validateSavedLoadout } from '../loadout.js';
 import { allocateName, nameSuffix } from '../names.js';
 import { validateNative } from '../native.js';
 import { WorkerPlacement } from '../placement.js';
-import { modelEvidenceNotice, modelStatus } from '../presentation.js';
 import type { WorkerNotice } from '../presentation.js';
 import {
   acceptReply,
@@ -32,18 +30,16 @@ import {
   namePrefix,
   publish,
   validateTask,
-  recordEvent,
 } from '../records.js';
 import { resolveTerminal, text, requireObject, result } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
 import { isGenericLoadout, isPiLoadout, isTaskId } from '../types.js';
-import type { GenericLoadout, ReplyDelivery, SubmissionState, Task } from '../types.js';
+import type { GenericLoadout, Task } from '../types.js';
 import type { WorkerWidgetRow } from '../widget.js';
 import {
   ensureReplyActive,
   workBudget,
   launchTiming,
-  remainingCleanupBudget,
   remainingLaunchBudget,
   remainingWorkBudget,
 } from './budget.js';
@@ -69,25 +65,17 @@ import {
   handleRecovery,
   savedRecovery,
   taskStatus,
-  cleanupDetail,
-  recordNativeIssue,
   readOwnedWorker,
 } from './record.js';
-import {
-  waitForShell,
-  integer,
-  isBareShell,
-  readProcessStart,
-  WorkerExitedError,
-} from './shellIdentity.js';
-import type { InspectionBudget } from './shellIdentity.js';
-import { closeUnstartedPane, stopOwnedWorker } from './stop.js';
+import { waitForShell, integer, isBareShell, readProcessStart } from './shellIdentity.js';
+import { createHandle, TaskController } from './task.js';
+import type { TaskContext } from './task.js';
 import type { Handle } from './types.js';
 import { widgetRow } from './widgetRows.js';
 
 interface PiReplyRequest {
   directory: string;
-  handle: Handle;
+  worker: TaskController;
   questionId: string;
   answer: { replyId: string };
   value: unknown;
@@ -109,15 +97,6 @@ interface LaunchTaskPlan {
   cancellationBudget: number;
   monotonicDeadline: number;
   source?: FollowUpPreparation;
-}
-
-interface CleanupOutcomeRequest {
-  handle: Handle;
-  reason: 'timeout' | 'cancelled' | 'completion' | 'failure';
-  failureDetail: string;
-  detail: string;
-  stopped: boolean;
-  record: (operation: () => void) => void;
 }
 
 const workerCapacity = (): number => {
@@ -178,20 +157,6 @@ class TaskAccessError extends Error {
   override name = 'TaskAccessError';
 }
 
-const deliveryFromSubmission = (
-  state: SubmissionState | undefined,
-): Exclude<ReplyDelivery, 'notResent'> => {
-  if (state === 'submitted') {
-    return 'sent';
-  }
-
-  if (state === 'not-delivered') {
-    return 'notDelivered';
-  }
-
-  return 'uncertain';
-};
-
 // A saved reply identity is never sent again; different text under the same identity is a conflict.
 const repeatedGenericReply = (
   directory: string,
@@ -218,21 +183,30 @@ const repeatedGenericReply = (
 
 // Launch, replies, and cleanup share ownership state and one deadline. Keep their transitions together.
 export class WorkerController {
-  private readonly handles = new Map<string, Handle>();
+  private readonly workers = new Map<string, TaskController>();
   private readonly capacity = workerCapacity();
   private readonly live = new Set<string>();
   private readonly lifetime = new AbortController();
   private readonly placement = new WorkerPlacement();
+  private readonly taskContext: TaskContext;
   private closed = false;
 
   constructor(
     private readonly root: string,
     private readonly client: HerdrClient = herdrClient,
-    private readonly notify: (notice: WorkerNotice) => void = () => undefined,
-  ) {}
-
-  private herdrCall(handle: Handle, signal = handle.abort.signal): TerminalCall {
-    return (argumentsList) => this.client(argumentsList, workBudget(handle), signal);
+    notify: (notice: WorkerNotice) => void = () => undefined,
+  ) {
+    this.taskContext = {
+      client,
+      notify,
+      placement: this.placement,
+      lifetime: this.lifetime.signal,
+      closed: () => this.closed,
+      owns: (taskId) => this.owns(taskId),
+      release: (taskId) => {
+        this.live.delete(taskId);
+      },
+    };
   }
 
   widgetRows(parentSessionId: string): WorkerWidgetRow[] {
@@ -243,7 +217,9 @@ export class WorkerController {
         continue;
       }
 
-      rows.push(widgetRow(directory, task, this.owns(task.taskId), this.handles.get(task.taskId)));
+      const handle = this.workers.get(task.taskId)?.handle;
+
+      rows.push(widgetRow(directory, task, this.owns(task.taskId), handle));
     }
 
     return rows.toSorted((left, right) => right.createdAt - left.createdAt);
@@ -255,7 +231,7 @@ export class WorkerController {
     let task: Task | undefined;
 
     try {
-      handle = this.handles.get(taskId);
+      handle = this.workers.get(taskId)?.handle;
       task = handle ? handle.task : readTask(directory);
 
       if (handle != null && handle.cleanup.recordErrors.length > 0) {
@@ -324,17 +300,19 @@ export class WorkerController {
 
   async nativeOutput(taskId: string, parentSessionId: string) {
     this.directory(taskId, parentSessionId);
-    const handle = this.handles.get(taskId);
+    const live = this.workers.get(taskId);
 
-    if (!handle || !isGenericLoadout(handle.task.loadout)) {
+    if (!live || !isGenericLoadout(live.handle.task.loadout)) {
       throw new Error('Native output requires an active owned generic worker.');
     }
+
+    const { handle } = live;
 
     if (this.closed || handle.cleanup.stopping) {
       throw new Error('Native output requires an active owned generic worker.');
     }
 
-    const call = this.herdrCall(handle);
+    const call = live.herdrCall();
     // Reading output only verifies identity; the poll loop owns the handle and saved records.
     const { worker } = await observeWorker(handle, call);
     const location = await resolveTerminal(worker.terminalId, call);
@@ -353,13 +331,13 @@ export class WorkerController {
   }
 
   owns(taskId: string): boolean {
-    return !this.closed && this.handles.has(taskId);
+    return !this.closed && this.workers.has(taskId);
   }
 
   private savedHandle(directory: string, task: Task): Handle {
     const owned = readOwnedWorker(directory, task);
     const remaining = Math.max(task.deadline - Date.now(), task.cancellationBudget);
-    const handle = this.createHandle(directory, task, performance.now() + remaining);
+    const handle = createHandle(directory, task, performance.now() + remaining);
 
     handle.identity.owned = owned;
     handle.identity.paneId = owned.paneId;
@@ -375,7 +353,7 @@ export class WorkerController {
 
   async resume(parentSessionId: string): Promise<void> {
     for (const { directory, task } of readTasks(this.root)) {
-      const foreign = task.parentSessionId !== parentSessionId || this.handles.has(task.taskId);
+      const foreign = task.parentSessionId !== parentSessionId || this.workers.has(task.taskId);
       const unavailable = this.closed || this.live.size >= this.capacity;
 
       if (foreign || unavailable || readEvent(directory, task.taskId, 'cleanup')) {
@@ -409,22 +387,24 @@ export class WorkerController {
 
     // Reserve capacity and expose saved ownership to shutdown before inspection can yield.
     // ponytail: one Pi process per parent session; add cross-process exclusion if concurrent resumes become supported.
-    this.handles.set(task.taskId, handle);
+    const worker = new TaskController(handle, this.taskContext);
+
+    this.workers.set(task.taskId, worker);
     this.live.add(task.taskId);
 
     try {
-      handle.identity.owned = await inspectWorker(handle, this.herdrCall(handle));
+      handle.identity.owned = await inspectWorker(handle, worker.herdrCall());
       this.lifetime.signal.throwIfAborted();
-      this.poll(handle);
+      worker.poll();
     } catch {
       // An expired budget fails the first herdr call; the reserved cleanup budget still stops the worker.
       if (remainingWorkBudget(handle) <= 0) {
-        await this.stop(handle, 'timeout');
+        await worker.stop('timeout');
 
         return;
       }
 
-      this.handles.delete(task.taskId);
+      this.workers.delete(task.taskId);
       this.live.delete(task.taskId);
       // Saved evidence remains available; cancellation can still check the saved shell and pane.
     }
@@ -446,12 +426,13 @@ export class WorkerController {
   }
 
   private async replyGeneric(
-    handle: Handle,
+    worker: TaskController,
     answer: { questionId?: string; replyId: string; reply: string },
   ) {
     requireGenericReplyShape(answer);
+    const { handle } = worker;
     const { directory, task } = handle;
-    const call = this.herdrCall(handle);
+    const call = worker.herdrCall();
 
     // Check the saved submission before native state. A saved reply is never sent twice, so a
     // blocked dialog must not turn a repeat into an error.
@@ -462,13 +443,13 @@ export class WorkerController {
     }
 
     handle.observation.nativeState = 'unknown';
-    const worker = await inspectWorker(handle, call);
-    const location = await resolveTerminal(worker.terminalId, call);
+    const inspected = await inspectWorker(handle, call);
+    const location = await resolveTerminal(inspected.terminalId, call);
 
     ensureReplyActive(handle);
 
     if (
-      location.paneId !== worker.paneId ||
+      location.paneId !== inspected.paneId ||
       !['idle', 'working', 'done'].includes(handle.observation.nativeState)
     ) {
       throw new Error(
@@ -508,11 +489,13 @@ export class WorkerController {
     answer: { questionId?: string; replyId: string; reply: string; scopeUnchanged: unknown },
   ) {
     const directory = this.directory(taskId, parentSessionId);
-    const handle = this.handles.get(taskId);
+    const worker = this.workers.get(taskId);
 
-    if (!handle || this.closed || handle.cleanup.stopping) {
+    if (!worker || this.closed || worker.handle.cleanup.stopping) {
       throw new Error('No active owned worker for this reply.');
     }
+
+    const { handle } = worker;
 
     if (answer.scopeUnchanged !== true) {
       throw new Error('Replies cannot increase scope or change saved worker settings.');
@@ -521,22 +504,23 @@ export class WorkerController {
     ensureReplyActive(handle);
 
     if (isGenericLoadout(handle.task.loadout)) {
-      return this.replyGeneric(handle, answer);
+      return this.replyGeneric(worker, answer);
     }
 
     if (answer.questionId == null || answer.questionId === '') {
       throw new Error('Pi replies require a structured questionId.');
     }
 
-    return this.replyPi(directory, handle, answer.questionId, answer);
+    return this.replyPi(directory, worker, answer.questionId, answer);
   }
 
   private async replyPi(
     directory: string,
-    handle: Handle,
+    worker: TaskController,
     questionId: string,
     answer: { replyId: string; reply: string },
   ) {
+    const { handle } = worker;
     const { taskId } = handle.task;
 
     const value = {
@@ -557,11 +541,11 @@ export class WorkerController {
       throw new Error('Reply does not match the pending question.');
     }
 
-    const call = this.herdrCall(handle);
-    const worker = await inspectWorker(handle, call);
-    const location = await resolveTerminal(worker.terminalId, call);
+    const call = worker.herdrCall();
+    const inspected = await inspectWorker(handle, call);
+    const location = await resolveTerminal(inspected.terminalId, call);
 
-    if (location.paneId !== worker.paneId) {
+    if (location.paneId !== inspected.paneId) {
       throw new Error('Worker moved during identity checks; no input sent.');
     }
 
@@ -574,15 +558,16 @@ export class WorkerController {
       return acceptedReply(directory, handle.task, questionId);
     }
 
-    return this.sendPiReply({ directory, handle, questionId, answer, value });
+    return this.sendPiReply({ directory, worker, questionId, answer, value });
   }
 
   private async sendPiReply(request: PiReplyRequest) {
-    const { directory, handle, questionId, answer, value } = request;
+    const { directory, worker, questionId, answer, value } = request;
+    const { handle } = worker;
     const { taskId } = handle.task;
     const reference = { version: 1, taskId, questionId, replyId: answer.replyId };
     const prompt = `TAU_REPLY ${JSON.stringify(reference)}`;
-    const call = this.herdrCall(handle);
+    const call = worker.herdrCall();
 
     acceptReply(directory, taskId, value);
 
@@ -611,11 +596,11 @@ export class WorkerController {
       throw new Error('Parent controller stopped.');
     }
 
-    const live = this.handles.get(taskId);
+    const live = this.workers.get(taskId);
 
     // A settled stop already released capacity; reserving it again would leak the slot.
-    if (live?.cleanup.stopping) {
-      await live.cleanup.stopping;
+    if (live?.handle.cleanup.stopping) {
+      await live.handle.cleanup.stopping;
 
       return this.status(taskId, parentSessionId);
     }
@@ -625,11 +610,13 @@ export class WorkerController {
       return this.status(taskId, parentSessionId);
     }
 
-    const handle = live ?? this.savedHandle(directory, readTask(directory));
+    const worker =
+      live ??
+      new TaskController(this.savedHandle(directory, readTask(directory)), this.taskContext);
 
-    this.handles.set(taskId, handle);
+    this.workers.set(taskId, worker);
     this.live.add(taskId);
-    await this.stop(handle, 'cancelled');
+    await worker.stop('cancelled');
 
     return this.status(taskId, parentSessionId);
   }
@@ -653,60 +640,13 @@ export class WorkerController {
     }
 
     const directory = join(this.root, taskId);
-    const task = this.handles.get(taskId)?.task ?? this.savedTask(directory);
+    const task = this.workers.get(taskId)?.handle.task ?? this.savedTask(directory);
 
     if (task.parentSessionId !== parentSessionId) {
       throw new TaskAccessError('Task belongs to another parent session.');
     }
 
     return directory;
-  }
-
-  private noticeStatus(handle: Handle) {
-    if (handle.cleanup.recordErrors.length) {
-      throw new Error(handle.cleanup.recordErrors.join('; '));
-    }
-
-    const status = {
-      ...taskStatus(handle.directory, this.owns(handle.task.taskId)),
-      ...genericStatus(handle.directory, handle.task, handle, !this.closed),
-    };
-
-    if (handle.cleanup.detail !== undefined) {
-      status.cleanup = handle.cleanup.detail;
-    }
-
-    return status;
-  }
-
-  private notifySnapshot(
-    handle: Handle,
-    options: { question?: boolean; failure?: string; delivery?: string } = {},
-  ): void {
-    const question = options.question ?? false;
-
-    try {
-      const status = {
-        ...this.noticeStatus(handle),
-        ...(options.failure === undefined ? {} : { failure: options.failure }),
-        ...(options.delivery === undefined ? {} : { delivery: options.delivery }),
-      };
-
-      this.notify({ content: modelStatus(status), details: status, question });
-    } catch (error) {
-      const evidenceError = [String(error), handle.cleanup.detail]
-        .filter((value): value is string => value !== undefined && value !== '')
-        .join(' ');
-
-      const details = {
-        taskId: handle.task.taskId,
-        ...(handle.task.name === undefined ? {} : { name: handle.task.name }),
-        evidenceError,
-        recovery: handleRecovery(handle),
-      };
-
-      this.notify({ content: modelEvidenceNotice(details), details, question });
-    }
   }
 
   launch(input: LaunchInput, signal: AbortSignal = new AbortController().signal) {
@@ -783,7 +723,8 @@ export class WorkerController {
     );
   }
 
-  private async startAgent(handle: Handle, paneId: string, name: string): Promise<void> {
+  private async startAgent(worker: TaskController, paneId: string, name: string): Promise<void> {
+    const { handle } = worker;
     const { task } = handle;
     const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
 
@@ -799,7 +740,7 @@ export class WorkerController {
     handle.startup.neverStarted = false;
     const pending = new AbortController();
     const signal = AbortSignal.any([handle.abort.signal, pending.signal]);
-    const call = this.herdrCall(handle, signal);
+    const call = worker.herdrCall(signal);
 
     handle.startup.starting = Promise.resolve().then(() =>
       call([
@@ -825,13 +766,15 @@ export class WorkerController {
   }
 
   private async startWithBusyRetry(
-    handle: Handle,
+    worker: TaskController,
     paneId: string,
     name: string,
     call: TerminalCall,
   ): Promise<void> {
+    const { handle } = worker;
+
     try {
-      await this.startAgent(handle, paneId, name);
+      await this.startAgent(worker, paneId, name);
     } catch (error) {
       if (!isHerdrError(error, 'agent_pane_busy')) {
         throw error;
@@ -857,22 +800,23 @@ export class WorkerController {
         detail: 'One retry after unchanged-shell and agent-absence verification.',
       });
 
-      await this.startAgent(handle, paneId, name);
+      await this.startAgent(worker, paneId, name);
     }
   }
 
   private async startWorker(
-    handle: Handle,
+    worker: TaskController,
     paneId: string,
     name: string,
     call: TerminalCall,
   ): Promise<void> {
+    const { handle } = worker;
     const { task } = handle;
     const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
 
     await this.prepareStart(handle, paneId, call, generic);
 
-    await this.startWithBusyRetry(handle, paneId, name, call).catch((error: unknown) => {
+    await this.startWithBusyRetry(worker, paneId, name, call).catch((error: unknown) => {
       if (handle.startup.starting === undefined) {
         throw error;
       }
@@ -884,7 +828,7 @@ export class WorkerController {
       }
 
       publish(handle.directory, 'nativeStart-error.json', { detail: handle.startup.error });
-      this.notifySnapshot(handle, { failure: handle.startup.error });
+      worker.notifySnapshot({ failure: handle.startup.error });
     });
   }
 
@@ -954,63 +898,6 @@ export class WorkerController {
     }
   }
 
-  private hasAssignment(handle: Handle): boolean {
-    const { directory, task } = handle;
-
-    return (
-      readGenericSubmission(directory, task.taskId, 'assignment') !== undefined ||
-      !this.nativeReady(handle)
-    );
-  }
-
-  private nativeReady(handle: Handle): boolean {
-    return ['idle', 'done'].includes(handle.observation.nativeState ?? 'unknown');
-  }
-
-  private async dispatch(handle: Handle, call: TerminalCall): Promise<void> {
-    const { directory, task } = handle;
-
-    if (isPiLoadout(task.loadout)) {
-      publish(directory, 'dispatch.json', { taskId: task.taskId });
-
-      return;
-    }
-
-    if (this.hasAssignment(handle)) {
-      return;
-    }
-
-    const worker = await inspectWorker(handle, call);
-    const location = await resolveTerminal(worker.terminalId, call);
-
-    if (location.paneId !== worker.paneId || !this.nativeReady(handle)) {
-      throw new Error('Native worker moved or is not ready for the assignment.');
-    }
-
-    workBudget(handle);
-    const prompt = genericPrompt(task);
-
-    const submission = await submitGenericText(directory, task, {
-      id: 'assignment',
-      text: prompt,
-      send: () => call(agentPromptArguments(location.paneId, prompt)),
-    });
-
-    this.notifyUndelivered(handle, submission?.observation?.state);
-  }
-
-  private notifyUndelivered(handle: Handle, state: SubmissionState | undefined): void {
-    if (state === undefined || handle.cleanup.stopping || this.closed) {
-      return;
-    }
-
-    const delivery = deliveryFromSubmission(state);
-
-    if (delivery !== 'sent') {
-      this.notifySnapshot(handle, { delivery });
-    }
-  }
-
   // The pane display title is cosmetic. Startup is already complete, so an unresponsive herdr call
   // only delays the launch return by at most the short shared deadline below; it cannot block
   // dispatch or extend the task's original deadline. A rejected or unresolved write leaves the
@@ -1064,28 +951,29 @@ export class WorkerController {
 
     launchSignal.throwIfAborted();
     const prepared = await this.prepareLaunch(input, launchSignal, source);
-    const { handle, name } = prepared;
+    const { worker, name } = prepared;
+    const { handle } = worker;
 
     try {
       launchSignal.throwIfAborted();
       workBudget(handle);
 
-      const call = this.herdrCall(handle);
+      const call = worker.herdrCall();
       const location = await this.placeWorker(input, handle, call);
 
       if (source) {
         checkHandoff(source);
       }
 
-      await this.startWorker(handle, location.paneId, name, call);
-      await this.finishStartup(handle, call);
+      await this.startWorker(worker, location.paneId, name, call);
+      await this.finishStartup(worker, call);
       handle.removeLaunchAbort?.();
 
       await this.renameWorkerPane(handle);
     } catch (error) {
       const reason = remainingWorkBudget(handle) <= 0 ? 'timeout' : 'failure';
 
-      await this.stop(handle, reason, this.startupFailureDetail(handle, error));
+      await worker.stop(reason, this.startupFailureDetail(handle, error));
     }
 
     return this.status(prepared.taskId, input.parentSessionId);
@@ -1118,7 +1006,7 @@ export class WorkerController {
 
     if (this.live.size >= this.capacity) {
       const workers = [...this.live].map((id) => {
-        const live = this.handles.get(id)?.task;
+        const live = this.workers.get(id)?.handle.task;
 
         return live ? `${live.name ?? id} until ${new Date(live.deadline).toISOString()}` : id;
       });
@@ -1146,12 +1034,15 @@ export class WorkerController {
     prepareTaskDirectory(directory, task, Boolean(source));
     this.live.add(taskId);
 
-    const handle = this.createHandle(directory, task, timing.expires);
+    const worker = new TaskController(
+      createHandle(directory, task, timing.expires),
+      this.taskContext,
+    );
 
-    this.handles.set(taskId, handle);
-    this.armHandle(handle, launchSignal);
+    this.workers.set(taskId, worker);
+    worker.arm(launchSignal);
 
-    return { taskId, handle, name };
+    return { taskId, worker, name };
   }
 
   private async readAgentListing(
@@ -1197,39 +1088,9 @@ export class WorkerController {
     });
   }
 
-  private createHandle(directory: string, task: Task, expires: number): Handle {
-    return {
-      directory,
-      task,
-      abort: new AbortController(),
-      expires,
-      identity: {},
-      startup: { neverStarted: true },
-      observation: { notifiedQuestions: new Set() },
-      cleanup: { recordErrors: [] },
-    };
-  }
+  private async finishStartup(worker: TaskController, call: TerminalCall): Promise<void> {
+    const { handle } = worker;
 
-  private armHandle(handle: Handle, launchSignal: AbortSignal): void {
-    const abortLaunch = () => {
-      void this.stop(handle, 'cancelled');
-    };
-
-    launchSignal.addEventListener('abort', abortLaunch, { once: true });
-
-    handle.removeLaunchAbort = () => {
-      launchSignal.removeEventListener('abort', abortLaunch);
-    };
-
-    handle.timer = setTimeout(
-      () => {
-        void this.stop(handle, 'timeout');
-      },
-      Math.max(1, remainingWorkBudget(handle)),
-    );
-  }
-
-  private async finishStartup(handle: Handle, call: TerminalCall): Promise<void> {
     if (!isPiLoadout(handle.task.loadout)) {
       if (handle.startup.error !== undefined && (await verifyRejectedStart(handle, call))) {
         handle.startup.neverStarted = true;
@@ -1238,7 +1099,7 @@ export class WorkerController {
         );
       }
 
-      await this.pollGeneric(handle);
+      await worker.pollGeneric();
 
       return;
     }
@@ -1253,8 +1114,8 @@ export class WorkerController {
     }
 
     handle.abort.signal.throwIfAborted();
-    await this.dispatch(handle, call);
-    this.poll(handle);
+    await worker.dispatch(call);
+    worker.poll();
   }
 
   private startupFailureDetail(handle: Handle, error: unknown): string {
@@ -1267,402 +1128,15 @@ export class WorkerController {
       : `Startup delivery is uncertain; no automatic retry. ${String(error)}`;
   }
 
-  private poll(handle: Handle): void {
-    if (this.closed || handle.cleanup.stopping) {
-      return;
-    }
-
-    if (handle.timer) {
-      clearTimeout(handle.timer);
-    }
-
-    handle.timer = setTimeout(
-      () => {
-        this.pollOnce(handle);
-      },
-      Math.max(
-        1,
-        Math.min(isGenericLoadout(handle.task.loadout) ? 1500 : 250, remainingWorkBudget(handle)),
-      ),
-    );
-  }
-
-  private pollOnce(handle: Handle): void {
-    if (isGenericLoadout(handle.task.loadout)) {
-      void this.pollGeneric(handle);
-
-      return;
-    }
-
-    try {
-      if (remainingWorkBudget(handle) <= 0) {
-        void this.stop(handle, 'timeout');
-
-        return;
-      }
-
-      const settled =
-        readEvent(handle.directory, handle.task.taskId, 'settled') !== undefined ||
-        readEvent(handle.directory, handle.task.taskId, 'startupFailure') !== undefined;
-
-      const absent =
-        handle.identity.owned !== undefined && processAbsent(handle.identity.owned.processId);
-
-      if (settled || absent) {
-        void this.stop(handle, 'completion');
-
-        return;
-      }
-
-      this.notifyPendingQuestion(handle);
-      this.poll(handle);
-    } catch (error) {
-      void this.stop(handle, 'failure', `Worker evidence unavailable: ${String(error)}. No retry.`);
-    }
-  }
-
-  private notifyPendingQuestion(handle: Handle): void {
-    const question = readPendingQuestion(handle.directory, handle.task.taskId);
-
-    if (question && !handle.observation.notifiedQuestions.has(question.questionId)) {
-      handle.observation.notifiedQuestions.add(question.questionId);
-      this.notifySnapshot(handle, { question: true });
-    }
-  }
-
-  private async pollGeneric(handle: Handle): Promise<void> {
-    if (this.closed || handle.cleanup.stopping) {
-      return;
-    }
-
-    try {
-      await this.pollGenericOnce(handle);
-    } catch (error) {
-      // oxlint-disable-next-line typescript/no-unnecessary-condition -- Awaited calls can stop the handle or controller before this catch runs.
-      if (handle.cleanup.stopping !== undefined || this.closed) {
-        return;
-      }
-
-      this.reportNativeObservationIssue(handle, error);
-      this.poll(handle);
-    }
-  }
-
-  private async pollGenericOnce(handle: Handle): Promise<void> {
-    if (remainingWorkBudget(handle) <= 0) {
-      await this.stop(handle, 'timeout');
-
-      return;
-    }
-
-    if (await this.stopOnAcceptedReport(handle)) {
-      return;
-    }
-
-    if (handle.identity.owned && processAbsent(handle.identity.owned.processId)) {
-      await this.stop(handle, 'completion');
-
-      return;
-    }
-
-    const call = this.herdrCall(handle);
-    const previousState = handle.observation.nativeState;
-
-    handle.identity.owned = await inspectWorker(handle, call);
-    delete handle.observation.issue;
-    this.notifyNativeState(handle, previousState);
-
-    await this.dispatch(handle, call);
-    this.poll(handle);
-  }
-
-  private async stopOnAcceptedReport(handle: Handle): Promise<boolean> {
-    try {
-      if (!acceptGenericReport(handle.directory, handle.task)) {
-        return false;
-      }
-    } catch (error) {
-      recordNativeIssue(handle, 'nativeFailure.json', error);
-      await this.stop(handle, 'completion');
-
-      return true;
-    }
-
-    await this.stop(handle, 'completion');
-
-    return true;
-  }
-
-  private notifyNativeState(handle: Handle, previousState: string | undefined): void {
-    const blocked = ['blocked', 'unknown'].includes(handle.observation.nativeState ?? 'unknown');
-
-    if (handle.observation.nativeState !== previousState && blocked) {
-      this.notifySnapshot(handle);
-    }
-  }
-
-  private reportNativeObservationIssue(handle: Handle, error: unknown): void {
-    // One notice per unresolved observation episode. A successful inspection deletes the issue,
-    // so the next genuine failure notifies again while changing diagnostics stay quiet.
-    const firstIssue = handle.observation.issue === undefined;
-
-    recordNativeIssue(handle, 'nativeObservation-error.json', error);
-    handle.observation.nativeState = 'unknown';
-
-    if (firstIssue) {
-      this.notifySnapshot(handle);
-    }
-  }
-
-  private stop(
-    handle: Handle,
-    reason: 'timeout' | 'cancelled' | 'completion' | 'failure',
-    failureDetail = 'Worker lifecycle failed; saved evidence may be incomplete. No retry.',
-  ): Promise<void> {
-    if (handle.cleanup.stopping) {
-      return handle.cleanup.stopping;
-    }
-
-    if (handle.timer) {
-      clearTimeout(handle.timer);
-    }
-
-    handle.removeLaunchAbort?.();
-    handle.abort.abort();
-
-    // A report published between polls must be saved before cleanup can close its pane.
-    if (isGenericLoadout(handle.task.loadout)) {
-      try {
-        acceptGenericReport(handle.directory, handle.task);
-      } catch (error) {
-        recordNativeIssue(handle, 'nativeFailure.json', error);
-      }
-    }
-
-    try {
-      if (readEvent(handle.directory, handle.task.taskId, 'stopping') === undefined) {
-        recordEvent(
-          handle.directory,
-          handle.task.taskId,
-          'stopping',
-          'Parent started bounded cleanup.',
-        );
-      }
-    } catch (error) {
-      handle.cleanup.recordErrors.push(String(error));
-    }
-
-    const cleaned = this.cleanup(handle, reason, failureDetail);
-
-    handle.cleanup.stopping = Promise.allSettled([cleaned])
-      .then(() => {
-        this.live.delete(handle.task.taskId);
-
-        // Keep sharing intact until cleanup finishes, including its queued topology change.
-        // Unconfirmed cleanup must still stop contributing placement candidates.
-        if (handle.identity.terminalId != null) {
-          this.placement.release(handle.identity.terminalId);
-        }
-
-        // Report the cleanup failure only once placement cleanup finishes.
-        return cleaned;
-      })
-      .catch((error: unknown) => {
-        handle.cleanup.recordErrors.push(String(error));
-
-        if (this.closed) {
-          return;
-        }
-
-        this.notifySnapshot(handle);
-      });
-
-    return handle.cleanup.stopping;
-  }
-
-  private cleanupFailureDetail(handle: Handle, failureDetail: string): string {
-    if (handle.startup.neverStarted && handle.startup.error !== undefined) {
-      return `Startup was rejected or exited before dispatch; worker absence confirmed. No automatic retry. ${handle.startup.error}`;
-    }
-
-    return failureDetail;
-  }
-
-  private async recoverStartup(
-    handle: Handle,
-    call: TerminalCall,
-    budget: InspectionBudget,
-    record: (operation: () => void) => void,
-  ): Promise<string> {
-    if (handle.startup.neverStarted || handle.identity.owned) {
-      return '';
-    }
-
-    try {
-      if (handle.startup.starting) {
-        // The start usually settles first; an unreferenced timer never holds the process open.
-        await Promise.race([
-          handle.startup.starting.catch(() => undefined),
-          delay(budget.remainingBudget(), undefined, { signal: budget.signal, ref: false }),
-        ]);
-      }
-
-      handle.startup.neverStarted = await verifyRejectedStart(handle, call, budget);
-
-      if (!handle.startup.neverStarted) {
-        if (isPiLoadout(handle.task.loadout)) {
-          handle.identity.owned = await waitForPiIdentity(handle, call, budget);
-
-          record(() => {
-            publish(handle.directory, 'owned.json', handle.identity.owned);
-          });
-        } else {
-          handle.identity.owned = await inspectWorker(handle, call, budget);
-        }
-      }
-
-      return '';
-    } catch (error) {
-      // A worker that left its bare shell before herdr reported its session has nothing left to stop.
-      if (error instanceof WorkerExitedError) {
-        handle.startup.neverStarted = true;
-
-        return '';
-      }
-
-      return ` Cleanup inspection failed: ${String(error)}`;
-    }
-  }
-
-  private async cleanup(
-    handle: Handle,
-    reason: 'timeout' | 'cancelled' | 'completion' | 'failure',
-    failureDetail: string,
-  ): Promise<void> {
-    // Receipt failures must never prevent the bounded stop attempt or hide later recording errors.
-    const record = (operation: () => void) => {
-      try {
-        operation();
-      } catch (error) {
-        handle.cleanup.recordErrors.push(String(error));
-      }
-    };
-
-    const budget = Math.max(1, remainingCleanupBudget(handle));
-    const expires = Math.min(handle.expires, performance.now() + budget);
-    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(budget)]);
-
-    const remainingBudget = () => {
-      signal.throwIfAborted();
-      const remaining = Math.floor(expires - performance.now());
-
-      if (remaining <= 0) {
-        throw new Error('Original cleanup budget expired.');
-      }
-
-      return remaining;
-    };
-
-    const call = (argumentsList: string[]) => this.client(argumentsList, remainingBudget(), signal);
-
-    const inspectionFailure = await this.recoverStartup(
-      handle,
-      call,
-      { remainingBudget, signal },
-      record,
-    );
-
-    let stopped = handle.startup.neverStarted;
-    let detail = cleanupDetail(handle, stopped) + inspectionFailure;
-
-    if (stopped && handle.identity.shell && handle.identity.terminalId != null) {
-      const closedPane = await closeUnstartedPane({
-        handle,
-        call,
-        remainingBudget,
-        signal,
-        placement: this.placement,
-      });
-
-      stopped = closedPane.stopped;
-      handle.startup.neverStarted = stopped;
-      detail = closedPane.detail;
-    }
-
-    if (handle.identity.owned) {
-      const stoppedWorker = await stopOwnedWorker({
-        handle,
-        owned: handle.identity.owned,
-        call,
-        remainingBudget,
-        signal,
-        placement: this.placement,
-        client: this.client,
-      });
-
-      stopped = stoppedWorker.stopped;
-      detail = stoppedWorker.detail;
-    }
-
-    if (handle.cleanup.shutdownReason) {
-      detail = `Parent session ${handle.cleanup.shutdownReason}. ${detail}`;
-    }
-
-    const failure = this.cleanupFailureDetail(handle, failureDetail);
-
-    handle.cleanup.detail = reason === 'failure' ? `${detail} ${failure}` : detail;
-    this.recordCleanupEvents({ handle, reason, failureDetail: failure, detail, stopped, record });
-
-    this.notifyCleanup(handle, record);
-  }
-
-  private recordCleanupEvents(request: CleanupOutcomeRequest): void {
-    const { handle, reason, failureDetail, detail, stopped, record } = request;
-    const { directory, task } = handle;
-
-    record(() => {
-      if (reason === 'timeout' || reason === 'cancelled') {
-        if (readEvent(directory, task.taskId, reason) === undefined) {
-          recordEvent(directory, task.taskId, reason, {
-            detail: `Parent requested ${reason}. ${detail}`,
-            stopped,
-          });
-        }
-      } else if (reason === 'failure' && !readEvent(directory, task.taskId, 'startupFailure')) {
-        recordEvent(directory, task.taskId, 'startupFailure', failureDetail);
-      }
-    });
-
-    record(() => {
-      recordEvent(directory, task.taskId, 'cleanup', { detail, stopped });
-    });
-  }
-
-  private notifyCleanup(handle: Handle, record: (operation: () => void) => void): void {
-    if (this.closed) {
-      return;
-    }
-
-    const { directory, task } = handle;
-
-    record(() => {
-      recordEvent(directory, task.taskId, 'notified', 'Parent notification attempted once.');
-    });
-
-    this.notifySnapshot(handle);
-  }
-
   // Freeze admission before snapshotting handles, but keep cleanup's lifetime signal active.
   async stopAll(reason: SessionShutdownEvent['reason'] = 'quit'): Promise<void> {
     this.closed = true;
 
-    for (const handle of this.handles.values()) {
-      handle.cleanup.shutdownReason = reason;
+    for (const worker of this.workers.values()) {
+      worker.handle.cleanup.shutdownReason = reason;
     }
 
-    await Promise.allSettled(
-      [...this.handles.values()].map((handle) => this.stop(handle, 'cancelled')),
-    );
+    await Promise.allSettled([...this.workers.values()].map((worker) => worker.stop('cancelled')));
 
     this.close();
   }
@@ -1675,26 +1149,8 @@ export class WorkerController {
     this.closed = true;
     this.lifetime.abort();
 
-    for (const handle of this.handles.values()) {
-      clearTimeout(handle.timer);
-      handle.removeLaunchAbort?.();
-      handle.abort.abort();
-
-      if (handle.cleanup.stopping) {
-        continue;
-      }
-
-      // A waiting worker cannot receive a reply from a later controller, so it must stop waiting.
-      try {
-        recordEvent(
-          handle.directory,
-          handle.task.taskId,
-          'parentClosed',
-          'Parent controller closed. Replies are no longer possible.',
-        );
-      } catch (error) {
-        handle.cleanup.recordErrors.push(String(error));
-      }
+    for (const worker of this.workers.values()) {
+      worker.close();
     }
   }
 }
