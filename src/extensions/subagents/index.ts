@@ -147,6 +147,7 @@ const hasHerdrParentPane = (): boolean =>
 const delegationGuidelines = [
   'You are the manager. You own the plan, the user conversation, acceptance criteria, integration, and commits. Launch workers for implementation, investigation, and review on your own; do not wait for the user to ask.',
   'Send non-trivial implementation, meaning more than a small local edit or anything that needs new tests, to a `worker` subagent. Send open questions that need wide reading or running commands to a `scout`. Send a finished worker change to a `reviewer` before you accept or commit it.',
+  'Also send a finished change with user-visible behavior to `qa`, which uses the app as a user would. It expects the user to run the app from the worktree under test. Tell it where that app runs, and when it asks, ask the user. Give it only test-account credentials, never real ones, because worker records keep them.',
   'Do the work yourself when it is a question you can answer with a quick look, a small or obvious edit, worker coordination, or needs back-and-forth with the user. Follow any explicit user instruction about delegation.',
   'While subagent workers run, do not edit their worktree or redo their work.',
   'Treat a worker report as a claim. Check its evidence before you tell the user the work is done.',
@@ -399,7 +400,7 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
     label: 'Launch worker',
     description: [
       'Launch a herdr worker. Requires task, profile, permissions; cwd must match this session.',
-      'Built-in profiles: scout, worker, reviewer, each with a default Pi model. Pi is the default harness.',
+      'Built-in profiles: scout, worker, reviewer, qa, each with a default Pi model. Pi is the default harness.',
       'Pi needs trusted-full-tools and CC Safety Net.',
       'Set harness for a non-Pi kind; Pi workers refuse nativeArguments.',
       'Other harnesses need native-controls and writable cwd/.tau/workers/<taskId>/report.md.',

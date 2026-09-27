@@ -681,6 +681,7 @@ it('defaults the launch timeout by profile role and keeps an explicit timeout', 
   for (const launchInput of [
     { ...input, profile: 'scout' },
     { ...input, profile: 'reviewer' },
+    { ...input, profile: 'qa' },
     { ...input, profile: 'worker' },
     { ...input, profile: 'worker', timeoutSeconds: 10 },
   ]) {
@@ -689,7 +690,7 @@ it('defaults the launch timeout by profile role and keeps an explicit timeout', 
   }
 
   expect(launch.mock.calls.map(([launchInput]) => launchInput.timeout)).toEqual([
-    1_800_000, 1_800_000, 3_600_000, 10_000,
+    1_800_000, 1_800_000, 1_800_000, 3_600_000, 10_000,
   ]);
 });
 

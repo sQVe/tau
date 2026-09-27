@@ -151,7 +151,7 @@ it('defaults bundled profiles to a model that the environment and custom profile
   runtime.registerNativeProvider(fauxProvider({ provider: 'tau-worker-fixture' }).provider);
   const withBundled = { ...context, modelRegistry: new ModelRegistry(runtime) };
 
-  for (const name of ['scout', 'worker', 'reviewer']) {
+  for (const name of ['scout', 'worker', 'reviewer', 'qa']) {
     const launch = { profile: name, permissions: 'trusted-full-tools' };
 
     expect(asPiLoadout(resolveLoadout(launch, withBundled)).model).toBe(
@@ -297,17 +297,20 @@ it('refuses worker startup without the saved model, cwd, or CC Safety Net and ac
   expect(setActiveTools).toHaveBeenCalledOnce();
 });
 
-it('launches the bundled reviewer without editing responsibility', async ({ onTestFinished }) => {
-  const { context, request } = await workerFixture(onTestFinished);
+it.for(['reviewer', 'qa'])(
+  'launches the bundled %s without editing responsibility',
+  async (name, { onTestFinished }) => {
+    const { context, request } = await workerFixture(onTestFinished);
 
-  expect(resolveLoadout({ ...request, profile: 'reviewer' }, context)).toMatchObject({
-    profile: 'reviewer',
-    role: 'investigation',
-  });
-});
+    expect(resolveLoadout({ ...request, profile: name }, context)).toMatchObject({
+      profile: name,
+      role: 'investigation',
+    });
+  },
+);
 
 it('defaults bundled roles to medium effort without effort settings in markdown', () => {
-  for (const name of ['scout', 'worker', 'reviewer']) {
+  for (const name of ['scout', 'worker', 'reviewer', 'qa']) {
     const source = new URL(`./profiles/${name}.md`, import.meta.url);
     const content = readFileSync(source, 'utf8');
 
