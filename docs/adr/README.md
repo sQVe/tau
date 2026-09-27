@@ -72,3 +72,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0048: Keep the bare repository root read-only for agents](./0048-keep-the-bare-repository-root-read-only-for-agents.md)
 - [0049: Treat the bash commit guard as guidance](./0049-treat-the-bash-commit-guard-as-guidance.md)
 - [0050: Split worker control into a coordinator and one controller per worker](./0050-split-worker-control-into-a-coordinator-and-one-controller-per-worker.md)
+- [0051: Note the bare root rule instead of enforcing it](./0051-note-the-bare-root-rule-instead-of-enforcing-it.md)
