@@ -1931,6 +1931,29 @@ it('refuses follow-up without writes when a newer Tau record names the same pred
   expect(fixture.calls).toEqual([['agent', 'list']]);
 });
 
+it('refuses follow-up without writes when a current task that looks retired names the same predecessor', async () => {
+  const fixture = await completed();
+  const directory = join(fixture.directory, 'malformed');
+  mkdirSync(directory);
+
+  records.publish(directory, 'task.json', {
+    ...fixture.source,
+    taskId: 'malformed',
+    predecessorTaskId: fixture.source.taskId,
+    parentTaskId: 'ancestor',
+  });
+
+  const saved = savedFiles(fixture.directory);
+  fixture.calls.length = 0;
+
+  await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+    'Cannot verify saved follow-up attempts',
+  );
+
+  expect(savedFiles(fixture.directory)).toEqual(saved);
+  expect(fixture.calls).toEqual([['agent', 'list']]);
+});
+
 it('refuses follow-up of a malformed source task ID without writes', async () => {
   const fixture = await completed();
   const saved = savedFiles(fixture.directory);

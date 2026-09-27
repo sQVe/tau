@@ -205,9 +205,10 @@ it('skips tasks saved in a retired format without blocking current tasks', () =>
     },
   };
 
+  // Every retired format predates version 3.
   for (const [taskId, saved] of Object.entries(retired)) {
     mkdirSync(join(root, taskId));
-    writeFileSync(join(root, taskId, 'task.json'), JSON.stringify(saved));
+    writeFileSync(join(root, taskId, 'task.json'), JSON.stringify({ ...saved, version: 1 }));
   }
 
   const diagnostics: string[] = [];

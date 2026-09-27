@@ -237,8 +237,14 @@ export const validateTask = (value: unknown): Task => {
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
-const isNewerTask = (value: unknown): boolean =>
-  isObjectRecord(value) && typeof value.version === 'number' && value.version > taskVersion;
+const savedVersion = (value: unknown): unknown =>
+  isObjectRecord(value) ? value.version : undefined;
+
+const isNewerTask = (value: unknown): boolean => {
+  const version = savedVersion(value);
+
+  return typeof version === 'number' && version > taskVersion;
+};
 
 const newerTaskNotice = 'saved by a newer Tau; restart this session to read it.';
 
@@ -295,7 +301,14 @@ const isRetiredHarness = (
 };
 
 // Records from before the current saved format are never read, but they must not block unrelated tasks.
+// Every retired format predates version 3, so a current or newer record is never retired.
 const isRetiredTask = (value: unknown): boolean => {
+  const version = savedVersion(value);
+
+  if (typeof version === 'number' && version >= taskVersion) {
+    return false;
+  }
+
   if (!isObjectRecord(value) || !('loadout' in value)) {
     return false;
   }
@@ -325,15 +338,16 @@ const readSkippedTask = (directory: string): unknown => {
 
 const diagnoseSkippedTask = (directory: string, error: unknown, notices: ScanNotices): void => {
   const saved = readSkippedTask(directory);
-  const newer = isNewerTask(saved);
 
-  if (!newer && isRetiredTask(saved)) {
+  if (isRetiredTask(saved)) {
     notices.skipped.push(
       `Skipped task ${basename(directory)} saved in a retired format; start a fresh task instead.`,
     );
 
     return;
   }
+
+  const newer = isNewerTask(saved);
 
   const diagnostic = newer
     ? `Skipped task ${basename(directory)} ${newerTaskNotice}`
