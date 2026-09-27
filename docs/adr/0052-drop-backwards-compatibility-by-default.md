@@ -40,8 +40,8 @@ users still counts as published.
 ### Repository decisions win
 
 A repository convention that already decides compatibility applies without asking, through the
-preamble of the coding instructions. ADR 0003 keeps externally observable names stable, and the
-records policy that ME-441 sets governs saved records.
+preamble of the coding instructions. ADR 0003 keeps externally observable names stable, and
+[ADR 0053](./0053-version-each-saved-record-format.md) governs saved records.
 
 ### Stay within the task
 
