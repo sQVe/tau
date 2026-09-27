@@ -19,6 +19,15 @@ and repository conventions when they differ from these defaults.
 - Parse untrusted values once at the boundary and pass trusted types inward.
 - Check each reason to reject in its own guard, with its own error message.
 
+## Drop backwards compatibility by default
+
+- When you change an interface, update its callers in the repository and delete the old path.
+- Do not keep deprecated aliases, optional parameters for the old call shape, branches that read old
+  config keys, or re-exports of moved symbols.
+- Ask before you choose when something outside the repository may use the old surface: a published
+  package, API, or CLI, a config file users own, or data an earlier version saved.
+- If deleting the old path is outside the task, say so instead of silently keeping both paths.
+
 ## Keep functions small
 
 - One function, one job. Split anything that does two.
