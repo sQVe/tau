@@ -5,14 +5,14 @@
 
 ## Context
 
-Agents add backwards compatibility without being asked: a deprecated alias next to a renamed
-function, an optional parameter for the old call shape, or a branch that still reads an old config
-key. When every caller is in the repository, these paths serve no one, and nobody removes them
-later.
-
-Some surfaces do have users the agent cannot see. Published packages have npm users, and users type
-CLI commands and write config files. Records written by one Tau version are read by another (ADR
-0045). Deleting the old path there breaks something outside the checkout.
+- Agents add backwards compatibility without being asked: a deprecated alias next to a renamed
+  function, an optional parameter for the old call shape, or a branch that still reads an old config
+  key.
+- When every caller is in the repository, these paths serve no one, and nobody removes them later.
+- Some surfaces have users the agent cannot see. Published packages have npm users, and users type
+  CLI commands and write config files.
+- Records written by one Tau version are read by another (ADR 0045).
+- Deleting the old path on these surfaces breaks something outside the checkout.
 
 ## Options considered
 
