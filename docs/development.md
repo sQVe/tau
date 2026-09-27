@@ -95,11 +95,11 @@ default.
 
 ### Workers
 
-The bundled `scout`, `worker`, and `reviewer` profiles default to `claude-bridge/claude-opus-5-5`.
-Set `TAU_SUBAGENT_MODEL=provider/model-id` to replace that default, or to choose the model for a
-user or project profile that names none. A launch `model` overrides both, and a model in a user or
-project profile overrides the setting. Without any model, worker launch refuses; it never falls back
-to the parent's model. See the
+The bundled `scout`, `worker`, `reviewer`, and `qa` profiles default to
+`claude-bridge/claude-opus-5-5`. Set `TAU_SUBAGENT_MODEL=provider/model-id` to replace that default,
+or to choose the model for a user or project profile that names none. A launch `model` overrides
+both, and a model in a user or project profile overrides the setting. Without any model, worker
+launch refuses; it never falls back to the parent's model. See the
 [default decision](adr/0047-default-bundled-worker-profiles-to-opus-5-5.md).
 
 A launch without `timeoutSeconds` gets 30 minutes for investigation profiles and 60 minutes for

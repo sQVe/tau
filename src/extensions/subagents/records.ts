@@ -149,7 +149,7 @@ export const readOptionalRecord = (directory: string, name: string): unknown => 
   }
 };
 
-const builtInProfiles = new Set(['worker', 'scout', 'reviewer']);
+const builtInProfiles = new Set(['worker', 'scout', 'reviewer', 'qa']);
 
 // Custom profiles can have any name, so they fall back to the role prefix.
 export const namePrefix = (loadout: Loadout): string => {

@@ -2387,18 +2387,21 @@ it('retains friendly names and avoids retained and live collisions', async ({ on
   recovered.close();
 });
 
-it('names a reviewer launch after its profile', async ({ onTestFinished }) => {
-  vi.spyOn(names, 'nameSuffix').mockReturnValue('aa');
-  const { controller, input, calls } = setup(onTestFinished);
+it.for(['reviewer', 'qa'])(
+  'names a %s launch after its profile',
+  async (profile, { onTestFinished }) => {
+    vi.spyOn(names, 'nameSuffix').mockReturnValue('aa');
+    const { controller, input, calls } = setup(onTestFinished);
 
-  const status = await controller.launch({
-    ...input,
-    loadout: { ...input.loadout, profile: 'reviewer', role: 'investigation' },
-  });
+    const status = await controller.launch({
+      ...input,
+      loadout: { ...input.loadout, profile, role: 'investigation' },
+    });
 
-  expect(readTask(status.directory).name).toBe('reviewer-aa');
-  expect(calls.find((call) => call[1] === 'start')?.[2]).toBe('reviewer-aa');
-});
+    expect(readTask(status.directory).name).toBe(`${profile}-aa`);
+    expect(calls.find((call) => call[1] === 'start')?.[2]).toBe(`${profile}-aa`);
+  },
+);
 
 it('names a custom profile launch after its role', async ({ onTestFinished }) => {
   vi.spyOn(names, 'nameSuffix').mockReturnValue('aa');
