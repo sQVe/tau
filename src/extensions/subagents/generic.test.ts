@@ -44,7 +44,7 @@ const fixture = () => {
   mkdirSync(records);
 
   const task: Task = {
-    version: 2,
+    version: 3,
     taskId: 'full-task-id',
     task: 'Inspect.',
     parentSession: join(directory, 'parent.jsonl'),

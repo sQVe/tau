@@ -24,7 +24,7 @@ const fixture = () => {
   });
 
   const task: NativeTask = {
-    version: 1,
+    version: 3,
     taskId: 'task',
     task: 'Inspect.',
     parentSession: join(directory, 'parent.jsonl'),

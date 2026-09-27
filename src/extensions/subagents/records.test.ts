@@ -46,7 +46,7 @@ const questionFixture = () => {
   });
 
   const task = {
-    version: 1,
+    version: 3,
     taskId: 'task-one',
     task: 'Inspect source.',
     parentSession: join(directory, 'parent.jsonl'),
@@ -205,9 +205,10 @@ it('skips tasks saved in a retired format without blocking current tasks', () =>
     },
   };
 
+  // Every retired format predates version 3.
   for (const [taskId, saved] of Object.entries(retired)) {
     mkdirSync(join(root, taskId));
-    writeFileSync(join(root, taskId, 'task.json'), JSON.stringify(saved));
+    writeFileSync(join(root, taskId, 'task.json'), JSON.stringify({ ...saved, version: 1 }));
   }
 
   const diagnostics: string[] = [];
@@ -221,6 +222,89 @@ it('skips tasks saved in a retired format without blocking current tasks', () =>
       (taskId) => `Skipped task ${taskId} saved in a retired format; start a fresh task instead.`,
     ),
   );
+});
+
+const taskRecordFixture = (name: string): string =>
+  readFileSync(new URL(`./fixtures/taskRecords/${name}.json`, import.meta.url), 'utf8');
+
+const parsedTaskRecordFixture = (name: string): Record<string, unknown> => {
+  const value: unknown = JSON.parse(taskRecordFixture(name));
+
+  if (typeof value !== 'object' || value === null) {
+    throw new Error(`Task record fixture ${name} is not an object.`);
+  }
+
+  return { ...value };
+};
+
+const saveTaskRecordFixtures = (names: string[]) => {
+  const { directory } = questionFixture();
+  const root = join(directory, 'registry');
+
+  for (const name of names) {
+    mkdirSync(join(root, name), { recursive: true });
+    writeFileSync(join(root, name, 'task.json'), taskRecordFixture(name));
+  }
+
+  return root;
+};
+
+it('reads task records saved in the previous and current formats', () => {
+  const names = ['previous-pi', 'previous-generic', 'current-pi', 'current-generic'];
+  const root = saveTaskRecordFixtures(names);
+  const diagnostics: string[] = [];
+
+  const scanned = records.readTasks(root, diagnostics);
+
+  expect(diagnostics).toEqual([]);
+
+  expect(
+    scanned.map(({ task }) => task).toSorted((a, b) => a.taskId.localeCompare(b.taskId)),
+  ).toEqual(
+    names.toSorted().map((name) => Object.assign(parsedTaskRecordFixture(name), { version: 3 })),
+  );
+});
+
+it('skips a task saved by a newer Tau and asks for a restart', () => {
+  const root = saveTaskRecordFixtures(['current-pi', 'newer']);
+  const diagnostics: string[] = [];
+  const skipped: string[] = [];
+
+  const scanned = records.readTasks(root, diagnostics, skipped);
+
+  expect(scanned.map(({ task }) => task.taskId)).toEqual(['current-pi']);
+  expect(diagnostics).toEqual([]);
+
+  expect(skipped).toEqual([
+    'Skipped task newer saved by a newer Tau; restart this session to read it.',
+  ]);
+
+  expect(() => records.readTask(join(root, 'newer'))).toThrow('restart this session');
+  expect(readFileSync(join(root, 'newer', 'task.json'), 'utf8')).toBe(taskRecordFixture('newer'));
+});
+
+it('asks for a restart when a newer task lacks fields of a retired format', () => {
+  const root = saveTaskRecordFixtures(['newer']);
+  const { monotonicDeadline: _dropped, ...newer } = parsedTaskRecordFixture('newer');
+  writeFileSync(join(root, 'newer', 'task.json'), JSON.stringify(newer));
+  const skipped: string[] = [];
+
+  expect(records.readTasks(root, [], skipped)).toEqual([]);
+
+  expect(skipped).toEqual([
+    'Skipped task newer saved by a newer Tau; restart this session to read it.',
+  ]);
+});
+
+it('diagnoses a current-format task record with an unknown field', () => {
+  const root = saveTaskRecordFixtures(['current-pi', 'malformed']);
+  const diagnostics: string[] = [];
+
+  const scanned = records.readTasks(root, diagnostics, []);
+
+  expect(scanned.map(({ task }) => task.taskId)).toEqual(['current-pi']);
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toContain(join(root, 'malformed'));
 });
 
 it('reads a task saved before investigators were renamed to scouts', () => {

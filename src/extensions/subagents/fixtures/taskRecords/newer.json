@@ -1,0 +1,26 @@
+{
+  "version": 4,
+  "taskId": "newer",
+  "name": "scout-ab",
+  "task": "Inspect source.",
+  "parentSession": "/work/parent.jsonl",
+  "parentSessionId": "parent-one",
+  "createdAt": 1000,
+  "deadline": 20000,
+  "cancellationBudget": 1000,
+  "monotonicDeadline": 20000,
+  "nativeSessionId": "native-newer",
+  "nativeSessionFile": "/work/agent/newer.jsonl",
+  "loadout": {
+    "harness": "pi",
+    "profile": "scout",
+    "role": "investigation",
+    "model": "faux/test",
+    "thinking": "off",
+    "cwd": "/work",
+    "agentDirectory": "/work/agent",
+    "permissions": "trusted-full-tools",
+    "instructions": "Inspect the assigned source."
+  },
+  "futureField": "saved by a newer Tau"
+}

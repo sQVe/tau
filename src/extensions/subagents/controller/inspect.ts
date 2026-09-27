@@ -12,7 +12,7 @@ import { matchesWorker, processAbsent, runClient } from '../cancellation.js';
 import type { OwnedWorker } from '../cancellation.js';
 import { readGenericReference, prepareGenericReport } from '../generic.js';
 import { seedSession } from '../profiles.js';
-import { publish, readEvent } from '../records.js';
+import { publish, publishRecord, readEvent } from '../records.js';
 import { requireObject, resolveTerminal, result, text } from '../terminal.js';
 import { isGenericLoadout, isPiLoadout, nativeAgentStates, requireNativeTask } from '../types.js';
 import type { GenericLoadout, NativeAgentState, Task, TaskEvent } from '../types.js';
@@ -478,7 +478,7 @@ export const waitForPiIdentity = async (
 export const prepareTaskDirectory = (directory: string, task: Task, continued: boolean): void => {
   try {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-    publish(directory, 'task.json', task);
+    publishRecord(directory, 'task.json', task);
 
     // Native harnesses own their conversations; only Pi sessions are seeded with Tau lineage.
     if (isGenericLoadout(task.loadout)) {

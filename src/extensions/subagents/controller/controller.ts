@@ -25,7 +25,7 @@ import {
 } from '../records.js';
 import { result } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
-import { isGenericLoadout, isPiLoadout, isTaskId } from '../types.js';
+import { isGenericLoadout, isPiLoadout, isTaskId, taskVersion } from '../types.js';
 import type { Task } from '../types.js';
 import type { WorkerWidgetRow } from '../widget.js';
 import {
@@ -602,7 +602,7 @@ export class WorkerController {
 
   private buildTask(input: LaunchInput, plan: LaunchTaskPlan): Task {
     return validateTask({
-      version: isGenericLoadout(input.loadout) ? 2 : 1,
+      version: taskVersion,
       name: `${namePrefix(input.loadout)}-00`,
       ...(input.label === undefined ? {} : { label: input.label }),
       taskId: plan.taskId,

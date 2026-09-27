@@ -77,7 +77,7 @@ const setup = () => {
     );
 
     const record = validateTask({
-      version: 1,
+      version: 3,
       taskId: id,
       task: large ? `${'界'.repeat(10000)} needle-tail` : 'Inspect shared source.',
       ...(name != null ? { name } : {}),
@@ -562,7 +562,7 @@ it('carries derived state for generic task candidates without inventing native s
   mkdirSync(taskDirectory);
 
   const record = validateTask({
-    version: 2,
+    version: 3,
     taskId: 'generic-one',
     task: 'Inspect shared source.',
     parentSession: fixture.child,

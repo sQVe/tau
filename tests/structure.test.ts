@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, it } from 'vitest';
 
+import { versionedRecords } from '../src/extensions/subagents/records.js';
+
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 const sourceFiles = readdirSync(join(root, 'src'), { recursive: true, encoding: 'utf8' })
@@ -27,6 +29,34 @@ it('names each source test after the module beside it', () => {
   });
 
   expect(unmatched).toEqual([]);
+});
+
+it('gives every versioned record schema a format version', () => {
+  const unversioned = Object.entries(versionedRecords).filter(([, schema]) => {
+    const variants: unknown[] = 'anyOf' in schema ? schema.anyOf : [schema];
+
+    return !variants.every((variant) =>
+      Number.isInteger(
+        (variant as { properties?: { version?: { const?: unknown } } }).properties?.version?.const,
+      ),
+    );
+  });
+
+  expect(unversioned.map(([name]) => name)).toEqual([]);
+});
+
+it('writes versioned records only through publishRecord', () => {
+  const rawWrites = sourceFiles
+    .filter((path) => !isTest(path) && !isFixture(path))
+    .filter((path) => {
+      const source = readFileSync(join(root, path), 'utf8');
+
+      return Object.keys(versionedRecords).some((name) =>
+        new RegExp(String.raw`\bpublish\([^)]*'${name.replace('.', String.raw`\.`)}'`).test(source),
+      );
+    });
+
+  expect(rawWrites).toEqual([]);
 });
 
 it('keeps fixtures out of production modules', () => {

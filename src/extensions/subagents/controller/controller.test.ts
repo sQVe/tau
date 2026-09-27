@@ -226,6 +226,16 @@ it('reattaches accepted work and cancels it without replacing saved records', as
   }
 });
 
+it('saves a launched Pi task in the current record format', async ({ onTestFinished }) => {
+  const fixture = setup(onTestFinished);
+
+  const launched = await fixture.controller.launch(fixture.input);
+
+  expect(JSON.parse(readFileSync(join(launched.directory, 'task.json'), 'utf8'))).toMatchObject({
+    version: 3,
+  });
+});
+
 it('skips saved workers without herdr calls when the reattach capacity is full', async ({
   onTestFinished,
 }) => {
@@ -1595,19 +1605,18 @@ it('skips unpublished preparation debris while published attempts remain exclusi
     }) + '\n',
   );
 
-  const originalPublish = records.publish;
+  const originalPublish = records.publishRecord;
 
-  const preparation = vi.spyOn(records, 'publish').mockImplementation((directory, name, value) => {
-    if (name === 'task.json') {
+  const preparation = vi
+    .spyOn(records, 'publishRecord')
+    .mockImplementation((directory, name, value) => {
       vi.mocked(fsyncSync).mockImplementationOnce(() => {
         throw new Error('Initial task file sync failed.');
       });
 
       preparation.mockRestore();
-    }
-
-    originalPublish(directory, name, value);
-  });
+      originalPublish(directory, name, value);
+    });
 
   await expect(fixture.controller.launch(fixture.input)).rejects.toThrow('Task preparation');
 
@@ -1879,6 +1888,7 @@ const newerTauRecord = (source: ReturnType<typeof readTask>, predecessorTaskId: 
   taskId: 'newer',
   name: 'critic-ab',
   predecessorTaskId,
+  version: 4,
   loadout: { ...source.loadout, profile: 'critic' },
   futureField: 'written by a newer Tau',
 });
@@ -1895,7 +1905,9 @@ it('lists a newer Tau record as unreadable and still follows up an unrelated tas
     sessionDirectory: fixture.directory,
   });
 
-  expect(history.diagnostics.join(' ')).toContain(directory);
+  expect(history.diagnostics).toContain(
+    'Skipped task newer saved by a newer Tau; restart this session to read it.',
+  );
 
   await expect(fixture.controller.followUp(fixture.input, fixture.context)).resolves.toMatchObject({
     state: 'starting',
@@ -1908,6 +1920,29 @@ it('refuses follow-up without writes when a newer Tau record names the same pred
   const directory = join(fixture.directory, 'newer');
   mkdirSync(directory);
   records.publish(directory, 'task.json', newerTauRecord(fixture.source, fixture.source.taskId));
+  const saved = savedFiles(fixture.directory);
+  fixture.calls.length = 0;
+
+  await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+    'Cannot verify saved follow-up attempts',
+  );
+
+  expect(savedFiles(fixture.directory)).toEqual(saved);
+  expect(fixture.calls).toEqual([['agent', 'list']]);
+});
+
+it('refuses follow-up without writes when a current task that looks retired names the same predecessor', async () => {
+  const fixture = await completed();
+  const directory = join(fixture.directory, 'malformed');
+  mkdirSync(directory);
+
+  records.publish(directory, 'task.json', {
+    ...fixture.source,
+    taskId: 'malformed',
+    predecessorTaskId: fixture.source.taskId,
+    parentTaskId: 'ancestor',
+  });
+
   const saved = savedFiles(fixture.directory);
   fixture.calls.length = 0;
 
