@@ -11,3 +11,6 @@ to check with the user. The manager passes only test-account credentials, becaus
 keep them. The manager sends changes with user-visible behavior to `qa` alongside the reviewer.
 Browser testing needs the `pi-agent-browser-native` package; without it, `qa` tests only on the
 command line.
+
+Split the bundled `scout` and `reviewer` instructions into short paragraphs, with a list for the
+reviewer's rerun conditions, without changing their wording.
