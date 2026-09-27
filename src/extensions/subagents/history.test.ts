@@ -142,6 +142,8 @@ const historyTool = async (fixture: ReturnType<typeof setup>, file: string, id: 
     tool.execute('history-test', parameters, new AbortController().signal, undefined, context);
 };
 
+// Writes 20 tasks with large reports and searches them four times; this file I/O went past the
+// 5 s default on a busy CI runner.
 it('bounds production history output while paging all matches and retaining record retrieval', async () => {
   const fixture = setup();
 
@@ -232,7 +234,7 @@ it('bounds production history output while paging all matches and retaining reco
   expect(JSON.stringify(second)).toContain('task-01');
   const empty = await execute({ query: 'needle-tail', offset: 20 });
   expect(empty.details).toEqual({ outcome: 'clarification', totalMatches: 20, candidates: [] });
-});
+}, 30_000);
 
 it('reads history only from the records of the running Tau checkout', async () => {
   const fixture = setup();
