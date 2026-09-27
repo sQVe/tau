@@ -2,6 +2,7 @@ import type { Theme } from '@earendil-works/pi-coding-agent';
 import { stripTerminalSequences, truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 
 import { stateLabel } from './presentation.js';
+import { workerNamePattern } from './types.js';
 import type { WorkerState } from './types.js';
 
 export interface WorkerWidgetRow {
@@ -115,7 +116,7 @@ const stateText = (row: WorkerWidgetRow): string =>
   row.state === 'unknown' ? 'status unavailable' : stateLabel(row.state, row.outcome).text;
 
 export const truncateWorkerName = (name: string, width: number): string => {
-  const suffix = name.match(/^(?:worker|scout|reviewer|investigator)-[a-z0-9]{2}$/)?.[0].slice(-3);
+  const suffix = new RegExp(workerNamePattern).test(name) ? name.slice(-3) : undefined;
 
   if (suffix == null || visibleWidth(name) <= width || width <= visibleWidth(suffix)) {
     return truncateToWidth(name, width);
