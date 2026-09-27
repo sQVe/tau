@@ -516,7 +516,8 @@ const registerReplyTool = (runtime: SubagentRuntime): void => {
     label: 'Reply to worker',
     description: [
       "Reply within an active owned worker's scope and deadline. Requires taskId, unique replyId, reply, and scopeUnchanged: true.",
-      'Only Pi supports structured questions: supply questionId. Other harnesses take plain text without questionId; replyId cannot be assignment.',
+      "Pi replies need the questionId from the worker's question notice; a Pi worker without a pending question takes no reply, so use subagent_follow_up after it stops.",
+      'Other harnesses take plain text without questionId; replyId cannot be assignment.',
       'Returns delivery: sent (herdr accepted text); notResent (saved reply, not sent again; Pi delivery may remain uncertain);',
       'uncertain (unconfirmed, do not retry); notDelivered (dialog blocked input, user action needed). Delivery is not task acceptance or acknowledgement.',
       'Inspect status with questionId for Pi or submissionId for other harnesses. Tau refuses blocked or unknown native state and never approves dialogs.',
