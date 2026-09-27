@@ -19,12 +19,12 @@ const taskBase = {
 const tasks: Record<'pi' | 'generic', Task> = {
   pi: {
     ...taskBase,
-    version: 1,
+    version: 3,
     nativeSessionId: 'native-one',
     nativeSessionFile: '/work/native.jsonl',
     loadout: fixtureLoadout('/work'),
   },
-  generic: { ...taskBase, version: 2, loadout: fixtureGenericLoadout('/work') },
+  generic: { ...taskBase, version: 3, loadout: fixtureGenericLoadout('/work') },
 };
 
 const event = (kind: TaskEvent['kind'], stopped = false): TaskEvent => ({

@@ -25,9 +25,12 @@ import { errorMessage, isMissingFile } from '../../errors/index.js';
 import {
   eventSchema,
   reportSchema,
+  previousTaskSchema,
   taskSchema,
+  taskVersion,
   isGenericLoadout,
   isTaskId,
+  requireNativeTask,
   taskEndedEventKinds,
 } from './types.js';
 import type { GenericLoadout, Loadout, Report, Task, TaskEvent } from './types.js';
@@ -106,6 +109,16 @@ export const publish = (directory: string, name: string, value: unknown): void =
   }
 };
 
+export const versionedRecords = { 'task.json': taskSchema };
+
+export const publishRecord = <Name extends keyof typeof versionedRecords>(
+  directory: string,
+  name: Name,
+  value: Static<(typeof versionedRecords)[Name]>,
+): void => {
+  publish(directory, name, value);
+};
+
 export const readRecord = (directory: string, name: string): unknown => {
   const descriptor = openSync(join(directory, name), 'r');
 
@@ -167,9 +180,7 @@ const hasAbsoluteGenericPaths = (task: Task, loadout: GenericLoadout): boolean =
   [task.parentSession, loadout.cwd].every(isAbsolute);
 
 const hasGenericTaskIdentity = (task: Task, loadout: GenericLoadout): boolean =>
-  task.version === 2 &&
-  task.predecessorTaskId === undefined &&
-  !['pi', 'generic'].includes(loadout.kind);
+  task.predecessorTaskId === undefined && !['pi', 'generic'].includes(loadout.kind);
 
 const validateGenericTask = (task: Task, loadout: GenericLoadout): void => {
   const identityIsValid =
@@ -203,32 +214,48 @@ export const validateTask = (value: unknown): Task => {
     return value;
   }
 
-  if (value.version !== 1) {
-    throw new Error('Native worker session identity is required.');
-  }
+  const native = requireNativeTask(value);
 
   if (
     ![
-      value.nativeSessionFile,
-      value.parentSession,
-      value.loadout.cwd,
-      value.loadout.agentDirectory,
+      native.nativeSessionFile,
+      native.parentSession,
+      native.loadout.cwd,
+      native.loadout.agentDirectory,
     ].every(isAbsolute)
   ) {
     throw new Error('Worker paths must be absolute.');
   }
 
-  if (!identityIsSelfConsistent(value)) {
+  if (!identityIsSelfConsistent(native)) {
     throw new Error('Invalid worker identity.');
   }
 
-  return value;
+  return native;
 };
+
+const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const isNewerTask = (value: unknown): boolean =>
+  isObjectRecord(value) && typeof value.version === 'number' && value.version > taskVersion;
+
+const newerTaskNotice = 'saved by a newer Tau; restart this session to read it.';
+
+// The previous format differs from the current one only in its version.
+const upgradeTask = (value: unknown): unknown =>
+  Value.Check(previousTaskSchema, value) ? { ...value, version: taskVersion } : value;
 
 // Callers treat a missing task as unpublished, so only other failures name the task.
 export const readTask = (directory: string): Task => {
   try {
-    return validateTask(readRecord(directory, 'task.json'));
+    const value = readRecord(directory, 'task.json');
+
+    if (isNewerTask(value)) {
+      throw new Error(`Task ${newerTaskNotice}`);
+    }
+
+    return validateTask(upgradeTask(value));
   } catch (error) {
     if (isMissingFile(error)) {
       throw error;
@@ -244,9 +271,6 @@ const isUnpublishedDirectory = (directory: string): boolean =>
   readdirSync(directory, { withFileTypes: true }).every(
     (entry) => entry.isFile() && /^\.receipt-[a-f0-9-]+$/.test(entry.name),
   );
-
-const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 // Earlier Pi formats lacked a task-level monotonic deadline or saved replay fingerprints.
 const isRetiredPiTask = (
@@ -291,16 +315,19 @@ const isRetiredTask = (value: unknown): boolean => {
   return isRetiredHarness(harness, value, loadout);
 };
 
-const isRetiredRecord = (directory: string): boolean => {
+const readSkippedTask = (directory: string): unknown => {
   try {
-    return isRetiredTask(readRecord(directory, 'task.json'));
+    return readRecord(directory, 'task.json');
   } catch {
-    return false;
+    return undefined;
   }
 };
 
 const diagnoseSkippedTask = (directory: string, error: unknown, notices: ScanNotices): void => {
-  if (isRetiredRecord(directory)) {
+  const saved = readSkippedTask(directory);
+  const newer = isNewerTask(saved);
+
+  if (!newer && isRetiredTask(saved)) {
     notices.skipped.push(
       `Skipped task ${basename(directory)} saved in a retired format; start a fresh task instead.`,
     );
@@ -308,10 +335,15 @@ const diagnoseSkippedTask = (directory: string, error: unknown, notices: ScanNot
     return;
   }
 
-  const diagnostic = `Skipped task at ${directory}: ${errorMessage(error)}`;
+  const diagnostic = newer
+    ? `Skipped task ${basename(directory)} ${newerTaskNotice}`
+    : `Skipped task at ${directory}: ${errorMessage(error)}`;
 
+  // Follow-ups still check unreadable tasks for a claim on the same source.
   if (notices.unreadable) {
     notices.unreadable.push({ directory, diagnostic });
+  } else if (newer) {
+    notices.skipped.push(diagnostic);
   } else {
     notices.diagnostics.push(diagnostic);
   }

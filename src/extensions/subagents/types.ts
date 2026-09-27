@@ -17,7 +17,7 @@ export type WorkerState =
 
 export type Harness = string;
 
-export type NativeTask = Extract<Task, { version: 1 }>;
+export type NativeTask = Extract<Task, { loadout: PiLoadout }>;
 
 export type SubmissionState = 'submitted' | 'not-delivered' | 'uncertain';
 
@@ -105,28 +105,36 @@ const taskProperties = {
   monotonicDeadline: Type.Number({ minimum: 1 }),
 };
 
-export const taskSchema = Type.Union([
+const piTaskSchema = <Version extends number>(version: Version) =>
   Type.Object(
     {
       ...taskProperties,
-      version: Type.Literal(1),
+      version: Type.Literal(version),
       nativeSessionId: text,
       nativeSessionFile: text,
       loadout: piLoadoutSchema,
     },
     { additionalProperties: false },
-  ),
+  );
+
+const genericTaskSchema = <Version extends number>(version: Version) =>
   Type.Object(
     {
       ...taskProperties,
-      version: Type.Literal(2),
+      version: Type.Literal(version),
       nativeSessionId: Type.Optional(Type.Never()),
       nativeSessionFile: Type.Optional(Type.Never()),
       loadout: genericLoadoutSchema,
     },
     { additionalProperties: false },
-  ),
-]);
+  );
+
+// Bump for any change to the saved fields, including a new optional field.
+export const taskVersion = 3;
+
+export const taskSchema = Type.Union([piTaskSchema(taskVersion), genericTaskSchema(taskVersion)]);
+
+export const previousTaskSchema = Type.Union([piTaskSchema(1), genericTaskSchema(2)]);
 
 const ownedWorkerProperties = {
   paneId: text,
@@ -232,8 +240,10 @@ export const harnessOf = (loadout: Loadout): Harness =>
 
 export type Task = Static<typeof taskSchema>;
 
+const isNativeTask = (task: Task): task is NativeTask => isPiLoadout(task.loadout);
+
 export const requireNativeTask = (task: Task): NativeTask => {
-  if (task.version !== 1) {
+  if (!isNativeTask(task)) {
     throw new Error('This task has no reproducible Pi native session.');
   }
 

@@ -191,7 +191,7 @@ it.each(['editing', 'investigation'] as const)(
     vi.stubEnv('TAU_WORKER_RECORD', taskDirectory);
 
     const task = validateTask({
-      version: 1,
+      version: 3,
       taskId: 'fixture-task',
       task: 'Edit source.txt and check it.',
       parentSession: join(directory, 'parent.jsonl'),

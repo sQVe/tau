@@ -285,6 +285,16 @@ it('waits for the split shell before starting a native worker', async () => {
   expect(setup.state.busyShellPolls).toBe(0);
 });
 
+it('saves a launched generic task in the current record format', async () => {
+  const setup = fixture();
+
+  const started = await setup.controller.launch(setup.input);
+
+  expect(JSON.parse(readFileSync(join(started.directory, 'task.json'), 'utf8'))).toMatchObject({
+    version: 3,
+  });
+});
+
 it.each(['claude', 'codex', 'gemini'])(
   'launches %s through herdr and accepts a complete report without Pi events',
   async (kind) => {

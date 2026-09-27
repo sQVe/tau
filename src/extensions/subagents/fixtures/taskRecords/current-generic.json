@@ -1,0 +1,22 @@
+{
+  "version": 3,
+  "taskId": "current-generic",
+  "name": "worker-ab",
+  "task": "Inspect source.",
+  "parentSession": "/work/parent.jsonl",
+  "parentSessionId": "parent-one",
+  "createdAt": 1000,
+  "deadline": 20000,
+  "cancellationBudget": 1000,
+  "monotonicDeadline": 20000,
+  "loadout": {
+    "harness": "generic",
+    "kind": "codex",
+    "profile": "worker",
+    "role": "editing",
+    "cwd": "/work",
+    "permissions": "native-controls",
+    "arguments": [],
+    "instructions": "Only the assigned task."
+  }
+}
