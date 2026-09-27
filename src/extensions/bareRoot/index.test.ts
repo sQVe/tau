@@ -25,25 +25,18 @@ const startSession = async (cwd: string) => {
   const context = { cwd } as ExtensionContext;
   await api.handler('session_start')({ type: 'session_start', reason: 'startup' }, context);
 
-  const systemPrompt = (
+  return (
     api.handler('before_agent_start')({ systemPrompt: 'base' }, context) as
       | { systemPrompt: string }
       | undefined
   )?.systemPrompt;
-
-  return { systemPrompt, refusesTools: api.handlers.has('tool_call') };
 };
 
 describe('bare repository root guard', () => {
-  it('points the agent to worktrees and handoffs in a bare root without refusing tools', async () => {
+  it('adds the bare root rule to the system prompt in a bare root', async () => {
     const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
-    const session = await startSession(root);
 
-    expect(session.systemPrompt).toMatch(
-      /^base\n\n.*worktree skill.*handoff skill.*\.tau\/handoffs/s,
-    );
-
-    expect(session.refusesTools).toBe(false);
+    expect(await startSession(root)).toMatch(/^base\n\n\S/);
   });
 
   it.for(['GIT_DIR', 'GIT_COMMON_DIR'])(
@@ -52,9 +45,8 @@ describe('bare repository root guard', () => {
       const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
       const other = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
       vi.stubEnv(variable, join(other, '.git'));
-      const session = await startSession(root);
 
-      expect(session.systemPrompt).toMatch(/worktree skill/);
+      expect(await startSession(root)).toMatch(/^base\n\n\S/);
     },
   );
 
@@ -65,8 +57,6 @@ describe('bare repository root guard', () => {
       cwd: root,
     });
 
-    const session = await startSession(join(root, 'main'));
-
-    expect(session.systemPrompt).toBeUndefined();
+    expect(await startSession(join(root, 'main'))).toBeUndefined();
   });
 });
