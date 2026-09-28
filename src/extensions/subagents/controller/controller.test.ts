@@ -3513,6 +3513,26 @@ it('closes the launched pane by its session argument when process inspection fai
   expect(calls.filter((call) => call[1] === 'close')).toEqual([['pane', 'close', 'worker-1']]);
 });
 
+it('reports a worker that exits while Tau establishes its identity as exited', async ({
+  onTestFinished,
+}) => {
+  const fixture = setup(onTestFinished, -1, async (argumentsList) => {
+    // Pi exits and herdr removes its pane while the first identity check runs.
+    if (argumentsList[1] === 'process-info') {
+      fixture.fake.state.stopped = true;
+
+      throw new Error('Command failed: herdr pane process-info');
+    }
+
+    return '';
+  });
+
+  const status = await fixture.controller.launch(fixture.input);
+
+  expect(status).toMatchObject({ outcome: 'failure', state: 'stopped' });
+  expect(status.failure).toContain('exited before readiness');
+});
+
 it('detects an owned worker exiting before readiness without waiting for the task deadline', async ({
   onTestFinished,
 }) => {

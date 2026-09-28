@@ -256,9 +256,7 @@ const locateWorker = async (
   return location;
 };
 
-// Verifies the worker without saving records. The handle receives the pane as soon as it resolves,
-// so a later failed check still leaves it behind.
-export const inspectWorker = async (
+const checkWorker = async (
   handle: Handle,
   call: (argumentsList: string[]) => Promise<string>,
   cleanup?: InspectionBudget,
@@ -301,6 +299,31 @@ export const inspectWorker = async (
   }
 
   return owned;
+};
+
+// Verifies the worker without saving records. The handle receives the pane as soon as it resolves,
+// so a later failed check still leaves it behind.
+export const inspectWorker = async (
+  handle: Handle,
+  call: (argumentsList: string[]) => Promise<string>,
+  cleanup?: InspectionBudget,
+): Promise<OwnedWorker> => {
+  try {
+    return await checkWorker(handle, call, cleanup);
+  } catch (error) {
+    if (error instanceof WorkerExitedError) {
+      throw error;
+    }
+
+    const terminals = await listTerminals(call).catch(() => undefined);
+
+    // Herdr removes a Pi pane when Pi exits, which can happen during the checks.
+    if (terminals?.every((pane) => pane.terminalId !== handle.identity.terminalId) === true) {
+      throw new WorkerExitedError({ cause: error });
+    }
+
+    throw error;
+  }
 };
 
 export const waitForPiIdentity = async (
@@ -367,16 +390,7 @@ export const waitForWorkerReadiness = async (
     }
 
     // oxlint-disable-next-line eslint/no-await-in-loop -- Detect death and changed identity before readiness within the same startup budget.
-    await inspectWorker(handle, call).catch(async (error: unknown) => {
-      const terminals = await listTerminals(call);
-
-      // Herdr removes a Pi pane when Pi exits, which can happen during the checks.
-      if (terminals.every((pane) => pane.terminalId !== handle.identity.terminalId)) {
-        throw new WorkerExitedError({ cause: error });
-      }
-
-      throw error;
-    });
+    await inspectWorker(handle, call);
 
     // oxlint-disable-next-line eslint/no-await-in-loop -- Readiness remains inside the original deadline and cancellation signal.
     await delay(Math.min(250, workBudget(handle)), undefined, { signal: handle.abort.signal });
