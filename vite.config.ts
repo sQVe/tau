@@ -381,6 +381,29 @@ export default defineConfig({
           'eslint/no-restricted-imports': ['error', { patterns: [testHelperImports] }],
         },
       },
+      {
+        files: ['src/extensions/subagents/**/*.ts'],
+        rules: {
+          'eslint/no-restricted-imports': [
+            'error',
+            {
+              patterns: [
+                testHelperImports,
+                {
+                  group: [
+                    '**/controller/*',
+                    '!**/controller/controller.js',
+                    '!**/controller/record.js',
+                    '!**/controller/budget.js',
+                  ],
+                  message:
+                    'This controller file is private. Import controller.ts, record.ts, or budget.ts, or make the file public in vite.config.ts.',
+                },
+              ],
+            },
+          ],
+        },
+      },
       ...(styleEnabled
         ? [
             {

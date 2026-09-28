@@ -694,3 +694,41 @@ it('keeps test helpers out of production code and extensions out of shared modul
   expect(diagnostics).toHaveLength(2);
   expect(diagnostics.every((line) => line.includes('/probe.ts:'))).toBe(true);
 }, 30_000);
+
+it('keeps private controller files out of the rest of the subagents extension', async ({
+  onTestFinished,
+}) => {
+  const directory = await mkdtemp(
+    join(root, 'src', 'extensions', 'subagents', 'tau-lint-private-'),
+  );
+
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+  await writeFile(
+    join(directory, 'probe.ts'),
+    [
+      "import { launchTiming } from '../controller/budget.js';",
+      "import { WorkerController } from '../controller/controller.js';",
+      "import { EvidenceUnavailableError } from '../controller/record.js';",
+      "import { stopOwnedWorker } from '../controller/stop.js';",
+      '',
+      'export const value = [launchTiming, WorkerController, EvidenceUnavailableError, stopOwnedWorker];',
+      '',
+    ].join('\n'),
+  );
+
+  const result = spawnSync('pnpm', ['lint', directory], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+
+  const diagnostics = result.stdout
+    .split('\n')
+    .filter((line) => line.includes('no-restricted-imports'));
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toContain("'../controller/stop.js'");
+}, 30_000);
