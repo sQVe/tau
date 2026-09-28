@@ -178,7 +178,6 @@ export type Task = Static<typeof taskSchema>;
 export type Report = Static<typeof reportSchema>;
 export type TaskEvent = Static<typeof eventSchema>;
 
-
 // A worker with any of these events no longer accepts replies.
 export const replyClosedEventKinds: readonly TaskEvent['kind'][] = [
   'settled',
