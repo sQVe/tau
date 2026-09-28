@@ -57,6 +57,7 @@ export interface StatusInput {
   submissionReceipt?: SubmissionReceiptInput | undefined;
   nativeOutput?: unknown;
   recovery?: unknown;
+  placement?: { visibility: string; reason?: string } | undefined;
 }
 
 export interface ReplyReceiptInput {
@@ -216,6 +217,7 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   };
 
   addField(result, 'name', status.name);
+  addField(result, 'placement', status.placement);
   addField(result, 'outcome', status.outcome);
   addField(result, 'predecessorTaskId', status.predecessorTaskId);
   addField(result, 'successorTaskId', status.successorTaskId);

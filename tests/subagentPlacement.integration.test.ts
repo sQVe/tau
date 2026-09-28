@@ -16,8 +16,7 @@ const minimumPane = { width: 82, height: 24 };
 const hasHerdr = toolAvailable('herdr');
 
 it.runIf(hasHerdr).each([
-  [340, 100, 2, 2],
-  [340, 100, 4, 4],
+  [340, 100, 3, 1],
   [250, 30, 2, 1],
 ])(
   'keeps useful real panes at %s x %s with %s workers and %s foreground workers',
@@ -62,9 +61,9 @@ it.runIf(hasHerdr).each([
   20_000,
 );
 
-it.runIf(hasHerdr).each([0, 1])(
-  'replaces owned worker %s after herdr closes its pane',
-  async (index) => {
+it.runIf(hasHerdr)(
+  'shows a new foreground worker after herdr closes the visible one',
+  async () => {
     const { root, client } = await isolatedHerdr(
       '[server]\nheadless_cols = 340\nheadless_rows = 100\n[ui]\nsidebar_start_collapsed = true\nsidebar_collapsed_mode = "hidden"\nhide_tab_bar_when_single_tab = true\n',
     );
@@ -82,16 +81,12 @@ it.runIf(hasHerdr).each([0, 1])(
       environment: [],
     };
 
-    const workers = await Promise.all([
-      placement.place(input, client),
-      placement.place(input, client),
-    ]);
-
-    const closing = workers[index]!;
-    placement.release(closing.terminalId);
+    const visible = await placement.place(input, client);
+    const hidden = await placement.place(input, client);
+    placement.release(visible.terminalId);
 
     await placement.close(async () => {
-      await client(['pane', 'close', closing.paneId]);
+      await client(['pane', 'close', visible.paneId]);
     });
 
     const replacement = await placement.place(input, client);
@@ -100,23 +95,20 @@ it.runIf(hasHerdr).each([0, 1])(
       result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,
     );
 
-    const entries = (layout.panes as Record<string, unknown>[]).map((pane) =>
-      requireObject(pane.rect),
-    );
-
     const terminals = await listTerminals(client);
 
+    expect(hidden.tabId).not.toBe(parent.tabId);
     expect(replacement.tabId).toBe(parent.tabId);
-    expect(entries).toHaveLength(3);
+    expect(layout.panes).toHaveLength(2);
     expect(layout.focused_pane_id).toBe(parent.paneId);
-    expect(terminals.some((pane) => pane.terminalId === closing.terminalId)).toBe(false);
-    expect(terminals.some((pane) => pane.terminalId === workers[1 - index]!.terminalId)).toBe(true);
+    expect(terminals.some((pane) => pane.terminalId === visible.terminalId)).toBe(false);
+    expect(terminals.some((pane) => pane.terminalId === hidden.terminalId)).toBe(true);
   },
   20_000,
 );
 
 it.runIf(hasHerdr)(
-  'preserves a manual Tau ratio and unrelated topology during later foreground placement',
+  'preserves a manual Tau ratio and unrelated topology during later placement',
   async () => {
     const { root, client } = await isolatedHerdr(
       '[server]\nheadless_cols = 600\nheadless_rows = 120\n[ui]\nsidebar_start_collapsed = true\nsidebar_collapsed_mode = "hidden"\nhide_tab_bar_when_single_tab = true\n',
@@ -153,7 +145,7 @@ it.runIf(hasHerdr)(
       environment: [],
     };
 
-    await placement.place(input, client);
+    const worker = await placement.place(input, client);
 
     await client([
       'pane',
@@ -161,12 +153,12 @@ it.runIf(hasHerdr)(
       '--pane',
       parent.paneId,
       '--direction',
-      'down',
+      'right',
       '--amount',
       '0.1',
     ]);
 
-    await client(['pane', 'focus', '--pane', parent.paneId, '--direction', 'right']);
+    await client(['pane', 'focus', '--pane', worker.paneId, '--direction', 'right']);
 
     const before = requireObject(
       result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,

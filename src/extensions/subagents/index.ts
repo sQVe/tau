@@ -36,8 +36,9 @@ interface SubagentRuntime {
 const visibility = Type.Optional(
   StringEnum(['foreground', 'background'] as const, {
     description: [
-      'Choose foreground for visible work or background for separate worker tabs. foreground is the default.',
-      'Foreground shares parent or worker space, falling back to a separate tab when space is too small.',
+      'Defaults to foreground for editing profiles and background for investigation profiles.',
+      'Foreground places the worker beside the parent. Background runs it in a separate worker tab.',
+      'Only one worker per parent is foreground. Another foreground request, or a zoomed or too small parent tab, runs in the background; the result reports placement and its reason.',
       'Both preserve focus, manual split ratios, and unrelated panes.',
     ].join(' '),
   }),

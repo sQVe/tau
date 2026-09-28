@@ -11,6 +11,9 @@ import type { TerminalCall, TerminalLocation } from './terminal.js';
 
 export type Visibility = 'foreground' | 'background';
 
+// The reason explains a foreground request that landed in the background.
+export type Placement = TerminalLocation & { visibility: Visibility; reason?: string };
+
 interface PlacementInput {
   parentPane?: string;
   visibility: Visibility;
@@ -62,23 +65,17 @@ const rectangle = (value: unknown): Rectangle => {
 const isUseful = (bounds: Rectangle): boolean =>
   bounds.width >= minimumPane.width && bounds.height >= minimumPane.height;
 
-// A parent alone in its foreground tab slightly favors a worker beside it, but only when a worker
-// below it could not keep a useful third of the height. Where it can, stacking first lets later
-// workers share the tab.
-const preferRight = (bounds: Rectangle, down: boolean, alone: boolean): boolean => {
-  const columns = bounds.width / minimumPane.width;
-  const rows = bounds.height / minimumPane.height;
-  const short = bounds.height - Math.round((bounds.height * 2) / 3) < minimumPane.height;
+// The one foreground worker goes beside its parent. Background workers split along the axis that
+// fits more useful panes, so a worker tab holds more of them.
+const preferRight = (bounds: Rectangle, down: boolean, beside: boolean): boolean =>
+  !down || beside || bounds.width / minimumPane.width >= bounds.height / minimumPane.height;
 
-  return !down || (alone && short ? 1.1 : 1) * columns >= rows;
-};
-
-export const splitDirection = (bounds: Rectangle, alone = false): 'right' | 'down' | undefined => {
+export const splitDirection = (bounds: Rectangle, beside = false): 'right' | 'down' | undefined => {
   // Herdr rounds the first half up and gives the second half the remaining cells.
   const right = isUseful({ width: Math.floor(bounds.width / 2), height: bounds.height });
   const down = isUseful({ width: bounds.width, height: Math.floor(bounds.height / 2) });
 
-  if (right && preferRight(bounds, down, alone)) {
+  if (right && preferRight(bounds, down, beside)) {
     return 'right';
   }
 
@@ -129,13 +126,11 @@ const splitCandidate = (
     return undefined;
   }
 
-  const alone = visibility === 'foreground' && layout.panes.length === 1;
-
   const candidates = layout.panes
     .flatMap((value) => {
       const pane = requireObject(value);
       const bounds = rectangle(pane.rect);
-      const direction = splitDirection(bounds, alone);
+      const direction = splitDirection(bounds, visibility === 'foreground');
       const location = eligible.find((entry) => entry.paneId === text(pane.pane_id));
 
       return direction && location ? [{ location, bounds, direction }] : [];
@@ -150,6 +145,8 @@ const splitCandidate = (
 
 export class WorkerPlacement {
   private readonly owned = new Map<string, { tabId: string; visibility: Visibility }>();
+  // Release stops splitting a worker pane, but a pane that cleanup left open still shows.
+  private foreground: string | undefined;
   private pending: Promise<unknown> = Promise.resolve();
 
   release(terminalId: string): void {
@@ -196,7 +193,7 @@ export class WorkerPlacement {
     input: PlacementInput,
     call: TerminalCall,
     signal: AbortSignal = new AbortController().signal,
-  ): Promise<TerminalLocation> {
+  ): Promise<Placement> {
     let location: TerminalLocation | undefined;
 
     const onCreated = (created: TerminalLocation) => {
@@ -309,6 +306,11 @@ export class WorkerPlacement {
     const location = terminalLocation(result(created).pane);
 
     this.owned.set(location.terminalId, { tabId: location.tabId, visibility });
+
+    if (visibility === 'foreground') {
+      this.foreground = location.terminalId;
+    }
+
     onCreated?.(location);
 
     return location;
@@ -382,7 +384,7 @@ export class WorkerPlacement {
     return location;
   }
 
-  private async create(input: PlacementInput, call: TerminalCall): Promise<TerminalLocation> {
+  private async create(input: PlacementInput, call: TerminalCall): Promise<Placement> {
     const paneTarget =
       input.parentPane != null && input.parentPane !== ''
         ? ['--pane', input.parentPane]
@@ -405,7 +407,12 @@ export class WorkerPlacement {
 
     const candidateTabs = [...backgroundTabs];
 
-    if (input.visibility === 'foreground') {
+    // One worker pane beside the parent is readable; more split the tab into panes nobody reads.
+    const showing = locations.some(
+      (pane) => pane.terminalId === this.foreground && pane.tabId === parent.tabId,
+    );
+
+    if (input.visibility === 'foreground' && !showing) {
       candidateTabs.unshift(parent.tabId);
     }
 
@@ -422,14 +429,25 @@ export class WorkerPlacement {
       onCreated: input.onCreated,
     });
 
-    if (placed) {
-      return placed;
+    let location = placed;
+
+    if (!location) {
+      location = await this.createBackgroundTab(parent, options, call);
+      input.onCreated?.(location);
     }
 
-    const location = await this.createBackgroundTab(parent, options, call);
+    if (location.tabId === parent.tabId) {
+      return { ...location, visibility: 'foreground' };
+    }
 
-    input.onCreated?.(location);
+    if (input.visibility === 'background') {
+      return { ...location, visibility: 'background' };
+    }
 
-    return location;
+    const reason = showing
+      ? 'Another worker is already visible beside the parent.'
+      : 'The parent tab is zoomed or too small for another pane.';
+
+    return { ...location, visibility: 'background', reason };
   }
 }
