@@ -2,6 +2,7 @@ import { join } from 'node:path';
 
 import type { ThemeColor } from '@earendil-works/pi-coding-agent';
 
+import { capReportText } from './reportCap.js';
 import type { WorkerState } from './types.js';
 
 // The single label table for worker states. Wording credits the worker and never claims a stop
@@ -165,56 +166,23 @@ const modelQuestionReceipt = (
   };
 };
 
-const reportCharacterCap = 8000;
-
-// Cuts before a split surrogate pair so the result stays valid text.
-const cut = (text: string, length: number): string =>
-  text.slice(0, /[\uD800-\uDBFF]/.test(text.charAt(length - 1)) ? length - 1 : length);
-
-const summaryCutMarker = '\n[…]\n';
-
-// Concerns come last in a summary, so a long one keeps its start and its end.
-const cutSummary = (summary: string): string => {
-  if (summary.length <= reportCharacterCap) {
-    return summary;
-  }
-
-  const room = reportCharacterCap - summaryCutMarker.length;
-  const head = Math.floor(room / 2);
-  const tail = summary.slice(summary.length - (room - head));
-
-  return `${cut(summary, head)}${summaryCutMarker}${tail.replace(/^[\uDC00-\uDFFF]/, '')}`;
-};
-
 const cappedReport = (report: unknown): Record<string, unknown> | undefined => {
   if (!isRecord(report) || typeof report.summary !== 'string' || !Array.isArray(report.evidence)) {
     return undefined;
   }
 
   const evidence = report.evidence.filter((entry): entry is string => typeof entry === 'string');
-  const size = evidence.reduce((total, entry) => total + entry.length, report.summary.length);
+  const capped = capReportText(report.summary, evidence);
 
-  if (size <= reportCharacterCap) {
+  if (!capped) {
     return undefined;
-  }
-
-  let remaining = reportCharacterCap - Math.min(report.summary.length, reportCharacterCap);
-  const kept: string[] = [];
-
-  for (const entry of evidence) {
-    if (remaining <= 0) {
-      break;
-    }
-
-    kept.push(cut(entry, remaining));
-    remaining -= entry.length;
   }
 
   return {
     taskId: report.taskId,
     outcome: report.outcome,
-    summary: cutSummary(report.summary),
-    evidence: kept,
+    summary: capped.summary,
+    evidence: capped.evidence,
   };
 };
 

@@ -277,11 +277,14 @@ it('caps a long report and points to the unchanged saved report', ({ onTestFinis
   const report = readReport(directory, 'task-1');
   const status = { taskId: 'task-1', state: 'stopped' as const, deadline: 10, directory, report };
   const content = modelStatus(status);
-  const capped = content.report as { outcome: string; summary: string; evidence: string[] };
 
-  expect(capped.outcome).toBe('success');
-  expect(capped.summary).toBe(report?.summary);
-  expect(capped.evidence).toEqual(['e'.repeat(8000 - (report?.summary.length ?? 0))]);
+  expect(content.report).toEqual({
+    taskId: 'task-1',
+    outcome: 'success',
+    summary: report?.summary,
+    evidence: ['e'.repeat(8000 - (report?.summary.length ?? 0))],
+  });
+
   expect(content.truncated).toBe(true);
   expect(readFileSync(content.reportFile as string, 'utf8')).toBe(saved);
   expect(status.report).toEqual(JSON.parse(saved));
@@ -292,32 +295,8 @@ it('caps a long report and points to the unchanged saved report', ({ onTestFinis
   });
 });
 
-it('keeps the start and the closing concerns of a summary over the cap', () => {
-  const summary = `## Changes\n${'s'.repeat(10_000)}\n## Concerns\nRisky migration.`;
-
-  const content = modelStatus({
-    taskId: 'task-1',
-    state: 'stopped',
-    deadline: 10,
-    report: { taskId: 'task-1', outcome: 'success', summary, evidence: ['e'] },
-  });
-
-  const capped = content.report as { summary: string; evidence: string[] };
-
-  expect(capped.summary.startsWith('## Changes\n')).toBe(true);
-  expect(capped.summary.endsWith('\n## Concerns\nRisky migration.')).toBe(true);
-  expect(capped.summary.length).toBeLessThanOrEqual(8000);
-  expect(capped.evidence).toEqual([]);
-  expect(content.truncated).toBe(true);
-});
-
-it('keeps a report within the cap unchanged', () => {
-  const report = {
-    taskId: 'task-1',
-    outcome: 'success',
-    summary: 's'.repeat(7000),
-    evidence: ['e'.repeat(1000)],
-  };
+it('passes a report within the cap through without a cut mark', () => {
+  const report = { taskId: 'task-1', outcome: 'success', summary: 'Done.', evidence: ['e'] };
 
   const content = modelStatus({ taskId: 'task-1', state: 'stopped', deadline: 10, report });
 

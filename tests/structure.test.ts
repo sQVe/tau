@@ -24,6 +24,7 @@ const isFixture = (path: string) => path.split(/[/\\]/).includes('fixtures');
 const pureModules = [
   'src/extensions/subagents/incompleteReport.ts',
   'src/extensions/subagents/piStop.ts',
+  'src/extensions/subagents/reportCap.ts',
   'src/extensions/subagents/workerState.ts',
 ];
 
