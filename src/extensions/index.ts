@@ -11,11 +11,13 @@ import statusbarExtension from './statusbar/index.js';
 import subagentsExtension from './subagents/index.js';
 import tddExtension from './tdd/index.js';
 import webAccessExtension from './webAccess/index.js';
+import workflowExtension from './workflow/index.js';
 import writingExtension from './writing/index.js';
 
 export default async function tauExtension(pi: ExtensionAPI) {
   await writingExtension(pi);
   await codingExtension(pi);
+  await workflowExtension(pi);
 
   broExtension(pi);
   commitExtension(pi);

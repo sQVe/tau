@@ -13,8 +13,8 @@ differ from these defaults.
 - Lead with the answer. For procedural instructions, lead with the first action. Put supporting
   evidence after it. Use active voice and name the actor. Use passive voice only when the actor is
   unknown or does not matter.
-- State concrete facts and actions. Cut vague praise, sales language, abstract metaphors, and claims
-  of importance that add no information.
+- State concrete facts and actions. Cut vague praise, flattery, sales language, abstract metaphors,
+  claims of importance, canned greetings, dramatic verdicts, and generic conclusions.
 - Use the same word for the same thing, verbs included. Do not rotate "check", "verify", and
   "confirm" for one action.
 
@@ -23,8 +23,8 @@ differ from these defaults.
 - Number steps the user must perform. Each step should name one bounded action.
 - When resuming interrupted work, state what is done and what remains. Do not repeat state every
   turn.
-- When work needs user input, end with one concrete action or decision. Otherwise, continue the
-  work.
+- End with the needed information, or with one concrete action, question, or decision for the user.
+  Do not repeat the answer or add a menu of offers.
 - For failures, state what failed and what the evidence shows. Name the cause only when evidence
   supports it. If the cause is unknown, say so and name the next diagnostic step.
 
@@ -32,13 +32,10 @@ differ from these defaults.
 
 - Remove filler, repeated points, and adverbs that add no meaning. Keep at most one hedge per
   sentence.
-- Skip flattery, canned greetings, dramatic verdicts, and generic conclusions.
 - State the point directly. Avoid formulas such as "not just X, but Y", forced groups of three, and
   comparisons between things that do not share a useful scale.
 - Name sources for attributed claims. Do not invent sources, measurements, or certainty.
 - Do not repeat earlier messages unless something changed or the reader needs a short reminder.
-- End with the needed information or at most one question. Do not repeat the answer or add a menu of
-  offers.
 
 ## Keep formatting useful
 
@@ -62,6 +59,5 @@ differ from these defaults.
 - Preserve claims, conditions, sources, intent, and real uncertainty.
 - Preserve exact quotations, code, identifiers, commands, URLs, and required formats.
 
-Apply these rules as you write. Before sending or saving text, review it silently. Split any
-sentence past 25 words that carries two ideas. Remove remaining filler and awkward phrasing. Check
-that the meaning and required details have not changed.
+Before sending or saving text, review it silently and split any sentence past 25 words that carries
+two ideas.

@@ -14,6 +14,8 @@ verification.
 - Follow the [coding instructions](src/extensions/coding/instructions.md) for all code. Pi loads
   them through Tau; other agents must read the file.
 - Follow the [writing instructions](src/extensions/writing/instructions.md) for every document.
+- Follow the [workflow instructions](src/extensions/workflow/instructions.md) for how you run
+  commands and scope work.
 - Before finishing a document, check its local links and verify the commands it gives against the
   repository.
 - Follow the module, query, and failure conventions in
@@ -27,12 +29,8 @@ verification.
 
 Keep tests fast so the full suite stays practical as coverage grows.
 
-- Test behavior a user, agent, Pi, or Git can observe. If a failure would break nothing for them, do
-  not write the test.
 - Do not test wording, constants, types, removed features, or internal calls. Assert exact bytes
   only where another program parses them.
-- For a refusal, assert the error and that nothing changed.
-- Assert after the call, never inside a fake that production code may catch.
 - Keep tests next to source. Cross-module and package checks go in `tests/`.
 - Use real Git, filesystem, and Pi where those boundaries matter. Otherwise avoid subprocesses and
   reuse existing fakes, such as `src/extensions/subagents/fixtures/herdrFake.ts`.

@@ -155,13 +155,16 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
       'utf8',
     );
 
+    const workflowInstructions = await readFile(
+      join(packageRoot, 'src/extensions/workflow/instructions.md'),
+      'utf8',
+    );
+
     expect(writingInstructions).toContain(
       'Write for readers who use English as a second language.',
     );
 
-    expect(codingInstructions).toContain(
-      'Separate the logical steps inside a function with a blank line.',
-    );
+    expect(codingInstructions).toContain('Separate the logical steps in every function');
 
     expect(codingInstructions).not.toContain('bulk_read');
     expect(prompts[0]?.startsWith(basePrompt)).toBe(true);
@@ -169,6 +172,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     for (const prompt of prompts) {
       expect(prompt.split(writingInstructions)).toHaveLength(2);
       expect(prompt.split(codingInstructions)).toHaveLength(2);
+      expect(prompt.split(workflowInstructions)).toHaveLength(2);
 
       for (const guideline of delegationGuidelines ?? []) {
         expect(prompt.split(guideline)).toHaveLength(2);
