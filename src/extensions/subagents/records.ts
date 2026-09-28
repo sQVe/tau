@@ -221,11 +221,17 @@ const newerTaskNotice = 'saved by a newer Tau; restart this session to read it.'
 
 const nonPiTaskNotice = 'run by a non-Pi worker; Tau no longer supports non-Pi workers.';
 
-// ADR 0058 retired non-Pi workers, whose tasks were saved at versions 2 and 3.
 const hasGenericLoadout = (value: unknown): boolean =>
   isObjectRecord(value) && isObjectRecord(value.loadout) && value.loadout.harness === 'generic';
 
-const isNonPiTask = (value: unknown): boolean => hasGenericLoadout(value) && !isNewerTask(value);
+// ADR 0058 retired non-Pi workers, whose tasks were saved only at versions 2 and 3. Any other
+// version with a generic loadout is malformed.
+const isNonPiTask = (value: unknown): boolean => {
+  const version = savedVersion(value);
+  const retiredVersion = version === 2 || version === 3;
+
+  return retiredVersion && hasGenericLoadout(value);
+};
 
 // The previous format differs from the current one only in its version.
 const upgradeTask = (value: unknown): unknown =>

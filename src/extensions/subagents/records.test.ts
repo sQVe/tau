@@ -304,6 +304,36 @@ it('skips non-Pi tasks and their submissions without hiding Pi tasks', () => {
   }
 });
 
+it('diagnoses a malformed record that only looks like a non-Pi task', () => {
+  const root = saveTaskRecordFixtures(['previous-generic']);
+  const { version: _version, ...unversioned } = parsedTaskRecordFixture('previous-generic');
+
+  for (const [taskId, version] of [
+    ['unversioned', undefined],
+    ['text-version', '2'],
+    ['first-version', 1],
+  ] as const) {
+    const saved = { ...unversioned, taskId, ...(version === undefined ? {} : { version }) };
+    mkdirSync(join(root, taskId));
+    writeFileSync(join(root, taskId, 'task.json'), JSON.stringify(saved));
+  }
+
+  const diagnostics: string[] = [];
+  const skipped: string[] = [];
+
+  expect(records.readTasks(root, diagnostics, skipped)).toEqual([]);
+
+  expect(skipped).toEqual([
+    'Skipped task previous-generic run by a non-Pi worker; Tau no longer supports non-Pi workers.',
+  ]);
+
+  expect(diagnostics).toHaveLength(3);
+
+  for (const taskId of ['first-version', 'text-version', 'unversioned']) {
+    expect(diagnostics.some((diagnostic) => diagnostic.includes(join(root, taskId)))).toBe(true);
+  }
+});
+
 it('skips a task saved by a newer Tau and asks for a restart', () => {
   const root = saveTaskRecordFixtures(['current-pi', 'newer']);
   const diagnostics: string[] = [];
