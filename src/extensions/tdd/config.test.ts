@@ -79,14 +79,16 @@ describe('TDD config', () => {
     expect(classify('src\\nested\\value.ts')).toBe('production');
   });
 
-  it('reads the grove layout from .pi/tau.json', async ({ onTestFinished }) => {
+  it('reads the grove layout from .pi/tau.json and ignores other top-level keys', async ({
+    onTestFinished,
+  }) => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-config-load-'));
     onTestFinished(() => rm(cwd, { recursive: true, force: true }));
     await mkdir(join(cwd, '.pi'));
 
     await writeFile(
       join(cwd, '.pi', 'tau.json'),
-      JSON.stringify({ tdd: { productionGlobs: ['{internal,cmd}/**/*.go'] } }),
+      JSON.stringify({ formatters: {}, tdd: { productionGlobs: ['{internal,cmd}/**/*.go'] } }),
     );
 
     const { config } = await loadTddConfig({
@@ -103,7 +105,6 @@ describe('TDD config', () => {
     ['.pi/tau.json', '{', 'JSON'],
     ['.pi/tau.json', '[]', 'object'],
     ['.pi/tau.json', '{"tdd": {"productionGlob": []}}', 'productionGlob'],
-    ['.pi/tau.json', '{"formatters": {}}', 'formatters'],
     ['.pi/tau.json', '{"tdd": {"testGlobs": ["", "**/*.test.ts"]}}', 'testGlobs'],
     ['.pi/tau.json', '{"tdd": {"verificationArgv": ["jest"]}}', 'verificationArgv'],
     ['.pi/tau.json', '{"tdd": {"verificationArgv": []}}', 'verificationArgv'],

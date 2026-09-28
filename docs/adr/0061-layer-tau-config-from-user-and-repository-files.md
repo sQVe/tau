@@ -58,10 +58,11 @@ untrusted project's file is skipped, and the status output names it.
 
 - One loader reads and validates both files at the tool boundary. A pure function merges the layers,
   and the parsed values go into classification, fingerprints, and the runner.
-- The schema rejects unknown keys at every level, so a misspelled field fails instead of being
-  ignored.
-- Invalid JSON, a wrong type, an unknown key, or an unreadable file is an error that names the file
-  and the failing field. Tau never skips the broken layer or falls back to defaults.
+- The schema rejects unknown keys inside `tdd`, so a misspelled field fails instead of being
+  ignored. It ignores unknown top-level keys, because every Tau checkout reads the same user file
+  and an older one must not reject a key a newer consumer added.
+- Invalid JSON, a wrong type, an unknown `tdd` key, or an unreadable file is an error that names the
+  file and the failing field. Tau never skips the broken layer or falls back to defaults.
 - A config error pauses hints and appends the error once to the tool result. It never blocks an
   edit. `run_tests` fails with the error instead of running with another config.
 - Config changes hints and test execution only. Commit checks stay unchanged.
@@ -86,6 +87,8 @@ decision.
 - A typo fails loudly, and the error says which file to fix.
 - Cost: replacing a whole list means copying the earlier value to extend it. The status output shows
   what applies.
+- Cost: a misspelled top-level key, such as `tddd`, is ignored. The status output then shows only
+  built-in defaults.
 - Cost: in an untrusted project, the repository file has no effect beyond a note in the status
   output.
 - Cost: a `verificationArgv` without `--reporter=json` makes every run fail as an unreadable report.

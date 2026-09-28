@@ -36,10 +36,10 @@ const tddConfigSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const configFileSchema = Type.Object(
-  { tdd: Type.Optional(Type.Partial(tddConfigSchema, { additionalProperties: false })) },
-  { additionalProperties: false },
-);
+// Other top-level keys belong to other consumers, possibly from a newer Tau sharing the user file.
+const configFileSchema = Type.Object({
+  tdd: Type.Optional(Type.Partial(tddConfigSchema, { additionalProperties: false })),
+});
 
 const configFileName = 'tau.json';
 
