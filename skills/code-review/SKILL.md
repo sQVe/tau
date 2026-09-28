@@ -136,8 +136,8 @@ stopped early, or left a claim uncertain, or when the input changed during the r
   beyond the target. Do not audit unrelated code.
 - Report only material findings: a concrete failure or cost, file:line evidence, and a fix
   direction. For rule violations, also cite the applicable rule's file and supporting lines. No
-  quotas or nits. Mark pre-existing issues separately. Name areas you left unread or read only
-  shallowly.
+  quotas or nits. Mark pre-existing issues separately. Name areas you left unread, and separately
+  the areas you read only shallowly.
 - A behavioral finding needs a production path that reaches the harmful state. A type or fixture
   that can represent the state is not enough.
 - Save details that do not fit the report in `$dir/details.md`.
@@ -178,8 +178,9 @@ Use the review assignment, then add:
   only exact duplicates and style points no rule supports, naming each in one line. Show refuted
   candidates only when one affects a decision. The checker's verdict is advice, not proof.
 - Gaps: after the table, list exclusions, unreadable or binary input, areas workers say they left
-  unread or read shallowly, worker failures, stale or unknown freshness, and a check result that may
-  not match the capture. Do not infer read coverage from citations.
+  unread, worker failures, stale or unknown freshness, and a check result that may not match the
+  capture. Do not infer read coverage from citations.
+- Notes: after the gaps, list areas workers say they read only shallowly. They are not gaps.
 - End with one question. With findings, ask for approval of the proposed actions, such as "Fix 1 and
   2, and investigate 3?" Approval starts separate work after the review. When a gap, failure, or
   stale result needs a decision, include it in the question.
