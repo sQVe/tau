@@ -1,5 +1,6 @@
 import { WorkerPlacement } from '../placement.js';
 import type { Visibility } from '../placement.js';
+import { requireObject } from '../terminal.js';
 
 interface FixturePane {
   pane_id: string;
@@ -19,6 +20,7 @@ export const placementFixture = (width: number, height: number) => {
   const panes = [parent];
   const dimensions = new Map([['parent', { width, height }]]);
   const titles = new Map<string, string>();
+  const labels = new Map<string, string>();
   const calls: string[][] = [];
   let created = 0;
 
@@ -51,6 +53,12 @@ export const placementFixture = (width: number, height: number) => {
           },
         },
       });
+    }
+
+    if (argumentsList[0] === 'tab' && operation === 'rename') {
+      labels.set(argumentsList[2]!, argumentsList.slice(3).join(' '));
+
+      return '{}';
     }
 
     if (operation === 'rename') {
@@ -118,6 +126,13 @@ export const placementFixture = (width: number, height: number) => {
     dimensions.set(pane.pane_id, { width, height });
     panes.push(pane);
 
+    labels.set(
+      pane.tab_id,
+      operation === 'apply'
+        ? String(requireObject(JSON.parse(argumentsList[2]!)).tab_label)
+        : value('--label')!,
+    );
+
     return JSON.stringify({
       result:
         operation === 'apply'
@@ -129,7 +144,8 @@ export const placementFixture = (width: number, height: number) => {
   return {
     placement: new WorkerPlacement(),
     client,
-    input: (visibility: Visibility) => ({
+    input: (visibility: Visibility, name = 'worker') => ({
+      name,
       visibility,
       cwd: '/work',
       environment: { TASK: 'fixture' },
@@ -137,6 +153,7 @@ export const placementFixture = (width: number, height: number) => {
     calls,
     panes,
     titles,
+    labels,
     dimensions,
     parent,
   };

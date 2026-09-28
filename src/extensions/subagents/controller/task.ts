@@ -426,7 +426,10 @@ export class TaskController {
         // Keep sharing intact until cleanup finishes, including its queued topology change.
         // Unconfirmed cleanup must still stop contributing placement candidates.
         if (handle.identity.terminalId != null) {
-          this.context.placement.release(handle.identity.terminalId);
+          // The tab label is cosmetic, so its rename gets a short deadline of its own.
+          this.context.placement.release(handle.identity.terminalId, (argumentsList) =>
+            this.context.client(argumentsList, 2_000, this.context.lifetime),
+          );
         }
 
         // Report the cleanup failure only once placement cleanup finishes.

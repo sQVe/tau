@@ -390,6 +390,7 @@ export class WorkerController {
   private placeWorker(input: LaunchInput, handle: Handle, call: TerminalCall) {
     return this.placement.place(
       {
+        name: handle.task.name ?? 'worker',
         ...(input.parentPane != null && input.parentPane !== ''
           ? { parentPane: input.parentPane }
           : {}),
