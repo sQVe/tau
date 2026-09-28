@@ -16,6 +16,12 @@ verification.
 - Follow the [writing instructions](src/extensions/writing/instructions.md) for every document.
 - Before finishing a document, check its local links and verify the commands it gives against the
   repository.
+- Follow the module, query, and failure conventions in
+  [ADR 0055](docs/adr/0055-record-tau-coding-conventions-in-agents-md.md). Give each new public read
+  path over saved records or running workers a contract test for normal, missing, and malformed
+  evidence.
+- Change a saved record format with a new version and fixtures
+  ([ADR 0053](docs/adr/0053-version-each-saved-record-format.md)).
 
 ## Tests
 
