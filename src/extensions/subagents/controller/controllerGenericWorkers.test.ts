@@ -285,6 +285,24 @@ it('waits for the split shell before starting a native worker', async () => {
   expect(setup.state.busyShellPolls).toBe(0);
 });
 
+it('titles a worker pane without a known model with its name only', async () => {
+  let title: string | undefined;
+
+  const setup = fixture('codex', async (argumentsList) => {
+    if (argumentsList[1] !== 'rename') {
+      return '';
+    }
+
+    title = argumentsList[3];
+
+    return JSON.stringify({ result: { pane: {} } });
+  });
+
+  await setup.controller.launch(setup.input);
+
+  expect(title).toMatch(/^worker-[a-z0-9]{2}$/);
+});
+
 it('saves a launched generic task in the current record format', async () => {
   const setup = fixture();
 

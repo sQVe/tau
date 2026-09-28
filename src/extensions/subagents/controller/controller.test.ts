@@ -4877,9 +4877,7 @@ it('keeps cleanup failure unconfirmed even when its detail omits that wording', 
   expect(failedRow?.recovery).toContain('manual cleanup');
 });
 
-it('renames the owned worker pane with its name, harness, and known model', async ({
-  onTestFinished,
-}) => {
+it('renames the owned worker pane with its name and model', async ({ onTestFinished }) => {
   const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
     if (argumentsList[1] === 'rename') {
       return JSON.stringify({ result: { pane: {} } });
@@ -4893,12 +4891,10 @@ it('renames the owned worker pane with its name, harness, and known model', asyn
   const rename = calls.find((call) => call[1] === 'rename');
 
   expect(rename?.slice(0, 3)).toEqual(['pane', 'rename', 'worker-1']);
-  expect(rename?.[3]).toMatch(/^worker-[a-z0-9]{2} \(pi \/ test\)$/);
+  expect(rename?.[3]).toMatch(/^worker-[a-z0-9]{2} \(test\)$/);
 });
 
-it('titles the worker pane with the full model ID after the provider', async ({
-  onTestFinished,
-}) => {
+it('titles the worker pane with the model ID after the provider', async ({ onTestFinished }) => {
   const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
     if (argumentsList[1] === 'rename') {
       return JSON.stringify({ result: { pane: {} } });
@@ -4911,7 +4907,7 @@ it('titles the worker pane with the full model ID after the provider', async ({
   const launched = await controller.launch({ ...input, loadout });
   const rename = calls.find((call) => call[1] === 'rename');
 
-  expect(rename?.[3]).toMatch(/^worker-[a-z0-9]{2} \(pi \/ meta-llama\)$/);
+  expect(rename?.[3]).toMatch(/^worker-[a-z0-9]{2} \(meta-llama\)$/);
 
   expect(workerArguments(readTask(launched.directory)).slice(3, 7)).toEqual([
     '--provider',
