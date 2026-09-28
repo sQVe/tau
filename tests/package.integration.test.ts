@@ -98,7 +98,16 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
         .getSkills()
         .skills.map((skill) => skill.name)
         .toSorted(),
-    ).toEqual(['bro', 'code-review', 'commit', 'handoff', 'tdd', 'update-branch', 'worktree']);
+    ).toEqual([
+      'bro',
+      'code-review',
+      'commit',
+      'handoff',
+      'pr',
+      'tdd',
+      'update-branch',
+      'worktree',
+    ]);
 
     expect(loader.getSkills().diagnostics).toEqual([]);
 
