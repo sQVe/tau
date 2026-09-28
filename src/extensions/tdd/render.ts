@@ -1,6 +1,7 @@
 import { isAbsolute, relative } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
+import type { LoadedTddConfig } from './config.js';
 import { maximumRetainedRuns } from './runner/retention.js';
 import type { DiagnosticFile, RunnerResult } from './runner/types.js';
 import { maximumFailures } from './runner/vitest.js';
@@ -275,3 +276,18 @@ export const runContext = (behavior: Behavior, observation: Observation): string
 
   return cap(lines.join('\n'), 4000);
 };
+
+export const configSummary = ({ source, config }: LoadedTddConfig): string =>
+  cap(
+    printable(
+      [
+        `TDD config: ${source ?? 'built-in defaults'}`,
+        `Production: ${config.productionGlobs.join(', ')}`,
+        `Tests: ${config.testGlobs.join(', ')}`,
+        `Test support: ${config.testSupportGlobs.join(', ')}`,
+        `Excluded: ${config.excludedGlobs.join(', ')}`,
+        `Command: ${config.verificationArgv.join(' ')}`,
+      ].join('\n'),
+    ),
+    1500,
+  );

@@ -13,8 +13,9 @@ import { editRenderers } from '../../../node_modules/@earendil-works/pi-coding-a
 import { writeRenderers } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/core/tools/renderers/write.js';
 import { ToolExecutionComponent } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { defaultTddConfig } from './config.js';
 import tddExtension from './index.js';
-import { runContext, summarize } from './render.js';
+import { configSummary, runContext, summarize } from './render.js';
 import type { RunnerResult } from './runner/types.js';
 import { runTests } from './runner/vitest.js';
 import type * as runnerModule from './runner/vitest.js';
@@ -265,10 +266,11 @@ it.for(['ordinary', 'long'] as const)(
         { type: 'text', text: hint },
         { type: 'text', text: summarize(cwd, details) },
         { type: 'text', text: runContext(parameters, details) },
+        { type: 'text', text: configSummary({ source: undefined, config: defaultTddConfig }) },
       ]),
     );
 
-    expect(result.content).toHaveLength(3);
+    expect(result.content).toHaveLength(4);
     expect(application.tool?.renderResult).toBeUndefined();
     initTheme('dark', false);
 
@@ -468,4 +470,86 @@ it('does not let a late run completion restore observations after a session rese
   expect(await application.edit(cwd)).toMatchObject({
     content: [{ text: 'Original result' }, { text: redHint }],
   });
+});
+
+const writeEvent = (path: string) => ({
+  toolName: 'write',
+  input: { path },
+  isError: false,
+  content: [{ type: 'text', text: 'Written' }],
+});
+
+it('reads source scope from tau.json and shows the effective config in run output', async ({
+  onTestFinished,
+}) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-config-scope-'));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  await writeFile(join(cwd, 'value.test.ts'), 'test');
+
+  await writeFile(
+    join(cwd, 'tau.json'),
+    JSON.stringify({ tdd: { excludedGlobs: ['**/node_modules/**', 'src/components/**'] } }),
+  );
+
+  const application = setup();
+
+  expect(
+    await application.emit('tool_result', cwd, writeEvent('src/components/Button.tsx')),
+  ).toBeUndefined();
+
+  expect(await application.emit('tool_result', cwd, writeEvent('src/hooks/useValue.ts'))).toEqual({
+    content: [
+      { type: 'text', text: 'Written' },
+      { type: 'text', text: redHint },
+    ],
+  });
+
+  vi.mocked(runTests).mockResolvedValueOnce({ kind: 'pass', tests: [] });
+  const tested = JSON.stringify((await application.run(cwd)).content);
+
+  expect(tested).toContain('tau.json');
+  expect(tested).toContain('src/components/**');
+});
+
+it('uses built-in defaults when tau.json is missing', async ({ onTestFinished }) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-config-default-'));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  await writeFile(join(cwd, 'value.test.ts'), 'test');
+  const application = setup();
+
+  expect(
+    await application.emit('tool_result', cwd, writeEvent('src/components/Button.tsx')),
+  ).toMatchObject({ content: [{ text: 'Written' }, { text: redHint }] });
+
+  vi.mocked(runTests).mockResolvedValueOnce({ kind: 'pass', tests: [] });
+  const tested = JSON.stringify((await application.run(cwd)).content);
+
+  expect(tested).toContain('built-in defaults');
+  expect(tested).toContain('**/*.test.{ts,tsx,js,jsx,mjs,cjs}');
+});
+
+it('reports malformed tau.json without falling back to defaults or blocking edits', async ({
+  onTestFinished,
+}) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-config-malformed-'));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  await writeFile(join(cwd, 'value.test.ts'), 'test');
+  await writeFile(join(cwd, 'tau.json'), JSON.stringify({ tdd: { productionGlobs: 'src/**' } }));
+  vi.mocked(runTests).mockClear();
+  const application = setup();
+  const event = writeEvent('src/value.ts');
+  const patch = await application.emit('tool_result', cwd, event);
+
+  expect(patch).toEqual({
+    content: [
+      ...event.content,
+      { type: 'text', text: expect.stringContaining(join(cwd, 'tau.json')) as string },
+    ],
+  });
+
+  expect(JSON.stringify(patch)).toContain('productionGlobs');
+  expect(JSON.stringify(patch)).not.toContain(redHint);
+  expect(await application.emit('tool_result', cwd, event)).toBeUndefined();
+  await expect(application.run(cwd)).rejects.toThrow(join(cwd, 'tau.json'));
+  expect(runTests).not.toHaveBeenCalled();
 });

@@ -10,6 +10,9 @@ Tau guides test-driven development, or TDD, with test results and nonblocking hi
 - prove the pass
 - optionally refactor safely
 
+A `tdd` block in a repository's `tau.json` sets which files the hints cover and how Vitest runs.
+`run_tests` output shows the effective config.
+
 Pi runs the agent and its tools. Tau stages and commits with installed Git hooks without a prompt.
 Test results never control edit permission. Tau is not a general agent framework.
 

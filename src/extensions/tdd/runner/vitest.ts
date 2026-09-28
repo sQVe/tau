@@ -1,7 +1,7 @@
 import { readFile, rm } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 
-import { tddConfig } from '../config.js';
+import { defaultTddConfig } from '../config.js';
 import { saveDiagnostics } from './diagnostics.js';
 import { defaultSpawn } from './process.js';
 import { defaultResolveVitest, explainSessionCwd, resolutionFailure } from './resolution.js';
@@ -278,7 +278,7 @@ const scopedPaths = (input: RunTestsInput): string[] => {
 
 const buildArguments = (input: RunTestsInput, outputFile: string): string[] | null => {
   const runnerArguments: string[] = [
-    ...tddConfig.verificationArgv.slice(1),
+    ...(input.verificationArgv ?? defaultTddConfig.verificationArgv).slice(1),
     `--outputFile=${outputFile}`,
   ];
 
