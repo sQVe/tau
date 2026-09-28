@@ -1,12 +1,12 @@
-import { access, readFile } from 'node:fs/promises';
-import { join, matchesGlob } from 'node:path';
+import { matchesGlob } from 'node:path';
 
 import { CONFIG_DIR_NAME } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isMissingFile } from '../../errors/index.js';
+import { configFileName, readTauConfig } from '../../tauConfig/index.js';
+import type { ConfigFile, ConfigLocation } from '../../tauConfig/index.js';
 import { mergeConfigLayers } from './configLayers.js';
 import type { ConfigLayer, MergedTddConfig } from './configLayers.js';
 
@@ -15,12 +15,6 @@ export type TddConfig = Static<typeof tddConfigSchema>;
 export interface LoadedTddConfig extends MergedTddConfig {
   // A repository config file that was skipped because the project is not trusted.
   ignored: string | undefined;
-}
-
-interface ConfigLocation {
-  cwd: string;
-  agentDirectory: string;
-  projectTrusted: boolean;
 }
 
 const globs = Type.Array(Type.String({ minLength: 1 }));
@@ -40,8 +34,6 @@ const tddConfigSchema = Type.Object(
 const configFileSchema = Type.Object({
   tdd: Type.Optional(Type.Partial(tddConfigSchema, { additionalProperties: false })),
 });
-
-const configFileName = 'tau.json';
 
 const defaultSource = 'built-in default';
 
@@ -83,29 +75,7 @@ const problem = (value: unknown): string => {
     : `${error.instancePath} ${error.message}`;
 };
 
-const readConfigFile = async (source: string): Promise<ConfigLayer | undefined> => {
-  let text: string;
-
-  try {
-    text = await readFile(source, 'utf8');
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return undefined;
-    }
-
-    throw new Error(`Could not read TDD config ${source}: ${String(error)}`, { cause: error });
-  }
-
-  let value: unknown;
-
-  try {
-    value = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`Invalid TDD config ${source}: not valid JSON (${String(error)})`, {
-      cause: error,
-    });
-  }
-
+const tddLayer = ({ source, value }: ConfigFile): ConfigLayer => {
   if (!Value.Check(configFileSchema, value)) {
     throw new Error(
       `Invalid TDD config ${source}: ${problem(value)}. Expected {"tdd": {...}} with productionGlobs, testGlobs, testSupportGlobs, and excludedGlobs as string arrays, and verificationArgv starting with "vitest". Fix the file; Tau does not fall back to another config.`,
@@ -124,26 +94,11 @@ const readConfigFile = async (source: string): Promise<ConfigLayer | undefined> 
   return { source, values };
 };
 
-const exists = (path: string) =>
-  access(path).then(
-    () => true,
-    () => false,
-  );
+// Repository config overrides user config, which overrides the defaults.
+export const loadTddConfig = (location: ConfigLocation): LoadedTddConfig => {
+  const { files, ignored } = readTauConfig(location);
 
-// Repository config overrides user config, which overrides the defaults. Pi's project trust gates
-// the repository file, as it gates `.pi/settings.json`.
-export const loadTddConfig = async ({
-  cwd,
-  agentDirectory,
-  projectTrusted,
-}: ConfigLocation): Promise<LoadedTddConfig> => {
-  const projectPath = join(cwd, CONFIG_DIR_NAME, configFileName);
-  const user = await readConfigFile(join(agentDirectory, configFileName));
-  const project = projectTrusted ? await readConfigFile(projectPath) : undefined;
-  const ignored = !projectTrusted && (await exists(projectPath)) ? projectPath : undefined;
-  const layers = [user, project].filter((layer) => layer !== undefined);
-
-  return { ...mergeConfigLayers(defaultTddConfig, defaultSource, layers), ignored };
+  return { ...mergeConfigLayers(defaultTddConfig, defaultSource, files.map(tddLayer)), ignored };
 };
 
 export const classifyPath = (config: TddConfig, path: string): 'test' | 'production' | 'other' => {

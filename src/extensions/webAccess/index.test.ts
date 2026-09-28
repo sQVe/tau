@@ -6,6 +6,9 @@ import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import webAccessExtension from './index.js';
 
 const setup = () => {
+  // No Tau config limits the delegate, whatever the developer's agent directory holds.
+  vi.stubEnv('PI_CODING_AGENT_DIR', '/nonexistent/tau-agent');
+
   const delegate = fauxProvider({
     provider: 'test-provider',
     models: [{ id: 'delegate' }],
@@ -19,7 +22,13 @@ const setup = () => {
   );
 
   const getAvailable = vi.fn<ExtensionContext['modelRegistry']['getAvailable']>(() => available);
-  const context = { modelRegistry: { find, getAvailable } } as unknown as ExtensionContext;
+
+  const context = {
+    cwd: '/tmp',
+    isProjectTrusted: () => false,
+    modelRegistry: { find, getAvailable },
+  } as unknown as ExtensionContext;
+
   const fake = fakeExtensionApi();
 
   webAccessExtension(fake.pi);

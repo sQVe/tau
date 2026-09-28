@@ -21,6 +21,15 @@ The block accepts `productionGlobs`, `testGlobs`, `testSupportGlobs`, `excludedG
 `verificationArgv`. Each key you set replaces its default. The repository file overrides the user
 file, and Tau reads it only in a trusted project. `run_tests` output shows the config in use.
 
+To limit the models Tau picks for workers and delegate tasks, add `allowedModels` to either file:
+
+```json
+{ "allowedModels": ["openai-codex/gpt-5.6-luna", "claude-bridge/claude-opus-5-5"] }
+```
+
+The repository list can only remove models from your list. Tau refuses any other model instead of
+falling back.
+
 Pi runs the agent and its tools. Tau stages and commits with installed Git hooks without a prompt.
 Test results never control edit permission. Tau is not a general agent framework.
 

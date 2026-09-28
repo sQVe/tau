@@ -11,7 +11,8 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { Value } from 'typebox/value';
 
-import { parseModelReference } from '../../delegateModel/index.js';
+import { parseModelReference, requireAllowedModel } from '../../delegateModel/index.js';
+import type { ConfigLocation } from '../../tauConfig/index.js';
 import { bundledProfileDirectory, resolveProfile } from './profiles.js';
 import { loadoutSchema } from './types.js';
 import type { Loadout, Profile } from './types.js';
@@ -32,9 +33,16 @@ const safetyExtension = (): string =>
     join(dirname(nodeRequire.resolve('cc-safety-net/package.json')), 'dist', 'pi', 'index.js'),
   );
 
-const findModel = (registry: ModelRegistry, model: { provider: string; id: string }) =>
+const findModel = (
+  registry: ModelRegistry,
+  location: ConfigLocation,
+  model: { provider: string; id: string },
+) => {
+  requireAllowedModel(`${model.provider}/${model.id}`, location);
+
   // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model IDs, not an array predicate.
-  registry.find(model.provider, model.id);
+  return registry.find(model.provider, model.id);
+};
 
 const configuredModels = (context: ModelContext): string => {
   const models = context.scopedModels.map(({ model }) => `${model.provider}/${model.id}`);
@@ -44,7 +52,12 @@ const configuredModels = (context: ModelContext): string => {
 
 const isBundled = (profile: Profile): boolean => profile.source.startsWith(bundledProfileDirectory);
 
-const resolveModel = (explicit: string | undefined, profile: Profile, context: ModelContext) => {
+const resolveModel = (
+  explicit: string | undefined,
+  profile: Profile,
+  context: ModelContext,
+  location: ConfigLocation,
+) => {
   // oxlint-disable-next-line node/no-process-env -- Explicit worker model configuration has no implicit parent-model fallback.
   const configured = process.env.TAU_SUBAGENT_MODEL;
   const environment = configured === '' ? undefined : configured;
@@ -62,7 +75,7 @@ const resolveModel = (explicit: string | undefined, profile: Profile, context: M
     );
   }
 
-  const selectedModel = findModel(context.modelRegistry, reference);
+  const selectedModel = findModel(context.modelRegistry, location, reference);
 
   if (!selectedModel) {
     throw new Error(`Worker model unavailable: ${model}.${configuredModels(context)}`);
@@ -119,7 +132,9 @@ export const resolveLoadout = (
 ): Loadout => {
   signal.throwIfAborted();
   const { cwd, agentDirectory, profile } = resolveLaunchPlan(input, context);
-  const model = resolveModel(input.model, profile, context);
+  // The launch plan already requires a trusted project.
+  const location = { cwd, agentDirectory, projectTrusted: true };
+  const model = resolveModel(input.model, profile, context, location);
 
   return {
     harness: 'pi',
@@ -157,7 +172,8 @@ export const validateSavedLoadout = (
 
   requireSavedWorkerDirectory(value, context);
   const reference = parseModelReference(value.model);
-  const model = reference && findModel(context.modelRegistry, reference);
+  const location = { cwd: value.cwd, agentDirectory: value.agentDirectory, projectTrusted: true };
+  const model = reference && findModel(context.modelRegistry, location, reference);
 
   if (!model || clampThinkingLevel(model, value.thinking) !== value.thinking) {
     throw new Error('Saved worker model or thinking cannot be reproduced; no fallback allowed.');

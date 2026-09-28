@@ -11,6 +11,8 @@ import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import bulkReadExtension, { rewriteContinuationNotice } from './index.js';
 
 const setup = () => {
+  // No Tau config limits the delegate, whatever the developer's agent directory holds.
+  vi.stubEnv('PI_CODING_AGENT_DIR', '/nonexistent/tau-agent');
   const fake = fakeExtensionApi();
 
   const find = vi
@@ -21,7 +23,11 @@ const setup = () => {
     .fn<ExtensionContext['modelRegistry']['complete']>()
     .mockResolvedValue(fauxAssistantMessage('answer'));
 
-  const context = { cwd: '/tmp', modelRegistry: { find, complete } } as unknown as ExtensionContext;
+  const context = {
+    cwd: '/tmp',
+    isProjectTrusted: () => false,
+    modelRegistry: { find, complete },
+  } as unknown as ExtensionContext;
 
   bulkReadExtension(fake.pi);
   const tool = fake.tools.get('bulk_read');

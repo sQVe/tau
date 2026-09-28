@@ -91,7 +91,7 @@ describe('TDD config', () => {
       JSON.stringify({ formatters: {}, tdd: { productionGlobs: ['{internal,cmd}/**/*.go'] } }),
     );
 
-    const { config } = await loadTddConfig({
+    const { config } = loadTddConfig({
       cwd,
       agentDirectory: join(cwd, 'agent'),
       projectTrusted: true,
@@ -116,13 +116,14 @@ describe('TDD config', () => {
     await mkdir(join(cwd, 'agent'));
     await writeFile(join(cwd, file), content);
 
-    const loading = loadTddConfig({
-      cwd,
-      agentDirectory: join(cwd, 'agent'),
-      projectTrusted: true,
-    });
+    const loading = () =>
+      loadTddConfig({
+        cwd,
+        agentDirectory: join(cwd, 'agent'),
+        projectTrusted: true,
+      });
 
-    await expect(loading).rejects.toThrow(join(cwd, file));
-    await expect(loading).rejects.toThrow(problem);
+    expect(loading).toThrow(join(cwd, file));
+    expect(loading).toThrow(problem);
   });
 });

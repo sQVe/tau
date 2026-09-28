@@ -84,3 +84,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0060: Keep local code review in a skill](./0060-keep-local-code-review-in-a-skill.md)
 - [0061: Layer Tau config from user and repository files](./0061-layer-tau-config-from-user-and-repository-files.md)
 - [0062: Put worker instructions in the system prompt](./0062-put-worker-instructions-in-the-system-prompt.md)
+- [0063: Narrow allowed models from the user file to the repository file](./0063-narrow-allowed-models-from-user-to-repository.md)
