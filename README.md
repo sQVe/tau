@@ -10,9 +10,16 @@ Tau guides test-driven development, or TDD, with test results and nonblocking hi
 - prove the pass
 - optionally refactor safely
 
-A `tdd` block in `~/.pi/agent/tau.json` sets which files the hints cover and how Vitest runs. A
-trusted repository's `.pi/tau.json` overrides it per field. `run_tests` output shows the effective
-config.
+To set which files the hints cover, add a `tdd` block to `.pi/tau.json` in the repository, or to
+`~/.pi/agent/tau.json` for every repository:
+
+```json
+{ "tdd": { "productionGlobs": ["{src,scripts}/**/*.ts"] } }
+```
+
+The block accepts `productionGlobs`, `testGlobs`, `testSupportGlobs`, `excludedGlobs`, and
+`verificationArgv`. Each key you set replaces its default. The repository file overrides the user
+file, and Tau reads it only in a trusted project. `run_tests` output shows the config in use.
 
 Pi runs the agent and its tools. Tau stages and commits with installed Git hooks without a prompt.
 Test results never control edit permission. Tau is not a general agent framework.
