@@ -46,6 +46,7 @@
     "@vitest/coverage-v8": "4.1.11",
     "jiti": "2.7.0",
     "knip": "6.37.0",
+    "oxc-parser": "0.150.0",
     "typescript": "7.0.2",
     "vite-plus": "0.3.0",
     "vitest": "4.1.11"

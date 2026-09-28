@@ -78,3 +78,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0054: Show one foreground worker per parent](./0054-show-one-foreground-worker-per-parent.md)
 - [0055: Record Tau coding conventions in `AGENTS.md`](./0055-record-tau-coding-conventions-in-agents-md.md)
 - [0056: Load workflow rules apart from coding and writing](./0056-load-workflow-rules-apart-from-coding-and-writing.md)
+- [0057: Enforce pure decision modules from a registry](./0057-enforce-pure-decision-modules-from-a-registry.md)

@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { truncateLine } from '@earendil-works/pi-coding-agent';
 
 import { isMissingFile } from '../../errors/index.js';
+import { readWorkerFacts } from './controller/record.js';
 import { readGenericReference } from './generic.js';
 import { nativeHeader } from './native.js';
 import { findSuccessor, readReport } from './records.js';
@@ -10,7 +11,7 @@ import { canonical, historyRegistry, lineage, sameRoot } from './sessionLineage.
 import type { LineageNode } from './sessionLineage.js';
 import { isGenericLoadout, isTaskId, requireNativeTask } from './types.js';
 import type { Report, Task, WorkerState } from './types.js';
-import { deriveWorkerState, readWorkerFacts } from './workerState.js';
+import { deriveWorkerState } from './workerState.js';
 
 interface Candidate {
   sourceFile: string;
@@ -84,7 +85,11 @@ const candidateState = (
   diagnostics: string[],
 ): WorkerState | undefined => {
   return readOrDiagnose(
-    () => deriveWorkerState(readWorkerFacts(directory, task.taskId), task, ownership(task.taskId)),
+    () => {
+      const facts = readWorkerFacts(directory, task.taskId);
+
+      return deriveWorkerState(facts, task, ownership(task.taskId));
+    },
     `Task ${task.taskId} state`,
     diagnostics,
   );

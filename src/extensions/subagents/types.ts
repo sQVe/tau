@@ -257,17 +257,6 @@ export const nativeAgentStates = ['idle', 'done', 'working', 'blocked', 'unknown
 
 export type NativeAgentState = (typeof nativeAgentStates)[number];
 
-// These events end the task even when no report was saved.
-export const taskEndedEventKinds: readonly TaskEvent['kind'][] = [
-  'cleanup',
-  'cancelled',
-  'timeout',
-  'startupFailure',
-  'parentClosed',
-  'settled',
-  'stopping',
-];
-
 // A worker with any of these events no longer accepts replies.
 export const replyClosedEventKinds: readonly TaskEvent['kind'][] = [
   'settled',

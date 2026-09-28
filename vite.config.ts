@@ -435,6 +435,8 @@ export default defineConfig({
           'eslint/max-depth': 'off',
           // Tests isolate the real process environment.
           'node/no-process-env': 'off',
+          // Vitest prints a second argument with the failure, such as the fix for a structure check.
+          'vitest/valid-expect': ['error', { maxArgs: 2 }],
           // Shared scenario runners assert inside the helper.
           'vitest/expect-expect': [
             'error',

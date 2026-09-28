@@ -1,7 +1,7 @@
-import { readPendingQuestion, readReply } from './questionRecords.js';
-import { readEvent, readGenericSubmission, readReport } from './records.js';
-import { isGenericLoadout, taskEndedEventKinds } from './types.js';
+import type { readGenericSubmission } from './records.js';
 import type { Question, Report, Task, TaskEvent, WorkerState } from './types.js';
+
+// Decides worker state from facts the caller read. tests/structure.test.ts keeps this module pure.
 
 export interface WorkerFacts {
   events: Partial<Record<TaskEvent['kind'], TaskEvent>>;
@@ -11,39 +11,16 @@ export interface WorkerFacts {
   pendingQuestion: (Question & { replySaved?: boolean }) | undefined;
 }
 
-const factEventKinds: readonly TaskEvent['kind'][] = ['accepted', ...taskEndedEventKinds];
-
-const readPendingQuestionFact = (directory: string, taskId: string) => {
-  const question = readPendingQuestion(directory, taskId);
-
-  if (question === undefined) {
-    return undefined;
-  }
-
-  const replySaved = readReply(directory, taskId, question.questionId) !== undefined;
-
-  return replySaved ? { ...question, replySaved: true } : question;
-};
-
-// Reads each lifecycle record once. Records can still appear between the individual reads.
-export const readWorkerFacts = (directory: string, taskId: string): WorkerFacts => {
-  const events: WorkerFacts['events'] = {};
-
-  for (const kind of factEventKinds) {
-    const event = readEvent(directory, taskId, kind);
-
-    if (event) {
-      events[kind] = event;
-    }
-  }
-
-  return {
-    events,
-    report: readReport(directory, taskId),
-    assignment: readGenericSubmission(directory, taskId, 'assignment'),
-    pendingQuestion: readPendingQuestionFact(directory, taskId),
-  };
-};
+// These events end the task even when no report was saved.
+export const taskEndedEventKinds: readonly TaskEvent['kind'][] = [
+  'cleanup',
+  'cancelled',
+  'timeout',
+  'startupFailure',
+  'parentClosed',
+  'settled',
+  'stopping',
+];
 
 // The worker's own settled.stopped never proves a stop; only the parent's cleanup record does.
 // oxlint-disable-next-line eslint/complexity -- One ordered table of ownership and lifecycle rules is clearer than nested helpers.
@@ -80,7 +57,7 @@ export const deriveWorkerState = (
     return 'reported';
   }
 
-  if (isGenericLoadout(task.loadout)) {
+  if (task.loadout.harness === 'generic') {
     return facts.assignment?.observation?.state === 'submitted' ? 'running' : 'starting';
   }
 
