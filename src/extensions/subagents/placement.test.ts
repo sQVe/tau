@@ -404,3 +404,88 @@ it('stacks the second background worker below the first in 193 columns and 60 ro
 
   expect(dimensions.get(second.paneId)).toEqual({ width: 193, height: 30 });
 });
+
+it('labels a new worker tab with its first worker', async () => {
+  const { placement, client, input, labels } = fixture(340, 100);
+
+  const worker = await placement.place(
+    { ...input('background', 'scout-as'), command: ['pi'] },
+    client,
+  );
+
+  expect(labels.get(worker.tabId)).toBe('scout-as');
+});
+
+it('adds a worker to the label of the owned tab it joins, not the parent tab', async () => {
+  const { placement, client, input, labels, calls } = fixture(340, 100);
+  await placement.place(input('foreground', 'worker-kq'), client);
+  const first = await placement.place(input('background', 'scout-as'), client);
+  const second = await placement.place(input('background', 'reviewer-so'), client);
+
+  expect(second.tabId).toBe(first.tabId);
+  expect(labels.get(first.tabId)).toBe('scout-as, reviewer-so');
+  expect(calls.some((call) => call[0] === 'tab' && call[2] === 'working')).toBe(false);
+});
+
+it('drops a released worker from its tab label', async () => {
+  const { placement, client, input, labels } = fixture(340, 100);
+  const first = await placement.place(input('background', 'scout-as'), client);
+  await placement.place(input('background', 'reviewer-so'), client);
+
+  placement.release(first.terminalId, client);
+  await placement.close(() => Promise.resolve());
+
+  expect(labels.get(first.tabId)).toBe('reviewer-so');
+});
+
+it('counts workers past the third in the tab label', async () => {
+  const { placement, client, input, labels } = fixture(340, 100);
+
+  await Promise.all(
+    ['scout-as', 'reviewer-so', 'worker-kq', 'scout-bt', 'scout-cu'].map((name) =>
+      placement.place(input('background', name), client),
+    ),
+  );
+
+  expect(labels.get('background-1')).toBe('scout-as, reviewer-so, worker-kq +2');
+});
+
+it('keeps placing and releasing workers when a tab rename fails', async () => {
+  const { placement, client, input } = fixture(340, 100);
+
+  const failingClient = async (argumentsList: string[]) => {
+    if (argumentsList[0] === 'tab' && argumentsList[1] === 'rename') {
+      throw new Error('rename rejected');
+    }
+
+    return client(argumentsList);
+  };
+
+  const first = await placement.place(input('background', 'scout-as'), failingClient);
+  const second = await placement.place(input('background', 'reviewer-so'), failingClient);
+
+  placement.release(first.terminalId, failingClient);
+  await placement.close(() => Promise.resolve());
+
+  expect(second.tabId).toBe(first.tabId);
+});
+
+it('renames a joined tab through its own label call, not the launch call', async () => {
+  const { placement, client, input, labels } = fixture(340, 100);
+  const first = await placement.place(input('background', 'scout-as'), client);
+
+  const hangingRename = async (argumentsList: string[]) => {
+    if (argumentsList[0] === 'tab' && argumentsList[1] === 'rename') {
+      return new Promise<string>(() => undefined);
+    }
+
+    return client(argumentsList);
+  };
+
+  await placement.place(
+    { ...input('background', 'reviewer-so'), labelCall: client },
+    hangingRename,
+  );
+
+  expect(labels.get(first.tabId)).toBe('scout-as, reviewer-so');
+});

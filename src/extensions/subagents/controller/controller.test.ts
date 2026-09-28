@@ -2555,13 +2555,13 @@ it.each(['confirmed', 'unconfirmed'] as const)(
       expect(second.state).toBe('starting');
       // The cleaning worker still holds the parent's one foreground slot.
       expect(second.placement?.visibility).toBe('background');
-      expect(release).not.toHaveBeenCalledWith('terminal-1');
+      expect(release).not.toHaveBeenCalledWith('terminal-1', expect.any(Function));
     } finally {
       resume.resolve(undefined);
       await cancellation;
     }
 
-    expect(release).toHaveBeenCalledWith('terminal-1');
+    expect(release).toHaveBeenCalledWith('terminal-1', expect.any(Function));
 
     expect(terminal.panes.some((pane) => pane.pane_id === 'worker-1')).toBe(
       outcome === 'unconfirmed',

@@ -15,6 +15,9 @@ export type Visibility = 'foreground' | 'background';
 export type Placement = TerminalLocation & { visibility: Visibility; reason?: string };
 
 interface PlacementInput {
+  name: string;
+  // Renames the tab without the launch budget, so a hung rename cannot fail the launch.
+  labelCall?: TerminalCall;
   parentPane?: string;
   visibility: Visibility;
   cwd: string;
@@ -139,12 +142,47 @@ const splitCandidate = (
 
 export class WorkerPlacement {
   private readonly owned = new Map<string, { tabId: string; visibility: Visibility }>();
+  // Workers in each background tab's label, in launch order. Unlike owned, a cancelled placement
+  // keeps its name until the stop path releases it.
+  private readonly labelled = new Map<string, { tabId: string; name: string }>();
   // Release stops splitting a worker pane, but a pane that cleanup left open still shows.
   private foreground: string | undefined;
   private pending: Promise<unknown> = Promise.resolve();
 
-  release(terminalId: string): void {
+  // Only the stop path passes a call; that is when the name leaves the tab label.
+  release(terminalId: string, call?: TerminalCall): void {
     this.owned.delete(terminalId);
+    const labelled = this.labelled.get(terminalId);
+
+    if (call && labelled) {
+      this.labelled.delete(terminalId);
+      this.pending = this.pending.then(() => this.relabel(labelled.tabId, call));
+    }
+  }
+
+  private label(tabId: string): string {
+    const names = [...this.labelled.values()]
+      .filter((worker) => worker.tabId === tabId)
+      .map((worker) => worker.name);
+
+    const shown = names.slice(0, 3).join(', ');
+
+    return names.length > 3 ? `${shown} +${names.length - 3}` : shown;
+  }
+
+  // The tab label is cosmetic; a failed rename never fails a launch or a stop.
+  private async relabel(tabId: string, call: TerminalCall): Promise<void> {
+    const label = this.label(tabId);
+
+    if (label === '') {
+      return;
+    }
+
+    try {
+      await call(['tab', 'rename', tabId, label]);
+    } catch {
+      // Keep the previous label.
+    }
   }
 
   private async enqueue<Result>(
@@ -345,7 +383,7 @@ export class WorkerPlacement {
               '--workspace',
               parent.workspaceId,
               '--label',
-              'Tau workers',
+              input.name,
               '--cwd',
               input.cwd,
               '--no-focus',
@@ -358,6 +396,7 @@ export class WorkerPlacement {
         );
 
     this.owned.set(location.terminalId, { tabId: location.tabId, visibility: 'background' });
+    this.labelled.set(location.terminalId, { tabId: location.tabId, name: input.name });
     input.onCreated?.(location);
 
     return location;
@@ -374,7 +413,7 @@ export class WorkerPlacement {
       'apply',
       JSON.stringify({
         workspace_id: parent.workspaceId,
-        tab_label: 'Tau workers',
+        tab_label: input.name,
         focus: false,
         root: { type: 'pane', cwd: input.cwd, env: input.environment, command: input.command },
       }),
@@ -443,6 +482,10 @@ export class WorkerPlacement {
 
       if (target.visibility === 'foreground') {
         this.foreground = location.terminalId;
+        this.labelled.delete(location.terminalId);
+      } else {
+        this.labelled.set(location.terminalId, { tabId: location.tabId, name: input.name });
+        await this.relabel(location.tabId, input.labelCall ?? call);
       }
     }
 

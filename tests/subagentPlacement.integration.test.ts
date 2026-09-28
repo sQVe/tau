@@ -38,7 +38,13 @@ it.runIf(hasHerdr).each([
     const workers = await Promise.all(
       Array.from({ length: count }, () =>
         placement.place(
-          { parentPane: parent.paneId, visibility: 'foreground', cwd: root, environment: {} },
+          {
+            name: 'worker',
+            parentPane: parent.paneId,
+            visibility: 'foreground',
+            cwd: root,
+            environment: {},
+          },
           client,
         ),
       ),
@@ -81,6 +87,7 @@ it.runIf(hasHerdr)(
     const worker = await new WorkerPlacement().place(
       {
         parentPane: parent.paneId,
+        name: 'worker',
         visibility: 'foreground',
         cwd: root,
         environment: { EXIT_SIGNAL: exitSignal },
@@ -140,6 +147,7 @@ it.runIf(hasHerdr)(
 
     const input = {
       parentPane: parent.paneId,
+      name: 'worker',
       visibility: 'foreground' as const,
       cwd: root,
       environment: {},
@@ -204,6 +212,7 @@ it.runIf(hasHerdr)(
 
     const input = {
       parentPane: parent.paneId,
+      name: 'worker',
       visibility: 'foreground' as const,
       cwd: root,
       environment: {},
@@ -310,6 +319,7 @@ it.runIf(hasHerdr)(
         placement.place(
           {
             parentPane: parent.paneId,
+            name: 'worker',
             visibility: 'background',
             cwd: root,
             environment: {},
