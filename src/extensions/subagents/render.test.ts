@@ -93,12 +93,11 @@ const statusFixture = (state: WorkerState) => ({
   nativeSessionFile: join(records, 'session.jsonl'),
 });
 
-const replyFixture = (delivery: string, workerAcknowledged?: boolean) => ({
+const replyFixture = (workerAcknowledged?: boolean) => ({
   taskId,
   name: 'worker-ab',
   questionId: 'question-abcdef01',
   replyAccepted: true,
-  delivery,
   ...(workerAcknowledged === undefined ? {} : { workerAcknowledged }),
 });
 
@@ -241,26 +240,15 @@ it('marks the deadline as enforced only for owned live states', () => {
 
 it('shows the worker name on a reply line and falls back to the short ID', () => {
   const subject = theme();
-  const named = lines(renderReplyResult(replyFixture('sent'), false, subject)).join('\n');
+  const named = lines(renderReplyResult(replyFixture(), false, subject)).join('\n');
   expect(named).toContain('worker-ab');
 
   const unnamed = lines(
-    renderReplyResult({ ...replyFixture('sent'), name: undefined }, false, subject),
+    renderReplyResult({ ...replyFixture(), name: undefined }, false, subject),
   ).join('\n');
 
   expect(unnamed).toContain(taskId.slice(0, 8));
   expect(unnamed).not.toContain(taskId);
-});
-
-it('shows why an uncertain reply delivery failed in the expanded view', () => {
-  const subject = theme();
-  const reply = { ...replyFixture('uncertain'), deliveryError: 'herdr timed out' };
-
-  expect(lines(renderReplyResult(reply, true, subject)).join('\n')).toContain('herdr timed out');
-
-  expect(lines(renderReplyResult(reply, false, subject)).join('\n')).not.toContain(
-    'herdr timed out',
-  );
 });
 
 it('shows the predecessor name on a follow-up line and falls back to the short ID', () => {
@@ -282,21 +270,13 @@ it('shows the predecessor name on a follow-up line and falls back to the short I
   expect(unnamed).toContain('predeces');
 });
 
-it('never claims an acknowledgement and renders each delivery value differently', () => {
+it('claims an acknowledgement only when the worker saved one', () => {
   const subject = theme();
-  const deliveries = ['sent', 'uncertain', 'notResent'];
+  const pending = collapsedReplyLines(replyFixture(false), subject).join('\n');
+  const acknowledged = collapsedReplyLines(replyFixture(true), subject).join('\n');
 
-  const outputs = deliveries.map((delivery) =>
-    collapsedReplyLines(replyFixture(delivery), subject).join('\n'),
-  );
-
-  const acknowledged = collapsedReplyLines(replyFixture('sent', true), subject).join('\n');
-
-  expect(new Set(outputs).size).toBe(deliveries.length);
-
-  for (const output of [...outputs, acknowledged]) {
-    expect(/(?<!not )\backnowledged\b/.test(output)).toBe(false);
-  }
+  expect(/(?<!not )\backnowledged\b/.test(pending)).toBe(false);
+  expect(/(?<!not )\backnowledged\b/.test(acknowledged)).toBe(true);
 });
 
 it('renders at most five history rows and an expansion hint', () => {
@@ -378,17 +358,6 @@ it('rejects results without a worker state so Pi renders its default', () => {
   );
 });
 
-it('falls back to Pi rendering for a legacy prose reply delivery', () => {
-  const subject = theme();
-
-  const legacy = {
-    ...replyFixture('sent'),
-    delivery: 'Herdr accepted the reply text; saved on disk.',
-  };
-
-  expect(() => renderReplyResult(legacy, false, subject)).toThrow(DefaultRenderingRequiredError);
-});
-
 it('renders through the registered tool definitions and the message renderer', () => {
   const subject = theme();
   const { tools, messageRenderers } = renderers();
@@ -413,7 +382,7 @@ it('renders through the registered tool definitions and the message renderer', (
 
   const replyOutput = plain(
     reply.renderResult(
-      { content: [{ type: 'text', text: '{}' }], details: replyFixture('sent') },
+      { content: [{ type: 'text', text: '{}' }], details: replyFixture() },
       options,
       subject,
       context,
@@ -455,7 +424,7 @@ it('renders through the registered tool definitions and the message renderer', (
 
 it('keeps generated paths, JSON, and full task IDs out of collapsed reply and history lines', () => {
   const subject = theme();
-  const reply = collapsedReplyLines(replyFixture('sent'), subject).join('\n');
+  const reply = collapsedReplyLines(replyFixture(), subject).join('\n');
   expect(reply).not.toContain('{');
   expect(reply).not.toMatch(/(^|\s)\/\S|~\//);
   expect(reply).not.toContain(taskId);

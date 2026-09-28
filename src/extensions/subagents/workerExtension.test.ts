@@ -870,3 +870,67 @@ it('stops waiting after uncertain question publication once the deadline passes'
   await emit('session_shutdown');
   expect(vi.getTimerCount()).toBe(0);
 });
+
+const saveReply = (directory: string, questionId: string) => {
+  questions.acceptReply(directory, 'task', {
+    version: 1,
+    taskId: 'task',
+    questionId,
+    replyId: 'reply',
+    reply: 'Read notes.md.',
+  });
+};
+
+it('acknowledges a saved reply and lets only that message through the input hook', async () => {
+  const { directory, emit, ask, sendUserMessage } = await waitingWorker();
+  const { details } = (await ask()) as { details: { questionId: string } };
+
+  expect(await emit('input', { text: 'typed', source: 'interactive' })).toEqual({
+    action: 'handled',
+  });
+
+  saveReply(directory, details.questionId);
+  await vi.advanceTimersByTimeAsync(1000);
+  // The question turn has not settled yet, so delivering now would let that settle end the task.
+  expect(questions.readAcknowledgement(directory, 'task', details.questionId)).toBeUndefined();
+
+  await emit('agent_settled');
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(readEvent(directory, 'task', 'settled')).toBeUndefined();
+
+  expect(questions.readAcknowledgement(directory, 'task', details.questionId)).toMatchObject({
+    replyId: 'reply',
+  });
+
+  expect(questions.readPendingQuestion(directory, 'task')).toBeUndefined();
+
+  expect(sendUserMessage).toHaveBeenLastCalledWith(expect.stringContaining('Read notes.md.'), {
+    deliverAs: 'followUp',
+  });
+
+  const [text] = sendUserMessage.mock.lastCall ?? [];
+
+  expect(await emit('input', { text: 'other', source: 'extension' })).toEqual({
+    action: 'handled',
+  });
+
+  expect(await emit('input', { text, source: 'extension' })).toEqual({ action: 'continue' });
+  expect(await emit('input', { text, source: 'extension' })).toEqual({ action: 'handled' });
+  await emit('session_shutdown');
+});
+
+it('leaves a reply saved after the wait ended unacknowledged', async () => {
+  const { directory, createdAt, emit, ask, sendUserMessage, shutdown } = await waitingWorker();
+  const { details } = (await ask()) as { details: { questionId: string } };
+
+  sendUserMessage.mockClear();
+  await emit('agent_settled');
+  vi.setSystemTime(createdAt + 30_000);
+  saveReply(directory, details.questionId);
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(shutdown).toHaveBeenCalledOnce();
+  expect(questions.readAcknowledgement(directory, 'task', details.questionId)).toBeUndefined();
+  expect(sendUserMessage).not.toHaveBeenCalled();
+  await emit('session_shutdown');
+});

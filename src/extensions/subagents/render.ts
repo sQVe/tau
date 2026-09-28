@@ -38,8 +38,6 @@ interface ReplyView {
   taskId?: string | undefined;
   name?: string | undefined;
   questionId?: string | undefined;
-  delivery: string;
-  deliveryError?: string | undefined;
   workerAcknowledged?: boolean | undefined;
 }
 
@@ -100,8 +98,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isWorkerState = (value: unknown): value is WorkerState =>
   typeof value === 'string' && Object.hasOwn(stateLabels, value);
-
-const replyDeliveries = new Set(['sent', 'uncertain', 'notResent']);
 
 const stringField = (record: Record<string, unknown>, key: string): string | undefined => {
   const value = record[key];
@@ -227,11 +223,7 @@ const replyView = (details: unknown): ReplyView | undefined => {
     return undefined;
   }
 
-  const delivery = stringField(details, 'delivery');
-
-  // Results saved before delivery became a small vocabulary carry prose here. Fall back to Pi's
-  // default rendering instead of labelling unknown text as an uncertain delivery.
-  if (delivery === undefined || !replyDeliveries.has(delivery)) {
+  if (details.replyAccepted !== true) {
     return undefined;
   }
 
@@ -239,8 +231,6 @@ const replyView = (details: unknown): ReplyView | undefined => {
     taskId: stringField(details, 'taskId'),
     name: stringField(details, 'name'),
     questionId: stringField(details, 'questionId'),
-    delivery,
-    deliveryError: stringField(details, 'deliveryError'),
     workerAcknowledged:
       typeof details.workerAcknowledged === 'boolean' ? details.workerAcknowledged : undefined,
   };
@@ -619,31 +609,12 @@ export const expandedHistoryLines = (details: HistoryView, theme: Theme): string
   return lines;
 };
 
-const replyLabel = (delivery: string): StateLabel => {
-  switch (delivery) {
-    case 'sent':
-      return { icon: '↳', color: 'accent', text: 'reply saved' };
-    case 'notResent':
-      return { icon: '↳', color: 'accent', text: 'reply already saved' };
-    default:
-      return { icon: '!', color: 'warning', text: 'reply saved' };
-  }
-};
-
 const replyStatement = (details: ReplyView, name: string, theme: Theme): string => {
-  const label = replyLabel(details.delivery);
-  const headText = `${theme.fg(label.color, label.icon)} ${theme.bold(name)}`;
+  const saved = `${theme.fg('accent', '↳')} ${theme.bold(name)} reply saved`;
 
-  switch (details.delivery) {
-    case 'sent':
-      return details.workerAcknowledged === true
-        ? `${headText} ${label.text} · sent to its pane`
-        : `${headText} ${label.text} · sent to its pane · not acknowledged yet`;
-    case 'notResent':
-      return `${headText} ${label.text} · not resent`;
-    default:
-      return `${headText} ${label.text} · delivery uncertain · do not resend`;
-  }
+  return details.workerAcknowledged === true
+    ? `${saved} · worker acknowledged`
+    : `${saved} · not acknowledged yet`;
 };
 
 export const collapsedReplyLines = (details: ReplyView, theme: Theme): string[] => [
@@ -661,8 +632,6 @@ const acknowledgedText = (acknowledged: boolean | undefined): string | undefined
 const expandedReplyLines = (details: ReplyView, theme: Theme): string[] => [
   row('Task', details.taskId ?? 'unknown', theme),
   ...optionalRow('Question ID', details.questionId, theme),
-  row('Delivery', details.delivery, theme),
-  ...optionalRow('Delivery error', details.deliveryError, theme),
   ...optionalRow('Acknowledged', acknowledgedText(details.workerAcknowledged), theme),
 ];
 

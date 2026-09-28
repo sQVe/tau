@@ -363,14 +363,12 @@ it('builds reply content with the question identity', () => {
       questionId: 'question-1',
       replyAccepted: true,
       workerAcknowledged: false,
-      delivery: 'sent',
     }),
   ).toEqual({
     taskId: 'task-1',
     questionId: 'question-1',
     replyAccepted: true,
     workerAcknowledged: false,
-    delivery: 'sent',
   });
 });
 

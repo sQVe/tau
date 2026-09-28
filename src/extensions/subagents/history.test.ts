@@ -493,13 +493,13 @@ it('returns clarification for ambiguous names and descriptions without writing o
   expect(() => controller.status(first.record.taskId, 'root')).toThrow('another parent');
   await expect(controller.cancel(first.record.taskId, 'root')).rejects.toThrow('another parent');
 
-  await expect(
+  expect(() =>
     controller.reply(first.record.taskId, 'root', {
       questionId: 'question',
       replyId: 'reply',
       reply: 'Inspect it.',
     }),
-  ).rejects.toThrow('another parent');
+  ).toThrow('another parent');
 
   controller.close();
   expect(snapshot()).toEqual(before);

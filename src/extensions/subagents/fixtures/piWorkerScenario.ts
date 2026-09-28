@@ -15,6 +15,7 @@ import { WorkerController } from '../controller/controller.js';
 import { searchHistory } from '../history.js';
 import { resolveLoadout, validateSavedLoadout } from '../loadout.js';
 import { readAcknowledgement, readReply } from '../questionRecords.js';
+import * as records from '../records.js';
 import { readTask } from '../records.js';
 import { listTerminals, requireObject, result, terminalLocation } from '../terminal.js';
 import { fixtureModel } from './controlledProvider.js';
@@ -30,6 +31,7 @@ export type PiWorkerScenario =
   | 'active timeout'
   | 'early exit'
   | 'question completion'
+  | 'question restart'
   | 'question cancellation'
   | 'question timeout';
 
@@ -39,7 +41,8 @@ export const piWorkerTimeout = 40_000;
 
 export const runPiWorkerScenario = async (scenario: PiWorkerScenario) => {
   const { root, environment, client: isolatedClient } = await isolatedHerdr();
-  const completes = ['completion', 'question completion', 'follow-up'].includes(scenario);
+  const answered = ['question completion', 'question restart'].includes(scenario);
+  const completes = answered || ['completion', 'follow-up'].includes(scenario);
 
   writeFileSync(
     join(root, 'parent.jsonl'),
@@ -77,18 +80,14 @@ export default function (pi) {
   );
 
   const observations: string[] = [];
-  const deliveryEntered = Promise.withResolvers<undefined>();
-  const releaseDelivery = Promise.withResolvers<undefined>();
   let promptCount = 0;
 
   let launches = 0;
   const subsequentLaunchErrors: string[] = [];
 
   const client = async (argumentsList: string[], budget = 5000, signal?: AbortSignal) => {
-    if (argumentsList[1] === 'prompt') {
+    if (argumentsList[0] === 'agent' && argumentsList[1] === 'prompt') {
       promptCount += 1;
-      deliveryEntered.resolve(undefined);
-      await releaseDelivery.promise;
     }
 
     const earlyExitLaunch = scenario === 'early exit' && argumentsList[0] === 'layout';
@@ -322,24 +321,25 @@ export default function (pi) {
       reply: 'Yes. Edit only the fixture.',
     };
 
-    if (scenario === 'question completion') {
-      const delivering = controller.reply(task.taskId, 'parent', answer);
-      await deliveryEntered.promise;
-      const repeated = await controller.reply(task.taskId, 'parent', answer);
+    if (scenario === 'question restart') {
+      // A crashed parent never records parentClosed, so the worker keeps waiting for a reply.
+      const recordEvent = vi.spyOn(records, 'recordEvent').mockImplementation(() => undefined);
 
-      if (!('workerAcknowledged' in repeated)) {
-        throw new Error('Expected a Pi reply receipt.');
-      }
+      controller.close();
+      recordEvent.mockRestore();
+      controller = new WorkerController(join(root, 'records'), client, notify);
+      await controller.resume('parent');
+    }
+
+    if (answered) {
+      const receipt = controller.reply(task.taskId, 'parent', answer);
+      const repeated = controller.reply(task.taskId, 'parent', answer);
 
       replyObservations.push(
+        receipt.replyAccepted,
+        repeated.replyAccepted,
         readReply(launched.directory, task.taskId, question.questionId)?.replyId,
-        readAcknowledgement(launched.directory, task.taskId, question.questionId),
-        repeated.workerAcknowledged,
-        promptCount,
       );
-
-      releaseDelivery.resolve(undefined);
-      await delivering;
     } else if (scenario === 'question cancellation') {
       await controller.cancel(task.taskId, 'parent');
     }
@@ -356,18 +356,15 @@ export default function (pi) {
     scenario.startsWith('question') ? ['awaitingReply', 'before\n', launched.deadline] : [],
   );
 
-  expect(replyObservations).toEqual(
-    scenario === 'question completion' ? ['reply-one', undefined, false, 1] : [],
-  );
+  expect(replyObservations).toEqual(answered ? [true, true, 'reply-one'] : []);
+  expect(promptCount).toBe(0);
 
   const acknowledgement =
     askedQuestionId != null
       ? readAcknowledgement(launched.directory, launched.taskId, askedQuestionId)
       : undefined;
 
-  expect(acknowledgement?.replyId).toBe(
-    scenario === 'question completion' ? 'reply-one' : undefined,
-  );
+  expect(acknowledgement?.replyId).toBe(answered ? 'reply-one' : undefined);
 
   expect(readTask(launched.directory)).toEqual(savedTask);
   expect(status.failure ?? '').toMatch(failure);
@@ -383,6 +380,7 @@ export default function (pi) {
         'active timeout': 'timeout',
         'early exit': 'failure',
         'question completion': 'success',
+        'question restart': 'success',
         'question cancellation': 'cancelled',
         'question timeout': 'timeout',
       }[scenario],

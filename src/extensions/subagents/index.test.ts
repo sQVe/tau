@@ -852,11 +852,10 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
     successorTaskId: 'successor-1',
   } as never);
 
-  vi.spyOn(WorkerController.prototype, 'reply').mockResolvedValue({
+  vi.spyOn(WorkerController.prototype, 'reply').mockReturnValue({
     replyAccepted: true,
     name: 'worker-ab',
     workerAcknowledged: false,
-    delivery: 'sent',
   });
 
   vi.spyOn(WorkerController.prototype, 'cancel').mockResolvedValue(fullWorkerStatus as never);
@@ -916,7 +915,6 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
     questionId: 'question-1',
     replyAccepted: true,
     workerAcknowledged: false,
-    delivery: 'sent',
   });
 
   expect((replyResult as { details: Record<string, unknown> }).details).toHaveProperty(
