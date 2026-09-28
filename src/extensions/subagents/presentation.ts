@@ -1,5 +1,8 @@
+import { join } from 'node:path';
+
 import type { ThemeColor } from '@earendil-works/pi-coding-agent';
 
+import { capReportText } from './reportCap.js';
 import type { WorkerState } from './types.js';
 
 // The single label table for worker states. Wording credits the worker and never claims a stop
@@ -27,6 +30,7 @@ export interface StatusInput {
   taskId: string;
   state: WorkerState;
   deadline: number;
+  directory?: string | undefined;
   name?: string | undefined;
   outcome?: string | undefined;
   predecessorTaskId?: string | undefined;
@@ -162,6 +166,45 @@ const modelQuestionReceipt = (
   };
 };
 
+const cappedReport = (report: unknown): Record<string, unknown> | undefined => {
+  if (!isRecord(report) || typeof report.summary !== 'string' || !Array.isArray(report.evidence)) {
+    return undefined;
+  }
+
+  const evidence = report.evidence.filter((entry): entry is string => typeof entry === 'string');
+  const capped = capReportText(report.summary, evidence);
+
+  if (!capped) {
+    return undefined;
+  }
+
+  return {
+    taskId: report.taskId,
+    outcome: report.outcome,
+    summary: capped.summary,
+    evidence: capped.evidence,
+  };
+};
+
+const addReport = (target: Record<string, unknown>, status: StatusInput): void => {
+  const capped = cappedReport(status.report);
+
+  if (!capped) {
+    addField(target, 'report', status.report);
+
+    return;
+  }
+
+  target.report = capped;
+  target.truncated = true;
+
+  addField(
+    target,
+    'reportFile',
+    status.directory === undefined ? undefined : join(status.directory, 'report.json'),
+  );
+};
+
 export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   const result: Record<string, unknown> = {
     taskId: status.taskId,
@@ -174,7 +217,7 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   addField(result, 'outcome', status.outcome);
   addField(result, 'predecessorTaskId', status.predecessorTaskId);
   addField(result, 'successorTaskId', status.successorTaskId);
-  addField(result, 'report', status.report);
+  addReport(result, status);
   addField(result, 'handoffSections', handoffSections(status.report));
   addField(result, 'pendingQuestion', modelQuestion(status.pendingQuestion));
   addField(result, 'failure', status.failure);

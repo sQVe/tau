@@ -1,6 +1,11 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { expect, it } from 'vitest';
 
 import { modelEvidenceNotice, modelReply, modelStatus, stateLabel } from './presentation.js';
+import { acceptReport, readReport } from './records.js';
 import type { WorkerState } from './types.js';
 
 const states: WorkerState[] = [
@@ -252,6 +257,52 @@ it('counts parenthesized and quoted headings that the report tool accepts', () =
     present: ['Changes', 'Evidence', 'Decisions', 'Concerns'],
     missing: [],
   });
+});
+
+it('caps a long report and points to the unchanged saved report', ({ onTestFinished }) => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-presentation-'));
+
+  onTestFinished(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  acceptReport(directory, 'task-1', {
+    taskId: 'task-1',
+    outcome: 'success',
+    summary: `## Changes\n${'s'.repeat(6000)}`,
+    evidence: ['e'.repeat(3000), 'kept-out'],
+  });
+
+  const saved = readFileSync(join(directory, 'report.json'), 'utf8');
+  const report = readReport(directory, 'task-1');
+  const status = { taskId: 'task-1', state: 'stopped' as const, deadline: 10, directory, report };
+  const content = modelStatus(status);
+
+  expect(content.report).toEqual({
+    taskId: 'task-1',
+    outcome: 'success',
+    summary: report?.summary,
+    evidence: ['e'.repeat(8000 - (report?.summary.length ?? 0))],
+  });
+
+  expect(content.truncated).toBe(true);
+  expect(readFileSync(content.reportFile as string, 'utf8')).toBe(saved);
+  expect(status.report).toEqual(JSON.parse(saved));
+
+  expect(content.handoffSections).toEqual({
+    present: ['Changes'],
+    missing: ['Evidence', 'Decisions', 'Concerns'],
+  });
+});
+
+it('passes a report within the cap through without a cut mark', () => {
+  const report = { taskId: 'task-1', outcome: 'success', summary: 'Done.', evidence: ['e'] };
+
+  const content = modelStatus({ taskId: 'task-1', state: 'stopped', deadline: 10, report });
+
+  expect(content.report).toEqual(report);
+  expect(content).not.toHaveProperty('truncated');
+  expect(content).not.toHaveProperty('reportFile');
 });
 
 it('carries a saved-reply flag on a pending question', () => {

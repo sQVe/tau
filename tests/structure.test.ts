@@ -25,6 +25,7 @@ const pureModules = [
   'src/extensions/tdd/configLayers.ts',
   'src/extensions/subagents/incompleteReport.ts',
   'src/extensions/subagents/piStop.ts',
+  'src/extensions/subagents/reportCap.ts',
   'src/extensions/subagents/workerState.ts',
 ];
 

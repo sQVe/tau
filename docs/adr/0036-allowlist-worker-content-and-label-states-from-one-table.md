@@ -14,6 +14,11 @@ Status wording has a second constraint. ADR 0028 keeps worker control in the par
 records prove a stop or an acknowledgement. A label that says "stopped" or shows a check mark
 without that record misleads the pilot.
 
+Worker reports have no size target that anything enforces. The report tool accepts a
+32,000-character summary and 100 evidence strings, and each notice and status result repeats the
+report. Across 356 saved reports, summary and evidence together have a median of 4,990 characters
+and a p90 of 9,789.
+
 ## Options considered
 
 - Return the full record and filter it by key name or delete known keys. This needs no new code per
@@ -24,6 +29,10 @@ without that record misleads the pilot.
 - Build model content from an explicit allowlist, keep the full record in `details`, and take all
   state wording from one label table. This costs an allowlist entry per field the model needs, but
   new fields stay out of model content until someone adds them on purpose.
+- Pass every report through whole. This keeps the model's view complete, but one long report fills
+  the parent's context again with every notice and status call.
+- Cap the report the model sees, mark the cut, and point to the saved report. The model reads the
+  rest on demand, and short reports stay unchanged.
 
 ## Decision
 
@@ -39,6 +48,19 @@ Keep the full record in `details` for renderers.
 - Send notices as status snapshots. A notice without `state` means the parent could not read the
   task records, and it carries `recovery` instead.
 
+### Worker reports
+
+- Cap `report.summary` and `report.evidence` in model content at 8,000 characters together. The
+  summary takes the budget first, then evidence in order. A summary over the cap keeps its start and
+  its end, because Concerns come last.
+- When the cap cuts a report, add `truncated: true` and `reportFile`, the path of the saved
+  `report.json`.
+- Keep the full report in `details` and in the saved record. Section checks read the full report.
+- Keep notices as JSON, so worker text stays apart from Tau's fields.
+
+The cap is twice the profiles' 4,000-character report target and leaves 288 of 356 saved reports
+(81%) unchanged.
+
 ### Labels
 
 - Take every state icon and word from `stateLabels` in `presentation.ts`.
@@ -52,6 +74,8 @@ Keep the full record in `details` for renderers.
 
 - New record fields stay out of model content until they are added to the allowlist on purpose.
 - Tools and notices use the same wording for the same state.
+- A long report costs the parent at most the cap per notice, and the model can still read the rest.
+- Cost: a capped report can drop evidence the parent needs until it reads `reportFile`.
 - Renderers read `details`, so model content can shrink without breaking the pilot's view.
 - Cost: each field the model needs takes an allowlist entry and a test.
 - Cost: a renderer that throws falls back to Pi's default rendering without an error, so render
