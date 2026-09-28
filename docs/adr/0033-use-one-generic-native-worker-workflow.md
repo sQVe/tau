@@ -1,6 +1,7 @@
 # ADR 0033: Use one generic native worker workflow
 
-- Status: Accepted; parent-user approval rules superseded by
+- Status: Superseded by [ADR 0058](./0058-run-subagents-only-as-pi-workers.md). Before that,
+  parent-user approval rules superseded by
   [ADR 0037](./0037-launch-native-workers-without-parent-approval.md); report area rule superseded
   by [ADR 0045](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md); the saved Pi
   record shape (fingerprints, `noExtensions`, tree ancestry) superseded by

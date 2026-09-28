@@ -1,7 +1,8 @@
 # ADR 0043: Own only the worker guarantees herdr lacks
 
 - Status: Accepted; placement rule superseded by
-  [ADR 0054](./0054-show-one-foreground-worker-per-parent.md)
+  [ADR 0054](./0054-show-one-foreground-worker-per-parent.md); generic workflow rule superseded by
+  [ADR 0058](./0058-run-subagents-only-as-pi-workers.md)
 - Date: 2026-09-24
 - Supersedes: [ADR 0029](./0029-version-worker-provider-fingerprints.md),
   [ADR 0031](./0031-reserve-worker-capacity-under-one-tree-lock.md), the claim rules in
@@ -105,3 +106,4 @@ subagent. Keep the generic workflow for non-Pi harnesses from
 
 - [ADR 0028: Keep worker control in the parent](./0028-keep-worker-control-in-the-parent.md)
 - [ADR 0033: Use one generic native worker workflow](./0033-use-one-generic-native-worker-workflow.md)
+- [ADR 0058: Run subagents only as Pi workers](./0058-run-subagents-only-as-pi-workers.md)
