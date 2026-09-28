@@ -8,11 +8,17 @@ these defaults.
 
 - Never edit, test, or commit another worktree. Send the work to that workspace with the handoff
   skill.
+- Never discard uncommitted changes you did not make. To set your own work aside, commit it instead
+  of stashing.
 
-## Run commands so their results mean something
+## Run commands
 
 - Append `|| true` only to probes where no match is expected, such as `rg` searches, never to
   checks.
+- Save the output of a long check to a file and read failures from it. Do not rerun a check only to
+  see output you cut off.
+- Run commands so they never wait for input. Pass every value a prompt would ask for, and set
+  `GIT_EDITOR=true` for `git rebase --continue`.
 
 ## Keep to the task
 
