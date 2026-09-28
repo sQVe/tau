@@ -143,7 +143,7 @@ required pre-merge checks pass and a complete review of the pushed content has n
 
     ```sh
     diff <(printf '%s\n' "$(gh pr view <number> --repo <repo> --json body -q .body)") \
-      <(printf '%s\n' "$(cat "$prdir/body.md")")
+      <(printf '%s\n' "$(cat <prdir>/body.md)")
     ```
 
     Report any difference and the PR URL. If verification fails or shows a difference, stop here.
