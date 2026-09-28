@@ -498,7 +498,6 @@ it('returns clarification for ambiguous names and descriptions without writing o
       questionId: 'question',
       replyId: 'reply',
       reply: 'Inspect it.',
-      scopeUnchanged: true,
     }),
   ).rejects.toThrow('another parent');
 

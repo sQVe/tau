@@ -541,7 +541,6 @@ it('places follow-ups with explicit visibility and the current parent terminal',
       sourceTaskId: 'source',
       task: 'Follow up.',
       timeoutSeconds: 10,
-      settingsUnchanged: true,
       visibility: 'background',
     },
     undefined,
@@ -628,7 +627,7 @@ it('launches a Pi worker through the tool and refuses a launch outside herdr', a
 
   expect(Value.Check(tool.parameters, input)).toBe(true);
 
-  const answer = { taskId: 'task', replyId: 'reply', reply: 'Scoped text.', scopeUnchanged: true };
+  const answer = { taskId: 'task', replyId: 'reply', reply: 'Scoped text.' };
 
   expect(Value.Check(reply.parameters, answer)).toBe(false);
   expect(Value.Check(reply.parameters, { ...answer, questionId: 'question' })).toBe(true);
@@ -783,7 +782,6 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
       sourceTaskId: 'source-1',
       task: 'Follow up.',
       timeoutSeconds: 10,
-      settingsUnchanged: true,
     },
     undefined,
     undefined,
@@ -869,7 +867,6 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
       questionId: 'question-1',
       replyId: 'reply-1',
       reply: 'Scoped text.',
-      scopeUnchanged: true,
     },
     undefined,
     undefined,
@@ -1066,7 +1063,7 @@ it('returns the unreadable-evidence object when follow-up records fail', async (
 
   const result = await tool.execute(
     'call',
-    { sourceTaskId: 'source', task: 'Continue.', timeoutSeconds: 10, settingsUnchanged: true },
+    { sourceTaskId: 'source', task: 'Continue.', timeoutSeconds: 10 },
     undefined,
     undefined,
     context,

@@ -84,7 +84,6 @@ const followUpParameters = Type.Object(
       }),
     ),
     timeoutSeconds: Type.Integer({ minimum: 10, maximum: 86400 }),
-    settingsUnchanged: Type.Literal(true),
     visibility,
   },
   { additionalProperties: false },
@@ -107,7 +106,6 @@ const replyParameters = Type.Object(
     questionId: Type.String({ minLength: 1 }),
     replyId: Type.String({ pattern: '^[a-zA-Z0-9-]{1,128}$' }),
     reply: Type.String({ minLength: 1, maxLength: 32000 }),
-    scopeUnchanged: Type.Boolean(),
   },
   { additionalProperties: false },
 );
@@ -391,8 +389,6 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
       'Assign acceptance criteria, baseline, worktree, one editor per worktree.',
       'Expect a report with Changes, Evidence, Decisions, and Concerns sections.',
       'Workers cannot launch workers; ask the parent. Each parent caps its live workers. The deadline includes waits and cleanup.',
-      'Returns state: starting (not accepted); running (accepted); awaitingReply (waiting for parent); reported (report saved, cleanup pending);',
-      'stopping (cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (manual cleanup, references kept); notOwned (no verified handle, may still run).',
       'When a worker asks, reports, or stops, a status notice starts a new parent turn after the current tool call finishes.',
       'End your turn to wait; never sleep or poll.',
       'No state means unreadable records; inspect recovery. subagent_cancel stops such a worker this session owns.',
@@ -423,7 +419,7 @@ const registerFollowUpTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_follow_up',
     label: 'Follow up completed worker',
     description: [
-      'Assign a new task in a saved Pi session. Requires sourceTaskId from session history, task, timeoutSeconds, and settingsUnchanged: true.',
+      'Assign a new task in a saved Pi session. Requires sourceTaskId from session history, task, and timeoutSeconds.',
       'The source must be stopped with a report and no successorTaskId; its native session must not be live.',
       'Returns the new task status, reusing the saved session and settings.',
     ].join(' '),
@@ -498,7 +494,7 @@ const registerReplyTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_reply',
     label: 'Reply to worker',
     description: [
-      "Reply within an active owned worker's scope and deadline. Requires taskId, the questionId from the worker's question notice, unique replyId, reply, and scopeUnchanged: true.",
+      "Reply within an active owned worker's scope and deadline. Requires taskId, the questionId from the worker's question notice, unique replyId, and reply.",
       'A worker without a pending question takes no reply, so use subagent_follow_up after it stops.',
       'Returns delivery: sent (herdr accepted text); notResent (saved reply, not sent again; delivery may remain uncertain);',
       'uncertain (unconfirmed, do not retry). Delivery is not task acceptance or acknowledgement.',

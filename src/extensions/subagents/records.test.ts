@@ -16,7 +16,7 @@ import { join } from 'node:path';
 
 import { afterEach, expect, it, onTestFinished as afterTest, vi } from 'vitest';
 
-import { readWorkerFacts } from './controller/record.js';
+import { readWorkerFacts, taskRecordStatus } from './controller/record.js';
 import * as questions from './questionRecords.js';
 import * as records from './records.js';
 
@@ -1082,6 +1082,25 @@ it('reads saved worker facts once for state and status', () => {
   expect(facts.report).toEqual(report);
 
   expect(facts.pendingQuestion).toEqual({ ...question, replySaved: true });
+});
+
+it('ignores a notified event saved by an earlier Tau', () => {
+  const { directory, task } = questionFixture();
+  records.recordEvent(directory, task.taskId, 'accepted', 'Accepted.');
+  records.recordEvent(directory, task.taskId, 'cleanup', { detail: 'Stopped.', stopped: true });
+
+  records.publish(directory, 'notified.json', {
+    taskId: task.taskId,
+    kind: 'notified',
+    detail: 'Parent notification attempted once.',
+    stopped: false,
+    at: 1000,
+  });
+
+  expect(taskRecordStatus(directory, records.readTask(directory))).toMatchObject({
+    taskId: task.taskId,
+    state: 'stopped',
+  });
 });
 
 it('refuses worker facts with a malformed lifecycle record', () => {
