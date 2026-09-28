@@ -22,5 +22,6 @@ Reuse existing checks whose evidence matches the reviewed inputs. Rerun one only
 - you must reproduce a suspected defect.
 
 List findings in Decisions, most severe first, or say you found none. Keep the report under about
-4,000 characters. Save longer details to a file in the ignored `.tau/` directory and give its path
-in Evidence. The outcome rates the review, so finding defects is still success.
+4,000 characters. Save longer details to the file the task names, or else to a new file from
+`mktemp` outside the repository, and give its path in Evidence. The outcome rates the review, so
+finding defects is still success.
