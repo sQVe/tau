@@ -21,7 +21,6 @@ import { placementFixture } from '../fixtures/placement.js';
 import { searchHistory } from '../history.js';
 import * as loadoutModule from '../loadout.js';
 import * as names from '../names.js';
-import { WorkerPlacement } from '../placement.js';
 import type { WorkerNotice } from '../presentation.js';
 import * as questions from '../questionRecords.js';
 import { acceptReport, readEvent, readTask, recordEvent } from '../records.js';
@@ -2455,18 +2454,17 @@ it("names herdr's Pi integration when a started Pi worker reports no agent sessi
   expect(calls.some((call) => call[1] === 'prompt')).toBe(false);
 });
 
-it.each(['confirmed', 'unconfirmed'] as const)(
+it.each(['confirmed', 'unconfirmed', 'confirmed with failing notices'] as const)(
   'keeps terminal ownership during %s cleanup and releases it afterward',
   async (outcome) => {
     const terminal = placementFixture(340, 100);
     const tokens = new Map<string, string>();
     const entered = Promise.withResolvers<undefined>();
     const resume = Promise.withResolvers<undefined>();
-    const release = vi.spyOn(WorkerPlacement.prototype, 'release');
     let cleaning = false;
     let held = false;
 
-    const { controller, input, fake } = setup(afterTest, 0, async (argumentsList) => {
+    const harness = setup(afterTest, 0, async (argumentsList) => {
       if (cleaning && !held && argumentsList[1] === 'list') {
         held = true;
         entered.resolve(undefined);
@@ -2538,30 +2536,52 @@ it.each(['confirmed', 'unconfirmed'] as const)(
       return terminal.client(argumentsList);
     });
 
+    const { controller, input, fake, notifications } = harness;
+
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const first = await controller.launch(input);
+    const first = await controller.launch({ ...input, visibility: 'background' });
     expect(first.state).toBe('starting');
 
     vi.spyOn(process, 'kill').mockImplementation(() => {
       throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
     });
 
+    if (outcome === 'confirmed with failing notices') {
+      vi.spyOn(notifications, 'push').mockImplementation(() => {
+        throw new Error('Notice delivery failed.');
+      });
+    }
+
     cleaning = true;
     const cancellation = controller.cancel(first.taskId, input.parentSessionId);
     await entered.promise;
+    let second: Awaited<ReturnType<typeof controller.launch>>;
+    let settled: unknown;
 
     try {
-      const second = await controller.launch(input);
+      second = await controller.launch({ ...input, visibility: 'background' });
       expect(second.state).toBe('starting');
-      // The cleaning worker still holds the parent's one foreground slot.
-      expect(second.placement?.visibility).toBe('background');
-      expect(release).not.toHaveBeenCalledWith('terminal-1', expect.any(Function));
+      // The cleaning worker still owns its tab, so the next worker joins it.
+      expect(terminal.labels.get('background-1')).toBe(`${first.name}, ${second.name}`);
     } finally {
       resume.resolve(undefined);
-      await cancellation;
+
+      settled = await cancellation.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
     }
 
-    expect(release).toHaveBeenCalledWith('terminal-1', expect.any(Function));
+    expect(settled).toEqual(
+      outcome === 'confirmed with failing notices'
+        ? new Error('Notice delivery failed.')
+        : undefined,
+    );
+
+    // Only a confirmed stop takes the worker's name out of its tab label.
+    expect(terminal.labels.get('background-1')).toBe(
+      outcome === 'unconfirmed' ? `${first.name}, ${second.name}` : second.name,
+    );
 
     expect(terminal.panes.some((pane) => pane.pane_id === 'worker-1')).toBe(
       outcome === 'unconfirmed',

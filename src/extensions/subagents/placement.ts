@@ -142,14 +142,14 @@ const splitCandidate = (
 
 export class WorkerPlacement {
   private readonly owned = new Map<string, { tabId: string; visibility: Visibility }>();
-  // Workers in each background tab's label, in launch order. Unlike owned, a cancelled placement
-  // keeps its name until the stop path releases it.
+  // Workers in each background tab's label, in launch order. Unlike owned, a worker leaves only on
+  // a confirmed stop, so a pane that may still run keeps its name.
   private readonly labelled = new Map<string, { tabId: string; name: string }>();
   // Release stops splitting a worker pane, but a pane that cleanup left open still shows.
   private foreground: string | undefined;
   private pending: Promise<unknown> = Promise.resolve();
 
-  // Only the stop path passes a call; that is when the name leaves the tab label.
+  // Only a confirmed stop passes a call; that is when the name leaves the tab label.
   release(terminalId: string, call?: TerminalCall): void {
     this.owned.delete(terminalId);
     const labelled = this.labelled.get(terminalId);

@@ -51,7 +51,6 @@ interface CleanupOutcomeRequest {
   failureDetail: string;
   detail: string;
   stopped: boolean;
-  record: (operation: () => void) => void;
 }
 
 export const createHandle = (directory: string, task: Task, expires: number): Handle => ({
@@ -417,23 +416,32 @@ export class TaskController {
       handle.cleanup.recordErrors.push(String(error));
     }
 
-    const cleaned = this.cleanup(reason, failureDetail);
+    const stopped = this.cleanup(reason, failureDetail);
 
-    handle.cleanup.stopping = Promise.allSettled([cleaned])
-      .then(() => {
+    // A failed notice must not hide a confirmed stop.
+    const cleaned = stopped.then(() => {
+      this.notifyCleanup();
+    });
+
+    handle.cleanup.stopping = Promise.allSettled([stopped, cleaned])
+      .then(async ([outcome]) => {
         this.context.release(handle.task.taskId);
 
         // Keep sharing intact until cleanup finishes, including its queued topology change.
         // Unconfirmed cleanup must still stop contributing placement candidates.
         if (handle.identity.terminalId != null) {
-          // The tab label is cosmetic, so its rename gets a short deadline of its own.
-          this.context.placement.release(handle.identity.terminalId, (argumentsList) =>
-            this.context.client(argumentsList, 2_000, this.context.lifetime),
+          // A pane that may still run keeps its name in the tab label. The label is cosmetic, so
+          // its rename gets a short deadline of its own.
+          this.context.placement.release(
+            handle.identity.terminalId,
+            outcome.status === 'fulfilled' && outcome.value
+              ? (argumentsList) => this.context.client(argumentsList, 2_000, this.context.lifetime)
+              : undefined,
           );
         }
 
         // Report the cleanup failure only once placement cleanup finishes.
-        return cleaned;
+        await cleaned;
       })
       .catch((error: unknown) => {
         handle.cleanup.recordErrors.push(String(error));
@@ -448,18 +456,9 @@ export class TaskController {
     return handle.cleanup.stopping;
   }
 
-  private async cleanup(reason: StopReason, failureDetail: string): Promise<void> {
+  // Resolves whether the worker's pane is confirmed stopped.
+  private async cleanup(reason: StopReason, failureDetail: string): Promise<boolean> {
     const { handle } = this;
-
-    // Receipt failures must never prevent the bounded stop attempt or hide later recording errors.
-    const record = (operation: () => void) => {
-      try {
-        operation();
-      } catch (error) {
-        handle.cleanup.recordErrors.push(String(error));
-      }
-    };
-
     const budget = Math.max(1, remainingCleanupBudget(handle));
     const expires = Math.min(handle.expires, performance.now() + budget);
     const signal = AbortSignal.any([this.context.lifetime, AbortSignal.timeout(budget)]);
@@ -497,16 +496,25 @@ export class TaskController {
     const failure = failureDetail;
 
     handle.cleanup.detail = reason === 'failure' ? `${detail} ${failure}` : detail;
-    this.recordCleanupEvents({ reason, failureDetail: failure, detail, stopped, record });
+    this.recordCleanupEvents({ reason, failureDetail: failure, detail, stopped });
 
-    this.notifyCleanup(record);
+    return stopped;
+  }
+
+  // Receipt failures must never prevent the bounded stop attempt or hide later recording errors.
+  private record(operation: () => void): void {
+    try {
+      operation();
+    } catch (error) {
+      this.handle.cleanup.recordErrors.push(String(error));
+    }
   }
 
   private recordCleanupEvents(request: CleanupOutcomeRequest): void {
-    const { reason, failureDetail, detail, stopped, record } = request;
+    const { reason, failureDetail, detail, stopped } = request;
     const { directory, task } = this.handle;
 
-    record(() => {
+    this.record(() => {
       if (reason === 'timeout' || reason === 'cancelled') {
         if (readEvent(directory, task.taskId, reason) === undefined) {
           recordEvent(directory, task.taskId, reason, {
@@ -519,19 +527,19 @@ export class TaskController {
       }
     });
 
-    record(() => {
+    this.record(() => {
       recordEvent(directory, task.taskId, 'cleanup', { detail, stopped });
     });
   }
 
-  private notifyCleanup(record: (operation: () => void) => void): void {
+  private notifyCleanup(): void {
     if (this.closed) {
       return;
     }
 
     const { directory, task } = this.handle;
 
-    record(() => {
+    this.record(() => {
       recordEvent(directory, task.taskId, 'notified', 'Parent notification attempted once.');
     });
 
