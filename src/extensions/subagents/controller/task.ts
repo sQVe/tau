@@ -420,20 +420,26 @@ export class TaskController {
     const cleaned = this.cleanup(reason, failureDetail);
 
     handle.cleanup.stopping = Promise.allSettled([cleaned])
-      .then(() => {
+      .then(async ([outcome]) => {
         this.context.release(handle.task.taskId);
 
         // Keep sharing intact until cleanup finishes, including its queued topology change.
         // Unconfirmed cleanup must still stop contributing placement candidates.
         if (handle.identity.terminalId != null) {
-          // The tab label is cosmetic, so its rename gets a short deadline of its own.
-          this.context.placement.release(handle.identity.terminalId, (argumentsList) =>
-            this.context.client(argumentsList, 2_000, this.context.lifetime),
+          const stopped = outcome.status === 'fulfilled' && outcome.value;
+
+          // A pane that may still run keeps its name in the tab label. The label is cosmetic, so
+          // its rename gets a short deadline of its own.
+          this.context.placement.release(
+            handle.identity.terminalId,
+            stopped
+              ? (argumentsList) => this.context.client(argumentsList, 2_000, this.context.lifetime)
+              : undefined,
           );
         }
 
         // Report the cleanup failure only once placement cleanup finishes.
-        return cleaned;
+        await cleaned;
       })
       .catch((error: unknown) => {
         handle.cleanup.recordErrors.push(String(error));
@@ -448,7 +454,8 @@ export class TaskController {
     return handle.cleanup.stopping;
   }
 
-  private async cleanup(reason: StopReason, failureDetail: string): Promise<void> {
+  // Resolves whether the worker's pane is confirmed stopped.
+  private async cleanup(reason: StopReason, failureDetail: string): Promise<boolean> {
     const { handle } = this;
 
     // Receipt failures must never prevent the bounded stop attempt or hide later recording errors.
@@ -500,6 +507,8 @@ export class TaskController {
     this.recordCleanupEvents({ reason, failureDetail: failure, detail, stopped, record });
 
     this.notifyCleanup(record);
+
+    return stopped;
   }
 
   private recordCleanupEvents(request: CleanupOutcomeRequest): void {

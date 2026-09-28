@@ -2555,13 +2555,16 @@ it.each(['confirmed', 'unconfirmed'] as const)(
       expect(second.state).toBe('starting');
       // The cleaning worker still holds the parent's one foreground slot.
       expect(second.placement?.visibility).toBe('background');
-      expect(release).not.toHaveBeenCalledWith('terminal-1', expect.any(Function));
+      expect(release).not.toHaveBeenCalled();
     } finally {
       resume.resolve(undefined);
       await cancellation;
     }
 
-    expect(release).toHaveBeenCalledWith('terminal-1', expect.any(Function));
+    // Only a confirmed stop takes the worker's name out of its tab label.
+    expect(release.mock.calls.map(([terminalId, call]) => [terminalId, typeof call])).toEqual([
+      ['terminal-1', outcome === 'confirmed' ? 'function' : 'undefined'],
+    ]);
 
     expect(terminal.panes.some((pane) => pane.pane_id === 'worker-1')).toBe(
       outcome === 'unconfirmed',
