@@ -26,28 +26,37 @@ const pureModules = ['src/extensions/subagents/workerState.ts'];
 const pureAdvice =
   'A pure module must not read records, the clock, randomness, or the environment. Move the read or effect to the caller and pass the value in as a fact.';
 
-const effectMembers = new Set(['Date.now', 'Math.random', 'process.env']);
+const effectMembers = new Set(['Date.now', 'Math.random', 'performance.now', 'process.env']);
 
-const memberName = (node: MemberExpression) =>
-  node.object.type === 'Identifier' && node.property.type === 'Identifier'
-    ? `${node.object.name}.${node.property.name}`
-    : undefined;
-
-const isTypeOnly = (node: ModuleDeclaration) => {
-  if (node.type === 'ImportDeclaration') {
-    const specifiers = node.specifiers;
-
-    const typeSpecifiers =
-      specifiers.length > 0 &&
-      specifiers.every(
-        (specifier) => specifier.type === 'ImportSpecifier' && specifier.importKind === 'type',
-      );
-
-    return node.importKind === 'type' || typeSpecifiers;
+// Reads `Date.now` and `Date['now']` alike.
+const propertyKey = ({ computed, property }: MemberExpression) => {
+  if (property.type === 'Identifier' && !computed) {
+    return property.name;
   }
 
-  return 'exportKind' in node && node.exportKind === 'type';
+  return property.type === 'Literal' && typeof property.value === 'string'
+    ? property.value
+    : undefined;
 };
+
+const memberName = (node: MemberExpression) => {
+  const key = propertyKey(node);
+
+  return node.object.type === 'Identifier' && key !== undefined
+    ? `${node.object.name}.${key}`
+    : undefined;
+};
+
+// Inline `{ type X }` specifiers still load the module under verbatimModuleSyntax, so only a
+// top-level `import type` or `export type` is type-only.
+const isTypeOnly = (node: ModuleDeclaration) => {
+  const typeImport = 'importKind' in node && node.importKind === 'type';
+  const typeExport = 'exportKind' in node && node.exportKind === 'type';
+
+  return typeImport || typeExport;
+};
+
+const findingLines = (found: string[]) => found.map((finding) => Number(finding.split(':')[1]));
 
 // Lists each runtime import outside the registry, dynamic load, and effect in a registered module.
 const impurities = (path: string, source: string, registry: readonly string[]) => {
@@ -76,8 +85,11 @@ const impurities = (path: string, source: string, registry: readonly string[]) =
     ExportAllDeclaration: checkImport,
     ImportExpression: (node) => at(node.start, 'dynamic import'),
     CallExpression: (node) => {
-      if (node.callee.type === 'Identifier' && node.callee.name === 'require') {
-        at(node.start, 'require');
+      const callee = node.callee.type === 'Identifier' ? node.callee.name : undefined;
+
+      // `Date()` returns the current time as a string.
+      if (callee === 'require' || callee === 'Date') {
+        at(node.start, `${callee}()`);
       }
     },
     NewExpression: (node) => {
@@ -162,7 +174,7 @@ it('refuses reads and effects in a pure module but allows types and other pure m
 
   const allowed = [
     "import type { Task } from '../tasks.js';",
-    "import { type Report } from '../records.js';",
+    "import type { Report } from '../records.js';",
     "import { limit } from './rules.js';",
     "export type { Facts } from '../facts.js';",
     'export const decide = (task: Task, report: Report, now: number) =>',
@@ -174,26 +186,23 @@ it('refuses reads and effects in a pure module but allows types and other pure m
     "import { join } from 'node:path';",
     "export { readTask } from '../tasks.js';",
     "export * from './unregistered.js';",
+    "import { type Task } from '../tasks.js';",
+    "export { type Facts } from '../facts.js';",
     "export const load = () => import('./rules.js');",
     "export const legacy = () => require('./rules.js');",
     'export const now = () => Date.now();',
+    "export const nowByKey = () => Date['now']();",
+    'export const elapsed = () => performance.now();',
     'export const today = () => new Date();',
+    'export const stamp = () => Date();',
     'export const pick = () => Math.random();',
     'export const home = () => process.env.HOME;',
+    "export const homeByKey = () => process['env'].HOME;",
   ].join('\n');
 
   expect(impurities('src/pure/decide.ts', allowed, registry)).toEqual([]);
 
-  expect(impurities('src/pure/decide.ts', refused, registry)).toEqual([
-    'src/pure/decide.ts:1: runtime import of ../records.js',
-    'src/pure/decide.ts:2: runtime import of node:path',
-    'src/pure/decide.ts:3: runtime import of ../tasks.js',
-    'src/pure/decide.ts:4: runtime import of ./unregistered.js',
-    'src/pure/decide.ts:5: dynamic import',
-    'src/pure/decide.ts:6: require',
-    'src/pure/decide.ts:7: Date.now',
-    'src/pure/decide.ts:8: new Date()',
-    'src/pure/decide.ts:9: Math.random',
-    'src/pure/decide.ts:10: process.env',
-  ]);
+  expect(findingLines(impurities('src/pure/decide.ts', refused, registry))).toEqual(
+    Array.from({ length: 16 }, (_, index) => index + 1),
+  );
 });

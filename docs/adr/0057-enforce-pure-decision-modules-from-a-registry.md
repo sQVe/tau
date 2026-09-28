@@ -28,9 +28,11 @@
 Tau keeps an explicit registry of pure modules, `pureModules` in `tests/structure.test.ts`, and
 fails the suite when a registered module does any of these:
 
-- imports at runtime from anything but another registered module (type-only imports are allowed);
+- imports at runtime from anything but another registered module (`import type` and `export type`
+  are allowed);
 - imports dynamically or calls `require`;
-- uses `Date.now`, `new Date()` without arguments, `Math.random`, or `process.env`.
+- uses `Date.now`, `Date()`, `new Date()` without arguments, `performance.now`, `Math.random`, or
+  `process.env`.
 
 The failure tells the agent to move the read or effect to the caller and pass the value in as a
 fact. Callers read first and then decide. Effect callbacks are not facts.
@@ -45,8 +47,8 @@ own reasons. `AGENTS.md` states the rule beside the conventions from ADR 0055.
   does not escape it.
 - Decision rules can be tested as tables without temporary directories or fake clocks.
 - Cost: an unregistered module is not checked. Agents must register a module when they split it.
-- Cost: the check does not see effects passed in as callbacks or reached through globals it does not
-  list.
+- Cost: the check does not see effects passed in as callbacks, reached through aliases such as
+  `globalThis` or destructuring, or reached through globals it does not list.
 - Cost: `oxc-parser` becomes a direct development dependency.
 
 ## See also
