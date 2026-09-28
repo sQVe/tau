@@ -23,6 +23,8 @@ required pre-merge checks pass and a complete review of the pushed content has n
 
 - Push, create or edit a PR, or change its draft status only after the user approves the preview.
   Any change after approval needs a new preview.
+- Ask every question with the `ask_user_question` tool, including the preview approval, the review's
+  approval question, and the bot choice. Never end a turn with a question in prose.
 - Follow the push rules in the [update-branch skill](../update-branch/SKILL.md). Never rebase or
   force-push unless the user asks.
 - Commit with the [commit skill](../commit/SKILL.md). Never stash, discard, or commit changes that
@@ -30,15 +32,17 @@ required pre-merge checks pass and a complete review of the pushed content has n
   the review or checks.
 - Do not fix review findings or failing checks without the user's approval. Do not rerun a review
   after fixes on your own.
-- On an update, keep title and body text you did not write in this session, and keep the body's
-  structure. Change only facts that are now wrong or missing, and show each change in the preview.
+- On an update, keep title and body text you did not write in this session. Change only facts that
+  are now wrong or missing, and show each change in the preview. Step 7 decides the body's
+  structure.
 - If a step fails partway, stop and report what completed. Read the remote branch and the PR before
   you retry anything.
 - Do not watch CI, wait for reviews, request human reviewers, or merge.
 - Before you save the first file, create a fresh directory inside an ignored `.tau/` from the
   repository root. Stop unless it prints `prdir=`, and use the printed path as `$prdir` for every
   file you save. Like code-review's setup, it refuses symlinks that would send writes outside the
-  repository.
+  repository. Never write scratch files to `/tmp` or another shared path: other sessions run at the
+  same time. Shell variables do not survive between commands, so repeat the printed path.
 
   ```sh
   ! [ -L .tau ] && ! [ -L .tau/pr ] && ! [ -L .tau/.gitignore ] &&
@@ -100,8 +104,9 @@ required pre-merge checks pass and a complete review of the pushed content has n
 5. Run checks. Reuse a passing result of the required pre-merge checks when evidence shows it ran on
    the same content, as
    [ADR 0039](../../docs/adr/0039-reuse-reported-checks-and-run-one-full-suite.md) describes.
-   Otherwise run them once. Save the output in `$prdir`, with the HEAD, `git status --porcelain`,
-   and diff hash it ran on at the top. A failing check is a gap.
+   Otherwise commit the task's changes first and run them once on that tree. Save their real output
+   in `$prdir`, with the HEAD, `git status --porcelain`, and diff hash taken before the run at the
+   top. Never write a summary in its place. A failing check is a gap.
 
 6. Choose the draft status. Ready needs passing required checks and a complete, matching review with
    no open findings. A finding is closed only when fixed and reviewed again, or when the user
@@ -109,12 +114,13 @@ required pre-merge checks pass and a complete review of the pushed content has n
    leaves unfixed stays open. Only checks that can run solely after deployment are deferred instead
    of gaps. Any gap means draft. For an existing ready PR with a gap, offer to convert it to draft.
 
-7. Write the title and body. For a new PR, use the repository's template: look case-insensitively
-   for `pull_request_template.md` in the root, `.github/`, `docs/`, or a `PULL_REQUEST_TEMPLATE/`
-   directory, and ask when more than one fits. Otherwise use the
-   [fallback template](fallback-template.md). Match the title to the repository's convention. Write
-   `Fixes <issue>` only for an issue this PR completes, and `Related to <issue>` for the rest. Save
-   the body as `$prdir/body.md`.
+7. Write the title and body. For a new PR, or an update whose body does not follow the template, use
+   the repository's template: look case-insensitively for `pull_request_template.md` in the root,
+   `.github/`, `docs/`, or a `PULL_REQUEST_TEMPLATE/` directory, and ask when more than one fits.
+   Otherwise use the [fallback template](fallback-template.md). Ask before you restructure a body
+   that has text you did not write in this session, and keep that text. Match the title to the
+   repository's convention. Write `Fixes <issue>` only for an issue this PR completes, and
+   `Related to <issue>` for the rest. Save the body as `$prdir/body.md`.
 
 8. Preview and ask. Show the title, full body, base repository and branch, head, draft status,
    commits to push, and push command. Add the summary: commits made, comment findings and removals,
@@ -133,8 +139,14 @@ required pre-merge checks pass and a complete review of the pushed content has n
 
 10. Verify. Compare
     `gh pr view <number> --repo <repo> --json url,title,body,baseRefName,isDraft,headRefOid` with
-    the preview and local HEAD. Report any difference and the PR URL. If verification fails or shows
-    a difference, stop here.
+    the preview and local HEAD. GitHub drops the body's trailing newlines, so compare the body with:
+
+    ```sh
+    diff <(printf '%s\n' "$(gh pr view <number> --repo <repo> --json body -q .body)") \
+      <(printf '%s\n' "$(cat "$prdir/body.md")")
+    ```
+
+    Report any difference and the PR URL. If verification fails or shows a difference, stop here.
 
 11. Offer bot reviews. Publication approval does not cover them. Ask which bots to request, with an
     option to skip. Suggest the repository's documented bots, or Codex when none are documented.
