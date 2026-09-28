@@ -18,6 +18,7 @@ import type { Static } from 'typebox';
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
+import { blockerKinds, decideIncompleteReport } from './incompleteReport.js';
 import { checkWorkerRuntime } from './loadout.js';
 import { handoffSections } from './presentation.js';
 import { workerPrompt } from './profiles.js';
@@ -76,7 +77,7 @@ const reportParameters = Type.Object({
     }),
   ),
   blockerKind: Type.Optional(
-    StringEnum(['time', 'dependency', 'decision', 'limit'], {
+    StringEnum(blockerKinds, {
       description:
         'Required for incomplete. time: the task deadline is nearly reached, accepted only in the last tenth of the task window; dependency: an external dependency; decision: a parent decision; limit: another exhausted limit that is not time.',
     }),
@@ -339,7 +340,6 @@ const handleInput = (
 const remainingWork = (state: WorkerExtensionState, task: Task): number =>
   state.monotonicDeadline - task.cancellationBudget - monotonicNow();
 
-// Refuse once so an early handback costs a named blocker, but never so late that the report is lost.
 const refuseEarlyIncomplete = (
   state: WorkerExtensionState,
   task: Task,
@@ -353,22 +353,23 @@ const refuseEarlyIncomplete = (
   }
 
   const remaining = remainingWork(state, task);
-  const window = task.deadline - task.createdAt;
 
-  // A time blocker is true only in the last tenth of the work window, however often it is repeated.
-  if (blockerKind === 'time') {
-    if (remaining < 0.1 * window) {
-      return;
-    }
+  const step = decideIncompleteReport({
+    blockerKind,
+    remaining,
+    window: task.deadline - task.createdAt,
+    refusedBefore: state.incompleteRefused,
+  });
 
+  if (step === 'accept') {
+    return;
+  }
+
+  if (step === 'refuseTime') {
     state.remindAfterRefusal = true;
     throw new Error(
       `Report refused: ${Math.floor(remaining / 1000)} seconds remain. Continue the remaining assigned work now. Do not sleep, poll, or retry the report only to wait out the time. Report incomplete only when a concrete blocker stops you.`,
     );
-  }
-
-  if (state.incompleteRefused || remaining < Math.max(0.2 * window, 300_000)) {
-    return;
   }
 
   state.incompleteRefused = true;
