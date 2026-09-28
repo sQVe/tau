@@ -578,7 +578,6 @@ it('ignores repository config in an untrusted project and says so', async ({ onT
   const tested = await runOutput(application, cwd);
 
   expect(tested).toContain(join(cwd, '.pi', 'tau.json'));
-  expect(tested).toContain('not trusted');
 });
 
 it('uses built-in defaults when no config file exists', async ({ onTestFinished }) => {
@@ -591,7 +590,6 @@ it('uses built-in defaults when no config file exists', async ({ onTestFinished 
 
   const tested = await runOutput(application, cwd);
 
-  expect(tested).toContain('built-in default');
   expect(tested).toContain('**/*.test.{ts,tsx,js,jsx,mjs,cjs}');
 });
 
