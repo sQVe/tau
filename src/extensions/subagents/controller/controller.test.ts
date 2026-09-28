@@ -3024,6 +3024,54 @@ it('reads status, history, and widget rows without writing records or stopping w
   expect(calls.slice(callCount).filter((call) => call[1] === 'close')).toHaveLength(0);
 });
 
+it('reads worker activity into status without writing records or stopping workers', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, calls } = setup(onTestFinished);
+  const launched = await controller.launch(input);
+  const activityPath = join(launched.directory, 'activity.json');
+
+  const snapshot = () =>
+    readdirSync(launched.directory)
+      .toSorted()
+      .map((name) => [name, readFileSync(join(launched.directory, name), 'utf8')]);
+
+  const callCount = calls.length;
+
+  rmSync(activityPath, { force: true });
+  let before = snapshot();
+  expect(controller.status(launched.taskId, 'parent-id').activity).toBeUndefined();
+  expect(snapshot()).toEqual(before);
+
+  writeWorkerActivity(launched.directory, {
+    taskId: launched.taskId,
+    sequence: 1,
+    updatedAt: 5,
+    phase: 'active',
+    description: 'Fixing status counts',
+    usage: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 },
+  });
+
+  before = snapshot();
+
+  expect(controller.status(launched.taskId, 'parent-id').activity).toMatchObject({
+    phase: 'active',
+    description: 'Fixing status counts',
+    usage: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 },
+  });
+
+  expect(snapshot()).toEqual(before);
+
+  for (const malformed of ['{', JSON.stringify({ taskId: launched.taskId, phase: 'lost' })]) {
+    writeFileSync(activityPath, malformed);
+    before = snapshot();
+    expect(controller.status(launched.taskId, 'parent-id').activity).toBeUndefined();
+    expect(snapshot()).toEqual(before);
+  }
+
+  expect(calls.slice(callCount).filter((call) => call[1] === 'close')).toHaveLength(0);
+});
+
 it('keeps the original deadline and reports active-work cancellation failure honestly', async ({
   onTestFinished,
 }) => {

@@ -159,6 +159,52 @@ it('drops absent keys and maps receipts to their narrow shape', () => {
   });
 });
 
+const activity = {
+  taskId: 'task-1',
+  sequence: 3,
+  updatedAt: 5,
+  phase: 'active' as const,
+  label: 'tool: read',
+  description: 'Fixing status counts',
+  model: 'provider/model',
+  usage: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 },
+};
+
+it.each([
+  ['starting', true],
+  ['running', true],
+  ['awaitingReply', true],
+  ['notOwned', true],
+  ['reported', false],
+  ['stopping', false],
+  ['stopped', false],
+  ['cleanupUnconfirmed', false],
+] as const)('shows worker activity for %s: %s', (state, shown) => {
+  const content = modelStatus({ taskId: 'task-1', state, deadline: 10, activity });
+
+  expect(content.activity).toEqual(
+    shown
+      ? {
+          phase: 'active',
+          description: 'Fixing status counts',
+          updatedAt: 5,
+          usage: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 },
+        }
+      : undefined,
+  );
+});
+
+it('shows only the phase and time of activity without a description or usage', () => {
+  const content = modelStatus({
+    taskId: 'task-1',
+    state: 'running',
+    deadline: 10,
+    activity: { taskId: 'task-1', sequence: 0, updatedAt: 5, phase: 'starting' },
+  });
+
+  expect(content.activity).toEqual({ phase: 'starting', updatedAt: 5 });
+});
+
 it('marks handoff sections present and missing without inventing evidence', () => {
   const legacy = modelStatus({
     taskId: 'task-1',

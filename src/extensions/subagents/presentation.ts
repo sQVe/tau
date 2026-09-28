@@ -2,6 +2,7 @@ import { join } from 'node:path';
 
 import type { ThemeColor } from '@earendil-works/pi-coding-agent';
 
+import type { WorkerActivity } from './activity.js';
 import { capReportText } from './reportCap.js';
 import type { WorkerState } from './types.js';
 
@@ -31,6 +32,7 @@ export interface StatusInput {
   state: WorkerState;
   deadline: number;
   directory?: string | undefined;
+  activity?: WorkerActivity | undefined;
   name?: string | undefined;
   outcome?: string | undefined;
   predecessorTaskId?: string | undefined;
@@ -166,6 +168,25 @@ const modelQuestionReceipt = (
   };
 };
 
+// Activity helps the parent decide whether to wait or cancel, so a settled worker omits it.
+const liveStates = new Set<WorkerState>(['starting', 'running', 'awaitingReply', 'notOwned']);
+
+const modelActivity = (status: StatusInput): Record<string, unknown> | undefined => {
+  const { activity } = status;
+
+  if (!activity || !liveStates.has(status.state)) {
+    return undefined;
+  }
+
+  const result: Record<string, unknown> = { phase: activity.phase };
+
+  addField(result, 'description', activity.description);
+  result.updatedAt = activity.updatedAt;
+  addField(result, 'usage', activity.usage);
+
+  return result;
+};
+
 const cappedReport = (report: unknown): Record<string, unknown> | undefined => {
   if (!isRecord(report) || typeof report.summary !== 'string' || !Array.isArray(report.evidence)) {
     return undefined;
@@ -215,6 +236,7 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   addField(result, 'name', status.name);
   addField(result, 'placement', status.placement);
   addField(result, 'outcome', status.outcome);
+  addField(result, 'activity', modelActivity(status));
   addField(result, 'predecessorTaskId', status.predecessorTaskId);
   addField(result, 'successorTaskId', status.successorTaskId);
   addReport(result, status);

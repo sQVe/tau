@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { readWorkerActivity } from '../activity.js';
 import type { OwnedWorker } from '../cancellation.js';
 import { readPendingQuestion, readReply } from '../questionRecords.js';
 import {
@@ -224,6 +225,7 @@ export const taskRecordStatus = (directory: string, task: Task, controlled = fal
       reason: 'Pi reports worker usage in its own session totals.',
     },
     directory,
+    activity: readWorkerActivity(directory, task.taskId),
     report,
     pendingQuestion: facts.pendingQuestion,
     failure: failure?.detail,
