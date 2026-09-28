@@ -44,6 +44,7 @@ type WorkerPhase = 'starting' | 'active' | 'waiting' | 'done';
 interface WorkerExtensionState {
   directory: string;
   task: Task | undefined;
+  monotonicDeadline: number;
   accepted: boolean;
   reported: boolean;
   incompleteRefused: boolean;
@@ -72,6 +73,12 @@ const reportParameters = Type.Object({
       maxLength: 4000,
       description:
         'Required for incomplete: the external dependency, exhausted limit, or parent decision that stops you.',
+    }),
+  ),
+  blockerKind: Type.Optional(
+    StringEnum(['time', 'dependency', 'decision', 'limit'], {
+      description:
+        'Required for incomplete. time: the task deadline is nearly reached, accepted only in the last tenth of the task window; dependency: an external dependency; decision: a parent decision; limit: another exhausted limit that is not time.',
     }),
   ),
 });
@@ -329,24 +336,36 @@ const handleInput = (
   }
 };
 
-const remainingWork = (task: Task): number =>
-  task.monotonicDeadline - task.cancellationBudget - monotonicNow();
+const remainingWork = (state: WorkerExtensionState, task: Task): number =>
+  state.monotonicDeadline - task.cancellationBudget - monotonicNow();
 
 // Refuse once so an early handback costs a named blocker, but never so late that the report is lost.
 const refuseEarlyIncomplete = (
   state: WorkerExtensionState,
   task: Task,
-  blocker: string | undefined,
+  { blocker, blockerKind }: Pick<ReportInput, 'blocker' | 'blockerKind'>,
 ) => {
-  if (blocker === undefined || blocker.trim() === '') {
+  if (blocker === undefined || blocker.trim() === '' || blockerKind === undefined) {
     state.remindAfterRefusal = true;
     throw new Error(
-      'An incomplete report needs a blocker: the external dependency, exhausted limit, or parent decision that stops you. Without one, finish the work or report failure.',
+      'An incomplete report needs a blocker and blockerKind: the external dependency, exhausted limit, or parent decision that stops you. Without one, finish the work or report failure.',
     );
   }
 
-  const remaining = remainingWork(task);
+  const remaining = remainingWork(state, task);
   const window = task.deadline - task.createdAt;
+
+  // A time blocker is true only in the last tenth of the work window, however often it is repeated.
+  if (blockerKind === 'time') {
+    if (remaining < 0.1 * window) {
+      return;
+    }
+
+    state.remindAfterRefusal = true;
+    throw new Error(
+      `Report refused: ${Math.floor(remaining / 1000)} seconds remain. Continue the remaining assigned work now. Do not sleep, poll, or retry the report only to wait out the time. Report incomplete only when a concrete blocker stops you.`,
+    );
+  }
 
   if (state.incompleteRefused || remaining < Math.max(0.2 * window, 300_000)) {
     return;
@@ -392,7 +411,7 @@ const reportToParent = (
   }
 
   const task = state.task;
-  const { blocker, ...handover } = parameters;
+  const { blocker, blockerKind: _blockerKind, ...handover } = parameters;
 
   // Check what will be saved: a blocker can push the last section past the size limit.
   const summary = withBlocker(
@@ -403,7 +422,7 @@ const reportToParent = (
   refuseMissingSections(state, summary);
 
   if (handover.outcome === 'incomplete') {
-    refuseEarlyIncomplete(state, task, blocker);
+    refuseEarlyIncomplete(state, task, parameters);
   }
 
   const report = acceptReport(state.directory, task.taskId, {
@@ -485,6 +504,9 @@ const startWorker = (
     const task = readTask(state.directory);
 
     state.task = task;
+    // Bun's hrtime starts at process launch, so the parent's saved monotonicDeadline is on another clock.
+    // Anchor the shared wall-clock deadline once, then measure locally.
+    state.monotonicDeadline = monotonicNow() + task.deadline - Date.now();
     state.usageBaseline = readPiSessionUsage(context);
     state.phaseDescription = undefined;
     recordWorkerActivity(state, context, 'starting', 'Pi worker starting');
@@ -616,7 +638,7 @@ const registerReportTool = (pi: ExtensionAPI, state: WorkerExtensionState): void
     description: [
       'Submit the final durable handoff once.',
       'Put the Changes, Evidence, Decisions, and Concerns sections in summary; evidence holds references, not the Evidence section.',
-      'Outcome incomplete requires blocker. Receipt does not prove correctness or stopped work. Do not retry uncertain delivery.',
+      'Outcome incomplete requires blocker and blockerKind. Receipt does not prove correctness or stopped work. Do not retry uncertain delivery.',
     ].join(' '),
     parameters: reportParameters,
     execute(...argumentsList) {
@@ -697,7 +719,7 @@ const registerReportReminder = (pi: ExtensionAPI, state: WorkerExtensionState): 
 
     const task = state.task;
 
-    if (remainingWork(task) <= 0 || taskEnded(state.directory, task)) {
+    if (remainingWork(state, task) <= 0 || taskEnded(state.directory, task)) {
       return;
     }
 
@@ -760,6 +782,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
   const state: WorkerExtensionState = {
     directory,
     task: undefined,
+    monotonicDeadline: 0,
     accepted: false,
     reported: false,
     incompleteRefused: false,

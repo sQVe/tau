@@ -212,7 +212,7 @@ export const workerPrompt = (task: Task): string =>
       'Do not report every tool call or repeat a phase for reassurance.',
       'Waiting does not extend the original deadline or authorize increased scope.',
       'Finish by calling subagent_report once with the outcome, a summary holding the Changes, Evidence, Decisions, and Concerns sections,',
-      'evidence references, and a blocker when the outcome is incomplete.',
+      'evidence references, and a blocker with its blockerKind when the outcome is incomplete.',
       'Missing or uncertain handoff is not success; do not retry it automatically.',
     ].join(' '),
   ].join('\n\n');

@@ -25,7 +25,11 @@ vi.mock('./loadout.js', () => ({
 
 const sections = '\n\nChanges: None\nEvidence: None\nDecisions: None\nConcerns: None';
 
-const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_000) => {
+const setup = (
+  role: 'editing' | 'investigation' = 'investigation',
+  window = 30_000,
+  parentClockLead = 0,
+) => {
   vi.useFakeTimers();
   const directory = mkdtempSync(join(tmpdir(), 'tau-worker-clock-'));
 
@@ -51,7 +55,7 @@ const setup = (role: 'editing' | 'investigation' = 'investigation', window = 30_
     createdAt,
     deadline: createdAt + window,
     cancellationBudget: 2000,
-    monotonicDeadline: monotonicNow() + window,
+    monotonicDeadline: monotonicNow() + parentClockLead + window,
     loadout: {
       harness: 'pi',
       profile: role === 'editing' ? 'worker' : 'scout',
@@ -226,8 +230,9 @@ it('records Pi activity and tool names without recording tool input', async () =
 const waitingWorker = async (
   role: 'editing' | 'investigation' = 'investigation',
   window = 30_000,
+  parentClockLead = 0,
 ) => {
-  const worker = setup(role, window);
+  const worker = setup(role, window, parentClockLead);
   await worker.emit('session_start');
   publish(worker.directory, 'dispatch.json', { taskId: 'task' });
   await vi.advanceTimersByTimeAsync(50);
@@ -589,7 +594,11 @@ it('refuses a report that misses handoff sections until the worker resends them'
 
 const hour = 3_600_000;
 
-const reportIncomplete = (worker: Awaited<ReturnType<typeof waitingWorker>>, blocker?: string) => {
+const reportIncomplete = (
+  worker: Awaited<ReturnType<typeof waitingWorker>>,
+  blocker?: string,
+  blockerKind: string | null = 'dependency',
+) => {
   const report = worker.tools.get('subagent_report');
 
   if (!report) {
@@ -603,6 +612,7 @@ const reportIncomplete = (worker: Awaited<ReturnType<typeof waitingWorker>>, blo
       summary: `Implementation done. Regression tests remain.${sections}`,
       evidence: [],
       ...(blocker === undefined ? {} : { blocker }),
+      ...(blockerKind === null ? {} : { blockerKind }),
     },
     undefined,
     undefined,
@@ -656,6 +666,75 @@ it('accepts the first incomplete report just below the time bar', async () => {
   expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
 });
 
+it('refuses an incomplete report without a blocker kind', async () => {
+  const worker = await waitingWorker('editing');
+
+  expect(() => reportIncomplete(worker, 'The parent must choose.', null)).toThrow('blockerKind');
+
+  expect(readReport(worker.directory, 'task')).toBeUndefined();
+});
+
+it('keeps refusing a repeated time blocker while meaningful time remains', async () => {
+  const worker = await waitingWorker('editing', hour);
+
+  expect(() => reportIncomplete(worker, 'Time ran out.', 'time')).toThrow('remain');
+  expect(() => reportIncomplete(worker, 'Time ran out.', 'time')).toThrow('remain');
+  expect(readReport(worker.directory, 'task')).toBeUndefined();
+  expect(readEvent(worker.directory, 'task', 'settled')).toBeUndefined();
+});
+
+it('accepts a time blocker near the end of the task', async () => {
+  const worker = await waitingWorker('editing', hour);
+  await vi.advanceTimersByTimeAsync(55 * 60_000);
+
+  await reportIncomplete(worker, 'Time ran out.', 'time');
+
+  expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
+});
+
+const incidentWindow = 240_000;
+
+it('refuses a time blocker and its retry early in a four-minute task', async () => {
+  const worker = await waitingWorker('editing', incidentWindow);
+  await vi.advanceTimersByTimeAsync(33_000);
+
+  expect(() => reportIncomplete(worker, 'Time ran out.', 'time')).toThrow('remain');
+  await vi.advanceTimersByTimeAsync(24_000);
+  expect(() => reportIncomplete(worker, 'Time ran out.', 'time')).toThrow('remain');
+  expect(readReport(worker.directory, 'task')).toBeUndefined();
+  expect(readEvent(worker.directory, 'task', 'settled')).toBeUndefined();
+});
+
+it('accepts a time blocker in the last tenth of a four-minute task', async () => {
+  const worker = await waitingWorker('editing', incidentWindow);
+  await vi.advanceTimersByTimeAsync(215_000);
+
+  await reportIncomplete(worker, 'Time ran out.', 'time');
+
+  expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
+});
+
+it.each(['dependency', 'decision'])(
+  'accepts an early %s blocker in a four-minute task',
+  async (blockerKind) => {
+    const worker = await waitingWorker('editing', incidentWindow);
+    await vi.advanceTimersByTimeAsync(33_000);
+
+    await reportIncomplete(worker, 'The parent must choose the storage format.', blockerKind);
+
+    expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
+  },
+);
+
+it('measures remaining time on the worker clock when the parent process clock leads', async () => {
+  const worker = await waitingWorker('editing', hour, 20 * 60_000);
+  await vi.advanceTimersByTimeAsync(55 * 60_000);
+
+  await reportIncomplete(worker, 'Time ran out.', 'time');
+
+  expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
+});
+
 it('reminds a refused worker to report even after an earlier reminder', async () => {
   const worker = await waitingWorker('editing', hour);
   await worker.emit('agent_end');
@@ -693,6 +772,7 @@ it('keeps the blocker when the summary is at the size limit', async () => {
       summary: `Task ended.${sections}`.padEnd(textLimit, '.'),
       evidence: [],
       blocker: 'The parent must choose the storage format.',
+      blockerKind: 'decision',
     },
     undefined,
     undefined,
