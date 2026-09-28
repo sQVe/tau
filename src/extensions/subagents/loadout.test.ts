@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +18,7 @@ import { expect, it, vi } from 'vitest';
 
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { checkWorkerRuntime, resolveLoadout, validateSavedLoadout } from './loadout.js';
-import { resolveProfile, parseProfile } from './profiles.js';
+import { listProfiles, resolveProfile, parseProfile } from './profiles.js';
 
 const profile = (body: string) => `---\nname: worker\nrole: editing\nthinking: off\n---\n${body}`;
 
@@ -533,6 +541,63 @@ it('validates only the requested winning profile and rejects malformed overrides
 
   expect(selected).toThrow('Profile requires');
   expect(resolveProfile(directory, directory, true, 'missing')).toBeUndefined();
+});
+
+it('lists bundled, user, and trusted project profiles without changing profile files', ({
+  onTestFinished,
+}) => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-profile-list-'));
+
+  onTestFinished(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  const bundled = ['qa', 'reviewer', 'scout', 'worker'].map((name) => ({ name }));
+
+  expect(listProfiles(directory, directory, true)).toEqual(bundled);
+
+  const user = join(directory, 'agents');
+  const project = join(directory, '.pi', 'agents');
+  mkdirSync(user);
+  mkdirSync(project, { recursive: true });
+
+  writeFileSync(
+    join(user, 'triage.md'),
+    profile('Triage.').replace('name: worker', 'name: triage\ndescription: Sorts bug reports'),
+  );
+
+  writeFileSync(join(user, 'broken.md'), 'Not a profile.');
+
+  writeFileSync(
+    join(project, 'worker.md'),
+    profile('Project worker.').replace('role:', 'description: Project editor\nrole:'),
+  );
+
+  const files = () =>
+    [user, project].flatMap((folder) =>
+      readdirSync(folder)
+        .toSorted()
+        .map((name) => [name, readFileSync(join(folder, name), 'utf8')]),
+    );
+
+  const before = files();
+
+  expect(listProfiles(directory, directory, true)).toEqual([
+    { name: 'qa' },
+    { name: 'reviewer' },
+    { name: 'scout' },
+    { name: 'worker', description: 'Project editor' },
+    { name: 'broken' },
+    { name: 'triage', description: 'Sorts bug reports' },
+  ]);
+
+  expect(listProfiles(directory, directory, false)).toEqual([
+    ...bundled,
+    { name: 'broken' },
+    { name: 'triage', description: 'Sorts bug reports' },
+  ]);
+
+  expect(files()).toEqual(before);
 });
 
 it('resolves profile precedence and refuses discarded isolation and transcript settings', ({

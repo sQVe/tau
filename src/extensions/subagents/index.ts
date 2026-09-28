@@ -1,6 +1,7 @@
 /* oxlint-disable node/no-process-env -- Worker ownership and herdr connection come from the active Pi process. */
 
 import { StringEnum } from '@earendil-works/pi-ai';
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
@@ -11,6 +12,8 @@ import { historyPage, searchHistory } from './history.js';
 import { resolveLoadout } from './loadout.js';
 import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
 import type { WorkerNotice } from './presentation.js';
+import { listProfiles } from './profiles.js';
+import type { ProfileSummary } from './profiles.js';
 import { workerRecordsDirectory } from './records.js';
 import {
   callText,
@@ -379,13 +382,33 @@ const cancelWorker = async (
   };
 };
 
-const registerLaunchTool = (runtime: SubagentRuntime): void => {
+// An unreadable profile directory also fails every launch, which reports the read error.
+const launchProfiles = (
+  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>,
+): ProfileSummary[] => {
+  try {
+    return listProfiles(context.cwd, getAgentDir(), context.isProjectTrusted());
+  } catch {
+    return [];
+  }
+};
+
+const profileText = (profiles: ProfileSummary[]): string =>
+  profiles.length === 0
+    ? 'unreadable, launch reports why'
+    : profiles
+        .map(({ name, description }) =>
+          description === undefined ? name : `${name} (${description})`,
+        )
+        .join(', ');
+
+const registerLaunchTool = (runtime: SubagentRuntime, profiles: ProfileSummary[]): void => {
   runtime.pi.registerTool({
     name: 'subagent',
     label: 'Launch worker',
     description: [
       'Launch a Pi worker in herdr with full tools and CC Safety Net. Requires task and profile; cwd must match this session.',
-      'Built-in profiles: scout, worker, reviewer, qa, each with a default model. model selects another Pi provider/id.',
+      `Profiles: ${profileText(profiles)}. model overrides the profile's Pi provider/id.`,
       'Assign acceptance criteria, baseline, worktree, one editor per worktree.',
       'Expect a report with Changes, Evidence, Decisions, and Concerns sections.',
       'Workers cannot launch workers; ask the parent. Each parent caps its live workers. The deadline includes waits and cleanup.',
@@ -537,7 +560,11 @@ const registerCancelTool = (runtime: SubagentRuntime): void => {
 };
 
 const registerSubagentTools = (runtime: SubagentRuntime): void => {
-  registerLaunchTool(runtime);
+  registerLaunchTool(
+    runtime,
+    launchProfiles({ cwd: process.cwd(), isProjectTrusted: () => false }),
+  );
+
   registerFollowUpTool(runtime);
   registerHistoryTool(runtime);
   registerStatusTool(runtime);
@@ -651,6 +678,9 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
 
   pi.on('session_start', (_event, context) => {
     shuttingDown = false;
+
+    // Project profiles load only once the session's cwd and trust are known.
+    registerLaunchTool(runtime, launchProfiles(context));
 
     if (widgetTimer) {
       clearInterval(widgetTimer);

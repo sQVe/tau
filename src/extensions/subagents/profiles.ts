@@ -10,6 +10,19 @@ import { assignmentContractFor, handoffContract } from './handoff.js';
 import { thinkingSchema } from './types.js';
 import type { Loadout, Profile, Task } from './types.js';
 
+export interface ProfileSummary {
+  name: string;
+  description?: string;
+}
+
+interface ProfileCandidate {
+  name: string;
+  description: string | undefined;
+  content: string;
+  fallbackName: string;
+  source: string;
+}
+
 const matchField = (line: string) => line.match(/^([a-z-]+):\s*(.+)$/);
 
 const supportedProfileKeys = new Set(['name', 'description', 'role', 'model', 'thinking', 'cli']);
@@ -104,14 +117,9 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
 
 export const bundledProfileDirectory = fileURLToPath(new URL('./profiles/', import.meta.url));
 
-export const resolveProfile = (
-  cwd: string,
-  agentDirectory: string,
-  trusted: boolean,
-  requestedName: string,
-): Profile | undefined => {
-  let winner: { content: string; fallbackName: string; source: string } | undefined;
-
+// Read only identity before selection. A malformed winner must still reach strict validation.
+const scanProfiles = (cwd: string, agentDirectory: string, trusted: boolean) => {
+  const candidates: ProfileCandidate[] = [];
   const directories = [bundledProfileDirectory, join(agentDirectory, 'agents')];
 
   if (trusted) {
@@ -130,25 +138,55 @@ export const resolveProfile = (
       const content = readFileSync(source, 'utf8');
       const fallbackName = file.slice(0, -3);
 
-      // Read only identity before selection. A malformed winner must still reach strict validation.
-      const frontmatter = content
+      const fields = content
         .replaceAll('\r\n', '\n')
-        .match(/^---\n([\s\S]*?)(?:\n---(?:\n|$)|$)/)?.[1];
+        .match(/^---\n([\s\S]*?)(?:\n---(?:\n|$)|$)/)?.[1]
+        ?.split('\n')
+        .map(matchField);
 
-      const name =
-        frontmatter
-          ?.split('\n')
-          .map(matchField)
-          .find((field) => field?.[1] === 'name')?.[2]
-          ?.trim() ?? fallbackName;
+      const field = (key: string) => fields?.find((match) => match?.[1] === key)?.[2]?.trim();
 
-      if (name === requestedName) {
-        winner = { content, fallbackName, source };
-      }
+      candidates.push({
+        name: field('name') ?? fallbackName,
+        description: field('description'),
+        content,
+        fallbackName,
+        source,
+      });
     }
   }
 
+  return candidates;
+};
+
+export const resolveProfile = (
+  cwd: string,
+  agentDirectory: string,
+  trusted: boolean,
+  requestedName: string,
+): Profile | undefined => {
+  const winner = scanProfiles(cwd, agentDirectory, trusted).findLast(
+    (candidate) => candidate.name === requestedName,
+  );
+
   return winner ? parseProfile(winner.content, winner.fallbackName, winner.source) : undefined;
+};
+
+// Later directories win, as in resolveProfile. A malformed profile stays listed so launch reports why.
+export const listProfiles = (
+  cwd: string,
+  agentDirectory: string,
+  trusted: boolean,
+): ProfileSummary[] => {
+  const winners = new Map<string, string | undefined>();
+
+  for (const { name, description } of scanProfiles(cwd, agentDirectory, trusted)) {
+    winners.set(name, description);
+  }
+
+  return [...winners].map(([name, description]) =>
+    description === undefined ? { name } : { name, description },
+  );
 };
 
 export const seedSession = (task: Task): void => {
