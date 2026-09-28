@@ -16,6 +16,7 @@ Optional. Consequential choices, each with its reason and trade-off.
 
 - [x] A check that passed, such as `pnpm check`.
 - [x] A complete review of the pushed content with no open findings.
+- [x] Fixes accepted without a new review, when there are any, with what they fix.
 - [ ] Failed: a required check that ran and failed, with what failed.
 - [ ] Not run: a required check or review that is still missing, with why.
 
