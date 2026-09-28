@@ -4917,22 +4917,6 @@ it('titles the worker pane with the model ID after the provider', async ({ onTes
   ]);
 });
 
-it('titles the worker pane without the claude- model prefix', async ({ onTestFinished }) => {
-  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
-    if (argumentsList[1] === 'rename') {
-      return JSON.stringify({ result: { pane: {} } });
-    }
-
-    return '';
-  });
-
-  const loadout = { ...input.loadout, model: 'anthropic/claude-opus-5-5' };
-  await controller.launch({ ...input, loadout });
-  const rename = calls.find((call) => call[1] === 'rename');
-
-  expect(rename?.[3]).toMatch(/^worker-[a-z0-9]{2} \(opus-5-5\)$/);
-});
-
 it('keeps a worker running when the pane display title write is rejected', async ({
   onTestFinished,
 }) => {

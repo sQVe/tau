@@ -107,7 +107,7 @@ const paneTitle = (task: Task): string => {
     return name;
   }
 
-  return `${name} (${model.replace(/^claude-/, '').replace(/[^a-zA-Z0-9._-]/g, '-')})`;
+  return `${name} (${model.replace(/[^a-zA-Z0-9._-]/g, '-')})`;
 };
 
 // The reply is saved before this read. A corrupt acknowledgement record must not make a saved reply
