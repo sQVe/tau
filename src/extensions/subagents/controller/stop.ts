@@ -11,7 +11,7 @@ import {
   terminalLocation,
 } from '../terminal.js';
 import type { TerminalLocation } from '../terminal.js';
-import { inspectWorker } from './inspect.js';
+import { inspectWorker, isHerdrError } from './inspect.js';
 import type { Handle } from './types.js';
 
 export interface StopPiWorkerRequest {
@@ -96,7 +96,10 @@ const findLaunchedTerminal = async (request: StopPiWorkerRequest): Promise<strin
 };
 
 // A cancelled launch can stop after herdr started Pi but before Tau read the pane's terminal.
-const launchedTerminal = async (request: StopPiWorkerRequest): Promise<string | undefined> => {
+// `exited` means herdr already removed the launched pane, which it does only after Pi exits.
+const launchedTerminal = async (
+  request: StopPiWorkerRequest,
+): Promise<string | { exited: true } | undefined> => {
   const { handle, call, signal, placement } = request;
 
   // Placement is serialized, so this empty step runs after an in-flight launch records its pane.
@@ -118,8 +121,8 @@ const launchedTerminal = async (request: StopPiWorkerRequest): Promise<string | 
     const response = await call(['pane', 'get', paneId]);
 
     return terminalLocation(result(response).pane).terminalId;
-  } catch {
-    return undefined;
+  } catch (error) {
+    return isHerdrError(error, 'pane_not_found') ? { exited: true } : undefined;
   }
 };
 
@@ -213,6 +216,13 @@ export const stopPiWorker = async (
 
   if (terminalId === undefined) {
     return unlocatedLaunch(handle);
+  }
+
+  if (typeof terminalId !== 'string') {
+    return {
+      stopped: true,
+      detail: 'Worker exited and its pane closed. Detached descendants are not covered.',
+    };
   }
 
   const graceEnds = performance.now() + (request.graceful ? 1000 : 0);

@@ -19,7 +19,8 @@ type Scenario =
   | 'unowned without session'
   | 'lost launch reply'
   | 'two panes on the session'
-  | 'older pane on the session';
+  | 'older pane on the session'
+  | 'exited before its terminal was read';
 
 const token = '/tmp/worker-session.jsonl';
 const processId = 4242;
@@ -38,9 +39,16 @@ const stopScenario = async (scenario: Scenario) => {
     'lost launch reply',
     'two panes on the session',
     'older pane on the session',
+    'exited before its terminal was read',
   ].includes(scenario);
 
   handle.startup.neverStarted = false;
+
+  // herdr reported the launched pane, but it closed before Tau read its terminal.
+  if (scenario === 'exited before its terminal was read') {
+    handle.identity.paneId = 'pane';
+    present = false;
+  }
 
   if (lostReply) {
     handle.startup.terminalsBeforeLaunch =
@@ -112,6 +120,12 @@ const stopScenario = async (scenario: Scenario) => {
       return '{}';
     }
 
+    if (action === 'get') {
+      throw Object.assign(new Error('pane not found'), {
+        stderr: JSON.stringify({ error: { code: 'pane_not_found' } }),
+      });
+    }
+
     throw new Error(`Unexpected herdr call: ${argumentsList.join(' ')}`);
   };
 
@@ -147,4 +161,11 @@ it.each([
   ['older pane on the session', false],
 ] as const)('closes a Pi worker pane with %s identity: %s', async (scenario, closes) => {
   expect(await stopScenario(scenario)).toEqual({ stopped: closes, closed: closes });
+});
+
+it('confirms a worker whose pane closed before Tau read its terminal', async () => {
+  expect(await stopScenario('exited before its terminal was read')).toEqual({
+    stopped: true,
+    closed: false,
+  });
 });
