@@ -47,7 +47,7 @@ const lastUserTextOf = (context: { messages: { role: string; content: unknown }[
 };
 
 describe('skill commands', () => {
-  it.for(['bro', 'commit'])(
+  it.for(['bro', 'code-review', 'commit'])(
     'sends the %s skill body to the model',
     async (skillName, { onTestFinished }) => {
       const { session, faux } = await createSession(onTestFinished);

@@ -75,6 +75,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     expect(delegationGuidelines?.length).toBeGreaterThan(0);
 
     expect(tauExtension?.commands.has('bro')).toBe(true);
+    expect(tauExtension?.commands.has('code-review')).toBe(true);
     expect(tauExtension?.commands.has('commit')).toBe(true);
     expect(tauExtension?.tools.has('bulk_read')).toBe(true);
     expect(tauExtension?.commands.has('tdd')).toBe(false);
@@ -97,7 +98,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
         .getSkills()
         .skills.map((skill) => skill.name)
         .toSorted(),
-    ).toEqual(['bro', 'commit', 'handoff', 'tdd', 'update-branch', 'worktree']);
+    ).toEqual(['bro', 'code-review', 'commit', 'handoff', 'tdd', 'update-branch', 'worktree']);
 
     expect(loader.getSkills().diagnostics).toEqual([]);
 

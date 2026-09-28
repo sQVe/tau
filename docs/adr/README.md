@@ -81,3 +81,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0057: Enforce pure decision modules from a registry](./0057-enforce-pure-decision-modules-from-a-registry.md)
 - [0058: Run subagents only as Pi workers](./0058-run-subagents-only-as-pi-workers.md)
 - [0059: Run each Pi worker as its pane's own process](./0059-run-each-pi-worker-as-its-panes-own-process.md)
+- [0060: Keep local code review in a skill](./0060-keep-local-code-review-in-a-skill.md)

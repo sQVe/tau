@@ -4,6 +4,7 @@ import askUserQuestionExtension from './askUserQuestion/index.js';
 import bareRootExtension from './bareRoot/index.js';
 import broExtension from './bro/index.js';
 import bulkReadExtension from './bulkRead/index.js';
+import codeReviewExtension from './codeReview/index.js';
 import codingExtension from './coding/index.js';
 import commitExtension from './commit/index.js';
 import snippetsExtension from './snippets/index.js';
@@ -20,6 +21,7 @@ export default async function tauExtension(pi: ExtensionAPI) {
   await workflowExtension(pi);
 
   broExtension(pi);
+  codeReviewExtension(pi);
   commitExtension(pi);
   tddExtension(pi);
   bulkReadExtension(pi);
