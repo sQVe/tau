@@ -1,272 +1,59 @@
-import { expect, it, vi, onTestFinished } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 
-import { cancelOwnedWorker, matchesWorker } from './cancellation.js';
-import { paneListResponse, processInfoResponse } from './fixtures/herdrFake.js';
+import { matchesWorker, processAbsent, runClient } from './cancellation.js';
 
-it('resolves moved terminal identity before sending cancellation keys', async () => {
-  const calls: string[][] = [];
-
-  const owned = {
-    kind: 'process' as const,
-    paneId: 'old:pane',
-    terminalId: 'terminal',
-    shellPid: 1,
-    processId: process.pid,
-    token: '/tmp/moved-session',
-  };
-
-  const client = async (argumentsList: string[]) => {
-    calls.push(argumentsList);
-
-    if (argumentsList[1] === 'list') {
-      return paneListResponse([
-        {
-          pane_id: 'new:pane',
-          terminal_id: 'terminal',
-          workspace_id: 'new',
-          tab_id: 'new:tab',
-        },
-      ]);
-    }
-
-    if (argumentsList[1] === 'process-info') {
-      return processInfoResponse({
-        paneId: 'new:pane',
-        shellPid: 1,
-        processId: process.pid,
-        argv: ['pi', owned.token],
-      });
-    }
-
-    throw new Error('Input delivery uncertain');
-  };
-
-  const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);
-
-  expect(calls.filter((call) => call[1] === 'send-keys')).toEqual([
-    ['pane', 'send-keys', 'new:pane', 'ctrl+c'],
-  ]);
-
-  expect(result.cleanup).toBe('unconfirmed');
-  expect(calls.flat()).not.toContain('old:pane');
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
-it('follows a second move while confirming cancellation without sending input twice', async () => {
-  const calls: string[][] = [];
-  let paneId = 'first:pane';
-  let stopped = false;
+const information = {
+  pane_id: 'pane',
+  shell_pid: 101,
+  foreground_process_group_id: 101,
+  foreground_processes: [{ name: 'pi', pid: 101 }],
+};
 
-  const owned = {
-    kind: 'process' as const,
-    paneId: 'old:pane',
-    terminalId: 'terminal',
-    shellPid: 100,
-    processId: 101,
-    token: '/tmp/worker',
-  };
-
-  vi.spyOn(process, 'kill').mockImplementation(() => {
-    throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
-  });
-
-  onTestFinished(() => {
-    vi.restoreAllMocks();
-  });
-
-  const client = async (argumentsList: string[]) => {
-    calls.push(argumentsList);
-
-    if (argumentsList[1] === 'list') {
-      return paneListResponse([
-        {
-          pane_id: paneId,
-          terminal_id: owned.terminalId,
-          workspace_id: 'workspace',
-          tab_id: 'tab',
-        },
-      ]);
-    }
-
-    if (argumentsList[1] === 'send-keys') {
-      paneId = 'second:pane';
-      stopped = true;
-
-      return '{}';
-    }
-
-    const processId = stopped ? owned.shellPid : owned.processId;
-
-    return processInfoResponse({
-      paneId: paneId,
-      shellPid: owned.shellPid,
-      processId: processId,
-      argv: [owned.token],
-    });
-  };
-
-  const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);
-
-  expect(result.cleanup).toBe('confirmed');
-
-  expect(calls.filter((call) => call[1] === 'send-keys')).toEqual([
-    ['pane', 'send-keys', 'first:pane', 'ctrl+c'],
-  ]);
-
-  expect(calls.at(-1)).toEqual(['pane', 'process-info', '--pane', 'second:pane']);
-});
-
-it.each(['missing', 'duplicate', 'changed before input'] as const)(
-  'refuses %s terminal ownership before cancellation input',
-  async (scenario) => {
-    let inventories = 0;
-    const calls: string[][] = [];
-
-    const owned = {
-      kind: 'process' as const,
-      paneId: 'old:pane',
-      terminalId: 'terminal',
-      shellPid: 100,
-      processId: 101,
-      token: '/tmp/worker',
-    };
-
-    const client = async (argumentsList: string[]) => {
-      calls.push(argumentsList);
-
-      if (argumentsList[1] === 'list') {
-        const pane = {
-          pane_id: ++inventories === 1 ? 'first:pane' : 'second:pane',
-          terminal_id: owned.terminalId,
-          workspace_id: 'workspace',
-          tab_id: 'tab',
-        };
-
-        const panes = scenario === 'missing' ? [] : [pane];
-
-        if (scenario === 'duplicate') {
-          panes.push({ ...pane, pane_id: 'duplicate' });
-        }
-
-        return JSON.stringify({ result: { panes } });
-      }
-
-      return processInfoResponse({
-        paneId: 'first:pane',
-        shellPid: owned.shellPid,
-        processId: owned.processId,
-        argv: [owned.token],
-      });
-    };
-
-    const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);
-
-    expect(result.cleanup).toBe('refused');
-    expect(calls.some((call) => call[1] === 'send-keys' || call[1] === 'close')).toBe(false);
-  },
-);
-
-it('reports identity loss after cancellation input as unconfirmed', async () => {
-  let sent = false;
-
-  const owned = {
-    kind: 'process' as const,
-    paneId: 'pane',
-    terminalId: 'terminal',
-    shellPid: 100,
-    processId: 101,
-    token: '/tmp/worker',
-  };
-
-  const client = async (argumentsList: string[]) => {
-    if (argumentsList[1] === 'list') {
-      const pane = { pane_id: 'pane', terminal_id: 'terminal', workspace_id: 'w', tab_id: 't' };
-
-      return JSON.stringify({ result: { panes: sent ? [] : [pane] } });
-    }
-
-    if (argumentsList[1] === 'send-keys') {
-      sent = true;
-
-      return '{}';
-    }
-
-    return processInfoResponse({
-      paneId: 'pane',
-      shellPid: owned.shellPid,
-      processId: owned.processId,
-      argv: [owned.token],
-    });
-  };
-
-  const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);
-
-  expect(sent).toBe(true);
-  expect(result.cleanup).toBe('unconfirmed');
-});
+const worker = {
+  kind: 'pi' as const,
+  paneId: 'pane',
+  terminalId: 'terminal',
+  shellPid: 101,
+  processId: 101,
+  token: '/tmp/session',
+};
 
 it('matches a Pi worker by start time when herdr omits its argv', () => {
-  const information = {
-    pane_id: 'pane',
-    shell_pid: 100,
-    foreground_process_group_id: 101,
-    foreground_processes: [{ name: 'pi', pid: 101 }],
-  };
+  expect(matchesWorker(information, { ...worker, startedAt: 'Mon Sep 21 10:43:04 2026' })).toBe(
+    true,
+  );
 
-  const worker = { paneId: 'pane', terminalId: 'terminal', shellPid: 100, processId: 101 };
+  expect(matchesWorker(information, { ...worker, startedAt: '' })).toBe(false);
+});
 
-  expect(
-    matchesWorker(information, {
-      ...worker,
-      kind: 'pi',
-      token: '/tmp/session',
-      startedAt: 'Mon Sep 21 10:43:04 2026',
-    }),
-  ).toBe(true);
+it('never counts EPERM as an absent process', () => {
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    throw Object.assign(new Error('Permission denied'), { code: 'EPERM' });
+  });
 
-  expect(matchesWorker(information, { ...worker, kind: 'process', token: '/tmp/worker' })).toBe(
-    false,
+  expect(processAbsent(101)).toBe(false);
+});
+
+it('bounds a real stalled client and reports failure instead of success', async () => {
+  const started = performance.now();
+
+  await expect(
+    runClient(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], 150),
+  ).rejects.toThrow('budget');
+
+  expect(performance.now() - started).toBeLessThan(1500);
+});
+
+it('reports failed client calls', async () => {
+  await expect(runClient(process.execPath, ['-e', 'process.exit(2)'], 1000)).rejects.toThrow(
+    'Command failed',
   );
 });
 
-it('confirms a worker that exits during identity checks without sending input', async () => {
-  const calls: string[][] = [];
-
-  const owned = {
-    kind: 'process' as const,
-    paneId: 'pane',
-    terminalId: 'terminal',
-    shellPid: 100,
-    processId: 101,
-    token: '/tmp/worker',
-  };
-
-  vi.spyOn(process, 'kill').mockImplementation(() => {
-    throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
-  });
-
-  onTestFinished(() => {
-    vi.restoreAllMocks();
-  });
-
-  const client = async (argumentsList: string[]) => {
-    calls.push(argumentsList);
-
-    if (argumentsList[1] === 'list') {
-      return paneListResponse([
-        { pane_id: 'pane', terminal_id: 'terminal', workspace_id: 'workspace', tab_id: 'tab' },
-      ]);
-    }
-
-    return processInfoResponse({
-      paneId: 'pane',
-      shellPid: owned.shellPid,
-      processId: owned.shellPid,
-      argv: ['zsh'],
-    });
-  };
-
-  const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);
-
-  expect(result.cleanup).toBe('confirmed');
-  expect(calls.some((call) => call[1] === 'send-keys')).toBe(false);
+it.each([0, -1, Number.NaN, 2_147_483_648])('refuses an invalid client budget %s', (budget) => {
+  expect(() => runClient(process.execPath, ['-e', ''], budget)).toThrow('integer');
 });

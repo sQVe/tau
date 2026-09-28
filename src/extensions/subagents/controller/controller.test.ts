@@ -71,8 +71,7 @@ const setup = (
     `${JSON.stringify({ type: 'session', version: 3, id: 'parent-id', cwd: directory })}\n`,
   );
 
-  const fake = herdrFake('pi');
-  fake.state.shell = 100;
+  const fake = herdrFake();
 
   vi.spyOn(cancellationModule, 'runClient').mockImplementation(
     (executable, argumentsList, budget, options) => {
@@ -2416,19 +2415,22 @@ it('waits for Pi integration session identity before dispatch', async ({ onTestF
 it('refuses readiness when the worker process identity differs from the ready event', async ({
   onTestFinished,
 }) => {
+  let launched = false;
+
   const fixture = setup(onTestFinished, 0, async (argumentsList) => {
-    if (argumentsList[1] === 'process-info' && fixture.fake.state.started) {
+    launched ||= argumentsList[0] === 'layout';
+
+    if (argumentsList[1] === 'process-info' && launched) {
       fixture.fake.state.process = process.pid === 101 ? 102 : 101;
     }
 
     return '';
   });
 
-  const launched = await fixture.controller.launch(fixture.input);
+  const status = await fixture.controller.launch(fixture.input);
 
-  expect(launched.outcome).toBe('failure');
+  expect(status.outcome).toBe('failure');
   expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
-  expect(fixture.calls.some((call) => call[1] === 'send-keys')).toBe(false);
 });
 
 it("names herdr's Pi integration when a started Pi worker reports no agent session", async ({
@@ -2715,7 +2717,6 @@ it.each(['moved', 'duplicate', 'missing', 'replacement process'] as const)(
       scenario === 'moved' ? [['pane', 'close', 'other-workspace:pane']] : [],
     );
 
-    expect(cleanupCalls.some((call) => call[1] === 'send-keys')).toBe(false);
     expect(cleanupCalls.flat()).not.toContain('worker-1');
     expect(cancelled.state).toBe(scenario === 'moved' ? 'stopped' : 'cleanupUnconfirmed');
     expect(cancelled.deadline).toBe(launched.deadline);
@@ -3013,7 +3014,7 @@ it('reads status, history, and widget rows without writing records or stopping w
   controller.widgetRows('parent-id');
 
   expect(snapshot()).toEqual(corrupt);
-  expect(calls.slice(callCount).filter((call) => call[1] === 'send-keys')).toHaveLength(0);
+  expect(calls.slice(callCount).filter((call) => call[1] === 'close')).toHaveLength(0);
 });
 
 it('keeps the original deadline and reports active-work cancellation failure honestly', async ({
@@ -3320,11 +3321,7 @@ it('admits another worker after cleanup fails its terminal identity check', asyn
     },
   });
 
-  expect(
-    fixture.calls
-      .slice(callsBefore)
-      .filter((call) => ['send-keys', 'close'].includes(call[1] ?? '')),
-  ).toEqual([]);
+  expect(fixture.calls.slice(callsBefore).filter((call) => call[1] === 'close')).toEqual([]);
 
   const replacement = await fixture.controller.launch(fixture.input);
 

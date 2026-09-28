@@ -40,7 +40,7 @@ export const terminalLocation = (value: unknown): TerminalLocation => {
   };
 };
 
-export class TerminalIdentityError extends Error {
+class TerminalIdentityError extends Error {
   override name = 'TerminalIdentityError';
 }
 
