@@ -2,7 +2,7 @@
 name: worktree
 description:
   Create or open a Git worktree for a ticket or task with Grove and open it in Herdr. Use it when
-  asked to create, add, start, or open a worktree, optionally followed by a handover.
+  asked to create, add, start, or open a worktree, optionally followed by a handoff.
 ---
 
 # Worktree
@@ -29,5 +29,5 @@ worktree and runs the repository's add hooks, such as dependency installs.
    without a ticket. Pass `--base <base>` only for a new branch whose base the user or project
    names; Grove otherwise uses the default branch and rejects `--base` for an existing branch. If
    the branch already has a worktree, Grove opens it instead.
-3. If the user asked for a handover, send it to the new workspace with the
+3. If the user asked for a handoff, send it to the new workspace with the
    [handoff skill](../handoff/SKILL.md).
