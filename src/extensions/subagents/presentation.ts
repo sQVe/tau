@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import type { ThemeColor } from '@earendil-works/pi-coding-agent';
 
 import type { WorkerState } from './types.js';
@@ -27,6 +29,7 @@ export interface StatusInput {
   taskId: string;
   state: WorkerState;
   deadline: number;
+  directory?: string | undefined;
   name?: string | undefined;
   outcome?: string | undefined;
   predecessorTaskId?: string | undefined;
@@ -162,6 +165,80 @@ const modelQuestionReceipt = (
   };
 };
 
+// Characters of summary and evidence the model sees per report. The rest stays in the saved report.
+const reportCharacterCap = 8000;
+
+// Cuts before a split surrogate pair so the result stays valid text.
+const cut = (text: string, length: number): string =>
+  text.slice(0, /[\uD800-\uDBFF]/.test(text.charAt(length - 1)) ? length - 1 : length);
+
+const summaryCutMarker = '\n[…]\n';
+
+// Concerns come last in a summary, so a long one keeps its start and its end.
+const cutSummary = (summary: string): string => {
+  if (summary.length <= reportCharacterCap) {
+    return summary;
+  }
+
+  const room = reportCharacterCap - summaryCutMarker.length;
+  const head = Math.floor(room / 2);
+  const tail = summary.slice(summary.length - (room - head));
+
+  return `${cut(summary, head)}${summaryCutMarker}${tail.replace(/^[\uDC00-\uDFFF]/, '')}`;
+};
+
+// Spends one budget on the summary, then on evidence in order. Returns undefined within the cap.
+const cappedReport = (report: unknown): Record<string, unknown> | undefined => {
+  if (!isRecord(report) || typeof report.summary !== 'string' || !Array.isArray(report.evidence)) {
+    return undefined;
+  }
+
+  const evidence = report.evidence.filter((entry): entry is string => typeof entry === 'string');
+  const size = evidence.reduce((total, entry) => total + entry.length, report.summary.length);
+
+  if (size <= reportCharacterCap) {
+    return undefined;
+  }
+
+  let remaining = reportCharacterCap - Math.min(report.summary.length, reportCharacterCap);
+  const kept: string[] = [];
+
+  for (const entry of evidence) {
+    if (remaining <= 0) {
+      break;
+    }
+
+    kept.push(cut(entry, remaining));
+    remaining -= entry.length;
+  }
+
+  return {
+    taskId: report.taskId,
+    outcome: report.outcome,
+    summary: cutSummary(report.summary),
+    evidence: kept,
+  };
+};
+
+const addReport = (target: Record<string, unknown>, status: StatusInput): void => {
+  const capped = cappedReport(status.report);
+
+  if (!capped) {
+    addField(target, 'report', status.report);
+
+    return;
+  }
+
+  target.report = capped;
+  target.truncated = true;
+
+  addField(
+    target,
+    'reportFile',
+    status.directory === undefined ? undefined : join(status.directory, 'report.json'),
+  );
+};
+
 export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   const result: Record<string, unknown> = {
     taskId: status.taskId,
@@ -174,7 +251,7 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   addField(result, 'outcome', status.outcome);
   addField(result, 'predecessorTaskId', status.predecessorTaskId);
   addField(result, 'successorTaskId', status.successorTaskId);
-  addField(result, 'report', status.report);
+  addReport(result, status);
   addField(result, 'handoffSections', handoffSections(status.report));
   addField(result, 'pendingQuestion', modelQuestion(status.pendingQuestion));
   addField(result, 'failure', status.failure);
