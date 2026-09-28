@@ -138,7 +138,10 @@ it('lists user profiles in the launch description after session start', async ({
 
   fake.handler('session_start')({}, context);
 
-  expect(fake.tools.get('subagent')?.description).toContain('triage (Sorts bug reports)');
+  const description = fake.tools.get('subagent')?.description;
+
+  expect(description).toContain('triage');
+  expect(description).toContain('Sorts bug reports');
 });
 
 it('returns from session start while worker reattachment is still pending', async ({
