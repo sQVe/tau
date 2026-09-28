@@ -224,8 +224,8 @@ const nonPiTaskNotice = 'run by a non-Pi worker; Tau no longer supports non-Pi w
 const hasGenericLoadout = (value: unknown): boolean =>
   isObjectRecord(value) && isObjectRecord(value.loadout) && value.loadout.harness === 'generic';
 
-// ADR 0058 retired non-Pi workers, whose tasks were saved only at versions 2 and 3. Any other
-// version with a generic loadout is malformed.
+// Non-Pi tasks were saved only at versions 2 and 3. Any other version with a generic loadout is
+// malformed.
 const isNonPiTask = (value: unknown): boolean => {
   const version = savedVersion(value);
   const retiredVersion = version === 2 || version === 3;

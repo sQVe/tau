@@ -91,7 +91,7 @@ export const taskVersion = 3;
 
 export const taskSchema = versionedTaskSchema(taskVersion);
 
-// Non-Pi tasks, saved at version 2 and 3, are retired (ADR 0058).
+// Versions 2 and 3 also saved non-Pi tasks, which are no longer read.
 export const previousTaskSchema = versionedTaskSchema(1);
 
 // Version 2: the Pi worker is its pane's own process, so shellPid equals processId.

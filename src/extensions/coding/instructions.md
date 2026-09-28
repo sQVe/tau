@@ -58,10 +58,14 @@ and repository conventions when they differ from these defaults.
 
 ## Comment only what the code cannot say
 
-- Keep comments that explain constraints, invariants, surprising behavior, workarounds, deliberate
-  omissions, and decisions whose alternatives would be wrong. Keep required documentation and tool
-  directives.
-- Remove comments that only narrate obvious code. Delete commented-out code and temporary
+- Default to no comment. Add one only when a reader would otherwise make a wrong change: a
+  constraint, invariant, workaround, or surprising behavior the code cannot show.
+- Never cite an ADR, ticket, PR, or review, and never describe the code's history. State the rule
+  itself.
+- Never restate the name, type, or signature below the comment.
+- Never state a cause or measurement you have not checked in this session, even if a ticket says it.
+- Match the density and style of the comments already in the file.
+- Keep required documentation and tool directives. Delete commented-out code and temporary
   development notes.
 
 ## Write tests that can fail
