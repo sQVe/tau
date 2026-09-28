@@ -2988,6 +2988,17 @@ it('keeps capacity free when a stopped worker is cancelled again', async ({ onTe
   expect(controller.owns(next.taskId)).toBe(true);
 });
 
+it('reads the worker directory once per widget refresh', async ({ onTestFinished }) => {
+  const { controller, input } = setup(onTestFinished);
+  await controller.launch(input);
+  await controller.launch(input);
+  await controller.launch(input);
+  const readTasks = vi.spyOn(records, 'readTasks');
+
+  expect(controller.widgetRows('parent-id')).toHaveLength(3);
+  expect(readTasks).toHaveBeenCalledOnce();
+});
+
 it('reads status, history, and widget rows without writing records or stopping workers', async ({
   onTestFinished,
 }) => {

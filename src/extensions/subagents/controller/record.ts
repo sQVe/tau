@@ -184,7 +184,13 @@ export const readWorkerFacts = (directory: string, taskId: string): WorkerFacts 
 };
 
 // oxlint-disable-next-line eslint/complexity -- Status fields must reflect one consistent read of the task records.
-export const taskRecordStatus = (directory: string, task: Task, controlled = false) => {
+export const taskRecordStatus = (
+  directory: string,
+  task: Task,
+  controlled = false,
+  // A caller that builds many statuses passes one snapshot so each status skips its own scan.
+  entries: { directory: string; task: Task }[] = readTasks(dirname(directory)),
+) => {
   const facts = readWorkerFacts(directory, task.taskId);
   const { events, report } = facts;
   const failure = events.startupFailure;
@@ -207,8 +213,7 @@ export const taskRecordStatus = (directory: string, task: Task, controlled = fal
     ...(outcome === undefined ? {} : { outcome }),
     predecessorTaskId: task.predecessorTaskId,
     predecessorName: predecessorName(dirname(directory), task),
-    // ponytail: full scan (~10 ms/100 records in review); index successors once per scan if status calls become hot.
-    successorTaskId: findSuccessor(readTasks(dirname(directory)), task.taskId)?.taskId,
+    successorTaskId: findSuccessor(entries, task.taskId)?.taskId,
     deadline: task.deadline,
     ...(state === 'stopped'
       ? {
