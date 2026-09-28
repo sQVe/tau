@@ -1,6 +1,7 @@
 # ADR 0050: Split worker control into a coordinator and one controller per worker
 
-- Status: Accepted
+- Status: Accepted; generic steps superseded by
+  [ADR 0058](./0058-run-subagents-only-as-pi-workers.md)
 - Date: 2026-09-25
 
 ## Context
@@ -62,3 +63,4 @@ let cancellation abort in-flight work outside it.
 - [ADR 0028: Keep worker control in the parent](./0028-keep-worker-control-in-the-parent.md)
 - [ADR 0033: Use one generic native worker workflow](./0033-use-one-generic-native-worker-workflow.md)
 - [ADR 0043: Own only the worker guarantees herdr lacks](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
+- [ADR 0058: Run subagents only as Pi workers](./0058-run-subagents-only-as-pi-workers.md)

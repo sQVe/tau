@@ -17,7 +17,6 @@ import { join } from 'node:path';
 import { afterEach, expect, it, onTestFinished as afterTest, vi } from 'vitest';
 
 import { readWorkerFacts } from './controller/record.js';
-import { fixtureGenericLoadout } from './fixtures/loadout.js';
 import * as questions from './questionRecords.js';
 import * as records from './records.js';
 
@@ -250,7 +249,7 @@ const saveTaskRecordFixtures = (names: string[]) => {
 };
 
 it('reads task records saved in the previous and current formats', () => {
-  const names = ['previous-pi', 'previous-generic', 'current-pi', 'current-generic'];
+  const names = ['previous-pi', 'current-pi'];
   const root = saveTaskRecordFixtures(names);
   const diagnostics: string[] = [];
 
@@ -263,6 +262,76 @@ it('reads task records saved in the previous and current formats', () => {
   ).toEqual(
     names.toSorted().map((name) => Object.assign(parsedTaskRecordFixture(name), { version: 3 })),
   );
+});
+
+const saveSubmissionRecordFixtures = (directory: string) => {
+  for (const suffix of ['intent', 'observation']) {
+    const name = `submission-assignment-${suffix}.json`;
+    const fixture = new URL(`./fixtures/submissionRecords/${name}`, import.meta.url);
+
+    writeFileSync(join(directory, name), readFileSync(fixture, 'utf8'));
+  }
+};
+
+it('skips non-Pi tasks and their submissions without hiding Pi tasks', () => {
+  const root = saveTaskRecordFixtures([
+    'previous-pi',
+    'previous-generic',
+    'current-pi',
+    'current-generic',
+  ]);
+
+  saveSubmissionRecordFixtures(join(root, 'previous-generic'));
+  const diagnostics: string[] = [];
+  const skipped: string[] = [];
+
+  const scanned = records.readTasks(root, diagnostics, skipped);
+
+  expect(scanned.map(({ task }) => task.taskId).toSorted()).toEqual(['current-pi', 'previous-pi']);
+  expect(diagnostics).toEqual([]);
+
+  expect(skipped.toSorted()).toEqual(
+    ['current-generic', 'previous-generic'].map(
+      (taskId) =>
+        `Skipped task ${taskId} run by a non-Pi worker; Tau no longer supports non-Pi workers.`,
+    ),
+  );
+
+  for (const taskId of ['previous-generic', 'current-generic']) {
+    expect(() => records.readTask(join(root, taskId))).toThrow(
+      'Tau no longer supports non-Pi workers.',
+    );
+  }
+});
+
+it('diagnoses a malformed record that only looks like a non-Pi task', () => {
+  const root = saveTaskRecordFixtures(['previous-generic']);
+  const { version: _version, ...unversioned } = parsedTaskRecordFixture('previous-generic');
+
+  for (const [taskId, version] of [
+    ['unversioned', undefined],
+    ['text-version', '2'],
+    ['first-version', 1],
+  ] as const) {
+    const saved = { ...unversioned, taskId, ...(version === undefined ? {} : { version }) };
+    mkdirSync(join(root, taskId));
+    writeFileSync(join(root, taskId, 'task.json'), JSON.stringify(saved));
+  }
+
+  const diagnostics: string[] = [];
+  const skipped: string[] = [];
+
+  expect(records.readTasks(root, diagnostics, skipped)).toEqual([]);
+
+  expect(skipped).toEqual([
+    'Skipped task previous-generic run by a non-Pi worker; Tau no longer supports non-Pi workers.',
+  ]);
+
+  expect(diagnostics).toHaveLength(3);
+
+  for (const taskId of ['first-version', 'text-version', 'unversioned']) {
+    expect(diagnostics.some((diagnostic) => diagnostic.includes(join(root, taskId)))).toBe(true);
+  }
 });
 
 it('skips a task saved by a newer Tau and asks for a restart', () => {
@@ -996,31 +1065,6 @@ it('accepts one validated report without replacing durable evidence', ({ onTestF
   expect(readFileSync(join(directory, 'report.json'), 'utf8')).toBe(accepted);
 });
 
-const genericWorkerFixture = () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-worker-generic-'));
-
-  afterTest(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
-
-  const task = {
-    version: 2,
-    taskId: 'task-two',
-    task: 'Inspect source.',
-    parentSession: join(directory, 'parent.jsonl'),
-    parentSessionId: 'parent-two',
-    createdAt: 1000,
-    deadline: 20000,
-    cancellationBudget: 1000,
-    monotonicDeadline: 20000,
-    loadout: fixtureGenericLoadout(directory),
-  };
-
-  records.publish(directory, 'task.json', task);
-
-  return { directory, task };
-};
-
 it('reads saved worker facts once for state and status', () => {
   const { directory, task, question, reply } = questionFixture();
   records.recordEvent(directory, task.taskId, 'accepted', 'Accepted.');
@@ -1031,29 +1075,17 @@ it('reads saved worker facts once for state and status', () => {
   const report = { taskId: task.taskId, outcome: 'success', summary: 'Done.', evidence: [] };
   records.acceptReport(directory, task.taskId, report);
 
-  records.publish(directory, records.submissionName('assignment', 'intent'), {
-    taskId: task.taskId,
-    id: 'assignment',
-    text: 'Work.',
-  });
-
   const facts = readWorkerFacts(directory, task.taskId);
 
   expect(Object.keys(facts.events).toSorted()).toEqual(['accepted', 'cleanup']);
   expect(facts.events.cleanup).toMatchObject({ kind: 'cleanup', stopped: true });
   expect(facts.report).toEqual(report);
 
-  expect(facts.assignment?.intent).toEqual({
-    taskId: task.taskId,
-    id: 'assignment',
-    text: 'Work.',
-  });
-
   expect(facts.pendingQuestion).toEqual({ ...question, replySaved: true });
 });
 
 it('refuses worker facts with a malformed lifecycle record', () => {
-  const { directory, task } = genericWorkerFixture();
+  const { directory, task } = questionFixture();
   records.recordEvent(directory, task.taskId, 'cleanup', { detail: 'Stopped.', stopped: true });
   writeFileSync(join(directory, 'stopping.json'), '{');
 

@@ -4,12 +4,11 @@ import { truncateLine } from '@earendil-works/pi-coding-agent';
 
 import { isMissingFile } from '../../errors/index.js';
 import { readWorkerFacts } from './controller/record.js';
-import { readGenericReference } from './generic.js';
 import { nativeHeader } from './native.js';
-import { findSuccessor, readReport } from './records.js';
+import { findSuccessor, readReport, readTask } from './records.js';
 import { canonical, historyRegistry, lineage, sameRoot } from './sessionLineage.js';
 import type { LineageNode } from './sessionLineage.js';
-import { isGenericLoadout, isTaskId, requireNativeTask } from './types.js';
+import { isTaskId } from './types.js';
 import type { Report, Task, WorkerState } from './types.js';
 import { deriveWorkerState } from './workerState.js';
 
@@ -22,8 +21,7 @@ interface Candidate {
   description: string;
   nativeSessionId?: string;
   nativeSessionFile?: string;
-  nativeReference?: { kind: string; value: string };
-  nativeEvidence: 'available' | 'missing' | 'invalid' | 'opaque';
+  nativeEvidence: 'available' | 'missing' | 'invalid';
   state?: WorkerState;
   report?: Report;
 }
@@ -31,6 +29,17 @@ interface Candidate {
 type Ownership = (taskId: string) => boolean;
 
 type InScope = (file: string, id?: string) => boolean;
+
+// A saved task this Tau cannot read names its own reason, such as a retired non-Pi worker.
+const refuseUnreadableTask = (directory: string): void => {
+  try {
+    readTask(directory);
+  } catch (error) {
+    if (!isMissingFile(error)) {
+      throw error;
+    }
+  }
+};
 
 export const authorizeHistoryTask = (
   root: string,
@@ -46,6 +55,8 @@ export const authorizeHistoryTask = (
   const origin = origins.get(taskId);
 
   if (!selected || !origin) {
+    refuseUnreadableTask(join(root, taskId));
+
     throw new Error(
       'Unknown task or invalid continuation chain. Native-only sessions cannot be followed up.',
     );
@@ -85,57 +96,10 @@ const candidateState = (
   diagnostics: string[],
 ): WorkerState | undefined => {
   return readOrDiagnose(
-    () => {
-      const facts = readWorkerFacts(directory, task.taskId);
-
-      return deriveWorkerState(facts, task, ownership(task.taskId));
-    },
+    () => deriveWorkerState(readWorkerFacts(directory, task.taskId), ownership(task.taskId)),
     `Task ${task.taskId} state`,
     diagnostics,
   );
-};
-
-const genericTaskCandidate = (
-  directory: string,
-  task: Task,
-  inScope: (file: string, id?: string) => boolean,
-  ownership: Ownership,
-  diagnostics: string[],
-): Candidate | undefined => {
-  const scoped = readOrDiagnose(
-    () => inScope(task.parentSession, task.parentSessionId),
-    `Task ${task.taskId} parent ancestry`,
-    diagnostics,
-  );
-
-  if (scoped !== true) {
-    return undefined;
-  }
-
-  const report = readOrDiagnose(
-    () => readReport(directory, task.taskId),
-    `Task ${task.taskId} report`,
-    diagnostics,
-  );
-
-  const reference = readOrDiagnose(
-    () => readGenericReference(directory, task.taskId),
-    `Task ${task.taskId} native reference`,
-    diagnostics,
-  );
-
-  const state = candidateState(directory, task, ownership, diagnostics);
-
-  return {
-    sourceFile: join(directory, 'task.json'),
-    taskId: task.taskId,
-    ...(task.name != null ? { name: task.name } : {}),
-    description: task.task,
-    nativeEvidence: 'opaque',
-    ...(state ? { state } : {}),
-    ...(report ? { report } : {}),
-    ...(reference ? { nativeReference: reference } : {}),
-  };
 };
 
 const readNativeEvidence = (
@@ -178,15 +142,10 @@ const taskCandidate = (
   ownership: Ownership,
   diagnostics: string[],
 ): Candidate | undefined => {
-  if (isGenericLoadout(task.loadout)) {
-    return genericTaskCandidate(directory, task, inScope, ownership, diagnostics);
-  }
-
-  const native = requireNativeTask(task);
   let origin: Task | undefined;
 
   try {
-    origin = tasks.get(canonical(native.nativeSessionFile));
+    origin = tasks.get(canonical(task.nativeSessionFile));
 
     if (
       !origin ||
@@ -201,7 +160,7 @@ const taskCandidate = (
     return undefined;
   }
 
-  const nativeEvidence = readNativeEvidence(task, native.nativeSessionFile, origin, diagnostics);
+  const nativeEvidence = readNativeEvidence(task, task.nativeSessionFile, origin, diagnostics);
 
   const report = readOrDiagnose(
     () => readReport(directory, task.taskId),
@@ -217,8 +176,8 @@ const taskCandidate = (
     ...(task.predecessorTaskId != null ? { predecessorTaskId: task.predecessorTaskId } : {}),
     ...(task.name != null ? { name: task.name } : {}),
     description: task.task,
-    nativeSessionId: native.nativeSessionId,
-    nativeSessionFile: native.nativeSessionFile,
+    nativeSessionId: task.nativeSessionId,
+    nativeSessionFile: task.nativeSessionFile,
     nativeEvidence,
     ...(state ? { state } : {}),
     ...(report ? { report } : {}),
@@ -239,13 +198,8 @@ const searchOutcome = (query: string, count: number): string => {
 
 // The caller's own task names the current native session, so its own task and every task that owns
 // an ancestor session are not history candidates for that caller.
-const ownsAncestorSession = (task: Task, ancestorFiles: Set<string>): boolean => {
-  if (isGenericLoadout(task.loadout)) {
-    return false;
-  }
-
-  return ancestorFiles.has(canonical(requireNativeTask(task).nativeSessionFile));
-};
+const ownsAncestorSession = (task: Task, ancestorFiles: Set<string>): boolean =>
+  ancestorFiles.has(canonical(task.nativeSessionFile));
 
 const createScopeTest = (origin: LineageNode): InScope => {
   return (file: string, id?: string) => {
@@ -296,13 +250,9 @@ const candidateMatches = (candidate: Candidate, needle: string): boolean => {
     return true;
   }
 
-  return [
-    candidate.taskId,
-    candidate.name,
-    candidate.description,
-    candidate.nativeSessionId,
-    candidate.nativeReference?.value,
-  ].some((value) => value?.toLowerCase().includes(needle) === true);
+  return [candidate.taskId, candidate.name, candidate.description, candidate.nativeSessionId].some(
+    (value) => value?.toLowerCase().includes(needle) === true,
+  );
 };
 
 const candidateSortKey = (candidate: Candidate): string =>
@@ -361,21 +311,6 @@ const previewOptionalText = (
 ): Record<string, unknown> =>
   value != null && value !== '' ? { [field]: preview(value, field, truncatedFields) } : {};
 
-const candidateNativeReference = (candidate: Candidate, truncatedFields: string[]) => {
-  const reference = candidate.nativeReference;
-
-  if (!reference) {
-    return {};
-  }
-
-  return {
-    nativeReference: {
-      kind: reference.kind,
-      value: preview(reference.value, 'nativeReference.value', truncatedFields),
-    },
-  };
-};
-
 const candidateReport = (
   report: Report | undefined,
   summary: string | undefined,
@@ -415,7 +350,6 @@ const candidatePreview = (candidate: Candidate) => {
     description: preview(candidate.description, 'description', truncatedFields),
     ...(candidate.state ? { state: candidate.state } : {}),
     ...previewOptionalText(candidate.nativeSessionId, 'nativeSessionId', truncatedFields),
-    ...candidateNativeReference(candidate, truncatedFields),
     nativeEvidence: candidate.nativeEvidence,
     ...candidateReport(report, summary, evidence),
     ...(reportTruncated ? { reportFile: join(dirname(candidate.sourceFile), 'report.json') } : {}),

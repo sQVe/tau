@@ -8,7 +8,7 @@ import { ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
-import { asPiLoadout, fixtureGenericLoadout, fixtureLoadout } from './fixtures/loadout.js';
+import { fixtureLoadout } from './fixtures/loadout.js';
 import { checkWorkerRuntime, resolveLoadout, validateSavedLoadout } from './loadout.js';
 import { resolveProfile, parseProfile } from './profiles.js';
 
@@ -49,11 +49,7 @@ const workerFixture = async (onTestFinished: (callback: () => void) => void) => 
     isProjectTrusted: () => true,
   };
 
-  const request = {
-    profile: 'worker',
-    permissions: 'trusted-full-tools',
-    model: `${model.provider}/${model.id}`,
-  };
+  const request = { profile: 'worker', model: `${model.provider}/${model.id}` };
 
   return { directory, model, context, request };
 };
@@ -63,7 +59,7 @@ it('resolves an explicit worker model and names the configured models when none 
 }) => {
   const { directory, context, request } = await workerFixture(onTestFinished);
 
-  const resolved = asPiLoadout(resolveLoadout(request, context));
+  const resolved = resolveLoadout(request, context);
 
   expect(resolved).toEqual({
     harness: 'pi',
@@ -84,7 +80,7 @@ it('resolves an explicit worker model and names the configured models when none 
     profile('Bare task.').replace('worker', 'bare'),
   );
 
-  const withoutModel = { profile: 'bare', permissions: 'trusted-full-tools' };
+  const withoutModel = { profile: 'bare' };
   const missing = () => resolveLoadout(withoutModel, context);
   expect(missing).toThrow('no fallback');
   expect(missing).toThrow(`Configured models: ${request.model}.`);
@@ -101,7 +97,7 @@ it('resolves an explicit worker model and names the configured models when none 
   expect(unavailable).toThrow('unavailable: missing/model');
   expect(unavailable).toThrow(request.model);
   vi.stubEnv('TAU_SUBAGENT_MODEL', request.model);
-  expect(asPiLoadout(resolveLoadout(withoutModel, context)).model).toBe(request.model);
+  expect(resolveLoadout(withoutModel, context).model).toBe(request.model);
 
   writeFileSync(
     join(directory, 'agents', 'worker.md'),
@@ -114,15 +110,7 @@ it('resolves an explicit worker model and names the configured models when none 
     'missing/profile',
   );
 
-  expect(asPiLoadout(resolveLoadout(request, context)).model).toBe(request.model);
-
-  expect(() => resolveLoadout({ ...request, harness: 'codex' }, context)).toThrow(
-    'native-controls',
-  );
-
-  expect(() => resolveLoadout({ ...request, permissions: 'read-only' }, context)).toThrow(
-    'trusted-full-tools',
-  );
+  expect(resolveLoadout(request, context).model).toBe(request.model);
 
   expect(() => resolveLoadout(request, { ...context, isProjectTrusted: () => false })).toThrow(
     'trusted project',
@@ -152,16 +140,14 @@ it('defaults bundled profiles to a model that the environment and custom profile
   const withBundled = { ...context, modelRegistry: new ModelRegistry(runtime) };
 
   for (const name of ['scout', 'worker', 'reviewer', 'qa']) {
-    const launch = { profile: name, permissions: 'trusted-full-tools' };
+    const launch = { profile: name };
 
-    expect(asPiLoadout(resolveLoadout(launch, withBundled)).model).toBe(
-      'claude-bridge/claude-opus-5-5',
-    );
+    expect(resolveLoadout(launch, withBundled).model).toBe('claude-bridge/claude-opus-5-5');
   }
 
-  const withoutModel = { profile: 'worker', permissions: 'trusted-full-tools' };
+  const withoutModel = { profile: 'worker' };
   vi.stubEnv('TAU_SUBAGENT_MODEL', request.model);
-  expect(asPiLoadout(resolveLoadout(withoutModel, withBundled)).model).toBe(request.model);
+  expect(resolveLoadout(withoutModel, withBundled).model).toBe(request.model);
   mkdirSync(join(directory, 'agents'));
 
   writeFileSync(
@@ -186,7 +172,7 @@ it('resolves and replays a worker model whose ID contains a slash', async ({ onT
   runtime.registerNativeProvider(nested.provider);
   const withNested = { ...context, modelRegistry: new ModelRegistry(runtime) };
   const launch = { ...request, model: 'openrouter/meta/llama' };
-  const saved = asPiLoadout(resolveLoadout(launch, withNested));
+  const saved = resolveLoadout(launch, withNested);
 
   expect(saved.model).toBe('openrouter/meta/llama');
   expect(validateSavedLoadout(saved, withNested)).toEqual(saved);
@@ -196,15 +182,13 @@ it('replays a saved loadout only under the same trust, directories, model, and t
   onTestFinished,
 }) => {
   const { directory, context, request } = await workerFixture(onTestFinished);
-  const saved = asPiLoadout(resolveLoadout(request, context));
+  const saved = resolveLoadout(request, context);
 
   expect(validateSavedLoadout(saved, context)).toEqual(saved);
 
   expect(() => validateSavedLoadout({ ...saved, providerFingerprint: 'f' }, context)).toThrow(
     'Invalid saved',
   );
-
-  expect(() => validateSavedLoadout(fixtureGenericLoadout(directory), context)).toThrow('Non-Pi');
 
   expect(() => validateSavedLoadout(saved, { ...context, isProjectTrusted: () => false })).toThrow(
     'trusted',
@@ -347,6 +331,18 @@ it('accepts blank and comment frontmatter lines without relaxing selected profil
         'fixture',
       ),
     ).toThrow(/Unsupported or duplicate|Invalid profile thinking/);
+  }
+});
+
+const withCli = (cli: string) => `---\nrole: editing\ncli: ${cli}\n---\nTask`;
+
+it('refuses a profile whose cli is not Pi', () => {
+  expect(parseProfile(withCli('pi'), 'worker', 'fixture')).toMatchObject({ name: 'worker' });
+
+  for (const cli of ['claude', 'codex']) {
+    expect(() => parseProfile(withCli(cli), 'worker', 'fixture')).toThrow(
+      'non-Pi workers are no longer supported',
+    );
   }
 });
 

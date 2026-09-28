@@ -1,6 +1,7 @@
 # ADR 0053: Version each saved record format
 
-- Status: Accepted
+- Status: Accepted; task record policy superseded by
+  [ADR 0058](./0058-run-subagents-only-as-pi-workers.md)
 - Date: 2026-09-27
 
 ## Context

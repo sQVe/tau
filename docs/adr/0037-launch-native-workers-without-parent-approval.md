@@ -1,6 +1,7 @@
 # ADR 0037: Launch native workers without parent approval
 
-- Status: Accepted; report directory check superseded by
+- Status: Superseded by [ADR 0058](./0058-run-subagents-only-as-pi-workers.md). Before that, report
+  directory check superseded by
   [ADR 0045](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md)
 - Date: 2026-09-22
 - Supersedes: the parent-user approval sentences in

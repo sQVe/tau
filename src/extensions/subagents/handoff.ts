@@ -1,5 +1,3 @@
-// Both harness prompt paths share these contracts, so a worker gets the same assignment and
-// handoff expectations whether it runs through Pi or a generic herdr kind.
 export const assignmentContract = [
   'Own the assigned outcome through to completion: acceptance criteria, exploration, design, implementation, tests, and debugging.',
   'Tests, docs, and checks the assignment names are part of the work, not follow-ups.',

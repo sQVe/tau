@@ -1,6 +1,4 @@
-import { spawn } from 'node:child_process';
-
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as timeout from './cancellation.js';
 import { agentResponse, paneListResponse, processInfoResponse } from './fixtures/herdrFake.js';
@@ -25,49 +23,6 @@ const snapshot = (processId = owned.processId, token = owned.token) =>
   });
 
 const shell = () => snapshot(owned.shellPid);
-
-const spawnShell = () =>
-  spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
-
-const processStart = async (pid: number) =>
-  (await timeout.runClient('ps', ['-p', String(pid), '-o', 'lstart='], 1000)).trim();
-
-const genericOwned = async (shellPid: number) => {
-  return {
-    kind: 'generic' as const,
-    paneId: owned.paneId,
-    terminalId: owned.terminalId,
-    shellPid,
-    processId: process.pid,
-    agentKind: 'codex',
-    startedAt: await processStart(process.pid),
-    shellStartedAt: await processStart(shellPid),
-    nativeReference: { kind: 'codex-session', value: 'session-value' },
-  };
-};
-
-const genericSnapshot = (
-  worker: { paneId: string; shellPid: number; processId: number },
-  processId = worker.processId,
-) =>
-  processInfoResponse({
-    paneId: worker.paneId,
-    shellPid: worker.shellPid,
-    processId: processId,
-    argv: ['codex'],
-  });
-
-const shellSnapshot = (worker: { paneId: string; shellPid: number }) =>
-  JSON.stringify({
-    result: {
-      process_info: {
-        pane_id: worker.paneId,
-        shell_pid: worker.shellPid,
-        foreground_process_group_id: worker.shellPid,
-        foreground_processes: [],
-      },
-    },
-  });
 
 const withInventory =
   (client: Client): Client =>
@@ -199,120 +154,6 @@ describe('owned worker cancellation', () => {
 
     expect(result.cleanup).toBe(scenario === 'rewritten argv' ? 'confirmed' : 'refused');
     expect(sent).toHaveLength(scenario === 'rewritten argv' ? 1 : 0);
-  });
-
-  it.each(['foreground', 'session'] as const)(
-    'stops repeated generic interrupts after %s identity changes',
-    async (changed) => {
-      const shellProcess = spawnShell();
-
-      onTestFinished(() => {
-        shellProcess.kill('SIGKILL');
-      });
-
-      const generic = await genericOwned(shellProcess.pid as number);
-      const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
-
-      const client = vi.fn<Client>(async (argumentsList): Promise<string> => {
-        const sent = client.mock.calls.filter(([call]) => call[1] === 'send-keys').length;
-
-        if (argumentsList[1] === 'get') {
-          return JSON.stringify({
-            result: {
-              agent: {
-                pane_id: generic.paneId,
-                agent: generic.agentKind,
-                agent_session: {
-                  kind: generic.nativeReference.kind,
-                  value:
-                    sent && changed === 'session' ? 'replacement' : generic.nativeReference.value,
-                },
-              },
-            },
-          });
-        }
-
-        if (argumentsList[1] === 'send-keys') {
-          if (sent > 1) {
-            throw new Error('Interrupted a replacement worker.');
-          }
-
-          return '{}';
-        }
-
-        if (sent) {
-          clock.mockReturnValue(600);
-        }
-
-        return genericSnapshot(generic, sent && changed === 'foreground' ? 102 : generic.processId);
-      });
-
-      const result = timeout.cancelOwnedWorker(
-        generic,
-        1200,
-        withInventory(client),
-        new AbortController().signal,
-      );
-
-      await expect(result).resolves.toMatchObject({ cleanup: 'unconfirmed' });
-      expect(client.mock.calls.filter(([call]) => call[1] === 'send-keys')).toHaveLength(1);
-    },
-  );
-
-  it('confirms a generic stop when the agent session ends before the process does', async () => {
-    const shellProcess = spawnShell();
-
-    onTestFinished(() => {
-      shellProcess.kill('SIGKILL');
-    });
-
-    const generic = await genericOwned(shellProcess.pid as number);
-    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
-    let polls = 0;
-
-    const client = vi.fn<Client>(async (argumentsList): Promise<string> => {
-      const sent = client.mock.calls.filter(([call]) => call[1] === 'send-keys').length;
-
-      if (argumentsList[1] === 'get') {
-        return sent
-          ? '{}'
-          : JSON.stringify({
-              result: {
-                agent: {
-                  pane_id: generic.paneId,
-                  agent: generic.agentKind,
-                  agent_session: {
-                    kind: generic.nativeReference.kind,
-                    value: generic.nativeReference.value,
-                  },
-                },
-              },
-            });
-      }
-
-      if (argumentsList[1] === 'send-keys') {
-        return '{}';
-      }
-
-      if (!sent) {
-        return genericSnapshot(generic);
-      }
-
-      polls += 1;
-      clock.mockReturnValue(600);
-
-      return polls > 1 ? shellSnapshot(generic) : genericSnapshot(generic);
-    });
-
-    const result = await timeout.cancelOwnedWorker(
-      generic,
-      1200,
-      withInventory(client),
-      new AbortController().signal,
-    );
-
-    expect(result.cleanup).toBe('confirmed');
-    expect(client.mock.calls.filter(([call]) => call[1] === 'send-keys')).toHaveLength(1);
   });
 
   it('never counts EPERM as an absent worker', async () => {

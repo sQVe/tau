@@ -36,7 +36,6 @@ import {
   readReport,
   validateTask,
 } from '../src/extensions/subagents/records.js';
-import { requireNativeTask } from '../src/extensions/subagents/types.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 
 const handoff =
@@ -250,7 +249,7 @@ it.each(['editing', 'investigation'] as const)(
       modelRuntime: runtime,
       model,
       thinkingLevel: 'off',
-      sessionManager: SessionManager.open(requireNativeTask(task).nativeSessionFile),
+      sessionManager: SessionManager.open(task.nativeSessionFile),
       settingsManager,
       resourceLoader: loader,
     });

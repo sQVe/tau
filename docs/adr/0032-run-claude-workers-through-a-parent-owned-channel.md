@@ -1,6 +1,7 @@
 # ADR 0032: Run Claude workers through a parent-owned channel
 
-- Status: Superseded by [ADR 0033](./0033-use-one-generic-native-worker-workflow.md)
+- Status: Superseded by [ADR 0033](./0033-use-one-generic-native-worker-workflow.md), then by
+  [ADR 0058](./0058-run-subagents-only-as-pi-workers.md)
 - Date: 2026-09-18
 
 ## Context

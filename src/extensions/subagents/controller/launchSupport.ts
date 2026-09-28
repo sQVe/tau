@@ -6,7 +6,6 @@ import type { Visibility } from '../placement.js';
 import { nativeIdentity } from '../profiles.js';
 import { findSuccessor, mayFollow, readTask, readTasks } from '../records.js';
 import type { UnreadableTask } from '../records.js';
-import { isGenericLoadout } from '../types.js';
 import type { Loadout, Task } from '../types.js';
 
 export interface LaunchInput {
@@ -28,11 +27,7 @@ export interface FollowUpPreparation {
   native: ReturnType<typeof validateNative>;
 }
 
-export const nativeReference = (
-  loadout: Loadout,
-  directory: string,
-  source?: FollowUpPreparation,
-) => {
+export const nativeReference = (directory: string, source?: FollowUpPreparation) => {
   if (source) {
     return {
       predecessorTaskId: source.task.taskId,
@@ -41,7 +36,7 @@ export const nativeReference = (
     };
   }
 
-  return isGenericLoadout(loadout) ? {} : nativeIdentity(directory);
+  return nativeIdentity(directory);
 };
 
 export const requireUnclaimed = (root: string, source: { directory: string; task: Task }): void => {

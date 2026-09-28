@@ -1,29 +1,19 @@
-import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { Value } from 'typebox/value';
 
 import type { OwnedWorker } from '../cancellation.js';
-import { genericReportPath, readGenericReference } from '../generic.js';
 import { readPendingQuestion, readReply } from '../questionRecords.js';
 import {
   findSuccessor,
-  publish,
   readEvent,
-  readGenericSubmission,
   readPane,
   readOptionalRecord,
   readReport,
   readTask,
   readTasks,
 } from '../records.js';
-import {
-  harnessOf,
-  isGenericLoadout,
-  isPiLoadout,
-  ownedWorkerSchema,
-  requireNativeTask,
-} from '../types.js';
+import { ownedWorkerSchema } from '../types.js';
 import type { Report, Task, TaskEvent } from '../types.js';
 import { deriveWorkerState, taskEndedEventKinds } from '../workerState.js';
 import type { WorkerFacts } from '../workerState.js';
@@ -50,19 +40,11 @@ export const readOwnedWorker = (directory: string, task: Task): OwnedWorker => {
     throw new Error('Invalid saved worker ownership.');
   }
 
-  const generic = isGenericLoadout(task.loadout);
-
-  if (value.kind !== (generic ? 'generic' : 'pi')) {
-    throw new Error('Saved worker kind does not match the task.');
-  }
-
-  if (value.kind === 'pi' && value.token !== task.nativeSessionFile) {
+  if (value.token !== task.nativeSessionFile) {
     throw new Error('Saved worker session does not match the task.');
   }
 
-  const reference = value.nativeReference ?? readGenericReference(directory, task.taskId);
-
-  return reference ? { ...value, nativeReference: reference } : value;
+  return value;
 };
 
 // Without a report, terminal event, or cleanup record there is no outcome to claim.
@@ -82,37 +64,25 @@ const taskOutcome = (
 
 const taskRecovery = (task: Task, directory: string) => {
   const paneId = readPane(directory);
-  const base = { ...(paneId === undefined ? {} : { paneId }), directory };
 
-  if (isPiLoadout(task.loadout)) {
-    return { ...base, nativeSessionFile: requireNativeTask(task).nativeSessionFile };
-  }
-
-  const reference = readGenericReference(directory, task.taskId);
-
-  return { ...base, ...(reference ? { nativeReference: reference } : {}) };
+  return {
+    ...(paneId === undefined ? {} : { paneId }),
+    directory,
+    nativeSessionFile: task.nativeSessionFile,
+  };
 };
 
 // Evidence notices read only handle memory; a corrupt record cannot build this recovery hint.
-export const handleRecovery = (handle: Handle) => {
-  const base = {
-    ...(handle.identity.paneId === undefined ? {} : { paneId: handle.identity.paneId }),
-    directory: handle.directory,
-  };
-
-  if (isPiLoadout(handle.task.loadout)) {
-    return { ...base, nativeSessionFile: requireNativeTask(handle.task).nativeSessionFile };
-  }
-
-  const reference = handle.identity.owned?.nativeReference;
-
-  return { ...base, ...(reference === undefined ? {} : { nativeReference: reference }) };
-};
+export const handleRecovery = (handle: Handle) => ({
+  ...(handle.identity.paneId === undefined ? {} : { paneId: handle.identity.paneId }),
+  directory: handle.directory,
+  nativeSessionFile: handle.task.nativeSessionFile,
+});
 
 // Without a handle, recovery falls back to the task directory and the saved Pi session path.
 export const savedRecovery = (task: Task | undefined, directory: string) => {
-  if (task && isPiLoadout(task.loadout)) {
-    return { directory, nativeSessionFile: requireNativeTask(task).nativeSessionFile };
+  if (task) {
+    return { directory, nativeSessionFile: task.nativeSessionFile };
   }
 
   return { directory };
@@ -138,13 +108,6 @@ export class EvidenceUnavailableError extends Error {
     this.recovery = input.recovery;
   }
 }
-
-const nativeUsage = (task: Task) => ({
-  available: false as const,
-  reason: isPiLoadout(task.loadout)
-    ? 'Pi reports worker usage in its own session totals.'
-    : 'Native usage and model verification are unavailable through this generic interface.',
-});
 
 // A missing or unreadable predecessor must not fail the status; the renderer falls back to the
 // short task ID when the name is absent.
@@ -189,7 +152,6 @@ export const readWorkerFacts = (directory: string, taskId: string): WorkerFacts 
   return {
     events,
     report: readReport(directory, taskId),
-    assignment: readGenericSubmission(directory, taskId, 'assignment'),
     pendingQuestion: readPendingQuestionFact(directory, taskId),
   };
 };
@@ -200,7 +162,7 @@ export const taskRecordStatus = (directory: string, task: Task, controlled = fal
   const { events, report } = facts;
   const failure = events.startupFailure;
   const cleanup = events.cleanup;
-  const state = deriveWorkerState(facts, task, controlled);
+  const state = deriveWorkerState(facts, controlled);
 
   const outcome = taskOutcome(
     [events.timeout, events.cancelled, failure],
@@ -228,10 +190,12 @@ export const taskRecordStatus = (directory: string, task: Task, controlled = fal
         }
       : {}),
     cleanupConfirmed: cleanup?.stopped === true,
-    harness: harnessOf(task.loadout),
     nativeSessionId: task.nativeSessionId,
     nativeSessionFile: task.nativeSessionFile,
-    usage: nativeUsage(task),
+    usage: {
+      available: false as const,
+      reason: 'Pi reports worker usage in its own session totals.',
+    },
     directory,
     report,
     pendingQuestion: facts.pendingQuestion,
@@ -245,51 +209,6 @@ export const taskStatus = (directory: string, controlled = false) => {
   const task = readTask(directory);
 
   return taskRecordStatus(directory, task, controlled);
-};
-
-export const genericStatus = (
-  directory: string,
-  task: Task,
-  handle?: Handle,
-  ownedLive = false,
-) => {
-  if (!isGenericLoadout(task.loadout)) {
-    return {};
-  }
-
-  return {
-    // Keep the generic harness separate from the native kind name in status.
-    harness: 'generic' as const,
-    nativeKind: task.loadout.kind,
-    ...(ownedLive && handle?.observation.nativeState !== undefined
-      ? { nativeState: handle.observation.nativeState }
-      : {}),
-    observationIssue: handle?.observation.issue,
-    nativeReference: readGenericReference(directory, task.taskId),
-    nativeConfiguration: task.loadout,
-    requestedModel: task.loadout.requestedModel,
-    observedModel: null,
-    modelVerification:
-      'Unavailable. Native arguments record a request, not proof of the model used.',
-    reportPath: genericReportPath(task),
-    assignment: readGenericSubmission(directory, task.taskId, 'assignment'),
-    safety:
-      'Native controls; Tau does not certify runtime enforcement. Approval dialogs require user action.',
-  };
-};
-
-export const recordNativeIssue = (handle: Handle, filename: string, error: unknown): void => {
-  const detail = String(error).slice(0, 4000);
-
-  handle.observation.issue = detail;
-
-  try {
-    if (!existsSync(join(handle.directory, filename))) {
-      publish(handle.directory, filename, { taskId: handle.task.taskId, detail });
-    }
-  } catch (recordError) {
-    handle.cleanup.recordErrors.push(String(recordError));
-  }
 };
 
 // Absence evidence proves no live process remains; it does not prove the start never ran.

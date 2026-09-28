@@ -23,21 +23,6 @@ interface QuestionReceiptInput {
   acknowledgement?: unknown;
 }
 
-interface SubmissionReceiptInput {
-  intent?:
-    | { taskId?: string | undefined; id?: string | undefined; text?: string | undefined }
-    | undefined;
-  observation?:
-    | {
-        taskId?: string | undefined;
-        id?: string | undefined;
-        state?: string | undefined;
-        detail?: string | undefined;
-      }
-    | undefined;
-  retry?: string | undefined;
-}
-
 export interface StatusInput {
   taskId: string;
   state: WorkerState;
@@ -51,11 +36,6 @@ export interface StatusInput {
   failure?: string | undefined;
   cleanup?: string | undefined;
   questionReceipt?: QuestionReceiptInput | undefined;
-  nativeState?: string | undefined;
-  delivery?: string | undefined;
-  observationIssue?: string | undefined;
-  submissionReceipt?: SubmissionReceiptInput | undefined;
-  nativeOutput?: unknown;
   recovery?: unknown;
   placement?: { visibility: string; reason?: string } | undefined;
 }
@@ -152,18 +132,6 @@ export const handoffSections = (report: unknown): HandoffSections | undefined =>
   };
 };
 
-// Native observation errors are raw herdr text. Bound them before the model reads them, because the
-// full text stays in details for the pilot.
-const observationIssueLimit = 200;
-
-const boundedReason = (value: string | undefined): string | undefined => {
-  if (value === undefined || value.length <= observationIssueLimit) {
-    return value;
-  }
-
-  return `${value.slice(0, observationIssueLimit)}…`;
-};
-
 const modelQuestion = (
   question: StatusQuestion | undefined,
 ): Record<string, unknown> | undefined => {
@@ -194,21 +162,6 @@ const modelQuestionReceipt = (
   };
 };
 
-const modelSubmissionReceipt = (
-  receipt: SubmissionReceiptInput | undefined,
-): Record<string, unknown> | undefined => {
-  if (!receipt) {
-    return undefined;
-  }
-
-  const result: Record<string, unknown> = { id: receipt.intent?.id };
-
-  addField(result, 'state', receipt.observation?.state);
-  addField(result, 'detail', receipt.observation?.detail);
-
-  return result;
-};
-
 export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   const result: Record<string, unknown> = {
     taskId: status.taskId,
@@ -227,11 +180,6 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   addField(result, 'failure', status.failure);
   addField(result, 'cleanup', status.cleanup);
   addField(result, 'questionReceipt', modelQuestionReceipt(status.questionReceipt));
-  addField(result, 'nativeState', status.nativeState);
-  addField(result, 'delivery', status.delivery);
-  addField(result, 'observationIssue', boundedReason(status.observationIssue));
-  addField(result, 'submissionReceipt', modelSubmissionReceipt(status.submissionReceipt));
-  addField(result, 'nativeOutput', status.nativeOutput);
 
   if (status.state === 'cleanupUnconfirmed' || status.state === 'notOwned') {
     addField(result, 'recovery', status.recovery);

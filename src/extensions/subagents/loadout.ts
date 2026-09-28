@@ -12,13 +12,17 @@ import type {
 import { Value } from 'typebox/value';
 
 import { parseModelReference } from '../../delegateModel/index.js';
-import { resolveGenericLoadout } from './genericLoadout.js';
-import type { NativeLaunchInput } from './genericLoadout.js';
 import { bundledProfileDirectory, resolveProfile } from './profiles.js';
-import { isPiLoadout, loadoutSchema } from './types.js';
-import type { Loadout, PiLoadout, Profile } from './types.js';
+import { loadoutSchema } from './types.js';
+import type { Loadout, Profile } from './types.js';
 
 type ModelContext = Pick<ExtensionContext, 'modelRegistry' | 'scopedModels'>;
+
+interface LaunchRequest {
+  profile: string;
+  cwd?: string;
+  model?: string;
+}
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -81,18 +85,8 @@ const piWorkerTools = (extensionTools: Iterable<string>): string[] =>
     ]),
   ].filter((tool) => tool !== 'ask_user_question');
 
-const requirePiPermissions = (input: NativeLaunchInput): void => {
-  if (input.permissions !== 'trusted-full-tools') {
-    throw new Error('Workers require explicit trusted-full-tools permission.');
-  }
-
-  if (input.nativeArguments !== undefined) {
-    throw new Error('Pi workers do not accept native launch arguments.');
-  }
-};
-
 const resolveLaunchPlan = (
-  input: NativeLaunchInput & { profile: string; cwd?: string; harness?: string },
+  input: LaunchRequest,
   context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>,
 ) => {
   if (!context.isProjectTrusted()) {
@@ -115,31 +109,16 @@ const resolveLaunchPlan = (
     throw new Error(`Worker profile not found: ${input.profile}`);
   }
 
-  const kind = input.harness ?? profile.harness;
-
-  if (profile.harnessSpecified === true && profile.harness !== kind) {
-    throw new Error(`Profile ${profile.name} is a ${profile.harness} profile, not a ${kind} one.`);
-  }
-
-  return { cwd, agentDirectory, profile, kind };
+  return { cwd, agentDirectory, profile };
 };
 
 export const resolveLoadout = (
-  input: NativeLaunchInput & { profile: string; cwd?: string; harness?: string },
+  input: LaunchRequest,
   context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'scopedModels' | 'isProjectTrusted'>,
   signal: AbortSignal = AbortSignal.timeout(10_000),
 ): Loadout => {
   signal.throwIfAborted();
-  const { cwd, agentDirectory, profile, kind } = resolveLaunchPlan(input, context);
-
-  if (kind !== 'pi') {
-    // Bundled models name Pi providers; native harnesses select models through their own arguments.
-    const nativeProfile = isBundled(profile) ? { ...profile, model: undefined } : profile;
-
-    return resolveGenericLoadout({ input, profile: nativeProfile, kind, cwd, signal });
-  }
-
-  requirePiPermissions(input);
+  const { cwd, agentDirectory, profile } = resolveLaunchPlan(input, context);
   const model = resolveModel(input.model, profile, context);
 
   return {
@@ -155,7 +134,7 @@ export const resolveLoadout = (
   };
 };
 
-const requireSavedWorkerDirectory = (loadout: PiLoadout, context: { cwd: string }): void => {
+const requireSavedWorkerDirectory = (loadout: Loadout, context: { cwd: string }): void => {
   if (
     realpathSync(context.cwd) !== loadout.cwd ||
     realpathSync(getAgentDir()) !== loadout.agentDirectory
@@ -167,13 +146,9 @@ const requireSavedWorkerDirectory = (loadout: PiLoadout, context: { cwd: string 
 export const validateSavedLoadout = (
   value: unknown,
   context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'isProjectTrusted'>,
-): PiLoadout => {
+): Loadout => {
   if (!Value.Check(loadoutSchema, value)) {
     throw new Error('Invalid saved worker loadout.');
-  }
-
-  if (!isPiLoadout(value)) {
-    throw new Error('Non-Pi continuation is unsupported; start a fresh task.');
   }
 
   if (!context.isProjectTrusted()) {
@@ -192,7 +167,7 @@ export const validateSavedLoadout = (
 };
 
 export const checkWorkerRuntime = (
-  loadout: PiLoadout,
+  loadout: Loadout,
   pi: Pick<ExtensionAPI, 'getThinkingLevel' | 'getCommands' | 'getAllTools' | 'setActiveTools'>,
   context: Pick<ExtensionContext, 'model' | 'cwd' | 'isProjectTrusted'>,
 ): void => {

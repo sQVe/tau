@@ -1,5 +1,5 @@
 import { readEvent, readReport } from '../records.js';
-import { isGenericLoadout, replyClosedEventKinds } from '../types.js';
+import { replyClosedEventKinds } from '../types.js';
 import type { Handle } from './types.js';
 
 export const monotonicNow = (): number => Number(process.hrtime.bigint()) / 1_000_000;
@@ -32,14 +32,13 @@ export const ensureReplyActive = (handle: Handle): void => {
   workBudget(handle);
   const { directory, task } = handle;
 
-  const missingPiAcceptance =
-    !isGenericLoadout(task.loadout) && !readEvent(directory, task.taskId, 'accepted');
+  const missingAcceptance = !readEvent(directory, task.taskId, 'accepted');
 
   const ended =
     replyClosedEventKinds.some((kind) => readEvent(directory, task.taskId, kind)) ||
     readReport(directory, task.taskId) !== undefined;
 
-  if (missingPiAcceptance || ended) {
+  if (missingAcceptance || ended) {
     throw new Error('Worker task is inactive.');
   }
 };

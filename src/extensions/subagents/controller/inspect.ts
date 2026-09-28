@@ -1,8 +1,6 @@
-import { existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { isDeepStrictEqual } from 'node:util';
 
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -10,12 +8,10 @@ import { Value } from 'typebox/value';
 import { parseModelReference } from '../../../delegateModel/index.js';
 import { matchesWorker, processAbsent, runClient } from '../cancellation.js';
 import type { OwnedWorker } from '../cancellation.js';
-import { readGenericReference, prepareGenericReport } from '../generic.js';
 import { seedSession } from '../profiles.js';
-import { publish, publishRecord, readEvent } from '../records.js';
+import { publishRecord, readEvent } from '../records.js';
 import { requireObject, resolveTerminal, result, text } from '../terminal.js';
-import { isGenericLoadout, isPiLoadout, nativeAgentStates, requireNativeTask } from '../types.js';
-import type { GenericLoadout, NativeAgentState, Task, TaskEvent } from '../types.js';
+import type { Task, TaskEvent } from '../types.js';
 import { workBudget } from './budget.js';
 import {
   integer,
@@ -43,10 +39,6 @@ export const herdrClient: HerdrClient = (argumentsList, budget, signal) =>
   runClient('herdr', argumentsList, budget, signal ? { signal } : {});
 
 export const workerArguments = (task: Task): string[] => {
-  if (!isPiLoadout(task.loadout)) {
-    throw new Error('Only Pi workers use Pi launch arguments.');
-  }
-
   const model = parseModelReference(task.loadout.model);
 
   if (!model) {
@@ -56,7 +48,7 @@ export const workerArguments = (task: Task): string[] => {
   return [
     '--approve',
     '--session',
-    requireNativeTask(task).nativeSessionFile,
+    task.nativeSessionFile,
     '--provider',
     model.provider,
     '--model',
@@ -75,7 +67,6 @@ const checkForeground = (
   information: Record<string, unknown>,
   paneId: string,
   previous: OwnedWorker | undefined,
-  starting: boolean,
 ): void => {
   const paneMoved = information.pane_id !== paneId;
   const foregroundIsJob = information.foreground_process_group_id !== information.shell_pid;
@@ -86,10 +77,6 @@ const checkForeground = (
 
   if (paneMovedOrJobRunning || previousWorkerRemains) {
     return;
-  }
-
-  if (starting) {
-    throw new Error('Native worker has not reached its own process yet.');
   }
 
   throw new WorkerExitedError();
@@ -115,22 +102,12 @@ export const isHerdrError = (error: unknown, code: string): boolean => {
   return 'cause' in error && isHerdrError(error.cause, code);
 };
 
+// herdr answers with an error document for a pane that has no detected agent yet.
 const readAgent = async (
   call: (argumentsList: string[]) => Promise<string>,
   paneId: string,
-  starting: boolean,
-): Promise<Record<string, unknown>> => {
-  try {
-    // herdr answers with an error document for a pane that has no detected agent yet.
-    return requireObject(result(await call(['agent', 'get', paneId])).agent);
-  } catch (error) {
-    if (starting && isHerdrError(error, 'agent_not_found')) {
-      throw new Error('Native worker has not been detected by herdr yet.', { cause: error });
-    }
-
-    throw error;
-  }
-};
+): Promise<Record<string, unknown>> =>
+  requireObject(result(await call(['agent', 'get', paneId])).agent);
 
 class PendingPiSessionError extends Error {
   override name = 'PendingPiSessionError';
@@ -167,63 +144,6 @@ const checkAgentIdentity = (
   if (!samePane || !sameSession || unchangedShell) {
     throw new Error('Started worker identity could not be established.');
   }
-};
-
-const opaqueNativeReferenceSchema = Type.Object({
-  kind: Type.String({ minLength: 1, maxLength: 100 }),
-  value: Type.String({ minLength: 1, maxLength: 8000 }),
-});
-
-const opaqueAgentReference = (
-  agent: Record<string, unknown>,
-): { kind: string; value: string } | undefined => {
-  if (agent.agent_session === undefined || agent.agent_session === null) {
-    return undefined;
-  }
-
-  if (!Value.Check(opaqueNativeReferenceSchema, agent.agent_session)) {
-    throw new Error('Malformed opaque native reference.');
-  }
-
-  return { kind: agent.agent_session.kind, value: agent.agent_session.value };
-};
-
-const checkGenericAgent = async (
-  handle: Handle,
-  agent: Record<string, unknown>,
-  expected: { kind: string; paneId: string; shellPid: number; processId: number },
-  cleanup?: InspectionBudget,
-) => {
-  const expectedShell = handle.identity.shell;
-
-  const wrongAgent =
-    agent.pane_id !== expected.paneId ||
-    agent.agent !== expected.kind ||
-    expected.shellPid === expected.processId;
-
-  const wrongShell = expected.shellPid !== expectedShell?.processId;
-
-  if (wrongAgent || wrongShell) {
-    throw new Error('Native kind, terminal, or shell identity changed.');
-  }
-
-  const shellStart = await readProcessStart(handle, expected.shellPid, cleanup);
-
-  if (shellStart !== expectedShell.startedAt) {
-    throw new Error('Native kind, terminal, or shell identity changed.');
-  }
-
-  const reference = opaqueAgentReference(agent);
-
-  const savedReference =
-    handle.identity.owned?.nativeReference ??
-    readGenericReference(handle.directory, handle.task.taskId);
-
-  if (savedReference && !isDeepStrictEqual(savedReference, reference)) {
-    throw new Error('Opaque native reference changed.');
-  }
-
-  return reference;
 };
 
 // The placed shell is still the bare foreground process, so no worker runs in the pane.
@@ -274,7 +194,7 @@ export const verifyRejectedStart = async (
   }
 
   try {
-    if (Object.keys(await readAgent(call, text(handle.identity.paneId), true)).length > 0) {
+    if (Object.keys(await readAgent(call, text(handle.identity.paneId))).length > 0) {
       return false;
     }
   } catch (error) {
@@ -285,60 +205,9 @@ export const verifyRejectedStart = async (
   return true;
 };
 
-export const agentPromptArguments = (paneId: string, message: string): string[] => [
-  'agent',
-  'prompt',
-  paneId,
-  message,
-];
-
-const saveGenericOwnership = (handle: Handle, owned: OwnedWorker): void => {
-  if (owned.nativeReference && !readGenericReference(handle.directory, handle.task.taskId)) {
-    publish(handle.directory, 'nativeReference.json', {
-      taskId: handle.task.taskId,
-      reference: owned.nativeReference,
-    });
-  }
-
-  if (!existsSync(join(handle.directory, 'owned.json'))) {
-    publish(handle.directory, 'owned.json', owned);
-  }
-};
-
-const isNativeAgentState = (value: unknown): value is NativeAgentState =>
-  nativeAgentStates.some((state) => state === value);
-
-const observedNativeState = (agent: Record<string, unknown>): NativeAgentState =>
-  isNativeAgentState(agent.agent_status) ? agent.agent_status : 'unknown';
-
-const verifyWorkerAgent = async (
-  handle: Handle,
-  agent: Record<string, unknown>,
-  identity: { paneId: string; shellPid: number; processId: number },
-  cleanup?: InspectionBudget,
-): Promise<{ kind: string; value: string } | undefined> => {
-  if (isGenericLoadout(handle.task.loadout)) {
-    return checkGenericAgent(
-      handle,
-      agent,
-      { kind: handle.task.loadout.kind, ...identity },
-      cleanup,
-    );
-  }
-
-  checkAgentIdentity(
-    agent,
-    { paneId: identity.paneId, expectedSession: text(handle.task.nativeSessionFile) },
-    identity.shellPid === identity.processId,
-  );
-
-  return undefined;
-};
-
 const buildOwnedWorker = (
   handle: Handle,
   previous: OwnedWorker | undefined,
-  generic: GenericLoadout | undefined,
   identity: {
     paneId: string;
     terminalId: string;
@@ -348,74 +217,48 @@ const buildOwnedWorker = (
   },
 ): OwnedWorker =>
   previous ?? {
-    kind: generic ? 'generic' : 'pi',
+    kind: 'pi',
     paneId: identity.paneId,
     terminalId: identity.terminalId,
     shellPid: identity.shellPid,
     processId: identity.processId,
-    ...(generic
-      ? {
-          agentKind: generic.kind,
-          shellStartedAt: text(handle.identity.shell?.startedAt),
-        }
-      : { token: text(handle.task.nativeSessionFile) }),
+    token: handle.task.nativeSessionFile,
     startedAt: identity.startedAt,
   };
 
-const unrecordedProgress = () => ({ identity: {}, observation: {} });
-
-// Verifies the worker without changing the handle or saving records. Progress receives the pane and
-// first observation as they are established, so a later failed check still leaves them behind.
-export const observeWorker = async (
+// Verifies the worker without saving records. The handle receives the pane as soon as it resolves,
+// so a later failed check still leaves it behind.
+export const inspectWorker = async (
   handle: Handle,
   call: (argumentsList: string[]) => Promise<string>,
   cleanup?: InspectionBudget,
-  progress: {
-    identity: Pick<Handle['identity'], 'paneId'>;
-    observation: Pick<Handle['observation'], 'workerObserved'>;
-  } = unrecordedProgress(),
-): Promise<{ worker: OwnedWorker; nativeState: NativeAgentState }> => {
-  const generic = isGenericLoadout(handle.task.loadout) ? handle.task.loadout : undefined;
+): Promise<OwnedWorker> => {
   const location = await resolveTerminal(text(handle.identity.terminalId), call);
   const paneId = location.paneId;
 
-  progress.identity.paneId = paneId;
+  handle.identity.paneId = paneId;
 
   const information = requireObject(
     result(await call(['pane', 'process-info', '--pane', paneId])).process_info,
   );
 
   const previous = handle.identity.owned ? { ...handle.identity.owned, paneId } : undefined;
-  // Ownership is unestablished until a started process reports the expected session to herdr.
-  const starting = Boolean(generic) && !previous;
 
-  checkForeground(
-    information,
-    paneId,
-    previous,
-    starting && handle.observation.workerObserved !== true,
-  );
+  checkForeground(information, paneId, previous);
 
-  progress.observation.workerObserved = true;
-
-  const agent = await readAgent(call, paneId, starting);
+  const agent = await readAgent(call, paneId);
   const processId = integer(information.foreground_process_group_id);
   const shellPid = integer(information.shell_pid);
 
-  const nativeReference = await verifyWorkerAgent(
-    handle,
+  checkAgentIdentity(
     agent,
-    {
-      paneId,
-      shellPid,
-      processId,
-    },
-    cleanup,
+    { paneId, expectedSession: handle.task.nativeSessionFile },
+    shellPid === processId,
   );
 
   const startedAt = await readProcessStart(handle, processId, cleanup);
 
-  const owned = buildOwnedWorker(handle, previous, generic, {
+  const owned = buildOwnedWorker(handle, previous, {
     paneId,
     terminalId: location.terminalId,
     shellPid,
@@ -427,24 +270,7 @@ export const observeWorker = async (
     throw new Error('Worker process start or pane identity changed or is unavailable.');
   }
 
-  const worker = nativeReference ? { ...owned, nativeReference } : owned;
-
-  return { worker, nativeState: observedNativeState(agent) };
-};
-
-export const inspectWorker = async (
-  handle: Handle,
-  call: (argumentsList: string[]) => Promise<string>,
-  cleanup?: InspectionBudget,
-): Promise<OwnedWorker> => {
-  const { worker, nativeState } = await observeWorker(handle, call, cleanup, handle);
-
-  if (isGenericLoadout(handle.task.loadout)) {
-    saveGenericOwnership(handle, worker);
-    handle.observation.nativeState = nativeState;
-  }
-
-  return worker;
+  return owned;
 };
 
 export const waitForPiIdentity = async (
@@ -480,10 +306,8 @@ export const prepareTaskDirectory = (directory: string, task: Task, continued: b
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     publishRecord(directory, 'task.json', task);
 
-    // Native harnesses own their conversations; only Pi sessions are seeded with Tau lineage.
-    if (isGenericLoadout(task.loadout)) {
-      prepareGenericReport(task);
-    } else if (!continued) {
+    // A follow-up continues the saved session, which already holds its lineage.
+    if (!continued) {
       seedSession(task);
     }
   } catch (error) {

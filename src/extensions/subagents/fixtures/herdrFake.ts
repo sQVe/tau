@@ -137,7 +137,6 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
 
   const agentActions: Record<string, (argumentsList: string[]) => string> = {
     list: () => JSON.stringify({ result: { type: 'agent_list', agents: [] } }),
-    read: () => JSON.stringify({ result: { text: 'A bounded native question or approval.' } }),
     start: (argumentsList) => {
       const timeout = Number(argumentsList[argumentsList.indexOf('--timeout') + 1]);
 

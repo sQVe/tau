@@ -17,7 +17,7 @@ import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 import { writeWorkerActivity } from '../activity.js';
 import * as cancellationModule from '../cancellation.js';
 import { herdrFake } from '../fixtures/herdrFake.js';
-import { fixtureLoadout, readPiTask as readTask } from '../fixtures/loadout.js';
+import { fixtureLoadout } from '../fixtures/loadout.js';
 import { placementFixture } from '../fixtures/placement.js';
 import { searchHistory } from '../history.js';
 import * as loadoutModule from '../loadout.js';
@@ -25,7 +25,7 @@ import * as names from '../names.js';
 import { WorkerPlacement } from '../placement.js';
 import type { WorkerNotice } from '../presentation.js';
 import * as questions from '../questionRecords.js';
-import { acceptReport, readEvent, recordEvent } from '../records.js';
+import { acceptReport, readEvent, readTask, recordEvent } from '../records.js';
 import * as records from '../records.js';
 import { WorkerController } from './controller.js';
 import { workerArguments } from './inspect.js';
@@ -1952,6 +1952,68 @@ it('refuses follow-up without writes when a current task that looks retired name
 
   expect(savedFiles(fixture.directory)).toEqual(saved);
   expect(fixture.calls).toEqual([['agent', 'list']]);
+});
+
+const saveNonPiTask = (root: string): void => {
+  const directory = join(root, 'previous-generic');
+  mkdirSync(directory);
+
+  for (const [name, fixture] of [
+    ['task.json', 'taskRecords/previous-generic.json'],
+    ['submission-assignment-intent.json', 'submissionRecords/submission-assignment-intent.json'],
+    [
+      'submission-assignment-observation.json',
+      'submissionRecords/submission-assignment-observation.json',
+    ],
+  ] as const) {
+    const source = new URL(`../fixtures/${fixture}`, import.meta.url);
+
+    writeFileSync(join(directory, name), readFileSync(source, 'utf8'));
+  }
+};
+
+it('refuses a saved non-Pi task by name and still serves Pi tasks', async () => {
+  const fixture = await completed();
+  saveNonPiTask(fixture.directory);
+  const unsupported = 'Tau no longer supports non-Pi workers.';
+  const saved = savedFiles(fixture.directory);
+
+  const history = await searchHistory(fixture.directory, {
+    file: fixture.input.parentSession,
+    id: fixture.input.parentSessionId,
+    sessionDirectory: fixture.directory,
+  });
+
+  expect(history.diagnostics).toContain(
+    `Skipped task previous-generic run by a non-Pi worker; ${unsupported}`,
+  );
+
+  const status = () => fixture.controller.status('previous-generic', 'parent-one');
+
+  expect(status).toThrow(EvidenceUnavailableError);
+  expect(status).toThrow(unsupported);
+
+  await expect(fixture.controller.cancel('previous-generic', 'parent-one')).rejects.toThrow(
+    unsupported,
+  );
+
+  await expect(
+    fixture.controller.followUp(
+      { ...fixture.input, sourceTaskId: 'previous-generic' },
+      fixture.context,
+    ),
+  ).rejects.toThrow(unsupported);
+
+  expect(savedFiles(fixture.directory)).toEqual(saved);
+
+  expect(fixture.controller.widgetRows('parent-id').map(({ taskId }) => taskId)).toEqual([
+    fixture.source.taskId,
+  ]);
+
+  await expect(fixture.controller.followUp(fixture.input, fixture.context)).resolves.toMatchObject({
+    state: 'starting',
+    predecessorTaskId: fixture.source.taskId,
+  });
 });
 
 it('refuses follow-up of a malformed source task ID without writes', async () => {
