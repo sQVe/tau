@@ -99,7 +99,7 @@ stopped early, or left a claim uncertain, or when the input changed during the r
      For named files, loop over `git ls-files -z -c -o --exclude-standard -- <paths>` so unchanged
      files appear in full. A named path that lists nothing is a gap; ask about it.
    - For a commit or range, capture only `git diff --no-ext-diff --no-color "$from" "$to"`, without
-     the untracked loop.
+     the untracked loop. For a root commit, capture only the `git show` command from step 1.
    - An empty capture with no errors means there is nothing to review. Say so and stop.
    - List binary files, exclusions, and unreadable files under a `## Gaps` heading at the end of
      `input.md`. Never trim the capture.
