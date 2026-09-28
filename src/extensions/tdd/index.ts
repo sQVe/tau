@@ -5,11 +5,11 @@ import type {
   ExtensionContext,
   ToolResultEvent,
 } from '@earendil-works/pi-coding-agent';
-import { defineTool } from '@earendil-works/pi-coding-agent';
+import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import { Text } from '@earendil-works/pi-tui';
 import { Type } from 'typebox';
 
-import { classifyPath, configFileName, loadTddConfig } from './config.js';
+import { classifyPath, loadTddConfig } from './config.js';
 import type { LoadedTddConfig } from './config.js';
 import { createTestObservation, observationDirectory } from './observation.js';
 import { configSummary, runContext, selectionSummary, summarize } from './render.js';
@@ -30,7 +30,7 @@ const runTestsDescription =
   'A full pass counts without prior RED or focused renewal after formatting. A repository full check that already ran the suite on the current inputs satisfies full verification; do not run a second full suite only for bookkeeping. Duplicate, skipped, and missing tests cannot establish RED. ' +
   'Short session-local hints suggest missing RED, RED from a thrown error instead of a failed assertion, full verification, or rerunning stale results. Hints never block or require acknowledgment. ' +
   'By default, freshness covers .ts/.tsx/.js/.jsx/.mjs/.cjs under root src/, apps/, packages/, functions/, and infra/, plus test/spec files and root tests/ helpers. ' +
-  `A "tdd" block in the repository's ${configFileName} replaces these globs and the Vitest command; each run shows the effective config. ` +
+  'A "tdd" block in the user tau.json in the Pi agent directory, or in the repository .pi/tau.json when the project is trusted, replaces these globs and the Vitest command per field; each run shows the effective config. ' +
   'Freshness also covers default-named package/Vite/Vitest/TypeScript configs, npm/pnpm/Yarn/Bun lockfiles, and pnpm/Vitest workspace files throughout the worktree. ' +
   'Dependencies and common generated/cache directories are excluded. Other source layouts, assets, and custom config filenames are not covered. ' +
   'Checks run at bounded checkpoints, not an atomic snapshot or reusable verification. ' +
@@ -65,9 +65,15 @@ const runTestsParameters = Type.Object({
   }),
 });
 
-const observationFor = async (tracker: ObservationTracker, directory: string) => {
-  const cwd = await observationDirectory(directory);
-  const loaded = await loadTddConfig(cwd);
+const observationFor = async (tracker: ObservationTracker, context: ExtensionContext) => {
+  const cwd = await observationDirectory(context.cwd);
+
+  const loaded = await loadTddConfig({
+    cwd,
+    agentDirectory: getAgentDir(),
+    projectTrusted: context.isProjectTrusted(),
+  });
+
   const key = JSON.stringify(loaded);
 
   if (tracker.current?.cwd !== cwd || tracker.current.key !== key) {
@@ -102,7 +108,7 @@ const handleToolResult = async (
   let current: Awaited<ReturnType<typeof observationFor>>;
 
   try {
-    current = await observationFor(tracker, context.cwd);
+    current = await observationFor(tracker, context);
   } catch (error) {
     const message = `TDD hints are paused: ${error instanceof Error ? error.message : String(error)}`;
 
@@ -156,7 +162,7 @@ const registerRunTestsTool = (pi: ExtensionAPI, tracker: ObservationTracker): vo
           details: undefined,
         });
 
-        const { cwd, loaded, observation } = await observationFor(tracker, context.cwd);
+        const { cwd, loaded, observation } = await observationFor(tracker, context);
 
         const { hint, ...details } = await observation.run(behavior, scope, signal, (selected) => {
           onUpdate?.({

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -79,44 +79,49 @@ describe('TDD config', () => {
     expect(classify('src\\nested\\value.ts')).toBe('production');
   });
 
-  it('replaces only the fields tau.json sets and keeps defaults without a file', async ({
-    onTestFinished,
-  }) => {
+  it('reads the grove layout from .pi/tau.json', async ({ onTestFinished }) => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-config-load-'));
     onTestFinished(() => rm(cwd, { recursive: true, force: true }));
-
-    expect(await loadTddConfig(cwd)).toEqual({ source: undefined, config: defaultTddConfig });
+    await mkdir(join(cwd, '.pi'));
 
     await writeFile(
-      join(cwd, 'tau.json'),
-      JSON.stringify({ tdd: { productionGlobs: ['{internal,cmd}/**/*.go'], testGlobs: [] } }),
+      join(cwd, '.pi', 'tau.json'),
+      JSON.stringify({ tdd: { productionGlobs: ['{internal,cmd}/**/*.go'] } }),
     );
 
-    const loaded = await loadTddConfig(cwd);
-
-    expect(loaded).toEqual({
-      source: join(cwd, 'tau.json'),
-      config: { ...defaultTddConfig, productionGlobs: ['{internal,cmd}/**/*.go'], testGlobs: [] },
+    const { config } = await loadTddConfig({
+      cwd,
+      agentDirectory: join(cwd, 'agent'),
+      projectTrusted: true,
     });
 
-    expect(classifyPath(loaded.config, 'internal/git/status.go')).toBe('production');
-    expect(classifyPath(loaded.config, 'src/value.ts')).toBe('other');
+    expect(classifyPath(config, 'internal/git/status.go')).toBe('production');
+    expect(classifyPath(config, 'src/value.ts')).toBe('other');
   });
 
-  it.for<[string, string]>([
-    ['{', 'JSON'],
-    ['[]', 'object'],
-    ['{"tdd": {"productionGlob": []}}', 'productionGlob'],
-    ['{"formatters": {}}', 'formatters'],
-    ['{"tdd": {"testGlobs": ["", "**/*.test.ts"]}}', 'testGlobs'],
-    ['{"tdd": {"verificationArgv": ["jest"]}}', 'verificationArgv'],
-    ['{"tdd": {"verificationArgv": []}}', 'verificationArgv'],
-  ])('names tau.json and the problem for %s', async ([content, problem], { onTestFinished }) => {
+  it.for<[string, string, string]>([
+    ['.pi/tau.json', '{', 'JSON'],
+    ['.pi/tau.json', '[]', 'object'],
+    ['.pi/tau.json', '{"tdd": {"productionGlob": []}}', 'productionGlob'],
+    ['.pi/tau.json', '{"formatters": {}}', 'formatters'],
+    ['.pi/tau.json', '{"tdd": {"testGlobs": ["", "**/*.test.ts"]}}', 'testGlobs'],
+    ['.pi/tau.json', '{"tdd": {"verificationArgv": ["jest"]}}', 'verificationArgv'],
+    ['.pi/tau.json', '{"tdd": {"verificationArgv": []}}', 'verificationArgv'],
+    ['agent/tau.json', '{"tdd": {"excludedGlobs": "dist"}}', 'excludedGlobs'],
+  ])('names %s and the problem for %s', async ([file, content, problem], { onTestFinished }) => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-config-invalid-'));
     onTestFinished(() => rm(cwd, { recursive: true, force: true }));
-    await writeFile(join(cwd, 'tau.json'), content);
+    await mkdir(join(cwd, '.pi'));
+    await mkdir(join(cwd, 'agent'));
+    await writeFile(join(cwd, file), content);
 
-    await expect(loadTddConfig(cwd)).rejects.toThrow(join(cwd, 'tau.json'));
-    await expect(loadTddConfig(cwd)).rejects.toThrow(problem);
+    const loading = loadTddConfig({
+      cwd,
+      agentDirectory: join(cwd, 'agent'),
+      projectTrusted: true,
+    });
+
+    await expect(loading).rejects.toThrow(join(cwd, file));
+    await expect(loading).rejects.toThrow(problem);
   });
 });

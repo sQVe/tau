@@ -13,7 +13,7 @@ import { editRenderers } from '../../../node_modules/@earendil-works/pi-coding-a
 import { writeRenderers } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/core/tools/renderers/write.js';
 import { ToolExecutionComponent } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { defaultTddConfig } from './config.js';
+import { loadTddConfig } from './config.js';
 import tddExtension from './index.js';
 import { configSummary, runContext, summarize } from './render.js';
 import type { RunnerResult } from './runner/types.js';
@@ -28,15 +28,23 @@ vi.mock('./runner/vitest.js', async (importOriginal) => ({
 const redHint =
   'Hint: No RED observed for this behavior; start the next behavior with a failing focused test.';
 
-const setup = (hasUI = false) => {
+const setup = (hasUI = false, trusted = true) => {
   const notify = vi.fn<ExtensionContext['ui']['notify']>();
   const fake = fakeExtensionApi();
+
+  // Keep the developer's own user config out of the tests.
+  vi.stubEnv('PI_CODING_AGENT_DIR', join(tmpdir(), 'tau-no-agent-directory'));
 
   tddExtension(fake.pi);
   const tool = fake.tools.get('run_tests');
 
   const contextFor = (cwd: string) =>
-    ({ cwd, hasUI, ui: { notify } }) as unknown as ExtensionContext;
+    ({
+      cwd,
+      hasUI,
+      ui: { notify },
+      isProjectTrusted: () => trusted,
+    }) as unknown as ExtensionContext;
 
   const emit = (name: string, cwd: string, event: Record<string, unknown> = {}) =>
     fake.handlers.has(name) ? fake.handler(name)(event, contextFor(cwd)) : undefined;
@@ -266,7 +274,12 @@ it.for(['ordinary', 'long'] as const)(
         { type: 'text', text: hint },
         { type: 'text', text: summarize(cwd, details) },
         { type: 'text', text: runContext(parameters, details) },
-        { type: 'text', text: configSummary({ source: undefined, config: defaultTddConfig }) },
+        {
+          type: 'text',
+          text: configSummary(
+            await loadTddConfig({ cwd, agentDirectory: cwd, projectTrusted: true }),
+          ),
+        },
       ]),
     );
 
@@ -479,18 +492,29 @@ const writeEvent = (path: string) => ({
   content: [{ type: 'text', text: 'Written' }],
 });
 
-it('reads source scope from tau.json and shows the effective config in run output', async ({
-  onTestFinished,
-}) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-config-scope-'));
+const configFixture = async (onTestFinished: (cleanup: () => Promise<void>) => void) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-config-'));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  await mkdir(join(cwd, '.pi'));
+  await mkdir(join(cwd, 'agent'));
   await writeFile(join(cwd, 'value.test.ts'), 'test');
 
-  await writeFile(
-    join(cwd, 'tau.json'),
-    JSON.stringify({ tdd: { excludedGlobs: ['**/node_modules/**', 'src/components/**'] } }),
-  );
+  const write = (path: string, tdd: unknown) => writeFile(join(cwd, path), JSON.stringify({ tdd }));
 
+  return { cwd, writeProject: (tdd: unknown) => write('.pi/tau.json', tdd), write };
+};
+
+const runOutput = async (application: ReturnType<typeof setup>, cwd: string) => {
+  vi.mocked(runTests).mockResolvedValueOnce({ kind: 'pass', tests: [] });
+
+  return JSON.stringify((await application.run(cwd)).content);
+};
+
+it('reads source scope from .pi/tau.json and shows the effective config in run output', async ({
+  onTestFinished,
+}) => {
+  const { cwd, writeProject } = await configFixture(onTestFinished);
+  await writeProject({ excludedGlobs: ['**/node_modules/**', 'src/components/**'] });
   const application = setup();
 
   expect(
@@ -504,52 +528,91 @@ it('reads source scope from tau.json and shows the effective config in run outpu
     ],
   });
 
-  vi.mocked(runTests).mockResolvedValueOnce({ kind: 'pass', tests: [] });
-  const tested = JSON.stringify((await application.run(cwd)).content);
+  const tested = await runOutput(application, cwd);
 
-  expect(tested).toContain('tau.json');
+  expect(tested).toContain(join(cwd, '.pi', 'tau.json'));
   expect(tested).toContain('src/components/**');
 });
 
-it('uses built-in defaults when tau.json is missing', async ({ onTestFinished }) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-config-default-'));
-  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
-  await writeFile(join(cwd, 'value.test.ts'), 'test');
+it('applies user config and lets the repository override it per field', async ({
+  onTestFinished,
+}) => {
+  const { cwd, write, writeProject } = await configFixture(onTestFinished);
+
+  await write('agent/tau.json', {
+    productionGlobs: ['lib/**/*.ts'],
+    excludedGlobs: ['lib/vendor/**'],
+  });
+
+  const application = setup();
+  vi.stubEnv('PI_CODING_AGENT_DIR', join(cwd, 'agent'));
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  expect(await application.emit('tool_result', cwd, writeEvent('lib/vendor/x.ts'))).toBeUndefined();
+  expect(await application.emit('tool_result', cwd, writeEvent('src/value.ts'))).toBeUndefined();
+
+  await writeProject({ excludedGlobs: [] });
+
+  expect(await application.emit('tool_result', cwd, writeEvent('lib/vendor/x.ts'))).toMatchObject({
+    content: [{ text: 'Written' }, { text: redHint }],
+  });
+
+  const tested = await runOutput(application, cwd);
+
+  expect(tested).toContain(join(cwd, 'agent', 'tau.json'));
+  expect(tested).toContain(join(cwd, '.pi', 'tau.json'));
+});
+
+it('ignores repository config in an untrusted project and says so', async ({ onTestFinished }) => {
+  const { cwd, writeProject } = await configFixture(onTestFinished);
+  await writeProject({ productionGlobs: 'not a list' });
+  const application = setup(false, false);
+
+  expect(await application.emit('tool_result', cwd, writeEvent('src/value.ts'))).toMatchObject({
+    content: [{ text: 'Written' }, { text: redHint }],
+  });
+
+  const tested = await runOutput(application, cwd);
+
+  expect(tested).toContain(join(cwd, '.pi', 'tau.json'));
+  expect(tested).toContain('not trusted');
+});
+
+it('uses built-in defaults when no config file exists', async ({ onTestFinished }) => {
+  const { cwd } = await configFixture(onTestFinished);
   const application = setup();
 
   expect(
     await application.emit('tool_result', cwd, writeEvent('src/components/Button.tsx')),
   ).toMatchObject({ content: [{ text: 'Written' }, { text: redHint }] });
 
-  vi.mocked(runTests).mockResolvedValueOnce({ kind: 'pass', tests: [] });
-  const tested = JSON.stringify((await application.run(cwd)).content);
+  const tested = await runOutput(application, cwd);
 
-  expect(tested).toContain('built-in defaults');
+  expect(tested).toContain('built-in default');
   expect(tested).toContain('**/*.test.{ts,tsx,js,jsx,mjs,cjs}');
 });
 
-it('reports malformed tau.json without falling back to defaults or blocking edits', async ({
+it('reports malformed config without falling back to defaults or blocking edits', async ({
   onTestFinished,
 }) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-config-malformed-'));
-  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
-  await writeFile(join(cwd, 'value.test.ts'), 'test');
-  await writeFile(join(cwd, 'tau.json'), JSON.stringify({ tdd: { productionGlobs: 'src/**' } }));
+  const { cwd, writeProject } = await configFixture(onTestFinished);
+  const path = join(cwd, '.pi', 'tau.json');
+  await writeProject({ productionGlobs: 'src/**' });
   vi.mocked(runTests).mockClear();
   const application = setup();
   const event = writeEvent('src/value.ts');
   const patch = await application.emit('tool_result', cwd, event);
 
   expect(patch).toEqual({
-    content: [
-      ...event.content,
-      { type: 'text', text: expect.stringContaining(join(cwd, 'tau.json')) as string },
-    ],
+    content: [...event.content, { type: 'text', text: expect.stringContaining(path) as string }],
   });
 
   expect(JSON.stringify(patch)).toContain('productionGlobs');
   expect(JSON.stringify(patch)).not.toContain(redHint);
   expect(await application.emit('tool_result', cwd, event)).toBeUndefined();
-  await expect(application.run(cwd)).rejects.toThrow(join(cwd, 'tau.json'));
+  await expect(application.run(cwd)).rejects.toThrow(path);
   expect(runTests).not.toHaveBeenCalled();
 });
