@@ -1,50 +1,34 @@
-import { matchesGlob } from 'node:path';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { classifyPath, tddConfig } from './config.js';
+import { classifyPath, defaultTddConfig, loadTddConfig } from './config.js';
+
+const classify = (path: string) => classifyPath(defaultTddConfig, path);
 
 describe('TDD config', () => {
-  it('defines production globs, test globs, and JSON verification arguments', () => {
-    expect(tddConfig.productionGlobs).toEqual([
-      '{src,apps,packages,functions,infra}/**/*.{ts,tsx,js,jsx,mjs,cjs}',
-    ]);
-
-    expect(tddConfig.testGlobs).toEqual([
-      '**/*.test.{ts,tsx,js,jsx,mjs,cjs}',
-      '**/*.spec.{ts,tsx,js,jsx,mjs,cjs}',
-    ]);
-
-    expect(tddConfig.verificationArgv).toEqual([
-      'vitest',
-      'run',
-      '--reporter=json',
-      '--reporter=default',
-      '--no-color',
-    ]);
-  });
-
   it('gives test globs precedence, then production globs, then other', () => {
-    expect(matchesGlob('src/example.test.ts', tddConfig.productionGlobs[0])).toBe(true);
-    expect(classifyPath('src/example.test.ts')).toBe('test');
-    expect(classifyPath('src/component.spec.tsx')).toBe('test');
-    expect(classifyPath('tests/example.test.ts')).toBe('test');
-    expect(classifyPath('tests/commitTool.ts')).toBe('other');
-    expect(classifyPath('tests/fixtures/helper.ts')).toBe('other');
-    expect(classifyPath('example.spec.ts')).toBe('test');
-    expect(classifyPath('src/example.ts')).toBe('production');
-    expect(classifyPath('src/component.tsx')).toBe('production');
+    expect(classify('src/example.test.ts')).toBe('test');
+    expect(classify('src/component.spec.tsx')).toBe('test');
+    expect(classify('tests/example.test.ts')).toBe('test');
+    expect(classify('tests/commitTool.ts')).toBe('other');
+    expect(classify('tests/fixtures/helper.ts')).toBe('other');
+    expect(classify('example.spec.ts')).toBe('test');
+    expect(classify('src/example.ts')).toBe('production');
+    expect(classify('src/component.tsx')).toBe('production');
 
     for (const path of ['src/x.js', 'src/x.jsx', 'src/x.mjs', 'src/x.cjs']) {
-      expect(classifyPath(path)).toBe('production');
+      expect(classify(path)).toBe('production');
     }
 
-    expect(classifyPath('src/x.test.js')).toBe('test');
-    expect(classifyPath('src/x.spec.mjs')).toBe('test');
-    expect(classifyPath('scripts/check.js')).toBe('other');
-    expect(classifyPath('README.md')).toBe('other');
-    expect(classifyPath('docs/example.md')).toBe('other');
-    expect(classifyPath('src/example.css')).toBe('other');
+    expect(classify('src/x.test.js')).toBe('test');
+    expect(classify('src/x.spec.mjs')).toBe('test');
+    expect(classify('scripts/check.js')).toBe('other');
+    expect(classify('README.md')).toBe('other');
+    expect(classify('docs/example.md')).toBe('other');
+    expect(classify('src/example.css')).toBe('other');
   });
 
   it('classifies the supported production layouts without treating every script as production', () => {
@@ -56,13 +40,13 @@ describe('TDD config', () => {
       'infra/stacks/main.ts',
       'packages\\core\\index.ts',
     ]) {
-      expect(classifyPath(path)).toBe('production');
+      expect(classify(path)).toBe('production');
     }
 
-    expect(classifyPath('apps/web/src/page.test.tsx')).toBe('test');
-    expect(classifyPath('packages/core/index.spec.ts')).toBe('test');
-    expect(classifyPath('scripts/release.ts')).toBe('other');
-    expect(classifyPath('docs/example.ts')).toBe('other');
+    expect(classify('apps/web/src/page.test.tsx')).toBe('test');
+    expect(classify('packages/core/index.spec.ts')).toBe('test');
+    expect(classify('scripts/release.ts')).toBe('other');
+    expect(classify('docs/example.ts')).toBe('other');
   });
 
   it('excludes dependencies and generated directories before classifying source or tests', () => {
@@ -81,17 +65,64 @@ describe('TDD config', () => {
       '__generated__',
     ]) {
       for (const file of ['value.ts', 'value.test.ts']) {
-        expect(classifyPath(`apps/web/${directory}/${file}`)).toBe('other');
-        expect(classifyPath(`${directory}/src/${file}`)).toBe('other');
-        expect(classifyPath(`packages\\core\\${directory}\\${file}`)).toBe('other');
+        expect(classify(`apps/web/${directory}/${file}`)).toBe('other');
+        expect(classify(`${directory}/src/${file}`)).toBe('other');
+        expect(classify(`packages\\core\\${directory}\\${file}`)).toBe('other');
       }
     }
   });
 
   it('classifies backslash-separated paths like their forward-slash form', () => {
-    expect(classifyPath('src\\example.test.ts')).toBe('test');
-    expect(classifyPath('tests\\nested\\component.spec.tsx')).toBe('test');
-    expect(classifyPath('src\\example.ts')).toBe('production');
-    expect(classifyPath('src\\nested\\value.ts')).toBe('production');
+    expect(classify('src\\example.test.ts')).toBe('test');
+    expect(classify('tests\\nested\\component.spec.tsx')).toBe('test');
+    expect(classify('src\\example.ts')).toBe('production');
+    expect(classify('src\\nested\\value.ts')).toBe('production');
+  });
+
+  it('reads the grove layout from .pi/tau.json and ignores other top-level keys', async ({
+    onTestFinished,
+  }) => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-config-load-'));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    await mkdir(join(cwd, '.pi'));
+
+    await writeFile(
+      join(cwd, '.pi', 'tau.json'),
+      JSON.stringify({ formatters: {}, tdd: { productionGlobs: ['{internal,cmd}/**/*.go'] } }),
+    );
+
+    const { config } = await loadTddConfig({
+      cwd,
+      agentDirectory: join(cwd, 'agent'),
+      projectTrusted: true,
+    });
+
+    expect(classifyPath(config, 'internal/git/status.go')).toBe('production');
+    expect(classifyPath(config, 'src/value.ts')).toBe('other');
+  });
+
+  it.for<[string, string, string]>([
+    ['.pi/tau.json', '{', '.pi/tau.json'],
+    ['.pi/tau.json', '[]', '.pi/tau.json'],
+    ['.pi/tau.json', '{"tdd": {"productionGlob": []}}', 'productionGlob'],
+    ['.pi/tau.json', '{"tdd": {"testGlobs": ["", "**/*.test.ts"]}}', 'testGlobs'],
+    ['.pi/tau.json', '{"tdd": {"verificationArgv": ["jest"]}}', 'verificationArgv'],
+    ['.pi/tau.json', '{"tdd": {"verificationArgv": []}}', 'verificationArgv'],
+    ['agent/tau.json', '{"tdd": {"excludedGlobs": "dist"}}', 'excludedGlobs'],
+  ])('names %s and the problem for %s', async ([file, content, problem], { onTestFinished }) => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-config-invalid-'));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    await mkdir(join(cwd, '.pi'));
+    await mkdir(join(cwd, 'agent'));
+    await writeFile(join(cwd, file), content);
+
+    const loading = loadTddConfig({
+      cwd,
+      agentDirectory: join(cwd, 'agent'),
+      projectTrusted: true,
+    });
+
+    await expect(loading).rejects.toThrow(join(cwd, file));
+    await expect(loading).rejects.toThrow(problem);
   });
 });

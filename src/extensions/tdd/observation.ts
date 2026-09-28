@@ -3,7 +3,8 @@ import { access, glob, readFile, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { isMissingFile } from '../../errors/index.js';
-import { classifyPath, configurationGlobs, tddConfig } from './config.js';
+import { classifyPath, configurationGlobs, defaultTddConfig } from './config.js';
+import type { TddConfig } from './config.js';
 import { finishDiagnostics } from './runner/retention.js';
 import type { RunDiagnostics, RunnerResult } from './runner/types.js';
 import { runTests } from './runner/vitest.js';
@@ -33,7 +34,7 @@ interface RunRequest {
 const testNames = (behavior: Behavior) =>
   Array.isArray(behavior.testFullName) ? behavior.testFullName : [behavior.testFullName];
 
-const normalizeTestFile = async (cwd: string, file: string): Promise<string> => {
+const normalizeTestFile = async (cwd: string, config: TddConfig, file: string): Promise<string> => {
   const literalPath = file.replaceAll(sep, '/');
   const path = relative(cwd, resolve(cwd, file)).replaceAll(sep, '/');
 
@@ -53,7 +54,7 @@ const normalizeTestFile = async (cwd: string, file: string): Promise<string> => 
       () => false,
     );
 
-  if (path.startsWith('../') || classifyPath(path) !== 'test') {
+  if (path.startsWith('../') || classifyPath(config, path) !== 'test') {
     throw new Error(`Expected a test file inside the worktree: ${file}`);
   }
 
@@ -64,8 +65,15 @@ const normalizeTestFile = async (cwd: string, file: string): Promise<string> => 
   return path;
 };
 
-const normalizeBehavior = async (cwd: string, behavior: Behavior): Promise<Behavior> => {
-  const normalized = await Promise.all(behavior.files.map((file) => normalizeTestFile(cwd, file)));
+const normalizeBehavior = async (
+  cwd: string,
+  config: TddConfig,
+  behavior: Behavior,
+): Promise<Behavior> => {
+  const normalized = await Promise.all(
+    behavior.files.map((file) => normalizeTestFile(cwd, config, file)),
+  );
+
   const files = [...new Set(normalized)].toSorted();
 
   return { ...behavior, files, testFullName: [...new Set(testNames(behavior))].toSorted() };
@@ -82,20 +90,28 @@ const compareInputs = (before: string | null, after: string | null): Freshness =
 };
 
 // Content is checked at bounded checkpoints, not as an atomic snapshot.
-const fingerprint = async (cwd: string, files: string[]): Promise<string | null> => {
+const fingerprint = async (
+  cwd: string,
+  config: TddConfig,
+  files: string[],
+): Promise<string | null> => {
   try {
     const paths = [...files];
 
     for await (const file of glob(
       [
-        ...tddConfig.productionGlobs,
-        ...tddConfig.testGlobs,
-        ...tddConfig.testSupportGlobs,
+        ...config.productionGlobs,
+        ...config.testGlobs,
+        ...config.testSupportGlobs,
         ...configurationGlobs,
       ],
-      { cwd, exclude: [...tddConfig.excludedGlobs] },
+      { cwd, exclude: config.excludedGlobs, withFileTypes: true },
     )) {
-      paths.push(file);
+      // A glob such as `src/**` also matches directories, which cannot be hashed. Symbolic links
+      // stay, so a linked source file is still read through its link.
+      if (!file.isDirectory()) {
+        paths.push(join(file.parentPath, file.name));
+      }
     }
 
     const digest = createHash('sha256');
@@ -177,6 +193,7 @@ const hints = {
 
 interface ObservationState {
   cwd: string;
+  config: TddConfig;
   active: string | null;
   observedRed: boolean;
   latest: LatestRun | null;
@@ -307,7 +324,7 @@ const checkpointWork = async (
 
   if (latest !== null && latest.fingerprint !== null) {
     if (latest.freshness !== 'stale' || canSuggestRed) {
-      current = await fingerprint(state.cwd, latest.behavior.files);
+      current = await fingerprint(state.cwd, state.config, latest.behavior.files);
 
       if (current === null) {
         latest.freshness = 'unknown';
@@ -336,9 +353,15 @@ const runTestsFor = (
 ): ReturnType<typeof runTests> =>
   runTests(
     request.scope === 'full'
-      ? { cwd: state.cwd, scope: 'all', signal: request.signal }
+      ? {
+          cwd: state.cwd,
+          scope: 'all',
+          verificationArgv: state.config.verificationArgv,
+          signal: request.signal,
+        }
       : {
           cwd: state.cwd,
+          verificationArgv: state.config.verificationArgv,
           scope: 'changed',
           files: behavior.files,
           testNames: testNames(behavior),
@@ -350,7 +373,7 @@ const performRun = async (
   state: ObservationState,
   request: RunRequest,
 ): Promise<ObservationResult> => {
-  const behavior = await normalizeBehavior(state.cwd, request.requested);
+  const behavior = await normalizeBehavior(state.cwd, state.config, request.requested);
   const key = identity(behavior);
 
   if (state.active !== key && !sameAsLatest(state, key)) {
@@ -360,12 +383,12 @@ const performRun = async (
 
   state.active = key;
 
-  const before = await fingerprint(state.cwd, behavior.files);
+  const before = await fingerprint(state.cwd, state.config, behavior.files);
 
   request.onStart?.(behavior);
 
   const report = await runTestsFor(state, behavior, request);
-  const after = await fingerprint(state.cwd, behavior.files);
+  const after = await fingerprint(state.cwd, state.config, behavior.files);
   const freshness = compareInputs(before, after);
   const previous = state.latest;
 
@@ -427,9 +450,13 @@ const performRun = async (
 const runObservation = (state: ObservationState, request: RunRequest) =>
   enqueue(state, () => performRun(state, request));
 
-export const createTestObservation = (cwd: string): TestObservation => {
+export const createTestObservation = (
+  cwd: string,
+  config: TddConfig = defaultTddConfig,
+): TestObservation => {
   const state: ObservationState = {
     cwd,
+    config,
     active: null,
     observedRed: false,
     latest: null,

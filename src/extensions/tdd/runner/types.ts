@@ -6,6 +6,7 @@ export interface RunTestsInput {
   path?: string;
   testNames?: string[];
   files?: string[];
+  verificationArgv?: readonly string[];
   signal?: AbortSignal | undefined;
 }
 

@@ -10,6 +10,17 @@ Tau guides test-driven development, or TDD, with test results and nonblocking hi
 - prove the pass
 - optionally refactor safely
 
+To set which files the hints cover, add a `tdd` block to `.pi/tau.json` in the repository, or to
+`~/.pi/agent/tau.json` for every repository:
+
+```json
+{ "tdd": { "productionGlobs": ["{src,scripts}/**/*.ts"] } }
+```
+
+The block accepts `productionGlobs`, `testGlobs`, `testSupportGlobs`, `excludedGlobs`, and
+`verificationArgv`. Each key you set replaces its default. The repository file overrides the user
+file, and Tau reads it only in a trusted project. `run_tests` output shows the config in use.
+
 Pi runs the agent and its tools. Tau stages and commits with installed Git hooks without a prompt.
 Test results never control edit permission. Tau is not a general agent framework.
 

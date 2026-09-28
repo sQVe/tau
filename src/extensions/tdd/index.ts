@@ -5,17 +5,21 @@ import type {
   ExtensionContext,
   ToolResultEvent,
 } from '@earendil-works/pi-coding-agent';
-import { defineTool } from '@earendil-works/pi-coding-agent';
+import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import { Text } from '@earendil-works/pi-tui';
 import { Type } from 'typebox';
 
-import { classifyPath } from './config.js';
+import { classifyPath, loadTddConfig } from './config.js';
+import type { LoadedTddConfig } from './config.js';
 import { createTestObservation, observationDirectory } from './observation.js';
-import { runContext, selectionSummary, summarize } from './render.js';
+import { configSummary, runContext, selectionSummary, summarize } from './render.js';
 import type { TestObservation } from './types.js';
 
 interface ObservationTracker {
-  current: { cwd: string; observation: TestObservation } | undefined;
+  current:
+    | { cwd: string; key: string; loaded: LoadedTddConfig; observation: TestObservation }
+    | undefined;
+  reportedConfigError: string | undefined;
 }
 
 const runTestsDescription =
@@ -25,8 +29,9 @@ const runTestsDescription =
   'Returns kind, scope, freshness (fresh, stale, or unknown), and the actual runner report, even when inputs changed during the run. ' +
   'A full pass counts without prior RED or focused renewal after formatting. A repository full check that already ran the suite on the current inputs satisfies full verification; do not run a second full suite only for bookkeeping. Duplicate, skipped, and missing tests cannot establish RED. ' +
   'Short session-local hints suggest missing RED, RED from a thrown error instead of a failed assertion, full verification, or rerunning stale results. Hints never block or require acknowledgment. ' +
-  'Freshness covers .ts/.tsx/.js/.jsx/.mjs/.cjs under root src/, apps/, packages/, functions/, and infra/, plus test/spec files and root tests/ helpers. ' +
-  'It also covers default-named package/Vite/Vitest/TypeScript configs, npm/pnpm/Yarn/Bun lockfiles, and pnpm/Vitest workspace files throughout the worktree. ' +
+  'By default, freshness covers .ts/.tsx/.js/.jsx/.mjs/.cjs under root src/, apps/, packages/, functions/, and infra/, plus test/spec files and root tests/ helpers. ' +
+  'A "tdd" block in the user tau.json in the Pi agent directory, or in the repository .pi/tau.json when the project is trusted, replaces these globs and the Vitest command per field; each run shows the effective config. ' +
+  'Freshness also covers default-named package/Vite/Vitest/TypeScript configs, npm/pnpm/Yarn/Bun lockfiles, and pnpm/Vitest workspace files throughout the worktree. ' +
   'Dependencies and common generated/cache directories are excluded. Other source layouts, assets, and custom config filenames are not covered. ' +
   'Checks run at bounded checkpoints, not an atomic snapshot or reusable verification. ' +
   'Shows focused files and exact names, or full-suite scope. Focused summaries show each selected test duration; full summaries list only tests over 1000 ms outside .integration. files. The summary is capped at 2000 characters, with up to 4000 characters of run context and at most one hint. ' +
@@ -60,14 +65,35 @@ const runTestsParameters = Type.Object({
   }),
 });
 
-const observationFor = async (tracker: ObservationTracker, directory: string) => {
-  const cwd = await observationDirectory(directory);
+const observationFor = async (tracker: ObservationTracker, context: ExtensionContext) => {
+  const cwd = await observationDirectory(context.cwd);
 
-  if (tracker.current?.cwd !== cwd) {
-    tracker.current = { cwd, observation: createTestObservation(cwd) };
+  const loaded = await loadTddConfig({
+    cwd,
+    agentDirectory: getAgentDir(),
+    projectTrusted: context.isProjectTrusted(),
+  });
+
+  const key = JSON.stringify(loaded);
+
+  if (tracker.current?.cwd !== cwd || tracker.current.key !== key) {
+    tracker.current = { cwd, key, loaded, observation: createTestObservation(cwd, loaded.config) };
   }
 
   return tracker.current;
+};
+
+const withNotice = (
+  event: ToolResultEvent,
+  context: ExtensionContext,
+  text: string,
+  level: 'info' | 'warning' = 'info',
+) => {
+  if (context.hasUI) {
+    context.ui.notify(text, level);
+  }
+
+  return { content: [...event.content, { type: 'text' as const, text }] };
 };
 
 const handleToolResult = async (
@@ -79,25 +105,36 @@ const handleToolResult = async (
     return undefined;
   }
 
-  const { cwd, observation } = await observationFor(tracker, context.cwd);
+  let current: Awaited<ReturnType<typeof observationFor>>;
+
+  try {
+    current = await observationFor(tracker, context);
+  } catch (error) {
+    const message = `TDD hints are paused: ${error instanceof Error ? error.message : String(error)}`;
+
+    if (tracker.reportedConfigError === message) {
+      return undefined;
+    }
+
+    tracker.reportedConfigError = message;
+
+    return withNotice(event, context, message, 'warning');
+  }
+
+  tracker.reportedConfigError = undefined;
+  const { cwd, loaded, observation } = current;
   const path = typeof event.input.path === 'string' ? event.input.path.replace(/^@/, '') : '';
   const target = await observationDirectory(resolve(context.cwd, path));
   const editablePath = event.toolName !== 'bash' && path.length > 0;
 
   const productionEdit =
-    !event.isError && editablePath && classifyPath(relative(cwd, target)) === 'production';
+    !event.isError &&
+    editablePath &&
+    classifyPath(loaded.config, relative(cwd, target)) === 'production';
 
   const hint = await observation.checkpoint(productionEdit);
 
-  if (hint === undefined) {
-    return undefined;
-  }
-
-  if (context.hasUI) {
-    context.ui.notify(hint, 'info');
-  }
-
-  return { content: [...event.content, { type: 'text' as const, text: hint }] };
+  return hint === undefined ? undefined : withNotice(event, context, hint);
 };
 
 const registerRunTestsTool = (pi: ExtensionAPI, tracker: ObservationTracker): void => {
@@ -125,7 +162,7 @@ const registerRunTestsTool = (pi: ExtensionAPI, tracker: ObservationTracker): vo
           details: undefined,
         });
 
-        const { cwd, observation } = await observationFor(tracker, context.cwd);
+        const { cwd, loaded, observation } = await observationFor(tracker, context);
 
         const { hint, ...details } = await observation.run(behavior, scope, signal, (selected) => {
           onUpdate?.({
@@ -139,6 +176,7 @@ const registerRunTestsTool = (pi: ExtensionAPI, tracker: ObservationTracker): vo
         const content = [
           { type: 'text' as const, text: summarize(cwd, details) },
           { type: 'text' as const, text: runContext(behavior, details) },
+          { type: 'text' as const, text: configSummary(loaded) },
         ];
 
         if (hint !== undefined) {
@@ -152,10 +190,11 @@ const registerRunTestsTool = (pi: ExtensionAPI, tracker: ObservationTracker): vo
 };
 
 export default function tddExtension(pi: ExtensionAPI) {
-  const tracker: ObservationTracker = { current: undefined };
+  const tracker: ObservationTracker = { current: undefined, reportedConfigError: undefined };
 
   pi.on('session_start', () => {
     tracker.current = undefined;
+    tracker.reportedConfigError = undefined;
   });
 
   pi.on('session_shutdown', () => {

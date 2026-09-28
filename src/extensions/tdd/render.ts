@@ -1,6 +1,8 @@
 import { isAbsolute, relative } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
+import type { LoadedTddConfig, TddConfig } from './config.js';
+import { tddConfigFields } from './configLayers.js';
 import { maximumRetainedRuns } from './runner/retention.js';
 import type { DiagnosticFile, RunnerResult } from './runner/types.js';
 import { maximumFailures } from './runner/vitest.js';
@@ -274,4 +276,29 @@ export const runContext = (behavior: Behavior, observation: Observation): string
   }
 
   return cap(lines.join('\n'), 4000);
+};
+
+const configLabels: Record<keyof TddConfig, string> = {
+  productionGlobs: 'Production',
+  testGlobs: 'Tests',
+  testSupportGlobs: 'Test support',
+  excludedGlobs: 'Excluded',
+  verificationArgv: 'Command',
+};
+
+export const configSummary = ({ config, sources, ignored }: LoadedTddConfig): string => {
+  const lines = [
+    'TDD config (repository .pi/tau.json overrides user tau.json):',
+    ...tddConfigFields.map((field) => {
+      const separator = field === 'verificationArgv' ? ' ' : ', ';
+
+      return `${configLabels[field]} (${sources[field]}): ${config[field].join(separator)}`;
+    }),
+  ];
+
+  if (ignored !== undefined) {
+    lines.push(`Ignored ${ignored}: the project is not trusted.`);
+  }
+
+  return cap(printable(lines.join('\n')), 1500);
 };

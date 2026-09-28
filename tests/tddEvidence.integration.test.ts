@@ -79,14 +79,14 @@ it('observes RED and focused passes, then accepts full verification after format
 
   expect(green.details.kind).toBe('pass');
   expect(green.content[0]?.text).toContain('scope "full"');
-  expect((await run()).content).toHaveLength(2);
+  expect((await run()).content).toHaveLength(3);
 
   await call('bash', { command: "printf '\n' >> behavior.test.ts" });
   const full = await run({ scope: 'full' });
 
   expect(full.details).toMatchObject({ kind: 'pass', scope: 'full', freshness: 'fresh' });
-  expect(full.content).toHaveLength(2);
-  expect((await run({ scope: 'full' })).content).toHaveLength(2);
+  expect(full.content).toHaveLength(3);
+  expect((await run({ scope: 'full' })).content).toHaveLength(3);
 
   const edited = await call('write', { path: 'src/value.ts', content: 'export const value = 2;' });
 
@@ -168,7 +168,7 @@ it('recommends full verification for regression checks across Pi session handoff
   expect(handoff.details).toMatchObject({ kind: 'pass', freshness: 'fresh' });
   expect(handoff.content[0]?.text).toContain('scope "full"');
   expect(JSON.stringify(handoff.content)).not.toContain('RED');
-  expect((await second.run()).content).toHaveLength(2);
+  expect((await second.run()).content).toHaveLength(3);
 });
 
 it('keeps the full report while shortening displayed output', async ({ onTestFinished }) => {
