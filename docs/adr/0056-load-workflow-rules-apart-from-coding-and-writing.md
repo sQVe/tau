@@ -32,6 +32,13 @@ each ordinary agent run, the same way the coding and writing extensions load the
 - `workflow/instructions.md` governs how the agent carries out a task. This covers the commands it
   runs, the checkouts it touches, the scope it keeps, and when it stops.
 
+### The CC Safety Net rule is dropped, not moved
+
+The coding instructions told agents to run a command that CC Safety Net may block in its own bash
+call. The workflow instructions do not keep it. The blocked command stays blocked either way, and a
+bundled refusal only costs rerunning the safe reads beside it. That cost does not justify the prompt
+space the rule needs to explain CC Safety Net.
+
 ## Tradeoffs
 
 - Each rule sits in the file whose scope it matches.
