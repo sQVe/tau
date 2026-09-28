@@ -12,16 +12,7 @@ import type { Loadout, Profile, Task } from './types.js';
 
 const matchField = (line: string) => line.match(/^([a-z-]+):\s*(.+)$/);
 
-const supportedProfileKeys = new Set([
-  'name',
-  'description',
-  'role',
-  'model',
-  'thinking',
-  'cli',
-  'session-mode',
-  'permissions',
-]);
+const supportedProfileKeys = new Set(['name', 'description', 'role', 'model', 'thinking', 'cli']);
 
 const parseFields = (frontmatter: string) => {
   const fields = new Map<string, string>();
@@ -82,18 +73,6 @@ const requirePiCli = (fields: Map<string, string>): void => {
   }
 };
 
-const requireLineageOnly = (fields: Map<string, string>): void => {
-  if ((fields.get('session-mode') ?? 'lineage-only') !== 'lineage-only') {
-    throw new Error('Workers require fresh lineage-only sessions.');
-  }
-};
-
-const requireTrustedPermissions = (fields: Map<string, string>): void => {
-  if ((fields.get('permissions') ?? 'trusted-full-tools') !== 'trusted-full-tools') {
-    throw new Error('Only trusted full-tool workers are supported; roles are not sandboxes.');
-  }
-};
-
 export const parseProfile = (content: string, fallbackName: string, source: string): Profile => {
   const match = content.replaceAll('\r\n', '\n').match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
 
@@ -106,8 +85,6 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
   const role = parseRole(fields);
 
   requirePiCli(fields);
-  requireLineageOnly(fields);
-  requireTrustedPermissions(fields);
 
   if (!body.trim()) {
     throw new Error('Profile instructions are empty.');

@@ -135,7 +135,6 @@ export const eventSchema = Type.Object(
       'cancelled',
       'timeout',
       'cleanup',
-      'notified',
       'parentClosed',
       'stopping',
     ]),

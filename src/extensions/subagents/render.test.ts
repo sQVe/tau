@@ -624,12 +624,9 @@ it('shows only a short task ID on task call lines', () => {
 
   const calls: [string, Record<string, unknown>][] = [
     ['subagent_status', { taskId }],
-    ['subagent_reply', { taskId, replyId: 'reply', reply: 'Scoped text.', scopeUnchanged: true }],
+    ['subagent_reply', { taskId, replyId: 'reply', reply: 'Scoped text.' }],
     ['subagent_cancel', { taskId }],
-    [
-      'subagent_follow_up',
-      { sourceTaskId: taskId, task: 'Continue.', timeoutSeconds: 60, settingsUnchanged: true },
-    ],
+    ['subagent_follow_up', { sourceTaskId: taskId, task: 'Continue.', timeoutSeconds: 60 }],
   ];
 
   for (const [name, parameters] of calls) {

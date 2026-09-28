@@ -138,6 +138,8 @@ stopped early, or left a claim uncertain, or when the input changed during the r
   direction. For rule violations, also cite the applicable rule's file and supporting lines. No
   quotas or nits. Mark pre-existing issues separately. Name areas you left unread or read only
   shallowly.
+- A behavioral finding needs a production path that reaches the harmful state. A type or fixture
+  that can represent the state is not enough.
 - Save details that do not fit the report in `$dir/details.md`.
 - Handoff: "Changes: None, read-only. Baseline: `$dir/input.md` at HEAD `<sha>`." Do not recapture
   Git state or run full checks for the handoff.

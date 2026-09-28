@@ -537,12 +537,6 @@ export class TaskController {
       return;
     }
 
-    const { directory, task } = this.handle;
-
-    this.record(() => {
-      recordEvent(directory, task.taskId, 'notified', 'Parent notification attempted once.');
-    });
-
     this.notifySnapshot();
   }
 

@@ -485,11 +485,13 @@ it('resolves profile precedence and refuses discarded isolation and transcript s
     'User instructions.',
   );
 
-  expect(() =>
-    parseProfile('---\nrole: editing\nsession-mode: fork\n---\nTask', 'worker', 'fixture'),
-  ).toThrow('lineage-only');
-
-  expect(() =>
-    parseProfile('---\nrole: editing\ntools: read\n---\nTask', 'worker', 'fixture'),
-  ).toThrow('Unsupported');
+  for (const setting of [
+    'session-mode: lineage-only',
+    'permissions: trusted-full-tools',
+    'tools: read',
+  ]) {
+    expect(() =>
+      parseProfile(`---\nrole: editing\n${setting}\n---\nTask`, 'worker', 'fixture'),
+    ).toThrow('Unsupported');
+  }
 });

@@ -907,7 +907,6 @@ it('skips unpublished preparation debris while published attempts remain exclusi
   const input = {
     task: 'Follow up.',
     sourceTaskId: launched.taskId,
-    settingsUnchanged: true,
     timeout: 10000,
     parentSession: current.file,
     parentSessionId: current.id,
@@ -988,7 +987,6 @@ const completed = async (intercept?: HerdrClient) => {
     task: 'Follow up within saved settings.',
     sourceTaskId: status.taskId,
     timeout: 12000,
-    settingsUnchanged: true,
     parentSession: fixture.input.parentSession,
     parentSessionId: fixture.input.parentSessionId,
     parentPane: fixture.input.parentPane,
@@ -2034,16 +2032,11 @@ it('delivers a clarification once without treating herdr delivery as acknowledge
     questionId: question.questionId,
     replyId: 'reply-one',
     reply: 'source.txt',
-    scopeUnchanged: true,
   };
 
   await expect(controller.reply(task.taskId, 'wrong-parent', answer)).rejects.toThrow(
     'another parent',
   );
-
-  await expect(
-    controller.reply(task.taskId, 'parent-id', { ...answer, scopeUnchanged: false }),
-  ).rejects.toThrow('scope');
 
   await expect(
     controller.reply(task.taskId, 'parent-id', { ...answer, questionId: 'wrong' }),
@@ -2107,7 +2100,6 @@ it('treats an unreadable acknowledgement as unacknowledged after saving the Pi r
     questionId: 'question-one',
     replyId: 'reply-one',
     reply: 'source.txt',
-    scopeUnchanged: true,
   });
 
   expect(result).toMatchObject({
@@ -2141,7 +2133,6 @@ it('treats an unreadable acknowledgement as unacknowledged on a repeated Pi repl
     questionId: 'question-one',
     replyId: 'reply-one',
     reply: 'source.txt',
-    scopeUnchanged: true,
   };
 
   await controller.reply(task.taskId, 'parent-id', answer);
@@ -2237,7 +2228,6 @@ it.each(['before', 'during'] as const)(
       questionId: 'question-one',
       replyId: 'reply-one',
       reply: 'source.txt',
-      scopeUnchanged: true,
     });
 
     const outcome = await reply.catch((error: unknown) => String(error));
@@ -2277,7 +2267,6 @@ it('retains uncertain reply delivery without resending or acknowledging it', asy
     questionId: 'question-one',
     replyId: 'reply-one',
     reply: 'source.txt',
-    scopeUnchanged: true,
   };
 
   const uncertain = await controller.reply(launched.taskId, 'parent-id', answer);
@@ -2338,7 +2327,6 @@ it('notifies the parent once while waiting and refuses replies after the origina
       questionId: 'question-one',
       replyId: 'reply-one',
       reply: 'source.txt',
-      scopeUnchanged: true,
     }),
   ).rejects.toThrow('active');
 
@@ -2378,7 +2366,6 @@ it('refuses reply delivery when the original native worker identity changes', as
       questionId: 'question-one',
       replyId: 'reply-one',
       reply: 'source.txt',
-      scopeUnchanged: true,
     }),
   ).rejects.toThrow('identity');
 
@@ -3467,7 +3454,6 @@ it('ends in-flight cleanup on parent shutdown without further calls or notificat
   expect(abortedOnClose).toBe(true);
   expect(calls).toHaveLength(callCount);
   expect(notifications).toEqual([]);
-  expect(readdirSync(launched.directory)).not.toContain('notified.json');
 
   expect(controller.status(launched.taskId, 'parent-id')).toMatchObject({
     outcome: 'cancelled',

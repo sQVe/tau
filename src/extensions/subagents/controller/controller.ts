@@ -263,7 +263,7 @@ export class WorkerController {
   async reply(
     taskId: string,
     parentSessionId: string,
-    answer: { questionId: string; replyId: string; reply: string; scopeUnchanged: unknown },
+    answer: { questionId: string; replyId: string; reply: string },
   ) {
     const directory = this.directory(taskId, parentSessionId);
     const worker = this.workers.get(taskId);
@@ -273,10 +273,6 @@ export class WorkerController {
     }
 
     const { handle } = worker;
-
-    if (answer.scopeUnchanged !== true) {
-      throw new Error('Replies cannot increase scope or change saved worker settings.');
-    }
 
     ensureReplyActive(handle);
 
@@ -349,7 +345,6 @@ export class WorkerController {
   async followUp(
     input: Omit<LaunchInput, 'loadout' | 'startedAt'> & {
       sourceTaskId: string;
-      settingsUnchanged: boolean;
     },
     context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'isProjectTrusted'>,
     signal: AbortSignal = new AbortController().signal,
@@ -365,8 +360,8 @@ export class WorkerController {
 
     validationSignal.throwIfAborted();
 
-    if (this.closed || !input.settingsUnchanged) {
-      throw new Error('Follow-up requires an active parent and explicit unchanged saved settings.');
+    if (this.closed) {
+      throw new Error('Follow-up requires an active parent.');
     }
 
     const source = authorizeHistoryTask(

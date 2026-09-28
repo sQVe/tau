@@ -320,7 +320,6 @@ export default function (pi) {
       questionId: question.questionId,
       replyId: 'reply-one',
       reply: 'Yes. Edit only the fixture.',
-      scopeUnchanged: true,
     };
 
     if (scenario === 'question completion') {
@@ -451,7 +450,6 @@ export default function (pi) {
         sourceTaskId: savedTask.taskId,
         task: 'Follow up and verify prior context.',
         timeout: 10000,
-        settingsUnchanged: true,
         parentSession: savedTask.parentSession,
         parentSessionId: savedTask.parentSessionId,
         parentPane: paneId,
