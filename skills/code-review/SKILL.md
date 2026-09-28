@@ -54,19 +54,27 @@ stopped early, or left a claim uncertain, or when the input changed during the r
    - Record exclusions the user declares. Ask when the target, base, or ownership is unclear. When
      the work is the user's own, workers also list worthwhile pre-existing issues in touched code.
 
-2. Prepare one input file. Choose an ID such as the current time, set
-   `dir=.tau/workers/review-<id>`, and make sure `.tau/` is ignored before you write:
+2. Prepare one input file. From the repository root, create a fresh review directory inside an
+   ignored `.tau/`:
 
    ```sh
-   mkdir -p "$dir" && { grep -qx '\*' .tau/.gitignore 2>/dev/null || echo '*' >> .tau/.gitignore; }
+   ! [ -L .tau ] && ! [ -L .tau/workers ] && ! [ -L .tau/.gitignore ] &&
+     mkdir -p .tau/workers &&
+     { grep -qsx '\*' .tau/.gitignore || printf '\n*\n' >> .tau/.gitignore; } &&
+     dir=$(mktemp -d .tau/workers/review-XXXXXX) &&
+     git check-ignore -q "$dir/input.md" && echo "dir=$dir"
    ```
+
+   Stop and tell the user unless it prints `dir=`. It refuses symlinks that would send writes
+   outside the repository, but a path swapped between the check and the write can still escape. Use
+   the printed path as `$dir` from here on.
 
    Write `$dir/input.md` with the target, mode, base and HEAD SHAs, declared exclusions, the rule
    files that apply (such as `AGENTS.md` and the ADRs it links), and any existing check result with
    its saved output path, or "none". Include the known task intent, acceptance criteria, and
    intentional behavior changes. Mark unavailable context explicitly; do not invent requirements or
    copy the whole conversation. End it with a `## Capture` heading. Then capture from the repository
-   root, in the same bash call that sets `dir` and `base`:
+   root, in one bash call that sets `dir` and `base`:
 
    ```sh
    set -o pipefail
