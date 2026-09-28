@@ -25,6 +25,10 @@ export const fixtureAuth = {
   },
 };
 
+const systemInstructions = (context: { systemPrompt?: string }): boolean =>
+  savedTask !== undefined &&
+  context.systemPrompt?.includes(savedTask.loadout.instructions) === true;
+
 const registerFollowUpProvider = (pi: ExtensionAPI): void => {
   provider.setResponses([
     fauxAssistantMessage([fauxToolCall('bash', { command: 'find ./delete-fixture/.git -delete' })]),
@@ -41,9 +45,7 @@ const registerFollowUpProvider = (pi: ExtensionAPI): void => {
         ),
       ).includes('BLOCKED by CC Safety Net');
 
-      const instructions = JSON.stringify(
-        context.messages.findLast((message) => message.role === 'user'),
-      ).includes(savedTask?.loadout.instructions ?? '');
+      const instructions = systemInstructions(context);
 
       return fauxAssistantMessage([
         fauxToolCall('subagent_report', {
@@ -108,13 +110,18 @@ const registerDefaultProvider = (pi: ExtensionAPI): void => {
       );
 
       const edited = readFileSync(join(process.cwd(), 'source.txt'), 'utf8') === 'after\n';
+      const instructions = systemInstructions(context);
 
       return fauxAssistantMessage([
         fauxToolCall('subagent_report', {
-          outcome: blocked && edited ? 'success' : 'failure',
+          outcome: blocked && edited && instructions ? 'success' : 'failure',
           summary:
             'Model-free CLI fixture completed.\n\nChanges: None\nEvidence: None\nDecisions: None\nConcerns: None',
-          evidence: ['edit checked', `Safety Net block: ${blocked}`],
+          evidence: [
+            'edit checked',
+            `Safety Net block: ${blocked}`,
+            `saved instructions: ${instructions}`,
+          ],
         }),
       ]);
     },

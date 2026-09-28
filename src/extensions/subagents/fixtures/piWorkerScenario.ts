@@ -402,7 +402,7 @@ export default function (pi) {
   ).toBe(false);
 
   expect(status.report?.evidence ?? []).toEqual(
-    completes ? ['edit checked', 'Safety Net block: true'] : [],
+    completes ? ['edit checked', 'Safety Net block: true', 'saved instructions: true'] : [],
   );
 
   expect(readFileSync(join(root, 'source.txt'), 'utf8')).toBe(completes ? 'after\n' : 'before\n');

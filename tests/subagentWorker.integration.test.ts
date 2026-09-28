@@ -24,7 +24,7 @@ import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { workerArguments } from '../src/extensions/subagents/controller/inspect.js';
 import subagentsExtension from '../src/extensions/subagents/index.js';
-import { nativeIdentity, seedSession, workerPrompt } from '../src/extensions/subagents/profiles.js';
+import { nativeIdentity, seedSession } from '../src/extensions/subagents/profiles.js';
 import {
   acceptReply,
   readAcknowledgement,
@@ -275,6 +275,8 @@ it.each(['editing', 'investigation'] as const)(
       }
     });
 
+    let reminderSystemPrompt: string | undefined;
+
     provider.setResponses([
       fauxAssistantMessage([
         fauxToolCall('bash', { command: '' }),
@@ -319,13 +321,18 @@ it.each(['editing', 'investigation'] as const)(
         fauxToolCall('bash', { command: 'find ./delete-fixture/.git -delete' }),
       ]),
       fauxAssistantMessage('The assigned work is complete.'),
-      fauxAssistantMessage([
-        fauxToolCall('subagent_report', {
-          outcome: 'success',
-          summary: handoff,
-          evidence: ['source.txt', 'command-ok', 'Safety Net blocked deletion'],
-        }),
-      ]),
+      // The report reminder starts this turn without before_agent_start.
+      (context) => {
+        reminderSystemPrompt = context.systemPrompt;
+
+        return fauxAssistantMessage([
+          fauxToolCall('subagent_report', {
+            outcome: 'success',
+            summary: handoff,
+            evidence: ['source.txt', 'command-ok', 'Safety Net blocked deletion'],
+          }),
+        ]);
+      },
     ]);
 
     const custom = vi
@@ -378,7 +385,6 @@ it.each(['editing', 'investigation'] as const)(
     const parentQuestions = results.filter((result) => result.toolName === 'subagent_question');
     expect(parentQuestions.map((result) => result.isError)).toEqual([true, false]);
     expect(parentQuestions[0]?.text).toContain('64 KB');
-    expect(workerPrompt(task)).toContain('subagent_question');
     const question = readPendingQuestion(taskDirectory, task.taskId);
 
     if (!question) {
@@ -462,6 +468,7 @@ it.each(['editing', 'investigation'] as const)(
     ) as { taskId: string };
 
     expect(reportRequest.taskId).toBe(task.taskId);
+    expect(reminderSystemPrompt).toContain(task.loadout.instructions);
     const original = readFileSync(join(taskDirectory, 'report.json'), 'utf8');
     await session.bindExtensions({});
 
