@@ -1,9 +1,9 @@
-import { writeFile } from 'node:fs/promises';
+import { lstat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExecResult, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { errorMessage } from '../../errors/index.js';
+import { errorMessage, isMissingFile } from '../../errors/index.js';
 import {
   currentHead,
   listCommitPaths,
@@ -121,12 +121,24 @@ const readStagedBefore = async (
   };
 };
 
-// Git cannot add a staged deletion, and the index already holds it.
-const isStagedDeletion = (run: GroupRun, file: string) => {
-  const path = repositoryPath(run.prefix, file);
+const stagedDeletions = (check: Pick<CleanupCheck, 'prefix' | 'stagedBefore'>, files: string[]) =>
+  files.filter((file) => {
+    const path = repositoryPath(check.prefix, file);
 
-  return run.stagedBefore.files.has(path) && !run.stagedBefore.entries.has(path);
-};
+    return check.stagedBefore.files.has(path) && !check.stagedBefore.entries.has(path);
+  });
+
+const isMissingFromWorktree = (cwd: string, file: string) =>
+  lstat(join(cwd, file)).then(
+    () => false,
+    (error: unknown) => {
+      if (isMissingFile(error)) {
+        return true;
+      }
+
+      throw error;
+    },
+  );
 
 const restoreRequest = async (
   pi: Pick<ExtensionAPI, 'exec'>,
@@ -134,8 +146,10 @@ const restoreRequest = async (
   check: Pick<CleanupCheck, 'prefix' | 'stagedBefore'>,
   files: string[],
 ) => {
-  if (check.stagedBefore.entries.size > 0) {
-    await restoreIndexEntries(pi, cwd, [...check.stagedBefore.entries.values()]);
+  const deletions = stagedDeletions(check, files);
+
+  if (check.stagedBefore.entries.size > 0 || deletions.length > 0) {
+    await restoreIndexEntries(pi, cwd, [...check.stagedBefore.entries.values()], deletions);
   }
 
   const unstaged = files.filter(
@@ -148,7 +162,15 @@ const restoreRequest = async (
 };
 
 const stageAndVerifyRequest = async (run: GroupRun): Promise<boolean> => {
-  const filesToAdd = run.parameters.files.filter((file) => !isStagedDeletion(run, file));
+  const deletions = stagedDeletions(run, run.parameters.files);
+
+  // Git cannot add a staged deletion that is still missing, and the index already holds it.
+  const missing = await Promise.all(
+    deletions.map((file) => isMissingFromWorktree(run.context.cwd, file)),
+  );
+
+  const skipped = new Set(deletions.filter((_file, index) => missing[index] === true));
+  const filesToAdd = run.parameters.files.filter((file) => !skipped.has(file));
 
   if (filesToAdd.length > 0) {
     await stageFiles(run.pi, run.context.cwd, filesToAdd);

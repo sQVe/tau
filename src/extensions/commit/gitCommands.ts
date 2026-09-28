@@ -118,11 +118,19 @@ export const restoreIndexEntries = (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
   entries: string[],
+  removedFiles: string[],
 ) =>
   runGit(
     pi,
     workingDirectory,
-    ['update-index', '--add', ...entries.flatMap((entry) => ['--cacheinfo', entry])],
+    [
+      'update-index',
+      '--add',
+      ...entries.flatMap((entry) => ['--cacheinfo', entry]),
+      '--force-remove',
+      '--',
+      ...removedFiles,
+    ],
     { timeout: null },
   );
 

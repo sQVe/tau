@@ -643,6 +643,23 @@ describe('commitTool.execute', () => {
     expect(await git(repositoryDirectory, ['status', '--short'])).toBe('');
   });
 
+  it('commits a recreated file over its staged deletion', async () => {
+    const repositoryDirectory = await createTemporaryRepository();
+
+    await writeRepositoryFile(repositoryDirectory, 'old.md', 'gone\n');
+    await git(repositoryDirectory, ['add', '--', 'old.md']);
+    await git(repositoryDirectory, ['commit', '-m', 'initial']);
+    await git(repositoryDirectory, ['rm', '--', 'old.md']);
+    await writeRepositoryFile(repositoryDirectory, 'old.md', 'recreated\n');
+
+    await executeCommit(repositoryDirectory, {
+      groups: [{ files: ['old.md'], subject: 'feat: rewrite old notes' }],
+    });
+
+    expect(await git(repositoryDirectory, ['show', 'HEAD:old.md'])).toBe('recreated\n');
+    expect(await git(repositoryDirectory, ['status', '--short'])).toBe('');
+  });
+
   it.each([
     {
       failure: 'staging',
@@ -654,6 +671,12 @@ describe('commitTool.execute', () => {
       failure: 'hook',
       files: ['README.md', 'old.md', 'new.md'],
       hook: 'exit 1',
+      error: 'git commit failed',
+    },
+    {
+      failure: 'a hook that restages a deleted path',
+      files: ['README.md', 'old.md', 'new.md'],
+      hook: 'echo back > old.md; git add old.md; exit 1',
       error: 'git commit failed',
     },
   ])('keeps changes staged before the call when $failure fails', async ({ files, hook, error }) => {
