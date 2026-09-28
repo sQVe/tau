@@ -12,7 +12,7 @@ description:
 ## When to use
 
 Use this skill to open or update the GitHub pull request for the branch in this session's worktree.
-It needs an authenticated `gh`. If `gh auth status` fails, tell the user and stop.
+It needs `gh` authenticated for the target host's active account.
 
 ## Goal
 
@@ -51,10 +51,13 @@ required pre-merge checks pass and a complete review of the pushed content has n
 ## Procedure
 
 1. Resolve the target. Ask when any part is unclear.
+   - Determine the GitHub host from the target repository URL or Git remote. Before other `gh`
+     calls, run `gh auth status --active --hostname <host>`. If it fails, tell the user and stop.
    - Stop on a detached HEAD or on the default branch.
    - Head: the push target from `git rev-parse --abbrev-ref @{push}`, the remote the user names, or
      the sole remote with the local branch name. Base repository: the upstream of a fork, otherwise
-     the push remote's repository. Pass `--repo <owner/name>` to every `gh` command.
+     the push remote's repository. Use `<host>/<owner>/<name>` for the repository, and pass
+     `--repo <repo>` to repository-scoped `gh` commands.
    - Find the PR with
      `gh pr list --repo <repo> --head <branch> --state all --json number,url,state,title,body,baseRefName,isDraft,headRefOid,headRepositoryOwner`,
      keeping only PRs from the head owner. Stop on a `gh` error. Use the open PR. When only merged
