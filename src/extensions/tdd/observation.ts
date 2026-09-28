@@ -105,9 +105,13 @@ const fingerprint = async (
         ...config.testSupportGlobs,
         ...configurationGlobs,
       ],
-      { cwd, exclude: config.excludedGlobs },
+      { cwd, exclude: config.excludedGlobs, withFileTypes: true },
     )) {
-      paths.push(file);
+      // A glob such as `src/**` also matches directories, which cannot be hashed. Symbolic links
+      // stay, so a linked source file is still read through its link.
+      if (!file.isDirectory()) {
+        paths.push(join(file.parentPath, file.name));
+      }
     }
 
     const digest = createHash('sha256');

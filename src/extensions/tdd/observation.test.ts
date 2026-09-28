@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { beforeEach, expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 
+import { defaultTddConfig } from './config.js';
 import { createTestObservation, thrownErrorType } from './observation.js';
 import type { RunnerResult } from './runner/types.js';
 import { runTests } from './runner/vitest.js';
@@ -35,6 +36,9 @@ const setup = async (cleanup: TestContext['onTestFinished']) => {
 
   return { cwd, observation: createTestObservation(cwd) };
 };
+
+// A link to itself fails to read for every user, including root.
+const makeUnreadable = (path: string) => symlink(basename(path), path);
 
 beforeEach(() => {
   vi.mocked(runTests).mockReset();
@@ -174,7 +178,7 @@ it.for(['stale', 'unknown'] as const)(
       if (freshness === 'stale') {
         await writeFile(join(cwd, 'src/value.ts'), 'changed during tests');
       } else {
-        await mkdir(join(cwd, 'package.json'));
+        await makeUnreadable(join(cwd, 'package.json'));
       }
 
       return report;
@@ -188,7 +192,7 @@ it.for(['stale', 'unknown'] as const)(
     expect(passed.hint).not.toContain('scope "full"');
 
     if (freshness === 'unknown') {
-      await rm(join(cwd, 'package.json'), { recursive: true });
+      await rm(join(cwd, 'package.json'));
     }
 
     expect((await observation.run(behavior, 'focused')).hint).toContain('scope "full"');
@@ -475,7 +479,7 @@ it.each(['timeout', 'cancelled', 'compile-error', 'runner-missing', 'runner-reso
     await writeFile(join(cwd, 'src/value.ts'), 'another implementation');
     expect(await observation.checkpoint(true)).toBeUndefined();
 
-    await mkdir(join(cwd, 'package.json'));
+    await makeUnreadable(join(cwd, 'package.json'));
     vi.mocked(runTests).mockResolvedValueOnce(report);
     const unreadable = await observation.run(behavior, 'focused');
 
@@ -762,7 +766,8 @@ it('preserves successful reports when nested configuration cannot be read', asyn
   const { cwd, observation } = await setup(onTestFinished);
   const report = result('passed');
   vi.mocked(runTests).mockResolvedValue(report);
-  await mkdir(join(cwd, 'packages/core/tsconfig.json'), { recursive: true });
+  await mkdir(join(cwd, 'packages/core'), { recursive: true });
+  await makeUnreadable(join(cwd, 'packages/core/tsconfig.json'));
 
   const observed = await observation.run(behavior, 'full');
 
@@ -840,10 +845,10 @@ it('recovers freshness after a transient fingerprint failure', async ({ onTestFi
   const { cwd, observation } = await setup(onTestFinished);
 
   expect((await observation.run(behavior, 'full')).hint).toBeUndefined();
-  await mkdir(join(cwd, 'package.json'));
+  await makeUnreadable(join(cwd, 'package.json'));
   expect(await observation.checkpoint(true)).toContain('unknown');
 
-  await rm(join(cwd, 'package.json'), { recursive: true });
+  await rm(join(cwd, 'package.json'));
   expect(await observation.checkpoint(true)).toBeUndefined();
 });
 
@@ -851,7 +856,7 @@ it('keeps reports and successful edits when fingerprints fail', async ({ onTestF
   const { cwd, observation } = await setup(onTestFinished);
   const report = result('passed');
   vi.mocked(runTests).mockResolvedValue(report);
-  await mkdir(join(cwd, 'package.json'));
+  await makeUnreadable(join(cwd, 'package.json'));
 
   const observed = await observation.run(behavior, 'full');
 
@@ -922,4 +927,29 @@ it('isolates observations between directories and extension instances', async ({
 
   expect(await second.observation.checkpoint(true)).toContain('RED');
   expect(await createTestObservation(first.cwd).checkpoint(true)).toContain('RED');
+});
+
+it('fingerprints files when a configured glob also matches directories', async ({
+  onTestFinished,
+}) => {
+  const { cwd } = await setup(onTestFinished);
+  await mkdir(join(cwd, 'src/nested'));
+
+  const observation = createTestObservation(cwd, {
+    ...defaultTddConfig,
+    productionGlobs: ['src/**'],
+  });
+
+  const fresh = await observation.run(behavior, 'focused');
+
+  expect(fresh.freshness).toBe('fresh');
+  expect(fresh.inputs.after).not.toBeNull();
+
+  vi.mocked(runTests).mockImplementationOnce(async () => {
+    await writeFile(join(cwd, 'src/value.ts'), 'after');
+
+    return result('passed');
+  });
+
+  expect((await observation.run(behavior, 'focused')).freshness).toBe('stale');
 });
