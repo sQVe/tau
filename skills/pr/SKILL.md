@@ -86,7 +86,8 @@ required pre-merge checks pass and a complete review of the pushed content has n
    code review only when all of these hold:
    - The session or its saved files under `.tau/workers/review-*/` show that every worker reported
      (`reviewer.md`, or `finder.md` and `checker.md`), the freshness check passed, and no gaps
-     remain. A status that the evidence does not state is unknown, so do not reuse.
+     remain besides areas a worker read shallowly. A status that the evidence does not state is
+     unknown, so do not reuse.
    - Its base is the pinned merge base, and it covered the whole branch.
    - Its capture matches the content. Use the saved `recheck.diff` and confirm that its
      `git hash-object` equals the recorded capture hash. Split it and
@@ -112,7 +113,8 @@ required pre-merge checks pass and a complete review of the pushed content has n
    no open findings. A finding is closed only when fixed and reviewed again, or when the user
    dismissed it as not a defect; record their reason in the summary. A finding the user defers or
    leaves unfixed stays open. Only checks that can run solely after deployment are deferred instead
-   of gaps. Any gap means draft. For an existing ready PR with a gap, offer to convert it to draft.
+   of gaps. Any gap means draft. Areas a worker read shallowly are notes for the summary, not gaps.
+   For an existing ready PR with a gap, offer to convert it to draft.
 
 7. Write the title and body. For a new PR, or an update whose body does not follow the template, use
    the repository's template: look case-insensitively for `pull_request_template.md` in the root,
@@ -120,11 +122,14 @@ required pre-merge checks pass and a complete review of the pushed content has n
    Otherwise use the [fallback template](fallback-template.md). Ask before you restructure a body
    that has text you did not write in this session, and keep that text. Match the title to the
    repository's convention. Write `Fixes <issue>` only for an issue this PR completes, and
-   `Related to <issue>` for the rest. Save the body as `$prdir/body.md`.
+   `Related to <issue>` for the rest. State the review's result and open findings in the body, and
+   keep reviewer notes, worker names, and local paths for the summary. Save the body as
+   `$prdir/body.md`.
 
 8. Preview and ask. Show the title, full body, base repository and branch, head, draft status,
    commits to push, and push command. Add the summary: commits made, comment findings and removals,
-   review and check sources, and gaps. Wait for approval.
+   review and check sources, reviewer notes, and gaps. When the review is the only gap, offer a new
+   fast review next to draft, so the PR can open ready if it finds nothing. Wait for approval.
 
 9. Publish.
    - Compare HEAD, local status, and the commits to push with the preview, and read the PR again. If
@@ -149,7 +154,8 @@ required pre-merge checks pass and a complete review of the pushed content has n
     Report any difference and the PR URL. If verification fails or shows a difference, stop here.
 
 11. Offer bot reviews. Publication approval does not cover them. Ask which bots to request, with an
-    option to skip. Suggest the repository's documented bots, or Codex when none are documented.
+    option to skip. Suggest the bots the repository documents or configures, such as CodeRabbit for
+    a `.coderabbit.yaml`, or Codex when there are none.
     - For Codex, run `gh pr comment <number> --repo <repo> --body '@codex review'`. Use each other
       bot's documented trigger; do not invent one.
     - Read existing requests and reviews first. Do not repeat a request known to cover the current
