@@ -52,10 +52,15 @@ Every Pi worker runs as its pane's own process, so a pane lives exactly as long 
 ### Launch
 
 Create the worker with `layout.apply` and a single-pane root whose `command` is the absolute `pi`
-executable from `PATH` with the worker arguments. Pass the cwd, the pane label, and the worker
-environment in the same request. Never pass `tab_id`, because that replaces an existing tab. A
-foreground worker then moves beside its parent. A background worker moves into an owned background
-tab, or stays in its new tab. Placement stays serialized.
+executable from `PATH` with the worker arguments. Pass the cwd and the worker environment in the
+same request. Never pass `tab_id`, because that replaces an existing tab. A foreground worker then
+moves beside its parent. A background worker moves into an owned background tab, or stays in its new
+tab. Generic native workers are placed the same way, from a new shell tab, so placement has one
+path. Placement stays serialized.
+
+The worker environment is the parent's environment plus Tau's worker variables. A direct pane does
+not run the user's shell startup files, and the parent Pi was started from that shell, so its
+environment carries settings such as `PATH` that the typed command used to get.
 
 ### Lifecycle
 
@@ -92,7 +97,7 @@ Source: herdr v0.9.1 `src/persist/restore.rs`, `src/app/agent_resume.rs`, and `s
 - Stopping no longer waits for a bare shell, so a stop takes one checked close instead of a keypress
   loop.
 - Cost: `layout.apply` has no CLI command in herdr 0.9.1, so Tau sends it over herdr's socket.
-- Cost: every Pi worker first appears in its own tab, and then moves. A tab can flash in the tab bar
+- Cost: every worker first appears in its own tab, and then moves. A tab can flash in the tab bar
   during placement.
 - Cost: until the follow-ups land, a worker whose parent dies keeps running, and herdr can restore a
   worker session outside Tau.
