@@ -55,8 +55,7 @@ Create the worker with `layout.apply` and a single-pane root whose `command` is 
 executable from `PATH` with the worker arguments. Pass the cwd and the worker environment in the
 same request. Never pass `tab_id`, because that replaces an existing tab. A foreground worker then
 moves beside its parent. A background worker moves into an owned background tab, or stays in its new
-tab. Generic native workers are placed the same way, from a new shell tab, so placement has one
-path. Placement stays serialized.
+tab. Placement stays serialized.
 
 The worker environment is the parent's environment plus Tau's worker variables. A direct pane does
 not run the user's shell startup files, and the parent Pi was started from that shell, so its
