@@ -1,6 +1,7 @@
 # ADR 0043: Own only the worker guarantees herdr lacks
 
-- Status: Accepted
+- Status: Accepted; placement rule superseded by
+  [ADR 0054](./0054-show-one-foreground-worker-per-parent.md)
 - Date: 2026-09-24
 - Supersedes: [ADR 0029](./0029-version-worker-provider-fingerprints.md),
   [ADR 0031](./0031-reserve-worker-capacity-under-one-tree-lock.md), the claim rules in

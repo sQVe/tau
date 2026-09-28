@@ -12,6 +12,7 @@ import { validateSavedLoadout } from '../loadout.js';
 import { allocateName, nameSuffix } from '../names.js';
 import { validateNative } from '../native.js';
 import { WorkerPlacement } from '../placement.js';
+import type { Visibility } from '../placement.js';
 import type { WorkerNotice } from '../presentation.js';
 import { readAcknowledgement, readQuestion, readReply } from '../questionRecords.js';
 import {
@@ -438,7 +439,10 @@ export class WorkerController {
         ...(input.parentPane != null && input.parentPane !== ''
           ? { parentPane: input.parentPane }
           : {}),
-        visibility: input.visibility ?? 'foreground',
+        // Users read the editing worker; the parent reads investigation reports.
+        visibility:
+          input.visibility ??
+          (handle.task.loadout.role === 'editing' ? 'foreground' : 'background'),
         onCreated: (created) => {
           handle.identity.paneId = created.paneId;
           handle.identity.terminalId = created.terminalId;
@@ -478,7 +482,11 @@ export class WorkerController {
     input: LaunchInput,
     launchSignal: AbortSignal,
     source?: FollowUpPreparation,
-  ): Promise<ReturnType<WorkerController['status']>> {
+  ): Promise<
+    ReturnType<WorkerController['status']> & {
+      placement?: { visibility: Visibility; reason?: string };
+    }
+  > {
     if (this.closed) {
       throw new Error('Parent controller stopped.');
     }
@@ -487,6 +495,7 @@ export class WorkerController {
     const prepared = await this.prepareLaunch(input, launchSignal, source);
     const { worker, name } = prepared;
     const { handle } = worker;
+    let placement: { visibility: Visibility; reason?: string } | undefined;
 
     try {
       launchSignal.throwIfAborted();
@@ -494,6 +503,11 @@ export class WorkerController {
 
       const call = worker.herdrCall();
       const location = await this.placeWorker(input, handle, call);
+
+      placement = {
+        visibility: location.visibility,
+        ...(location.reason === undefined ? {} : { reason: location.reason }),
+      };
 
       if (source) {
         checkHandoff(source);
@@ -506,7 +520,10 @@ export class WorkerController {
       await worker.stop(reason, worker.startupFailureDetail(error));
     }
 
-    return this.status(prepared.taskId, input.parentSessionId);
+    return {
+      ...this.status(prepared.taskId, input.parentSessionId),
+      ...(placement ? { placement } : {}),
+    };
   }
 
   private async prepareLaunch(

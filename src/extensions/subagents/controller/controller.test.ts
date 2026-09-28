@@ -2438,6 +2438,20 @@ it.for(['reviewer', 'qa'])(
   },
 );
 
+it.for([
+  ['editing', 'foreground'],
+  ['investigation', 'background'],
+] as const)(
+  'shows %s workers in the %s by default',
+  async ([role, visibility], { onTestFinished }) => {
+    const { controller, input } = setup(onTestFinished);
+
+    const status = await controller.launch({ ...input, loadout: { ...input.loadout, role } });
+
+    expect(status.placement).toEqual({ visibility });
+  },
+);
+
 it('names a custom profile launch after its role', async ({ onTestFinished }) => {
   vi.spyOn(names, 'nameSuffix').mockReturnValue('aa');
   const { controller, input } = setup(onTestFinished);
@@ -3259,8 +3273,8 @@ it.each(['confirmed', 'unconfirmed'] as const)(
     try {
       const second = await controller.launch(input);
       expect(second.state).toBe('starting');
-      expect(terminal.panes.map((pane) => pane.tab_id)).toEqual(['working', 'working', 'working']);
-      expect(terminal.calls.some((call) => call[1] === 'create')).toBe(false);
+      // The cleaning worker still holds the parent's one foreground slot.
+      expect(second.placement?.visibility).toBe('background');
       expect(release).not.toHaveBeenCalledWith('terminal-1');
     } finally {
       resume.resolve(undefined);

@@ -84,25 +84,26 @@ it('serializes concurrent launches instead of splitting below the useful floor',
   }
 });
 
-it.each([
-  [407, 60, 4],
-  [488, 100, 5],
-])(
-  'keeps every foreground pane useful at %s x %s with %s workers under herdr rounding',
-  async (width, height, workers) => {
-    const { placement, client, input, panes, dimensions } = fixture(width, height);
+it('shows one foreground worker per parent until it is released', async () => {
+  const { placement, client, input, panes, dimensions } = fixture(400, 100);
+  const first = await placement.place(input('foreground'), client);
+  const second = await placement.place(input('foreground'), client);
 
-    await Promise.all(
-      Array.from({ length: workers }, () => placement.place(input('foreground'), client)),
-    );
+  expect(first).toMatchObject({ tabId: 'working', visibility: 'foreground' });
+  expect(first.reason).toBeUndefined();
+  expect(second.tabId).not.toBe('working');
+  expect(second.visibility).toBe('background');
+  expect(second.reason).toBeTypeOf('string');
 
-    for (const pane of panes) {
-      const bounds = dimensions.get(pane.pane_id)!;
-      expect(bounds.width).toBeGreaterThanOrEqual(minimumPane.width);
-      expect(bounds.height).toBeGreaterThanOrEqual(minimumPane.height);
-    }
-  },
-);
+  placement.release(first.terminalId);
+  const closed = panes.findIndex((pane) => pane.pane_id === first.paneId);
+  panes.splice(closed, 1);
+  dimensions.set('parent', { width: 400, height: 100 });
+
+  const third = await placement.place(input('foreground'), client);
+
+  expect(third).toMatchObject({ tabId: 'working', visibility: 'foreground' });
+});
 
 it('releases a confirmed terminal when creation is cancelled', async () => {
   const { placement, client, input, dimensions } = fixture(340, 100);
@@ -145,6 +146,8 @@ it('uses a background tab when the parent cannot split usefully', async () => {
   const location = await placement.place(input('foreground'), client);
 
   expect(location.tabId).not.toBe('working');
+  expect(location.visibility).toBe('background');
+  expect(location.reason).toBeTypeOf('string');
   expect(dimensions.get('parent')).toEqual({ width: 100, height: 30 });
   expect(calls.some((call) => call[1] === 'split')).toBe(false);
 });
@@ -265,11 +268,18 @@ it('does not reclaim a background tab after an unrelated pane joins it', async (
   expect(dimensions.get(first.paneId)).toEqual({ width: 340, height: 100 });
 });
 
-it('splits the largest eligible pane without touching unrelated panes', async () => {
+it('keeps the foreground slot while a released worker pane stays open', async () => {
+  const { placement, client, input } = fixture(400, 100);
+  const first = await placement.place(input('foreground'), client);
+  placement.release(first.terminalId);
+  const second = await placement.place(input('foreground'), client);
+
+  expect(second.tabId).not.toBe('working');
+  expect(second.visibility).toBe('background');
+});
+
+it('splits the parent instead of a larger unrelated pane', async () => {
   const { placement, client, input, panes, dimensions, calls } = fixture(340, 100);
-  const worker = await placement.place(input('foreground'), client);
-  dimensions.set('parent', { width: 100, height: 100 });
-  dimensions.set(worker.paneId, { width: 239, height: 100 });
 
   panes.push({
     pane_id: 'unrelated',
@@ -282,11 +292,26 @@ it('splits the largest eligible pane without touching unrelated panes', async ()
 
   await placement.place(input('foreground'), client);
 
-  expect(dimensions.get('parent')).toEqual({ width: 100, height: 100 });
   expect(dimensions.get('unrelated')).toEqual({ width: 500, height: 500 });
 
   expect(calls.findLast((call) => call[1] === 'split')).toEqual(
-    expect.arrayContaining(['--pane', worker.paneId]),
+    expect.arrayContaining(['--pane', 'parent']),
+  );
+});
+
+it('splits the largest owned pane in a background tab', async () => {
+  const { placement, client, input, dimensions, calls } = fixture(340, 100);
+  const first = await placement.place(input('background'), client);
+  const second = await placement.place(input('background'), client);
+  dimensions.set(first.paneId, { width: 100, height: 100 });
+  dimensions.set(second.paneId, { width: 239, height: 100 });
+
+  await placement.place(input('background'), client);
+
+  expect(dimensions.get(first.paneId)).toEqual({ width: 100, height: 100 });
+
+  expect(calls.findLast((call) => call[1] === 'split')).toEqual(
+    expect.arrayContaining(['--pane', second.paneId]),
   );
 });
 
@@ -358,6 +383,17 @@ it('places the first foreground worker beside the parent in 193 columns and 60 r
   await placement.place(input('foreground'), client);
 
   expect([...dimensions.values()].map((bounds) => bounds.height)).toEqual([60, 60]);
+});
+
+it('places a foreground worker beside a parent that shares its tab', async () => {
+  const { placement, client, input, panes, dimensions } = fixture(340, 100);
+  panes.push({ ...panes[0]!, pane_id: 'unrelated', terminal_id: 'unrelated' });
+  dimensions.set('parent', { width: 170, height: 100 });
+  dimensions.set('unrelated', { width: 170, height: 100 });
+
+  const worker = await placement.place(input('foreground'), client);
+
+  expect(dimensions.get(worker.paneId)).toEqual({ width: 85, height: 100 });
 });
 
 it('stacks the second background worker below the first in 193 columns and 60 rows', async () => {

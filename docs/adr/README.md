@@ -75,3 +75,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0051: Note the bare root rule instead of enforcing it](./0051-note-the-bare-root-rule-instead-of-enforcing-it.md)
 - [0052: Drop backwards compatibility by default](./0052-drop-backwards-compatibility-by-default.md)
 - [0053: Version each saved record format](./0053-version-each-saved-record-format.md)
+- [0054: Show one foreground worker per parent](./0054-show-one-foreground-worker-per-parent.md)
