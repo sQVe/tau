@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { onTestFinished } from 'vitest';
 
 import { runClient } from '../cancellation.js';
+import { socketRequest } from '../controller/inspect.js';
 
 export const isolatedHerdr = async (
   configuration = '',
@@ -50,7 +51,9 @@ export const isolatedHerdr = async (
 
   const readyDeadline = performance.now() + 10_000;
 
-  while (!existsSync(join(root, 'config', 'herdr', 'sessions', 'tau-worker-test', 'herdr.sock'))) {
+  const socketPath = join(root, 'config', 'herdr', 'sessions', 'tau-worker-test', 'herdr.sock');
+
+  while (!existsSync(socketPath)) {
     if (performance.now() > readyDeadline) {
       throw new Error('Isolated herdr did not start.');
     }
@@ -59,10 +62,12 @@ export const isolatedHerdr = async (
   }
 
   const client = (argumentsList: string[], budget = 5000, signal?: AbortSignal) =>
-    runClient('herdr', ['--session', 'tau-worker-test', ...argumentsList], budget, {
-      signal,
-      environment,
-    });
+    argumentsList[0] === 'layout'
+      ? socketRequest(socketPath, argumentsList, budget, signal)
+      : runClient('herdr', ['--session', 'tau-worker-test', ...argumentsList], budget, {
+          signal,
+          environment,
+        });
 
   return { root, environment, client };
 };

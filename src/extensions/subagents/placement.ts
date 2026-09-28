@@ -18,25 +18,19 @@ interface PlacementInput {
   parentPane?: string;
   visibility: Visibility;
   cwd: string;
-  environment: string[];
+  environment: Record<string, string>;
+  // Runs as the pane's own process instead of the user's shell.
+  command?: string[];
+  // Receives the pane ID as soon as herdr starts the command, before its terminal is known.
+  onLaunched?: (paneId: string) => void;
   onCreated?: (location: TerminalLocation) => void;
-}
-
-interface SplitRequest {
-  eligible: TerminalLocation[];
-  visibility: Visibility;
-  options: string[];
-  call: TerminalCall;
-  onCreated: PlacementInput['onCreated'];
 }
 
 interface TabSearch {
   tabs: string[];
   parent: TerminalLocation;
   locations: TerminalLocation[];
-  options: string[];
   call: TerminalCall;
-  onCreated: PlacementInput['onCreated'];
 }
 
 type PaneLayout = Record<string, unknown> & { panes: unknown[] };
@@ -271,8 +265,8 @@ export class WorkerPlacement {
     }
   }
 
-  private async split(request: SplitRequest): Promise<TerminalLocation | undefined> {
-    const { eligible, visibility, options, call, onCreated } = request;
+  // Choose the pane to split, and check that its tab still matches the layout read.
+  private async target(eligible: TerminalLocation[], visibility: Visibility, call: TerminalCall) {
     const first = eligible[0];
 
     if (!first) {
@@ -280,7 +274,6 @@ export class WorkerPlacement {
     }
 
     const layout = await readLayout(first.paneId, call);
-
     const shape = layoutShape(layout);
     const candidate = splitCandidate(layout, eligible, first.workspaceId, first.tabId, visibility);
 
@@ -289,35 +282,13 @@ export class WorkerPlacement {
     }
 
     // External moves, closes, and resizing do not share our queue. Abandon changed plans; never replay a saved layout.
-    const target = candidate.location;
+    await this.confirmTarget(candidate.location, shape, call);
 
-    await this.confirmTarget(target, shape, call);
-
-    const created = await call([
-      'pane',
-      'split',
-      '--pane',
-      target.paneId,
-      '--direction',
-      candidate.direction,
-      ...options,
-    ]);
-
-    const location = terminalLocation(result(created).pane);
-
-    this.owned.set(location.terminalId, { tabId: location.tabId, visibility });
-
-    if (visibility === 'foreground') {
-      this.foreground = location.terminalId;
-    }
-
-    onCreated?.(location);
-
-    return location;
+    return { ...candidate, visibility };
   }
 
-  private async placeInTabs(search: TabSearch): Promise<TerminalLocation | undefined> {
-    const { tabs, parent, locations, options, call, onCreated } = search;
+  private async findTarget(search: TabSearch) {
+    const { tabs, parent, locations, call } = search;
 
     for (const tabId of tabs) {
       const visibility = tabId === parent.tabId ? 'foreground' : 'background';
@@ -328,20 +299,21 @@ export class WorkerPlacement {
         continue;
       }
 
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Search owned tabs until a single placement succeeds.
-      const location = await this.split({ eligible, visibility, options, call, onCreated });
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Search owned tabs until one has room.
+      const target = await this.target(eligible, visibility, call);
 
-      if (location) {
-        return location;
+      if (target) {
+        return target;
       }
     }
 
     return undefined;
   }
 
-  private async createBackgroundTab(
+  // Every worker starts in a new tab. A command runs as the pane's own process, without a shell.
+  private async createTab(
     parent: TerminalLocation,
-    options: string[],
+    input: PlacementInput,
     call: TerminalCall,
   ): Promise<TerminalLocation> {
     const currentParent = await resolveTerminal(parent.terminalId, call);
@@ -357,31 +329,62 @@ export class WorkerPlacement {
       result(await call(['pane', 'layout', '--pane', currentParent.paneId])).layout,
     );
 
-    const area = rectangle(parentLayout.area);
-
-    if (!isUseful(area)) {
+    if (!isUseful(rectangle(parentLayout.area))) {
       throw new Error(
         'Terminal area is too small for a useful worker tab. Enlarge it before launching.',
       );
     }
 
-    const location = terminalLocation(
-      result(
-        await call([
-          'tab',
-          'create',
-          '--workspace',
-          parent.workspaceId,
-          '--label',
-          'Tau workers',
-          ...options,
-        ]),
-      ).root_pane,
-    );
+    const location = input.command
+      ? await this.applyCommandTab(parent, { ...input, command: input.command }, call)
+      : terminalLocation(
+          result(
+            await call([
+              'tab',
+              'create',
+              '--workspace',
+              parent.workspaceId,
+              '--label',
+              'Tau workers',
+              '--cwd',
+              input.cwd,
+              '--no-focus',
+              ...Object.entries(input.environment).flatMap(([key, value]) => [
+                '--env',
+                `${key}=${value}`,
+              ]),
+            ]),
+          ).root_pane,
+        );
 
     this.owned.set(location.terminalId, { tabId: location.tabId, visibility: 'background' });
+    input.onCreated?.(location);
 
     return location;
+  }
+
+  private async applyCommandTab(
+    parent: TerminalLocation,
+    input: PlacementInput & { command: string[] },
+    call: TerminalCall,
+  ): Promise<TerminalLocation> {
+    // Never pass tab_id: herdr would replace that tab.
+    const applied = await call([
+      'layout',
+      'apply',
+      JSON.stringify({
+        workspace_id: parent.workspaceId,
+        tab_label: 'Tau workers',
+        focus: false,
+        root: { type: 'pane', cwd: input.cwd, env: input.environment, command: input.command },
+      }),
+    ]);
+
+    const paneId = text(requireObject(requireObject(result(applied).layout).root).pane_id);
+
+    input.onLaunched?.(paneId);
+
+    return terminalLocation(result(await call(['pane', 'get', paneId])).pane);
   }
 
   private async create(input: PlacementInput, call: TerminalCall): Promise<Placement> {
@@ -417,23 +420,30 @@ export class WorkerPlacement {
     }
 
     const tabs = [...new Set(candidateTabs)];
-    const environment = input.environment.flatMap((value) => ['--env', value]);
-    const options = ['--cwd', input.cwd, '--no-focus', ...environment];
+    const target = await this.findTarget({ tabs, parent, locations, call });
+    const created = await this.createTab(parent, input, call);
+    let location = created;
 
-    const placed = await this.placeInTabs({
-      tabs,
-      parent,
-      locations,
-      options,
-      call,
-      onCreated: input.onCreated,
-    });
+    if (target) {
+      const moved = await call([
+        'pane',
+        'move',
+        created.paneId,
+        '--tab',
+        target.location.tabId,
+        '--target-pane',
+        target.location.paneId,
+        '--split',
+        target.direction,
+        '--no-focus',
+      ]);
 
-    let location = placed;
+      location = terminalLocation(requireObject(result(moved).move_result).pane);
+      this.owned.set(location.terminalId, { tabId: location.tabId, visibility: target.visibility });
 
-    if (!location) {
-      location = await this.createBackgroundTab(parent, options, call);
-      input.onCreated?.(location);
+      if (target.visibility === 'foreground') {
+        this.foreground = location.terminalId;
+      }
     }
 
     if (location.tabId === parent.tabId) {

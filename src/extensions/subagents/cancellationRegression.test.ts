@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as timeout from './cancellation.js';
-import { agentResponse, paneListResponse, processInfoResponse } from './fixtures/herdrFake.js';
+import { paneListResponse, processInfoResponse } from './fixtures/herdrFake.js';
 
 type Client = Parameters<typeof timeout.cancelOwnedWorker>[2];
 
@@ -53,107 +53,19 @@ describe('owned worker cancellation', () => {
     vi.restoreAllMocks();
   });
 
-  it('uses Pi clear then exit keys instead of a terminal interrupt', async () => {
-    const recognized = agentResponse({
-      pane_id: owned.paneId,
-      agent: 'pi',
-      agent_session: { value: owned.token },
-    });
+  it('sends no keys to a Pi worker, which stops only when its pane closes', async () => {
+    const client = vi.fn<Client>();
 
-    const client = vi
-      .fn<Client>()
-      .mockResolvedValueOnce(recognized)
-      .mockResolvedValueOnce(snapshot())
-      .mockResolvedValueOnce('{}')
-      .mockResolvedValue(shell());
+    await expect(
+      timeout.cancelOwnedWorker(
+        { ...owned, kind: 'pi', shellPid: owned.processId },
+        200,
+        withInventory(client),
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow('Cancellation requires');
 
-    const result = await timeout.cancelOwnedWorker(
-      { ...owned, kind: 'pi' },
-      200,
-      withInventory(client),
-      new AbortController().signal,
-    );
-
-    expect(result.cleanup).toBe('confirmed');
-
-    expect(client).toHaveBeenCalledWith(
-      ['agent', 'send-keys', owned.paneId, 'escape', 'ctrl+c', 'ctrl+d'],
-      expect.any(Number),
-      expect.any(AbortSignal),
-    );
-  });
-
-  it.each([
-    'rewritten argv',
-    'wrong session',
-    'changed start',
-    'wrong pane',
-    'wrong shell',
-    'wrong foreground',
-    'wrong process entry',
-  ])('checks alternative Pi identity with %s', async (scenario) => {
-    const startedAt = (
-      await timeout.runClient('ps', ['-p', String(process.pid), '-o', 'lstart='], 1000)
-    ).trim();
-
-    const piOwned = {
-      ...owned,
-      kind: 'pi' as const,
-      processId: process.pid,
-      startedAt: scenario === 'changed start' ? 'previous process' : startedAt,
-    };
-
-    const client = vi.fn<Client>(async (argumentsList) => {
-      if (argumentsList[1] === 'get') {
-        return JSON.stringify({
-          result: {
-            agent: {
-              pane_id: owned.paneId,
-              agent: 'pi',
-              agent_session: {
-                value: scenario === 'wrong session' ? '/tmp/another-session' : owned.token,
-              },
-            },
-          },
-        });
-      }
-
-      if (argumentsList[1] === 'send-keys') {
-        return '{}';
-      }
-
-      if (client.mock.calls.some(([call]) => call[1] === 'send-keys')) {
-        return shell();
-      }
-
-      return JSON.stringify({
-        result: {
-          process_info: {
-            pane_id: scenario === 'wrong pane' ? 'another-pane' : owned.paneId,
-            shell_pid: scenario === 'wrong shell' ? 999 : owned.shellPid,
-            foreground_process_group_id: scenario === 'wrong foreground' ? 999 : process.pid,
-            foreground_processes: [
-              {
-                pid: scenario === 'wrong process entry' ? 999 : process.pid,
-                argv: ['pi rewritten title'],
-              },
-            ],
-          },
-        },
-      });
-    });
-
-    const result = await timeout.cancelOwnedWorker(
-      piOwned,
-      1000,
-      withInventory(client),
-      new AbortController().signal,
-    );
-
-    const sent = client.mock.calls.filter(([argumentsList]) => argumentsList[1] === 'send-keys');
-
-    expect(result.cleanup).toBe(scenario === 'rewritten argv' ? 'confirmed' : 'refused');
-    expect(sent).toHaveLength(scenario === 'rewritten argv' ? 1 : 0);
+    expect(client).not.toHaveBeenCalled();
   });
 
   it('never counts EPERM as an absent worker', async () => {

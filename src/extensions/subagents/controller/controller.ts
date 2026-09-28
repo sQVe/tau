@@ -16,7 +16,7 @@ import type { Visibility } from '../placement.js';
 import type { WorkerNotice } from '../presentation.js';
 import { readAcknowledgement, readQuestion, readReply } from '../questionRecords.js';
 import { readEvent, readTask, readTasks, namePrefix, publish, validateTask } from '../records.js';
-import { result } from '../terminal.js';
+import { listTerminals, result } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
 import { isTaskId, taskVersion } from '../types.js';
 import type { Task } from '../types.js';
@@ -28,7 +28,14 @@ import {
   remainingLaunchBudget,
   remainingWorkBudget,
 } from './budget.js';
-import { herdrClient, inspectWorker, prepareTaskDirectory } from './inspect.js';
+import {
+  herdrClient,
+  inspectWorker,
+  prepareTaskDirectory,
+  RequestNotSentError,
+  workerCommand,
+  workerEnvironment,
+} from './inspect.js';
 import type { HerdrClient } from './inspect.js';
 import { checkHandoff, nativeReference, requireUnclaimed } from './launchSupport.js';
 import type { FollowUpPreparation, LaunchInput } from './launchSupport.js';
@@ -390,18 +397,41 @@ export class WorkerController {
         visibility:
           input.visibility ??
           (handle.task.loadout.role === 'editing' ? 'foreground' : 'background'),
+        onLaunched: (paneId) => {
+          handle.identity.paneId = paneId;
+        },
         onCreated: (created) => {
           handle.identity.paneId = created.paneId;
           handle.identity.terminalId = created.terminalId;
           publish(handle.directory, 'pane.json', created);
         },
         cwd: handle.task.loadout.cwd,
-        environment: [
-          `TAU_WORKER_RECORD=${handle.directory}`,
-          `PI_CODING_AGENT_DIR=${handle.task.loadout.agentDirectory}`,
-        ],
+        command: workerCommand(handle.task),
+        environment: {
+          ...workerEnvironment(),
+          TAU_WORKER_RECORD: handle.directory,
+          PI_CODING_AGENT_DIR: handle.task.loadout.agentDirectory,
+        },
       },
-      call,
+      async (argumentsList) => {
+        if (argumentsList[0] !== 'layout') {
+          return call(argumentsList);
+        }
+
+        const terminals = await listTerminals(call);
+
+        handle.startup.terminalsBeforeLaunch = terminals.map((pane) => pane.terminalId);
+        // `layout apply` starts a Pi worker. Only a request herdr never received started nothing.
+        handle.startup.neverStarted = false;
+
+        try {
+          return await call(argumentsList);
+        } catch (error) {
+          handle.startup.neverStarted = error instanceof RequestNotSentError;
+
+          throw error;
+        }
+      },
       handle.abort.signal,
     );
   }
@@ -438,7 +468,7 @@ export class WorkerController {
 
     launchSignal.throwIfAborted();
     const prepared = await this.prepareLaunch(input, launchSignal, source);
-    const { worker, name } = prepared;
+    const { worker } = prepared;
     const { handle } = worker;
     let placement: { visibility: Visibility; reason?: string } | undefined;
 
@@ -447,6 +477,12 @@ export class WorkerController {
       workBudget(handle);
 
       const call = worker.herdrCall();
+
+      // A Pi worker opens the saved session as soon as placement starts it.
+      if (source) {
+        checkHandoff(source);
+      }
+
       const location = await this.placeWorker(input, handle, call);
 
       placement = {
@@ -454,11 +490,7 @@ export class WorkerController {
         ...(location.reason === undefined ? {} : { reason: location.reason }),
       };
 
-      if (source) {
-        checkHandoff(source);
-      }
-
-      await worker.start(location.paneId, name, call);
+      await worker.start(call);
     } catch (error) {
       const reason = remainingWorkBudget(handle) <= 0 ? 'timeout' : 'failure';
 

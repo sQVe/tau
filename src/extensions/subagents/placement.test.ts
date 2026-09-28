@@ -60,7 +60,7 @@ it('serializes concurrent launches instead of splitting below the useful floor',
   const resume = Promise.withResolvers<undefined>();
 
   const delayed = async (argumentsList: string[]) => {
-    if (argumentsList[1] === 'split') {
+    if (argumentsList[1] === 'move') {
       entered.resolve(undefined);
       await resume.promise;
     }
@@ -294,8 +294,8 @@ it('splits the parent instead of a larger unrelated pane', async () => {
 
   expect(dimensions.get('unrelated')).toEqual({ width: 500, height: 500 });
 
-  expect(calls.findLast((call) => call[1] === 'split')).toEqual(
-    expect.arrayContaining(['--pane', 'parent']),
+  expect(calls.findLast((call) => call[1] === 'move')).toEqual(
+    expect.arrayContaining(['--target-pane', 'parent']),
   );
 });
 
@@ -310,8 +310,8 @@ it('splits the largest owned pane in a background tab', async () => {
 
   expect(dimensions.get(first.paneId)).toEqual({ width: 100, height: 100 });
 
-  expect(calls.findLast((call) => call[1] === 'split')).toEqual(
-    expect.arrayContaining(['--pane', second.paneId]),
+  expect(calls.findLast((call) => call[1] === 'move')).toEqual(
+    expect.arrayContaining(['--target-pane', second.paneId]),
   );
 });
 
@@ -353,7 +353,7 @@ it('cancels queued placement within its own budget without waiting for another l
   expect(calls.filter((call) => call[1] === 'create')).toHaveLength(1);
 });
 
-it('does not split a released terminal or retry uncertain creation', async () => {
+it('does not split a released terminal or retry an uncertain move', async () => {
   const { placement, client, input, calls } = fixture(340, 100);
   const first = await placement.place(input('background'), client);
   placement.release(first.terminalId);
@@ -362,7 +362,7 @@ it('does not split a released terminal or retry uncertain creation', async () =>
   expect(second.tabId).not.toBe(first.tabId);
 
   const failingClient = async (argumentsList: string[]) => {
-    if (argumentsList[1] === 'split') {
+    if (argumentsList[1] === 'move') {
       calls.push(argumentsList);
       throw new Error('Delivery uncertain');
     }
@@ -374,7 +374,7 @@ it('does not split a released terminal or retry uncertain creation', async () =>
     'Delivery uncertain',
   );
 
-  expect(calls.filter((call) => call[1] === 'split')).toHaveLength(1);
+  expect(calls.filter((call) => call[1] === 'move')).toHaveLength(1);
 });
 
 it('places the first foreground worker beside the parent in 193 columns and 60 rows', async () => {

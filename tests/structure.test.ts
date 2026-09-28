@@ -21,7 +21,10 @@ const isFixture = (path: string) => path.split(/[/\\]/).includes('fixtures');
 
 // Pure decision modules take every read, clock, and environment value as a fact from the caller.
 // Register a module here once its decisions are split from its reads.
-const pureModules = ['src/extensions/subagents/workerState.ts'];
+const pureModules = [
+  'src/extensions/subagents/piStop.ts',
+  'src/extensions/subagents/workerState.ts',
+];
 
 const pureAdvice =
   'A pure module must not read records, the clock, randomness, or the environment. Move the read or effect to the caller and pass the value in as a fact.';

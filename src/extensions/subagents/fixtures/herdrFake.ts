@@ -1,4 +1,5 @@
 import type { HerdrClient } from '../controller/inspect.js';
+import { requireObject, result, text } from '../terminal.js';
 import { placementFixture } from './placement.js';
 
 interface ProcessSnapshot {
@@ -77,6 +78,8 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
   const calls: string[][] = [];
   // Agents follow their terminal when herdr moves it to another pane.
   const agentTerminals = new Set<string>();
+  // A layout command runs as its pane's own process, without a shell. Keyed by terminal.
+  const commands = new Map<string, string[]>();
 
   const terminalOf = (paneId: string | undefined) =>
     layout.panes.find((pane) => pane.pane_id === paneId)?.terminal_id;
@@ -113,6 +116,8 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
     }
 
     const running = hasAgent(paneId) && state.started && !state.stopped;
+    const command = commands.get(terminalOf(paneId) ?? '');
+    const direct = command !== undefined;
 
     if (!state.started && state.busyShellPolls > 0) {
       state.busyShellPolls -= 1;
@@ -128,9 +133,9 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
 
     return processInfoResponse({
       paneId: reportedPaneId,
-      shellPid: state.shell,
-      processId: running ? state.process : state.shell,
-      argv: state.processArguments,
+      shellPid: direct ? state.process : state.shell,
+      processId: running || direct ? state.process : state.shell,
+      argv: command ?? state.processArguments,
       ...(foregroundProcesses === undefined ? {} : { foregroundProcesses }),
     });
   };
@@ -206,6 +211,14 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
 
   const client: HerdrClient = async (argumentsList) => {
     calls.push(argumentsList);
+
+    // Herdr removes a command pane once its process exits.
+    if (state.stopped) {
+      const running = layout.panes.filter((pane) => !commands.has(pane.terminal_id));
+
+      layout.panes.splice(0, layout.panes.length, ...running);
+    }
+
     const [surface, action] = argumentsList;
     const agentAction = surface === 'agent' ? agentActions[action ?? ''] : undefined;
 
@@ -213,7 +226,33 @@ export const herdrFake = (kind: string, width = 200, height = 60) => {
       return agentAction(argumentsList);
     }
 
-    return action === 'process-info' ? processInfo(argumentsList) : layout.client(argumentsList);
+    if (action === 'process-info') {
+      return processInfo(argumentsList);
+    }
+
+    if (
+      surface === 'pane' &&
+      action === 'close' &&
+      commands.has(terminalOf(argumentsList[2]) ?? '')
+    ) {
+      state.stopped = true;
+    }
+
+    const response = await layout.client(argumentsList);
+
+    if (surface === 'layout') {
+      const params = JSON.parse(argumentsList[2] ?? '') as { root: { command: string[] } };
+      const paneId = text(requireObject(requireObject(result(response).layout).root).pane_id);
+      const terminal = terminalOf(paneId) ?? '';
+
+      commands.set(terminal, params.root.command);
+      agentTerminals.add(terminal);
+      state.started = true;
+      // The shared state follows the newest worker process.
+      state.stopped = false;
+    }
+
+    return response;
   };
 
   return { client, state, calls, layout };

@@ -1,13 +1,13 @@
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { cancelOwnedWorker, matchesWorker } from './cancellation.js';
-import { agentResponse, paneListResponse, processInfoResponse } from './fixtures/herdrFake.js';
+import { paneListResponse, processInfoResponse } from './fixtures/herdrFake.js';
 
 it('resolves moved terminal identity before sending cancellation keys', async () => {
   const calls: string[][] = [];
 
   const owned = {
-    kind: 'pi' as const,
+    kind: 'process' as const,
     paneId: 'old:pane',
     terminalId: 'terminal',
     shellPid: 1,
@@ -29,14 +29,6 @@ it('resolves moved terminal identity before sending cancellation keys', async ()
       ]);
     }
 
-    if (argumentsList[1] === 'get') {
-      return agentResponse({
-        pane_id: 'new:pane',
-        agent: 'pi',
-        agent_session: { value: owned.token },
-      });
-    }
-
     if (argumentsList[1] === 'process-info') {
       return processInfoResponse({
         paneId: 'new:pane',
@@ -52,7 +44,7 @@ it('resolves moved terminal identity before sending cancellation keys', async ()
   const result = await cancelOwnedWorker(owned, 1000, client, new AbortController().signal);
 
   expect(calls.filter((call) => call[1] === 'send-keys')).toEqual([
-    ['agent', 'send-keys', 'new:pane', 'escape', 'ctrl+c', 'ctrl+d'],
+    ['pane', 'send-keys', 'new:pane', 'ctrl+c'],
   ]);
 
   expect(result.cleanup).toBe('unconfirmed');
@@ -210,62 +202,6 @@ it('reports identity loss after cancellation input as unconfirmed', async () => 
 
   expect(sent).toBe(true);
   expect(result.cleanup).toBe('unconfirmed');
-});
-
-it('requests active Pi abort before attempting editor shutdown without claiming it stopped', async () => {
-  const calls: string[][] = [];
-
-  const owned = {
-    kind: 'pi' as const,
-    paneId: 'owned',
-    terminalId: 'owned-terminal',
-    shellPid: 1,
-    processId: process.pid,
-    token: '/tmp/unique-session.jsonl',
-  };
-
-  const client = async (argumentsList: string[]) => {
-    calls.push(argumentsList);
-
-    if (argumentsList[1] === 'list') {
-      return paneListResponse([
-        {
-          pane_id: owned.paneId,
-          terminal_id: owned.terminalId,
-          workspace_id: 'workspace',
-          tab_id: 'tab',
-        },
-      ]);
-    }
-
-    if (argumentsList[1] === 'get') {
-      return agentResponse({
-        pane_id: 'owned',
-        agent: 'pi',
-        agent_session: { value: owned.token },
-      });
-    }
-
-    if (argumentsList[1] === 'process-info') {
-      return processInfoResponse({
-        paneId: 'owned',
-        shellPid: 1,
-        processId: process.pid,
-        argv: ['pi', owned.token],
-      });
-    }
-
-    throw new Error('Injected unavailable terminal input.');
-  };
-
-  const result = await cancelOwnedWorker(owned, 100, client, new AbortController().signal);
-
-  expect(calls.filter((call) => call[1] === 'send-keys')).toEqual([
-    ['agent', 'send-keys', 'owned', 'escape', 'ctrl+c', 'ctrl+d'],
-  ]);
-
-  expect(result.cleanup).toBe('unconfirmed');
-  expect(result.detail).toContain('manual cleanup');
 });
 
 it('matches a Pi worker by start time when herdr omits its argv', () => {

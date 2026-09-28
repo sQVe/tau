@@ -16,9 +16,12 @@ export interface Handle {
     owned?: OwnedWorker;
     paneId?: string;
     terminalId?: string;
-    shell?: { processId: number; startedAt: string };
   };
-  startup: { neverStarted: boolean; starting?: Promise<string>; error?: string };
+  startup: {
+    neverStarted: boolean;
+    // Terminals that existed before a Pi launch; a lost launch reply leaves only newer ones to search.
+    terminalsBeforeLaunch?: string[];
+  };
   observation: { notifiedQuestions: Set<string> };
   cleanup: {
     stopping?: Promise<void>;

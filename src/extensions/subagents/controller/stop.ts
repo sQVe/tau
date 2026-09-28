@@ -1,174 +1,239 @@
-import { cancelOwnedWorker, processAbsent, workerStopped } from '../cancellation.js';
-import type { OwnedWorker } from '../cancellation.js';
+import { setTimeout as delay } from 'node:timers/promises';
+
+import { processAbsent } from '../cancellation.js';
+import { decidePiStop } from '../piStop.js';
 import type { WorkerPlacement } from '../placement.js';
-import { requireObject, resolveTerminal, result, text } from '../terminal.js';
-import { shellUnchanged } from './inspect.js';
-import type { HerdrClient } from './inspect.js';
-import { cleanupDetail } from './record.js';
-import { runsForegroundJob, settledShell } from './shellIdentity.js';
+import {
+  listTerminals,
+  requireObject,
+  resolveTerminal,
+  result,
+  terminalLocation,
+} from '../terminal.js';
+import type { TerminalLocation } from '../terminal.js';
+import { inspectWorker } from './inspect.js';
 import type { Handle } from './types.js';
 
-export interface StopOwnedWorkerRequest {
+export interface StopPiWorkerRequest {
   handle: Handle;
-  owned: OwnedWorker;
   call: (argumentsList: string[]) => Promise<string>;
   remainingBudget: () => number;
   signal: AbortSignal;
   placement: WorkerPlacement;
-  client: HerdrClient;
+  // A finished worker gets a moment to exit by itself before its pane is closed.
+  graceful: boolean;
 }
 
-interface CheckShellOwnedRequest {
-  handle: Handle;
-  worker: OwnedWorker;
-  call: (argumentsList: string[]) => Promise<string>;
-  signal: AbortSignal;
+interface PiStopProgress {
+  terminalId: string;
+  graceEnds: number;
+  closed: boolean;
 }
 
-const checkShellOwned = async (
-  request: CheckShellOwnedRequest,
-): Promise<{ owned: OwnedWorker; shellOwned: boolean }> => {
-  const { handle, worker, call, signal } = request;
-  const location = await resolveTerminal(text(worker.terminalId), call);
-  const owned = { ...worker, paneId: location.paneId };
+// The pane's own process is the Pi launched with this task's session.
+const runsTaskSession = (response: string, paneId: string, session: string): boolean => {
+  const information = requireObject(result(response).process_info);
 
-  handle.identity.paneId = location.paneId;
-  handle.identity.owned = owned;
-  const seen = { changedShell: false, stopped: false };
+  const processes = Array.isArray(information.foreground_processes)
+    ? information.foreground_processes.map(requireObject)
+    : [];
 
-  const sampleStopped = async () => {
-    const information = requireObject(
-      result(await call(['pane', 'process-info', '--pane', owned.paneId])).process_info,
-    );
+  const root = processes.find((process) => process.pid === information.shell_pid);
 
-    seen.changedShell =
-      information.pane_id !== owned.paneId || information.shell_pid !== owned.shellPid;
-
-    seen.stopped = workerStopped(information, owned);
-
-    return seen.changedShell || seen.stopped || runsForegroundJob(information);
-  };
-
-  // Once the worker is gone, its shell may still be running prompt hooks.
-  await (processAbsent(owned.processId) ? settledShell(sampleStopped, signal) : sampleStopped());
-
-  return { owned, shellOwned: seen.stopped };
+  return information.pane_id === paneId && Array.isArray(root?.argv) && root.argv.includes(session);
 };
 
-const closeCheckedShell = async (
-  request: Pick<StopOwnedWorkerRequest, 'handle' | 'call'>,
-  expectedPaneId: string,
-  paneConfirmed: { confirmed: boolean },
+// Without saved ownership, the pane's own process must be the Pi started for this task's session.
+const checkUnownedPi = async (
+  handle: Handle,
+  paneId: string,
+  call: (argumentsList: string[]) => Promise<string>,
 ): Promise<void> => {
+  const response = await call(['pane', 'process-info', '--pane', paneId]);
+
+  if (!runsTaskSession(response, paneId, handle.task.nativeSessionFile)) {
+    throw new Error('Pane runs another process; pane closure refused.');
+  }
+};
+
+// After a lost launch reply, the worker is the one pane that is new since the launch and runs this
+// task's session. A follow-up shares its predecessor's session, so older panes never count.
+const findLaunchedTerminal = async (request: StopPiWorkerRequest): Promise<string | undefined> => {
   const { handle, call } = request;
-  // Catch a terminal move during the awaited shell checks.
-  const location = await resolveTerminal(text(handle.identity.terminalId), call);
+  const before = handle.startup.terminalsBeforeLaunch;
 
-  if (location.paneId !== handle.identity.paneId || location.paneId !== expectedPaneId) {
-    throw new Error('Worker moved after the shell check; pane closure refused.');
+  if (before === undefined) {
+    return undefined;
   }
 
-  await call(['pane', 'close', location.paneId]);
-  paneConfirmed.confirmed = true;
-};
+  const terminals = await listTerminals(call);
+  const launched = terminals.filter((pane) => !before.includes(pane.terminalId));
 
-const closeStoppedShell = async (
-  request: StopOwnedWorkerRequest,
-  worker: OwnedWorker,
-  expectedPaneId: string,
-  paneConfirmed: { confirmed: boolean },
-): Promise<string> => {
-  const { handle, call, signal } = request;
-  const { shellOwned } = await checkShellOwned({ handle, worker, call, signal });
-
-  if (!shellOwned) {
-    throw new Error('Stopped shell identity changed; pane closure refused.');
-  }
-
-  await closeCheckedShell(request, expectedPaneId, paneConfirmed);
-
-  return 'Owned process stopped and pane closed. Detached descendants are not covered.';
-};
-
-export const closeUnstartedPane = async (
-  request: Omit<StopOwnedWorkerRequest, 'owned' | 'client'>,
-): Promise<{ stopped: boolean; detail: string }> => {
-  const { handle, call, remainingBudget, signal, placement } = request;
-  const paneClosed = { confirmed: false };
-
-  try {
-    const location = await resolveTerminal(text(handle.identity.terminalId), call);
-
-    await placement.close(async () => {
-      const absent = await shellUnchanged(handle, call, { remainingBudget, signal });
-
-      if (!absent) {
-        throw new Error('Worker shell identity changed; pane closure refused.');
-      }
-
-      await closeCheckedShell(request, location.paneId, paneClosed);
-    }, signal);
-
-    return {
-      stopped: true,
-      detail: 'Worker absence confirmed; its unchanged shell pane closed.',
-    };
-  } catch (error) {
-    const detail = paneClosed.confirmed
-      ? `Worker pane closed; placement cleanup failed: ${String(error)}`
-      : `Pane ${handle.identity.paneId} left open: ${String(error)}`;
-
-    return { stopped: paneClosed.confirmed, detail };
-  }
-};
-
-export const stopOwnedWorker = async (
-  request: StopOwnedWorkerRequest,
-): Promise<{ stopped: boolean; detail: string }> => {
-  const { handle, call, remainingBudget, signal, placement, client } = request;
-  const worker = request.owned;
-  let owned = worker;
-  let stopped = handle.startup.neverStarted;
-  let detail = cleanupDetail(handle, stopped);
-  const paneConfirmed = { confirmed: false };
-
-  try {
-    const checked = await checkShellOwned({ handle, worker, call, signal });
-
-    owned = checked.owned;
-    stopped = checked.shellOwned;
-    signal.throwIfAborted();
-
-    if (stopped) {
-      detail =
-        'The owned process is absent and its shell is foreground; detached or background descendants are not covered.';
-    } else {
-      const cancellation = await cancelOwnedWorker(
-        owned,
-        remainingBudget(),
-        (argumentsList, remaining, attempt) => client(argumentsList, remaining, attempt),
-        signal,
+  const matches = await Promise.all(
+    launched.map(async (pane) => {
+      const response = await call(['pane', 'process-info', '--pane', pane.paneId]).catch(
+        () => undefined,
       );
 
-      stopped = cancellation.cleanup === 'confirmed';
-      detail = cancellation.detail;
-    }
+      return response !== undefined &&
+        runsTaskSession(response, pane.paneId, handle.task.nativeSessionFile)
+        ? pane
+        : undefined;
+    }),
+  );
 
-    // closeShell rechecks the stopped shell inside the placement queue. Never close a reused pane.
-    if (stopped) {
-      const location = await resolveTerminal(worker.terminalId, call);
+  const [found, ...others] = matches.filter((pane) => pane !== undefined);
 
-      await placement.close(async () => {
-        detail = await closeStoppedShell(request, worker, location.paneId, paneConfirmed);
-      }, signal);
-    }
-  } catch (error) {
-    if (!paneConfirmed.confirmed) {
-      detail = stopped
-        ? `${detail} Pane ${handle.identity.paneId} left open: ${String(error)}`
-        : `${String(error)} Check pane ${handle.identity.paneId} manually. Detached descendants are not covered.`;
-    }
+  // Several panes on one session leave the launched one unknown.
+  if (found === undefined || others.length > 0) {
+    return undefined;
   }
 
-  return { stopped, detail };
+  handle.identity.paneId = found.paneId;
+  handle.identity.terminalId = found.terminalId;
+
+  return found.terminalId;
+};
+
+// A cancelled launch can stop after herdr started Pi but before Tau read the pane's terminal.
+const launchedTerminal = async (request: StopPiWorkerRequest): Promise<string | undefined> => {
+  const { handle, call, signal, placement } = request;
+
+  // Placement is serialized, so this empty step runs after an in-flight launch records its pane.
+  if (handle.identity.terminalId === undefined && !handle.startup.neverStarted) {
+    await placement.close(() => Promise.resolve(), signal).catch(() => undefined);
+  }
+
+  const paneId = handle.identity.paneId;
+
+  if (handle.identity.terminalId !== undefined || handle.startup.neverStarted) {
+    return handle.identity.terminalId;
+  }
+
+  if (paneId === undefined) {
+    return findLaunchedTerminal(request);
+  }
+
+  try {
+    const response = await call(['pane', 'get', paneId]);
+
+    return terminalLocation(result(response).pane).terminalId;
+  } catch {
+    return undefined;
+  }
+};
+
+const unlocatedLaunch = (handle: Handle): { stopped: boolean; detail: string } =>
+  handle.startup.neverStarted
+    ? { stopped: true, detail: 'No worker was started.' }
+    : {
+        stopped: false,
+        detail: `Worker launch is uncertain: herdr confirmed no pane. Check herdr for a Pi pane on ${handle.task.nativeSessionFile}.`,
+      };
+
+// Checks the worker inside the placement queue, then closes its pane.
+const closePiPane = async (
+  request: StopPiWorkerRequest,
+  location: TerminalLocation,
+): Promise<void> => {
+  const { handle, call, remainingBudget, signal, placement } = request;
+
+  handle.identity.paneId = location.paneId;
+
+  await placement.close(async () => {
+    await (handle.identity.owned
+      ? inspectWorker(handle, call, { remainingBudget, signal })
+      : checkUnownedPi(handle, location.paneId, call));
+
+    // Catch a move during the checks.
+    const current = await resolveTerminal(location.terminalId, call);
+
+    if (current.paneId !== location.paneId) {
+      throw new Error('Worker moved during identity checks; pane closure refused.');
+    }
+
+    await call(['pane', 'close', location.paneId]);
+  }, signal);
+};
+
+// One poll of the worker pane. Returns the result once the stop is settled.
+const pollPiStop = async (
+  request: StopPiWorkerRequest,
+  progress: PiStopProgress,
+): Promise<{ stopped: boolean; detail: string } | undefined> => {
+  const owned = request.handle.identity.owned;
+  const exited = () => owned !== undefined && processAbsent(owned.processId);
+  const terminals = await listTerminals(request.call);
+  const location = terminals.find((pane) => pane.terminalId === progress.terminalId);
+
+  const step = decidePiStop({
+    paneFound: location !== undefined,
+    owned: owned !== undefined,
+    exited: exited(),
+    closed: progress.closed,
+    graceElapsed: performance.now() >= progress.graceEnds,
+  });
+
+  if (step === 'stopped') {
+    const how = progress.closed
+      ? 'Worker identity checked and pane closed.'
+      : 'Worker exited and its pane closed.';
+
+    return { stopped: true, detail: `${how} Detached descendants are not covered.` };
+  }
+
+  if (step === 'processRemains') {
+    throw new Error('The worker pane is gone, but its process ID is still in use.');
+  }
+
+  if (step === 'close' && location) {
+    progress.closed = await closePiPane(request, location).then(
+      () => true,
+      (error: unknown) => {
+        // Pi may exit during the checks; herdr then removes the pane by itself.
+        if (exited()) {
+          return false;
+        }
+
+        throw error;
+      },
+    );
+  }
+
+  return undefined;
+};
+
+// A Pi worker is its pane's own process. Herdr removes the pane when Pi exits, and `pane close`
+// stops Pi.
+export const stopPiWorker = async (
+  request: StopPiWorkerRequest,
+): Promise<{ stopped: boolean; detail: string }> => {
+  const { handle, remainingBudget, signal } = request;
+  const terminalId = await launchedTerminal(request);
+
+  if (terminalId === undefined) {
+    return unlocatedLaunch(handle);
+  }
+
+  const graceEnds = performance.now() + (request.graceful ? 1000 : 0);
+  const progress = { terminalId, graceEnds, closed: false };
+
+  try {
+    for (;;) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Each poll shares the cleanup budget.
+      const stop = await pollPiStop(request, progress);
+
+      if (stop) {
+        return stop;
+      }
+
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Poll within the cleanup budget.
+      await delay(Math.min(25, remainingBudget()), undefined, { signal });
+    }
+  } catch (error) {
+    return {
+      stopped: false,
+      detail: `Pane ${handle.identity.paneId ?? 'unknown'} needs manual cleanup: ${String(error)} Detached descendants are not covered.`,
+    };
+  }
 };

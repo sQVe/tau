@@ -5,6 +5,8 @@ import { hasErrorCode } from '../../errors/index.js';
 import { resolveTerminal, TerminalIdentityError } from './terminal.js';
 
 export interface OwnedWorker {
+  // Pi ownership format 2: the pane's shell process is the worker process.
+  readonly version?: 2;
   readonly kind: 'process' | 'pi';
   readonly paneId: string;
   readonly terminalId: string;
@@ -178,8 +180,9 @@ export const workerStopped = (information: Record<string, unknown>, owned: Owned
 
 const isPositiveInteger = (value: number): boolean => Number.isSafeInteger(value) && value > 0;
 
+// A Pi worker is its pane's own process; closing the pane stops it, so it never gets keys.
 const hasWorkerIdentity = (owned: OwnedWorker): boolean =>
-  ['process', 'pi'].includes(owned.kind) && Boolean(owned.paneId) && Boolean(owned.terminalId);
+  owned.kind === 'process' && Boolean(owned.paneId) && Boolean(owned.terminalId);
 
 const hasValidProcessIds = (owned: OwnedWorker): boolean =>
   isPositiveInteger(owned.shellPid) &&
@@ -196,11 +199,12 @@ const validateWorker = (owned: OwnedWorker): void => {
   }
 };
 
-// Escape requests active-run abort; shutdown keys remain best-effort while tools unwind.
-const shutdownKeys = (owned: OwnedWorker): string[] =>
-  owned.kind === 'pi'
-    ? ['agent', 'send-keys', owned.paneId, 'escape', 'ctrl+c', 'ctrl+d']
-    : ['pane', 'send-keys', owned.paneId, 'ctrl+c'];
+const shutdownKeys = (owned: OwnedWorker): string[] => [
+  'pane',
+  'send-keys',
+  owned.paneId,
+  'ctrl+c',
+];
 
 const stopConfirmed: CleanupResult = {
   cleanup: 'confirmed',

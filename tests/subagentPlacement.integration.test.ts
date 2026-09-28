@@ -1,3 +1,7 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+
 import { expect, it } from 'vitest';
 
 import { isolatedHerdr } from '../src/extensions/subagents/fixtures/isolatedHerdr.js';
@@ -34,7 +38,7 @@ it.runIf(hasHerdr).each([
     const workers = await Promise.all(
       Array.from({ length: count }, () =>
         placement.place(
-          { parentPane: parent.paneId, visibility: 'foreground', cwd: root, environment: [] },
+          { parentPane: parent.paneId, visibility: 'foreground', cwd: root, environment: {} },
           client,
         ),
       ),
@@ -62,6 +66,66 @@ it.runIf(hasHerdr).each([
 );
 
 it.runIf(hasHerdr)(
+  'runs a command worker as its own pane process beside the parent until it exits',
+  async () => {
+    const { root, client } = await isolatedHerdr(
+      '[server]\nheadless_cols = 340\nheadless_rows = 100\n[ui]\nsidebar_start_collapsed = true\nsidebar_collapsed_mode = "hidden"\n',
+    );
+
+    const parent = terminalLocation(
+      result(await client(['workspace', 'create', '--cwd', root, '--focus'])).root_pane,
+    );
+
+    const exitSignal = join(root, 'exit');
+
+    const worker = await new WorkerPlacement().place(
+      {
+        parentPane: parent.paneId,
+        visibility: 'foreground',
+        cwd: root,
+        environment: { EXIT_SIGNAL: exitSignal },
+        command: ['/bin/sh', '-c', 'while [ ! -e "$EXIT_SIGNAL" ]; do sleep 0.05; done'],
+      },
+      client,
+    );
+
+    const information = requireObject(
+      result(await client(['pane', 'process-info', '--pane', worker.paneId])).process_info,
+    );
+
+    const layout = requireObject(
+      result(await client(['pane', 'layout', '--pane', parent.paneId])).layout,
+    );
+
+    const processes = information.foreground_processes as Record<string, unknown>[];
+
+    const tabs = requireObject(
+      result(await client(['tab', 'list', '--workspace', parent.workspaceId])),
+    ).tabs as unknown[];
+
+    expect(worker).toMatchObject({ tabId: parent.tabId, visibility: 'foreground' });
+
+    expect(processes.find((entry) => entry.pid === information.shell_pid)?.argv).toEqual([
+      '/bin/sh',
+      '-c',
+      'while [ ! -e "$EXIT_SIGNAL" ]; do sleep 0.05; done',
+    ]);
+
+    expect(layout.focused_pane_id).toBe(parent.paneId);
+    expect(tabs).toHaveLength(1);
+
+    writeFileSync(exitSignal, '');
+    const deadline = performance.now() + 5000;
+
+    while ((await listTerminals(client)).some((pane) => pane.terminalId === worker.terminalId)) {
+      expect(performance.now()).toBeLessThan(deadline);
+      await delay(25);
+    }
+  },
+  20_000,
+);
+
+it.runIf(hasHerdr)(
   'shows a new foreground worker after herdr closes the visible one',
   async () => {
     const { root, client } = await isolatedHerdr(
@@ -78,7 +142,7 @@ it.runIf(hasHerdr)(
       parentPane: parent.paneId,
       visibility: 'foreground' as const,
       cwd: root,
-      environment: [],
+      environment: {},
     };
 
     const visible = await placement.place(input, client);
@@ -142,7 +206,7 @@ it.runIf(hasHerdr)(
       parentPane: parent.paneId,
       visibility: 'foreground' as const,
       cwd: root,
-      environment: [],
+      environment: {},
     };
 
     const worker = await placement.place(input, client);
@@ -248,7 +312,7 @@ it.runIf(hasHerdr)(
             parentPane: parent.paneId,
             visibility: 'background',
             cwd: root,
-            environment: [],
+            environment: {},
           },
           client,
         ),
