@@ -82,35 +82,48 @@ export const placementFixture = (width: number, height: number) => {
       return '{}';
     }
 
-    if (operation !== 'create' && operation !== 'split') {
+    if (operation === 'get') {
+      return JSON.stringify({
+        result: { pane: panes.find((pane) => pane.pane_id === argumentsList[2]) },
+      });
+    }
+
+    if (operation === 'move') {
+      const pane = panes.find((item) => item.pane_id === argumentsList[2])!;
+      const target = panes.find((item) => item.pane_id === value('--target-pane'))!;
+      const bounds = { ...dimensions.get(target.pane_id)! };
+      const axis = value('--split') === 'right' ? 'width' : 'height';
+      const firstLength = Math.round(bounds[axis] / 2);
+
+      dimensions.set(target.pane_id, { ...bounds, [axis]: firstLength });
+      dimensions.set(pane.pane_id, { ...bounds, [axis]: bounds[axis] - firstLength });
+      pane.tab_id = target.tab_id;
+
+      return JSON.stringify({ result: { move_result: { pane } } });
+    }
+
+    if (operation !== 'create' && operation !== 'apply') {
       throw new Error(`Unexpected operation: ${argumentsList.join(' ')}`);
     }
 
-    const source = panes.find((pane) => pane.pane_id === value('--pane'));
     created += 1;
 
     const pane: FixturePane = {
       ...parent,
       pane_id: `worker-${created}`,
       terminal_id: `terminal-${created}`,
-      tab_id: source?.tab_id ?? `background-${created}`,
+      tab_id: `background-${created}`,
     };
 
-    let bounds = { width, height };
-
-    if (source) {
-      bounds = { ...dimensions.get(source.pane_id)! };
-      const axis = value('--direction') === 'right' ? 'width' : 'height';
-      const firstLength = Math.round(bounds[axis] / 2);
-      dimensions.set(source.pane_id, { ...bounds, [axis]: firstLength });
-      bounds[axis] -= firstLength;
-    }
-
-    dimensions.set(pane.pane_id, bounds);
+    dimensions.set(pane.pane_id, { width, height });
     panes.push(pane);
-    const key = source ? 'pane' : 'root_pane';
 
-    return JSON.stringify({ result: { [key]: pane } });
+    return JSON.stringify({
+      result:
+        operation === 'apply'
+          ? { layout: { root: { pane_id: pane.pane_id } } }
+          : { root_pane: pane },
+    });
   };
 
   return {
@@ -119,7 +132,7 @@ export const placementFixture = (width: number, height: number) => {
     input: (visibility: Visibility) => ({
       visibility,
       cwd: '/work',
-      environment: ['TASK=fixture'],
+      environment: { TASK: 'fixture' },
     }),
     calls,
     panes,

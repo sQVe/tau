@@ -1,4 +1,8 @@
-import { mkdirSync } from 'node:fs';
+import { once } from 'node:events';
+import { accessSync, constants, mkdirSync } from 'node:fs';
+import { createConnection } from 'node:net';
+import { delimiter, isAbsolute, join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -6,21 +10,15 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { parseModelReference } from '../../../delegateModel/index.js';
-import { matchesWorker, processAbsent, runClient } from '../cancellation.js';
+import { matchesWorker, runClient } from '../cancellation.js';
 import type { OwnedWorker } from '../cancellation.js';
 import { seedSession } from '../profiles.js';
 import { publishRecord, readEvent } from '../records.js';
-import { requireObject, resolveTerminal, result, text } from '../terminal.js';
+import { listTerminals, requireObject, result } from '../terminal.js';
+import type { TerminalLocation } from '../terminal.js';
 import type { Task, TaskEvent } from '../types.js';
 import { workBudget } from './budget.js';
-import {
-  integer,
-  isBareShell,
-  readProcessStart,
-  runsForegroundJob,
-  settledShell,
-  WorkerExitedError,
-} from './shellIdentity.js';
+import { integer, readProcessStart, WorkerExitedError } from './shellIdentity.js';
 import type { InspectionBudget } from './shellIdentity.js';
 import type { Handle } from './types.js';
 
@@ -35,8 +33,74 @@ const agentSessionSchema = Type.Object({ value: Type.String({ minLength: 1 }) })
 const missingPiIntegrationMessage =
   "herdr reported no Pi agent session. herdr's Pi integration must be loaded in Pi; install it with `herdr integration install pi`.";
 
+// Nothing reached herdr, so the request started nothing.
+export class RequestNotSentError extends Error {
+  override name = 'RequestNotSentError';
+}
+
+// herdr 0.9.1 offers layout.apply only on its socket. `layout apply <params>` stands for it, so
+// every client and fake keeps one argv interface.
+export const socketRequest = async (
+  socketPath: string,
+  argumentsList: string[],
+  budget: number,
+  signal?: AbortSignal,
+): Promise<string> => {
+  if (!socketPath) {
+    throw new RequestNotSentError('HERDR_SOCKET_PATH is not set.');
+  }
+
+  const expired = AbortSignal.timeout(budget);
+  const stop = AbortSignal.any([expired, ...(signal ? [signal] : [])]);
+  const params: unknown = JSON.parse(argumentsList[2] ?? '');
+  const socket = createConnection(socketPath);
+
+  const failed = once(socket, 'error').then(([error]: unknown[]) => {
+    throw error;
+  });
+
+  try {
+    await Promise.race([once(socket, 'connect', { signal: stop }), failed]).catch(
+      (error: unknown) => {
+        throw new RequestNotSentError('herdr did not receive the request.', { cause: error });
+      },
+    );
+
+    socket.write(`${JSON.stringify({ id: 'tau', method: 'layout.apply', params })}\n`);
+
+    const received: unknown[] = await Promise.race([
+      once(createInterface({ input: socket }), 'line', { signal: stop }),
+      failed,
+      once(socket, 'close').then(() => {
+        throw new Error('herdr closed its socket without a response.');
+      }),
+    ]);
+
+    const line = String(received[0]);
+    const failure: unknown = requireObject(JSON.parse(line)).error;
+
+    if (failure !== undefined) {
+      // Match the CLI, whose structured error is on stderr.
+      throw Object.assign(new Error(JSON.stringify(failure)), { stderr: line });
+    }
+
+    return line;
+  } catch (error) {
+    throw expired.aborted && !(error instanceof RequestNotSentError)
+      ? new Error('Client attempt budget expired; delivery and cleanup are unconfirmed.', {
+          cause: error,
+        })
+      : error;
+  } finally {
+    socket.destroy();
+  }
+};
+
 export const herdrClient: HerdrClient = (argumentsList, budget, signal) =>
-  runClient('herdr', argumentsList, budget, signal ? { signal } : {});
+  argumentsList[0] === 'layout'
+    ? // oxlint-disable-next-line node/no-process-env -- herdr gives each pane its socket path.
+      socketRequest(process.env.HERDR_SOCKET_PATH ?? '', argumentsList, budget, signal)
+    : runClient('herdr', argumentsList, budget, signal ? { signal } : {});
 
 export const workerArguments = (task: Task): string[] => {
   const model = parseModelReference(task.loadout.model);
@@ -63,24 +127,38 @@ export const workerArguments = (task: Task): string[] => {
   ];
 };
 
-const checkForeground = (
-  information: Record<string, unknown>,
-  paneId: string,
-  previous: OwnedWorker | undefined,
-): void => {
-  const paneMoved = information.pane_id !== paneId;
-  const foregroundIsJob = information.foreground_process_group_id !== information.shell_pid;
-  const shellReplaced = previous !== undefined && information.shell_pid !== previous.shellPid;
-  const previousProcessAlive = previous !== undefined && !processAbsent(previous.processId);
-  const paneMovedOrJobRunning = paneMoved || foregroundIsJob;
-  const previousWorkerRemains = shellReplaced || previousProcessAlive;
+// The user's `pi` can be a shell function. Herdr runs the executable from PATH directly.
+const piExecutable = (): string => {
+  // oxlint-disable-next-line node/no-process-env -- Find pi as the user's shell would.
+  for (const directory of (process.env.PATH ?? '').split(delimiter)) {
+    const candidate = join(directory, 'pi');
 
-  if (paneMovedOrJobRunning || previousWorkerRemains) {
-    return;
+    try {
+      if (isAbsolute(directory)) {
+        accessSync(candidate, constants.X_OK);
+
+        return candidate;
+      }
+    } catch {
+      // Try the next PATH entry.
+    }
   }
 
-  throw new WorkerExitedError();
+  throw new Error('No pi executable found on PATH.');
 };
+
+export const workerCommand = (task: Task): string[] => [piExecutable(), ...workerArguments(task)];
+
+// A typed command inherited the user's shell setup, such as PATH. Pass the parent's environment,
+// which came from that shell. Herdr sets the pane's own HERDR_* identity after it.
+export const workerEnvironment = (): Record<string, string> =>
+  Object.fromEntries(
+    // oxlint-disable-next-line node/no-process-env -- The worker inherits the parent's environment.
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] =>
+        entry[1] !== undefined && entry[0] !== 'PWD' && entry[0] !== 'OLDPWD',
+    ),
+  );
 
 export const isHerdrError = (error: unknown, code: string): boolean => {
   if (!(error instanceof Error)) {
@@ -119,90 +197,26 @@ const missingAgentSession = (session: unknown): boolean =>
 const checkAgentIdentity = (
   agent: Record<string, unknown>,
   expected: { paneId: string; expectedSession: string },
-  unchangedShell: boolean,
 ): void => {
-  // herdr detects a Pi pane before its integration reports which session that agent opened.
   const session = agent.agent_session;
+  const samePiPane = agent.agent === 'pi' && agent.pane_id === expected.paneId;
 
   if (!Value.Check(agentSessionSchema, session)) {
-    const isPiPane = agent.agent === 'pi' || agent.agent === undefined;
-    const sessionPending = missingAgentSession(session);
-    const samePiPane = agent.agent === 'pi' && agent.pane_id === expected.paneId;
-
-    if (sessionPending && samePiPane && !unchangedShell) {
+    // herdr detects a Pi pane before its integration reports which session that agent opened.
+    if (missingAgentSession(session) && samePiPane) {
       throw new PendingPiSessionError(missingPiIntegrationMessage);
     }
 
     throw new Error(
-      isPiPane ? missingPiIntegrationMessage : 'Started worker identity could not be established.',
+      agent.agent === 'pi' || agent.agent === undefined
+        ? missingPiIntegrationMessage
+        : 'Started worker identity could not be established.',
     );
   }
 
-  const samePane = agent.pane_id === expected.paneId;
-  const sameSession = agent.agent === 'pi' && session.value === expected.expectedSession;
-
-  if (!samePane || !sameSession || unchangedShell) {
+  if (!samePiPane || session.value !== expected.expectedSession) {
     throw new Error('Started worker identity could not be established.');
   }
-};
-
-// The placed shell is still the bare foreground process, so no worker runs in the pane.
-export const shellUnchanged = async (
-  handle: Handle,
-  call: (argumentsList: string[]) => Promise<string>,
-  cleanup?: InspectionBudget,
-): Promise<boolean> => {
-  const shell = handle.identity.shell;
-
-  if (!shell || handle.identity.terminalId == null) {
-    return false;
-  }
-
-  const seen = { changedPane: false, bare: false };
-
-  await settledShell(async () => {
-    const location = await resolveTerminal(text(handle.identity.terminalId), call);
-
-    handle.identity.paneId = location.paneId;
-
-    const information = requireObject(
-      result(await call(['pane', 'process-info', '--pane', location.paneId])).process_info,
-    );
-
-    seen.changedPane =
-      information.pane_id !== location.paneId || integer(information.shell_pid) !== shell.processId;
-
-    seen.bare = isBareShell(information);
-
-    return seen.changedPane || seen.bare || runsForegroundJob(information);
-  }, cleanup?.signal ?? handle.abort.signal);
-
-  if (seen.changedPane || !seen.bare) {
-    return false;
-  }
-
-  return (await readProcessStart(handle, shell.processId, cleanup)) === shell.startedAt;
-};
-
-export const verifyRejectedStart = async (
-  handle: Handle,
-  call: (argumentsList: string[]) => Promise<string>,
-  cleanup?: InspectionBudget,
-): Promise<boolean> => {
-  if (!(await shellUnchanged(handle, call, cleanup))) {
-    return false;
-  }
-
-  try {
-    if (Object.keys(await readAgent(call, text(handle.identity.paneId))).length > 0) {
-      return false;
-    }
-  } catch (error) {
-    return isHerdrError(error, 'agent_not_found');
-  }
-
-  // Accept a successful empty agent object as absence evidence after checking the shell identity.
-  return true;
 };
 
 const buildOwnedWorker = (
@@ -217,6 +231,7 @@ const buildOwnedWorker = (
   },
 ): OwnedWorker =>
   previous ?? {
+    version: 2,
     kind: 'pi',
     paneId: identity.paneId,
     terminalId: identity.terminalId,
@@ -226,14 +241,27 @@ const buildOwnedWorker = (
     startedAt: identity.startedAt,
   };
 
-// Verifies the worker without saving records. The handle receives the pane as soon as it resolves,
-// so a later failed check still leaves it behind.
-export const inspectWorker = async (
+// Herdr removes a Pi pane when Pi exits, so a missing terminal means the worker exited.
+const locateWorker = async (
+  terminalId: string | undefined,
+  call: (argumentsList: string[]) => Promise<string>,
+): Promise<TerminalLocation> => {
+  const terminals = await listTerminals(call);
+  const location = terminals.find((pane) => pane.terminalId === terminalId);
+
+  if (!location) {
+    throw new WorkerExitedError();
+  }
+
+  return location;
+};
+
+const checkWorker = async (
   handle: Handle,
   call: (argumentsList: string[]) => Promise<string>,
   cleanup?: InspectionBudget,
 ): Promise<OwnedWorker> => {
-  const location = await resolveTerminal(text(handle.identity.terminalId), call);
+  const location = await locateWorker(handle.identity.terminalId, call);
   const paneId = location.paneId;
 
   handle.identity.paneId = paneId;
@@ -244,24 +272,24 @@ export const inspectWorker = async (
 
   const previous = handle.identity.owned ? { ...handle.identity.owned, paneId } : undefined;
 
-  checkForeground(information, paneId, previous);
+  const agent = await readAgent(call, paneId).catch((error: unknown) => {
+    // herdr detects a Pi pane shortly after Pi starts.
+    throw !previous && isHerdrError(error, 'agent_not_found')
+      ? new PendingPiSessionError(missingPiIntegrationMessage, { cause: error })
+      : error;
+  });
 
-  const agent = await readAgent(call, paneId);
-  const processId = integer(information.foreground_process_group_id);
-  const shellPid = integer(information.shell_pid);
+  // A Pi worker is its pane's own process.
+  const processId = integer(information.shell_pid);
 
-  checkAgentIdentity(
-    agent,
-    { paneId, expectedSession: handle.task.nativeSessionFile },
-    shellPid === processId,
-  );
+  checkAgentIdentity(agent, { paneId, expectedSession: handle.task.nativeSessionFile });
 
   const startedAt = await readProcessStart(handle, processId, cleanup);
 
   const owned = buildOwnedWorker(handle, previous, {
     paneId,
     terminalId: location.terminalId,
-    shellPid,
+    shellPid: processId,
     processId,
     startedAt,
   });
@@ -271,6 +299,31 @@ export const inspectWorker = async (
   }
 
   return owned;
+};
+
+// Verifies the worker without saving records. The handle receives the pane as soon as it resolves,
+// so a later failed check still leaves it behind.
+export const inspectWorker = async (
+  handle: Handle,
+  call: (argumentsList: string[]) => Promise<string>,
+  cleanup?: InspectionBudget,
+): Promise<OwnedWorker> => {
+  try {
+    return await checkWorker(handle, call, cleanup);
+  } catch (error) {
+    if (error instanceof WorkerExitedError) {
+      throw error;
+    }
+
+    const terminals = await listTerminals(call).catch(() => undefined);
+
+    // Herdr removes a Pi pane when Pi exits, which can happen during the checks.
+    if (terminals?.every((pane) => pane.terminalId !== handle.identity.terminalId) === true) {
+      throw new WorkerExitedError({ cause: error });
+    }
+
+    throw error;
+  }
 };
 
 export const waitForPiIdentity = async (
@@ -315,34 +368,6 @@ export const prepareTaskDirectory = (directory: string, task: Task, continued: b
       `Task preparation ${task.taskId} is uncertain at ${directory}. No automatic retry.`,
       { cause: error },
     );
-  }
-};
-
-export const waitForWorkerExit = async (
-  handle: Handle,
-  call: (argumentsList: string[]) => Promise<string>,
-  signal: AbortSignal,
-): Promise<never> => {
-  const budget = { signal, remainingBudget: () => workBudget(handle) };
-  let bareSamples = 0;
-  let workerObserved = false;
-
-  for (;;) {
-    // ponytail: require a worker record or foreground sample; exits missed between polls fall back to herdr's timeout.
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Exit polling shares the startup deadline and ends when agent start settles.
-    await delay(Math.min(250, workBudget(handle)), undefined, { signal });
-    const failure = readEvent(handle.directory, handle.task.taskId, 'startupFailure');
-    const ended = failure ?? readEvent(handle.directory, handle.task.taskId, 'settled');
-
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Records precede shutdown; only the unchanged bare shell proves exit.
-    const bare = await shellUnchanged(handle, call, budget);
-
-    workerObserved ||= ended !== undefined || !bare;
-    bareSamples = workerObserved && bare ? bareSamples + 1 : 0;
-
-    if (bareSamples === 2) {
-      throw failure ? new Error(failure.detail) : new WorkerExitedError();
-    }
   }
 };
 

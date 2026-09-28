@@ -1,5 +1,6 @@
 import { dirname, join } from 'node:path';
 
+import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { OwnedWorker } from '../cancellation.js';
@@ -29,16 +30,42 @@ export interface EvidenceUnavailableInput {
   cause?: unknown;
 }
 
-export const readOwnedWorker = (directory: string, task: Task): OwnedWorker => {
-  const value = readOptionalRecord(directory, 'owned.json');
+// Pi ownership before version 2 described a shell that ran Pi.
+const isRetiredPiOwnership = (value: unknown): boolean => {
+  if (typeof value !== 'object' || value === null || 'version' in value) {
+    return false;
+  }
 
+  return 'kind' in value && value.kind === 'pi';
+};
+
+// A Pi worker is its pane's own process.
+const isOwnedWorker = (value: unknown): value is Static<typeof ownedWorkerSchema> => {
+  if (!Value.Check(ownedWorkerSchema, value)) {
+    return false;
+  }
+
+  return value.shellPid === value.processId;
+};
+
+const checkOwnedWorker = (value: unknown): Static<typeof ownedWorkerSchema> => {
   if (value === undefined) {
     throw new Error('No saved worker ownership.');
   }
 
-  if (!Value.Check(ownedWorkerSchema, value)) {
+  if (isRetiredPiOwnership(value)) {
+    throw new Error('Saved worker ownership is in a retired format; start a fresh task instead.');
+  }
+
+  if (!isOwnedWorker(value)) {
     throw new Error('Invalid saved worker ownership.');
   }
+
+  return value;
+};
+
+export const readOwnedWorker = (directory: string, task: Task): OwnedWorker => {
+  const value = checkOwnedWorker(readOptionalRecord(directory, 'owned.json'));
 
   if (value.token !== task.nativeSessionFile) {
     throw new Error('Saved worker session does not match the task.');
@@ -209,17 +236,4 @@ export const taskStatus = (directory: string, controlled = false) => {
   const task = readTask(directory);
 
   return taskRecordStatus(directory, task, controlled);
-};
-
-// Absence evidence proves no live process remains; it does not prove the start never ran.
-export const cleanupDetail = (handle: Handle, stopped: boolean): string => {
-  const pane = handle.identity.paneId ?? 'none';
-
-  if (handle.startup.error !== undefined && handle.startup.neverStarted) {
-    return `Native startup was rejected by herdr absence evidence; a worker may have started briefly and exited. Pane ${pane} is left as placed.`;
-  }
-
-  return stopped
-    ? `No worker process was ever started for this task. Pane ${pane} is left as placed.`
-    : `Cleanup unconfirmed. Check pane ${handle.identity.paneId ?? 'unknown'} manually. No automatic retry.`;
 };

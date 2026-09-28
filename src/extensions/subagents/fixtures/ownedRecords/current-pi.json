@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "kind": "pi",
+  "paneId": "w1:p2",
+  "terminalId": "term_1",
+  "shellPid": 4242,
+  "processId": 4242,
+  "startedAt": "Mon Sep 28 10:00:00 2026",
+  "token": "/tmp/task/session.jsonl"
+}

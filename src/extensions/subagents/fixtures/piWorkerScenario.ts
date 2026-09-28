@@ -16,7 +16,7 @@ import { searchHistory } from '../history.js';
 import { resolveLoadout, validateSavedLoadout } from '../loadout.js';
 import { readAcknowledgement, readReply } from '../questionRecords.js';
 import { readTask } from '../records.js';
-import { requireObject, result, terminalLocation } from '../terminal.js';
+import { listTerminals, requireObject, result, terminalLocation } from '../terminal.js';
 import { fixtureModel } from './controlledProvider.js';
 import { isolatedHerdr } from './isolatedHerdr.js';
 import { toolAvailable } from './toolAvailable.js';
@@ -81,8 +81,8 @@ export default function (pi) {
   const releaseDelivery = Promise.withResolvers<undefined>();
   let promptCount = 0;
 
-  let startAttempts = 0;
-  const subsequentStartErrors: string[] = [];
+  let launches = 0;
+  const subsequentLaunchErrors: string[] = [];
 
   const client = async (argumentsList: string[], budget = 5000, signal?: AbortSignal) => {
     if (argumentsList[1] === 'prompt') {
@@ -91,12 +91,12 @@ export default function (pi) {
       await releaseDelivery.promise;
     }
 
-    const earlyExitStart = scenario === 'early exit' && argumentsList[1] === 'start';
+    const earlyExitLaunch = scenario === 'early exit' && argumentsList[0] === 'layout';
 
-    if (earlyExitStart) {
-      startAttempts += 1;
+    if (earlyExitLaunch) {
+      launches += 1;
 
-      if (startAttempts === 1) {
+      if (launches === 1) {
         writeFileSync(exitSignal, 'exit');
       }
     }
@@ -107,9 +107,8 @@ export default function (pi) {
 
       return response;
     } catch (error) {
-      // The first start fails either way: herdr notices the exit or the parent aborts it.
-      if (earlyExitStart && startAttempts > 1) {
-        subsequentStartErrors.push(String(error));
+      if (earlyExitLaunch && launches > 1) {
+        subsequentLaunchErrors.push(String(error));
       }
 
       throw error;
@@ -394,6 +393,14 @@ export default function (pi) {
 
   expect(status.cleanup).toContain('pane closed');
 
+  const workerPane = requireObject(
+    JSON.parse(readFileSync(join(launched.directory, 'pane.json'), 'utf8')),
+  );
+
+  expect(
+    (await listTerminals(client)).some((pane) => pane.terminalId === workerPane.terminalId),
+  ).toBe(false);
+
   expect(status.report?.evidence ?? []).toEqual(
     completes ? ['edit checked', 'Safety Net block: true'] : [],
   );
@@ -413,7 +420,7 @@ export default function (pi) {
       loadout,
     });
 
-    expect(subsequentStartErrors).toEqual([]);
+    expect(subsequentLaunchErrors).toEqual([]);
     expect(next.failure).toBeUndefined();
     expect(existsSync(join(next.directory, 'dispatch.json'))).toBe(true);
     expect(controller.owns(next.taskId)).toBe(true);

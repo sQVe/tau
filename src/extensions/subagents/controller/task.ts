@@ -1,5 +1,3 @@
-import { setTimeout as delay } from 'node:timers/promises';
-
 import { parseModelReference } from '../../../delegateModel/index.js';
 import { errorMessage } from '../../../errors/index.js';
 import { processAbsent } from '../cancellation.js';
@@ -13,7 +11,7 @@ import {
   readReply,
 } from '../questionRecords.js';
 import { publish, readEvent, recordEvent } from '../records.js';
-import { requireObject, resolveTerminal, result, text } from '../terminal.js';
+import { resolveTerminal, text } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
 import type { Task } from '../types.js';
 import {
@@ -22,26 +20,10 @@ import {
   remainingWorkBudget,
   workBudget,
 } from './budget.js';
-import {
-  inspectWorker,
-  isHerdrError,
-  verifyRejectedStart,
-  waitForPiIdentity,
-  waitForWorkerExit,
-  waitForWorkerReadiness,
-  workerArguments,
-} from './inspect.js';
+import { inspectWorker, waitForPiIdentity, waitForWorkerReadiness } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
-import { cleanupDetail, handleRecovery, readOwnedWorker, taskStatus } from './record.js';
-import {
-  integer,
-  isBareShell,
-  readProcessStart,
-  waitForShell,
-  WorkerExitedError,
-} from './shellIdentity.js';
-import type { InspectionBudget } from './shellIdentity.js';
-import { closeUnstartedPane, stopOwnedWorker } from './stop.js';
+import { handleRecovery, readOwnedWorker, taskStatus } from './record.js';
+import { stopPiWorker } from './stop.js';
 import type { Handle } from './types.js';
 
 // What one worker needs from the coordinator. One context is shared by every task.
@@ -158,144 +140,13 @@ export class TaskController {
     );
   }
 
-  // Startup runs once, after placement; the caller stops the worker when it throws.
-  async start(paneId: string, name: string, call: TerminalCall): Promise<void> {
-    await this.startWorker(paneId, name, call);
+  // Placement starts the worker as its pane's process. Startup then runs once and the caller stops
+  // the worker when it throws.
+  async start(call: TerminalCall): Promise<void> {
     await this.finishStartup(call);
     this.handle.removeLaunchAbort?.();
 
     await this.renameWorkerPane();
-  }
-
-  private async startAgent(paneId: string, name: string): Promise<void> {
-    const { handle } = this;
-    const { task } = handle;
-
-    // herdr must time out before the client budget kills it, so its structured error survives.
-    const budget = workBudget(handle);
-    const herdrTimeout = budget - Math.min(3000, Math.ceil(budget / 4));
-
-    // herdr 0.9.1 rejects start timeouts of 3000 ms or less.
-    if (herdrTimeout <= 3000) {
-      throw new Error('Too little startup budget is left for herdr agent start.');
-    }
-
-    handle.startup.neverStarted = false;
-    const pending = new AbortController();
-    const signal = AbortSignal.any([handle.abort.signal, pending.signal]);
-    const call = this.herdrCall(signal);
-
-    handle.startup.starting = Promise.resolve().then(() =>
-      call([
-        'agent',
-        'start',
-        name,
-        '--kind',
-        'pi',
-        '--pane',
-        paneId,
-        '--timeout',
-        String(herdrTimeout),
-        '--',
-        ...workerArguments(task),
-      ]),
-    );
-
-    try {
-      await Promise.race([handle.startup.starting, waitForWorkerExit(handle, call, signal)]);
-    } finally {
-      pending.abort();
-    }
-  }
-
-  private async startWithBusyRetry(
-    paneId: string,
-    name: string,
-    call: TerminalCall,
-  ): Promise<void> {
-    const { handle } = this;
-
-    try {
-      await this.startAgent(paneId, name);
-    } catch (error) {
-      if (!isHerdrError(error, 'agent_pane_busy')) {
-        throw error;
-      }
-
-      if (!(await verifyRejectedStart(handle, call))) {
-        throw error;
-      }
-
-      handle.startup.neverStarted = true;
-      await waitForShell(handle, paneId, call);
-
-      if (!(await verifyRejectedStart(handle, call))) {
-        throw new Error('Shell identity changed before the rejected-start retry.', {
-          cause: error,
-        });
-      }
-
-      publish(handle.directory, 'startRetry.json', {
-        taskId: handle.task.taskId,
-        at: Date.now(),
-        reason: 'agent_pane_busy',
-        detail: 'One retry after unchanged-shell and agent-absence verification.',
-      });
-
-      await this.startAgent(paneId, name);
-    }
-  }
-
-  private async startWorker(paneId: string, name: string, call: TerminalCall): Promise<void> {
-    const { handle } = this;
-
-    await this.prepareStart(paneId, call);
-
-    await this.startWithBusyRetry(paneId, name, call).catch((error: unknown) => {
-      if (handle.startup.starting === undefined) {
-        throw error;
-      }
-
-      handle.startup.error = String(error).slice(0, 4000);
-
-      throw error;
-    });
-  }
-
-  private async prepareStart(paneId: string, call: TerminalCall): Promise<void> {
-    const { handle } = this;
-    const shellPid = await waitForShell(handle, paneId, call);
-
-    // A new shell briefly starts prompt-hook children; wait again instead of failing on one.
-    for (;;) {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Rechecks share the original startup budget.
-      const response = await call(['pane', 'process-info', '--pane', paneId]);
-      const information = requireObject(result(response).process_info);
-
-      if (information.pane_id !== paneId || integer(information.shell_pid) !== shellPid) {
-        throw new Error('Native start requires an unchanged foreground shell.');
-      }
-
-      if (isBareShell(information)) {
-        break;
-      }
-
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Rechecks share the original startup budget.
-      if ((await waitForShell(handle, paneId, call)) !== shellPid) {
-        throw new Error('Native start requires an unchanged foreground shell.');
-      }
-    }
-
-    handle.identity.shell = {
-      processId: shellPid,
-      startedAt: await readProcessStart(handle, shellPid),
-    };
-
-    if (!handle.identity.shell.startedAt) {
-      throw new Error('Shell start identity is unavailable.');
-    }
-
-    publish(handle.directory, 'shell.json', handle.identity.shell);
   }
 
   private async finishStartup(call: TerminalCall): Promise<void> {
@@ -318,13 +169,9 @@ export class TaskController {
   startupFailureDetail(error: unknown): string {
     const { handle } = this;
 
-    if (handle.startup.starting === undefined) {
-      return `No worker was started; no automatic retry. ${String(error)}`;
-    }
-
-    return handle.startup.error !== undefined && handle.startup.neverStarted
-      ? `Native startup was rejected by herdr absence evidence; no retry. ${String(error)}`
-      : `Startup delivery is uncertain; no automatic retry. ${String(error)}`;
+    return handle.startup.neverStarted
+      ? `No worker was started; no automatic retry. ${String(error)}`
+      : `Worker startup failed; no automatic retry. ${String(error)}`;
   }
 
   // The pane display title is cosmetic. Startup is already complete, so an unresponsive herdr call
@@ -598,59 +445,6 @@ export class TaskController {
     return handle.cleanup.stopping;
   }
 
-  private cleanupFailureDetail(failureDetail: string): string {
-    const { handle } = this;
-
-    if (handle.startup.neverStarted && handle.startup.error !== undefined) {
-      return `Startup was rejected or exited before dispatch; worker absence confirmed. No automatic retry. ${handle.startup.error}`;
-    }
-
-    return failureDetail;
-  }
-
-  private async recoverStartup(
-    call: TerminalCall,
-    budget: InspectionBudget,
-    record: (operation: () => void) => void,
-  ): Promise<string> {
-    const { handle } = this;
-
-    if (handle.startup.neverStarted || handle.identity.owned) {
-      return '';
-    }
-
-    try {
-      if (handle.startup.starting) {
-        // The start usually settles first; an unreferenced timer never holds the process open.
-        await Promise.race([
-          handle.startup.starting.catch(() => undefined),
-          delay(budget.remainingBudget(), undefined, { signal: budget.signal, ref: false }),
-        ]);
-      }
-
-      handle.startup.neverStarted = await verifyRejectedStart(handle, call, budget);
-
-      if (!handle.startup.neverStarted) {
-        handle.identity.owned = await waitForPiIdentity(handle, call, budget);
-
-        record(() => {
-          publish(handle.directory, 'owned.json', handle.identity.owned);
-        });
-      }
-
-      return '';
-    } catch (error) {
-      // A worker that left its bare shell before herdr reported its session has nothing left to stop.
-      if (error instanceof WorkerExitedError) {
-        handle.startup.neverStarted = true;
-
-        return '';
-      }
-
-      return ` Cleanup inspection failed: ${String(error)}`;
-    }
-  }
-
   private async cleanup(reason: StopReason, failureDetail: string): Promise<void> {
     const { handle } = this;
 
@@ -681,45 +475,23 @@ export class TaskController {
     const call = (argumentsList: string[]) =>
       this.context.client(argumentsList, remainingBudget(), signal);
 
-    const inspectionFailure = await this.recoverStartup(call, { remainingBudget, signal }, record);
+    const stop = await stopPiWorker({
+      handle,
+      call,
+      remainingBudget,
+      signal,
+      placement: this.context.placement,
+      graceful: reason === 'completion',
+    });
 
-    let stopped = handle.startup.neverStarted;
-    let detail = cleanupDetail(handle, stopped) + inspectionFailure;
-
-    if (stopped && handle.identity.shell && handle.identity.terminalId != null) {
-      const closedPane = await closeUnstartedPane({
-        handle,
-        call,
-        remainingBudget,
-        signal,
-        placement: this.context.placement,
-      });
-
-      stopped = closedPane.stopped;
-      handle.startup.neverStarted = stopped;
-      detail = closedPane.detail;
-    }
-
-    if (handle.identity.owned) {
-      const stoppedWorker = await stopOwnedWorker({
-        handle,
-        owned: handle.identity.owned,
-        call,
-        remainingBudget,
-        signal,
-        placement: this.context.placement,
-        client: this.context.client,
-      });
-
-      stopped = stoppedWorker.stopped;
-      detail = stoppedWorker.detail;
-    }
+    const { stopped } = stop;
+    let { detail } = stop;
 
     if (handle.cleanup.shutdownReason) {
       detail = `Parent session ${handle.cleanup.shutdownReason}. ${detail}`;
     }
 
-    const failure = this.cleanupFailureDetail(failureDetail);
+    const failure = failureDetail;
 
     handle.cleanup.detail = reason === 'failure' ? `${detail} ${failure}` : detail;
     this.recordCleanupEvents({ reason, failureDetail: failure, detail, stopped, record });
