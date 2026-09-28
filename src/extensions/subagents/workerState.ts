@@ -57,3 +57,8 @@ export const deriveWorkerState = (facts: WorkerFacts, controlled = false): Worke
 
   return events.accepted ? 'running' : 'starting';
 };
+
+const liveStates = new Set<WorkerState>(['starting', 'running', 'awaitingReply', 'notOwned']);
+
+// Activity helps the parent decide whether to wait or cancel, so only a live worker shows it.
+export const showsActivity = (state: WorkerState): boolean => liveStates.has(state);

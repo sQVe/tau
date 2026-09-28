@@ -5,6 +5,7 @@ import type { ThemeColor } from '@earendil-works/pi-coding-agent';
 import type { WorkerActivity } from './activity.js';
 import { capReportText } from './reportCap.js';
 import type { WorkerState } from './types.js';
+import { showsActivity } from './workerState.js';
 
 // The single label table for worker states. Wording credits the worker and never claims a stop
 // or an acknowledgement that the saved records do not prove.
@@ -168,13 +169,10 @@ const modelQuestionReceipt = (
   };
 };
 
-// Activity helps the parent decide whether to wait or cancel, so a settled worker omits it.
-const liveStates = new Set<WorkerState>(['starting', 'running', 'awaitingReply', 'notOwned']);
-
 const modelActivity = (status: StatusInput): Record<string, unknown> | undefined => {
   const { activity } = status;
 
-  if (!activity || !liveStates.has(status.state)) {
+  if (!activity || !showsActivity(status.state)) {
     return undefined;
   }
 
