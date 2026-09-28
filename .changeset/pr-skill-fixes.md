@@ -6,5 +6,5 @@ Make the pr skill ask every question with `ask_user_question`, move an update's 
 when it does not follow it, keep scratch files out of `/tmp`, save real check output after the
 task's changes are committed, and ignore GitHub's dropped trailing newlines when it verifies the
 body. Areas a reviewer read shallowly no longer force a draft, and when the review is the only gap
-the preview offers a new fast review. The body leaves reviewer notes to the summary, and bot
-suggestions include bots the repository configures.
+the preview asks once whether to accept approved fixes or run a new fast review. The body leaves
+reviewer notes to the summary, and bot suggestions include bots the repository configures.

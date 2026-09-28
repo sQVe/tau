@@ -99,8 +99,8 @@ required pre-merge checks pass and a complete review of the pushed content has n
 
    When you cannot establish one of these, run the `code-review` skill in fast mode on the range
    instead. If it or its worker tools are missing, report a gap and do not review in its place. Ask
-   its approval question for findings. After approved fixes, the review is a gap until the user asks
-   for a new one.
+   its approval question for findings. After approved fixes, the review is a gap until the user
+   accepts the fixes or asks for a new review. Do not ask about either before the preview.
 
 5. Run checks. Reuse a passing result of the required pre-merge checks when evidence shows it ran on
    the same content, as
@@ -110,11 +110,12 @@ required pre-merge checks pass and a complete review of the pushed content has n
    top. Never write a summary in its place. A failing check is a gap.
 
 6. Choose the draft status. Ready needs passing required checks and a complete, matching review with
-   no open findings. A finding is closed only when fixed and reviewed again, or when the user
-   dismissed it as not a defect; record their reason in the summary. A finding the user defers or
-   leaves unfixed stays open. Only checks that can run solely after deployment are deferred instead
-   of gaps. Any gap means draft. Areas a worker read shallowly are notes for the summary, not gaps.
-   For an existing ready PR with a gap, offer to convert it to draft.
+   no open findings. A finding is closed only when fixed and reviewed again, when the user accepts
+   its fix without a review, or when the user dismissed it as not a defect; record their reason in
+   the summary. A finding the user defers or leaves unfixed stays open. Only checks that can run
+   solely after deployment are deferred instead of gaps. Any gap means draft. Areas a worker read
+   shallowly are notes for the summary, not gaps. For an existing ready PR with a gap, offer to
+   convert it to draft.
 
 7. Write the title and body. For a new PR, or an update whose body does not follow the template, use
    the repository's template: look case-insensitively for `pull_request_template.md` in the root,
@@ -128,8 +129,9 @@ required pre-merge checks pass and a complete review of the pushed content has n
 
 8. Preview and ask. Show the title, full body, base repository and branch, head, draft status,
    commits to push, and push command. Add the summary: commits made, comment findings and removals,
-   review and check sources, reviewer notes, and gaps. When the review is the only gap, offer a new
-   fast review next to draft, so the PR can open ready if it finds nothing. Wait for approval.
+   review and check sources, reviewer notes, and gaps. When the review is the only gap, offer these
+   in the same question as draft: accept any approved fixes without a review, or run a new fast
+   review and open ready if it finds nothing. Wait for approval.
 
 9. Publish.
    - Compare HEAD, local status, and the commits to push with the preview, and read the PR again. If
