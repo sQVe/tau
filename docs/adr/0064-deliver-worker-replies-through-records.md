@@ -22,9 +22,11 @@ by watching the record directory.
 ## Decision
 
 The parent only saves the reply record. While a question is pending, the worker watches for the
-reply, saves its acknowledgement, and sends the reply to its own session as a user message.
+reply and sends it to its own session as a user message. It saves its acknowledgement when that
+message reaches its input hook.
 
-- The acknowledgement record is the only proof that the worker took the reply.
+- The acknowledgement record is the only proof that the worker took the reply, so it is saved only
+  once the session accepted the message.
 - The worker delivers the reply only after the question turn has settled.
 - The parent sends no terminal input to a worker.
 

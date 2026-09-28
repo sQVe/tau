@@ -895,19 +895,16 @@ it('acknowledges a saved reply and lets only that message through the input hook
   expect(questions.readAcknowledgement(directory, 'task', details.questionId)).toBeUndefined();
 
   await emit('agent_settled');
-  await vi.advanceTimersByTimeAsync(1000);
+  await vi.advanceTimersByTimeAsync(2000);
   expect(readEvent(directory, 'task', 'settled')).toBeUndefined();
-
-  expect(questions.readAcknowledgement(directory, 'task', details.questionId)).toMatchObject({
-    replyId: 'reply',
-  });
-
-  expect(questions.readPendingQuestion(directory, 'task')).toBeUndefined();
+  expect(sendUserMessage).toHaveBeenCalledTimes(2);
 
   expect(sendUserMessage).toHaveBeenLastCalledWith(expect.stringContaining('Read notes.md.'), {
     deliverAs: 'followUp',
   });
 
+  // Pi can drop the message before the input hook, so only the hook proves the session took it.
+  expect(questions.readAcknowledgement(directory, 'task', details.questionId)).toBeUndefined();
   const [text] = sendUserMessage.mock.lastCall ?? [];
 
   expect(await emit('input', { text: 'other', source: 'extension' })).toEqual({
@@ -915,6 +912,12 @@ it('acknowledges a saved reply and lets only that message through the input hook
   });
 
   expect(await emit('input', { text, source: 'extension' })).toEqual({ action: 'continue' });
+
+  expect(questions.readAcknowledgement(directory, 'task', details.questionId)).toMatchObject({
+    replyId: 'reply',
+  });
+
+  expect(questions.readPendingQuestion(directory, 'task')).toBeUndefined();
   expect(await emit('input', { text, source: 'extension' })).toEqual({ action: 'handled' });
   await emit('session_shutdown');
 });
