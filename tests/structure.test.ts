@@ -1,7 +1,9 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { parseSync, Visitor } from 'oxc-parser';
+import type { MemberExpression, ModuleDeclaration } from 'oxc-parser';
 import { expect, it } from 'vitest';
 
 import { versionedRecords } from '../src/extensions/subagents/records.js';
@@ -16,6 +18,86 @@ const isTest = (path: string) => path.endsWith('.test.ts');
 // A relative path through fixtures/, or the bare segment passed to join(); globs and prose do not load.
 const fixtureLoad = /['"`](?:\.{1,2}\/(?:[^'"`]*\/)?fixtures(?:\/[^'"`]*)?|fixtures)['"`]/;
 const isFixture = (path: string) => path.split(/[/\\]/).includes('fixtures');
+
+// Pure decision modules take every read, clock, and environment value as a fact from the caller.
+// Register a module here once its decisions are split from its reads.
+const pureModules = ['src/extensions/subagents/workerState.ts'];
+
+const pureAdvice =
+  'A pure module must not read records, the clock, randomness, or the environment. Move the read or effect to the caller and pass the value in as a fact.';
+
+const effectMembers = new Set(['Date.now', 'Math.random', 'process.env']);
+
+const memberName = (node: MemberExpression) =>
+  node.object.type === 'Identifier' && node.property.type === 'Identifier'
+    ? `${node.object.name}.${node.property.name}`
+    : undefined;
+
+const isTypeOnly = (node: ModuleDeclaration) => {
+  if (node.type === 'ImportDeclaration') {
+    const specifiers = node.specifiers;
+
+    const typeSpecifiers =
+      specifiers.length > 0 &&
+      specifiers.every(
+        (specifier) => specifier.type === 'ImportSpecifier' && specifier.importKind === 'type',
+      );
+
+    return node.importKind === 'type' || typeSpecifiers;
+  }
+
+  return 'exportKind' in node && node.exportKind === 'type';
+};
+
+// Lists each runtime import outside the registry, dynamic load, and effect in a registered module.
+const impurities = (path: string, source: string, registry: readonly string[]) => {
+  const found: string[] = [];
+
+  const at = (offset: number, what: string) =>
+    found.push(`${path}:${source.slice(0, offset).split('\n').length}: ${what}`);
+
+  const checkImport = (node: ModuleDeclaration) => {
+    const specifier = 'source' in node ? node.source?.value : undefined;
+
+    if (specifier === undefined || isTypeOnly(node)) {
+      return;
+    }
+
+    const target = posix.join(posix.dirname(path), specifier).replace(/\.js$/, '.ts');
+
+    if (!specifier.startsWith('.') || !registry.includes(target)) {
+      at(node.start, `runtime import of ${specifier}`);
+    }
+  };
+
+  new Visitor({
+    ImportDeclaration: checkImport,
+    ExportNamedDeclaration: checkImport,
+    ExportAllDeclaration: checkImport,
+    ImportExpression: (node) => at(node.start, 'dynamic import'),
+    CallExpression: (node) => {
+      if (node.callee.type === 'Identifier' && node.callee.name === 'require') {
+        at(node.start, 'require');
+      }
+    },
+    NewExpression: (node) => {
+      const isDate = node.callee.type === 'Identifier' && node.callee.name === 'Date';
+
+      if (isDate && node.arguments.length === 0) {
+        at(node.start, 'new Date()');
+      }
+    },
+    MemberExpression: (node) => {
+      const name = memberName(node);
+
+      if (name !== undefined && effectMembers.has(name)) {
+        at(node.start, name);
+      }
+    },
+  }).visit(parseSync(path, source).program);
+
+  return found;
+};
 
 it('names each source test after the module beside it', () => {
   const unmatched = sourceFiles.filter(isTest).filter((test) => {
@@ -65,4 +147,53 @@ it('keeps fixtures out of production modules', () => {
     .filter((path) => fixtureLoad.test(readFileSync(join(root, path), 'utf8')));
 
   expect(importers).toEqual([]);
+});
+
+it('keeps registered pure modules free of reads and effects', () => {
+  const found = pureModules.flatMap((path) =>
+    impurities(path, readFileSync(join(root, path), 'utf8'), pureModules),
+  );
+
+  expect(found, pureAdvice).toEqual([]);
+});
+
+it('refuses reads and effects in a pure module but allows types and other pure modules', () => {
+  const registry = ['src/pure/decide.ts', 'src/pure/rules.ts'];
+
+  const allowed = [
+    "import type { Task } from '../tasks.js';",
+    "import { type Report } from '../records.js';",
+    "import { limit } from './rules.js';",
+    "export type { Facts } from '../facts.js';",
+    'export const decide = (task: Task, report: Report, now: number) =>',
+    '  now - task.createdAt > limit && new Date(now).getDay() > 0 && report.outcome;',
+  ].join('\n');
+
+  const refused = [
+    "import { readReport } from '../records.js';",
+    "import { join } from 'node:path';",
+    "export { readTask } from '../tasks.js';",
+    "export * from './unregistered.js';",
+    "export const load = () => import('./rules.js');",
+    "export const legacy = () => require('./rules.js');",
+    'export const now = () => Date.now();',
+    'export const today = () => new Date();',
+    'export const pick = () => Math.random();',
+    'export const home = () => process.env.HOME;',
+  ].join('\n');
+
+  expect(impurities('src/pure/decide.ts', allowed, registry)).toEqual([]);
+
+  expect(impurities('src/pure/decide.ts', refused, registry)).toEqual([
+    'src/pure/decide.ts:1: runtime import of ../records.js',
+    'src/pure/decide.ts:2: runtime import of node:path',
+    'src/pure/decide.ts:3: runtime import of ../tasks.js',
+    'src/pure/decide.ts:4: runtime import of ./unregistered.js',
+    'src/pure/decide.ts:5: dynamic import',
+    'src/pure/decide.ts:6: require',
+    'src/pure/decide.ts:7: Date.now',
+    'src/pure/decide.ts:8: new Date()',
+    'src/pure/decide.ts:9: Math.random',
+    'src/pure/decide.ts:10: process.env',
+  ]);
 });
