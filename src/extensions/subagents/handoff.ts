@@ -27,5 +27,6 @@ export const handoffContract = [
     '- Evidence: each command, its result, and its saved output path, checked against the Changes reference.',
     'Name later edits, failed checks, and checks you did not run; if you cannot compare the current work to the reference, say it is unverified.',
   ].join(' '),
-  '- Decisions: consequential choices with their reasons. Concerns: unresolved risks and decisions the parent must make.',
+  '- Decisions: consequential choices with their reasons.',
+  '- Concerns: unresolved risks and decisions the parent must make.',
 ].join('\n');
