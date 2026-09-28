@@ -691,6 +691,12 @@ const registerActivityHandlers = (pi: ExtensionAPI, state: WorkerExtensionState)
   });
 };
 
+// The worker pane is bound to its saved native session, so /new, /resume, and /fork would orphan the task.
+const registerSessionSwitchBlock = (pi: ExtensionAPI): void => {
+  pi.on('session_before_switch', () => ({ cancel: true }));
+  pi.on('session_before_fork', () => ({ cancel: true }));
+};
+
 const registerSessionShutdownHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.on('session_shutdown', () => {
     clearActivityTimer(state);
@@ -805,6 +811,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
   registerProgressTool(pi, state);
   registerReportTool(pi, state);
   registerSessionStartHandler(pi, state);
+  registerSessionSwitchBlock(pi);
   registerActivityHandlers(pi, state);
   registerSessionShutdownHandler(pi, state);
   registerAgentStartHandler(pi, state);

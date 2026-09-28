@@ -241,6 +241,19 @@ const waitingWorker = async (
   return worker;
 };
 
+it.each([
+  ['session_before_switch', { type: 'session_before_switch', reason: 'new' }],
+  ['session_before_switch', { type: 'session_before_switch', reason: 'resume' }],
+  ['session_before_fork', { type: 'session_before_fork', entryId: 'entry', position: 'at' }],
+])('cancels %s during a task', async (name, event) => {
+  const worker = await waitingWorker();
+
+  expect(await worker.emit(name, event)).toEqual({ cancel: true });
+  expect(readEvent(worker.directory, 'task', 'accepted')).toBeDefined();
+  expect(worker.shutdown).not.toHaveBeenCalled();
+  await worker.emit('session_shutdown');
+});
+
 it('requests a missing report once before the worker settles', async () => {
   const worker = await waitingWorker();
 
