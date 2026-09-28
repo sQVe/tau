@@ -5,16 +5,10 @@ and repository conventions when they differ from these defaults.
 
 ## Write straightforward code
 
-- Prefer straightforward code over clever shortcuts.
 - Use descriptive names. No abbreviations, even idiomatic ones: `getUserByIdentifier` not `getUsr`,
   and no `btn`, `cb`, or `errMsg`.
 - Search for an existing helper before you write one. Reuse or extend it when it serves the same
   purpose.
-- Never edit, test, or commit another worktree. Send the work to that workspace with the handoff
-  skill.
-- Run a command that CC Safety Net may block in its own bash call, not bundled with safe reads.
-- Append `|| true` only to probes where no match is expected, such as `rg` searches, never to
-  checks.
 - Reject invalid states where they enter the system. Report the error at that point.
 - Parse untrusted values once at the boundary and pass trusted types inward.
 - Check each reason to reject in its own guard, with its own error message.
@@ -32,20 +26,18 @@ and repository conventions when they differ from these defaults.
 
 - One function, one job. Split anything that does two.
 - Review functions longer than 60 lines, files longer than 500 lines, and functions with more than 4
-  parameters. These are review thresholds, not required splits.
+  parameters.
 - Keep related control flow and state together when splitting would make a behavior harder to trace.
   Do not introduce inheritance or parameter objects only to meet a size threshold.
-- Extract a phase or callback when its name and boundary make the caller easier to understand. Group
-  parameters only when they describe one concept.
+- Extract a phase or callback when its name and boundary make the caller easier to understand.
 - Declare a helper function before the function that uses it. Do not define one in the middle of
   unrelated steps.
-- Prefer simpler control flow when a complexity rule fails. Allow a narrow, explained suppression
-  when keeping the code together makes its behavior easier to understand.
+- When a linter flags complexity, simplify first. Suppress only narrowly, with a comment that
+  explains why.
 
 ## Separate logical steps
 
-- Separate the logical steps inside a function with a blank line. Use one blank line, never two.
-- A function body that runs as an unbroken block of statements is a defect, even when it is short.
+- Separate the logical steps in every function, even short ones, with one blank line. Never two.
 
 ## Keep conditions short
 
@@ -71,7 +63,6 @@ and repository conventions when they differ from these defaults.
   directives.
 - Remove comments that only narrate obvious code. Delete commented-out code and temporary
   development notes.
-- Editing comments does not give permission to refactor code or expand the task.
 
 ## Write tests that can fail
 

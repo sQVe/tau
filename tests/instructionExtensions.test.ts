@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
-const instructionExtensions = ['writing', 'coding'] as const;
+const instructionExtensions = ['writing', 'coding', 'workflow'] as const;
 
 for (const extension of instructionExtensions) {
   it(`rejects invalid ${extension} instructions and reads them again on reload`, async ({
