@@ -21,7 +21,7 @@ import { monotonicNow } from './controller/budget.js';
 import { blockerKinds, decideIncompleteReport } from './incompleteReport.js';
 import { checkWorkerRuntime } from './loadout.js';
 import { handoffSections } from './presentation.js';
-import { workerPrompt } from './profiles.js';
+import { workerInstructions, workerPrompt } from './profiles.js';
 import {
   acceptAcknowledgement,
   acceptQuestion,
@@ -700,6 +700,14 @@ const registerSessionShutdownHandler = (pi: ExtensionAPI, state: WorkerExtension
   });
 };
 
+const registerSystemPromptHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
+  pi.on('before_agent_start', (event) =>
+    state.task
+      ? { systemPrompt: `${event.systemPrompt}\n\n${workerInstructions(state.task.loadout)}` }
+      : undefined,
+  );
+};
+
 const registerAgentStartHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.on('agent_start', (_event, context) => {
     if (!state.task || state.accepted) {
@@ -807,6 +815,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
   registerSessionStartHandler(pi, state);
   registerActivityHandlers(pi, state);
   registerSessionShutdownHandler(pi, state);
+  registerSystemPromptHandler(pi, state);
   registerAgentStartHandler(pi, state);
   registerToolCallHandler(pi, state);
   registerReportReminder(pi, state);

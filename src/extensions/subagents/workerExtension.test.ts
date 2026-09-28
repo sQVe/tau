@@ -15,7 +15,7 @@ import { monotonicNow } from './controller/budget.js';
 import { assignmentContract, handoffContract } from './handoff.js';
 import { checkWorkerRuntime } from './loadout.js';
 import * as questions from './questionRecords.js';
-import { publish, readEvent, readReport, recordEvent } from './records.js';
+import { publish, readEvent, readReport, readTask, recordEvent } from './records.js';
 import { textLimit } from './types.js';
 import workerExtension from './workerExtension.js';
 
@@ -472,25 +472,29 @@ it('does not attribute a predecessor phase to the current task', async () => {
   await worker.emit('session_shutdown');
 });
 
-it('sends the autonomous assignment and handoff contract to a dispatched Pi editing worker', async () => {
-  const worker = await waitingWorker('editing');
-  const prompt = worker.sendUserMessage.mock.calls[0]?.[0];
+it.each([
+  { role: 'editing', assignment: true },
+  { role: 'investigation', assignment: false },
+] as const)(
+  'puts the $role instructions in the system prompt, not the task message',
+  async ({ role, assignment }) => {
+    const worker = await waitingWorker(role);
+    const prompt = worker.sendUserMessage.mock.calls[0]?.[0];
+    const { instructions } = readTask(worker.directory).loadout;
 
-  expect(typeof prompt).toBe('string');
-  expect(prompt).toContain(assignmentContract);
-  expect(prompt).toContain(handoffContract);
-  await worker.emit('session_shutdown');
-});
+    const result = (await worker.emit('before_agent_start', { systemPrompt: 'base' })) as {
+      systemPrompt: string;
+    };
 
-it('keeps the editing assignment out of a dispatched Pi scout prompt', async () => {
-  const worker = await waitingWorker('investigation');
-  const prompt = worker.sendUserMessage.mock.calls[0]?.[0];
-
-  expect(typeof prompt).toBe('string');
-  expect(prompt).toContain(handoffContract);
-  expect(prompt).not.toContain(assignmentContract);
-  await worker.emit('session_shutdown');
-});
+    expect(result.systemPrompt.startsWith('base\n\n')).toBe(true);
+    expect(result.systemPrompt).toContain(instructions);
+    expect(result.systemPrompt).toContain(handoffContract);
+    expect(result.systemPrompt.includes(assignmentContract)).toBe(assignment);
+    expect(prompt).not.toContain(instructions);
+    expect(prompt).not.toContain(handoffContract);
+    await worker.emit('session_shutdown');
+  },
+);
 
 it.each([
   {

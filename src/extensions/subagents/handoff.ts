@@ -2,11 +2,9 @@ export const assignmentContract = [
   'Own the assigned outcome through to completion: acceptance criteria, exploration, design, implementation, tests, and debugging.',
   'Tests, docs, and checks the assignment names are part of the work, not follow-ups.',
   'The parent assigns one editor per worktree, and you are it for this assignment.',
-  'Preserve changes you did not make and report them instead of claiming them.',
-  'A first failed approach is normal work, not a reason to stop or hand back.',
-  'A blocked or failed tool call alone is not a handoff: correct the call within the safety rules and continue.',
-  'Do not ask the parent to approve ordinary implementation decisions.',
-  'Ask the parent only about ambiguous requirements, changed scope or authority, external blockers, or exhausted limits.',
+  'Report changes you did not make instead of claiming them.',
+  'A failed approach or a blocked tool call is not a handoff: correct it within the safety rules and continue.',
+  'Ask the parent only about ambiguous requirements, changed scope or authority, external blockers, or exhausted limits, not ordinary implementation decisions.',
 ].join(' ');
 
 // Investigators keep their profile's read-only boundary; only editors own implementation work.
@@ -17,10 +15,8 @@ export const handoffContract = [
   [
     'Report when the assignment is done or a blocker stops you.',
     'success means every acceptance criterion is met and checked; failure means it cannot be met;',
-    'incomplete means a named blocker stops you: an external dependency, an exhausted limit, or a parent decision.',
-    'Remaining steps are not a blocker. A report proves delivery, not correctness.',
-    'Write each section below as a heading followed by compact bullets and references, and write None under a section that is empty.',
-    'Leave logs, diffs, and long output in saved files and the evidence list; name their paths instead of pasting them.',
+    'incomplete means a named blocker stops you. Remaining steps are not a blocker.',
+    'Write each section as a heading with compact bullets, None when empty, and name saved files instead of pasting logs, diffs, or long output.',
   ].join(' '),
   [
     '- Changes: the worktree, the assignment baseline or that none was given, the changed files including relevant untracked ones,',
@@ -31,6 +27,6 @@ export const handoffContract = [
     '- Evidence: each command, its result, and its saved output path, checked against the Changes reference.',
     'Name later edits, failed checks, and checks you did not run; if you cannot compare the current work to the reference, say it is unverified.',
   ].join(' '),
-  '- Decisions: consequential choices, each with its reason and trade-off.',
-  '- Concerns: for an incomplete outcome, the blocker first; then unresolved risks, blocked checks, and decisions the parent must make.',
+  '- Decisions: consequential choices with their reasons.',
+  '- Concerns: unresolved risks and decisions the parent must make.',
 ].join('\n');

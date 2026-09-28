@@ -8,7 +8,7 @@ import { Value } from 'typebox/value';
 
 import { assignmentContractFor, handoffContract } from './handoff.js';
 import { thinkingSchema } from './types.js';
-import type { Profile, Task } from './types.js';
+import type { Loadout, Profile, Task } from './types.js';
 
 const matchField = (line: string) => line.match(/^([a-z-]+):\s*(.+)$/);
 
@@ -196,23 +196,22 @@ export const nativeIdentity = (directory: string) => {
   return { nativeSessionId, nativeSessionFile: join(directory, `${nativeSessionId}.jsonl`) };
 };
 
-export const workerPrompt = (task: Task): string =>
+// The system prompt holds the standing instructions, so follow-ups and compaction keep them.
+export const workerInstructions = (loadout: Loadout): string =>
   [
-    task.loadout.instructions,
-    [`Task ${task.taskId} (${task.loadout.role}):`, task.task].join('\n'),
-    `${assignmentContractFor(task.loadout.role)}${handoffContract}`,
+    loadout.instructions,
+    `${assignmentContractFor(loadout.role)}${handoffContract}`,
     [
-      `Deadline: ${new Date(task.deadline).toISOString()}. Work only within this task.`,
       'Full tools and CC Safety Net are not a sandbox.',
-      'Do not commit, merge, or reset unless the task says so, and never run extra model trials. Do not launch workers.',
-      'Ask the parent through subagent_question if the task needs delegation.',
-      'Preserve unrelated edits. Do not resume arbitrary conversations.',
-      'Ask the parent for clarification with subagent_question, never ask_user_question.',
-      'Report each work-phase change once with subagent_progress, for example "Inspecting launch code" or "Running focused tests".',
-      'Do not report every tool call or repeat a phase for reassurance.',
-      'Waiting does not extend the original deadline or authorize increased scope.',
-      'Finish by calling subagent_report once with the outcome, a summary holding the Changes, Evidence, Decisions, and Concerns sections,',
-      'evidence references, and a blocker with its blockerKind when the outcome is incomplete.',
-      'Missing or uncertain handoff is not success; do not retry it automatically.',
+      'Do not commit, merge, or reset unless the task says so, and never run extra model trials.',
+      'Preserve unrelated edits.',
     ].join(' '),
   ].join('\n\n');
+
+export const workerPrompt = (task: Task): string =>
+  [
+    `Task ${task.taskId}:`,
+    task.task,
+    '',
+    `Deadline: ${new Date(task.deadline).toISOString()}.`,
+  ].join('\n');
