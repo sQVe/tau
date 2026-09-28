@@ -16,10 +16,10 @@ import { join } from 'node:path';
 
 import { afterEach, expect, it, onTestFinished as afterTest, vi } from 'vitest';
 
+import { readWorkerFacts } from './controller/record.js';
 import { fixtureGenericLoadout } from './fixtures/loadout.js';
 import * as questions from './questionRecords.js';
 import * as records from './records.js';
-import { readWorkerFacts } from './workerState.js';
 
 vi.mock('node:fs', async (importOriginal) => {
   const original = await importOriginal<typeof fileSystem>();

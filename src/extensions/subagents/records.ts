@@ -31,9 +31,9 @@ import {
   isGenericLoadout,
   isTaskId,
   requireNativeTask,
-  taskEndedEventKinds,
 } from './types.js';
 import type { GenericLoadout, Loadout, Report, Task, TaskEvent } from './types.js';
+import { taskEndedEventKinds } from './workerState.js';
 
 interface FoundTaskEntry {
   directory: string;

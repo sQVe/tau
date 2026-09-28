@@ -5,12 +5,15 @@ import { Value } from 'typebox/value';
 
 import type { OwnedWorker } from '../cancellation.js';
 import { genericReportPath, readGenericReference } from '../generic.js';
+import { readPendingQuestion, readReply } from '../questionRecords.js';
 import {
   findSuccessor,
   publish,
+  readEvent,
   readGenericSubmission,
   readPane,
   readOptionalRecord,
+  readReport,
   readTask,
   readTasks,
 } from '../records.js';
@@ -22,7 +25,8 @@ import {
   requireNativeTask,
 } from '../types.js';
 import type { Report, Task, TaskEvent } from '../types.js';
-import { deriveWorkerState, readWorkerFacts } from '../workerState.js';
+import { deriveWorkerState, taskEndedEventKinds } from '../workerState.js';
+import type { WorkerFacts } from '../workerState.js';
 import type { Handle } from './types.js';
 
 export interface EvidenceUnavailableInput {
@@ -154,6 +158,40 @@ const predecessorName = (root: string, task: Task): string | undefined => {
   } catch {
     return undefined;
   }
+};
+
+const factEventKinds: readonly TaskEvent['kind'][] = ['accepted', ...taskEndedEventKinds];
+
+const readPendingQuestionFact = (directory: string, taskId: string) => {
+  const question = readPendingQuestion(directory, taskId);
+
+  if (question === undefined) {
+    return undefined;
+  }
+
+  const replySaved = readReply(directory, taskId, question.questionId) !== undefined;
+
+  return replySaved ? { ...question, replySaved: true } : question;
+};
+
+// Reads each lifecycle record once. Records can still appear between the individual reads.
+export const readWorkerFacts = (directory: string, taskId: string): WorkerFacts => {
+  const events: WorkerFacts['events'] = {};
+
+  for (const kind of factEventKinds) {
+    const event = readEvent(directory, taskId, kind);
+
+    if (event) {
+      events[kind] = event;
+    }
+  }
+
+  return {
+    events,
+    report: readReport(directory, taskId),
+    assignment: readGenericSubmission(directory, taskId, 'assignment'),
+    pendingQuestion: readPendingQuestionFact(directory, taskId),
+  };
 };
 
 // oxlint-disable-next-line eslint/complexity -- Status fields must reflect one consistent read of the task records.
