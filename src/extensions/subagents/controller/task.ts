@@ -15,7 +15,7 @@ import {
 import { publish, readEvent, recordEvent } from '../records.js';
 import { requireObject, resolveTerminal, result, text } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
-import { harnessOf, isGenericLoadout, isPiLoadout } from '../types.js';
+import { isGenericLoadout, isPiLoadout } from '../types.js';
 import type { Task } from '../types.js';
 import {
   ensureReplyActive,
@@ -100,12 +100,14 @@ export const createHandle = (directory: string, task: Task, expires: number): Ha
 });
 
 const paneTitle = (task: Task): string => {
-  const harness = harnessOf(task.loadout);
+  const name = task.name ?? 'worker';
   const model = isPiLoadout(task.loadout) ? parseModelReference(task.loadout.model)?.id : undefined;
-  const identity = [harness, model].filter((value): value is string => value !== undefined);
-  const details = identity.map((value) => value.replace(/[^a-zA-Z0-9._-]/g, '-'));
 
-  return `${task.name ?? 'worker'} (${details.join(' / ')})`;
+  if (model === undefined) {
+    return name;
+  }
+
+  return `${name} (${model.replace(/^claude-/, '').replace(/[^a-zA-Z0-9._-]/g, '-')})`;
 };
 
 // The reply is saved before this read. A corrupt acknowledgement record must not make a saved reply
