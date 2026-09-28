@@ -209,6 +209,78 @@ it('replays a saved loadout only under the same trust, directories, model, and t
   expect(() => validateSavedLoadout({ ...saved, thinking: 'high' }, context)).toThrow('thinking');
 });
 
+const allowModels = (path: string, allowedModels: string[] | undefined) => {
+  if (allowedModels !== undefined) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify({ allowedModels }));
+  }
+};
+
+const allowedFixture = async (
+  onTestFinished: (callback: () => void) => void,
+  user: string[] | undefined,
+  repository: string[] | undefined,
+) => {
+  const { directory, context, request } = await workerFixture(onTestFinished);
+  const saved = resolveLoadout(request, context);
+
+  const entries = (models?: string[]) =>
+    models?.map((model) => model.replace('{model}', request.model));
+
+  allowModels(join(directory, 'tau.json'), entries(user));
+  allowModels(join(directory, '.pi', 'tau.json'), entries(repository));
+
+  return { directory, context, request, saved };
+};
+
+it.for<[string, string[] | undefined, string[] | undefined]>([
+  ['an absent list', undefined, undefined],
+  ['an allowed model', ['{model}', 'other/model'], undefined],
+  ['a repository list that narrows', ['{model}', 'other/model'], ['{model}']],
+])(
+  'launches and replays workers under allowedModels: %s',
+  async ([, user, repository], { onTestFinished }) => {
+    const { context, request, saved } = await allowedFixture(onTestFinished, user, repository);
+
+    expect(resolveLoadout(request, context).model).toBe(request.model);
+    expect(validateSavedLoadout(saved, context)).toEqual(saved);
+  },
+);
+
+it.for<[string, string[] | undefined, string[] | undefined, string]>([
+  ['a model outside the user list', ['other/model'], undefined, 'tau.json'],
+  [
+    'a model the repository list removes',
+    ['{model}', 'other/model'],
+    ['other/model'],
+    '.pi/tau.json',
+  ],
+  [
+    'a repository list that tries to widen',
+    ['other/model'],
+    ['other/model', '{model}'],
+    '.pi/tau.json',
+  ],
+])(
+  'refuses to launch or replay workers under allowedModels: %s',
+  async ([, user, repository, refusingFile], { onTestFinished }) => {
+    const { directory, context, request, saved } = await allowedFixture(
+      onTestFinished,
+      user,
+      repository,
+    );
+
+    for (const refused of [
+      () => resolveLoadout(request, context),
+      () => validateSavedLoadout(saved, context),
+    ]) {
+      expect(refused).toThrow(request.model);
+      expect(refused).toThrow('other/model');
+      expect(refused).toThrow(join(directory, refusingFile));
+    }
+  },
+);
+
 it('refuses worker startup without the saved model, cwd, or CC Safety Net and activates the worker tools', async ({
   onTestFinished,
 }) => {
