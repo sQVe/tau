@@ -3,7 +3,8 @@
 - Status: Accepted; settings reproduction, evidence-only recovery, foreground placement rebalancing,
   and cancellation-during-placement rules superseded by
   [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md). Herdr owns layout after
-  placement.
+  placement. The manual cleanup cost is superseded by
+  [ADR 0059](./0059-run-each-pi-worker-as-its-panes-own-process.md).
 - Date: 2026-09-16
 
 ## Context

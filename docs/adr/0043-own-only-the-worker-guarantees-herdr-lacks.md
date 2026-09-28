@@ -2,7 +2,8 @@
 
 - Status: Accepted; placement rule superseded by
   [ADR 0054](./0054-show-one-foreground-worker-per-parent.md); generic workflow rule superseded by
-  [ADR 0058](./0058-run-subagents-only-as-pi-workers.md)
+  [ADR 0058](./0058-run-subagents-only-as-pi-workers.md); cleanup rule superseded by
+  [ADR 0059](./0059-run-each-pi-worker-as-its-panes-own-process.md)
 - Date: 2026-09-24
 - Supersedes: [ADR 0029](./0029-version-worker-provider-fingerprints.md),
   [ADR 0031](./0031-reserve-worker-capacity-under-one-tree-lock.md), the claim rules in
