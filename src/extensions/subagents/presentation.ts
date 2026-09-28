@@ -165,7 +165,6 @@ const modelQuestionReceipt = (
   };
 };
 
-// Characters of summary and evidence the model sees per report. The rest stays in the saved report.
 const reportCharacterCap = 8000;
 
 // Cuts before a split surrogate pair so the result stays valid text.
@@ -187,7 +186,6 @@ const cutSummary = (summary: string): string => {
   return `${cut(summary, head)}${summaryCutMarker}${tail.replace(/^[\uDC00-\uDFFF]/, '')}`;
 };
 
-// Spends one budget on the summary, then on evidence in order. Returns undefined within the cap.
 const cappedReport = (report: unknown): Record<string, unknown> | undefined => {
   if (!isRecord(report) || typeof report.summary !== 'string' || !Array.isArray(report.evidence)) {
     return undefined;
