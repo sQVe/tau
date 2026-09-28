@@ -620,6 +620,102 @@ describe('commitTool.execute', () => {
     ).rejects.toThrow(/already staged: old\.md/i);
   });
 
+  it('commits an already-staged deletion in one commit with the other requested files', async () => {
+    const repositoryDirectory = await createTemporaryRepository();
+
+    await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
+    await writeRepositoryFile(repositoryDirectory, 'old.md', 'gone\n');
+    await git(repositoryDirectory, ['add', '--', 'README.md', 'old.md']);
+    await git(repositoryDirectory, ['commit', '-m', 'initial']);
+    await git(repositoryDirectory, ['rm', '--', 'old.md']);
+    await writeRepositoryFile(repositoryDirectory, 'README.md', 'updated\n');
+    await writeRepositoryFile(repositoryDirectory, 'new.md', 'new\n');
+
+    await executeCommit(repositoryDirectory, {
+      groups: [{ files: ['README.md', 'old.md', 'new.md'], subject: 'feat: replace old notes' }],
+    });
+
+    expect(await git(repositoryDirectory, ['show', '--name-status', '--format=', 'HEAD'])).toBe(
+      'M\tREADME.md\nA\tnew.md\nD\told.md\n',
+    );
+
+    expect(await git(repositoryDirectory, ['rev-list', '--count', 'HEAD'])).toBe('2\n');
+    expect(await git(repositoryDirectory, ['status', '--short'])).toBe('');
+  });
+
+  it('commits a recreated file over its staged deletion', async () => {
+    const repositoryDirectory = await createTemporaryRepository();
+
+    await writeRepositoryFile(repositoryDirectory, 'old.md', 'gone\n');
+    await git(repositoryDirectory, ['add', '--', 'old.md']);
+    await git(repositoryDirectory, ['commit', '-m', 'initial']);
+    await git(repositoryDirectory, ['rm', '--', 'old.md']);
+    await writeRepositoryFile(repositoryDirectory, 'old.md', 'recreated\n');
+
+    await executeCommit(repositoryDirectory, {
+      groups: [{ files: ['old.md'], subject: 'feat: rewrite old notes' }],
+    });
+
+    expect(await git(repositoryDirectory, ['show', 'HEAD:old.md'])).toBe('recreated\n');
+    expect(await git(repositoryDirectory, ['status', '--short'])).toBe('');
+  });
+
+  it.each([
+    {
+      failure: 'staging',
+      files: ['README.md', 'old.md', 'new.md', 'missing.md'],
+      hook: '',
+      error: "pathspec 'missing.md' did not match",
+    },
+    {
+      failure: 'hook',
+      files: ['README.md', 'old.md', 'new.md'],
+      hook: 'exit 1',
+      error: 'git commit failed',
+    },
+    {
+      failure: 'a hook that restages a deleted path',
+      files: ['README.md', 'old.md', 'new.md'],
+      hook: 'echo back > old.md; git add old.md; exit 1',
+      error: 'git commit failed',
+    },
+  ])('keeps changes staged before the call when $failure fails', async ({ files, hook, error }) => {
+    const repositoryDirectory = await createTemporaryRepository();
+
+    await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
+    await writeRepositoryFile(repositoryDirectory, 'old.md', 'gone\n');
+    await git(repositoryDirectory, ['add', '--', 'README.md', 'old.md']);
+    await git(repositoryDirectory, ['commit', '-m', 'initial']);
+    await git(repositoryDirectory, ['rm', '--', 'old.md']);
+    await writeRepositoryFile(repositoryDirectory, 'README.md', 'staged\n');
+    await git(repositoryDirectory, ['add', '--', 'README.md']);
+    await writeRepositoryFile(repositoryDirectory, 'README.md', 'unstaged\n');
+    await writeRepositoryFile(repositoryDirectory, 'new.md', 'new\n');
+
+    if (hook) {
+      await writeRepositoryFile(
+        repositoryDirectory,
+        '.git/hooks/pre-commit',
+        `#!/bin/sh\n${hook}\n`,
+      );
+
+      await chmod(join(repositoryDirectory, '.git/hooks/pre-commit'), 0o755);
+    }
+
+    await expect(
+      executeCommit(repositoryDirectory, {
+        groups: [{ files, subject: 'feat: replace old notes' }],
+      }),
+    ).rejects.toThrow(error);
+
+    expect(await git(repositoryDirectory, ['diff', '--cached', '--name-status'])).toBe(
+      'M\tREADME.md\nD\told.md\n',
+    );
+
+    expect(await git(repositoryDirectory, ['show', ':README.md'])).toBe('staged\n');
+    expect(await git(repositoryDirectory, ['rev-list', '--count', 'HEAD'])).toBe('1\n');
+  });
+
   it('keeps an initial commit when a hook stages additional paths', async () => {
     const repositoryDirectory = await createTemporaryRepository();
 

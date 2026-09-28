@@ -1,15 +1,17 @@
-import { writeFile } from 'node:fs/promises';
+import { lstat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExecResult, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { errorMessage } from '../../errors/index.js';
+import { errorMessage, isMissingFile } from '../../errors/index.js';
 import {
   currentHead,
   listCommitPaths,
   readIndex,
+  readIndexEntries,
   listStagedPaths,
   repositoryPathPrefix,
+  restoreIndexEntries,
   runGit,
   stageFiles,
   unstageFiles,
@@ -32,6 +34,11 @@ interface StagedSnapshot {
   head: string | null;
 }
 
+interface StagedBefore {
+  files: Set<string>;
+  entries: Map<string, string>;
+}
+
 interface GroupExecution {
   parameters: CommitInput['groups'][number];
   temporaryDirectory: string;
@@ -46,6 +53,8 @@ interface GroupRun extends GroupExecution {
   subject: string;
   body: string | null;
   requestedFiles: Set<string>;
+  prefix: string;
+  stagedBefore: StagedBefore;
   snapshot: StagedSnapshot | null;
 }
 
@@ -58,6 +67,8 @@ interface CleanupCheck {
   pi: Pick<ExtensionAPI, 'exec'>;
   cwd: string;
   requestedFiles: Set<string>;
+  prefix: string;
+  stagedBefore: StagedBefore;
   snapshot: StagedSnapshot | null;
 }
 
@@ -73,7 +84,7 @@ const buildCancelledResult = (
 const validateStagingArea = async (
   execution: GroupExecution,
   requestedFiles: Set<string>,
-): Promise<void> => {
+): Promise<string[]> => {
   const stagedPaths = await listStagedPaths(execution.pi, execution.context.cwd);
   const unrelatedStagedPaths = stagedPaths.filter((file) => !requestedFiles.has(file));
 
@@ -84,10 +95,86 @@ const validateStagingArea = async (
   }
 
   await validateFileRequests(execution.context.cwd, execution.parameters.files);
+
+  return stagedPaths;
+};
+
+const repositoryPath = (prefix: string, file: string) =>
+  normalizeRepositoryPath(`${prefix}${file}`);
+
+const readStagedBefore = async (
+  execution: GroupExecution,
+  prefix: string,
+  stagedPaths: string[],
+): Promise<StagedBefore> => {
+  const files = new Set(stagedPaths);
+
+  const stagedRequests = execution.parameters.files.filter((file) =>
+    files.has(repositoryPath(prefix, file)),
+  );
+
+  return {
+    files,
+    entries: stagedRequests.length
+      ? await readIndexEntries(execution.pi, execution.context.cwd, stagedRequests)
+      : new Map<string, string>(),
+  };
+};
+
+const stagedDeletions = (check: Pick<CleanupCheck, 'prefix' | 'stagedBefore'>, files: string[]) =>
+  files.filter((file) => {
+    const path = repositoryPath(check.prefix, file);
+
+    return check.stagedBefore.files.has(path) && !check.stagedBefore.entries.has(path);
+  });
+
+const isMissingFromWorktree = (cwd: string, file: string) =>
+  lstat(join(cwd, file)).then(
+    () => false,
+    (error: unknown) => {
+      if (isMissingFile(error)) {
+        return true;
+      }
+
+      throw error;
+    },
+  );
+
+const restoreRequest = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  cwd: string,
+  check: Pick<CleanupCheck, 'prefix' | 'stagedBefore'>,
+  files: string[],
+) => {
+  const deletions = stagedDeletions(check, files);
+
+  if (check.stagedBefore.entries.size > 0 || deletions.length > 0) {
+    await restoreIndexEntries(pi, cwd, [...check.stagedBefore.entries.values()], deletions);
+  }
+
+  const unstaged = files.filter(
+    (file) => !check.stagedBefore.files.has(repositoryPath(check.prefix, file)),
+  );
+
+  if (unstaged.length > 0) {
+    await unstageFiles(pi, cwd, unstaged);
+  }
 };
 
 const stageAndVerifyRequest = async (run: GroupRun): Promise<boolean> => {
-  await stageFiles(run.pi, run.context.cwd, run.parameters.files);
+  const deletions = stagedDeletions(run, run.parameters.files);
+
+  // Git cannot add a staged deletion that is still missing, and the index already holds it.
+  const missing = await Promise.all(
+    deletions.map((file) => isMissingFromWorktree(run.context.cwd, file)),
+  );
+
+  const skipped = new Set(deletions.filter((_file, index) => missing[index] === true));
+  const filesToAdd = run.parameters.files.filter((file) => !skipped.has(file));
+
+  if (filesToAdd.length > 0) {
+    await stageFiles(run.pi, run.context.cwd, filesToAdd);
+  }
 
   const stagedAfterRequest = await listStagedPaths(run.pi, run.context.cwd);
   const unrequestedPaths = stagedAfterRequest.filter((file) => !run.requestedFiles.has(file));
@@ -173,7 +260,7 @@ const assertCleanupOwnership = async (check: CleanupCheck): Promise<void> => {
 
 const cleanUpGroup = async (check: CleanupCheck, files: string[]): Promise<void> => {
   await assertCleanupOwnership(check);
-  await unstageFiles(check.pi, check.cwd, files);
+  await restoreRequest(check.pi, check.cwd, check, files);
 };
 
 // A cleanup failure must not hide why the group failed.
@@ -215,7 +302,7 @@ const commitStaged = async (run: GroupRun): Promise<ExecResult> => {
       }
 
       // Requested-path staging during hooks is hook-owned; same-path concurrent writers are unsupported.
-      await unstageFiles(run.pi, run.context.cwd, run.parameters.files);
+      await restoreRequest(run.pi, run.context.cwd, run, run.parameters.files);
     } catch (error) {
       throw new Error(`${failure.message}\n${String(error)}`, { cause: error });
     }
@@ -367,7 +454,13 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
   const prefix = await repositoryPathPrefix(execution.pi, execution.context.cwd);
 
   const requestedFiles = new Set(
-    execution.parameters.files.map((file) => normalizeRepositoryPath(`${prefix}${file}`)),
+    execution.parameters.files.map((file) => repositoryPath(prefix, file)),
+  );
+
+  const stagedBefore = await readStagedBefore(
+    execution,
+    prefix,
+    await validateStagingArea(execution, requestedFiles),
   );
 
   const run: GroupRun = {
@@ -376,13 +469,13 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
     subject,
     body,
     requestedFiles,
+    prefix,
+    stagedBefore,
     snapshot: null,
   };
 
   let groupError: unknown;
   let readyToCommit = false;
-
-  await validateStagingArea(execution, requestedFiles);
 
   try {
     if (!(await runGroupPipeline(run))) {
@@ -399,6 +492,8 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
         pi: execution.pi,
         cwd: execution.context.cwd,
         requestedFiles,
+        prefix,
+        stagedBefore,
         snapshot: run.snapshot,
       };
 

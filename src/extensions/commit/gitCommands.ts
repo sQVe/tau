@@ -87,6 +87,53 @@ export const stageFiles = (
     timeout: null,
   });
 
+// Maps each repository path with an index entry to `mode,object,path` for `update-index --cacheinfo`.
+export const readIndexEntries = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+  files: string[],
+) => {
+  const output = await runGit(
+    pi,
+    workingDirectory,
+    ['--literal-pathspecs', 'ls-files', '--stage', '--full-name', '-z', '--', ...files],
+    { timeout: null },
+  );
+
+  return new Map(
+    output
+      .split('\0')
+      .filter(Boolean)
+      .map((line) => {
+        const tab = line.indexOf('\t');
+        const [mode, object] = line.slice(0, tab).split(' ');
+        const file = normalizeRepositoryPath(line.slice(tab + 1));
+
+        return [file, `${mode},${object},${file}`] as const;
+      }),
+  );
+};
+
+export const restoreIndexEntries = (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+  entries: string[],
+  removedFiles: string[],
+) =>
+  runGit(
+    pi,
+    workingDirectory,
+    [
+      'update-index',
+      '--add',
+      ...entries.flatMap((entry) => ['--cacheinfo', entry]),
+      '--force-remove',
+      '--',
+      ...removedFiles,
+    ],
+    { timeout: null },
+  );
+
 export const unstageFiles = (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
