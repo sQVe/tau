@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { Value } from 'typebox/value';
 
 import { assignmentContractFor, handoffContract } from './handoff.js';
-import { isPiLoadout, requireNativeTask, thinkingSchema } from './types.js';
+import { thinkingSchema } from './types.js';
 import type { Profile, Task } from './types.js';
 
 const matchField = (line: string) => line.match(/^([a-z-]+):\s*(.+)$/);
@@ -72,14 +72,14 @@ const parseRole = (fields: Map<string, string>): Profile['role'] => {
   return role;
 };
 
-const parseHarness = (fields: Map<string, string>): string => {
-  const harness = fields.get('cli') ?? 'pi';
+const requirePiCli = (fields: Map<string, string>): void => {
+  const cli = fields.get('cli') ?? 'pi';
 
-  if (!/^[a-z][a-z0-9-]{0,63}$/.test(harness) || harness === 'generic') {
-    throw new Error('Invalid herdr kind in profile.');
+  if (cli !== 'pi') {
+    throw new Error(
+      `Profile sets cli: ${cli}, but non-Pi workers are no longer supported. Remove the cli setting to run a Pi worker.`,
+    );
   }
-
-  return harness;
 };
 
 const requireLineageOnly = (fields: Map<string, string>): void => {
@@ -104,8 +104,8 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
   const [, frontmatter = '', body = ''] = match;
   const fields = parseFields(frontmatter);
   const role = parseRole(fields);
-  const harness = parseHarness(fields);
 
+  requirePiCli(fields);
   requireLineageOnly(fields);
   requireTrustedPermissions(fields);
 
@@ -118,11 +118,8 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
   return {
     name: fields.get('name') ?? fallbackName,
     role,
-    harness,
-    harnessSpecified: fields.has('cli'),
     model: fields.get('model'),
     thinking,
-    thinkingSpecified: fields.has('thinking'),
     instructions: body.trim(),
     source,
   };
@@ -187,7 +184,7 @@ export const seedSession = (task: Task): void => {
     parentSession: task.parentSession,
   };
 
-  writeFileSync(requireNativeTask(task).nativeSessionFile, `${JSON.stringify(header)}\n`, {
+  writeFileSync(task.nativeSessionFile, `${JSON.stringify(header)}\n`, {
     flag: 'wx',
     mode: 0o600,
   });
@@ -199,12 +196,8 @@ export const nativeIdentity = (directory: string) => {
   return { nativeSessionId, nativeSessionFile: join(directory, `${nativeSessionId}.jsonl`) };
 };
 
-export const workerPrompt = (task: Task): string => {
-  if (!isPiLoadout(task.loadout)) {
-    throw new Error('Only Pi workers use the structured worker prompt.');
-  }
-
-  return [
+export const workerPrompt = (task: Task): string =>
+  [
     task.loadout.instructions,
     [`Task ${task.taskId} (${task.loadout.role}):`, task.task].join('\n'),
     `${assignmentContractFor(task.loadout.role)}${handoffContract}`,
@@ -223,4 +216,3 @@ export const workerPrompt = (task: Task): string => {
       'Missing or uncertain handoff is not success; do not retry it automatically.',
     ].join(' '),
   ].join('\n\n');
-};

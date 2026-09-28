@@ -127,7 +127,8 @@ it('names each source test after the module beside it', () => {
 
 it('gives every versioned record schema a format version', () => {
   const unversioned = Object.entries(versionedRecords).filter(([, schema]) => {
-    const variants: unknown[] = 'anyOf' in schema ? schema.anyOf : [schema];
+    const variants: unknown[] =
+      'anyOf' in schema && Array.isArray(schema.anyOf) ? schema.anyOf : [schema];
 
     return !variants.every((variant) =>
       Number.isInteger(

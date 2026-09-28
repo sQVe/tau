@@ -1,4 +1,4 @@
-import { cancelOwnedWorker, processAbsent, runClient, workerStopped } from '../cancellation.js';
+import { cancelOwnedWorker, processAbsent, workerStopped } from '../cancellation.js';
 import type { OwnedWorker } from '../cancellation.js';
 import type { WorkerPlacement } from '../placement.js';
 import { requireObject, resolveTerminal, result, text } from '../terminal.js';
@@ -22,14 +22,13 @@ interface CheckShellOwnedRequest {
   handle: Handle;
   worker: OwnedWorker;
   call: (argumentsList: string[]) => Promise<string>;
-  remainingBudget: number;
   signal: AbortSignal;
 }
 
 const checkShellOwned = async (
   request: CheckShellOwnedRequest,
 ): Promise<{ owned: OwnedWorker; shellOwned: boolean }> => {
-  const { handle, worker, call, remainingBudget, signal } = request;
+  const { handle, worker, call, signal } = request;
   const location = await resolveTerminal(text(worker.terminalId), call);
   const owned = { ...worker, paneId: location.paneId };
 
@@ -53,22 +52,7 @@ const checkShellOwned = async (
   // Once the worker is gone, its shell may still be running prompt hooks.
   await (processAbsent(owned.processId) ? settledShell(sampleStopped, signal) : sampleStopped());
 
-  if (!seen.stopped) {
-    return { owned, shellOwned: false };
-  }
-
-  if (owned.kind === 'generic') {
-    const shellStart = await runClient(
-      'ps',
-      ['-p', String(owned.shellPid), '-o', 'lstart='],
-      remainingBudget,
-      { signal },
-    );
-
-    return { owned, shellOwned: shellStart.trim() === owned.shellStartedAt };
-  }
-
-  return { owned, shellOwned: true };
+  return { owned, shellOwned: seen.stopped };
 };
 
 const closeCheckedShell = async (
@@ -94,15 +78,8 @@ const closeStoppedShell = async (
   expectedPaneId: string,
   paneConfirmed: { confirmed: boolean },
 ): Promise<string> => {
-  const { handle, call, remainingBudget, signal } = request;
-
-  const { shellOwned } = await checkShellOwned({
-    handle,
-    worker,
-    call,
-    remainingBudget: remainingBudget(),
-    signal,
-  });
+  const { handle, call, signal } = request;
+  const { shellOwned } = await checkShellOwned({ handle, worker, call, signal });
 
   if (!shellOwned) {
     throw new Error('Stopped shell identity changed; pane closure refused.');
@@ -156,13 +133,7 @@ export const stopOwnedWorker = async (
   const paneConfirmed = { confirmed: false };
 
   try {
-    const checked = await checkShellOwned({
-      handle,
-      worker,
-      call,
-      remainingBudget: remainingBudget(),
-      signal,
-    });
+    const checked = await checkShellOwned({ handle, worker, call, signal });
 
     owned = checked.owned;
     stopped = checked.shellOwned;

@@ -7,7 +7,6 @@ import { Value } from 'typebox/value';
 
 import { isMissingFile } from '../../errors/index.js';
 import { readEvent, readReport } from './records.js';
-import { requireNativeTask } from './types.js';
 import type { Task } from './types.js';
 
 interface Entry {
@@ -114,7 +113,7 @@ const resolveExistingPath = (value: string): string | undefined => {
 const matchesSessionPath = (value: string, task: Task): boolean => {
   const path = resolveExistingPath(value);
 
-  return path !== undefined && path === realpathSync(requireNativeTask(task).nativeSessionFile);
+  return path !== undefined && path === realpathSync(task.nativeSessionFile);
 };
 
 export const refuseLiveNativeWriter = (agents: unknown, task: Task): void => {

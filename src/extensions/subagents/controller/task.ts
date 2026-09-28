@@ -15,7 +15,6 @@ import {
 import { publish, readEvent, recordEvent } from '../records.js';
 import { requireObject, resolveTerminal, result, text } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
-import { isGenericLoadout, isPiLoadout } from '../types.js';
 import type { Task } from '../types.js';
 import {
   ensureReplyActive,
@@ -23,15 +22,6 @@ import {
   remainingWorkBudget,
   workBudget,
 } from './budget.js';
-import {
-  dispatchAssignment,
-  finishGenericStartup,
-  pollGeneric,
-  publishNativeStartIntent,
-  recordNativeStartError,
-  replyGeneric,
-  saveReportBeforeStop,
-} from './genericWorker.js';
 import {
   inspectWorker,
   isHerdrError,
@@ -42,13 +32,7 @@ import {
   workerArguments,
 } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
-import {
-  cleanupDetail,
-  genericStatus,
-  handleRecovery,
-  readOwnedWorker,
-  taskStatus,
-} from './record.js';
+import { cleanupDetail, handleRecovery, readOwnedWorker, taskStatus } from './record.js';
 import {
   integer,
   isBareShell,
@@ -101,7 +85,7 @@ export const createHandle = (directory: string, task: Task, expires: number): Ha
 
 const paneTitle = (task: Task): string => {
   const name = task.name ?? 'worker';
-  const model = isPiLoadout(task.loadout) ? parseModelReference(task.loadout.model)?.id : undefined;
+  const model = parseModelReference(task.loadout.model)?.id;
 
   if (model === undefined) {
     return name;
@@ -136,10 +120,6 @@ export const savedHandle = (directory: string, task: Task): Handle => {
   handle.identity.paneId = owned.paneId;
   handle.identity.terminalId = owned.terminalId;
   handle.startup.neverStarted = false;
-
-  if (owned.shellStartedAt != null && owned.shellStartedAt !== '') {
-    handle.identity.shell = { processId: owned.shellPid, startedAt: owned.shellStartedAt };
-  }
 
   return handle;
 };
@@ -190,7 +170,6 @@ export class TaskController {
   private async startAgent(paneId: string, name: string): Promise<void> {
     const { handle } = this;
     const { task } = handle;
-    const generic = isGenericLoadout(task.loadout) ? task.loadout : undefined;
 
     // herdr must time out before the client budget kills it, so its structured error survives.
     const budget = workBudget(handle);
@@ -212,13 +191,13 @@ export class TaskController {
         'start',
         name,
         '--kind',
-        generic?.kind ?? 'pi',
+        'pi',
         '--pane',
         paneId,
         '--timeout',
         String(herdrTimeout),
         '--',
-        ...(generic?.arguments ?? workerArguments(task)),
+        ...workerArguments(task),
       ]),
     );
 
@@ -279,11 +258,7 @@ export class TaskController {
 
       handle.startup.error = String(error).slice(0, 4000);
 
-      if (!isGenericLoadout(handle.task.loadout)) {
-        throw error;
-      }
-
-      recordNativeStartError(this, handle.startup.error);
+      throw error;
     });
   }
 
@@ -321,20 +296,10 @@ export class TaskController {
     }
 
     publish(handle.directory, 'shell.json', handle.identity.shell);
-
-    if (isGenericLoadout(handle.task.loadout)) {
-      publishNativeStartIntent(handle, handle.task.loadout);
-    }
   }
 
   private async finishStartup(call: TerminalCall): Promise<void> {
     const { handle } = this;
-
-    if (!isPiLoadout(handle.task.loadout)) {
-      await finishGenericStartup(this, call);
-
-      return;
-    }
 
     handle.identity.owned = await waitForPiIdentity(handle, call);
     publish(handle.directory, 'owned.json', handle.identity.owned);
@@ -346,7 +311,7 @@ export class TaskController {
     }
 
     handle.abort.signal.throwIfAborted();
-    await this.dispatch(call);
+    publish(handle.directory, 'dispatch.json', { taskId: handle.task.taskId });
     this.poll();
   }
 
@@ -406,13 +371,10 @@ export class TaskController {
     }
   }
 
-  private async replyPi(
-    directory: string,
-    questionId: string,
-    answer: { replyId: string; reply: string },
-  ) {
+  async reply(directory: string, answer: { questionId: string; replyId: string; reply: string }) {
     const { handle } = this;
     const { taskId } = handle.task;
+    const { questionId } = answer;
 
     const value = {
       version: 1,
@@ -480,18 +442,6 @@ export class TaskController {
     };
   }
 
-  async reply(directory: string, answer: { questionId?: string; replyId: string; reply: string }) {
-    if (isGenericLoadout(this.handle.task.loadout)) {
-      return replyGeneric(this, answer);
-    }
-
-    if (answer.questionId == null || answer.questionId === '') {
-      throw new Error('Pi replies require a structured questionId.');
-    }
-
-    return this.replyPi(directory, answer.questionId, answer);
-  }
-
   private noticeStatus() {
     const { handle } = this;
 
@@ -499,10 +449,7 @@ export class TaskController {
       throw new Error(handle.cleanup.recordErrors.join('; '));
     }
 
-    const status = {
-      ...taskStatus(handle.directory, this.context.owns(handle.task.taskId)),
-      ...genericStatus(handle.directory, handle.task, handle, !this.closed),
-    };
+    const status = taskStatus(handle.directory, this.context.owns(handle.task.taskId));
 
     if (handle.cleanup.detail !== undefined) {
       status.cleanup = handle.cleanup.detail;
@@ -511,16 +458,11 @@ export class TaskController {
     return status;
   }
 
-  notifySnapshot(options: { question?: boolean; failure?: string; delivery?: string } = {}): void {
+  private notifySnapshot(question = false): void {
     const { handle } = this;
-    const question = options.question ?? false;
 
     try {
-      const status = {
-        ...this.noticeStatus(),
-        ...(options.failure === undefined ? {} : { failure: options.failure }),
-        ...(options.delivery === undefined ? {} : { delivery: options.delivery }),
-      };
+      const status = this.noticeStatus();
 
       this.context.notify({ content: modelStatus(status), details: status, question });
     } catch (error) {
@@ -539,19 +481,6 @@ export class TaskController {
     }
   }
 
-  async dispatch(call: TerminalCall): Promise<void> {
-    const { handle } = this;
-    const { directory, task } = handle;
-
-    if (isPiLoadout(task.loadout)) {
-      publish(directory, 'dispatch.json', { taskId: task.taskId });
-
-      return;
-    }
-
-    await dispatchAssignment(this, call);
-  }
-
   poll(): void {
     const { handle } = this;
 
@@ -567,21 +496,12 @@ export class TaskController {
       () => {
         this.pollOnce();
       },
-      Math.max(
-        1,
-        Math.min(isGenericLoadout(handle.task.loadout) ? 1500 : 250, remainingWorkBudget(handle)),
-      ),
+      Math.max(1, Math.min(250, remainingWorkBudget(handle))),
     );
   }
 
   private pollOnce(): void {
     const { handle } = this;
-
-    if (isGenericLoadout(handle.task.loadout)) {
-      void pollGeneric(this);
-
-      return;
-    }
 
     try {
       if (remainingWorkBudget(handle) <= 0) {
@@ -616,7 +536,7 @@ export class TaskController {
 
     if (question && !handle.observation.notifiedQuestions.has(question.questionId)) {
       handle.observation.notifiedQuestions.add(question.questionId);
-      this.notifySnapshot({ question: true });
+      this.notifySnapshot(true);
     }
   }
 
@@ -636,10 +556,6 @@ export class TaskController {
 
     handle.removeLaunchAbort?.();
     handle.abort.abort();
-
-    if (isGenericLoadout(handle.task.loadout)) {
-      saveReportBeforeStop(handle);
-    }
 
     try {
       if (readEvent(handle.directory, handle.task.taskId, 'stopping') === undefined) {
@@ -715,15 +631,11 @@ export class TaskController {
       handle.startup.neverStarted = await verifyRejectedStart(handle, call, budget);
 
       if (!handle.startup.neverStarted) {
-        if (isPiLoadout(handle.task.loadout)) {
-          handle.identity.owned = await waitForPiIdentity(handle, call, budget);
+        handle.identity.owned = await waitForPiIdentity(handle, call, budget);
 
-          record(() => {
-            publish(handle.directory, 'owned.json', handle.identity.owned);
-          });
-        } else {
-          handle.identity.owned = await inspectWorker(handle, call, budget);
-        }
+        record(() => {
+          publish(handle.directory, 'owned.json', handle.identity.owned);
+        });
       }
 
       return '';

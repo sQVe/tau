@@ -17,7 +17,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { WorkerController } from './controller/controller.js';
 import { taskStatus } from './controller/record.js';
-import { fixtureGenericLoadout, fixtureLoadout } from './fixtures/loadout.js';
+import { fixtureLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
 import subagentsExtension from './index.js';
 import {
@@ -28,7 +28,6 @@ import {
   validateTask,
   workerRecordsDirectory,
 } from './records.js';
-import { requireNativeTask } from './types.js';
 
 const setup = () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-history-'));
@@ -102,7 +101,7 @@ const setup = () => {
       evidence: large ? ['界'.repeat(5000), '\u0000'.repeat(1000)] : ['Checked source.'],
     });
 
-    return { taskDirectory, record: requireNativeTask(record) };
+    return { taskDirectory, record };
   };
 
   return { directory, sessions, workers, root, child, sibling, unrelated, session, task };
@@ -556,40 +555,6 @@ it('flags mismatched saved native ancestry without searching an unrelated transc
   expect(history.candidates).toHaveLength(1);
   expect(history.candidates[0]).toMatchObject({ taskId: 'first', nativeEvidence: 'invalid' });
   expect(history.diagnostics.length).toBeGreaterThan(0);
-});
-
-it('carries derived state for generic task candidates without inventing native sessions', async () => {
-  const fixture = setup();
-  const taskDirectory = join(fixture.workers, 'generic-one');
-  mkdirSync(taskDirectory);
-
-  const record = validateTask({
-    version: 3,
-    taskId: 'generic-one',
-    task: 'Inspect shared source.',
-    parentSession: fixture.child,
-    parentSessionId: 'child',
-    createdAt: 1000,
-    deadline: 20000,
-    cancellationBudget: 1000,
-    monotonicDeadline: 20000,
-    loadout: fixtureGenericLoadout(fixture.directory),
-  });
-
-  publish(taskDirectory, 'task.json', record);
-  recordEvent(taskDirectory, 'generic-one', 'cleanup', { detail: 'Pane removed.', stopped: true });
-
-  const history = await searchHistory(fixture.workers, {
-    file: fixture.root,
-    id: 'root',
-    sessionDirectory: fixture.sessions,
-  });
-
-  const candidate = history.candidates.find((entry) => entry.taskId === 'generic-one');
-
-  expect(candidate).toMatchObject({ state: 'stopped', nativeEvidence: 'opaque' });
-  expect(candidate).not.toHaveProperty('nativeSessionId');
-  expect(candidate).not.toHaveProperty('nativeSessionFile');
 });
 
 it('derives candidate state with ownership from the live controller', async () => {

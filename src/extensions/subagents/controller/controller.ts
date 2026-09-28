@@ -15,18 +15,10 @@ import { WorkerPlacement } from '../placement.js';
 import type { Visibility } from '../placement.js';
 import type { WorkerNotice } from '../presentation.js';
 import { readAcknowledgement, readQuestion, readReply } from '../questionRecords.js';
-import {
-  readEvent,
-  readGenericSubmission,
-  readTask,
-  readTasks,
-  namePrefix,
-  publish,
-  validateTask,
-} from '../records.js';
+import { readEvent, readTask, readTasks, namePrefix, publish, validateTask } from '../records.js';
 import { result } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
-import { isGenericLoadout, isPiLoadout, isTaskId, taskVersion } from '../types.js';
+import { isTaskId, taskVersion } from '../types.js';
 import type { Task } from '../types.js';
 import type { WorkerWidgetRow } from '../widget.js';
 import {
@@ -36,18 +28,11 @@ import {
   remainingLaunchBudget,
   remainingWorkBudget,
 } from './budget.js';
-import { nativeOutput } from './genericWorker.js';
 import { herdrClient, inspectWorker, prepareTaskDirectory } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
 import { checkHandoff, nativeReference, requireUnclaimed } from './launchSupport.js';
 import type { FollowUpPreparation, LaunchInput } from './launchSupport.js';
-import {
-  EvidenceUnavailableError,
-  genericStatus,
-  handleRecovery,
-  savedRecovery,
-  taskStatus,
-} from './record.js';
+import { EvidenceUnavailableError, handleRecovery, savedRecovery, taskStatus } from './record.js';
 import { createHandle, savedHandle, TaskController } from './task.js';
 import type { TaskContext } from './task.js';
 import type { Handle } from './types.js';
@@ -123,9 +108,7 @@ export class WorkerController {
         continue;
       }
 
-      const handle = this.workers.get(task.taskId)?.handle;
-
-      rows.push(widgetRow(directory, task, this.owns(task.taskId), handle));
+      rows.push(widgetRow(directory, task, this.owns(task.taskId)));
     }
 
     return rows.toSorted((left, right) => right.createdAt - left.createdAt);
@@ -144,10 +127,7 @@ export class WorkerController {
         throw new Error(handle.cleanup.recordErrors.join('; '));
       }
 
-      return {
-        ...taskStatus(directory, this.owns(taskId)),
-        ...genericStatus(directory, task, handle, !this.closed),
-      };
+      return taskStatus(directory, this.owns(taskId));
     } catch (error) {
       return this.statusFailure({ taskId, directory, handle, task, error });
     }
@@ -194,31 +174,6 @@ export class WorkerController {
     });
   }
 
-  submissionReceipt(taskId: string, parentSessionId: string, id: string) {
-    const directory = this.directory(taskId, parentSessionId);
-
-    if (!isGenericLoadout(readTask(directory).loadout)) {
-      throw new Error('Pi workers use structured question receipts.');
-    }
-
-    return readGenericSubmission(directory, taskId, id);
-  }
-
-  async nativeOutput(taskId: string, parentSessionId: string) {
-    this.directory(taskId, parentSessionId);
-    const live = this.workers.get(taskId);
-
-    if (!live || !isGenericLoadout(live.handle.task.loadout)) {
-      throw new Error('Native output requires an active owned generic worker.');
-    }
-
-    if (this.closed || live.handle.cleanup.stopping) {
-      throw new Error('Native output requires an active owned generic worker.');
-    }
-
-    return nativeOutput(live);
-  }
-
   owns(taskId: string): boolean {
     return !this.closed && this.workers.has(taskId);
   }
@@ -243,10 +198,6 @@ export class WorkerController {
 
   private async resumeSaved(directory: string, task: Task): Promise<void> {
     const handle = savedHandle(directory, task);
-
-    if (isGenericLoadout(task.loadout) && !handle.identity.owned?.nativeReference) {
-      return;
-    }
 
     // ponytail: PID reuse can make an exited worker look present, costing one identity-checked stop attempt.
     if (
@@ -305,7 +256,7 @@ export class WorkerController {
   async reply(
     taskId: string,
     parentSessionId: string,
-    answer: { questionId?: string; replyId: string; reply: string; scopeUnchanged: unknown },
+    answer: { questionId: string; replyId: string; reply: string; scopeUnchanged: unknown },
   ) {
     const directory = this.directory(taskId, parentSessionId);
     const worker = this.workers.get(taskId);
@@ -417,10 +368,6 @@ export class WorkerController {
       input.sourceTaskId,
     );
 
-    if (!isPiLoadout(source.task.loadout)) {
-      throw new Error('Non-Pi native continuation is unsupported. Start a fresh task.');
-    }
-
     const native = validateNative(source.task, source.origin);
     const loadout = validateSavedLoadout(source.task.loadout, context);
 
@@ -449,12 +396,10 @@ export class WorkerController {
           publish(handle.directory, 'pane.json', created);
         },
         cwd: handle.task.loadout.cwd,
-        environment: isPiLoadout(handle.task.loadout)
-          ? [
-              `TAU_WORKER_RECORD=${handle.directory}`,
-              `PI_CODING_AGENT_DIR=${handle.task.loadout.agentDirectory}`,
-            ]
-          : [],
+        environment: [
+          `TAU_WORKER_RECORD=${handle.directory}`,
+          `PI_CODING_AGENT_DIR=${handle.task.loadout.agentDirectory}`,
+        ],
       },
       call,
       handle.abort.signal,
@@ -626,7 +571,7 @@ export class WorkerController {
       task: input.task,
       parentSession: input.parentSession,
       parentSessionId: input.parentSessionId,
-      ...nativeReference(input.loadout, plan.directory, plan.source),
+      ...nativeReference(plan.directory, plan.source),
       createdAt: plan.createdAt,
       deadline: plan.deadline,
       cancellationBudget: plan.cancellationBudget,

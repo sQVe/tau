@@ -60,7 +60,7 @@ const records = join(homedir(), 'records', taskId);
 
 // A full status keeps the fields the renderer must never show collapsed: generated paths, full
 // identifiers, and JSON. The summary stays path-free so the collapsed path check is meaningful.
-const statusFixture = (state: WorkerState, generic: boolean) => ({
+const statusFixture = (state: WorkerState) => ({
   taskId,
   name: 'worker-ab',
   state,
@@ -91,10 +91,6 @@ const statusFixture = (state: WorkerState, generic: boolean) => ({
   directory: records,
   nativeSessionId: 'native-abcdef01',
   nativeSessionFile: join(records, 'session.jsonl'),
-  harness: generic ? 'generic' : 'pi',
-  ...(generic
-    ? { nativeState: 'blocked', nativeSessionId: undefined, nativeSessionFile: undefined }
-    : {}),
 });
 
 const replyFixture = (delivery: string, workerAcknowledged?: boolean) => ({
@@ -135,22 +131,12 @@ const context = {} as Parameters<NonNullable<ToolDefinition['renderResult']>>[3]
 
 it.each(states)('renders a Pi %s status collapsed and expanded', (state) => {
   const subject = theme();
-  const details = statusFixture(state, false);
+  const details = statusFixture(state);
 
   for (const expanded of [false, true]) {
     const output = plain(renderStatusResult(details, expanded, subject));
     expect(output.trim().length, `${state} rendered nothing`).toBeGreaterThan(0);
     expect(output).not.toContain('{');
-  }
-});
-
-it.each(states)('renders a generic %s status collapsed and expanded', (state) => {
-  const subject = theme();
-  const details = statusFixture(state, true);
-
-  for (const expanded of [false, true]) {
-    const output = plain(renderStatusResult(details, expanded, subject));
-    expect(output.trim().length, `${state} rendered nothing`).toBeGreaterThan(0);
   }
 });
 
@@ -162,13 +148,11 @@ it('keeps generated paths, JSON, and full task IDs out of collapsed status lines
       continue;
     }
 
-    for (const generic of [false, true]) {
-      const output = collapsedStatusLines(statusFixture(state, generic), subject).join('\n');
-      expect(output, `${state} leaked braces`).not.toContain('{');
-      expect(output, `${state} leaked a path`).not.toMatch(/(^|\s)\/\S|~\//);
-      expect(output, `${state} leaked the full task ID`).not.toContain(taskId);
-      expect(output, `${state} leaked a home path`).not.toContain(homedir());
-    }
+    const output = collapsedStatusLines(statusFixture(state), subject).join('\n');
+    expect(output, `${state} leaked braces`).not.toContain('{');
+    expect(output, `${state} leaked a path`).not.toMatch(/(^|\s)\/\S|~\//);
+    expect(output, `${state} leaked the full task ID`).not.toContain(taskId);
+    expect(output, `${state} leaked a home path`).not.toContain(homedir());
   }
 });
 
@@ -176,29 +160,21 @@ it('keeps generated paths, JSON, and full task IDs out of collapsed status lines
 const rawFailure =
   'Error: Command failed: herdr agent start codex --pane w-1 -- --arg\nline two\nagent_not_ready: trust prompt';
 
-const rawObservation = `SyntaxError: Unexpected token 'o', ..."","beta":nope,"gamma"... is not valid JSON at ${records}`;
-
-it('keeps raw failure and observation text off collapsed lines and shows it on ctrl+o', () => {
+it('keeps raw failure text off collapsed lines and shows it on ctrl+o', () => {
   const subject = theme();
 
   for (const state of states) {
-    const details = {
-      ...statusFixture(state, true),
-      failure: rawFailure,
-      nativeState: 'unknown',
-      observationIssue: rawObservation,
-    };
+    const details = { ...statusFixture(state), failure: rawFailure };
 
     const collapsed = lines(renderStatusResult(details, false, subject)).join('\n');
     const expanded = lines(renderStatusResult(details, true, subject)).join('\n');
 
-    for (const fragment of ['herdr agent start', 'line two', 'trust prompt', '"beta"', 'nope']) {
+    for (const fragment of ['herdr agent start', 'line two', 'trust prompt']) {
       expect(collapsed, `${state} collapsed ${fragment}`).not.toContain(fragment);
     }
 
     expect(collapsed, `${state} ctrl+o hint`).toContain('ctrl+o');
     expect(expanded, `${state} expanded failure`).toContain('trust prompt');
-    expect(expanded, `${state} expanded observation`).toContain('is not valid JSON');
   }
 });
 
@@ -206,18 +182,12 @@ it('uses the check mark only for a stopped success and shows the deadline only f
   const subject = theme();
 
   for (const state of states) {
-    for (const generic of [false, true]) {
-      for (const outcome of ['success', 'failure', 'incomplete']) {
-        const output = collapsedStatusLines(
-          { ...statusFixture(state, generic), outcome },
-          subject,
-        ).join('\n');
-
-        const check = state === 'stopped' && outcome === 'success';
-        expect(output.includes('✓'), `${state}/${outcome} check mark`).toBe(check);
-        const deadline = ['starting', 'running', 'awaitingReply'].includes(state);
-        expect(/\d{2}:\d{2}/.test(output), `${state}/${outcome} deadline`).toBe(deadline);
-      }
+    for (const outcome of ['success', 'failure', 'incomplete']) {
+      const output = collapsedStatusLines({ ...statusFixture(state), outcome }, subject).join('\n');
+      const check = state === 'stopped' && outcome === 'success';
+      expect(output.includes('✓'), `${state}/${outcome} check mark`).toBe(check);
+      const deadline = ['starting', 'running', 'awaitingReply'].includes(state);
+      expect(/\d{2}:\d{2}/.test(output), `${state}/${outcome} deadline`).toBe(deadline);
     }
   }
 });
@@ -229,17 +199,15 @@ it('claims a stop only for stopped workers and always names the worker', () => {
   const subject = theme();
 
   for (const state of states) {
-    for (const generic of [false, true]) {
-      for (const outcome of ['success', 'failure', 'incomplete', undefined]) {
-        const output = lines(
-          renderStatusResult({ ...statusFixture(state, generic), outcome }, false, subject),
-        ).join('\n');
+    for (const outcome of ['success', 'failure', 'incomplete', undefined]) {
+      const output = lines(
+        renderStatusResult({ ...statusFixture(state), outcome }, false, subject),
+      ).join('\n');
 
-        const label = `${state}/${String(outcome)}/${generic ? 'generic' : 'pi'}`;
+      const label = `${state}/${String(outcome)}`;
 
-        expect(claimsStop(output), `${label} stop claim`).toBe(state === 'stopped');
-        expect(output, `${label} name`).toContain('worker-ab');
-      }
+      expect(claimsStop(output), `${label} stop claim`).toBe(state === 'stopped');
+      expect(output, `${label} name`).toContain('worker-ab');
     }
   }
 });
@@ -248,7 +216,7 @@ it('shows the question, the report summary, and the pane where the pilot needs t
   const subject = theme();
 
   const render = (state: WorkerState) =>
-    lines(renderStatusResult(statusFixture(state, false), false, subject)).join('\n');
+    lines(renderStatusResult(statusFixture(state), false, subject)).join('\n');
 
   expect(render('awaitingReply')).toContain('Which file should I change?');
   expect(render('stopped')).toContain('Finished the loader fix.');
@@ -257,63 +225,11 @@ it('shows the question, the report summary, and the pane where the pilot needs t
   expect(render('running')).not.toContain('pane-1');
 });
 
-it('shows an undelivered or uncertain assignment delivery on the collapsed line', () => {
-  const subject = theme();
-
-  const notDelivered = collapsedStatusLines(
-    { ...statusFixture('running', true), delivery: 'notDelivered' },
-    subject,
-  ).join('\n');
-
-  const uncertain = collapsedStatusLines(
-    { ...statusFixture('running', true), delivery: 'uncertain' },
-    subject,
-  ).join('\n');
-
-  expect(notDelivered).toContain('not delivered');
-  expect(uncertain).toContain('uncertain');
-});
-
-it('shows a blocked or unknown native state for every live state', () => {
-  const subject = theme();
-  const live: WorkerState[] = ['starting', 'running', 'awaitingReply', 'reported', 'stopping'];
-
-  for (const state of live) {
-    const blocked = collapsedStatusLines(
-      { ...statusFixture(state, true), nativeState: 'blocked' },
-      subject,
-    ).join('\n');
-
-    expect(blocked, `${state} blocked`).toContain('blocked');
-
-    const unknown = collapsedStatusLines(
-      {
-        ...statusFixture(state, true),
-        failure: undefined,
-        nativeState: 'unknown',
-        observationIssue: 'herdr observation failed.',
-      },
-      subject,
-    ).join('\n');
-
-    expect(unknown, `${state} unknown`).toContain('unknown');
-    expect(unknown, `${state} ctrl+o hint`).toContain('ctrl+o');
-    expect(unknown, `${state} raw reason`).not.toContain('herdr observation failed.');
-
-    const both = collapsedStatusLines(
-      { ...statusFixture(state, true), nativeState: 'unknown', observationIssue: 'observed.' },
-      subject,
-    ).join('\n');
-
-    expect(both.split('ctrl+o').length - 1, `${state} one hint`).toBe(1);
-  }
-});
-
 it('marks the deadline as enforced only for owned live states', () => {
   const subject = theme();
 
   for (const state of states) {
-    const output = expandedStatusLines(statusFixture(state, false), subject)
+    const output = expandedStatusLines(statusFixture(state), subject)
       .map(stripVTControlCharacters)
       .join('\n');
 
@@ -350,15 +266,13 @@ it('shows why an uncertain reply delivery failed in the expanded view', () => {
 it('shows the predecessor name on a follow-up line and falls back to the short ID', () => {
   const subject = theme();
 
-  const named = lines(renderStatusResult(statusFixture('starting', false), false, subject)).join(
-    '\n',
-  );
+  const named = lines(renderStatusResult(statusFixture('starting'), false, subject)).join('\n');
 
   expect(named).toContain('worker-up');
 
   const unnamed = lines(
     renderStatusResult(
-      { ...statusFixture('starting', false), predecessorName: undefined },
+      { ...statusFixture('starting'), predecessorName: undefined },
       false,
       subject,
     ),
@@ -370,7 +284,7 @@ it('shows the predecessor name on a follow-up line and falls back to the short I
 
 it('never claims an acknowledgement and renders each delivery value differently', () => {
   const subject = theme();
-  const deliveries = ['sent', 'uncertain', 'notResent', 'notDelivered'];
+  const deliveries = ['sent', 'uncertain', 'notResent'];
 
   const outputs = deliveries.map((delivery) =>
     collapsedReplyLines(replyFixture(delivery), subject).join('\n'),
@@ -488,7 +402,7 @@ it('renders through the registered tool definitions and the message renderer', (
 
   const statusOutput = plain(
     status.renderResult(
-      { content: [{ type: 'text', text: '{}' }], details: statusFixture('running', false) },
+      { content: [{ type: 'text', text: '{}' }], details: statusFixture('running') },
       options,
       subject,
       context,
@@ -528,7 +442,7 @@ it('renders through the registered tool definitions and the message renderer', (
       customType: 'tau-worker',
       content: '{}',
       display: true,
-      details: statusFixture('awaitingReply', false),
+      details: statusFixture('awaitingReply'),
       timestamp: 0,
     },
     { expanded: false, outputPad: 0 },
@@ -576,7 +490,6 @@ it('wires a call and a result renderer into every subagent tool', () => {
     {
       task: 'Do the thing.\nSecond line.',
       profile: 'worker',
-      permissions: 'trusted-full-tools',
       timeoutSeconds: 60,
     },
     subject,
@@ -622,7 +535,7 @@ it('uses Pi default rendering for a state-less result through the tool component
 
 it('shortens the home directory in the expanded records and session rows', () => {
   const subject = theme();
-  const output = expandedStatusLines(statusFixture('stopped', false), subject).join('\n');
+  const output = expandedStatusLines(statusFixture('stopped'), subject).join('\n');
   expect(output).toContain(`~/records/${taskId}`);
 });
 
@@ -631,29 +544,20 @@ it('keeps a sibling of the home directory unshortened', () => {
   const sibling = `${homedir()}-other/records`;
 
   const output = expandedStatusLines(
-    { ...statusFixture('stopped', false), directory: sibling },
+    { ...statusFixture('stopped'), directory: sibling },
     subject,
   ).join('\n');
 
   expect(output).toContain(sibling);
 });
 
-it('offers follow-up only to Pi workers', () => {
+it('offers follow-up only to a reported worker without a successor', () => {
   const subject = theme();
   const done = { successorTaskId: undefined };
+  const available = expandedStatusLines({ ...statusFixture('stopped'), ...done }, subject);
+  const followedUp = expandedStatusLines(statusFixture('stopped'), subject).join('\n');
 
-  const pi = expandedStatusLines({ ...statusFixture('stopped', false), ...done }, subject).join(
-    '\n',
-  );
-
-  const generic = expandedStatusLines({ ...statusFixture('stopped', true), ...done }, subject).join(
-    '\n',
-  );
-
-  const followedUp = expandedStatusLines(statusFixture('stopped', false), subject).join('\n');
-
-  expect(pi).toMatch(/Follow-up available/);
-  expect(generic).not.toMatch(/Follow-up available/);
+  expect(available.join('\n')).toMatch(/Follow-up available/);
   expect(followedUp).not.toMatch(/Follow-up available/);
   expect(followedUp).toContain('successor-abcdef01');
 });
@@ -662,13 +566,13 @@ it('shows which handoff sections the saved report is missing', () => {
   const subject = theme();
 
   const legacy = stripVTControlCharacters(
-    expandedStatusLines(statusFixture('stopped', false), subject).join('\n'),
+    expandedStatusLines(statusFixture('stopped'), subject).join('\n'),
   );
 
   expect(legacy).toContain('Handoff sections missing: Changes, Evidence, Decisions, Concerns');
 
   const completeReport = {
-    ...statusFixture('stopped', false),
+    ...statusFixture('stopped'),
     report: {
       outcome: 'success',
       summary: 'Changes: fixed loader\nEvidence: tests passed\nDecisions: none\nConcerns: none',
@@ -683,16 +587,11 @@ it('shows which handoff sections the saved report is missing', () => {
   expect(complete).not.toContain('Handoff sections missing');
 });
 
-it('shows requested native output and receipts on ctrl+o', () => {
+it('shows a requested question receipt on ctrl+o', () => {
   const subject = theme();
 
   const details = {
-    ...statusFixture('running', true),
-    nativeOutput: { text: 'Approve the edit? [y/n]' },
-    submissionReceipt: {
-      intent: { id: 'reply-7' },
-      observation: { state: 'not-delivered', detail: 'agent_blocked' },
-    },
+    ...statusFixture('running'),
     questionReceipt: {
       question: { questionId: 'question-9' },
       reply: { replyId: 'r' },
@@ -702,9 +601,6 @@ it('shows requested native output and receipts on ctrl+o', () => {
 
   const output = lines(renderStatusResult(details, true, subject)).join('\n');
 
-  expect(output).toContain('Approve the edit? [y/n]');
-  expect(output).toContain('reply-7');
-  expect(output).toContain('not-delivered');
   expect(output).toContain('question-9');
 });
 

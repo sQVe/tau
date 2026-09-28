@@ -17,7 +17,6 @@ import { basename, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
-import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
@@ -28,11 +27,9 @@ import {
   previousTaskSchema,
   taskSchema,
   taskVersion,
-  isGenericLoadout,
   isTaskId,
-  requireNativeTask,
 } from './types.js';
-import type { GenericLoadout, Loadout, Report, Task, TaskEvent } from './types.js';
+import type { Loadout, Report, Task, TaskEvent } from './types.js';
 import { taskEndedEventKinds } from './workerState.js';
 
 interface FoundTaskEntry {
@@ -173,24 +170,6 @@ export const namePrefix = (loadout: Loadout): string => {
   return loadout.role === 'editing' ? 'worker' : 'scout';
 };
 
-const modelArgumentsAreConsistent = (loadout: GenericLoadout): boolean =>
-  loadout.requestedModel === undefined || Boolean(loadout.arguments.length);
-
-const hasAbsoluteGenericPaths = (task: Task, loadout: GenericLoadout): boolean =>
-  [task.parentSession, loadout.cwd].every(isAbsolute);
-
-const hasGenericTaskIdentity = (task: Task, loadout: GenericLoadout): boolean =>
-  task.predecessorTaskId === undefined && !['pi', 'generic'].includes(loadout.kind);
-
-const validateGenericTask = (task: Task, loadout: GenericLoadout): void => {
-  const identityIsValid =
-    hasGenericTaskIdentity(task, loadout) && hasAbsoluteGenericPaths(task, loadout);
-
-  if (!identityIsValid || !modelArgumentsAreConsistent(loadout)) {
-    throw new Error('Invalid generic worker identity or native configuration.');
-  }
-};
-
 const identityIsSelfConsistent = (task: Task): boolean =>
   task.predecessorTaskId !== task.taskId && task.taskId !== task.nativeSessionId;
 
@@ -208,30 +187,22 @@ export const validateTask = (value: unknown): Task => {
     throw new Error('Invalid fixed worker deadline.');
   }
 
-  if (isGenericLoadout(value.loadout)) {
-    validateGenericTask(value, value.loadout);
-
-    return value;
-  }
-
-  const native = requireNativeTask(value);
-
   if (
     ![
-      native.nativeSessionFile,
-      native.parentSession,
-      native.loadout.cwd,
-      native.loadout.agentDirectory,
+      value.nativeSessionFile,
+      value.parentSession,
+      value.loadout.cwd,
+      value.loadout.agentDirectory,
     ].every(isAbsolute)
   ) {
     throw new Error('Worker paths must be absolute.');
   }
 
-  if (!identityIsSelfConsistent(native)) {
+  if (!identityIsSelfConsistent(value)) {
     throw new Error('Invalid worker identity.');
   }
 
-  return native;
+  return value;
 };
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
@@ -248,6 +219,14 @@ const isNewerTask = (value: unknown): boolean => {
 
 const newerTaskNotice = 'saved by a newer Tau; restart this session to read it.';
 
+const nonPiTaskNotice = 'run by a non-Pi worker; Tau no longer supports non-Pi workers.';
+
+// ADR 0058 retired non-Pi workers, whose tasks were saved at versions 2 and 3.
+const hasGenericLoadout = (value: unknown): boolean =>
+  isObjectRecord(value) && isObjectRecord(value.loadout) && value.loadout.harness === 'generic';
+
+const isNonPiTask = (value: unknown): boolean => hasGenericLoadout(value) && !isNewerTask(value);
+
 // The previous format differs from the current one only in its version.
 const upgradeTask = (value: unknown): unknown =>
   Value.Check(previousTaskSchema, value) ? { ...value, version: taskVersion } : value;
@@ -259,6 +238,10 @@ export const readTask = (directory: string): Task => {
 
     if (isNewerTask(value)) {
       throw new Error(`Task ${newerTaskNotice}`);
+    }
+
+    if (isNonPiTask(value)) {
+      throw new Error(`Task was ${nonPiTaskNotice}`);
     }
 
     return validateTask(upgradeTask(value));
@@ -338,6 +321,12 @@ const readSkippedTask = (directory: string): unknown => {
 
 const diagnoseSkippedTask = (directory: string, error: unknown, notices: ScanNotices): void => {
   const saved = readSkippedTask(directory);
+
+  if (isNonPiTask(saved)) {
+    notices.skipped.push(`Skipped task ${basename(directory)} ${nonPiTaskNotice}`);
+
+    return;
+  }
 
   if (isRetiredTask(saved)) {
     notices.skipped.push(
@@ -643,74 +632,6 @@ export const findSuccessor = (
 export const taskEnded = (directory: string, task: Task): boolean =>
   taskEndedEventKinds.some((kind) => readEvent(directory, task.taskId, kind)) ||
   Boolean(readReport(directory, task.taskId));
-
-const submissionIntentSchema = Type.Object(
-  {
-    taskId: Type.String({ minLength: 1 }),
-    id: Type.String({ pattern: '^[a-zA-Z0-9-]{1,128}$' }),
-    text: Type.String({ minLength: 1 }),
-  },
-  { additionalProperties: false },
-);
-
-const submissionSchema = Type.Object({
-  taskId: Type.String(),
-  id: Type.String(),
-  state: Type.Union([
-    Type.Literal('submitted'),
-    Type.Literal('not-delivered'),
-    Type.Literal('uncertain'),
-  ]),
-  detail: Type.String(),
-});
-
-export const submissionName = (id: string, suffix: 'intent' | 'observation'): string => {
-  if (!/^[a-zA-Z0-9-]{1,128}$/.test(id)) {
-    throw new Error('Invalid native submission identity.');
-  }
-
-  return `submission-${id}-${suffix}.json`;
-};
-
-const isMatchingSubmission = (
-  value: unknown,
-  taskId: string,
-  id: string,
-): value is Static<typeof submissionSchema> => {
-  if (!Value.Check(submissionSchema, value)) {
-    return false;
-  }
-
-  return value.taskId === taskId && value.id === id;
-};
-
-export const readGenericSubmission = (directory: string, taskId: string, id: string) => {
-  const intent = readOptionalRecord(directory, submissionName(id, 'intent'));
-
-  if (intent === undefined) {
-    return undefined;
-  }
-
-  if (
-    !Value.Check(submissionIntentSchema, intent) ||
-    intent.taskId !== taskId ||
-    intent.id !== id
-  ) {
-    throw new Error('Invalid native submission intent.');
-  }
-
-  const observation = readOptionalRecord(directory, submissionName(id, 'observation'));
-
-  if (observation !== undefined && !isMatchingSubmission(observation, taskId, id)) {
-    throw new Error('Invalid native submission observation.');
-  }
-
-  return {
-    intent,
-    observation,
-    retry: 'Never resubmit this identity; missing observation means uncertain delivery.',
-  };
-};
 
 export const readPane = (directory: string): string | undefined => {
   const value = readOptionalRecord(directory, 'pane.json');

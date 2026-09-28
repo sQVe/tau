@@ -3,7 +3,6 @@ import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { requireNativeTask } from './types.js';
 import type { Task } from './types.js';
 
 const headerSchema = Type.Object({
@@ -71,10 +70,8 @@ const readNative = (path: string) => {
 export const nativeHeader = (file: string) => readNative(file).header;
 
 export const validateNative = (task: Task, origin: Task) => {
-  const saved = requireNativeTask(task);
-
   try {
-    const native = readNative(saved.nativeSessionFile);
+    const native = readNative(task.nativeSessionFile);
 
     if (
       native.header.id !== task.nativeSessionId ||

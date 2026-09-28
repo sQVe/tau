@@ -17,7 +17,7 @@ const states: WorkerState[] = [
 const cleanupStates = new Set<WorkerState>(['cleanupUnconfirmed', 'notOwned']);
 
 // A full status carries every excluded field the model must never read.
-const fullStatus = (state: WorkerState, generic: boolean) => ({
+const fullStatus = (state: WorkerState) => ({
   taskId: 'task-1',
   name: 'worker-ab',
   state,
@@ -49,28 +49,14 @@ const fullStatus = (state: WorkerState, generic: boolean) => ({
     directory: '/abs/records/task-1',
     nativeSessionFile: '/abs/records/task-1/session.jsonl',
   },
-  ...(generic ? { nativeState: 'blocked' } : {}),
-  submissionReceipt: { intent: { id: 'reply-one', text: 'text' }, retry: 'Never resubmit.' },
-  nativeOutput: { text: 'terminal text', truncated: false, format: 'native' },
   usage: { available: false, reason: 'Pi reports worker usage in its own session totals.' },
-  safety: 'Native controls; Tau does not certify runtime enforcement.',
-  modelVerification: 'Unavailable.',
-  nativeConfiguration: { cwd: '/abs/cwd' },
   directory: '/abs/records/task-1',
   nativeSessionId: 'native-1',
   nativeSessionFile: '/abs/records/task-1/session.jsonl',
-  harness: generic ? 'generic' : 'pi',
-  nativeKind: 'codex',
-  nativeReference: { kind: 'id', value: 'opaque' },
-  requestedModel: 'requested/model',
-  observedModel: null,
-  reportPath: '/abs/report/report.md',
-  assignment: { intent: { text: 'text' }, observation: { state: 'submitted' } },
-  observationIssue: 'herdr observation failed.',
 });
 
-const expectKeys = (state: WorkerState, generic: boolean) => {
-  const content = modelStatus(fullStatus(state, generic));
+const expectKeys = (state: WorkerState) => {
+  const content = modelStatus(fullStatus(state));
   const cleanup = cleanupStates.has(state);
 
   const expected = [
@@ -87,14 +73,7 @@ const expectKeys = (state: WorkerState, generic: boolean) => {
     'failure',
     'cleanup',
     'questionReceipt',
-    'submissionReceipt',
-    'nativeOutput',
-    'observationIssue',
   ];
-
-  if (generic) {
-    expected.push('nativeState');
-  }
 
   if (cleanup) {
     expected.push('recovery');
@@ -120,19 +99,17 @@ const stringValues = (value: unknown, at: string[] = []): { path: string; text: 
 };
 
 it.each(states)('builds the allowlisted model content for %s', (state) => {
-  for (const generic of [false, true]) {
-    const { content, expected } = expectKeys(state, generic);
-    expect(Object.keys(content).toSorted()).toEqual(expected.toSorted());
-    expect(content.taskId).toBe('task-1');
-    expect(content.state).toBe(state);
-    expect(content.predecessorTaskId).toBe('predecessor-1');
-    expect(content.successorTaskId).toBe('successor-1');
-  }
+  const { content, expected } = expectKeys(state);
+  expect(Object.keys(content).toSorted()).toEqual(expected.toSorted());
+  expect(content.taskId).toBe('task-1');
+  expect(content.state).toBe(state);
+  expect(content.predecessorTaskId).toBe('predecessor-1');
+  expect(content.successorTaskId).toBe('successor-1');
 });
 
 it('keeps recovery only for unconfirmed or unowned states', () => {
   for (const state of states) {
-    const content = modelStatus(fullStatus(state, false));
+    const content = modelStatus(fullStatus(state));
     const cleanup = cleanupStates.has(state);
 
     expect('recovery' in content).toBe(cleanup);
@@ -141,16 +118,14 @@ it('keeps recovery only for unconfirmed or unowned states', () => {
 
 it('never leaks an absolute path outside recovery and report text', () => {
   for (const state of states) {
-    for (const generic of [false, true]) {
-      const content = modelStatus(fullStatus(state, generic));
+    const content = modelStatus(fullStatus(state));
 
-      const values = stringValues(content).filter(
-        ({ path }) => !path.startsWith('recovery') && !path.startsWith('report'),
-      );
+    const values = stringValues(content).filter(
+      ({ path }) => !path.startsWith('recovery') && !path.startsWith('report'),
+    );
 
-      for (const { path, text } of values) {
-        expect(text.startsWith('/'), `${path} leaked a path`).toBe(false);
-      }
+    for (const { path, text } of values) {
+      expect(text.startsWith('/'), `${path} leaked a path`).toBe(false);
     }
   }
 });
@@ -279,28 +254,6 @@ it('counts parenthesized and quoted headings that the report tool accepts', () =
   });
 });
 
-it('carries a bounded native observation reason into model content', () => {
-  const short = modelStatus({
-    taskId: 'task-1',
-    state: 'running',
-    deadline: 10,
-    observationIssue: 'herdr observation failed.',
-  });
-
-  expect(short.observationIssue).toBe('herdr observation failed.');
-
-  const long = modelStatus({
-    taskId: 'task-1',
-    state: 'running',
-    deadline: 10,
-    observationIssue: '界'.repeat(1000),
-  });
-
-  const reason = String(long.observationIssue);
-  expect(reason.length).toBeLessThan(1000);
-  expect(reason.startsWith('界'.repeat(200))).toBe(true);
-});
-
 it('carries a saved-reply flag on a pending question', () => {
   const content = modelStatus({
     taskId: 'task-1',
@@ -316,29 +269,7 @@ it('carries a saved-reply flag on a pending question', () => {
   });
 });
 
-it('shapes a submission receipt to its identity, state, and detail', () => {
-  const content = modelStatus({
-    taskId: 'task-1',
-    state: 'running',
-    deadline: 10,
-    submissionReceipt: {
-      intent: { id: 'reply-one', text: 'Private reply text.' },
-      observation: { state: 'uncertain', detail: 'lost' },
-      retry: 'Never resubmit this identity; missing observation means uncertain delivery.',
-    },
-  });
-
-  expect(content.submissionReceipt).toEqual({
-    id: 'reply-one',
-    state: 'uncertain',
-    detail: 'lost',
-  });
-
-  expect(JSON.stringify(content)).not.toContain('Private reply text.');
-  expect(JSON.stringify(content)).not.toContain('Never resubmit');
-});
-
-it('builds reply content with and without a Pi question identity', () => {
+it('builds reply content with the question identity', () => {
   expect(
     modelReply('task-1', {
       questionId: 'question-1',
@@ -352,12 +283,6 @@ it('builds reply content with and without a Pi question identity', () => {
     replyAccepted: true,
     workerAcknowledged: false,
     delivery: 'sent',
-  });
-
-  expect(modelReply('task-1', { replyAccepted: true, delivery: 'notDelivered' })).toEqual({
-    taskId: 'task-1',
-    replyAccepted: true,
-    delivery: 'notDelivered',
   });
 });
 

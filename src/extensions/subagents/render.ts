@@ -27,16 +27,10 @@ interface StatusView {
   pendingQuestion?: { questionId?: string | undefined; question?: string | undefined } | undefined;
   failure?: string | undefined;
   cleanup?: string | undefined;
-  nativeState?: string | undefined;
-  delivery?: string | undefined;
-  observationIssue?: string | undefined;
   recovery?: { paneId?: string | undefined; directory?: string | undefined } | undefined;
   directory?: string | undefined;
   nativeSessionId?: string | undefined;
   nativeSessionFile?: string | undefined;
-  harness?: string | undefined;
-  nativeOutput?: string | undefined;
-  submission?: string | undefined;
   questionReceipt?: string | undefined;
 }
 
@@ -107,7 +101,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isWorkerState = (value: unknown): value is WorkerState =>
   typeof value === 'string' && Object.hasOwn(stateLabels, value);
 
-const replyDeliveries = new Set(['sent', 'uncertain', 'notResent', 'notDelivered']);
+const replyDeliveries = new Set(['sent', 'uncertain', 'notResent']);
 
 const stringField = (record: Record<string, unknown>, key: string): string | undefined => {
   const value = record[key];
@@ -144,24 +138,7 @@ const reportView = (value: unknown): ReportView | undefined => {
   };
 };
 
-// Requested receipts are summarized into one row each; ctrl+o is where the pilot reads them.
-const submissionSummary = (value: unknown): string | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const intent = isRecord(value.intent) ? value.intent : {};
-  const observation = isRecord(value.observation) ? value.observation : {};
-
-  const parts = [
-    stringField(intent, 'id'),
-    stringField(observation, 'state') ?? 'no observation',
-    stringField(observation, 'detail'),
-  ];
-
-  return parts.filter((part): part is string => part !== undefined).join(' · ');
-};
-
+// A requested receipt is summarized into one row; ctrl+o is where the pilot reads it.
 const questionReceiptSummary = (value: unknown): string | undefined => {
   if (!isRecord(value)) {
     return undefined;
@@ -177,9 +154,6 @@ const questionReceiptSummary = (value: unknown): string | undefined => {
 
   return `${id} · ${saved} · ${acknowledged}`;
 };
-
-const nativeOutputText = (value: unknown): string | undefined =>
-  isRecord(value) ? stringField(value, 'text') : undefined;
 
 const statusView = (details: unknown): StatusView | undefined => {
   if (!isRecord(details)) {
@@ -213,9 +187,6 @@ const statusView = (details: unknown): StatusView | undefined => {
       : undefined,
     failure: stringField(details, 'failure'),
     cleanup: stringField(details, 'cleanup'),
-    nativeState: stringField(details, 'nativeState'),
-    delivery: stringField(details, 'delivery'),
-    observationIssue: stringField(details, 'observationIssue'),
     recovery: recovery
       ? {
           paneId: stringField(recovery, 'paneId'),
@@ -223,9 +194,6 @@ const statusView = (details: unknown): StatusView | undefined => {
         }
       : undefined,
     directory: stringField(details, 'directory'),
-    harness: stringField(details, 'harness'),
-    nativeOutput: nativeOutputText(details.nativeOutput),
-    submission: submissionSummary(details.submissionReceipt),
     questionReceipt: questionReceiptSummary(details.questionReceipt),
     nativeSessionId: stringField(details, 'nativeSessionId'),
     nativeSessionFile: stringField(details, 'nativeSessionFile'),
@@ -382,37 +350,9 @@ const basePart = (details: StatusView): string => {
   return label;
 };
 
-// Raw failure and observation text is unbounded and can quote paths, JSON, or commands. Collapsed
-// lines flag it with a fixed phrase; ctrl+o shows the full text.
+// Raw failure text is unbounded and can quote paths, JSON, or commands. Collapsed lines flag it
+// with a fixed phrase; ctrl+o shows the full text.
 const reasonHint = 'ctrl+o for the reason';
-
-const assignmentDeliveryPart = (delivery: string | undefined): string[] => {
-  if (delivery === 'notDelivered') {
-    return ['assignment not delivered'];
-  }
-
-  if (delivery === 'uncertain') {
-    return ['assignment delivery uncertain'];
-  }
-
-  return [];
-};
-
-const nativeStatePart = (details: StatusView): string[] => {
-  if (!liveStates.has(details.state)) {
-    return [];
-  }
-
-  if (details.nativeState === 'blocked') {
-    return ['blocked on a native approval'];
-  }
-
-  if (details.nativeState !== 'unknown') {
-    return [];
-  }
-
-  return ['native state unknown'];
-};
 
 export const deadlineStates = new Set<WorkerState>(['starting', 'running', 'awaitingReply']);
 
@@ -447,27 +387,17 @@ const lifecycleParts = (details: StatusView, state: WorkerState): string[] => {
   return parts;
 };
 
-// One hint covers every reason the collapsed line leaves to ctrl+o.
-const hasHiddenReason = (details: StatusView): boolean => {
-  const observed = nativeStatePart(details).length > 0 && details.observationIssue !== undefined;
-
-  return Boolean(details.failure) || observed;
-};
-
 const statusParts = (details: StatusView): string[] => {
   const parts = [basePart(details)];
+  const failed = details.failure != null && details.failure !== '';
 
-  if (details.failure != null && details.failure !== '') {
+  if (failed) {
     parts.push('failed');
   }
 
-  parts.push(
-    ...assignmentDeliveryPart(details.delivery),
-    ...nativeStatePart(details),
-    ...lifecycleParts(details, details.state),
-  );
+  parts.push(...lifecycleParts(details, details.state));
 
-  if (hasHiddenReason(details)) {
+  if (failed) {
     parts.push(reasonHint);
   }
 
@@ -531,10 +461,6 @@ const followUpHint = (details: StatusView): string => {
     return `Follow-up unavailable: already followed up by ${details.successorTaskId}.`;
   }
 
-  if (details.harness !== 'pi') {
-    return 'Follow-up unavailable: only Pi workers can continue; start a fresh task instead.';
-  }
-
   return `Follow-up available with source task ${details.taskId ?? 'unknown'}.`;
 };
 
@@ -555,9 +481,7 @@ const identityRows = (details: StatusView, theme: Theme): string[] => [
   ...optionalRow('Follows', details.predecessorTaskId, theme),
   ...optionalRow('Followed up by', details.successorTaskId, theme),
   ...optionalRow('Failure', details.failure, theme),
-  ...optionalRow('Observation', details.observationIssue, theme),
   ...optionalRow('Cleanup', details.cleanup, theme),
-  ...optionalRow('Native state', details.nativeState, theme),
   ...optionalRow('Pane', details.recovery?.paneId, theme),
 ];
 
@@ -581,8 +505,6 @@ const missingHandoffRows = (report: ReportView | undefined, theme: Theme): strin
 
 const requestedRows = (details: StatusView, theme: Theme): string[] => [
   ...optionalRow('Question receipt', details.questionReceipt, theme),
-  ...optionalRow('Submission', details.submission, theme),
-  ...optionalRow('Native output', details.nativeOutput, theme),
 ];
 
 export const expandedStatusLines = (details: StatusView, theme: Theme): string[] => {
@@ -703,8 +625,6 @@ const replyLabel = (delivery: string): StateLabel => {
       return { icon: '↳', color: 'accent', text: 'reply saved' };
     case 'notResent':
       return { icon: '↳', color: 'accent', text: 'reply already saved' };
-    case 'notDelivered':
-      return { icon: '!', color: 'error', text: 'reply not delivered' };
     default:
       return { icon: '!', color: 'warning', text: 'reply saved' };
   }
@@ -721,8 +641,6 @@ const replyStatement = (details: ReplyView, name: string, theme: Theme): string 
         : `${headText} ${label.text} · sent to its pane · not acknowledged yet`;
     case 'notResent':
       return `${headText} ${label.text} · not resent`;
-    case 'notDelivered':
-      return `${headText} ${label.text} · a native dialog needs you`;
     default:
       return `${headText} ${label.text} · delivery uncertain · do not resend`;
   }

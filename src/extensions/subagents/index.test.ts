@@ -12,6 +12,7 @@ import { expect, it, vi, onTestFinished as finishTest } from 'vitest';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
+import { fixtureModel } from './fixtures/controlledProvider.js';
 import subagentsExtension, { deliverWorkerNotice } from './index.js';
 import type { WorkerNotice } from './presentation.js';
 import type { WorkerWidgetRow } from './widget.js';
@@ -30,6 +31,21 @@ const textContent = (result: unknown): Record<string, unknown> => {
   return JSON.parse(text) as Record<string, unknown>;
 };
 
+const fixtureModelReference = `${fixtureModel.provider}/${fixtureModel.id}`;
+
+// Resolves every requested model to the fixture model, so a launch reaches the controller.
+const launchContext = (directory: string) =>
+  ({
+    cwd: directory,
+    isProjectTrusted: () => true,
+    modelRegistry: { find: () => fixtureModel },
+    scopedModels: [],
+    sessionManager: {
+      getSessionFile: () => join(directory, 'parent.jsonl'),
+      getSessionId: () => 'parent',
+    },
+  }) as unknown as ExtensionContext;
+
 const testTheme = { fg: (_color: string, text: string) => text };
 const noOperation = (): void => undefined;
 
@@ -44,7 +60,6 @@ const fullWorkerStatus = {
   usage: { available: false, reason: 'native' },
   nativeSessionId: 'native-1',
   nativeSessionFile: '/abs/records/task-1/session.jsonl',
-  harness: 'pi',
 };
 
 it('guides a manager inside herdr to delegate through the subagent tool prompt guidelines', ({
@@ -307,11 +322,11 @@ it('refreshes history while open, then stops polling after close without a model
       state: 'cleanupUnconfirmed',
       createdAt: 1,
       deadline: 10_000,
-      details: 'native-controls, not Tau-certified · manual cleanup pane-7',
+      details: 'Pi trusted tools + verified safety · manual cleanup pane-7',
       detailPath: '/records/task-full-id/task.json',
       issue: 'inspect recovery',
-      model: 'requested claude · observed unavailable',
-      usage: { available: false, reason: 'herdr did not expose usage' },
+      model: 'requested faux/test · observed unavailable',
+      usage: { available: false, reason: 'Pi session usage was not recorded' },
       report: { summary: 'Partial handoff', evidence: ['output.log'] },
     },
   ];
@@ -545,10 +560,10 @@ it('places follow-ups with explicit visibility and the current parent terminal',
   expect(followUp.mock.calls[0]?.[0]).not.toHaveProperty('parentPane');
 });
 
-it('routes approved native tool arguments through the generic resolver without Pi guarantees', async ({
+it('launches a Pi worker through the tool and refuses a launch outside herdr', async ({
   onTestFinished,
 }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-native-tool-'));
+  const directory = mkdtempSync(join(tmpdir(), 'tau-launch-tool-'));
 
   onTestFinished(() => {
     vi.restoreAllMocks();
@@ -569,20 +584,11 @@ it('routes approved native tool arguments through the generic resolver without P
     .spyOn(WorkerController.prototype, 'launch')
     .mockResolvedValue({} as Awaited<ReturnType<WorkerController['launch']>>);
 
-  const context = {
-    cwd: directory,
-    isProjectTrusted: () => true,
-    sessionManager: {
-      getSessionFile: () => join(directory, 'parent.jsonl'),
-      getSessionId: () => 'parent',
-    },
-  } as unknown as ExtensionContext;
+  const context = launchContext(directory);
 
   const input = {
     profile: 'worker',
-    harness: 'gemini',
-    permissions: 'native-controls',
-    nativeArguments: ['--native-setting', 'literal value'],
+    model: fixtureModelReference,
     task: 'Inspect fixture.',
     timeoutSeconds: 10,
   };
@@ -596,35 +602,18 @@ it('routes approved native tool arguments through the generic resolver without P
 
   expect(Value.Check(tool.parameters, input)).toBe(true);
 
-  expect(
-    Value.Check(reply.parameters, {
-      taskId: 'task',
-      replyId: 'reply',
-      reply: 'Scoped text.',
-      scopeUnchanged: true,
-    }),
-  ).toBe(true);
+  const answer = { taskId: 'task', replyId: 'reply', reply: 'Scoped text.', scopeUnchanged: true };
 
-  await tool.execute('native-call', input, undefined, undefined, context);
+  expect(Value.Check(reply.parameters, answer)).toBe(false);
+  expect(Value.Check(reply.parameters, { ...answer, questionId: 'question' })).toBe(true);
+
+  await tool.execute('pi-call', input, undefined, undefined, context);
 
   expect(launch.mock.calls[0]?.[0].loadout).toMatchObject({
-    harness: 'generic',
-    kind: 'gemini',
-    permissions: 'native-controls',
-    arguments: input.nativeArguments,
+    harness: 'pi',
+    model: fixtureModelReference,
+    permissions: 'trusted-full-tools',
   });
-
-  expect(launch.mock.calls[0]?.[0].loadout).not.toHaveProperty('safetyExtension');
-
-  await expect(
-    tool.execute(
-      'unsupported-guarantee',
-      { ...input, permissions: 'trusted-full-tools' },
-      undefined,
-      undefined,
-      context,
-    ),
-  ).rejects.toThrow('native-controls');
 
   vi.stubEnv('HERDR_ENV', '0');
 
@@ -661,20 +650,8 @@ it('defaults the launch timeout by profile role and keeps an explicit timeout', 
     throw new Error('Missing launch tool.');
   }
 
-  const context = {
-    cwd: directory,
-    isProjectTrusted: () => true,
-    sessionManager: {
-      getSessionFile: () => join(directory, 'parent.jsonl'),
-      getSessionId: () => 'parent',
-    },
-  } as unknown as ExtensionContext;
-
-  const input = {
-    harness: 'gemini',
-    permissions: 'native-controls',
-    task: 'Inspect fixture.',
-  };
+  const context = launchContext(directory);
+  const input = { model: fixtureModelReference, task: 'Inspect fixture.' };
 
   expect(Value.Check(tool.parameters, { ...input, profile: 'scout' })).toBe(true);
 
@@ -1103,22 +1080,13 @@ it('returns the unreadable-evidence object when launch records fail', async ({
     throw new Error('Missing launch tool.');
   }
 
-  const context = {
-    cwd: directory,
-    isProjectTrusted: () => true,
-    sessionManager: {
-      getSessionFile: () => join(directory, 'parent.jsonl'),
-      getSessionId: () => 'parent',
-    },
-  } as unknown as ExtensionContext;
+  const context = launchContext(directory);
 
   const result = await tool.execute(
     'call',
     {
       profile: 'worker',
-      harness: 'gemini',
-      permissions: 'native-controls',
-      nativeArguments: ['--native-setting'],
+      model: fixtureModelReference,
       task: 'Inspect fixture.',
       timeoutSeconds: 10,
     },

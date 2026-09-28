@@ -15,10 +15,10 @@ import { WorkerController } from '../controller/controller.js';
 import { searchHistory } from '../history.js';
 import { resolveLoadout, validateSavedLoadout } from '../loadout.js';
 import { readAcknowledgement, readReply } from '../questionRecords.js';
+import { readTask } from '../records.js';
 import { requireObject, result, terminalLocation } from '../terminal.js';
 import { fixtureModel } from './controlledProvider.js';
 import { isolatedHerdr } from './isolatedHerdr.js';
-import { readPiTask as readTask } from './loadout.js';
 import { toolAvailable } from './toolAvailable.js';
 
 export type PiWorkerScenario =
@@ -201,7 +201,6 @@ export default function (pi) {
     {
       profile: 'worker',
       model: `${fixtureModel.provider}/${fixtureModel.id}`,
-      permissions: 'trusted-full-tools',
     },
     {
       cwd: root,

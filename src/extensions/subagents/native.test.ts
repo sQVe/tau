@@ -14,7 +14,7 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { validateNative } from './native.js';
-import type { NativeTask } from './types.js';
+import type { Task } from './types.js';
 
 const fixture = () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-native-'));
@@ -23,7 +23,7 @@ const fixture = () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  const task: NativeTask = {
+  const task: Task = {
     version: 3,
     taskId: 'task',
     task: 'Inspect.',

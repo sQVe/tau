@@ -57,12 +57,7 @@ const launchParameters = Type.Object({
   profile: Type.String({ minLength: 1 }),
   cwd: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
-  harness: Type.Optional(Type.String()),
-  nativeArguments: Type.Optional(
-    Type.Array(Type.String({ maxLength: 8000, pattern: '^[^\\u0000]*$' }), { maxItems: 100 }),
-  ),
   visibility,
-  permissions: StringEnum(['trusted-full-tools', 'native-controls'] as const),
   timeoutSeconds: Type.Optional(
     Type.Integer({
       minimum: 10,
@@ -101,14 +96,12 @@ const historyParameters = Type.Object({
 const statusParameters = Type.Object({
   taskId: Type.String(),
   questionId: Type.Optional(Type.String()),
-  submissionId: Type.Optional(Type.String()),
-  readOutput: Type.Optional(Type.Boolean()),
 });
 
 const replyParameters = Type.Object(
   {
     taskId: Type.String(),
-    questionId: Type.Optional(Type.String()),
+    questionId: Type.String({ minLength: 1 }),
     replyId: Type.String({ pattern: '^[a-zA-Z0-9-]{1,128}$' }),
     reply: Type.String({ minLength: 1, maxLength: 32000 }),
     scopeUnchanged: Type.Boolean(),
@@ -317,7 +310,7 @@ const searchWorkerHistory = async (
   return { content: [{ type: 'text' as const, text: JSON.stringify(page) }], details: page };
 };
 
-const readWorkerStatus = async (
+const readWorkerStatus = (
   runtime: SubagentRuntime,
   parameters: StatusParameters,
   context: ExtensionContext,
@@ -333,17 +326,7 @@ const readWorkerStatus = async (
         ? active.questionReceipt(parameters.taskId, parentSessionId, parameters.questionId)
         : undefined;
 
-    const submissionReceipt =
-      parameters.submissionId != null && parameters.submissionId !== ''
-        ? active.submissionReceipt(parameters.taskId, parentSessionId, parameters.submissionId)
-        : undefined;
-
-    const nativeOutput =
-      parameters.readOutput === true
-        ? await active.nativeOutput(parameters.taskId, parentSessionId)
-        : undefined;
-
-    const status = { ...current, questionReceipt: receipt, submissionReceipt, nativeOutput };
+    const status = { ...current, questionReceipt: receipt };
 
     return {
       content: [{ type: 'text' as const, text: JSON.stringify(modelStatus(status)) }],
@@ -363,9 +346,7 @@ const replyToWorker = async (
     .getController()
     .reply(parameters.taskId, context.sessionManager.getSessionId(), parameters);
 
-  const questionId =
-    parameters.questionId === undefined ? {} : { questionId: parameters.questionId };
-
+  const questionId = { questionId: parameters.questionId };
   const content = modelReply(parameters.taskId, { ...receipt, ...questionId });
 
   return {
@@ -400,16 +381,12 @@ const registerLaunchTool = (runtime: SubagentRuntime): void => {
     name: 'subagent',
     label: 'Launch worker',
     description: [
-      'Launch a herdr worker. Requires task, profile, permissions; cwd must match this session.',
-      'Built-in profiles: scout, worker, reviewer, qa, each with a default Pi model. Pi is the default harness.',
-      'Pi needs trusted-full-tools and CC Safety Net.',
-      'Set harness for a non-Pi kind; Pi workers refuse nativeArguments.',
-      'Other harnesses need native-controls and writable cwd/.tau/workers/<taskId>/report.md.',
-      'Literal nativeArguments default empty; model requests need native flags. Tau neither verifies native models or controls nor approves dialogs.',
+      'Launch a Pi worker in herdr with full tools and CC Safety Net. Requires task and profile; cwd must match this session.',
+      'Built-in profiles: scout, worker, reviewer, qa, each with a default model. model selects another Pi provider/id.',
       'Assign acceptance criteria, baseline, worktree, one editor per worktree.',
       'Expect a report with Changes, Evidence, Decisions, and Concerns sections.',
       'Workers cannot launch workers; ask the parent. Each parent caps its live workers. The deadline includes waits and cleanup.',
-      'Returns state: starting (not accepted); running (Pi accepted or native text sent); awaitingReply (waiting for parent); reported (report saved, cleanup pending);',
+      'Returns state: starting (not accepted); running (accepted); awaitingReply (waiting for parent); reported (report saved, cleanup pending);',
       'stopping (cleanup running); stopped (cleanup confirmed); cleanupUnconfirmed (manual cleanup, references kept); notOwned (no verified handle, may still run).',
       'When a worker asks, reports, or stops, a status notice starts a new parent turn after the current tool call finishes.',
       'End your turn to wait; never sleep or poll.',
@@ -443,7 +420,7 @@ const registerFollowUpTool = (runtime: SubagentRuntime): void => {
     description: [
       'Assign a new task in a saved Pi session. Requires sourceTaskId from session history, task, timeoutSeconds, and settingsUnchanged: true.',
       'The source must be stopped with a report and no successorTaskId; its native session must not be live.',
-      'Returns the new task status, reusing the saved session and settings. Only Pi supports follow-up; start a fresh task for other harnesses.',
+      'Returns the new task status, reusing the saved session and settings.',
     ].join(' '),
     parameters: followUpParameters,
     renderCall(parameters, theme) {
@@ -492,8 +469,8 @@ const registerStatusTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_status',
     label: 'Worker status',
     description: [
-      'Read a direct child task. Requires taskId; questionId selects Pi reply and acknowledgement, submissionId selects native delivery, readOutput reads active native terminal text.',
-      'Returns state, saved references, and report evidence for the work it names, not proof of correctness. Missing delivery observation means uncertain; do not resend.',
+      'Read a direct child task. Requires taskId; questionId selects a reply and its acknowledgement.',
+      'Returns state, saved references, and report evidence for the work it names, not proof of correctness.',
       'The same parent session reattaches after restart when herdr confirms worker identity, without redispatch or a new deadline.',
       'No state means unreadable records; inspect recovery. subagent_cancel stops such a worker this session owns.',
     ].join(' '),
@@ -505,8 +482,8 @@ const registerStatusTool = (runtime: SubagentRuntime): void => {
       return renderStatusResult(result.details, options.expanded, theme);
     },
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
-    async execute(_toolCallId, parameters, _signal, _onUpdate, context) {
-      return readWorkerStatus(runtime, parameters, context);
+    execute(_toolCallId, parameters, _signal, _onUpdate, context) {
+      return Promise.resolve().then(() => readWorkerStatus(runtime, parameters, context));
     },
   });
 };
@@ -516,12 +493,11 @@ const registerReplyTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_reply',
     label: 'Reply to worker',
     description: [
-      "Reply within an active owned worker's scope and deadline. Requires taskId, unique replyId, reply, and scopeUnchanged: true.",
-      "Pi replies need the questionId from the worker's question notice; a Pi worker without a pending question takes no reply, so use subagent_follow_up after it stops.",
-      'Other harnesses take plain text without questionId; replyId cannot be assignment.',
-      'Returns delivery: sent (herdr accepted text); notResent (saved reply, not sent again; Pi delivery may remain uncertain);',
-      'uncertain (unconfirmed, do not retry); notDelivered (dialog blocked input, user action needed). Delivery is not task acceptance or acknowledgement.',
-      'Inspect status with questionId for Pi or submissionId for other harnesses. Tau refuses blocked or unknown native state and never approves dialogs.',
+      "Reply within an active owned worker's scope and deadline. Requires taskId, the questionId from the worker's question notice, unique replyId, reply, and scopeUnchanged: true.",
+      'A worker without a pending question takes no reply, so use subagent_follow_up after it stops.',
+      'Returns delivery: sent (herdr accepted text); notResent (saved reply, not sent again; delivery may remain uncertain);',
+      'uncertain (unconfirmed, do not retry). Delivery is not task acceptance or acknowledgement.',
+      'Inspect status with questionId for the acknowledgement.',
     ].join(' '),
     parameters: replyParameters,
     renderCall(parameters, theme) {

@@ -5,7 +5,6 @@ import { isMissingFile } from '../../errors/index.js';
 import { continuationOrigins } from './continuations.js';
 import { nativeHeader } from './native.js';
 import { readTasks } from './records.js';
-import { isGenericLoadout, requireNativeTask } from './types.js';
 import type { Task } from './types.js';
 
 export const canonical = (path: string): string => {
@@ -77,11 +76,7 @@ export const historyRegistry = (root: string) => {
   const tasks = new Map<string, Task>();
 
   for (const origin of origins.values()) {
-    if (isGenericLoadout(origin.loadout)) {
-      continue;
-    }
-
-    const path = canonical(requireNativeTask(origin).nativeSessionFile);
+    const path = canonical(origin.nativeSessionFile);
 
     if (tasks.has(path) && tasks.get(path)?.taskId !== origin.taskId) {
       throw new Error('Conflicting saved native session identities.');

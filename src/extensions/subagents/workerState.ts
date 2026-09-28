@@ -1,12 +1,10 @@
-import type { readGenericSubmission } from './records.js';
-import type { Question, Report, Task, TaskEvent, WorkerState } from './types.js';
+import type { Question, Report, TaskEvent, WorkerState } from './types.js';
 
 // Decides worker state from facts the caller read. tests/structure.test.ts keeps this module pure.
 
 export interface WorkerFacts {
   events: Partial<Record<TaskEvent['kind'], TaskEvent>>;
   report: Report | undefined;
-  assignment: ReturnType<typeof readGenericSubmission>;
   // A pending question keeps its identity; only a saved reply adds the delivery flag.
   pendingQuestion: (Question & { replySaved?: boolean }) | undefined;
 }
@@ -24,11 +22,7 @@ export const taskEndedEventKinds: readonly TaskEvent['kind'][] = [
 
 // The worker's own settled.stopped never proves a stop; only the parent's cleanup record does.
 // oxlint-disable-next-line eslint/complexity -- One ordered table of ownership and lifecycle rules is clearer than nested helpers.
-export const deriveWorkerState = (
-  facts: WorkerFacts,
-  task: Task,
-  controlled = false,
-): WorkerState => {
+export const deriveWorkerState = (facts: WorkerFacts, controlled = false): WorkerState => {
   const { events } = facts;
 
   if (events.cleanup?.stopped === true) {
@@ -55,10 +49,6 @@ export const deriveWorkerState = (
 
   if (facts.report) {
     return 'reported';
-  }
-
-  if (task.loadout.harness === 'generic') {
-    return facts.assignment?.observation?.state === 'submitted' ? 'running' : 'starting';
   }
 
   if (facts.pendingQuestion && facts.pendingQuestion.replySaved !== true) {
