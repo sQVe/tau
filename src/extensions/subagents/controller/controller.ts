@@ -391,6 +391,7 @@ export class WorkerController {
     return this.placement.place(
       {
         name: handle.task.name ?? 'worker',
+        labelCall: (argumentsList) => this.client(argumentsList, 2_000, this.lifetime.signal),
         ...(input.parentPane != null && input.parentPane !== ''
           ? { parentPane: input.parentPane }
           : {}),

@@ -15,8 +15,9 @@ export type Visibility = 'foreground' | 'background';
 export type Placement = TerminalLocation & { visibility: Visibility; reason?: string };
 
 interface PlacementInput {
-  // Worker name for the tab label.
   name: string;
+  // Renames the tab without the launch budget, so a hung rename cannot fail the launch.
+  labelCall?: TerminalCall;
   parentPane?: string;
   visibility: Visibility;
   cwd: string;
@@ -141,13 +142,14 @@ const splitCandidate = (
 
 export class WorkerPlacement {
   private readonly owned = new Map<string, { tabId: string; visibility: Visibility }>();
-  // Background workers named in their tab's label, in launch order, until their pane is stopped.
+  // Workers in each background tab's label, in launch order. Unlike owned, a cancelled placement
+  // keeps its name until the stop path releases it.
   private readonly labelled = new Map<string, { tabId: string; name: string }>();
   // Release stops splitting a worker pane, but a pane that cleanup left open still shows.
   private foreground: string | undefined;
   private pending: Promise<unknown> = Promise.resolve();
 
-  // A call means Tau stopped the pane, so its name leaves the tab label.
+  // Only the stop path passes a call; that is when the name leaves the tab label.
   release(terminalId: string, call?: TerminalCall): void {
     this.owned.delete(terminalId);
     const labelled = this.labelled.get(terminalId);
@@ -483,7 +485,7 @@ export class WorkerPlacement {
         this.labelled.delete(location.terminalId);
       } else {
         this.labelled.set(location.terminalId, { tabId: location.tabId, name: input.name });
-        await this.relabel(location.tabId, call);
+        await this.relabel(location.tabId, input.labelCall ?? call);
       }
     }
 
