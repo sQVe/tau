@@ -68,7 +68,7 @@ const runTestsParameters = Type.Object({
 const observationFor = async (tracker: ObservationTracker, context: ExtensionContext) => {
   const cwd = await observationDirectory(context.cwd);
 
-  const loaded = await loadTddConfig({
+  const loaded = loadTddConfig({
     cwd,
     agentDirectory: getAgentDir(),
     projectTrusted: context.isProjectTrusted(),
