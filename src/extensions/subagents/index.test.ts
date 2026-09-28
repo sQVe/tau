@@ -560,6 +560,32 @@ it('places follow-ups with explicit visibility and the current parent terminal',
   expect(followUp.mock.calls[0]?.[0]).not.toHaveProperty('parentPane');
 });
 
+it('refuses launch and status arguments that only non-Pi workers used', () => {
+  const tools = registerTools();
+  const launch = tools.get('subagent');
+  const status = tools.get('subagent_status');
+
+  if (!launch || !status) {
+    throw new Error('Worker tools missing.');
+  }
+
+  const input = { profile: 'worker', task: 'Inspect fixture.' };
+
+  expect(Value.Check(launch.parameters, input)).toBe(true);
+
+  for (const removed of [
+    { harness: 'claude' },
+    { permissions: 'native-controls' },
+    { nativeArguments: ['--model', 'other'] },
+  ]) {
+    expect(Value.Check(launch.parameters, { ...input, ...removed })).toBe(false);
+  }
+
+  expect(Value.Check(status.parameters, { taskId: 'task' })).toBe(true);
+  expect(Value.Check(status.parameters, { taskId: 'task', submissionId: 'reply' })).toBe(false);
+  expect(Value.Check(status.parameters, { taskId: 'task', readOutput: true })).toBe(false);
+});
+
 it('launches a Pi worker through the tool and refuses a launch outside herdr', async ({
   onTestFinished,
 }) => {

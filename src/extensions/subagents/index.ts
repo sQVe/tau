@@ -44,28 +44,31 @@ const visibility = Type.Optional(
   }),
 );
 
-const launchParameters = Type.Object({
-  task: Type.String({ minLength: 1, maxLength: 32_000 }),
-  label: Type.Optional(
-    Type.String({
-      minLength: 1,
-      maxLength: 120,
-      description:
-        'Short human label for the compact widget, such as "Fix status counts". Keep the full assignment in task.',
-    }),
-  ),
-  profile: Type.String({ minLength: 1 }),
-  cwd: Type.Optional(Type.String()),
-  model: Type.Optional(Type.String()),
-  visibility,
-  timeoutSeconds: Type.Optional(
-    Type.Integer({
-      minimum: 10,
-      maximum: 86_400,
-      description: 'Defaults to 1800 for investigation profiles and 3600 for editing profiles.',
-    }),
-  ),
-});
+const launchParameters = Type.Object(
+  {
+    task: Type.String({ minLength: 1, maxLength: 32_000 }),
+    label: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 120,
+        description:
+          'Short human label for the compact widget, such as "Fix status counts". Keep the full assignment in task.',
+      }),
+    ),
+    profile: Type.String({ minLength: 1 }),
+    cwd: Type.Optional(Type.String()),
+    model: Type.Optional(Type.String()),
+    visibility,
+    timeoutSeconds: Type.Optional(
+      Type.Integer({
+        minimum: 10,
+        maximum: 86_400,
+        description: 'Defaults to 1800 for investigation profiles and 3600 for editing profiles.',
+      }),
+    ),
+  },
+  { additionalProperties: false },
+);
 
 const defaultTimeoutSeconds = { investigation: 1800, editing: 3600 };
 
@@ -93,10 +96,10 @@ const historyParameters = Type.Object({
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
 });
 
-const statusParameters = Type.Object({
-  taskId: Type.String(),
-  questionId: Type.Optional(Type.String()),
-});
+const statusParameters = Type.Object(
+  { taskId: Type.String(), questionId: Type.Optional(Type.String()) },
+  { additionalProperties: false },
+);
 
 const replyParameters = Type.Object(
   {
