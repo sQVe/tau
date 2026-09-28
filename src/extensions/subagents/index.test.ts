@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -104,6 +104,44 @@ it('keeps parent tools, delegation guidelines, and handlers unavailable when a t
 
   expect(fake.tools.size).toBe(0);
   expect(fake.handlers.size).toBe(0);
+});
+
+it('lists user profiles in the launch description after session start', async ({
+  onTestFinished,
+}) => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-launch-profiles-'));
+  const fake = fakeExtensionApi();
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+  vi.spyOn(WorkerController.prototype, 'resume').mockResolvedValue(undefined);
+  mkdirSync(join(directory, 'agents'));
+
+  writeFileSync(
+    join(directory, 'agents', 'triage.md'),
+    '---\nname: triage\ndescription: Sorts bug reports\nrole: investigation\n---\nTriage.',
+  );
+
+  subagentsExtension(fake.pi);
+
+  const context = {
+    cwd: directory,
+    isProjectTrusted: () => false,
+    sessionManager: { getSessionId: () => 'parent' },
+  } as unknown as ExtensionContext;
+
+  onTestFinished(async () => {
+    await fake.handler('session_shutdown')({ reason: 'quit' }, context);
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  fake.handler('session_start')({}, context);
+
+  const description = fake.tools.get('subagent')?.description;
+
+  expect(description).toContain('triage');
+  expect(description).toContain('Sorts bug reports');
 });
 
 it('returns from session start while worker reattachment is still pending', async ({

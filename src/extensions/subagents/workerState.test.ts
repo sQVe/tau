@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import type { TaskEvent } from './types.js';
-import { deriveWorkerState } from './workerState.js';
+import { deriveWorkerState, showsActivity } from './workerState.js';
 import type { WorkerFacts } from './workerState.js';
 
 const event = (kind: TaskEvent['kind'], stopped = false): TaskEvent => ({
@@ -129,3 +129,16 @@ it.each([
     expect(deriveWorkerState(saved, controlled)).toBe(state);
   },
 );
+
+it.each([
+  ['starting', true],
+  ['running', true],
+  ['awaitingReply', true],
+  ['notOwned', true],
+  ['reported', false],
+  ['stopping', false],
+  ['stopped', false],
+  ['cleanupUnconfirmed', false],
+] as const)('shows activity for %s: %s', (state, shown) => {
+  expect(showsActivity(state)).toBe(shown);
+});

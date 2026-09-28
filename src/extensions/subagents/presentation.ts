@@ -2,8 +2,10 @@ import { join } from 'node:path';
 
 import type { ThemeColor } from '@earendil-works/pi-coding-agent';
 
+import type { WorkerActivity } from './activity.js';
 import { capReportText } from './reportCap.js';
 import type { WorkerState } from './types.js';
+import { showsActivity } from './workerState.js';
 
 // The single label table for worker states. Wording credits the worker and never claims a stop
 // or an acknowledgement that the saved records do not prove.
@@ -31,6 +33,7 @@ export interface StatusInput {
   state: WorkerState;
   deadline: number;
   directory?: string | undefined;
+  activity?: WorkerActivity | undefined;
   name?: string | undefined;
   outcome?: string | undefined;
   predecessorTaskId?: string | undefined;
@@ -166,6 +169,22 @@ const modelQuestionReceipt = (
   };
 };
 
+const modelActivity = (status: StatusInput): Record<string, unknown> | undefined => {
+  const { activity } = status;
+
+  if (!activity || !showsActivity(status.state)) {
+    return undefined;
+  }
+
+  const result: Record<string, unknown> = { phase: activity.phase };
+
+  addField(result, 'description', activity.description);
+  result.updatedAt = activity.updatedAt;
+  addField(result, 'usage', activity.usage);
+
+  return result;
+};
+
 const cappedReport = (report: unknown): Record<string, unknown> | undefined => {
   if (!isRecord(report) || typeof report.summary !== 'string' || !Array.isArray(report.evidence)) {
     return undefined;
@@ -215,6 +234,7 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   addField(result, 'name', status.name);
   addField(result, 'placement', status.placement);
   addField(result, 'outcome', status.outcome);
+  addField(result, 'activity', modelActivity(status));
   addField(result, 'predecessorTaskId', status.predecessorTaskId);
   addField(result, 'successorTaskId', status.successorTaskId);
   addReport(result, status);

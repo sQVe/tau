@@ -159,6 +159,43 @@ it('drops absent keys and maps receipts to their narrow shape', () => {
   });
 });
 
+const activity = {
+  taskId: 'task-1',
+  sequence: 3,
+  updatedAt: 5,
+  phase: 'active' as const,
+  label: 'tool: read',
+  description: 'Fixing status counts',
+  model: 'provider/model',
+  usage: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 },
+};
+
+it('shows the activity of a live worker and omits it for a stopped one', () => {
+  expect(
+    modelStatus({ taskId: 'task-1', state: 'running', deadline: 10, activity }).activity,
+  ).toEqual({
+    phase: 'active',
+    description: 'Fixing status counts',
+    updatedAt: 5,
+    usage: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 },
+  });
+
+  expect(
+    modelStatus({ taskId: 'task-1', state: 'stopped', deadline: 10, activity }).activity,
+  ).toBeUndefined();
+});
+
+it('shows only the phase and time of activity without a description or usage', () => {
+  const content = modelStatus({
+    taskId: 'task-1',
+    state: 'running',
+    deadline: 10,
+    activity: { taskId: 'task-1', sequence: 0, updatedAt: 5, phase: 'starting' },
+  });
+
+  expect(content.activity).toEqual({ phase: 'starting', updatedAt: 5 });
+});
+
 it('marks handoff sections present and missing without inventing evidence', () => {
   const legacy = modelStatus({
     taskId: 'task-1',
