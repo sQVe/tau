@@ -30,8 +30,9 @@ stopped early, or left a claim uncertain, or when the input changed during the r
 - Review the whole selected target on every run. Do not shrink a repeated review to a delta or reuse
   earlier findings or verdicts.
 - Launch workers with the `reviewer` profile. Omit `model` to use the configured reviewer model,
-  unless the user names a model. Omit `timeoutSeconds`. If a launch fails, report it. Never switch
-  model or provider silently.
+  unless the user names a model. Omit `timeoutSeconds`, unless the user names a cheap model; then
+  set a shorter one than the default. If a launch fails, report it. Never switch model or provider
+  silently.
 - Fast launches one worker. Deep launches two: a finder, then a fresh checker. Never retry, follow
   up, or add workers without the user's approval.
 - Aim for about 5 minutes for fast and 10 for deep. The aim is yours, not the workers': put no
@@ -137,6 +138,7 @@ stopped early, or left a claim uncertain, or when the input changed during the r
   direction. For rule violations, also cite the applicable rule's file and supporting lines. No
   quotas or nits. Mark pre-existing issues separately. Name areas you left unread or read only
   shallowly.
+- Save details that do not fit the report in `$dir/details.md`.
 - Handoff: "Changes: None, read-only. Baseline: `$dir/input.md` at HEAD `<sha>`." Do not recapture
   Git state or run full checks for the handoff.
 
