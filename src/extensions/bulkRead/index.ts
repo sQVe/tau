@@ -14,7 +14,7 @@ interface BulkReadState {
   clamped: Set<string>;
 }
 
-// ADR 0014 records the measurement behind this threshold.
+// Repeat the bulk read measurement in docs/development.md before changing this threshold.
 const bulkReadLineThreshold = 400;
 
 // Cancellations and timeouts, like recoverable bulk read failures, say nothing about the delegate.
@@ -126,8 +126,8 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
   registerBulkRead(pi, state);
   registerTrimHook(pi, state);
 
-  // The extension outlives a session, but ADR 0014 scopes a stopped trim to the session that
-  // stopped it.
+  // The extension outlives a session, but a stopped trim applies only to the session that stopped
+  // it.
   const resetSession = () => {
     state.trimming = true;
     state.clamped.clear();
