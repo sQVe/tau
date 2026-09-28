@@ -102,22 +102,12 @@ export const isHerdrError = (error: unknown, code: string): boolean => {
   return 'cause' in error && isHerdrError(error.cause, code);
 };
 
+// herdr answers with an error document for a pane that has no detected agent yet.
 const readAgent = async (
   call: (argumentsList: string[]) => Promise<string>,
   paneId: string,
-  starting: boolean,
-): Promise<Record<string, unknown>> => {
-  try {
-    // herdr answers with an error document for a pane that has no detected agent yet.
-    return requireObject(result(await call(['agent', 'get', paneId])).agent);
-  } catch (error) {
-    if (starting && isHerdrError(error, 'agent_not_found')) {
-      throw new Error('Native worker has not been detected by herdr yet.', { cause: error });
-    }
-
-    throw error;
-  }
-};
+): Promise<Record<string, unknown>> =>
+  requireObject(result(await call(['agent', 'get', paneId])).agent);
 
 class PendingPiSessionError extends Error {
   override name = 'PendingPiSessionError';
@@ -204,7 +194,7 @@ export const verifyRejectedStart = async (
   }
 
   try {
-    if (Object.keys(await readAgent(call, text(handle.identity.paneId), true)).length > 0) {
+    if (Object.keys(await readAgent(call, text(handle.identity.paneId))).length > 0) {
       return false;
     }
   } catch (error) {
@@ -256,7 +246,7 @@ export const inspectWorker = async (
 
   checkForeground(information, paneId, previous);
 
-  const agent = await readAgent(call, paneId, false);
+  const agent = await readAgent(call, paneId);
   const processId = integer(information.foreground_process_group_id);
   const shellPid = integer(information.shell_pid);
 

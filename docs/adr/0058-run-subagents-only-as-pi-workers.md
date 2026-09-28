@@ -8,7 +8,8 @@
   [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md), the generic steps in
   [ADR 0050](./0050-split-worker-control-into-a-coordinator-and-one-controller-per-worker.md), and
   the non-Pi report area in
-  [ADR 0045](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md)
+  [ADR 0045](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md), and the task
+  record policy in [ADR 0053](./0053-version-each-saved-record-format.md)
 
 ## Context
 
