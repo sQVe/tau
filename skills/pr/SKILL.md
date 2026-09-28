@@ -18,6 +18,7 @@ It needs `gh` authenticated for the target host's active account.
 
 Publish a pull request whose description matches the pushed commits. Mark it ready only when the
 required pre-merge checks pass and a complete review of the pushed content has no open findings.
+Approved fixes the user accepts without a new review count as reviewed.
 
 ## Hard rules
 
@@ -105,8 +106,9 @@ required pre-merge checks pass and a complete review of the pushed content has n
    the same content, as
    [ADR 0039](../../docs/adr/0039-reuse-reported-checks-and-run-one-full-suite.md) describes.
    Otherwise commit the task's changes first and run them once on that tree. Save their real output
-   in `$prdir`, with the HEAD, `git status --porcelain`, and diff hash taken before the run at the
-   top. Never write a summary in its place. A failing check is a gap.
+   in `$prdir`, with the HEAD, `git status --porcelain`, and the hash of
+   `git diff <merge base> HEAD`, taken before the run, at the top. Never write a summary in its
+   place. A failing check is a gap.
 
 6. Choose the draft status. Ready needs passing required checks and a complete review with no open
    findings that matches the pushed content, apart from approved fixes the user accepted without a
