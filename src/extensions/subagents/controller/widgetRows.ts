@@ -6,9 +6,14 @@ import type { Task } from '../types.js';
 import type { WorkerWidgetRow } from '../widget.js';
 import { taskRecordStatus } from './record.js';
 
-const readWidgetStatus = (directory: string, task: Task, controlled: boolean) => {
+const readWidgetStatus = (
+  directory: string,
+  task: Task,
+  controlled: boolean,
+  entries: { directory: string; task: Task }[],
+) => {
   try {
-    return taskRecordStatus(directory, task, controlled);
+    return taskRecordStatus(directory, task, controlled, entries);
   } catch {
     return undefined;
   }
@@ -258,10 +263,15 @@ const buildWidgetRow = (
   };
 };
 
-export const widgetRow = (directory: string, task: Task, controlled: boolean): WorkerWidgetRow =>
+export const widgetRow = (
+  directory: string,
+  task: Task,
+  controlled: boolean,
+  entries: { directory: string; task: Task }[],
+): WorkerWidgetRow =>
   buildWidgetRow(
     directory,
     task,
-    readWidgetStatus(directory, task, controlled),
+    readWidgetStatus(directory, task, controlled, entries),
     readWorkerActivity(directory, task.taskId),
   );

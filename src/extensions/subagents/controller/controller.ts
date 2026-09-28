@@ -109,13 +109,14 @@ export class WorkerController {
 
   widgetRows(parentSessionId: string): WorkerWidgetRow[] {
     const rows: WorkerWidgetRow[] = [];
+    const entries = readTasks(this.root);
 
-    for (const { directory, task } of readTasks(this.root)) {
+    for (const { directory, task } of entries) {
       if (task.parentSessionId !== parentSessionId) {
         continue;
       }
 
-      rows.push(widgetRow(directory, task, this.owns(task.taskId)));
+      rows.push(widgetRow(directory, task, this.owns(task.taskId), entries));
     }
 
     return rows.toSorted((left, right) => right.createdAt - left.createdAt);

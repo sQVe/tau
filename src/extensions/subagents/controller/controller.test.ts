@@ -34,7 +34,11 @@ import { EvidenceUnavailableError, taskStatus } from './record.js';
 vi.mock('node:fs', async (importOriginal) => {
   const original = await importOriginal<typeof fileSystem>();
 
-  return { ...original, fsyncSync: vi.fn<typeof fsyncSync>(original.fsyncSync) };
+  return {
+    ...original,
+    fsyncSync: vi.fn<typeof fsyncSync>(original.fsyncSync),
+    readdirSync: vi.fn<typeof readdirSync>(original.readdirSync),
+  };
 });
 
 const originalRunClient = cancellationModule.runClient;
@@ -2986,6 +2990,18 @@ it('keeps capacity free when a stopped worker is cancelled again', async ({ onTe
   const next = await controller.launch(input);
 
   expect(controller.owns(next.taskId)).toBe(true);
+});
+
+it('reads the worker directory once per widget refresh', async ({ onTestFinished }) => {
+  const { controller, input } = setup(onTestFinished);
+  const launched = await controller.launch(input);
+  await controller.launch(input);
+  await controller.launch(input);
+  const root = dirname(launched.directory);
+  vi.mocked(readdirSync).mockClear();
+
+  expect(controller.widgetRows('parent-id')).toHaveLength(3);
+  expect(vi.mocked(readdirSync).mock.calls.filter(([path]) => path === root)).toHaveLength(1);
 });
 
 it('reads status, history, and widget rows without writing records or stopping workers', async ({
