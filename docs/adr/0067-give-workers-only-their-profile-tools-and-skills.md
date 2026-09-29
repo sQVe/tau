@@ -1,4 +1,4 @@
-# ADR 0066: Give workers only their profile's tools and skills
+# ADR 0067: Give workers only their profile's tools and skills
 
 - Status: Accepted
 - Date: 2026-09-29

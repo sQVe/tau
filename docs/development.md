@@ -112,7 +112,7 @@ start when a listed tool is not registered. Workers load no skills unless the pr
 setting names them, for example `skills: tdd`. The bundled `qa` profile lists the browser tools from
 `pi-agent-browser-native`; without that package, add a `qa` profile to `~/.pi/agent/agents/` that
 lists other tools. See the
-[tool and skill decision](adr/0066-give-workers-only-their-profile-tools-and-skills.md).
+[tool and skill decision](adr/0067-give-workers-only-their-profile-tools-and-skills.md).
 
 Set `TAU_SUBAGENT_CAP` to limit how many live workers each parent controller runs at once. It takes
 an integer from 1 to 256 and defaults to 4. Each controller reads the cap once when it starts. A
