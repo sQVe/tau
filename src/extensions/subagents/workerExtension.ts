@@ -80,14 +80,13 @@ const reportParameters = Type.Object({
     Type.String({
       minLength: 1,
       maxLength: 4000,
-      description:
-        'Required for incomplete: the external dependency, exhausted limit, or parent decision that stops you.',
+      description: 'Required for incomplete: what stops you.',
     }),
   ),
   blockerKind: Type.Optional(
     StringEnum(blockerKinds, {
       description:
-        'Required for incomplete. time: the task deadline is nearly reached, accepted only in the last tenth of the task window or its last 90 seconds; dependency: an external dependency; decision: a parent decision; limit: another exhausted limit that is not time.',
+        'Required for incomplete. time: the deadline is nearly reached; dependency: an external dependency; decision: a parent decision; limit: another exhausted limit.',
     }),
   ),
 });
@@ -644,7 +643,7 @@ const registerQuestionTool = (pi: ExtensionAPI, state: WorkerExtensionState): vo
     name: 'subagent_question',
     label: 'Ask parent',
     description:
-      'Ask the parent one clarification and pause this turn without exiting. Waiting uses the original deadline. This does not authorize increased scope. Call alone.',
+      'Ask the parent one question and wait for the reply. The deadline keeps running, and the reply cannot widen scope. Call alone.',
     parameters: Type.Object(
       { question: Type.String({ minLength: 1, maxLength: 32000 }) },
       { additionalProperties: false },
@@ -664,11 +663,8 @@ const registerProgressTool = (pi: ExtensionAPI, state: WorkerExtensionState): vo
   pi.registerTool({
     name: 'subagent_progress',
     label: 'Report progress',
-    description: [
-      'Publish one short single-line phase description when the work phase changes, for example "Inspecting launch code" or "Running focused tests".',
-      'Update it on phase changes only, not for every tool call and not for reassurance.',
-      'It is passive: it never wakes the parent and never extends the deadline.',
-    ].join(' '),
+    description:
+      'Publish a short one-line phase, such as "Running focused tests", only when the work phase changes. It never wakes the parent or extends the deadline.',
     parameters: progressParameters,
     execute(...argumentsList) {
       const saved = recordPhaseDescription(state, argumentsList[4], argumentsList[1].description);
@@ -686,9 +682,8 @@ const registerReportTool = (pi: ExtensionAPI, state: WorkerExtensionState): void
     name: 'subagent_report',
     label: 'Worker report',
     description: [
-      'Submit the final durable handoff once.',
-      'Put the Changes, Evidence, Decisions, and Concerns sections in summary; evidence holds references, not the Evidence section.',
-      'Outcome incomplete requires blocker and blockerKind. Receipt does not prove correctness or stopped work. Do not retry uncertain delivery.',
+      'Submit the final report once. Put the report sections in summary; evidence holds references, not the Evidence section.',
+      'Do not retry uncertain delivery.',
     ].join(' '),
     parameters: reportParameters,
     execute(...argumentsList) {

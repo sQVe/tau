@@ -22,46 +22,31 @@ interface ObservationTracker {
   reportedConfigError: string | undefined;
 }
 
-const runTestsDescription =
-  'Runs Vitest only; use the project runner for Go, Jest, pytest, or other test runners. Run focused tests for a behavior, then the full suite. Use exact names for the installed Vitest version: join describe names and the it name with spaces in Vitest 4 ("outer inner works") or " > " in Vitest 5 ("outer > inner > works"). ' +
-  'Names are literal, not regexes. On no match, use the reported collected names; do not restructure tests or broaden selection. ' +
-  'Start with a failing focused test (RED), implement the behavior, then rerun focused (GREEN) and verify the full suite through the repository full check or scope "full". These are observations, never edit permissions. ' +
-  'Returns kind, scope, freshness (fresh, stale, or unknown), and the actual runner report, even when inputs changed during the run. ' +
-  'A full pass counts without prior RED or focused renewal after formatting. A repository full check that already ran the suite on the current inputs satisfies full verification; do not run a second full suite only for bookkeeping. Duplicate, skipped, and missing tests cannot establish RED. ' +
-  'Short session-local hints suggest missing RED, RED from a thrown error instead of a failed assertion, full verification, or rerunning stale results. Hints never block or require acknowledgment. ' +
-  'By default, freshness covers .ts/.tsx/.js/.jsx/.mjs/.cjs under root src/, apps/, packages/, functions/, and infra/, plus test/spec files and root tests/ helpers. ' +
-  'A "tdd" block in the user tau.json in the Pi agent directory, or in the repository .pi/tau.json when the project is trusted, replaces these globs and the Vitest command per field; each run shows the effective config. ' +
-  'Freshness also covers default-named package/Vite/Vitest/TypeScript configs, npm/pnpm/Yarn/Bun lockfiles, and pnpm/Vitest workspace files throughout the worktree. ' +
-  'Dependencies and common generated/cache directories are excluded. Other source layouts, assets, and custom config filenames are not covered. ' +
-  'Checks run at bounded checkpoints, not an atomic snapshot or reusable verification. ' +
-  'Shows focused files and exact names, or full-suite scope. Focused summaries show each selected test duration; full summaries list only tests over 1000 ms outside .integration. files. The summary is capped at 2000 characters, with up to 4000 characters of run context and at most one hint. ' +
-  'Read the saved run.json for command, selection, and before/after input fingerprints. Diagnostics retain up to 8 MiB stdout, 32 KiB stderr, and 8 MiB raw JSON, including passes. ' +
-  'Console output beyond the capture limit is discarded without stopping tests. Truncation distinguishes process bytes from decoded text bytes. ' +
-  'Files live in the Pi agent test-runs directory. After each run, cleanup keeps up to 32 completed runs for seven days; recent unfinished runs are protected. ' +
-  'Runner output is diagnostic text, never the source of test verdicts. ' +
-  'Resolution failures include safe error codes/types and available lookup paths. Inspect once, then fix resolution or use the repository runner. ' +
-  'Bash tests do not update Tau observations.';
+const runTestsDescription = [
+  'Runs Vitest only; use the project runner for other test frameworks.',
+  'Run a failing focused test (RED), implement, rerun the same selection (GREEN), then verify the full suite once with scope "full" or the repository full check.',
+  'RED and GREEN are observations, never edit permissions. Duplicate, skipped, and missing tests cannot establish RED.',
+  'Returns the runner report, input freshness (fresh, stale, or unknown), and at most one hint. Bash test runs do not update these observations.',
+].join(' ');
 
 const runTestsParameters = Type.Object({
   behavior: Type.String({
     minLength: 1,
-    description: 'Name the behavior. This label does not affect test selection.',
+    description: 'Label only; it does not select tests.',
   }),
   testFullName: Type.Union(
     [Type.String({ minLength: 1 }), Type.Array(Type.String({ minLength: 1 }), { minItems: 1 })],
     {
       description:
-        'Exact Vitest test name: nested names use spaces in Vitest 4 and " > " in Vitest 5. An array selects names that prove one behavior together. Keep names stable between focused runs.',
+        'Exact literal test name. Vitest 4 joins nested names with spaces, Vitest 5 with " > ". An array selects names that prove one behavior.',
     },
   ),
   files: Type.Array(Type.String({ minLength: 1 }), {
     minItems: 1,
-    description:
-      'Literal worktree-relative test file paths. Keep files stable between focused runs.',
+    description: 'Worktree-relative test file paths.',
   }),
   scope: Type.Union([Type.Literal('focused'), Type.Literal('full')], {
-    description:
-      'focused selects the exact names in the supplied files; full runs the whole suite.',
+    description: 'focused runs the named tests in files; full runs the whole suite.',
   }),
 });
 
