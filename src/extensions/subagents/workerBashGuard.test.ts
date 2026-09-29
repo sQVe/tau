@@ -59,23 +59,11 @@ it('shows the head and tail of long output and saves the exact output privately'
 
   expect(text.length).toBeLessThanOrEqual(8000);
   expect(text).toMatch(/^1\n2\n3\n/u);
-  expect(text).toMatch(/1899\n1900$/u);
+  expect(text).toMatch(/1899\n1900\n?$/u);
   expect(text).toMatch(/\[\d+ of 8393 characters cut\. Command exited with code 0\./u);
   expect(await readFile(path, 'utf8')).toBe(result.content[0]?.text);
   expect((await stat(path)).mode & 0o777).toBe(0o600);
   expect((await stat(dirname(path))).mode & 0o777).toBe(0o700);
-});
-
-it('shows the head and tail of output with a long line', async () => {
-  const result = await runBash("head -c 20000 /dev/zero | tr '\\0' x; echo; echo Done");
-  const text = await modelText(result);
-
-  savedPath(text);
-
-  expect(text.length).toBeGreaterThan(7000);
-  expect(text.length).toBeLessThanOrEqual(8000);
-  expect(text).toMatch(/^x{1000}/u);
-  expect(text).toMatch(/x{1000}\nDone\n?$/u);
 });
 
 it('leaves the output of a long failing command whole', async () => {

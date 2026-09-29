@@ -26,6 +26,7 @@ const pureModules = [
   'src/delegateModel/allowedModels.ts',
   'src/extensions/askUserQuestion/questionnaire.ts',
   'src/extensions/tdd/configLayers.ts',
+  'src/extensions/subagents/bashOutputCap.ts',
   'src/extensions/subagents/incompleteReport.ts',
   'src/extensions/subagents/piStop.ts',
   'src/extensions/subagents/reportCap.ts',

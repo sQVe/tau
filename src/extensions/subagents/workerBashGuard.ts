@@ -2,25 +2,9 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { truncateHead, truncateTail } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ToolResultEvent } from '@earendil-works/pi-coding-agent';
 
-const outputCap = 8000;
-const headLength = 2000;
-const tailLength = 5500;
-
-// Pi's helpers keep whole lines, so one long line can leave the head or tail almost empty.
-const keepHead = (text: string): string => {
-  const lines = truncateHead(text, { maxBytes: headLength, maxLines: Infinity }).content;
-
-  return lines.length >= headLength / 2 ? lines : text.slice(0, headLength).toWellFormed();
-};
-
-const keepTail = (text: string): string => {
-  const lines = truncateTail(text, { maxBytes: tailLength, maxLines: Infinity }).content;
-
-  return lines.length >= tailLength / 2 ? lines : text.slice(-tailLength).toWellFormed();
-};
+import { cutBashOutput } from './bashOutputCap.js';
 
 // mkdtemp creates the directory readable only by its owner, outside the worktree under test.
 const saveFullOutput = async (text: string): Promise<string> => {
@@ -40,15 +24,19 @@ const capBashOutput = async (event: ToolResultEvent) => {
 
   const [part, ...rest] = event.content;
 
-  if (part?.type !== 'text' || rest.length > 0 || part.text.length <= outputCap) {
+  if (part?.type !== 'text' || rest.length > 0) {
     return undefined;
   }
 
   const text = part.text;
+  const cutOutput = cutBashOutput(text);
+
+  if (cutOutput === undefined) {
+    return undefined;
+  }
+
+  const { head, tail, cut } = cutOutput;
   const path = await saveFullOutput(text);
-  const head = keepHead(text);
-  const tail = keepTail(text);
-  const cut = text.length - head.length - tail.length;
   const marker = `[${cut} of ${text.length} characters cut. Command exited with code 0. Full output: ${path}]`;
 
   return { content: [{ type: 'text' as const, text: `${head}\n\n${marker}\n\n${tail}` }] };
