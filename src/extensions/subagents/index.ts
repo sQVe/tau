@@ -45,12 +45,8 @@ type NoticeDelivery = (
 
 const visibility = Type.Optional(
   StringEnum(['foreground', 'background'] as const, {
-    description: [
-      'Defaults to foreground for editing profiles and background for investigation profiles.',
-      'Foreground places the worker beside the parent. Background runs it in a separate worker tab.',
-      'Only one worker per parent is foreground. Another foreground request, or a zoomed or too small parent tab, runs in the background; the result reports placement and its reason.',
-      'Both preserve focus, manual split ratios, and unrelated panes.',
-    ].join(' '),
+    description:
+      'Foreground opens beside the parent, background in a separate tab. Defaults to foreground for editing profiles. The result reports the actual placement.',
   }),
 );
 
@@ -61,8 +57,7 @@ const launchParameters = Type.Object(
       Type.String({
         minLength: 1,
         maxLength: 120,
-        description:
-          'Short human label for the compact widget, such as "Fix status counts". Keep the full assignment in task.',
+        description: 'Short widget label, such as "Fix status counts".',
       }),
     ),
     profile: Type.String({ minLength: 1 }),
@@ -90,7 +85,7 @@ const followUpParameters = Type.Object(
       Type.String({
         minLength: 1,
         maxLength: 120,
-        description: 'Short human label for the compact widget. Keep the full assignment in task.',
+        description: 'Short widget label.',
       }),
     ),
     timeoutSeconds: Type.Integer({ minimum: 10, maximum: 86400 }),
@@ -443,14 +438,10 @@ const registerLaunchTool = (runtime: SubagentRuntime, profiles: ProfileSummary[]
     name: 'subagent',
     label: 'Launch worker',
     description: [
-      'Launch a Pi worker in herdr with full tools and CC Safety Net. Requires task and profile; cwd must match this session.',
+      'Launch a Pi worker in a herdr pane. cwd must match this session.',
       `Profiles: ${profileText(profiles)}. model overrides the profile's Pi provider/id.`,
-      'Assign acceptance criteria, baseline, worktree, one editor per worktree.',
-      'Expect a report with Changes, Evidence, Decisions, and Concerns sections.',
-      'Workers cannot launch workers; ask the parent. Each parent caps its live workers. The deadline includes waits and cleanup.',
-      'When a worker asks, reports, or stops, a status notice starts a new parent turn after the current tool call finishes.',
-      'End your turn to wait; never sleep or poll.',
-      'No state means unreadable records; inspect recovery. subagent_cancel stops such a worker this session owns.',
+      'Give the task acceptance criteria, baseline, and worktree; one editor per worktree. The deadline includes waits and cleanup.',
+      'A notice starts a new turn when a worker asks, reports, or stops. End your turn to wait; never sleep or poll.',
     ].join(' '),
     promptSnippet: 'Launch Tau workers to scout, implement, or review work',
     parameters: launchParameters,
@@ -476,9 +467,8 @@ const registerFollowUpTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_follow_up',
     label: 'Follow up completed worker',
     description: [
-      'Assign a new task in a saved Pi session. Requires sourceTaskId from session history, task, and timeoutSeconds.',
-      'The source must be stopped with a report and no successorTaskId; its native session must not be live.',
-      'Returns the new task status, reusing the saved session and settings.',
+      'Give a stopped worker a new task in its saved session and settings.',
+      'The source must have a report, no successorTaskId, and no live session.',
     ].join(' '),
     parameters: followUpParameters,
     renderCall(parameters, theme) {
@@ -503,10 +493,8 @@ const registerHistoryTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_history',
     label: 'Search session history',
     description: [
-      'Search earlier work in this session history by name, task or native session ID, or description. No required inputs; query, offset, and limit are optional.',
-      'Returns candidates and totalMatches, excluding current and ancestor sessions. Use nextOffset with the same query to page; additions can shift pages.',
-      'truncatedFields marks previews, not exact IDs or paths; reportFile locates a truncated report. Clarify multiple matches using full IDs.',
-      'Search does not grant control of workers.',
+      'Search earlier workers in this session history by name, task or session ID, or description.',
+      'Page with nextOffset and the same query. truncatedFields marks previews; use full IDs, and reportFile for a truncated report.',
     ].join(' '),
     parameters: historyParameters,
     renderCall(parameters, theme) {
@@ -527,10 +515,9 @@ const registerStatusTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_status',
     label: 'Worker status',
     description: [
-      'Read a direct child task. Requires taskId; questionId selects a reply and its acknowledgement.',
-      'Returns state, saved references, and report evidence for the work it names, not proof of correctness.',
-      'The same parent session reattaches after restart when herdr confirms worker identity, without redispatch or a new deadline.',
-      'No state means unreadable records; inspect recovery. subagent_cancel stops such a worker this session owns.',
+      "Read a direct child task's state, saved references, and report evidence. questionId selects a reply and its acknowledgement.",
+      'After a restart, the same parent session reattaches workers that herdr confirms; do not relaunch them.',
+      'No state means unreadable records; inspect recovery, or cancel a worker this session owns.',
     ].join(' '),
     parameters: statusParameters,
     renderCall(parameters, theme) {
@@ -551,10 +538,8 @@ const registerReplyTool = (runtime: SubagentRuntime): void => {
     name: 'subagent_reply',
     label: 'Reply to worker',
     description: [
-      "Reply within an active owned worker's scope and deadline. Requires taskId, the questionId from the worker's question notice, unique replyId, and reply.",
-      'A worker without a pending question takes no reply, so use subagent_follow_up after it stops.',
-      'Saves the reply for the worker to read; resending an identical reply is safe.',
-      'Inspect status with questionId for the acknowledgement.',
+      "Answer a worker's pending question with the questionId from its notice and a unique replyId. Resending the same reply is safe.",
+      'A reply cannot widen scope or extend the deadline. After a worker stops, use subagent_follow_up.',
     ].join(' '),
     parameters: replyParameters,
     renderCall(parameters, theme) {
@@ -574,10 +559,8 @@ const registerCancelTool = (runtime: SubagentRuntime): void => {
   runtime.pi.registerTool({
     name: 'subagent_cancel',
     label: 'Cancel worker',
-    description: [
-      "Cancel a worker using live or saved identity. Requires this parent's taskId.",
-      'Returns cleanup status; cleanupUnconfirmed needs manual cleanup. Detached descendants are not contained.',
-    ].join(' '),
+    description:
+      'Cancel a worker this session owns. cleanupUnconfirmed in the result needs manual cleanup.',
     parameters: cancelParameters,
     renderCall(parameters, theme) {
       return callText('Cancel worker', shortId(parameters.taskId), theme);

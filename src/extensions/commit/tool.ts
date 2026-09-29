@@ -34,14 +34,9 @@ interface CommitToolResult {
 }
 
 export const commitToolGuidelines = [
-  'When asked to commit, call commit with exact, ordered groups without asking for confirmation. It stages and commits each group with installed Git hooks.',
-  'The commit tool stages whole requested files on the real index. Assign each path to one group. Working edits remain visible to hooks. Installed hooks may add paths; commit reports actual committed files relative to the repository root.',
-  "Never absorb unrelated edits, another group's paths, or rejected sensitive paths to clear a commit error. Never overwrite concurrent staging or HEAD.",
-  "The commit tool runs the repository's installed hooks. Never bypass hooks through --no-verify, core.hooksPath, environment variables, or config changes to evade a failure.",
-  'On hook failure, commit restores requested files to their staging before the call and returns raw output unless HEAD changed or restoring failed. Read cleanup diagnostics before changing the index. Successful hook rewrites and added paths stay committed and are reported. If a hook consumed a later group with no new staged changes, the batch stops. If reporting fails after commit success, inspect Git history before retrying.',
-  'The commit tool rejects NUL in messages. Body CRLF and CR become LF; other whitespace is preserved. Nonempty bodies end in LF. Tau supplies the normalized message through git commit --cleanup=verbatim -F and reports the actual stored message.',
-  'Use a conventional commit subject.',
-  'Do not commit sensitive files such as .env or SSH keys.',
+  'When asked to commit, call commit with exact, ordered groups without asking for confirmation. It stages whole files, so assign each path to one group.',
+  'Never bypass hooks through --no-verify, core.hooksPath, environment variables, or config changes. On failure, fix the cause; never add unrelated edits, other groups, or rejected sensitive paths to clear it.',
+  'Use a conventional commit subject. Do not commit sensitive files such as .env or SSH keys.',
 ];
 
 const cleanupTemporary = async (directory: string): Promise<string | null> => {
