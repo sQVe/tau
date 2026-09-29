@@ -35,7 +35,7 @@ it('ships Safety Net as a runtime dependency and explicit extension', () => {
   expect(manifest.pi.extensions).toContain('./node_modules/cc-safety-net/dist/pi/index.js');
 });
 
-it('loads Tau through Pi with commit features, bundled question and web tools, and writing and coding rules on every run', async ({
+it('loads Tau through Pi with commit features, question and bundled web tools, and writing and coding rules on every run', async ({
   onTestFinished,
 }) => {
   const workingDirectory = await mkdtemp(join(tmpdir(), 'tau-package-'));
@@ -91,7 +91,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     const { extensions, errors } = loader.getExtensions();
 
     expect(errors).toEqual([]);
-    expect(extensions).toHaveLength(5);
+    expect(extensions).toHaveLength(4);
     const safetyExtension = extensions.find((extension) => extension.commands.has('cc-safety-net'));
     expect(safetyExtension).toBeDefined();
     expect(safetyExtension?.handlers.has('tool_call')).toBe(true);
@@ -236,9 +236,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
   }
 }, 30_000);
 
-it('reports extension errors for missing bundled question and web extensions', async ({
-  onTestFinished,
-}) => {
+it('reports an extension error for a missing bundled web extension', async ({ onTestFinished }) => {
   const workingDirectory = await mkdtemp(join(tmpdir(), 'tau-package-missing-'));
   onTestFinished(() => rm(workingDirectory, { recursive: true, force: true }));
 
@@ -292,12 +290,10 @@ it('reports extension errors for missing bundled question and web extensions', a
     },
   });
 
-  expect(errors).toHaveLength(2);
+  expect(errors).toHaveLength(1);
 
-  const questionError = errors.find((error) => error.includes('ask_user_question'));
   const webAccessError = errors.find((error) => error.includes('pi-web-access'));
 
-  expect(questionError).toContain('@juicesharp/rpiv-ask-user-question');
   expect(webAccessError).toContain('web_search');
   expect(webAccessError).toContain('fetch_content');
 }, 30_000);
