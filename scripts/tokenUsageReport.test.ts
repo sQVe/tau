@@ -209,17 +209,24 @@ describe('tokenUsageReport', () => {
     expect(result.sessions.map((row) => [row.path, row.tokens])).toEqual([['/fork.jsonl', 4]]);
   });
 
-  it('skips malformed lines and an incomplete tail and counts the complete lines', () => {
+  it('skips malformed lines, entries without a time, and an incomplete tail', () => {
+    const untimed = JSON.stringify({
+      type: 'message',
+      id: 'a0',
+      message: { role: 'assistant', usage: usage({ output: 50 }) },
+    });
+
     const lines = [
       header(11),
       '[1]',
+      untimed,
       assistant('a1', 12, { output: 7 }),
       '{"type":"message","id":"a2',
     ];
 
     const result = report([{ ...session('/p.jsonl', lines), text: lines.join('\n') }]);
 
-    expect(result.malformedLines).toBe(2);
+    expect(result.malformedLines).toBe(3);
     expect(result.sessions[0]).toMatchObject({ turns: 1, tokens: 7 });
   });
 
@@ -380,6 +387,26 @@ describe('parseWorkerTask', () => {
         createdAt: 5,
         sessionFile: undefined,
       },
+    },
+    {
+      rule: 'rejects a profile that is not text',
+      source: '{"taskId":"t","createdAt":5,"loadout":{"profile":7}}',
+      parsed: undefined,
+    },
+    {
+      rule: 'rejects a harness that is not text',
+      source: '{"taskId":"t","createdAt":5,"loadout":{"harness":["generic"]}}',
+      parsed: undefined,
+    },
+    {
+      rule: 'rejects a session file that is not text',
+      source: '{"taskId":"t","createdAt":5,"nativeSessionFile":null}',
+      parsed: undefined,
+    },
+    {
+      rule: 'rejects a loadout that is not an object',
+      source: '{"taskId":"t","createdAt":5,"loadout":"pi"}',
+      parsed: undefined,
     },
     { rule: 'rejects a record without a start time', source: '{"taskId":"t"}', parsed: undefined },
     { rule: 'rejects malformed JSON', source: '{"taskId":', parsed: undefined },

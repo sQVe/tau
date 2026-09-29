@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
+import { isMissingFile } from '../src/errors/index.ts';
 import {
   formatTokenUsageReport,
   ownsSession,
@@ -25,8 +26,13 @@ const listFiles = async (directory: string) => {
     const names = await readdir(directory, { recursive: true, encoding: 'utf8' });
 
     return names.map((name) => join(directory, name));
-  } catch {
-    return [];
+  } catch (error) {
+    // A missing directory holds no records; any other failure would fake an empty window.
+    if (isMissingFile(error)) {
+      return [];
+    }
+
+    throw error;
   }
 };
 

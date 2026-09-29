@@ -94,6 +94,8 @@ const isRecord = (value: unknown): value is Entry =>
 
 const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
 
+const isOptionalText = (value: unknown) => value === undefined || typeof value === 'string';
+
 const count = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 
@@ -116,7 +118,18 @@ export const parseWorkerTask = (source: string): WorkerTask | undefined => {
     return undefined;
   }
 
-  const loadout = isRecord(record.loadout) ? record.loadout : {};
+  const loadout = record.loadout ?? {};
+
+  if (!isRecord(loadout)) {
+    return undefined;
+  }
+
+  // Older records omit these fields; a present field of another type is a broken record.
+  const optionalFields = [record.name, record.nativeSessionFile, loadout.profile, loadout.harness];
+
+  if (!optionalFields.every(isOptionalText)) {
+    return undefined;
+  }
 
   return {
     taskId,
@@ -335,6 +348,13 @@ const countInWindow = (
   seen: Set<string>,
 ) => {
   const time = Date.parse(text(entry.timestamp) ?? '');
+
+  if (Number.isNaN(time)) {
+    report.malformedLines += 1;
+
+    return;
+  }
+
   // Forks and clones copy entries with their IDs and timestamps, so each copy counts once.
   const key = `${text(entry.id) ?? ''}\0${text(entry.timestamp) ?? ''}`;
   const inWindow = time >= report.window.since && time < report.window.until;

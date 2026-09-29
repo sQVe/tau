@@ -86,6 +86,12 @@ it('returns nothing for an agent directory without sessions', async () => {
   expect(records).toEqual(nothing);
 });
 
+it('fails when a records directory cannot be read', async () => {
+  await write('tau', 'not a directory');
+
+  await expect(readUsageRecords(agentDirectory, since)).rejects.toMatchObject({ code: 'ENOTDIR' });
+});
+
 it('counts a malformed task record and still reads the session beside it', async () => {
   const worker = await write('tau/repo-1/workers/a/s.jsonl', '{}\n');
   await write('tau/repo-1/workers/a/task.json', '{"taskId":');
