@@ -86,3 +86,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0062: Put worker instructions in the system prompt](./0062-put-worker-instructions-in-the-system-prompt.md)
 - [0063: Narrow allowed models from the user file to the repository file](./0063-narrow-allowed-models-from-user-to-repository.md)
 - [0064: Deliver worker replies through records](./0064-deliver-worker-replies-through-records.md)
+- [0065: Put user decisions first in replies](./0065-put-user-decisions-first-in-replies.md)
