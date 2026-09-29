@@ -87,3 +87,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0063: Narrow allowed models from the user file to the repository file](./0063-narrow-allowed-models-from-user-to-repository.md)
 - [0064: Deliver worker replies through records](./0064-deliver-worker-replies-through-records.md)
 - [0065: Put user decisions first in replies](./0065-put-user-decisions-first-in-replies.md)
+- [0066: Add Tau's prompt text to Pi's append section](./0066-add-taus-prompt-text-to-pis-append-section.md)

@@ -495,14 +495,18 @@ it.each([
     const prompt = worker.sendUserMessage.mock.calls[0]?.[0];
     const { instructions } = readTask(worker.directory).loadout;
 
-    const result = (await worker.emit('before_agent_start', { systemPrompt: 'base' })) as {
-      systemPrompt: string;
-    };
+    const systemPromptOptions = { appendSystemPrompt: 'user append' };
 
-    expect(result.systemPrompt.startsWith('base\n\n')).toBe(true);
-    expect(result.systemPrompt).toContain(instructions);
-    expect(result.systemPrompt).toContain(handoffContract);
-    expect(result.systemPrompt.includes(assignmentContract)).toBe(assignment);
+    expect(
+      await worker.emit('before_agent_start', { systemPrompt: 'base', systemPromptOptions }),
+    ).toBeUndefined();
+
+    const appended = systemPromptOptions.appendSystemPrompt;
+
+    expect(appended.startsWith('user append\n\n')).toBe(true);
+    expect(appended).toContain(instructions);
+    expect(appended).toContain(handoffContract);
+    expect(appended.includes(assignmentContract)).toBe(assignment);
     expect(prompt).not.toContain(instructions);
     expect(prompt).not.toContain(handoffContract);
     await worker.emit('session_shutdown');

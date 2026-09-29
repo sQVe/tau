@@ -7,7 +7,7 @@ import { createReadTool } from '@earendil-works/pi-coding-agent';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
 import bulkReadExtension, { rewriteContinuationNotice } from './index.js';
 
 const setup = () => {
@@ -41,7 +41,7 @@ const setup = () => {
 
   const emit = (name: string, event: unknown) => fake.handler(name)(event, context);
 
-  return { find, complete, execute, emit, tool };
+  return { find, complete, execute, emit, tool, handlers: fake.handlers };
 };
 
 afterEach(() => vi.unstubAllEnvs());
@@ -69,9 +69,11 @@ it('describes bulk reads as evidence gathering rather than review judgments', ()
   expect(tool.promptSnippet).toBe(tool.description);
 });
 
-it('keeps selective verification guidance on the bulk-read tool', () => {
-  const { tool } = setup();
-  const guidelines = tool.promptGuidelines?.join(' ') ?? '';
+it('appends selective verification guidance while bulk_read is active', () => {
+  const { handlers } = setup();
+  const guidelines = appendedSystemPrompt(handlers, ['bulk_read']);
+
+  expect(appendedSystemPrompt(handlers, ['read'])).toBe('');
 
   expect(guidelines).toContain('bulk_read');
   expect(guidelines).toContain('navigation without rereading');

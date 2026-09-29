@@ -6,6 +6,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
+import { appendToolGuidelines } from '../../systemPrompt/index.js';
 import { WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { historyPage, searchHistory } from './history.js';
@@ -122,18 +123,36 @@ type StatusParameters = Static<typeof statusParameters>;
 type ReplyParameters = Static<typeof replyParameters>;
 type CancelParameters = Static<typeof cancelParameters>;
 
-export const deliverWorkerNotice = (pi: ExtensionAPI, notice: WorkerNotice): void => {
-  const message = JSON.stringify(notice.content);
+export const deliverWorkerNotice = (
+  pi: ExtensionAPI,
+  context: Pick<ExtensionContext, 'isIdle'> | undefined,
+  notice: WorkerNotice,
+): void => {
+  const message = {
+    customType: 'tau-worker',
+    content: JSON.stringify(notice.content),
+    display: true,
+    details: notice.details,
+  };
 
-  pi.sendMessage(
-    { customType: 'tau-worker', content: message, display: true, details: notice.details },
-    { deliverAs: 'steer', triggerTurn: true },
-  );
+  // An idle triggerTurn skips before_agent_start and Tau's prompt additions with it, which
+  // pi-claude-bridge rejects (pi#5581). A user message starts the turn through that hook.
+  if (context?.isIdle() === true) {
+    pi.sendMessage(message, { deliverAs: 'nextTurn' });
+    pi.sendUserMessage('A worker notice arrived.', { deliverAs: 'steer' });
+
+    return;
+  }
+
+  pi.sendMessage(message, { deliverAs: 'steer', triggerTurn: true });
 };
 
-const createController = (pi: ExtensionAPI): WorkerController =>
+const createController = (
+  pi: ExtensionAPI,
+  getContext: () => ExtensionContext | undefined,
+): WorkerController =>
   new WorkerController(workerRecordsDirectory(), undefined, (notice) => {
-    deliverWorkerNotice(pi, notice);
+    deliverWorkerNotice(pi, getContext(), notice);
   });
 
 const hasHerdrEnvironment = (): boolean =>
@@ -142,7 +161,7 @@ const hasHerdrEnvironment = (): boolean =>
 const hasHerdrParentPane = (): boolean =>
   hasHerdrEnvironment() && Boolean(process.env.HERDR_PANE_ID);
 
-const delegationGuidelines = [
+export const delegationGuidelines = [
   'You are the manager. You own the plan, the user conversation, acceptance criteria, integration, and commits.',
   'Do small work yourself: quick questions, small local edits, obvious rebase conflicts, worker coordination, and back-and-forth with the user. Your own small edits need checks, not a reviewer. When a task mixes a small fix with larger work, make the fix yourself and delegate the rest.',
   'Without waiting to be asked, send larger implementation or work that needs new tests to a `worker`, and open questions that need wide reading or running commands to a `scout`. Send a finished worker change to a `reviewer` before you accept or commit it. Follow any explicit user instruction about delegation.',
@@ -417,8 +436,6 @@ const registerLaunchTool = (runtime: SubagentRuntime, profiles: ProfileSummary[]
       'No state means unreadable records; inspect recovery. subagent_cancel stops such a worker this session owns.',
     ].join(' '),
     promptSnippet: 'Launch Tau workers to scout, implement, or review work',
-    // Launch needs herdr and a parent pane, so a manager outside herdr must not be told to delegate.
-    promptGuidelines: hasHerdrParentPane() ? delegationGuidelines : [],
     parameters: launchParameters,
     renderCall(parameters, theme) {
       return callText(
@@ -594,6 +611,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   }
 
   let controller: WorkerController | undefined;
+  let sessionContext: ExtensionContext | undefined;
   let widgetTimer: ReturnType<typeof setInterval> | undefined;
   let historyView: WorkerHistoryView | undefined;
   let historyOpen = false;
@@ -602,7 +620,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   const runtime: SubagentRuntime = {
     pi,
     getController: () => {
-      controller ??= createController(pi);
+      controller ??= createController(pi, () => sessionContext);
 
       return controller;
     },
@@ -610,6 +628,8 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   };
 
   registerSubagentTools(runtime);
+  // Launch needs herdr and a parent pane, so a manager outside herdr must not be told to delegate.
+  appendToolGuidelines(pi, 'subagent', hasHerdrParentPane() ? delegationGuidelines : []);
 
   const refreshWidget = (context: ExtensionContext, currentRows?: WorkerWidgetRow[]): void => {
     if (shuttingDown || !context.hasUI || context.mode !== 'tui') {
@@ -677,6 +697,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
 
   pi.on('session_start', (_event, context) => {
     shuttingDown = false;
+    sessionContext = context;
 
     // Project profiles load only once the session's cwd and trust are known.
     registerLaunchTool(runtime, launchProfiles(context));
@@ -728,6 +749,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
 
   pi.on('session_shutdown', async (event) => {
     shuttingDown = true;
+    sessionContext = undefined;
     historyOpen = false;
     historyView?.dismiss();
     historyView = undefined;

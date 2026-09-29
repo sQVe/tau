@@ -3,6 +3,8 @@ import { promisify } from 'node:util';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
+import { appendSystemPrompt } from '../../systemPrompt/index.js';
+
 const rule =
   'This session runs in the bare repository root, not a worktree. Use it to read, answer ' +
   'questions, open worktrees, and hand off work. Do development in a worktree: open one with the ' +
@@ -39,7 +41,9 @@ export default function bareRootExtension(pi: ExtensionAPI) {
     bareRoot = await isBareRoot(context.cwd);
   });
 
-  pi.on('before_agent_start', (event) =>
-    bareRoot ? { systemPrompt: `${event.systemPrompt}\n\n${rule}` } : undefined,
-  );
+  pi.on('before_agent_start', (event) => {
+    if (bareRoot) {
+      appendSystemPrompt(event, rule);
+    }
+  });
 }

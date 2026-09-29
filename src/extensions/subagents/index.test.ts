@@ -9,11 +9,11 @@ import type { Terminal } from '@earendil-works/pi-tui';
 import { Value } from 'typebox/value';
 import { expect, it, vi, onTestFinished as finishTest } from 'vitest';
 
-import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { fixtureModel } from './fixtures/controlledProvider.js';
-import subagentsExtension, { deliverWorkerNotice } from './index.js';
+import subagentsExtension, { delegationGuidelines, deliverWorkerNotice } from './index.js';
 import type { WorkerNotice } from './presentation.js';
 import type { WorkerWidgetRow } from './widget.js';
 
@@ -22,6 +22,13 @@ const registerTools = () => {
   subagentsExtension(fake.pi);
 
   return fake.tools;
+};
+
+const managerGuidelines = () => {
+  const fake = fakeExtensionApi();
+  subagentsExtension(fake.pi);
+
+  return appendedSystemPrompt(fake.handlers, ['subagent']);
 };
 
 const textContent = (result: unknown): Record<string, unknown> => {
@@ -46,6 +53,7 @@ const launchContext = (directory: string) =>
     },
   }) as unknown as ExtensionContext;
 
+const busyParent = { isIdle: () => false };
 const testTheme = { fg: (_color: string, text: string) => text };
 const noOperation = (): void => undefined;
 
@@ -62,9 +70,7 @@ const fullWorkerStatus = {
   nativeSessionFile: '/abs/records/task-1/session.jsonl',
 };
 
-it('guides a manager inside herdr to delegate through the subagent tool prompt guidelines', ({
-  onTestFinished,
-}) => {
+it('appends delegation guidelines for a manager inside herdr', ({ onTestFinished }) => {
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });
@@ -73,7 +79,11 @@ it('guides a manager inside herdr to delegate through the subagent tool prompt g
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
 
-  expect(registerTools().get('subagent')?.promptGuidelines?.length).toBeGreaterThan(0);
+  const appended = managerGuidelines();
+
+  for (const guideline of delegationGuidelines) {
+    expect(appended).toContain(guideline);
+  }
 });
 
 it('leaves delegation guidelines out when a manager runs outside herdr', ({ onTestFinished }) => {
@@ -84,10 +94,8 @@ it('leaves delegation guidelines out when a manager runs outside herdr', ({ onTe
   vi.stubEnv('HERDR_ENV', '0');
   vi.stubEnv('HERDR_PANE_ID', '');
 
-  const tool = registerTools().get('subagent');
-
-  expect(tool).toBeDefined();
-  expect(tool?.promptGuidelines ?? []).toEqual([]);
+  expect(registerTools().get('subagent')).toBeDefined();
+  expect(managerGuidelines()).toBe('');
 });
 
 it('keeps parent tools, delegation guidelines, and handlers unavailable when a test chooses a worker environment', ({
@@ -734,7 +742,7 @@ it('defaults the launch timeout by profile role and keeps an explicit timeout', 
   ]);
 });
 
-it('delivers a question notice as a steer that wakes the idle parent', () => {
+it('steers a question notice into a busy parent', () => {
   const sendMessage = vi.fn<() => void>();
   const pi = fakeExtensionApi({ sendMessage }).pi;
 
@@ -747,7 +755,7 @@ it('delivers a question notice as a steer that wakes the idle parent', () => {
 
   const notice: WorkerNotice = { content, details: { full: true }, question: true };
 
-  deliverWorkerNotice(pi, notice);
+  deliverWorkerNotice(pi, busyParent, notice);
 
   expect(sendMessage).toHaveBeenCalledWith(
     {
@@ -761,13 +769,13 @@ it('delivers a question notice as a steer that wakes the idle parent', () => {
 });
 
 it.each(['success', 'incomplete', 'failure'])(
-  '%s report notices steer to the parent',
+  '%s report notices steer to a busy parent',
   (outcome) => {
     const sendMessage = vi.fn<() => void>();
     const pi = fakeExtensionApi({ sendMessage }).pi;
     const content = { taskId: 'task-1', state: 'stopped', deadline: 1, outcome };
 
-    deliverWorkerNotice(pi, { content, details: {}, question: false });
+    deliverWorkerNotice(pi, busyParent, { content, details: {}, question: false });
 
     expect(sendMessage).toHaveBeenCalledWith(expect.anything(), {
       deliverAs: 'steer',

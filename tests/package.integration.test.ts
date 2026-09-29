@@ -8,6 +8,7 @@ import {
   InMemoryModelsStore,
   fauxAssistantMessage,
   fauxProvider,
+  getCurrentSystemPrompt,
 } from '@earendil-works/pi-ai';
 import {
   DefaultResourceLoader,
@@ -16,9 +17,16 @@ import {
   SettingsManager,
   createAgentSession,
 } from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionAPI,
+  NormalizedBuildSystemPromptOptions,
+} from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
 import manifest from '../package.json' with { type: 'json' };
+import { bulkReadGuidelines } from '../src/extensions/bulkRead/index.js';
+import { commitToolGuidelines } from '../src/extensions/commit/tool.js';
+import { delegationGuidelines } from '../src/extensions/subagents/index.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 
 it('ships Safety Net as a runtime dependency and explicit extension', () => {
@@ -48,11 +56,30 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
 
     const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
 
+    // Pi-claude-bridge keeps this options object at before_agent_start and forwards only its
+    // appendSystemPrompt and context files at agent_start, after every handler has run.
+    const forwarded: NormalizedBuildSystemPromptOptions[] = [];
+
+    const bridge = (pi: ExtensionAPI) => {
+      let options: NormalizedBuildSystemPromptOptions | undefined;
+
+      pi.on('before_agent_start', (event) => {
+        options = event.systemPromptOptions;
+      });
+
+      pi.on('agent_start', () => {
+        if (options) {
+          forwarded.push(structuredClone(options));
+        }
+      });
+    };
+
     const loader = new DefaultResourceLoader({
       cwd: workingDirectory,
       agentDir: agentDirectory,
       settingsManager,
       additionalExtensionPaths: [packageRoot],
+      extensionFactories: [bridge],
       noExtensions: true,
       noSkills: true,
       noPromptTemplates: true,
@@ -64,15 +91,12 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     const { extensions, errors } = loader.getExtensions();
 
     expect(errors).toEqual([]);
-    expect(extensions).toHaveLength(4);
+    expect(extensions).toHaveLength(5);
     const safetyExtension = extensions.find((extension) => extension.commands.has('cc-safety-net'));
     expect(safetyExtension).toBeDefined();
     expect(safetyExtension?.handlers.has('tool_call')).toBe(true);
 
     const tauExtension = extensions.find((extension) => extension.tools.has('commit'));
-    const delegationGuidelines = tauExtension?.tools.get('subagent')?.definition.promptGuidelines;
-
-    expect(delegationGuidelines?.length).toBeGreaterThan(0);
 
     expect(tauExtension?.commands.has('bro')).toBe(true);
     expect(tauExtension?.commands.has('code-review')).toBe(true);
@@ -130,7 +154,7 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
       resourceLoader: loader,
       sessionManager: SessionManager.inMemory(workingDirectory),
       settingsManager,
-      tools: ['subagent'],
+      tools: ['subagent', 'bulk_read', 'commit'],
     });
 
     onTestFinished(() => {
@@ -139,12 +163,13 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
 
     await session.bindExtensions({});
 
-    const basePrompt = session.systemPrompt;
     const prompts: string[] = [];
+    const transcripts: string[] = [];
 
     scriptedProvider.setResponses(
       [0, 1].map(() => (context) => {
-        prompts.push(context.systemPrompt ?? '');
+        prompts.push(getCurrentSystemPrompt(context.messages));
+        transcripts.push(JSON.stringify(context.messages));
 
         return fauxAssistantMessage('Ready.');
       }),
@@ -177,16 +202,35 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
     expect(codingInstructions).toContain('Separate the logical steps in every function');
 
     expect(codingInstructions).not.toContain('bulk_read');
-    expect(prompts[0]?.startsWith(basePrompt)).toBe(true);
+
+    const blocks = [
+      writingInstructions.trim(),
+      codingInstructions.trim(),
+      workflowInstructions.trim(),
+      ...delegationGuidelines,
+      ...bulkReadGuidelines,
+      ...commitToolGuidelines,
+    ];
+
+    expect(forwarded).toHaveLength(2);
+
+    for (const options of forwarded) {
+      expect(options.forceSystemPrompt).toBeUndefined();
+
+      for (const block of blocks) {
+        expect(options.appendSystemPrompt.split(block)).toHaveLength(2);
+      }
+    }
 
     for (const prompt of prompts) {
-      expect(prompt.split(writingInstructions)).toHaveLength(2);
-      expect(prompt.split(codingInstructions)).toHaveLength(2);
-      expect(prompt.split(workflowInstructions)).toHaveLength(2);
-
-      for (const guideline of delegationGuidelines ?? []) {
-        expect(prompt.split(guideline)).toHaveLength(2);
+      for (const block of blocks) {
+        expect(prompt.split(block)).toHaveLength(2);
       }
+    }
+
+    // A direct provider receives each block once per session, not once per prompt.
+    for (const block of blocks) {
+      expect(transcripts[1]?.split(JSON.stringify(block).slice(1, -1))).toHaveLength(2);
     }
   } finally {
     await rm(workingDirectory, { recursive: true, force: true });
