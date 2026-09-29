@@ -2,13 +2,19 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxToolCall,
+  getCurrentSystemPrompt,
+} from '@earendil-works/pi-ai';
 import type { AssistantMessage, Context, Message } from '@earendil-works/pi-ai';
-import type { AgentSession, ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { AgentSession, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { expect, it, vi } from 'vitest';
 
-import { deliverWorkerNotice } from '../src/extensions/subagents/index.js';
+import { createNoticeDelivery } from '../src/extensions/subagents/index.js';
+import { appendSystemPrompt } from '../src/systemPrompt/index.js';
 import { createBoundSession } from './piSession.js';
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -21,6 +27,8 @@ const fixtureNotice = {
 
 const contextHasNotice = (messages: Message[]): boolean =>
   JSON.stringify(messages).includes('task-1');
+
+const appendedRule = 'Fixture rule appended in before_agent_start.';
 
 const waitForSettle = (session: AgentSession): Promise<undefined> => {
   const settled = Promise.withResolvers<undefined>();
@@ -44,12 +52,28 @@ const createHarness = async (
 
   const faux = fauxProvider({ provider: 'tau-notice-fixture' });
   const contexts: Context[] = [];
+  const startPrompts: string[] = [];
   const entered = Promise.withResolvers<undefined>();
   const release = Promise.withResolvers<undefined>();
-  let capturedPi: ExtensionAPI | undefined;
+  let capturedContext: ExtensionContext | undefined;
+
+  let deliver: ReturnType<typeof createNoticeDelivery> | undefined;
 
   const fixtureExtension = (pi: ExtensionAPI) => {
-    capturedPi = pi;
+    deliver = createNoticeDelivery(pi);
+
+    pi.on('session_start', (_event, context) => {
+      capturedContext = context;
+    });
+
+    pi.on('before_agent_start', (event) => {
+      appendSystemPrompt(event, appendedRule);
+    });
+
+    // Pi-claude-bridge records this prompt at agent_start and fails a turn it cannot match.
+    pi.on('agent_start', (_event, context) => {
+      startPrompts.push(context.getSystemPrompt());
+    });
 
     pi.registerTool({
       name: 'subagent_status',
@@ -76,15 +100,17 @@ const createHarness = async (
     extensionFactories: [fixtureExtension],
   });
 
-  if (!capturedPi) {
-    throw new Error('Fixture extension did not capture the Pi API.');
+  if (!capturedContext || !deliver) {
+    throw new Error('Fixture extension did not capture its context and notice delivery.');
   }
 
   return {
     session,
     faux,
     contexts,
-    pi: capturedPi,
+    startPrompts,
+    context: capturedContext,
+    deliverNotice: (notice = fixtureNotice) => deliver?.(capturedContext, notice),
     toolEntered: entered.promise,
     releaseTool: () => {
       release.resolve(undefined);
@@ -111,11 +137,69 @@ it('wakes an idle manager and includes the notice in its first provider request'
 
   const settled = waitForSettle(harness.session);
 
-  deliverWorkerNotice(harness.pi, fixtureNotice);
+  harness.deliverNotice();
   await settled;
 
   expect(harness.contexts).toHaveLength(1);
   expect(contextHasNotice(harness.contexts[0]?.messages ?? [])).toBe(true);
+});
+
+it('keeps before_agent_start prompt additions on the turn an idle notice starts', async ({
+  onTestFinished,
+}) => {
+  const harness = await createHarness(onTestFinished, { blockTool: false });
+
+  harness.faux.setResponses([
+    recordResponse(harness.contexts, () => fauxAssistantMessage('Ready.')),
+    recordResponse(harness.contexts, () => fauxAssistantMessage('Notice handled.')),
+  ]);
+
+  await harness.session.prompt('Begin.');
+  const settled = waitForSettle(harness.session);
+
+  harness.deliverNotice();
+  await settled;
+
+  const notified = harness.contexts[1]?.messages ?? [];
+
+  expect(harness.contexts).toHaveLength(2);
+  expect(contextHasNotice(notified)).toBe(true);
+  expect(harness.startPrompts).toHaveLength(2);
+  expect(harness.startPrompts[1]).toContain(appendedRule);
+  expect(getCurrentSystemPrompt(notified)).toContain(appendedRule);
+  expect(JSON.stringify(notified).split(appendedRule)).toHaveLength(2);
+});
+
+it('starts one turn for idle notices that arrive before it runs', async ({ onTestFinished }) => {
+  const harness = await createHarness(onTestFinished, { blockTool: false });
+  const idleDuringRequest: boolean[] = [];
+
+  harness.faux.setResponses([
+    recordResponse(harness.contexts, () => {
+      idleDuringRequest.push(harness.context.isIdle());
+
+      return fauxAssistantMessage('Both handled.');
+    }),
+  ]);
+
+  const settled = waitForSettle(harness.session);
+
+  harness.deliverNotice();
+
+  harness.deliverNotice({
+    ...fixtureNotice,
+    content: { ...fixtureNotice.content, taskId: 'task-2' },
+  });
+
+  await settled;
+
+  const messages = JSON.stringify(harness.contexts[0]?.messages ?? []);
+
+  expect(harness.contexts).toHaveLength(1);
+  expect(messages).toContain('task-1');
+  expect(messages).toContain('task-2');
+  expect(idleDuringRequest).toEqual([false]);
+  expect(harness.startPrompts[0]).toContain(appendedRule);
 });
 
 it('delivers an active manager notice at the steering point before the final answer', async ({
@@ -135,7 +219,7 @@ it('delivers an active manager notice at the steering point before the final ans
   const running = harness.session.prompt('Begin.');
 
   await harness.toolEntered;
-  deliverWorkerNotice(harness.pi, fixtureNotice);
+  harness.deliverNotice();
   harness.releaseTool();
   await running;
   await settled;

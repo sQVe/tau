@@ -15,6 +15,7 @@ import type {
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
+import { appendSystemPrompt } from '../../systemPrompt/index.js';
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
@@ -749,11 +750,11 @@ const registerSessionShutdownHandler = (pi: ExtensionAPI, state: WorkerExtension
 };
 
 const registerSystemPromptHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
-  pi.on('before_agent_start', (event) =>
-    state.task
-      ? { systemPrompt: `${event.systemPrompt}\n\n${workerInstructions(state.task.loadout)}` }
-      : undefined,
-  );
+  pi.on('before_agent_start', (event) => {
+    if (state.task) {
+      appendSystemPrompt(event, workerInstructions(state.task.loadout));
+    }
+  });
 };
 
 const registerAgentStartHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {

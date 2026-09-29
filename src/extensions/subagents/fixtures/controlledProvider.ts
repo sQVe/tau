@@ -1,7 +1,13 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxToolCall,
+  getCurrentSystemPrompt,
+} from '@earendil-works/pi-ai';
+import type { TranscriptContext } from '@earendil-works/pi-ai';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { readTask } from '../records.js';
@@ -25,9 +31,9 @@ export const fixtureAuth = {
   },
 };
 
-const systemInstructions = (context: { systemPrompt?: string }): boolean =>
+const systemInstructions = (context: TranscriptContext): boolean =>
   savedTask !== undefined &&
-  context.systemPrompt?.includes(savedTask.loadout.instructions) === true;
+  getCurrentSystemPrompt(context.messages).includes(savedTask.loadout.instructions);
 
 const registerFollowUpProvider = (pi: ExtensionAPI): void => {
   provider.setResponses([

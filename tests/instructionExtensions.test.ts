@@ -1,4 +1,4 @@
-import { copyFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -14,12 +14,22 @@ for (const extension of instructionExtensions) {
     const workingDirectory = await mkdtemp(join(tmpdir(), `tau-${extension}-`));
     onTestFinished(() => rm(workingDirectory, { recursive: true, force: true }));
 
-    const extensionPath = join(workingDirectory, 'index.ts');
-    const instructionsPath = join(workingDirectory, 'instructions.md');
+    // Keep the extension's relative import of the shared system prompt helper.
+    const extensionDirectory = join(workingDirectory, 'extensions', extension);
+    const extensionPath = join(extensionDirectory, 'index.ts');
+    const instructionsPath = join(extensionDirectory, 'instructions.md');
+
+    await mkdir(extensionDirectory, { recursive: true });
+    await mkdir(join(workingDirectory, 'systemPrompt'));
 
     await copyFile(
       new URL(`../src/extensions/${extension}/index.ts`, import.meta.url),
       extensionPath,
+    );
+
+    await copyFile(
+      new URL('../src/systemPrompt/index.ts', import.meta.url),
+      join(workingDirectory, 'systemPrompt', 'index.ts'),
     );
 
     await writeFile(instructionsPath, ' \n\t');

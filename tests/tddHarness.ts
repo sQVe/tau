@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
-import type { FauxResponseStep } from '@earendil-works/pi-ai';
+import type { FauxResponseStep, JsonObject } from '@earendil-works/pi-ai';
 import type { AgentSessionEvent, ExtensionFactory } from '@earendil-works/pi-coding-agent';
 import type { TestContext } from 'vitest';
 import { expect } from 'vitest';
@@ -66,11 +66,7 @@ export const createHarness = async (
   const events: AgentSessionEvent[] = [];
   session.subscribe((event) => events.push(event));
 
-  const call = async (
-    toolName: string,
-    input: Record<string, unknown>,
-    between: FauxResponseStep[] = [],
-  ) => {
+  const call = async (toolName: string, input: JsonObject, between: FauxResponseStep[] = []) => {
     events.length = 0;
 
     faux.setResponses([

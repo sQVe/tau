@@ -33,7 +33,7 @@ interface CommitToolResult {
   details: { groups: CommitSuccess['details'][] };
 }
 
-const commitToolGuidelines = [
+export const commitToolGuidelines = [
   'When asked to commit, call commit with exact, ordered groups without asking for confirmation. It stages and commits each group with installed Git hooks.',
   'The commit tool stages whole requested files on the real index. Assign each path to one group. Working edits remain visible to hooks. Installed hooks may add paths; commit reports actual committed files relative to the repository root.',
   "Never absorb unrelated edits, another group's paths, or rejected sensitive paths to clear a commit error. Never overwrite concurrent staging or HEAD.",
@@ -183,7 +183,6 @@ export const createCommitTool = (
     description:
       'Stage and commit each group sequentially with Git hooks. Hook failures return errors.',
     promptSnippet: 'Create git commits for an ordered groups array in one call.',
-    promptGuidelines: commitToolGuidelines,
     parameters: commitToolParameters,
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {

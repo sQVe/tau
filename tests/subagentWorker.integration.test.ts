@@ -10,6 +10,7 @@ import {
   envApiKeyAuth,
   fauxProvider,
   fauxToolCall,
+  getCurrentSystemPrompt,
 } from '@earendil-works/pi-ai';
 import {
   DefaultResourceLoader,
@@ -323,7 +324,7 @@ it.each(['editing', 'investigation'] as const)(
       fauxAssistantMessage('The assigned work is complete.'),
       // The report reminder starts this turn without before_agent_start.
       (context) => {
-        reminderSystemPrompt = context.systemPrompt;
+        reminderSystemPrompt = getCurrentSystemPrompt(context.messages);
 
         return fauxAssistantMessage([
           fauxToolCall('subagent_report', {

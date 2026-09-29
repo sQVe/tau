@@ -1,6 +1,6 @@
 # ADR 0062: Put worker instructions in the system prompt
 
-- Status: Accepted
+- Status: Superseded by [ADR 0066](./0066-add-taus-prompt-text-to-pis-append-section.md)
 - Date: 2026-09-28
 
 ## Context
@@ -37,4 +37,5 @@ The worker extension appends the saved profile body and the contracts to the sys
 
 ## See also
 
+- [ADR 0066: Add Tau's prompt text to Pi's append section](./0066-add-taus-prompt-text-to-pis-append-section.md)
 - [ADR 0056: Load workflow rules apart from coding and writing](./0056-load-workflow-rules-apart-from-coding-and-writing.md)

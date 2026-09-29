@@ -47,3 +47,17 @@ export const fakeExtensionApi = (overrides: Partial<ExtensionAPI> = {}) => {
 
   return { pi, handlers, handler, tools, commands, messageRenderers, sendUserMessage, sendMessage };
 };
+
+export const appendedSystemPrompt = (
+  handlers: Map<string, Handler[]>,
+  selectedTools: string[],
+  context = {} as ExtensionContext,
+) => {
+  const event = { systemPromptOptions: { appendSystemPrompt: '', selectedTools } };
+
+  for (const handler of handlers.get('before_agent_start') ?? []) {
+    handler(event as never, context);
+  }
+
+  return event.systemPromptOptions.appendSystemPrompt;
+};

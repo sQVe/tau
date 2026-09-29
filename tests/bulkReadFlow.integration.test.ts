@@ -2,7 +2,12 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxToolCall,
+  getCurrentSystemPrompt,
+} from '@earendil-works/pi-ai';
 import type { AgentSession } from '@earendil-works/pi-coding-agent';
 import {
   afterEach,
@@ -79,7 +84,7 @@ it('clamps a real Pi read and records delegate usage in the session ledger', asy
 
   sessionModel.setResponses([
     (context) => {
-      sessionPrompt = context.systemPrompt ?? '';
+      sessionPrompt = getCurrentSystemPrompt(context.messages);
 
       return fauxAssistantMessage([fauxToolCall('read', { path: 'large.txt' })]);
     },

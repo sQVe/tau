@@ -7,6 +7,7 @@ import type {
 import { Type } from 'typebox';
 
 import { resolveDelegate } from '../../delegateModel/index.js';
+import { appendToolGuidelines } from '../../systemPrompt/index.js';
 import { BulkReadRecoverableError, bulkReadTool, bulkRead, isCancellation } from './tool.js';
 
 interface BulkReadState {
@@ -20,6 +21,11 @@ const bulkReadLineThreshold = 400;
 // Cancellations and timeouts, like recoverable bulk read failures, say nothing about the delegate.
 const isRecoverable = (error: unknown): boolean =>
   error instanceof BulkReadRecoverableError || isCancellation(error);
+
+export const bulkReadGuidelines = [
+  'Use bulk_read summaries for navigation without rereading files. Verify only consequential claims before edits or reports using bounded reads. Integration claims need production callers.',
+  'For bulk_read-based branch judgments, including alleged regressions, inspect the actual diff and applicable project rules. Distinguish inherited code from changes.',
+];
 
 const bulkReadDescription =
   'Ask a cheaper model for focused summaries, test inventories, and line-cited evidence from supplied files, not correctness or branch review judgments.';
@@ -63,10 +69,6 @@ const registerBulkRead = (pi: ExtensionAPI, state: BulkReadState): void => {
     label: 'Bulk read',
     description: bulkReadDescription,
     promptSnippet: bulkReadDescription,
-    promptGuidelines: [
-      'Use bulk_read summaries for navigation without rereading files. Verify only consequential claims before edits or reports using bounded reads. Integration claims need production callers.',
-      'For bulk_read-based branch judgments, including alleged regressions, inspect the actual diff and applicable project rules. Distinguish inherited code from changes.',
-    ],
     parameters: Type.Object({
       paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
       question: Type.String({ minLength: 1 }),
@@ -124,6 +126,7 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
   const state: BulkReadState = { trimming: true, clamped: new Set() };
 
   registerBulkRead(pi, state);
+  appendToolGuidelines(pi, bulkReadTool, bulkReadGuidelines);
   registerTrimHook(pi, state);
 
   // The extension outlives a session, but a stopped trim applies only to the session that stopped

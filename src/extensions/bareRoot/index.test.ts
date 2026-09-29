@@ -25,18 +25,20 @@ const startSession = async (cwd: string) => {
   const context = { cwd } as ExtensionContext;
   await api.handler('session_start')({ type: 'session_start', reason: 'startup' }, context);
 
-  return (
-    api.handler('before_agent_start')({ systemPrompt: 'base' }, context) as
-      | { systemPrompt: string }
-      | undefined
-  )?.systemPrompt;
+  const systemPromptOptions = { appendSystemPrompt: 'user append' };
+
+  expect(
+    api.handler('before_agent_start')({ systemPrompt: 'base', systemPromptOptions }, context),
+  ).toBeUndefined();
+
+  return systemPromptOptions.appendSystemPrompt;
 };
 
 describe('bare repository root guard', () => {
-  it('adds the bare root rule to the system prompt in a bare root', async () => {
+  it('appends the bare root rule to the system prompt in a bare root', async () => {
     const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
 
-    expect(await startSession(root)).toMatch(/^base\n\n\S/);
+    expect(await startSession(root)).toMatch(/^user append\n\n\S/);
   });
 
   it.for(['GIT_DIR', 'GIT_COMMON_DIR'])(
@@ -46,7 +48,7 @@ describe('bare repository root guard', () => {
       const other = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
       vi.stubEnv(variable, join(other, '.git'));
 
-      expect(await startSession(root)).toMatch(/^base\n\n\S/);
+      expect(await startSession(root)).toMatch(/^user append\n\n\S/);
     },
   );
 
@@ -57,6 +59,6 @@ describe('bare repository root guard', () => {
       cwd: root,
     });
 
-    expect(await startSession(join(root, 'main'))).toBeUndefined();
+    expect(await startSession(join(root, 'main'))).toBe('user append');
   });
 });
