@@ -23,10 +23,22 @@ differ from these defaults.
 - Number steps the user must perform. Each step should name one bounded action.
 - When resuming interrupted work, state what is done and what remains. Do not repeat state every
   turn.
-- End with the needed information, or with one concrete action, question, or decision for the user.
-  Do not repeat the answer or add a menu of offers.
+- Stop when the reader has what they need. Do not end by repeating the answer or with a menu of
+  offers.
 - For failures, state what failed and what the evidence shows. Name the cause only when evidence
   supports it. If the cause is unknown, say so and name the next diagnostic step.
+
+## Ask for decisions
+
+- When a reply needs a decision from the user, start with one sentence of status, then the
+  decisions. Put the report and evidence after them.
+- Give each decision a number and one question. Make it readable without earlier messages. Do not
+  refer to labels such as "the scope question."
+- Say in one sentence what the decision changes or blocks.
+- Give options as letters. Put your recommendation first and mark it. Say in one line what happens
+  with each option.
+- For yes or no questions, state the default you will use if the user does not answer.
+- Do not end a turn that waits for the user without stating the question.
 
 ## Cut what adds nothing
 
