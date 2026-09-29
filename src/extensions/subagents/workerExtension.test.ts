@@ -12,6 +12,7 @@ import { expect, it, vi, onTestFinished } from 'vitest';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { readWorkerActivity, writeWorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
+import { taskRecordStatus } from './controller/record.js';
 import { assignmentContract, handoffContract } from './handoff.js';
 import { checkWorkerRuntime } from './loadout.js';
 import * as questions from './questionRecords.js';
@@ -22,6 +23,8 @@ import workerExtension from './workerExtension.js';
 vi.mock('./loadout.js', () => ({
   checkWorkerRuntime: vi.fn<typeof checkWorkerRuntime>(),
 }));
+
+const emptyEvent = { messages: [] };
 
 const sections = '\n\nChanges: None\nEvidence: None\nDecisions: None\nConcerns: None';
 
@@ -85,7 +88,7 @@ const setup = (
 
   workerExtension(fake.pi);
 
-  const emit = (name: string, event: unknown = {}) =>
+  const emit = (name: string, event: unknown = emptyEvent) =>
     fake.handlers.has(name) ? fake.handler(name)(event, context) : undefined;
 
   const ask = () =>
@@ -307,7 +310,11 @@ it.each(['deadline', 'parent stopped', 'question', 'reported'] as const)(
 
     await worker.emit('agent_end');
 
-    expect(worker.sendMessage).not.toHaveBeenCalled();
+    const reminders = worker.sendMessage.mock.calls.filter(
+      ([message]) => message.customType === 'tau-worker-report-request',
+    );
+
+    expect(reminders).toHaveLength(0);
   },
 );
 
@@ -754,6 +761,90 @@ it('measures remaining time on the worker clock when the parent process clock le
   await reportIncomplete(worker, 'Time ran out.', 'time');
 
   expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
+});
+
+const deadlineWarnings = (worker: Awaited<ReturnType<typeof waitingWorker>>) =>
+  worker.sendMessage.mock.calls.filter(([message]) => message.customType === 'tau-worker-deadline');
+
+it('warns a worker once when its deadline accepts a time blocker', async () => {
+  const worker = await waitingWorker('editing', 240_000);
+
+  await vi.advanceTimersByTimeAsync(147_000);
+  expect(deadlineWarnings(worker)).toHaveLength(0);
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(deadlineWarnings(worker)).toHaveLength(1);
+  expect(deadlineWarnings(worker)[0]?.[0].content).toContain('Deadline in 90 s');
+  expect(deadlineWarnings(worker)[0]?.[1]).toMatchObject({ deliverAs: 'steer', triggerTurn: true });
+
+  await vi.advanceTimersByTimeAsync(1000);
+  await reportIncomplete(worker, 'Time ran out.', 'time');
+  await vi.advanceTimersByTimeAsync(90_000);
+
+  expect(deadlineWarnings(worker)).toHaveLength(1);
+  expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
+});
+
+it('sends no deadline warning after a report', async () => {
+  const worker = await waitingWorker('editing', 240_000);
+
+  await worker.tools
+    .get('subagent_report')!
+    .execute(
+      'report',
+      { outcome: 'success', summary: `Done.${sections}`, evidence: [] },
+      undefined,
+      undefined,
+      worker.context,
+    );
+
+  await vi.advanceTimersByTimeAsync(240_000);
+
+  expect(deadlineWarnings(worker)).toHaveLength(0);
+});
+
+it.each(['error', 'aborted'] as const)(
+  'settles a worker whose final turn ended with %s without a reminder, and shows the error to the parent',
+  async (stopReason) => {
+    const worker = await waitingWorker();
+
+    await worker.emit('agent_end', {
+      messages: [
+        { role: 'assistant', content: [], stopReason, errorMessage: 'Invalid tool schema.' },
+      ],
+    });
+
+    expect(worker.sendMessage).not.toHaveBeenCalled();
+    await worker.emit('agent_settled');
+    expect(worker.shutdown).toHaveBeenCalledOnce();
+
+    const status = taskRecordStatus(worker.directory, readTask(worker.directory), false, []);
+
+    expect(status.failure).toContain('Invalid tool schema.');
+    expect(status.outcome).toBe('incomplete');
+  },
+);
+
+it('keeps a reported outcome free of the settled detail', async () => {
+  const worker = await waitingWorker();
+
+  await worker.tools
+    .get('subagent_report')!
+    .execute(
+      'report',
+      { outcome: 'success', summary: `Done.${sections}`, evidence: [] },
+      undefined,
+      undefined,
+      worker.context,
+    );
+
+  await worker.emit('agent_end');
+  await worker.emit('agent_settled');
+
+  const status = taskRecordStatus(worker.directory, readTask(worker.directory), false, []);
+
+  expect(status.failure).toBeUndefined();
+  expect(status.outcome).toBe('success');
 });
 
 it('reminds a refused worker to report even after an earlier reminder', async () => {

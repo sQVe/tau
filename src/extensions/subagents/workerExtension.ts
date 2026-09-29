@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { StringEnum } from '@earendil-works/pi-ai';
 import type {
+  AgentEndEvent,
   AgentToolResult,
   ExtensionAPI,
   ExtensionContext,
@@ -19,7 +20,7 @@ import { appendSystemPrompt } from '../../systemPrompt/index.js';
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
-import { blockerKinds, decideIncompleteReport } from './incompleteReport.js';
+import { blockerKinds, decideIncompleteReport, timeBlockerReserve } from './incompleteReport.js';
 import { checkWorkerRuntime } from './loadout.js';
 import { handoffSections } from './presentation.js';
 import { workerInstructions, workerPrompt } from './profiles.js';
@@ -52,6 +53,8 @@ interface WorkerExtensionState {
   incompleteRefused: boolean;
   remindAfterRefusal: boolean;
   settled: boolean;
+  runError: string | undefined;
+  deadlineWarning: ReturnType<typeof setTimeout> | undefined;
   kickoff: ReturnType<typeof setInterval> | undefined;
   pendingQuestion: Question | undefined;
   parentWatch: ReturnType<typeof setInterval> | undefined;
@@ -82,7 +85,7 @@ const reportParameters = Type.Object({
   blockerKind: Type.Optional(
     StringEnum(blockerKinds, {
       description:
-        'Required for incomplete. time: the task deadline is nearly reached, accepted only in the last tenth of the task window; dependency: an external dependency; decision: a parent decision; limit: another exhausted limit that is not time.',
+        'Required for incomplete. time: the task deadline is nearly reached, accepted only in the last tenth of the task window or its last 90 seconds; dependency: an external dependency; decision: a parent decision; limit: another exhausted limit that is not time.',
     }),
   ),
 });
@@ -476,6 +479,7 @@ const reportToParent = (
   });
 
   state.reported = true;
+  clearTimeout(state.deadlineWarning);
 
   return Promise.resolve({
     content: [{ type: 'text' as const, text: 'Handover durably accepted. Stop working.' }],
@@ -746,6 +750,7 @@ const registerSessionShutdownHandler = (pi: ExtensionAPI, state: WorkerExtension
 
     clearInterval(state.kickoff);
     clearInterval(state.parentWatch);
+    clearTimeout(state.deadlineWarning);
   });
 };
 
@@ -757,6 +762,42 @@ const registerSystemPromptHandler = (pi: ExtensionAPI, state: WorkerExtensionSta
   });
 };
 
+const armDeadlineWarning = (pi: ExtensionAPI, state: WorkerExtensionState, task: Task): void => {
+  state.deadlineWarning = setTimeout(
+    () => {
+      if (!isTaskActive(state) || state.pendingQuestion) {
+        return;
+      }
+
+      const seconds = Math.max(0, Math.floor(remainingWork(state, task) / 1000));
+
+      pi.sendMessage(
+        {
+          customType: 'tau-worker-deadline',
+          content: `Deadline in ${seconds} s: call subagent_report now with what you have; blockerKind time is accepted.`,
+          display: true,
+        },
+        { deliverAs: 'steer', triggerTurn: true },
+      );
+    },
+    Math.max(0, remainingWork(state, task) - timeBlockerReserve),
+  );
+};
+
+const lastRunError = (event: AgentEndEvent): string | undefined => {
+  const message = event.messages.findLast((entry) => entry.role === 'assistant');
+
+  if (message?.role !== 'assistant') {
+    return undefined;
+  }
+
+  if (message.stopReason !== 'error' && message.stopReason !== 'aborted') {
+    return undefined;
+  }
+
+  return `Pi run ended with ${message.stopReason}: ${message.errorMessage ?? 'no error message'}`;
+};
+
 const registerAgentStartHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.on('agent_start', (_event, context) => {
     if (!state.task || state.accepted) {
@@ -766,12 +807,16 @@ const registerAgentStartHandler = (pi: ExtensionAPI, state: WorkerExtensionState
     recordEvent(state.directory, state.task.taskId, 'accepted', 'Pi started the assigned task.');
     state.accepted = true;
     recordWorkerActivity(state, context, 'active', 'Pi task accepted');
+    armDeadlineWarning(pi, state, state.task);
   });
 };
 
 const registerReportReminder = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
-  pi.on('agent_end', () => {
-    if (!isTaskActive(state) || state.pendingQuestion) {
+  pi.on('agent_end', (event) => {
+    state.runError = lastRunError(event);
+
+    // A reminder after an errored or aborted run repeats the same error; the error explains the stop.
+    if (!isTaskActive(state) || state.pendingQuestion || state.runError !== undefined) {
       return;
     }
 
@@ -826,7 +871,7 @@ const registerAgentSettledHandler = (pi: ExtensionAPI, state: WorkerExtensionSta
     state.settled = true;
 
     recordEvent(state.directory, task.taskId, 'settled', {
-      detail: 'Pi has no active run or queued continuation.',
+      detail: state.runError ?? 'Pi has no active run or queued continuation.',
       stopped: true,
     });
 
@@ -852,6 +897,8 @@ export default function workerExtension(pi: ExtensionAPI): void {
     incompleteRefused: false,
     remindAfterRefusal: false,
     settled: false,
+    runError: undefined,
+    deadlineWarning: undefined,
     kickoff: undefined,
     pendingQuestion: undefined,
     parentWatch: undefined,
