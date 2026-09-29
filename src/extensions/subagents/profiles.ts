@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 import { Value } from 'typebox/value';
 
+import { instructionSetNames, isInstructionSetName } from '../../instructionSets/index.js';
+import type { InstructionSetName } from '../../instructionSets/index.js';
 import { assignmentContractFor, handoffContract } from './handoff.js';
 import { thinkingSchema, toolNamePattern } from './types.js';
 import type { Loadout, Profile, Task } from './types.js';
@@ -34,6 +36,7 @@ const supportedProfileKeys = new Set([
   'cli',
   'tools',
   'skills',
+  'instruction-sets',
 ]);
 
 const parseFields = (frontmatter: string) => {
@@ -119,6 +122,22 @@ const parseTools = (fields: Map<string, string>, role: Profile['role']): string[
   return tools;
 };
 
+const parseInstructionSets = (fields: Map<string, string>): InstructionSetName[] => {
+  const names = parseList('instruction-sets', fields.get('instruction-sets'));
+
+  if (names === undefined) {
+    return [...instructionSetNames];
+  }
+
+  const unknown = names.find((name) => !isInstructionSetName(name));
+
+  if (unknown !== undefined) {
+    throw new Error(`Unknown profile instruction set: ${unknown}`);
+  }
+
+  return names.filter((name) => isInstructionSetName(name));
+};
+
 const requirePiCli = (fields: Map<string, string>): void => {
   const cli = fields.get('cli') ?? 'pi';
 
@@ -155,6 +174,7 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
     thinking,
     tools: parseTools(fields, role),
     skills: parseList('skills', fields.get('skills')) ?? [],
+    instructionSets: parseInstructionSets(fields),
     instructions: body.trim(),
     source,
   };

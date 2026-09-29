@@ -1,6 +1,6 @@
 {
-  "version": 5,
-  "taskId": "current-pi",
+  "version": 4,
+  "taskId": "version-4-pi",
   "name": "scout-ab",
   "task": "Inspect source.",
   "parentSession": "/work/parent.jsonl",
@@ -9,8 +9,8 @@
   "deadline": 20000,
   "cancellationBudget": 1000,
   "monotonicDeadline": 20000,
-  "nativeSessionId": "native-current-pi",
-  "nativeSessionFile": "/work/agent/current-pi.jsonl",
+  "nativeSessionId": "native-version-4-pi",
+  "nativeSessionFile": "/work/agent/version-4-pi.jsonl",
   "loadout": {
     "harness": "pi",
     "profile": "scout",
@@ -22,7 +22,6 @@
     "permissions": "trusted-full-tools",
     "instructions": "Inspect the assigned source.",
     "tools": ["read", "bash", "web_search"],
-    "skills": ["/work/agent/skills/code-review/SKILL.md"],
-    "instructionSets": ["writing", "workflow"]
+    "skills": ["/work/agent/skills/code-review/SKILL.md"]
   }
 }

@@ -10,6 +10,7 @@ import type {
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { readInstructionSet } from '../../instructionSets/index.js';
 import { readWorkerActivity, writeWorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
 import { taskRecordStatus } from './controller/record.js';
@@ -48,7 +49,7 @@ const setup = (
   const createdAt = Date.now();
 
   publish(directory, 'task.json', {
-    version: 4,
+    version: 5,
     taskId: 'task',
     task: 'Read the assigned file.',
     parentSession: join(directory, 'parent.jsonl'),
@@ -71,6 +72,8 @@ const setup = (
       instructions: 'Read only.',
       tools: ['read', 'bash'],
       skills: [],
+      instructionSets:
+        role === 'editing' ? ['writing', 'coding', 'workflow'] : ['writing', 'workflow'],
     },
   });
 
@@ -518,6 +521,36 @@ it.each([
     expect(appended.includes(assignmentContract)).toBe(assignment);
     expect(prompt).not.toContain(instructions);
     expect(prompt).not.toContain(handoffContract);
+    await worker.emit('session_shutdown');
+  },
+);
+
+it.each([
+  { role: 'editing', sets: ['writing', 'coding', 'workflow'], omitted: [] },
+  { role: 'investigation', sets: ['writing', 'workflow'], omitted: ['coding'] },
+] as const)(
+  'appends the $role loadout instruction sets in order after the worker instructions',
+  async ({ role, sets, omitted }) => {
+    const worker = await waitingWorker(role);
+    const loadoutInstructions = readTask(worker.directory).loadout.instructions;
+    const systemPromptOptions = { appendSystemPrompt: '' };
+
+    await worker.emit('before_agent_start', { systemPrompt: 'base', systemPromptOptions });
+
+    const appended = systemPromptOptions.appendSystemPrompt;
+    const texts = await Promise.all(sets.map((name) => readInstructionSet(name)));
+    const positions = texts.map((text) => appended.indexOf(text));
+
+    expect(positions.every((position) => position > appended.indexOf(loadoutInstructions))).toBe(
+      true,
+    );
+
+    expect(positions).toEqual(positions.toSorted((first, second) => first - second));
+
+    for (const name of omitted) {
+      expect(appended).not.toContain(await readInstructionSet(name));
+    }
+
     await worker.emit('session_shutdown');
   },
 );

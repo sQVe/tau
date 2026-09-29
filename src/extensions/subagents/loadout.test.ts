@@ -84,6 +84,7 @@ it('resolves an explicit worker model and names the configured models when none 
     instructions: resolved.instructions,
     tools: resolved.tools,
     skills: [],
+    instructionSets: ['writing', 'coding', 'workflow'],
   });
 
   mkdirSync(join(directory, 'agents'));
@@ -424,6 +425,37 @@ it('saves the profile tools, or the role defaults, and the paths of its skills',
 
   expect(resolve('plain')).toMatchObject({ tools: ['read', 'bash'], skills: [] });
   expect(() => resolve('unknown')).toThrow('Worker profile skill not found: missing-skill');
+});
+
+const parseSettings = (settings: string) =>
+  parseProfile(`---\nrole: investigation\n${settings}---\nInspect.\n`, 'custom', 'fixture');
+
+it('saves the profile instruction sets, or all sets without the setting', async ({
+  onTestFinished,
+}) => {
+  const { context, request } = await workerFixture(onTestFinished);
+  const resolve = (name: string) => resolveLoadout({ ...request, profile: name }, context);
+
+  expect(parseSettings('instruction-sets: workflow, writing, workflow\n').instructionSets).toEqual([
+    'workflow',
+    'writing',
+  ]);
+
+  expect(parseSettings('').instructionSets).toEqual(['writing', 'coding', 'workflow']);
+  expect(resolve('scout').instructionSets).toEqual(['writing', 'workflow']);
+  expect(resolve('qa').instructionSets).toEqual(['writing', 'workflow']);
+  expect(resolve('reviewer').instructionSets).toEqual(['writing', 'coding', 'workflow']);
+  expect(resolve('worker').instructionSets).toEqual(['writing', 'coding', 'workflow']);
+});
+
+it('rejects an unknown or empty profile instruction set', () => {
+  expect(() => parseSettings('instruction-sets: writing, testing\n')).toThrow(
+    'Unknown profile instruction set: testing',
+  );
+
+  expect(() => parseSettings('instruction-sets: writing,,coding\n')).toThrow(
+    'comma-separated list',
+  );
 });
 
 it('defaults bundled roles to medium effort without effort settings in markdown', () => {

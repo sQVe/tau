@@ -39,6 +39,7 @@ import {
   validateTask,
 } from '../src/extensions/subagents/records.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
+import { readInstructionSet } from '../src/instructionSets/index.js';
 
 const handoff =
   'Changes: edited source.txt\nEvidence: command-ok\nDecisions: None\nConcerns: Safety Net blocked deletion';
@@ -144,6 +145,10 @@ it.each(['editing', 'investigation'] as const)(
       new URL('../src/extensions/askUserQuestion/index.ts', import.meta.url),
     );
 
+    const instructionExtensions = ['writing', 'coding', 'workflow'].map((name) =>
+      fileURLToPath(new URL(`../src/extensions/${name}/index.ts`, import.meta.url)),
+    );
+
     const expectedSource = role === 'editing' ? 'after' : 'before';
     const directory = mkdtempSync(join(tmpdir(), 'tau-worker-pi-'));
 
@@ -192,7 +197,7 @@ it.each(['editing', 'investigation'] as const)(
     vi.stubEnv('TAU_WORKER_RECORD', taskDirectory);
 
     const task = validateTask({
-      version: 4,
+      version: 5,
       taskId: 'fixture-task',
       task: 'Edit source.txt and check it.',
       parentSession: join(directory, 'parent.jsonl'),
@@ -218,6 +223,8 @@ it.each(['editing', 'investigation'] as const)(
             ? ['read', 'bash', 'edit', 'write', 'ask_user_question']
             : ['read', 'bash'],
         skills: [],
+        instructionSets:
+          role === 'editing' ? ['writing', 'coding', 'workflow'] : ['writing', 'workflow'],
       },
     });
 
@@ -234,6 +241,8 @@ it.each(['editing', 'investigation'] as const)(
       ),
       safety,
       questionnaire,
+      // The parent's configuration loads the instruction extensions too; a worker must not repeat them.
+      ...instructionExtensions,
     ];
 
     const loader = new DefaultResourceLoader({
@@ -467,6 +476,15 @@ it.each(['editing', 'investigation'] as const)(
 
     expect(reportRequest.taskId).toBe(task.taskId);
     expect(reminderSystemPrompt).toContain(task.loadout.instructions);
+
+    for (const name of ['writing', 'coding', 'workflow'] as const) {
+      const text = await readInstructionSet(name);
+      const occurrences = (reminderSystemPrompt ?? '').split(text).length - 1;
+      const expected = task.loadout.instructionSets.includes(name) ? 1 : 0;
+
+      expect(occurrences).toBe(expected);
+    }
+
     const original = readFileSync(join(taskDirectory, 'report.json'), 'utf8');
     await session.bindExtensions({});
 

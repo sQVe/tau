@@ -45,7 +45,7 @@ const questionFixture = () => {
   });
 
   const task = {
-    version: 4,
+    version: 5,
     taskId: 'task-one',
     task: 'Inspect source.',
     parentSession: join(directory, 'parent.jsonl'),
@@ -68,6 +68,7 @@ const questionFixture = () => {
       instructions: 'Inspect the assigned source.',
       tools: ['read', 'bash'],
       skills: [],
+      instructionSets: ['writing', 'coding', 'workflow'],
     },
   };
 
@@ -260,8 +261,9 @@ const saveTaskRecordFixtures = (names: string[]) => {
 
 it('reads task records saved in the previous and current formats', () => {
   const previous = ['previous-pi', 'version-3-pi'];
-  const root = saveTaskRecordFixtures([...previous, 'current-pi']);
+  const root = saveTaskRecordFixtures([...previous, 'version-4-pi', 'current-pi']);
   const diagnostics: string[] = [];
+  const allInstructionSets = ['writing', 'coding', 'workflow'];
 
   const scanned = records.readTasks(root, diagnostics);
 
@@ -271,14 +273,26 @@ it('reads task records saved in the previous and current formats', () => {
     const saved = parsedTaskRecordFixture(name);
 
     return Object.assign(saved, {
-      version: 4,
-      loadout: { ...(saved.loadout as object), tools: ['read', 'bash'], skills: [] },
+      version: 5,
+      loadout: {
+        ...(saved.loadout as object),
+        tools: ['read', 'bash'],
+        skills: [],
+        instructionSets: allInstructionSets,
+      },
     });
+  });
+
+  const version4 = parsedTaskRecordFixture('version-4-pi');
+
+  const upgradedVersion4 = Object.assign(version4, {
+    version: 5,
+    loadout: { ...(version4.loadout as object), instructionSets: allInstructionSets },
   });
 
   expect(
     scanned.map(({ task }) => task).toSorted((a, b) => a.taskId.localeCompare(b.taskId)),
-  ).toEqual([parsedTaskRecordFixture('current-pi'), ...upgraded]);
+  ).toEqual([parsedTaskRecordFixture('current-pi'), ...upgraded, upgradedVersion4]);
 });
 
 const saveSubmissionRecordFixtures = (directory: string) => {
