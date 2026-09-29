@@ -30,6 +30,8 @@ differ from these defaults.
 
 ## Ask for decisions
 
+A skill's own reply or question format takes precedence over this section.
+
 - When a reply needs a decision from the user, start with one sentence of status, then the
   decisions. Put the report and evidence after them.
 - Give each decision a number and one question. Make it readable without earlier messages. Do not

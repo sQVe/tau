@@ -38,6 +38,8 @@ report and evidence follow.
 - Options use letters. The recommendation comes first and is marked. Each option says in one line
   what happens.
 - A yes or no question states the default the agent uses without an answer.
+- A skill's own reply or question format takes precedence over these rules, so skills such as
+  code-review and pr keep their reports and `ask_user_question` prompts.
 - A turn that waits for the user states the question. This rule sits in the workflow instructions
   because it governs when the agent stops, following ADR 0056. The other rules sit in the writing
   instructions.
