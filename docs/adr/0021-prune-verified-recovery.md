@@ -7,9 +7,9 @@
 
 [ADR 0019](./0019-verified-raw-recovery.md) retains every recovery archive after a successful
 restoration, because deleting it could discard user work written to displaced files. Each archive
-holds several copies of the working files, index snapshots, and a Git ref that pins an otherwise
-unreachable tree. A check window runs on every commit, so a repository grows by several megabytes
-per commit with no way to remove them.
+holds a copy of the working files, a manifest with more copies, index snapshots, and a Git ref that
+pins an otherwise unreachable tree. A check window runs on every commit, so a repository grows by
+several megabytes per commit with no way to remove them.
 
 Only the displaced inodes can receive late writes: a process that held a file open before hiding
 keeps writing to the moved inode. Tau reads the snapshots and the ref only during restoration, and

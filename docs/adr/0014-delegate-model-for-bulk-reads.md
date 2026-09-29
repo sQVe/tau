@@ -145,8 +145,7 @@ edge cases rather than reading the file a second time:
   sessions, 2,981 reads, 2,137 unbounded reads, 568 truncated or hinted results (19.1%), and at most
   470 offset pages. That day's review had counted 2.3% truncated or hinted. The rest comes from Pi's
   own continuation notice, which the query also matches. Nine `bulk_read` calls cost
-  $0.08 against
-  $84.65 of assistant spend in the seven sessions that used it. Cumulative catalog
+  $0.08 against $84.65 of assistant spend in the seven sessions that used it. Cumulative catalog
   cost to that date was $555.49 for `assistant` and $0.08 for `toolResult`. The counts include
   sessions before `bulk_read` shipped, and files under 400 lines count as unbounded reads. The
   offset count is an upper bound without a same-path join. These counts compare no thresholds and

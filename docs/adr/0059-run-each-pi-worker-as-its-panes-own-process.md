@@ -25,7 +25,7 @@ exits. Herdr can also close such a pane and move it beside another pane.
   finds the shell function, not the executable.
 - Run Pi as the pane's own process. Chosen: the pane lives exactly as long as Pi, and no shell state
   remains to check.
-- Ask herdr for a lease that closes a worker pane when its owner goes away. Rejected: this is a
+- Ask herdr for a lease that closes a worker pane when its owner goes away. Deferred: this is a
   herdr change and out of scope here.
 
 ## Decision

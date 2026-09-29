@@ -16,7 +16,8 @@ receives its task by watching its record directory.
 - Keep typing into the pane. Rejected: it depends on herdr accepting input at the right pane, and it
   never proves the worker read the reply.
 - Let the worker read the reply from the record directory while its question is pending, the same
-  way it receives its task. Chosen.
+  way it receives its task. Chosen: a reply then needs no herdr call, and the worker's
+  acknowledgement proves it took the reply.
 
 ## Decision
 

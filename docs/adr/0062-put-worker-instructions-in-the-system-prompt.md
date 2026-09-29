@@ -18,7 +18,8 @@ descriptions and guards that the worker already sees.
   Rejected: the flag replaces Pi's discovered `APPEND_SYSTEM.md`, so workers would lose the user's
   own appended prompt.
 - Append them in the worker extension's `before_agent_start` hook, as Tau's coding, writing, and
-  workflow instructions are appended. Chosen.
+  workflow instructions are appended. Chosen: compaction keeps the instructions, follow-ups do not
+  repeat them, and workers keep the user's `APPEND_SYSTEM.md`.
 
 ## Decision
 

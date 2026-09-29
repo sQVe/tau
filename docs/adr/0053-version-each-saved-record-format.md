@@ -28,7 +28,8 @@ For marking the format:
   one, so it can only report a failure with no fix.
 - Accept unknown fields. Rejected: old readers would read records whose meaning changed, and act on
   them.
-- Give each format its own version, and keep strict readers. Chosen.
+- Give each format its own version, and keep strict readers. Chosen: a reader can tell a newer
+  record from a broken one, and it still rejects fields it does not know.
 
 ## Decision
 
