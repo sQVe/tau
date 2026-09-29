@@ -16,7 +16,7 @@ interface PiSessionOptions {
   agentDirectory: string;
   /** The first provider supplies the session model. */
   providers: [FauxProviderHandle, ...FauxProviderHandle[]];
-  tools: string[];
+  tools?: string[];
   extensionPaths?: string[];
   skillPaths?: string[];
   extensionFactories?: NonNullable<LoaderOptions['extensionFactories']>;
@@ -69,7 +69,7 @@ export const createPiSession = async (
     resourceLoader: loader,
     sessionManager: SessionManager.inMemory(cwd),
     settingsManager,
-    tools: options.tools,
+    ...(options.tools === undefined ? {} : { tools: options.tools }),
   });
 
   registerCleanup(() => {

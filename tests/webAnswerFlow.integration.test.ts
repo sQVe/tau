@@ -4,33 +4,43 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
-import { expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
 
 vi.setConfig({ testTimeout: 60_000 });
 
+let directory: string;
+let agentDirectory: string;
+
+// pi-web-access keeps the config path from its first load in this process, so every scenario shares one.
+beforeAll(async () => {
+  directory = await mkdtemp(join(tmpdir(), 'tau-web-answer-'));
+  agentDirectory = join(directory, 'agent');
+  await mkdir(agentDirectory);
+
+  isolateWebAccessConfig(agentDirectory, (restore) => {
+    afterAll(restore);
+  });
+
+  // Tau's shared setting takes precedence over the upstream persistent answer setting.
+  await writeFile(
+    join(agentDirectory, 'web-search.json'),
+    JSON.stringify({
+      fetch: { answerProvider: 'ignored', answerModel: 'ignored' },
+      fetchRouting: { providers: ['http'] },
+      // Only this isolated fixture server may bypass the package's private-address guard.
+      ssrf: { allowRanges: ['127.0.0.1/32'] },
+    }),
+  );
+});
+
+afterAll(() => rm(directory, { recursive: true, force: true }));
+
 it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'] as const)(
   'runs web answer mode through Pi with delegate selection: %s',
   async (scenario, { onTestFinished }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-web-answer-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
-    const agentDirectory = join(directory, 'agent');
-    await mkdir(agentDirectory);
-    isolateWebAccessConfig(agentDirectory, onTestFinished);
-
-    // Tau's shared setting takes precedence over the upstream persistent answer setting.
-    await writeFile(
-      join(agentDirectory, 'web-search.json'),
-      JSON.stringify({
-        fetch: { answerProvider: 'ignored', answerModel: 'ignored' },
-        fetchRouting: { providers: ['http'] },
-        // Only this isolated fixture server may bypass the package's private-address guard.
-        ssrf: { allowRanges: ['127.0.0.1/32'] },
-      }),
-    );
-
     vi.stubEnv('TAU_DELEGATE_MODEL', 'web-delegate/reader');
 
     onTestFinished(() => {
@@ -88,7 +98,7 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
       tools: ['fetch_content', 'get_search_content', 'web_search'],
       extensionPaths: [
         resolve(import.meta.dirname, '../src/extensions/webAccess/index.ts'),
-        resolve(import.meta.dirname, '../node_modules/pi-web-access/index.ts'),
+        resolve(import.meta.dirname, '../node_modules/pi-web-access/dist/index.js'),
       ],
       settings: { compaction: { enabled: false }, retry: { enabled: false } },
     });

@@ -37,7 +37,7 @@ const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
 
 const bundledWebAccessExtensionPath = resolve(
   import.meta.dirname,
-  '../node_modules/pi-web-access/index.ts',
+  '../node_modules/pi-web-access/dist/index.js',
 );
 
 const git = async (repositoryDirectory: string, commandArguments: string[]): Promise<string> => {

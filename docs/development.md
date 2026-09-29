@@ -126,8 +126,10 @@ notice. Workers cannot launch workers; they ask their parent instead.
 
 ### Web provider
 
-Configure a search provider in `~/.pi/web-search.json`, not in this repository. Most providers need
-an API key. To search without a key, select DuckDuckGo explicitly:
+Configure a search provider in `~/.pi/agent/web-search.json`, not in this repository. If you already
+have the older `~/.pi/web-search.json`, edit that file instead: pi-web-access reads it only when the
+first file is missing. Most providers need an API key. To search without a key, select DuckDuckGo
+explicitly:
 
 ```json
 {
@@ -149,8 +151,8 @@ that Enter submits from any row.
 
 ### Web access
 
-With a search provider configured, ask Pi to search the web. Check that `web_search` returns results
-and that `fetch_content` on a URL returns readable markdown.
+With a search provider configured, ask Pi to search the web. Check that Pi calls `web_enable` first,
+that `web_search` returns results, and that `fetch_content` on a URL returns readable markdown.
 
 ### Snippets
 
