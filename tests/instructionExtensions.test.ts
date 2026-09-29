@@ -6,6 +6,7 @@ import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-codin
 import { expect, it } from 'vitest';
 
 const instructionExtensions = ['writing', 'coding', 'workflow'] as const;
+const sharedModules = ['instructionSets', 'systemPrompt', 'workerProcess'];
 
 for (const extension of instructionExtensions) {
   it(`rejects invalid ${extension} instructions and reads them again on reload`, async ({
@@ -14,23 +15,26 @@ for (const extension of instructionExtensions) {
     const workingDirectory = await mkdtemp(join(tmpdir(), `tau-${extension}-`));
     onTestFinished(() => rm(workingDirectory, { recursive: true, force: true }));
 
-    // Keep the extension's relative import of the shared system prompt helper.
+    // Keep the extension's relative imports of the shared modules.
     const extensionDirectory = join(workingDirectory, 'extensions', extension);
     const extensionPath = join(extensionDirectory, 'index.ts');
     const instructionsPath = join(extensionDirectory, 'instructions.md');
 
     await mkdir(extensionDirectory, { recursive: true });
-    await mkdir(join(workingDirectory, 'systemPrompt'));
 
     await copyFile(
       new URL(`../src/extensions/${extension}/index.ts`, import.meta.url),
       extensionPath,
     );
 
-    await copyFile(
-      new URL('../src/systemPrompt/index.ts', import.meta.url),
-      join(workingDirectory, 'systemPrompt', 'index.ts'),
-    );
+    for (const sharedModule of sharedModules) {
+      await mkdir(join(workingDirectory, sharedModule));
+
+      await copyFile(
+        new URL(`../src/${sharedModule}/index.ts`, import.meta.url),
+        join(workingDirectory, sharedModule, 'index.ts'),
+      );
+    }
 
     await writeFile(instructionsPath, ' \n\t');
 

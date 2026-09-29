@@ -12,4 +12,5 @@ export const fixtureLoadout = (directory: string): Loadout => ({
   instructions: 'Work on the assigned task.',
   tools: ['read', 'bash', 'edit', 'write'],
   skills: [],
+  instructionSets: ['writing', 'coding', 'workflow'],
 });

@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "taskId": "malformed",
   "name": "scout-ab",
   "task": "Inspect source.",
@@ -22,7 +22,8 @@
     "permissions": "trusted-full-tools",
     "instructions": "Inspect the assigned source.",
     "tools": ["read", "bash", "web_search"],
-    "skills": ["/work/agent/skills/code-review/SKILL.md"]
+    "skills": ["/work/agent/skills/code-review/SKILL.md"],
+    "instructionSets": ["writing", "workflow"]
   },
   "futureField": "added without a version bump"
 }

@@ -21,6 +21,7 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { errorMessage, isMissingFile } from '../../errors/index.js';
+import { instructionSetNames } from '../../instructionSets/index.js';
 import { roleTools } from './profiles.js';
 import {
   eventSchema,
@@ -29,6 +30,7 @@ import {
   taskSchema,
   taskVersion,
   isTaskId,
+  version4TaskSchema,
 } from './types.js';
 import type { Loadout, Report, Task, TaskEvent } from './types.js';
 import { taskEndedEventKinds } from './workerState.js';
@@ -235,15 +237,32 @@ const isNonPiTask = (value: unknown): boolean => {
   return retiredVersion && hasGenericLoadout(value);
 };
 
-// Previous formats lack only the tool and skill loadout.
-const upgradeTask = (value: unknown): unknown =>
-  Value.Check(previousTaskSchema, value)
-    ? {
-        ...value,
-        version: taskVersion,
-        loadout: { ...value.loadout, tools: roleTools[value.loadout.role], skills: [] },
-      }
-    : value;
+// Version 4 lacks the instruction sets, and earlier formats also lack the tool and skill loadout.
+// Workers of every earlier format loaded all instruction sets.
+const upgradeTask = (value: unknown): unknown => {
+  if (Value.Check(version4TaskSchema, value)) {
+    return {
+      ...value,
+      version: taskVersion,
+      loadout: { ...value.loadout, instructionSets: [...instructionSetNames] },
+    };
+  }
+
+  if (Value.Check(previousTaskSchema, value)) {
+    return {
+      ...value,
+      version: taskVersion,
+      loadout: {
+        ...value.loadout,
+        tools: roleTools[value.loadout.role],
+        skills: [],
+        instructionSets: [...instructionSetNames],
+      },
+    };
+  }
+
+  return value;
+};
 
 // Callers treat a missing task as unpublished, so only other failures name the task.
 export const readTask = (directory: string): Task => {

@@ -26,6 +26,7 @@ import * as questions from '../questionRecords.js';
 import { acceptReport, readEvent, readTask, recordEvent } from '../records.js';
 import * as records from '../records.js';
 import * as terminalModule from '../terminal.js';
+import { taskVersion } from '../types.js';
 import { WorkerController } from './controller.js';
 import { RequestNotSentError, workerArguments } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
@@ -221,7 +222,7 @@ it('saves a launched Pi task in the current record format', async ({ onTestFinis
   const launched = await fixture.controller.launch(fixture.input);
 
   expect(JSON.parse(readFileSync(join(launched.directory, 'task.json'), 'utf8'))).toMatchObject({
-    version: 4,
+    version: 5,
   });
 });
 
@@ -1108,7 +1109,7 @@ const newerTauRecord = (source: ReturnType<typeof readTask>, predecessorTaskId: 
   taskId: 'newer',
   name: 'critic-ab',
   predecessorTaskId,
-  version: 5,
+  version: taskVersion + 1,
   loadout: { ...source.loadout, profile: 'critic' },
   futureField: 'written by a newer Tau',
 });

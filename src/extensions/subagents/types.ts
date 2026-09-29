@@ -4,6 +4,8 @@ import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { modelReferencePattern } from '../../delegateModel/index.js';
+import { instructionSetNames } from '../../instructionSets/index.js';
+import type { InstructionSetName } from '../../instructionSets/index.js';
 
 export type WorkerState =
   | 'starting'
@@ -22,6 +24,7 @@ export interface Profile {
   thinking: Loadout['thinking'];
   tools: string[];
   skills: string[];
+  instructionSets: InstructionSetName[];
   instructions: string;
   source: string;
 }
@@ -60,13 +63,23 @@ const loadoutProperties = {
   instructions: text,
 };
 
+const toolAndSkillProperties = {
+  tools: Type.Array(Type.String({ pattern: toolNamePattern }), { minItems: 1, maxItems: 100 }),
+  // SKILL.md paths, not skill names.
+  skills: Type.Array(text, { maxItems: 100 }),
+};
+
 export const loadoutSchema = Type.Object(
   {
     ...loadoutProperties,
-    tools: Type.Array(Type.String({ pattern: toolNamePattern }), { minItems: 1, maxItems: 100 }),
-    // SKILL.md paths, not skill names.
-    skills: Type.Array(text, { maxItems: 100 }),
+    ...toolAndSkillProperties,
+    instructionSets: Type.Array(StringEnum(instructionSetNames), { maxItems: 3 }),
   },
+  { additionalProperties: false },
+);
+
+const version4LoadoutSchema = Type.Object(
+  { ...loadoutProperties, ...toolAndSkillProperties },
   { additionalProperties: false },
 );
 
@@ -90,7 +103,10 @@ const taskProperties = {
 
 const versionedTaskSchema = <
   Version extends TSchema,
-  SavedLoadout extends typeof loadoutSchema | typeof previousLoadoutSchema,
+  SavedLoadout extends
+    | typeof loadoutSchema
+    | typeof version4LoadoutSchema
+    | typeof previousLoadoutSchema,
 >(
   version: Version,
   loadout: SavedLoadout,
@@ -107,9 +123,11 @@ const versionedTaskSchema = <
   );
 
 // Bump for any change to the saved fields, including a new optional field.
-export const taskVersion = 4;
+export const taskVersion = 5;
 
 export const taskSchema = versionedTaskSchema(Type.Literal(taskVersion), loadoutSchema);
+
+export const version4TaskSchema = versionedTaskSchema(Type.Literal(4), version4LoadoutSchema);
 
 // Versions 2 and 3 also saved non-Pi tasks, which are no longer read.
 export const previousTaskSchema = versionedTaskSchema(

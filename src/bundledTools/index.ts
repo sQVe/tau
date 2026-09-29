@@ -1,13 +1,14 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
+import { isWorkerProcess } from '../workerProcess/index.js';
+
 export const requireRegisteredTools = (
   pi: ExtensionAPI,
   packageName: string,
   requiredToolNames: readonly string[],
 ) => {
   // A worker registers only its profile's tools and checks those itself.
-  // oxlint-disable-next-line node/no-process-env -- The parent marks a worker process with its task record.
-  if (process.env.TAU_WORKER_RECORD != null && process.env.TAU_WORKER_RECORD !== '') {
+  if (isWorkerProcess()) {
     return;
   }
 

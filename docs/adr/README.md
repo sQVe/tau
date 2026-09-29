@@ -89,3 +89,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0065: Put user decisions first in replies](./0065-put-user-decisions-first-in-replies.md)
 - [0066: Add Tau's prompt text to Pi's append section](./0066-add-taus-prompt-text-to-pis-append-section.md)
 - [0067: Give workers only their profile's tools and skills](./0067-give-workers-only-their-profile-tools-and-skills.md)
+- [0068: Load only the instruction sets each worker profile needs](./0068-load-only-the-instruction-sets-each-worker-profile-needs.md)

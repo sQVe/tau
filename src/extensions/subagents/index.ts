@@ -1,4 +1,4 @@
-/* oxlint-disable node/no-process-env -- Worker ownership and herdr connection come from the active Pi process. */
+/* oxlint-disable node/no-process-env -- The herdr connection comes from the active Pi process. */
 
 import { StringEnum } from '@earendil-works/pi-ai';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
@@ -7,6 +7,7 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import { appendToolGuidelines } from '../../systemPrompt/index.js';
+import { isWorkerProcess } from '../../workerProcess/index.js';
 import { WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { historyPage, searchHistory } from './history.js';
@@ -622,7 +623,7 @@ const totalSleepSeconds = (command: string): number => {
 };
 
 export default function subagentsExtension(pi: ExtensionAPI): void {
-  if (process.env.TAU_WORKER_RECORD != null && process.env.TAU_WORKER_RECORD !== '') {
+  if (isWorkerProcess()) {
     return;
   }
 

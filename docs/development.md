@@ -114,6 +114,11 @@ setting names them, for example `skills: tdd`. The bundled `qa` profile lists th
 lists other tools. See the
 [tool and skill decision](adr/0067-give-workers-only-their-profile-tools-and-skills.md).
 
+A profile's `instruction-sets:` setting lists the Tau instruction sets its worker loads, from
+`writing`, `coding`, and `workflow`. Without it, a worker loads all three. The bundled `scout` and
+`qa` profiles set `instruction-sets: writing, workflow`. See the
+[instruction set decision](adr/0068-load-only-the-instruction-sets-each-worker-profile-needs.md).
+
 Set `TAU_SUBAGENT_CAP` to limit how many live workers each parent controller runs at once. It takes
 an integer from 1 to 256 and defaults to 4. Each controller reads the cap once when it starts. A
 launch at the cap refuses and lists the live workers with their deadlines; retry after a stop

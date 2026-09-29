@@ -17,6 +17,7 @@ import type {
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
+import { instructionSetNames, readInstructionSet } from '../../instructionSets/index.js';
 import { appendSystemPrompt } from '../../systemPrompt/index.js';
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
@@ -41,7 +42,7 @@ import {
   taskEnded,
 } from './records.js';
 import { textLimit } from './types.js';
-import type { Acknowledgement, Question, Report, Task } from './types.js';
+import type { Acknowledgement, Loadout, Question, Report, Task } from './types.js';
 
 type WorkerPhase = 'starting' | 'active' | 'waiting' | 'done';
 
@@ -755,10 +756,25 @@ const registerSessionShutdownHandler = (pi: ExtensionAPI, state: WorkerExtension
   });
 };
 
+const readLoadoutInstructionSets = (loadout: Loadout): Promise<string[]> =>
+  Promise.all(
+    instructionSetNames
+      .filter((name) => loadout.instructionSets.includes(name))
+      .map((name) => readInstructionSet(name)),
+  );
+
 const registerSystemPromptHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
-  pi.on('before_agent_start', (event) => {
+  // Read once, so every turn gets the same text even if the checkout changes.
+  let instructionSets: Promise<string[]> | undefined;
+
+  pi.on('before_agent_start', async (event) => {
     if (state.task) {
+      instructionSets ??= readLoadoutInstructionSets(state.task.loadout);
       appendSystemPrompt(event, workerInstructions(state.task.loadout));
+
+      for (const text of await instructionSets) {
+        appendSystemPrompt(event, text);
+      }
     }
   });
 };
