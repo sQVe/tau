@@ -20,6 +20,7 @@ interface Candidate {
   name?: string;
   label?: string;
   profile?: string;
+  createdAt?: number;
   description: string;
   nativeSessionId?: string;
   nativeSessionFile?: string;
@@ -189,6 +190,7 @@ const taskCandidate = (
     ...(task.name != null ? { name: task.name } : {}),
     ...(task.label != null ? { label: task.label } : {}),
     profile: task.loadout.profile,
+    createdAt: task.createdAt,
     description: task.task,
     nativeSessionId: task.nativeSessionId,
     nativeSessionFile: task.nativeSessionFile,

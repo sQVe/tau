@@ -11,6 +11,8 @@ export interface WorkerRecordFacts {
   state?: WorkerState;
   pendingQuestionId?: string;
   successorTaskId?: string;
+  // The task's launch time, in milliseconds since the epoch.
+  createdAt?: number;
   report?: Report;
 }
 
@@ -23,6 +25,7 @@ export interface LedgerWorker {
   state?: WorkerState;
   pendingQuestionId?: string;
   successorTaskId?: string;
+  createdAt?: number;
   report?: { outcome: Report['outcome']; evidence: string[] };
 }
 
@@ -36,6 +39,7 @@ export interface Ledger {
 const evidenceLength = 500;
 const diagnosticLength = 300;
 const diagnosticCount = 5;
+const fullStoppedCount = 10;
 
 const shorten = (text: string, length: number): string =>
   text.length > length ? `${text.slice(0, length)}…` : text;
@@ -63,6 +67,7 @@ const ledgerWorker = ({
     ? {}
     : { pendingQuestionId: worker.pendingQuestionId }),
   ...(worker.successorTaskId === undefined ? {} : { successorTaskId: worker.successorTaskId }),
+  ...(worker.createdAt === undefined ? {} : { createdAt: worker.createdAt }),
   ...ledgerReport(report),
 });
 
@@ -80,11 +85,41 @@ export const buildLedger = (workers: WorkerRecordFacts[], diagnostics: string[])
     .map((entry) => shorten(entry, diagnosticLength)),
 });
 
-const workerHeading = (worker: LedgerWorker): string => {
+const isOlderStopped = (worker: LedgerWorker): boolean =>
+  worker.state === 'stopped' && worker.pendingQuestionId === undefined;
+
+const launchedLater = (left: LedgerWorker, right: LedgerWorker): number =>
+  (right.createdAt ?? 0) - (left.createdAt ?? 0);
+
+// The summary text stays small in a session with many workers: live workers, workers with a
+// question, and the most recent stopped workers keep their evidence. Older stopped workers keep one
+// line each, so every task ID stays in the summary.
+export const summaryLayout = (ledger: Ledger) => {
+  const shortened = new Set(
+    ledger.workers.filter(isOlderStopped).toSorted(launchedLater).slice(fullStoppedCount),
+  );
+
+  return {
+    full: ledger.workers.filter((worker) => !shortened.has(worker)),
+    short: ledger.workers.filter((worker) => shortened.has(worker)),
+  };
+};
+
+const workerIdentity = (worker: LedgerWorker): string => {
   const quotedLabel = worker.label === undefined ? undefined : `"${worker.label}"`;
   const names = [worker.name, quotedLabel].filter((part) => part !== undefined);
 
-  const identity = names.length > 0 ? ` (${names.join(', ')})` : '';
+  return names.length > 0 ? ` (${names.join(', ')})` : '';
+};
+
+const shortWorkerLine = (worker: LedgerWorker): string => {
+  const outcome = worker.report?.outcome ?? 'no report';
+
+  return `- Task ${worker.taskId}${workerIdentity(worker)}: state stopped, report ${outcome}`;
+};
+
+const workerHeading = (worker: LedgerWorker): string => {
+  const identity = workerIdentity(worker);
   const profile = worker.profile ?? 'unknown';
   const state = worker.state ?? 'unreadable';
 
@@ -125,8 +160,15 @@ export const renderLedger = (ledger: Ledger): string => {
     lines.push('- No workers in this session.');
   }
 
-  for (const worker of ledger.workers) {
+  const layout = summaryLayout(ledger);
+
+  for (const worker of layout.full) {
     lines.push(...workerLines(worker));
+  }
+
+  if (layout.short.length > 0) {
+    lines.push('', 'Older stopped workers, without evidence:');
+    lines.push(...layout.short.map(shortWorkerLine));
   }
 
   if (ledger.diagnostics.length > 0) {

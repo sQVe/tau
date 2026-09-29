@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { buildLedger, renderLedger } from './ledger.js';
+import { buildLedger, renderLedger, summaryLayout } from './ledger.js';
 import type { Ledger, LedgerWorker, WorkerRecordFacts } from './ledger.js';
 
 interface LedgerCase {
@@ -8,6 +8,13 @@ interface LedgerCase {
   workers: WorkerRecordFacts[];
   diagnostics: string[];
   ledger: Ledger;
+}
+
+interface LayoutCase {
+  name: string;
+  workers: WorkerRecordFacts[];
+  full: string[];
+  short: string[];
 }
 
 const reported: WorkerRecordFacts = {
@@ -107,4 +114,88 @@ it('renders every saved identifier and evidence entry into the summary text', ()
   ]) {
     expect(text).toContain(value);
   }
+});
+
+const stopped = (
+  taskId: string,
+  createdAt: number,
+): WorkerRecordFacts & { taskId: string; createdAt: number } => ({
+  taskId,
+  name: `${taskId}-name`,
+  state: 'stopped',
+  createdAt,
+  report: { taskId, outcome: 'success', summary: 'Done.', evidence: [`evidence of ${taskId}`] },
+});
+
+// Eleven stopped workers, launched in the order of their number.
+const stoppedWorkers = Array.from({ length: 11 }, (_, index) =>
+  stopped(`stopped-${String(index + 1).padStart(2, '0')}`, 1000 + index),
+);
+
+const recentStopped = stoppedWorkers.slice(1).map((worker) => worker.taskId);
+
+const { createdAt: _unused, ...undated } = stopped('undated', 1);
+
+const layoutCases: LayoutCase[] = [
+  {
+    name: 'shortens a stopped worker beyond the 10 most recent',
+    workers: stoppedWorkers,
+    full: recentStopped,
+    short: ['stopped-01'],
+  },
+  {
+    name: 'keeps a worker that is not stopped in full however old it is',
+    workers: [...stoppedWorkers, { ...stopped('running-old', 1), state: 'running' }],
+    full: ['running-old', ...recentStopped],
+    short: ['stopped-01'],
+  },
+  {
+    name: 'keeps an unreadable worker in full',
+    workers: [...stoppedWorkers, { taskId: 'unreadable-old', createdAt: 1 }],
+    full: [...recentStopped, 'unreadable-old'],
+    short: ['stopped-01'],
+  },
+  {
+    name: 'keeps a stopped worker with a pending question in full',
+    workers: [...stoppedWorkers, { ...stopped('asking-old', 1), pendingQuestionId: 'question-1' }],
+    full: ['asking-old', ...recentStopped],
+    short: ['stopped-01'],
+  },
+  {
+    name: 'treats a stopped worker without a launch time as the oldest',
+    workers: [...stoppedWorkers.slice(1), undated],
+    full: recentStopped,
+    short: ['undated'],
+  },
+];
+
+it.each(layoutCases)('$name', ({ workers, full, short }) => {
+  const layout = summaryLayout(buildLedger(workers, []));
+
+  expect(layout.full.map((worker) => worker.taskId)).toEqual(full);
+  expect(layout.short.map((worker) => worker.taskId)).toEqual(short);
+});
+
+it('keeps every worker in full in the details', () => {
+  const ledger = buildLedger(stoppedWorkers, []);
+
+  expect(ledger.workers).toHaveLength(11);
+
+  expect(ledger.workers[0]).toEqual({
+    taskId: 'stopped-01',
+    name: 'stopped-01-name',
+    state: 'stopped',
+    createdAt: 1000,
+    report: { outcome: 'success', evidence: ['evidence of stopped-01'] },
+  });
+});
+
+it('keeps the task ID and outcome of an older stopped worker in the text, without evidence', () => {
+  const text = renderLedger(buildLedger(stoppedWorkers, []));
+  const line = text.split('\n').find((entry) => entry.includes('stopped-01')) ?? '';
+
+  expect(line).toContain('stopped-01-name');
+  expect(line).toContain('success');
+  expect(text).not.toContain('evidence of stopped-01');
+  expect(text).toContain('evidence of stopped-11');
 });
