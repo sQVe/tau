@@ -1,4 +1,11 @@
+export interface ToolResultFacts {
+  toolName: string;
+  isError: boolean;
+  content: readonly { type: string; text?: string }[];
+}
+
 export interface CutBashOutput {
+  text: string;
   head: string;
   tail: string;
   cut: number;
@@ -31,14 +38,27 @@ const keepTail = (text: string): string => {
   return window.replace(/^[\uDC00-\uDFFF]/u, '');
 };
 
+// A failing test run prints its failure details before its summary, where a cut would hide them.
+const cappedText = ({ toolName, isError, content }: ToolResultFacts): string | undefined => {
+  if (toolName !== 'bash' || isError || content.length !== 1) {
+    return undefined;
+  }
+
+  const [part] = content;
+
+  return part?.type === 'text' ? part.text : undefined;
+};
+
 // Keeps whole lines unless one long line would leave the head or tail under half its room.
-export const cutBashOutput = (text: string): CutBashOutput | undefined => {
-  if (text.length <= outputCap) {
+export const decideBashOutputCap = (result: ToolResultFacts): CutBashOutput | undefined => {
+  const text = cappedText(result);
+
+  if (text === undefined || text.length <= outputCap) {
     return undefined;
   }
 
   const head = keepHead(text);
   const tail = keepTail(text);
 
-  return { head, tail, cut: text.length - head.length - tail.length };
+  return { text, head, tail, cut: text.length - head.length - tail.length };
 };

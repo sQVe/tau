@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import type { ExtensionAPI, ToolResultEvent } from '@earendil-works/pi-coding-agent';
 
-import { cutBashOutput } from './bashOutputCap.js';
+import { decideBashOutputCap } from './bashOutputCap.js';
 
 // mkdtemp creates the directory readable only by its owner, outside the worktree under test.
 const saveFullOutput = async (text: string): Promise<string> => {
@@ -16,26 +16,14 @@ const saveFullOutput = async (text: string): Promise<string> => {
   return path;
 };
 
-// A failing test run prints its failure details before its summary, where a cut would hide them.
 const capBashOutput = async (event: ToolResultEvent) => {
-  if (event.toolName !== 'bash' || event.isError) {
+  const decision = decideBashOutputCap(event);
+
+  if (decision === undefined) {
     return undefined;
   }
 
-  const [part, ...rest] = event.content;
-
-  if (part?.type !== 'text' || rest.length > 0) {
-    return undefined;
-  }
-
-  const text = part.text;
-  const cutOutput = cutBashOutput(text);
-
-  if (cutOutput === undefined) {
-    return undefined;
-  }
-
-  const { head, tail, cut } = cutOutput;
+  const { text, head, tail, cut } = decision;
   const path = await saveFullOutput(text);
   const marker = `[${cut} of ${text.length} characters cut. Command exited with code 0. Full output: ${path}]`;
 

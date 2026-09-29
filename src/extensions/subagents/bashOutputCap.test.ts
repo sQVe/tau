@@ -1,12 +1,39 @@
 import { expect, it } from 'vitest';
 
-import { cutBashOutput } from './bashOutputCap.js';
+import { decideBashOutputCap } from './bashOutputCap.js';
 
 const lines = (from: number, to: number) =>
   Array.from({ length: to - from + 1 }, (_, index) => String(from + index)).join('\n');
 
-it('leaves output within the cap uncut', () => {
-  expect(cutBashOutput('x'.repeat(8000))).toBeUndefined();
+const long = 'x'.repeat(8001);
+
+const successfulBash = (text: string) => ({
+  toolName: 'bash',
+  isError: false,
+  content: [{ type: 'text', text }],
+});
+
+it.each([
+  { rule: 'output within the cap', result: successfulBash('x'.repeat(8000)) },
+  { rule: 'another tool', result: { ...successfulBash(long), toolName: 'read' } },
+  { rule: 'a failed command', result: { ...successfulBash(long), isError: true } },
+  {
+    rule: 'an image part',
+    result: { ...successfulBash(long), content: [{ type: 'image', data: long }] },
+  },
+  {
+    rule: 'more than one part',
+    result: {
+      ...successfulBash(long),
+      content: [
+        { type: 'text', text: long },
+        { type: 'text', text: 'note' },
+      ],
+    },
+  },
+  { rule: 'no content', result: { ...successfulBash(long), content: [] } },
+])('leaves $rule whole', ({ result }) => {
+  expect(decideBashOutputCap(result)).toBeUndefined();
 });
 
 it.each([
@@ -41,7 +68,7 @@ it.each([
     tail: /^b{5499}$/u,
   },
 ])('$rule', ({ text, head, tail }) => {
-  const result = cutBashOutput(text);
+  const result = decideBashOutputCap(successfulBash(text));
 
   expect(result?.head).toMatch(head);
   expect(result?.tail).toMatch(tail);
@@ -49,5 +76,6 @@ it.each([
   expect(result?.tail.isWellFormed()).toBe(true);
   expect((result?.head.length ?? 0) + (result?.tail.length ?? 0)).toBeGreaterThan(6000);
   expect((result?.head.length ?? 0) + (result?.tail.length ?? 0)).toBeLessThanOrEqual(7500);
+  expect(result?.text).toBe(text);
   expect(result?.cut).toBe(text.length - (result?.head.length ?? 0) - (result?.tail.length ?? 0));
 });
