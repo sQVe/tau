@@ -45,7 +45,6 @@ export const herdrFake = (width = 200, height = 60) => {
 
   const state = {
     stopped: false,
-    promptError: '',
     session: 'opaque-reference',
     process: process.pid,
   };
@@ -84,18 +83,6 @@ export const herdrFake = (width = 200, height = 60) => {
         agent_status: 'idle',
         agent_session: { kind: 'path', value: state.session },
       });
-    },
-    prompt: (argumentsList) => {
-      // Real herdr rejects '--' as text; a separator here would fail delivery.
-      if (argumentsList[3] === '--') {
-        throw new Error('unknown option: text');
-      }
-
-      if (state.promptError) {
-        throw new Error(state.promptError);
-      }
-
-      return JSON.stringify({ result: {} });
     },
   };
 

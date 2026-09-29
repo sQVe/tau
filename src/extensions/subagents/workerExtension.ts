@@ -38,7 +38,7 @@ import {
   taskEnded,
 } from './records.js';
 import { textLimit } from './types.js';
-import type { Question, Report, Task } from './types.js';
+import type { Acknowledgement, Question, Report, Task } from './types.js';
 
 type WorkerPhase = 'starting' | 'active' | 'waiting' | 'done';
 
@@ -54,6 +54,8 @@ interface WorkerExtensionState {
   kickoff: ReturnType<typeof setInterval> | undefined;
   pendingQuestion: Question | undefined;
   parentWatch: ReturnType<typeof setInterval> | undefined;
+  questionSettled: boolean;
+  replyDelivery: { text: string; acknowledgement: Acknowledgement } | undefined;
   activitySequence: number;
   activityTimer: ReturnType<typeof setTimeout> | undefined;
   phase: WorkerPhase;
@@ -219,15 +221,70 @@ const shouldEndParentWait = (state: WorkerExtensionState, task: Task): boolean =
   );
 };
 
-const startParentWatch = (
+// The parent saves the reply as a record; send it to this session as a user message. Wait until the
+// question turn settled, or its settle handler would see no pending question and end the task. Pi
+// can drop the message before the input hook, so the hook saves the acknowledgement.
+const deliverSavedReply = (
+  pi: ExtensionAPI,
   state: WorkerExtensionState,
   task: Task,
   context: ExtensionContext,
 ): void => {
+  const question = state.pendingQuestion;
+  const readyForReply = state.questionSettled && state.replyDelivery === undefined;
+
+  if (!question || !readyForReply || !matchesNativeSession(task, context)) {
+    return;
+  }
+
+  const reply = readReply(state.directory, task.taskId, question.questionId);
+
+  if (!reply) {
+    return;
+  }
+
+  const text = `Parent clarification for the original task only. Scope, safety settings and deadline are unchanged.\n\n${reply.reply}`;
+
+  state.replyDelivery = {
+    text,
+    acknowledgement: {
+      version: 1,
+      taskId: task.taskId,
+      questionId: question.questionId,
+      replyId: reply.replyId,
+    },
+  };
+
+  try {
+    pi.sendUserMessage(text, { deliverAs: 'followUp' });
+  } catch (error) {
+    state.replyDelivery = undefined;
+    throw error;
+  }
+};
+
+const startParentWatch = (
+  pi: ExtensionAPI,
+  state: WorkerExtensionState,
+  task: Task,
+  context: ExtensionContext,
+): void => {
+  let refusal: string | undefined;
+
   // A restarted parent can reply until the deadline unless the previous parent closed cleanly.
   // Start watching before publication so an uncertain save still ends the wait.
   state.parentWatch = setInterval(() => {
     if (!shouldEndParentWait(state, task)) {
+      try {
+        deliverSavedReply(pi, state, task, context);
+      } catch (error) {
+        // An unreadable reply stays unacknowledged; report it once, not on every tick.
+        if (refusal !== String(error)) {
+          refusal = String(error);
+          context.ui.notify(`Reply refused: ${refusal}. No automatic retry.`, 'error');
+        }
+      }
+
       return;
     }
 
@@ -246,6 +303,7 @@ const startParentWatch = (
 };
 
 const askParent = (
+  pi: ExtensionAPI,
   state: WorkerExtensionState,
   questionText: string,
   context: ExtensionContext,
@@ -269,7 +327,7 @@ const askParent = (
   // Keep waiting after uncertain publication rather than generate another question identity.
   state.pendingQuestion = question;
   recordWorkerActivity(state, context, 'waiting', 'Waiting for parent question reply');
-  startParentWatch(state, task, context);
+  startParentWatch(pi, state, task, context);
   acceptQuestion(state.directory, task.taskId, question);
 
   return Promise.resolve({
@@ -284,57 +342,41 @@ const askParent = (
   });
 };
 
+// Workers take no pane input. Only the dispatch before acceptance and a delivered reply pass.
 const handleInput = (
   state: WorkerExtensionState,
   event: InputEvent,
   context: ExtensionContext,
-): InputEventResult | undefined => {
-  if (!state.accepted && event.source === 'extension') {
+): InputEventResult => {
+  if (event.source !== 'extension') {
+    return { action: 'handled' };
+  }
+
+  if (!state.accepted) {
     return { action: 'continue' };
   }
 
+  const delivery = state.replyDelivery;
+
+  if (!hasRunningTask(state) || delivery === undefined || event.text !== delivery.text) {
+    return { action: 'handled' };
+  }
+
+  // A failed save keeps the question pending and unacknowledged until the wait ends.
   try {
-    if (!isTaskActive(state) || state.pendingQuestion === undefined) {
-      return { action: 'handled' };
-    }
-
-    const task = state.task;
-    const pendingQuestion = state.pendingQuestion;
-
-    if (!matchesNativeSession(task, context)) {
-      return { action: 'handled' };
-    }
-
-    const reply = readReply(state.directory, task.taskId, pendingQuestion.questionId);
-
-    if (!reply) {
-      return { action: 'handled' };
-    }
-
-    const reference = {
-      version: 1,
-      taskId: task.taskId,
-      questionId: pendingQuestion.questionId,
-      replyId: reply.replyId,
-    };
-
-    if (event.text !== `TAU_REPLY ${JSON.stringify(reference)}`) {
-      return { action: 'handled' };
-    }
-
-    acceptAcknowledgement(state.directory, task.taskId, reference);
-    state.pendingQuestion = undefined;
-    clearInterval(state.parentWatch);
-
-    return {
-      action: 'transform',
-      text: `Parent clarification for the original task only. Scope, safety settings and deadline are unchanged.\n\n${reply.reply}`,
-    };
+    acceptAcknowledgement(state.directory, state.task.taskId, delivery.acknowledgement);
   } catch (error) {
     context.ui.notify(`Reply refused: ${String(error)}. No automatic retry.`, 'error');
 
     return { action: 'handled' };
   }
+
+  state.replyDelivery = undefined;
+  state.pendingQuestion = undefined;
+  state.questionSettled = false;
+  clearInterval(state.parentWatch);
+
+  return { action: 'continue' };
 };
 
 const remainingWork = (state: WorkerExtensionState, task: Task): number =>
@@ -601,7 +643,7 @@ const registerQuestionTool = (pi: ExtensionAPI, state: WorkerExtensionState): vo
       { additionalProperties: false },
     ),
     execute(...argumentsList) {
-      return askParent(state, argumentsList[1].question, argumentsList[4]);
+      return askParent(pi, state, argumentsList[1].question, argumentsList[4]);
     },
   });
 };
@@ -768,7 +810,13 @@ const registerReportReminder = (pi: ExtensionAPI, state: WorkerExtensionState): 
 
 const registerAgentSettledHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.on('agent_settled', (_event, context) => {
-    if (!hasRunningTask(state) || state.pendingQuestion) {
+    if (!hasRunningTask(state)) {
+      return;
+    }
+
+    if (state.pendingQuestion) {
+      state.questionSettled = true;
+
       return;
     }
 
@@ -806,6 +854,8 @@ export default function workerExtension(pi: ExtensionAPI): void {
     kickoff: undefined,
     pendingQuestion: undefined,
     parentWatch: undefined,
+    questionSettled: false,
+    replyDelivery: undefined,
     activitySequence: 0,
     activityTimer: undefined,
     phase: 'starting',

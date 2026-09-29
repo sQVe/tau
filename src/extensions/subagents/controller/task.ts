@@ -1,5 +1,4 @@
 import { parseModelReference } from '../../../delegateModel/index.js';
-import { errorMessage } from '../../../errors/index.js';
 import { processAbsent } from '../cancellation.js';
 import type { WorkerPlacement } from '../placement.js';
 import { modelEvidenceNotice, modelStatus } from '../presentation.js';
@@ -14,12 +13,7 @@ import { publish, readEvent, recordEvent } from '../records.js';
 import { resolveTerminal, text } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
 import type { Task } from '../types.js';
-import {
-  ensureReplyActive,
-  remainingCleanupBudget,
-  remainingWorkBudget,
-  workBudget,
-} from './budget.js';
+import { remainingCleanupBudget, remainingWorkBudget, workBudget } from './budget.js';
 import { inspectWorker, waitForPiIdentity, waitForWorkerReadiness } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
 import { handleRecovery, readOwnedWorker, taskStatus } from './record.js';
@@ -38,13 +32,6 @@ export interface TaskContext {
 }
 
 type StopReason = 'timeout' | 'cancelled' | 'completion' | 'failure';
-
-interface PiReplyRequest {
-  directory: string;
-  questionId: string;
-  answer: { replyId: string };
-  value: unknown;
-}
 
 interface CleanupOutcomeRequest {
   reason: StopReason;
@@ -84,13 +71,6 @@ const replyAcknowledged = (directory: string, taskId: string, questionId: string
     return false;
   }
 };
-
-const acceptedReply = (directory: string, task: Task, questionId: string) => ({
-  replyAccepted: true,
-  name: task.name,
-  workerAcknowledged: replyAcknowledged(directory, task.taskId, questionId),
-  delivery: 'notResent' as const,
-});
 
 export const savedHandle = (directory: string, task: Task): Handle => {
   const owned = readOwnedWorker(directory, task);
@@ -217,74 +197,31 @@ export class TaskController {
     }
   }
 
-  async reply(directory: string, answer: { questionId: string; replyId: string; reply: string }) {
-    const { handle } = this;
-    const { taskId } = handle.task;
+  // The worker watches for the saved reply while its question is pending; no pane input is sent.
+  reply(directory: string, answer: { questionId: string; replyId: string; reply: string }) {
+    const { task } = this.handle;
+    const { taskId } = task;
     const { questionId } = answer;
 
-    const value = {
+    if (
+      !readReply(directory, taskId, questionId) &&
+      readPendingQuestion(directory, taskId)?.questionId !== questionId
+    ) {
+      throw new Error('Reply does not match the pending question.');
+    }
+
+    acceptReply(directory, taskId, {
       version: 1,
       taskId,
       questionId,
       replyId: answer.replyId,
       reply: answer.reply,
-    };
-
-    if (readReply(directory, taskId, questionId)) {
-      acceptReply(directory, taskId, value);
-
-      return acceptedReply(directory, handle.task, questionId);
-    }
-
-    if (readPendingQuestion(directory, taskId)?.questionId !== questionId) {
-      throw new Error('Reply does not match the pending question.');
-    }
-
-    const call = this.herdrCall();
-    const inspected = await inspectWorker(handle, call);
-    const location = await resolveTerminal(inspected.terminalId, call);
-
-    if (location.paneId !== inspected.paneId) {
-      throw new Error('Worker moved during identity checks; no input sent.');
-    }
-
-    ensureReplyActive(handle);
-
-    // Another caller may have accepted this reply during the identity check. Never send it twice.
-    if (readReply(directory, taskId, questionId)) {
-      acceptReply(directory, taskId, value);
-
-      return acceptedReply(directory, handle.task, questionId);
-    }
-
-    return this.sendPiReply({ directory, questionId, answer, value });
-  }
-
-  private async sendPiReply(request: PiReplyRequest) {
-    const { directory, questionId, answer, value } = request;
-    const { handle } = this;
-    const { taskId } = handle.task;
-    const reference = { version: 1, taskId, questionId, replyId: answer.replyId };
-    const prompt = `TAU_REPLY ${JSON.stringify(reference)}`;
-    const call = this.herdrCall();
-
-    acceptReply(directory, taskId, value);
-
-    // The reply is saved; a throw here would read as a failed reply and invite a resend.
-    let deliveryError: string | undefined;
-
-    try {
-      await call(['agent', 'prompt', text(handle.identity.paneId), prompt]);
-    } catch (error) {
-      deliveryError = errorMessage(error).slice(0, 4000);
-    }
+    });
 
     return {
       replyAccepted: true,
-      name: handle.task.name,
+      name: task.name,
       workerAcknowledged: replyAcknowledged(directory, taskId, questionId),
-      delivery: deliveryError === undefined ? 'sent' : 'uncertain',
-      ...(deliveryError === undefined ? {} : { deliveryError }),
     };
   }
 

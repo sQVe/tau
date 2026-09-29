@@ -343,12 +343,12 @@ const readWorkerStatus = (
   }
 };
 
-const replyToWorker = async (
+const replyToWorker = (
   runtime: SubagentRuntime,
   parameters: ReplyParameters,
   context: ExtensionContext,
 ) => {
-  const receipt = await runtime
+  const receipt = runtime
     .getController()
     .reply(parameters.taskId, context.sessionManager.getSessionId(), parameters);
 
@@ -519,8 +519,7 @@ const registerReplyTool = (runtime: SubagentRuntime): void => {
     description: [
       "Reply within an active owned worker's scope and deadline. Requires taskId, the questionId from the worker's question notice, unique replyId, and reply.",
       'A worker without a pending question takes no reply, so use subagent_follow_up after it stops.',
-      'Returns delivery: sent (herdr accepted text); notResent (saved reply, not sent again; delivery may remain uncertain);',
-      'uncertain (unconfirmed, do not retry). Delivery is not task acceptance or acknowledgement.',
+      'Saves the reply for the worker to read; resending an identical reply is safe.',
       'Inspect status with questionId for the acknowledgement.',
     ].join(' '),
     parameters: replyParameters,
@@ -531,8 +530,8 @@ const registerReplyTool = (runtime: SubagentRuntime): void => {
       return renderReplyResult(result.details, options.expanded, theme);
     },
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
-    async execute(_toolCallId, parameters, _signal, _onUpdate, context) {
-      return replyToWorker(runtime, parameters, context);
+    execute(_toolCallId, parameters, _signal, _onUpdate, context) {
+      return Promise.resolve(replyToWorker(runtime, parameters, context));
     },
   });
 };

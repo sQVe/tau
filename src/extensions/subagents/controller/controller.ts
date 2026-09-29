@@ -261,7 +261,7 @@ export class WorkerController {
     };
   }
 
-  async reply(
+  reply(
     taskId: string,
     parentSessionId: string,
     answer: { questionId: string; replyId: string; reply: string },

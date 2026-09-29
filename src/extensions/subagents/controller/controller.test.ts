@@ -93,8 +93,6 @@ const setup = (
     processId === fake.state.process ? fake.state.stopped : originalProcessAbsent(processId),
   );
 
-  fake.state.promptError = 'Injected herdr failure; active process remains alive.';
-
   const calls: string[][] = [];
   let startAttempted = false;
 
@@ -2005,16 +2003,10 @@ it.each(['cancelled', 'expired', 'closed'] as const)(
   },
 );
 
-it('delivers a clarification once without treating herdr delivery as acknowledgement', async ({
-  onTestFinished,
-}) => {
+it('saves a clarification once without sending pane input', async ({ onTestFinished }) => {
   vi.useFakeTimers();
 
-  const { controller, input, calls, notifications, directory } = setup(
-    onTestFinished,
-    0,
-    async (argumentsList) => (argumentsList[1] === 'prompt' ? JSON.stringify({ result: {} }) : ''),
-  );
+  const { controller, input, calls, notifications, directory } = setup(onTestFinished);
 
   const launched = await controller.launch(input);
   const task = readTask(launched.directory);
@@ -2038,21 +2030,18 @@ it('delivers a clarification once without treating herdr delivery as acknowledge
     reply: 'source.txt',
   };
 
-  await expect(controller.reply(task.taskId, 'wrong-parent', answer)).rejects.toThrow(
-    'another parent',
-  );
+  expect(() => controller.reply(task.taskId, 'wrong-parent', answer)).toThrow('another parent');
 
-  await expect(
+  expect(() =>
     controller.reply(task.taskId, 'parent-id', { ...answer, questionId: 'wrong' }),
-  ).rejects.toThrow('pending question');
+  ).toThrow('pending question');
 
-  const result = await controller.reply(task.taskId, 'parent-id', answer);
+  const result = controller.reply(task.taskId, 'parent-id', answer);
   expect(result).toMatchObject({ replyAccepted: true });
   expect(result).toMatchObject({ workerAcknowledged: false });
   expect(result).toMatchObject({ name: task.name });
-  await controller.reply(task.taskId, 'parent-id', answer);
-  expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
-  expect(calls.find((call) => call[1] === 'prompt')?.[2]).toBe('worker-1');
+  controller.reply(task.taskId, 'parent-id', answer);
+  expect(calls.some((call) => call[1] === 'prompt')).toBe(false);
   expect(records.readTask(launched.directory)).toEqual(task);
 
   expect(
@@ -2069,58 +2058,14 @@ it('delivers a clarification once without treating herdr delivery as acknowledge
     replySaved: true,
   });
 
-  await expect(recovered.reply(task.taskId, 'parent-id', answer)).rejects.toThrow('active');
+  expect(() => recovered.reply(task.taskId, 'parent-id', answer)).toThrow('active');
   recovered.close();
 });
 
-it('treats an unreadable acknowledgement as unacknowledged after saving the Pi reply', async ({
+it('treats an unreadable acknowledgement as unacknowledged on a repeated reply', async ({
   onTestFinished,
 }) => {
-  let taskDirectory = '';
-
-  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) => {
-    if (argumentsList[1] === 'prompt') {
-      writeFileSync(join(taskDirectory, 'acknowledgement-question-one.json'), '{}');
-
-      return JSON.stringify({ result: {} });
-    }
-
-    return '';
-  });
-
-  const launched = await controller.launch(input);
-  taskDirectory = launched.directory;
-  const task = readTask(launched.directory);
-  recordEvent(launched.directory, task.taskId, 'accepted', 'Accepted.');
-
-  questions.acceptQuestion(launched.directory, task.taskId, {
-    version: 1,
-    taskId: task.taskId,
-    questionId: 'question-one',
-    question: 'Which file?',
-  });
-
-  const result = await controller.reply(task.taskId, 'parent-id', {
-    questionId: 'question-one',
-    replyId: 'reply-one',
-    reply: 'source.txt',
-  });
-
-  expect(result).toMatchObject({
-    replyAccepted: true,
-    workerAcknowledged: false,
-    delivery: 'sent',
-  });
-
-  expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
-});
-
-it('treats an unreadable acknowledgement as unacknowledged on a repeated Pi reply', async ({
-  onTestFinished,
-}) => {
-  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) =>
-    argumentsList[1] === 'prompt' ? JSON.stringify({ result: {} }) : '',
-  );
+  const { controller, input } = setup(onTestFinished);
 
   const launched = await controller.launch(input);
   const task = readTask(launched.directory);
@@ -2139,124 +2084,16 @@ it('treats an unreadable acknowledgement as unacknowledged on a repeated Pi repl
     reply: 'source.txt',
   };
 
-  await controller.reply(task.taskId, 'parent-id', answer);
+  controller.reply(task.taskId, 'parent-id', answer);
   writeFileSync(join(launched.directory, 'acknowledgement-question-one.json'), '{}');
 
-  const repeated = await controller.reply(task.taskId, 'parent-id', answer);
+  const repeated = controller.reply(task.taskId, 'parent-id', answer);
 
-  expect(repeated).toMatchObject({
-    replyAccepted: true,
-    workerAcknowledged: false,
-    delivery: 'notResent',
-  });
-
-  expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
+  expect(repeated).toMatchObject({ replyAccepted: true, workerAcknowledged: false });
 });
 
-it.each(['before', 'during'] as const)(
-  'checks terminal movement %s reply identity checks',
-  async (movement) => {
-    let replying = false;
-    let moved = false;
-    let token = '';
-    const movedPane = 'other-workspace:worker';
-
-    const { controller, input, calls } = setup(afterTest, 0, async (argumentsList) => {
-      if (argumentsList[0] === 'layout') {
-        const { command } = (JSON.parse(argumentsList[2]!) as { root: { command: string[] } }).root;
-        token = command[command.indexOf('--session') + 1]!;
-      }
-
-      if (!replying) {
-        return '';
-      }
-
-      if (argumentsList[0] === 'pane' && argumentsList[1] === 'list' && moved) {
-        return JSON.stringify({
-          result: {
-            panes: [
-              {
-                pane_id: movedPane,
-                terminal_id: 'terminal-1',
-                workspace_id: 'other-workspace',
-                tab_id: 'other-tab',
-              },
-            ],
-          },
-        });
-      }
-
-      if (argumentsList[1] === 'process-info' && moved) {
-        return JSON.stringify({
-          result: {
-            process_info: {
-              pane_id: movedPane,
-              shell_pid: process.pid,
-              foreground_process_group_id: process.pid,
-              foreground_processes: [{ pid: process.pid, argv: ['pi', token] }],
-            },
-          },
-        });
-      }
-
-      if (argumentsList[0] === 'agent' && argumentsList[1] === 'get') {
-        const paneId = moved ? movedPane : 'worker-1';
-        moved = true;
-
-        return JSON.stringify({
-          result: { agent: { pane_id: paneId, agent: 'pi', agent_session: { value: token } } },
-        });
-      }
-
-      if (argumentsList[1] === 'prompt') {
-        return '{}';
-      }
-
-      return '';
-    });
-
-    const launched = await controller.launch(input);
-    recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
-
-    questions.acceptQuestion(launched.directory, launched.taskId, {
-      version: 1,
-      taskId: launched.taskId,
-      questionId: 'question-one',
-      question: 'Which file?',
-    });
-
-    replying = true;
-    moved = movement === 'before';
-
-    const reply = controller.reply(launched.taskId, 'parent-id', {
-      questionId: 'question-one',
-      replyId: 'reply-one',
-      reply: 'source.txt',
-    });
-
-    const outcome = await reply.catch((error: unknown) => String(error));
-
-    const expected: Record<typeof movement, unknown> = {
-      before: expect.objectContaining({ replyAccepted: true, workerAcknowledged: false }),
-      during: expect.stringContaining('moved'),
-    };
-
-    expect(outcome).toEqual(expected[movement]);
-
-    expect(calls.filter((call) => call[1] === 'prompt').map((call) => call[2])).toEqual(
-      movement === 'before' ? [movedPane] : [],
-    );
-
-    expect(questions.readReply(launched.directory, launched.taskId, 'question-one')?.replyId).toBe(
-      movement === 'before' ? 'reply-one' : undefined,
-    );
-  },
-);
-
-it('retains uncertain reply delivery without resending or acknowledging it', async ({
-  onTestFinished,
-}) => {
-  const { controller, input, calls } = setup(onTestFinished);
+it('refuses a conflicting reply to an answered question', async ({ onTestFinished }) => {
+  const { controller, input } = setup(onTestFinished);
   const launched = await controller.launch(input);
   recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
 
@@ -2273,30 +2110,54 @@ it('retains uncertain reply delivery without resending or acknowledging it', asy
     reply: 'source.txt',
   };
 
-  const uncertain = await controller.reply(launched.taskId, 'parent-id', answer);
-
-  expect(uncertain).toMatchObject({ replyAccepted: true, delivery: 'uncertain' });
-
-  expect(uncertain).toHaveProperty(
-    'deliveryError',
-    expect.stringContaining('Injected herdr failure'),
-  );
-
-  await expect(controller.reply(launched.taskId, 'parent-id', answer)).resolves.toMatchObject({
-    workerAcknowledged: false,
-    delivery: 'notResent',
-  });
-
-  expect(calls.filter((call) => call[1] === 'prompt')).toHaveLength(1);
+  controller.reply(launched.taskId, 'parent-id', answer);
 
   expect(controller.questionReceipt(launched.taskId, 'parent-id', 'question-one')).toMatchObject({
     reply: { replyId: 'reply-one' },
     acknowledgement: undefined,
   });
 
-  await expect(
+  expect(() =>
     controller.reply(launched.taskId, 'parent-id', { ...answer, reply: 'changed' }),
-  ).rejects.toThrow('Conflicting');
+  ).toThrow('Conflicting');
+});
+
+it('saves a reply through a restarted parent that reattached the worker', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers();
+  const fixture = setup(onTestFinished);
+  const launched = await fixture.controller.launch(fixture.input);
+  recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
+
+  questions.acceptQuestion(launched.directory, launched.taskId, {
+    version: 1,
+    taskId: launched.taskId,
+    questionId: 'question-one',
+    question: 'Which file?',
+  });
+
+  const recovered = new WorkerController(fixture.directory, fixture.client);
+
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  await recovered.resume('parent-id');
+
+  expect(
+    recovered.reply(launched.taskId, 'parent-id', {
+      questionId: 'question-one',
+      replyId: 'reply-one',
+      reply: 'source.txt',
+    }),
+  ).toMatchObject({ replyAccepted: true, workerAcknowledged: false });
+
+  expect(questions.readReply(launched.directory, launched.taskId, 'question-one')?.replyId).toBe(
+    'reply-one',
+  );
+
+  expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
 });
 
 it('notifies the parent once while waiting and refuses replies after the original deadline', async ({
@@ -2326,52 +2187,13 @@ it('notifies the parent once while waiting and refuses replies after the origina
   expect(controller.status(launched.taskId, 'parent-id').deadline).toBe(launched.deadline);
   await vi.advanceTimersByTimeAsync(7500);
 
-  await expect(
+  expect(() =>
     controller.reply(launched.taskId, 'parent-id', {
       questionId: 'question-one',
       replyId: 'reply-one',
       reply: 'source.txt',
     }),
-  ).rejects.toThrow('active');
-
-  expect(calls.some((call) => call[1] === 'prompt')).toBe(false);
-  expect(questions.readReply(launched.directory, launched.taskId, 'question-one')).toBeUndefined();
-});
-
-it('refuses reply delivery when the original native worker identity changes', async ({
-  onTestFinished,
-}) => {
-  let changed = false;
-
-  const { controller, input, calls } = setup(onTestFinished, 0, async (argumentsList) =>
-    changed && argumentsList[0] === 'agent' && argumentsList[1] === 'get'
-      ? JSON.stringify({
-          result: {
-            agent: { pane_id: 'worker-1', agent: 'pi', agent_session: { value: '/wrong.jsonl' } },
-          },
-        })
-      : '',
-  );
-
-  const launched = await controller.launch(input);
-  recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
-
-  questions.acceptQuestion(launched.directory, launched.taskId, {
-    version: 1,
-    taskId: launched.taskId,
-    questionId: 'question-one',
-    question: 'Which file?',
-  });
-
-  changed = true;
-
-  await expect(
-    controller.reply(launched.taskId, 'parent-id', {
-      questionId: 'question-one',
-      replyId: 'reply-one',
-      reply: 'source.txt',
-    }),
-  ).rejects.toThrow('identity');
+  ).toThrow('active');
 
   expect(calls.some((call) => call[1] === 'prompt')).toBe(false);
   expect(questions.readReply(launched.directory, launched.taskId, 'question-one')).toBeUndefined();
