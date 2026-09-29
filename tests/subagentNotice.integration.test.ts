@@ -13,7 +13,7 @@ import type { AgentSession, ExtensionAPI, ExtensionContext } from '@earendil-wor
 import { Type } from 'typebox';
 import { expect, it, vi } from 'vitest';
 
-import { deliverWorkerNotice } from '../src/extensions/subagents/index.js';
+import { createNoticeDelivery } from '../src/extensions/subagents/index.js';
 import { appendSystemPrompt } from '../src/systemPrompt/index.js';
 import { createBoundSession } from './piSession.js';
 
@@ -55,11 +55,12 @@ const createHarness = async (
   const startPrompts: string[] = [];
   const entered = Promise.withResolvers<undefined>();
   const release = Promise.withResolvers<undefined>();
-  let capturedPi: ExtensionAPI | undefined;
   let capturedContext: ExtensionContext | undefined;
 
+  let deliver: ReturnType<typeof createNoticeDelivery> | undefined;
+
   const fixtureExtension = (pi: ExtensionAPI) => {
-    capturedPi = pi;
+    deliver = createNoticeDelivery(pi);
 
     pi.on('session_start', (_event, context) => {
       capturedContext = context;
@@ -99,8 +100,8 @@ const createHarness = async (
     extensionFactories: [fixtureExtension],
   });
 
-  if (!capturedPi || !capturedContext) {
-    throw new Error('Fixture extension did not capture the Pi API and context.');
+  if (!capturedContext || !deliver) {
+    throw new Error('Fixture extension did not capture its context and notice delivery.');
   }
 
   return {
@@ -108,8 +109,8 @@ const createHarness = async (
     faux,
     contexts,
     startPrompts,
-    pi: capturedPi,
     context: capturedContext,
+    deliverNotice: (notice = fixtureNotice) => deliver?.(capturedContext, notice),
     toolEntered: entered.promise,
     releaseTool: () => {
       release.resolve(undefined);
@@ -136,7 +137,7 @@ it('wakes an idle manager and includes the notice in its first provider request'
 
   const settled = waitForSettle(harness.session);
 
-  deliverWorkerNotice(harness.pi, harness.context, fixtureNotice);
+  harness.deliverNotice();
   await settled;
 
   expect(harness.contexts).toHaveLength(1);
@@ -156,7 +157,7 @@ it('keeps before_agent_start prompt additions on the turn an idle notice starts'
   await harness.session.prompt('Begin.');
   const settled = waitForSettle(harness.session);
 
-  deliverWorkerNotice(harness.pi, harness.context, fixtureNotice);
+  harness.deliverNotice();
   await settled;
 
   const notified = harness.contexts[1]?.messages ?? [];
@@ -168,6 +169,38 @@ it('keeps before_agent_start prompt additions on the turn an idle notice starts'
   expect(getCurrentSystemPrompt(notified)).toContain(appendedRule);
   // The addition stays in the first system message instead of being removed and sent again.
   expect(JSON.stringify(notified).split(appendedRule)).toHaveLength(2);
+});
+
+it('starts one turn for idle notices that arrive before it runs', async ({ onTestFinished }) => {
+  const harness = await createHarness(onTestFinished, { blockTool: false });
+  const idleDuringRequest: boolean[] = [];
+
+  harness.faux.setResponses([
+    recordResponse(harness.contexts, () => {
+      idleDuringRequest.push(harness.context.isIdle());
+
+      return fauxAssistantMessage('Both handled.');
+    }),
+  ]);
+
+  const settled = waitForSettle(harness.session);
+
+  harness.deliverNotice();
+
+  harness.deliverNotice({
+    ...fixtureNotice,
+    content: { ...fixtureNotice.content, taskId: 'task-2' },
+  });
+
+  await settled;
+
+  const messages = JSON.stringify(harness.contexts[0]?.messages ?? []);
+
+  expect(harness.contexts).toHaveLength(1);
+  expect(messages).toContain('task-1');
+  expect(messages).toContain('task-2');
+  expect(idleDuringRequest).toEqual([false]);
+  expect(harness.startPrompts[0]).toContain(appendedRule);
 });
 
 it('delivers an active manager notice at the steering point before the final answer', async ({
@@ -187,7 +220,7 @@ it('delivers an active manager notice at the steering point before the final ans
   const running = harness.session.prompt('Begin.');
 
   await harness.toolEntered;
-  deliverWorkerNotice(harness.pi, harness.context, fixtureNotice);
+  harness.deliverNotice();
   harness.releaseTool();
   await running;
   await settled;

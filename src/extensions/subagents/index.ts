@@ -37,6 +37,11 @@ interface SubagentRuntime {
   peekController: () => WorkerController | undefined;
 }
 
+type NoticeDelivery = (
+  context: Pick<ExtensionContext, 'isIdle'> | undefined,
+  notice: WorkerNotice,
+) => void;
+
 const visibility = Type.Optional(
   StringEnum(['foreground', 'background'] as const, {
     description: [
@@ -123,36 +128,47 @@ type StatusParameters = Static<typeof statusParameters>;
 type ReplyParameters = Static<typeof replyParameters>;
 type CancelParameters = Static<typeof cancelParameters>;
 
-export const deliverWorkerNotice = (
-  pi: ExtensionAPI,
-  context: Pick<ExtensionContext, 'isIdle'> | undefined,
-  notice: WorkerNotice,
-): void => {
-  const message = {
-    customType: 'tau-worker',
-    content: JSON.stringify(notice.content),
-    display: true,
-    details: notice.details,
+// ponytail: a notice turn whose prompt fails before agent_start leaves later idle notices queued
+// for the next user prompt instead of starting a turn.
+export const createNoticeDelivery = (pi: ExtensionAPI): NoticeDelivery => {
+  // The prompt a notice starts consumes every nextTurn message queued before its run begins.
+  let turnStarting = false;
+
+  pi.on('agent_start', () => {
+    turnStarting = false;
+  });
+
+  return (context, notice) => {
+    const message = {
+      customType: 'tau-worker',
+      content: JSON.stringify(notice.content),
+      display: true,
+      details: notice.details,
+    };
+
+    // An idle triggerTurn skips before_agent_start and Tau's prompt additions with it, which
+    // pi-claude-bridge rejects (pi#5581). A user message starts the turn through that hook.
+    if (context?.isIdle() === true) {
+      pi.sendMessage(message, { deliverAs: 'nextTurn' });
+
+      if (!turnStarting) {
+        turnStarting = true;
+        pi.sendUserMessage('A worker notice arrived.', { deliverAs: 'steer' });
+      }
+
+      return;
+    }
+
+    pi.sendMessage(message, { deliverAs: 'steer', triggerTurn: true });
   };
-
-  // An idle triggerTurn skips before_agent_start and Tau's prompt additions with it, which
-  // pi-claude-bridge rejects (pi#5581). A user message starts the turn through that hook.
-  if (context?.isIdle() === true) {
-    pi.sendMessage(message, { deliverAs: 'nextTurn' });
-    pi.sendUserMessage('A worker notice arrived.', { deliverAs: 'steer' });
-
-    return;
-  }
-
-  pi.sendMessage(message, { deliverAs: 'steer', triggerTurn: true });
 };
 
 const createController = (
-  pi: ExtensionAPI,
+  deliver: NoticeDelivery,
   getContext: () => ExtensionContext | undefined,
 ): WorkerController =>
   new WorkerController(workerRecordsDirectory(), undefined, (notice) => {
-    deliverWorkerNotice(pi, getContext(), notice);
+    deliver(getContext(), notice);
   });
 
 const hasHerdrEnvironment = (): boolean =>
@@ -612,6 +628,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
 
   let controller: WorkerController | undefined;
   let sessionContext: ExtensionContext | undefined;
+  const deliverNotice = createNoticeDelivery(pi);
   let widgetTimer: ReturnType<typeof setInterval> | undefined;
   let historyView: WorkerHistoryView | undefined;
   let historyOpen = false;
@@ -620,7 +637,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   const runtime: SubagentRuntime = {
     pi,
     getController: () => {
-      controller ??= createController(pi, () => sessionContext);
+      controller ??= createController(deliverNotice, () => sessionContext);
 
       return controller;
     },

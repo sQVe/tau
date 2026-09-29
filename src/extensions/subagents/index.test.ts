@@ -13,7 +13,7 @@ import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extension
 import { WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { fixtureModel } from './fixtures/controlledProvider.js';
-import subagentsExtension, { delegationGuidelines, deliverWorkerNotice } from './index.js';
+import subagentsExtension, { createNoticeDelivery, delegationGuidelines } from './index.js';
 import type { WorkerNotice } from './presentation.js';
 import type { WorkerWidgetRow } from './widget.js';
 
@@ -755,7 +755,7 @@ it('steers a question notice into a busy parent', () => {
 
   const notice: WorkerNotice = { content, details: { full: true }, question: true };
 
-  deliverWorkerNotice(pi, busyParent, notice);
+  createNoticeDelivery(pi)(busyParent, notice);
 
   expect(sendMessage).toHaveBeenCalledWith(
     {
@@ -775,7 +775,7 @@ it.each(['success', 'incomplete', 'failure'])(
     const pi = fakeExtensionApi({ sendMessage }).pi;
     const content = { taskId: 'task-1', state: 'stopped', deadline: 1, outcome };
 
-    deliverWorkerNotice(pi, busyParent, { content, details: {}, question: false });
+    createNoticeDelivery(pi)(busyParent, { content, details: {}, question: false });
 
     expect(sendMessage).toHaveBeenCalledWith(expect.anything(), {
       deliverAs: 'steer',
