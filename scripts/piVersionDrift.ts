@@ -1,6 +1,5 @@
 const minor = (version: string) => /^(\d+\.\d+)\.\d+/.exec(version.trim())?.[1];
 
-// Returns the fix when the installed Pi and Tau's Pi dependency differ in minor version.
 export const piVersionDrift = (installed: string, dependency: string): string | undefined => {
   const installedMinor = minor(installed);
 

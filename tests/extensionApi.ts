@@ -48,7 +48,6 @@ export const fakeExtensionApi = (overrides: Partial<ExtensionAPI> = {}) => {
   return { pi, handlers, handler, tools, commands, messageRenderers, sendUserMessage, sendMessage };
 };
 
-// Runs every before_agent_start handler and returns the text they appended to the system prompt.
 export const appendedSystemPrompt = (
   handlers: Map<string, Handler[]>,
   selectedTools: string[],
