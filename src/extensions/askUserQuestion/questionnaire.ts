@@ -157,8 +157,9 @@ const handleOptionKey = (
   // The cursor picks the answer only in single-select.
   if (cursor !== undefined) {
     const moved = withQuestion(state, { cursor });
+    const keepsAnswer = facts.multiSelect || cursor === question.cursor;
 
-    return { kind: 'update', state: facts.multiSelect ? moved : reopened(moved) };
+    return { kind: 'update', state: keepsAnswer ? moved : reopened(moved) };
   }
 
   if (key.kind === 'space' && facts.multiSelect) {

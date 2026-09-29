@@ -280,3 +280,24 @@ it('keeps an answer when the user only moves through a multi-select question', (
     ],
   });
 });
+
+it('keeps a single-select answer when a key does not move the cursor', () => {
+  const questions = [single, multi];
+
+  const outcome = run(questions, initialState(2), [
+    press('enter'),
+    press('previousQuestion'),
+    press('up'),
+    press('nextQuestion'),
+    press('space'),
+    press('enter'),
+  ]);
+
+  expect(outcome).toEqual({
+    kind: 'submit',
+    answers: [
+      { question: 'Which library?', selected: ['Luxon'], preview: 'luxon()' },
+      { question: 'Which features?', selected: ['Lint'] },
+    ],
+  });
+});
