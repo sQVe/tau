@@ -11,9 +11,10 @@
     "changeset": "changeset",
     "changeset:check": "changeset status --since=origin/main",
     "changeset:version": "changeset version",
-    "check": "pnpm typecheck && pnpm style:check && pnpm format:check && pnpm knip && pnpm test",
+    "check": "pnpm pi-version:check && pnpm typecheck && pnpm style:check && pnpm format:check && pnpm knip && pnpm test",
     "fix": "vp lint --fix && vp fmt",
     "knip": "knip",
+    "pi-version:check": "node scripts/checkPiVersion.ts",
     "format": "vp fmt",
     "format:check": "vp fmt --check",
     "lint": "vp lint --deny-warnings",
@@ -28,7 +29,7 @@
     "release:github": "pnpm changeset tag"
   },
   "dependencies": {
-    "@earendil-works/pi-tui": "0.85.1",
+    "@earendil-works/pi-tui": "0.87.1",
     "@juicesharp/rpiv-ask-user-question": "2.9.0",
     "cc-safety-net": "2.4.1",
     "nanoid": "3.3.18",
@@ -38,8 +39,8 @@
   "devDependencies": {
     "@changesets/changelog-github": "1.0.1",
     "@changesets/cli": "3.0.2",
-    "@earendil-works/pi-ai": "^0.85.1",
-    "@earendil-works/pi-coding-agent": "^0.85.1",
+    "@earendil-works/pi-ai": "^0.87.1",
+    "@earendil-works/pi-coding-agent": "^0.87.1",
     "@oxlint/plugins": "1.79.0",
     "@stylistic/eslint-plugin": "5.10.0",
     "@types/node": "24.13.3",
@@ -52,8 +53,8 @@
     "vitest": "4.1.11"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "^0.85.1",
-    "@earendil-works/pi-coding-agent": "^0.85.1"
+    "@earendil-works/pi-ai": "^0.87.1",
+    "@earendil-works/pi-coding-agent": "^0.87.1"
   },
   "engines": {
     "node": ">=24.11.0"

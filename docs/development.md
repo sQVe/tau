@@ -16,18 +16,18 @@ Pi loads the TypeScript source directly; there is no build step.
 
 ## Check changes
 
-| Command                                        | Use                                                                                          |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `pnpm check`                                   | Run typechecking, all lint rules, formatting checks, and the full test suite before pushing. |
-| `pnpm test:changed`                            | Run tests affected by uncommitted changes. Add `origin/main` to include branch commits.      |
-| `pnpm test src/extensions/commit/tool.test.ts` | Run one test file.                                                                           |
-| `pnpm test:unit`                               | Skip `*.integration.test.ts` files.                                                          |
-| `pnpm test:coverage`                           | Run the full test suite and report coverage.                                                 |
-| `pnpm test`                                    | Run the full test suite, including package loading through Pi.                               |
-| `pnpm style:check`                             | Check all lint rules, including house style.                                                 |
-| `pnpm style:fix`                               | Apply safe lint fixes, then format.                                                          |
-| `pnpm lint`                                    | Run ordinary lint diagnostics, as editors do.                                                |
-| `pnpm format`                                  | Format files.                                                                                |
+| Command                                        | Use                                                                                             |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `pnpm check`                                   | Check the installed Pi minor, then run typechecking, lint, formatting, and the full test suite. |
+| `pnpm test:changed`                            | Run tests affected by uncommitted changes. Add `origin/main` to include branch commits.         |
+| `pnpm test src/extensions/commit/tool.test.ts` | Run one test file.                                                                              |
+| `pnpm test:unit`                               | Skip `*.integration.test.ts` files.                                                             |
+| `pnpm test:coverage`                           | Run the full test suite and report coverage.                                                    |
+| `pnpm test`                                    | Run the full test suite, including package loading through Pi.                                  |
+| `pnpm style:check`                             | Check all lint rules, including house style.                                                    |
+| `pnpm style:fix`                               | Apply safe lint fixes, then format.                                                             |
+| `pnpm lint`                                    | Run ordinary lint diagnostics, as editors do.                                                   |
+| `pnpm format`                                  | Format files.                                                                                   |
 
 Tests use temporary directories and need no model API. Changed-test selection follows imports;
 changes to `vite.config.ts` or `package.json` run the full suite.
