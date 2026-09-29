@@ -38,7 +38,7 @@ const herdrError = (message: string, code: string) =>
  * One stateful herdr fake: placement geometry plus Pi workers that run as their pane's own
  * process. Tests change `state` to inject faults.
  */
-// ponytail: every worker pane shares one worker state. Keep state per pane when a test needs two
+// Every worker pane shares one worker state. Keep state per pane when a test needs two
 // workers that differ.
 export const herdrFake = (width = 200, height = 60) => {
   const layout = placementFixture(width, height);

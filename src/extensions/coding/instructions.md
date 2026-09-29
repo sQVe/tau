@@ -5,10 +5,16 @@ and repository conventions when they differ from these defaults.
 
 ## Write straightforward code
 
+- Before you write code, ask whether the change needs to exist at all. Skip work for a need nobody
+  has shown.
+- Prefer deleting code over adding it.
 - Use descriptive names. No abbreviations, even idiomatic ones: `getUserByIdentifier` not `getUsr`,
   and no `btn`, `cb`, or `errMsg`.
 - Search for an existing helper before you write one. Reuse or extend it when it serves the same
   purpose.
+- Use the standard library or an installed dependency before you add a dependency.
+- Fix a bug once, at its root cause, in the function all callers share. Do not patch only the caller
+  the report names.
 - Reject invalid states where they enter the system. Report the error at that point.
 - Parse untrusted values once at the boundary and pass trusted types inward.
 - Check each reason to reject in its own guard, with its own error message.

@@ -128,7 +128,7 @@ type StatusParameters = Static<typeof statusParameters>;
 type ReplyParameters = Static<typeof replyParameters>;
 type CancelParameters = Static<typeof cancelParameters>;
 
-// ponytail: a notice turn whose prompt fails before agent_start leaves later idle notices queued
+// A notice turn whose prompt fails before agent_start leaves later idle notices queued
 // for the next user prompt instead of starting a turn.
 export const createNoticeDelivery = (pi: ExtensionAPI): NoticeDelivery => {
   // The prompt a notice starts consumes every nextTurn message queued before its run begins.

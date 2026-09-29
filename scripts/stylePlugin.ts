@@ -292,7 +292,7 @@ const stylePlugin: Plugin = {
 
         return {
           FunctionDeclaration: checkReferences,
-          // ponytail: infer only function syntax; factory-returned helpers need type-aware lint.
+          // Infer only function syntax; factory-returned helpers need type-aware lint.
           VariableDeclarator(node) {
             let initializer = node.init;
 
