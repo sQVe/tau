@@ -66,6 +66,18 @@ it('shows the head and tail of long output and saves the exact output privately'
   expect((await stat(dirname(path))).mode & 0o777).toBe(0o700);
 });
 
+it('shows the head and tail of output with a long line', async () => {
+  const result = await runBash("head -c 20000 /dev/zero | tr '\\0' x; echo; echo Done");
+  const text = await modelText(result);
+
+  savedPath(text);
+
+  expect(text.length).toBeGreaterThan(7000);
+  expect(text.length).toBeLessThanOrEqual(8000);
+  expect(text).toMatch(/^x{1000}/u);
+  expect(text).toMatch(/x{1000}\nDone\n?$/u);
+});
+
 it('leaves the output of a long failing command whole', async () => {
   const result = await runBash('seq 1 1200; echo "error: a test failed" >&2; seq 1 1200; exit 3');
 

@@ -6,8 +6,21 @@ import { truncateHead, truncateTail } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ToolResultEvent } from '@earendil-works/pi-coding-agent';
 
 const outputCap = 8000;
-const headBytes = 2000;
-const tailBytes = 5500;
+const headLength = 2000;
+const tailLength = 5500;
+
+// Pi's helpers keep whole lines, so one long line can leave the head or tail almost empty.
+const keepHead = (text: string): string => {
+  const lines = truncateHead(text, { maxBytes: headLength, maxLines: Infinity }).content;
+
+  return lines.length >= headLength / 2 ? lines : text.slice(0, headLength).toWellFormed();
+};
+
+const keepTail = (text: string): string => {
+  const lines = truncateTail(text, { maxBytes: tailLength, maxLines: Infinity }).content;
+
+  return lines.length >= tailLength / 2 ? lines : text.slice(-tailLength).toWellFormed();
+};
 
 // mkdtemp creates the directory readable only by its owner, outside the worktree under test.
 const saveFullOutput = async (text: string): Promise<string> => {
@@ -33,8 +46,8 @@ const capBashOutput = async (event: ToolResultEvent) => {
 
   const text = part.text;
   const path = await saveFullOutput(text);
-  const head = truncateHead(text, { maxBytes: headBytes, maxLines: Infinity }).content;
-  const tail = truncateTail(text, { maxBytes: tailBytes, maxLines: Infinity }).content;
+  const head = keepHead(text);
+  const tail = keepTail(text);
   const cut = text.length - head.length - tail.length;
   const marker = `[${cut} of ${text.length} characters cut. Command exited with code 0. Full output: ${path}]`;
 
