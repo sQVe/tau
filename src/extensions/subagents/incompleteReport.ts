@@ -17,13 +17,17 @@ export const blockerKinds = ['time', 'dependency', 'decision', 'limit'] as const
 
 type BlockerKind = (typeof blockerKinds)[number];
 
+// A report turn takes about a minute at p90, so a short window still leaves room to write one.
+export const timeBlockerReserve = 90_000;
+
 // Refuse once so an early handback costs a named blocker, but never so late that the report is lost.
 export const decideIncompleteReport = (facts: IncompleteReportFacts): IncompleteReportStep => {
   const { blockerKind, remaining, window, refusedBefore } = facts;
 
-  // A time blocker is true only in the last tenth of the work window, however often it is repeated.
+  // A time blocker is true only in the last tenth of the work window or its reserve, however often
+  // it is repeated.
   if (blockerKind === 'time') {
-    return remaining < 0.1 * window ? 'accept' : 'refuseTime';
+    return remaining < Math.max(0.1 * window, timeBlockerReserve) ? 'accept' : 'refuseTime';
   }
 
   if (refusedBefore || remaining < Math.max(0.2 * window, 300_000)) {

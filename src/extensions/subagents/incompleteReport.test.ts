@@ -21,11 +21,19 @@ it.each([
   { facts: facts({ blockerKind: 'time', remaining: 359_999 }), step: 'accept' },
   { facts: facts({ blockerKind: 'time', remaining: -1 }), step: 'accept' },
   { facts: facts({ blockerKind: 'time', refusedBefore: true }), step: 'refuseTime' },
+  { facts: facts({ blockerKind: 'time', remaining: 420_000 }), step: 'refuseTime' },
+  { facts: facts({ blockerKind: 'time', remaining: 300_000 }), step: 'accept' },
+  // A short window accepts a time blocker in its last 90 seconds, however small its tenth.
   {
-    facts: facts({ blockerKind: 'time', window: fourMinutes, remaining: 24_000 }),
+    facts: facts({ blockerKind: 'time', window: fourMinutes, remaining: 100_000 }),
     step: 'refuseTime',
   },
-  { facts: facts({ blockerKind: 'time', window: fourMinutes, remaining: 23_999 }), step: 'accept' },
+  {
+    facts: facts({ blockerKind: 'time', window: fourMinutes, remaining: 90_000 }),
+    step: 'refuseTime',
+  },
+  { facts: facts({ blockerKind: 'time', window: fourMinutes, remaining: 89_999 }), step: 'accept' },
+  { facts: facts({ blockerKind: 'time', window: fourMinutes, remaining: 80_000 }), step: 'accept' },
   // Other kinds are refused once while a fifth of the window, and at least five minutes, remain.
   { facts: facts(), step: 'refuseFirst' },
   { facts: facts({ blockerKind: 'decision' }), step: 'refuseFirst' },

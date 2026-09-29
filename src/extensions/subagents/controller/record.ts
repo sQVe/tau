@@ -233,7 +233,7 @@ export const taskRecordStatus = (
     activity: readWorkerActivity(directory, task.taskId),
     report,
     pendingQuestion: facts.pendingQuestion,
-    failure: failure?.detail,
+    failure: failure?.detail ?? (report ? undefined : events.settled?.detail),
     cleanup: cleanup?.detail,
     ...(recovery ? { recovery } : {}),
   };
