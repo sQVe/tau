@@ -7,7 +7,7 @@ import { questionDialog } from './dialog.js';
 const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
 const preview = Array.from({ length: 35 }, (_line, index) => `line ${index + 1}`).join('\n');
 
-it('keeps the question and options on screen with a tall preview', () => {
+it("leaves room for Pi's footer below a tall preview", () => {
   const terminal = { terminal: { rows: 24 }, requestRender: () => undefined };
 
   const dialog = questionDialog([
@@ -24,7 +24,7 @@ it('keeps the question and options on screen with a tall preview', () => {
 
   const lines = dialog.render(60);
 
-  expect(lines.length).toBeLessThanOrEqual(24);
+  expect(lines.length).toBeLessThanOrEqual(18);
   expect(lines.some((line) => line.includes('Which layout?'))).toBe(true);
   expect(lines.some((line) => line.includes('line 1'))).toBe(true);
   expect(lines.some((line) => line.includes('line 35'))).toBe(false);

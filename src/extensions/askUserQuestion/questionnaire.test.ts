@@ -259,3 +259,24 @@ it('submits a changed answer after returning to an answered question', () => {
     ],
   });
 });
+
+it('keeps an answer when the user only moves through a multi-select question', () => {
+  const questions = [multi, single];
+
+  const outcome = run(questions, initialState(2), [
+    press('space'),
+    press('enter'),
+    press('previousQuestion'),
+    press('down'),
+    press('nextQuestion'),
+    press('enter'),
+  ]);
+
+  expect(outcome).toEqual({
+    kind: 'submit',
+    answers: [
+      { question: 'Which features?', selected: ['Lint'] },
+      { question: 'Which library?', selected: ['Luxon'], preview: 'luxon()' },
+    ],
+  });
+});

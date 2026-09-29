@@ -24,6 +24,8 @@ export interface DialogResult {
 }
 
 const customLabel = 'Type something.';
+// Pi renders its widgets and a footer of two or more lines below the dialog.
+const piChromeRows = 6;
 
 const readKey = (data: string): KeyPress => {
   if (matchesKey(data, Key.enter)) {
@@ -150,7 +152,7 @@ class QuestionDialog implements Component {
     ];
 
     const bottom = ['', truncateToWidth(theme.fg('dim', ` ${this.hint(facts)}`), width), border];
-    const previewRows = this.terminal.terminal.rows - top.length - bottom.length;
+    const previewRows = this.terminal.terminal.rows - top.length - bottom.length - piChromeRows;
 
     return [...top, ...this.preview(facts, width, previewRows), ...bottom];
   }

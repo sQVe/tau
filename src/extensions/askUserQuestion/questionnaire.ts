@@ -50,16 +50,21 @@ const withQuestion = (
     return state;
   }
 
-  // An edit reopens the question, so a changed answer is never submitted in its saved form.
-  return {
-    ...state,
-    questions: state.questions.with(state.tab, { ...question, ...change }),
-    answers: state.answers.with(state.tab, undefined),
-  };
+  return { ...state, questions: state.questions.with(state.tab, { ...question, ...change }) };
 };
 
-export const withCustomText = (state: QuestionnaireState, text: string) =>
-  withQuestion(state, { customText: text });
+// A changed answer must be entered again, so its saved form is never submitted.
+const reopened = (state: QuestionnaireState): QuestionnaireState => ({
+  ...state,
+  answers: state.answers.with(state.tab, undefined),
+});
+
+export const withCustomText = (state: QuestionnaireState, text: string) => {
+  const unchanged = state.questions[state.tab]?.customText === text;
+  const updated = withQuestion(state, { customText: text });
+
+  return unchanged ? updated : reopened(updated);
+};
 
 const toggle = (checked: number[], index: number) =>
   checked.includes(index) ? checked.filter((item) => item !== index) : [...checked, index];
@@ -149,14 +154,17 @@ const handleOptionKey = (
 
   const cursor = cursors[key.kind];
 
+  // The cursor picks the answer only in single-select.
   if (cursor !== undefined) {
-    return { kind: 'update', state: withQuestion(state, { cursor }) };
+    const moved = withQuestion(state, { cursor });
+
+    return { kind: 'update', state: facts.multiSelect ? moved : reopened(moved) };
   }
 
   if (key.kind === 'space' && facts.multiSelect) {
     const checked = toggle(question.checked, question.cursor);
 
-    return { kind: 'update', state: withQuestion(state, { checked }) };
+    return { kind: 'update', state: reopened(withQuestion(state, { checked })) };
   }
 
   return { kind: 'update', state };
