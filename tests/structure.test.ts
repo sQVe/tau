@@ -23,6 +23,7 @@ const isFixture = (path: string) => path.split(/[/\\]/).includes('fixtures');
 // Register a module here once its decisions are split from its reads.
 const pureModules = [
   'scripts/piVersionDrift.ts',
+  'scripts/tokenUsageReport.ts',
   'src/delegateModel/allowedModels.ts',
   'src/extensions/askUserQuestion/questionnaire.ts',
   'src/extensions/tdd/configLayers.ts',
