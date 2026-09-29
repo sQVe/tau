@@ -23,7 +23,6 @@ const runBash = async (command: string): Promise<ModelResult> => {
   }
 };
 
-// Returns the text the worker's model sees after the guard's tool_result handler.
 const modelText = async (result: ModelResult): Promise<string> => {
   const fake = fakeExtensionApi();
   workerBashGuard(fake.pi);
