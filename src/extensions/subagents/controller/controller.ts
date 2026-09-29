@@ -207,7 +207,7 @@ export class WorkerController {
   private async resumeSaved(directory: string, task: Task): Promise<void> {
     const handle = savedHandle(directory, task);
 
-    // ponytail: PID reuse can make an exited worker look present, costing one identity-checked stop attempt.
+    // PID reuse can make an exited worker look present, costing one identity-checked stop attempt.
     if (
       remainingWorkBudget(handle) <= 0 &&
       handle.identity.owned &&
@@ -217,7 +217,7 @@ export class WorkerController {
     }
 
     // Reserve capacity and expose saved ownership to shutdown before inspection can yield.
-    // ponytail: one Pi process per parent session; add cross-process exclusion if concurrent resumes become supported.
+    // One Pi process per parent session; add cross-process exclusion if concurrent resumes become supported.
     const worker = new TaskController(handle, this.taskContext);
 
     this.workers.set(task.taskId, worker);
