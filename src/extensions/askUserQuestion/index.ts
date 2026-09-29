@@ -2,6 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
+import { appendToolGuidelines } from '../../systemPrompt/index.js';
 import { questionDialog } from './dialog.js';
 import type { DialogResult } from './dialog.js';
 import type { Answer } from './questionnaire.js';
@@ -124,13 +125,14 @@ const responseText = (result: DialogResult | undefined) => {
 };
 
 export default function askUserQuestionExtension(pi: ExtensionAPI) {
+  appendToolGuidelines(pi, 'ask_user_question', promptGuidelines);
+
   pi.registerTool({
     name: 'ask_user_question',
     label: 'Ask User Question',
     description: toolDescription,
     promptSnippet:
       'Ask the user up to 4 structured questions (2-4 options each) when requirements are ambiguous',
-    promptGuidelines,
     parameters: questionParams,
 
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
