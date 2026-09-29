@@ -1,6 +1,6 @@
 import { StringEnum } from '@earendil-works/pi-ai';
 import { Type } from 'typebox';
-import type { Static } from 'typebox';
+import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { modelReferencePattern } from '../../delegateModel/index.js';
@@ -20,6 +20,8 @@ export interface Profile {
   role: 'investigation' | 'editing';
   model: string | undefined;
   thinking: Loadout['thinking'];
+  tools: string[];
+  skills: string[];
   instructions: string;
   source: string;
 }
@@ -43,20 +45,32 @@ export const thinkingSchema = StringEnum([
   'max',
 ] as const);
 
+// Pi takes the tool allowlist as one comma-separated argument.
+export const toolNamePattern = '^[A-Za-z0-9_-]{1,64}$';
+
+const loadoutProperties = {
+  harness: Type.Literal('pi'),
+  profile: text,
+  role: Type.Union([Type.Literal('investigation'), Type.Literal('editing')]),
+  model: Type.String({ pattern: modelReferencePattern }),
+  thinking: thinkingSchema,
+  cwd: text,
+  agentDirectory: text,
+  permissions: Type.Literal('trusted-full-tools'),
+  instructions: text,
+};
+
 export const loadoutSchema = Type.Object(
   {
-    harness: Type.Literal('pi'),
-    profile: text,
-    role: Type.Union([Type.Literal('investigation'), Type.Literal('editing')]),
-    model: Type.String({ pattern: modelReferencePattern }),
-    thinking: thinkingSchema,
-    cwd: text,
-    agentDirectory: text,
-    permissions: Type.Literal('trusted-full-tools'),
-    instructions: text,
+    ...loadoutProperties,
+    tools: Type.Array(Type.String({ pattern: toolNamePattern }), { minItems: 1, maxItems: 100 }),
+    // SKILL.md paths, not skill names.
+    skills: Type.Array(text, { maxItems: 100 }),
   },
   { additionalProperties: false },
 );
+
+const previousLoadoutSchema = Type.Object(loadoutProperties, { additionalProperties: false });
 
 const taskProperties = {
   taskId: taskIdSchema,
@@ -74,25 +88,34 @@ const taskProperties = {
   monotonicDeadline: Type.Number({ minimum: 1 }),
 };
 
-const versionedTaskSchema = <Version extends number>(version: Version) =>
+const versionedTaskSchema = <
+  Version extends TSchema,
+  SavedLoadout extends typeof loadoutSchema | typeof previousLoadoutSchema,
+>(
+  version: Version,
+  loadout: SavedLoadout,
+) =>
   Type.Object(
     {
       ...taskProperties,
-      version: Type.Literal(version),
+      version,
       nativeSessionId: text,
       nativeSessionFile: text,
-      loadout: loadoutSchema,
+      loadout,
     },
     { additionalProperties: false },
   );
 
 // Bump for any change to the saved fields, including a new optional field.
-export const taskVersion = 3;
+export const taskVersion = 4;
 
-export const taskSchema = versionedTaskSchema(taskVersion);
+export const taskSchema = versionedTaskSchema(Type.Literal(taskVersion), loadoutSchema);
 
 // Versions 2 and 3 also saved non-Pi tasks, which are no longer read.
-export const previousTaskSchema = versionedTaskSchema(1);
+export const previousTaskSchema = versionedTaskSchema(
+  Type.Union([Type.Literal(1), Type.Literal(3)]),
+  previousLoadoutSchema,
+);
 
 // Version 2: the Pi worker is its pane's own process, so shellPid equals processId.
 export const ownedWorkerSchema = Type.Object(

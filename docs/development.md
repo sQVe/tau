@@ -105,6 +105,15 @@ launch refuses; it never falls back to the parent's model. See the
 A launch without `timeoutSeconds` gets 30 minutes for investigation profiles and 60 minutes for
 editing profiles.
 
+A profile's `tools:` setting lists the tools its worker gets, separated by commas. Without it,
+investigation profiles get `read` and `bash`, and editing profiles add `edit` and `write`. Workers
+always get `subagent_progress`, `subagent_report`, and `subagent_question`. A worker refuses to
+start when a listed tool is not registered. Workers load no skills unless the profile's `skills:`
+setting names them, for example `skills: code-review`. The bundled `qa` profile lists the browser
+tools from `pi-agent-browser-native`; without that package, add a `qa` profile to
+`~/.pi/agent/agents/` that lists other tools. See the
+[tool and skill decision](adr/0065-give-workers-only-their-profile-tools-and-skills.md).
+
 Set `TAU_SUBAGENT_CAP` to limit how many live workers each parent controller runs at once. It takes
 an integer from 1 to 256 and defaults to 4. Each controller reads the cap once when it starts. A
 launch at the cap refuses and lists the live workers with their deadlines; retry after a stop

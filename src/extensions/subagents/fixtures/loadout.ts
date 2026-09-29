@@ -10,4 +10,6 @@ export const fixtureLoadout = (directory: string): Loadout => ({
   agentDirectory: directory,
   permissions: 'trusted-full-tools',
   instructions: 'Work on the assigned task.',
+  tools: ['read', 'bash', 'edit', 'write'],
+  skills: [],
 });

@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 
@@ -8,12 +8,13 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   ModelRegistry,
+  SlashCommandInfo,
 } from '@earendil-works/pi-coding-agent';
 import { Value } from 'typebox/value';
 
 import { parseModelReference, requireAllowedModel } from '../../delegateModel/index.js';
 import type { ConfigLocation } from '../../tauConfig/index.js';
-import { bundledProfileDirectory, resolveProfile } from './profiles.js';
+import { bundledProfileDirectory, resolveProfile, workerTools } from './profiles.js';
 import { loadoutSchema } from './types.js';
 import type { Loadout, Profile } from './types.js';
 
@@ -84,19 +85,18 @@ const resolveModel = (
   return selectedModel;
 };
 
-const piWorkerTools = (extensionTools: Iterable<string>): string[] =>
-  [
-    ...new Set([
-      'read',
-      'bash',
-      'edit',
-      'write',
-      ...extensionTools,
-      'subagent_progress',
-      'subagent_report',
-      'subagent_question',
-    ]),
-  ].filter((tool) => tool !== 'ask_user_question');
+const resolveSkills = (profile: Profile, commands: SlashCommandInfo[]): string[] =>
+  profile.skills.map((name) => {
+    const skill = commands.find(
+      (command) => command.source === 'skill' && command.name === `skill:${name}`,
+    );
+
+    if (!skill) {
+      throw new Error(`Worker profile skill not found: ${name}`);
+    }
+
+    return skill.sourceInfo.path;
+  });
 
 const resolveLaunchPlan = (
   input: LaunchRequest,
@@ -129,6 +129,7 @@ export const resolveLoadout = (
   input: LaunchRequest,
   context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'scopedModels' | 'isProjectTrusted'>,
   signal: AbortSignal = AbortSignal.timeout(10_000),
+  commands: SlashCommandInfo[] = [],
 ): Loadout => {
   signal.throwIfAborted();
   const { cwd, agentDirectory, profile } = resolveLaunchPlan(input, context);
@@ -146,6 +147,8 @@ export const resolveLoadout = (
     agentDirectory,
     permissions: 'trusted-full-tools',
     instructions: profile.instructions,
+    tools: profile.tools,
+    skills: resolveSkills(profile, commands),
   };
 };
 
@@ -177,6 +180,12 @@ export const validateSavedLoadout = (
 
   if (!model || clampThinkingLevel(model, value.thinking) !== value.thinking) {
     throw new Error('Saved worker model or thinking cannot be reproduced; no fallback allowed.');
+  }
+
+  const missingSkill = value.skills.find((path) => !existsSync(path));
+
+  if (missingSkill !== undefined) {
+    throw new Error(`Saved worker skill is missing: ${missingSkill}`);
   }
 
   return value;
@@ -223,14 +232,14 @@ export const checkWorkerRuntime = (
     );
   }
 
-  pi.setActiveTools(
-    piWorkerTools(
-      pi
-        .getAllTools()
-        .filter(
-          (tool: { sourceInfo?: { source?: string } }) => tool.sourceInfo?.source !== 'builtin',
-        )
-        .map((tool) => tool.name),
-    ),
-  );
+  // Pi's --tools skips unknown names without an error.
+  const registered = new Set(pi.getAllTools().map((tool) => tool.name));
+  const tools = workerTools(loadout);
+  const missing = tools.filter((tool) => !registered.has(tool));
+
+  if (missing.length) {
+    throw new Error(`Worker profile tools are not registered: ${missing.join(', ')}.`);
+  }
+
+  pi.setActiveTools(tools);
 };

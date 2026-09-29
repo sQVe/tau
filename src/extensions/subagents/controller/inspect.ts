@@ -12,7 +12,7 @@ import { Value } from 'typebox/value';
 import { parseModelReference } from '../../../delegateModel/index.js';
 import { matchesWorker, runClient } from '../cancellation.js';
 import type { OwnedWorker } from '../cancellation.js';
-import { seedSession } from '../profiles.js';
+import { seedSession, workerTools } from '../profiles.js';
 import { publishRecord, readEvent } from '../records.js';
 import { listTerminals, requireObject, result } from '../terminal.js';
 import type { TerminalLocation } from '../terminal.js';
@@ -119,6 +119,11 @@ export const workerArguments = (task: Task): string[] => {
     model.id,
     '--thinking',
     task.loadout.thinking,
+    // Only the profile's tools are registered, so no extension can activate another one later.
+    '--tools',
+    workerTools(task.loadout).join(','),
+    '--no-skills',
+    ...task.loadout.skills.flatMap((path) => ['--skill', path]),
     // Pi loads these command-line extensions before the saved configuration's, so the guard is active before CC Safety Net.
     '-e',
     fileURLToPath(new URL('../workerBashGuard.ts', import.meta.url)),

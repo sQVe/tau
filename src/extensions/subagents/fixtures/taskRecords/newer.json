@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "taskId": "newer",
   "name": "scout-ab",
   "task": "Inspect source.",
@@ -20,7 +20,9 @@
     "cwd": "/work",
     "agentDirectory": "/work/agent",
     "permissions": "trusted-full-tools",
-    "instructions": "Inspect the assigned source."
+    "instructions": "Inspect the assigned source.",
+    "tools": ["read", "bash", "web_search"],
+    "skills": ["/work/agent/skills/code-review/SKILL.md"]
   },
   "futureField": "saved by a newer Tau"
 }

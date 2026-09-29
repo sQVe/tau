@@ -9,8 +9,7 @@ each with repro steps and evidence. It does not edit the worktree or install, bu
 anything; when the app is not running from the worktree or needs a test account, it asks the manager
 to check with the user. The manager passes only test-account credentials, because worker records
 keep them. The manager sends changes with user-visible behavior to `qa` alongside the reviewer.
-Browser testing needs the `pi-agent-browser-native` package; without it, `qa` tests only on the
-command line.
+Browser testing needs the `pi-agent-browser-native` package.
 
 Split the bundled `scout` and `reviewer` instructions into short paragraphs, with a list for the
 reviewer's rerun conditions, without changing their wording.

@@ -45,7 +45,7 @@ const questionFixture = () => {
   });
 
   const task = {
-    version: 3,
+    version: 4,
     taskId: 'task-one',
     task: 'Inspect source.',
     parentSession: join(directory, 'parent.jsonl'),
@@ -66,6 +66,8 @@ const questionFixture = () => {
       agentDirectory: directory,
       permissions: 'trusted-full-tools',
       instructions: 'Inspect the assigned source.',
+      tools: ['read', 'bash'],
+      skills: [],
     },
   };
 
@@ -223,6 +225,14 @@ it('skips tasks saved in a retired format without blocking current tasks', () =>
   );
 });
 
+it('refuses a saved task whose skill path is relative', () => {
+  const { task } = questionFixture();
+  const skills = (paths: string[]) => ({ ...task, loadout: { ...task.loadout, skills: paths } });
+
+  expect(records.validateTask(skills(['/skills/review/SKILL.md'])).loadout.skills).toHaveLength(1);
+  expect(() => records.validateTask(skills(['skills/review/SKILL.md']))).toThrow('absolute');
+});
+
 const taskRecordFixture = (name: string): string =>
   readFileSync(new URL(`./fixtures/taskRecords/${name}.json`, import.meta.url), 'utf8');
 
@@ -249,19 +259,26 @@ const saveTaskRecordFixtures = (names: string[]) => {
 };
 
 it('reads task records saved in the previous and current formats', () => {
-  const names = ['previous-pi', 'current-pi'];
-  const root = saveTaskRecordFixtures(names);
+  const previous = ['previous-pi', 'version-3-pi'];
+  const root = saveTaskRecordFixtures([...previous, 'current-pi']);
   const diagnostics: string[] = [];
 
   const scanned = records.readTasks(root, diagnostics);
 
   expect(diagnostics).toEqual([]);
 
+  const upgraded = previous.map((name) => {
+    const saved = parsedTaskRecordFixture(name);
+
+    return Object.assign(saved, {
+      version: 4,
+      loadout: { ...(saved.loadout as object), tools: ['read', 'bash'], skills: [] },
+    });
+  });
+
   expect(
     scanned.map(({ task }) => task).toSorted((a, b) => a.taskId.localeCompare(b.taskId)),
-  ).toEqual(
-    names.toSorted().map((name) => Object.assign(parsedTaskRecordFixture(name), { version: 3 })),
-  );
+  ).toEqual([parsedTaskRecordFixture('current-pi'), ...upgraded]);
 });
 
 const saveSubmissionRecordFixtures = (directory: string) => {
