@@ -38,7 +38,6 @@ differ from these defaults.
 - Give options as letters. Put your recommendation first and mark it. Say in one line what happens
   with each option.
 - For yes or no questions, state the default you will use if the user does not answer.
-- Do not end a turn that waits for the user without stating the question.
 
 ## Cut what adds nothing
 

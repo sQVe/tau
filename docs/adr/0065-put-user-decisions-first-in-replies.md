@@ -38,7 +38,9 @@ report and evidence follow.
 - Options use letters. The recommendation comes first and is marked. Each option says in one line
   what happens.
 - A yes or no question states the default the agent uses without an answer.
-- A turn that waits for the user states the question.
+- A turn that waits for the user states the question. This rule sits in the workflow instructions
+  because it governs when the agent stops, following ADR 0056. The other rules sit in the writing
+  instructions.
 
 ## Tradeoffs
 
@@ -50,3 +52,4 @@ report and evidence follow.
 ## See also
 
 - [ADR 0006: Default writing policy](./0006-default-writing-policy.md)
+- [ADR 0056: Load workflow rules apart from coding and writing](./0056-load-workflow-rules-apart-from-coding-and-writing.md)
