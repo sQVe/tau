@@ -6,21 +6,22 @@
 
 ## Context
 
-- `WorkerController` held every worker concern in one 1,981-line class: registry, capacity, launch,
-  follow-up, status, replies, polling, timeouts, cleanup, notifications, recovery, and widget data.
+- `WorkerController` held every worker concern in one class of almost 2,000 lines: registry,
+  capacity, launch, follow-up, status, replies, polling, timeouts, cleanup, notifications, recovery,
+  and widget data.
 - Nearly every subagents change touched it, and parallel branches collided there.
 - Pi and generic steps interleaved through `isGenericLoadout` branches inside shared methods.
-- The worker handle had 22 ungrouped fields.
+- The worker handle had about 20 ungrouped fields.
 
 ## Options considered
 
-- Keep one controller and split only its helpers into modules. Changes to one worker's lifecycle
-  would still edit the class that holds global state.
-- Add a harness interface with a Pi and a generic implementation.
+- Keep one controller and split only its helpers into modules. Rejected: changes to one worker's
+  lifecycle would still edit the class that holds global state.
+- Add a harness interface with a Pi and a generic implementation. Rejected:
   [ADR 0033](./0033-use-one-generic-native-worker-workflow.md) rejects per-harness adapters, and the
   Pi and generic paths share most steps.
-- Serialize each worker's operations through a per-task queue. No same-worker race has shown up, and
-  cancellation would have to bypass the queue to abort in-flight work.
+- Serialize each worker's operations through a per-task queue. Rejected: no same-worker race has
+  shown up, and cancellation would have to bypass the queue to abort in-flight work.
 
 ## Decision
 

@@ -13,12 +13,12 @@ states that it is the next Luna iteration and costs less.
 
 ## Options considered
 
-- Keep `gpt-5.6-luna` until a repeated comparison passes ADR 0027's review gate. This keeps measured
-  evidence behind the default but keeps the older model.
-- Run the comparison first, then switch. The owner declined the extra work for a successor model in
-  the same family.
-- Switch to `gpt-6-luna` without a comparison. Choose this option because the owner accepts the
-  quality risk in exchange for the newer, cheaper model.
+- Keep `gpt-5.6-luna` until a repeated comparison passes ADR 0027's review gate. Rejected: this
+  keeps measured evidence behind the default but keeps the older model.
+- Run the comparison first, then switch. Rejected: the owner declined the extra work for a successor
+  model in the same family.
+- Switch to `gpt-6-luna` without a comparison. Chosen: the owner accepts the quality risk in
+  exchange for the newer, cheaper model.
 
 ## Decision
 

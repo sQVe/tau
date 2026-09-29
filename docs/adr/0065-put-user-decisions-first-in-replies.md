@@ -7,24 +7,21 @@
 
 - The writing instructions told agents to end a reply with the needed information, or with one
   question or decision for the user. That rule put decisions at the bottom of long replies.
-- About 2,100 turn-ending assistant messages from 35 days of Pi sessions showed these problems:
-  - Among 250 decision replies over 250 words, the first question sat about 96% of the way down,
-    below long status reports.
-  - Options did not say what was at stake. The user asked "Tell me why my decision is important for
-    each of these bullets" and "give me options to respond to for each point".
-  - Decisions referred to earlier turns, such as "decide whether blocking TDD stays first". The user
-    replied "What do you mean?"
-  - Some turns ended without the question. The user asked "What is the scope question?" and "So,
-    what is the verdict?"
+- A review of recent Pi sessions showed these problems:
+  - In long decision replies, the first question sat near the end, below long status reports.
+  - Options did not say what was at stake, and the user asked why each decision mattered.
+  - Decisions referred to earlier turns, and the user asked what they meant.
+  - Some turns ended without the question.
   - Several decisions were bundled into one sentence.
 
 ## Options considered
 
-- Keep the rule to end with the decision. Long replies keep hiding decisions below the report.
-- Require `ask_user_question` for every decision. The question tool shows options without the status
-  and evidence the user needs to choose, so it hides the context.
+- Keep the rule to end with the decision. Rejected: long replies keep hiding decisions below the
+  report.
+- Require `ask_user_question` for every decision. Rejected: the question tool shows options without
+  the status and evidence the user needs to choose.
 - Put decisions first in the reply, one per number, with lettered options and a recommendation.
-  Choose this option.
+  Chosen: the user sees what to decide first and can answer by number and letter.
 
 ## Decision
 

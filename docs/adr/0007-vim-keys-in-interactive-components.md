@@ -11,24 +11,24 @@ the original decision; the navigation rule still applies to remaining components
 
 - Tau draws two interactive components: the snippet menu with its preview pane, and the commit
   overlay with its choice list and comment review report.
-- Each component read its own keys. They moved on arrow keys, `home`, and `end` only.
-- Pi's `KeybindingsManager` receives binding definitions in its constructor and exposes no method
-  for adding one. An extension can read Pi's bindings but cannot register a binding that Pi lists in
-  help or lets users rebind.
-- Pi's `SelectList` reads input itself and keeps `selectedIndex` private. It binds arrow keys,
-  `enter`, and `escape`, and has no binding for jumping to either end.
-- Component authors had no rule to follow, so each new component invented its own keys.
+- Each component read its own keys, and moved on arrow keys, `home`, and `end` only. With no rule,
+  each new component invented its own keys.
+- An extension can read Pi's bindings but cannot register a binding that Pi lists in help or lets
+  users rebind.
+- Pi's `SelectList` reads input itself and keeps `selectedIndex` private. It has no binding for
+  jumping to either end.
 
 ## Options considered
 
-- Leave each component to choose its keys. Costs nothing now, but keys become less consistent as
-  components are added.
-- Ask users to rebind Pi's own bindings, such as `tui.select.up`, in their settings. This covers
-  Pi's components but not the parts of Tau that read input directly. Every user must repeat the same
-  configuration.
-- Read Pi's bindings and follow whatever the user set. Tau then matches Pi, but arrow keys stay the
-  default. Users must configure vim keys themselves.
-- Carry the keys in Tau and apply them to every component.
+- Leave each component to choose its keys. Rejected: it costs nothing now, but keys become less
+  consistent as components are added.
+- Ask users to rebind Pi's own bindings, such as `tui.select.up`, in their settings. Rejected: this
+  covers Pi's components but not the parts of Tau that read input directly. Every user must repeat
+  the same configuration.
+- Read Pi's bindings and follow whatever the user set. Rejected: Tau then matches Pi, but arrow keys
+  stay the default. Users must configure vim keys themselves.
+- Carry the keys in Tau and apply them to every component. Chosen: every component gets the same
+  keys, and users configure nothing.
 
 ## Decision
 

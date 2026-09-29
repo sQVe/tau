@@ -11,11 +11,12 @@ mix new work with its previous outcome and deadline.
 
 ## Options considered
 
-- Restart the previous task and reset its deadline. This changes the meaning of accepted records and
-  can repeat work after uncertain delivery.
-- Reclaim abandoned continuation locks by age. Time alone cannot prove that a native writer stopped.
-- Keep immutable task records and claim one successor before native opening. This separates new
-  authority from old evidence and lets filesystem exclusion coordinate cooperating parents.
+- Restart the previous task and reset its deadline. Rejected: this changes the meaning of accepted
+  records and can repeat work after uncertain delivery.
+- Reclaim abandoned continuation locks by age. Rejected: time alone cannot prove that a native
+  writer stopped.
+- Keep immutable task records and claim one successor before native opening. Chosen: this separates
+  new authority from old evidence and lets filesystem exclusion coordinate cooperating parents.
 
 ## Decision
 

@@ -12,10 +12,9 @@ and is dropping it. No benchmark results are recorded here.
 
 ## Options considered
 
-- Keep `gpt-6-luna`. The owner no longer trusts its quality.
+- Keep `gpt-6-luna`. Rejected: the owner no longer trusts its quality.
 - Restore `gpt-5.6-luna`, which [ADR 0027](./0027-share-one-delegate-model.md) chose after a labeled
-  comparison. Choose this option because it returns the default to the last model with measured
-  evidence.
+  comparison. Chosen: it returns the default to the last model with measured evidence.
 
 ## Decision
 

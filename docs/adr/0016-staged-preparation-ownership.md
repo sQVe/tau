@@ -12,10 +12,11 @@ the user's staging area directly risks changing what the user already selected.
 
 ## Options considered
 
-- Prepare in shared staging and restore on failure. Restoration can overwrite newer selections made
-  by another process.
-- Include every changed file. Absorbs unrelated work without permission.
-- Prepare with separate staging and backups. Keeps preparation's selections apart from the user's.
+- Prepare in shared staging and restore on failure. Rejected: restoration can overwrite newer
+  selections made by another process.
+- Include every changed file. Rejected: it absorbs unrelated work without permission.
+- Prepare with separate staging and backups. Chosen: it keeps preparation's selections apart from
+  the user's.
 
 ## Decision
 

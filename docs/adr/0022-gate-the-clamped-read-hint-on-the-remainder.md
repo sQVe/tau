@@ -16,12 +16,12 @@ clamped path and ADR 0014 rejected a second file read.
 
 ## Options considered
 
-- Keep the fixed hint. Every clamped read still points at `bulk_read`, and small remainders keep
-  paying the delegate cost. Rejected.
-- Have the delegate pick the ranges to return. This is the excerpt experiment tracked in ABU-375 and
+- Keep the fixed hint. Rejected: every clamped read still points at `bulk_read`, and small
+  remainders keep paying the delegate cost.
+- Have the delegate pick the ranges to return. Deferred: this is a separate excerpt experiment and
   is out of scope here.
 - Compute the remaining range from the notice and gate the `bulk_read` sentence on the clamp
-  threshold. Uses information Pi already gives, with no extra read. Chosen.
+  threshold. Chosen: it uses information Pi already gives, with no extra read.
 
 ## Decision
 

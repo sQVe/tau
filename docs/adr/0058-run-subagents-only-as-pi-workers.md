@@ -14,26 +14,25 @@
 ## Context
 
 - Tau-owned subagents had two lifecycles: Pi workers with structured controls, and a generic herdr
-  workflow for every other kind (ADR 0033). Every lifecycle change had to carry both. The controller
-  split (ADR 0050) and the pure decision modules both did.
-- The generic path added about 780 production lines and 1,600 test lines, plus Pi and non-Pi
-  branches in about 15 more files.
-- Its parameters filled the tool descriptions that every parent session loads. The Pi and non-Pi
-  reply rules confused agents (ME-447).
-- Of 343 worker runs in the 30 days before 2026-09-28, 323 were Pi. The 20 non-Pi runs (19 Claude, 1
-  Codex) all ran on 2026-09-22 and 2026-09-23 and match the proof runs for the generic workflow.
+  workflow for every other kind (ADR 0033). Every lifecycle change had to carry both, such as the
+  controller split (ADR 0050) and the pure decision modules.
+- The generic path added Pi and non-Pi branches across many files. Its parameters filled the tool
+  descriptions that every parent session loads, and the two reply rules confused agents.
+- Almost all worker runs in the 30 days before 2026-09-28 were Pi. The few non-Pi runs match the
+  proof runs for the generic workflow.
 - Pi already runs Claude and GPT models through its providers, so a Pi worker covers model variety.
 - The vision says to hand off to the tool that already does the job, such as a browser task to
-  Claude Code. The handoff skill does this with `herdr agent prompt` to the agent in another
-  workspace. That agent owns its workspace, and Tau does not own its lifecycle.
+  Claude Code. The handoff skill already sends such work to the agent in another workspace, and Tau
+  does not own that agent's lifecycle.
 
 ## Options considered
 
-- Keep the generic workflow. It serves no regular use and keeps doubling every lifecycle change.
-- Move non-Pi workers into a separate tool. Tool descriptions get shorter, but the controller still
-  carries both lifecycles.
+- Keep the generic workflow. Rejected: it serves no regular use and keeps doubling every lifecycle
+  change.
+- Move non-Pi workers into a separate tool. Rejected: tool descriptions get shorter, but the
+  controller still carries both lifecycles.
 - Run subagents only as Pi workers, and send work for Claude Code or Codex through a handoff to a
-  workspace. Choose this option.
+  workspace. Chosen: one lifecycle remains, and the handoff already covers other agents.
 
 ## Decision
 

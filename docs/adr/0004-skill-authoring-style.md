@@ -15,10 +15,11 @@
 
 ## Options considered
 
-- Let each author choose the format. Allows more freedom but makes skills less consistent.
-- Use XML-like tags such as `<skill_overview>` and `<critical_rules>`. Familiar from Claude Code
-  skills, but not part of Pi's format.
-- Use Markdown. Readable as plain text and matches Pi's format.
+- Let each author choose the format. Rejected: it allows more freedom but makes skills less
+  consistent.
+- Use XML-like tags such as `<skill_overview>` and `<critical_rules>`. Rejected: they are familiar
+  from Claude Code skills, but not part of Pi's format.
+- Use Markdown. Chosen: it reads well as plain text and matches Pi's format.
 
 ## Decision
 

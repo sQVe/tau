@@ -11,11 +11,12 @@ fields can select an endpoint, account header, region, or proxy.
 
 ## Options considered
 
-- Keep credential-sensitive fingerprints for every task. This preserves existing behavior but
-  refuses otherwise unchanged settings after token rotation.
-- Exclude all resolved auth. This could silently accept changed routing or provider settings.
-- Version the fingerprints and exclude only the resolved API-key field for new records. This allows
-  narrow credential rotation without reinterpreting existing hashes.
+- Keep credential-sensitive fingerprints for every task. Rejected: this preserves existing behavior
+  but refuses otherwise unchanged settings after token rotation.
+- Exclude all resolved auth. Rejected: this could silently accept changed routing or provider
+  settings.
+- Version the fingerprints and exclude only the resolved API-key field for new records. Chosen: this
+  allows narrow credential rotation without reinterpreting existing hashes.
 
 ## Decision
 

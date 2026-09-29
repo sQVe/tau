@@ -18,14 +18,14 @@
 
 ## Options considered
 
-- Reuse ADR 0061's per-field override. A repository could then replace the user's list with models
-  the user never allowed, which defeats the reason for the list.
-- Ignore `allowedModels` in the repository file. A repository could not keep its own work to a
-  smaller set, such as models approved for a client's code.
-- Silently drop repository entries the user did not allow. The effective list would be right, but a
-  repository author would never learn that their list does not apply.
-- Intersect the lists and refuse a repository list that names a model the user did not allow. Choose
-  this option.
+- Reuse ADR 0061's per-field override. Rejected: a repository could then replace the user's list
+  with models the user never allowed, which defeats the reason for the list.
+- Ignore `allowedModels` in the repository file. Rejected: a repository could not keep its own work
+  to a smaller set, such as models approved for a client's code.
+- Silently drop repository entries the user did not allow. Rejected: the effective list would be
+  right, but a repository author would never learn that their list does not apply.
+- Intersect the lists and refuse a repository list that names a model the user did not allow.
+  Chosen: the user's list holds, and a repository can still narrow it.
 
 ## Decision
 

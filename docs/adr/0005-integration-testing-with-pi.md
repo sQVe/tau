@@ -15,14 +15,15 @@
 
 ## Options considered
 
-- Keep `ExtensionAPI` stubs. Fast, but cannot catch broken Pi setup or rejected tool inputs.
-- Use a real `AgentSession` with Pi's faux provider. `fauxProvider` lets tests supply assistant
-  messages and tool calls without a network connection.
-- Run `pi -p` or `--mode json` in a subprocess. Uses the real program, but `hasUI` is always false
-  in print mode. Tests cannot approve a commit, and each run needs an API key.
-- Run `pi --mode rpc` in a subprocess. Tests could exchange approval messages, but this needs an API
-  key. Pi's `RpcClient` does not handle `extension_ui_request` and is not in the package `exports`
-  map.
+- Keep `ExtensionAPI` stubs. Rejected: they are fast, but cannot catch broken Pi setup or rejected
+  tool inputs.
+- Use a real `AgentSession` with Pi's faux provider. Chosen: `fauxProvider` lets tests supply
+  assistant messages and tool calls without a network connection.
+- Run `pi -p` or `--mode json` in a subprocess. Rejected: it uses the real program, but `hasUI` is
+  always false in print mode. Tests cannot approve a commit, and each run needs an API key.
+- Run `pi --mode rpc` in a subprocess. Rejected: tests could exchange approval messages, but this
+  needs an API key. Pi's `RpcClient` does not handle `extension_ui_request` and is not in the
+  package `exports` map.
 
 ## Decision
 

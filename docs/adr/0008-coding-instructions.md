@@ -20,13 +20,14 @@ layout checks. The remaining decisions below still apply.
 
 ## Options considered
 
-- Add the rules to the writing policy. One extension already loads instructions, but a prose policy
-  should not also govern code structure.
-- Enforce the rules with lint. Oxlint has no layout rules, and adding a second linter for them was
-  rejected. A rule that matches statement types cannot see logical steps anyway.
-- Extend the comment review gate to block unreadable code. The gate gives evidence for concrete
-  defects. Readability is a judgment call, so it would block commits on opinion.
-- Load a second policy through its own extension. Matches ADR 0006 and keeps one concern per file.
+- Add the rules to the writing policy. Rejected: one extension already loads instructions, but a
+  prose policy should not also govern code structure.
+- Enforce the rules with lint. Rejected: Oxlint has no layout rules, and adding a second linter for
+  them was rejected. A rule that matches statement types cannot see logical steps anyway.
+- Extend the comment review gate to block unreadable code. Rejected: the gate gives evidence for
+  concrete defects. Readability is a judgment call, so it would block commits on opinion.
+- Load a second policy through its own extension. Chosen: it matches ADR 0006 and keeps one concern
+  per file.
 
 ## Decision
 

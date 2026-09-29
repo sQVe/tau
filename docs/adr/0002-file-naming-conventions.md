@@ -10,9 +10,9 @@
 
 ## Options considered
 
-- Let each module choose its style. File names become less consistent.
-- Use one rule for TypeScript files. Makes names consistent, but can be awkward for files with many
-  classes.
+- Let each module choose its style. Rejected: file names become less consistent.
+- Use one rule for TypeScript files. Chosen: it makes names consistent, though it can be awkward for
+  files with many classes.
 
 ## Decision
 

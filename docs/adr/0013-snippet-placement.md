@@ -14,11 +14,13 @@
 
 ## Options considered
 
-- Leave the choice to the author. Needs no rule, but the set keeps drifting as snippets are added.
-- Sort by snippet age or by the order the author wants the model to work in. Easy to apply, but the
-  model does not run the instructions in order, so the grouping tells the reader nothing.
-- Choose by the snippet's main purpose. Puts instructions of the same kind together and gives a new
-  author a rule to follow.
+- Leave the choice to the author. Rejected: it needs no rule, but the set keeps drifting as snippets
+  are added.
+- Sort by snippet age or by the order the author wants the model to work in. Rejected: it is easy to
+  apply, but the model does not run the instructions in order, so the grouping tells the reader
+  nothing.
+- Choose by the snippet's main purpose. Chosen: it puts instructions of the same kind together and
+  gives a new author a rule to follow.
 
 ## Decision
 

@@ -5,34 +5,32 @@
 
 ## Context
 
-- Advisory TDD classifies edits and fingerprints inputs with globs hardcoded for TypeScript and
-  JavaScript under `src/`, `apps/`, `packages/`, `functions/`, and `infra/` (ADR 0023). Grove keeps
-  its code in `internal/**/*.go` and `cmd/**/*.go`, so hints and `run_tests` freshness see none of
-  it. Other repositories want to exclude part of `src/`, such as `src/components/**`.
+- Advisory TDD uses globs hardcoded for TypeScript and JavaScript under a few root folders (ADR
+  0023). In a Go repository such as Grove, hints and `run_tests` freshness see no code. Other
+  repositories want to exclude part of `src/`, such as `src/components/**`.
 - Tau needs settings a user sets once for every repository, and settings a repository checks in that
-  override them. TDD is the first consumer. The formatter table (ME-368), a bash allowlist, and
-  model settings may follow.
+  override them. TDD is the first consumer. The formatter table, a bash allowlist, and model
+  settings may follow.
 - Pi layers its own settings the same way: `~/.pi/agent/settings.json`, overridden by
-  `.pi/settings.json`. Pi's extension guide places project config at
-  `<cwd>/<CONFIG_DIR_NAME>/<name>.json` and reads it only when `ctx.isProjectTrusted()` holds.
-  pi-claude-bridge follows it with `<agentDir>/claude-bridge.json` and `.pi/claude-bridge.json`.
+  `.pi/settings.json`. Pi's extension guide puts project config in `.pi/` and reads it only in a
+  trusted project. pi-claude-bridge follows that guide.
 - `.tau/` holds state that stays out of version control, and Tau's own `.gitignore` ignores the
   whole folder.
 
 ## Options considered
 
-- `$XDG_CONFIG_HOME/tau/` for the user file. It ignores `PI_CODING_AGENT_DIR`, so separate Pi setups
-  and the integration tests would share one file, the reason ADR 0045 rejected XDG for records.
-  Tools that run under several agents, such as ponytail, use XDG; Tau runs only in Pi.
-- A root `tau.json` or `.tau/tdd.json` for the repository file. The first departs from Pi's
-  extension convention and skips project trust. The second sits among ignored state and needs
+- `$XDG_CONFIG_HOME/tau/` for the user file. Rejected: it ignores `PI_CODING_AGENT_DIR`, so separate
+  Pi setups and the integration tests would share one file, the reason ADR 0045 rejected XDG for
+  records. XDG suits tools that run under several agents, and Tau runs only in Pi.
+- A root `tau.json` or `.tau/tdd.json` for the repository file. Rejected: the first departs from
+  Pi's extension convention and skips project trust. The second sits among ignored state and needs
   ignore-rule changes before Git tracks it.
-- A `tau.tdd` block in `package.json`. Go and Lua repositories have none.
-- A config-loading library such as cosmiconfig or lilconfig. Tau reads two fixed paths, and
-  validation and error wording would still be ours. Many of them can load JS config, which runs
+- A `tau.tdd` block in `package.json`. Rejected: Go and Lua repositories have none.
+- A config-loading library such as cosmiconfig or lilconfig. Rejected: Tau reads two fixed paths,
+  and validation and error wording would still be ours. Many of them can load JS config, which runs
   repository code.
-- `<agentDir>/tau.json` overridden by `.pi/tau.json`, as Pi and its extensions do. Choose this
-  option.
+- `<agentDir>/tau.json` overridden by `.pi/tau.json`, as Pi and its extensions do. Chosen: the files
+  sit where Pi users look, and the repository file follows Pi's project trust.
 
 ## Decision
 

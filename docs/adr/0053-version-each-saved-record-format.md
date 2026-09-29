@@ -6,31 +6,29 @@
 
 ## Context
 
-- Worker records outlive the Tau that wrote them. When `main` moves while a session is open, the
-  running Tau and a new session share one records folder (ADR 0045).
-- On 2026-09-25, an older session refused every follow-up because a newer Tau had saved a name it
-  rejected (ME-440).
-- Every record schema sets `additionalProperties: false`, so an older reader fails on any new field.
-- Task records had a `version` of 1 for Pi workers and 2 for generic workers. The field named the
-  worker kind, which `loadout.harness` already records, and could not mark a format change.
+- Worker records outlive the Tau that wrote them. An open session and a newer session can share one
+  records folder (ADR 0045).
+- Every record schema rejects unknown fields, so an older reader fails on any new field. An older
+  session once refused every follow-up because a newer Tau had saved a name it rejected.
+- Task records used `version` to name the worker kind, so it could not mark a format change.
 - Tau has no releases. Sessions load Tau from a checkout, so "the previous release" names nothing.
 
 ## Options considered
 
 For how long an older, running Tau must read records a newer Tau writes:
 
-- One release back. A newer Tau would never write a record the previous release cannot read. Every
-  new field would need two steps: first a release whose reader accepts it, then a release that
-  writes it. Tau cuts no releases, so there is no previous release to test against.
-- Until the older session restarts, best effort. The older session skips what it cannot read and
-  keeps working on everything else. A restart loads the newer reader. Choose this option.
+- One release back, so a newer Tau never writes a record the previous release cannot read. Rejected:
+  every new field would need two releases, and Tau cuts no releases to test against.
+- Until the older session restarts, best effort. Chosen: the older session skips what it cannot read
+  and keeps working on everything else. A restart loads the newer reader.
 
 For marking the format:
 
-- Keep strict readers without a version. A reader cannot tell a newer record from a broken one, so
-  it can only report a failure with no fix.
-- Accept unknown fields. Old readers would then read records whose meaning changed, and act on them.
-- Give each format its own version, and keep strict readers. Choose this option.
+- Keep strict readers without a version. Rejected: a reader cannot tell a newer record from a broken
+  one, so it can only report a failure with no fix.
+- Accept unknown fields. Rejected: old readers would read records whose meaning changed, and act on
+  them.
+- Give each format its own version, and keep strict readers. Chosen.
 
 ## Decision
 
@@ -53,8 +51,8 @@ Each format's reader sorts a record into one of four groups:
   supported while running Tau sessions may still own such records.
 - Retired: skipped with a notice to start a fresh task.
 - Newer: a version above the reader's current one. Skipped with a notice to restart the session.
-  Follow-ups still read the claimed predecessor from it (ME-440), so it keeps blocking a second
-  follow-up of the same source.
+  Follow-ups still read the claimed predecessor from it, so it keeps blocking a second follow-up of
+  the same source.
 
 A record that claims a known version but fails its schema is malformed. The reader reports it as a
 diagnostic. No unreadable record may stop an operation that does not need it.

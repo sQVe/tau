@@ -20,10 +20,11 @@ but it cannot certify native permissions, model selection, task acceptance, or c
 
 ## Options considered
 
-- Keep the Claude bridge and add harness-specific adapters. This preserves deeper integration for
-  Claude, but makes each new harness another permission and lifecycle implementation to maintain.
-- Use one herdr workflow for every non-Pi kind and state its weaker guarantees. This keeps Tau's
-  ownership rules shared without treating unrelated native controls as equivalent to Pi's SDK.
+- Keep the Claude bridge and add harness-specific adapters. Rejected: this preserves deeper
+  integration for Claude, but makes each new harness another permission and lifecycle implementation
+  to maintain.
+- Use one herdr workflow for every non-Pi kind and state its weaker guarantees. Chosen: this keeps
+  Tau's ownership rules shared without treating unrelated native controls as equivalent to Pi's SDK.
 
 ## Decision
 

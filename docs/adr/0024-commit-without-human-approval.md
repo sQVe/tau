@@ -13,10 +13,10 @@ agent so it can correct the request or report the blocker.
 
 ## Options considered
 
-- Keep approval with a startup flag. This keeps two execution paths and requires launcher setup for
-  unattended work.
-- Remove human approval from every commit call. This gives interactive and unattended workers the
-  same error and retry path.
+- Keep approval with a startup flag. Rejected: this keeps two execution paths and requires launcher
+  setup for unattended work.
+- Remove human approval from every commit call. Chosen: this gives interactive and unattended
+  workers the same error and retry path.
 
 ## Decision
 

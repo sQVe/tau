@@ -5,19 +5,18 @@
 
 ## Context
 
-A worker that asks the parent a question waits for a reply. The parent saved the reply in the task's
-record directory, then typed a marker line into the worker's pane with `herdr agent prompt`, and the
-worker matched that exact text. This was the last place the parent sent terminal input to a worker.
-A failed or unconfirmed pane write left the parent unsure whether the worker saw the reply, so the
-receipt carried a delivery state the parent had to interpret. The worker already receives its task
-by watching the record directory.
+A worker that asks the parent a question waits for a reply. The parent saved the reply and then
+typed it into the worker's pane. This was the last place the parent sent terminal input to a worker.
+When a pane write failed or was not confirmed, the parent could not tell whether the worker saw the
+reply, so the reply receipt carried a delivery state the parent had to interpret. The worker already
+receives its task by watching its record directory.
 
 ## Options considered
 
-- Keep typing into the pane. It works, but it depends on herdr accepting input at the right pane and
-  leaves a delivery state that never proves the worker read the reply.
+- Keep typing into the pane. Rejected: it depends on herdr accepting input at the right pane, and it
+  never proves the worker read the reply.
 - Let the worker read the reply from the record directory while its question is pending, the same
-  way it receives its task.
+  way it receives its task. Chosen.
 
 ## Decision
 

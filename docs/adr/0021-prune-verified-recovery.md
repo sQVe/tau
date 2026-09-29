@@ -6,21 +6,23 @@
 ## Context
 
 [ADR 0019](./0019-verified-raw-recovery.md) retains every recovery archive after a successful
-restoration, on the grounds that deleting it could discard user work written to displaced files.
-Each archive holds a full copy of the working files, a manifest with two more copies, index
-snapshots, and a Git ref that pins an otherwise unreachable tree. A check window runs on every
-commit, so a repository accumulates several megabytes per commit with no removal path.
+restoration, because deleting it could discard user work written to displaced files. Each archive
+holds several copies of the working files, index snapshots, and a Git ref that pins an otherwise
+unreachable tree. A check window runs on every commit, so a repository grows by several megabytes
+per commit with no way to remove them.
 
 Only the displaced inodes can receive late writes: a process that held a file open before hiding
-keeps writing to the moved inode. The snapshots and the ref are consulted only during restoration,
-and verified restoration has already compared the working tree against them.
+keeps writing to the moved inode. Tau reads the snapshots and the ref only during restoration, and
+verified restoration has already compared the working tree against them.
 
 ## Options considered
 
-- Retain everything, as ADR 0019 requires. Unbounded growth and refs that block garbage collection.
-- Delete the whole archive after success. Discards bytes an open writer may still be appending.
-- Delete the snapshots and the ref, keep the displaced inodes. Bounded by what open writers can
-  still touch.
+- Retain everything, as ADR 0019 requires. Rejected: growth is unbounded, and the refs block garbage
+  collection.
+- Delete the whole archive after success. Rejected: this discards bytes an open writer may still be
+  appending.
+- Delete the snapshots and the ref, and keep the displaced inodes. Chosen: what remains is bounded
+  by what open writers can still touch.
 
 ## Decision
 

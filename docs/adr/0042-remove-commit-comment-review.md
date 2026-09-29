@@ -10,28 +10,21 @@
 The `commit` tool sent each staged tree to a model that reviewed its comments before Git hooks ran.
 Blocking findings returned tool errors, and a group was refused after two returns.
 
-The gate blocked commits over comment wording, not over code. In one session, a checked and passing
-UI commit could not land. The agent rewrote a flagged comment, and the reviewer raised a new
-objection to it. The agent deleted the comment, and the reviewer then refused the commit over an
-older comment it had not flagged before. The user had to step in.
-
-Pi session logs show the same pattern. They contain 386 "needs corrections" blocks in 67 sessions,
-180 refusals after two returns, 78 `commentDispute` workarounds, and about 100 failures where the
-reviewer itself failed. The same logs show about 93 successful commit groups.
-
-The gate was already patched four times: lockfiles skipped, findings batched, a verifier added, and
-policy findings made advisory in ADR 0038. It still blocked on judgment calls, because a model can
-always find a new objection to a comment.
+The gate blocked checked, passing commits over comment wording, not over code. Each fix to a flagged
+comment could draw a new objection, and the user had to step in. Pi session logs show 180 refusals
+after two returns against about 93 successful commit groups. The gate was already patched four
+times, including ADR 0038's advisory policy findings. It still blocked on judgment calls, because a
+model can always find a new objection to a comment.
 
 ## Options considered
 
-- Keep the gate and patch it again. Earlier patches narrowed what blocks, but each retry still gets
-  a fresh review that can raise a new finding on unchanged code.
-- Make every finding advisory. Commits no longer block, but each commit still pays for a model call
-  and returns reports that agents tend to act on.
-- Move comment review to pull request review. Code and PR review can already catch wrong comments
-  without a separate commit step.
-- Remove comment review. Git hooks remain the only commit gate.
+- Keep the gate and patch it again. Rejected: each retry still gets a fresh review that can raise a
+  new finding on unchanged code.
+- Make every finding advisory. Rejected: each commit still pays for a model call and returns reports
+  that agents tend to act on.
+- Move comment review to pull request review. Chosen: no new step is needed, because code and PR
+  review can already catch wrong comments.
+- Remove comment review. Chosen: Git hooks remain the only commit gate.
 
 ## Decision
 

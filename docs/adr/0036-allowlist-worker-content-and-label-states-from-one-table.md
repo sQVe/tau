@@ -5,34 +5,31 @@
 
 ## Context
 
-Subagent tools return one result object that serves two readers. The parent model needs a small,
-stable set of fields to choose its next call. The pilot needs a short line per step and details on
-demand. Worker records keep gaining fields: capacity, placement, generic harness evidence, and
-recovery references. Many of these fields are paths or audit data the model should not read.
+Subagent tools return one result object for two readers:
 
-Status wording has a second constraint. ADR 0028 keeps worker control in the parent, and only parent
-records prove a stop or an acknowledgement. A label that says "stopped" or shows a check mark
-without that record misleads the pilot.
+- The parent model needs a small, stable set of fields to choose its next call. Worker records keep
+  gaining fields, and many are paths or audit data the model should not read.
+- The pilot needs a short line per step and details on demand. ADR 0028 keeps worker control in the
+  parent, so only parent records prove a stop or an acknowledgement. A label that says "stopped" or
+  shows a check mark without that record misleads the pilot.
 
-Worker reports have no size target that anything enforces. The report tool accepts a
-32,000-character summary and 100 evidence strings, and each notice and status result repeats the
-report. Across 356 saved reports, summary and evidence together have a median of 4,990 characters
-and a p90 of 9,789.
+Nothing enforces a size target for worker reports, and each notice and status result repeats the
+report. Across 356 saved reports, summary and evidence together have a median of about 5,000
+characters.
 
 ## Options considered
 
-- Return the full record and filter it by key name or delete known keys. This needs no new code per
-  field, but every new field reaches the model by default. A reused key name changes behavior
-  silently.
-- Let each renderer word its own states. This keeps renderers independent, but the same state can
-  read differently across tools and notices. A renderer can claim a stop the records do not prove.
+- Return the full record and filter it by key name or delete known keys. Rejected: every new field
+  reaches the model by default, and a reused key name changes behavior silently.
+- Let each renderer word its own states. Rejected: the same state can read differently across tools
+  and notices, and a renderer can claim a stop the records do not prove.
 - Build model content from an explicit allowlist, keep the full record in `details`, and take all
-  state wording from one label table. This costs an allowlist entry per field the model needs, but
-  new fields stay out of model content until someone adds them on purpose.
-- Pass every report through whole. This keeps the model's view complete, but one long report fills
-  the parent's context again with every notice and status call.
-- Cap the report the model sees, mark the cut, and point to the saved report. The model reads the
-  rest on demand, and short reports stay unchanged.
+  state wording from one label table. Chosen: it costs an allowlist entry per field the model needs,
+  but new fields stay out of model content until someone adds them on purpose.
+- Pass every report through whole. Rejected: one long report fills the parent's context again with
+  every notice and status call.
+- Cap the report the model sees, mark the cut, and point to the saved report. Chosen: the model
+  reads the rest on demand, and short reports stay unchanged.
 
 ## Decision
 

@@ -12,12 +12,13 @@ descriptions and guards that the worker already sees.
 
 ## Options considered
 
-- Keep the instructions in the first user message. Nothing changes, but the costs above remain.
-- Write them to a private file and pass it with Pi's `--append-system-prompt`. This is how Pi
-  Herdsman does it, but the flag replaces Pi's discovered `APPEND_SYSTEM.md`, so workers would lose
-  the user's own appended prompt.
+- Keep the instructions in the first user message. Rejected: nothing changes, but the costs above
+  remain.
+- Write them to a private file and pass it with Pi's `--append-system-prompt`, as Pi Herdsman does.
+  Rejected: the flag replaces Pi's discovered `APPEND_SYSTEM.md`, so workers would lose the user's
+  own appended prompt.
 - Append them in the worker extension's `before_agent_start` hook, as Tau's coding, writing, and
-  workflow instructions are appended.
+  workflow instructions are appended. Chosen.
 
 ## Decision
 

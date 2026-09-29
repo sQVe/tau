@@ -14,12 +14,12 @@ full-tool workers with CC Safety Net, not separate permission classes or process
 
 ## Options considered
 
-- Adapt the upstream profiles and sessions, but keep control in the parent. This fits the required
-  lifetime without a separate service.
-- Run an independent supervisor. This would add recovery and process ownership rules for a lifetime
-  the user does not require.
-- Retain upstream restricted extension loadouts. This could remove the user's safety integration and
-  would restore the discarded isolation model.
+- Adapt the upstream profiles and sessions, but keep control in the parent. Chosen: this fits the
+  required lifetime without a separate service.
+- Run an independent supervisor. Rejected: this would add recovery and process ownership rules for a
+  lifetime the user does not require.
+- Retain upstream restricted extension loadouts. Rejected: this could remove the user's safety
+  integration and would restore the discarded isolation model.
 
 ## Decision
 

@@ -6,19 +6,18 @@
 
 ## Context
 
-The readability refactor split one worker controller into an inheritance chain while retaining
-shared lifecycle state. Smaller files did not remove that coupling. The split also introduced a
-polling-budget regression, fixed separately with a regression test.
-
-Line and parameter counts identify code worth reviewing, but cannot tell whether a split makes
-behavior easier to trace. Tau rejects lint warnings in required checks, so changing these rules from
-errors to warnings would still block changes.
+A readability refactor split one worker controller into an inheritance chain that still shared
+lifecycle state. Smaller files did not remove that coupling, and the split introduced a regression.
+Line and parameter counts find code worth reviewing, but they cannot tell whether a split makes
+behavior easier to trace. Tau rejects lint warnings in required checks, so turning these rules into
+warnings would still block changes.
 
 ## Options considered
 
-- Keep mandatory size limits. This bounds local size but can encourage artificial boundaries.
-- Keep size thresholds in coding guidance without lint gates. This requires judgment but allows
-  coupled control flow to stay together.
+- Keep mandatory size limits. Rejected: this bounds local size but can encourage artificial
+  boundaries.
+- Keep size thresholds in coding guidance without lint gates. Chosen: this requires judgment but
+  lets coupled control flow stay together.
 
 ## Decision
 

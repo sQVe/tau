@@ -12,18 +12,19 @@ blocked without a check.
 
 Policy findings are style judgments, and the review model makes them differently on each run. Each
 corrected tree got a fresh review, which raised a new policy finding on code the previous run had
-passed. It flagged test titles and tool description fields as comments. After two returns the gate
-refused the commit, and the agent handed a passing, reviewed change back to the user.
+passed. After two returns the gate refused the commit, and the agent handed a passing, reviewed
+change back to the user.
 
 ## Options considered
 
-- Keep policy findings blocking. Retries keep producing new findings on unchanged code, and the user
-  has to step in over style.
-- Review only lines that changed since the previous review. This stops repeat findings on passed
-  code but still blocks on unverified judgments, and it needs state across trees.
-- Verify policy findings like inaccuracies. The verifier sees only an excerpt and not the project
-  conventions a policy finding may rest on, so it cannot settle them.
-- Report policy findings as advisory. Commits proceed, and the agent still sees the findings.
+- Keep policy findings blocking. Rejected: retries keep producing new findings on unchanged code,
+  and the user has to step in over style.
+- Review only lines that changed since the previous review. Rejected: this stops repeat findings on
+  passed code but still blocks on unverified judgments, and it needs state across trees.
+- Verify policy findings like inaccuracies. Rejected: the verifier sees only an excerpt, not the
+  project conventions a policy finding may rest on, so it cannot settle them.
+- Report policy findings as advisory. Chosen: commits proceed, and the agent still sees the
+  findings.
 
 ## Decision
 

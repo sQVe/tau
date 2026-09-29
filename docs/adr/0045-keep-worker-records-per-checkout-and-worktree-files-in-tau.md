@@ -9,34 +9,34 @@
 ## Context
 
 Every Tau checkout reads and writes the same `~/.pi/agent/tau/workers/`. Dev checkouts load their
-own Tau through a project `.pi/settings.json`, and several branches change the record format at the
-same time. On 2026-09-24, `abu-400` saved records with a field that main rejects. One such record
-stopped launches, `subagent_history`, and status in every workspace.
+own Tau, and several branches change the record format at the same time. One record saved by a
+branch with a field main rejects stopped launches, `subagent_history`, and status in every
+workspace.
 
-Tau's other files have no fixed home. Non-Pi workers write reports to a folder the caller chooses.
-Handoff briefs, which we keep, sit in `~/.cache/tau/handoffs/`. Leftover `.tau/` folders from older
-Tau versions exist in some worktrees, and only Tau's own `.gitignore` ignores them.
+Tau's other files have no fixed home. Non-Pi workers write reports to a folder the caller chooses,
+and handoff briefs sit in `~/.cache/tau/handoffs/`. Leftover `.tau/` folders from older Tau versions
+exist in some worktrees, and only Tau's own `.gitignore` ignores them.
 
 [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md) says which records Tau keeps. It
 does not say where.
 
 ## Options considered
 
-- Keep one shared folder and version the record format. Each branch must remember to bump the
-  version, and parallel branches pick the same next number. Skipping unreadable records hides the
-  failure but still drops the other branch's workers from history.
-- Key records by Git branch. The branch of a checkout can change, and `npm:` or `git:` installs have
-  no branch.
-- Key records by the Tau checkout that wrote them. Branches never share records, and nothing needs a
-  manual bump. Choose this option.
+- Keep one shared folder and version the record format. Rejected: each branch must remember to bump
+  the version, and parallel branches pick the same next number. Skipping unreadable records hides
+  the failure but still drops the other branch's workers from history.
+- Key records by Git branch. Rejected: the branch of a checkout can change, and `npm:` or `git:`
+  installs have no branch.
+- Key records by the Tau checkout that wrote them. Chosen: branches never share records, and nothing
+  needs a manual bump.
 
 For the record root:
 
-- `~/.local/state/tau/` follows XDG for state files. It ignores `PI_CODING_AGENT_DIR`, so separate
-  Pi agent directories, such as `~/.pi/agent-work` and the integration tests' temporary ones, would
-  share records.
-- `<agentDir>/tau/`, where `agentDir` is Pi's `getAgentDir()`, follows `PI_CODING_AGENT_DIR`. Pi
-  keeps its own sessions in the same directory. Choose this option.
+- `~/.local/state/tau/`, which follows XDG for state files. Rejected: it ignores
+  `PI_CODING_AGENT_DIR`, so separate Pi agent directories, such as `~/.pi/agent-work` and the
+  integration tests' temporary ones, would share records.
+- `<agentDir>/tau/`, where `agentDir` is Pi's `getAgentDir()`. Chosen: it follows
+  `PI_CODING_AGENT_DIR`, and Pi keeps its own sessions in the same directory.
 
 ## Decision
 

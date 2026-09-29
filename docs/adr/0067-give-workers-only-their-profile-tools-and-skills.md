@@ -5,31 +5,28 @@
 
 ## Context
 
-- A worker loads the parent's whole Pi configuration. Before this decision, it kept every extension
-  tool and listed every skill. The tool schemas and the skill list are sent again on every turn of
-  every worker.
-- Measured on the first model request of a bundled profile, with the user's configuration and Pi
-  0.87.1: 19 tools took 28.4k characters and the skill list took 8.3k, out of 66k.
-- In the saved worker sessions, workers never called `ask_user_question`, `source_check`, or
-  `codex_generate_image`. Only scouts used the web tools often. Workers read few skills. Reviewers
-  read `code-review` most, but that skill is the manager's procedure for launching reviewers.
+- A worker loads the parent's whole Pi configuration, so it kept every extension tool and listed
+  every skill. The tool schemas and the skill list are sent again on every turn.
+- In one measured bundled worker, tools and the skill list took over half of a 66k-character first
+  request.
+- Saved worker sessions show that workers use few of those tools and skills. Only scouts used the
+  web tools often.
 - Every extension must still load. The worker refuses to start without CC Safety Net from Tau's
   bundled file, [ADR 0028](./0028-keep-worker-control-in-the-parent.md) rejects restricted extension
   loadouts, and reloading extensions once left the Claude bridge provider unregistered.
-- Activating tools after startup does not hold. `rpiv-ask-user-question` activates its tool again
-  before every prompt when the session has a UI, and its handler runs after Tau's.
+- Activating tools after startup does not hold. Some extensions, such as the questionnaire, activate
+  their tool again before every prompt.
 
 ## Options considered
 
-- Keep every tool and skill. This costs about 9k tokens per worker turn for tools and skills that
-  workers do not use.
-- Restrict which extensions load, as Pi Herdsman does with `noExtensions`. Rejected for the reasons
-  in Context.
-- Set the active tools after startup only. Any extension can activate its tool again, as the
-  questionnaire does.
+- Keep every tool and skill. Rejected: this costs about 9k tokens per worker turn for tools and
+  skills that workers do not use.
+- Restrict which extensions load, as Pi Herdsman does with `noExtensions`. Rejected: every extension
+  must still load, as Context explains.
+- Set the active tools after startup only. Rejected: any extension can activate its tool again, as
+  the questionnaire does.
 - Launch the worker with Pi's `--tools` allowlist and `--no-skills`, and check the allowlist after
-  the Safety Net check. Every extension still loads, but Pi registers only the listed tools. Choose
-  this option.
+  the Safety Net check. Chosen: every extension still loads, but Pi registers only the listed tools.
 
 ## Decision
 

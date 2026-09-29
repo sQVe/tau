@@ -11,10 +11,11 @@ policy.
 
 ## Options considered
 
-- Keep confirmation mandatory. Unattended workers cannot complete commits.
-- Infer permission from herdr or a task prompt. Neither provides explicit commit authorization.
-- Add a startup flag through Pi's extension API. The launcher can explicitly authorize commits
-  without changes to Pi or herdr.
+- Keep confirmation mandatory. Rejected: unattended workers cannot complete commits.
+- Infer permission from herdr or a task prompt. Rejected: neither provides explicit commit
+  authorization.
+- Add a startup flag through Pi's extension API. Chosen: the launcher can explicitly authorize
+  commits without changes to Pi or herdr.
 
 ## Decision
 

@@ -13,11 +13,12 @@ environment values must not grant authority that their parent did not hold.
 
 ## Options considered
 
-- Count published tasks without exclusion. Concurrent callers can both admit the last slot.
-- Run a separate admission service. This adds a service lifetime beyond the required parent-owned
-  control.
-- Use one filesystem lock per root tree with durable reservations. This coordinates cooperating
-  processes on Linux and macOS without another service.
+- Count published tasks without exclusion. Rejected: concurrent callers can both admit the last
+  slot.
+- Run a separate admission service. Rejected: this adds a service lifetime beyond the required
+  parent-owned control.
+- Use one filesystem lock per root tree with durable reservations. Chosen: this coordinates
+  cooperating processes on Linux and macOS without another service.
 
 ## Decision
 

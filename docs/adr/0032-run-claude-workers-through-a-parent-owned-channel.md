@@ -16,12 +16,12 @@ choose. A finished turn also does not prove that the parent accepted a result.
 
 ## Options considered
 
-- Put a separate controller beside Claude. This duplicates ownership of admission, records, and
-  deadlines across processes.
-- Use the Stop hook and transcript as the result. This cannot distinguish an idle worker from an
-  accepted handover.
-- Serve worker tools and hook decisions from the existing parent controller. This keeps one owner
-  for task state, but requires the parent to remain alive.
+- Put a separate controller beside Claude. Rejected: this duplicates ownership of admission,
+  records, and deadlines across processes.
+- Use the Stop hook and transcript as the result. Rejected: this cannot distinguish an idle worker
+  from an accepted handover.
+- Serve worker tools and hook decisions from the existing parent controller. Chosen: this keeps one
+  owner for task state, but requires the parent to remain alive.
 
 ## Decision
 

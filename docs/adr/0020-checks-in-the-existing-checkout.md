@@ -13,9 +13,11 @@ selected content.
 
 ## Options considered
 
-- Share dependencies with a temporary checkout. Links can resolve to the wrong sources.
-- Copy the repository and install dependencies again. Slow, and requires repository-specific setup.
-- Check in the current checkout. Preserves dependency links but temporarily changes visible files.
+- Share dependencies with a temporary checkout. Rejected: links can resolve to the wrong sources.
+- Copy the repository and install dependencies again. Rejected: it is slow and requires
+  repository-specific setup.
+- Check in the current checkout. Chosen: it preserves dependency links, but it temporarily changes
+  visible files.
 
 ## Decision
 
