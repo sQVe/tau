@@ -11,8 +11,8 @@
 - Measured on the first model request of a bundled profile, with the user's configuration and Pi
   0.87.1: 19 tools took 28.4k characters and the skill list took 8.3k, out of 66k.
 - In the saved worker sessions, workers never called `ask_user_question`, `source_check`, or
-  `codex_generate_image`. Only scouts used the web tools often. Workers read only a few skills, and
-  reviewers read `code-review` most.
+  `codex_generate_image`. Only scouts used the web tools often. Workers read few skills. Reviewers
+  read `code-review` most, but that skill is the manager's procedure for launching reviewers.
 - Every extension must still load. The worker refuses to start without CC Safety Net from Tau's
   bundled file, [ADR 0028](./0028-keep-worker-control-in-the-parent.md) rejects restricted extension
   loadouts, and reloading extensions once left the Claude bridge provider unregistered.
@@ -61,7 +61,8 @@ The bundled profiles name the tools their workers used in saved sessions:
   some tasks ask them to commit.
 - `scout`: the investigation defaults, `write`, `bulk_read`, and the web tools `web_search`,
   `fetch_content`, and `get_search_content`. Scouts research outside the repository.
-- `reviewer`: the investigation defaults and `write`, with the `code-review` skill.
+- `reviewer`: the investigation defaults and `write`. It loads no skill, because the manager copies
+  the reviewer rules from `code-review` into each assignment.
 - `qa`: the investigation defaults, `write`, `agent_browser`, and `agent_browser_code`. The browser
   tools come from `pi-agent-browser-native`, which Tau does not bundle. Without that package, `qa`
   refuses to start until a user or project `qa` profile drops those tools.
@@ -75,7 +76,7 @@ task saved in format 1 or 3 gets its role's default tools and no skills.
 
 ## Tradeoffs
 
-- The measured fixed prompt of a bundled worker drops from 66k characters to 25k to 34k.
+- The measured fixed prompt of a bundled worker drops from 66k characters to 24k to 34k.
 - A tool that disappears from the configuration stops the worker at startup with its name.
 - Cost: a worker that needs another tool or skill needs a profile that lists it.
 - Cost: `agent_browser_tools` cannot enable advanced browser tools unless the profile lists them.

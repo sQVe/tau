@@ -3,7 +3,6 @@ name: reviewer
 role: investigation
 model: claude-bridge/claude-opus-5-5
 tools: read, bash, write
-skills: code-review
 ---
 
 Review the assigned change or finding. Do not edit the worktree.

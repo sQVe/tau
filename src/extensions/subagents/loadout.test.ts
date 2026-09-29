@@ -155,11 +155,7 @@ it('defaults bundled profiles to a model that the environment and custom profile
   for (const name of ['scout', 'worker', 'reviewer', 'qa']) {
     const launch = { profile: name };
 
-    const commands = [skillCommand('code-review', '/skills/code-review/SKILL.md')];
-
-    expect(resolveLoadout(launch, withBundled, undefined, commands).model).toBe(
-      'claude-bridge/claude-opus-5-5',
-    );
+    expect(resolveLoadout(launch, withBundled).model).toBe('claude-bridge/claude-opus-5-5');
   }
 
   const withoutModel = { profile: 'worker' };
@@ -389,11 +385,7 @@ it.for(['reviewer', 'qa'])(
   async (name, { onTestFinished }) => {
     const { context, request } = await workerFixture(onTestFinished);
 
-    expect(
-      resolveLoadout({ ...request, profile: name }, context, undefined, [
-        skillCommand('code-review', '/skills/code-review/SKILL.md'),
-      ]),
-    ).toMatchObject({
+    expect(resolveLoadout({ ...request, profile: name }, context)).toMatchObject({
       profile: name,
       role: 'investigation',
     });

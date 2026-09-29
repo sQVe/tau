@@ -10,11 +10,10 @@ allowlist, so no extension can activate another tool later, and with `--no-skill
 registered, and launch fails when a listed skill is not found.
 
 The bundled profiles name the tools their workers used. `scout` keeps the web tools and `bulk_read`,
-`worker` keeps `run_tests` and `commit`, `reviewer` loads the `code-review` skill, and `qa` keeps
-`agent_browser` and `agent_browser_code`. The bundled `qa` profile now refuses to start without
-`pi-agent-browser-native`; add a user `qa` profile without the browser tools to test only on the
-command line. The fixed prompt of a bundled worker's first request drops from 66k characters to
-25k–34k.
+`worker` keeps `run_tests` and `commit`, and `qa` keeps `agent_browser` and `agent_browser_code`.
+The bundled `qa` profile now refuses to start without `pi-agent-browser-native`; add a user `qa`
+profile without the browser tools to test only on the command line. The fixed prompt of a bundled
+worker's first request drops from 66k characters to 24k–34k.
 
 Task records move to format 4, which saves the tools and skills. Follow-ups of older tasks get their
 role's default tools and no skills.

@@ -17,8 +17,8 @@ import subagentsExtension, { createNoticeDelivery, delegationGuidelines } from '
 import type { WorkerNotice } from './presentation.js';
 import type { WorkerWidgetRow } from './widget.js';
 
-const registerTools = (overrides: Parameters<typeof fakeExtensionApi>[0] = {}) => {
-  const fake = fakeExtensionApi(overrides);
+const registerTools = () => {
+  const fake = fakeExtensionApi();
   subagentsExtension(fake.pi);
 
   return fake.tools;
@@ -711,12 +711,7 @@ it('defaults the launch timeout by profile role and keeps an explicit timeout', 
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
-
-  const tool = registerTools({
-    getCommands: () => [
-      { name: 'skill:code-review', source: 'skill', sourceInfo: { path: '/code-review/SKILL.md' } },
-    ],
-  } as Parameters<typeof fakeExtensionApi>[0]).get('subagent');
+  const tool = registerTools().get('subagent');
 
   const launch = vi
     .spyOn(WorkerController.prototype, 'launch')

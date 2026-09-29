@@ -109,9 +109,9 @@ A profile's `tools:` setting lists the tools its worker gets, separated by comma
 investigation profiles get `read` and `bash`, and editing profiles add `edit` and `write`. Workers
 always get `subagent_progress`, `subagent_report`, and `subagent_question`. A worker refuses to
 start when a listed tool is not registered. Workers load no skills unless the profile's `skills:`
-setting names them, for example `skills: code-review`. The bundled `qa` profile lists the browser
-tools from `pi-agent-browser-native`; without that package, add a `qa` profile to
-`~/.pi/agent/agents/` that lists other tools. See the
+setting names them, for example `skills: tdd`. The bundled `qa` profile lists the browser tools from
+`pi-agent-browser-native`; without that package, add a `qa` profile to `~/.pi/agent/agents/` that
+lists other tools. See the
 [tool and skill decision](adr/0065-give-workers-only-their-profile-tools-and-skills.md).
 
 Set `TAU_SUBAGENT_CAP` to limit how many live workers each parent controller runs at once. It takes
