@@ -78,6 +78,21 @@ const wrapWithPrefix = (prefix: string, text: string, width: number): string[] =
   return wrapped.map((line, index) => `${index === 0 ? prefix : indent}${line}`);
 };
 
+// Scrolls the option rows so the focused option stays visible within `room` lines.
+const visibleOptions = (blocks: string[][], cursor: number, room: number): string[] => {
+  const lines = blocks.flat();
+
+  if (lines.length <= room) {
+    return lines;
+  }
+
+  const start = blocks.slice(0, cursor).flat().length;
+  const end = start + (blocks[cursor]?.length ?? 1);
+  const first = Math.min(start, Math.max(0, end - room));
+
+  return lines.slice(first, first + Math.max(1, room));
+};
+
 class QuestionDialog implements Component {
   private state: QuestionnaireState;
   private readonly inputs: Input[];
@@ -142,19 +157,22 @@ class QuestionDialog implements Component {
       return [border, border];
     }
 
-    const top = [
+    const header = [
       border,
       ...this.tabBar(width),
       ...wrapTextWithAnsi(theme.bold(` ${facts.question}`), width),
       '',
-      ...this.optionRows(facts, width),
-      this.customRow(facts, width),
     ];
 
     const bottom = ['', truncateToWidth(theme.fg('dim', ` ${this.hint(facts)}`), width), border];
-    const previewRows = this.terminal.terminal.rows - top.length - bottom.length - piChromeRows;
+    // Pi shows only the last rows of a component taller than the terminal, hiding the question.
+    const room = this.terminal.terminal.rows - piChromeRows - header.length - bottom.length;
+    const blocks = [...this.optionBlocks(facts, width), [this.customRow(facts, width)]];
+    const cursor = this.state.questions[this.state.tab]?.cursor ?? 0;
+    const options = visibleOptions(blocks, cursor, room);
+    const preview = this.preview(facts, width, room - options.length);
 
-    return [...top, ...this.preview(facts, width, previewRows), ...bottom];
+    return [...header, ...options, ...preview, ...bottom];
   }
 
   private tabBar(width: number): string[] {
@@ -184,11 +202,11 @@ class QuestionDialog implements Component {
     return `${pointer}${index + 1}. ${facts.multiSelect ? box : ''}`;
   }
 
-  private optionRows(facts: DialogQuestion, width: number): string[] {
+  private optionBlocks(facts: DialogQuestion, width: number): string[][] {
     const { theme } = this;
     const question = this.state.questions[this.state.tab];
 
-    return facts.options.flatMap((option, index) => {
+    return facts.options.map((option, index) => {
       const prefix = this.rowPrefix(facts, index, question?.checked.includes(index) === true);
       const label = theme.fg(question?.cursor === index ? 'accent' : 'text', option.label);
 
@@ -222,7 +240,6 @@ class QuestionDialog implements Component {
     return truncateToWidth(prefix + text, width);
   }
 
-  // Pi shows the last rows of a component taller than the terminal, which would hide the options.
   private preview(facts: DialogQuestion, width: number, rows: number): string[] {
     const cursor = this.state.questions[this.state.tab]?.cursor ?? 0;
     const preview = facts.options[cursor]?.preview;
