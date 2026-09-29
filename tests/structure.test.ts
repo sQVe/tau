@@ -24,6 +24,7 @@ const isFixture = (path: string) => path.split(/[/\\]/).includes('fixtures');
 const pureModules = [
   'scripts/piVersionDrift.ts',
   'src/delegateModel/allowedModels.ts',
+  'src/extensions/askUserQuestion/questionnaire.ts',
   'src/extensions/tdd/configLayers.ts',
   'src/extensions/subagents/incompleteReport.ts',
   'src/extensions/subagents/piStop.ts',

@@ -35,11 +35,6 @@ const execFileAsync = promisify(execFile);
 
 const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
 
-const bundledQuestionExtensionPath = resolve(
-  import.meta.dirname,
-  '../node_modules/@juicesharp/rpiv-ask-user-question/index.ts',
-);
-
 const bundledWebAccessExtensionPath = resolve(
   import.meta.dirname,
   '../node_modules/pi-web-access/index.ts',
@@ -103,11 +98,7 @@ const createHarness = async (
       agentDirectory,
       providers: [faux],
       tools: ['read', 'bash', 'edit', 'write', 'commit'],
-      extensionPaths: [
-        tauExtensionsPath,
-        bundledQuestionExtensionPath,
-        bundledWebAccessExtensionPath,
-      ],
+      extensionPaths: [tauExtensionsPath, bundledWebAccessExtensionPath],
     },
     hasUI ? { uiContext: createScriptedUI(overlays) } : {},
   );

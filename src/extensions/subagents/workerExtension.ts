@@ -613,7 +613,7 @@ const handleToolCall = (
     };
   }
 
-  // The bundled questionnaire reconciler may restore this tool each turn. Workers must ask the parent instead.
+  // A profile may list this tool, but a worker pane has no user to answer it.
   if (event.toolName === 'ask_user_question') {
     return {
       block: true,

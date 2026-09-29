@@ -138,7 +138,9 @@ rendering and live network access manually in a session started as above:
 ### Questions
 
 Ask Pi something underspecified so it calls `ask_user_question`. Check that the questionnaire
-renders, that arrow keys and Enter select an option, and that Esc abandons it.
+renders, that arrow keys and Enter select an option, and that Esc abandons it. In a multi-select
+question, check that Space checks options, that typed text checks the "Type something." row, and
+that Enter submits from any row.
 
 ### Web access
 

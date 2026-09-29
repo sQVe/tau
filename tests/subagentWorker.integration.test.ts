@@ -23,6 +23,7 @@ import {
 import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
+import askUserQuestionExtension from '../src/extensions/askUserQuestion/index.js';
 import { workerArguments } from '../src/extensions/subagents/controller/inspect.js';
 import subagentsExtension from '../src/extensions/subagents/index.js';
 import { nativeIdentity, seedSession, workerTools } from '../src/extensions/subagents/profiles.js';
@@ -42,7 +43,7 @@ import workerExtension from '../src/extensions/subagents/workerExtension.js';
 const handoff =
   'Changes: edited source.txt\nEvidence: command-ok\nDecisions: None\nConcerns: Safety Net blocked deletion';
 
-it('keeps the real bundled questionnaire available to the parent', async () => {
+it('keeps the questionnaire available to the parent', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-parent-questionnaire-'));
 
   onTestFinished(() => {
@@ -76,10 +77,7 @@ it('keeps the real bundled questionnaire available to the parent', async () => {
     noSkills: true,
     noPromptTemplates: true,
     noThemes: true,
-    additionalExtensionPaths: [
-      fileURLToPath(import.meta.resolve('@juicesharp/rpiv-ask-user-question')),
-    ],
-    extensionFactories: [workerExtension],
+    extensionFactories: [askUserQuestionExtension, workerExtension],
   });
 
   await loader.reload();
@@ -142,7 +140,10 @@ it.each(['editing', 'investigation'] as const)(
       'index.js',
     );
 
-    const questionnaire = fileURLToPath(import.meta.resolve('@juicesharp/rpiv-ask-user-question'));
+    const questionnaire = fileURLToPath(
+      new URL('../src/extensions/askUserQuestion/index.ts', import.meta.url),
+    );
+
     const expectedSource = role === 'editing' ? 'after' : 'before';
     const directory = mkdtempSync(join(tmpdir(), 'tau-worker-pi-'));
 
@@ -386,7 +387,6 @@ it.each(['editing', 'investigation'] as const)(
     expect(activeWorkerTools).toEqual(subagentTools);
     publish(taskDirectory, 'dispatch.json', { taskId: task.taskId });
     await finished.promise;
-    // The questionnaire extension reactivates its tool before each prompt when it is registered.
     expect(session.getActiveToolNames().toSorted()).toEqual(allowed);
     expect(custom).not.toHaveBeenCalled();
     const directQuestion = results.find((result) => result.toolName === 'ask_user_question');
