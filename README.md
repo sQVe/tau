@@ -30,6 +30,14 @@ To limit the models Tau picks for workers and delegate tasks, add `allowedModels
 The repository list can only remove models from your list. Tau refuses any other model instead of
 falling back.
 
+Tau compacts the context of a manager session once it passes 200,000 tokens. Workers keep Pi's own
+compaction. To change the threshold, add `compaction` to either file. The threshold must be at least
+40,000 tokens:
+
+```json
+{ "compaction": { "thresholdTokens": 150000 } }
+```
+
 Pi runs the agent and its tools. Tau stages and commits with installed Git hooks without a prompt.
 Test results never control edit permission. Tau is not a general agent framework.
 

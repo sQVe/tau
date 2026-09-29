@@ -18,11 +18,14 @@ interface Candidate {
   predecessorTaskId?: string;
   successorTaskId?: string;
   name?: string;
+  label?: string;
+  profile?: string;
   description: string;
   nativeSessionId?: string;
   nativeSessionFile?: string;
   nativeEvidence: 'available' | 'missing' | 'invalid';
   state?: WorkerState;
+  pendingQuestionId?: string;
   report?: Report;
 }
 
@@ -94,12 +97,21 @@ const candidateState = (
   task: Task,
   ownership: Ownership,
   diagnostics: string[],
-): WorkerState | undefined => {
-  return readOrDiagnose(
-    () => deriveWorkerState(readWorkerFacts(directory, task.taskId), ownership(task.taskId)),
+): Pick<Candidate, 'state' | 'pendingQuestionId'> => {
+  const facts = readOrDiagnose(
+    () => readWorkerFacts(directory, task.taskId),
     `Task ${task.taskId} state`,
     diagnostics,
   );
+
+  if (!facts) {
+    return {};
+  }
+
+  const state = deriveWorkerState(facts, ownership(task.taskId));
+  const questionId = facts.pendingQuestion?.questionId;
+
+  return questionId === undefined ? { state } : { state, pendingQuestionId: questionId };
 };
 
 const readNativeEvidence = (
@@ -175,11 +187,13 @@ const taskCandidate = (
     taskId: task.taskId,
     ...(task.predecessorTaskId != null ? { predecessorTaskId: task.predecessorTaskId } : {}),
     ...(task.name != null ? { name: task.name } : {}),
+    ...(task.label != null ? { label: task.label } : {}),
+    profile: task.loadout.profile,
     description: task.task,
     nativeSessionId: task.nativeSessionId,
     nativeSessionFile: task.nativeSessionFile,
     nativeEvidence,
-    ...(state ? { state } : {}),
+    ...state,
     ...(report ? { report } : {}),
   };
 };
