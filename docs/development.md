@@ -196,6 +196,29 @@ The [changeset check](../.github/workflows/changeset.yml) requires a changeset w
 The [release workflow](../.github/workflows/release.yml) opens version PRs and creates Git tags and
 GitHub releases; Tau is private and is not published to npm.
 
+## Measuring token use
+
+Report the token use of Pi parent sessions and Tau workers over a time window, for example before
+and after a token cut:
+
+```sh
+pnpm token-usage --since 3d
+```
+
+`--since` and `--until` take an ISO date or time, or an age such as `12h` or `3d`. `--since`
+defaults to `7d` and `--until` to now. `--top` sets how many sessions to list, 10 by default.
+
+The report counts only entries timestamped inside the window. It lists tokens by kind and source,
+assistant turns by worker profile and model, the top sessions, and tool output characters by tool.
+Context means `input + cacheRead + cacheWrite` of one request. The median first request comes from
+each session's first request, and the median final context from each task's last request in the
+window, or for a parent, from each session's last request. The second line counts skipped records,
+so check it before comparing two reports.
+
+Claude and Codex workers write no Pi session, so the report cannot measure their tokens. The second
+line counts those that started in the window. A cut looks larger than it is when work moves from Pi
+workers to them.
+
 ## Measuring bulk reads
 
 Repeat this when the delegate or the session model changes;
