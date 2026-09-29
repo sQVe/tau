@@ -19,7 +19,7 @@ import { readEvent, readTask, readTasks, namePrefix, publish, validateTask } fro
 import { listTerminals, result } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
 import { isTaskId, taskVersion } from '../types.js';
-import type { Task } from '../types.js';
+import type { Loadout, Task } from '../types.js';
 import type { WorkerWidgetRow } from '../widget.js';
 import {
   ensureReplyActive,
@@ -39,6 +39,8 @@ import {
 import type { HerdrClient } from './inspect.js';
 import { checkHandoff, nativeReference, requireUnclaimed } from './launchSupport.js';
 import type { FollowUpPreparation, LaunchInput } from './launchSupport.js';
+import { InstallQueue, installWorkerPackages, piPackageManager } from './packageInstall.js';
+import type { WorkerPackageManager } from './packageInstall.js';
 import { EvidenceUnavailableError, handleRecovery, savedRecovery, taskStatus } from './record.js';
 import { createHandle, savedHandle, TaskController } from './task.js';
 import type { TaskContext } from './task.js';
@@ -86,6 +88,7 @@ export class WorkerController {
   private readonly live = new Set<string>();
   private readonly lifetime = new AbortController();
   private readonly placement = new WorkerPlacement();
+  private readonly installs = new InstallQueue();
   private readonly taskContext: TaskContext;
   private closed = false;
 
@@ -93,6 +96,7 @@ export class WorkerController {
     private readonly root: string,
     private readonly client: HerdrClient = herdrClient,
     notify: (notice: WorkerNotice) => void = () => undefined,
+    private readonly packageManager: (loadout: Loadout) => WorkerPackageManager = piPackageManager,
   ) {
     this.taskContext = {
       client,
@@ -404,7 +408,7 @@ export class WorkerController {
           publish(handle.directory, 'pane.json', created);
         },
         cwd: handle.task.loadout.cwd,
-        command: workerCommand(handle.task),
+        command: workerCommand(handle.task, handle.startup.extensionPackages),
         environment: {
           ...workerEnvironment(),
           TAU_WORKER_RECORD: handle.directory,
@@ -522,6 +526,52 @@ export class WorkerController {
 
     const listing = await this.readAgentListing(launchSignal, timing);
 
+    this.admit(input.loadout, listing.agents, source);
+    // Settings can change between starts, so a follow-up decides the duplicates again.
+    const extensionPackages = await this.installPackages(input.loadout, launchSignal, timing);
+
+    // A follow-up's native session can gain a live writer during the install.
+    const installed = source !== undefined && extensionPackages.length > 0;
+    const agents = installed ? await this.readAgents(launchSignal, timing) : listing.agents;
+
+    // Other launches can start during the install. Admit again so admission, allocation, and
+    // publication below run in one synchronous step.
+    this.admit(input.loadout, agents, source);
+
+    // Synchronous allocation and publication after listing coordinate launches in this process's event loop,
+    // not launches in independent processes.
+    const name = allocateName({
+      root: this.root,
+      parentSessionId: input.parentSessionId,
+      loadout: input.loadout,
+      live: agents,
+      suffix: nameSuffix,
+    });
+
+    task.name = name;
+    validateTask(task);
+
+    prepareTaskDirectory(directory, task, Boolean(source));
+    this.live.add(taskId);
+
+    const worker = new TaskController(
+      createHandle(directory, task, timing.expires),
+      this.taskContext,
+    );
+
+    worker.handle.startup.extensionPackages = extensionPackages;
+    this.workers.set(taskId, worker);
+    worker.arm(launchSignal);
+
+    return { taskId, worker, name };
+  }
+
+  // Every refusal that needs no task directory, checked before any download or write.
+  private admit(
+    loadout: LaunchInput['loadout'],
+    agents: unknown,
+    source?: FollowUpPreparation,
+  ): void {
     if (this.closed) {
       throw new Error('Parent controller stopped.');
     }
@@ -538,33 +588,27 @@ export class WorkerController {
       );
     }
 
-    this.checkFollowUpSource(input.loadout, listing.agents, source);
+    this.checkFollowUpSource(loadout, agents, source);
+  }
 
-    // Synchronous allocation and publication after listing coordinate launches in this process's event loop,
-    // not launches in independent processes.
-    const name = allocateName({
-      root: this.root,
-      parentSessionId: input.parentSessionId,
-      loadout: input.loadout,
-      live: listing.agents,
-      suffix: nameSuffix,
-    });
+  private installPackages(
+    loadout: LaunchInput['loadout'],
+    launchSignal: AbortSignal,
+    timing: ReturnType<typeof launchTiming>,
+  ) {
+    const signal = AbortSignal.any([
+      launchSignal,
+      this.lifetime.signal,
+      AbortSignal.timeout(Math.max(1, remainingLaunchBudget(timing))),
+    ]);
 
-    task.name = name;
-    validateTask(task);
+    return installWorkerPackages(loadout, this.packageManager, this.installs, signal);
+  }
 
-    prepareTaskDirectory(directory, task, Boolean(source));
-    this.live.add(taskId);
+  private async readAgents(launchSignal: AbortSignal, timing: ReturnType<typeof launchTiming>) {
+    const listing = await this.readAgentListing(launchSignal, timing);
 
-    const worker = new TaskController(
-      createHandle(directory, task, timing.expires),
-      this.taskContext,
-    );
-
-    this.workers.set(taskId, worker);
-    worker.arm(launchSignal);
-
-    return { taskId, worker, name };
+    return listing.agents;
   }
 
   private async readAgentListing(

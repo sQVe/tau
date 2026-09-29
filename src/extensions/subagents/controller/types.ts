@@ -21,6 +21,8 @@ export interface Handle {
     neverStarted: boolean;
     // Terminals that existed before a Pi launch; a lost launch reply leaves only newer ones to search.
     terminalsBeforeLaunch?: string[];
+    // Profile packages the worker loads with -e for this start.
+    extensionPackages: string[];
   };
   observation: { notifiedQuestions: Set<string> };
   cleanup: {

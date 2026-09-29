@@ -197,7 +197,7 @@ it.each(['editing', 'investigation'] as const)(
     vi.stubEnv('TAU_WORKER_RECORD', taskDirectory);
 
     const task = validateTask({
-      version: 5,
+      version: 6,
       taskId: 'fixture-task',
       task: 'Edit source.txt and check it.',
       parentSession: join(directory, 'parent.jsonl'),
@@ -225,6 +225,7 @@ it.each(['editing', 'investigation'] as const)(
         skills: [],
         instructionSets:
           role === 'editing' ? ['writing', 'coding', 'workflow'] : ['writing', 'workflow'],
+        packages: [],
       },
     });
 
@@ -233,7 +234,7 @@ it.each(['editing', 'investigation'] as const)(
     writeFileSync(join(directory, 'source.txt'), 'before\n');
     mkdirSync(join(directory, 'delete-fixture', '.git'), { recursive: true });
     writeFileSync(join(directory, 'delete-fixture', '.git', 'keep'), 'preserve');
-    const argumentsList = workerArguments(task);
+    const argumentsList = workerArguments(task, []);
 
     const extensionPaths = [
       ...argumentsList.flatMap((argument, index) =>

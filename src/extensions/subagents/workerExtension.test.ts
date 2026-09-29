@@ -50,7 +50,7 @@ const setup = (
   const createdAt = Date.now();
 
   publish(directory, 'task.json', {
-    version: 5,
+    version: 6,
     taskId: 'task',
     task: 'Read the assigned file.',
     parentSession: join(directory, 'parent.jsonl'),
@@ -75,6 +75,7 @@ const setup = (
       skills: [],
       instructionSets:
         role === 'editing' ? ['writing', 'coding', 'workflow'] : ['writing', 'workflow'],
+      packages: [],
     },
   });
 

@@ -37,6 +37,7 @@ const supportedProfileKeys = new Set([
   'tools',
   'skills',
   'instruction-sets',
+  'packages',
 ]);
 
 const parseFields = (frontmatter: string) => {
@@ -175,6 +176,7 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
     tools: parseTools(fields, role),
     skills: parseList('skills', fields.get('skills')) ?? [],
     instructionSets: parseInstructionSets(fields),
+    packages: parseList('packages', fields.get('packages')) ?? [],
     instructions: body.trim(),
     source,
   };

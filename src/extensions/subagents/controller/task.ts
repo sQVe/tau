@@ -17,6 +17,7 @@ import { remainingCleanupBudget, remainingWorkBudget, workBudget } from './budge
 import { inspectWorker, waitForPiIdentity, waitForWorkerReadiness } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
 import { handleRecovery, readOwnedWorker, taskStatus } from './record.js';
+import { WorkerExitedError } from './shellIdentity.js';
 import { stopPiWorker } from './stop.js';
 import type { Handle } from './types.js';
 
@@ -46,7 +47,7 @@ export const createHandle = (directory: string, task: Task, expires: number): Ha
   abort: new AbortController(),
   expires,
   identity: {},
-  startup: { neverStarted: true },
+  startup: { neverStarted: true, extensionPackages: [] },
   observation: { notifiedQuestions: new Set() },
   cleanup: { recordErrors: [] },
 });
@@ -148,9 +149,19 @@ export class TaskController {
   startupFailureDetail(error: unknown): string {
     const { handle } = this;
 
-    return handle.startup.neverStarted
-      ? `No worker was started; no automatic retry. ${String(error)}`
-      : `Worker startup failed; no automatic retry. ${String(error)}`;
+    if (handle.startup.neverStarted) {
+      return `No worker was started; no automatic retry. ${String(error)}`;
+    }
+
+    const detail = `Worker startup failed; no automatic retry. ${String(error)}`;
+    const packages = handle.startup.extensionPackages;
+
+    // Pi exits before Tau's worker extension runs when a -e package fails to load.
+    if (error instanceof WorkerExitedError && packages.length) {
+      return `${detail} Pi exits at startup when a package fails to load. Check each profile package with \`pi -e <source>\`: ${packages.join(', ')}.`;
+    }
+
+    return detail;
   }
 
   // The pane display title is cosmetic. Startup is already complete, so an unresponsive herdr call

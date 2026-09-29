@@ -1,6 +1,6 @@
 {
-  "version": 7,
-  "taskId": "newer",
+  "version": 5,
+  "taskId": "version-5-pi",
   "name": "scout-ab",
   "task": "Inspect source.",
   "parentSession": "/work/parent.jsonl",
@@ -9,8 +9,8 @@
   "deadline": 20000,
   "cancellationBudget": 1000,
   "monotonicDeadline": 20000,
-  "nativeSessionId": "native-newer",
-  "nativeSessionFile": "/work/agent/newer.jsonl",
+  "nativeSessionId": "native-version-5-pi",
+  "nativeSessionFile": "/work/agent/version-5-pi.jsonl",
   "loadout": {
     "harness": "pi",
     "profile": "scout",
@@ -23,8 +23,6 @@
     "instructions": "Inspect the assigned source.",
     "tools": ["read", "bash", "web_search"],
     "skills": ["/work/agent/skills/code-review/SKILL.md"],
-    "instructionSets": ["writing", "workflow"],
-    "packages": ["npm:pi-agent-browser-native@0.8.2", "/work/extensions/probe"]
-  },
-  "futureField": "saved by a newer Tau"
+    "instructionSets": ["writing", "workflow"]
+  }
 }

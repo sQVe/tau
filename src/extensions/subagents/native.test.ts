@@ -24,7 +24,7 @@ const fixture = () => {
   });
 
   const task: Task = {
-    version: 5,
+    version: 6,
     taskId: 'task',
     task: 'Inspect.',
     parentSession: join(directory, 'parent.jsonl'),
