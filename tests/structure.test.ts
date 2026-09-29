@@ -22,6 +22,8 @@ const isFixture = (path: string) => path.split(/[/\\]/).includes('fixtures');
 // Pure decision modules take every read, clock, and environment value as a fact from the caller.
 // Register a module here once its decisions are split from its reads.
 const pureModules = [
+  'scripts/compactionRecall.ts',
+  'scripts/compactionReplayReport.ts',
   'scripts/piVersionDrift.ts',
   'scripts/tokenUsageReport.ts',
   'src/delegateModel/allowedModels.ts',

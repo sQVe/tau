@@ -28,7 +28,7 @@ export interface SkippedRecords {
   otherHarnessTasks: WorkerTask[];
 }
 
-interface Usage {
+export interface Usage {
   input: number;
   output: number;
   cacheRead: number;
@@ -81,7 +81,7 @@ export interface TokenUsageReport {
   tools: Map<string, ToolRow>;
 }
 
-type Entry = Record<string, unknown>;
+export type Entry = Record<string, unknown>;
 
 interface CountedFile {
   file: SessionFile;
@@ -89,10 +89,10 @@ interface CountedFile {
   firstTurnSeen: boolean;
 }
 
-const isRecord = (value: unknown): value is Entry =>
+export const isRecord = (value: unknown): value is Entry =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
+export const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
 
 const isOptionalText = (value: unknown) => value === undefined || typeof value === 'string';
 
@@ -153,11 +153,11 @@ export const ownsSession = (task: WorkerTask, taskDirectory: string, sessionPath
   return named || `${taskDirectory}/${fileName(sessionPath)}` === sessionPath;
 };
 
-const contextTokens = (usage: Usage) => usage.input + usage.cacheRead + usage.cacheWrite;
+export const contextTokens = (usage: Usage) => usage.input + usage.cacheRead + usage.cacheWrite;
 
-const totalTokens = (usage: Usage) => contextTokens(usage) + usage.output;
+export const totalTokens = (usage: Usage) => contextTokens(usage) + usage.output;
 
-const parseUsage = (value: unknown): Usage | undefined => {
+export const parseUsage = (value: unknown): Usage | undefined => {
   if (!isRecord(value)) {
     return undefined;
   }
@@ -172,7 +172,7 @@ const parseUsage = (value: unknown): Usage | undefined => {
   return totalTokens(usage) === 0 ? undefined : usage;
 };
 
-const median = (values: number[]) => {
+export const median = (values: number[]) => {
   if (values.length === 0) {
     return undefined;
   }
@@ -184,8 +184,9 @@ const median = (values: number[]) => {
   return (lower + upper) / 2;
 };
 
-const parseEntries = (report: TokenUsageReport, source: string) => {
+export const parseEntries = (source: string) => {
   const entries: Entry[] = [];
+  let malformedLines = 0;
 
   for (const line of source.split('\n').filter((candidate) => candidate.trim() !== '')) {
     try {
@@ -194,17 +195,17 @@ const parseEntries = (report: TokenUsageReport, source: string) => {
       if (isRecord(entry)) {
         entries.push(entry);
       } else {
-        report.malformedLines += 1;
+        malformedLines += 1;
       }
     } catch {
-      report.malformedLines += 1;
+      malformedLines += 1;
     }
   }
 
-  return entries;
+  return { entries, malformedLines };
 };
 
-const upsert = <Value>(map: Map<string, Value>, key: string, create: () => Value) => {
+export const upsert = <Value>(map: Map<string, Value>, key: string, create: () => Value) => {
   const value = map.get(key) ?? create();
 
   map.set(key, value);
@@ -234,7 +235,7 @@ const addUsage = (report: TokenUsageReport, counted: CountedFile, source: string
 const taskAt = (tasks: WorkerTask[], time: number) =>
   tasks.findLast((task) => task.createdAt <= time) ?? tasks[0];
 
-const modelName = (message: Entry) => {
+export const modelName = (message: Entry) => {
   const model = text(message.model) ?? 'unknown';
   const provider = text(message.provider);
 
@@ -375,7 +376,10 @@ const countInWindow = (
 };
 
 const countFile = (report: TokenUsageReport, file: SessionFile, seen: Set<string>) => {
-  const entries = parseEntries(report, file.text);
+  const { entries, malformedLines } = parseEntries(file.text);
+
+  report.malformedLines += malformedLines;
+
   const header = entries.find((entry) => entry.type === 'session');
 
   if (header === undefined) {
@@ -403,7 +407,7 @@ const countFile = (report: TokenUsageReport, file: SessionFile, seen: Set<string
   }
 };
 
-const headerTime = (file: SessionFile) => {
+export const headerTime = (file: SessionFile) => {
   const [firstLine = ''] = file.text.split('\n', 1);
 
   try {
@@ -449,10 +453,10 @@ export const tokenUsageReport = (
   return report;
 };
 
-const formatNumber = (value: number | undefined) =>
+export const formatNumber = (value: number | undefined) =>
   value === undefined ? '-' : Math.round(value).toLocaleString('en-US');
 
-const table = (headings: string[], rows: string[][]) => {
+export const table = (headings: string[], rows: string[][]) => {
   const all = [headings, ...rows];
 
   const widths = headings.map((_, column) =>

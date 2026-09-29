@@ -21,7 +21,7 @@ const usage = `Usage: node scripts/tokenUsage.ts [--since 7d] [--until <time>] [
 
 --since and --until take an ISO date or time, or an age such as 12h or 3d.`;
 
-const listFiles = async (directory: string) => {
+export const listFiles = async (directory: string) => {
   try {
     const names = await readdir(directory, { recursive: true, encoding: 'utf8' });
 
@@ -43,7 +43,7 @@ const readTask = async (path: string): Promise<TaskRecord | undefined> => {
 };
 
 // A file last written before the window holds no entry inside it. Undefined means unreadable.
-const readSession = async (path: string, side: Side, tasks: WorkerTask[], since: number) => {
+export const readSession = async (path: string, side: Side, tasks: WorkerTask[], since: number) => {
   try {
     const { mtimeMs } = await stat(path);
 

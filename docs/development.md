@@ -232,6 +232,15 @@ Claude and Codex workers write no Pi session, so the report cannot measure their
 line counts those that started in the window. A cut looks larger than it is when work moves from Pi
 workers to them.
 
+To estimate what a lower compaction threshold would save on parent sessions, and how much of what
+the manager used again survived real compactions, replay the saved sessions without model calls:
+
+```sh
+pnpm compaction-replay --since 7d --threshold 150k,200k,300k
+```
+
+It takes the same `--since` and `--until` as `pnpm token-usage`, and prints its assumptions first.
+
 ## Measuring bulk reads
 
 Repeat this when the delegate or the session model changes;

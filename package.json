@@ -26,6 +26,7 @@
     "test:coverage": "vp test --coverage",
     "test:unit": "vp test --exclude '**/*.integration.test.ts'",
     "token-usage": "node scripts/tokenUsage.ts",
+    "compaction-replay": "node scripts/compactionReplay.ts",
     "typecheck": "pnpm exec tsc --noEmit",
     "release:github": "pnpm changeset tag"
   },
