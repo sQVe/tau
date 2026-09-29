@@ -4317,7 +4317,7 @@ it('names the package whose install outlasts the launch budget', async ({ onTest
   const saved = readdirSync(directory);
   const loadout = { ...input.loadout, packages: ['npm:slow'] };
 
-  // Pi's AbortSignal.timeout ignores fake timers, so this spends about 150 ms of real time.
+  // AbortSignal.timeout ignores fake timers, so this test waits in real time.
   await expect(controller.launch({ ...input, loadout, timeout: 200 })).rejects.toThrow(
     'Worker profile package npm:slow install ran out of launch time.',
   );
