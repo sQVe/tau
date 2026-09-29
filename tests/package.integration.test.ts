@@ -298,3 +298,29 @@ it('reports an extension error for a missing bundled web extension', async ({ on
   expect(webAccessError).toContain('web_search');
   expect(webAccessError).toContain('fetch_content');
 }, 30_000);
+
+it('loads Tau as a Pi package without extension warnings', async ({ onTestFinished }) => {
+  const workingDirectory = await mkdtemp(join(tmpdir(), 'tau-package-warnings-'));
+  onTestFinished(() => rm(workingDirectory, { recursive: true, force: true }));
+
+  const agentDirectory = join(workingDirectory, 'agent');
+  isolateWebAccessConfig(agentDirectory, onTestFinished);
+
+  const loader = new DefaultResourceLoader({
+    cwd: workingDirectory,
+    agentDir: agentDirectory,
+    settingsManager: SettingsManager.inMemory({
+      packages: [fileURLToPath(new URL('../', import.meta.url))],
+    }),
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+  });
+
+  await loader.reload();
+
+  const { errors, warnings } = loader.getExtensions();
+
+  expect(errors).toEqual([]);
+  expect(warnings).toEqual([]);
+}, 30_000);

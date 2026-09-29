@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type {
   AgentBeforeSettleEventResult,
   ExtensionContext,
+  ExtensionToolContext,
   SessionEntry,
   ToolCallEventResult,
 } from '@earendil-works/pi-coding-agent';
@@ -91,7 +92,7 @@ const setup = (
     },
     shutdown,
     ui: { notify: vi.fn<ExtensionContext['ui']['notify']>() },
-  } as unknown as ExtensionContext;
+  } as unknown as ExtensionToolContext;
 
   workerExtension(fake.pi);
 

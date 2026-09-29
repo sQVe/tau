@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { initTheme } from '@earendil-works/pi-coding-agent';
 import type { TUI } from '@earendil-works/pi-tui';
 import { expect, it, vi } from 'vitest';
@@ -44,7 +44,7 @@ const setup = (hasUI = false, trusted = true) => {
       hasUI,
       ui: { notify },
       isProjectTrusted: () => trusted,
-    }) as unknown as ExtensionContext;
+    }) as unknown as ExtensionToolContext;
 
   const emit = (name: string, cwd: string, event: Record<string, unknown> = {}) =>
     fake.handlers.has(name) ? fake.handler(name)(event, contextFor(cwd)) : undefined;

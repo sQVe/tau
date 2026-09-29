@@ -2,5 +2,4 @@
 'tau': major
 ---
 
-Require Pi 0.87.1 or later within the 0.87 series from `@earendil-works/pi-coding-agent`. Update
-comment review to use the session's model registry and migrate schemas to TypeBox 1.x.
+Update comment review to use the session's model registry and migrate schemas to TypeBox 1.x.
