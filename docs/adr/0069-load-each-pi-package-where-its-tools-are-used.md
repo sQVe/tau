@@ -22,8 +22,8 @@
   its tool again, as the questionnaire does, and the parent still lists the package's skills.
 - Filter a rarely used package out of the user's settings. Rejected: the parent stops paying, but no
   profile can use the package either.
-- Let a profile name the packages its workers need, and load them only in those workers. Chosen: the
-  parent stays the same size as profiles are added, and each profile keeps the packages it needs.
+- Let a profile name the packages its workers need, and load them only in those workers. Chosen: a
+  profile's packages stay out of the parent's prompt, and each profile keeps the packages it needs.
 
 ## Decision
 
@@ -38,6 +38,16 @@ profile.
   loads it at launch, and the parent does not load it. The worker still loads every extension the
   parent loads, so adding a package never removes CC Safety Net or a model provider.
 
+### Loading a profile's packages
+
+- A profile's `packages:` setting lists package sources as `pi -e` takes them.
+- Before it opens the worker's pane, the parent installs each package into Pi's temporary `-e`
+  cache. An install failure stops the launch and names the package. When Pi installs at worker
+  startup instead, a failure only shows as a worker that exited.
+- The worker loads each package with `-e`, after Tau's worker extensions.
+- A package that the user's or project's settings already load gets no `-e`, and the launch goes on.
+  Loading it twice would leave the tool conflict to Pi's load order.
+
 ### Trimming the parent's prompt
 
 - Count parent tool calls and skill reads from saved sessions before cutting.
@@ -47,12 +57,14 @@ profile.
 
 ## Tradeoffs
 
-- The parent's prompt stays the same size as profiles are added.
+- A new profile adds no package tools or skills to the parent's prompt. It still adds its name and
+  description to the `subagent` tool.
 - The user keeps control of the packages the parent loads, and Tau works without them.
 - Cost: the parent cannot call a profile's tools directly. It must start a worker for that work.
 - Cost: a profile gets every tool and skill of the packages it names. Its tool allowlist narrows the
   tools, but not the skills.
 - Cost: a worker launch fails when a named package cannot be installed or loaded.
+- Cost: Pi keeps an unpinned npm package at the version it first cached. Pin a version to update it.
 
 ## See also
 

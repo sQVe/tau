@@ -61,8 +61,8 @@ The bundled profiles name the tools their workers used in saved sessions:
 - `reviewer`: the investigation defaults and `write`. It loads no skill, because the manager copies
   the reviewer rules from `code-review` into each assignment.
 - `qa`: the investigation defaults, `write`, `agent_browser`, and `agent_browser_code`. The browser
-  tools come from `pi-agent-browser-native`, which Tau does not bundle. Without that package, `qa`
-  refuses to start until a user or project `qa` profile drops those tools.
+  tools come from `pi-agent-browser-native`, which Tau does not bundle. The `qa` profile loads that
+  package itself ([ADR 0069](./0069-load-each-pi-package-where-its-tools-are-used.md)).
 
 The investigation profiles get `write` because their instructions save long details to a file.
 
@@ -84,3 +84,4 @@ task saved in format 1 or 3 gets its role's default tools and no skills.
 - [ADR 0028: Keep worker control in the parent](./0028-keep-worker-control-in-the-parent.md)
 - [ADR 0053: Version each saved record format](./0053-version-each-saved-record-format.md)
 - [ADR 0058: Run subagents only as Pi workers](./0058-run-subagents-only-as-pi-workers.md)
+- [ADR 0069: Load each Pi package where its tools are used](./0069-load-each-pi-package-where-its-tools-are-used.md)
