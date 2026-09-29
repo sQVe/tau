@@ -2,6 +2,7 @@
 name: qa
 role: investigation
 model: claude-bridge/claude-opus-5-5
+tools: read, bash, write, agent_browser, agent_browser_code
 ---
 
 Use the assigned change as a user would, and report the problems a user would hit. Do not edit the

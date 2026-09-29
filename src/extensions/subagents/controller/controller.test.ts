@@ -221,7 +221,7 @@ it('saves a launched Pi task in the current record format', async ({ onTestFinis
   const launched = await fixture.controller.launch(fixture.input);
 
   expect(JSON.parse(readFileSync(join(launched.directory, 'task.json'), 'utf8'))).toMatchObject({
-    version: 3,
+    version: 4,
   });
 });
 
@@ -1108,7 +1108,7 @@ const newerTauRecord = (source: ReturnType<typeof readTask>, predecessorTaskId: 
   taskId: 'newer',
   name: 'critic-ab',
   predecessorTaskId,
-  version: 4,
+  version: 5,
   loadout: { ...source.loadout, profile: 'critic' },
   futureField: 'written by a newer Tau',
 });
@@ -2604,6 +2604,20 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
   ]);
 
   expect(workerArguments(task)).not.toContain('--no-extensions');
+
+  const narrowed = {
+    ...task,
+    loadout: { ...task.loadout, tools: ['read'], skills: ['/s/SKILL.md'] },
+  };
+
+  expect(workerArguments(narrowed).slice(9, 14)).toEqual([
+    '--tools',
+    'read,subagent_progress,subagent_report,subagent_question',
+    '--no-skills',
+    '--skill',
+    '/s/SKILL.md',
+  ]);
+
   expect(launched.state).toBe('starting');
   recordEvent(launched.directory, task.taskId, 'accepted', 'Accepted.');
 

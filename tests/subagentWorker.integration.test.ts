@@ -25,7 +25,7 @@ import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { workerArguments } from '../src/extensions/subagents/controller/inspect.js';
 import subagentsExtension from '../src/extensions/subagents/index.js';
-import { nativeIdentity, seedSession } from '../src/extensions/subagents/profiles.js';
+import { nativeIdentity, seedSession, workerTools } from '../src/extensions/subagents/profiles.js';
 import {
   acceptReply,
   readAcknowledgement,
@@ -191,7 +191,7 @@ it.each(['editing', 'investigation'] as const)(
     vi.stubEnv('TAU_WORKER_RECORD', taskDirectory);
 
     const task = validateTask({
-      version: 3,
+      version: 4,
       taskId: 'fixture-task',
       task: 'Edit source.txt and check it.',
       parentSession: join(directory, 'parent.jsonl'),
@@ -211,6 +211,12 @@ it.each(['editing', 'investigation'] as const)(
         agentDirectory: directory,
         permissions: 'trusted-full-tools',
         instructions: 'Edit the fixture only.',
+        // The editing profile keeps the questionnaire to check that the worker redirects it.
+        tools:
+          role === 'editing'
+            ? ['read', 'bash', 'edit', 'write', 'ask_user_question']
+            : ['read', 'bash'],
+        skills: [],
       },
     });
 
@@ -250,6 +256,7 @@ it.each(['editing', 'investigation'] as const)(
       modelRuntime: runtime,
       model,
       thinkingLevel: 'off',
+      tools: argumentsList[argumentsList.indexOf('--tools') + 1]!.split(','),
       sessionManager: SessionManager.open(task.nativeSessionFile),
       settingsManager,
       resourceLoader: loader,
@@ -360,29 +367,32 @@ it.each(['editing', 'investigation'] as const)(
     });
 
     await session.bindExtensions({ uiContext, mode: 'tui' });
-    expect(session.getActiveToolNames()).not.toContain('ask_user_question');
+    const allowed = workerTools(task.loadout).toSorted();
+    expect(session.getActiveToolNames().toSorted()).toEqual(allowed);
 
-    const workerTools = session
+    const subagentTools = session
       .getAllTools()
       .map((tool) => tool.name)
       .filter((name) => name.startsWith('subagent'))
       .toSorted();
 
-    expect(workerTools).toEqual(['subagent_progress', 'subagent_question', 'subagent_report']);
+    expect(subagentTools).toEqual(['subagent_progress', 'subagent_question', 'subagent_report']);
 
     const activeWorkerTools = session
       .getActiveToolNames()
       .filter((name) => name.startsWith('subagent'))
       .toSorted();
 
-    expect(activeWorkerTools).toEqual(workerTools);
+    expect(activeWorkerTools).toEqual(subagentTools);
     publish(taskDirectory, 'dispatch.json', { taskId: task.taskId });
     await finished.promise;
-    expect(session.getActiveToolNames()).toContain('ask_user_question');
+    // The questionnaire extension reactivates its tool before each prompt when it is registered.
+    expect(session.getActiveToolNames().toSorted()).toEqual(allowed);
     expect(custom).not.toHaveBeenCalled();
     const directQuestion = results.find((result) => result.toolName === 'ask_user_question');
     expect(directQuestion?.isError).toBe(true);
-    expect(directQuestion?.text).toContain('subagent_question');
+
+    expect(directQuestion?.text).toContain(role === 'editing' ? 'subagent_question' : 'not found');
     const parentQuestions = results.filter((result) => result.toolName === 'subagent_question');
     expect(parentQuestions.map((result) => result.isError)).toEqual([true, false]);
     expect(parentQuestions[0]?.text).toContain('64 KB');

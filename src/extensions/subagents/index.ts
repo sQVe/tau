@@ -248,7 +248,7 @@ const launchWorker = async (
   );
 
   const controller = runtime.getController();
-  const loadout = resolveLoadout(parameters, context, signal);
+  const loadout = resolveLoadout(parameters, context, signal, runtime.pi.getCommands());
 
   const timeout = (parameters.timeoutSeconds ?? defaultTimeoutSeconds[loadout.role]) * 1000;
 

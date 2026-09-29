@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import { fauxProvider, InMemoryCredentialStore, InMemoryModelsStore } from '@earendil-works/pi-ai';
 import { ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, SlashCommandInfo } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
 import { fixtureLoadout } from './fixtures/loadout.js';
@@ -21,6 +21,9 @@ import { checkWorkerRuntime, resolveLoadout, validateSavedLoadout } from './load
 import { listProfiles, resolveProfile, parseProfile } from './profiles.js';
 
 const profile = (body: string) => `---\nname: worker\nrole: editing\nthinking: off\n---\n${body}`;
+
+const skillCommand = (name: string, path: string) =>
+  ({ name: `skill:${name}`, source: 'skill', sourceInfo: { path } }) as SlashCommandInfo;
 
 const startup =
   (...startupArguments: Parameters<typeof checkWorkerRuntime>) =>
@@ -79,6 +82,8 @@ it('resolves an explicit worker model and names the configured models when none 
     agentDirectory: directory,
     permissions: 'trusted-full-tools',
     instructions: resolved.instructions,
+    tools: resolved.tools,
+    skills: [],
   });
 
   mkdirSync(join(directory, 'agents'));
@@ -215,6 +220,12 @@ it('replays a saved loadout only under the same trust, directories, model, and t
   );
 
   expect(() => validateSavedLoadout({ ...saved, thinking: 'high' }, context)).toThrow('thinking');
+
+  const skill = join(directory, 'skills', 'SKILL.md');
+
+  expect(() => validateSavedLoadout({ ...saved, skills: [skill] }, context)).toThrow(
+    `skill is missing: ${skill}`,
+  );
 });
 
 const allowModels = (path: string, allowedModels: string[] | undefined) => {
@@ -289,7 +300,7 @@ it.for<[string, string[] | undefined, string[] | undefined, string]>([
   },
 );
 
-it('refuses worker startup without the saved model, cwd, or CC Safety Net and activates the worker tools', async ({
+it('refuses worker startup without the saved model, cwd, CC Safety Net, or profile tools and activates only those tools', async ({
   onTestFinished,
 }) => {
   const { directory, model, request } = await workerFixture(onTestFinished);
@@ -311,11 +322,17 @@ it('refuses worker startup without the saved model, cwd, or CC Safety Net and ac
     getCommands: () => [
       { name: 'cc-safety-net:2', source: 'extension', sourceInfo: { path: safetyPath } },
     ],
-    getAllTools: () => [
-      { name: 'read', sourceInfo: { source: 'builtin' } },
-      { name: 'ask_user_question', sourceInfo: { source: 'extension' } },
-      { name: 'commit', sourceInfo: { source: 'extension' } },
-    ],
+    getAllTools: () =>
+      [
+        'read',
+        'bash',
+        'edit',
+        'write',
+        'ask_user_question',
+        'subagent_progress',
+        'subagent_report',
+        'subagent_question',
+      ].map((name) => ({ name })),
     setActiveTools,
   } as unknown as Parameters<typeof checkWorkerRuntime>[1];
 
@@ -332,11 +349,13 @@ it('refuses worker startup without the saved model, cwd, or CC Safety Net and ac
     'bash',
     'edit',
     'write',
-    'commit',
     'subagent_progress',
     'subagent_report',
     'subagent_question',
   ]);
+
+  const unregistered = startup({ ...loadout, tools: ['read', 'web_search', 'commit'] }, pi, worker);
+  expect(unregistered).toThrow('web_search, commit');
 
   expect(startup(loadout, pi, { ...worker, isProjectTrusted: () => false })).toThrow('trust');
   expect(startup(loadout, pi, { ...worker, model: undefined })).toThrow('no fallback');
@@ -372,6 +391,40 @@ it.for(['reviewer', 'qa'])(
     });
   },
 );
+
+it('saves the profile tools, or the role defaults, and the paths of its skills', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, request } = await workerFixture(onTestFinished);
+  mkdirSync(join(directory, 'agents'));
+
+  const saveProfile = (name: string, settings: string) => {
+    writeFileSync(
+      join(directory, 'agents', `${name}.md`),
+      `---\nname: ${name}\nrole: investigation\n${settings}---\nInspect.\n`,
+    );
+  };
+
+  saveProfile('narrow', 'tools: read, web_search, read\nskills: code-review\n');
+  saveProfile('plain', '');
+  saveProfile('unknown', 'skills: code-review, missing-skill\n');
+
+  const commands = [
+    { name: 'skill:code-review', source: 'extension', sourceInfo: { path: '/extension.ts' } },
+    skillCommand('code-review', '/skills/code-review/SKILL.md'),
+  ] as SlashCommandInfo[];
+
+  const resolve = (name: string) =>
+    resolveLoadout({ ...request, profile: name }, context, undefined, commands);
+
+  expect(resolve('narrow')).toMatchObject({
+    tools: ['read', 'web_search'],
+    skills: ['/skills/code-review/SKILL.md'],
+  });
+
+  expect(resolve('plain')).toMatchObject({ tools: ['read', 'bash'], skills: [] });
+  expect(() => resolve('unknown')).toThrow('Worker profile skill not found: missing-skill');
+});
 
 it('defaults bundled roles to medium effort without effort settings in markdown', () => {
   for (const name of ['scout', 'worker', 'reviewer', 'qa']) {
@@ -512,7 +565,7 @@ it('validates only the requested winning profile and rejects malformed overrides
   for (const content of [
     profile('Task').replace('editing', 'bad'),
     profile('Task').replace('thinking: off', 'thinking: invalid'),
-    profile('Task').replace('thinking: off', 'tools: read'),
+    profile('Task').replace('thinking: off', 'tools: read, web search'),
     '---\nname: worker\nrole: editing\nTask without closing frontmatter',
   ]) {
     writeFileSync(winner, content);
@@ -625,7 +678,7 @@ it('resolves profile precedence and refuses discarded isolation and transcript s
   for (const setting of [
     'session-mode: lineage-only',
     'permissions: trusted-full-tools',
-    'tools: read',
+    'extensions: none',
   ]) {
     expect(() =>
       parseProfile(`---\nrole: editing\n${setting}\n---\nTask`, 'worker', 'fixture'),

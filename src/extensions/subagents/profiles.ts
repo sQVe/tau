@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { Value } from 'typebox/value';
 
 import { assignmentContractFor, handoffContract } from './handoff.js';
-import { thinkingSchema } from './types.js';
+import { thinkingSchema, toolNamePattern } from './types.js';
 import type { Loadout, Profile, Task } from './types.js';
 
 export interface ProfileSummary {
@@ -25,7 +25,16 @@ interface ProfileCandidate {
 
 const matchField = (line: string) => line.match(/^([a-z-]+):\s*(.+)$/);
 
-const supportedProfileKeys = new Set(['name', 'description', 'role', 'model', 'thinking', 'cli']);
+const supportedProfileKeys = new Set([
+  'name',
+  'description',
+  'role',
+  'model',
+  'thinking',
+  'cli',
+  'tools',
+  'skills',
+]);
 
 const parseFields = (frontmatter: string) => {
   const fields = new Map<string, string>();
@@ -76,6 +85,40 @@ const parseRole = (fields: Map<string, string>): Profile['role'] => {
   return role;
 };
 
+export const roleTools: Record<Profile['role'], string[]> = {
+  investigation: ['read', 'bash'],
+  editing: ['read', 'bash', 'edit', 'write'],
+};
+
+export const workerTools = (loadout: Loadout): string[] => [
+  ...new Set([...loadout.tools, 'subagent_progress', 'subagent_report', 'subagent_question']),
+];
+
+const parseList = (key: string, value: string | undefined): string[] | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const items = value.split(',').map((item) => item.trim());
+
+  if (items.some((item) => !item)) {
+    throw new Error(`Profile ${key} must be a comma-separated list of names.`);
+  }
+
+  return [...new Set(items)];
+};
+
+const parseTools = (fields: Map<string, string>, role: Profile['role']): string[] => {
+  const tools = parseList('tools', fields.get('tools')) ?? roleTools[role];
+  const invalid = tools.find((tool) => !new RegExp(toolNamePattern).test(tool));
+
+  if (invalid !== undefined) {
+    throw new Error(`Invalid profile tool name: ${invalid}`);
+  }
+
+  return tools;
+};
+
 const requirePiCli = (fields: Map<string, string>): void => {
   const cli = fields.get('cli') ?? 'pi';
 
@@ -110,6 +153,8 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
     role,
     model: fields.get('model'),
     thinking,
+    tools: parseTools(fields, role),
+    skills: parseList('skills', fields.get('skills')) ?? [],
     instructions: body.trim(),
     source,
   };
@@ -217,7 +262,7 @@ export const workerInstructions = (loadout: Loadout): string =>
     loadout.instructions,
     `${assignmentContractFor(loadout.role)}${handoffContract}`,
     [
-      'Full tools and CC Safety Net are not a sandbox.',
+      'Your tools and CC Safety Net are not a sandbox.',
       'Do not commit, merge, or reset unless the task says so, and never run extra model trials.',
       'Preserve unrelated edits.',
     ].join(' '),

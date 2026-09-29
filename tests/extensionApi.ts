@@ -27,6 +27,7 @@ export const fakeExtensionApi = (overrides: Partial<ExtensionAPI> = {}) => {
     registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
     registerCommand: (name: string, command: Command) => commands.set(name, command),
     registerShortcut: () => undefined,
+    getCommands: () => [],
     registerMessageRenderer: (customType: string, renderer: MessageRenderer) => {
       messageRenderers.set(customType, renderer);
     },

@@ -48,7 +48,7 @@ const setup = (
   const createdAt = Date.now();
 
   publish(directory, 'task.json', {
-    version: 3,
+    version: 4,
     taskId: 'task',
     task: 'Read the assigned file.',
     parentSession: join(directory, 'parent.jsonl'),
@@ -69,6 +69,8 @@ const setup = (
       agentDirectory: directory,
       permissions: 'trusted-full-tools',
       instructions: 'Read only.',
+      tools: ['read', 'bash'],
+      skills: [],
     },
   });
 
