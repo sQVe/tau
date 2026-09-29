@@ -25,3 +25,5 @@ these defaults.
 - Editing comments does not give permission to refactor code or expand the task.
 - Continue the work unless it needs user input.
 - Do not end a turn that waits for the user without stating the question.
+- As a manager, start a new session when a batch of work has finished and no workers are running.
+  Carry state through handoff files and Linear, not the conversation.
