@@ -9,22 +9,21 @@
 - Workers load the parent's settings and narrow them to their profile
   ([ADR 0067](./0067-give-workers-only-their-profile-tools-and-skills.md)). So the parent must load
   every package any profile needs, and it grows with each new profile.
-- The parent rarely uses some of these packages. Over 492 parent sessions, `pi-codex-image-gen` was
-  used in 1 and `pi-agent-browser-native` in 13. Together they add about 10k of the parent's 45k
-  characters per request.
+- The parent rarely uses some of these packages. The image and browser packages appeared in few
+  saved parent sessions, yet took about a fifth of every parent request.
 - Pi can load a package for one run with `-e <source>`, including its skills.
 - Tau bundles `cc-safety-net` and `pi-web-access` because its own code depends on them.
 
 ## Options considered
 
 - Keep loading every package in the parent's settings, and narrow workers with profile allowlists.
-  The parent pays for every profile's tools, used or not.
-- Deactivate unused tools in the parent with `setActiveTools`. An extension can activate its tool
-  again, as the questionnaire does, and the parent still lists the package's skills.
-- Filter a rarely used package out of the user's settings. The parent stops paying, but no profile
-  can use the package either.
-- Let a profile name the packages its workers need, and load them only in those workers. Choose this
-  option.
+  Rejected: the parent pays for every profile's tools, used or not.
+- Deactivate unused tools in the parent with `setActiveTools`. Rejected: an extension can activate
+  its tool again, as the questionnaire does, and the parent still lists the package's skills.
+- Filter a rarely used package out of the user's settings. Rejected: the parent stops paying, but no
+  profile can use the package either.
+- Let a profile name the packages its workers need, and load them only in those workers. Chosen: the
+  parent stays the same size as profiles are added, and each profile keeps the packages it needs.
 
 ## Decision
 
