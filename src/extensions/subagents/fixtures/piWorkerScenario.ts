@@ -190,9 +190,29 @@ export default function (pi) {
 
   mkdirSync(join(root, '.pi', 'agents'), { recursive: true });
 
+  // Only the worker loads this package; the launch fails unless its tool passes the allowlist check.
+  const profilePackage =
+    scenario === 'completion'
+      ? 'tools: read, bash, edit, write, profile_probe\npackages: ./profile-package.js\n'
+      : '';
+
+  writeFileSync(
+    join(root, 'profile-package.js'),
+    `export default function (pi) {
+  pi.registerTool({
+    name: 'profile_probe',
+    label: 'profile_probe',
+    description: 'Fixture tool from a profile package.',
+    parameters: { type: 'object', properties: {} },
+    execute: async () => ({ content: [{ type: 'text', text: 'probe' }], details: {} }),
+  });
+}
+`,
+  );
+
   writeFileSync(
     join(root, '.pi', 'agents', 'worker.md'),
-    '---\nname: worker\nrole: editing\nthinking: off\n---\nComplete only the fixture task.\n',
+    `---\nname: worker\nrole: editing\nthinking: off\n${profilePackage}---\nComplete only the fixture task.\n`,
   );
 
   const loadout = resolveLoadout(
@@ -249,6 +269,11 @@ export default function (pi) {
   const failure = scenario === 'early exit' ? /exited before readiness/ : /^$/;
   expect(launchDuration).toBeLessThan(10_000);
   expect(launched.failure ?? '').toMatch(failure);
+
+  expect(readTask(launched.directory).loadout.packages).toEqual(
+    scenario === 'completion' ? ['./profile-package.js'] : [],
+  );
+
   expect(existsSync(join(launched.directory, 'dispatch.json'))).toBe(scenario !== 'early exit');
   let movement: { sameTerminal: boolean; newPane: boolean } | undefined;
 

@@ -27,9 +27,11 @@ import { acceptReport, readEvent, readTask, recordEvent } from '../records.js';
 import * as records from '../records.js';
 import * as terminalModule from '../terminal.js';
 import { taskVersion } from '../types.js';
+import type { Loadout } from '../types.js';
 import { WorkerController } from './controller.js';
 import { RequestNotSentError, workerArguments } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
+import type { WorkerPackageManager } from './packageInstall.js';
 import { EvidenceUnavailableError, taskStatus } from './record.js';
 
 vi.mock('node:fs', async (importOriginal) => {
@@ -58,6 +60,7 @@ const setup = (
   onTestFinished: (callback: () => void) => void,
   readyDelay = 0,
   intercept?: HerdrClient,
+  packageManager?: (loadout: Loadout) => WorkerPackageManager,
 ) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-controller-'));
 
@@ -147,8 +150,11 @@ const setup = (
 
   const notifications: WorkerNotice[] = [];
 
-  const controller = new WorkerController(directory, client, (notice) =>
-    notifications.push(notice),
+  const controller = new WorkerController(
+    directory,
+    client,
+    (notice) => notifications.push(notice),
+    packageManager,
   );
 
   onTestFinished(() => {
@@ -222,7 +228,7 @@ it('saves a launched Pi task in the current record format', async ({ onTestFinis
   const launched = await fixture.controller.launch(fixture.input);
 
   expect(JSON.parse(readFileSync(join(launched.directory, 'task.json'), 'utf8'))).toMatchObject({
-    version: 5,
+    version: 6,
   });
 });
 
@@ -939,8 +945,13 @@ const savedFiles = (directory: string) => {
   });
 };
 
-const completed = async (intercept?: HerdrClient) => {
-  const fixture = setup(afterTest, 0, intercept);
+const completed = async (
+  intercept?: HerdrClient,
+  packages?: { manager: (loadout: Loadout) => WorkerPackageManager; sources: string[] },
+) => {
+  const fixture = setup(afterTest, 0, intercept, packages?.manager);
+
+  fixture.input.loadout = { ...fixture.input.loadout, packages: packages?.sources ?? [] };
 
   writeFileSync(
     fixture.input.parentSession,
@@ -972,7 +983,13 @@ const completed = async (intercept?: HerdrClient) => {
   });
 
   fixture.controller.close();
-  const controller = new WorkerController(fixture.directory, fixture.client);
+
+  const controller = new WorkerController(
+    fixture.directory,
+    fixture.client,
+    undefined,
+    packages?.manager,
+  );
 
   afterTest(() => {
     controller.close();
@@ -2595,7 +2612,7 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
   expect(task.nativeSessionId).not.toBe(task.taskId);
   expect(task.loadout).toEqual(input.loadout);
 
-  expect(workerArguments(task).slice(3, 9)).toEqual([
+  expect(workerArguments(task, []).slice(3, 9)).toEqual([
     '--provider',
     'faux',
     '--model',
@@ -2604,14 +2621,14 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
     'off',
   ]);
 
-  expect(workerArguments(task)).not.toContain('--no-extensions');
+  expect(workerArguments(task, [])).not.toContain('--no-extensions');
 
   const narrowed = {
     ...task,
     loadout: { ...task.loadout, tools: ['read'], skills: ['/s/SKILL.md'] },
   };
 
-  expect(workerArguments(narrowed).slice(9, 14)).toEqual([
+  expect(workerArguments(narrowed, []).slice(9, 14)).toEqual([
     '--tools',
     'read,subagent_progress,subagent_report,subagent_question',
     '--no-skills',
@@ -2643,7 +2660,7 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
   };
 
   expect(root.command[0]).toMatch(/^\/.*\/pi$/);
-  expect(root.command.slice(1)).toEqual(workerArguments(task));
+  expect(root.command.slice(1)).toEqual(workerArguments(task, []));
 
   expect(root.env).toMatchObject({
     TAU_WORKER_RECORD: launched.directory,
@@ -2722,7 +2739,7 @@ it('recovers reports and native references without extension discovery metadata'
     report: { summary: 'Saved HEAD handover.' },
   });
 
-  expect(workerArguments(readTask(launched.directory))).toEqual(workerArguments(task));
+  expect(workerArguments(readTask(launched.directory), [])).toEqual(workerArguments(task, []));
 });
 
 it('reports corrupt launch evidence without stopping dispatched work until cancelled', async ({
@@ -4063,7 +4080,7 @@ it('titles the worker pane with the model ID after the provider', async ({ onTes
 
   expect(rename?.[3]).toMatch(/^worker-[a-z0-9]{2} \(meta-llama\)$/);
 
-  expect(workerArguments(readTask(launched.directory)).slice(3, 7)).toEqual([
+  expect(workerArguments(readTask(launched.directory), []).slice(3, 7)).toEqual([
     '--provider',
     'openrouter',
     '--model',
@@ -4087,4 +4104,324 @@ it('keeps a worker running when the pane display title write is rejected', async
   expect(calls.some((call) => call[1] === 'rename')).toBe(true);
   expect(launched.state).not.toBe('cleanupUnconfirmed');
   expect(launched.state).not.toBe('notOwned');
+});
+
+const installedPackages = (sources: string[]) => ({
+  extensions: sources.map((path) => ({
+    path,
+    enabled: true,
+    metadata: { source: path, scope: 'temporary' as const, origin: 'package' as const },
+  })),
+  skills: [],
+  prompts: [],
+  themes: [],
+});
+
+const packageSettings = (configured: string[]) => {
+  const installs: string[][] = [];
+
+  const manager = (): WorkerPackageManager => ({
+    listConfiguredPackages: () =>
+      configured.map((source) => ({ source, scope: 'user' as const, filtered: false })),
+    resolveExtensionSources: (sources) => {
+      installs.push(sources);
+
+      if (sources.includes('npm:broken')) {
+        return Promise.reject(new Error('npm install failed'));
+      }
+
+      return Promise.resolve(installedPackages(sources));
+    },
+  });
+
+  return { configured, installs, manager };
+};
+
+const launchedCommand = (calls: string[][]): string[] => {
+  const launches = calls.filter((call) => call[0] === 'layout');
+  const { root } = JSON.parse(launches.at(-1)?.[2] ?? '') as { root: { command: string[] } };
+
+  return root.command;
+};
+
+it('loads profile packages with -e after the worker guards, skipping those settings load', async ({
+  onTestFinished,
+}) => {
+  const settings = packageSettings(['npm:pi-agent-browser-native']);
+  const { controller, input, calls } = setup(onTestFinished, 0, undefined, settings.manager);
+  const packages = ['npm:pi-agent-browser-native@0.8.2', 'npm:pi-codex-image-gen'];
+  const launched = await controller.launch({ ...input, loadout: { ...input.loadout, packages } });
+  const command = launchedCommand(calls);
+
+  expect(launched.failure).toBeUndefined();
+  expect(command.at(-3)).toMatch(/workerExtension\.ts$/);
+  expect(command.slice(-2)).toEqual(['-e', 'npm:pi-codex-image-gen']);
+  expect(settings.installs).toEqual([['npm:pi-codex-image-gen']]);
+  expect(readTask(launched.directory).loadout.packages).toEqual(packages);
+});
+
+it('refuses a launch whose profile package fails to install before it opens a pane', async ({
+  onTestFinished,
+}) => {
+  const settings = packageSettings([]);
+
+  const { controller, input, calls, directory } = setup(
+    onTestFinished,
+    0,
+    undefined,
+    settings.manager,
+  );
+
+  const saved = readdirSync(directory);
+  const loadout = { ...input.loadout, packages: ['npm:broken', 'npm:later'] };
+
+  await expect(controller.launch({ ...input, loadout })).rejects.toThrow(
+    'Worker profile package npm:broken failed to install',
+  );
+
+  expect(settings.installs).toEqual([['npm:broken']]);
+  expect(calls.filter((call) => call[0] === 'layout')).toEqual([]);
+  expect(readdirSync(directory)).toEqual(saved);
+});
+
+it('names the -e packages when the worker exits before readiness', async ({ onTestFinished }) => {
+  let inspections = 0;
+  const settings = packageSettings(['npm:pi-agent-browser-native']);
+
+  const fixture = setup(
+    onTestFinished,
+    -1,
+    async (argumentsList) => {
+      // Pi exits at startup, and herdr removes its pane.
+      if (argumentsList[1] === 'process-info' && ++inspections > 1) {
+        fixture.fake.state.stopped = true;
+      }
+
+      return '';
+    },
+    settings.manager,
+  );
+
+  const packages = ['npm:pi-agent-browser-native', 'npm:pi-codex-image-gen'];
+  const loadout = { ...fixture.input.loadout, packages };
+  const status = await fixture.controller.launch({ ...fixture.input, loadout });
+
+  expect(status).toMatchObject({ outcome: 'failure', state: 'stopped' });
+  expect(status.failure).toContain('exited before readiness');
+  expect(status.failure).toContain('pi -e <source>');
+  expect(status.failure).toContain('npm:pi-codex-image-gen');
+  expect(status.failure).not.toContain('npm:pi-agent-browser-native');
+});
+
+it('decides the -e packages again when a follow-up starts after settings change', async () => {
+  const settings = packageSettings([]);
+  const packages = ['npm:pi-agent-browser-native'];
+  const fixture = await completed(undefined, { manager: settings.manager, sources: packages });
+
+  expect(launchedCommand(fixture.calls).slice(-2)).toEqual(['-e', 'npm:pi-agent-browser-native']);
+
+  settings.configured.push('npm:pi-agent-browser-native');
+  fixture.calls.length = 0;
+  const next = await fixture.controller.followUp(fixture.input, fixture.context);
+  const listings = fixture.calls.filter((call) => call[0] === 'agent' && call[1] === 'list');
+
+  expect(next.failure).toBeUndefined();
+  // Without an install, nothing waited, so the first listing still holds.
+  expect(listings).toHaveLength(1);
+  expect(launchedCommand(fixture.calls).at(-1)).toMatch(/workerExtension\.ts$/);
+  expect(readTask(next.directory).loadout.packages).toEqual(packages);
+});
+
+it('stops waiting for a pending package install when the launch is cancelled', async ({
+  onTestFinished,
+}) => {
+  const installing = Promise.withResolvers<undefined>();
+
+  const manager = (): WorkerPackageManager => ({
+    listConfiguredPackages: () => [],
+    resolveExtensionSources: () => {
+      installing.resolve(undefined);
+
+      // A stalled npm install.
+      return new Promise(() => undefined);
+    },
+  });
+
+  const { controller, input, calls, directory } = setup(onTestFinished, 0, undefined, manager);
+  const saved = readdirSync(directory);
+  const cancel = new AbortController();
+  const loadout = { ...input.loadout, packages: ['npm:slow'] };
+  const launch = controller.launch({ ...input, loadout }, cancel.signal);
+
+  await installing.promise;
+  cancel.abort();
+
+  await expect(launch).rejects.toThrow('Worker profile package npm:slow install was cancelled.');
+  expect(calls.filter((call) => call[0] === 'layout')).toEqual([]);
+  expect(readdirSync(directory)).toEqual(saved);
+});
+
+it('refuses a launch at capacity before it installs profile packages', async ({
+  onTestFinished,
+}) => {
+  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+  const settings = packageSettings([]);
+  const { controller, input } = setup(onTestFinished, 0, undefined, settings.manager);
+
+  await controller.launch(input);
+  const loadout = { ...input.loadout, packages: ['npm:pi-codex-image-gen'] };
+
+  await expect(controller.launch({ ...input, loadout })).rejects.toThrow('Worker capacity full');
+  expect(settings.installs).toEqual([]);
+});
+
+it('refuses a launch whose slot another launch took during its package install', async ({
+  onTestFinished,
+}) => {
+  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
+  const installing = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+
+  const manager = (): WorkerPackageManager => ({
+    listConfiguredPackages: () => [],
+    resolveExtensionSources: async (sources) => {
+      installing.resolve(undefined);
+      await release.promise;
+
+      return installedPackages(sources);
+    },
+  });
+
+  const { controller, input, directory } = setup(onTestFinished, 0, undefined, manager);
+  const loadout = { ...input.loadout, packages: ['npm:slow'] };
+  const waiting = controller.launch({ ...input, loadout });
+
+  await installing.promise;
+  const taken = await controller.launch(input);
+  const saved = readdirSync(directory);
+
+  release.resolve(undefined);
+
+  await expect(waiting).rejects.toThrow('Worker capacity full');
+  expect(taken.failure).toBeUndefined();
+  expect(readdirSync(directory)).toEqual(saved);
+});
+
+const stalledInstall = (): WorkerPackageManager => ({
+  listConfiguredPackages: () => [],
+  resolveExtensionSources: () => new Promise(() => undefined),
+});
+
+it('names the package whose install outlasts the launch budget', async ({ onTestFinished }) => {
+  const { controller, input, directory } = setup(onTestFinished, 0, undefined, stalledInstall);
+  const saved = readdirSync(directory);
+  const loadout = { ...input.loadout, packages: ['npm:slow'] };
+
+  // Pi's AbortSignal.timeout ignores fake timers, so this spends about 150 ms of real time.
+  await expect(controller.launch({ ...input, loadout, timeout: 200 })).rejects.toThrow(
+    'Worker profile package npm:slow install ran out of launch time.',
+  );
+
+  expect(readdirSync(directory)).toEqual(saved);
+});
+
+it('refuses a follow-up whose native session gained a live writer during its install', async () => {
+  let live: unknown[] = [];
+  let following = false;
+
+  const manager = (): WorkerPackageManager => ({
+    listConfiguredPackages: () => [],
+    resolveExtensionSources: (sources) => {
+      // The user resumes the saved session by hand while npm runs.
+      if (following) {
+        live = [
+          {
+            pane_id: 'manual',
+            name: 'manual-pi',
+            agent_session: { kind: 'path', value: fixture.source.nativeSessionFile },
+          },
+        ];
+      }
+
+      return Promise.resolve(installedPackages(sources));
+    },
+  });
+
+  const fixture = await completed(
+    async (argumentsList) =>
+      argumentsList[0] === 'agent' && argumentsList[1] === 'list'
+        ? JSON.stringify({ result: { type: 'agent_list', agents: live } })
+        : '',
+    { manager, sources: ['npm:pi-agent-browser-native'] },
+  );
+
+  const saved = savedFiles(fixture.directory);
+  fixture.calls.length = 0;
+  following = true;
+
+  await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+    'already live',
+  );
+
+  expect(savedFiles(fixture.directory)).toEqual(saved);
+
+  expect(fixture.calls).toEqual([
+    ['agent', 'list'],
+    ['agent', 'list'],
+  ]);
+});
+
+it('never runs two profile package installs at once across parallel launches', async ({
+  onTestFinished,
+}) => {
+  const started: string[] = [];
+  const firstStarted = Promise.withResolvers<undefined>();
+  let queued = 0;
+
+  const manager = (): WorkerPackageManager => ({
+    // Each launch reads settings right before it joins the install queue.
+    listConfiguredPackages: () => {
+      queued += 1;
+
+      return [];
+    },
+    resolveExtensionSources: (sources) => {
+      started.push(...sources);
+      firstStarted.resolve(undefined);
+
+      // A stalled npm install.
+      return new Promise(() => undefined);
+    },
+  });
+
+  const { controller, input, directory } = setup(onTestFinished, 0, undefined, manager);
+  const saved = readdirSync(directory);
+  const cancelFirst = new AbortController();
+  const cancelSecond = new AbortController();
+
+  const launch = (source: string, cancel: AbortController) =>
+    controller.launch(
+      { ...input, loadout: { ...input.loadout, packages: [source] } },
+      cancel.signal,
+    );
+
+  const first = launch('npm:first', cancelFirst);
+  const second = launch('npm:second', cancelSecond);
+
+  await firstStarted.promise;
+
+  await vi.waitFor(() => {
+    expect(queued).toBe(2);
+  });
+
+  // Run every pending step of the second launch while the first install still runs.
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(started).toEqual(['npm:first']);
+
+  cancelSecond.abort();
+  await expect(second).rejects.toThrow('npm:second install was cancelled');
+  cancelFirst.abort();
+  await expect(first).rejects.toThrow('npm:first install was cancelled');
+  expect(started).toEqual(['npm:first']);
+  expect(readdirSync(directory)).toEqual(saved);
 });

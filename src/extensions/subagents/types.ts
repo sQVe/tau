@@ -25,6 +25,7 @@ export interface Profile {
   tools: string[];
   skills: string[];
   instructionSets: InstructionSetName[];
+  packages: string[];
   instructions: string;
   source: string;
 }
@@ -69,12 +70,23 @@ const toolAndSkillProperties = {
   skills: Type.Array(text, { maxItems: 100 }),
 };
 
+const instructionSetProperties = {
+  instructionSets: Type.Array(StringEnum(instructionSetNames), { maxItems: 3 }),
+};
+
 export const loadoutSchema = Type.Object(
   {
     ...loadoutProperties,
     ...toolAndSkillProperties,
-    instructionSets: Type.Array(StringEnum(instructionSetNames), { maxItems: 3 }),
+    ...instructionSetProperties,
+    // Pi package sources as the profile names them, before settings duplicates are skipped.
+    packages: Type.Array(text, { maxItems: 100 }),
   },
+  { additionalProperties: false },
+);
+
+const version5LoadoutSchema = Type.Object(
+  { ...loadoutProperties, ...toolAndSkillProperties, ...instructionSetProperties },
   { additionalProperties: false },
 );
 
@@ -105,6 +117,7 @@ const versionedTaskSchema = <
   Version extends TSchema,
   SavedLoadout extends
     | typeof loadoutSchema
+    | typeof version5LoadoutSchema
     | typeof version4LoadoutSchema
     | typeof previousLoadoutSchema,
 >(
@@ -123,9 +136,11 @@ const versionedTaskSchema = <
   );
 
 // Bump for any change to the saved fields, including a new optional field.
-export const taskVersion = 5;
+export const taskVersion = 6;
 
 export const taskSchema = versionedTaskSchema(Type.Literal(taskVersion), loadoutSchema);
+
+export const version5TaskSchema = versionedTaskSchema(Type.Literal(5), version5LoadoutSchema);
 
 export const version4TaskSchema = versionedTaskSchema(Type.Literal(4), version4LoadoutSchema);
 

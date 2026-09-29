@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "taskId": "current-pi",
   "name": "scout-ab",
   "task": "Inspect source.",
@@ -23,6 +23,7 @@
     "instructions": "Inspect the assigned source.",
     "tools": ["read", "bash", "web_search"],
     "skills": ["/work/agent/skills/code-review/SKILL.md"],
-    "instructionSets": ["writing", "workflow"]
+    "instructionSets": ["writing", "workflow"],
+    "packages": ["npm:pi-agent-browser-native@0.8.2", "/work/extensions/probe"]
   }
 }

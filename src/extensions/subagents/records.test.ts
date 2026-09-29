@@ -45,7 +45,7 @@ const questionFixture = () => {
   });
 
   const task = {
-    version: 5,
+    version: 6,
     taskId: 'task-one',
     task: 'Inspect source.',
     parentSession: join(directory, 'parent.jsonl'),
@@ -69,6 +69,7 @@ const questionFixture = () => {
       tools: ['read', 'bash'],
       skills: [],
       instructionSets: ['writing', 'coding', 'workflow'],
+      packages: [],
     },
   };
 
@@ -261,7 +262,7 @@ const saveTaskRecordFixtures = (names: string[]) => {
 
 it('reads task records saved in the previous and current formats', () => {
   const previous = ['previous-pi', 'version-3-pi'];
-  const root = saveTaskRecordFixtures([...previous, 'version-4-pi', 'current-pi']);
+  const root = saveTaskRecordFixtures([...previous, 'version-4-pi', 'version-5-pi', 'current-pi']);
   const diagnostics: string[] = [];
   const allInstructionSets = ['writing', 'coding', 'workflow'];
 
@@ -273,12 +274,13 @@ it('reads task records saved in the previous and current formats', () => {
     const saved = parsedTaskRecordFixture(name);
 
     return Object.assign(saved, {
-      version: 5,
+      version: 6,
       loadout: {
         ...(saved.loadout as object),
         tools: ['read', 'bash'],
         skills: [],
         instructionSets: allInstructionSets,
+        packages: [],
       },
     });
   });
@@ -286,13 +288,53 @@ it('reads task records saved in the previous and current formats', () => {
   const version4 = parsedTaskRecordFixture('version-4-pi');
 
   const upgradedVersion4 = Object.assign(version4, {
-    version: 5,
-    loadout: { ...(version4.loadout as object), instructionSets: allInstructionSets },
+    version: 6,
+    loadout: { ...(version4.loadout as object), instructionSets: allInstructionSets, packages: [] },
+  });
+
+  const version5 = parsedTaskRecordFixture('version-5-pi');
+
+  const upgradedVersion5 = Object.assign(version5, {
+    version: 6,
+    loadout: { ...(version5.loadout as object), packages: [] },
   });
 
   expect(
     scanned.map(({ task }) => task).toSorted((a, b) => a.taskId.localeCompare(b.taskId)),
-  ).toEqual([parsedTaskRecordFixture('current-pi'), ...upgraded, upgradedVersion4]);
+  ).toEqual([
+    parsedTaskRecordFixture('current-pi'),
+    ...upgraded,
+    upgradedVersion4,
+    upgradedVersion5,
+  ]);
+});
+
+it('diagnoses a current-format task whose profile packages are missing or malformed', () => {
+  const root = saveTaskRecordFixtures(['current-pi']);
+  const current = parsedTaskRecordFixture('current-pi');
+  const { packages: _packages, ...withoutPackages } = current.loadout as Record<string, unknown>;
+
+  for (const [taskId, loadout] of [
+    ['missing-packages', withoutPackages],
+    ['empty-package', { ...withoutPackages, packages: [''] }],
+    ['text-packages', { ...withoutPackages, packages: 'npm:pi-agent-browser-native' }],
+  ] as const) {
+    mkdirSync(join(root, taskId));
+    writeFileSync(join(root, taskId, 'task.json'), JSON.stringify({ ...current, taskId, loadout }));
+  }
+
+  const diagnostics: string[] = [];
+  const scanned = records.readTasks(root, diagnostics, []);
+
+  expect(scanned.map(({ task }) => task.loadout.packages)).toEqual([
+    ['npm:pi-agent-browser-native@0.8.2', '/work/extensions/probe'],
+  ]);
+
+  expect(diagnostics).toHaveLength(3);
+
+  for (const taskId of ['empty-package', 'missing-packages', 'text-packages']) {
+    expect(diagnostics.some((diagnostic) => diagnostic.includes(join(root, taskId)))).toBe(true);
+  }
 });
 
 const saveSubmissionRecordFixtures = (directory: string) => {

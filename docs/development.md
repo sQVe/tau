@@ -109,10 +109,21 @@ A profile's `tools:` setting lists the tools its worker gets, separated by comma
 investigation profiles get `read` and `bash`, and editing profiles add `edit` and `write`. Workers
 always get `subagent_progress`, `subagent_report`, and `subagent_question`. A worker refuses to
 start when a listed tool is not registered. Workers load no skills unless the profile's `skills:`
-setting names them, for example `skills: tdd`. The bundled `qa` profile lists the browser tools from
-`pi-agent-browser-native`; without that package, add a `qa` profile to `~/.pi/agent/agents/` that
-lists other tools. See the
+setting names them, for example `skills: tdd`. See the
 [tool and skill decision](adr/0067-give-workers-only-their-profile-tools-and-skills.md).
+
+A profile's `packages:` setting lists Pi packages its worker loads, separated by commas. Each entry
+is a source that `pi -e` accepts, such as `npm:name`, `npm:name@1.2.3`, `git:host/path`, a URL, or a
+local path. Before it opens the worker's pane, the parent installs each package into Pi's temporary
+`-e` cache, and the worker loads it with `-e`. The parent session does not load it. A package that
+the user or project settings already load is not loaded a second time. A launch stops with the
+package name when an install fails. An unpinned npm package stays at the version that was first
+cached, so pin a version to update it. See the
+[package decision](adr/0069-load-each-pi-package-where-its-tools-are-used.md).
+
+The bundled `qa` profile sets `packages: npm:pi-agent-browser-native` for its browser tools. If the
+parent session does not use the browser itself, remove `npm:pi-agent-browser-native` from the
+`packages` list in `~/.pi/agent/settings.json`.
 
 A profile's `instruction-sets:` setting lists the Tau instruction sets its worker loads, from
 `writing`, `coding`, and `workflow`. Without it, a worker loads all three. The bundled `scout` and

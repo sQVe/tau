@@ -31,6 +31,7 @@ import {
   taskVersion,
   isTaskId,
   version4TaskSchema,
+  version5TaskSchema,
 } from './types.js';
 import type { Loadout, Report, Task, TaskEvent } from './types.js';
 import { taskEndedEventKinds } from './workerState.js';
@@ -237,14 +238,19 @@ const isNonPiTask = (value: unknown): boolean => {
   return retiredVersion && hasGenericLoadout(value);
 };
 
-// Version 4 lacks the instruction sets, and earlier formats also lack the tool and skill loadout.
-// Workers of every earlier format loaded all instruction sets.
+// Version 5 lacks the profile packages, version 4 also the instruction sets, and earlier formats
+// also the tool and skill loadout. Workers of every earlier format loaded all instruction sets and
+// no profile packages.
 const upgradeTask = (value: unknown): unknown => {
+  if (Value.Check(version5TaskSchema, value)) {
+    return { ...value, version: taskVersion, loadout: { ...value.loadout, packages: [] } };
+  }
+
   if (Value.Check(version4TaskSchema, value)) {
     return {
       ...value,
       version: taskVersion,
-      loadout: { ...value.loadout, instructionSets: [...instructionSetNames] },
+      loadout: { ...value.loadout, instructionSets: [...instructionSetNames], packages: [] },
     };
   }
 
@@ -257,6 +263,7 @@ const upgradeTask = (value: unknown): unknown => {
         tools: roleTools[value.loadout.role],
         skills: [],
         instructionSets: [...instructionSetNames],
+        packages: [],
       },
     };
   }

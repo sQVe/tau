@@ -85,6 +85,7 @@ it('resolves an explicit worker model and names the configured models when none 
     tools: resolved.tools,
     skills: [],
     instructionSets: ['writing', 'coding', 'workflow'],
+    packages: [],
   });
 
   mkdirSync(join(directory, 'agents'));
@@ -637,7 +638,12 @@ it('lists bundled, user, and trusted project profiles without changing profile f
     rmSync(directory, { recursive: true, force: true });
   });
 
-  const bundled = ['qa', 'reviewer', 'scout', 'worker'].map((name) => ({ name }));
+  const qaDescription: unknown = expect.any(String);
+
+  const bundled = [
+    { name: 'qa', description: qaDescription },
+    ...['reviewer', 'scout', 'worker'].map((name) => ({ name })),
+  ];
 
   expect(listProfiles(directory, directory, true)).toEqual(bundled);
 
@@ -668,7 +674,7 @@ it('lists bundled, user, and trusted project profiles without changing profile f
   const before = files();
 
   expect(listProfiles(directory, directory, true)).toEqual([
-    { name: 'qa' },
+    { name: 'qa', description: qaDescription },
     { name: 'reviewer' },
     { name: 'scout' },
     { name: 'worker', description: 'Project editor' },
@@ -716,4 +722,24 @@ it('resolves profile precedence and refuses discarded isolation and transcript s
       parseProfile(`---\nrole: editing\n${setting}\n---\nTask`, 'worker', 'fixture'),
     ).toThrow('Unsupported');
   }
+});
+
+it('saves the profile packages, or none without the setting', async ({ onTestFinished }) => {
+  const { context, request } = await workerFixture(onTestFinished);
+  const resolve = (name: string) => resolveLoadout({ ...request, profile: name }, context);
+
+  expect(
+    parseSettings('packages: npm:pi-codex-image-gen@1.2.3, ./probe, npm:pi-codex-image-gen@1.2.3\n')
+      .packages,
+  ).toEqual(['npm:pi-codex-image-gen@1.2.3', './probe']);
+
+  expect(parseSettings('').packages).toEqual([]);
+  expect(resolve('qa').packages).toEqual(['npm:pi-agent-browser-native']);
+  expect(resolve('worker').packages).toEqual([]);
+});
+
+it('rejects an empty profile package', () => {
+  expect(() => parseSettings('packages: npm:pi-codex-image-gen, \n')).toThrow(
+    'comma-separated list',
+  );
 });

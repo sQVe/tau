@@ -13,4 +13,5 @@ export const fixtureLoadout = (directory: string): Loadout => ({
   tools: ['read', 'bash', 'edit', 'write'],
   skills: [],
   instructionSets: ['writing', 'coding', 'workflow'],
+  packages: [],
 });

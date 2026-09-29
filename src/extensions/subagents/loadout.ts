@@ -150,6 +150,7 @@ export const resolveLoadout = (
     tools: profile.tools,
     skills: resolveSkills(profile, commands),
     instructionSets: profile.instructionSets,
+    packages: profile.packages,
   };
 };
 
