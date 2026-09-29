@@ -6,6 +6,7 @@ import { StringEnum } from '@earendil-works/pi-ai';
 import type {
   AgentEndEvent,
   AgentToolResult,
+  CustomMessageEntryDraft,
   ExtensionAPI,
   ExtensionContext,
   InputEvent,
@@ -811,19 +812,33 @@ const registerAgentStartHandler = (pi: ExtensionAPI, state: WorkerExtensionState
   });
 };
 
-const registerReportReminder = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
+const registerRunErrorHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.on('agent_end', (event) => {
     state.runError = lastRunError(event);
+  });
+};
 
+const reportReminder: CustomMessageEntryDraft = {
+  type: 'custom_message',
+  customType: 'tau-worker-report-request',
+  content: [
+    'Your turn ended without subagent_report. Finish the assigned work, then call subagent_report.',
+    'Report incomplete only with a concrete blocker. Do not expand the original scope; the deadline is unchanged.',
+  ].join(' '),
+  display: true,
+};
+
+const registerReportReminder = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
+  pi.on('agent_before_settle', (event) => {
     // A reminder after an errored or aborted run repeats the same error; the error explains the stop.
     if (!isTaskActive(state) || state.pendingQuestion || state.runError !== undefined) {
-      return;
+      return undefined;
     }
 
     const task = state.task;
 
     if (remainingWork(state, task) <= 0 || taskEnded(state.directory, task)) {
-      return;
+      return undefined;
     }
 
     const requested = existsSync(join(state.directory, 'reportRequest.json'));
@@ -831,7 +846,7 @@ const registerReportReminder = (pi: ExtensionAPI, state: WorkerExtensionState): 
     const alreadyReminded = requested && !state.remindAfterRefusal;
 
     if (alreadyReminded) {
-      return;
+      return undefined;
     }
 
     state.remindAfterRefusal = false;
@@ -840,17 +855,7 @@ const registerReportReminder = (pi: ExtensionAPI, state: WorkerExtensionState): 
       publish(state.directory, 'reportRequest.json', { taskId: task.taskId, at: Date.now() });
     }
 
-    pi.sendMessage(
-      {
-        customType: 'tau-worker-report-request',
-        content: [
-          'Your turn ended without subagent_report. Finish the assigned work, then call subagent_report.',
-          'Report incomplete only with a concrete blocker. Do not expand the original scope; the deadline is unchanged.',
-        ].join(' '),
-        display: true,
-      },
-      { deliverAs: 'followUp', triggerTurn: true },
-    );
+    return { entries: [...event.entries, reportReminder], continue: true };
   });
 };
 
@@ -923,6 +928,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
   registerSystemPromptHandler(pi, state);
   registerAgentStartHandler(pi, state);
   registerToolCallHandler(pi, state);
+  registerRunErrorHandler(pi, state);
   registerReportReminder(pi, state);
   registerAgentSettledHandler(pi, state);
 }

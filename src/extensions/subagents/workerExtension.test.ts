@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type {
+  AgentBeforeSettleEventResult,
   ExtensionContext,
   SessionEntry,
   ToolCallEventResult,
@@ -93,6 +94,18 @@ const setup = (
   const emit = (name: string, event: unknown = emptyEvent) =>
     fake.handlers.has(name) ? fake.handler(name)(event, context) : undefined;
 
+  const settle = async (endEvent: unknown = emptyEvent) => {
+    await emit('agent_end', endEvent);
+
+    const boundary = { entries: [], continue: false, context: {}, outcome: 'completed' };
+
+    const result = (await emit('agent_before_settle', boundary)) as
+      | AgentBeforeSettleEventResult
+      | undefined;
+
+    return result ?? {};
+  };
+
   const ask = () =>
     fake.tools
       .get('subagent_question')
@@ -102,6 +115,7 @@ const setup = (
     directory,
     createdAt,
     emit,
+    settle,
     ask,
     sendUserMessage: fake.sendUserMessage,
     sendMessage: fake.sendMessage,
@@ -259,24 +273,41 @@ it.each([
   await worker.emit('session_shutdown');
 });
 
+const reportReminders = (result: AgentBeforeSettleEventResult) =>
+  (result.entries ?? []).filter(
+    (entry) => entry.type === 'custom_message' && entry.customType === 'tau-worker-report-request',
+  );
+
 it('requests a missing report once before the worker settles', async () => {
   const worker = await waitingWorker();
 
-  await worker.emit('agent_end');
-  await worker.emit('agent_end');
+  const first = await worker.settle();
+  const second = await worker.settle();
 
-  expect(worker.sendMessage).toHaveBeenCalledOnce();
-  expect(worker.sendMessage.mock.calls[0]?.[0].content).toContain('subagent_report');
-
-  expect(worker.sendMessage.mock.calls[0]?.[1]).toMatchObject({
-    triggerTurn: true,
-    deliverAs: 'followUp',
-  });
-
+  expect(reportReminders(first)).toHaveLength(1);
+  expect(first.continue).toBe(true);
+  expect(reportReminders(second)).toHaveLength(0);
+  expect(second.continue).toBeUndefined();
+  expect(worker.sendMessage).not.toHaveBeenCalled();
   expect(worker.shutdown).not.toHaveBeenCalled();
   expect(readEvent(worker.directory, 'task', 'settled')).toBeUndefined();
   await worker.emit('agent_settled');
   expect(worker.shutdown).toHaveBeenCalledOnce();
+});
+
+it('keeps boundary entries from earlier extensions when it requests a report', async () => {
+  const worker = await waitingWorker();
+  const earlier = { type: 'custom', customType: 'other-extension' } as const;
+
+  const result = (await worker.emit('agent_before_settle', {
+    entries: [earlier],
+    continue: false,
+    context: {},
+    outcome: 'completed',
+  })) as AgentBeforeSettleEventResult;
+
+  expect(result.entries?.[0]).toEqual(earlier);
+  expect(reportReminders(result)).toHaveLength(1);
 });
 
 it.each(['deadline', 'parent stopped', 'question', 'reported'] as const)(
@@ -310,13 +341,10 @@ it.each(['deadline', 'parent stopped', 'question', 'reported'] as const)(
       );
     }
 
-    await worker.emit('agent_end');
+    const result = await worker.settle();
 
-    const reminders = worker.sendMessage.mock.calls.filter(
-      ([message]) => message.customType === 'tau-worker-report-request',
-    );
-
-    expect(reminders).toHaveLength(0);
+    expect(reportReminders(result)).toHaveLength(0);
+    expect(result.continue).toBeUndefined();
   },
 );
 
@@ -809,13 +837,14 @@ it.each(['error', 'aborted'] as const)(
   async (stopReason) => {
     const worker = await waitingWorker();
 
-    await worker.emit('agent_end', {
+    const result = await worker.settle({
       messages: [
         { role: 'assistant', content: [], stopReason, errorMessage: 'Invalid tool schema.' },
       ],
     });
 
-    expect(worker.sendMessage).not.toHaveBeenCalled();
+    expect(reportReminders(result)).toHaveLength(0);
+    expect(result.continue).toBeUndefined();
     await worker.emit('agent_settled');
     expect(worker.shutdown).toHaveBeenCalledOnce();
 
@@ -839,7 +868,7 @@ it('keeps a reported outcome free of the settled detail', async () => {
       worker.context,
     );
 
-  await worker.emit('agent_end');
+  await worker.settle();
   await worker.emit('agent_settled');
 
   const status = taskRecordStatus(worker.directory, readTask(worker.directory), false, []);
@@ -850,24 +879,25 @@ it('keeps a reported outcome free of the settled detail', async () => {
 
 it('reminds a refused worker to report even after an earlier reminder', async () => {
   const worker = await waitingWorker('editing', hour);
-  await worker.emit('agent_end');
+  await worker.settle();
   expect(() => reportIncomplete(worker, 'Tests remain.')).toThrow('minutes remain');
 
-  await worker.emit('agent_end');
-  await worker.emit('agent_end');
+  const afterRefusal = await worker.settle();
+  const later = await worker.settle();
 
-  expect(worker.sendMessage).toHaveBeenCalledTimes(2);
+  expect(reportReminders(afterRefusal)).toHaveLength(1);
+  expect(reportReminders(later)).toHaveLength(0);
   expect(worker.shutdown).not.toHaveBeenCalled();
 });
 
 it('reminds a worker refused for a missing blocker even after an earlier reminder', async () => {
   const worker = await waitingWorker('editing', hour);
-  await worker.emit('agent_end');
+  await worker.settle();
   expect(() => reportIncomplete(worker)).toThrow('blocker');
 
-  await worker.emit('agent_end');
+  const afterRefusal = await worker.settle();
 
-  expect(worker.sendMessage).toHaveBeenCalledTimes(2);
+  expect(reportReminders(afterRefusal)).toHaveLength(1);
 });
 
 it('keeps the blocker when the summary is at the size limit', async () => {
