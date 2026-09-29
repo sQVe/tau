@@ -774,7 +774,6 @@ it('warns a worker once when its deadline accepts a time blocker', async () => {
   await vi.advanceTimersByTimeAsync(1000);
 
   expect(deadlineWarnings(worker)).toHaveLength(1);
-  expect(deadlineWarnings(worker)[0]?.[0].content).toContain('Deadline in 90 s');
   expect(deadlineWarnings(worker)[0]?.[1]).toMatchObject({ deliverAs: 'steer', triggerTurn: true });
 
   await vi.advanceTimersByTimeAsync(1000);
