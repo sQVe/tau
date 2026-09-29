@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
 import { createReadTool } from '@earendil-works/pi-coding-agent';
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
@@ -27,7 +27,7 @@ const setup = () => {
     cwd: '/tmp',
     isProjectTrusted: () => false,
     modelRegistry: { find, complete },
-  } as unknown as ExtensionContext;
+  } as unknown as ExtensionToolContext;
 
   bulkReadExtension(fake.pi);
   const tool = fake.tools.get('bulk_read');

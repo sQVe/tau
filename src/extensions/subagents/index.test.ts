@@ -2,7 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ExtensionToolContext,
+} from '@earendil-works/pi-coding-agent';
 import { createEventBus } from '@earendil-works/pi-coding-agent';
 import { TuiAltScreen, VStack } from '@earendil-works/pi-tui';
 import type { Terminal } from '@earendil-works/pi-tui';
@@ -51,7 +55,7 @@ const launchContext = (directory: string) =>
       getSessionFile: () => join(directory, 'parent.jsonl'),
       getSessionId: () => 'parent',
     },
-  }) as unknown as ExtensionContext;
+  }) as unknown as ExtensionToolContext;
 
 const busyParent = { isIdle: () => false };
 const testTheme = { fg: (_color: string, text: string) => text };
@@ -201,7 +205,7 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
 
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
-  } as unknown as ExtensionContext;
+  } as unknown as ExtensionToolContext;
 
   await tools
     .get('subagent_status')!
@@ -246,7 +250,7 @@ it('blocks long parent sleeps only while this session has an active worker', asy
 
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
-  } as unknown as ExtensionContext;
+  } as unknown as ExtensionToolContext;
 
   const bash = (command: string) =>
     fake.handler('tool_call')({ toolName: 'bash', input: { command } }, context);
@@ -579,7 +583,7 @@ it('places follow-ups with explicit visibility and the current parent terminal',
 
   const context = {
     sessionManager: { getSessionFile: () => '/fixture/parent.jsonl', getSessionId: () => 'parent' },
-  } as unknown as ExtensionContext;
+  } as unknown as ExtensionToolContext;
 
   await tool.execute(
     'call',
@@ -820,7 +824,7 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
 
   const context = {
     sessionManager: { getSessionFile: () => '/fixture/parent.jsonl', getSessionId: () => 'parent' },
-  } as unknown as ExtensionContext;
+  } as unknown as ExtensionToolContext;
 
   const result = (await tool.execute(
     'call',
@@ -874,7 +878,7 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
 
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
-  } as unknown as ExtensionContext;
+  } as unknown as ExtensionToolContext;
 
   const statusTool = tools.get('subagent_status');
   const replyTool = tools.get('subagent_reply');
@@ -973,7 +977,7 @@ it('returns the unreadable-evidence object when status records fail', async ({
 
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
-  } as unknown as ExtensionContext;
+  } as unknown as ExtensionToolContext;
 
   const tool = tools.get('subagent_status');
 
@@ -1034,7 +1038,7 @@ it('returns the unreadable-evidence object before reading an unknown question re
 
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
-  } as unknown as ExtensionContext;
+  } as unknown as ExtensionToolContext;
 
   const result = await tool.execute(
     'call',
@@ -1068,7 +1072,7 @@ it('returns the unreadable-evidence object when cancel records fail', async ({
 
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
-  } as unknown as ExtensionContext;
+  } as unknown as ExtensionToolContext;
 
   const result = await tool.execute('call', { taskId: 'task-1' }, undefined, undefined, context);
   const content = textContent(result);
@@ -1103,7 +1107,7 @@ it('returns the unreadable-evidence object when follow-up records fail', async (
 
   const context = {
     sessionManager: { getSessionFile: () => '/fixture/parent.jsonl', getSessionId: () => 'parent' },
-  } as unknown as ExtensionContext;
+  } as unknown as ExtensionToolContext;
 
   const result = await tool.execute(
     'call',

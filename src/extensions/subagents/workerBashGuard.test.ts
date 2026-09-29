@@ -17,7 +17,7 @@ const runBash = async (command: string): Promise<ModelResult> => {
   try {
     const result = await createBashTool(import.meta.dirname).execute('call', { command });
 
-    return { content: result.content as ModelResult['content'], isError: false };
+    return { content: result.content as ModelResult['content'], isError: result.isError === true };
   } catch (error) {
     return { content: [{ type: 'text', text: (error as Error).message }], isError: true };
   }

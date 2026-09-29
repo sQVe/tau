@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { DefaultResourceLoader } from '@earendil-works/pi-coding-agent';
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { WorkerController } from './controller/controller.js';
@@ -135,7 +135,7 @@ const historyTool = async (fixture: ReturnType<typeof setup>, file: string, id: 
       getSessionId: () => id,
       getSessionDir: () => fixture.sessions,
     },
-  } as unknown as ExtensionContext;
+  } as unknown as ExtensionToolContext;
 
   return (parameters: { query?: string; offset?: number; limit?: number }) =>
     tool.execute('history-test', parameters, new AbortController().signal, undefined, context);
