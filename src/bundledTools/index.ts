@@ -5,6 +5,12 @@ export const requireRegisteredTools = (
   packageName: string,
   requiredToolNames: readonly string[],
 ) => {
+  // A worker registers only its profile's tools and checks those itself.
+  // oxlint-disable-next-line node/no-process-env -- The parent marks a worker process with its task record.
+  if (process.env.TAU_WORKER_RECORD != null && process.env.TAU_WORKER_RECORD !== '') {
+    return;
+  }
+
   pi.on('session_start', () => {
     const registeredToolNames = new Set(pi.getAllTools().map((tool) => tool.name));
     const missingToolNames = requiredToolNames.filter((name) => !registeredToolNames.has(name));
