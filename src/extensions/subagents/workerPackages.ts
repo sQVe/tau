@@ -110,13 +110,23 @@ const packageIdentity = (source: string): string => {
   return gitIdentity(trimmed) ?? `source:${trimmed}`;
 };
 
-// A package already in the user's or project's settings loads there; a second copy from -e would
-// register the same tools twice.
+// A package already in the user's or project's settings loads there, and a profile's first entry for
+// a package wins. A second copy from -e would register the same tools twice.
 export const packagesToLoad = (
   profilePackages: readonly string[],
   configuredPackages: readonly string[],
 ): string[] => {
-  const configured = new Set(configuredPackages.map((source) => packageIdentity(source)));
+  const loaded = new Set(configuredPackages.map((source) => packageIdentity(source)));
+  const load: string[] = [];
 
-  return profilePackages.filter((source) => !configured.has(packageIdentity(source)));
+  for (const source of profilePackages) {
+    const identity = packageIdentity(source);
+
+    if (!loaded.has(identity)) {
+      loaded.add(identity);
+      load.push(source);
+    }
+  }
+
+  return load;
 };

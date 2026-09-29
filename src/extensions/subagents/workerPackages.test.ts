@@ -57,6 +57,13 @@ it.each([
     load: ['git:localhost/user/repo'],
   },
   { profile: ['npm:foo'], configured: [' npm:foo'], load: ['npm:foo'] },
+  { profile: ['npm:foo', 'npm:foo@1.2.3'], configured: [], load: ['npm:foo'] },
+  {
+    profile: ['git:github.com/user/repo', 'https://github.com/user/repo.git'],
+    configured: [],
+    load: ['git:github.com/user/repo'],
+  },
+  { profile: ['npm:foo', 'npm:foo@1.2.3'], configured: ['npm:foo@2'], load: [] },
   { profile: ['/work/extensions/probe'], configured: ['/work/extensions/probe'], load: [] },
   {
     profile: ['/work/extensions/probe'],
