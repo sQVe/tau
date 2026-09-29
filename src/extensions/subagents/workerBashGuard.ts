@@ -1,4 +1,34 @@
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import type { ExtensionAPI, ToolResultEvent } from '@earendil-works/pi-coding-agent';
+
+import { decideBashOutputCap } from './bashOutputCap.js';
+
+// mkdtemp creates the directory readable only by its owner, outside the worktree under test.
+const saveFullOutput = async (text: string): Promise<string> => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-bash-'));
+  const path = join(directory, 'output.log');
+
+  await writeFile(path, text, { mode: 0o600 });
+
+  return path;
+};
+
+const capBashOutput = async (event: ToolResultEvent) => {
+  const decision = decideBashOutputCap(event);
+
+  if (decision === undefined) {
+    return undefined;
+  }
+
+  const { text, head, tail, cut } = decision;
+  const path = await saveFullOutput(text);
+  const marker = `[${cut} of ${text.length} characters cut. Command exited with code 0. Full output: ${path}]`;
+
+  return { content: [{ type: 'text' as const, text: `${head}\n\n${marker}\n\n${tail}` }] };
+};
 
 export default function workerBashGuard(pi: ExtensionAPI): void {
   pi.on('tool_call', (event) => {
@@ -17,4 +47,6 @@ export default function workerBashGuard(pi: ExtensionAPI): void {
       reason: 'Empty bash command rejected. Send the complete command and continue your task.',
     };
   });
+
+  pi.on('tool_result', capBashOutput);
 }
