@@ -11,11 +11,11 @@ error alone does not prove absence: the worker may have launched before the resp
 
 ## Options considered
 
-- Keep every claim permanently. This avoids reclaim races but blocks conversations after confirmed
-  pre-dispatch failures.
-- Release claims after a start error or a timeout. Neither proves that the worker stopped.
+- Keep every claim permanently. Rejected: this avoids reclaim races but blocks conversations after
+  confirmed pre-dispatch failures.
+- Release claims after a start error or a timeout. Rejected: neither proves that the worker stopped.
 - Release the owning controller's claim after confirmed cleanup, only without dispatch, acceptance,
-  or report evidence. This permits retries without treating uncertain delivery as rejection.
+  or report evidence. Chosen: this permits retries without treating uncertain delivery as rejection.
 
 ## Decision
 

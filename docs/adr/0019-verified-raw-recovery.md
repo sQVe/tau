@@ -11,9 +11,11 @@ change, Tau needs a reliable backup and clear rules for when restoration is safe
 
 ## Options considered
 
-- Use a stash. Restoring through a merge can conflict or change staging.
-- Restore through Git checkout. Git can convert file bytes and cannot preserve all file permissions.
-- Back up exact working bytes and staging, then restore only under recorded conditions.
+- Use a stash. Rejected: restoring through a merge can conflict or change staging.
+- Restore through Git checkout. Rejected: Git can convert file bytes and cannot preserve all file
+  permissions.
+- Back up exact working bytes and staging, then restore only under recorded conditions. Chosen: it
+  keeps exact bytes, permissions, and staging, and restores only when that is safe.
 
 ## Decision
 

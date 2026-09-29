@@ -14,12 +14,12 @@
 
 ## Options considered
 
-- Use skills. Users can invoke them explicitly, but a procedure is more than a short instruction
-  added to a message.
-- Let users paste the text each time. Needs no code, but the wording drifts and long instructions
-  are tiring to retype.
-- Store the instructions as files and let the user toggle them per message. Keeps the wording stable
-  and gives the user control over each send.
+- Use skills. Rejected: users can invoke them explicitly, but a procedure is more than a short
+  instruction added to a message.
+- Let users paste the text each time. Rejected: it needs no code, but the wording drifts and long
+  instructions are tiring to retype.
+- Store the instructions as files and let the user toggle them per message. Chosen: it keeps the
+  wording stable and gives the user control over each send.
 
 ## Decision
 

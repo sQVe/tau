@@ -11,10 +11,12 @@ necessarily a file the user wants to commit.
 
 ## Options considered
 
-- Always stop and require a new commit tool call. Safe, but interrupts users who can decide
-  immediately.
-- Add generated files automatically. This confuses generated output with permission to commit it.
-- Ask before including generated files. Keeps the choice explicit without repeating preparation.
+- Always stop and require a new commit tool call. Rejected: it is safe, but it interrupts users who
+  can decide immediately.
+- Add generated files automatically. Rejected: this confuses generated output with permission to
+  commit it.
+- Ask before including generated files. Chosen: it keeps the choice explicit without repeating
+  preparation.
 
 ## Decision
 

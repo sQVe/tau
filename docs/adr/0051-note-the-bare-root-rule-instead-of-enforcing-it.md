@@ -12,9 +12,10 @@ one of the jobs the root exists for.
 
 ## Options considered
 
-- Keep the refusal and allow `write` under `.tau/handoffs`. Adds path rules to a guard that `bash`
-  already bypasses, and the next legitimate root task would need another exception.
-- Keep only the system prompt rule. It steers the agent without breaking the root's own workflows.
+- Keep the refusal and allow `write` under `.tau/handoffs`. Rejected: it adds path rules to a guard
+  that `bash` already bypasses, and the next legitimate root task would need another exception.
+- Keep only the system prompt rule. Chosen: it steers the agent without breaking the root's own
+  workflows.
 
 ## Decision
 

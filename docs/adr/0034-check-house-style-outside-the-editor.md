@@ -15,11 +15,13 @@ linter. Its plugin interface remains alpha.
 
 ## Options considered
 
-- Keep instructions alone. Avoids tooling work but cannot enforce the mechanical rules.
-- Enable every rule in the editor. Gives immediate feedback but adds unwanted style diagnostics.
-- Add a separate ESLint runner. Reuses its rules but duplicates the lint pipeline and configuration.
-- Enable house-style rules only in explicit commands and required checks. Keeps the existing runner
-  and separates style enforcement from live diagnostics.
+- Keep instructions alone. Rejected: it avoids tooling work but cannot enforce the mechanical rules.
+- Enable every rule in the editor. Rejected: it gives immediate feedback but adds unwanted style
+  diagnostics.
+- Add a separate ESLint runner. Rejected: it reuses ESLint rules but duplicates the lint pipeline
+  and configuration.
+- Enable house-style rules only in explicit commands and required checks. Chosen: it keeps the
+  existing runner and separates style enforcement from live diagnostics.
 
 ## Decision
 

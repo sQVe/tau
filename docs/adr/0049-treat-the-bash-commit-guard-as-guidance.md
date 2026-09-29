@@ -15,11 +15,12 @@ code such as `python3 -c`.
 
 ## Options considered
 
-- Keep the regex. It blocks harmless commands and trains agents to reword around it.
+- Keep the regex. Rejected: it blocks harmless commands and trains agents to reword around it.
 - Treat the guard as a security boundary and close every bypass, with a full shell parser dependency
-  or ever more parser cases. The commit tool exists for workflow, not containment, and an agent that
-  wants to evade the guard has many other ways to run Git.
-- Treat the guard as guidance. Block the forms an agent writes by accident and let quoted data pass.
+  or ever more parser cases. Rejected: the commit tool exists for workflow, not containment, and an
+  agent that wants to evade the guard has many other ways to run Git.
+- Treat the guard as guidance. Chosen: block the forms an agent writes by accident and let quoted
+  data pass.
 
 ## Decision
 

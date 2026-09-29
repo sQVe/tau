@@ -13,13 +13,13 @@ evidence about the same inputs.
 
 ## Options considered
 
-- Require every agent to run the required checks independently. This treats a reported pass as
-  untrusted, but it reruns the same suite on unchanged inputs and does not inspect the diff.
-- Keep separate bookkeeping passes for TDD verification and the repository gate. This runs the full
-  suite twice on one work state and teaches agents to rerun for process reasons.
+- Require every agent to run the required checks independently. Rejected: it treats a reported pass
+  as untrusted, but it reruns the same suite on unchanged inputs and does not inspect the diff.
+- Keep separate bookkeeping passes for TDD verification and the repository gate. Rejected: this runs
+  the full suite twice on one work state and teaches agents to rerun for process reasons.
 - Treat one full check as satisfying both, and reuse worker-reported checks unless a concrete reason
-  says otherwise. This keeps diff review and targeted reproduction, which are the checks that find
-  defects.
+  says otherwise. Chosen: this keeps diff review and targeted reproduction, which are the checks
+  that find defects.
 
 ## Decision
 

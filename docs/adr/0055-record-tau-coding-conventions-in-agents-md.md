@@ -8,22 +8,23 @@
 - Agents write nearly all of Tau's code. They copy nearby patterns and follow the coding
   instructions Tau loads into every session (ADR 0008).
 - An instruction alone fails when nothing makes the rule the easy path. "Parse untrusted values
-  once" was already an instruction, and agents still wrote four task ID parsers (ME-438).
+  once" was already an instruction, and agents still wrote four task ID parsers.
 - Agents game proxy checks such as size thresholds (ADR 0035).
 - Every instruction line costs context in every session (ADR 0008).
-- A multi-model review proposed conventions for module ownership, queries, failures, and mappings.
-  It kept only short semantic rules and put the details in ADRs, lint messages, and code examples.
+- A review proposed conventions for module ownership, queries, failures, and mappings. It kept only
+  short semantic rules and put the details in ADRs, lint messages, and code examples.
 
 ## Options considered
 
-- Add the conventions to the coding instructions. Those instructions load in every repository an
-  agent works in, so every session would pay for rules that other repositories may not share.
-- Add only general forms of the rules to the coding instructions. They would still set conventions
-  for other repositories, which the coding instructions should leave to those repositories.
-- Record the conventions in this ADR only. Agents would not see the choices they make before
-  designing, such as where code lives, until review.
+- Add the conventions to the coding instructions. Rejected: those instructions load in every
+  repository, so every session would pay for rules that other repositories may not share.
+- Add only general forms of the rules to the coding instructions. Rejected: they would still set
+  conventions for other repositories, which should decide their own.
+- Record the conventions in this ADR only. Rejected: agents would not see the choices they make
+  before designing, such as where code lives, until review.
 - Record every convention here, and link to it from `AGENTS.md`, which loads only in Tau. Leave
-  syntax to lint messages and examples. Choose this option.
+  syntax to lint messages and examples. Chosen: agents in Tau see the rules, and other repositories
+  pay nothing.
 
 ## Decision
 

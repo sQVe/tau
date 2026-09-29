@@ -7,23 +7,21 @@
 ## Context
 
 - Every launch defaulted to foreground. Foreground workers split the parent tab until panes became
-  too small.
-- A scan on 2026-09-28 of the 64 parent Pi sessions from the previous 30 days found that reviewers
-  used the foreground default in 60 of 81 launches. The parent reads their report, not their pane.
-- In 7 of those sessions, 2 or more foreground workers were live at once, with a peak of 6. The user
-  could not read them all.
-- Agents pass `foreground` out of habit: 42 of 93 Pi worker launches set it explicitly. An explicit
-  value does not show that the user asked for a pane.
+  too small, and some sessions had up to 6 visible at once.
+- Most reviewer launches used the foreground default, but the parent reads their report, not their
+  pane.
+- Agents pass `foreground` out of habit, in almost half of Pi worker launches. An explicit value
+  does not show that the user asked for a pane.
 - Users ask for one worker pane at a time, usually the editing worker.
 
 ## Options considered
 
-- Keep the parent's choice and document when to use each visibility. Agents already ignore the
-  existing description, and nothing stops panes from piling up across turns.
-- Let an explicit `foreground` exceed the limit. Most explicit values are habit, so the limit would
-  rarely apply.
-- Count worker panes in the tab through herdr. This also limits several parents sharing one tab, but
-  it adds herdr reads to every placement for a case the logs do not show.
+- Keep the parent's choice and document when to use each visibility. Rejected: agents already ignore
+  the existing description, and nothing stops panes from piling up across turns.
+- Let an explicit `foreground` exceed the limit. Rejected: most explicit values are habit, so the
+  limit would rarely apply.
+- Count worker panes in the tab through herdr. Rejected: this also limits several parents sharing
+  one tab, but it adds herdr reads to every placement for a case the logs do not show.
 
 ## Decision
 

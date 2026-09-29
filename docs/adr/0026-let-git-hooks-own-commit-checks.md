@@ -13,10 +13,11 @@ progress.
 
 ## Options considered
 
-- Reject hook rewrites to preserve the reviewed tree. This treats successful formatting as failure
-  and requires changing history after Git succeeds.
-- Accept hook changes and report them. This preserves Git's result without a second check policy.
-- Leave review retries unlimited. This allows corrections but risks automatic loops.
+- Reject hook rewrites to preserve the reviewed tree. Rejected: this treats successful formatting as
+  failure and requires changing history after Git succeeds.
+- Accept hook changes and report them. Chosen: this preserves Git's result without a second check
+  policy.
+- Leave review retries unlimited. Rejected: this allows corrections but risks automatic loops.
 
 ## Decision
 

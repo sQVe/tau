@@ -11,10 +11,12 @@ edits must not weaken checks for staged files.
 
 ## Options considered
 
-- Use `--no-verify`. Some hooks still run, including `prepare-commit-msg`.
-- Disable hooks repository-wide. This also changes human commits.
-- Let the agent bypass hooks when they fail. This gives the agent control over repository policy.
+- Use `--no-verify`. Rejected: some hooks still run, including `prepare-commit-msg`.
+- Disable hooks repository-wide. Rejected: this also changes human commits.
+- Let the agent bypass hooks when they fail. Rejected: this gives the agent control over repository
+  policy.
 - Read policy from staged configuration and limit hook skipping to Tau's final commit command.
+  Chosen: owners set the policy, and human commits stay unchanged.
 
 ## Decision
 

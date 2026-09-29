@@ -10,10 +10,10 @@ session turns the gate on. A stale writer can also erase another session's evide
 
 ## Options considered
 
-- Keep per-session caches. They cannot reliably reflect changes from other processes.
-- Use only an in-process queue. It cannot protect state shared by separate Pi processes.
-- Read disk state for each decision and lock read-modify-write operations across processes. This
-  keeps one source of truth without adding a database or lock service.
+- Keep per-session caches. Rejected: they cannot reliably reflect changes from other processes.
+- Use only an in-process queue. Rejected: it cannot protect state shared by separate Pi processes.
+- Read disk state for each decision and lock read-modify-write operations across processes. Chosen:
+  this keeps one source of truth without adding a database or lock service.
 
 ## Decision
 

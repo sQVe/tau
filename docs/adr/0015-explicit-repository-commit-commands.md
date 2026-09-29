@@ -15,11 +15,12 @@ validate the staged content, not unrelated working changes.
 
 ## Options considered
 
-- Discover commands from package scripts or hooks. Requires ecosystem-specific rules and can run
-  unrelated actions.
-- Let repository owners configure executable and argument arrays. Makes command selection explicit
-  without requiring Tau to understand the build system.
-- Keep preparation in hooks. Preserves the undo-and-retry cycle when hooks rewrite approved content.
+- Discover commands from package scripts or hooks. Rejected: it requires ecosystem-specific rules
+  and can run unrelated actions.
+- Let repository owners configure executable and argument arrays. Chosen: it makes command selection
+  explicit without requiring Tau to understand the build system.
+- Keep preparation in hooks. Rejected: it preserves the undo-and-retry cycle when hooks rewrite
+  approved content.
 
 ## Decision
 

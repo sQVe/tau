@@ -15,14 +15,15 @@ their value and still compile. The value and its type then sit apart.
 
 ## Options considered
 
-- Leave placement to review. Costs nothing, but placement stays inconsistent.
-- Hoist every type. Separates each TypeBox type from its schema.
-- Exempt types built with named helpers such as `Static` or `ReturnType`. Needs a list that grows
-  with every new helper and misses `typeof value` alone.
-- Exempt a type that references an exempt type. Keeps chains such as `Extract<Task, { version: 1 }>`
-  together, but an interface that only uses a TypeBox type in one field would never move.
-- Exempt a type only when it applies `typeof` to a value declared in the same module. Uses the
-  reference itself, so it needs no list.
+- Leave placement to review. Rejected: it costs nothing, but placement stays inconsistent.
+- Hoist every type. Rejected: it separates each TypeBox type from its schema.
+- Exempt types built with named helpers such as `Static` or `ReturnType`. Rejected: it needs a list
+  that grows with every new helper and misses `typeof value` alone.
+- Exempt a type that references an exempt type. Rejected: it keeps chains such as
+  `Extract<Task, { version: 1 }>` together, but an interface that only uses a TypeBox type in one
+  field would never move.
+- Exempt a type only when it applies `typeof` to a value declared in the same module. Chosen: it
+  uses the reference itself, so it needs no list.
 
 ## Decision
 

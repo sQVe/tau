@@ -12,10 +12,11 @@ worker launched from the root would also work there.
 
 ## Options considered
 
-- Rely on the worktree and handoff skills alone. The agent already ignores them at times.
-- Add a rule to the system prompt only. Cheap, but nothing stops an agent that disregards it.
-- Add the rule and refuse the tools that change files or start workers. Catches the common case with
-  a clear refusal that names the way out.
+- Rely on the worktree and handoff skills alone. Rejected: the agent already ignores them at times.
+- Add a rule to the system prompt only. Rejected: it is cheap, but nothing stops an agent that
+  disregards it.
+- Add the rule and refuse the tools that change files or start workers. Chosen: it catches the
+  common case with a clear refusal that names the way out.
 
 ## Decision
 

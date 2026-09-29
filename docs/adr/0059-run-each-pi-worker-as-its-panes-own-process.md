@@ -8,42 +8,25 @@
 
 ## Context
 
-Tau started a Pi worker by splitting a pane, which starts the user's interactive shell, and then
-typing `pi --session …` into that shell. To stop the worker, Tau sent keys, waited for the shell to
-be bare again, and closed the pane. A scan on 2026-09-28 of the 235 worker records in
-`~/.pi/agent/tau/` found:
+Tau started each Pi worker by typing a `pi` command into a new pane's interactive shell. It stopped
+the worker by sending keys and closing the pane once the shell looked idle. Both steps depended on
+the user's shell setup, which Tau does not control. In practice, panes stayed open after cleanup,
+some launches failed, and records still said the worker had stopped. Prompt hooks confused the idle
+check, the stop keys did not stop Pi, and `pi` can be a shell function.
 
-- 6 workers left a pane open. In 3, cleanup used its whole 5 s budget. In 3, the shell check refused
-  to close the pane after about 0.1 s.
-- 4 launches failed with "Native start requires an unchanged foreground shell". Each left a "Tau
-  workers" tab that holds only a shell.
-- All six records that left a pane open still say `stopped: true`, so the widget and recovery never
-  flag them.
-
-The shell causes each failure:
-
-- zsh prompt hooks, such as powerlevel10k, briefly show a forked zsh as the foreground group leader.
-  The shell check reads that as a real job and refuses to close the pane.
-- The stop keys `escape ctrl+c ctrl+d` do not stop Pi. The user binds `ctrl+d` to another action,
-  and one `ctrl+c` only clears the editor.
-- The user's `pi` is a shell function, so the typed command depends on the user's shell setup.
-
-Herdr 0.9.1 can run a command as a pane's own process. The socket request `layout.apply` creates a
-new tab whose single pane runs a given argv with a cwd, label, and environment. The pane has no
-shell: `shell_pid` is the Pi process. When that process exits, herdr removes the pane and its tab.
-`herdr pane close` stops the process with HUP, then TERM, then KILL. `herdr pane move` can place
-that pane beside another pane, and herdr removes the empty source tab.
+Herdr can run a command as a pane's own process, with no shell. The pane closes when that process
+exits. Herdr can also close such a pane and move it beside another pane.
 
 ## Options considered
 
-- Keep the shell and fix each check: resample prompt hooks longer, send `ctrl+c` twice, and retry
-  keys. Each fix depends on the user's shell and key bindings, which Tau does not control.
-- Start the shell with `exec pi …`. The shell still runs prompt hooks first, and `exec pi` finds the
-  shell function, not the executable.
-- Run Pi as the pane's own process. The pane then lives exactly as long as Pi, and no shell state
-  remains to check. Choose this option.
-- Ask herdr for a lease that closes a worker pane when its owner goes away. This is a herdr change,
-  and it is out of scope here.
+- Keep the shell and fix each check. Rejected: each fix depends on the user's shell and key
+  bindings.
+- Start the shell with `exec pi …`. Rejected: the shell still runs prompt hooks first, and `exec pi`
+  finds the shell function, not the executable.
+- Run Pi as the pane's own process. Chosen: the pane lives exactly as long as Pi, and no shell state
+  remains to check.
+- Ask herdr for a lease that closes a worker pane when its owner goes away. Deferred: this is a
+  herdr change and out of scope here.
 
 ## Decision
 
@@ -78,7 +61,7 @@ records describe a shell and are retired, as
 [ADR 0052](./0052-drop-backwards-compatibility-by-default.md) allows.
 
 Recording "process stopped" and "pane closed" as separate facts is a follow-up. Today one `stopped`
-flag covers both, which hid the six open panes.
+flag covers both, which hid the open panes.
 
 ### Herdr restart
 

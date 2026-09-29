@@ -6,21 +6,20 @@
 ## Context
 
 The bundled `scout`, `worker`, and `reviewer` profiles named no model, and `TAU_SUBAGENT_MODEL` is
-usually unset. Pi worker launch then refused. An audit of Pi sessions for
-[ME-427](https://linear.app/sqve/issue/ME-427) found 86 such refusals; at least 16 were retried at
-once with a model. [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md) still forbids
-falling back to the parent's model, because the parent's runtime settings are not reproducible in a
-worker.
+usually unset. Pi worker launch then refused. A session audit found 86 such refusals, and at least
+16 were retried at once with a model.
+[ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md) still forbids falling back to the
+parent's model, because the parent's runtime settings are not reproducible in a worker.
 
 Past worker records mostly used `claude-bridge/claude-opus-5-5` for editing work, with a mix of
 models for investigation. The owner chose Opus 5.5 for all three profiles.
 
 ## Options considered
 
-- Keep refusing without a model. Every launch then repeats a model argument.
-- Fall back to the parent's model. ADR 0043 rejects this.
-- Name a model in each bundled profile. Choose this option because it keeps an exact, visible model
-  and needs no new setting.
+- Keep refusing without a model. Rejected: every launch then repeats a model argument.
+- Fall back to the parent's model. Rejected: ADR 0043 forbids this.
+- Name a model in each bundled profile. Chosen: it keeps an exact, visible model and needs no new
+  setting.
 
 ## Decision
 
@@ -45,3 +44,4 @@ through native arguments.
 
 - [ADR 0043: Own only the worker guarantees herdr lacks](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 - [Development](../development.md)
+- [ME-427](https://linear.app/sqve/issue/ME-427), the audit of refused worker launches

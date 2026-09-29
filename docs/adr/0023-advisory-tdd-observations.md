@@ -6,26 +6,26 @@
 
 ## Context
 
-ABU-364 replaces blocking TDD enforcement. Formatting could invalidate saved evidence and require
+Blocking TDD enforcement had three limits. Formatting could invalidate saved evidence and require
 focused renewal even after the full suite passed. Shared permission state also required disk
 schemas, migration, and cross-process locks. That machinery could control edits but could not judge
 whether a failing assertion proved useful behavior.
 
 ## Options considered
 
-- Keep the gate and improve evidence renewal. This retains permission failures unrelated to actual
-  test outcomes and the shared-state machinery needed to resolve them.
-- Persist reminders instead of permissions. This removes blocking but keeps synchronization and
-  migration costs for advice that does not need to survive a session.
-- Keep session-local observations and short hints. This preserves test feedback without making
-  historical RED evidence a condition for editing or accepting a full-suite pass.
+- Keep the gate and improve evidence renewal. Rejected: this retains permission failures unrelated
+  to actual test outcomes and the shared-state machinery needed to resolve them.
+- Persist reminders instead of permissions. Rejected: this removes blocking but keeps
+  synchronization and migration costs for advice that does not need to survive a session.
+- Keep session-local observations and short hints. Chosen: this preserves test feedback without
+  making historical RED evidence a condition for editing or accepting a full-suite pass.
 
 ## Decision
 
 Use nonblocking TDD hints backed by session-local observations, not saved edit permissions. The
-project owner approved this design for ABU-364. Remove the guard, permission state, and `/tdd`
-switches. Keep runner outcomes and commit checks, requested-file safeguards, review, and approval
-independent of hints.
+project owner approved this design. Remove the guard, permission state, and `/tdd` switches. Keep
+runner outcomes and commit checks, requested-file safeguards, review, and approval independent of
+hints.
 
 Track one active behavior and the latest run. A full pass starts the next cycle without requiring
 prior RED or focused renewal after formatting. Deduplicate hints by meaningful transitions, not

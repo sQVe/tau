@@ -9,23 +9,21 @@
 
 ## Context
 
-Non-Pi workers launch with native-controls, which Tau does not certify. ADR 0033 required explicit
-parent-user approval of the native argument list and the report area before each launch. Tau showed
-a confirmation dialog on every launch, and the launch tool description also told the model to ask
-the user first. Every launch cost two approvals for the same configuration. People approved without
-reading, so the dialog no longer carried a decision.
-
-The native harness runs its own approval dialogs for the actions the worker takes. Tau adds no
-bypass flags and never answers those dialogs.
+Non-Pi workers launch with native-controls, which Tau does not certify. ADR 0033 required the parent
+user to approve the native argument list and the report area before each launch. In practice, every
+launch asked twice for the same configuration: once from the model and once in a Tau dialog. People
+approved without reading, so the dialog no longer carried a decision. The native harness runs its
+own approval dialogs for the actions the worker takes, and Tau never answers or bypasses them.
 
 ## Options considered
 
-- Keep the dialog. It remains a formality that people click through, and it blocks unattended
-  launches.
+- Keep the dialog. Rejected: it remains a formality that people click through, and it blocks
+  unattended launches.
 - Remember approvals per configuration tuple (kind, cwd, arguments, report area) and ask only for a
-  new tuple. This adds saved state and an invalidation rule for a check the native harness already
-  performs on the actions that matter.
-- Remove the dialog and keep the sandbox checks. The native harness's dialogs stay the real control.
+  new tuple. Rejected: this adds saved state and an invalidation rule for a check the native harness
+  already performs on the actions that matter.
+- Remove the dialog and keep the sandbox checks. Chosen: the native harness's dialogs stay the real
+  control.
 
 ## Decision
 

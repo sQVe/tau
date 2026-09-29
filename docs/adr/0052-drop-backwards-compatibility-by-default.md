@@ -16,12 +16,12 @@
 
 ## Options considered
 
-- Keep no rule. Agents keep adding shims by reflex.
-- Keep compatibility by default. This protects outside users but leaves dead paths in every internal
-  rename.
-- Always delete the old path. This breaks outside users without warning.
-- Delete by default and ask when an outside user may exist. The agent can decide most cases from the
-  repository and asks only when it cannot.
+- Keep no rule. Rejected: agents keep adding shims by reflex.
+- Keep compatibility by default. Rejected: this protects outside users but leaves dead paths in
+  every internal rename.
+- Always delete the old path. Rejected: this breaks outside users without warning.
+- Delete by default and ask when an outside user may exist. Chosen: the agent can decide most cases
+  from the repository and asks only when it cannot.
 
 ## Decision
 

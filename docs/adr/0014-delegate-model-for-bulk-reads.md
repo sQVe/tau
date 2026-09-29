@@ -6,42 +6,28 @@
 
 ## Context
 
-ABU-359 asks whether Tau can reduce the session model's bulk file reading by giving that work to a
-cheaper model. Grep and bounded reads answer "where is X" without delegation. Semantic questions
-spanning several large files still require a model to read and interpret those files.
+Tau could reduce the session model's bulk file reading by giving that work to a cheaper model. Grep
+and bounded reads answer "where is X", but a semantic question that spans several large files still
+needs a model to read them.
 
-The [vision](../vision.md#principles) allows model selection for Tau's tools and subagents to reduce
-cost and time, and requires those models to be user-configurable. This proposal applies that
-principle to bulk reads.
-
-Model availability varies by provider and account, so Tau cannot rely on one hardcoded delegate
-working for every user.
-
-The owner chose `openai-codex/gpt-5.6-luna` as the default from the investigation's catalog price
-comparison:
-
-| Model                         | input $/M | output $/M | cacheRead |
-| ----------------------------- | --------- | ---------- | --------- |
-| `gpt-6-astra` (session model) | 10        | 50         | 1         |
-| `gpt-5.6-luna` (delegate)     | 0.2       | 1.2        | 0.02      |
-
-Catalog prices go stale; the ratio is what matters.
+The [vision](../vision.md#principles) allows cheaper models for Tau's tools and subagents, and
+requires those models to be user-configurable. Model availability varies by provider and account, so
+no single hardcoded delegate works for every user. The owner chose `openai-codex/gpt-5.6-luna` as
+the default because its catalog price per token is about 40 to 50 times lower than the session
+model's.
 
 ## Options considered
 
-1. Do nothing. Rely on grep and bounded reads. This is the cheapest option for locating symbols, but
-   it does not answer semantic questions across several large files without bulk reading.
-2. Use deterministic outlines from rtk or `tsc`. The investigation found that rtk 0.48.0 `read`
-   passed a TypeScript file through byte for byte, with 23,737 characters in and out. Its
-   `-l aggressive` mode cut the output to 5,031 characters but truncated statements and emitted no
-   line numbers. It left `import type {` unclosed and cut the arguments after
-   `const result = await pi.exec(`. `tsc` declaration output is TypeScript-only. Reject this option
-   because Tau must work on any codebase.
-3. Use a delegate model. Choose this option because it is the only proposed bulk-read replacement
-   that works across languages and answers questions rather than just listing structure.
-4. Use cheap code writers. Defer this option. Portal by Spotify ships a code-writer mode but lists
-   its inability to enforce that mode as a known limitation. ABU-359 already limits code writers to
-   "only if 1 and 2 show a measured saving". Bulk-read delegation does not authorize code writing.
+1. Do nothing and rely on grep and bounded reads. Rejected: this is cheapest for locating symbols,
+   but it cannot answer semantic questions across several large files.
+2. Use deterministic outlines from rtk or `tsc`. Rejected: rtk either passed a file through
+   unchanged or truncated statements and dropped line numbers, and `tsc` works only for TypeScript.
+   Tau must work on any codebase.
+3. Use a delegate model. Chosen: it is the only proposed replacement that works across languages and
+   answers questions instead of listing structure.
+4. Use cheap code writers. Deferred: Portal by Spotify lists its inability to enforce a code-writer
+   mode as a known limitation. Code writers were allowed only if options 1 and 2 showed a measured
+   saving. Bulk-read delegation does not authorize code writing.
 
 ## Decision
 
@@ -149,32 +135,35 @@ edge cases rather than reading the file a second time:
 - The roughly 90% figure reported by Portal and rtk describes a reduction in what the agent reads,
   not a reduction in the bill. Both estimate tokens as characters divided by four, without a
   tokenizer.
-- Four runs on 2026-09-10 over a 2,244-line fixture, `openai-codex/gpt-6-astra` against
-  `openai-codex/gpt-5.6-luna`, gave a median catalog cost of $0.36 without trimming against $0.32
-  with it, an 11% saving inside run-to-run variance, and a median wall clock of 42 against 66
-  seconds. The one run that clamped and then delegated was 32% cheaper than the comparable full-read
-  run and twice as slow. These results accepted this ADR;
+- Four runs on 2026-09-10 over a 2,244-line fixture compared `openai-codex/gpt-6-astra` with
+  `openai-codex/gpt-5.6-luna`. The median catalog cost was $0.36 without trimming and $0.32 with it,
+  an 11% saving inside run-to-run variance. The median wall clock was 42 seconds against 66 seconds.
+  The one run that clamped and then delegated was 32% cheaper than the comparable full-read run and
+  twice as slow. These results accepted this ADR.
   [Development](../development.md#measuring-bulk-reads) has the procedure to repeat them.
 - The [population script](../../scripts/bulk-read-population.sh) run on 2026-09-12 counted 194
   sessions, 2,981 reads, 2,137 unbounded reads, 568 truncated or hinted results (19.1%), and at most
-  470 offset pages. That day's review had counted 2.3% truncated or hinted; the query also matches
-  Pi's own continuation notice, which is where the rest comes from. Nine `bulk_read` calls cost
+  470 offset pages. That day's review had counted 2.3% truncated or hinted. The rest comes from Pi's
+  own continuation notice, which the query also matches. Nine `bulk_read` calls cost
   $0.08 against $84.65 of assistant spend in the seven sessions that used it. Cumulative catalog
-  cost to that date was $555.49 for `assistant`
-  and $0.08 for `toolResult`. Sessions before
-  `bulk_read` shipped are counted, files under 400 lines count as unbounded reads, and the offset
-  count is an upper bound without a same-path join. These counts compare no thresholds and establish
-  no savings, so measure savings in sessions using delegation before expanding delegation work,
-  including code writers.
+  cost to that date was $555.49 for `assistant` and $0.08 for `toolResult`. The counts include
+  sessions before `bulk_read` shipped, and files under 400 lines count as unbounded reads. The
+  offset count is an upper bound without a same-path join. These counts compare no thresholds and
+  establish no savings. Measure savings in sessions using delegation before expanding delegation
+  work, including code writers.
 - The session model often avoids bulk reads on its own, grepping and reading bounded ranges the
   clamp leaves alone, and those runs cost the same either way. The threshold stays at 400, and code
   writers do not earn a ticket on this evidence.
-- Three follow-up changes were measured live and reverted: offering bounded reads "for exact code"
-  in the hint, which gave no speedup and two mis-bounded citations; one delegate call per file in
-  parallel, which ran faster per call but padded answers with remarks about files the call never
-  saw; and a system-prompt guideline to delegate first, which cost 12% less and about 40 seconds
-  more while dropping a claim in three of four answers. The clamp, the hint, and the shorter-answer
-  sentence held.
+- Three follow-up changes were measured live and reverted:
+  - Offering bounded reads "for exact code" in the hint gave no speedup and two mis-bounded
+    citations.
+  - One delegate call per file in parallel ran faster per call but padded answers with remarks about
+    files the call never saw.
+  - A system-prompt guideline to delegate first cost 12% less and took about 40 seconds more, and it
+    dropped a claim in three of four answers.
+
+  The clamp, the hint, and the shorter-answer sentence held.
+
 - File content reaches a weaker model whose output returns as trusted-looking bullets. Prompt
   framing is the mitigation, and it is weaker than in Tau's other uses of it. The delegate has no
   tools, so injected content cannot act. Citation instructions do not establish that an answer is

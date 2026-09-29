@@ -7,20 +7,22 @@
 
 - Tau appends three instruction sets to the system prompt: writing, coding, and workflow. A worker
   loads the parent's whole Pi configuration, so every worker got all three on every turn.
-- The coding instructions are 4,420 characters. Scouts and QA workers do not write code, so for them
-  this text is sent on every turn without use.
+- Scouts and QA workers do not write code, so for them the coding instructions are sent on every
+  turn without use.
 - Reviewers do not edit code either, but they judge code against the coding instructions.
 - A worker reads its instructions from its saved task and appends them itself, so a follow-up gets
   them without resending ([ADR 0066](./0066-add-taus-prompt-text-to-pis-append-section.md)).
 
 ## Options considered
 
-- Keep every set for every worker. This costs about 4.4k characters per turn for scouts and QA.
+- Keep every set for every worker. Rejected: this costs about 4.4k characters per turn for scouts
+  and QA.
 - Choose the sets by role, so investigation profiles drop the coding set. Rejected: the reviewer is
   an investigation profile but needs the coding set.
 - Send the list of sets to the worker through an environment variable. Rejected: the worker reads
   its saved task, so a follow-up would lose a list that only the launch environment carried.
-- Name the sets in the profile and save them in the task loadout. Choose this option.
+- Name the sets in the profile and save them in the task loadout. Chosen: each profile gets the sets
+  its role needs, and a follow-up keeps them.
 
 ## Decision
 

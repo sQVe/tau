@@ -9,13 +9,17 @@ applicable. Preserve historical reasoning when superseding a decision and link t
 
 ## Context
 
-Describe the problem and constraints that made this choice necessary. Include only facts needed to
-understand the decision, not a feature summary or history of the implementation.
+State the problem, the constraints, and what forced a choice, in 2 to 6 short sentences or a short
+list. Leave out the investigation story, the step-by-step history of the old mechanism, ticket IDs,
+and implementation mechanics. Leave out measurements the decision does not rest on; summarize one
+that it does rest on in one sentence. Leave out prices and exact version or byte counts that go
+stale.
 
 ## Options considered
 
-Name the credible alternatives and explain why the chosen option fits the constraints better.
-Include keeping the current approach when viable. Do not invent options to fill this section.
+Name the credible alternatives in one or two sentences each. Start the reason with `Chosen:`,
+`Rejected:`, or `Deferred:`. Include keeping the current approach when viable. Do not invent options
+to fill this section.
 
 ## Decision
 

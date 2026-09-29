@@ -12,12 +12,12 @@
 
 ## Options considered
 
-- Keep `extensions/`, `src/`, `skills/`, and `rules/` at the root. Mixes application code with tool
-  settings and leaves code in several places.
-- Put everything under `src/`, including skills. Keeps code together, but does not match Pi's
-  discovery of skills from a root directory declared in `package.json`.
-- Put application code under `src/` and skills at the package root. Matches how Pi finds skills and
-  gives code one home.
+- Keep `extensions/`, `src/`, `skills/`, and `rules/` at the root. Rejected: it mixes application
+  code with tool settings and leaves code in several places.
+- Put everything under `src/`, including skills. Rejected: it keeps code together, but does not
+  match Pi's discovery of skills from a root directory declared in `package.json`.
+- Put application code under `src/` and skills at the package root. Chosen: it matches how Pi finds
+  skills and gives code one home.
 
 ## Decision
 

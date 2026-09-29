@@ -14,10 +14,10 @@ those checks see staged content.
 
 ## Options considered
 
-- Remove preparation and recovery first, then remove Tau-run checks. This preserves the planned
-  ticket sequence but adds temporary check behavior that the next change would delete.
-- Remove preparation, recovery, and Tau-run checks together. Use the real index and let installed
-  Git hooks run checks without a second Tau-specific configuration.
+- Remove preparation and recovery first, then remove Tau-run checks. Rejected: this preserves the
+  planned ticket sequence but adds temporary check behavior that the next change would delete.
+- Remove preparation, recovery, and Tau-run checks together. Chosen: Tau uses the real index, and
+  installed Git hooks run checks without a second Tau-specific configuration.
 
 ## Decision
 

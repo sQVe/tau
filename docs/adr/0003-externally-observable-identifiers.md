@@ -5,28 +5,22 @@
 
 ## Context
 
-- Other programs and users depend on some names in Tau. For example:
+Users, scripts, and saved data depend on some names in Tau. For example, users type `/commit` for
+the command registered as `'commit'`. Renaming its handler function could tempt someone to rename
+the command too, which breaks every use of the old name. The same risk applies to:
 
-  ```ts
-  pi.registerCommand('commit', commitHandler);
-  ```
-
-  Users type `/commit` in Pi. Scripts and saved sessions may also use that name.
-
-- Renaming `commitHandler` to `createCommitHandler` might lead someone to rename `'commit'` to
-  `'createCommit'` too. That would break uses of the old command.
-- The same risk applies to:
-  - saved session keys, including Pi custom entry types written to disk.
-  - Pi tool names registered via `pi.registerTool` and seen by the model.
-  - slash command names registered via `pi.registerCommand` and typed by users.
-  - event type strings passed to `pi.on`.
-  - skill directory names under `skills/`, discovered by Pi.
-- This ADR records when these names may change.
+- saved session keys, including Pi custom entry types written to disk.
+- Pi tool names registered via `pi.registerTool` and seen by the model.
+- slash command names registered via `pi.registerCommand` and typed by users.
+- event type strings passed to `pi.on`.
+- skill directory names under `skills/`, discovered by Pi.
 
 ## Options considered
 
-- Rename both code and public names together. Simple, but can break saved state and callers.
-- Keep public names stable when renaming code. Change a public name only for a separate reason.
+- Rename both code and public names together. Rejected: it is simple, but can break saved state and
+  callers.
+- Keep public names stable when renaming code. Chosen: a public name changes only for a separate
+  reason.
 
 ## Decision
 

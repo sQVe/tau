@@ -15,11 +15,11 @@
 
 ## Options considered
 
-- Keep a page per feature under `docs/`. Gives readers a guide, but duplicates behavior already
-  defined in code and can drift as the code changes.
-- Move each page next to the extension it describes. Shortens the distance, but still asks every
-  feature change to update prose that repeats the code.
-- Write no feature pages. Record decisions in ADRs, and let code and tool descriptions state
+- Keep a page per feature under `docs/`. Rejected: it gives readers a guide, but duplicates behavior
+  already defined in code and can drift as the code changes.
+- Move each page next to the extension it describes. Rejected: it shortens the distance, but still
+  asks every feature change to update prose that repeats the code.
+- Write no feature pages. Chosen: ADRs record decisions, and code and tool descriptions state
   behavior.
 
 ## Decision

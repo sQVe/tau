@@ -7,21 +7,21 @@
 
 ## Context
 
-Bulk reads and web answers already share a model, while comment review uses Pi's session model.
-ABU-391 asks for independent provider and model selection across these three tasks to reduce cost.
-Comment review can block commits, so lower catalog prices alone do not justify changing its default.
+Bulk reads and web answers already share a model, while comment review uses Pi's session model. Tau
+needed independent provider and model selection across these three tasks to reduce cost. Comment
+review can block commits, so lower catalog prices alone do not justify changing its default.
 
 The owner chose lower cost with preserved review quality over lower latency. The owner also approved
 removing `TAU_BULK_READ_MODEL` without compatibility handling because Tau has no other users.
 
 ## Options considered
 
-1. Keep comment review on the session model. This avoids a new review-quality risk but ties a
-   bounded tool call to the model chosen for implementation work.
-2. Share one configurable delegate after a labeled comparison. Choose this option because the
-   existing delegate passed the agreed review gate at lower measured catalog cost.
-3. Add task routing or a settings UI. Reject these additions because the three callers need one
-   independent default, not another model-selection system.
+1. Keep comment review on the session model. Rejected: this avoids a new review-quality risk but
+   ties a bounded tool call to the model chosen for implementation work.
+2. Share one configurable delegate after a labeled comparison. Chosen: the existing delegate passed
+   the agreed review gate at lower measured catalog cost.
+3. Add task routing or a settings UI. Rejected: the three callers need one independent default, not
+   another model-selection system.
 
 ## Decision
 

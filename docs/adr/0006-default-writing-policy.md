@@ -12,10 +12,11 @@
 
 ## Options considered
 
-- Keep current behavior. Sets no default writing rules.
-- Ship only an unslop skill. Helps with editing requests but must be loaded first.
-- Load a policy through a Pi extension. Includes the same rules in each ordinary agent run.
-- Rewrite responses automatically. Takes more time and risks changing meaning.
+- Keep current behavior. Rejected: it sets no default writing rules.
+- Ship only an unslop skill. Rejected: it helps with editing requests but must be loaded first.
+- Load a policy through a Pi extension. Chosen: it includes the same rules in each ordinary agent
+  run.
+- Rewrite responses automatically. Rejected: it takes more time and risks changing meaning.
 
 ## Decision
 

@@ -15,9 +15,11 @@
 
 ## Options considered
 
-- Keep the rules where they are. Needs no change, but the boundary ADR 0008 draws keeps eroding.
-- Add the rules to the bare root prompt. That prompt applies only in a bare repository root.
-- Load a third instruction file through its own extension. Matches ADR 0006 and ADR 0008.
+- Keep the rules where they are. Rejected: it needs no change, but the boundary ADR 0008 draws keeps
+  eroding.
+- Add the rules to the bare root prompt. Rejected: that prompt applies only in a bare repository
+  root.
+- Load a third instruction file through its own extension. Chosen: it matches ADR 0006 and ADR 0008.
 
 ## Decision
 
