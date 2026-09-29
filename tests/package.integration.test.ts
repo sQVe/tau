@@ -228,7 +228,6 @@ it('loads Tau through Pi with commit features, bundled question and web tools, a
       }
     }
 
-    // A direct provider receives each block once per session, not once per prompt.
     for (const block of blocks) {
       expect(transcripts[1]?.split(JSON.stringify(block).slice(1, -1))).toHaveLength(2);
     }

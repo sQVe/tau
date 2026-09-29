@@ -3,8 +3,6 @@ import { spawnSync } from 'node:child_process';
 import piManifest from '../node_modules/@earendil-works/pi-coding-agent/package.json' with { type: 'json' };
 import { piVersionDrift } from './piVersionDrift.ts';
 
-// Agents working on Tau read the installed Pi's docs, so Tau must build against the same minor.
-
 const result = spawnSync('pi', ['--version'], { encoding: 'utf8' });
 
 if (result.error) {

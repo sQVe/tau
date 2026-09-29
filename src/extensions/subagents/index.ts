@@ -147,7 +147,7 @@ export const createNoticeDelivery = (pi: ExtensionAPI): NoticeDelivery => {
     };
 
     // An idle triggerTurn skips before_agent_start and Tau's prompt additions with it, which
-    // pi-claude-bridge rejects (pi#5581). A user message starts the turn through that hook.
+    // pi-claude-bridge rejects. A user message starts the turn through that hook.
     if (context?.isIdle() === true) {
       pi.sendMessage(message, { deliverAs: 'nextTurn' });
 

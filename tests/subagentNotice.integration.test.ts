@@ -167,7 +167,6 @@ it('keeps before_agent_start prompt additions on the turn an idle notice starts'
   expect(harness.startPrompts).toHaveLength(2);
   expect(harness.startPrompts[1]).toContain(appendedRule);
   expect(getCurrentSystemPrompt(notified)).toContain(appendedRule);
-  // The addition stays in the first system message instead of being removed and sent again.
   expect(JSON.stringify(notified).split(appendedRule)).toHaveLength(2);
 });
 
