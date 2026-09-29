@@ -10,7 +10,7 @@
   ([ADR 0067](./0067-give-workers-only-their-profile-tools-and-skills.md)). So the parent must load
   every package any profile needs, and it grows with each new profile.
 - The parent rarely uses some of these packages. Over 492 parent sessions, `pi-codex-image-gen` was
-  used in 1 and `pi-agent-browser-native` in 13. Together they add about 10k of the parent's 61.5k
+  used in 1 and `pi-agent-browser-native` in 13. Together they add about 10k of the parent's 45k
   characters per request.
 - Pi can load a package for one run with `-e <source>`, including its skills.
 - Tau bundles `cc-safety-net` and `pi-web-access` because its own code depends on them.
