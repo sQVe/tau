@@ -12,3 +12,10 @@ export const piVersionDrift = (installed: string, dependency: string): string | 
     'Upgrade @earendil-works/pi-coding-agent, pi-ai, and pi-tui to the installed minor, or update pi to match.',
   ].join('\n');
 };
+
+// `pnpm run` puts the package bin directories first, and they hold the dependency's own `pi`.
+export const installedPiPath = (path: string, delimiter: string): string =>
+  path
+    .split(delimiter)
+    .filter((directory) => !/node_modules[/\\]\.bin[/\\]?$/.test(directory))
+    .join(delimiter);
