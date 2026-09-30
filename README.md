@@ -39,8 +39,9 @@ compaction. To change the threshold, add `compaction` to either file. The thresh
 ```
 
 Tau names no model of its own. Set the models for workers and `bulk_read` in `~/.pi/agent/tau.json`.
-A worker launch needs `profiles.default.model` or a model passed on the launch. `default` covers
-every profile without its own entry. `bulk_read` needs `bulkRead.model`:
+A worker launch needs a model passed on the launch, `profiles.<name>.model` for its profile, or
+`profiles.default.model`, which covers every profile without its own entry. `bulk_read` needs
+`bulkRead.model`:
 
 ```json
 {

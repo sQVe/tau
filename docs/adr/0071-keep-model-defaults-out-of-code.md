@@ -65,7 +65,9 @@ Tau no longer sets `answerModel`. `pi-web-access` uses its own `fetch.answerMode
 - Cost: web answer models are set in `pi-web-access`'s own file. Without that setting,
   `pi-web-access` answers with the session model.
 - Cost: `allowedModels` no longer covers `pi-web-access`'s configured answer model, only one passed
-  per call.
+  per call. Tau's refusal of a router model standing in for an unavailable native model also covers
+  only a passed model. `pi-web-access` may route its configured model, limited to Pi's scoped
+  models.
 - Cost: `bulk_read` and web answers no longer share one setting, so switching both means editing two
   files.
 
