@@ -100,7 +100,8 @@ or reported as open. Replies tell the reviewer only what they cannot see for the
      by your push do not stop the round.
    - Reply to a thread with
      `gh api --hostname <host> -X POST repos/<owner>/<name>/pulls/<pr>/comments/<databaseId>/replies -f body=<text>`,
-     using the `databaseId` of its first comment.
+     using the `databaseId` of its first comment. When `viewerCanReply` is false, report the thread
+     instead of replying.
    - Resolve a fixed, declined, or tracked thread, or one marked in reviewer mode, with
      `gh api graphql --hostname <host> -f query='mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }' -F id=<thread id>`.
      Leave a thread open when it holds an answered question or the reviewer owns the next step. When
