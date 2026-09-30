@@ -97,8 +97,8 @@ or reported as open. Replies tell the reviewer only what they cannot see for the
 
 9. Post and resolve.
    - Read `headRefOid` and every source from step 3 again. Stop and report if the head moved other
-     than by your push, or a person commented since step 3. Bot replies and threads marked outdated
-     by your push do not stop the round.
+     than by your push, or a person added, edited, or deleted a comment since step 3. Bot replies
+     and threads marked outdated by your push do not stop the round.
    - Reply to a thread with
      `gh api --hostname <host> -X POST repos/<owner>/<name>/pulls/<pr>/comments/<databaseId>/replies -f body=<text>`,
      using the `databaseId` of its first comment. When `viewerCanReply` is false, report the thread
