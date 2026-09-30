@@ -78,7 +78,8 @@ profile default unless the user asks for another model or a multi-model discussi
 - Cost: a user or repository profile file with `model:` stops loading until the key moves into
   `tau.json`.
 - Cost: a repository cannot set a model for its own profiles.
-- Cost: the model line adds tokens to every turn in a herdr session.
+- Cost: the model line adds tokens to every turn in a herdr session. With six scoped models it is
+  269 characters, about 70 tokens by a four-characters-per-token estimate.
 - Cost: difficulty stays with the manager. An easy task on `worker` runs on the `worker` default
   unless the manager passes `model`.
 
