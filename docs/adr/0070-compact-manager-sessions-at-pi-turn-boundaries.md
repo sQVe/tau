@@ -1,6 +1,6 @@
 # ADR 0070: Compact manager sessions at Pi turn boundaries
 
-- Status: Accepted
+- Status: Superseded by [ADR 0073](./0073-leave-manager-compaction-to-pi.md)
 - Date: 2026-09-29
 
 ## Context

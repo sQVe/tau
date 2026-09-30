@@ -11,7 +11,6 @@ import { isWorkerProcess } from '../../workerProcess/index.js';
 import { WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { historyPage, searchHistory } from './history.js';
-import { readSessionLedger } from './ledgerRecords.js';
 import { launchModels, resolveLoadout } from './loadout.js';
 import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
 import type { WorkerNotice } from './presentation.js';
@@ -642,10 +641,9 @@ const totalSleepSeconds = (command: string): number => {
   return total;
 };
 
-// Returns the worker ledger reader that compaction puts at the top of its summary.
-export const registerSubagents = (pi: ExtensionAPI) => {
+export default function subagentsExtension(pi: ExtensionAPI): void {
   if (isWorkerProcess()) {
-    return undefined;
+    return;
   }
 
   let controller: WorkerController | undefined;
@@ -804,15 +802,4 @@ export const registerSubagents = (pi: ExtensionAPI) => {
     await controller?.stopAll(event.reason);
     controller = undefined;
   });
-
-  const ownership = (taskId: string) => controller?.owns(taskId) ?? false;
-
-  return {
-    readWorkerLedger: (context: ExtensionContext) =>
-      readSessionLedger(context, workerRecordsDirectory(), ownership),
-  };
-};
-
-export default function subagentsExtension(pi: ExtensionAPI): void {
-  registerSubagents(pi);
 }
