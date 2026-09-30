@@ -36,10 +36,17 @@ export interface Ledger {
   diagnostics: string[];
 }
 
+interface ShownWorker {
+  worker: LedgerWorker;
+  evidence: string[];
+  omitted: number;
+}
+
 const evidenceLength = 500;
 const diagnosticLength = 300;
 const diagnosticCount = 5;
-const fullStoppedCount = 10;
+// About 6,000 tokens of evidence in the summary text, whatever the number of workers.
+const evidenceBudget = 24_000;
 
 const shorten = (text: string, length: number): string =>
   text.length > length ? `${text.slice(0, length)}…` : text;
@@ -85,24 +92,61 @@ export const buildLedger = (workers: WorkerRecordFacts[], diagnostics: string[])
     .map((entry) => shorten(entry, diagnosticLength)),
 });
 
-const isOlderStopped = (worker: LedgerWorker): boolean =>
-  worker.state === 'stopped' && worker.pendingQuestionId === undefined;
+// Workers with a question come first, then live workers, then the most recently launched stopped
+// workers. A worker without a launch time counts as the oldest.
+const priority = (worker: LedgerWorker): number => {
+  if (worker.pendingQuestionId !== undefined) {
+    return 0;
+  }
 
-const launchedLater = (left: LedgerWorker, right: LedgerWorker): number =>
-  (right.createdAt ?? 0) - (left.createdAt ?? 0);
+  return worker.state === 'stopped' ? 2 : 1;
+};
 
-// The summary text stays small in a session with many workers: live workers, workers with a
-// question, and the most recent stopped workers keep their evidence. Older stopped workers keep one
-// line each, so every task ID stays in the summary.
-export const summaryLayout = (ledger: Ledger) => {
-  const shortened = new Set(
-    ledger.workers.filter(isOlderStopped).toSorted(launchedLater).slice(fullStoppedCount),
-  );
+const byPriority = (left: LedgerWorker, right: LedgerWorker): number =>
+  priority(left) - priority(right) || (right.createdAt ?? 0) - (left.createdAt ?? 0);
 
-  return {
-    full: ledger.workers.filter((worker) => !shortened.has(worker)),
-    short: ledger.workers.filter((worker) => shortened.has(worker)),
-  };
+const fittingEvidence = (evidence: string[], budget: number): string[] => {
+  const shown: string[] = [];
+  let used = 0;
+
+  for (const entry of evidence) {
+    if (used + entry.length > budget) {
+      break;
+    }
+
+    shown.push(entry);
+    used += entry.length;
+  }
+
+  return shown;
+};
+
+// The summary text stays small however many workers and evidence entries the records hold. Workers
+// take evidence from one character budget in priority order. Once an entry does not fit, every later
+// worker gets one short line, so every task ID stays in the summary.
+export const summaryLayout = (ledger: Ledger, budget = evidenceBudget) => {
+  const full: ShownWorker[] = [];
+  const short: LedgerWorker[] = [];
+  let remaining = budget;
+  let usedUp = false;
+
+  for (const worker of ledger.workers.toSorted(byPriority)) {
+    if (usedUp) {
+      short.push(worker);
+
+      continue;
+    }
+
+    const evidence = worker.report?.evidence ?? [];
+    const shown = fittingEvidence(evidence, remaining);
+    const omitted = evidence.length - shown.length;
+
+    full.push({ worker, evidence: shown, omitted });
+    remaining -= shown.reduce((total, entry) => total + entry.length, 0);
+    usedUp = omitted > 0;
+  }
+
+  return { full, short };
 };
 
 const workerIdentity = (worker: LedgerWorker): string => {
@@ -113,9 +157,19 @@ const workerIdentity = (worker: LedgerWorker): string => {
 };
 
 const shortWorkerLine = (worker: LedgerWorker): string => {
+  const state = worker.state ?? 'unreadable';
   const outcome = worker.report?.outcome ?? 'no report';
+  const parts = [`state ${state}`, `report ${outcome}`];
 
-  return `- Task ${worker.taskId}${workerIdentity(worker)}: state stopped, report ${outcome}`;
+  if (worker.pendingQuestionId !== undefined) {
+    parts.push(`pending question ${worker.pendingQuestionId}`);
+  }
+
+  if (worker.successorTaskId !== undefined) {
+    parts.push(`continued as task ${worker.successorTaskId}`);
+  }
+
+  return `- Task ${worker.taskId}${workerIdentity(worker)}: ${parts.join(', ')}`;
 };
 
 const workerHeading = (worker: LedgerWorker): string => {
@@ -126,7 +180,7 @@ const workerHeading = (worker: LedgerWorker): string => {
   return `- Task ${worker.taskId}${identity}: profile ${profile}, state ${state}`;
 };
 
-const workerLines = (worker: LedgerWorker): string[] => {
+const workerLines = ({ worker, evidence, omitted }: ShownWorker): string[] => {
   const lines = [workerHeading(worker)];
 
   if (worker.pendingQuestionId !== undefined) {
@@ -140,8 +194,12 @@ const workerLines = (worker: LedgerWorker): string[] => {
   if (worker.report !== undefined) {
     lines.push(`  - Report: ${worker.report.outcome}`);
 
-    for (const entry of worker.report.evidence) {
+    for (const entry of evidence) {
       lines.push(`    - Evidence: ${entry}`);
+    }
+
+    if (omitted > 0) {
+      lines.push(`    - ${omitted} more evidence items are in the saved report.`);
     }
   }
 
@@ -167,7 +225,7 @@ export const renderLedger = (ledger: Ledger): string => {
   }
 
   if (layout.short.length > 0) {
-    lines.push('', 'Older stopped workers, without evidence:');
+    lines.push('', 'Workers past the evidence budget, without evidence:');
     lines.push(...layout.short.map(shortWorkerLine));
   }
 

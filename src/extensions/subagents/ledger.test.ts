@@ -13,7 +13,8 @@ interface LedgerCase {
 interface LayoutCase {
   name: string;
   workers: WorkerRecordFacts[];
-  full: string[];
+  // Task ID, evidence entries shown, and evidence entries omitted, in the order shown.
+  full: [string, number, number][];
   short: string[];
 }
 
@@ -116,86 +117,121 @@ it('renders every saved identifier and evidence entry into the summary text', ()
   }
 });
 
-const stopped = (
+const worker = (
   taskId: string,
-  createdAt: number,
-): WorkerRecordFacts & { taskId: string; createdAt: number } => ({
+  facts: Omit<WorkerRecordFacts, 'taskId' | 'report'> = {},
+  evidence: string[] = [`evidence of ${taskId}`],
+): WorkerRecordFacts => ({
   taskId,
   name: `${taskId}-name`,
   state: 'stopped',
-  createdAt,
-  report: { taskId, outcome: 'success', summary: 'Done.', evidence: [`evidence of ${taskId}`] },
+  ...facts,
+  report: { taskId, outcome: 'success', summary: 'Done.', evidence },
 });
 
-// Eleven stopped workers, launched in the order of their number.
-const stoppedWorkers = Array.from({ length: 11 }, (_, index) =>
-  stopped(`stopped-${String(index + 1).padStart(2, '0')}`, 1000 + index),
-);
+// The schema allows 100 evidence entries; the ledger keeps 501 characters of each.
+const longEvidence = Array.from({ length: 100 }, (_, index) => `${index}`.padEnd(900, 'x'));
 
-const recentStopped = stoppedWorkers.slice(1).map((worker) => worker.taskId);
-
-const { createdAt: _unused, ...undated } = stopped('undated', 1);
-
+// 47 entries of 501 characters fit in the 24,000-character budget; the 48th does not.
 const layoutCases: LayoutCase[] = [
   {
-    name: 'shortens a stopped worker beyond the 10 most recent',
-    workers: stoppedWorkers,
-    full: recentStopped,
-    short: ['stopped-01'],
+    name: 'lists a worker with a question, then live workers, then the newest stopped workers',
+    workers: [
+      worker('stopped-old', { createdAt: 1 }),
+      worker('stopped-new', { createdAt: 3 }),
+      worker('running', { state: 'running', createdAt: 1 }),
+      { taskId: 'unreadable', createdAt: 1 },
+      worker('asking', { pendingQuestionId: 'question-1', createdAt: 2 }),
+      worker('undated'),
+    ],
+    full: [
+      ['asking', 1, 0],
+      ['running', 1, 0],
+      ['unreadable', 0, 0],
+      ['stopped-new', 1, 0],
+      ['stopped-old', 1, 0],
+      ['undated', 1, 0],
+    ],
+    short: [],
   },
   {
-    name: 'keeps a worker that is not stopped in full however old it is',
-    workers: [...stoppedWorkers, { ...stopped('running-old', 1), state: 'running' }],
-    full: ['running-old', ...recentStopped],
-    short: ['stopped-01'],
+    name: 'keeps the evidence that fits and shortens every worker after the budget',
+    workers: [
+      worker('running-a', { state: 'running' }, longEvidence),
+      worker('running-b', { state: 'running' }, longEvidence),
+      worker('stopped', { createdAt: 1 }),
+    ],
+    full: [['running-a', 47, 53]],
+    short: ['running-b', 'stopped'],
   },
   {
-    name: 'keeps an unreadable worker in full',
-    workers: [...stoppedWorkers, { taskId: 'unreadable-old', createdAt: 1 }],
-    full: [...recentStopped, 'unreadable-old'],
-    short: ['stopped-01'],
-  },
-  {
-    name: 'keeps a stopped worker with a pending question in full',
-    workers: [...stoppedWorkers, { ...stopped('asking-old', 1), pendingQuestionId: 'question-1' }],
-    full: ['asking-old', ...recentStopped],
-    short: ['stopped-01'],
-  },
-  {
-    name: 'treats a stopped worker without a launch time as the oldest',
-    workers: [...stoppedWorkers.slice(1), undated],
-    full: recentStopped,
-    short: ['undated'],
+    name: 'gives a later worker the budget an earlier worker left',
+    workers: [
+      worker('asking', { pendingQuestionId: 'question-1' }, longEvidence.slice(0, 40)),
+      worker('running', { state: 'running' }, longEvidence),
+    ],
+    full: [
+      ['asking', 40, 0],
+      ['running', 7, 93],
+    ],
+    short: [],
   },
 ];
 
 it.each(layoutCases)('$name', ({ workers, full, short }) => {
   const layout = summaryLayout(buildLedger(workers, []));
 
-  expect(layout.full.map((worker) => worker.taskId)).toEqual(full);
-  expect(layout.short.map((worker) => worker.taskId)).toEqual(short);
+  const shown = layout.full.map((entry): [string, number, number] => [
+    entry.worker.taskId,
+    entry.evidence.length,
+    entry.omitted,
+  ]);
+
+  expect(shown).toEqual(full);
+  expect(layout.short.map((entry) => entry.taskId)).toEqual(short);
 });
 
-it('keeps every worker in full in the details', () => {
-  const ledger = buildLedger(stoppedWorkers, []);
+it('keeps the shown evidence within the budget when every worker has 100 long entries', () => {
+  const workers = Array.from({ length: 20 }, (_, index) =>
+    worker(`task-${index}`, { state: 'running' }, longEvidence),
+  );
 
-  expect(ledger.workers).toHaveLength(11);
+  const layout = summaryLayout(buildLedger(workers, []));
+  const shown = layout.full.flatMap((entry) => entry.evidence).join('');
 
-  expect(ledger.workers[0]).toEqual({
-    taskId: 'stopped-01',
-    name: 'stopped-01-name',
-    state: 'stopped',
-    createdAt: 1000,
-    report: { outcome: 'success', evidence: ['evidence of stopped-01'] },
-  });
+  expect(shown.length).toBeGreaterThan(20_000);
+  expect(shown.length).toBeLessThanOrEqual(24_000);
 });
 
-it('keeps the task ID and outcome of an older stopped worker in the text, without evidence', () => {
-  const text = renderLedger(buildLedger(stoppedWorkers, []));
-  const line = text.split('\n').find((entry) => entry.includes('stopped-01')) ?? '';
+it('keeps every worker and evidence entry in the details', () => {
+  const workers = Array.from({ length: 20 }, (_, index) =>
+    worker(`task-${index}`, { state: 'running' }, longEvidence),
+  );
 
-  expect(line).toContain('stopped-01-name');
-  expect(line).toContain('success');
-  expect(text).not.toContain('evidence of stopped-01');
-  expect(text).toContain('evidence of stopped-11');
+  const ledger = buildLedger(workers, []);
+
+  expect(ledger.workers).toHaveLength(20);
+  expect(ledger.workers.every((entry) => entry.report?.evidence.length === 100)).toBe(true);
+});
+
+it('names the omitted evidence count and keeps identifiers on short lines', () => {
+  const text = renderLedger(
+    buildLedger(
+      [
+        worker('asking-a', { pendingQuestionId: 'question-1' }, longEvidence),
+        worker('asking-b', { pendingQuestionId: 'question-2', successorTaskId: 'task-next' }),
+      ],
+      [],
+    ),
+  );
+
+  const lines = text.split('\n');
+  const shortLine = lines.find((line) => line.includes('asking-b')) ?? '';
+
+  expect(lines.some((line) => line.includes('53'))).toBe(true);
+  expect(shortLine).toContain('asking-b-name');
+  expect(shortLine).toContain('question-2');
+  expect(shortLine).toContain('task-next');
+  expect(shortLine).toContain('success');
+  expect(text).not.toContain('evidence of asking-b');
 });
