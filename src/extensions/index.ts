@@ -7,10 +7,11 @@ import bulkReadExtension from './bulkRead/index.js';
 import codeReviewExtension from './codeReview/index.js';
 import codingExtension from './coding/index.js';
 import commitExtension from './commit/index.js';
+import compactionExtension from './compaction/index.js';
 import herdrBlockedExtension from './herdrBlocked/index.js';
 import snippetsExtension from './snippets/index.js';
 import statusbarExtension from './statusbar/index.js';
-import subagentsExtension from './subagents/index.js';
+import { registerSubagents } from './subagents/index.js';
 import tddExtension from './tdd/index.js';
 import webAccessExtension from './webAccess/index.js';
 import workflowExtension from './workflow/index.js';
@@ -30,7 +31,14 @@ export default async function tauExtension(pi: ExtensionAPI) {
   webAccessExtension(pi);
   snippetsExtension(pi);
   statusbarExtension(pi);
-  subagentsExtension(pi);
+
+  // Workers get neither extension, so compaction needs no reader there.
+  const subagents = registerSubagents(pi);
+
+  if (subagents) {
+    compactionExtension(pi, subagents.readWorkerLedger);
+  }
+
   bareRootExtension(pi);
   herdrBlockedExtension(pi);
 }
