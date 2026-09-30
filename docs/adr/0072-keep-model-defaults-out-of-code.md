@@ -47,9 +47,10 @@ file and lists the models Pi has scoped.
 ### `bulk_read`
 
 `bulkRead.model` in the user file sets the model. Only the user file may set `bulkRead`; a
-repository `.pi/tau.json` that sets it is an error that names the file. Without it, `bulk_read`
-fails with an error that names the key. `profiles.default` does not apply. `TAU_DELEGATE_MODEL` is
-removed.
+repository `.pi/tau.json` that sets it is an error that names the file. Without a usable one,
+`bulk_read` leaves the active tools, so its guidelines leave the prompt and reads are not clamped.
+The tool stays registered, so worker profiles that list it still start. `profiles.default` does not
+apply. `TAU_DELEGATE_MODEL` is removed.
 
 ### Web answers
 
