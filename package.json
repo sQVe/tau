@@ -10,7 +10,7 @@
   "scripts": {
     "changeset": "changeset",
     "changeset:check": "changeset status --since=origin/main",
-    "changeset:version": "changeset version",
+    "changeset:version": "changeset version && vp fmt",
     "check": "pnpm pi-version:check && pnpm typecheck && pnpm style:check && pnpm format:check && pnpm knip && pnpm test",
     "fix": "vp lint --fix && vp fmt",
     "knip": "knip",
