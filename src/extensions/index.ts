@@ -2,13 +2,12 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import askUserQuestionExtension from './askUserQuestion/index.js';
 import bareRootExtension from './bareRoot/index.js';
-import broExtension from './bro/index.js';
 import bulkReadExtension from './bulkRead/index.js';
-import codeReviewExtension from './codeReview/index.js';
 import codingExtension from './coding/index.js';
 import commitExtension from './commit/index.js';
 import compactionExtension from './compaction/index.js';
 import herdrBlockedExtension from './herdrBlocked/index.js';
+import skillCommandsExtension from './skillCommands/index.js';
 import snippetsExtension from './snippets/index.js';
 import statusbarExtension from './statusbar/index.js';
 import { registerSubagents } from './subagents/index.js';
@@ -22,8 +21,7 @@ export default async function tauExtension(pi: ExtensionAPI) {
   await codingExtension(pi);
   await workflowExtension(pi);
 
-  broExtension(pi);
-  codeReviewExtension(pi);
+  skillCommandsExtension(pi);
   commitExtension(pi);
   tddExtension(pi);
   bulkReadExtension(pi);

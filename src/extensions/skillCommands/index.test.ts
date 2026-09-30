@@ -1,13 +1,30 @@
+import { existsSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import broExtension from './index.js';
+import skillCommandsExtension from './index.js';
 
-describe('broExtension', () => {
+const skillsDirectory = resolve(import.meta.dirname, '../../../skills');
+
+describe('skillCommandsExtension', () => {
+  it('registers a command for every skill directory', () => {
+    const fake = fakeExtensionApi();
+
+    skillCommandsExtension(fake.pi);
+
+    const skillNames = readdirSync(skillsDirectory).filter((name) =>
+      existsSync(join(skillsDirectory, name, 'SKILL.md')),
+    );
+
+    expect([...fake.commands.keys()].toSorted()).toEqual(skillNames.toSorted());
+  });
+
   it('sends skill messages as follow-ups when idle and steering messages when busy', async () => {
     const fake = fakeExtensionApi();
 
-    broExtension(fake.pi);
+    skillCommandsExtension(fake.pi);
 
     const broCommand = fake.commands.get('bro');
 
