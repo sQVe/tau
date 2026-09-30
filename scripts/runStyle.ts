@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-// Enables stylePlugin.ts for this command's linter only, so editors keep ordinary diagnostics.
+// Enables the rules in lint/ for this command's linter only, so editors keep ordinary diagnostics.
 
 const executable = fileURLToPath(import.meta.resolve('vite-plus/bin'));
 const argumentsList = process.argv.slice(2);

@@ -78,7 +78,7 @@ export default defineConfig({
     options: {
       typeAware: true,
     },
-    jsPlugins: styleEnabled ? ['@stylistic/eslint-plugin', './scripts/stylePlugin.ts'] : [],
+    jsPlugins: styleEnabled ? ['@stylistic/eslint-plugin', './lint/plugin.ts'] : [],
     rules: {
       ...(styleEnabled
         ? {
