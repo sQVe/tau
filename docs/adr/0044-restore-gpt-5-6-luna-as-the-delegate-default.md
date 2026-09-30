@@ -1,6 +1,6 @@
 # ADR 0044: Restore gpt-5.6-luna as the delegate default
 
-- Status: Superseded by [ADR 0071](./0071-keep-model-defaults-out-of-code.md)
+- Status: Superseded by [ADR 0072](./0072-keep-model-defaults-out-of-code.md)
 - Date: 2026-09-24
 - Supersedes: [ADR 0041](./0041-default-the-delegate-to-gpt-6-luna.md)
 

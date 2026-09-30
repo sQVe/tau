@@ -101,7 +101,7 @@ clamped.
 Answer-mode `fetch_content` uses `fetch.answerProvider` and `fetch.answerModel` in pi-web-access's
 `web-search.json`, or the session model without them. Tau checks only an `answerModel` passed on the
 call against `allowedModels`. See the
-[model defaults decision](adr/0071-keep-model-defaults-out-of-code.md).
+[model defaults decision](adr/0072-keep-model-defaults-out-of-code.md).
 
 ### Workers
 
@@ -120,7 +120,7 @@ Without either, the launch fails. To choose a model per profile, add `profiles`:
 `default` applies to every profile without its own entry. A launch `model` overrides both. Only the
 user file may set `profiles`, and profile files may not set `model:`. Worker launch refuses a model
 that is unavailable or outside `allowedModels`; it never falls back to another model. See the
-[worker model decision](adr/0070-set-worker-models-in-the-user-config.md).
+[worker model decision](adr/0071-set-worker-models-in-the-user-config.md).
 
 A launch without `timeoutSeconds` gets 30 minutes for investigation profiles and 60 minutes for
 editing profiles.

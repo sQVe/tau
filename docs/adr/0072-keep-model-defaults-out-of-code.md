@@ -1,10 +1,10 @@
-# ADR 0071: Keep model defaults out of code
+# ADR 0072: Keep model defaults out of code
 
 - Status: Accepted
 - Date: 2026-09-30
 - Supersedes: [ADR 0027](./0027-share-one-delegate-model.md),
   [ADR 0044](./0044-restore-gpt-5-6-luna-as-the-delegate-default.md), and the built-in worker model
-  in [ADR 0070](./0070-set-worker-models-in-the-user-config.md)
+  in [ADR 0071](./0071-set-worker-models-in-the-user-config.md)
 
 ## Context
 
@@ -27,7 +27,7 @@
 - One shared key for helper tasks, such as `smallModel`. Rejected: it names a model size, not a job,
   and Tau would keep choosing web answer models for another package.
 - One `models` block for every model setting, or user-named aliases. Rejected: both move settings
-  away from the consumer that owns them, and aliases add a lookup close to the tiers ADR 0070
+  away from the consumer that owns them, and aliases add a lookup close to the tiers ADR 0071
   deferred.
 - A key per tool, owned by that tool, and web answers left to `pi-web-access`. Chosen: each name
   says what it controls, and it follows the per-consumer keys in

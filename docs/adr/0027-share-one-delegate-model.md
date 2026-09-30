@@ -1,6 +1,6 @@
 # ADR 0027: Share one delegate model across bounded tool tasks
 
-- Status: Superseded by [ADR 0071](./0071-keep-model-defaults-out-of-code.md); default earlier
+- Status: Superseded by [ADR 0072](./0072-keep-model-defaults-out-of-code.md); default earlier
   superseded by [ADR 0044](./0044-restore-gpt-5-6-luna-as-the-delegate-default.md); comment review
   removed from the delegate by [ADR 0042](./0042-remove-commit-comment-review.md)
 - Date: 2026-09-16
