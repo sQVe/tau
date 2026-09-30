@@ -1,6 +1,7 @@
 # ADR 0070: Set worker models in the user config
 
-- Status: Accepted
+- Status: Accepted; built-in worker model superseded by
+  [ADR 0071](./0071-keep-model-defaults-out-of-code.md)
 - Date: 2026-09-30
 - Supersedes: [ADR 0047](./0047-default-bundled-worker-profiles-to-opus-5-5.md)
 
