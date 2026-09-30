@@ -451,7 +451,13 @@ const launchModelLine = (
 
     const names = profiles.map(({ name }) => name);
 
-    return [workerModelLine(launchModels(context, location), names, readProfileModels(location))];
+    const line = workerModelLine(
+      launchModels(context, location),
+      names,
+      readProfileModels(location),
+    );
+
+    return line === undefined ? [] : [line];
   } catch {
     return [];
   }

@@ -64,3 +64,31 @@ export const readTauConfig = ({
 
   return { files: [user, project].filter((file) => file !== undefined), ignored };
 };
+
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const setsKey = ({ value }: ConfigFile, key: string): boolean =>
+  isRecord(value) && Object.hasOwn(value, key);
+
+// The user owns which models they pay for and trust, so a repository file cannot set a model key.
+// Returns the key's value from the user file, or undefined when the user file does not set it.
+export const readUserOnlyKey = (location: ConfigLocation, key: string): ConfigFile | undefined => {
+  const { files } = readTauConfig(location);
+  const userPath = userConfigPath(location.agentDirectory);
+  const repository = files.find((file) => file.source !== userPath && setsKey(file, key));
+
+  if (repository !== undefined) {
+    throw new Error(
+      `Invalid Tau config ${repository.source}: ${key} may be set only in the user file ${userPath}. Remove ${key} from ${repository.source}.`,
+    );
+  }
+
+  const user = files.find((file) => file.source === userPath)?.value;
+
+  if (!isRecord(user) || !Object.hasOwn(user, key)) {
+    return undefined;
+  }
+
+  return { source: userPath, value: user[key] };
+};

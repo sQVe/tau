@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -9,23 +9,12 @@ import {
   getCurrentSystemPrompt,
 } from '@earendil-works/pi-ai';
 import type { AgentSession } from '@earendil-works/pi-coding-agent';
-import {
-  afterEach,
-  beforeEach,
-  expect,
-  it,
-  onTestFinished as registerTestCleanup,
-  vi,
-} from 'vitest';
+import { afterEach, expect, it, onTestFinished as registerTestCleanup, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 
 import { createBoundSession } from './piSession.js';
 
 vi.setConfig({ testTimeout: 60_000 });
-
-beforeEach(() => {
-  vi.stubEnv('TAU_DELEGATE_MODEL', 'tau-delegate/reader');
-});
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -35,22 +24,31 @@ const createHarness = async (registerCleanup: TestContext['onTestFinished']) => 
   const cwd = await mkdtemp(join(tmpdir(), 'tau-bulk-flow-'));
   registerCleanup(() => rm(cwd, { recursive: true, force: true }));
   const agentDir = join(cwd, 'agent');
+  await mkdir(agentDir);
+
+  await writeFile(
+    join(agentDir, 'tau.json'),
+    JSON.stringify({ bulkRead: { model: 'tau-bulk/reader' } }),
+  );
+
+  // Tau reads its user config from the agent directory Pi names in the environment.
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDir);
   const content = Array.from({ length: 450 }, (_, index) => `line ${index + 1}`).join('\n');
   await writeFile(join(cwd, 'large.txt'), content);
 
   const sessionModel = fauxProvider({ provider: 'tau-test' });
-  const delegate = fauxProvider({ provider: 'tau-delegate', models: [{ id: 'reader' }] });
+  const reader = fauxProvider({ provider: 'tau-bulk', models: [{ id: 'reader' }] });
 
   const { session } = await createBoundSession(registerCleanup, {
     cwd,
     agentDirectory: agentDir,
-    providers: [sessionModel, delegate],
+    providers: [sessionModel, reader],
     tools: ['read', 'bulk_read'],
     extensionPaths: [resolve(import.meta.dirname, '../src/extensions/bulkRead/index.ts')],
     settings: { compaction: { enabled: false }, retry: { enabled: false } },
   });
 
-  return { session, sessionModel, delegate, content, cwd };
+  return { session, sessionModel, reader, content, cwd };
 };
 
 const toolResult = (session: AgentSession, name: string) => {
@@ -76,10 +74,10 @@ const textOf = (content: { type: string; text?: string }[]) =>
     .map((part) => part.text)
     .join('');
 
-it('clamps a real Pi read and records delegate usage in the session ledger', async ({
+it('clamps a real Pi read and records bulk_read model usage in the session ledger', async ({
   onTestFinished,
 }) => {
-  const { session, sessionModel, delegate } = await createHarness(onTestFinished);
+  const { session, sessionModel, reader } = await createHarness(onTestFinished);
   let sessionPrompt = '';
 
   sessionModel.setResponses([
@@ -94,7 +92,7 @@ it('clamps a real Pi read and records delegate usage in the session ledger', asy
     fauxAssistantMessage('Done.'),
   ]);
 
-  delegate.setResponses([fauxAssistantMessage('- large.txt:450 ends with line 450.')]);
+  reader.setResponses([fauxAssistantMessage('- large.txt:450 ends with line 450.')]);
 
   await session.prompt('Explain the large file.');
 
@@ -110,14 +108,14 @@ it('clamps a real Pi read and records delegate usage in the session ledger', asy
   const bulk = toolResult(session, 'bulk_read');
   expect(bulk.usage?.input).toBeGreaterThan(0);
   expect(textOf(bulk.content)).toBe('- large.txt:450 ends with line 450.');
-  expect(delegate.state.callCount).toBe(1);
+  expect(reader.state.callCount).toBe(1);
   expect(sessionModel.state.callCount).toBe(3);
 });
 
 it.each([400, 401])(
   'rewrites a real byte-truncated read with %i remaining lines and preserves bounded continuation',
   async (remaining) => {
-    const { session, sessionModel, delegate, cwd } = await createHarness(registerTestCleanup);
+    const { session, sessionModel, reader, cwd } = await createHarness(registerTestCleanup);
     const head = Array.from({ length: 50 }, () => 'x'.repeat(1023)).join('\n');
     const tail = Array.from({ length: remaining }, (_, index) => `line ${index + 51}`).join('\n');
     await writeFile(join(cwd, 'byte-limited.txt'), `${head}\n${tail}`);
@@ -167,6 +165,6 @@ it.each([400, 401])(
     expect(textOf(reads[0]!.content).includes('bulk_read')).toBe(remaining > 400);
     expect(reads.every((read) => !read.isError)).toBe(true);
     expect(textOf(reads[1]!.content)).toBe(tail);
-    expect(delegate.state.callCount).toBe(0);
+    expect(reader.state.callCount).toBe(0);
   },
 );

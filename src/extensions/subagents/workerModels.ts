@@ -3,15 +3,13 @@ export type ProfileModels = ReadonlyMap<string, string>;
 
 export const defaultProfileName = 'default';
 
-const builtInWorkerModel = 'claude-bridge/claude-opus-5-5';
-
-// A launch model wins, then the profile's entry, then the `default` entry, then the built-in model.
+// A launch model wins, then the profile's entry, then the `default` entry. Tau names no model of its
+// own, so without any of them the result is undefined.
 export const selectWorkerModel = (
   launchModel: string | undefined,
   profile: string,
   profiles: ProfileModels,
-): string =>
-  launchModel ?? profiles.get(profile) ?? profiles.get(defaultProfileName) ?? builtInWorkerModel;
+): string | undefined => launchModel ?? profiles.get(profile) ?? profiles.get(defaultProfileName);
 
 // Without an allowed list, every scoped model is available.
 export const availableModels = (
@@ -20,16 +18,21 @@ export const availableModels = (
 ): string[] =>
   allowed === undefined ? [...scoped] : scoped.filter((model) => allowed.includes(model));
 
-// Lists each available model once, then each profile default outside that list.
+// Lists each available model once, then each profile default outside that list. A profile without a
+// default is left out, and without any model there is no line.
 export const workerModelLine = (
   available: readonly string[],
   profileNames: readonly string[],
   profiles: ProfileModels,
-): string => {
+): string | undefined => {
   const defaults = new Map(available.map((model) => [model, [] as string[]]));
 
   for (const name of profileNames) {
     const model = selectWorkerModel(undefined, name, profiles);
+
+    if (model === undefined) {
+      continue;
+    }
 
     defaults.set(model, [...(defaults.get(model) ?? []), name]);
   }
@@ -37,6 +40,10 @@ export const workerModelLine = (
   const entries = [...defaults].map(([model, names]) =>
     names.length === 0 ? model : `${model} (${names.join(', ')})`,
   );
+
+  if (entries.length === 0) {
+    return undefined;
+  }
 
   return `Models, with the profiles that default to each: ${entries.join(', ')}.`;
 };

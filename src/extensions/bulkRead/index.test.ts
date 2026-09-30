@@ -1,3 +1,4 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,9 +11,24 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
 import bulkReadExtension, { rewriteContinuationNotice } from './index.js';
 
-const setup = () => {
-  // No Tau config limits the delegate, whatever the developer's agent directory holds.
-  vi.stubEnv('PI_CODING_AGENT_DIR', '/nonexistent/tau-agent');
+const writeUserConfig = (config: unknown) => {
+  const agentDirectory = mkdtempSync(join(tmpdir(), 'tau-bulk-read-agent-'));
+
+  onTestFinished(() => {
+    rmSync(agentDirectory, { recursive: true, force: true });
+  });
+
+  writeFileSync(join(agentDirectory, 'tau.json'), JSON.stringify(config));
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+
+  return join(agentDirectory, 'tau.json');
+};
+
+// The user file sets only the bulk_read model, whatever the developer's agent directory holds.
+const bulkReadConfig = { bulkRead: { model: 'tau-bulk/reader' } };
+
+const setup = (config: unknown = bulkReadConfig) => {
+  const userFile = writeUserConfig(config);
   const fake = fakeExtensionApi();
 
   const find = vi
@@ -41,7 +57,7 @@ const setup = () => {
 
   const emit = (name: string, event: unknown) => fake.handler(name)(event, context);
 
-  return { find, complete, execute, emit, tool, handlers: fake.handlers };
+  return { find, complete, execute, emit, tool, handlers: fake.handlers, userFile };
 };
 
 afterEach(() => vi.unstubAllEnvs());
@@ -249,12 +265,11 @@ it('turns trimming off when the registry throws at the first clamp', () => {
 });
 
 it('throws a registry miss and leaves later reads untouched', async () => {
-  vi.stubEnv('TAU_DELEGATE_MODEL', 'missing/reader');
-  const app = setup();
+  const app = setup({ bulkRead: { model: 'missing/reader' } });
   app.find.mockReturnValueOnce(undefined);
 
   await expect(app.execute()).rejects.toThrow(
-    'Delegate missing/reader failed: model not found. Check pi --list-models.',
+    'Model missing/reader not found. Check pi --list-models.',
   );
 
   const read = readCall();
@@ -364,12 +379,11 @@ it.each(['session_start', 'session_before_switch', 'session_before_fork'] as con
 );
 
 it.each(['model', '/model', 'provider/', ' ', ' provider/model', 'provider/model '])(
-  'rejects invalid shared configuration %j without clamping reads',
+  'rejects an invalid bulkRead.model %j without clamping reads',
   async (reference) => {
-    vi.stubEnv('TAU_DELEGATE_MODEL', reference);
-    const app = setup();
+    const app = setup({ bulkRead: { model: reference } });
 
-    await expect(app.execute()).rejects.toThrow('Invalid delegate model');
+    await expect(app.execute()).rejects.toThrow('bulkRead.model');
     const read = readCall();
     app.emit('tool_call', read);
 
@@ -378,7 +392,7 @@ it.each(['model', '/model', 'provider/', ' ', ' provider/model', 'provider/model
   },
 );
 
-it('reports delegate authentication failures without another model call', async () => {
+it('reports model authentication failures without another model call', async () => {
   const app = setup();
   app.complete.mockRejectedValue(new Error('Authentication failed: credentials expired'));
 
@@ -391,29 +405,44 @@ it('reports delegate authentication failures without another model call', async 
   expect(read.input).not.toHaveProperty('limit');
 });
 
-it('reads the shared reference and ignores the removed bulk-read setting', async () => {
-  vi.stubEnv('TAU_DELEGATE_MODEL', undefined);
-  vi.stubEnv('TAU_BULK_READ_MODEL', 'removed/model');
-  const app = setup();
+it('fails without bulkRead.model, even with profiles.default, and leaves reads unclamped', async () => {
+  const app = setup({ profiles: { default: { model: 'a/default' } } });
 
-  await app.execute();
+  const failure = app.execute();
+  await expect(failure).rejects.toThrow('bulkRead.model');
+  await expect(failure).rejects.toThrow(app.userFile);
 
-  expect(app.find).toHaveBeenLastCalledWith('openai-codex', 'gpt-5.6-luna');
+  const read = readCall();
+  app.emit('tool_call', read);
 
-  vi.stubEnv('TAU_DELEGATE_MODEL', '');
-  await app.execute();
+  expect(read.input).not.toHaveProperty('limit');
+  expect(app.find).not.toHaveBeenCalled();
+  expect(app.complete).not.toHaveBeenCalled();
+});
 
-  expect(app.find).toHaveBeenLastCalledWith('openai-codex', 'gpt-5.6-luna');
+it('leaves the first read unclamped without bulkRead.model', () => {
+  const app = setup({});
+  const first = readCall('first');
+  const second = readCall('second');
 
-  vi.stubEnv('TAU_DELEGATE_MODEL', 'openrouter/vendor/model');
-  await app.execute();
+  expect(() => app.emit('tool_call', first)).not.toThrow();
+  app.emit('tool_call', second);
 
-  expect(app.find).toHaveBeenLastCalledWith('openrouter', 'vendor/model');
+  expect(first.input).not.toHaveProperty('limit');
+  expect(second.input).not.toHaveProperty('limit');
+});
+
+it('refuses a bulkRead.model outside allowedModels without a model call', async () => {
+  const app = setup({ allowedModels: ['a/other'], bulkRead: { model: 'tau-bulk/reader' } });
+
+  await expect(app.execute()).rejects.toThrow('tau-bulk/reader is not allowed');
+
+  expect(app.find).not.toHaveBeenCalled();
+  expect(app.complete).not.toHaveBeenCalled();
 });
 
 it('splits the reference at the first slash and passes the rest as the model id', async () => {
-  vi.stubEnv('TAU_DELEGATE_MODEL', 'openrouter/vendor/model');
-  const app = setup();
+  const app = setup({ bulkRead: { model: 'openrouter/vendor/model' } });
 
   await app.execute();
 

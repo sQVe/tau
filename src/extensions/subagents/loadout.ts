@@ -12,11 +12,8 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { Value } from 'typebox/value';
 
-import {
-  parseModelReference,
-  readAllowedModels,
-  requireAllowedModel,
-} from '../../delegateModel/index.js';
+import { parseModelReference, readAllowedModels, requireAllowedModel } from '../../models/index.js';
+import { userConfigPath } from '../../tauConfig/index.js';
 import type { ConfigLocation } from '../../tauConfig/index.js';
 import { readProfileModels } from './profileModels.js';
 import { resolveProfile, workerTools } from './profiles.js';
@@ -73,6 +70,13 @@ const resolveModel = (
   location: ConfigLocation,
 ) => {
   const model = selectWorkerModel(explicit, profile.name, readProfileModels(location));
+
+  if (model === undefined) {
+    throw new Error(
+      `No model for worker profile ${profile.name}. Pass model, or set profiles.default.model in ${userConfigPath(location.agentDirectory)}.${configuredModels(context, location)}`,
+    );
+  }
+
   const reference = parseModelReference(model);
 
   if (!reference) {

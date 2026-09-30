@@ -21,7 +21,7 @@ The block accepts `productionGlobs`, `testGlobs`, `testSupportGlobs`, `excludedG
 `verificationArgv`. Each key you set replaces its default. The repository file overrides the user
 file, and Tau reads it only in a trusted project. `run_tests` output shows the config in use.
 
-To limit the models Tau picks for workers and delegate tasks, add `allowedModels` to either file:
+To limit the models Tau picks for workers and `bulk_read`, add `allowedModels` to either file:
 
 ```json
 { "allowedModels": ["openai-codex/gpt-5.6-luna", "claude-bridge/claude-opus-5-5"] }
@@ -38,17 +38,22 @@ compaction. To change the threshold, add `compaction` to either file. The thresh
 { "compaction": { "thresholdTokens": 150000 } }
 ```
 
-To choose worker models, add `profiles` to `~/.pi/agent/tau.json`. `default` covers every profile
-without its own entry:
+Tau names no model of its own. Set the models for workers and `bulk_read` in `~/.pi/agent/tau.json`.
+A worker launch needs `profiles.default.model` or a model passed on the launch. `default` covers
+every profile without its own entry. `bulk_read` needs `bulkRead.model`:
 
 ```json
 {
   "profiles": {
     "default": { "model": "claude-bridge/claude-opus-5-5" },
     "scout": { "model": "openai-codex/gpt-6.1-sol" }
-  }
+  },
+  "bulkRead": { "model": "openai-codex/gpt-5.6-luna" }
 }
 ```
+
+Web answers use pi-web-access's own `fetch.answerProvider` and `fetch.answerModel` in
+`web-search.json`.
 
 Pi runs the agent and its tools. Tau stages and commits with installed Git hooks without a prompt.
 Test results never control edit permission. Tau is not a general agent framework.

@@ -20,18 +20,10 @@ it.each([
     profiles: profiles({ worker: 'a/worker', default: 'a/default' }),
     model: 'a/default',
   },
-  {
-    launch: undefined,
-    profiles: profiles({ worker: 'a/worker' }),
-    model: 'claude-bridge/claude-opus-5-5',
-  },
-  { launch: undefined, profiles: profiles(), model: 'claude-bridge/claude-opus-5-5' },
+  { launch: undefined, profiles: profiles({ worker: 'a/worker' }), model: undefined },
+  { launch: undefined, profiles: profiles(), model: undefined },
   { launch: 'a/launch', profiles: profiles(), model: 'a/launch' },
-  {
-    launch: undefined,
-    profiles: profiles({ constructor: 'a/other' }),
-    model: 'claude-bridge/claude-opus-5-5',
-  },
+  { launch: undefined, profiles: profiles({ constructor: 'a/other' }), model: undefined },
 ])('selects the scout model $model', ({ launch, profiles: configured, model }) => {
   expect(selectWorkerModel(launch, 'scout', configured)).toBe(model);
 });
@@ -53,4 +45,15 @@ it('lists every available model and marks each profile default, including unlist
   );
 
   expect(line).toContain('a/one (worker), a/two (scout), a/three (qa).');
+});
+
+it('leaves out profiles without a default model', () => {
+  const line = workerModelLine(['a/one'], ['qa', 'scout'], profiles({ scout: 'a/two' }));
+
+  expect(line).toContain('a/one, a/two (scout).');
+  expect(line).not.toContain('qa');
+});
+
+it('gives no line without an available model or a profile default', () => {
+  expect(workerModelLine([], ['scout'], profiles())).toBeUndefined();
 });

@@ -3,7 +3,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { readTauConfig } from '../tauConfig/index.js';
+import { isRecord, readTauConfig } from '../tauConfig/index.js';
 import type { ConfigFile, ConfigLocation } from '../tauConfig/index.js';
 import { effectiveAllowedModels } from './allowedModels.js';
 
@@ -20,6 +20,35 @@ export const parseModelReference = (reference: string) => {
   const separator = reference.indexOf('/');
 
   return { provider: reference.slice(0, separator), id: reference.slice(separator + 1) };
+};
+
+// Parses a config entry such as {"model": "provider/model-id"} at `field`, naming the file and field.
+export const parseModelEntry = (source: string, field: string, entry: unknown): string => {
+  if (!isRecord(entry)) {
+    throw new Error(
+      `Invalid Tau config ${source}: ${field} must be an object such as {"model": "provider/model-id"}.`,
+    );
+  }
+
+  const unknownKey = Object.keys(entry).find((key) => key !== 'model');
+
+  if (unknownKey !== undefined) {
+    throw new Error(
+      `Invalid Tau config ${source}: ${field}.${unknownKey} is not a known key. Set only model.`,
+    );
+  }
+
+  if (entry.model === undefined) {
+    throw new Error(`Invalid Tau config ${source}: ${field}.model is missing.`);
+  }
+
+  if (typeof entry.model !== 'string' || !parseModelReference(entry.model)) {
+    throw new Error(
+      `Invalid Tau config ${source}: ${field}.model ${JSON.stringify(entry.model)} is not provider/model-id.`,
+    );
+  }
+
+  return entry.model;
 };
 
 const allowedModelsFileSchema = Type.Object({
@@ -59,21 +88,15 @@ export const requireAllowedModel = (reference: string, location: ConfigLocation)
   }
 };
 
-export const delegateReference = (): string => {
-  // eslint-disable-next-line node/no-process-env -- The delegate is selected independently of Pi's session model.
-  const reference = process.env.TAU_DELEGATE_MODEL;
-
-  return reference == null || reference === '' ? 'openai-codex/gpt-5.6-luna' : reference;
-};
-
-export const resolveDelegate = (
+// Parses the reference, checks it against allowedModels, and finds it in Pi's registry.
+export const resolveAllowedModel = (
   context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'modelRegistry'>,
-  reference = delegateReference(),
+  reference: string,
 ) => {
   const parsed = parseModelReference(reference);
 
   if (!parsed) {
-    throw new Error(`Invalid delegate model: ${JSON.stringify(reference)}. Use provider/model-id.`);
+    throw new Error(`Invalid model ${JSON.stringify(reference)}. Use provider/model-id.`);
   }
 
   requireAllowedModel(reference, {
@@ -86,7 +109,7 @@ export const resolveDelegate = (
   const model = context.modelRegistry.find(parsed.provider, parsed.id);
 
   if (!model) {
-    throw new Error(`Delegate ${reference} failed: model not found. Check pi --list-models.`);
+    throw new Error(`Model ${reference} not found. Check pi --list-models.`);
   }
 
   return model;

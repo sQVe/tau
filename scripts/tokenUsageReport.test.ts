@@ -244,7 +244,7 @@ describe('tokenUsageReport', () => {
     expect(groups(result)[0]).toMatchObject({ turns: 1, tokens: 3, firstRequests: [0] });
   });
 
-  it('adds compaction, usage entry, and delegate tool usage to totals without adding turns', () => {
+  it('adds compaction, usage entry, and tool model usage to totals without adding turns', () => {
     const result = report([
       session(
         '/w/a.jsonl',

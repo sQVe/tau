@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
-import { resolveDelegate } from './index.js';
+import { resolveAllowedModel } from './index.js';
 
 const writeConfig = (path: string, allowedModels: string[] | undefined) => {
   if (allowedModels !== undefined) {
@@ -18,7 +18,7 @@ const fixture = (
   user?: string[],
   repository?: string[],
 ) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-delegate-allowed-'));
+  const directory = mkdtempSync(join(tmpdir(), 'tau-models-allowed-'));
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
@@ -45,10 +45,10 @@ it.for<[string, string[] | undefined, string[] | undefined]>([
   ['an absent list', undefined, undefined],
   ['an allowed model', ['a/one', 'a/two'], undefined],
   ['a repository list that narrows', ['a/one', 'a/two'], ['a/two']],
-])('resolves the delegate under %s', ([, user, repository], { onTestFinished }) => {
+])('resolves the model under %s', ([, user, repository], { onTestFinished }) => {
   const { context } = fixture(onTestFinished, user, repository);
 
-  expect(resolveDelegate(context, 'a/two')).toEqual({ provider: 'a', id: 'two' });
+  expect(resolveAllowedModel(context, 'a/two')).toEqual({ provider: 'a', id: 'two' });
 });
 
 it.for<[string, string[] | undefined, string[] | undefined, 'userFile' | 'repositoryFile']>([
@@ -59,7 +59,7 @@ it.for<[string, string[] | undefined, string[] | undefined, 'userFile' | 'reposi
   'refuses %s and names the model, list, and file',
   ([, user, repository, file], { onTestFinished }) => {
     const paths = fixture(onTestFinished, user, repository);
-    const resolve = () => resolveDelegate(paths.context, 'a/two');
+    const resolve = () => resolveAllowedModel(paths.context, 'a/two');
 
     expect(resolve).toThrow('a/two');
     expect(resolve).toThrow('a/one');
@@ -72,13 +72,13 @@ it('ignores an untrusted repository list and fails loudly on an invalid entry', 
 }) => {
   const { context, userFile } = fixture(onTestFinished, ['a/one', 'a/two'], ['a/one']);
 
-  expect(resolveDelegate({ ...context, isProjectTrusted: () => false }, 'a/two')).toEqual({
+  expect(resolveAllowedModel({ ...context, isProjectTrusted: () => false }, 'a/two')).toEqual({
     provider: 'a',
     id: 'two',
   });
 
   writeConfig(userFile, ['a/one', 'two']);
-  const invalid = () => resolveDelegate(context, 'a/one');
+  const invalid = () => resolveAllowedModel(context, 'a/one');
 
   expect(invalid).toThrow(userFile);
   expect(invalid).toThrow('"two"');

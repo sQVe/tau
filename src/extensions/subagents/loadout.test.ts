@@ -87,12 +87,17 @@ it('resolves an explicit worker model and names the configured models when none 
     packages: [],
   });
 
+  writeFileSync(
+    join(directory, 'tau.json'),
+    JSON.stringify({ profiles: { default: { model: 'missing/model' } } }),
+  );
+
   const unavailableDefault = () => resolveLoadout({ profile: 'worker' }, context);
-  expect(unavailableDefault).toThrow('unavailable: claude-bridge/claude-opus-5-5');
+  expect(unavailableDefault).toThrow('unavailable: missing/model');
   expect(unavailableDefault).toThrow(`Configured models: ${request.model}.`);
 
   expect(() => resolveLoadout({ profile: 'worker' }, { ...context, scopedModels: [] })).toThrow(
-    /unavailable: claude-bridge\/claude-opus-5-5\.$/,
+    /unavailable: missing\/model\.$/,
   );
 
   expect(() => resolveLoadout({ ...request, model: 'invalid model' }, context)).toThrow(
@@ -137,14 +142,22 @@ const bundledFixture = async (onTestFinished: (callback: () => void) => void) =>
   return { ...fixture, context, opus: bundled.getModel() };
 };
 
-it('defaults every bundled profile to Opus 5.5 without profiles config', async ({
+it('refuses to launch a bundled profile without a launch or configured model', async ({
   onTestFinished,
 }) => {
-  const { context } = await bundledFixture(onTestFinished);
+  const { directory, context, request } = await bundledFixture(onTestFinished);
+  const userFile = join(directory, 'tau.json');
 
-  for (const name of ['scout', 'worker', 'reviewer', 'qa']) {
-    expect(resolveLoadout({ profile: name }, context).model).toBe('claude-bridge/claude-opus-5-5');
+  writeConfig(userFile, { profiles: { scout: { model: request.model } } });
+
+  for (const name of ['worker', 'reviewer', 'qa']) {
+    const missing = () => resolveLoadout({ profile: name }, context);
+    expect(missing).toThrow(`profiles.default.model in ${userFile}`);
+    expect(missing).toThrow(`Configured models: ${request.model}.`);
   }
+
+  expect(resolveLoadout({ profile: 'scout' }, context).model).toBe(request.model);
+  expect(resolveLoadout(request, context).model).toBe(request.model);
 });
 
 it('selects the launch model, then the profile entry, then the default entry', async ({
@@ -203,6 +216,7 @@ it('checks only the selected model against allowedModels', async ({ onTestFinish
 
   writeConfig(join(directory, 'tau.json'), {
     allowedModels: ['claude-bridge/claude-opus-5-5', request.model],
+    profiles: { default: { model: 'claude-bridge/claude-opus-5-5' } },
   });
 
   writeConfig(repositoryFile, { allowedModels: [request.model] });
