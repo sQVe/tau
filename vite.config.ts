@@ -111,6 +111,11 @@ export default defineConfig({
             'tau/max-condition-checks': 'error',
             'tau/no-enoent-literal': 'error',
             'tau/type-placement': 'error',
+            'tau/no-reduce-accumulator-copy': 'error',
+            'tau/no-reflect-apply': 'error',
+            'tau/no-reflect-get': 'error',
+            'tau/no-unknown-type-aliases': 'error',
+            'tau/no-widen-then-assert': 'error',
             '@stylistic/padding-line-between-statements': paddingRule(
               ...statementPadding,
               ...declarationPadding,
