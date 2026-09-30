@@ -20,6 +20,7 @@ import type { RunnerResult } from './runner/types.js';
 import { runTests } from './runner/vitest.js';
 import type * as runnerModule from './runner/vitest.js';
 
+// eslint-disable-next-line tau/no-module-mocking -- observation.ts imports runTests directly.
 vi.mock('./runner/vitest.js', async (importOriginal) => ({
   ...(await importOriginal<typeof runnerModule>()),
   runTests: vi.fn<typeof runTests>(),

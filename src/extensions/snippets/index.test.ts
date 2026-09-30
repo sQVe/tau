@@ -8,11 +8,13 @@ import { loadSnippets } from './snippet.js';
 import type * as snippetModule from './snippet.js';
 import type { Snippet } from './types.js';
 
+// eslint-disable-next-line tau/no-module-mocking -- index.ts imports loadSnippets directly.
 vi.mock('./snippet.js', async (importOriginal) => ({
   ...(await importOriginal<typeof snippetModule>()),
   loadSnippets: vi.fn<typeof loadSnippets>(),
 }));
 
+// eslint-disable-next-line tau/no-module-mocking -- index.ts imports openSnippetMenu directly.
 vi.mock('./menu.js', () => ({ openSnippetMenu: vi.fn<typeof openSnippetMenu>() }));
 
 const snippet: Snippet = {

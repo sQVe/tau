@@ -34,6 +34,7 @@ import type { HerdrClient } from './inspect.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 import { EvidenceUnavailableError, taskStatus } from './record.js';
 
+// eslint-disable-next-line tau/no-module-mocking -- records.ts imports node:fs directly.
 vi.mock('node:fs', async (importOriginal) => {
   const original = await importOriginal<typeof fileSystem>();
 

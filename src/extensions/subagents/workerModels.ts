@@ -25,7 +25,7 @@ export const workerModelLine = (
   profileNames: readonly string[],
   profiles: ProfileModels,
 ): string | undefined => {
-  const defaults = new Map(available.map((model) => [model, [] as string[]]));
+  const defaults = new Map<string, string[]>(available.map((model) => [model, []]));
 
   const launchable = profileNames.filter((name) => name !== defaultProfileName);
 

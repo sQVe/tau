@@ -17,6 +17,7 @@ import {
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 
+// eslint-disable-next-line tau/no-module-mocking -- tool.ts imports rm directly.
 vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof fileSystem>();
 

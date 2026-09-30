@@ -566,28 +566,30 @@ export const collapsedHistoryLines = (details: HistoryView, theme: Theme): strin
   return lines;
 };
 
-const candidateRows = (candidate: HistoryCandidate, theme: Theme): string[] => [
-  ...(
-    [
-      ['Task', candidate.taskId],
-      ['Name', candidate.name],
-      ['State', candidate.state],
-      ['Description', candidate.description],
-      ['Follows', candidate.predecessorTaskId],
-      ['Followed up by', candidate.successorTaskId],
-      ['Report outcome', candidate.report?.outcome],
-      ['Report summary', candidate.report?.summary],
-      ['Native evidence', candidate.nativeEvidence],
-      ['Native session ID', candidate.nativeSessionId],
-      ['Native session file', candidate.nativeSessionFile],
-      ['Report file', candidate.reportFile],
-      ['Truncated fields', candidate.truncatedFields?.join(', ')],
-    ] as [string, string | undefined][]
-  )
-    .filter((entry): entry is [string, string] => Boolean(entry[1]))
-    .map(([label, value]) => row(label, value, theme)),
-  ...(candidate.report?.evidence ?? []).map((entry) => row('Report evidence', entry, theme)),
-];
+const candidateRows = (candidate: HistoryCandidate, theme: Theme): string[] => {
+  const fields: [string, string | undefined][] = [
+    ['Task', candidate.taskId],
+    ['Name', candidate.name],
+    ['State', candidate.state],
+    ['Description', candidate.description],
+    ['Follows', candidate.predecessorTaskId],
+    ['Followed up by', candidate.successorTaskId],
+    ['Report outcome', candidate.report?.outcome],
+    ['Report summary', candidate.report?.summary],
+    ['Native evidence', candidate.nativeEvidence],
+    ['Native session ID', candidate.nativeSessionId],
+    ['Native session file', candidate.nativeSessionFile],
+    ['Report file', candidate.reportFile],
+    ['Truncated fields', candidate.truncatedFields?.join(', ')],
+  ];
+
+  return [
+    ...fields
+      .filter((entry): entry is [string, string] => Boolean(entry[1]))
+      .map(([label, value]) => row(label, value, theme)),
+    ...(candidate.report?.evidence ?? []).map((entry) => row('Report evidence', entry, theme)),
+  ];
+};
 
 export const expandedHistoryLines = (details: HistoryView, theme: Theme): string[] => {
   const lines = [

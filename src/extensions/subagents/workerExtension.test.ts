@@ -23,6 +23,7 @@ import { publish, readEvent, readReport, readTask, recordEvent } from './records
 import { textLimit } from './types.js';
 import workerExtension from './workerExtension.js';
 
+// eslint-disable-next-line tau/no-module-mocking -- workerExtension.ts imports checkWorkerRuntime directly.
 vi.mock('./loadout.js', () => ({
   checkWorkerRuntime: vi.fn<typeof checkWorkerRuntime>(),
 }));

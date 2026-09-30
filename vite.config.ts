@@ -111,11 +111,14 @@ export default defineConfig({
             'tau/max-condition-checks': 'error',
             'tau/no-enoent-literal': 'error',
             'tau/type-placement': 'error',
+            'tau/no-module-mocking': 'error',
+            'tau/no-object-parameters': 'error',
             'tau/no-reduce-accumulator-copy': 'error',
             'tau/no-reflect-apply': 'error',
             'tau/no-reflect-get': 'error',
             'tau/no-unknown-type-aliases': 'error',
             'tau/no-widen-then-assert': 'error',
+            'tau/require-safety-comment-for-type-assertion': 'error',
             '@stylistic/padding-line-between-statements': paddingRule(
               ...statementPadding,
               ...declarationPadding,
@@ -418,6 +421,8 @@ export default defineConfig({
                   ...statementPadding,
                   ...multilinePadding,
                 ),
+                // Tests assert fakes into the types they stand in for.
+                'tau/require-safety-comment-for-type-assertion': 'off' as const,
               },
             },
           ]

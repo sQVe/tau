@@ -7,12 +7,14 @@ import { runTests } from './runner/vitest.js';
 import type * as runnerModule from './runner/vitest.js';
 
 // Exercise Node's Windows path rules on every host, without claiming Windows runner coverage.
+// eslint-disable-next-line tau/no-module-mocking -- observation.ts imports node:path directly.
 vi.mock('node:path', async (importOriginal) => {
   const path = await importOriginal<typeof nodePath>();
 
   return { ...path, ...path.win32 };
 });
 
+// eslint-disable-next-line tau/no-module-mocking -- observation.ts imports runTests directly.
 vi.mock('./runner/vitest.js', async (importOriginal) => ({
   ...(await importOriginal<typeof runnerModule>()),
   runTests: vi.fn<typeof runTests>(),
