@@ -63,9 +63,10 @@ themselves.
      is clean, and after a fetch `HEAD` equals `headRefOid`. On a fork, stop when
      `maintainerCanModify` is false and the viewer does not own the fork.
    - Author mode, when `mergeable` is `CONFLICTING`: note `headRefOid` as the old head, then run the
-     [update-branch skill](../update-branch/SKILL.md) onto `baseRefName` without its push step.
-     Rebase before collecting or fixing anything, so the SHAs in replies stay valid. The rebased
-     `HEAD` is the code you verify against. Ask the user when a conflict needs a product decision.
+     [update-branch skill](../update-branch/SKILL.md) onto `baseRefName` without its checks and push
+     steps. Rebase before collecting or fixing anything, so the SHAs in replies stay valid. The
+     rebased `HEAD` is the code you verify against. Ask the user when a conflict needs a product
+     decision.
    - Reviewer mode: use the checkout only when it is clean and `HEAD` equals `headRefOid`. Otherwise
      run `git fetch <remote> refs/pull/<pr>/head` against the base repository's remote, and read
      files with `git show <headRefOid>:<path>`.
