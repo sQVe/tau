@@ -40,6 +40,7 @@ import {
 } from '../src/extensions/subagents/records.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { readInstructionSet } from '../src/instructionSets/index.js';
+import { createPiSession } from './piSession.js';
 
 const handoff =
   'Changes: edited source.txt\nEvidence: command-ok\nDecisions: None\nConcerns: Safety Net blocked deletion';
@@ -497,3 +498,88 @@ it.each(['editing', 'investigation'] as const)(
   },
   10_000,
 );
+
+it('starts a worker whose profile lists bulk_read without a bulk_read model', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-worker-bulk-read-'));
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  // The agent directory has no tau.json, so bulkRead.model is unset.
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+  const taskDirectory = join(directory, 'task');
+  mkdirSync(taskDirectory);
+  vi.stubEnv('TAU_WORKER_RECORD', taskDirectory);
+  const provider = fauxProvider({ provider: 'tau-worker-fixture' });
+  const model = provider.getModel();
+
+  const task = validateTask({
+    version: 6,
+    taskId: 'scout-task',
+    task: 'Inspect the fixture.',
+    parentSession: join(directory, 'parent.jsonl'),
+    parentSessionId: 'parent',
+    ...nativeIdentity(taskDirectory),
+    createdAt: Date.now(),
+    deadline: Date.now() + 30_000,
+    cancellationBudget: 2000,
+    monotonicDeadline: Date.now() + 30_000,
+    loadout: {
+      harness: 'pi',
+      profile: 'scout',
+      role: 'investigation',
+      model: `${model.provider}/${model.id}`,
+      thinking: 'off',
+      cwd: directory,
+      agentDirectory: directory,
+      permissions: 'trusted-full-tools',
+      instructions: 'Inspect the fixture only.',
+      tools: ['read', 'bash', 'bulk_read'],
+      skills: [],
+      instructionSets: [],
+      packages: [],
+    },
+  });
+
+  publish(taskDirectory, 'task.json', task);
+  seedSession(task);
+  const argumentsList = workerArguments(task, []);
+
+  const safety = join(
+    dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
+    'dist',
+    'pi',
+    'index.js',
+  );
+
+  // Pi loads the worker's command-line extensions before Tau from the saved configuration.
+  const extensionPaths = [
+    ...argumentsList.flatMap((argument, index) =>
+      argument === '-e' ? [argumentsList[index + 1]!] : [],
+    ),
+    safety,
+    fileURLToPath(new URL('../src/extensions/bulkRead/index.ts', import.meta.url)),
+  ];
+
+  const { session } = await createPiSession(onTestFinished, {
+    cwd: directory,
+    agentDirectory: directory,
+    providers: [provider],
+    tools: argumentsList[argumentsList.indexOf('--tools') + 1]!.split(','),
+    extensionPaths,
+    sessionManager: SessionManager.open(task.nativeSessionFile),
+  });
+
+  await session.bindExtensions({
+    uiContext: { notify: vi.fn<ExtensionUIContext['notify']>() } as unknown as ExtensionUIContext,
+    mode: 'tui',
+  });
+
+  expect(readEvent(taskDirectory, task.taskId, 'startupFailure')).toBeUndefined();
+  expect(readEvent(taskDirectory, task.taskId, 'ready')).toBeDefined();
+  expect(session.getAllTools().map((tool) => tool.name)).toContain('bulk_read');
+  expect(session.getActiveToolNames()).not.toContain('bulk_read');
+  expect(session.getActiveToolNames()).toContain('subagent_report');
+});

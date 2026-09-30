@@ -1,4 +1,4 @@
-import { isToolCallEventType } from '@earendil-works/pi-coding-agent';
+import { getAgentDir, isToolCallEventType } from '@earendil-works/pi-coding-agent';
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -6,8 +6,9 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { resolveDelegate } from '../../delegateModel/index.js';
+import { resolveAllowedModel } from '../../models/index.js';
 import { appendToolGuidelines } from '../../systemPrompt/index.js';
+import { requireBulkReadModel } from './config.js';
 import { BulkReadRecoverableError, bulkReadTool, bulkRead, isCancellation } from './tool.js';
 
 interface BulkReadState {
@@ -18,7 +19,7 @@ interface BulkReadState {
 // Repeat the bulk read measurement in docs/development.md before changing this threshold.
 const bulkReadLineThreshold = 400;
 
-// Cancellations and timeouts, like recoverable bulk read failures, say nothing about the delegate.
+// Cancellations and timeouts, like recoverable bulk read failures, say nothing about the bulk_read model.
 const isRecoverable = (error: unknown): boolean =>
   error instanceof BulkReadRecoverableError || isCancellation(error);
 
@@ -53,13 +54,39 @@ export const rewriteContinuationNotice = (text: string): string =>
     buildContinuationNotice,
   );
 
-// A throwing registry would escape the hook and block the read itself, so clamping falls back to
-// stock behavior instead. The tool path still reports the error.
-const clampDelegate = (context: ExtensionContext) => {
+const resolveBulkReadModel = (context: ExtensionContext) => {
+  const reference = requireBulkReadModel({
+    cwd: context.cwd,
+    agentDirectory: getAgentDir(),
+    projectTrusted: context.isProjectTrusted(),
+  });
+
+  return resolveAllowedModel(context, reference);
+};
+
+// A missing or broken model config would escape the hook and block the read itself, so clamping
+// falls back to stock behavior instead. The tool path still reports the error.
+const canClamp = (context: ExtensionContext): boolean => {
   try {
-    return resolveDelegate(context);
+    resolveBulkReadModel(context);
+
+    return true;
   } catch {
-    return undefined;
+    return false;
+  }
+};
+
+// The tool stays registered so worker profiles that list it still start. Tau loads after a worker's
+// command-line extensions, so this runs after the worker sets its profile tools.
+const hideUnusableBulkRead = (pi: ExtensionAPI, context: ExtensionContext): void => {
+  if (canClamp(context)) {
+    return;
+  }
+
+  const active = pi.getActiveTools();
+
+  if (active.includes(bulkReadTool)) {
+    pi.setActiveTools(active.filter((tool) => tool !== bulkReadTool));
   }
 };
 
@@ -76,7 +103,7 @@ const registerBulkRead = (pi: ExtensionAPI, state: BulkReadState): void => {
     // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, params, signal, _onUpdate, context) {
       try {
-        const model = resolveDelegate(context);
+        const model = resolveBulkReadModel(context);
 
         return await bulkRead(context, model, params, signal);
       } catch (error) {
@@ -96,7 +123,7 @@ const registerTrimHook = (pi: ExtensionAPI, state: BulkReadState): void => {
       return;
     }
 
-    if (!clampDelegate(context)) {
+    if (!canClamp(context)) {
       state.trimming = false;
 
       return;
@@ -136,7 +163,10 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
     state.clamped.clear();
   };
 
-  pi.on('session_start', resetSession);
+  pi.on('session_start', (_event, context) => {
+    resetSession();
+    hideUnusableBulkRead(pi, context);
+  });
 
   pi.on('session_before_switch', () => {
     resetSession();

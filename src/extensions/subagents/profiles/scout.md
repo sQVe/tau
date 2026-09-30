@@ -1,7 +1,6 @@
 ---
 name: scout
 role: investigation
-model: claude-bridge/claude-opus-5-5
 tools: read, bash, write, bulk_read, web_search, fetch_content, get_search_content
 instruction-sets: writing, workflow
 ---

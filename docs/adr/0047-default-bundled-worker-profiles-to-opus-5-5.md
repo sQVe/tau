@@ -1,6 +1,6 @@
 # ADR 0047: Default bundled worker profiles to Opus 5.5
 
-- Status: Accepted
+- Status: Superseded by [ADR 0071](./0071-set-worker-models-in-the-user-config.md)
 - Date: 2026-09-25
 
 ## Context

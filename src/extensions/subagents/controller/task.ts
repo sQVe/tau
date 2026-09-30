@@ -1,4 +1,4 @@
-import { parseModelReference } from '../../../delegateModel/index.js';
+import { parseModelReference } from '../../../models/index.js';
 import { processAbsent } from '../cancellation.js';
 import type { WorkerPlacement } from '../placement.js';
 import { modelEvidenceNotice, modelStatus } from '../presentation.js';

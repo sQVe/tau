@@ -552,7 +552,7 @@ export const formatTokenUsageReport = (report: TokenUsageReport, top: number) =>
     `Token use from ${since} to ${until}`,
     skipped,
     '',
-    'Tokens by kind (tool rows are delegate usage, such as bulk_read)',
+    'Tokens by kind (tool rows are model calls made by tools, such as bulk_read)',
     kindTable(report),
     '',
     'Assistant turns by profile and model (context = input + cacheRead + cacheWrite)',

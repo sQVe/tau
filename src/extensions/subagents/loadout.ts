@@ -12,11 +12,14 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { Value } from 'typebox/value';
 
-import { parseModelReference, requireAllowedModel } from '../../delegateModel/index.js';
+import { parseModelReference, readAllowedModels, requireAllowedModel } from '../../models/index.js';
+import { userConfigPath } from '../../tauConfig/index.js';
 import type { ConfigLocation } from '../../tauConfig/index.js';
-import { bundledProfileDirectory, resolveProfile, workerTools } from './profiles.js';
+import { readProfileModels } from './profileModels.js';
+import { resolveProfile, workerTools } from './profiles.js';
 import { loadoutSchema } from './types.js';
 import type { Loadout, Profile } from './types.js';
+import { availableModels, selectWorkerModel } from './workerModels.js';
 
 type ModelContext = Pick<ExtensionContext, 'modelRegistry' | 'scopedModels'>;
 
@@ -45,13 +48,20 @@ const findModel = (
   return registry.find(model.provider, model.id);
 };
 
-const configuredModels = (context: ModelContext): string => {
-  const models = context.scopedModels.map(({ model }) => `${model.provider}/${model.id}`);
+const scopedModelReferences = (context: Pick<ExtensionContext, 'scopedModels'>): string[] =>
+  context.scopedModels.map(({ model }) => `${model.provider}/${model.id}`);
+
+// The scoped models a launch may pass, as the launch description and errors list them.
+export const launchModels = (
+  context: Pick<ExtensionContext, 'scopedModels'>,
+  location: ConfigLocation,
+): string[] => availableModels(scopedModelReferences(context), readAllowedModels(location)?.models);
+
+const configuredModels = (context: ModelContext, location: ConfigLocation): string => {
+  const models = launchModels(context, location);
 
   return models.length ? ` Configured models: ${models.join(', ')}.` : '';
 };
-
-const isBundled = (profile: Profile): boolean => profile.source.startsWith(bundledProfileDirectory);
 
 const resolveModel = (
   explicit: string | undefined,
@@ -59,27 +69,26 @@ const resolveModel = (
   context: ModelContext,
   location: ConfigLocation,
 ) => {
-  // oxlint-disable-next-line node/no-process-env -- Explicit worker model configuration has no implicit parent-model fallback.
-  const configured = process.env.TAU_SUBAGENT_MODEL;
-  const environment = configured === '' ? undefined : configured;
+  const model = selectWorkerModel(explicit, profile.name, readProfileModels(location));
 
-  // The environment overrides only bundled defaults; a user or project profile's model is a choice.
-  const model = isBundled(profile)
-    ? (explicit ?? environment ?? profile.model)
-    : (explicit ?? profile.model ?? environment);
+  if (model === undefined) {
+    throw new Error(
+      `No model for worker profile ${profile.name}. Pass model, or set profiles.default.model in ${userConfigPath(location.agentDirectory)}.${configuredModels(context, location)}`,
+    );
+  }
 
-  const reference = model === undefined ? undefined : parseModelReference(model);
+  const reference = parseModelReference(model);
 
   if (!reference) {
     throw new Error(
-      `Set an exact worker model as provider/id; there is no fallback.${configuredModels(context)}`,
+      `Set an exact worker model as provider/id; there is no fallback.${configuredModels(context, location)}`,
     );
   }
 
   const selectedModel = findModel(context.modelRegistry, location, reference);
 
   if (!selectedModel) {
-    throw new Error(`Worker model unavailable: ${model}.${configuredModels(context)}`);
+    throw new Error(`Worker model unavailable: ${model}.${configuredModels(context, location)}`);
   }
 
   return selectedModel;

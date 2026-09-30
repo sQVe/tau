@@ -24,11 +24,11 @@ beforeAll(async () => {
     afterAll(restore);
   });
 
-  // Tau's shared setting takes precedence over the upstream persistent answer setting.
+  // Without a passed answerModel, pi-web-access answers with its own configured model.
   await writeFile(
     join(agentDirectory, 'web-search.json'),
     JSON.stringify({
-      fetch: { answerProvider: 'ignored', answerModel: 'ignored' },
+      fetch: { answerProvider: 'web-configured', answerModel: 'reader' },
       fetchRouting: { providers: ['http'] },
       // Only this isolated fixture server may bypass the package's private-address guard.
       ssrf: { allowRanges: ['127.0.0.1/32'] },
@@ -38,14 +38,25 @@ beforeAll(async () => {
 
 afterAll(() => rm(directory, { recursive: true, force: true }));
 
-it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'] as const)(
-  'runs web answer mode through Pi with delegate selection: %s',
-  async (scenario, { onTestFinished }) => {
-    vi.stubEnv('TAU_DELEGATE_MODEL', 'web-delegate/reader');
+const passedModels = {
+  configured: undefined,
+  authentication: undefined,
+  provider: undefined,
+  override: 'web-override/reader',
+  disallowed: 'web-override/reader',
+  invalid: 'invalid',
+  missing: 'missing/model',
+};
 
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
-    });
+it.for(Object.keys(passedModels) as (keyof typeof passedModels)[])(
+  'runs web answer mode through Pi with answer model selection: %s',
+  async (scenario, { onTestFinished }) => {
+    if (scenario === 'disallowed') {
+      const tauConfig = join(agentDirectory, 'tau.json');
+
+      await writeFile(tauConfig, JSON.stringify({ allowedModels: ['web-configured/reader'] }));
+      onTestFinished(() => rm(tauConfig, { force: true }));
+    }
 
     const server = createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/html' });
@@ -83,18 +94,18 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
     }
 
     const sessionModel = fauxProvider({ provider: 'web-session' });
-    const delegate = fauxProvider({ provider: 'web-delegate', models: [{ id: 'reader' }] });
+    const configured = fauxProvider({ provider: 'web-configured', models: [{ id: 'reader' }] });
     const override = fauxProvider({ provider: 'web-override', models: [{ id: 'reader' }] });
 
     // Faux completions need no credentials, but the web package requires an API key.
-    for (const provider of [delegate, override]) {
+    for (const provider of [configured, override]) {
       provider.provider.auth.apiKey!.resolve = async () => ({ auth: { apiKey: 'test' } });
     }
 
     const { session } = await createBoundSession(onTestFinished, {
       cwd: directory,
       agentDirectory,
-      providers: [sessionModel, delegate, override],
+      providers: [sessionModel, configured, override],
       tools: ['fetch_content', 'get_search_content', 'web_search'],
       extensionPaths: [
         resolve(import.meta.dirname, '../src/extensions/webAccess/index.ts'),
@@ -103,13 +114,9 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
       settings: { compaction: { enabled: false }, retry: { enabled: false } },
     });
 
-    if (scenario === 'invalid' || scenario === 'missing') {
-      vi.stubEnv('TAU_DELEGATE_MODEL', scenario === 'invalid' ? 'invalid' : 'missing/model');
-    } else if (scenario === 'override') {
-      vi.stubEnv('TAU_DELEGATE_MODEL', 'invalid');
-    } else if (scenario === 'authentication') {
+    if (scenario === 'authentication') {
       const authentication = vi
-        .spyOn(delegate.provider.auth.apiKey!, 'resolve')
+        .spyOn(configured.provider.auth.apiKey!, 'resolve')
         .mockRejectedValue(new Error('credentials expired'));
 
       onTestFinished(() => {
@@ -121,7 +128,7 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
       url: `http://127.0.0.1:${address.port}/policy`,
       mode: 'answer',
       prompt: 'How many times are requests retried?',
-      ...(scenario === 'override' ? { answerModel: 'web-override/reader' } : {}),
+      ...(passedModels[scenario] === undefined ? {} : { answerModel: passedModels[scenario] }),
     };
 
     sessionModel.setResponses([
@@ -129,7 +136,7 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
       fauxAssistantMessage('Done.'),
     ]);
 
-    delegate.setResponses([
+    configured.setResponses([
       scenario === 'provider'
         ? fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'provider unavailable' })
         : fauxAssistantMessage('Requests retry once.'),
@@ -153,13 +160,14 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
     }
 
     const text = JSON.stringify(entry.message.content);
-    const success = scenario === 'shared' || scenario === 'override';
+    const success = scenario === 'configured' || scenario === 'override';
 
     const expected = success
       ? 'requests retry once'
       : {
-          invalid: 'invalid delegate model',
-          missing: 'model not found',
+          disallowed: 'web-override/reader is not allowed',
+          invalid: 'invalid model',
+          missing: 'not found',
           authentication: 'no api key available',
           provider: 'provider unavailable',
         }[scenario];
@@ -168,6 +176,6 @@ it.for(['shared', 'override', 'invalid', 'missing', 'authentication', 'provider'
     expect(session.model?.provider).toBe('web-session');
     expect(sessionModel.state.callCount).toBe(2);
     expect(override.state.callCount).toBe(scenario === 'override' ? 1 : 0);
-    expect(delegate.state.callCount).toBe(['shared', 'provider'].includes(scenario) ? 1 : 0);
+    expect(configured.state.callCount).toBe(['configured', 'provider'].includes(scenario) ? 1 : 0);
   },
 );

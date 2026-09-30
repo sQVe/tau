@@ -11,6 +11,7 @@ import type { InstructionSetName } from '../../instructionSets/index.js';
 import { assignmentContractFor, handoffContract } from './handoff.js';
 import { thinkingSchema, toolNamePattern } from './types.js';
 import type { Loadout, Profile, Task } from './types.js';
+import { defaultProfileName } from './workerModels.js';
 
 export interface ProfileSummary {
   name: string;
@@ -31,7 +32,6 @@ const supportedProfileKeys = new Set([
   'name',
   'description',
   'role',
-  'model',
   'thinking',
   'cli',
   'tools',
@@ -40,7 +40,7 @@ const supportedProfileKeys = new Set([
   'packages',
 ]);
 
-const parseFields = (frontmatter: string) => {
+const parseFields = (frontmatter: string, source: string) => {
   const fields = new Map<string, string>();
 
   for (const line of frontmatter.split('\n')) {
@@ -59,6 +59,12 @@ const parseFields = (frontmatter: string) => {
 
     if (key == null || value == null) {
       throw new Error(`Unsupported or duplicate profile setting: ${line}`);
+    }
+
+    if (key === 'model') {
+      throw new Error(
+        `Profile ${source} sets model:. Move the model to profiles in the user tau.json, such as {"profiles": {"worker": {"model": "provider/model-id"}}}.`,
+      );
     }
 
     if (fields.has(key) || !supportedProfileKeys.has(key)) {
@@ -157,7 +163,16 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
   }
 
   const [, frontmatter = '', body = ''] = match;
-  const fields = parseFields(frontmatter);
+  const fields = parseFields(frontmatter, source);
+  const name = fields.get('name') ?? fallbackName;
+
+  // `default` names the model entry in tau.json that applies to every profile without its own.
+  if (name === defaultProfileName) {
+    throw new Error(
+      `Profile ${source} is named ${defaultProfileName}, which is reserved. Rename it.`,
+    );
+  }
+
   const role = parseRole(fields);
 
   requirePiCli(fields);
@@ -169,9 +184,8 @@ export const parseProfile = (content: string, fallbackName: string, source: stri
   const thinking = parseThinking(fields.get('thinking'));
 
   return {
-    name: fields.get('name') ?? fallbackName,
+    name,
     role,
-    model: fields.get('model'),
     thinking,
     tools: parseTools(fields, role),
     skills: parseList('skills', fields.get('skills')) ?? [],

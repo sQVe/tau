@@ -215,7 +215,7 @@ it('reports every missing or non-file path in one refusal', async () => {
   expect(complete).not.toHaveBeenCalled();
 });
 
-it('throws instead of asking the delegate when every file is binary', async () => {
+it('throws instead of asking the model when every file is binary', async () => {
   const { cwd, context, model, complete } = await setup();
   await writeFile(join(cwd, 'binary'), 'secret\0bytes');
 
@@ -253,7 +253,7 @@ it('expands a leading ~ like the read tool does', async () => {
   ).rejects.toThrow(join(homedir(), 'tau-bulk-missing'));
 });
 
-it('returns the delegate text and its usage on the result', async () => {
+it('returns the model text and its usage on the result', async () => {
   const { context, model, response } = await setup();
 
   const result = await bulkRead(context, model, { paths: ['a.ts'], question: 'Why?' }, undefined);
@@ -264,7 +264,7 @@ it('returns the delegate text and its usage on the result', async () => {
 });
 
 it.each(['error', 'aborted', 'length'] as const)(
-  'throws when the delegate stops with %s',
+  'throws when the model stops with %s',
   async (stopReason) => {
     const { context, model, response, complete } = await setup();
     complete.mockResolvedValue({ ...response, stopReason });

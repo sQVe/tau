@@ -83,24 +83,44 @@ automatically. Without the integration, worker launch refuses before it runs any
 For use in another project, run `pi install -l /absolute/path/to/tau` there, then start Pi. This
 records the local package in that project's `.pi/settings.json`.
 
-### Delegate model
+### Tool models
 
-Set `TAU_DELEGATE_MODEL=provider/model-id` before launching Pi to choose the delegate for
-`bulk_read` and answer-mode `fetch_content`. It uses Pi's credentials and does not change the
-session model. Use the exact provider and model ID from `pi --list-models`, including router
-prefixes such as `openrouter/anthropic/model-id`. The model needs working credentials. See the
-[shared-delegate decision](adr/0027-share-one-delegate-model.md) for why the tasks share one model,
-and the [default decision](adr/0044-restore-gpt-5-6-luna-as-the-delegate-default.md) for the
-default.
+Tau names no model in code. Set the model for `bulk_read` as `bulkRead.model` in
+`~/.pi/agent/tau.json`:
+
+```json
+{ "bulkRead": { "model": "openai-codex/gpt-5.6-luna" } }
+```
+
+Use the exact provider and model ID from `pi --list-models`, including router prefixes such as
+`openrouter/anthropic/model-id`. The model needs working credentials, and it does not change the
+session model. Only the user file may set `bulkRead`, and `profiles.default` does not apply to it.
+Without a usable `bulkRead.model`, a session starts with `bulk_read` inactive and reads are not
+clamped.
+
+Answer-mode `fetch_content` uses `fetch.answerProvider` and `fetch.answerModel` in pi-web-access's
+`web-search.json`, or the session model without them. Tau checks only an `answerModel` passed on the
+call against `allowedModels`. See the
+[model defaults decision](adr/0072-keep-model-defaults-out-of-code.md).
 
 ### Workers
 
-The bundled `scout`, `worker`, `reviewer`, and `qa` profiles default to
-`claude-bridge/claude-opus-5-5`. Set `TAU_SUBAGENT_MODEL=provider/model-id` to replace that default,
-or to choose the model for a user or project profile that names none. A launch `model` overrides
-both, and a model in a user or project profile overrides the setting. Without any model, worker
-launch refuses; it never falls back to the parent's model. See the
-[default decision](adr/0047-default-bundled-worker-profiles-to-opus-5-5.md).
+A worker launch needs a model: the launch `model`, or a `profiles` entry in `~/.pi/agent/tau.json`.
+Without either, the launch fails. To choose a model per profile, add `profiles`:
+
+```json
+{
+  "profiles": {
+    "scout": { "model": "openai-codex/gpt-6.1-sol" },
+    "default": { "model": "claude-bridge/claude-opus-5-5" }
+  }
+}
+```
+
+`default` applies to every profile without its own entry. A launch `model` overrides both. Only the
+user file may set `profiles`, and profile files may not set `model:`. Worker launch refuses a model
+that is unavailable or outside `allowedModels`; it never falls back to another model. See the
+[worker model decision](adr/0071-set-worker-models-in-the-user-config.md).
 
 A launch without `timeoutSeconds` gets 30 minutes for investigation profiles and 60 minutes for
 editing profiles.
@@ -187,10 +207,11 @@ Use a temporary repository.
 
 ### Bulk read
 
-With a working delegate, read a file longer than 400 lines without a limit. Check that the result
-ends with a `bulk_read` hint instead of `Use offset=`. Ask `bulk_read` a question using `paths` and
-`question`, then read a bounded range before editing. Check that the delegate's usage appears in the
-session totals. Restart with a missing model reference and check that reads are not clamped.
+With a working `bulkRead.model`, read a file longer than 400 lines without a limit. Check that the
+result ends with a `bulk_read` hint instead of `Use offset=`. Ask `bulk_read` a question using
+`paths` and `question`, then read a bounded range before editing. Check that the `bulk_read` model's
+usage appears in the session totals. Restart without `bulkRead.model`. Check that `bulk_read` is not
+among the active tools and that reads are not clamped.
 
 ## Versioning
 
@@ -234,7 +255,7 @@ workers to them.
 
 ## Measuring bulk reads
 
-Repeat this when the delegate or the session model changes;
+Repeat this when the `bulk_read` model or the session model changes;
 [ADR 0014](adr/0014-delegate-model-for-bulk-reads.md) records what the last run found. Measure with
 real providers on a session too small to compact, using one semantic question spanning three files
 above the threshold. Compare a local build with trimming off and `bulk_read` present against the
@@ -258,6 +279,7 @@ To count how often sessions reach the clamp, run
 `~/.pi/agent/sessions` unless given another directory and prints session count, read calls,
 unbounded reads, truncated-or-hinted results, offset pages, `bulk_read` calls, and cost by role.
 
-Record configuration, session input, cache read, cache write, output, delegate input, delegate
-output, assistant turns, `offset` pages after a clamped read, wall clock, and catalog cost as a
-ratio, not an invoice. Offline faux tests prove usage plumbing and result size, not savings.
+Record configuration, session input, cache read, cache write, output, `bulk_read` model input,
+`bulk_read` model output, assistant turns, `offset` pages after a clamped read, wall clock, and
+catalog cost as a ratio, not an invoice. Offline faux tests prove usage plumbing and result size,
+not savings.

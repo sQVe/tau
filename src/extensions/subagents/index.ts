@@ -12,9 +12,10 @@ import { WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { historyPage, searchHistory } from './history.js';
 import { readSessionLedger } from './ledgerRecords.js';
-import { resolveLoadout } from './loadout.js';
+import { launchModels, resolveLoadout } from './loadout.js';
 import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
 import type { WorkerNotice } from './presentation.js';
+import { readProfileModels } from './profileModels.js';
 import { listProfiles } from './profiles.js';
 import type { ProfileSummary } from './profiles.js';
 import { workerRecordsDirectory } from './records.js';
@@ -32,6 +33,7 @@ import { renderWorkerWidget } from './widget.js';
 import type { WorkerWidgetRow } from './widget.js';
 import { openWorkerHistory } from './widgetOverlay.js';
 import type { WorkerHistoryView } from './widgetOverlay.js';
+import { workerModelLine } from './workerModels.js';
 
 interface SubagentRuntime {
   pi: ExtensionAPI;
@@ -179,6 +181,7 @@ export const delegationGuidelines = [
   'Do small work yourself: quick questions, small local edits, obvious rebase conflicts, worker coordination, and back-and-forth with the user. Your own small edits need checks, not a reviewer. When a task mixes a small fix with larger work, make the fix yourself and delegate the rest.',
   'Without waiting to be asked, send larger implementation or work that needs new tests to a `worker`, and open questions that need wide reading or running commands to a `scout`. Send a finished worker change to a `reviewer` before you accept or commit it. Follow any explicit user instruction about delegation.',
   "Pass a reviewer the worker's check log path and a diff hash, such as `git hash-object` of the diff, so it reuses the checks. Use one reviewer; a large or risky change gets at most two, split by area. For a refactor whose tests do not change, the reviewer confirms behavior is unchanged.",
+  'Use the profile default unless the user asks for another model or a multi-model discussion.',
   'Pass a brief that several workers share as a file path. Give workers on cheap models a shorter `timeoutSeconds`. Run a multi-model discussion as one round with two models, and add a round only for a disagreement that changes the decision.',
   'Send a finished change with user-visible behavior to `qa`. It expects the user to run the app from the worktree under test. Tell it where the app runs, pass its questions to the user, and give it only test-account credentials, because worker records keep them.',
   'While subagent workers run, do not edit their worktree or redo their work.',
@@ -436,13 +439,44 @@ const profileText = (profiles: ProfileSummary[]): string =>
         )
         .join(', ');
 
-const registerLaunchTool = (runtime: SubagentRuntime, profiles: ProfileSummary[]): void => {
+// A config that cannot be read leaves the line out, and each launch reports the error.
+const launchModelLine = (
+  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'scopedModels'>,
+  profiles: ProfileSummary[],
+): string[] => {
+  try {
+    const location = {
+      cwd: context.cwd,
+      agentDirectory: getAgentDir(),
+      projectTrusted: context.isProjectTrusted(),
+    };
+
+    const names = profiles.map(({ name }) => name);
+
+    const line = workerModelLine(
+      launchModels(context, location),
+      names,
+      readProfileModels(location),
+    );
+
+    return line === undefined ? [] : [line];
+  } catch {
+    return [];
+  }
+};
+
+const registerLaunchTool = (
+  runtime: SubagentRuntime,
+  profiles: ProfileSummary[],
+  modelLine: string[] = [],
+): void => {
   runtime.pi.registerTool({
     name: 'subagent',
     label: 'Launch worker',
     description: [
       'Launch a Pi worker in a herdr pane. cwd must match this session.',
-      `Profiles: ${profileText(profiles)}. model overrides the profile's Pi provider/id.`,
+      `Profiles: ${profileText(profiles)}. model overrides the profile default as provider/id.`,
+      ...modelLine,
       'Give the task acceptance criteria, baseline, and worktree; one editor per worktree. The deadline includes waits and cleanup.',
       'A notice starts a new turn when a worker asks, reports, or stops. End your turn to wait; never sleep or poll.',
     ].join(' '),
@@ -704,8 +738,11 @@ export const registerSubagents = (pi: ExtensionAPI) => {
     shuttingDown = false;
     sessionContext = context;
 
-    // Project profiles load only once the session's cwd and trust are known.
-    registerLaunchTool(runtime, launchProfiles(context));
+    // Project profiles and scoped models load only once the session's cwd and trust are known.
+    // The description stays fixed for the session, so the prompt cache holds.
+    const profiles = launchProfiles(context);
+
+    registerLaunchTool(runtime, profiles, launchModelLine(context, profiles));
 
     if (widgetTimer) {
       clearInterval(widgetTimer);
