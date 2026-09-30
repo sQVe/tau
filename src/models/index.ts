@@ -22,7 +22,6 @@ export const parseModelReference = (reference: string) => {
   return { provider: reference.slice(0, separator), id: reference.slice(separator + 1) };
 };
 
-// Parses a config entry such as {"model": "provider/model-id"} at `field`, naming the file and field.
 export const parseModelEntry = (source: string, field: string, entry: unknown): string => {
   if (!isRecord(entry)) {
     throw new Error(
@@ -88,7 +87,6 @@ export const requireAllowedModel = (reference: string, location: ConfigLocation)
   }
 };
 
-// Parses the reference, checks it against allowedModels, and finds it in Pi's registry.
 export const resolveAllowedModel = (
   context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'modelRegistry'>,
   reference: string,

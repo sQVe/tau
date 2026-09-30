@@ -11,7 +11,6 @@ export const selectWorkerModel = (
   profiles: ProfileModels,
 ): string | undefined => launchModel ?? profiles.get(profile) ?? profiles.get(defaultProfileName);
 
-// Without an allowed list, every scoped model is available.
 export const availableModels = (
   scoped: readonly string[],
   allowed: readonly string[] | undefined,

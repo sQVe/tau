@@ -2,7 +2,6 @@ import { parseModelEntry } from '../../models/index.js';
 import { readUserOnlyKey, userConfigPath } from '../../tauConfig/index.js';
 import type { ConfigLocation } from '../../tauConfig/index.js';
 
-// Returns undefined when the user file sets no bulkRead block.
 export const readBulkReadModel = (location: ConfigLocation): string | undefined => {
   const user = readUserOnlyKey(location, 'bulkRead');
 

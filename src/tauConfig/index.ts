@@ -72,7 +72,6 @@ const setsKey = ({ value }: ConfigFile, key: string): boolean =>
   isRecord(value) && Object.hasOwn(value, key);
 
 // The user owns which models they pay for and trust, so a repository file cannot set a model key.
-// Returns the key's value from the user file, or undefined when the user file does not set it.
 export const readUserOnlyKey = (location: ConfigLocation, key: string): ConfigFile | undefined => {
   const { files } = readTauConfig(location);
   const userPath = userConfigPath(location.agentDirectory);
