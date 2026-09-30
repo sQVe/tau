@@ -63,6 +63,8 @@ before anything was written to Linear.
    ```
 
    Sort the nodes by `subIssueSortOrder`, lowest first. A child in the `completed` state is merged.
+   For each slice that exists, read its dependencies with `linear issue relation list <slice>` and
+   keep the lines of the form `<slice> blocked-by <other>`.
 
 3. Split the design into slices.
    - Each slice leaves `main` working and fits one review sitting, ideally a few hundred changed
@@ -94,9 +96,12 @@ before anything was written to Linear.
      ```
 
    - A table with one row per slice: number, title, what it delivers, rough size, and `blocked-by`.
+   - The exact `## Design` section that step 6 writes into the container, or into the ticket for a
+     design with one slice, quoted in full from the draft.
    - The exact `linear` commands step 6 will run, in order, with file paths.
-   - On a later run, what changed since the last approved plan. Slices dropped from the plan stay in
-     Linear: list them for the user to cancel by hand.
+   - On a later run, what changed since the last approved plan, including `blocked-by` relations to
+     add and remove. Slices dropped from the plan stay in Linear: list them for the user to cancel
+     by hand.
 
    Approve with `ask_user_question`: approve, change the plan, or stop. After any change, write the
    draft again and show a new preview.
@@ -113,21 +118,24 @@ before anything was written to Linear.
      `linear issue create --team <team> --project <project> --parent <container> --title "<title>" --description-file $slicedir/slice-<n>.md --no-interactive`.
    - Update a changed slice that is not merged:
      `linear issue update <slice> --title "<title>" --description-file $slicedir/slice-<n>.md`.
-   - Add each dependency: `linear issue relation add <slice> blocked-by <earlier slice>`.
+   - Add each new dependency: `linear issue relation add <slice> blocked-by <earlier slice>`.
+   - Remove each dependency the plan drops from a slice that is not merged:
+     `linear issue relation delete <slice> blocked-by <other>`.
 
    For a design with one slice, create or update that one ticket with its design and slice body, and
-   skip the container.
+   skip the container, the dependencies, and step 7.
 
 7. Check the order. Read the children again with the query in step 2. If sorting by
-   `subIssueSortOrder` does not give the plan order, move each slice this run created to a value
-   between its neighbors in the plan, then read the children again:
+   `subIssueSortOrder` does not give the plan order, move each unmerged slice that is out of place
+   to a value between its neighbors in the plan, then read the children again. Merged slices keep
+   their place:
 
    ```sh
    linear api 'mutation($id: String!, $order: Float!) { issueUpdate(id: $id, input: { subIssueSortOrder: $order }) { success } }' --variable id=<slice> --variable order=<value>
    ```
 
 8. Report the container and each slice with its identifier and URL, in order, and any slice the user
-   should cancel by hand.
+   should cancel by hand. For a design with one slice, report that ticket alone.
 
 ## See also
 
