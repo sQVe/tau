@@ -30,14 +30,6 @@ To limit the models Tau picks for workers and `bulk_read`, add `allowedModels` t
 The repository list can only remove models from your list. Tau refuses any other model instead of
 falling back.
 
-Tau compacts the context of a manager session once it passes 200,000 tokens. Workers keep Pi's own
-compaction. To change the threshold, add `compaction` to either file. The threshold must be at least
-40,000 tokens:
-
-```json
-{ "compaction": { "thresholdTokens": 150000 } }
-```
-
 Tau names no model of its own. Set the models for workers and `bulk_read` in `~/.pi/agent/tau.json`.
 A worker launch needs a model passed on the launch, `profiles.<name>.model` for its profile, or
 `profiles.default.model`, which covers every profile without its own entry. `bulk_read` needs
