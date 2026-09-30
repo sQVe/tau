@@ -56,15 +56,18 @@ before anything was written to Linear.
    design is agreed. If it is not, stop.
 
 2. Read the current state. If `$slicedir/plan.md` exists, read it and every body file it names. If
-   the container exists, read its children in sub-issue order:
+   the container exists, read its current description with
+   `linear issue view <container> --json --no-pager`, even when the design came from elsewhere, and
+   read its children in sub-issue order:
 
    ```sh
-   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title subIssueSortOrder state { type } } } } }' --variable id=<container>
+   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title subIssueSortOrder branchName } } } }' --variable id=<container>
    ```
 
-   Sort the nodes by `subIssueSortOrder`, lowest first. A child in the `completed` state is merged.
-   For each slice that exists, read its dependencies with `linear issue relation list <slice>` and
-   keep the lines of the form `<slice> blocked-by <other>`.
+   Sort the nodes by `subIssueSortOrder`, lowest first. A slice is merged only when
+   `gh pr list --head <branchName> --state merged --json number` lists a PR. Its Linear status is
+   not proof either way. For each slice that exists, read its dependencies with
+   `linear issue relation list <slice>` and keep the lines of the form `<slice> blocked-by <other>`.
 
 3. Split the design into slices.
    - Each slice leaves `main` working and fits one review sitting, ideally a few hundred changed
@@ -75,6 +78,8 @@ before anything was written to Linear.
    - Use one slice only when the work cannot split, and say why. Then the ticket is the slice, and
      there is no container.
    - Mark a slice `blocked-by` another only when it cannot work or merge without it.
+   - Give every slice a title that no other slice in the plan uses. A retry matches tickets by
+     title.
 
 4. Write the draft in `$slicedir`, one body file per ticket.
    - `container.md`: the container's full description, with the agreed design in its `## Design`
