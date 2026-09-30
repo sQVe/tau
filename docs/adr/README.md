@@ -92,3 +92,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0068: Load only the instruction sets each worker profile needs](./0068-load-only-the-instruction-sets-each-worker-profile-needs.md)
 - [0069: Load each Pi package where its tools are used](./0069-load-each-pi-package-where-its-tools-are-used.md)
 - [0070: Compact manager sessions at Pi turn boundaries](./0070-compact-manager-sessions-at-pi-turn-boundaries.md)
+- [0070: Set worker models in the user config](./0070-set-worker-models-in-the-user-config.md)
