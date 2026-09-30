@@ -6,6 +6,9 @@ description:
   else's it checks the author's fixes. Use it for "address the PR feedback", "fix CI on my PR",
   "fetch PR comments", "are the review comments valid", "fix and resolve the threads", or "check if
   they fixed my comments". For a plain rebase, use update-branch.
+metadata:
+  required-for:
+    replying to or resolving pull request review comments, including as a step in a larger task
 ---
 
 # PR feedback

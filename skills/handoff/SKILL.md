@@ -4,6 +4,10 @@ description:
   Send a message to the agent in another workspace instead of changing its worktree yourself. Use it
   when asked to edit, test, or commit in a worktree you do not own, or to pass work to another
   workspace.
+metadata:
+  required-for:
+    passing work to the agent in another workspace, including when a task needs changes in a
+    worktree you do not own
 ---
 
 # Handoff
