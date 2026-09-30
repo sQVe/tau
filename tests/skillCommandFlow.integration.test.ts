@@ -1,3 +1,4 @@
+import { existsSync, readdirSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -12,6 +13,11 @@ import { createBoundSession } from './piSession.js';
 vi.setConfig({ testTimeout: 60_000 });
 
 const packageRoot = resolve(import.meta.dirname, '..');
+const skillsDirectory = join(packageRoot, 'skills');
+
+const skillNames = readdirSync(skillsDirectory).filter((name) =>
+  existsSync(join(skillsDirectory, name, 'SKILL.md')),
+);
 
 const createSession = async (registerCleanup: TestContext['onTestFinished']) => {
   const directory = await mkdtemp(join(tmpdir(), 'tau-skill-command-'));
@@ -27,7 +33,7 @@ const createSession = async (registerCleanup: TestContext['onTestFinished']) => 
     providers: [faux],
     tools: ['read'],
     extensionPaths: [join(packageRoot, 'src/extensions')],
-    skillPaths: [join(packageRoot, 'skills')],
+    skillPaths: [skillsDirectory],
   });
 
   return { session, faux };
@@ -47,7 +53,7 @@ const lastUserTextOf = (context: { messages: { role: string; content: unknown }[
 };
 
 describe('skill commands', () => {
-  it.for(['bro', 'code-review', 'commit'])(
+  it.for(skillNames)(
     'sends the %s skill body to the model',
     async (skillName, { onTestFinished }) => {
       const { session, faux } = await createSession(onTestFinished);

@@ -266,20 +266,17 @@ const createFakePi = (executeCommand?: ExtensionAPI['exec']) => {
     fakePi: fake.pi,
     registeredTool: () => fake.tools.get('commit'),
     registeredHandlers: fake.handlers,
-    registeredCommands: fake.commands,
-    sendUserMessage: fake.sendUserMessage,
   };
 };
 
 describe('commitExtension', () => {
-  it('registers the guard, tool, and command', () => {
-    const { fakePi, registeredTool, registeredHandlers, registeredCommands } = createFakePi();
+  it('registers the guard and tool', () => {
+    const { fakePi, registeredTool, registeredHandlers } = createFakePi();
 
     commitExtension(fakePi);
 
     expect(registeredTool()).toBeDefined();
     expect(registeredHandlers.get('tool_call')).toEqual([guardToolCall]);
-    expect(registeredCommands.has('commit')).toBe(true);
   });
 
   it('commits without registering or reading an approval flag', async () => {
@@ -314,28 +311,6 @@ describe('commitExtension', () => {
     expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('2');
     expect(custom).not.toHaveBeenCalled();
     expect(fakePi.getFlag).not.toHaveBeenCalled();
-  });
-
-  it('sends skill messages as follow-ups when idle and steering messages when busy', async () => {
-    const { fakePi, registeredCommands, sendUserMessage } = createFakePi();
-
-    commitExtension(fakePi);
-
-    const commitCommand = registeredCommands.get('commit');
-
-    if (commitCommand == null) {
-      throw new Error('Expected commit command to be registered');
-    }
-
-    await commitCommand.handler('--scope auth', { isIdle: () => true } as never);
-    await commitCommand.handler('', { isIdle: () => true } as never);
-    await commitCommand.handler('--scope auth', { isIdle: () => false } as never);
-
-    expect(sendUserMessage.mock.calls).toEqual([
-      ['/skill:commit --scope auth', { deliverAs: 'followUp', expandPromptTemplates: true }],
-      ['/skill:commit', { deliverAs: 'followUp', expandPromptTemplates: true }],
-      ['/skill:commit --scope auth', { deliverAs: 'steer', expandPromptTemplates: true }],
-    ]);
   });
 
   it("does not affect the tool's own git invocations", async () => {

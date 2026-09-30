@@ -98,11 +98,7 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
 
     const tauExtension = extensions.find((extension) => extension.tools.has('commit'));
 
-    expect(tauExtension?.commands.has('bro')).toBe(true);
-    expect(tauExtension?.commands.has('code-review')).toBe(true);
-    expect(tauExtension?.commands.has('commit')).toBe(true);
     expect(tauExtension?.tools.has('bulk_read')).toBe(true);
-    expect(tauExtension?.commands.has('tdd')).toBe(false);
     expect(tauExtension?.tools.has('run_tests')).toBe(true);
     expect(extensions.some((extension) => extension.tools.has('ask_user_question'))).toBe(true);
 
@@ -136,6 +132,12 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
     ]);
 
     expect(loader.getSkills().diagnostics).toEqual([]);
+
+    const skillsWithoutCommand = loader
+      .getSkills()
+      .skills.filter((skill) => tauExtension?.commands.has(skill.name) !== true);
+
+    expect(skillsWithoutCommand).toEqual([]);
 
     const scriptedProvider = fauxProvider({ provider: 'tau-package-writing' });
 
