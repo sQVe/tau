@@ -21,6 +21,7 @@ interface PiSessionOptions {
   skillPaths?: string[];
   extensionFactories?: NonNullable<LoaderOptions['extensionFactories']>;
   settings?: Parameters<typeof SettingsManager.inMemory>[0];
+  sessionManager?: SessionManager;
 }
 
 // A real Pi session on faux providers that loads only the named extensions and skills. The caller
@@ -67,7 +68,7 @@ export const createPiSession = async (
     modelRuntime,
     model: providers[0].getModel(),
     resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(cwd),
+    sessionManager: options.sessionManager ?? SessionManager.inMemory(cwd),
     settingsManager,
     ...(options.tools === undefined ? {} : { tools: options.tools }),
   });

@@ -95,7 +95,8 @@ Tau names no model in code. Set the model for `bulk_read` as `bulkRead.model` in
 Use the exact provider and model ID from `pi --list-models`, including router prefixes such as
 `openrouter/anthropic/model-id`. The model needs working credentials, and it does not change the
 session model. Only the user file may set `bulkRead`, and `profiles.default` does not apply to it.
-Without `bulkRead.model`, `bulk_read` fails and reads are not clamped.
+Without a usable `bulkRead.model`, a session starts with `bulk_read` inactive and reads are not
+clamped.
 
 Answer-mode `fetch_content` uses `fetch.answerProvider` and `fetch.answerModel` in pi-web-access's
 `web-search.json`, or the session model without them. Tau checks only an `answerModel` passed on the
@@ -209,8 +210,8 @@ Use a temporary repository.
 With a working `bulkRead.model`, read a file longer than 400 lines without a limit. Check that the
 result ends with a `bulk_read` hint instead of `Use offset=`. Ask `bulk_read` a question using
 `paths` and `question`, then read a bounded range before editing. Check that the `bulk_read` model's
-usage appears in the session totals. Restart without `bulkRead.model` and check that reads are not
-clamped.
+usage appears in the session totals. Restart without `bulkRead.model`. Check that `bulk_read` is not
+among the active tools and that reads are not clamped.
 
 ## Versioning
 

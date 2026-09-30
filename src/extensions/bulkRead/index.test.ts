@@ -29,7 +29,14 @@ const bulkReadConfig = { bulkRead: { model: 'tau-bulk/reader' } };
 
 const setup = (config: unknown = bulkReadConfig) => {
   const userFile = writeUserConfig(config);
-  const fake = fakeExtensionApi();
+  let activeTools = ['read', 'bulk_read'];
+
+  const fake = fakeExtensionApi({
+    getActiveTools: () => activeTools,
+    setActiveTools: (tools) => {
+      activeTools = tools;
+    },
+  });
 
   const find = vi
     .fn<ExtensionContext['modelRegistry']['find']>()
@@ -57,7 +64,19 @@ const setup = (config: unknown = bulkReadConfig) => {
 
   const emit = (name: string, event: unknown) => fake.handler(name)(event, context);
 
-  return { find, complete, execute, emit, tool, handlers: fake.handlers, userFile };
+  const prompt = () => appendedSystemPrompt(fake.handlers, activeTools);
+
+  return {
+    find,
+    complete,
+    execute,
+    emit,
+    tool,
+    handlers: fake.handlers,
+    userFile,
+    activeTools: () => activeTools,
+    prompt,
+  };
 };
 
 afterEach(() => vi.unstubAllEnvs());
@@ -101,6 +120,40 @@ it('appends selective verification guidance while bulk_read is active', () => {
   expect(guidelines).toContain('actual diff');
   expect(guidelines).toContain('applicable project rules');
   expect(guidelines).toContain('inherited code');
+});
+
+it('keeps bulk_read and its guidelines when the session starts with a usable model', () => {
+  const app = setup();
+
+  app.emit('session_start', {});
+
+  expect(app.activeTools()).toEqual(['read', 'bulk_read']);
+  expect(app.prompt()).toContain('bulk_read');
+});
+
+it.each([
+  ['without bulkRead.model', {}, 'bulkRead.model'],
+  ['outside allowedModels', { ...bulkReadConfig, allowedModels: ['a/b'] }, 'is not allowed'],
+])(
+  'hides bulk_read and its guidelines when the session starts %s',
+  async (_name, config, error) => {
+    const app = setup(config);
+
+    app.emit('session_start', {});
+
+    expect(app.activeTools()).toEqual(['read']);
+    expect(app.prompt()).toBe('');
+    await expect(app.execute()).rejects.toThrow(error);
+  },
+);
+
+it('hides bulk_read when the session starts with a model missing from the registry', () => {
+  const app = setup();
+  app.find.mockReturnValue(undefined);
+
+  app.emit('session_start', {});
+
+  expect(app.activeTools()).toEqual(['read']);
 });
 
 it('clamps a read without limit to the threshold and leaves an explicit limit untouched', () => {

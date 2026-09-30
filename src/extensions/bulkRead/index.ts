@@ -76,6 +76,20 @@ const canClamp = (context: ExtensionContext): boolean => {
   }
 };
 
+// The tool stays registered so worker profiles that list it still start. Tau loads after a worker's
+// command-line extensions, so this runs after the worker sets its profile tools.
+const hideUnusableBulkRead = (pi: ExtensionAPI, context: ExtensionContext): void => {
+  if (canClamp(context)) {
+    return;
+  }
+
+  const active = pi.getActiveTools();
+
+  if (active.includes(bulkReadTool)) {
+    pi.setActiveTools(active.filter((tool) => tool !== bulkReadTool));
+  }
+};
+
 const registerBulkRead = (pi: ExtensionAPI, state: BulkReadState): void => {
   pi.registerTool({
     name: bulkReadTool,
@@ -149,7 +163,10 @@ export default function bulkReadExtension(pi: ExtensionAPI): void {
     state.clamped.clear();
   };
 
-  pi.on('session_start', resetSession);
+  pi.on('session_start', (_event, context) => {
+    resetSession();
+    hideUnusableBulkRead(pi, context);
+  });
 
   pi.on('session_before_switch', () => {
     resetSession();
