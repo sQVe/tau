@@ -106,8 +106,8 @@ or reported as open. Replies tell the reviewer only what they cannot see for the
      `gh api graphql --hostname <host> -f query='mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }' -F id=<thread id>`.
      Leave a thread open when it holds an answered question or the reviewer owns the next step. When
      `viewerCanResolve` is false, reply and report that you could not resolve it.
-   - Answer findings from review summaries and conversation comments in one PR comment with
-     `gh pr comment <pr> --repo <repo> --body <text>`. Link each source comment.
+   - In author mode, answer findings from review summaries and conversation comments in one PR
+     comment with `gh pr comment <pr> --repo <repo> --body <text>`. Link each source comment.
    - If a post fails, stop and report which replies were posted.
 
 10. Report. In author mode, use the headings Fixed, Not worth changing, Incorrect, and Blocked from
