@@ -91,8 +91,9 @@ or reported as open. Replies tell the reviewer only what they cannot see for the
    head repository. If the push is rejected, stop and report. A round that only declines or answers
    does not push.
 
-8. Draft the replies with the rules below. Show drafts for people in one `ask_user_question` batch,
-   where the user chooses post, edit, or skip for each. A skipped thread stays open.
+8. Draft the replies with the rules below. Show all drafts for people in one `ask_user_question`
+   question, with options to post all or skip all. The user types which drafts to edit or skip. A
+   skipped thread stays open.
 
 9. Post and resolve.
    - Read `headRefOid` and every source from step 3 again. Stop and report if the head moved other
