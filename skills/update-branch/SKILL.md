@@ -4,6 +4,8 @@ description:
   Rebase the current branch onto its base, resolve conflicts, and update the PR when asked. Use it
   for "rebase onto main", "fix conflicts", "the PR has conflicts", or when a rebase or merge stops
   on a conflict.
+metadata:
+  required-for: rebasing a branch or force-pushing it, including as a step in a larger task
 ---
 
 # Update branch

@@ -95,3 +95,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0071: Set worker models in the user config](./0071-set-worker-models-in-the-user-config.md)
 - [0072: Keep model defaults out of code](./0072-keep-model-defaults-out-of-code.md)
 - [0073: Leave manager compaction to Pi](./0073-leave-manager-compaction-to-pi.md)
+- [0074: Let skills declare the actions they must own](./0074-let-skills-declare-the-actions-they-must-own.md)
