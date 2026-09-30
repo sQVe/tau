@@ -183,6 +183,8 @@ export const delegationGuidelines = [
   'Send a finished change with user-visible behavior to `qa`. It expects the user to run the app from the worktree under test. Tell it where the app runs, pass its questions to the user, and give it only test-account credentials, because worker records keep them.',
   'While subagent workers run, do not edit their worktree or redo their work.',
   'Treat a worker report as a claim. Check its evidence before you tell the user the work is done.',
+  'When a reviewer reports findings on a worker change you delegated, send the in-scope fixes back to that worker without waiting for the user. If a skill you follow requires approval first, get it before you send them.',
+  'After any worker report, start the next step you own. Ask only when that step needs a decision you cannot make, and report and stop when the work is done.',
 ];
 
 const requireHerdrParent = (
