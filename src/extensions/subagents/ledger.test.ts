@@ -135,21 +135,25 @@ const longEvidence = Array.from({ length: 100 }, (_, index) => `${index}`.padEnd
 // 47 entries of 501 characters fit in the 24,000-character budget; the 48th does not.
 const layoutCases: LayoutCase[] = [
   {
-    name: 'lists a worker with a question, then live workers, then the newest stopped workers',
+    name: 'lists a worker with a question, then live workers, then the newest ended workers',
     workers: [
       worker('stopped-old', { createdAt: 1 }),
-      worker('stopped-new', { createdAt: 3 }),
+      worker('stopped-new', { createdAt: 4 }),
       worker('running', { state: 'running', createdAt: 1 }),
       { taskId: 'unreadable', createdAt: 1 },
       worker('asking', { pendingQuestionId: 'question-1', createdAt: 2 }),
       worker('undated'),
+      worker('unowned', { state: 'notOwned', createdAt: 3 }),
+      worker('unconfirmed', { state: 'cleanupUnconfirmed', createdAt: 2 }),
     ],
     full: [
       ['asking', 1, 0],
       ['running', 1, 0],
-      ['unreadable', 0, 0],
       ['stopped-new', 1, 0],
+      ['unowned', 1, 0],
+      ['unconfirmed', 1, 0],
       ['stopped-old', 1, 0],
+      ['unreadable', 0, 0],
       ['undated', 1, 0],
     ],
     short: [],

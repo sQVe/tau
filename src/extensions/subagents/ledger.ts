@@ -92,14 +92,24 @@ export const buildLedger = (workers: WorkerRecordFacts[], diagnostics: string[])
     .map((entry) => shorten(entry, diagnosticLength)),
 });
 
-// Workers with a question come first, then live workers, then the most recently launched stopped
+// Only a worker this parent controls can be live. Unowned, unconfirmed, and unreadable workers rank
+// with stopped ones, so old workers from earlier sessions cannot use up the budget.
+const liveStates = new Set<WorkerState | undefined>([
+  'starting',
+  'running',
+  'awaitingReply',
+  'reported',
+  'stopping',
+]);
+
+// Workers with a question come first, then live workers, then the most recently launched other
 // workers. A worker without a launch time counts as the oldest.
 const priority = (worker: LedgerWorker): number => {
   if (worker.pendingQuestionId !== undefined) {
     return 0;
   }
 
-  return worker.state === 'stopped' ? 2 : 1;
+  return liveStates.has(worker.state) ? 1 : 2;
 };
 
 const byPriority = (left: LedgerWorker, right: LedgerWorker): number =>
