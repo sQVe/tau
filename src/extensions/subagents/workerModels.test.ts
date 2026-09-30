@@ -54,6 +54,12 @@ it('leaves out profiles without a default model', () => {
   expect(line).not.toContain('qa');
 });
 
+it('does not mark a profile file named default, which cannot launch', () => {
+  const line = workerModelLine(['a/one'], ['default', 'scout'], profiles({ default: 'a/one' }));
+
+  expect(line).toContain('a/one (scout).');
+});
+
 it('gives no line without an available model or a profile default', () => {
   expect(workerModelLine([], ['scout'], profiles())).toBeUndefined();
 });

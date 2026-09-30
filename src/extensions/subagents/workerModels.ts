@@ -19,7 +19,8 @@ export const availableModels = (
   allowed === undefined ? [...scoped] : scoped.filter((model) => allowed.includes(model));
 
 // Lists each available model once, then each profile default outside that list. A profile without a
-// default is left out, and without any model there is no line.
+// default is left out, and without any model there is no line. A profile file named `default` is
+// refused at launch, so it gets no mark.
 export const workerModelLine = (
   available: readonly string[],
   profileNames: readonly string[],
@@ -27,7 +28,9 @@ export const workerModelLine = (
 ): string | undefined => {
   const defaults = new Map(available.map((model) => [model, [] as string[]]));
 
-  for (const name of profileNames) {
+  const launchable = profileNames.filter((name) => name !== defaultProfileName);
+
+  for (const name of launchable) {
     const model = selectWorkerModel(undefined, name, profiles);
 
     if (model === undefined) {
