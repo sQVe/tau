@@ -129,7 +129,8 @@ Approved fixes the user accepts without a new review count as reviewed.
    repository's convention. Write `Fixes <issue>` only for an issue this PR completes, and
    `Related to <issue>` for the rest. State the review's result, open findings, and fixes accepted
    without a review in the body, and keep reviewer notes, worker names, and local paths for the
-   summary. Save the body as `$prdir/body.md`.
+   summary. Write commit SHAs in full as plain text, never in backticks. Save the body as
+   `$prdir/body.md`.
 
 8. Preview and ask. Show the title, full body, base repository and branch, head, draft status,
    commits to push, and push command. Add the summary: commits made, comment findings and removals,
