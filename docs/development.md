@@ -101,7 +101,7 @@ Workers run on `claude-bridge/claude-opus-5-5` by default. To choose a model per
 ```json
 {
   "profiles": {
-    "scout": { "model": "openai-codex/gpt-5.6-luna" },
+    "scout": { "model": "openai-codex/gpt-6.1-sol" },
     "default": { "model": "claude-bridge/claude-opus-5-5" }
   }
 }

@@ -45,7 +45,7 @@ without its own entry:
 {
   "profiles": {
     "default": { "model": "claude-bridge/claude-opus-5-5" },
-    "scout": { "model": "openai-codex/gpt-5.6-luna" }
+    "scout": { "model": "openai-codex/gpt-6.1-sol" }
   }
 }
 ```
