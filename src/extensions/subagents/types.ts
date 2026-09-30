@@ -20,7 +20,6 @@ export type WorkerState =
 export interface Profile {
   name: string;
   role: 'investigation' | 'editing';
-  model: string | undefined;
   thinking: Loadout['thinking'];
   tools: string[];
   skills: string[];

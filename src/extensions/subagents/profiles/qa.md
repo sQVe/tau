@@ -2,7 +2,6 @@
 name: qa
 description: Tests the running app as a user would, through a browser or its command line.
 role: investigation
-model: claude-bridge/claude-opus-5-5
 tools: read, bash, write, agent_browser, agent_browser_code
 packages: npm:pi-agent-browser-native
 instruction-sets: writing, workflow

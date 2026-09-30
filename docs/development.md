@@ -95,12 +95,22 @@ default.
 
 ### Workers
 
-The bundled `scout`, `worker`, `reviewer`, and `qa` profiles default to
-`claude-bridge/claude-opus-5-5`. Set `TAU_SUBAGENT_MODEL=provider/model-id` to replace that default,
-or to choose the model for a user or project profile that names none. A launch `model` overrides
-both, and a model in a user or project profile overrides the setting. Without any model, worker
-launch refuses; it never falls back to the parent's model. See the
-[default decision](adr/0047-default-bundled-worker-profiles-to-opus-5-5.md).
+Workers run on `claude-bridge/claude-opus-5-5` by default. To choose a model per profile, add
+`profiles` to `~/.pi/agent/tau.json`:
+
+```json
+{
+  "profiles": {
+    "scout": { "model": "openai-codex/gpt-5.6-luna" },
+    "default": { "model": "claude-bridge/claude-opus-5-5" }
+  }
+}
+```
+
+`default` applies to every profile without its own entry. A launch `model` overrides both. Only the
+user file may set `profiles`, and profile files may not set `model:`. Worker launch refuses a model
+that is unavailable or outside `allowedModels`; it never falls back to another model. See the
+[worker model decision](adr/0070-set-worker-models-in-the-user-config.md).
 
 A launch without `timeoutSeconds` gets 30 minutes for investigation profiles and 60 minutes for
 editing profiles.

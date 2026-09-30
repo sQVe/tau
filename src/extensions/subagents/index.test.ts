@@ -118,26 +118,27 @@ it('keeps parent tools, delegation guidelines, and handlers unavailable when a t
   expect(fake.handlers.size).toBe(0);
 });
 
-it('lists user profiles in the launch description after session start', async ({
-  onTestFinished,
-}) => {
+const launchDescription = (
+  onTestFinished: typeof finishTest,
+  setup: (directory: string) => void,
+  scopedModels: string[] = [],
+) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-launch-profiles-'));
   const fake = fakeExtensionApi();
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.spyOn(WorkerController.prototype, 'resume').mockResolvedValue(undefined);
-  mkdirSync(join(directory, 'agents'));
-
-  writeFileSync(
-    join(directory, 'agents', 'triage.md'),
-    '---\nname: triage\ndescription: Sorts bug reports\nrole: investigation\n---\nTriage.',
-  );
-
+  setup(directory);
   subagentsExtension(fake.pi);
 
   const context = {
     cwd: directory,
     isProjectTrusted: () => false,
+    scopedModels: scopedModels.map((reference) => {
+      const [provider, ...id] = reference.split('/');
+
+      return { model: { provider, id: id.join('/') } };
+    }),
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionContext;
 
@@ -150,10 +151,57 @@ it('lists user profiles in the launch description after session start', async ({
 
   fake.handler('session_start')({}, context);
 
-  const description = fake.tools.get('subagent')?.description;
+  return fake.tools.get('subagent')?.description ?? '';
+};
+
+it('lists user profiles in the launch description after session start', ({ onTestFinished }) => {
+  const description = launchDescription(onTestFinished, (directory) => {
+    mkdirSync(join(directory, 'agents'));
+
+    writeFileSync(
+      join(directory, 'agents', 'triage.md'),
+      '---\nname: triage\ndescription: Sorts bug reports\nrole: investigation\n---\nTriage.',
+    );
+  });
 
   expect(description).toContain('triage');
   expect(description).toContain('Sorts bug reports');
+});
+
+it('lists allowed scoped models and each profile default in the launch description', ({
+  onTestFinished,
+}) => {
+  const description = launchDescription(
+    onTestFinished,
+    (directory) => {
+      writeFileSync(
+        join(directory, 'tau.json'),
+        JSON.stringify({
+          allowedModels: ['a/one', 'a/two', 'openrouter/meta/llama'],
+          profiles: { scout: { model: 'a/two' }, default: { model: 'a/one' } },
+        }),
+      );
+    },
+    ['a/one', 'a/hidden', 'a/two'],
+  );
+
+  expect(description).toContain('a/one (qa, reviewer, worker), a/two (scout).');
+  expect(description).not.toContain('a/hidden');
+});
+
+it('leaves the model line out of the launch description when the config is broken', ({
+  onTestFinished,
+}) => {
+  const description = launchDescription(
+    onTestFinished,
+    (directory) => {
+      writeFileSync(join(directory, 'tau.json'), JSON.stringify({ profiles: { scout: 'a/two' } }));
+    },
+    ['a/one'],
+  );
+
+  expect(description).toContain('Profiles: qa');
+  expect(description).not.toContain('a/one');
 });
 
 it('returns from session start while worker reattachment is still pending', async ({

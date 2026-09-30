@@ -26,6 +26,9 @@ export interface TauConfigFiles {
 
 export const configFileName = 'tau.json';
 
+export const userConfigPath = (agentDirectory: string): string =>
+  join(agentDirectory, configFileName);
+
 const readConfigFile = (source: string): ConfigFile | undefined => {
   let text: string;
 
@@ -55,7 +58,7 @@ export const readTauConfig = ({
   projectTrusted,
 }: ConfigLocation): TauConfigFiles => {
   const projectPath = join(cwd, CONFIG_DIR_NAME, configFileName);
-  const user = readConfigFile(join(agentDirectory, configFileName));
+  const user = readConfigFile(userConfigPath(agentDirectory));
   const project = projectTrusted ? readConfigFile(projectPath) : undefined;
   const ignored = !projectTrusted && existsSync(projectPath) ? projectPath : undefined;
 

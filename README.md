@@ -38,6 +38,18 @@ compaction. To change the threshold, add `compaction` to either file. The thresh
 { "compaction": { "thresholdTokens": 150000 } }
 ```
 
+To choose worker models, add `profiles` to `~/.pi/agent/tau.json`. `default` covers every profile
+without its own entry:
+
+```json
+{
+  "profiles": {
+    "default": { "model": "claude-bridge/claude-opus-5-5" },
+    "scout": { "model": "openai-codex/gpt-5.6-luna" }
+  }
+}
+```
+
 Pi runs the agent and its tools. Tau stages and commits with installed Git hooks without a prompt.
 Test results never control edit permission. Tau is not a general agent framework.
 

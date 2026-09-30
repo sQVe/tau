@@ -88,7 +88,11 @@ describe('TDD config', () => {
 
     await writeFile(
       join(cwd, '.pi', 'tau.json'),
-      JSON.stringify({ formatters: {}, tdd: { productionGlobs: ['{internal,cmd}/**/*.go'] } }),
+      JSON.stringify({
+        formatters: {},
+        profiles: { scout: 'broken' },
+        tdd: { productionGlobs: ['{internal,cmd}/**/*.go'] },
+      }),
     );
 
     const { config } = loadTddConfig({

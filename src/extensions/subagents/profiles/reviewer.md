@@ -1,7 +1,6 @@
 ---
 name: reviewer
 role: investigation
-model: claude-bridge/claude-opus-5-5
 tools: read, bash, write
 ---
 

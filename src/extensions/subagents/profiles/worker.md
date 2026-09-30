@@ -1,7 +1,6 @@
 ---
 name: worker
 role: editing
-model: claude-bridge/claude-opus-5-5
 tools: read, bash, edit, write, run_tests, commit
 ---
 

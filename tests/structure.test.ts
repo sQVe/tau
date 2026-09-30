@@ -33,6 +33,7 @@ const pureModules = [
   'src/extensions/subagents/ledger.ts',
   'src/extensions/subagents/piStop.ts',
   'src/extensions/subagents/reportCap.ts',
+  'src/extensions/subagents/workerModels.ts',
   'src/extensions/subagents/workerPackages.ts',
   'src/extensions/subagents/workerState.ts',
 ];

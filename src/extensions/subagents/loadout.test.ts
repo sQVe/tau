@@ -40,7 +40,6 @@ const workerFixture = async (onTestFinished: (callback: () => void) => void) => 
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  vi.stubEnv('TAU_SUBAGENT_MODEL', '');
   const provider = fauxProvider({ provider: 'tau-worker-fixture' });
 
   const runtime = await ModelRuntime.create({
@@ -88,20 +87,12 @@ it('resolves an explicit worker model and names the configured models when none 
     packages: [],
   });
 
-  mkdirSync(join(directory, 'agents'));
+  const unavailableDefault = () => resolveLoadout({ profile: 'worker' }, context);
+  expect(unavailableDefault).toThrow('unavailable: claude-bridge/claude-opus-5-5');
+  expect(unavailableDefault).toThrow(`Configured models: ${request.model}.`);
 
-  writeFileSync(
-    join(directory, 'agents', 'bare.md'),
-    profile('Bare task.').replace('worker', 'bare'),
-  );
-
-  const withoutModel = { profile: 'bare' };
-  const missing = () => resolveLoadout(withoutModel, context);
-  expect(missing).toThrow('no fallback');
-  expect(missing).toThrow(`Configured models: ${request.model}.`);
-
-  expect(() => resolveLoadout(withoutModel, { ...context, scopedModels: [] })).toThrow(
-    /no fallback\.$/,
+  expect(() => resolveLoadout({ profile: 'worker' }, { ...context, scopedModels: [] })).toThrow(
+    /unavailable: claude-bridge\/claude-opus-5-5\.$/,
   );
 
   expect(() => resolveLoadout({ ...request, model: 'invalid model' }, context)).toThrow(
@@ -111,20 +102,6 @@ it('resolves an explicit worker model and names the configured models when none 
   const unavailable = () => resolveLoadout({ ...request, model: 'missing/model' }, context);
   expect(unavailable).toThrow('unavailable: missing/model');
   expect(unavailable).toThrow(request.model);
-  vi.stubEnv('TAU_SUBAGENT_MODEL', request.model);
-  expect(resolveLoadout(withoutModel, context).model).toBe(request.model);
-
-  writeFileSync(
-    join(directory, 'agents', 'worker.md'),
-    profile('Custom task.').replace('role: editing', 'role: editing\nmodel: missing/profile'),
-  );
-
-  vi.stubEnv('TAU_SUBAGENT_MODEL', 'missing/environment');
-
-  expect(() => resolveLoadout({ ...withoutModel, profile: 'worker' }, context)).toThrow(
-    'missing/profile',
-  );
-
   expect(resolveLoadout(request, context).model).toBe(request.model);
 
   expect(() => resolveLoadout(request, { ...context, isProjectTrusted: () => false })).toThrow(
@@ -137,10 +114,13 @@ it('resolves an explicit worker model and names the configured models when none 
   expect(() => resolveLoadout({ ...request, profile: 'missing' }, context)).toThrow('not found');
 });
 
-it('defaults bundled profiles to a model that the environment and custom profiles override', async ({
-  onTestFinished,
-}) => {
-  const { directory, context, request } = await workerFixture(onTestFinished);
+const writeConfig = (path: string, value: unknown) => {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(value));
+};
+
+const bundledFixture = async (onTestFinished: (callback: () => void) => void) => {
+  const fixture = await workerFixture(onTestFinished);
   const bundled = fauxProvider({ provider: 'claude-bridge', models: [{ id: 'claude-opus-5-5' }] });
 
   const runtime = await ModelRuntime.create({
@@ -152,25 +132,119 @@ it('defaults bundled profiles to a model that the environment and custom profile
 
   runtime.registerNativeProvider(bundled.provider);
   runtime.registerNativeProvider(fauxProvider({ provider: 'tau-worker-fixture' }).provider);
-  const withBundled = { ...context, modelRegistry: new ModelRegistry(runtime) };
+  const context = { ...fixture.context, modelRegistry: new ModelRegistry(runtime) };
+
+  return { ...fixture, context, opus: bundled.getModel() };
+};
+
+it('defaults every bundled profile to Opus 5.5 without profiles config', async ({
+  onTestFinished,
+}) => {
+  const { context } = await bundledFixture(onTestFinished);
 
   for (const name of ['scout', 'worker', 'reviewer', 'qa']) {
-    const launch = { profile: name };
-
-    expect(resolveLoadout(launch, withBundled).model).toBe('claude-bridge/claude-opus-5-5');
+    expect(resolveLoadout({ profile: name }, context).model).toBe('claude-bridge/claude-opus-5-5');
   }
+});
 
-  const withoutModel = { profile: 'worker' };
-  vi.stubEnv('TAU_SUBAGENT_MODEL', request.model);
-  expect(resolveLoadout(withoutModel, withBundled).model).toBe(request.model);
+it('selects the launch model, then the profile entry, then the default entry', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, request } = await bundledFixture(onTestFinished);
+  const opus = 'claude-bridge/claude-opus-5-5';
+
+  writeConfig(join(directory, 'tau.json'), {
+    profiles: { scout: { model: request.model }, default: { model: opus } },
+  });
+
+  expect(resolveLoadout({ profile: 'scout' }, context).model).toBe(request.model);
+  expect(resolveLoadout({ profile: 'worker' }, context).model).toBe(opus);
+  expect(resolveLoadout({ profile: 'scout', model: opus }, context).model).toBe(opus);
+
+  writeConfig(join(directory, 'tau.json'), { profiles: { default: { model: request.model } } });
+
+  expect(resolveLoadout({ profile: 'reviewer' }, context).model).toBe(request.model);
+});
+
+it('refuses a configured profile model that is unavailable or malformed', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, request } = await bundledFixture(onTestFinished);
+  const userFile = join(directory, 'tau.json');
+
+  writeConfig(userFile, { profiles: { worker: { model: 'missing/model' } } });
+
+  const unavailable = () => resolveLoadout({ profile: 'worker' }, context);
+  expect(unavailable).toThrow('unavailable: missing/model');
+  expect(unavailable).toThrow(request.model);
+
+  writeConfig(userFile, { profiles: { worker: { model: 'no-provider' } } });
+
+  for (const launch of [{ profile: 'worker' }, request]) {
+    const malformed = () => resolveLoadout(launch, context);
+    expect(malformed).toThrow(userFile);
+    expect(malformed).toThrow('profiles.worker.model');
+  }
+});
+
+it('refuses launch when the repository config sets profiles', async ({ onTestFinished }) => {
+  const { directory, context, request } = await bundledFixture(onTestFinished);
+  const repositoryFile = join(directory, '.pi', 'tau.json');
+
+  writeConfig(repositoryFile, { profiles: { worker: { model: request.model } } });
+
+  expect(() => resolveLoadout({ profile: 'worker' }, context)).toThrow(repositoryFile);
+  expect(() => resolveLoadout(request, context)).toThrow(repositoryFile);
+});
+
+it('checks only the selected model against allowedModels', async ({ onTestFinished }) => {
+  const { directory, context, request } = await bundledFixture(onTestFinished);
+  const repositoryFile = join(directory, '.pi', 'tau.json');
+
+  writeConfig(join(directory, 'tau.json'), {
+    allowedModels: ['claude-bridge/claude-opus-5-5', request.model],
+  });
+
+  writeConfig(repositoryFile, { allowedModels: [request.model] });
+
+  const disallowedDefault = () => resolveLoadout({ profile: 'worker' }, context);
+  expect(disallowedDefault).toThrow('claude-bridge/claude-opus-5-5');
+  expect(disallowedDefault).toThrow(repositoryFile);
+  expect(resolveLoadout(request, context).model).toBe(request.model);
+});
+
+it('names only the allowed scoped models when a launch model is unavailable', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, request, opus } = await bundledFixture(onTestFinished);
+  const scoped = { ...context, scopedModels: [...context.scopedModels, { model: opus }] };
+
+  writeConfig(join(directory, 'tau.json'), { allowedModels: ['claude-bridge/claude-opus-5-5'] });
+
+  const invalid = () => resolveLoadout({ ...request, model: 'invalid model' }, scoped);
+  expect(invalid).toThrow('Configured models: claude-bridge/claude-opus-5-5.');
+});
+
+it('refuses profile files that set a model or use the reserved default name', ({
+  onTestFinished,
+}) => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-profile-model-'));
+
+  onTestFinished(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
   mkdirSync(join(directory, 'agents'));
+  const withModel = join(directory, 'agents', 'worker.md');
+  const named = join(directory, 'agents', 'reserved.md');
 
-  writeFileSync(
-    join(directory, 'agents', 'worker.md'),
-    profile('Custom task.').replace('role: editing', 'role: editing\nmodel: missing/profile'),
-  );
+  writeFileSync(withModel, profile('Task.').replace('thinking: off', 'model: a/model'));
+  writeFileSync(named, profile('Task.').replace('name: worker', 'name: default'));
 
-  expect(() => resolveLoadout(withoutModel, withBundled)).toThrow('missing/profile');
+  const modelProfile = () => resolveProfile(directory, directory, false, 'worker');
+  expect(modelProfile).toThrow(withModel);
+  expect(modelProfile).toThrow('tau.json');
+  expect(() => resolveProfile(directory, directory, false, 'default')).toThrow(named);
 });
 
 it('resolves and replays a worker model whose ID contains a slash', async ({ onTestFinished }) => {

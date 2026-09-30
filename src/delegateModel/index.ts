@@ -44,9 +44,13 @@ const allowedModelsLayer = ({ source, value }: ConfigFile) => {
   return { source, models: value.allowedModels };
 };
 
-// Tau's config may restrict every model Tau selects; without allowedModels, any model is allowed.
+// Without allowedModels in either file, the result is undefined and any model is allowed.
+export const readAllowedModels = (location: ConfigLocation) =>
+  effectiveAllowedModels(readTauConfig(location).files.map(allowedModelsLayer));
+
+// Tau's config may restrict every model Tau selects.
 export const requireAllowedModel = (reference: string, location: ConfigLocation): void => {
-  const allowed = effectiveAllowedModels(readTauConfig(location).files.map(allowedModelsLayer));
+  const allowed = readAllowedModels(location);
 
   if (allowed && !allowed.models.includes(reference)) {
     throw new Error(
