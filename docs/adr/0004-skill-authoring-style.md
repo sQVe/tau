@@ -20,6 +20,9 @@
 - Use XML-like tags such as `<skill_overview>` and `<critical_rules>`. Rejected: they are familiar
   from Claude Code skills, but not part of Pi's format.
 - Use Markdown. Chosen: it reads well as plain text and matches Pi's format.
+- Keep rules only in ADRs and link to them from skills. Rejected: the model had to leave the step to
+  find the rule in a record written for maintainers, and the user kept removing those links.
+- State each rule a step needs in the skill. Chosen: the model acts on the rule where it reads it.
 
 ## Decision
 
