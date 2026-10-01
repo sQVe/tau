@@ -35,6 +35,23 @@ Shell in a skill has no tests, and every copy drifts on its own.
 - Some skills still hold such blocks, such as the `.tau/` directory setup. Do not copy them into a
   new skill.
 
+## Write a skill's tool
+
+A skill's tool owns the mechanics. The skill keeps the judgment.
+
+- Put the call contract in the tool's description: its parameters, results, and errors. The skill
+  says when to call it and what to do with the result, without repeating the contract.
+- Split reading from writing. A read returns the current state and the exact writes it plans. An
+  apply takes that plan and refuses when the state has changed since the read.
+- Ask for confirmation inside the tool with `ctx.ui.confirm` before a write outside the worktree.
+  Write nothing when the user declines or when there is no UI.
+- Make a retry safe. Apply only the writes that are missing, and identify each one by a saved ID,
+  not by a title.
+- Report a partial failure as what was applied and what was not.
+- Parse command output once, at the boundary, and fail with an error that names the bad output.
+- Test with a fake CLI for normal, missing, and malformed output, a declined confirmation, and a
+  retry after a partial failure.
+
 ## Delete before you add
 
 Skills grow when every review finding becomes a new paragraph. Before you add text:
