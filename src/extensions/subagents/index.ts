@@ -13,7 +13,10 @@ import { readBrowserLoginCommand } from './browserLogin.js';
 import { WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { historyPage, searchHistory } from './history.js';
+import { renderLedger } from './ledger.js';
+import { readSessionLedger } from './ledgerRecords.js';
 import { launchModels, resolveLoadout } from './loadout.js';
+import { decideNoticeDelivery } from './noticeDelivery.js';
 import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
 import type { WorkerNotice } from './presentation.js';
 import { readProfileModels } from './profileModels.js';
@@ -44,7 +47,7 @@ interface SubagentRuntime {
 }
 
 type NoticeDelivery = (
-  context: Pick<ExtensionContext, 'isIdle'> | undefined,
+  context: Pick<ExtensionContext, 'isIdle' | 'signal'> | undefined,
   notice: WorkerNotice,
 ) => void;
 
@@ -134,9 +137,17 @@ type CancelParameters = Static<typeof cancelParameters>;
 export const createNoticeDelivery = (pi: ExtensionAPI): NoticeDelivery => {
   // The prompt a notice starts consumes every nextTurn message queued before its run begins.
   let turnStarting = false;
+  // Pi is busy during a run and during a manual compaction. Only a run takes a steered notice. The
+  // extension context exposes no run state that also covers Pi's compaction after the agent loop.
+  let runActive = false;
 
   pi.on('agent_start', () => {
     turnStarting = false;
+    runActive = true;
+  });
+
+  pi.on('agent_settled', () => {
+    runActive = false;
   });
 
   return (context, notice) => {
@@ -147,20 +158,26 @@ export const createNoticeDelivery = (pi: ExtensionAPI): NoticeDelivery => {
       details: notice.details,
     };
 
-    // An idle triggerTurn skips before_agent_start and Tau's prompt additions with it, which
-    // pi-claude-bridge rejects. A user message starts the turn through that hook.
-    if (context?.isIdle() === true) {
-      pi.sendMessage(message, { deliverAs: 'nextTurn' });
+    const step = decideNoticeDelivery({
+      piIdle: context?.isIdle(),
+      runActive,
+      agentRunning: context?.signal !== undefined,
+    });
 
-      if (!turnStarting) {
-        turnStarting = true;
-        pi.sendUserMessage('A worker notice arrived.', { deliverAs: 'steer' });
-      }
+    if (step === 'steer') {
+      pi.sendMessage(message, { deliverAs: 'steer', triggerTurn: true });
 
       return;
     }
 
-    pi.sendMessage(message, { deliverAs: 'steer', triggerTurn: true });
+    pi.sendMessage(message, { deliverAs: 'nextTurn' });
+
+    // An idle triggerTurn skips before_agent_start and Tau's prompt additions with it, which
+    // pi-claude-bridge rejects. A user message starts the turn through that hook.
+    if (step === 'wake' && !turnStarting) {
+      turnStarting = true;
+      pi.sendUserMessage('A worker notice arrived.', { deliverAs: 'steer' });
+    }
   };
 };
 
@@ -845,6 +862,25 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   pi.registerMessageRenderer('tau-worker', (message, options, theme) =>
     renderNotice(message.details, options.expanded, theme),
   );
+
+  // Pi's summary drops exact task IDs, question IDs, and evidence, so the ledger joins the next
+  // prompt.
+  pi.on('session_compact', async (_event, context) => {
+    const ledger = await readSessionLedger(
+      context,
+      workerRecordsDirectory(),
+      (taskId) => controller?.owns(taskId) ?? false,
+    );
+
+    if (ledger.workers.length === 0 && ledger.diagnostics.length === 0) {
+      return;
+    }
+
+    pi.sendMessage(
+      { customType: 'tau-worker-ledger', content: renderLedger(ledger), display: false },
+      { deliverAs: 'nextTurn' },
+    );
+  });
 
   pi.on('session_shutdown', async (event) => {
     shuttingDown = true;

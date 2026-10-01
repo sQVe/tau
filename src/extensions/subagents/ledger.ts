@@ -1,0 +1,248 @@
+import type { Report, WorkerState } from './types.js';
+
+// Builds the worker ledger from records the caller read. tests/structure.test.ts keeps this module
+// pure.
+
+export interface WorkerRecordFacts {
+  taskId?: string;
+  name?: string;
+  label?: string;
+  profile?: string;
+  state?: WorkerState;
+  pendingQuestionId?: string;
+  successorTaskId?: string;
+  // The task's launch time, in milliseconds since the epoch.
+  createdAt?: number;
+  report?: Report;
+}
+
+export interface LedgerWorker {
+  taskId: string;
+  name?: string;
+  label?: string;
+  profile?: string;
+  // Absent when the worker's lifecycle records could not be read.
+  state?: WorkerState;
+  pendingQuestionId?: string;
+  successorTaskId?: string;
+  createdAt?: number;
+  report?: { outcome: Report['outcome']; evidence: string[] };
+}
+
+export interface Ledger {
+  workers: LedgerWorker[];
+  diagnostics: string[];
+}
+
+interface ShownWorker {
+  worker: LedgerWorker;
+  evidence: string[];
+  omitted: number;
+}
+
+const evidenceLength = 500;
+const diagnosticLength = 300;
+const diagnosticCount = 5;
+// About 6,000 tokens of evidence in the ledger text, whatever the number of workers.
+const evidenceBudget = 24_000;
+
+const shorten = (text: string, length: number): string =>
+  text.length > length ? `${text.slice(0, length)}…` : text;
+
+const ledgerReport = (report: Report | undefined): Pick<LedgerWorker, 'report'> => {
+  if (report === undefined) {
+    return {};
+  }
+
+  const evidence = report.evidence.map((entry) => shorten(entry, evidenceLength));
+
+  return { report: { outcome: report.outcome, evidence } };
+};
+
+const ledgerWorker = ({
+  report,
+  ...worker
+}: WorkerRecordFacts & { taskId: string }): LedgerWorker => ({
+  taskId: worker.taskId,
+  ...(worker.name === undefined ? {} : { name: worker.name }),
+  ...(worker.label === undefined ? {} : { label: worker.label }),
+  ...(worker.profile === undefined ? {} : { profile: worker.profile }),
+  ...(worker.state === undefined ? {} : { state: worker.state }),
+  ...(worker.pendingQuestionId === undefined
+    ? {}
+    : { pendingQuestionId: worker.pendingQuestionId }),
+  ...(worker.successorTaskId === undefined ? {} : { successorTaskId: worker.successorTaskId }),
+  ...(worker.createdAt === undefined ? {} : { createdAt: worker.createdAt }),
+  ...ledgerReport(report),
+});
+
+const hasTaskId = (worker: WorkerRecordFacts): worker is WorkerRecordFacts & { taskId: string } =>
+  worker.taskId !== undefined;
+
+export const buildLedger = (workers: WorkerRecordFacts[], diagnostics: string[]): Ledger => ({
+  workers: workers
+    .filter(hasTaskId)
+    .toSorted((left, right) => left.taskId.localeCompare(right.taskId))
+    .map(ledgerWorker),
+  diagnostics: diagnostics
+    .slice(0, diagnosticCount)
+    .map((entry) => shorten(entry, diagnosticLength)),
+});
+
+// Only a worker this parent controls can be live. Unowned, unconfirmed, and unreadable workers rank
+// with stopped ones, so old workers from earlier sessions cannot use up the budget.
+const liveStates = new Set<WorkerState | undefined>([
+  'starting',
+  'running',
+  'awaitingReply',
+  'reported',
+  'stopping',
+]);
+
+// Workers with a question come first, then live workers, then the most recently launched other
+// workers. A worker without a launch time counts as the oldest.
+const priority = (worker: LedgerWorker): number => {
+  if (worker.pendingQuestionId !== undefined) {
+    return 0;
+  }
+
+  return liveStates.has(worker.state) ? 1 : 2;
+};
+
+const byPriority = (left: LedgerWorker, right: LedgerWorker): number =>
+  priority(left) - priority(right) || (right.createdAt ?? 0) - (left.createdAt ?? 0);
+
+const fittingEvidence = (evidence: string[], budget: number): string[] => {
+  const shown: string[] = [];
+  let used = 0;
+
+  for (const entry of evidence) {
+    if (used + entry.length > budget) {
+      break;
+    }
+
+    shown.push(entry);
+    used += entry.length;
+  }
+
+  return shown;
+};
+
+// The ledger text stays small however many workers and evidence entries the records hold. Workers
+// take evidence from one character budget in priority order. Once an entry does not fit, every later
+// worker gets one short line, so every task ID stays in the text.
+export const ledgerLayout = (ledger: Ledger, budget = evidenceBudget) => {
+  const full: ShownWorker[] = [];
+  const short: LedgerWorker[] = [];
+  let remaining = budget;
+  let usedUp = false;
+
+  for (const worker of ledger.workers.toSorted(byPriority)) {
+    if (usedUp) {
+      short.push(worker);
+
+      continue;
+    }
+
+    const evidence = worker.report?.evidence ?? [];
+    const shown = fittingEvidence(evidence, remaining);
+    const omitted = evidence.length - shown.length;
+
+    full.push({ worker, evidence: shown, omitted });
+    remaining -= shown.reduce((total, entry) => total + entry.length, 0);
+    usedUp = omitted > 0;
+  }
+
+  return { full, short };
+};
+
+const workerIdentity = (worker: LedgerWorker): string => {
+  const quotedLabel = worker.label === undefined ? undefined : `"${worker.label}"`;
+  const names = [worker.name, quotedLabel].filter((part) => part !== undefined);
+
+  return names.length > 0 ? ` (${names.join(', ')})` : '';
+};
+
+const shortWorkerLine = (worker: LedgerWorker): string => {
+  const state = worker.state ?? 'unreadable';
+  const outcome = worker.report?.outcome ?? 'no report';
+  const parts = [`state ${state}`, `report ${outcome}`];
+
+  if (worker.pendingQuestionId !== undefined) {
+    parts.push(`pending question ${worker.pendingQuestionId}`);
+  }
+
+  if (worker.successorTaskId !== undefined) {
+    parts.push(`continued as task ${worker.successorTaskId}`);
+  }
+
+  return `- Task ${worker.taskId}${workerIdentity(worker)}: ${parts.join(', ')}`;
+};
+
+const workerHeading = (worker: LedgerWorker): string => {
+  const identity = workerIdentity(worker);
+  const profile = worker.profile ?? 'unknown';
+  const state = worker.state ?? 'unreadable';
+
+  return `- Task ${worker.taskId}${identity}: profile ${profile}, state ${state}`;
+};
+
+const workerLines = ({ worker, evidence, omitted }: ShownWorker): string[] => {
+  const lines = [workerHeading(worker)];
+
+  if (worker.pendingQuestionId !== undefined) {
+    lines.push(`  - Pending question: ${worker.pendingQuestionId}`);
+  }
+
+  if (worker.successorTaskId !== undefined) {
+    lines.push(`  - Continued as task ${worker.successorTaskId}`);
+  }
+
+  if (worker.report !== undefined) {
+    lines.push(`  - Report: ${worker.report.outcome}`);
+
+    for (const entry of evidence) {
+      lines.push(`    - Evidence: ${entry}`);
+    }
+
+    if (omitted > 0) {
+      lines.push(`    - ${omitted} more evidence items are in the saved report.`);
+    }
+  }
+
+  return lines;
+};
+
+export const renderLedger = (ledger: Ledger): string => {
+  const lines = [
+    '## Tau worker ledger',
+    '',
+    'Tau rebuilt this list from saved worker records. Use these task IDs, question IDs, and evidence exactly.',
+    '',
+  ];
+
+  if (ledger.workers.length === 0) {
+    lines.push('- No workers in this session.');
+  }
+
+  const layout = ledgerLayout(ledger);
+
+  for (const worker of layout.full) {
+    lines.push(...workerLines(worker));
+  }
+
+  if (layout.short.length > 0) {
+    lines.push('', 'Workers past the evidence budget, without evidence:');
+    lines.push(...layout.short.map(shortWorkerLine));
+  }
+
+  if (ledger.diagnostics.length > 0) {
+    lines.push('', 'Unreadable worker records:');
+
+    for (const entry of ledger.diagnostics) {
+      lines.push(`- ${entry}`);
+    }
+  }
+
+  return lines.join('\n');
+};
