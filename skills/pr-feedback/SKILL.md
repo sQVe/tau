@@ -1,37 +1,44 @@
 ---
-name: pr-comments
+name: pr-feedback
 description:
-  Run one review round on a GitHub pull request. Fetches unresolved review threads and comments,
-  verifies each as a claim, then fixes, commits, pushes, replies, and resolves on the user's own PR,
-  or checks the author's fixes on someone else's. Use it for "fetch PR comments", "are the review
-  comments valid", "fix and resolve the threads", or "check if they fixed my comments".
+  Run one feedback round on a GitHub pull request, covering review comments, failing CI checks, and
+  merge conflicts. On the user's own PR it fixes, rebases, pushes, replies, and resolves. On someone
+  else's it checks the author's fixes. Use it for "address the PR feedback", "fix CI on my PR",
+  "fetch PR comments", "are the review comments valid", "fix and resolve the threads", or "check if
+  they fixed my comments". For a plain rebase, use update-branch.
 ---
 
-# PR comments
+# PR feedback
 
 ## When to use
 
-Use this skill for one review round on a GitHub pull request. It needs `gh` authenticated for the
+Use this skill for one feedback round on a GitHub pull request. It needs `gh` authenticated for the
 PR's host.
 
 ## Goal
 
 Every review comment that still needs something from us is fixed, declined with a reason, answered,
-or reported as open. Replies tell the reviewer only what they cannot see for themselves.
+or reported as open. Every failing check is fixed or reported with its cause. In author mode, the
+branch no longer conflicts with its base. Replies tell the reviewer only what they cannot see for
+themselves.
 
 ## Hard rules
 
 - Decide the mode from GitHub, never from the local checkout. The user often clones other people's
   PRs to review them.
   - Author mode: the PR author is the viewer, or the user asks you to fix this PR. The request
-    authorizes fixes, commits, one push, replies, and resolving threads.
-  - Reviewer mode: every other PR. Never commit or push. Resolve only threads the viewer started.
+    authorizes fixes, commits, one push, replies, resolving threads, and a rebase when the PR
+    conflicts.
+  - Reviewer mode: every other PR. Never commit, rebase, or push. Report failing checks and
+    conflicts without fixing them. Resolve only threads the viewer started.
 - A request to draft only, investigate only, or approve first limits this skill. Follow it.
 - Show drafts to the user before posting to a person, and ask with `ask_user_question`. Post to a
   bot directly. The author is a bot only when GitHub says so: `__typename` `Bot` in GraphQL, or
   `user.type` `Bot` in REST. A thread with any comment from a person is a person's thread. In author
   mode on a PR the viewer did not write, show every draft.
-- Commit with the [commit skill](../commit/SKILL.md). Never rebase or force-push.
+- Commit with the [commit skill](../commit/SKILL.md). Rebase and force-push only as steps 2 and 7
+  say.
+- Never rerun a check, or add retries, skips, or longer timeouts, to make a failure pass.
 - Never request new bot reviews.
 
 ## Procedure
@@ -41,13 +48,21 @@ or reported as open. Replies tell the reviewer only what they cannot see for the
      when neither gives one. Run `gh auth status --active --hostname <host>` and stop if it fails.
    - Use `<host>/<owner>/<name>` as `<repo>`, and pass `--hostname <host>` to every `gh api` call.
    - Read the viewer with `gh api user --hostname <host> --jq .login`, and the PR with
-     `gh pr view <pr> --repo <repo> --json number,url,state,author,headRefName,headRefOid,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify`.
+     `gh pr view <pr> --repo <repo> --json number,url,state,author,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,mergeable,mergeStateStatus`.
      Stop unless the state is `OPEN`. Choose the mode.
+   - `mergeable` reads `UNKNOWN` while GitHub computes it. Read it again up to three times, then
+     report it and skip the rebase.
+   - Read the checks with `gh pr checks <pr> --repo <repo> --json name,bucket,link,workflow`. Read
+     the JSON even though it exits non-zero while checks fail or are pending. Do not wait for
+     pending checks.
 
 2. Pin the code you verify against.
    - Author mode: stop and say what differs unless the worktree is on the PR's head branch, the tree
      is clean, and after a fetch `HEAD` equals `headRefOid`. On a fork, stop when
      `maintainerCanModify` is false and the viewer does not own the fork.
+   - Author mode, when `mergeable` is `CONFLICTING`: note `headRefOid` as the old head and run the
+     [update-branch skill](../update-branch/SKILL.md) onto `baseRefName`, without its checks and
+     push steps. Do this before collecting or fixing anything, so the SHAs in replies stay valid.
    - Reviewer mode: use the checkout only when it is clean and `HEAD` equals `headRefOid`. Otherwise
      run `git fetch <remote> refs/pull/<pr>/head` against the base repository's remote, and read
      files with `git show <headRefOid>:<path>`.
@@ -64,12 +79,21 @@ or reported as open. Replies tell the reviewer only what they cannot see for the
    - Read what we already posted. Judge whether each thread or comment still needs something from
      us. It does not when our reply settled it and the reviewer has not pushed back. It does again
      when the reviewer answered, or when our reply promised a fix that is not in the code.
+   - Author mode, failing checks: each check from step 1 with `bucket` `fail` or `cancel` is a
+     finding. For GitHub Actions, read
+     `gh run view <run id> --repo <repo> --job <job id> --log-failed` with the IDs from `link`. For
+     other providers, follow `link`. Compare with the base:
+     `gh run list --repo <repo> --branch <baseRefName> --workflow <workflow> --limit 5 --json conclusion,headSha,url`.
+     A failure belongs to the PR only when its cause is in the PR's changes and still in the pinned
+     code. Report the rest: failing on the base, a cause outside the PR such as a network timeout,
+     gone after the rebase, or blocked when you cannot read the log.
 
 4. Verify each remaining finding with the
    [triage findings](../../src/extensions/snippets/snippets/triage-findings.md) rules. Split a
    comment with several findings and verify each one. Verify an outdated thread against the pinned
-   code; outdated does not mean fixed. A question from a reviewer needs an answer, not a verdict. In
-   reviewer mode, handle the threads like this, then go to step 8:
+   code; outdated does not mean fixed. A question from a reviewer needs an answer, not a verdict.
+   Reproduce a failing check locally when you can. In reviewer mode, handle the threads like this,
+   then go to step 8:
    - For each thread the viewer started, check whether the author fixed it. Mark it to resolve when
      fixed. When the author declined with a reason, treat the reason as a claim: mark it to resolve
      when it holds, draft a follow-up when it does not. Draft a follow-up for anything else left.
@@ -80,16 +104,17 @@ or reported as open. Replies tell the reviewer only what they cannot see for the
    outside the PR's scope, ask the user. If they approve, file an issue in the tracker the
    repository uses, such as Linear when branches or commits name Linear IDs, and cite it in the
    reply. Commit through the commit skill, one commit per thread where practical, so each reply
-   names its commit.
+   names its commit. Failing checks need no reply on the PR.
 
-6. When the round committed fixes, run the repository's required checks once. Fix failures the round
-   caused and run the affected checks again. For any other failure, read
-   `gh pr checks <pr> --repo <repo>` for the head from before the round. Stop before you push when
-   it failed there too, or when there is no result.
+6. When the round rebased or committed fixes, run the repository's required checks once. A failure
+   is the round's, the rebase included, unless the matching check also failed in step 1 or fails on
+   the base. Fix the round's failures and run the affected checks again. Push past any other failure
+   only when you report it. Otherwise stop before you push.
 
-7. Push once with `git push <remote> HEAD:refs/heads/<headRefName>`, where `<remote>` is the PR's
-   head repository. If the push is rejected, stop and report. A round that only declines or answers
-   does not push.
+7. Push once to the PR's head repository `<remote>`. After a rebase, push with
+   `git push <remote> HEAD:refs/heads/<headRefName> --force-with-lease=refs/heads/<headRefName>:<old head>`.
+   Otherwise push with `git push <remote> HEAD:refs/heads/<headRefName>`. If the push or the lease
+   is rejected, stop and report. A round without a rebase or a new commit does not push.
 
 8. Draft the replies with the rules below. Show all drafts for people in one `ask_user_question`
    question, with options to post all or skip all. The user types which drafts to edit or skip. A
@@ -115,7 +140,9 @@ or reported as open. Replies tell the reviewer only what they cannot see for the
     the triage rules, then Answered or left open for questions and threads that wait on the
     reviewer. In reviewer mode, use Resolved, Follow-up drafted, and Open for other reviewers. Give
     each bullet the thread link and what you did: replied, resolved, or left open. List what you
-    judged as needing nothing, so the user can overrule it. End with the checks you ran.
+    judged as needing nothing, so the user can overrule it. In both modes, add a CI section with
+    each failing or pending check, its link, and its outcome, and a Conflicts section with what the
+    rebase resolved or why it did not run. End with the checks you ran.
 
 11. In author mode, when a person requested changes and the round pushed fixes, ask whether to
     request their review again with `gh pr edit <pr> --repo <repo> --add-reviewer <login>`. Default
