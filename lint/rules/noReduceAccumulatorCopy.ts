@@ -39,6 +39,8 @@ const arrayCopyMethods = new Set([
   'with',
 ]);
 
+const freshTargetKinds = new Set(['ArrayExpression', 'ObjectExpression']);
+
 const unwrap = (node: ESTree.Node): ESTree.Node => {
   let current = node;
 
@@ -233,6 +235,17 @@ const isGlobalObject = (sourceCode: SourceCode, node: ESTree.Node, name: string)
   return isGlobalName(sourceCode, unwrapped);
 };
 
+// `Object.assign({}, accumulator)` or `Object.assign([], accumulator)` copies into a new value.
+const assignsIntoFreshValue = (
+  call: ESTree.CallExpression,
+  isAccumulator: (node: ESTree.Node) => boolean,
+): boolean => {
+  const [target, ...sources] = call.arguments;
+  const intoFreshValue = target !== undefined && freshTargetKinds.has(unwrap(target).type);
+
+  return intoFreshValue && sources.some(isAccumulator);
+};
+
 const copiesAccumulator = (
   sourceCode: SourceCode,
   call: ESTree.CallExpression,
@@ -247,9 +260,7 @@ const copiesAccumulator = (
   }
 
   if (method.name === 'assign' && isGlobalObject(sourceCode, method.object, 'Object')) {
-    const intoNewObject = first !== undefined && unwrap(first).type === 'ObjectExpression';
-
-    return intoNewObject && call.arguments.slice(1).some(isAccumulator);
+    return assignsIntoFreshValue(call, isAccumulator);
   }
 
   if (method.name === 'from' && isGlobalObject(sourceCode, method.object, 'Array')) {

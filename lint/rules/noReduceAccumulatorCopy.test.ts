@@ -30,6 +30,10 @@ ruleTester.run('no-reduce-accumulator-copy', noReduceAccumulatorCopyRule, {
       errors: [copy],
     },
     {
+      code: 'export const all = [[1]].reduce((result, item) => Object.assign([], result, item), []);',
+      errors: [copy],
+    },
+    {
       code: 'export const all = [[1]].reduce((result, item) => result.concat(item), []);',
       errors: [copy],
     },
