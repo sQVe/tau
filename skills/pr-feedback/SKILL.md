@@ -110,11 +110,11 @@ themselves.
    reply. Commit through the commit skill, one commit per thread where practical, so each reply
    names its commit. Failing checks need no reply on the PR.
 
-6. When the round rebased or committed fixes, run the repository's required checks once. Fix
-   failures the round caused, the rebase included, and run the affected checks again. Compare any
-   other failure with the checks from step 1. Continue when the matching check passed on the head
-   from before the round, or when you report it as failing on the base or outside the PR's changes.
-   Otherwise stop before you push.
+6. When the round rebased or committed fixes, run the repository's required checks once. Treat a
+   failure as caused by the round, the rebase included, unless the matching check also failed in
+   step 1 or fails on the base. Fix failures the round caused and run the affected checks again.
+   Push with a failure from before the round only when you report it. On any other failure, stop
+   before you push.
 
 7. Push once to the PR's head repository `<remote>`. After a rebase, push with
    `git push <remote> HEAD:refs/heads/<headRefName> --force-with-lease=refs/heads/<headRefName>:<old head>`.
