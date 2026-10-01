@@ -55,6 +55,7 @@ it.for<[string, unknown, string]>([
   ['a non-object block', 'AI', 'slice'],
   ['an unknown key', { agentTeam: 'AI', team: 'AI' }, 'slice.team'],
   ['an empty team', { agentTeam: ' ' }, 'slice.agentTeam'],
+  ['a team with a line break', { agentTeam: 'AI\n- injected line' }, 'slice.agentTeam'],
   ['a non-string team', { agentTeam: 5 }, 'slice.agentTeam'],
 ])('refuses %s and names the file and field', ([, slice, field], { onTestFinished }) => {
   const { location, userFile } = configFixture(onTestFinished);

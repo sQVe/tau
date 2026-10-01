@@ -32,9 +32,14 @@ export const readSliceAgentTeam = (location: ConfigLocation): string | undefined
     return undefined;
   }
 
-  if (typeof slice.agentTeam !== 'string' || slice.agentTeam.trim() === '') {
+  if (typeof slice.agentTeam !== 'string') {
+    throw new TypeError(`Invalid Tau config ${source}: slice.agentTeam must be a string.`);
+  }
+
+  // The team becomes part of one prompt line, and a Linear team key has no whitespace.
+  if (!/^\S+$/u.test(slice.agentTeam)) {
     throw new Error(
-      `Invalid Tau config ${source}: slice.agentTeam must be a non-empty Linear team key.`,
+      `Invalid Tau config ${source}: slice.agentTeam must be a Linear team key such as "AI", with no spaces or line breaks.`,
     );
   }
 
