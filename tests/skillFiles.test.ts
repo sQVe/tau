@@ -4,13 +4,34 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { findSkillProblems } from './skillFiles.js';
-import type { SkillProblemKind } from './skillFiles.js';
+import { blockIdentity, findSkillProblems } from './skillFiles.js';
+import type { SkillAllowlists, SkillProblemKind } from './skillFiles.js';
 
 const skillsDirectory = join(import.meta.dirname, '..', 'skills');
 
+// Existing sections and shell blocks that predate the checks. Remove an entry when its skill
+// changes; never add one.
+const tauAllowlists: SkillAllowlists = {
+  extraHeadings: {
+    'code-review': ['Review assignment', 'Checker assignment', 'Report'],
+    'pr-feedback': ['Replies'],
+    'start-slice': ['Changes after the start'],
+  },
+  multiCommandShellBlocks: {
+    'code-review': ['e0e500f34f20', '892f0371f08b'],
+    pr: ['0e303365f0fe'],
+    slice: ['d4b87a0380fb'],
+    'start-slice': ['16e2bc9782a1'],
+  },
+};
+
+const noAllowlists: SkillAllowlists = { extraHeadings: {}, multiCommandShellBlocks: {} };
+
 const validFrontmatter = (name: string) =>
   `---\nname: ${name}\ndescription: Does a thing. Use when asked.\n---\n`;
+
+const shellBlock = (...lines: string[]) =>
+  `${validFrontmatter('demo')}\`\`\`sh\n${lines.join('\n')}\n\`\`\`\n`;
 
 const createSkills = async (skills: Record<string, string>) => {
   const root = await mkdtemp(join(tmpdir(), 'tau-skill-files-'));
@@ -30,7 +51,7 @@ const createSkills = async (skills: Record<string, string>) => {
 };
 
 it('finds no problems in the Tau skills', () => {
-  expect(findSkillProblems(skillsDirectory)).toEqual([]);
+  expect(findSkillProblems(skillsDirectory, tauAllowlists)).toEqual([]);
 });
 
 it.each<[string, string, SkillProblemKind]>([
@@ -52,7 +73,7 @@ it.each<[string, string, SkillProblemKind]>([
   ],
   [
     'a See also heading',
-    `${validFrontmatter('demo')}## See also\n\n- Nothing.\n`,
+    `${validFrontmatter('demo')}### See also\n\n- Nothing.\n`,
     'see-also-heading',
   ],
   ['broken YAML', '---\nname: demo\ndescription: [oops\n---\nBody.\n', 'bad-frontmatter'],
@@ -92,17 +113,112 @@ it.each<[string, string, SkillProblemKind]>([
     `${validFrontmatter('demo')}Use [the template](<body template.md>).\n`,
     'broken-link',
   ],
+  ['an unknown section heading', `${validFrontmatter('demo')}## Notes\n`, 'unknown-heading'],
+  ['commands joined by &&', shellBlock('git fetch && git status'), 'multi-command-shell-block'],
+  ['commands joined by ||', shellBlock('git fetch || true'), 'multi-command-shell-block'],
+  ['commands joined by ;', shellBlock('cd docs; ls'), 'multi-command-shell-block'],
+  ['commands joined by |', shellBlock('git log | head'), 'multi-command-shell-block'],
+  ['commands on two lines', shellBlock('git fetch', 'git status'), 'multi-command-shell-block'],
+  [
+    'commands continued after &&',
+    shellBlock('git fetch &&', '  git status'),
+    'multi-command-shell-block',
+  ],
+  [
+    'commands in an untagged block',
+    `${validFrontmatter('demo')}\`\`\`\ngit fetch\ngit status\n\`\`\`\n`,
+    'multi-command-shell-block',
+  ],
+  [
+    'a command after a comment that ends in a backslash',
+    shellBlock('git fetch # fetch first \\', 'git status'),
+    'multi-command-shell-block',
+  ],
+  [
+    'a command run in the background',
+    shellBlock('git fetch & git status'),
+    'multi-command-shell-block',
+  ],
+  [
+    'commands in a console block',
+    `${validFrontmatter('demo')}\`\`\`console\n$ git fetch\n$ git status\n\`\`\`\n`,
+    'multi-command-shell-block',
+  ],
 ])('reports %s', async (_case, content, kind) => {
   const directory = await createSkills({ demo: content });
   const skillFile = join(directory, 'demo', 'SKILL.md');
 
-  const problems = findSkillProblems(directory);
+  const problems = findSkillProblems(directory, noAllowlists);
 
   expect(new Set(problems.map((problem) => problem.kind))).toEqual(new Set([kind]));
   expect(new Set(problems.map((problem) => problem.file))).toEqual(new Set([skillFile]));
 });
 
-it('accepts sibling and reference links, URLs, anchors, code, and words that contain adr', async () => {
+it.each<[string, string, SkillAllowlists, SkillProblemKind]>([
+  [
+    'a heading allowed only for another skill',
+    '## Report\n',
+    { extraHeadings: { commit: ['Report'] }, multiCommandShellBlocks: {} },
+    'unknown-heading',
+  ],
+  [
+    'a stale heading entry',
+    '## Procedure\n',
+    { extraHeadings: { commit: ['Report'], demo: ['Replies'] }, multiCommandShellBlocks: {} },
+    'stale-allowlist',
+  ],
+  [
+    'a stale shell block entry',
+    '```sh\ngit status\n```\n',
+    {
+      extraHeadings: { commit: ['Report'] },
+      multiCommandShellBlocks: { demo: ['000000000000'] },
+    },
+    'stale-allowlist',
+  ],
+])('reports %s', async (_case, demoBody, allowlists, kind) => {
+  const directory = await createSkills({
+    demo: `${validFrontmatter('demo')}${demoBody}`,
+    commit: `${validFrontmatter('commit')}## Report\n`,
+  });
+
+  const skillFile = join(directory, 'demo', 'SKILL.md');
+
+  const problems = findSkillProblems(directory, allowlists);
+
+  expect(problems.map((problem) => ({ file: problem.file, kind: problem.kind }))).toEqual([
+    { file: skillFile, kind },
+  ]);
+});
+
+it('reports a copy of an allowlisted shell block', async () => {
+  const block = '```sh\ngit fetch && git status\n```\n';
+  const directory = await createSkills({ demo: `${validFrontmatter('demo')}${block}\n${block}` });
+
+  const problems = findSkillProblems(directory, {
+    extraHeadings: {},
+    multiCommandShellBlocks: { demo: [blockIdentity('git fetch && git status\n')] },
+  });
+
+  expect(problems.map(({ file, kind }) => ({ file, kind }))).toEqual([
+    { file: join(directory, 'demo', 'SKILL.md'), kind: 'multi-command-shell-block' },
+  ]);
+});
+
+it('reports an allowlist entry for a skill that does not exist', async () => {
+  const directory = await createSkills({ demo: `${validFrontmatter('demo')}Body.\n` });
+
+  const problems = findSkillProblems(directory, {
+    extraHeadings: {},
+    multiCommandShellBlocks: { gone: ['000000000000'] },
+  });
+
+  expect(problems.map(({ file, kind }) => ({ file, kind }))).toEqual([
+    { file: join(directory, 'gone', 'SKILL.md'), kind: 'stale-allowlist' },
+  ]);
+});
+
+it('accepts valid links, code, words that contain adr, and one-command shell blocks', async () => {
   const body = [
     'Commit with the [commit skill](../commit/SKILL.md#procedure).',
     'Read [the spec](https://agentskills.io/specification) and [mail](mailto:team@example.com).',
@@ -117,6 +233,30 @@ it('accepts sibling and reference links, URLs, anchors, code, and words that con
     '',
     '```markdown',
     '[fenced](missing.md)',
+    '## Not a section',
+    '```',
+    '',
+    '```sh',
+    'git push --force-with-lease origin \\',
+    '  HEAD',
+    '```',
+    '',
+    '```sh',
+    "linear api 'query { issue { children { nodes { id } } } }' --variable 'a=b && c; d | e'",
+    '```',
+    '',
+    '```sh',
+    'git status 2>&1 # a | b; c & d',
+    '```',
+    '',
+    '```console',
+    '$ git status',
+    'On branch main; nothing | to commit && done',
+    '```',
+    '',
+    '```text',
+    'first line',
+    'second line',
     '```',
     '',
   ].join('\n');
@@ -126,5 +266,5 @@ it('accepts sibling and reference links, URLs, anchors, code, and words that con
     commit: `${validFrontmatter('commit')}Body.\n`,
   });
 
-  expect(findSkillProblems(directory)).toEqual([]);
+  expect(findSkillProblems(directory, noAllowlists)).toEqual([]);
 });

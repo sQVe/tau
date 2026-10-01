@@ -2,7 +2,8 @@
 
 Use this guide when you write or change a skill in `skills/`. Copy the
 [template](./skill-template.md) to `skills/<name>/SKILL.md` and fill it in. Then go through the
-checklist. `tests/skillFiles.test.ts` checks every skill's frontmatter, links, and headings.
+checklist. `tests/skillFiles.test.ts` checks every skill's frontmatter, local links, headings, ADR
+mentions, and shell blocks.
 
 ## Shape
 
@@ -11,7 +12,8 @@ checklist. `tests/skillFiles.test.ts` checks every skill's frontmatter, links, a
 - Decide on `metadata.required-for` for every skill. Add it when the agent might take the skill's
   action as a step in its own plan, such as a push, a pull request, or a Linear write. The value
   completes "Use the `<name>` skill whenever you are ...".
-- Use only the sections the skill needs: `When to use`, `Hard rules`, `Procedure`, and `Checklist`.
+- Use only the sections the skill needs: `When to use`, `Goal`, `Hard rules`, `Procedure`, and
+  `Checklist`.
 - State each rule in the skill in your own words. Never link to, name, or cite an ADR.
 - Link a tool, template, or file at the step that uses it. Do not add a `## See also` section.
 
@@ -32,8 +34,8 @@ Shell in a skill has no tests, and every copy drifts on its own.
 - Move a shell block with several commands, conditions, or safety checks into a tested Tau tool. The
   step names the tool and says what to do with its result.
 - When two skills need the same mechanics, share one tool. Never copy a block into another skill.
-- Some skills still hold such blocks, such as the `.tau/` directory setup. Do not copy them into a
-  new skill.
+- The test rejects a new shell block with more than one command and lists the existing ones until a
+  tool replaces them.
 
 ## Write a skill's tool
 
@@ -90,7 +92,6 @@ Commands:
 - [ ] Each command, flag, and JSON field matches the installed CLI's `--help` or source. When help
       does not settle what a command does, run it in a temporary repository.
 - [ ] Each command runs without a prompt.
-- [ ] No new shell block holds more than one command.
 - [ ] Steps respect tool limits, such as four questions per `ask_user_question` call.
 
 Length:
