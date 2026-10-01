@@ -42,9 +42,10 @@ before anything was written to Linear.
 - Before you save the first file, create the draft directory inside an ignored `.tau/` from the
   repository root. Use the container's identifier in lower case as `<id>`, such as `eng-123`. For a
   container that does not exist yet, use a short slug of its title with only `a-z`, `0-9`, and `-`.
-  Stop unless it prints `slicedir=`, and use the printed path as `$slicedir` for every file you
-  save. The directory is fixed, so a later run finds the same draft. Never write scratch files to
-  `/tmp` or another shared path.
+  For an existing container, first search `.tau/slices/*/plan.md` for its identifier, and reuse that
+  directory as `<id>` when one matches. Stop unless it prints `slicedir=`, and use the printed path
+  as `$slicedir` for every file you save. The directory is fixed, so a later run finds the same
+  draft. Never write scratch files to `/tmp` or another shared path.
 
   ```sh
   ! [ -L .tau ] && ! [ -L .tau/slices ] && ! [ -L .tau/slices/<id> ] && ! [ -L .tau/.gitignore ] &&
@@ -56,7 +57,8 @@ before anything was written to Linear.
 ## Procedure
 
 1. Read the design from the Linear ticket, file, or conversation the user names. For a ticket, run
-   `linear issue view <id> --json --no-pager` and note its team and project. Ask once whether the
+   `linear issue view <id> --json --no-pager` and note its team and project. For a file or the
+   conversation, ask which Linear team and project the tickets belong in. Ask once whether the
    design is agreed. If it is not, stop.
 
 2. Read the current state. If `$slicedir/plan.md` exists, read it and every body file it names. If
@@ -65,13 +67,13 @@ before anything was written to Linear.
    read its children in sub-issue order:
 
    ```sh
-   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title subIssueSortOrder attachments { nodes { url } } } } } }' --variable id=<container>
+   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description subIssueSortOrder state { type } attachments { nodes { url } } } } } }' --variable id=<container>
    ```
 
    Sort the nodes by `subIssueSortOrder`, lowest first. A slice is merged only when one of its
    attachment URLs is a pull request and `gh pr view <url> --json state` returns `MERGED`. Its
-   Linear status is not proof either way. If a slice's status says done but no linked PR is merged,
-   stop and ask the user. For each slice that exists, read its dependencies with
+   Linear status is not proof either way. If a slice's state type is `completed` but no linked PR is
+   merged, stop and ask the user. For each slice that exists, read its dependencies with
    `linear issue relation list <slice>` and keep the lines of the form `<slice> blocked-by <other>`.
 
 3. Split the design into slices.
@@ -91,8 +93,13 @@ before anything was written to Linear.
      section. For an existing container, keep all text outside that section unchanged.
    - `slice-<n>.md`, numbered in plan order: `## Goal`, `## Delivers`, `## Out of scope`, and
      `## Acceptance` with checkboxes.
-   - `plan.md`: one row per slice with its number, title, body file, `blocked-by` numbers, and
-     Linear identifier. Leave the identifier empty until the ticket exists.
+   - `plan.md`: the container's identifier, then one row per slice with its number, title, body
+     file, `blocked-by` numbers, and Linear identifier. Keep the identifier of each slice that
+     already exists, even when the plan renames or renumbers it. Leave it empty until the ticket
+     exists.
+
+   For a design with one slice, write `ticket.md` instead of `container.md` and `slice-1.md`: the
+   ticket's full description with the `## Design` section followed by the slice sections.
 
 5. Preview and ask. Show what the user decides on, not how step 6 runs it. Keep it to about 40
    lines, and leave out raw commands and details of the local environment.
@@ -118,9 +125,9 @@ before anything was written to Linear.
    - The Linear writes step 6 will make, in order and numbered, one line each, such as
      `Create slices 1-3 under ENG-120` or `Mark 2 blocked by 1`. Say that step 7 may fix the
      sub-issue order, and that created tickets stay in Linear until the user cancels them by hand.
-   - On a later run, what changed since the last approved plan, including `blocked-by` relations to
-     add and remove. Slices dropped from the plan stay in Linear: list them for the user to cancel
-     by hand.
+   - On a later run, what the draft changes compared with Linear now, including `blocked-by`
+     relations to add and remove. Slices dropped from the plan stay in Linear: list them for the
+     user to cancel by hand.
 
    Approve with `ask_user_question` and give the number of writes in the question: approve, change
    the plan, or stop. After any change, write the draft again and show a new preview.
@@ -137,17 +144,23 @@ before anything was written to Linear.
      `linear issue create --team <team> --project <project> --parent <container> --title "<title>" --description-file $slicedir/slice-<n>.md --no-interactive`.
    - Update a changed slice that is not merged:
      `linear issue update <slice> --title "<title>" --description-file $slicedir/slice-<n>.md`.
-   - Add each new dependency: `linear issue relation add <slice> blocked-by <earlier slice>`.
+   - Add each new dependency to a slice that is not merged:
+     `linear issue relation add <slice> blocked-by <earlier slice>`.
    - Remove each dependency the plan drops from a slice that is not merged:
      `linear issue relation delete <slice> blocked-by <other>`.
 
-   For a design with one slice, create or update that one ticket with its design and slice body, and
-   skip the container, the dependencies, and step 7.
+   After creating the container, record its identifier in `plan.md`, then move `$slicedir` to
+   `.tau/slices/<identifier in lower case>` and use the new path.
+
+   For a design with one slice, write only that ticket, and skip the dependencies and step 7. Create
+   it with
+   `linear issue create --team <team> --project <project> --title "<title>" --description-file $slicedir/ticket.md --no-interactive`,
+   or update it with `linear issue update <ticket> --description-file $slicedir/ticket.md`.
 
 7. Check the order. Read the children again with the query in step 2. If sorting by
    `subIssueSortOrder` does not give the plan order, move each unmerged slice that is out of place
-   to a value between its neighbors in the plan, then read the children again. Merged slices keep
-   their place:
+   to a value between its neighbors in the plan, then read the children again. Repair once; if the
+   order is still wrong, report it. Merged slices keep their place:
 
    ```sh
    linear api 'mutation($id: String!, $order: Float!) { issueUpdate(id: $id, input: { subIssueSortOrder: $order }) { success } }' --variable id=<slice> --variable order=<value>
