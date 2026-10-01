@@ -16,5 +16,9 @@ ruleTester.run('no-reflect-apply', noReflectApplyRule, {
       code: "export const value = Reflect['apply'](Math.max, undefined, [1, 2]);",
       errors: [{ messageId: 'reflectApply' }],
     },
+    {
+      code: 'export const value = Reflect[`apply`](Math.max, undefined, [1, 2]);',
+      errors: [{ messageId: 'reflectApply' }],
+    },
   ],
 });
