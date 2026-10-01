@@ -64,10 +64,13 @@ const separatorCharacters = new Set([';', '&', '|', '\n', '(', ')']);
 // shell runs them. Parameter expansions stay unexpanded, and substitutions keep their source text.
 class ShellParser {
   readonly commands: ShellCommand[] = [];
+  private readonly source: string;
   private position = 0;
   private readonly pendingHeredocs: PendingHeredoc[] = [];
 
-  constructor(private readonly source: string) {}
+  constructor(source: string) {
+    this.source = source;
+  }
 
   // Parse until the end, or until the `)` that closes a `$(` when `closesSubstitution` is set.
   parseList(closesSubstitution: boolean): void {

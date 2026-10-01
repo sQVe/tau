@@ -88,10 +88,13 @@ export const savedHandle = (directory: string, task: Task): Handle => {
 
 // Startup, replies, polling, dispatch, stop, and cleanup for one worker share its handle and deadline.
 export class TaskController {
-  constructor(
-    readonly handle: Handle,
-    private readonly context: TaskContext,
-  ) {}
+  readonly handle: Handle;
+  private readonly context: TaskContext;
+
+  constructor(handle: Handle, context: TaskContext) {
+    this.handle = handle;
+    this.context = context;
+  }
 
   get closed(): boolean {
     return this.context.closed();

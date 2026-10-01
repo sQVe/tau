@@ -83,6 +83,9 @@ class TaskAccessError extends Error {
 
 // Registry, capacity, launch allocation, and ownership checks for all workers; each worker runs its own lifecycle.
 export class WorkerController {
+  private readonly root: string;
+  private readonly client: HerdrClient;
+  private readonly packageManager: (loadout: Loadout) => WorkerPackageManager;
   private readonly workers = new Map<string, TaskController>();
   private readonly capacity = workerCapacity();
   private readonly live = new Set<string>();
@@ -93,11 +96,15 @@ export class WorkerController {
   private closed = false;
 
   constructor(
-    private readonly root: string,
-    private readonly client: HerdrClient = herdrClient,
+    root: string,
+    client: HerdrClient = herdrClient,
     notify: (notice: WorkerNotice) => void = () => undefined,
-    private readonly packageManager: (loadout: Loadout) => WorkerPackageManager = piPackageManager,
+    packageManager: (loadout: Loadout) => WorkerPackageManager = piPackageManager,
   ) {
+    this.root = root;
+    this.client = client;
+    this.packageManager = packageManager;
+
     this.taskContext = {
       client,
       notify,
