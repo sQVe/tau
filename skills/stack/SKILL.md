@@ -4,6 +4,8 @@ description:
   Detect, switch, restack, and push a stack of GitHub pull requests with `gh stack`. Other skills
   call it when the branch is in a stack. Use it for "restack", "rebase the stack", "push the stack",
   "switch to PR 3 in the stack", or when a lower PR in a stack merged.
+metadata:
+  required-for: running gh stack commands, including as a step in a larger task
 ---
 
 # Stack
