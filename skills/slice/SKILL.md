@@ -168,8 +168,3 @@ before anything was written to Linear.
 
 8. Report the container and each slice with its identifier and URL, in order, and any slice the user
    should cancel by hand. For a design with one slice, report that ticket alone.
-
-## See also
-
-- [ADR 0075: Plan work as PR-sized slices in Linear](../../docs/adr/0075-plan-work-as-pr-sized-slices-in-linear.md)
-- [pr skill](../pr/SKILL.md) for the PR that ships each slice

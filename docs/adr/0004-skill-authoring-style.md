@@ -48,9 +48,9 @@ Prefer this shape when applicable:
 - `## Principles` or `## Hard rules`
 - `## Procedure` for repeatable workflows
 - `## Checklist` when a final review pass helps
-- `## See also` for linked rules or reference
 
-Not every skill needs every section. Keep the structure easy to recognize.
+Not every skill needs every section. Put each link inline at the step that needs it. Skills have no
+`## See also` section. Keep the structure easy to recognize.
 
 ### Division of responsibility
 
