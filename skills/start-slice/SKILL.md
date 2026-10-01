@@ -91,8 +91,10 @@ Workers then carry out the agent tickets.
 4. Choose the base. Run `git fetch origin`, then use the remote's default branch from
    `git symbolic-ref --short refs/remotes/origin/HEAD`, such as `origin/main`.
 
-5. Read the code the slice touches. Agent tickets are written against the code as it is now, so name
-   real files and tests.
+5. Read the code the slice touches in the tree the workers will use: the branch when
+   `git rev-parse --verify --quiet refs/heads/<branchName>` finds it, otherwise the base. The
+   current checkout may differ, so read without switching: `git ls-tree -r --name-only <tree>` and
+   `git show <tree>:<path>`. Agent tickets name real files and tests in that tree.
 
 6. Write the draft in `$slicedir`, one body file per agent ticket.
    - `agent-<n>.md`, numbered in work order: `## Outcome`, `## Files`, `## First test`, and
