@@ -13,7 +13,8 @@ mentions, and shell blocks.
   action as a step in its own plan, such as a push, a pull request, or a Linear write. The value
   completes "Use the `<name>` skill whenever you are ...".
 - Use only the sections the skill needs: `When to use`, `Goal`, `Hard rules`, `Procedure`, and
-  `Checklist`.
+  `Checklist`. A few existing skills have extra sections, which the test lists by name until they
+  move out.
 - State each rule in the skill in your own words. Never link to, name, or cite an ADR.
 - Link a tool, template, or file at the step that uses it. Do not add a `## See also` section.
 
