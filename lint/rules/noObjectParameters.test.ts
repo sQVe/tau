@@ -9,6 +9,7 @@ ruleTester.run('no-object-parameters', noObjectParametersRule, {
     'interface Options { name: string }\nexport const run = (options: Options) => options;',
     'export const run = (values: object[]) => values;',
     'export const run = (): object => ({});',
+    'type Value = string;\ntype Fixed = Value;\ntype Generic<Value> = Fixed | Value[];\nexport const run = (input: Generic<object>) => input;',
   ],
   invalid: [
     { code: 'export const run = (value: object) => value;', errors: [broad('value')] },

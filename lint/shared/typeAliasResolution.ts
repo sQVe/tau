@@ -191,7 +191,8 @@ const aliasSubstitutions = (
   base: Substitutions,
 ): Substitutions | undefined => {
   const typeArguments = reference.typeArguments?.params ?? [];
-  const next = new Map(base);
+  // The alias body sits outside the caller's scope, so it sees only its own parameters.
+  const next = new Map<string, Substitution>();
 
   for (const [index, parameter] of (alias.typeParameters?.params ?? []).entries()) {
     const explicitArgument = typeArguments[index];

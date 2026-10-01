@@ -9,6 +9,7 @@ ruleTester.run('no-unknown-type-aliases', noUnknownTypeAliasesRule, {
     'export type Box<Value> = { value: Value };\nexport type Named = Box<unknown>;',
     'export type Parsed<Value = string> = Value;\nexport type Name = Parsed;',
     'export type Handler = (input: unknown) => void;',
+    'type Value = string;\ntype Fixed = Value;\ntype Generic<Value> = Fixed | Value[];\nexport type Payload = Generic<unknown>;',
   ],
   invalid: [
     { code: 'export type Payload = unknown;', errors: [hides('Payload')] },
