@@ -192,9 +192,8 @@ export const bulkRead = async (
       .join(''),
   );
 
-  const skipped = input.skipped.length
-    ? `\n\nSkipped binary files: ${input.skipped.join(', ')}`
-    : '';
+  const skipped =
+    input.skipped.length > 0 ? `\n\nSkipped binary files: ${input.skipped.join(', ')}` : '';
 
   return { content: [{ type: 'text', text: text + skipped }], details: {}, usage: response.usage };
 };

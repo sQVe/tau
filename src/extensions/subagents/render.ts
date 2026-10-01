@@ -490,7 +490,7 @@ const sessionRows = (details: StatusView, theme: Theme): string[] => {
 const missingHandoffRows = (report: ReportView | undefined, theme: Theme): string[] => {
   const missing = handoffSections(report)?.missing ?? [];
 
-  return missing.length ? [row('Handoff sections missing', missing.join(', '), theme)] : [];
+  return missing.length > 0 ? [row('Handoff sections missing', missing.join(', '), theme)] : [];
 };
 
 const requestedRows = (details: StatusView, theme: Theme): string[] => [

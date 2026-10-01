@@ -33,7 +33,7 @@ const readNative = (path: string) => {
     while (length < buffer.length && buffer.subarray(0, length).indexOf(10) === -1) {
       const count = readSync(descriptor, buffer, length, buffer.length - length, length);
 
-      if (!count) {
+      if (count === 0) {
         break;
       }
 

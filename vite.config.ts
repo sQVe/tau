@@ -237,6 +237,7 @@ export default defineConfig({
       'unicorn/prefer-type-error': 'error',
       'unicorn/no-new-buffer': 'error',
       'unicorn/no-length-as-slice-end': 'error',
+      'unicorn/explicit-length-check': 'error',
       'unicorn/no-abusive-eslint-disable': 'error',
       'unicorn/no-document-cookie': 'error',
       'unicorn/no-useless-error-capture-stack-trace': 'error',

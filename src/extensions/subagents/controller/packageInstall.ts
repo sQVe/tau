@@ -172,7 +172,7 @@ export const installWorkerPackages = async (
   queue: InstallQueue,
   signal: AbortSignal,
 ): Promise<string[]> => {
-  if (!loadout.packages.length) {
+  if (loadout.packages.length === 0) {
     return [];
   }
 

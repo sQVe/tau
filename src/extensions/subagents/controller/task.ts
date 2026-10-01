@@ -165,7 +165,7 @@ export class TaskController {
     const packages = handle.startup.extensionPackages;
 
     // Pi exits before Tau's worker extension runs when a -e package fails to load.
-    if (error instanceof WorkerExitedError && packages.length) {
+    if (error instanceof WorkerExitedError && packages.length > 0) {
       return `${detail} Pi exits at startup when a package fails to load. Check each profile package with \`pi -e <source>\`: ${packages.join(', ')}.`;
     }
 
@@ -247,7 +247,7 @@ export class TaskController {
   private noticeStatus() {
     const { handle } = this;
 
-    if (handle.cleanup.recordErrors.length) {
+    if (handle.cleanup.recordErrors.length > 0) {
       throw new Error(handle.cleanup.recordErrors.join('; '));
     }
 

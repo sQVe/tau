@@ -57,7 +57,7 @@ export const requireUnclaimed = (root: string, source: { directory: string; task
     }
   }
 
-  if (diagnostics.length) {
+  if (diagnostics.length > 0) {
     throw new Error(`Cannot verify saved follow-up attempts: ${diagnostics.join(' ')}`);
   }
 
