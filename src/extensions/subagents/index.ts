@@ -200,7 +200,7 @@ const browserLoginStep = (loginCommand: string | undefined): string =>
     : `ask the user to run \`${loginCommand}\`, sign in, and close the window`;
 
 const browserGuideline = (loginCommand: string | undefined): string =>
-  `Send other browser work, such as lookups, forms, page checks, and screenshots, to \`browser\`. When a \`browser\` or \`qa\` worker needs a login, ${browserLoginStep(loginCommand)}, then start a new worker, because each new worker copies the configured Chrome profile when it starts.`;
+  `Send other browser work, such as lookups, forms, page checks, and screenshots, to \`browser\`. When a \`browser\` or \`qa\` worker needs a login, ${browserLoginStep(loginCommand)}, then cancel the waiting worker and start a new one, because each new worker copies the configured Chrome profile when it starts.`;
 
 export const delegationGuidelines = (loginCommand: string | undefined): string[] => [
   ...leadingDelegationGuidelines,

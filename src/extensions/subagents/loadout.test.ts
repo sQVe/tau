@@ -549,7 +549,7 @@ it('rejects an unknown or empty profile instruction set', () => {
 });
 
 it('defaults bundled roles to medium effort without effort settings in markdown', () => {
-  for (const name of ['scout', 'worker', 'reviewer', 'qa']) {
+  for (const name of ['scout', 'worker', 'reviewer', 'qa', 'browser']) {
     const source = new URL(`./profiles/${name}.md`, import.meta.url);
     const content = readFileSync(source, 'utf8');
 

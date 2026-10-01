@@ -4,10 +4,12 @@
 
 Add a bundled `browser` subagent profile for browser work the manager delegates, such as lookups,
 forms, page checks, and screenshots. It loads `npm:pi-agent-browser-native` and does not edit the
-worktree. The manager now sends browser work to it. When a worker needs a login, the manager asks
-the user to sign in once in the browser package's Chrome profile, then starts a new worker. Set
-`browser.loginCommand` in the user `tau.json` to have the manager name the command that opens that
-profile. Only the user file may set it.
+worktree. Like every profile, it needs a model: add a `profiles.browser` entry to
+`~/.pi/agent/tau.json`, or rely on `profiles.default`. The manager now sends browser work to it.
+When a worker needs a login, the manager asks the user to sign in once in the browser package's
+Chrome profile, then cancels the waiting worker and starts a new one. Set `browser.loginCommand` in
+the user `tau.json` to have the manager name the command that opens that profile. Only the user file
+may set it.
 
 Add a `browser` instruction set with the rules that keep the configured Chrome profile: automatic
 sessions, no explicit profile or browser path, no new profile folders, a check that the page is

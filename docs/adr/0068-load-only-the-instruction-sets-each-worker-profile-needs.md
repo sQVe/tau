@@ -1,6 +1,6 @@
 # ADR 0068: Load only the instruction sets each worker profile needs
 
-- Status: Accepted; the list of set names, the `qa` sets, and the delivery order superseded by
+- Status: Accepted; the list of set names, the `qa` sets, and the delivery order are superseded by
   [ADR 0076](./0076-give-browser-workers-one-shared-set-of-browser-rules.md)
 - Date: 2026-09-29
 

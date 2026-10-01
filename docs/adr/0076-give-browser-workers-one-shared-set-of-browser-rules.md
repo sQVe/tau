@@ -45,11 +45,12 @@ Browser work runs in workers that load the `browser` instruction set, not in the
 ### Logins
 
 - Workers keep the configured profile: automatic sessions, no explicit profile or browser path
-  unless the task names another account, and no new profile folders without the user's approval.
+  unless the task names another account or the user approved a persistent profile, and no new
+  profile folders without the user's approval.
 - On a login wall, a worker signs in only with credentials the task gives it, such as a test
   account. Otherwise it stops and asks.
-- The manager then asks the user to sign in once in Chrome on the agent profile and close it, and
-  starts a new worker, which copies the updated profile.
+- The manager then asks the user to sign in once in Chrome on the agent profile and close it. It
+  then cancels the waiting worker and starts a new one, which copies the updated profile.
 - `browser.loginCommand` in the user `tau.json` names the command that opens that profile. With it,
   the manager asks the user to run that exact command. Without it, the manager names no command.
   Only the user file may set it, because the manager asks the user to run it.
@@ -65,7 +66,6 @@ Browser work runs in workers that load the `browser` instruction set, not in the
 - Each worker is its own root Pi session, so it gets its own browser and a fresh copy of the
   profile. Tau does not set `PI_SUBAGENT_ROOT_SESSION_ID`. If workers shared the manager's root,
   they would share one browser, and "sign in, then start a new worker" would stop working.
-
 - Logins made once in the agent profile reach every later browser worker.
 - The manager's prompt does not grow with the browser rules.
 - Cost: a login needs the user, and a running worker cannot pick it up; the manager starts a new
@@ -78,3 +78,4 @@ Browser work runs in workers that load the `browser` instruction set, not in the
 - [ADR 0053: Version each saved record format](./0053-version-each-saved-record-format.md)
 - [ADR 0068: Load only the instruction sets each worker profile needs](./0068-load-only-the-instruction-sets-each-worker-profile-needs.md)
 - [ADR 0069: Load each Pi package where its tools are used](./0069-load-each-pi-package-where-its-tools-are-used.md)
+- [Vision](../vision.md)
