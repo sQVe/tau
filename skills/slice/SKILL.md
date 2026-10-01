@@ -2,9 +2,9 @@
 name: slice
 description:
   Split an agreed design into ordered, PR-sized slice tickets under a container ticket in Linear.
-  Drafts the tickets, previews the layout and the exact `linear` commands for approval, then creates
-  them in order. Use it for "slice this design", "plan the slices", "break this into sub-tickets",
-  or "plan this as PR-sized pieces". It does not split existing commits or a finished branch.
+  Drafts the tickets, previews the layout and every Linear write for approval, then creates them in
+  order. Use it for "slice this design", "plan the slices", "break this into sub-tickets", or "plan
+  this as PR-sized pieces". It does not split existing commits or a finished branch.
 ---
 
 # Slice
@@ -89,27 +89,36 @@ before anything was written to Linear.
    - `plan.md`: one row per slice with its number, title, body file, `blocked-by` numbers, and
      Linear identifier. Leave the identifier empty until the ticket exists.
 
-5. Preview and ask. Show:
+5. Preview and ask. Show what the user decides on, not how step 6 runs it. Keep it to about 40
+   lines, and leave out raw commands and details of the local environment.
    - The Linear layout as an ASCII tree with aligned columns. Mark each ticket as `new`, `update`,
-     or `unchanged`:
+     or `unchanged`, and give each slice its `blocked-by` numbers and rough size in changed lines.
+     Under each slice, add one line on what it delivers and one line from its `## Out of scope`:
 
      ```text
-     ENG-120  update     Add PR-sized planning          container
-     ├─ 1     new        Record the lifecycle
-     ├─ 2     new        Add the slice skill            blocked-by 1
-     └─ 3     new        Add the start skill
+     ENG-120  update  Add PR-sized planning
+     ├─ 1     new     Record the lifecycle                   ~150
+     │                The ADR for the slice lifecycle.
+     │                Out of scope: the skill itself.
+     └─ 2     new     Add the slice skill    blocked-by 1    ~300
+                      The /slice skill and its tests.
+                      Out of scope: starting a slice.
      ```
 
-   - A table with one row per slice: number, title, what it delivers, rough size, and `blocked-by`.
-   - The exact `## Design` section that step 6 writes into the container, or into the ticket for a
-     design with one slice, quoted in full from the draft.
-   - The exact `linear` commands step 6 will run, in order, with file paths.
+   - One line of reason for each dependency, or missing dependency, that is not obvious.
+   - Each acceptance criterion of the design, with the slice numbers that cover it.
+   - Each choice in the `## Design` section that the agreed design did not already state, one line
+     each, and the path of the draft that holds the full section. For an existing container, say
+     that the text outside that section stays unchanged.
+   - The Linear writes step 6 will make, in order and numbered, one line each, such as
+     `Create slices 1-3 under ENG-120` or `Mark 2 blocked by 1`. Say that step 7 may fix the
+     sub-issue order, and that created tickets stay in Linear until the user cancels them by hand.
    - On a later run, what changed since the last approved plan, including `blocked-by` relations to
      add and remove. Slices dropped from the plan stay in Linear: list them for the user to cancel
      by hand.
 
-   Approve with `ask_user_question`: approve, change the plan, or stop. After any change, write the
-   draft again and show a new preview.
+   Approve with `ask_user_question` and give the number of writes in the question: approve, change
+   the plan, or stop. After any change, write the draft again and show a new preview.
 
 6. Write to Linear in the previewed order. After each command that creates a ticket, record its
    identifier in `$slicedir/plan.md` at once. If the output shows no identifier, stop, and read the
