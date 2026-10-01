@@ -22,6 +22,7 @@ const readOrder = (value: string | undefined) => {
 
 /** Returns null when the file has no frontmatter block or no body text. */
 const parseSnippet = (filename: string, raw: string): Snippet | null => {
+  const id = filename.replace(/\.md$/i, '');
   const frontmatter = frontmatterPattern.exec(raw);
 
   if (frontmatter === null) {
@@ -46,8 +47,6 @@ const parseSnippet = (filename: string, raw: string): Snippet | null => {
     }
   }
 
-  // The menu splits the body on newlines, and a stray carriage return there
-  // returns the cursor to column 0 and corrupts the frame.
   const body = rest.replaceAll('\r\n', '\n').trim();
 
   if (body === '') {
@@ -55,8 +54,8 @@ const parseSnippet = (filename: string, raw: string): Snippet | null => {
   }
 
   return {
-    id: filename,
-    name: metadata.get('name') ?? filename.replace(/\.md$/i, ''),
+    id,
+    name: metadata.get('name') ?? id,
     description: metadata.get('description') ?? '',
     placement: readPlacement(metadata.get('placement')),
     order: readOrder(metadata.get('order')),
@@ -97,22 +96,4 @@ export const loadSnippets = async (directory: string): Promise<Snippet[]> => {
     ...snippets.filter((snippet) => snippet.placement === 'prepend').toSorted(compareSnippets),
     ...snippets.filter((snippet) => snippet.placement === 'append').toSorted(compareSnippets),
   ];
-};
-
-/**
- * Pi expands `/skill:name` and prompt templates after the input handlers run,
- * and both require the command at the start of the text. Wrapping the text
- * would leave the command unexpanded, or turn an appended body into its
- * arguments, so snippets never apply to a message that starts with a slash.
- */
-export const acceptsSnippets = (text: string) => !text.trimStart().startsWith('/');
-
-/** Wraps `text` with the bodies of `active`, which must already be sorted. */
-export const buildSnippetMessage = (text: string, active: Snippet[]): string => {
-  const bodiesFor = (placement: SnippetPlacement) =>
-    active.filter((snippet) => snippet.placement === placement).map((snippet) => snippet.body);
-
-  return [...bodiesFor('prepend'), text, ...bodiesFor('append')]
-    .filter((part) => part !== '')
-    .join('\n\n');
 };

@@ -199,8 +199,10 @@ that `web_search` returns results, and that `fetch_content` on a URL returns rea
 
 ### Snippets
 
-Press `ctrl+q`, turn on one snippet, and send a message. Check that Pi receives the snippet text
-around your message, and that the toggle turns off again.
+Type `#push` in the editor and check that the list offers `#push-back`. Press Tab, finish the
+message, and check that the widget names the snippet. Send it and check that Pi receives the snippet
+text before your message without the token. Press the up arrow and check that the editor shows the
+typed message with its token.
 
 ### Statusbar
 

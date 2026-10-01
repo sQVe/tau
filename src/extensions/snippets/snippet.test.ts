@@ -5,21 +5,10 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, onTestFinished as afterThisTest } from 'vitest';
 
-import { acceptsSnippets, buildSnippetMessage, loadSnippets } from './snippet.js';
-import type { Snippet } from './types.js';
+import { loadSnippets } from './snippet.js';
 
 const snippetFile = (name: string, placement: string, order: number, body: string) =>
   `---\nname: ${name}\nplacement: ${placement}\norder: ${order}\n---\n${body}\n`;
-
-const createSnippet = (overrides: Partial<Snippet> = {}): Snippet => ({
-  id: 'example.md',
-  name: 'Example',
-  description: '',
-  placement: 'append',
-  order: 10,
-  body: 'Example body.',
-  ...overrides,
-});
 
 // Each case loads one file the way the extension does, so it covers the parser and the loader together.
 const loadOne = async (filename: string, content: string) => {
@@ -46,7 +35,7 @@ describe('parsing a snippet file', () => {
     ].join('\n');
 
     expect(await loadOne('ask-questions.md', raw)).toEqual({
-      id: 'ask-questions.md',
+      id: 'ask-questions',
       name: 'Ask questions',
       description: 'Ask until we agree',
       placement: 'prepend',
@@ -62,7 +51,7 @@ describe('parsing a snippet file', () => {
     );
 
     expect(snippet).toEqual({
-      id: 'bare-snippet.md',
+      id: 'bare-snippet',
       name: 'bare-snippet',
       description: '',
       placement: 'append',
@@ -109,7 +98,7 @@ describe('parsing a snippet file', () => {
 
   it('accepts an empty frontmatter block, since every field is optional', async () => {
     expect(await loadOne('bare.md', '---\n---\nJust a body.\n')).toEqual({
-      id: 'bare.md',
+      id: 'bare',
       name: 'bare',
       description: '',
       placement: 'append',
@@ -147,7 +136,7 @@ describe('loadSnippets', () => {
     const snippets = await loadSnippets(directory);
 
     expect(snippets.map((snippet) => snippet.name)).toEqual(['First', 'Later', 'Second']);
-    expect(snippets.map((snippet) => snippet.id)).toEqual(['first.md', 'later.md', 'second.md']);
+    expect(snippets.map((snippet) => snippet.id)).toEqual(['first', 'later', 'second']);
   });
 
   it('sorts snippets with equal orders by name', async ({ onTestFinished }) => {
@@ -210,7 +199,7 @@ describe('the shipped snippets', () => {
     ]);
 
     expect(prepends.at(-1)).toMatchObject({
-      id: 'check-agreed-plan.md',
+      id: 'check-agreed-plan',
       order: 50,
       body: "Read the relevant ticket, its parent, and linked prerequisites before proposing work. Compare the current plan with the implementation and recent decisions. State this task's scope, exclusions, and blockers. Flag conflicting or outdated requirements rather than silently choosing one. Do not update tickets unless asked.",
     });
@@ -221,57 +210,5 @@ describe('the shipped snippets', () => {
     const keys = snippets.map((snippet) => `${snippet.placement}:${snippet.order}`);
 
     expect(new Set(keys).size).toBe(keys.length);
-  });
-});
-
-describe('acceptsSnippets', () => {
-  it.for(['/skill:commit', '/commit stage the fix', '  /skill:commit', '/my-prompt-template'])(
-    'refuses the slash command %s',
-    (text) => {
-      expect(acceptsSnippets(text)).toBe(false);
-    },
-  );
-
-  it.for(['Commit the fix.', 'Look at src/a.ts', 'Use the / operator here.'])(
-    'accepts %s',
-    (text) => {
-      expect(acceptsSnippets(text)).toBe(true);
-    },
-  );
-});
-
-describe('buildSnippetMessage', () => {
-  it('wraps the text with prepend bodies first and append bodies last', () => {
-    const active = [
-      createSnippet({ placement: 'prepend', body: 'Before one.' }),
-      createSnippet({ placement: 'prepend', body: 'Before two.' }),
-      createSnippet({ placement: 'append', body: 'After one.' }),
-    ];
-
-    expect(buildSnippetMessage('My message.', active)).toBe(
-      'Before one.\n\nBefore two.\n\nMy message.\n\nAfter one.',
-    );
-  });
-
-  it('keeps the given order within each group', () => {
-    const active = [
-      createSnippet({ placement: 'append', body: 'Second.' }),
-      createSnippet({ placement: 'append', body: 'Third.' }),
-    ];
-
-    expect(buildSnippetMessage('First.', active)).toBe('First.\n\nSecond.\n\nThird.');
-  });
-
-  it('omits empty text between the snippet bodies', () => {
-    const active = [
-      createSnippet({ placement: 'prepend', body: 'Before.' }),
-      createSnippet({ placement: 'append', body: 'After.' }),
-    ];
-
-    expect(buildSnippetMessage('', active)).toBe('Before.\n\nAfter.');
-  });
-
-  it('returns the text unchanged when nothing is active', () => {
-    expect(buildSnippetMessage('My message.', [])).toBe('My message.');
   });
 });
