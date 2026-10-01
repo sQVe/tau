@@ -21,6 +21,10 @@ ruleTester.run('no-object-parameters', noObjectParametersRule, {
       errors: [broad('value')],
     },
     {
+      code: 'type Loose = object;\nexport const Probe = class Loose {\n  run(value: Loose) { return value; }\n};\nexport const run = (value: Loose) => value;',
+      errors: [broad('value')],
+    },
+    {
       code: 'export interface Api { run(value: object): void }',
       errors: [broad('value')],
     },

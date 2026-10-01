@@ -95,8 +95,10 @@ const collectTypeBindings = (
 
   if (declared !== undefined) {
     const bindings = bindingsByName.get(declared.name) ?? [];
+    // A class expression's name is visible only inside the class itself.
+    const scope = node.type === 'ClassExpression' ? node : enclosingTypeScope(node);
 
-    bindings.push({ ...declared, scope: enclosingTypeScope(node) });
+    bindings.push({ ...declared, scope });
     bindingsByName.set(declared.name, bindings);
   }
 
