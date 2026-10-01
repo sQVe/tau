@@ -23,6 +23,13 @@ ruleTester.run('type-placement', typePlacementRule, {
       '',
       'export type Built = ReturnType<typeof build>;',
     ),
+    lines(
+      "import home = require('./home.ts');",
+      '',
+      'type Paths = string[];',
+      '',
+      'export const paths: Paths = [home];',
+    ),
   ],
   invalid: [
     {

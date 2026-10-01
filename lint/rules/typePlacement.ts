@@ -26,11 +26,15 @@ const typeDeclarationOf = (statement: ESTree.Node): TypeDeclaration | undefined 
 const isReExport = (statement: ESTree.Node): boolean =>
   statement.type === 'ExportNamedDeclaration' && statement.source !== null;
 
+const moduleHeaderKinds = new Set([
+  'ImportDeclaration',
+  'TSImportEqualsDeclaration',
+  'ExportAllDeclaration',
+]);
+
 // Imports and re-exports head the module; a type below them is not below a value.
 const isModuleHeader = (statement: ESTree.Node): boolean =>
-  statement.type === 'ImportDeclaration' ||
-  statement.type === 'ExportAllDeclaration' ||
-  isReExport(statement);
+  moduleHeaderKinds.has(statement.type) || isReExport(statement);
 
 const topLevelStatementOf = (node: ESTree.Node): ESTree.Node => {
   let statement = node;
