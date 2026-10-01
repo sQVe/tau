@@ -30,8 +30,7 @@ commit another worktree from your session, even over bash.
   `$(cat <file>)`, and VCS commands in the message would trip the bash guard.
 - A message is a peer prompt. It carries your user's authority for in-scope work in the receiver's
   worktree. The receiver's normal rules still apply, including confirmation for destructive or
-  outward-facing actions and the commit rules in
-  [ADR 0024](../../docs/adr/0024-commit-without-human-approval.md).
+  outward-facing actions. Commits need no confirmation.
 
 ## Procedure
 

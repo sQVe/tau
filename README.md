@@ -45,6 +45,13 @@ A worker launch needs a model passed on the launch, `profiles.<name>.model` for 
 }
 ```
 
+The `start-slice` skill creates agent tickets in the Linear team that `slice.agentTeam` names in
+`~/.pi/agent/tau.json`:
+
+```json
+{ "slice": { "agentTeam": "AI" } }
+```
+
 Web answers use pi-web-access's own `fetch.answerProvider` and `fetch.answerModel` in
 `web-search.json`.
 
