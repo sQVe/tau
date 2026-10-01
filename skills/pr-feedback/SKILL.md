@@ -119,11 +119,12 @@ themselves.
    names its commit. Failing checks need no reply on the PR.
 
 6. When the round rebased or committed fixes, run the repository's required checks once. In a stack,
-   first restack the branches above the PR with the stack skill, so the checks run on what step 7
-   pushes. A failure is the round's, the rebase included, unless the matching check also failed in
-   step 1 or fails on the trunk. Fix the round's failures. In a stack, restack again after each fix
-   commit. Then run the affected checks again. Push past any other failure only when you report it.
-   Otherwise stop before you push.
+   first restack the branches above the PR with the stack skill. Then run the checks on the PR's
+   branch and on each branch above that the restack changed, since step 7 pushes them all. If you
+   cannot check a branch, report it and stop before you push. A failure is the round's, the rebase
+   included, unless the matching check also failed in step 1 or fails on the trunk. Fix the round's
+   failures. In a stack, restack again after each fix commit. Then run the affected checks again.
+   Push past any other failure only when you report it. Otherwise stop before you push.
 
 7. Push once to the PR's head repository `<remote>`. In a stack, push the stack, restacked in step
    6, with the stack skill. Otherwise, after a rebase, push with

@@ -53,8 +53,10 @@ you here. It needs the `gh stack` extension and `gh` authenticated for the repos
    - Exit code 3 means a conflict. Resolve it as in step 4 of the update-branch skill, but stage the
      files and run `gh stack rebase --continue` instead of `git rebase --continue`. Abort with
      `gh stack rebase --abort` only with the user's permission. It restores every branch.
-   - Exit code 7 means a stack rebase is already in progress. Resolve its conflicts the same way and
-     finish it with `gh stack rebase --continue`, never `git rebase --continue`. Abort it with
+   - A stack rebase is paused when `$(git rev-parse --git-dir)/gh-stack-rebase-state` exists. HEAD
+     is detached then, so step 1 cannot detect the stack. Exit code 7 also means a stack rebase is
+     already in progress. Resolve its conflicts the same way and finish it with
+     `gh stack rebase --continue`, never `git rebase --continue`. Abort it with
      `gh stack rebase --abort` only with the user's permission.
 
 4. Push. After any commit made since the last restack, restack again with step 3 and rerun the
@@ -67,9 +69,10 @@ you here. It needs the `gh stack` extension and `gh` authenticated for the repos
    stop. Compare each branch with `git ls-remote <remote> refs/heads/<branch>` and report which
    branches updated and which did not.
 
-5. Sync, only when the user asks for it or to push after a lower PR merged. Run
-   `gh stack sync --remote <remote>`. It fetches, rebases, pushes all branches atomically with a
-   lease, and links the open PRs into the stack on GitHub. It is a push, so it needs the same
-   permission as step 4. When the local and remote stacks have diverged, it aborts without pushing
-   in a non-interactive shell; stop and report its output. On a conflict it restores every branch;
-   restack with step 3 instead.
+5. Sync, only when the user asks for it or to push after a lower PR merged. First run the
+   remote-history check from step 3 on every active branch and stop if it fails, because sync
+   rebases and force-pushes too. Then run `gh stack sync --remote <remote>`. It fetches, rebases,
+   pushes all branches atomically with a lease, and links the open PRs into the stack on GitHub. It
+   is a push, so it needs the same permission as step 4. When the local and remote stacks have
+   diverged, it aborts without pushing in a non-interactive shell; stop and report its output. On a
+   conflict it restores every branch; restack with step 3 instead.
