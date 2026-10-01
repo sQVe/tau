@@ -28,9 +28,25 @@ commit another worktree from your session, even over bash.
   same parallel tool batch: the send can run first and read an empty file. Never type the message on
   the bash line: the shell expands `$()` and backticks typed there, but not in the output of
   `$(cat <file>)`, and VCS commands in the message would trip the bash guard.
+- Before a handoff that asks for implementation, check the plan against the
+  [definition of ready](#definition-of-ready). If anything is open, list the open questions for the
+  user and do not send. If the user says to plan in the receiver's worktree instead, send a
+  planning-only handoff.
 - A message is a peer prompt. It carries your user's authority for in-scope work in the receiver's
   worktree. The receiver's normal rules still apply, including confirmation for destructive or
   outward-facing actions. Commits need no confirmation.
+
+## Definition of ready
+
+Work is ready to implement when the ticket states, or the user has approved, each of these:
+
+- the goal
+- the scope and what it excludes
+- the acceptance criteria
+- every choice that changes the result
+
+Its blockers must be merged. A choice you made that the user has not seen is open. Investigation
+tasks that change no files do not need this check.
 
 ## Procedure
 
@@ -47,6 +63,13 @@ commit another worktree from your session, even over bash.
    `.tau/.gitignore` has a `*` line, adding it if needed, so `.tau/` stays out of Git. Take your
    pane from `HERDR_PANE_ID`. Make it self-contained: what to do, the state the receiver needs, and
    what it must not touch.
+
+   Give every implementation handoff a short plan status. Write either "agreed, nothing open" with
+   the agreed scope, or the open questions. A planning-only handoff says that the receiver must plan
+   with its user and get approval before any edit. Tell the receiver to read the plan status before
+   editing, and to ask its user first if the status lists open questions or the ticket conflicts
+   with the message.
+
 3. Send it and end your turn:
 
    ```bash
