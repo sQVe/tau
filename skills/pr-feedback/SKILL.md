@@ -86,7 +86,9 @@ themselves.
    - Author mode, failing checks: each check with `bucket` `fail` or `cancel` from step 1 is a
      finding. For GitHub Actions, take the run and job IDs from `link` and read
      `gh run view <run id> --repo <repo> --job <job id> --log-failed`. For other providers, follow
-     `link`. Report a check as blocked when you cannot read its log.
+     `link`. Report a check as blocked when you cannot read its log. After a rebase, these results
+     describe the old head. Fix a failure only when its cause is still in the rebased code, and
+     report the rest as gone after the rebase. CI reports on the rebased head after the push.
 
 4. Verify each remaining finding with the
    [triage findings](../../src/extensions/snippets/snippets/triage-findings.md) rules. Split a
@@ -147,7 +149,8 @@ themselves.
     each bullet the thread link and what you did: replied, resolved, or left open. List what you
     judged as needing nothing, so the user can overrule it. Then add two sections in both modes:
     - CI: each failing or pending check with its link and outcome, such as fixed in a commit, also
-      failing on the base, failing outside the PR's changes, pending, or blocked.
+      failing on the base, failing outside the PR's changes, gone after the rebase, pending, or
+      blocked.
     - Conflicts: rebased onto the base with the files you resolved, conflicting but not rebased in
       reviewer mode, unknown, or none.
 
