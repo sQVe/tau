@@ -67,7 +67,10 @@ describe('tauSkillsExtension', () => {
     const namedSkills = skillNames.filter((name) => prompt.includes(`\`${name}\``));
     const requiredSkills = skillNames.filter((name) => requiredForOf(name) !== undefined);
 
-    expect(requiredSkills).toEqual(expect.arrayContaining(['pr', 'update-branch', 'worktree']));
+    expect(requiredSkills).toEqual(
+      expect.arrayContaining(['handoff', 'pr', 'pr-feedback', 'update-branch', 'worktree']),
+    );
+
     expect(namedSkills).toEqual(requiredSkills);
     expect(prompt.split('\n')).toHaveLength(requiredSkills.length);
 
