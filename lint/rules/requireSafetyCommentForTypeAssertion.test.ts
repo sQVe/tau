@@ -15,6 +15,10 @@ ruleTester.run(
   // SAFETY: Callers pass text.
   return input as string;
 };`,
+      `export const count = (input: unknown) => {
+  // SAFETY: Callers pass a number.
+  for (let index = input as number; index > 0; index -= 1) {}
+};`,
     ],
     invalid: [
       { code: "export const value = JSON.parse('1') as number;", errors: [missing] },
