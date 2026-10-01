@@ -105,10 +105,15 @@ export class TaskController {
   }
 
   // Timers and listeners cannot await a stop. A stop whose failure notice also fails keeps the
-  // error for the next status read.
+  // error for the next status read. The stop may have recorded the same error already.
   private stopInBackground(reason: StopReason, failureDetail?: string): void {
     this.stop(reason, failureDetail).catch((error: unknown) => {
-      this.handle.cleanup.recordErrors.push(String(error));
+      const { recordErrors } = this.handle.cleanup;
+      const message = String(error);
+
+      if (!recordErrors.includes(message)) {
+        recordErrors.push(message);
+      }
     });
   }
 

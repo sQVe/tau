@@ -2968,7 +2968,7 @@ it('keeps the original deadline and reports active-work cancellation failure hon
   expect(notifications).toHaveLength(1);
 });
 
-it('keeps a failed timeout notice in worker status', async ({ onTestFinished }) => {
+it('keeps a failed timeout notice in worker status once', async ({ onTestFinished }) => {
   vi.useFakeTimers();
   const { directory, client, input } = setup(onTestFinished);
 
@@ -2985,7 +2985,16 @@ it('keeps a failed timeout notice in worker status', async ({ onTestFinished }) 
 
   expect(readEvent(launched.directory, launched.taskId, 'timeout')).toBeDefined();
 
-  expect(() => controller.status(launched.taskId, 'parent-id')).toThrow('Injected notice failure.');
+  let failure = '';
+
+  try {
+    controller.status(launched.taskId, 'parent-id');
+  } catch (error) {
+    failure = String(error);
+  }
+
+  // The notice failure appears exactly once.
+  expect(failure.split('Injected notice failure.')).toHaveLength(2);
 });
 
 it('preserves incomplete output and malformed evidence without retrying startup', async ({
