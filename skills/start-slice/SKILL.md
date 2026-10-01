@@ -29,8 +29,10 @@ Workers then carry out the agent tickets.
 
 ## Hard rules
 
-- Before the user approves the preview, only read. You may run `git fetch`, but create or switch no
-  branch and write nothing to Linear. Any change after approval needs a new preview.
+- Before the user approves the preview, write only the draft in `$slicedir`. You may run
+  `git fetch`, but create or switch no branch and write nothing to Linear. Any change to the
+  approved plan needs a new preview, except an agent ticket added as "Changes after the start"
+  allows.
 - Ask every question with the `ask_user_question` tool, including the preview approval. Never end a
   turn with a question in prose.
 - Take the agent team only from the prompt line that starts with
@@ -85,8 +87,11 @@ Workers then carry out the agent tickets.
    the slice's existing agent tickets:
 
    ```sh
-   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title team { key } } } } }' --variable id=<slice>
+   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description team { key } } } } }' --variable id=<slice>
    ```
+
+   Linear holds the body of each agent ticket that exists. Save its description as its body file
+   when the file is missing or differs, so the worker gets the same task as the ticket.
 
 4. Choose the base. Run `git fetch origin`, then use the remote's default branch from
    `git symbolic-ref --short refs/remotes/origin/HEAD`, such as `origin/main`.
