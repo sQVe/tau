@@ -51,7 +51,7 @@ const setup = (
   const createdAt = Date.now();
 
   publish(directory, 'task.json', {
-    version: 6,
+    version: 7,
     taskId: 'task',
     task: 'Read the assigned file.',
     parentSession: join(directory, 'parent.jsonl'),
@@ -75,7 +75,7 @@ const setup = (
       tools: ['read', 'bash'],
       skills: [],
       instructionSets:
-        role === 'editing' ? ['writing', 'coding', 'workflow'] : ['writing', 'workflow'],
+        role === 'editing' ? ['writing', 'coding', 'workflow'] : ['writing', 'workflow', 'browser'],
       packages: [],
     },
   });
@@ -556,8 +556,8 @@ it.each([
 );
 
 it.each([
-  { role: 'editing', sets: ['writing', 'coding', 'workflow'], omitted: [] },
-  { role: 'investigation', sets: ['writing', 'workflow'], omitted: ['coding'] },
+  { role: 'editing', sets: ['writing', 'coding', 'workflow'], omitted: ['browser'] },
+  { role: 'investigation', sets: ['writing', 'workflow', 'browser'], omitted: ['coding'] },
 ] as const)(
   'appends the $role loadout instruction sets in order after the worker instructions',
   async ({ role, sets, omitted }) => {

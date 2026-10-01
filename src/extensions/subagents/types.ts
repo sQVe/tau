@@ -69,23 +69,38 @@ const toolAndSkillProperties = {
   skills: Type.Array(text, { maxItems: 100 }),
 };
 
-const instructionSetProperties = {
-  instructionSets: Type.Array(StringEnum(instructionSetNames), { maxItems: 3 }),
+// Formats 5 and 6 saved only these sets, and workers of earlier formats loaded all of them.
+export const version6InstructionSetNames = ['writing', 'coding', 'workflow'] as const;
+
+const version6InstructionSetProperties = {
+  instructionSets: Type.Array(StringEnum(version6InstructionSetNames), { maxItems: 3 }),
 };
+
+// Pi package sources as the profile names them, before settings duplicates are skipped.
+const packageProperties = { packages: Type.Array(text, { maxItems: 100 }) };
 
 export const loadoutSchema = Type.Object(
   {
     ...loadoutProperties,
     ...toolAndSkillProperties,
-    ...instructionSetProperties,
-    // Pi package sources as the profile names them, before settings duplicates are skipped.
-    packages: Type.Array(text, { maxItems: 100 }),
+    instructionSets: Type.Array(StringEnum(instructionSetNames), { maxItems: 4 }),
+    ...packageProperties,
+  },
+  { additionalProperties: false },
+);
+
+const version6LoadoutSchema = Type.Object(
+  {
+    ...loadoutProperties,
+    ...toolAndSkillProperties,
+    ...version6InstructionSetProperties,
+    ...packageProperties,
   },
   { additionalProperties: false },
 );
 
 const version5LoadoutSchema = Type.Object(
-  { ...loadoutProperties, ...toolAndSkillProperties, ...instructionSetProperties },
+  { ...loadoutProperties, ...toolAndSkillProperties, ...version6InstructionSetProperties },
   { additionalProperties: false },
 );
 
@@ -116,6 +131,7 @@ const versionedTaskSchema = <
   Version extends TSchema,
   SavedLoadout extends
     | typeof loadoutSchema
+    | typeof version6LoadoutSchema
     | typeof version5LoadoutSchema
     | typeof version4LoadoutSchema
     | typeof previousLoadoutSchema,
@@ -135,9 +151,11 @@ const versionedTaskSchema = <
   );
 
 // Bump for any change to the saved fields, including a new optional field.
-export const taskVersion = 6;
+export const taskVersion = 7;
 
 export const taskSchema = versionedTaskSchema(Type.Literal(taskVersion), loadoutSchema);
+
+export const version6TaskSchema = versionedTaskSchema(Type.Literal(6), version6LoadoutSchema);
 
 export const version5TaskSchema = versionedTaskSchema(Type.Literal(5), version5LoadoutSchema);
 

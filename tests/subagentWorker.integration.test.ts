@@ -198,7 +198,7 @@ it.each(['editing', 'investigation'] as const)(
     vi.stubEnv('TAU_WORKER_RECORD', taskDirectory);
 
     const task = validateTask({
-      version: 6,
+      version: 7,
       taskId: 'fixture-task',
       task: 'Edit source.txt and check it.',
       parentSession: join(directory, 'parent.jsonl'),
@@ -516,7 +516,7 @@ it('starts a worker whose profile lists bulk_read without a bulk_read model', as
   const model = provider.getModel();
 
   const task = validateTask({
-    version: 6,
+    version: 7,
     taskId: 'scout-task',
     task: 'Inspect the fixture.',
     parentSession: join(directory, 'parent.jsonl'),

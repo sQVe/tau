@@ -141,14 +141,27 @@ package name when an install fails. An unpinned npm package stays at the version
 cached, so pin a version to update it. See the
 [package decision](adr/0069-load-each-pi-package-where-its-tools-are-used.md).
 
-The bundled `qa` profile sets `packages: npm:pi-agent-browser-native` for its browser tools. If the
-parent session does not use the browser itself, remove `npm:pi-agent-browser-native` from the
-`packages` list in `~/.pi/agent/settings.json`.
+The bundled `browser` and `qa` profiles set `packages: npm:pi-agent-browser-native` for their
+browser tools. If the parent session does not use the browser itself, remove
+`npm:pi-agent-browser-native` from the `packages` list in `~/.pi/agent/settings.json`.
+
+When a browser worker needs a login, the manager asks you to sign in once in the browser package's
+Chrome profile. To have it name the command that opens that profile, set `browser.loginCommand` in
+`~/.pi/agent/tau.json`:
+
+```json
+{ "browser": { "loginCommand": "google-chrome-stable --profile-directory=\"Agent profile\"" } }
+```
+
+Only the user file may set `browser`. An empty or non-string command leaves the command out of the
+manager's guidelines and shows an error when the session starts.
 
 A profile's `instruction-sets:` setting lists the Tau instruction sets its worker loads, from
-`writing`, `coding`, and `workflow`. Without it, a worker loads all three. The bundled `scout` and
-`qa` profiles set `instruction-sets: writing, workflow`. See the
-[instruction set decision](adr/0068-load-only-the-instruction-sets-each-worker-profile-needs.md).
+`writing`, `coding`, `workflow`, and `browser`. Without it, a worker loads `writing`, `coding`, and
+`workflow`. The bundled `scout` profile sets `instruction-sets: writing, workflow`, and the bundled
+`browser` and `qa` profiles add `browser`. See the
+[instruction set decision](adr/0068-load-only-the-instruction-sets-each-worker-profile-needs.md) and
+the [browser decision](adr/0076-give-browser-workers-one-shared-set-of-browser-rules.md).
 
 Set `TAU_SUBAGENT_CAP` to limit how many live workers each parent controller runs at once. It takes
 an integer from 1 to 256 and defaults to 4. Each controller reads the cap once when it starts. A

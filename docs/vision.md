@@ -21,9 +21,8 @@ This is the goal. Tau is under active development, so parts of it are not there 
 - Few concepts, with clear meanings and firm rules. The same process every time.
 - Use models that fit the work to reduce cost and time without sacrificing required quality. Every
   model Tau selects must be user-configurable.
-- Hand off to the tool that already does the job. A browser task goes to the Claude Code agent in
-  another [herdr](https://herdr.dev) workspace through a handoff. It does not go to a Tau subagent
-  or a second browser stack in Pi.
+- Hand off to the tool that already does the job. Browser work goes to Tau's `browser` worker, which
+  loads the browser package only in workers, so the manager does not carry the browser.
 
 ## In scope
 

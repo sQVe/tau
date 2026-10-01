@@ -28,6 +28,7 @@ import manifest from '../package.json' with { type: 'json' };
 import { bulkReadGuidelines } from '../src/extensions/bulkRead/index.js';
 import { commitToolGuidelines } from '../src/extensions/commit/tool.js';
 import { delegationGuidelines } from '../src/extensions/subagents/index.js';
+import { readInstructionSet } from '../src/instructionSets/index.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 
 it('ships Safety Net as a runtime dependency and explicit extension', () => {
@@ -36,7 +37,7 @@ it('ships Safety Net as a runtime dependency and explicit extension', () => {
   expect(manifest.pi.extensions).toContain('./node_modules/cc-safety-net/dist/pi/index.js');
 });
 
-it('loads Tau through Pi with commit features, question and bundled web tools, and writing and coding rules on every run', async ({
+it('loads Tau through Pi with commit features, question and bundled web tools, and writing and coding rules but not browser rules on every run', async ({
   onTestFinished,
 }) => {
   const workingDirectory = await mkdtemp(join(tmpdir(), 'tau-package-'));
@@ -225,7 +226,7 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
       codingInstructions.trim(),
       workflowInstructions.trim(),
       String(prRequiredFor),
-      ...delegationGuidelines,
+      ...delegationGuidelines(undefined),
       ...bulkReadGuidelines,
       ...commitToolGuidelines,
     ];
@@ -248,6 +249,12 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
 
     for (const block of blocks) {
       expect(transcripts[1]?.split(JSON.stringify(block).slice(1, -1))).toHaveLength(2);
+    }
+
+    const browserInstructions = await readInstructionSet('browser');
+
+    for (const prompt of prompts) {
+      expect(prompt).not.toContain(browserInstructions);
     }
   } finally {
     await rm(workingDirectory, { recursive: true, force: true });

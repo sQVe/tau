@@ -219,7 +219,7 @@ it('saves a launched Pi task in the current record format', async ({ onTestFinis
   const launched = await fixture.controller.launch(fixture.input);
 
   expect(JSON.parse(readFileSync(join(launched.directory, 'task.json'), 'utf8'))).toMatchObject({
-    version: 6,
+    version: 7,
   });
 });
 
