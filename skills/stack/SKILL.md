@@ -38,12 +38,16 @@ you here. It needs the `gh stack` extension and `gh` authenticated for the repos
    read as a stack number first. If it reports that the local stack differs from the remote, stop
    and report both chains it prints.
 
-3. Restack. From the branch you changed, run `gh stack rebase --upstack --remote <remote>`. It
-   rebases that branch onto its parent and each branch above onto the one below it. To bring the
-   whole stack up to date with the trunk, run `gh stack rebase --remote <remote>`. Both fetch the
-   stack's branches first and fast-forward the ones behind their remote. Branches whose PRs merged
-   are skipped, and the branch above them is rebased onto the first unmerged branch below or onto
-   the trunk, so the merged commits drop out.
+3. Restack. Before the first rebase, run `git fetch <remote>`. For each active branch, one not
+   merged or queued, note its remote tip with `git rev-parse <remote>/<branch>`. Then check that
+   `git log --oneline <branch>..<remote>/<branch>` lists nothing. Stop and report each branch it
+   lists commits for. The rebase skips a branch that has diverged from its remote, and the push
+   would then overwrite those remote commits. From the branch you changed, run
+   `gh stack rebase --upstack --remote <remote>`. It rebases that branch onto its parent and each
+   branch above onto the one below it. To bring the whole stack up to date with the trunk, run
+   `gh stack rebase --remote <remote>`. Both fetch the stack's branches first and fast-forward the
+   ones behind their remote. Branches whose PRs merged are skipped, and the branch above them is
+   rebased onto the first unmerged branch below or onto the trunk, so the merged commits drop out.
    - Exit code 3 means a conflict. Resolve it as in step 4 of the update-branch skill, but stage the
      files and run `gh stack rebase --continue` instead of `git rebase --continue`. Abort with
      `gh stack rebase --abort` only with the user's permission. It restores every branch.
@@ -51,14 +55,15 @@ you here. It needs the `gh stack` extension and `gh` authenticated for the repos
      finish it with `gh stack rebase --continue`, never `git rebase --continue`. Abort it with
      `gh stack rebase --abort` only with the user's permission.
 
-4. Push. Before the rebase, note each active branch's remote tip with
-   `git rev-parse <remote>/<branch>`. Immediately before the push, fetch again and stop if any
-   remote tip moved. Then run `gh stack push --remote <remote>`. It fetches again and takes its
-   leases from that fetch, so the lease protects only against changes pushed after its own fetch. It
-   does not guarantee that the remote still holds the tips you noted. It force-pushes every active
-   branch with a per-branch `--force-with-lease` and skips merged and queued branches. The push is
-   not atomic. If it fails, stop. Compare each branch with
-   `git ls-remote <remote> refs/heads/<branch>` and report which branches updated and which did not.
+4. Push. After any commit made since the last restack, restack again with step 3 and rerun the
+   affected checks. The push does not restack, so the branches above would miss that commit.
+   Immediately before the push, fetch again and stop if any remote tip moved. Then run
+   `gh stack push --remote <remote>`. It fetches again and takes its leases from that fetch, so the
+   lease protects only against changes pushed after its own fetch. It does not guarantee that the
+   remote still holds the tips you noted. It force-pushes every active branch with a per-branch
+   `--force-with-lease` and skips merged and queued branches. The push is not atomic. If it fails,
+   stop. Compare each branch with `git ls-remote <remote> refs/heads/<branch>` and report which
+   branches updated and which did not.
 
 5. Sync, only when the user asks for it or to push after a lower PR merged. Run
    `gh stack sync --remote <remote>`. It fetches, rebases, pushes all branches atomically with a

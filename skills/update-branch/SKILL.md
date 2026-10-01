@@ -26,10 +26,12 @@ the [handoff skill](../handoff/SKILL.md).
 
 ## Procedure
 
-1. Check the branch, `git status`, and whether a rebase is in progress. To continue an existing
-   rebase, go to step 4 and ask if its target is unclear. Ask before pushing it unless you noted the
-   remote tip before it started. If a merge is in progress, resolve its conflicts as in step 4, then
-   finish with the [commit skill](../commit/SKILL.md) instead of `rebase --continue`.
+1. Check the branch, `git status`, and whether a rebase is in progress. When the
+   [stack skill](../stack/SKILL.md) finds the branch in a stack, continue an existing rebase with
+   it, never with `git rebase --continue`. To continue an existing rebase, go to step 4 and ask if
+   its target is unclear. Ask before pushing it unless you noted the remote tip before it started.
+   If a merge is in progress, resolve its conflicts as in step 4, then finish with the
+   [commit skill](../commit/SKILL.md) instead of `rebase --continue`.
 2. Fetch the base's remote and, if different, the remote the branch pushes to. Note the SHA of the
    branch's remote tip if it has one: `git rev-parse <remote>/<branch>`. Stop if fetching or
    resolving fails, or if `git log --oneline HEAD..<old-tip>` lists commits missing locally.
@@ -43,6 +45,7 @@ the [handoff skill](../handoff/SKILL.md).
    proof.
 5. Run the project's required checks. If you fix a failure, commit the fix with the
    [commit skill](../commit/SKILL.md), then rerun the affected checks and any required final check.
+   In a stack, restack with the stack skill after the commit and before the rerun.
 6. Push only when pushing is authorized.
    - In a stack, push with the stack skill. Its lease comes from its own fetch, not from the old
      tip, so check the old tips immediately before the push as that skill says.
