@@ -39,7 +39,7 @@ export const createLedgerFixture = (directory: string, workers: string) => {
     );
 
     const record = validateTask({
-      version: 6,
+      version: 7,
       taskId,
       task: 'Inspect shared source.',
       parentSession: manager,
