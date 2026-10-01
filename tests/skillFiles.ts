@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 
 import { loadSkillsFromDir, parseFrontmatter } from '@earendil-works/pi-coding-agent';
 
+import { parseShellCommands } from '../src/extensions/commit/shellCommands.js';
 import { requiredActions } from '../src/extensions/tauSkills/requiredFor.js';
 
 export type SkillProblemKind =
@@ -33,8 +34,11 @@ const consolePrompt = '$ ';
 const topLevelKeys = new Set(['name', 'description', 'metadata']);
 const metadataKeys = new Set(['required-for']);
 
-// Fences in list items are indented, so any indentation opens a block.
-const fencedCodeBlock = /^[ \t]*(`{3,}|~{3,})([^\n]*)\n([\s\S]*?)(?:^[ \t]*\1[ \t]*$|(?![\s\S]))/gm;
+// Fences in list items are indented, so any indentation opens a block. A closing fence may be
+// longer than the opening one.
+const fencedCodeBlock =
+  /^[ \t]*(([`~])\2{2,})([^\n]*)\n([\s\S]*?)(?:^[ \t]*\1\2*[ \t]*$|(?![\s\S]))/gm;
+
 const inlineCode = /(`+)[\s\S]*?\1/g;
 
 const inlineLink =
@@ -43,12 +47,6 @@ const inlineLink =
 const referenceDefinition = /^ {0,3}\[[^\]]+\]:[ \t]*(?:<([^>\n]*)>|(\S+))/gm;
 const adrWord = /\bADRs?\b/i;
 const sectionHeading = /^ {0,3}##[ \t]+(.+?)[ \t]*#*[ \t]*$/gm;
-const quotedTextOrComment = /('[^']*'|"(?:[^"\\]|\\.)*")|(^|[ \t])#.*$/gm;
-const commandSubstitution = /\$\(|`[^`]*`/g;
-const backslashContinuation = /\\[ \t]*\n/g;
-const operatorContinuation = /(&&|\|\|?|\{)[ \t]*\n/g;
-// A lone `&` runs a command in the background; `>&` and `&>` are redirects.
-const commandSeparator = /&&|\|\||;|\||(?<![>&])&(?![>&])/;
 const seeAlsoHeading = /^ {0,3}#{1,6}[ \t]+see also[ \t]*#*[ \t]*$/im;
 const externalTarget = /^(?:https?|mailto):/i;
 
@@ -62,16 +60,20 @@ const linkTargets = (markdown: string) =>
 
 const isLocalTarget = (target: string) => !externalTarget.test(target) && !target.startsWith('#');
 
-const resolveTarget = (file: string, target: string) => {
+const targetExists = (file: string, target: string) => {
   const [path = ''] = target.split('#');
 
-  return resolve(dirname(file), decodeURIComponent(path));
+  try {
+    return existsSync(resolve(dirname(file), decodeURIComponent(path)));
+  } catch {
+    return false;
+  }
 };
 
 const brokenLinks = (file: string, markdown: string) =>
   linkTargets(withoutCode(markdown))
     .filter(isLocalTarget)
-    .filter((target) => !existsSync(resolveTarget(file, target)))
+    .filter((target) => !targetExists(file, target))
     .map((target) => `links to missing ${target}`);
 
 const sectionHeadingsOf = (markdown: string) =>
@@ -82,40 +84,16 @@ const unknownHeadings = (headings: readonly string[], extraHeadings: readonly st
     .filter((heading) => !sectionHeadings.has(heading) && !extraHeadings.includes(heading))
     .map((heading) => `unknown section ## ${heading}`);
 
-// Quoted text may hold separators and braces, and a comment may end in `\`, so both are dropped
-// before lines are joined.
-const withoutQuotesOrComments = (shell: string) =>
-  shell.replaceAll(quotedTextOrComment, (_match, quoted?: string, before?: string) =>
-    quoted === undefined ? (before ?? '') : "''",
-  );
+// An unparsable block cannot be shown to hold one command, so it counts as several.
+const holdsSeveralCommands = (shell: string) => {
+  const commands = parseShellCommands(shell);
 
-// Single-quoted text stays literal, but `$(...)` and backticks run inside double quotes.
-const substitutionCount = (shell: string) => {
-  const expandable = shell.replaceAll(
-    quotedTextOrComment,
-    (match, quoted?: string, before?: string) => {
-      if (quoted === undefined) {
-        return before ?? '';
-      }
+  if (commands === undefined) {
+    return true;
+  }
 
-      return quoted.startsWith("'") ? "''" : match;
-    },
-  );
-
-  return [...expandable.matchAll(commandSubstitution)].length;
+  return commands.filter((command) => command.words.length > 0).length > 1;
 };
-
-const lineCommandCount = (shell: string) =>
-  withoutQuotesOrComments(shell)
-    .replaceAll(backslashContinuation, ' ')
-    .replaceAll(operatorContinuation, '$1 ')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line !== '')
-    .flatMap((line) => line.split(commandSeparator))
-    .filter((command) => command.trim() !== '').length;
-
-const commandCount = (shell: string) => lineCommandCount(shell) + substitutionCount(shell);
 
 // A `console` block holds a session, so only its `$ ` prompt lines are commands.
 const shellOf = (language: string, body: string): string | undefined => {
@@ -131,11 +109,24 @@ const shellOf = (language: string, body: string): string | undefined => {
   return shellLanguages.has(language) ? body : undefined;
 };
 
-const isMultiCommandShellBlock = (match: RegExpMatchArray) => {
-  const language = (match[2] ?? '').trim().split(/\s+/)[0] ?? '';
-  const shell = shellOf(language, match[3] ?? '');
+// A heredoc terminator must start its line, so remove the list indentation a block shares.
+const withoutSharedIndentation = (body: string) => {
+  const lines = body.split('\n');
 
-  return shell !== undefined && commandCount(shell) > 1;
+  const indentations = lines
+    .filter((line) => line.trim() !== '')
+    .map((line) => /^[ \t]*/.exec(line)?.[0].length ?? 0);
+
+  const shared = Math.min(...indentations, Number.POSITIVE_INFINITY);
+
+  return Number.isFinite(shared) ? lines.map((line) => line.slice(shared)).join('\n') : body;
+};
+
+const isMultiCommandShellBlock = (match: RegExpMatchArray) => {
+  const language = (match[3] ?? '').trim().split(/\s+/)[0] ?? '';
+  const shell = shellOf(language, withoutSharedIndentation(match[4] ?? ''));
+
+  return shell !== undefined && holdsSeveralCommands(shell);
 };
 
 // Trimming each line keeps a block's identity when its list indentation changes.
@@ -148,7 +139,7 @@ export const blockIdentity = (body: string) => {
 const multiCommandShellBlocks = (markdown: string) =>
   [...markdown.matchAll(fencedCodeBlock)]
     .filter(isMultiCommandShellBlock)
-    .map((match) => blockIdentity(match[3] ?? ''));
+    .map((match) => blockIdentity(match[4] ?? ''));
 
 // Each allowlist entry covers one block, so a copy of a listed block is reported.
 const matchAllowedBlocks = (blocks: readonly string[], allowed: readonly string[]) => {

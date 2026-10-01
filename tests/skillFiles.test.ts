@@ -115,6 +115,26 @@ it.each<[string, string, SkillProblemKind]>([
     'broken-link',
   ],
   [
+    'a missing link target with a parenthesized title',
+    `${validFrontmatter('demo')}Use [the template](template.md (Template)).\n`,
+    'broken-link',
+  ],
+  [
+    'a link target that does not decode',
+    `${validFrontmatter('demo')}Reach [full coverage](100%).\n`,
+    'broken-link',
+  ],
+  [
+    'a broken link after a longer closing fence',
+    `${validFrontmatter('demo')}\`\`\`text\nSample.\n\`\`\`\`\n\nUse [the template](template.md).\n`,
+    'broken-link',
+  ],
+  [
+    'an unknown heading after a longer closing fence',
+    `${validFrontmatter('demo')}~~~text\nSample.\n~~~~~\n\n## Notes\n`,
+    'unknown-heading',
+  ],
+  [
     'a missing angle-bracket link target',
     `${validFrontmatter('demo')}Use [the template](<body template.md>).\n`,
     'broken-link',
@@ -151,8 +171,23 @@ it.each<[string, string, SkillProblemKind]>([
     'multi-command-shell-block',
   ],
   [
+    'commands in process substitutions',
+    shellBlock('diff <(sort a) <(sort b)'),
+    'multi-command-shell-block',
+  ],
+  [
+    'a shell block that does not parse',
+    shellBlock('echo "unterminated'),
+    'multi-command-shell-block',
+  ],
+  [
     'a command run in the background',
     shellBlock('git fetch & git status'),
+    'multi-command-shell-block',
+  ],
+  [
+    'a command after a heredoc in a list item',
+    `${validFrontmatter('demo')}1. Run:\n\n   \`\`\`sh\n   cat <<'EOF'\n   data\n   EOF\n   git status\n   \`\`\`\n`,
     'multi-command-shell-block',
   ],
   [
@@ -259,6 +294,16 @@ it('accepts valid links, code, words that contain adr, and one-command shell blo
     '',
     '```sh',
     "linear api 'query { issue { children { nodes { id } } } }' --variable 'a=b && c; d | e'",
+    '```',
+    '',
+    '```sh',
+    "cat > notes.md <<'EOF'",
+    'first; second | third',
+    'EOF',
+    '```',
+    '',
+    '```sh',
+    'echo foo\\&bar\\;baz',
     '```',
     '',
     '```sh',
