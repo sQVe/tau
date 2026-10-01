@@ -37,7 +37,7 @@ PR against `main`.
 3. The manager starts one slice at a time: it creates the slice branch and the slice's agent
    tickets. The user approves each slice start once.
 4. Workers do the agent tickets, and the slice goes through review, a PR, and merge. Then the next
-   slice starts.
+   slice starts, unless it already started stacked on this one.
 
 ### Tickets
 
