@@ -747,11 +747,14 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       widgetTimer = undefined;
     }
 
-    void runtime
+    runtime
       .getController()
       .resume(context.sessionManager.getSessionId())
       .then(() => {
         refreshWidget(context);
+      })
+      .catch((error: unknown) => {
+        context.ui.notify(`Saved workers could not be reattached: ${String(error)}`, 'error');
       });
 
     refreshWidget(context);

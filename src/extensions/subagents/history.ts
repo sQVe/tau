@@ -205,7 +205,7 @@ const searchOutcome = (query: string, count: number): string => {
     return 'list';
   }
 
-  if (!count) {
+  if (count === 0) {
     return 'notFound';
   }
 
@@ -374,7 +374,7 @@ const candidatePreview = (candidate: Candidate) => {
       : {}),
   };
 
-  return truncatedFields.length
+  return truncatedFields.length > 0
     ? { ...result, truncatedFields: [...new Set(truncatedFields)] }
     : result;
 };
@@ -407,7 +407,7 @@ export const historyPage = (
     totalMatches: history.candidates.length,
     ...(nextOffset === undefined ? {} : { nextOffset }),
     candidates,
-    ...(diagnostics.length ? { diagnostics } : {}),
+    ...(diagnostics.length > 0 ? { diagnostics } : {}),
   });
 
   for (const candidate of history.candidates.slice(offset, offset + limit)) {
@@ -417,7 +417,7 @@ export const historyPage = (
     if (size > historyByteBudget) {
       candidates.pop();
 
-      if (!candidates.length) {
+      if (candidates.length === 0) {
         throw new Error(
           'A history reference exceeds the display budget. Inspect saved session/task files directly.',
         );

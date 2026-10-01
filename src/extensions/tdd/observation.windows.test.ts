@@ -1,20 +1,17 @@
-import type * as nodePath from 'node:path';
-
 import { expect, it, vi } from 'vitest';
 
 import { createTestObservation } from './observation.js';
 import { runTests } from './runner/vitest.js';
-import type * as runnerModule from './runner/vitest.js';
 
 // Exercise Node's Windows path rules on every host, without claiming Windows runner coverage.
-vi.mock('node:path', async (importOriginal) => {
-  const path = await importOriginal<typeof nodePath>();
+vi.mock(import('node:path'), async (importOriginal) => {
+  const path = await importOriginal();
 
   return { ...path, ...path.win32 };
 });
 
-vi.mock('./runner/vitest.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof runnerModule>()),
+vi.mock(import('./runner/vitest.js'), async (importOriginal) => ({
+  ...(await importOriginal()),
   runTests: vi.fn<typeof runTests>(),
 }));
 

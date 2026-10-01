@@ -5,7 +5,7 @@ export const instructionSetNames = ['writing', 'coding', 'workflow'] as const;
 export type InstructionSetName = (typeof instructionSetNames)[number];
 
 export const isInstructionSetName = (name: string): name is InstructionSetName =>
-  (instructionSetNames as readonly string[]).includes(name);
+  instructionSetNames.some((setName) => setName === name);
 
 export const readInstructionSet = async (name: InstructionSetName): Promise<string> => {
   const path = new URL(`../extensions/${name}/instructions.md`, import.meta.url);

@@ -1,4 +1,3 @@
-import type * as fileSystem from 'node:fs';
 import {
   fsyncSync,
   mkdirSync,
@@ -34,15 +33,7 @@ import type { HerdrClient } from './inspect.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 import { EvidenceUnavailableError, taskStatus } from './record.js';
 
-vi.mock('node:fs', async (importOriginal) => {
-  const original = await importOriginal<typeof fileSystem>();
-
-  return {
-    ...original,
-    fsyncSync: vi.fn<typeof fsyncSync>(original.fsyncSync),
-    readdirSync: vi.fn<typeof readdirSync>(original.readdirSync),
-  };
-});
+vi.mock(import('node:fs'), { spy: true });
 
 const originalRunClient = cancellationModule.runClient;
 
@@ -2975,6 +2966,35 @@ it('keeps the original deadline and reports active-work cancellation failure hon
   expect(notifications).toHaveLength(1);
   await vi.advanceTimersByTimeAsync(20_000);
   expect(notifications).toHaveLength(1);
+});
+
+it('keeps a failed timeout notice in worker status once', async ({ onTestFinished }) => {
+  vi.useFakeTimers();
+  const { directory, client, input } = setup(onTestFinished);
+
+  const controller = new WorkerController(directory, client, () => {
+    throw new Error('Injected notice failure.');
+  });
+
+  onTestFinished(() => {
+    controller.close();
+  });
+
+  const launched = await controller.launch(input);
+  await vi.advanceTimersByTimeAsync(20_000);
+
+  expect(readEvent(launched.directory, launched.taskId, 'timeout')).toBeDefined();
+
+  let failure = '';
+
+  try {
+    controller.status(launched.taskId, 'parent-id');
+  } catch (error) {
+    failure = String(error);
+  }
+
+  // The notice failure appears exactly once.
+  expect(failure.split('Injected notice failure.')).toHaveLength(2);
 });
 
 it('preserves incomplete output and malformed evidence without retrying startup', async ({

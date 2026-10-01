@@ -17,8 +17,8 @@ import {
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 
-vi.mock('node:fs/promises', async (importOriginal) => {
-  const original = await importOriginal<typeof fileSystem>();
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const original = await importOriginal();
 
   return {
     ...original,

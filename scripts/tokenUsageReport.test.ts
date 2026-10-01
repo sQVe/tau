@@ -26,7 +26,7 @@ const header = (at: number) =>
 
 const usage = (tokens: Tokens) => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ...tokens });
 
-const entry = (type: string, id: string, at: number, fields: object) =>
+const entry = (type: string, id: string, at: number, fields: Record<string, unknown>) =>
   JSON.stringify({ type, id, timestamp: minute(at), ...fields });
 
 const assistant = (id: string, at: number, tokens: Tokens | undefined, model = 'opus') =>

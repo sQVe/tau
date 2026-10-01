@@ -5,15 +5,14 @@ import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import snippetsExtension from './index.js';
 import { openSnippetMenu } from './menu.js';
 import { loadSnippets } from './snippet.js';
-import type * as snippetModule from './snippet.js';
 import type { Snippet } from './types.js';
 
-vi.mock('./snippet.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof snippetModule>()),
+vi.mock(import('./snippet.js'), async (importOriginal) => ({
+  ...(await importOriginal()),
   loadSnippets: vi.fn<typeof loadSnippets>(),
 }));
 
-vi.mock('./menu.js', () => ({ openSnippetMenu: vi.fn<typeof openSnippetMenu>() }));
+vi.mock(import('./menu.js'), () => ({ openSnippetMenu: vi.fn<typeof openSnippetMenu>() }));
 
 const snippet: Snippet = {
   id: 'review.md',

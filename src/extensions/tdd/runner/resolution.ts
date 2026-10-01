@@ -16,7 +16,7 @@ export const extractBinPath = (manifest: unknown): string | null => {
     return null;
   }
 
-  const binary: unknown = (manifest as { bin?: unknown }).bin;
+  const binary: unknown = 'bin' in manifest ? manifest.bin : undefined;
 
   if (typeof binary === 'string') {
     return binary;
@@ -26,7 +26,7 @@ export const extractBinPath = (manifest: unknown): string | null => {
     return null;
   }
 
-  const entry: unknown = (binary as { vitest?: unknown }).vitest;
+  const entry: unknown = 'vitest' in binary ? binary.vitest : undefined;
 
   return typeof entry === 'string' ? entry : null;
 };

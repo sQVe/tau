@@ -88,10 +88,13 @@ export const savedHandle = (directory: string, task: Task): Handle => {
 
 // Startup, replies, polling, dispatch, stop, and cleanup for one worker share its handle and deadline.
 export class TaskController {
-  constructor(
-    readonly handle: Handle,
-    private readonly context: TaskContext,
-  ) {}
+  readonly handle: Handle;
+  private readonly context: TaskContext;
+
+  constructor(handle: Handle, context: TaskContext) {
+    this.handle = handle;
+    this.context = context;
+  }
 
   get closed(): boolean {
     return this.context.closed();
@@ -101,9 +104,22 @@ export class TaskController {
     return (argumentsList) => this.context.client(argumentsList, workBudget(this.handle), signal);
   }
 
+  // Timers and listeners cannot await a stop. A stop whose failure notice also fails keeps the
+  // error for the next status read. The stop may have recorded the same error already.
+  private stopInBackground(reason: StopReason, failureDetail?: string): void {
+    this.stop(reason, failureDetail).catch((error: unknown) => {
+      const { recordErrors } = this.handle.cleanup;
+      const message = String(error);
+
+      if (!recordErrors.includes(message)) {
+        recordErrors.push(message);
+      }
+    });
+  }
+
   arm(launchSignal: AbortSignal): void {
     const abortLaunch = () => {
-      void this.stop('cancelled');
+      this.stopInBackground('cancelled');
     };
 
     launchSignal.addEventListener('abort', abortLaunch, { once: true });
@@ -114,7 +130,7 @@ export class TaskController {
 
     this.handle.timer = setTimeout(
       () => {
-        void this.stop('timeout');
+        this.stopInBackground('timeout');
       },
       Math.max(1, remainingWorkBudget(this.handle)),
     );
@@ -157,7 +173,7 @@ export class TaskController {
     const packages = handle.startup.extensionPackages;
 
     // Pi exits before Tau's worker extension runs when a -e package fails to load.
-    if (error instanceof WorkerExitedError && packages.length) {
+    if (error instanceof WorkerExitedError && packages.length > 0) {
       return `${detail} Pi exits at startup when a package fails to load. Check each profile package with \`pi -e <source>\`: ${packages.join(', ')}.`;
     }
 
@@ -239,7 +255,7 @@ export class TaskController {
   private noticeStatus() {
     const { handle } = this;
 
-    if (handle.cleanup.recordErrors.length) {
+    if (handle.cleanup.recordErrors.length > 0) {
       throw new Error(handle.cleanup.recordErrors.join('; '));
     }
 
@@ -299,7 +315,7 @@ export class TaskController {
 
     try {
       if (remainingWorkBudget(handle) <= 0) {
-        void this.stop('timeout');
+        this.stopInBackground('timeout');
 
         return;
       }
@@ -312,7 +328,7 @@ export class TaskController {
         handle.identity.owned !== undefined && processAbsent(handle.identity.owned.processId);
 
       if (settled || absent) {
-        void this.stop('completion');
+        this.stopInBackground('completion');
 
         return;
       }
@@ -320,7 +336,7 @@ export class TaskController {
       this.notifyPendingQuestion();
       this.poll();
     } catch (error) {
-      void this.stop('failure', `Worker evidence unavailable: ${String(error)}. No retry.`);
+      this.stopInBackground('failure', `Worker evidence unavailable: ${String(error)}. No retry.`);
     }
   }
 

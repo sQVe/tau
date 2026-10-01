@@ -467,7 +467,7 @@ const addReferencedTasks = (
 ): void => {
   // Tasks published late are appended here and checked by this same loop.
   for (const { task } of tasks) {
-    if (!unpublished.size) {
+    if (unpublished.size === 0) {
       return;
     }
 

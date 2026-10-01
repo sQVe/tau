@@ -20,20 +20,7 @@ import { readWorkerFacts, taskRecordStatus } from './controller/record.js';
 import * as questions from './questionRecords.js';
 import * as records from './records.js';
 
-vi.mock('node:fs', async (importOriginal) => {
-  const original = await importOriginal<typeof fileSystem>();
-
-  return {
-    ...original,
-    fsyncSync: vi.fn<typeof fsyncSync>(original.fsyncSync),
-    readSync: vi.fn<typeof original.readSync>(original.readSync),
-    openSync: vi.fn<typeof original.openSync>(original.openSync),
-    closeSync: vi.fn<typeof original.closeSync>(original.closeSync),
-    statSync: vi.fn<typeof original.statSync>(original.statSync),
-    lstatSync: vi.fn<typeof original.lstatSync>(original.lstatSync),
-    readdirSync: vi.fn<typeof original.readdirSync>(original.readdirSync),
-  };
-});
+vi.mock(import('node:fs'), { spy: true });
 
 afterEach(() => vi.resetAllMocks());
 
@@ -577,12 +564,18 @@ it.each([
       return original.openSync(path, ...rest);
     });
 
-    vi.mocked(fileSystem.lstatSync).mockImplementation(((path: string, options: object) =>
+    vi.mocked(fileSystem.lstatSync).mockImplementation(((
+      path: string,
+      options: { throwIfNoEntry: false },
+    ) =>
       isHidden(path)
         ? undefined
         : original.lstatSync(path, options)) as typeof fileSystem.lstatSync);
 
-    vi.mocked(fileSystem.readdirSync).mockImplementation(((path: string, options: object) => {
+    vi.mocked(fileSystem.readdirSync).mockImplementation(((
+      path: string,
+      options: { withFileTypes: true },
+    ) => {
       if (typeof path === 'string' && hidden.delete(path)) {
         return [];
       }

@@ -92,6 +92,11 @@ const refreshDirty = async (state: StatusbarState, context: ExtensionContext): P
   }
 };
 
+const startRefresh = (state: StatusbarState, context: ExtensionContext): void => {
+  // oxlint-disable-next-line typescript/no-floating-promises -- readDirty turns every git failure into a clean result, and requestRender only schedules a frame, so a refresh cannot reject.
+  void refreshDirty(state, context);
+};
+
 const createFooter = (
   pi: ExtensionAPI,
   state: StatusbarState,
@@ -105,11 +110,11 @@ const createFooter = (
     };
 
     const unsubscribe = footerData.onBranchChange(() => {
-      void refreshDirty(state, context);
+      startRefresh(state, context);
     });
 
     // Pi disposes the old footer before calling this factory. Start after that disposal.
-    void refreshDirty(state, context);
+    startRefresh(state, context);
 
     return {
       dispose() {
@@ -165,7 +170,7 @@ export default function statusbarExtension(pi: ExtensionAPI) {
   // Pi awaits tool_result handlers, so footer reads must run in the background.
   pi.on('tool_result', (_event, context) => {
     if (context.mode === 'tui' && state.requestRender !== undefined) {
-      void refreshDirty(state, context);
+      startRefresh(state, context);
     }
   });
 }

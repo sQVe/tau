@@ -94,15 +94,23 @@ const visibleOptions = (blocks: string[][], cursor: number, room: number): strin
 };
 
 class QuestionDialog implements Component {
+  private readonly questions: DialogQuestion[];
+  private readonly theme: Theme;
+  private readonly terminal: TUI;
+  private readonly done: (result: DialogResult) => void;
   private state: QuestionnaireState;
   private readonly inputs: Input[];
 
   constructor(
-    private readonly questions: DialogQuestion[],
-    private readonly theme: Theme,
-    private readonly terminal: TUI,
-    private readonly done: (result: DialogResult) => void,
+    questions: DialogQuestion[],
+    theme: Theme,
+    terminal: TUI,
+    done: (result: DialogResult) => void,
   ) {
+    this.questions = questions;
+    this.theme = theme;
+    this.terminal = terminal;
+    this.done = done;
     this.state = initialState(questions.length);
 
     this.inputs = questions.map(

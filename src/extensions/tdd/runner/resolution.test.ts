@@ -219,7 +219,9 @@ it('bounds and sanitizes resolution paths without copying error messages', async
   expect(JSON.stringify(result)).not.toContain('private-message');
   expect(JSON.stringify(result)).not.toContain('\\u001b');
   expect(JSON.stringify(result)).not.toContain('\\nxxx');
-  expect('message' in result && result.message.length).toBeLessThan(1000);
+  const messageLength = 'message' in result ? result.message.length : Number.POSITIVE_INFINITY;
+
+  expect(messageLength).toBeLessThan(1000);
 });
 
 it('does not echo arbitrary resolver error names codes or thrown values', async () => {

@@ -69,7 +69,7 @@ export default defineConfig({
     },
   },
   lint: {
-    plugins: ['typescript', 'unicorn', 'oxc', 'import', 'vitest', 'node'],
+    plugins: ['typescript', 'unicorn', 'oxc', 'import', 'vitest', 'node', 'promise'],
     categories: {
       correctness: 'error',
       suspicious: 'error',
@@ -78,7 +78,7 @@ export default defineConfig({
     options: {
       typeAware: true,
     },
-    jsPlugins: styleEnabled ? ['@stylistic/eslint-plugin', './scripts/stylePlugin.ts'] : [],
+    jsPlugins: styleEnabled ? ['@stylistic/eslint-plugin', './lint/plugin.ts'] : [],
     rules: {
       ...(styleEnabled
         ? {
@@ -111,6 +111,13 @@ export default defineConfig({
             'tau/max-condition-checks': 'error',
             'tau/no-enoent-literal': 'error',
             'tau/type-placement': 'error',
+            'tau/no-object-parameters': 'error',
+            'tau/no-reduce-accumulator-copy': 'error',
+            'tau/no-reflect-apply': 'error',
+            'tau/no-reflect-get': 'error',
+            'tau/no-unknown-type-aliases': 'error',
+            'tau/no-widen-then-assert': 'error',
+            'tau/require-safety-comment-for-type-assertion': 'error',
             '@stylistic/padding-line-between-statements': paddingRule(
               ...statementPadding,
               ...declarationPadding,
@@ -140,9 +147,19 @@ export default defineConfig({
       ],
       'unicorn/prefer-top-level-await': 'error',
       'eslint/no-warning-comments': 'error',
-      'typescript/unbound-method': 'off',
-      'typescript/no-extraneous-class': 'off',
-      'typescript/no-unsafe-enum-comparison': 'off',
+      'typescript/unbound-method': 'error',
+      'typescript/method-signature-style': 'error',
+      'vitest/prefer-import-in-mock': 'error',
+      'eslint/array-callback-return': 'error',
+      'eslint/no-loop-func': 'error',
+      'promise/no-multiple-resolved': 'error',
+      'promise/valid-params': 'error',
+      'promise/no-new-statics': 'error',
+      'promise/no-return-in-finally': 'error',
+      // The categories switch these on with the plugin. Cleanup callbacks need not return a value.
+      'promise/always-return': 'off',
+      'promise/no-callback-in-promise': 'off',
+      'promise/no-promise-in-callback': 'off',
       'oxc/no-async-endpoint-handlers': 'off',
       'oxc/no-this-in-exported-function': 'off',
 
@@ -169,7 +186,7 @@ export default defineConfig({
       'typescript/no-explicit-any': 'error',
       'typescript/no-non-null-assertion': 'error',
       'typescript/no-misused-promises': 'error',
-      'typescript/no-floating-promises': 'error',
+      'typescript/no-floating-promises': ['error', { ignoreVoid: false }],
       'typescript/await-thenable': 'error',
       'typescript/no-unsafe-argument': 'error',
       'typescript/no-unsafe-assignment': 'error',
@@ -229,6 +246,7 @@ export default defineConfig({
       'unicorn/prefer-type-error': 'error',
       'unicorn/no-new-buffer': 'error',
       'unicorn/no-length-as-slice-end': 'error',
+      'unicorn/explicit-length-check': 'error',
       'unicorn/no-abusive-eslint-disable': 'error',
       'unicorn/no-document-cookie': 'error',
       'unicorn/no-useless-error-capture-stack-trace': 'error',
@@ -413,6 +431,8 @@ export default defineConfig({
                   ...statementPadding,
                   ...multilinePadding,
                 ),
+                // Tests assert fakes into the types they stand in for.
+                'tau/require-safety-comment-for-type-assertion': 'off' as const,
               },
             },
           ]
@@ -435,6 +455,8 @@ export default defineConfig({
           'eslint/max-depth': 'off',
           // Tests isolate the real process environment.
           'node/no-process-env': 'off',
+          // Assertions read methods off fakes and spies without calling them.
+          'typescript/unbound-method': 'off',
           // Vitest prints a second argument with the failure, such as the fix for a structure check.
           'vitest/valid-expect': ['error', { maxArgs: 2 }],
           // Shared scenario runners assert inside the helper.

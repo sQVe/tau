@@ -60,7 +60,7 @@ export const launchModels = (
 const configuredModels = (context: ModelContext, location: ConfigLocation): string => {
   const models = launchModels(context, location);
 
-  return models.length ? ` Configured models: ${models.join(', ')}.` : '';
+  return models.length > 0 ? ` Configured models: ${models.join(', ')}.` : '';
 };
 
 const resolveModel = (
@@ -248,7 +248,7 @@ export const checkWorkerRuntime = (
   const tools = workerTools(loadout);
   const missing = tools.filter((tool) => !registered.has(tool));
 
-  if (missing.length) {
+  if (missing.length > 0) {
     throw new Error(`Worker profile tools are not registered: ${missing.join(', ')}.`);
   }
 

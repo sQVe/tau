@@ -361,7 +361,7 @@ it('keeps the selected task when fresh rows resort after a worker stops', () => 
     { ...rows[0]!, taskId: 'task-new-attention', name: 'worker-new', question: 'Choose a tool.' },
   ];
 
-  const mutableView = view as unknown as { setRows(nextRows: WorkerWidgetRow[]): void };
+  const mutableView = view as unknown as { setRows: (nextRows: WorkerWidgetRow[]) => void };
 
   mutableView.setRows(changedRows);
   const details = view.render(72).join('\n');
@@ -843,7 +843,7 @@ it('keeps the selected details scroll across an unchanged-selection refresh', ()
   view.handleInput('\u0004');
   const before = view.render(72).join('\n');
 
-  const mutableView = view as unknown as { setRows(nextRows: WorkerWidgetRow[]): void };
+  const mutableView = view as unknown as { setRows: (nextRows: WorkerWidgetRow[]) => void };
 
   mutableView.setRows([{ ...scrollRow }]);
   expect(view.render(72).join('\n')).toBe(before);

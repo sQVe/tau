@@ -18,10 +18,9 @@ import tddExtension from './index.js';
 import { configSummary, runContext, summarize } from './render.js';
 import type { RunnerResult } from './runner/types.js';
 import { runTests } from './runner/vitest.js';
-import type * as runnerModule from './runner/vitest.js';
 
-vi.mock('./runner/vitest.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof runnerModule>()),
+vi.mock(import('./runner/vitest.js'), async (importOriginal) => ({
+  ...(await importOriginal()),
   runTests: vi.fn<typeof runTests>(),
 }));
 

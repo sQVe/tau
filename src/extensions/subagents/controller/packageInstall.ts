@@ -113,7 +113,7 @@ export class InstallQueue {
     try {
       await untilAborted(previous, signal, source);
     } catch (error) {
-      void previous.then(release);
+      void previous.then(release, release);
 
       throw error;
     }
@@ -172,7 +172,7 @@ export const installWorkerPackages = async (
   queue: InstallQueue,
   signal: AbortSignal,
 ): Promise<string[]> => {
-  if (!loadout.packages.length) {
+  if (loadout.packages.length === 0) {
     return [];
   }
 

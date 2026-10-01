@@ -23,7 +23,7 @@ import { publish, readEvent, readReport, readTask, recordEvent } from './records
 import { textLimit } from './types.js';
 import workerExtension from './workerExtension.js';
 
-vi.mock('./loadout.js', () => ({
+vi.mock(import('./loadout.js'), () => ({
   checkWorkerRuntime: vi.fn<typeof checkWorkerRuntime>(),
 }));
 

@@ -115,9 +115,10 @@ const readStagedBefore = async (
 
   return {
     files,
-    entries: stagedRequests.length
-      ? await readIndexEntries(execution.pi, execution.context.cwd, stagedRequests)
-      : new Map<string, string>(),
+    entries:
+      stagedRequests.length > 0
+        ? await readIndexEntries(execution.pi, execution.context.cwd, stagedRequests)
+        : new Map<string, string>(),
   };
 };
 
@@ -327,11 +328,11 @@ const buildHookReport = (
   const sensitivePaths = committedPaths.filter((file) => isSensitivePath(file));
   const reportLines: string[] = [];
 
-  if (sensitivePaths.length) {
+  if (sensitivePaths.length > 0) {
     reportLines.push(`Warning: committed sensitive paths: ${sensitivePaths.join(', ')}`);
   }
 
-  if (hookChanges.files.length) {
+  if (hookChanges.files.length > 0) {
     reportLines.push(`Hook changed paths: ${hookChanges.files.join(', ')}`);
   }
 
