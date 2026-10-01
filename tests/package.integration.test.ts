@@ -16,6 +16,7 @@ import {
   SessionManager,
   SettingsManager,
   createAgentSession,
+  parseFrontmatter,
 } from '@earendil-works/pi-coding-agent';
 import type {
   ExtensionAPI,
@@ -207,10 +208,21 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
 
     expect(codingInstructions).not.toContain('bulk_read');
 
+    const prSkill = await readFile(join(packageRoot, 'skills/pr/SKILL.md'), 'utf8');
+
+    const { metadata } = parseFrontmatter<{ metadata?: Record<string, unknown> }>(
+      prSkill,
+    ).frontmatter;
+
+    const prRequiredFor = metadata?.['required-for'];
+
+    expect(prRequiredFor).toEqual(expect.any(String));
+
     const blocks = [
       writingInstructions.trim(),
       codingInstructions.trim(),
       workflowInstructions.trim(),
+      String(prRequiredFor),
       ...delegationGuidelines,
       ...bulkReadGuidelines,
       ...commitToolGuidelines,

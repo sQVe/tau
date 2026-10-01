@@ -6,8 +6,7 @@ these defaults.
 
 ## Stay in your own checkout
 
-- Never edit, test, or commit another worktree. Send the work to that workspace with the handoff
-  skill.
+- Never edit, test, or commit another worktree.
 - Never discard uncommitted changes you did not make. To set your own work aside, commit it instead
   of stashing.
 

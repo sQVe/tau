@@ -5,6 +5,9 @@ description:
   notes, checks added comments, reuses or runs a code review and checks, then previews the title,
   body, base, and draft status for approval before it pushes or publishes. Use it for "open a PR",
   "create a pull request", "update the PR", or "mark the PR ready".
+metadata:
+  required-for:
+    creating, updating, or marking ready a pull request, including as a step in a larger task
 ---
 
 # Pull request
