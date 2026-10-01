@@ -23,6 +23,10 @@ ruleTester.run('no-unknown-type-aliases', noUnknownTypeAliasesRule, {
       errors: [hides('Payload')],
     },
     {
+      code: 'export type Same<Value> = Value;\nexport type Payload = Same<Same<unknown>>;',
+      errors: [hides('Payload')],
+    },
+    {
       code: 'type Raw = unknown;\nexport type Wrap<Raw> = Raw;\nexport type Name = Wrap<string>;',
       errors: [hides('Raw')],
     },

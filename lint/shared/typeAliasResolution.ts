@@ -5,7 +5,7 @@ import { lexicalTypeParameterNames } from './lexicalTypeParameters.ts';
 
 type VisitorKeys = Readonly<Record<string, readonly string[]>>;
 
-type Substitutions = ReadonlyMap<string, Substitution>;
+type Substitutions = ReadonlyMap<string, Resolution>;
 
 type TypeMatcher = (type: ESTree.TSType, matches: (child: ESTree.TSType) => boolean) => boolean;
 
@@ -17,11 +17,6 @@ interface DeclaredType {
 
 interface TypeBinding extends DeclaredType {
   scope: ESTree.Node;
-}
-
-interface Substitution {
-  substitutions: Substitutions;
-  type: ESTree.TSType;
 }
 
 interface Resolution {
@@ -190,11 +185,12 @@ const visibleTypeAlias = (
 const aliasSubstitutions = (
   alias: ESTree.TSTypeAliasDeclaration,
   reference: ESTree.TSTypeReference,
-  base: Substitutions,
+  caller: Resolution,
+  expanding: ReadonlySet<ESTree.TSTypeAliasDeclaration>,
 ): Substitutions | undefined => {
   const typeArguments = reference.typeArguments?.params ?? [];
   // The alias body sits outside the caller's scope, so it sees only its own parameters.
-  const next = new Map<string, Substitution>();
+  const next = new Map<string, Resolution>();
 
   for (const [index, parameter] of (alias.typeParameters?.params ?? []).entries()) {
     const explicitArgument = typeArguments[index];
@@ -204,13 +200,14 @@ const aliasSubstitutions = (
       return undefined;
     }
 
-    // A default may refer to earlier parameters, so it reads the substitutions built so far.
-    const argumentSubstitutions = explicitArgument === undefined ? next : base;
+    // An explicit argument resolves in the caller's context, recursion set included. A default
+    // may refer to earlier parameters, so it reads the substitutions built so far.
+    const argumentContext =
+      explicitArgument === undefined
+        ? { substitutions: new Map(next), resolving: expanding }
+        : { substitutions: caller.substitutions, resolving: caller.resolving };
 
-    next.set(parameter.name.name, {
-      type: argument,
-      substitutions: new Map(argumentSubstitutions),
-    });
+    next.set(parameter.name.name, { type: argument, ...argumentContext });
   }
 
   return next;
@@ -231,7 +228,7 @@ const resolveReference = (
   const hasTypeArguments = (reference.typeArguments?.params.length ?? 0) > 0;
 
   if (substitution !== undefined && !hasTypeArguments) {
-    return { ...current, type: substitution.type, substitutions: substitution.substitutions };
+    return substitution;
   }
 
   const alias = visibleTypeAlias(name, reference, environment);
@@ -240,17 +237,14 @@ const resolveReference = (
     return undefined;
   }
 
-  const substitutions = aliasSubstitutions(alias, reference, current.substitutions);
+  const resolving = new Set([...current.resolving, alias]);
+  const substitutions = aliasSubstitutions(alias, reference, current, resolving);
 
   if (substitutions === undefined) {
     return undefined;
   }
 
-  return {
-    type: alias.typeAnnotation,
-    substitutions,
-    resolving: new Set([...current.resolving, alias]),
-  };
+  return { type: alias.typeAnnotation, substitutions, resolving };
 };
 
 // Match a type after resolving visible aliases and substituting their type parameters.
