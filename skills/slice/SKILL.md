@@ -61,12 +61,13 @@ before anything was written to Linear.
    read its children in sub-issue order:
 
    ```sh
-   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title subIssueSortOrder branchName } } } }' --variable id=<container>
+   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title subIssueSortOrder attachments { nodes { url } } } } } }' --variable id=<container>
    ```
 
-   Sort the nodes by `subIssueSortOrder`, lowest first. A slice is merged only when
-   `gh pr list --head <branchName> --state merged --json number` lists a PR. Its Linear status is
-   not proof either way. For each slice that exists, read its dependencies with
+   Sort the nodes by `subIssueSortOrder`, lowest first. A slice is merged only when one of its
+   attachment URLs is a pull request and `gh pr view <url> --json state` returns `MERGED`. Its
+   Linear status is not proof either way. If a slice's status says done but no linked PR is merged,
+   stop and ask the user. For each slice that exists, read its dependencies with
    `linear issue relation list <slice>` and keep the lines of the form `<slice> blocked-by <other>`.
 
 3. Split the design into slices.
