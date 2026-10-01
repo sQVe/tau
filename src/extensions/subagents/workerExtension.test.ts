@@ -23,8 +23,8 @@ import { publish, readEvent, readReport, readTask, recordEvent } from './records
 import { textLimit } from './types.js';
 import workerExtension from './workerExtension.js';
 
-// eslint-disable-next-line tau/no-module-mocking -- workerExtension.ts imports checkWorkerRuntime directly.
-vi.mock('./loadout.js', () => ({
+// eslint-disable-next-line tau/no-module-mocking -- Makes the worker runtime check pass or refuse without a matching model, tools, and trusted project. workerExtension receives only the Pi API, so the check cannot be passed in.
+vi.mock(import('./loadout.js'), () => ({
   checkWorkerRuntime: vi.fn<typeof checkWorkerRuntime>(),
 }));
 

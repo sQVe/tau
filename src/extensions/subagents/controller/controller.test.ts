@@ -1,4 +1,3 @@
-import type * as fileSystem from 'node:fs';
 import {
   fsyncSync,
   mkdirSync,
@@ -34,16 +33,8 @@ import type { HerdrClient } from './inspect.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 import { EvidenceUnavailableError, taskStatus } from './record.js';
 
-// eslint-disable-next-line tau/no-module-mocking -- records.ts imports node:fs directly.
-vi.mock('node:fs', async (importOriginal) => {
-  const original = await importOriginal<typeof fileSystem>();
-
-  return {
-    ...original,
-    fsyncSync: vi.fn<typeof fsyncSync>(original.fsyncSync),
-    readdirSync: vi.fn<typeof readdirSync>(original.readdirSync),
-  };
-});
+// eslint-disable-next-line tau/no-module-mocking -- Injects an fsync failure while a task record is published and counts directory reads. WorkerController reaches node:fs through records.ts, which takes no file system.
+vi.mock(import('node:fs'), { spy: true });
 
 const originalRunClient = cancellationModule.runClient;
 
