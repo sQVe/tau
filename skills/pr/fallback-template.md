@@ -6,7 +6,7 @@ have nothing to say.
 ```markdown
 **One sentence that states what the PR changes.**
 
-Two or three sentences of context: why the change is needed and what the reader should know first.
+At most three sentences of context: why the change is needed and what the diff cannot show.
 
 #### Decisions
 
@@ -33,5 +33,4 @@ Optional. Steps, order, or risks for whoever deploys the change.
 Fixes #123
 ```
 
-The closing line is optional. Use `Fixes` only for an issue the PR completes, and `Related to` for
-the rest.
+The closing line is optional.
