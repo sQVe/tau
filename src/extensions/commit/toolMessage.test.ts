@@ -17,7 +17,6 @@ import {
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 
-// eslint-disable-next-line tau/no-module-mocking -- Makes removal of the temporary message directory fail, which a real file system cannot do on demand. createCommitTool takes no file system, so rm cannot be passed in.
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const original = await importOriginal();
 

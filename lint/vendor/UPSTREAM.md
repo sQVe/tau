@@ -10,7 +10,6 @@ The ports follow Tau's code style and run under the `tau` plugin. They use `crea
 
 ## Ported rules
 
-- `no-module-mocking`: [noModuleMocking.ts](../rules/noModuleMocking.ts)
 - `no-object-parameters`: [noObjectParameters.ts](../rules/noObjectParameters.ts)
 - `no-reduce-accumulator-copy`: [noReduceAccumulatorCopy.ts](../rules/noReduceAccumulatorCopy.ts)
 - `no-reflect-apply`: [noReflectApply.ts](../rules/noReflectApply.ts)
@@ -34,6 +33,7 @@ The ports follow Tau's code style and run under the `tau` plugin. They use `crea
 | `no-array-filter-map`                | Its fix needs iterator helpers, which the ES2024 TypeScript lib lacks.                  |
 | `require-readable-spacing`           | Tau's `@stylistic/padding-line-between-statements` configuration sets blank lines.      |
 | `no-conditional-empty-object-spread` | Tau's coding instructions use this spread for optional properties.                      |
+| `no-module-mocking`                  | Tau's existing module mocks are all justified exceptions, so the rule only added noise. |
 | `no-shape-in-symbol-names`           | Left out of this port.                                                                  |
 | `no-runtime-typeof`                  | Left out of this port.                                                                  |
 | Effect rules                         | Tau does not use Effect.                                                                |

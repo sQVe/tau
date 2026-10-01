@@ -5,7 +5,6 @@ import { helperBeforeUseRule } from './rules/helperBeforeUse.ts';
 import { maxConditionChecksRule } from './rules/maxConditionChecks.ts';
 import { namingConventionRule } from './rules/namingConvention.ts';
 import { noEnoentLiteralRule } from './rules/noEnoentLiteral.ts';
-import { noModuleMockingRule } from './rules/noModuleMocking.ts';
 import { noObjectParametersRule } from './rules/noObjectParameters.ts';
 import { noReduceAccumulatorCopyRule } from './rules/noReduceAccumulatorCopy.ts';
 import { noReflectApplyRule } from './rules/noReflectApply.ts';
@@ -23,7 +22,6 @@ const tauPlugin: Plugin = {
     'max-condition-checks': maxConditionChecksRule,
     'naming-convention': namingConventionRule,
     'no-enoent-literal': noEnoentLiteralRule,
-    'no-module-mocking': noModuleMockingRule,
     'no-object-parameters': noObjectParametersRule,
     'no-reduce-accumulator-copy': noReduceAccumulatorCopyRule,
     'no-reflect-apply': noReflectApplyRule,

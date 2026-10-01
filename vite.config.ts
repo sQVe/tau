@@ -111,7 +111,6 @@ export default defineConfig({
             'tau/max-condition-checks': 'error',
             'tau/no-enoent-literal': 'error',
             'tau/type-placement': 'error',
-            'tau/no-module-mocking': 'error',
             'tau/no-object-parameters': 'error',
             'tau/no-reduce-accumulator-copy': 'error',
             'tau/no-reflect-apply': 'error',

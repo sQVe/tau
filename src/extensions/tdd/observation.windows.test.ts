@@ -4,14 +4,12 @@ import { createTestObservation } from './observation.js';
 import { runTests } from './runner/vitest.js';
 
 // Exercise Node's Windows path rules on every host, without claiming Windows runner coverage.
-// eslint-disable-next-line tau/no-module-mocking -- Applies Windows path rules on a POSIX host. createTestObservation takes no path module, so path.win32 cannot be passed in.
 vi.mock(import('node:path'), async (importOriginal) => {
   const path = await importOriginal();
 
   return { ...path, ...path.win32 };
 });
 
-// eslint-disable-next-line tau/no-module-mocking -- Returns chosen runner results instead of starting a nested Vitest process. createTestObservation takes no runner, so runTests cannot be passed in.
 vi.mock(import('./runner/vitest.js'), async (importOriginal) => ({
   ...(await importOriginal()),
   runTests: vi.fn<typeof runTests>(),

@@ -20,7 +20,6 @@ import { readWorkerFacts, taskRecordStatus } from './controller/record.js';
 import * as questions from './questionRecords.js';
 import * as records from './records.js';
 
-// eslint-disable-next-line tau/no-module-mocking -- Injects open, stat, read, and fsync failures into record I/O, which a real disk cannot produce on demand. The record functions take no file system, so node:fs cannot be passed in.
 vi.mock(import('node:fs'), { spy: true });
 
 afterEach(() => vi.resetAllMocks());

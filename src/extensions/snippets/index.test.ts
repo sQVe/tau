@@ -7,13 +7,11 @@ import { openSnippetMenu } from './menu.js';
 import { loadSnippets } from './snippet.js';
 import type { Snippet } from './types.js';
 
-// eslint-disable-next-line tau/no-module-mocking -- Replaces the snippet files on disk with a fixed list. snippetsExtension receives only the Pi API, so a loader cannot be passed in.
 vi.mock(import('./snippet.js'), async (importOriginal) => ({
   ...(await importOriginal()),
   loadSnippets: vi.fn<typeof loadSnippets>(),
 }));
 
-// eslint-disable-next-line tau/no-module-mocking -- Replaces the interactive menu, which waits for keyboard input, with a chosen selection. snippetsExtension receives only the Pi API, so a menu cannot be passed in.
 vi.mock(import('./menu.js'), () => ({ openSnippetMenu: vi.fn<typeof openSnippetMenu>() }));
 
 const snippet: Snippet = {

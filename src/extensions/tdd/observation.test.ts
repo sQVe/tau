@@ -10,7 +10,6 @@ import { createTestObservation, thrownErrorType } from './observation.js';
 import type { RunnerResult } from './runner/types.js';
 import { runTests } from './runner/vitest.js';
 
-// eslint-disable-next-line tau/no-module-mocking -- Returns chosen runner results instead of starting a nested Vitest process. createTestObservation takes no runner, so runTests cannot be passed in.
 vi.mock(import('./runner/vitest.js'), async (importOriginal) => ({
   ...(await importOriginal()),
   runTests: vi.fn<typeof runTests>(),
