@@ -53,7 +53,6 @@ const requiredForOf = (skill: SkillFrontmatterFacts): string | undefined => {
   return value.trim();
 };
 
-// Lists the action each skill must own, for skills that declare one.
 export const requiredActions = (skills: readonly SkillFrontmatterFacts[]): RequiredAction[] =>
   skills.flatMap((skill) => {
     const action = requiredForOf(skill);
