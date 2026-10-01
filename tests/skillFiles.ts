@@ -36,11 +36,15 @@ const metadataKeys = new Set(['required-for']);
 // Fences in list items are indented, so any indentation opens a block.
 const fencedCodeBlock = /^[ \t]*(`{3,}|~{3,})([^\n]*)\n([\s\S]*?)(?:^[ \t]*\1[ \t]*$|(?![\s\S]))/gm;
 const inlineCode = /(`+)[\s\S]*?\1/g;
-const inlineLink = /\[[^\]]*\]\(\s*(?:<([^>\n]*)>|([^\s)]*))(?:\s+"[^"]*")?\s*\)/g;
+
+const inlineLink =
+  /\[[^\]]*\]\(\s*(?:<([^>\n]*)>|([^\s)]*))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
+
 const referenceDefinition = /^ {0,3}\[[^\]]+\]:[ \t]*(?:<([^>\n]*)>|(\S+))/gm;
 const adrWord = /\bADRs?\b/i;
 const sectionHeading = /^ {0,3}##[ \t]+(.+?)[ \t]*#*[ \t]*$/gm;
 const quotedTextOrComment = /('[^']*'|"(?:[^"\\]|\\.)*")|(^|[ \t])#.*$/gm;
+const commandSubstitution = /\$\(|`[^`]*`/g;
 const backslashContinuation = /\\[ \t]*\n/g;
 const operatorContinuation = /(&&|\|\|?|\{)[ \t]*\n/g;
 // A lone `&` runs a command in the background; `>&` and `&>` are redirects.
@@ -85,7 +89,23 @@ const withoutQuotesOrComments = (shell: string) =>
     quoted === undefined ? (before ?? '') : "''",
   );
 
-const commandCount = (shell: string) =>
+// Single-quoted text stays literal, but `$(...)` and backticks run inside double quotes.
+const substitutionCount = (shell: string) => {
+  const expandable = shell.replaceAll(
+    quotedTextOrComment,
+    (match, quoted?: string, before?: string) => {
+      if (quoted === undefined) {
+        return before ?? '';
+      }
+
+      return quoted.startsWith("'") ? "''" : match;
+    },
+  );
+
+  return [...expandable.matchAll(commandSubstitution)].length;
+};
+
+const lineCommandCount = (shell: string) =>
   withoutQuotesOrComments(shell)
     .replaceAll(backslashContinuation, ' ')
     .replaceAll(operatorContinuation, '$1 ')
@@ -94,6 +114,8 @@ const commandCount = (shell: string) =>
     .filter((line) => line !== '')
     .flatMap((line) => line.split(commandSeparator))
     .filter((command) => command.trim() !== '').length;
+
+const commandCount = (shell: string) => lineCommandCount(shell) + substitutionCount(shell);
 
 // A `console` block holds a session, so only its `$ ` prompt lines are commands.
 const shellOf = (language: string, body: string): string | undefined => {

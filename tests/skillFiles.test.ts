@@ -19,7 +19,8 @@ const tauAllowlists: SkillAllowlists = {
   },
   multiCommandShellBlocks: {
     'code-review': ['e0e500f34f20', '892f0371f08b'],
-    pr: ['0e303365f0fe'],
+    handoff: ['1927769d42b4'],
+    pr: ['0e303365f0fe', 'e16c689d6943'],
     slice: ['d4b87a0380fb'],
     'start-slice': ['16e2bc9782a1'],
   },
@@ -109,6 +110,11 @@ it.each<[string, string, SkillProblemKind]>([
     'broken-link',
   ],
   [
+    'a missing link target with a single-quoted title',
+    `${validFrontmatter('demo')}Use [the template](template.md 'Template').\n`,
+    'broken-link',
+  ],
+  [
     'a missing angle-bracket link target',
     `${validFrontmatter('demo')}Use [the template](<body template.md>).\n`,
     'broken-link',
@@ -132,6 +138,16 @@ it.each<[string, string, SkillProblemKind]>([
   [
     'a command after a comment that ends in a backslash',
     shellBlock('git fetch # fetch first \\', 'git status'),
+    'multi-command-shell-block',
+  ],
+  [
+    'commands in a double-quoted substitution',
+    shellBlock('printf "%s\\n" "$(git fetch && git status)"'),
+    'multi-command-shell-block',
+  ],
+  [
+    'a command in a backtick substitution',
+    shellBlock('echo `git rev-parse HEAD`'),
     'multi-command-shell-block',
   ],
   [
@@ -247,6 +263,10 @@ it('accepts valid links, code, words that contain adr, and one-command shell blo
     '',
     '```sh',
     'git status 2>&1 # a | b; c & d',
+    '```',
+    '',
+    '```sh',
+    "git log --format='$(not run) `nor this`' -1",
     '```',
     '',
     '```console',
