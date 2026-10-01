@@ -38,18 +38,26 @@ you here. It needs the `gh stack` extension and `gh` authenticated for the repos
 
 2. Switch to a PR with `gh stack checkout <pr url>`. A URL always resolves to a PR. A bare number is
    read as a stack number first. If it reports that the local stack differs from the remote, stop
-   and report both chains it prints.
+   and report both chains it prints. It takes no `--remote`. To import a stack that is not tracked
+   locally, it fetches from the remote that Git config sets for the trunk: `pushRemote` or `remote`
+   of the trunk branch, `remote.pushDefault`, or `gh-stack.remote`. With several remotes and none of
+   these set, it fails with "multiple remotes configured" in a non-interactive shell; stop and
+   report it. Do not change the config to get past it.
 
-3. Restack. Before the first rebase, run `git fetch <remote>`. For each active branch, one not
-   merged or queued, note its remote tip with `git rev-parse <remote>/<branch>`. Then check that
-   `git log --oneline <branch>..<remote>/<branch>` lists nothing. Stop and report each branch it
-   lists commits for. The rebase skips a branch that has diverged from its remote, and the push
-   would then overwrite those remote commits. From the branch you changed, run
-   `gh stack rebase --upstack --remote <remote>`. It rebases that branch onto its parent and each
-   branch above onto the one below it. To bring the whole stack up to date with the trunk, run
-   `gh stack rebase --remote <remote>`. Both fetch the stack's branches first and fast-forward the
-   ones behind their remote. Branches whose PRs merged are skipped, and the branch above them is
-   rebased onto the first unmerged branch below or onto the trunk, so the merged commits drop out.
+3. Restack. Before the first rebase, run `git fetch --prune <remote>`, so the tracking refs of
+   deleted branches drop out. For each active branch, one not merged or queued, note its remote tip
+   with `git rev-parse --verify --quiet <remote>/<branch>`. When it prints nothing, note the branch
+   as unpublished and skip the next check for it. Otherwise check that
+   `git log --oneline <branch>..<remote>/<branch>` lists nothing. For a branch you rebased with
+   plain `git rebase` before this restack, use its tip from before that rebase in place of
+   `<branch>`. Stop and report each branch it lists commits for. The rebase skips a branch that has
+   diverged from its remote, and the push would then overwrite those remote commits. From the branch
+   you changed, run `gh stack rebase --upstack --remote <remote>`. It rebases that branch onto its
+   parent and each branch above onto the one below it. To bring the whole stack up to date with the
+   trunk, run `gh stack rebase --remote <remote>`. Both fetch the stack's branches first and
+   fast-forward the ones behind their remote. Branches whose PRs merged are skipped, and the branch
+   above them is rebased onto the first unmerged branch below or onto the trunk, so the merged
+   commits drop out.
    - Exit code 3 means a conflict. Resolve it as in step 4 of the update-branch skill, but stage the
      files and run `gh stack rebase --continue` instead of `git rebase --continue`. Abort with
      `gh stack rebase --abort` only with the user's permission. It restores every branch.
@@ -61,10 +69,11 @@ you here. It needs the `gh stack` extension and `gh` authenticated for the repos
 
 4. Push. After any commit made since the last restack, restack again with step 3 and rerun the
    affected checks. The push does not restack, so the branches above would miss that commit.
-   Immediately before the push, fetch again and stop if any remote tip moved. Then run
-   `gh stack push --remote <remote>`. It fetches again and takes its leases from that fetch, so the
-   lease protects only against changes pushed after its own fetch. It does not guarantee that the
-   remote still holds the tips you noted. It force-pushes every active branch with a per-branch
+   Immediately before the push, run `git fetch --prune <remote>` again and stop if any remote tip
+   moved, or if a branch you noted as unpublished now has a remote tip or a noted one is gone. Then
+   run `gh stack push --remote <remote>`. It fetches again and takes its leases from that fetch, so
+   the lease protects only against changes pushed after its own fetch. It does not guarantee that
+   the remote still holds the tips you noted. It force-pushes every active branch with a per-branch
    `--force-with-lease` and skips merged and queued branches. The push is not atomic. If it fails,
    stop. Compare each branch with `git ls-remote <remote> refs/heads/<branch>` and report which
    branches updated and which did not.

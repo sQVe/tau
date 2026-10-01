@@ -30,7 +30,8 @@ Approved fixes the user accepts without a new review count as reviewed.
 - Ask every question with the `ask_user_question` tool, including the preview approval, the review's
   approval question, and the bot choice. Never end a turn with a question in prose.
 - Follow the push rules in the [update-branch skill](../update-branch/SKILL.md). Never rebase or
-  force-push unless the user asks.
+  force-push unless the user asks. In a stack, step 5 restacks the branches above the PR's branch
+  locally, and the preview approval covers their force-push.
 - Commit with the [commit skill](../commit/SKILL.md). Never stash, discard, or commit changes that
   are not the task's. Ask when ownership is unclear, or when changes outside the task could affect
   the review or checks.
@@ -109,8 +110,11 @@ Approved fixes the user accepts without a new review count as reviewed.
 5. Run checks. Reuse a passing result of the required pre-merge checks when evidence shows it ran on
    the same content, as
    [ADR 0039](../../docs/adr/0039-reuse-reported-checks-and-run-one-full-suite.md) describes.
-   Otherwise commit the task's changes first and run them once on that tree. Save their real output
-   in `$prdir`, with the HEAD, `git status --porcelain`, and the hash of
+   Otherwise commit the task's changes first and run them once on that tree. In a stack, first
+   restack the branches above with the [stack skill](../stack/SKILL.md). Then run the checks on the
+   PR's branch and on each branch above that the restack changed, since step 9 pushes them all.
+   After any later commit, restack and run the affected checks again before the preview. Save their
+   real output in `$prdir`, with the HEAD, `git status --porcelain`, and the hash of
    `git diff <merge base> HEAD`, taken before the run, at the top. Never write a summary in its
    place. A failing check is a gap.
 
@@ -137,15 +141,15 @@ Approved fixes the user accepts without a new review count as reviewed.
    `$prdir/body.md`.
 
 8. Preview and ask. Show the title, full body, base repository and branch, head, draft status,
-   commits to push, and push command. In a stack, list every branch the push updates, and say that
-   each one is force-pushed with a lease. Also show the `gh stack link` command. Add the summary:
-   commits made, comment findings and removals, review and check sources, reviewer notes, and gaps.
-   Wait for approval.
+   commits to push, and push command. In a stack, list every branch the push updates with its local
+   SHA, and say that each one is force-pushed with a lease. Also show the `gh stack link` command,
+   or why step 9 cannot link. Add the summary: commits made, comment findings and removals, review
+   and check sources, reviewer notes, and gaps. Wait for approval.
 
 9. Publish.
-   - Compare HEAD, local status, and the commits to push with the preview, and read the PR again. If
-     anything changed, stop, refresh the affected evidence, and show a new preview that keeps the
-     new edits.
+   - Compare HEAD, local status, and the commits to push with the preview, and read the PR again. In
+     a stack, also compare each branch's SHA. If anything changed, stop, refresh the affected
+     evidence, and show a new preview that keeps the new edits.
    - Push with `git push <remote> HEAD:refs/heads/<branch>`, adding `-u` for a new branch. In a
      stack, push the stack with the stack skill instead. If the push is rejected, stop and report.
    - Create with `gh pr create`, specifying the approved base, head, title, and `--body-file`;
@@ -153,8 +157,19 @@ Approved fixes the user accepts without a new review count as reviewed.
      `gh pr edit`. Change an existing PR's draft status with `gh pr ready`, adding `--undo` for
      draft.
    - In a stack, after creating the PR, add it to the stack on GitHub with
-     `gh stack link --remote <remote> <PR numbers, bottom to top>`. Do not use `gh stack submit`: it
-     publishes generated titles instead of the approved ones.
+     `gh stack link --remote <remote> --base <trunk> <PR numbers, bottom to top>`. Without `--base`,
+     it sets the bottom PR's base to the default branch. Do not use `gh stack submit`: it publishes
+     generated titles instead of the approved ones.
+   - `link` only adds PRs to the top of a GitHub stack and never removes one. Read the stack that
+     holds the PR below with
+     `gh api --hostname <host> "repos/<owner>/<name>/stacks?pull_request=<number>" --jq '.[0].pull_requests | map(.number)'`.
+     Pass those numbers, merged ones included, then the new PR. When no stack holds the PR below,
+     pass the open PRs from `gh stack view --json`. A stack with one open PR needs no link. When the
+     new PR is not the top of the local stack, do not link; report that GitHub can add it only at
+     the top.
+   - After linking, read the stack again with the new PR's number and check that it lists the
+     numbers you passed, in order. `gh stack view --json` shows only the local stack, so it cannot
+     confirm the link.
 
 10. Verify. Compare
     `gh pr view <number> --repo <repo> --json url,title,body,baseRefName,isDraft,headRefOid` with

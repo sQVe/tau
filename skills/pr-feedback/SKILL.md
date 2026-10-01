@@ -49,10 +49,11 @@ themselves.
 
 1. Resolve the target.
    - Take the PR from the request. Otherwise, when the stack skill finds the current branch in a
-     stack, read each open PR's checks and threads with the commands below and in step 3. List the
-     PRs with unresolved threads or failing checks, and ask which to handle with
-     `ask_user_question`. Otherwise use `gh pr view --json number` on the current branch. Ask when
-     nothing gives a PR. Run `gh auth status --active --hostname <host>` and stop if it fails.
+     stack, read each open PR's `mergeable`, checks, threads, review summaries, and conversation
+     comments with the commands below and in step 3. List the PRs with a conflict, failing checks,
+     or comments that step 3 keeps, and ask which to handle with `ask_user_question`. Otherwise use
+     `gh pr view --json number` on the current branch. Ask when nothing gives a PR. Run
+     `gh auth status --active --hostname <host>` and stop if it fails.
    - Use `<host>/<owner>/<name>` as `<repo>`, and pass `--hostname <host>` to every `gh api` call.
    - Read the viewer with `gh api user --hostname <host> --jq .login`, and the PR with
      `gh pr view <pr> --repo <repo> --json number,url,state,author,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,mergeable,mergeStateStatus`.
@@ -96,9 +97,12 @@ themselves.
      `gh run list --repo <repo> --branch <trunk> --workflow <workflow> --limit 5 --json conclusion,headSha,url`.
      The trunk is `baseRefName`, or the stack's `trunk` when the PR is in a stack. In a stack, also
      read the checks of the PRs below. A failure belongs to the PR only when its cause is in the
-     PR's own commits, `<baseRefName>..HEAD`, and still in the pinned code. Report the rest: failing
-     on the trunk, caused by a PR below, a cause outside the PR such as a network timeout, gone
-     after the rebase, or blocked when you cannot read the log.
+     PR's own commits and still in the pinned code. Fetch the base repository's remote and list
+     those commits with `git log --oneline HEAD --not <base remote>/<baseRefName>`. In a stack, add
+     the branch's `base` SHA from `gh stack view --json` after `--not`. The local parent branch can
+     be stale and the remote one can be rewritten, so either alone can let a lower PR's commits in.
+     Report the rest: failing on the trunk, caused by a PR below, a cause outside the PR such as a
+     network timeout, gone after the rebase, or blocked when you cannot read the log.
 
 4. Verify each remaining finding with the
    [triage findings](../../src/extensions/snippets/snippets/triage-findings.md) rules. Split a

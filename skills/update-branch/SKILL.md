@@ -30,8 +30,13 @@ the [handoff skill](../handoff/SKILL.md).
    `$(git rev-parse --git-dir)/gh-stack-rebase-state` exists, a stack rebase is paused. Continue it
    with the [stack skill](../stack/SKILL.md), never with `git rebase --continue`. To continue an
    existing rebase, go to step 4 and ask if its target is unclear. Ask before pushing it unless you
-   noted the remote tip before it started. If a merge is in progress, resolve its conflicts as in
-   step 4, then finish with the [commit skill](../commit/SKILL.md) instead of `rebase --continue`.
+   noted the remote tip before it started. First note the tip the rebase started from: read
+   `orig-head` in `$(git rev-parse --git-path rebase-merge)` or, for the apply backend,
+   `$(git rev-parse --git-path rebase-apply)`, whichever exists. Stop if neither holds it. HEAD is
+   detached until the rebase finishes, so the stack skill can detect a stack only then. If it finds
+   the branch in a stack, restack the branches above with it before step 5. Use the noted tip in its
+   remote-history check for this branch. If a merge is in progress, resolve its conflicts as in step
+   4, then finish with the [commit skill](../commit/SKILL.md) instead of `rebase --continue`.
 2. Fetch the base's remote and, if different, the remote the branch pushes to. Note the SHA of the
    branch's remote tip if it has one: `git rev-parse <remote>/<branch>`. Stop if fetching or
    resolving fails, or if `git log --oneline HEAD..<old-tip>` lists commits missing locally.
