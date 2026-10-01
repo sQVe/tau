@@ -177,7 +177,7 @@ export default defineConfig({
       'typescript/no-explicit-any': 'error',
       'typescript/no-non-null-assertion': 'error',
       'typescript/no-misused-promises': 'error',
-      'typescript/no-floating-promises': 'error',
+      'typescript/no-floating-promises': ['error', { ignoreVoid: false }],
       'typescript/await-thenable': 'error',
       'typescript/no-unsafe-argument': 'error',
       'typescript/no-unsafe-assignment': 'error',

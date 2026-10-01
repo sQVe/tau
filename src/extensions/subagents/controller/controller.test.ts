@@ -2978,6 +2978,26 @@ it('keeps the original deadline and reports active-work cancellation failure hon
   expect(notifications).toHaveLength(1);
 });
 
+it('keeps a failed timeout notice in worker status', async ({ onTestFinished }) => {
+  vi.useFakeTimers();
+  const { directory, client, input } = setup(onTestFinished);
+
+  const controller = new WorkerController(directory, client, () => {
+    throw new Error('Injected notice failure.');
+  });
+
+  onTestFinished(() => {
+    controller.close();
+  });
+
+  const launched = await controller.launch(input);
+  await vi.advanceTimersByTimeAsync(20_000);
+
+  expect(readEvent(launched.directory, launched.taskId, 'timeout')).toBeDefined();
+
+  expect(() => controller.status(launched.taskId, 'parent-id')).toThrow('Injected notice failure.');
+});
+
 it('preserves incomplete output and malformed evidence without retrying startup', async ({
   onTestFinished,
 }) => {

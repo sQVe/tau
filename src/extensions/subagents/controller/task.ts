@@ -101,9 +101,17 @@ export class TaskController {
     return (argumentsList) => this.context.client(argumentsList, workBudget(this.handle), signal);
   }
 
+  // Timers and listeners cannot await a stop. A stop whose failure notice also fails keeps the
+  // error for the next status read.
+  private stopInBackground(reason: StopReason, failureDetail?: string): void {
+    this.stop(reason, failureDetail).catch((error: unknown) => {
+      this.handle.cleanup.recordErrors.push(String(error));
+    });
+  }
+
   arm(launchSignal: AbortSignal): void {
     const abortLaunch = () => {
-      void this.stop('cancelled');
+      this.stopInBackground('cancelled');
     };
 
     launchSignal.addEventListener('abort', abortLaunch, { once: true });
@@ -114,7 +122,7 @@ export class TaskController {
 
     this.handle.timer = setTimeout(
       () => {
-        void this.stop('timeout');
+        this.stopInBackground('timeout');
       },
       Math.max(1, remainingWorkBudget(this.handle)),
     );
@@ -299,7 +307,7 @@ export class TaskController {
 
     try {
       if (remainingWorkBudget(handle) <= 0) {
-        void this.stop('timeout');
+        this.stopInBackground('timeout');
 
         return;
       }
@@ -312,7 +320,7 @@ export class TaskController {
         handle.identity.owned !== undefined && processAbsent(handle.identity.owned.processId);
 
       if (settled || absent) {
-        void this.stop('completion');
+        this.stopInBackground('completion');
 
         return;
       }
@@ -320,7 +328,7 @@ export class TaskController {
       this.notifyPendingQuestion();
       this.poll();
     } catch (error) {
-      void this.stop('failure', `Worker evidence unavailable: ${String(error)}. No retry.`);
+      this.stopInBackground('failure', `Worker evidence unavailable: ${String(error)}. No retry.`);
     }
   }
 

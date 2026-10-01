@@ -113,7 +113,7 @@ export class InstallQueue {
     try {
       await untilAborted(previous, signal, source);
     } catch (error) {
-      void previous.then(release);
+      void previous.then(release, release);
 
       throw error;
     }

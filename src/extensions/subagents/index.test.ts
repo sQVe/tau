@@ -228,6 +228,37 @@ it('returns from session start while worker reattachment is still pending', asyn
   expect(result).toBeUndefined();
 });
 
+it('reports a failed worker reattachment in the UI', async ({ onTestFinished }) => {
+  const fake = fakeExtensionApi();
+  const failed = Promise.withResolvers<undefined>();
+  const notices: string[] = [];
+  vi.spyOn(WorkerController.prototype, 'resume').mockReturnValue(failed.promise);
+  subagentsExtension(fake.pi);
+
+  const context = {
+    sessionManager: { getSessionId: () => 'parent' },
+    ui: {
+      notify: (message: string) => {
+        notices.push(message);
+      },
+    },
+  } as unknown as ExtensionContext;
+
+  onTestFinished(async () => {
+    await fake.handler('session_shutdown')({ reason: 'quit' }, context);
+    vi.restoreAllMocks();
+  });
+
+  fake.handler('session_start')({}, context);
+  failed.reject(new Error('Injected records failure.'));
+
+  await vi.waitFor(() => {
+    expect(notices).toHaveLength(1);
+  });
+
+  expect(notices[0]).toContain('Injected records failure.');
+});
+
 it('waits for bounded worker cleanup during session shutdown', async ({ onTestFinished }) => {
   const fake = fakeExtensionApi();
   const released = Promise.withResolvers<undefined>();
