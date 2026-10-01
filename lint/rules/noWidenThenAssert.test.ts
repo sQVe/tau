@@ -23,6 +23,16 @@ export const read = (user: User) => {
       errors: [widened('value')],
     },
     {
+      code: `interface User { name: string }
+
+export const read = (user: User | undefined) => {
+  const value: unknown = user!;
+
+  return value as User;
+};`,
+      errors: [widened('value')],
+    },
+    {
       code: `export const read = () => {
   const value: object = { name: 'a' };
 

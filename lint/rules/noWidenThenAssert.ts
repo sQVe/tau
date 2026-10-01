@@ -48,10 +48,24 @@ const objectTypeKinds = new Set([
 
 const broadKeyKinds = new Set(['TSStringKeyword', 'TSNumberKeyword', 'TSSymbolKeyword']);
 
+// Wrappers that keep the value's type evidence; assertions are handled separately.
+const transparentExpressionKinds = new Set([
+  'ParenthesizedExpression',
+  'TSNonNullExpression',
+  'TSSatisfiesExpression',
+]);
+
+const isTransparentExpression = (
+  expression: ESTree.Expression,
+): expression is
+  | ESTree.ParenthesizedExpression
+  | ESTree.TSNonNullExpression
+  | ESTree.TSSatisfiesExpression => transparentExpressionKinds.has(expression.type);
+
 const unwrapExpression = (expression: ESTree.Expression): ESTree.Expression => {
   let current = expression;
 
-  while (current.type === 'ParenthesizedExpression') {
+  while (isTransparentExpression(current)) {
     current = current.expression;
   }
 
