@@ -17,10 +17,8 @@ import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extension
 import { WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { fixtureModel } from './fixtures/controlledProvider.js';
-import { createLedgerFixture } from './fixtures/workerLedger.js';
 import subagentsExtension, { createNoticeDelivery, delegationGuidelines } from './index.js';
 import type { WorkerNotice } from './presentation.js';
-import { acceptReport, workerRecordsDirectory } from './records.js';
 import type { WorkerWidgetRow } from './widget.js';
 
 const emitEvent = (
@@ -1037,63 +1035,37 @@ it('queues a notice for the next prompt while Pi is busy without a run', async (
   expect(fake.sendUserMessage).not.toHaveBeenCalled();
 });
 
-const compactionLedger = async (onTestFinished: typeof finishTest, withWorker: boolean) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-compaction-ledger-'));
+const compactionRow = (taskId: string, state: WorkerWidgetRow['state'], questionId?: string) =>
+  ({ name: taskId, taskId, state, questionId }) as WorkerWidgetRow;
 
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
+it('queues active workers and pending questions for the next prompt after a compaction', async () => {
+  const fake = fakeExtensionApi();
+  let rows = [compactionRow('task-stopped', 'stopped')];
+
+  vi.spyOn(WorkerController.prototype, 'widgetRows').mockImplementation(() => rows);
+
+  finishTest(() => {
+    vi.restoreAllMocks();
   });
 
-  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  vi.stubEnv('TAU_WORKER_RECORD', '');
-  const fake = fakeExtensionApi();
   subagentsExtension(fake.pi);
-  const fixture = createLedgerFixture(directory, workerRecordsDirectory());
-
-  // The ledger comes from the records saved when the compaction ends.
-  if (withWorker) {
-    const { taskDirectory } = fixture.task('task-reported');
-
-    acceptReport(taskDirectory, 'task-reported', {
-      taskId: 'task-reported',
-      outcome: 'success',
-      summary: 'Done.',
-      evidence: ['diff hash 1f2e3d'],
-    });
-  }
 
   const context = {
-    sessionManager: {
-      getSessionFile: () => fixture.current.file,
-      getSessionId: () => fixture.current.id,
-      getSessionDir: () => fixture.current.sessionDirectory,
-    },
+    sessionManager: { getSessionId: () => 'parent-session' },
   } as unknown as ExtensionContext;
 
   await emitEvent(fake.handlers, 'session_compact', { reason: 'manual' }, context);
 
-  return fake;
-};
+  expect(fake.sendMessage).not.toHaveBeenCalled();
 
-it('queues the worker ledger for the next prompt after a compaction', async ({
-  onTestFinished,
-}) => {
-  const fake = await compactionLedger(onTestFinished, true);
+  rows = [compactionRow('task-asking', 'awaitingReply', 'question-1')];
+  await emitEvent(fake.handlers, 'session_compact', { reason: 'manual' }, context);
 
   expect(fake.sendMessage).toHaveBeenCalledTimes(1);
   expect(fake.sendMessage.mock.calls[0]?.[1]).toEqual({ deliverAs: 'nextTurn' });
-  expect(fake.sendMessage.mock.calls[0]?.[0].content).toContain('task-reported');
-  expect(fake.sendMessage.mock.calls[0]?.[0].content).toContain('diff hash 1f2e3d');
+  expect(fake.sendMessage.mock.calls[0]?.[0].content).toContain('task-asking');
+  expect(fake.sendMessage.mock.calls[0]?.[0].content).toContain('question-1');
   expect(fake.sendUserMessage).not.toHaveBeenCalled();
-});
-
-it('queues no ledger after a compaction in a session without workers', async ({
-  onTestFinished,
-}) => {
-  const fake = await compactionLedger(onTestFinished, false);
-
-  expect(fake.sendMessage).not.toHaveBeenCalled();
 });
 
 it('returns allowlisted model content for a follow-up successor and keeps full details', async ({

@@ -10,11 +10,10 @@ import { errorMessage } from '../../errors/index.js';
 import { appendToolGuidelines } from '../../systemPrompt/index.js';
 import { isWorkerProcess } from '../../workerProcess/index.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
+import { activeStates, compactionWorkerList } from './compactionWorkers.js';
 import { WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { historyPage, searchHistory } from './history.js';
-import { renderLedger } from './ledger.js';
-import { readSessionLedger } from './ledgerRecords.js';
 import { launchModels, resolveLoadout } from './loadout.js';
 import { decideNoticeDelivery } from './noticeDelivery.js';
 import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
@@ -678,7 +677,6 @@ const registerSubagentTools = (runtime: SubagentRuntime): void => {
   registerCancelTool(runtime);
 };
 
-const activeStates = new Set(['starting', 'running', 'awaitingReply', 'reported', 'stopping']);
 const unitSeconds: Record<string, number> = { '': 1, s: 1, m: 60, h: 3600, d: 86_400 };
 
 // A running tool call holds worker notices back, so a long sleep delays the notice it waits for.
@@ -863,21 +861,17 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     renderNotice(message.details, options.expanded, theme),
   );
 
-  // Pi's summary drops exact task IDs, question IDs, and evidence, so the ledger joins the next
-  // prompt.
-  pi.on('session_compact', async (_event, context) => {
-    const ledger = await readSessionLedger(
-      context,
-      workerRecordsDirectory(),
-      (taskId) => controller?.owns(taskId) ?? false,
-    );
+  // Pi's summary drops exact task IDs and question IDs, so the list joins the next prompt.
+  pi.on('session_compact', (_event, context) => {
+    const rows = runtime.getController().widgetRows(context.sessionManager.getSessionId());
+    const list = compactionWorkerList(rows);
 
-    if (ledger.workers.length === 0 && ledger.diagnostics.length === 0) {
+    if (list === undefined) {
       return;
     }
 
     pi.sendMessage(
-      { customType: 'tau-worker-ledger', content: renderLedger(ledger), display: false },
+      { customType: 'tau-worker-ledger', content: list, display: false },
       { deliverAs: 'nextTurn' },
     );
   });
