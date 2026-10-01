@@ -7,14 +7,11 @@ const isObject = (value: unknown): value is object => typeof value === 'object' 
 const isNode = (value: unknown): value is ESTree.Node =>
   isObject(value) && 'type' in value && typeof value.type === 'string';
 
-// Oxlint nodes expose their fields as own enumerable properties, so the entries hold every child.
-export const childNodes = (node: ESTree.Node, visitorKeys: VisitorKeys): ESTree.Node[] => {
-  const fields = new Map<string, unknown>(Object.entries(node));
-
-  return (visitorKeys[node.type] ?? []).flatMap((key) => {
-    const value = fields.get(key);
+// Oxlint nodes store their fields as own data properties, so each visitor key reads one child.
+export const childNodes = (node: ESTree.Node, visitorKeys: VisitorKeys): ESTree.Node[] =>
+  (visitorKeys[node.type] ?? []).flatMap((key) => {
+    const value: unknown = Object.getOwnPropertyDescriptor(node, key)?.value;
     const values: unknown[] = Array.isArray(value) ? value : [value];
 
     return values.filter(isNode);
   });
-};
