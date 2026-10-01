@@ -10,7 +10,12 @@ const collectInferredNames = (node: ESTree.Node, visitorKeys: VisitorKeys, names
   }
 
   for (const child of childNodes(node, visitorKeys)) {
-    collectInferredNames(child, visitorKeys, names);
+    // A nested conditional binds the infer names in its own extends clause.
+    const isNestedBinder = node.type === 'TSConditionalType' && child === node.extendsType;
+
+    if (!isNestedBinder) {
+      collectInferredNames(child, visitorKeys, names);
+    }
   }
 };
 

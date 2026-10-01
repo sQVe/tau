@@ -10,6 +10,7 @@ ruleTester.run('no-object-parameters', noObjectParametersRule, {
     'export const run = (values: object[]) => values;',
     'export const run = (): object => ({});',
     'type Value = string;\ntype Fixed = Value;\ntype Generic<Value> = Fixed | Value[];\nexport const run = (input: Generic<object>) => input;',
+    'type Target = object;\nexport type Probe<Input> = Input extends [infer Target] ? (value: Target) => void : never;',
   ],
   invalid: [
     { code: 'export const run = (value: object) => value;', errors: [broad('value')] },
@@ -22,6 +23,10 @@ ruleTester.run('no-object-parameters', noObjectParametersRule, {
     },
     {
       code: 'type Loose = object;\nexport const Probe = class Loose {\n  run(value: Loose) { return value; }\n};\nexport const run = (value: Loose) => value;',
+      errors: [broad('value')],
+    },
+    {
+      code: 'type Target = object;\nexport type Probe<Input> = Input extends (Input extends infer Target ? Target : never)\n  ? (value: Target) => void\n  : never;',
       errors: [broad('value')],
     },
     {
