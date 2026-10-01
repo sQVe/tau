@@ -70,8 +70,9 @@ Approved fixes the user accepts without a new review count as reviewed.
      `gh pr list --repo <repo> --head <branch> --state all --json number,url,state,title,body,baseRefName,isDraft,headRefOid,headRepositoryOwner`,
      keeping only PRs from the head owner. Stop on a `gh` error. Use the open PR. When only merged
      or closed PRs match, ask.
-   - Base branch: the open PR's base, the base the user names, or the default branch. Fetch it and
-     pin the merge base with `git merge-base <remote>/<base> HEAD`.
+   - Base branch: the open PR's base, the base the user names, the parent branch when the
+     [stack skill](../stack/SKILL.md) finds the branch in a stack, or the default branch. Fetch it
+     and pin the merge base with `git merge-base <remote>/<base> HEAD`.
    - Read linked issues from the user, the branch name, commits, and the existing body with the CLI
      that serves them. Use the returned issue IDs, not branch aliases. Note issues you cannot read.
 
@@ -136,19 +137,24 @@ Approved fixes the user accepts without a new review count as reviewed.
    `$prdir/body.md`.
 
 8. Preview and ask. Show the title, full body, base repository and branch, head, draft status,
-   commits to push, and push command. Add the summary: commits made, comment findings and removals,
-   review and check sources, reviewer notes, and gaps. Wait for approval.
+   commits to push, and push command. In a stack, list every branch the push updates, and say that
+   each one is force-pushed with a lease. Also show the `gh stack link` command. Add the summary:
+   commits made, comment findings and removals, review and check sources, reviewer notes, and gaps.
+   Wait for approval.
 
 9. Publish.
    - Compare HEAD, local status, and the commits to push with the preview, and read the PR again. If
      anything changed, stop, refresh the affected evidence, and show a new preview that keeps the
      new edits.
-   - Push with `git push <remote> HEAD:refs/heads/<branch>`, adding `-u` for a new branch. If the
-     push is rejected, stop and report.
+   - Push with `git push <remote> HEAD:refs/heads/<branch>`, adding `-u` for a new branch. In a
+     stack, push the stack with the stack skill instead. If the push is rejected, stop and report.
    - Create with `gh pr create`, specifying the approved base, head, title, and `--body-file`;
      include `--draft` when approved as draft and `--head <owner>:<branch>` for a fork. Update with
      `gh pr edit`. Change an existing PR's draft status with `gh pr ready`, adding `--undo` for
      draft.
+   - In a stack, after creating the PR, add it to the stack on GitHub with
+     `gh stack link --remote <remote> <PR numbers, bottom to top>`. Do not use `gh stack submit`: it
+     publishes generated titles instead of the approved ones.
 
 10. Verify. Compare
     `gh pr view <number> --repo <repo> --json url,title,body,baseRefName,isDraft,headRefOid` with

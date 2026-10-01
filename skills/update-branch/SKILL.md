@@ -33,7 +33,9 @@ the [handoff skill](../handoff/SKILL.md).
 2. Fetch the base's remote and, if different, the remote the branch pushes to. Note the SHA of the
    branch's remote tip if it has one: `git rev-parse <remote>/<branch>`. Stop if fetching or
    resolving fails, or if `git log --oneline HEAD..<old-tip>` lists commits missing locally.
-3. Rebase onto the base's fetched remote-tracking branch, such as `git rebase origin/main`.
+3. Rebase onto the base's fetched remote-tracking branch, such as `git rebase origin/main`. When the
+   [stack skill](../stack/SKILL.md) finds the branch in a stack, restack with it instead. It rebases
+   the branches above too, and drops the commits of PRs that merged below.
 4. For each conflict, read both changes and enough surrounding code to understand their intent.
    Consult linked PRs or issues only when intent stays unclear. Keep both intents where they fit.
    Stage resolved files by name, then run `GIT_EDITOR=true git rebase --continue`. Skip a commit
@@ -41,7 +43,10 @@ the [handoff skill](../handoff/SKILL.md).
    proof.
 5. Run the project's required checks. If you fix a failure, commit the fix with the
    [commit skill](../commit/SKILL.md), then rerun the affected checks and any required final check.
-6. When pushing is authorized:
-   `git push <remote> HEAD:refs/heads/<branch> --force-with-lease=refs/heads/<branch>:<old-tip>`. If
-   the lease fails, stop and report. Do not refresh it to retry. If the remote branch does not exist
-   yet, push without a lease, and only when the user asked for it.
+6. Push only when pushing is authorized.
+   - In a stack, push with the stack skill. Its lease comes from its own fetch, not from the old
+     tip, so check the old tips immediately before the push as that skill says.
+   - Otherwise push with
+     `git push <remote> HEAD:refs/heads/<branch> --force-with-lease=refs/heads/<branch>:<old-tip>`.
+     If the lease fails, stop and report. Do not refresh it to retry. If the remote branch does not
+     exist yet, push without a lease, and only when the user asked for it.
