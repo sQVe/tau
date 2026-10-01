@@ -1,6 +1,7 @@
 # ADR 0010: Documentation scope
 
-- Status: Accepted
+- Status: Accepted; [ADR 0077](./0077-keep-a-skill-authoring-guide-in-docs.md) amends what `docs/`
+  holds
 - Date: 2026-09-09
 
 ## Context

@@ -25,11 +25,12 @@
 ## Decision
 
 `docs/` also holds `skill-authoring.md`, a guide with a checklist for skill authors, and
-`skill-template.md`, a fill-in `SKILL.md`.
+`skill-template.md`, a fill-in `SKILL.md`. This amends the list of what `docs/` holds in ADR 0010.
 
 - The guide covers decisions an author makes. It does not explain how any skill or feature works.
-- A test over `skills/*/SKILL.md` enforces the mechanical rules: frontmatter, local links, and no
-  ADR references or `## See also` sections.
+- A test over `skills/*/SKILL.md` enforces the mechanical rules: valid frontmatter, working local
+  links, only the allowed headings, no ADR mentions, one command per shell block, and no
+  `## See also` sections.
 - The template stays outside `skills/`, so Pi never loads it as a skill.
 
 ## Tradeoffs
