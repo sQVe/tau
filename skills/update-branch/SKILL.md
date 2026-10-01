@@ -26,14 +26,23 @@ the [handoff skill](../handoff/SKILL.md).
 
 ## Procedure
 
-1. Check the branch, `git status`, and whether a rebase is in progress. To continue an existing
-   rebase, go to step 4 and ask if its target is unclear. Ask before pushing it unless you noted the
-   remote tip before it started. If a merge is in progress, resolve its conflicts as in step 4, then
-   finish with the [commit skill](../commit/SKILL.md) instead of `rebase --continue`.
+1. Check the branch, `git status`, and whether a rebase is in progress. When
+   `$(git rev-parse --git-dir)/gh-stack-rebase-state` exists, a stack rebase is paused. Continue it
+   with the [stack skill](../stack/SKILL.md), never with `git rebase --continue`. To continue an
+   existing rebase, go to step 4 and ask if its target is unclear. Ask before pushing it unless you
+   noted the remote tip before it started. First note the tip the rebase started from: read
+   `orig-head` in `$(git rev-parse --git-path rebase-merge)` or, for the apply backend,
+   `$(git rev-parse --git-path rebase-apply)`, whichever exists. Stop if neither holds it. HEAD is
+   detached until the rebase finishes, so the stack skill can detect a stack only then. If it finds
+   the branch in a stack, restack the branches above with it before step 5. Use the noted tip in its
+   remote-history check for this branch. If a merge is in progress, resolve its conflicts as in step
+   4, then finish with the [commit skill](../commit/SKILL.md) instead of `rebase --continue`.
 2. Fetch the base's remote and, if different, the remote the branch pushes to. Note the SHA of the
    branch's remote tip if it has one: `git rev-parse <remote>/<branch>`. Stop if fetching or
    resolving fails, or if `git log --oneline HEAD..<old-tip>` lists commits missing locally.
-3. Rebase onto the base's fetched remote-tracking branch, such as `git rebase origin/main`.
+3. Rebase onto the base's fetched remote-tracking branch, such as `git rebase origin/main`. When the
+   [stack skill](../stack/SKILL.md) finds the branch in a stack, restack with it instead. It rebases
+   the branches above too, and drops the commits of PRs that merged below.
 4. For each conflict, read both changes and enough surrounding code to understand their intent.
    Consult linked PRs or issues only when intent stays unclear. Keep both intents where they fit.
    Stage resolved files by name, then run `GIT_EDITOR=true git rebase --continue`. Skip a commit
@@ -41,7 +50,11 @@ the [handoff skill](../handoff/SKILL.md).
    proof.
 5. Run the project's required checks. If you fix a failure, commit the fix with the
    [commit skill](../commit/SKILL.md), then rerun the affected checks and any required final check.
-6. When pushing is authorized:
-   `git push <remote> HEAD:refs/heads/<branch> --force-with-lease=refs/heads/<branch>:<old-tip>`. If
-   the lease fails, stop and report. Do not refresh it to retry. If the remote branch does not exist
-   yet, push without a lease, and only when the user asked for it.
+   In a stack, restack with the stack skill after the commit and before the rerun.
+6. Push only when pushing is authorized.
+   - In a stack, push with the stack skill. Its lease comes from its own fetch, not from the old
+     tip, so check the old tips immediately before the push as that skill says.
+   - Otherwise push with
+     `git push <remote> HEAD:refs/heads/<branch> --force-with-lease=refs/heads/<branch>:<old-tip>`.
+     If the lease fails, stop and report. Do not refresh it to retry. If the remote branch does not
+     exist yet, push without a lease, and only when the user asked for it.

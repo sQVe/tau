@@ -31,7 +31,8 @@ themselves.
   PRs to review them.
   - Author mode: the PR author is the viewer, or the user asks you to fix this PR. The request
     authorizes fixes, commits, one push, replies, resolving threads, and a rebase when the PR
-    conflicts.
+    conflicts. In a stack, one push is one stack push, and the request also authorizes restacking
+    the branches above the PR.
   - Reviewer mode: every other PR. Never commit, rebase, or push. Report failing checks and
     conflicts without fixing them. Resolve only threads the viewer started.
 - A request to draft only, investigate only, or approve first limits this skill. Follow it.
@@ -40,15 +41,19 @@ themselves.
   `user.type` `Bot` in REST. A thread with any comment from a person is a person's thread. In author
   mode on a PR the viewer did not write, show every draft.
 - Commit with the [commit skill](../commit/SKILL.md). Rebase and force-push only as steps 2 and 7
-  say.
+  say. Run every stack command through the [stack skill](../stack/SKILL.md).
 - Never rerun a check, or add retries, skips, or longer timeouts, to make a failure pass.
 - Never request new bot reviews.
 
 ## Procedure
 
 1. Resolve the target.
-   - Take the PR from the request, or from `gh pr view --json number` on the current branch. Ask
-     when neither gives one. Run `gh auth status --active --hostname <host>` and stop if it fails.
+   - Take the PR from the request. Otherwise, when the stack skill finds the current branch in a
+     stack, read each open PR's `mergeable`, checks, threads, review summaries, and conversation
+     comments with the commands below and in step 3. List the PRs with a conflict, failing checks,
+     or comments that step 3 keeps, and ask which to handle with `ask_user_question`. Otherwise use
+     `gh pr view --json number` on the current branch. Ask when nothing gives a PR. Run
+     `gh auth status --active --hostname <host>` and stop if it fails.
    - Use `<host>/<owner>/<name>` as `<repo>`, and pass `--hostname <host>` to every `gh api` call.
    - Read the viewer with `gh api user --hostname <host> --jq .login`, and the PR with
      `gh pr view <pr> --repo <repo> --json number,url,state,author,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,mergeable,mergeStateStatus`.
@@ -60,12 +65,15 @@ themselves.
      pending checks.
 
 2. Pin the code you verify against.
-   - Author mode: stop and say what differs unless the worktree is on the PR's head branch, the tree
-     is clean, and after a fetch `HEAD` equals `headRefOid`. On a fork, stop when
+   - Author mode: when the PR is in the current branch's stack and the tree is clean, switch to it
+     with the stack skill. Then stop and say what differs unless the worktree is on the PR's head
+     branch, the tree is clean, and after a fetch `HEAD` equals `headRefOid`. On a fork, stop when
      `maintainerCanModify` is false and the viewer does not own the fork.
    - Author mode, when `mergeable` is `CONFLICTING`: note `headRefOid` as the old head and run the
      [update-branch skill](../update-branch/SKILL.md) onto `baseRefName`, without its checks and
-     push steps. Do this before collecting or fixing anything, so the SHAs in replies stay valid.
+     push steps. In a stack, it restacks with the stack skill, which also drops the commits of
+     merged PRs below. Do this before collecting or fixing anything, so the SHAs in replies stay
+     valid.
    - Reviewer mode: use the checkout only when it is clean and `HEAD` equals `headRefOid`. Otherwise
      run `git fetch <remote> refs/pull/<pr>/head` against the base repository's remote, and read
      files with `git show <headRefOid>:<path>`.
@@ -85,11 +93,16 @@ themselves.
    - Author mode, failing checks: each check from step 1 with `bucket` `fail` or `cancel` is a
      finding. For GitHub Actions, read
      `gh run view <run id> --repo <repo> --job <job id> --log-failed` with the IDs from `link`. For
-     other providers, follow `link`. Compare with the base:
-     `gh run list --repo <repo> --branch <baseRefName> --workflow <workflow> --limit 5 --json conclusion,headSha,url`.
-     A failure belongs to the PR only when its cause is in the PR's changes and still in the pinned
-     code. Report the rest: failing on the base, a cause outside the PR such as a network timeout,
-     gone after the rebase, or blocked when you cannot read the log.
+     other providers, follow `link`. Compare with the trunk:
+     `gh run list --repo <repo> --branch <trunk> --workflow <workflow> --limit 5 --json conclusion,headSha,url`.
+     The trunk is `baseRefName`, or the stack's `trunk` when the PR is in a stack. In a stack, also
+     read the checks of the PRs below. A failure belongs to the PR only when its cause is in the
+     PR's own commits and still in the pinned code. Fetch the base repository's remote and list
+     those commits with `git log --oneline HEAD --not <base remote>/<baseRefName>`. In a stack, add
+     the branch's `base` SHA from `gh stack view --json` after `--not`. The local parent branch can
+     be stale and the remote one can be rewritten, so either alone can let a lower PR's commits in.
+     Report the rest: failing on the trunk, caused by a PR below, a cause outside the PR such as a
+     network timeout, gone after the rebase, or blocked when you cannot read the log.
 
 4. Verify each remaining finding with the
    [triage findings](../../src/extensions/snippets/snippets/triage-findings.md) rules. Split a
@@ -109,12 +122,16 @@ themselves.
    reply. Commit through the commit skill, one commit per thread where practical, so each reply
    names its commit. Failing checks need no reply on the PR.
 
-6. When the round rebased or committed fixes, run the repository's required checks once. A failure
-   is the round's, the rebase included, unless the matching check also failed in step 1 or fails on
-   the base. Fix the round's failures and run the affected checks again. Push past any other failure
-   only when you report it. Otherwise stop before you push.
+6. When the round rebased or committed fixes, run the repository's required checks once. In a stack,
+   first restack the branches above the PR with the stack skill. Then run the checks on the PR's
+   branch and on each branch above that the restack changed, since step 7 pushes them all. If you
+   cannot check a branch, report it and stop before you push. A failure is the round's, the rebase
+   included, unless the matching check also failed in step 1 or fails on the trunk. Fix the round's
+   failures. In a stack, restack again after each fix commit. Then run the affected checks again.
+   Push past any other failure only when you report it. Otherwise stop before you push.
 
-7. Push once to the PR's head repository `<remote>`. After a rebase, push with
+7. Push once to the PR's head repository `<remote>`. In a stack, push the stack, restacked in step
+   6, with the stack skill. Otherwise, after a rebase, push with
    `git push <remote> HEAD:refs/heads/<headRefName> --force-with-lease=refs/heads/<headRefName>:<old head>`.
    Otherwise push with `git push <remote> HEAD:refs/heads/<headRefName>`. If the push or the lease
    is rejected, stop and report. A round without a rebase or a new commit does not push.
