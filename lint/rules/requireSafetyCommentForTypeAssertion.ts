@@ -33,11 +33,18 @@ const hasSafetyCommentBefore = (
     .getCommentsBefore(owner)
     .some((comment) => comment.end <= assertion.start && safetyPattern.test(comment.value));
 
-const loopKinds = new Set(['ForStatement', 'ForInStatement', 'ForOfStatement']);
+// The loop whose head declares `node`; the comment above that loop covers the declaration.
+const loopHeadOf = (node: ESTree.Node): ESTree.Node | undefined => {
+  const { parent } = node;
 
-// A declaration in a loop head belongs to the loop, so the comment above the loop covers it.
-const ownsComment = (node: ESTree.Node): boolean =>
-  commentOwnerKinds.has(node.type) && !loopKinds.has(node.parent?.type ?? '');
+  if (parent?.type === 'ForStatement') {
+    return parent.init === node ? parent : undefined;
+  }
+
+  const isForInOrOf = parent?.type === 'ForInStatement' || parent?.type === 'ForOfStatement';
+
+  return isForInOrOf && parent.left === node ? parent : undefined;
+};
 
 const exportOf = (owner: ESTree.Node): ESTree.Node | undefined => {
   const parent = owner.parent;
@@ -51,7 +58,13 @@ const hasSafetyComment = (sourceCode: SourceCode, assertion: TypeAssertion): boo
   let current: ESTree.Node = assertion;
 
   while (!hasSafetyCommentBefore(sourceCode, current, assertion)) {
-    if (ownsComment(current)) {
+    if (commentOwnerKinds.has(current.type)) {
+      const loop = loopHeadOf(current);
+
+      if (loop !== undefined) {
+        return hasSafetyCommentBefore(sourceCode, loop, assertion);
+      }
+
       const exported = exportOf(current);
 
       return exported !== undefined && hasSafetyCommentBefore(sourceCode, exported, assertion);

@@ -34,6 +34,20 @@ export const second = JSON.parse('2') as number;`,
         errors: [{ ...missing, line: 3 }],
       },
       { code: "export const value = <number>JSON.parse('1');", errors: [missing] },
+      {
+        code: `// SAFETY: This comment belongs to the function.
+export const count = (input: unknown) => {
+  for (let index = input as number; index > 0; index -= 1) {}
+};`,
+        errors: [missing],
+      },
+      {
+        code: `// SAFETY: This comment belongs to the outer loop.
+for (let outer = 0; outer < 2; outer += 1) {
+  for (let inner = JSON.parse('1') as number; inner > 0; inner -= 1) {}
+}`,
+        errors: [missing],
+      },
     ],
   },
 );
