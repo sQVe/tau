@@ -123,8 +123,15 @@ Workers then carry out the agent tickets.
    - Create the branch with `git switch --no-track -c <branchName> <base>`. If
      `git rev-parse --verify --quiet refs/heads/<branchName>` shows it exists already, run
      `git switch <branchName>` instead.
-   - Create each agent ticket:
-     `linear issue create --team <agent team> --parent <slice> --title "<title>" --description-file $slicedir/agent-<n>.md --no-interactive`.
+   - Create each agent ticket through the API. `linear issue create --parent` copies the slice's
+     project, which fails when the agent team is not in that project. Read the agent team's ID with
+     `linear api 'query($key: String!) { team(id: $key) { id } }' --variable key=<agent team>`,
+     then:
+
+     ```sh
+     linear api 'mutation($team: String!, $parent: String!, $title: String!, $description: String!) { issueCreate(input: { teamId: $team, parentId: $parent, title: $title, description: $description }) { issue { identifier url } } }' --variable team=<team id> --variable parent=<slice> --variable "title=<title>" --variable description=@$slicedir/agent-<n>.md
+     ```
+
      After each one, record its identifier in `$slicedir/start.md` at once. If the output shows no
      identifier, stop and read the slice's children before any retry. On a retry, skip each agent
      ticket that has an identifier in the draft or a child with the same title, and record that
