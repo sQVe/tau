@@ -96,3 +96,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0072: Keep model defaults out of code](./0072-keep-model-defaults-out-of-code.md)
 - [0073: Leave manager compaction to Pi](./0073-leave-manager-compaction-to-pi.md)
 - [0074: Let skills declare the actions they must own](./0074-let-skills-declare-the-actions-they-must-own.md)
+- [0075: Plan work as PR-sized slices in Linear](./0075-plan-work-as-pr-sized-slices-in-linear.md)
