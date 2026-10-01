@@ -5,6 +5,10 @@ description:
   Drafts the tickets, previews the layout and every Linear write for approval, then creates them in
   order. Use it for "slice this design", "plan the slices", "break this into sub-tickets", or "plan
   this as PR-sized pieces". It does not split existing commits or a finished branch.
+metadata:
+  required-for:
+    creating or re-planning slice sub-tickets for a design in Linear, including as a step in a
+    larger task
 ---
 
 # Slice
