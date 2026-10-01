@@ -65,9 +65,9 @@ Workers then carry out the agent tickets.
    linear api 'query($id: String!) { issue(id: $id) { team { key } children { nodes { identifier title subIssueSortOrder team { key } state { type } attachments { nodes { url } } } } } }' --variable id=<container>
    ```
 
-   Sort the nodes by `subIssueSortOrder`, lowest first, and pick the first slice that passes step 2.
-   Tell the user in one line why you picked it. If none passes, stop and report each slice with what
-   blocks it.
+   Keep the nodes in the container's team, sort them by `subIssueSortOrder`, lowest first, and pick
+   the first slice that passes step 2. Tell the user in one line why you picked it. If none passes,
+   stop and report each slice with what blocks it.
 
 2. Check that the slice is ready, before you draft or write anything. This applies to a slice the
    user names too. For a named slice, read its state and links:
@@ -80,7 +80,8 @@ Workers then carry out the agent tickets.
    `gh pr view <url> --json state` returns `MERGED`. Its Linear status is not proof either way. Read
    its dependencies with `linear issue relation list <slice>`, and keep the lines of the form
    `<slice> blocked-by <other>`. The slice is ready when it is not merged, its state type is not
-   `canceled`, and every `blocked-by` slice is merged. Otherwise stop and report what blocks it.
+   `canceled`, and every `blocked-by` slice is merged. If its state type is `completed` but no
+   linked PR is merged, stop and ask the user. Otherwise stop and report what blocks it.
 
 3. Read the slice with `linear issue view <slice> --json --no-pager`. Note its `branchName`, team,
    and `## Acceptance`. If `$slicedir/start.md` exists, read it and every body file it names. Read
@@ -94,7 +95,8 @@ Workers then carry out the agent tickets.
    when the file is missing or differs, so the worker gets the same task as the ticket.
 
 4. Choose the base. Run `git fetch origin`, then use the remote's default branch from
-   `git symbolic-ref --short refs/remotes/origin/HEAD`, such as `origin/main`.
+   `git symbolic-ref --short refs/remotes/origin/HEAD`, such as `origin/main`. If that ref is
+   missing, read the default branch from `git ls-remote --symref origin HEAD`.
 
 5. Read the code the slice touches in the tree the workers will use: the branch when
    `git rev-parse --verify --quiet refs/heads/<branchName>` finds it, otherwise the base. The
@@ -134,8 +136,10 @@ Workers then carry out the agent tickets.
      then:
 
      ```sh
-     linear api 'mutation($team: String!, $parent: String!, $title: String!, $description: String!) { issueCreate(input: { teamId: $team, parentId: $parent, title: $title, description: $description }) { issue { identifier url } } }' --variable team=<team id> --variable parent=<slice> --variable "title=<title>" --variable description=@$slicedir/agent-<n>.md
+     linear api 'mutation($team: String!, $parent: String!, $title: String!, $description: String!) { issueCreate(input: { teamId: $team, parentId: $parent, title: $title, description: $description }) { issue { identifier url } } }' --variable team=<team id> --variable parent=<slice> --variable 'title=<title>' --variable description=@$slicedir/agent-<n>.md
      ```
+
+     Write each `'` in the title as `'\''`, so the shell expands nothing in it.
 
      After each one, record its identifier in `$slicedir/start.md` at once. If the output shows no
      identifier, stop and read the slice's children before any retry. On a retry, skip each agent
