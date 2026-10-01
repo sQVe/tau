@@ -9,8 +9,8 @@
 - ADR 0073 left compaction to Pi and the user. `pi-claude-bridge` registers a 1,000,000-token window
   for its `[1m]` models, so Pi's own compaction almost never runs for a bridge manager. The user
   needs a prompt to run `/compact`.
-- Pi's summary drops exact task IDs, question IDs, and check evidence. Tau's worker records still
-  hold them.
+- Pi's summary drops exact task IDs and question IDs. The manager needs them to reply to a worker or
+  read its report.
 - A worker notice that arrives during a manual compaction uses `triggerTurn`. Pi is busy but not
   running a turn, so the notice starts a turn beside the summary. That turn also skips
   `before_agent_start`, which the bridge needs.
@@ -27,6 +27,9 @@
   Rejected: it works only when Tau's handler runs before the bridge's, which depends on the user's
   and the repository's package order. Pi's own summary ignores the change, and Pi drops the
   instructions when nothing precedes the current turn.
+- Restore a full ledger with report evidence from the saved records of the whole session tree.
+  Rejected: it needs its own record reader, an evidence budget, and contract tests.
+  `subagent_status` and `subagent_history` already read reports and finished workers.
 - Keep ADR 0073 unchanged. Rejected: bridge managers grow without bound, and worker notices still
   race the summary.
 - Hold notices while Pi is busy without a run, and release them once Pi is idle. Rejected: Pi
@@ -43,16 +46,18 @@ compaction. Workers keep Pi's defaults.
 
 ### Reminder
 
-- Once the context passes `compaction.reminderTokens` from Tau config, Tau shows one notice that
-  suggests `/compact`. The default is 200,000 tokens. The repository file overrides the user file,
-  and an invalid value fails at session start.
+- Once the context passes a fixed 200,000 tokens, Tau shows one notice that suggests `/compact`.
 - The reminder shows again only after a compaction or after the context drops below the threshold.
   It sends the model nothing.
 
 ### Worker ledger
 
-- After every `session_compact`, Tau reads its saved worker records and queues the ledger as a
-  `nextTurn` message. The model sees it with the next prompt, and no turn starts for it.
+- After every `session_compact`, Tau lists the workers of the current session that are still active
+  or have a pending question. Each line names the task ID, worker name, state, and pending question
+  ID. A last line points to `subagent_status` and `subagent_history` for reports and finished
+  workers.
+- Tau queues the list as a `nextTurn` message. The model sees it with the next prompt, and no turn
+  starts for it. Tau sends nothing when no worker is listed.
 
 ### Worker notices
 
@@ -69,10 +74,10 @@ compaction. Workers keep Pi's defaults.
 - The ledger reaches the model after every compaction, whoever wrote the summary.
 - Cost: a manager that ignores the reminder keeps paying for a large context.
 - Cost: the summary itself still lacks exact IDs. The ledger arrives as a separate message.
+- Cost: report evidence and finished workers need a tool call after a compaction.
 - Cost: a notice that arrives during a manual `/compact` does not wake the manager by itself. The
   user started the compaction and is present to send the next prompt.
 
 ## See also
 
-- [ADR 0061: Layer Tau config from user and repository files](./0061-layer-tau-config-from-user-and-repository-files.md)
 - [ADR 0070: Compact manager sessions at Pi turn boundaries](./0070-compact-manager-sessions-at-pi-turn-boundaries.md)
