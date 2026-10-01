@@ -140,10 +140,11 @@ Approved fixes the user accepts without a new review count as reviewed.
    summary. Write commit SHAs in full as plain text, never in backticks. Save the body as
    `$prdir/body.md`.
 
-   Keep the body short, whatever the template. Lead with one sentence on what the PR changes, then
-   at most three on why and what the diff cannot show, such as an external cause, a constraint, or a
-   rejected approach. Cut anything the diff or commit messages show. Give each unrelated change and
-   each check one line, and describe a check's setup only when a reviewer must repeat it.
+   Keep the body's prose short, whatever the template. Lead with one sentence on what the PR
+   changes, then at most three on why and what the diff cannot show, such as an external cause, a
+   constraint, or a rejected approach. Do not explain what the diff or commit messages already show.
+   Give each unrelated change and each check one line, and describe a check's setup only when a
+   reviewer must repeat it.
 
 8. Preview and ask. Show the title, full body, base repository and branch, head, draft status,
    commits to push, and push command. In a stack, list every branch the push updates with its local
