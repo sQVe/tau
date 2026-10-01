@@ -13,8 +13,9 @@ export const activeStates = new Set([
   'stopping',
 ]);
 
+// An unresolved worker, such as one this parent could not reattach, may still be running.
 const needsTracking = (row: CompactionRow): boolean =>
-  activeStates.has(row.state) || row.questionId !== undefined;
+  row.state !== 'stopped' || row.questionId !== undefined;
 
 const workerLine = (row: CompactionRow): string => {
   const question = row.questionId === undefined ? '' : ` · pending question ${row.questionId}`;
@@ -31,7 +32,7 @@ export const compactionWorkerList = (rows: readonly CompactionRow[]): string | u
   }
 
   return [
-    'Workers from this session that are still active or have a pending question:',
+    'Workers from this session that have not stopped or have a pending question:',
     ...tracked.map((row) => workerLine(row)),
     'Use subagent_status for reports and subagent_history for finished workers.',
   ].join('\n');

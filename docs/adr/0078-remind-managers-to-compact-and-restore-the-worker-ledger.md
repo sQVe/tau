@@ -52,10 +52,11 @@ compaction. Workers keep Pi's defaults.
 
 ### Worker ledger
 
-- After every `session_compact`, Tau lists the workers of the current session that are still active
-  or have a pending question. Each line names the task ID, worker name, state, and pending question
-  ID. A last line points to `subagent_status` and `subagent_history` for reports and finished
-  workers.
+- After every `session_compact`, Tau lists the workers of the current session that have not stopped
+  or have a pending question. This includes unresolved workers, such as ones this parent could not
+  reattach, because they may still run. Each line names the task ID, worker name, state, and pending
+  question ID. A last line points to `subagent_status` and `subagent_history` for reports and
+  finished workers.
 - Tau queues the list as a `nextTurn` message. The model sees it with the next prompt, and no turn
   starts for it. Tau sends nothing when no worker is listed.
 
