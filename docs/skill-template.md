@@ -26,5 +26,6 @@ comment. -->
 
 1. <Gather the inputs. Name where each value comes from and what to do when one is missing.>
 2. <Preview the decisions and every write, and ask for approval.>
-3. <Make only the approved writes. On a failure, stop and report what changed.>
+3. <Make only the approved writes, with the skill's tool or one command. On a failure, stop and
+   report what changed.>
 4. <Report the result.>
