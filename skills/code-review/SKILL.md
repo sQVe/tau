@@ -71,11 +71,11 @@ stopped early, or left a claim uncertain, or when the input changed during the r
    the printed path as `$dir` from here on.
 
    Write `$dir/input.md` with the target, mode, base and HEAD SHAs, declared exclusions, the rule
-   files that apply (such as `AGENTS.md` and the ADRs it links), and any existing check result with
-   its saved output path, or "none". Include the known task intent, acceptance criteria, and
-   intentional behavior changes. Mark unavailable context explicitly; do not invent requirements or
-   copy the whole conversation. End it with a `## Capture` heading. Then capture from the repository
-   root, in one bash call that sets `dir` and `base`:
+   files that apply (such as `AGENTS.md` and the decision records it links), and any existing check
+   result with its saved output path, or "none". Include the known task intent, acceptance criteria,
+   and intentional behavior changes. Mark unavailable context explicitly; do not invent requirements
+   or copy the whole conversation. End it with a `## Capture` heading. Then capture from the
+   repository root, in one bash call that sets `dir` and `base`:
 
    ```sh
    set -o pipefail
