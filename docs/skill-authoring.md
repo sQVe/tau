@@ -17,19 +17,29 @@ checklist. `tests/skillFiles.test.ts` checks every skill's frontmatter, links, a
 
 ## Put each instruction in one place
 
-| Instruction                                                 | Where it goes                                        |
-| ----------------------------------------------------------- | ---------------------------------------------------- |
-| Judgment, order of steps, approvals, and boundaries         | The skill                                            |
-| Command mechanics, JSON fields, parsing, and retry handling | A tested tool or script, named at the step it serves |
-| The shape of a body or preview the user sees                | A template file next to the skill                    |
-| A rule for all work, not one workflow                       | The coding, writing, or workflow instructions        |
+| Instruction                                                 | Where it goes                                 |
+| ----------------------------------------------------------- | --------------------------------------------- |
+| Judgment, order of steps, approvals, and boundaries         | The skill                                     |
+| Command mechanics, JSON fields, parsing, and retry handling | A tested tool, named at the step it serves    |
+| The shape of a body or preview the user sees                | A template file next to the skill             |
+| A rule for all work, not one workflow                       | The coding, writing, or workflow instructions |
+
+## Keep scripts out of skills
+
+Shell in a skill has no tests, and every copy drifts on its own.
+
+- A step may give one command with its arguments, such as a `gh` or `linear` call.
+- Move a shell block with several commands, conditions, or safety checks into a tested Tau tool. The
+  step names the tool and says what to do with its result.
+- When two skills need the same mechanics, share one tool. Never copy a block into another skill.
+- Some skills still hold such blocks, such as the `.tau/` directory setup. Do not copy them into a
+  new skill.
 
 ## Delete before you add
 
 Skills grow when every review finding becomes a new paragraph. Before you add text:
 
 - Look for text the new rule replaces, and change the step that caused the problem.
-- Move command details into a tool when a step needs more than one or two.
 - Show decisions and their effects in a preview, not raw commands.
 - Do not repeat the procedure in the checklist.
 
@@ -63,6 +73,7 @@ Commands:
 - [ ] Each command, flag, and JSON field matches the installed CLI's `--help` or source. When help
       does not settle what a command does, run it in a temporary repository.
 - [ ] Each command runs without a prompt.
+- [ ] No new shell block holds more than one command.
 - [ ] Steps respect tool limits, such as four questions per `ask_user_question` call.
 
 Length:
