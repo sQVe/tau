@@ -6,8 +6,10 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
+import { errorMessage } from '../../errors/index.js';
 import { appendToolGuidelines } from '../../systemPrompt/index.js';
 import { isWorkerProcess } from '../../workerProcess/index.js';
+import { readBrowserLoginCommand } from './browserLogin.js';
 import { WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { historyPage, searchHistory } from './history.js';
@@ -175,7 +177,7 @@ const hasHerdrEnvironment = (): boolean =>
 const hasHerdrParentPane = (): boolean =>
   hasHerdrEnvironment() && Boolean(process.env.HERDR_PANE_ID);
 
-export const delegationGuidelines = [
+const leadingDelegationGuidelines = [
   'You are the manager. You own the plan, the user conversation, acceptance criteria, integration, and commits.',
   'Do small work yourself: quick questions, small local edits, obvious rebase conflicts, worker coordination, and back-and-forth with the user. Your own small edits need checks, not a reviewer. When a task mixes a small fix with larger work, make the fix yourself and delegate the rest.',
   'Without waiting to be asked, send larger implementation or work that needs new tests to a `worker`, and open questions that need wide reading or running commands to a `scout`. Send a finished worker change to a `reviewer` before you accept or commit it. Follow any explicit user instruction about delegation.',
@@ -183,11 +185,27 @@ export const delegationGuidelines = [
   'Use the profile default unless the user asks for another model or a multi-model discussion.',
   'Pass a brief that several workers share as a file path. Give workers on cheap models a shorter `timeoutSeconds`. Run a multi-model discussion as one round with two models, and add a round only for a disagreement that changes the decision.',
   'Send a finished change with user-visible behavior to `qa`. It expects the user to run the app from the worktree under test. Tell it where the app runs, pass its questions to the user, and give it only test-account credentials, because worker records keep them.',
-  'Send other browser work, such as lookups, forms, page checks, and screenshots, to `browser`. When a `browser` or `qa` worker needs a login, ask the user to sign in once with `google-chrome-stable --profile-directory="Agent profile"` and close the window, then start a new worker, because each new worker copies that profile when it starts.',
+];
+
+const trailingDelegationGuidelines = [
   'While subagent workers run, do not edit their worktree or redo their work.',
   'Treat a worker report as a claim. Check its evidence before you tell the user the work is done.',
   'When a reviewer reports findings on a worker change you delegated, send the in-scope fixes back to that worker without waiting for the user. If a skill you follow requires approval first, get it before you send them.',
   'After any worker report, start the next step you own. Ask only when that step needs a decision you cannot make, and report and stop when the work is done.',
+];
+
+const browserLoginStep = (loginCommand: string | undefined): string =>
+  loginCommand === undefined
+    ? 'ask the user to sign in once in the Chrome profile that the browser package config uses and close the window'
+    : `ask the user to run \`${loginCommand}\`, sign in, and close the window`;
+
+const browserGuideline = (loginCommand: string | undefined): string =>
+  `Send other browser work, such as lookups, forms, page checks, and screenshots, to \`browser\`. When a \`browser\` or \`qa\` worker needs a login, ${browserLoginStep(loginCommand)}, then start a new worker, because each new worker copies the configured Chrome profile when it starts.`;
+
+export const delegationGuidelines = (loginCommand: string | undefined): string[] => [
+  ...leadingDelegationGuidelines,
+  browserGuideline(loginCommand),
+  ...trailingDelegationGuidelines,
 ];
 
 const requireHerdrParent = (
@@ -465,6 +483,23 @@ const launchModelLine = (
   }
 };
 
+// A broken login command leaves the command out, so the manager still sends browser work.
+const browserLoginCommand = (
+  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'ui'>,
+): string | undefined => {
+  try {
+    return readBrowserLoginCommand({
+      cwd: context.cwd,
+      agentDirectory: getAgentDir(),
+      projectTrusted: context.isProjectTrusted(),
+    });
+  } catch (error) {
+    context.ui.notify(errorMessage(error), 'error');
+
+    return undefined;
+  }
+};
+
 const registerLaunchTool = (
   runtime: SubagentRuntime,
   profiles: ProfileSummary[],
@@ -667,7 +702,11 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
 
   registerSubagentTools(runtime);
   // Launch needs herdr and a parent pane, so a manager outside herdr must not be told to delegate.
-  appendToolGuidelines(pi, 'subagent', hasHerdrParentPane() ? delegationGuidelines : []);
+  const delegating = hasHerdrParentPane();
+  // Session start replaces the contents once the user config can be read.
+  const guidelines = delegating ? delegationGuidelines(undefined) : [];
+
+  appendToolGuidelines(pi, 'subagent', guidelines);
 
   const refreshWidget = (context: ExtensionContext, currentRows?: WorkerWidgetRow[]): void => {
     if (shuttingDown || !context.hasUI || context.mode !== 'tui') {
@@ -742,6 +781,14 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     const profiles = launchProfiles(context);
 
     registerLaunchTool(runtime, profiles, launchModelLine(context, profiles));
+
+    if (delegating) {
+      guidelines.splice(
+        0,
+        guidelines.length,
+        ...delegationGuidelines(browserLoginCommand(context)),
+      );
+    }
 
     if (widgetTimer) {
       clearInterval(widgetTimer);

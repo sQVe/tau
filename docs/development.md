@@ -145,6 +145,17 @@ The bundled `browser` and `qa` profiles set `packages: npm:pi-agent-browser-nati
 browser tools. If the parent session does not use the browser itself, remove
 `npm:pi-agent-browser-native` from the `packages` list in `~/.pi/agent/settings.json`.
 
+When a browser worker needs a login, the manager asks you to sign in once in the browser package's
+Chrome profile. To have it name the command that opens that profile, set `browser.loginCommand` in
+`~/.pi/agent/tau.json`:
+
+```json
+{ "browser": { "loginCommand": "google-chrome-stable --profile-directory=\"Agent profile\"" } }
+```
+
+Only the user file may set `browser`. An empty or non-string command leaves the command out of the
+manager's guidelines and shows an error when the session starts.
+
 A profile's `instruction-sets:` setting lists the Tau instruction sets its worker loads, from
 `writing`, `coding`, `workflow`, and `browser`. Without it, a worker loads `writing`, `coding`, and
 `workflow`. The bundled `scout` profile sets `instruction-sets: writing, workflow`, and the bundled

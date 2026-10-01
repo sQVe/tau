@@ -85,8 +85,110 @@ it('appends delegation guidelines for a manager inside herdr', ({ onTestFinished
 
   const appended = managerGuidelines();
 
-  for (const guideline of delegationGuidelines) {
+  for (const guideline of delegationGuidelines(undefined)) {
     expect(appended).toContain(guideline);
+  }
+});
+
+const loginCommand = 'google-chrome-stable --profile-directory="Agent profile"';
+
+const sessionGuidelines = (
+  onTestFinished: typeof finishTest,
+  config: { user?: unknown; repository?: unknown },
+) => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-browser-guideline-'));
+  const fake = fakeExtensionApi();
+  const notify = vi.fn<ExtensionContext['ui']['notify']>();
+
+  vi.stubEnv('HERDR_ENV', '1');
+  vi.stubEnv('HERDR_PANE_ID', 'parent');
+  vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+  vi.spyOn(WorkerController.prototype, 'resume').mockResolvedValue(undefined);
+
+  if (config.user !== undefined) {
+    writeFileSync(join(directory, 'tau.json'), JSON.stringify(config.user));
+  }
+
+  if (config.repository !== undefined) {
+    mkdirSync(join(directory, '.pi'));
+    writeFileSync(join(directory, '.pi', 'tau.json'), JSON.stringify(config.repository));
+  }
+
+  subagentsExtension(fake.pi);
+
+  const context = {
+    cwd: directory,
+    isProjectTrusted: () => true,
+    scopedModels: [],
+    hasUI: false,
+    ui: { notify },
+    sessionManager: { getSessionId: () => 'parent' },
+  } as unknown as ExtensionContext;
+
+  onTestFinished(async () => {
+    await fake.handler('session_shutdown')({ reason: 'quit' }, context);
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  fake.handler('session_start')({}, context);
+
+  return { appended: appendedSystemPrompt(fake.handlers, ['subagent']), notify };
+};
+
+it('gives the manager the configured browser login command', ({ onTestFinished }) => {
+  const { appended, notify } = sessionGuidelines(onTestFinished, {
+    user: { browser: { loginCommand } },
+  });
+
+  expect(appended).toContain(loginCommand);
+
+  for (const guideline of delegationGuidelines(loginCommand)) {
+    expect(appended).toContain(guideline);
+  }
+
+  expect(notify).not.toHaveBeenCalled();
+});
+
+it('gives the manager the browser guideline without a command when none is configured', ({
+  onTestFinished,
+}) => {
+  const { appended, notify } = sessionGuidelines(onTestFinished, {});
+
+  for (const guideline of delegationGuidelines(undefined)) {
+    expect(appended).toContain(guideline);
+  }
+
+  expect(notify).not.toHaveBeenCalled();
+});
+
+it.each([
+  {
+    condition: 'the user command is empty',
+    config: { user: { browser: { loginCommand: '' } } },
+    commands: [loginCommand],
+  },
+  {
+    condition: 'a repository file sets the command',
+    config: {
+      user: { browser: { loginCommand } },
+      repository: { browser: { loginCommand: 'open-project-browser' } },
+    },
+    commands: [loginCommand, 'open-project-browser'],
+  },
+])('reports the error and leaves the login command out when $condition', ({ config, commands }) => {
+  const { appended, notify } = sessionGuidelines(finishTest, config);
+
+  expect(notify).toHaveBeenCalledWith(expect.stringContaining('browser'), 'error');
+
+  for (const guideline of delegationGuidelines(undefined)) {
+    expect(appended).toContain(guideline);
+  }
+
+  for (const command of commands) {
+    expect(appended).not.toContain(command);
   }
 });
 
