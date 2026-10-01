@@ -108,13 +108,11 @@ Approved fixes the user accepts without a new review count as reviewed.
    its approval question for findings. Step 6 decides what approved fixes need.
 
 5. Run checks. Reuse a passing result of the required pre-merge checks when evidence shows it ran on
-   the same content, as
-   [ADR 0039](../../docs/adr/0039-reuse-reported-checks-and-run-one-full-suite.md) describes.
-   Otherwise commit the task's changes first and run them once on that tree. In a stack, first
-   restack the branches above with the [stack skill](../stack/SKILL.md). Then run the checks on the
-   PR's branch and on each branch above that the restack changed, since step 9 pushes them all.
-   After any later commit, restack and run the affected checks again before the preview. Save their
-   real output in `$prdir`, with the HEAD, `git status --porcelain`, and the hash of
+   the same content. Otherwise commit the task's changes first and run them once on that tree. In a
+   stack, first restack the branches above with the [stack skill](../stack/SKILL.md). Then run the
+   checks on the PR's branch and on each branch above that the restack changed, since step 9 pushes
+   them all. After any later commit, restack and run the affected checks again before the preview.
+   Save their real output in `$prdir`, with the HEAD, `git status --porcelain`, and the hash of
    `git diff <merge base> HEAD`, taken before the run, at the top. Never write a summary in its
    place. A failing check is a gap.
 
