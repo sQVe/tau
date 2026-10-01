@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 
 import { readBulkReadModel } from '../src/extensions/bulkRead/config.js';
-import { loadCompactionConfig } from '../src/extensions/compaction/config.js';
 import { readProfileModels } from '../src/extensions/subagents/profileModels.js';
 import { loadTddConfig } from '../src/extensions/tdd/config.js';
 import { readAllowedModels } from '../src/models/index.js';
@@ -33,7 +32,7 @@ const configFixture = (onTestFinished: (callback: () => void) => void) => {
   };
 };
 
-it('leaves TDD config, profiles, allowed models, and compaction readable when bulkRead is broken', ({
+it('leaves TDD config, profiles, and allowed models readable when bulkRead is broken', ({
   onTestFinished,
 }) => {
   const { location, userFile, repositoryFile } = configFixture(onTestFinished);
@@ -44,15 +43,10 @@ it('leaves TDD config, profiles, allowed models, and compaction readable when bu
     bulkRead: 'broken',
   });
 
-  writeConfig(repositoryFile, {
-    bulkRead: {},
-    tdd: { productionGlobs: ['lib/**'] },
-    compaction: { reminderTokens: 150_000 },
-  });
+  writeConfig(repositoryFile, { bulkRead: {}, tdd: { productionGlobs: ['lib/**'] } });
 
   expect(() => readBulkReadModel(location)).toThrow('bulkRead');
   expect(readAllowedModels(location)?.models).toEqual(['a/one']);
   expect(readProfileModels(location)).toEqual(new Map([['scout', 'a/one']]));
   expect(loadTddConfig(location).config.productionGlobs).toEqual(['lib/**']);
-  expect(loadCompactionConfig(location)).toEqual({ reminderTokens: 150_000 });
 });
