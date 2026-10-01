@@ -97,3 +97,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0073: Leave manager compaction to Pi](./0073-leave-manager-compaction-to-pi.md)
 - [0074: Let skills declare the actions they must own](./0074-let-skills-declare-the-actions-they-must-own.md)
 - [0075: Plan work as PR-sized slices in Linear](./0075-plan-work-as-pr-sized-slices-in-linear.md)
+- [0076: Give browser workers one shared set of browser rules](./0076-give-browser-workers-one-shared-set-of-browser-rules.md)

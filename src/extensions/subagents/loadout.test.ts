@@ -519,7 +519,7 @@ it('saves the profile tools, or the role defaults, and the paths of its skills',
 const parseSettings = (settings: string) =>
   parseProfile(`---\nrole: investigation\n${settings}---\nInspect.\n`, 'custom', 'fixture');
 
-it('saves the profile instruction sets, or all sets without the setting', async ({
+it('saves the profile instruction sets, or all but browser without the setting', async ({
   onTestFinished,
 }) => {
   const { context, request } = await workerFixture(onTestFinished);
@@ -532,7 +532,8 @@ it('saves the profile instruction sets, or all sets without the setting', async 
 
   expect(parseSettings('').instructionSets).toEqual(['writing', 'coding', 'workflow']);
   expect(resolve('scout').instructionSets).toEqual(['writing', 'workflow']);
-  expect(resolve('qa').instructionSets).toEqual(['writing', 'workflow']);
+  expect(resolve('qa').instructionSets).toEqual(['writing', 'workflow', 'browser']);
+  expect(resolve('browser').instructionSets).toEqual(['writing', 'workflow', 'browser']);
   expect(resolve('reviewer').instructionSets).toEqual(['writing', 'coding', 'workflow']);
   expect(resolve('worker').instructionSets).toEqual(['writing', 'coding', 'workflow']);
 });
@@ -726,10 +727,11 @@ it('lists bundled, user, and trusted project profiles without changing profile f
     rmSync(directory, { recursive: true, force: true });
   });
 
-  const qaDescription: unknown = expect.any(String);
+  const description: unknown = expect.any(String);
 
   const bundled = [
-    { name: 'qa', description: qaDescription },
+    { name: 'browser', description },
+    { name: 'qa', description },
     ...['reviewer', 'scout', 'worker'].map((name) => ({ name })),
   ];
 
@@ -762,7 +764,8 @@ it('lists bundled, user, and trusted project profiles without changing profile f
   const before = files();
 
   expect(listProfiles(directory, directory, true)).toEqual([
-    { name: 'qa', description: qaDescription },
+    { name: 'browser', description },
+    { name: 'qa', description },
     { name: 'reviewer' },
     { name: 'scout' },
     { name: 'worker', description: 'Project editor' },

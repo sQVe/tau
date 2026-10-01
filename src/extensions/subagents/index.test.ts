@@ -185,7 +185,7 @@ it('lists allowed scoped models and each profile default in the launch descripti
     ['a/one', 'a/hidden', 'a/two'],
   );
 
-  expect(description).toContain('a/one (qa, reviewer, worker), a/two (scout).');
+  expect(description).toContain('a/one (browser, qa, reviewer, worker), a/two (scout).');
   expect(description).not.toContain('a/hidden');
 });
 
@@ -200,7 +200,7 @@ it('leaves the model line out of the launch description when the config is broke
     ['a/one'],
   );
 
-  expect(description).toContain('Profiles: qa');
+  expect(description).toContain('Profiles: browser');
   expect(description).not.toContain('a/one');
 });
 

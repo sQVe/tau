@@ -21,7 +21,6 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { errorMessage, isMissingFile } from '../../errors/index.js';
-import { instructionSetNames } from '../../instructionSets/index.js';
 import { roleTools } from './profiles.js';
 import {
   eventSchema,
@@ -32,6 +31,8 @@ import {
   isTaskId,
   version4TaskSchema,
   version5TaskSchema,
+  version6TaskSchema,
+  version6InstructionSetNames,
 } from './types.js';
 import type { Loadout, Report, Task, TaskEvent } from './types.js';
 import { taskEndedEventKinds } from './workerState.js';
@@ -163,7 +164,7 @@ export const readOptionalRecord = (directory: string, name: string): unknown => 
   }
 };
 
-const builtInProfiles = new Set(['worker', 'scout', 'reviewer', 'qa']);
+const builtInProfiles = new Set(['worker', 'scout', 'reviewer', 'qa', 'browser']);
 
 // Custom profiles can have any name, so they fall back to the role prefix.
 export const namePrefix = (loadout: Loadout): string => {
@@ -238,10 +239,15 @@ const isNonPiTask = (value: unknown): boolean => {
   return retiredVersion && hasGenericLoadout(value);
 };
 
-// Version 5 lacks the profile packages, version 4 also the instruction sets, and earlier formats
-// also the tool and skill loadout. Workers of every earlier format loaded all instruction sets and
-// no profile packages.
+// Version 6 lacks the browser instruction set, version 5 also the profile packages, version 4 also
+// the instruction sets, and earlier formats also the tool and skill loadout. Workers of versions 4
+// and earlier loaded the writing, coding, and workflow sets, and workers of version 5 and earlier no
+// profile packages.
 const upgradeTask = (value: unknown): unknown => {
+  if (Value.Check(version6TaskSchema, value)) {
+    return { ...value, version: taskVersion };
+  }
+
   if (Value.Check(version5TaskSchema, value)) {
     return { ...value, version: taskVersion, loadout: { ...value.loadout, packages: [] } };
   }
@@ -250,7 +256,11 @@ const upgradeTask = (value: unknown): unknown => {
     return {
       ...value,
       version: taskVersion,
-      loadout: { ...value.loadout, instructionSets: [...instructionSetNames], packages: [] },
+      loadout: {
+        ...value.loadout,
+        instructionSets: [...version6InstructionSetNames],
+        packages: [],
+      },
     };
   }
 
@@ -262,7 +272,7 @@ const upgradeTask = (value: unknown): unknown => {
         ...value.loadout,
         tools: roleTools[value.loadout.role],
         skills: [],
-        instructionSets: [...instructionSetNames],
+        instructionSets: [...version6InstructionSetNames],
         packages: [],
       },
     };

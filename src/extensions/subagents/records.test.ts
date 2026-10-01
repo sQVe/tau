@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { afterEach, expect, it, onTestFinished as afterTest, vi } from 'vitest';
 
 import { readWorkerFacts, taskRecordStatus } from './controller/record.js';
+import { fixtureLoadout } from './fixtures/loadout.js';
 import * as questions from './questionRecords.js';
 import * as records from './records.js';
 
@@ -32,7 +33,7 @@ const questionFixture = () => {
   });
 
   const task = {
-    version: 6,
+    version: 7,
     taskId: 'task-one',
     task: 'Inspect source.',
     parentSession: join(directory, 'parent.jsonl'),
@@ -249,9 +250,10 @@ const saveTaskRecordFixtures = (names: string[]) => {
 
 it('reads task records saved in the previous and current formats', () => {
   const previous = ['previous-pi', 'version-3-pi'];
-  const root = saveTaskRecordFixtures([...previous, 'version-4-pi', 'version-5-pi', 'current-pi']);
+  const earlier = [...previous, 'version-4-pi', 'version-5-pi', 'version-6-pi'];
+  const root = saveTaskRecordFixtures([...earlier, 'current-pi']);
   const diagnostics: string[] = [];
-  const allInstructionSets = ['writing', 'coding', 'workflow'];
+  const earlierInstructionSets = ['writing', 'coding', 'workflow'];
 
   const scanned = records.readTasks(root, diagnostics);
 
@@ -261,12 +263,12 @@ it('reads task records saved in the previous and current formats', () => {
     const saved = parsedTaskRecordFixture(name);
 
     return Object.assign(saved, {
-      version: 6,
+      version: 7,
       loadout: {
         ...(saved.loadout as object),
         tools: ['read', 'bash'],
         skills: [],
-        instructionSets: allInstructionSets,
+        instructionSets: earlierInstructionSets,
         packages: [],
       },
     });
@@ -275,16 +277,22 @@ it('reads task records saved in the previous and current formats', () => {
   const version4 = parsedTaskRecordFixture('version-4-pi');
 
   const upgradedVersion4 = Object.assign(version4, {
-    version: 6,
-    loadout: { ...(version4.loadout as object), instructionSets: allInstructionSets, packages: [] },
+    version: 7,
+    loadout: {
+      ...(version4.loadout as object),
+      instructionSets: earlierInstructionSets,
+      packages: [],
+    },
   });
 
   const version5 = parsedTaskRecordFixture('version-5-pi');
 
   const upgradedVersion5 = Object.assign(version5, {
-    version: 6,
+    version: 7,
     loadout: { ...(version5.loadout as object), packages: [] },
   });
+
+  const upgradedVersion6 = Object.assign(parsedTaskRecordFixture('version-6-pi'), { version: 7 });
 
   expect(
     scanned.map(({ task }) => task).toSorted((a, b) => a.taskId.localeCompare(b.taskId)),
@@ -293,7 +301,22 @@ it('reads task records saved in the previous and current formats', () => {
     ...upgraded,
     upgradedVersion4,
     upgradedVersion5,
+    upgradedVersion6,
   ]);
+});
+
+it('diagnoses a format 6 task that lists the browser instruction set', () => {
+  const root = saveTaskRecordFixtures(['version-6-pi']);
+  const saved = parsedTaskRecordFixture('version-6-pi');
+  const loadout = { ...(saved.loadout as object), instructionSets: ['writing', 'browser'] };
+
+  writeFileSync(join(root, 'version-6-pi', 'task.json'), JSON.stringify({ ...saved, loadout }));
+
+  const diagnostics: string[] = [];
+
+  expect(records.readTasks(root, diagnostics, [])).toEqual([]);
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toContain(join(root, 'version-6-pi'));
 });
 
 it('diagnoses a current-format task whose profile packages are missing or malformed', () => {
@@ -461,6 +484,17 @@ it('reads a reviewer task named after its profile', () => {
   records.publish(join(directory, 'new'), 'task.json', saved);
 
   expect(records.readTask(join(directory, 'new'))).toEqual(saved);
+});
+
+it.each([
+  { profile: 'browser', role: 'investigation', prefix: 'browser' },
+  { profile: 'qa', role: 'investigation', prefix: 'qa' },
+  { profile: 'triage', role: 'investigation', prefix: 'scout' },
+  { profile: 'fixer', role: 'editing', prefix: 'worker' },
+] as const)('names a $profile worker with the $prefix prefix', ({ profile, role, prefix }) => {
+  const loadout = { ...fixtureLoadout(tmpdir()), profile, role };
+
+  expect(records.namePrefix(loadout)).toBe(prefix);
 });
 
 it('reads a task named after a profile this Tau does not know', () => {

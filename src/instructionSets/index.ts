@@ -1,8 +1,11 @@
 import { readFile } from 'node:fs/promises';
 
-export const instructionSetNames = ['writing', 'coding', 'workflow'] as const;
+export const instructionSetNames = ['writing', 'coding', 'workflow', 'browser'] as const;
 
 export type InstructionSetName = (typeof instructionSetNames)[number];
+
+// A profile without `instruction-sets:` loads these. Browser rules are opt-in.
+export const defaultInstructionSetNames: InstructionSetName[] = ['writing', 'coding', 'workflow'];
 
 export const isInstructionSetName = (name: string): name is InstructionSetName =>
   instructionSetNames.some((setName) => setName === name);

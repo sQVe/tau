@@ -76,7 +76,7 @@ const setup = () => {
     );
 
     const record = validateTask({
-      version: 6,
+      version: 7,
       taskId: id,
       task: large ? `${'界'.repeat(10000)} needle-tail` : 'Inspect shared source.',
       ...(name != null ? { name } : {}),

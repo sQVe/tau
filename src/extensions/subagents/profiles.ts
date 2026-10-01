@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { Value } from 'typebox/value';
 
-import { instructionSetNames, isInstructionSetName } from '../../instructionSets/index.js';
+import { defaultInstructionSetNames, isInstructionSetName } from '../../instructionSets/index.js';
 import type { InstructionSetName } from '../../instructionSets/index.js';
 import { assignmentContractFor, handoffContract } from './handoff.js';
 import { thinkingSchema, toolNamePattern } from './types.js';
@@ -133,7 +133,7 @@ const parseInstructionSets = (fields: Map<string, string>): InstructionSetName[]
   const names = parseList('instruction-sets', fields.get('instruction-sets'));
 
   if (names === undefined) {
-    return [...instructionSetNames];
+    return [...defaultInstructionSetNames];
   }
 
   const unknown = names.find((name) => !isInstructionSetName(name));
