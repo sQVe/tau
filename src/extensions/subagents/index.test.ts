@@ -192,6 +192,24 @@ it.each([
   }
 });
 
+it('names the configured slice agent team in the manager prompt', ({ onTestFinished }) => {
+  const { appended } = sessionGuidelines(onTestFinished, { user: { slice: { agentTeam: 'AI' } } });
+
+  expect(appended).toContain('`AI`');
+});
+
+it('states an invalid slice agent team in the manager prompt instead of dropping it', ({
+  onTestFinished,
+}) => {
+  const { appended } = sessionGuidelines(onTestFinished, { user: { slice: { agentTeam: '' } } });
+
+  expect(appended).toContain('slice.agentTeam');
+
+  for (const guideline of delegationGuidelines(undefined)) {
+    expect(appended).toContain(guideline);
+  }
+});
+
 it('leaves delegation guidelines out when a manager runs outside herdr', ({ onTestFinished }) => {
   onTestFinished(() => {
     vi.unstubAllEnvs();

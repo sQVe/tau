@@ -29,6 +29,7 @@ import {
   renderStatusResult,
   shortId,
 } from './render.js';
+import { agentTeamLine } from './sliceConfig.js';
 import { taskIdSchema } from './types.js';
 import { renderWorkerWidget } from './widget.js';
 import type { WorkerWidgetRow } from './widget.js';
@@ -783,10 +784,17 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     registerLaunchTool(runtime, profiles, launchModelLine(context, profiles));
 
     if (delegating) {
+      const location = {
+        cwd: context.cwd,
+        agentDirectory: getAgentDir(),
+        projectTrusted: context.isProjectTrusted(),
+      };
+
       guidelines.splice(
         0,
         guidelines.length,
         ...delegationGuidelines(browserLoginCommand(context)),
+        ...agentTeamLine(location),
       );
     }
 
