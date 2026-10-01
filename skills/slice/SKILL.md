@@ -26,7 +26,7 @@ before anything was written to Linear.
 ## Hard rules
 
 - Follow the lifecycle and ticket rules in
-  [ADR 0073](../../docs/adr/0073-plan-work-as-pr-sized-slices-in-linear.md).
+  [ADR 0075](../../docs/adr/0075-plan-work-as-pr-sized-slices-in-linear.md).
 - Write to Linear only after the user approves the preview. Any change after approval needs a new
   preview.
 - Ask every question with the `ask_user_question` tool, including the preview approval. Never end a
@@ -153,5 +153,5 @@ before anything was written to Linear.
 
 ## See also
 
-- [ADR 0073: Plan work as PR-sized slices in Linear](../../docs/adr/0073-plan-work-as-pr-sized-slices-in-linear.md)
+- [ADR 0075: Plan work as PR-sized slices in Linear](../../docs/adr/0075-plan-work-as-pr-sized-slices-in-linear.md)
 - [pr skill](../pr/SKILL.md) for the PR that ships each slice
