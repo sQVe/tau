@@ -16,6 +16,7 @@ verification.
 - Follow the [writing instructions](src/extensions/writing/instructions.md) for every document.
 - Follow the [workflow instructions](src/extensions/workflow/instructions.md) for how you run
   commands and scope work.
+- Before writing or changing a skill, read the [skill authoring guide](docs/skill-authoring.md).
 - Before finishing a document, check its local links and verify the commands it gives against the
   repository.
 - Follow the module, query, and failure conventions in

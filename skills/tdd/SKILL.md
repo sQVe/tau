@@ -14,7 +14,7 @@ Use this skill when changing behavior where `run_tests` is available. Start with
 make it pass, then verify the whole suite through the repository's full check or one full
 `run_tests` run.
 
-## Principles
+## Hard rules
 
 - RED and GREEN describe observed test results, not permission to edit.
 - Use `run_tests` so Tau can report outcomes and suggest the next step. Bash test runs do not update

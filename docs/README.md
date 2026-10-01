@@ -2,6 +2,8 @@
 
 - [Vision](./vision.md): project goals and limits.
 - [Development](./development.md): local setup, trying Tau, verification, and versioning.
+- [Skill authoring](./skill-authoring.md): a checklist and [template](./skill-template.md) for
+  writing skills.
 - [Architecture decisions](./adr/README.md): technical choices and their benefits and costs.
 - [Agent writing instructions](../src/extensions/writing/instructions.md): rules loaded into Pi.
 - [Agent coding instructions](../src/extensions/coding/instructions.md): code rules loaded into Pi.

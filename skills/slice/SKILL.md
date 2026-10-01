@@ -108,7 +108,7 @@ before anything was written to Linear.
      ```text
      ENG-120  update  Add PR-sized planning
      ├─ 1     new     Record the lifecycle                   ~150
-     │                The ADR for the slice lifecycle.
+     │                The decision record for the slice lifecycle.
      │                Out of scope: the skill itself.
      └─ 2     new     Add the slice skill    blocked-by 1    ~300
                       The /slice skill and its tests.

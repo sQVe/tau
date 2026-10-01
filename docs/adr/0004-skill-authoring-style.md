@@ -26,7 +26,9 @@
 
 ## Decision
 
-Write Tau skills in Markdown using Pi's skill format.
+Write Tau skills in Markdown using Pi's skill format. Start from the
+[skill template](../skill-template.md) and check the skill against the
+[skill authoring guide](../skill-authoring.md).
 
 ### Required shape
 
