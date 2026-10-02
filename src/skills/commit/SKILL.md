@@ -24,7 +24,8 @@ tool runs without a prompt.
    - Read untracked files before grouping them. Use the diffs for tracked files unless ambiguous.
    - If there are no changes, report the clean tree and stop.
    - Account for pre-staged files before calling `commit`. Assign each to a group, or unstage only
-     known staging with `git reset HEAD -- <file>`. Leave concurrent staging untouched.
+     staging you or the user created with `git reset HEAD -- <file>`. Leave concurrent staging
+     untouched.
 
 2. Plan exact, ordered groups.
    - Prefer small commits that each make one isolated change. Split unrelated changes into separate
