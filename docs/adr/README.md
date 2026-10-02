@@ -103,3 +103,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0079: Grow modules from flat files](./0079-grow-modules-from-flat-files.md)
 - [0080: Insert prompt snippets through autocomplete](./0080-insert-prompt-snippets-through-autocomplete.md)
 - [0081: Sort prompt snippets by id](./0081-sort-prompt-snippets-by-id.md)
+- [0082: Own Linear conventions in one tracker skill](./0082-own-linear-conventions-in-one-tracker-skill.md)

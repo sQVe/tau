@@ -117,9 +117,10 @@ themselves.
 5. Fix the supported findings at the root cause. Make small fixes yourself. Send a fix that needs
    new tests or spans modules to a `worker`, then a `reviewer`. For a finding that is valid but
    outside the PR's scope, ask the user. If they approve, file an issue in the tracker the
-   repository uses, such as Linear when branches or commits name Linear IDs, and cite it in the
-   reply. Commit through the commit skill, one commit per thread where practical, so each reply
-   names its commit. Failing checks need no reply on the PR.
+   repository uses, and cite it in the reply. Use the [tracker skill](../tracker/SKILL.md) for
+   Linear, which a repository uses when its branches or commits name Linear IDs. Commit through the
+   commit skill, one commit per thread where practical, so each reply names its commit. Failing
+   checks need no reply on the PR.
 
 6. When the round rebased or committed fixes, run the repository's required checks once. In a stack,
    first restack the branches above the PR with the stack skill. Then run the checks on the PR's

@@ -35,11 +35,11 @@ Workers then carry out the agent tickets.
   allows.
 - Ask every question with the `ask_user_question` tool, including the preview approval. Never end a
   turn with a question in prose.
-- Take the agent team only from the prompt line that starts with
-  `The agent team for slice agent tickets is`. If that line is missing, or says the team could not
-  be read, stop. Tell the user to set `slice.agentTeam` to a Linear team key in
-  `~/.pi/agent/tau.json`, and show any error the line gives. Never guess a team.
-- Do not change any ticket's status, and never change a merged slice.
+- Route, write, and create agent tickets with the [tracker skill](../tracker/SKILL.md). Before you
+  draft, check that the prompt names both the repository route and the agent team as that skill
+  describes. If either is missing, stop with the tracker skill's setup message.
+- Make no status change except moving the slice to In Progress in step 8, and never change a merged
+  slice.
 - If a step fails partway, stop and report what completed. Read the draft and the slice's children
   before you retry anything.
 - Before you save the first file, create the draft directory inside an ignored `.tau/` from the
@@ -104,9 +104,8 @@ Workers then carry out the agent tickets.
    `git show <tree>:<path>`. Agent tickets name real files and tests in that tree.
 
 6. Write the draft in `$slicedir`, one body file per agent ticket.
-   - `agent-<n>.md`, numbered in work order: `## Outcome`, `## Files`, `## First test`, and
-     `## Acceptance` with checkboxes. Keep each ticket to one worker task. A cheap worker model
-     needs the files, the first test, and the acceptance checks named exactly.
+   - `agent-<n>.md`, numbered in work order, with the agent ticket template in the
+     [tracker skill](../tracker/SKILL.md). Keep each ticket to one worker task.
    - `start.md`: the slice identifier, the branch, the base, and one row per agent ticket with its
      number, title, body file, and Linear identifier. Keep identifiers that already exist. Leave
      them empty until the ticket exists.
@@ -119,8 +118,8 @@ Workers then carry out the agent tickets.
    - Each agent ticket as `new` or `unchanged`, with its title and one line from its `## Outcome`.
    - Each acceptance criterion of the slice, with the agent ticket numbers that cover it.
    - The writes step 8 makes, numbered, one line each, such as
-     `Create agent tickets 1-3 under ENG-123 in AI` or
-     `Create branch eng-123-add-x from origin/main`.
+     `Create branch eng-123-add-x from origin/main`, `Move ENG-123 to In Progress`, or
+     `Create agent tickets 1-3 under ENG-123 in AI`.
 
    Approve with `ask_user_question`: approve, change the plan, or stop. After any change, write the
    draft again and show a new preview.
@@ -130,16 +129,9 @@ Workers then carry out the agent tickets.
    - Create the branch with `git switch --no-track -c <branchName> <base>`. If
      `git rev-parse --verify --quiet refs/heads/<branchName>` shows it exists already, run
      `git switch <branchName>` instead.
-   - Create each agent ticket through the API. `linear issue create --parent` copies the slice's
-     project, which fails when the agent team is not in that project. Read the agent team's ID with
-     `linear api 'query($key: String!) { team(id: $key) { id } }' --variable key=<agent team>`,
-     then:
-
-     ```sh
-     linear api 'mutation($team: String!, $parent: String!, $title: String!, $description: String!) { issueCreate(input: { teamId: $team, parentId: $parent, title: $title, description: $description }) { issue { identifier url } } }' --variable team=<team id> --variable parent=<slice> --variable 'title=<title>' --variable description=@$slicedir/agent-<n>.md
-     ```
-
-     Write each `'` in the title as `'\''`, so the shell expands nothing in it.
+   - Move the slice to In Progress as the tracker skill says.
+   - Create each agent ticket under the slice in the agent team, with the tracker skill's command
+     for agent tickets.
 
      After each one, record its identifier in `$slicedir/start.md` at once. If the output shows no
      identifier, stop and read the slice's children before any retry. On a retry, skip each agent

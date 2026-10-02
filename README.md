@@ -45,11 +45,17 @@ A worker launch needs a model passed on the launch, `profiles.<name>.model` for 
 }
 ```
 
-The `start-slice` skill creates agent tickets in the Linear team that `slice.agentTeam` names in
-`~/.pi/agent/tau.json`:
+The `tracker` skill writes Linear tickets. It sends agent tickets to the team that
+`tracker.agentTeam` names in `~/.pi/agent/tau.json`. Other tickets go to the team and optional
+project of the entry keyed by the `origin` remote's `owner/name`:
 
 ```json
-{ "slice": { "agentTeam": "AI" } }
+{
+  "tracker": {
+    "agentTeam": "AI",
+    "repositories": { "sQVe/tau": { "team": "ME", "project": "Tau" } }
+  }
+}
 ```
 
 Web answers use pi-web-access's own `fetch.answerProvider` and `fetch.answerModel` in
