@@ -12,9 +12,9 @@ these defaults.
 
 ## Resolve herdr IDs first
 
-- An ID like `wMJ` or `wMJ:p1` names a herdr workspace or pane. Run `herdr workspace get <id>`
-  before you search files, branches, worktrees, or Linear. It shows the workspace checkout and
-  ticket.
+- An ID like `wMJ` names a herdr workspace, and `wMJ:p1` a pane in it. Before you search files,
+  branches, worktrees, or Linear, run `herdr workspace get wMJ` with the workspace part only. It
+  shows the workspace checkout and ticket.
 
 ## Run commands
 
