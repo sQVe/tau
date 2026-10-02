@@ -275,10 +275,15 @@ it('refuses reads and effects in a pure module but allows types and other pure m
   );
 });
 
+// tests/lint.test.ts writes these probe folders under src/ while other test files run.
+const isLintProbe = (path: string) =>
+  path.split('/').some((segment) => segment.startsWith('tau-lint-'));
+
 it('keeps src/ free of index files, one-file folders, and folder modules without an entry', () => {
   const paths = readdirSync(join(root, 'src'), { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
-    .map((entry) => posix.join(relative(root, entry.parentPath).replaceAll('\\', '/'), entry.name));
+    .map((entry) => posix.join(relative(root, entry.parentPath).replaceAll('\\', '/'), entry.name))
+    .filter((path) => !isLintProbe(path));
 
   expect(layoutProblems(paths), layoutAdvice).toEqual([]);
 });
