@@ -82,6 +82,12 @@ automatically. Without the integration, worker launch refuses before it runs any
 For use in another project, run `pi install -l /absolute/path/to/tau` there, then start Pi. This
 records the local package in that project's `.pi/settings.json`.
 
+To install a released version instead of a checkout, name its tag:
+
+```sh
+pi install git:github.com/sqve/tau@v1.0.0
+```
+
 ### Tool models
 
 Tau names no model in code. Set the model for `bulk_read` as `bulkRead.model` in

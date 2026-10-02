@@ -1,6 +1,6 @@
 {
   "name": "tau",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "private": true,
   "description": "Opinionated workflow governor for pi.",
   "keywords": [
@@ -20,14 +20,14 @@
     "lint": "vp lint --deny-warnings",
     "style:check": "node scripts/runStyle.ts",
     "style:fix": "node scripts/runStyle.ts --fix",
-    "prepare": "vp config",
+    "prepare": "node scripts/prepare.ts",
     "test": "vp test",
     "test:changed": "vp test --changed",
     "test:coverage": "vp test --coverage",
     "test:unit": "vp test --exclude '**/*.integration.test.ts'",
     "token-usage": "node scripts/tokenUsage.ts",
     "typecheck": "pnpm exec tsc --noEmit",
-    "release:github": "pnpm changeset tag"
+    "release:github": "pnpm changeset git-tag"
   },
   "dependencies": {
     "cc-safety-net": "2.4.1",
