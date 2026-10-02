@@ -1,7 +1,7 @@
 # Bug
 
-Use this shape for a defect a person should see. Start the title with `Fix <symptom>`. Leave out
-optional sections that have nothing to say.
+Use this shape for a defect a person should see. Start the title with `Fix <symptom>`. Describe the
+symptom only. The cause, files, and tests belong in the agent tickets written when the work starts.
 
 ```markdown
 One sentence on the symptom and who sees it.
@@ -18,11 +18,7 @@ What should happen.
 
 What happens, with the error or output.
 
-## Cause
-
-Optional. The cause with `file:line`, only when evidence shows it.
-
 ## Acceptance
 
-- [ ] A test reproduces the symptom and passes after the fix.
+- [ ] Following the reproduction steps gives the expected result.
 ```
