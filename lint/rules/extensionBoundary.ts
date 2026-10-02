@@ -21,7 +21,6 @@ const publicFiles = new Set([
 
 const withoutExtension = (name: string): string => name.replace(/\.[jt]s$/, '');
 
-// The src/ folder that holds a file, or undefined for a file outside src/.
 const sourceRootOf = (path: string): string | undefined => {
   const segments = path.split('/');
   const index = segments.lastIndexOf('src');
@@ -61,7 +60,6 @@ const folderModuleOf = (segments: string[]): FolderModule | undefined => {
 const isPublicFile = ({ folder, file }: FolderModule): boolean =>
   file === posix.basename(folder) || publicFiles.has(`${folder}/${file}`);
 
-// Tests and fixtures may reach into a module's private files.
 const mayImportPrivateFiles = (segments: string[]): boolean =>
   (segments.at(-1) ?? '').endsWith('.test.ts') || segments.includes('fixtures');
 
