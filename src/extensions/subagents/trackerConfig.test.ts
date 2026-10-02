@@ -140,6 +140,20 @@ it.for<[string, unknown, string]>([
   expect(setup.status === 'invalid' ? setup.message : undefined).toContain(field);
 });
 
+it('refuses repository keys that differ only in case and names both', ({ onTestFinished }) => {
+  const { location, userFile } = configFixture(onTestFinished);
+
+  writeConfig(userFile, {
+    tracker: { repositories: { 'sQVe/tau': { team: 'ME' }, 'sqve/Tau': { team: 'OTHER' } } },
+  });
+
+  const read = () => readTrackerConfig(location);
+
+  expect(read).toThrow(userFile);
+  expect(read).toThrow('"sQVe/tau"');
+  expect(read).toThrow('"sqve/Tau"');
+});
+
 it('refuses the old slice key and names tracker.agentTeam', ({ onTestFinished }) => {
   const { location, userFile } = configFixture(onTestFinished);
 

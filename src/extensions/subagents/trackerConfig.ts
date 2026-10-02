@@ -112,12 +112,24 @@ const readRepositories = (source: string, value: unknown): Map<string, TrackerRe
     );
   }
 
-  return new Map(
-    Object.entries(value).map(([key, repository]) => [
-      key,
-      readRepository(source, key, repository),
-    ]),
-  );
+  const repositories = new Map<string, TrackerRepository>();
+
+  for (const [key, repository] of Object.entries(value)) {
+    const duplicate = [...repositories.keys()].find(
+      (earlier) => earlier.toLowerCase() === key.toLowerCase(),
+    );
+
+    // GitHub names ignore case, so two keys that differ only in case would name one repository.
+    if (duplicate !== undefined) {
+      throw new Error(
+        `Invalid Tau config ${source}: tracker.repositories has both ${JSON.stringify(duplicate)} and ${JSON.stringify(key)}, which name the same repository. Keep one.`,
+      );
+    }
+
+    repositories.set(key, readRepository(source, key, repository));
+  }
+
+  return repositories;
 };
 
 // The tracker names Linear teams the manager writes to, so only the user file may set it.
