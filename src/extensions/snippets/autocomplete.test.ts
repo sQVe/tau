@@ -106,6 +106,25 @@ it.each(['#', 'Read #', 'Read (#'])('shows no list for the bare # in %s', async 
   expect(wrapped.getSuggestions).not.toHaveBeenCalled();
 });
 
+it('closes the list when a space ends the query instead of listing files', async () => {
+  const { wrapped, result } = suggest(['Review #simp '], 0, 13);
+
+  expect(await result).toBeNull();
+  expect(wrapped.getSuggestions).not.toHaveBeenCalled();
+});
+
+it('passes Tab after a finished query to the wrapped provider', async () => {
+  const wrapped = createWrapped();
+  const provider = snippetAutocomplete(() => snippets)(wrapped);
+
+  const result = await provider.getSuggestions(['Review #simp '], 0, 13, {
+    ...options,
+    force: true,
+  });
+
+  expect(result).toEqual({ items: [wrappedItem], prefix: '@sr' });
+});
+
 it('shows no list when no snippet matches the query', async () => {
   const { result } = suggest(['#zzzz'], 0, 5);
 

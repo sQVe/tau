@@ -13,6 +13,13 @@ const queryAt = (...[lines, cursorLine, cursorCol]: EditorPosition) => {
   return snippetQueryAt(lines.join('\n'), offset);
 };
 
+const endsQuery = (lines: string[], cursorLine: number, cursorCol: number) => {
+  const line = lines[cursorLine] ?? '';
+  const afterWhitespace = /\s$/.test(line.slice(0, cursorCol));
+
+  return afterWhitespace && queryAt(lines, cursorLine, cursorCol - 1) !== undefined;
+};
+
 const suggestionFor = (snippet: Snippet): AutocompleteItem => ({
   value: `#${snippet.id}`,
   label: `#${snippet.id}`,
@@ -43,6 +50,16 @@ export const snippetAutocomplete =
     triggerCharacters: ['#'],
     getSuggestions: async (lines, cursorLine, cursorCol, options) => {
       const query = queryAt(lines, cursorLine, cursorCol);
+
+      // pi-tui refreshes an open list on each key. After a space ends a `#` query, the wrapped
+      // provider would replace the snippet list with every file in the directory.
+      if (
+        query === undefined &&
+        options.force !== true &&
+        endsQuery(lines, cursorLine, cursorCol)
+      ) {
+        return null;
+      }
 
       if (query === undefined) {
         return wrapped.getSuggestions(lines, cursorLine, cursorCol, options);
