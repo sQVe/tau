@@ -86,6 +86,7 @@ const promptGuidelines = [
   "Use ask_user_question whenever the user's request is underspecified and you cannot proceed without concrete decisions — you can ask up to 4 questions per invocation.",
   'Each question MUST have 2-4 options. Every option requires a concise label (1-5 words) and a description explaining what the choice means or its trade-offs. Do NOT author "Other" or "Type something." labels yourself.',
   'Do not stack multiple ask_user_question calls back-to-back — group all clarifying questions into one invocation.',
+  'If the user closes the dialog without an answer, state the blocked decision and stop. Closing the dialog is not approval, and do not ask the same question again in prose.',
 ];
 
 const validate = ({ questions }: QuestionParams) => {

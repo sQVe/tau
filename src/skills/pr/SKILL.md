@@ -26,8 +26,7 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 - Push, create or edit a PR, or change its draft status only after the user approves the preview.
   Any change after approval needs a new preview.
 - Ask every question with `ask_user_question`, including review approval, preview approval, and bot
-  choice. Never ask in prose. If the dialog closes without an answer, state the blocked decision and
-  stop. Closing the dialog is not approval.
+  choice. Never ask in prose.
 - Follow the push rules in the [update-branch skill](../update-branch/SKILL.md). Except for stack
   restacking in step 5, never rebase or force-push unless the user asks. Step 5 restacks locally;
   preview approval covers the stack's force-push.
