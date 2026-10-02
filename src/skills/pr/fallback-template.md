@@ -20,6 +20,7 @@ Optional. Consequential choices, each with its reason and trade-off.
 - [ ] Failed: a required check that ran and failed, with what failed.
 - [ ] Not run: a required check or review that is still missing, with why.
 - [ ] Untested: an area the checks and review did not cover, with why.
+- [ ] Open finding: a review finding that is not closed, with what it is.
 
 ##### Deferred verification
 
