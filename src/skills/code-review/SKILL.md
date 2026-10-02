@@ -123,7 +123,8 @@ target. Give each finding a status that says how it was checked.
    - Always report finished results, even after the aim has passed.
 
 6. Check freshness. Run the same capture into `$dir/recheck.diff` with errors in `$dir/recheck.err`,
-   never into `input.md` or `capture.err`. Apply the same checks.
+   never into `input.md` or `capture.err`. Apply the exit-status and error-file checks from step 4,
+   not the empty-capture stop.
    - If the checks fail, report the freshness as unknown.
    - Otherwise compare `git hash-object "$dir/recheck.diff"` and `git rev-parse HEAD` with their
      values at the start. If either differs, label the review stale and ask whether to run a new
