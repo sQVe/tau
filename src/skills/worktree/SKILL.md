@@ -11,17 +11,15 @@ metadata:
 
 ## When to use
 
-Use this skill when the user asks for a worktree for a ticket or a piece of work. Grove creates the
-worktree and runs the repository's add hooks, such as dependency installs.
+Use this skill when the user asks for a worktree for a ticket or a piece of work. Agreeing to a
+change is not a request for a worktree. Grove creates the worktree and runs the repository's add
+hooks, such as dependency installs.
 
 ## Hard rules
 
-- Create a worktree only when the user asks for one. Agreeing to a change is not a request for a
-  worktree.
-- Before `grove add` for an implementation handoff, check that the plan is ready, as the
-  [handoff skill](../handoff/SKILL.md) defines it. If anything is open, list the open questions for
-  the user and create no worktree until they answer. If they say to plan in the worktree, create it
-  and send a planning-only handoff.
+- Before `grove add` for an implementation handoff, check that the work is ready, as the
+  [handoff skill](../handoff/SKILL.md) defines it. Create no worktree while anything is open, unless
+  the user says to plan in it.
 - Do not change the ticket's status unless the user asks. Creating a worktree does not start work.
 - Do not start the work in the new worktree yourself. It belongs to the agent in that workspace.
 - Report a failed `grove add` before retrying or handing off. Do not work around it with
