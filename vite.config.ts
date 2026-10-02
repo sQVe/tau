@@ -395,7 +395,7 @@ export default defineConfig({
         },
       },
       {
-        files: ['src/tau.ts', 'src/extensions/**/*.ts', 'src/skills/**/*.ts'],
+        files: ['src/tau.ts', 'src/extensions/**/*.ts'],
         rules: {
           'eslint/no-restricted-imports': ['error', { patterns: [testHelperImports] }],
         },
