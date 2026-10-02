@@ -37,9 +37,9 @@
   "devDependencies": {
     "@changesets/changelog-github": "1.0.1",
     "@changesets/cli": "3.0.2",
-    "@earendil-works/pi-ai": "0.99.0",
-    "@earendil-works/pi-coding-agent": "0.99.0",
-    "@earendil-works/pi-tui": "0.99.0",
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-coding-agent": "1.0.0",
+    "@earendil-works/pi-tui": "1.0.0",
     "@oxlint/plugins": "1.79.0",
     "@stylistic/eslint-plugin": "5.10.0",
     "@types/node": "24.13.3",
