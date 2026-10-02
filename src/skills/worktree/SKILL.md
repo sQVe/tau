@@ -18,10 +18,10 @@ worktree and runs the repository's add hooks, such as dependency installs.
 
 - Create a worktree only when the user asks for one. Agreeing to a change is not a request for a
   worktree.
-- Before `grove add` for an implementation handoff, check the plan against the handoff skill's
-  [definition of ready](../handoff/SKILL.md#definition-of-ready). If anything is open, list the open
-  questions for the user and create no worktree until they answer. If they say to plan in the
-  worktree, create it and send a planning-only handoff.
+- Before `grove add` for an implementation handoff, check that the plan is ready, as the
+  [handoff skill](../handoff/SKILL.md) defines it. If anything is open, list the open questions for
+  the user and create no worktree until they answer. If they say to plan in the worktree, create it
+  and send a planning-only handoff.
 - Do not change the ticket's status unless the user asks. Creating a worktree does not start work.
 - Do not start the work in the new worktree yourself. It belongs to the agent in that workspace.
 - Report a failed `grove add` before retrying or handing off. Do not work around it with
