@@ -10,6 +10,15 @@ these defaults.
 - Never discard uncommitted changes you did not make. To set your own work aside, commit it instead
   of stashing.
 
+## Resolve herdr IDs first
+
+- An ID like `wMJ` names a herdr workspace, `wMJ:p1` a pane, and `wMJ:t1` a tab. Linear IDs look
+  like `ME-123` instead.
+- Run `herdr workspace get <id>` before you search files, branches, worktrees, or Linear. Its
+  `worktree.checkout_path` is the workspace checkout, and `tokens.linear` is its ticket.
+- Run `herdr pane list --workspace <id>` and `herdr pane read <pane-id>` to see what its panes hold.
+- You may read files in that checkout. Make changes there through the handoff skill.
+
 ## Run commands
 
 - Append `|| true` only to probes where no match is expected, such as `rg` searches, never to
