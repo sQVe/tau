@@ -1,7 +1,7 @@
 # Skill authoring
 
-Use this guide when you write or change a skill in `skills/`. Copy the
-[template](./skill-template.md) to `skills/<name>/SKILL.md` and fill it in. Then go through the
+Use this guide when you write or change a skill in `src/skills/`. Copy the
+[template](./skill-template.md) to `src/skills/<name>/SKILL.md` and fill it in. Then go through the
 checklist. `tests/skillFiles.test.ts` checks every skill's frontmatter, local links, headings, ADR
 mentions, and shell blocks.
 

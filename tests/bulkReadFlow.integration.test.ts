@@ -44,7 +44,7 @@ const createHarness = async (registerCleanup: TestContext['onTestFinished']) => 
     agentDirectory: agentDir,
     providers: [sessionModel, reader],
     tools: ['read', 'bulk_read'],
-    extensionPaths: [resolve(import.meta.dirname, '../src/extensions/bulkRead/index.ts')],
+    extensionPaths: [resolve(import.meta.dirname, '../src/extensions/bulkRead/bulkRead.ts')],
     settings: { compaction: { enabled: false }, retry: { enabled: false } },
   });
 

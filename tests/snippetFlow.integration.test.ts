@@ -19,7 +19,7 @@ type EditorFactory = NonNullable<ReturnType<ExtensionUIContext['getEditorCompone
 // Real Pi sessions need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
 
-const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
+const tauExtensionPath = resolve(import.meta.dirname, '../src/tau.ts');
 
 /**
  * A custom UI context makes Pi report hasUI=true. Render the menu once before
@@ -125,7 +125,7 @@ const createHarness = async (
     providers: [faux],
     // These tests send no tool calls; the list only has to be valid.
     tools: ['read'],
-    extensionPaths: [tauExtensionsPath],
+    extensionPaths: [tauExtensionPath],
   });
 
   expect(extensionsResult.errors).toEqual([]);

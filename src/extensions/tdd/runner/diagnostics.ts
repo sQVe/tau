@@ -2,7 +2,7 @@ import { chmod, lstat, truncate, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
-import { isMissingFile } from '../../../errors/index.js';
+import { isMissingFile } from '../../../errors.js';
 import { maximumStdoutBytes, maximumTotalBytes } from './process.js';
 import type { DiagnosticFile, RunDiagnostics, SpawnResult } from './types.js';
 

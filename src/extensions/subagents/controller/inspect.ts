@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { parseModelReference } from '../../../models/index.js';
+import { parseModelReference } from '../../../models/models.js';
 import { matchesWorker, runClient } from '../cancellation.js';
 import type { OwnedWorker } from '../cancellation.js';
 import { seedSession, workerTools } from '../profiles.js';

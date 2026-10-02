@@ -1,6 +1,6 @@
-import { parseModelEntry } from '../../models/index.js';
-import { readUserOnlyKey, userConfigPath } from '../../tauConfig/index.js';
-import type { ConfigLocation } from '../../tauConfig/index.js';
+import { parseModelEntry } from '../../models/models.js';
+import { readUserOnlyKey, userConfigPath } from '../../tauConfig.js';
+import type { ConfigLocation } from '../../tauConfig.js';
 
 export const readBulkReadModel = (location: ConfigLocation): string | undefined => {
   const user = readUserOnlyKey(location, 'bulkRead');

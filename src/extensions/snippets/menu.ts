@@ -9,7 +9,7 @@ import {
 } from '@earendil-works/pi-tui';
 import type { Component, TUI } from '@earendil-works/pi-tui';
 
-import { isBottom, isDown, isTop, isUp } from '../../keys/index.js';
+import { isBottom, isDown, isTop, isUp } from '../../keys.js';
 import type { Snippet } from './types.js';
 
 type MenuTheme = Pick<Theme, 'fg' | 'bold'>;

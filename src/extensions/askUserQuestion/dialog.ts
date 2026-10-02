@@ -9,7 +9,7 @@ import {
 } from '@earendil-works/pi-tui';
 import type { Component, TUI } from '@earendil-works/pi-tui';
 
-import { isBottom, isDown, isTop, isUp } from '../../keys/index.js';
+import { isBottom, isDown, isTop, isUp } from '../../keys.js';
 import { handleKey, initialState, isCustomChecked, withCustomText } from './questionnaire.js';
 import type { Answer, KeyPress, QuestionFacts, QuestionnaireState } from './questionnaire.js';
 

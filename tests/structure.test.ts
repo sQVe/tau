@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { basename, dirname, join, posix } from 'node:path';
+import { basename, dirname, join, posix, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseSync, Visitor } from 'oxc-parser';
@@ -128,6 +128,56 @@ const impurities = (path: string, source: string, registry: readonly string[]) =
   return found;
 };
 
+// Folders that group files under src/ without forming a module.
+const groupingFolders = new Set(['src', 'src/extensions', 'src/skills', 'src/instructions']);
+
+const isProductionSource = (path: string) =>
+  path.endsWith('.ts') && !isTest(path) && !isFixture(path);
+
+const parentFolders = (path: string) =>
+  path
+    .split('/')
+    .slice(0, -1)
+    .map((_, index, segments) => segments.slice(0, index + 1).join('/'));
+
+// The module folder a file belongs to: src/<module>/ or src/extensions/<module>/.
+const moduleFolderOf = (path: string) => {
+  const depth = path.startsWith('src/extensions/') ? 3 : 2;
+  const segments = path.split('/');
+  const folder = segments.slice(0, depth).join('/');
+
+  return segments.length > depth && !groupingFolders.has(folder) ? folder : undefined;
+};
+
+// Lists index files, folders with one production source file, and folder modules without an
+// entry file named after the folder. Takes every file below src/ as a POSIX path.
+const layoutProblems = (paths: readonly string[]) => {
+  const sources = paths.filter(isProductionSource);
+
+  const indexFiles = paths
+    .filter((path) => basename(path).startsWith('index.'))
+    .map((path) => `${path}: index file`);
+
+  const folders = [...new Set(paths.flatMap(parentFolders))].filter(
+    (folder) => !groupingFolders.has(folder),
+  );
+
+  const oneFileFolders = folders
+    .filter((folder) => sources.filter((path) => path.startsWith(`${folder}/`)).length === 1)
+    .map((folder) => `${folder}/: one production source file`);
+
+  const modules = [...new Set(sources.flatMap((path) => moduleFolderOf(path) ?? []))];
+
+  const missingEntries = modules
+    .filter((folder) => !sources.includes(`${folder}/${basename(folder)}.ts`))
+    .map((folder) => `${folder}/: no entry file ${basename(folder)}.ts`);
+
+  return [...indexFiles, ...oneFileFolders, ...missingEntries];
+};
+
+const layoutAdvice =
+  'Name a folder module entry after its folder, and keep a module with one production source file as a flat file beside its siblings.';
+
 it('names each source test after the module beside it', () => {
   const unmatched = sourceFiles.filter(isTest).filter((test) => {
     const name = basename(test).split('.')[0] ?? '';
@@ -223,4 +273,65 @@ it('refuses reads and effects in a pure module but allows types and other pure m
   expect(findingLines(impurities('src/pure/decide.ts', refused, registry))).toEqual(
     Array.from({ length: 16 }, (_, index) => index + 1),
   );
+});
+
+// tests/lint.test.ts writes these probe folders under src/ while other test files run.
+const isLintProbe = (path: string) =>
+  path.split('/').some((segment) => segment.startsWith('tau-lint-'));
+
+it('keeps src/ free of index files, one-file folders, and folder modules without an entry', () => {
+  const paths = readdirSync(join(root, 'src'), { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => posix.join(relative(root, entry.parentPath).replaceAll('\\', '/'), entry.name))
+    .filter((path) => !isLintProbe(path));
+
+  expect(layoutProblems(paths), layoutAdvice).toEqual([]);
+});
+
+it('refuses index files, one-file folders, and missing entries but allows flat files and assets', () => {
+  const allowed = [
+    'src/tau.ts',
+    'src/keys.ts',
+    'src/keys.test.ts',
+    'src/models/models.ts',
+    'src/models/models.test.ts',
+    'src/models/allowedModels.ts',
+    'src/instructions/coding.md',
+    'src/skills/pr/SKILL.md',
+    'src/extensions/coding.ts',
+    'src/extensions/commit/commit.ts',
+    'src/extensions/commit/tool.ts',
+    'src/extensions/commit/fixtures/repository.ts',
+    'src/extensions/snippets/snippets.ts',
+    'src/extensions/snippets/menu.ts',
+    'src/extensions/snippets/snippets/simplify.md',
+    'src/extensions/subagents/subagents.ts',
+    'src/extensions/subagents/profiles/scout.md',
+    'src/extensions/subagents/controller/controller.ts',
+    'src/extensions/subagents/controller/record.ts',
+  ];
+
+  const refused = [
+    'src/index.ts',
+    'src/errors/errors.ts',
+    'src/errors/errors.test.ts',
+    'src/extensions/index.ts',
+    'src/extensions/bareRoot/bareRoot.ts',
+    'src/extensions/bareRoot/fixtures/fake.ts',
+    'src/extensions/tdd/index.ts',
+    'src/extensions/tdd/config.ts',
+    'src/skills/pr/index.md',
+  ];
+
+  expect(layoutProblems(allowed)).toEqual([]);
+
+  expect(layoutProblems(refused)).toEqual([
+    'src/index.ts: index file',
+    'src/extensions/index.ts: index file',
+    'src/extensions/tdd/index.ts: index file',
+    'src/skills/pr/index.md: index file',
+    'src/errors/: one production source file',
+    'src/extensions/bareRoot/: one production source file',
+    'src/extensions/tdd/: no entry file tdd.ts',
+  ]);
 });

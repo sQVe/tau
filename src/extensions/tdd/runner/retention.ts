@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
-import { isMissingFile } from '../../../errors/index.js';
+import { isMissingFile } from '../../../errors.js';
 import type { RunDiagnostics } from './types.js';
 
 export const maximumRetainedRuns = 32;

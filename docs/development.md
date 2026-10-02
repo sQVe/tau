@@ -66,10 +66,9 @@ To try this checkout in Pi without changing global settings:
 Keep the generated `.pi/settings.json` out of commits. `--approve` trusts project-local settings for
 the run.
 
-Use the full package manifest, not only `./src/extensions/index.ts`: the latter omits the bundled
-question and web tools and CC Safety Net, causing worker launch to refuse. Do not use
-`--no-extensions` or `--no-skills`; they suppress configured resources, including skills and herdr
-integrations.
+Use the full package manifest, not only `./src/tau.ts`: the latter omits the bundled question and
+web tools and CC Safety Net, causing worker launch to refuse. Do not use `--no-extensions` or
+`--no-skills`; they suppress configured resources, including skills and herdr integrations.
 
 Before launching a Pi subagent worker, install herdr's Pi integration in the parent Pi session:
 
@@ -238,7 +237,7 @@ Describe the behavior change for users. Commit the generated file under `.change
 change it describes.
 
 The [changeset check](../.github/workflows/changeset.yml) requires a changeset when a PR touches
-`src/` or `skills/`, but not for changes only to docs, tooling, or dependencies.
+`src/`, but not for changes only to docs, tooling, or dependencies.
 
 The [release workflow](../.github/workflows/release.yml) opens version PRs and creates Git tags and
 GitHub releases; Tau is private and is not published to npm.

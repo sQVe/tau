@@ -1,0 +1,93 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { CONFIG_DIR_NAME } from '@earendil-works/pi-coding-agent';
+
+import { isMissingFile } from './errors.js';
+
+export interface ConfigLocation {
+  cwd: string;
+  agentDirectory: string;
+  projectTrusted: boolean;
+}
+
+// Each consumer validates its own top-level key in `value`.
+export interface ConfigFile {
+  source: string;
+  value: unknown;
+}
+
+export interface TauConfigFiles {
+  // The user file first, then the repository file.
+  files: ConfigFile[];
+  // A repository config file that was skipped because the project is not trusted.
+  ignored: string | undefined;
+}
+
+export const configFileName = 'tau.json';
+
+export const userConfigPath = (agentDirectory: string): string =>
+  join(agentDirectory, configFileName);
+
+const readConfigFile = (source: string): ConfigFile | undefined => {
+  let text: string;
+
+  try {
+    text = readFileSync(source, 'utf8');
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return undefined;
+    }
+
+    throw new Error(`Could not read Tau config ${source}: ${String(error)}`, { cause: error });
+  }
+
+  try {
+    return { source, value: JSON.parse(text) };
+  } catch (error) {
+    throw new Error(`Invalid Tau config ${source}: not valid JSON (${String(error)})`, {
+      cause: error,
+    });
+  }
+};
+
+// Pi's project trust gates the repository file, as it gates `.pi/settings.json`.
+export const readTauConfig = ({
+  cwd,
+  agentDirectory,
+  projectTrusted,
+}: ConfigLocation): TauConfigFiles => {
+  const projectPath = join(cwd, CONFIG_DIR_NAME, configFileName);
+  const user = readConfigFile(userConfigPath(agentDirectory));
+  const project = projectTrusted ? readConfigFile(projectPath) : undefined;
+  const ignored = !projectTrusted && existsSync(projectPath) ? projectPath : undefined;
+
+  return { files: [user, project].filter((file) => file !== undefined), ignored };
+};
+
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const setsKey = ({ value }: ConfigFile, key: string): boolean =>
+  isRecord(value) && Object.hasOwn(value, key);
+
+// The user owns which models they pay for and trust, so a repository file cannot set a model key.
+export const readUserOnlyKey = (location: ConfigLocation, key: string): ConfigFile | undefined => {
+  const { files } = readTauConfig(location);
+  const userPath = userConfigPath(location.agentDirectory);
+  const repository = files.find((file) => file.source !== userPath && setsKey(file, key));
+
+  if (repository !== undefined) {
+    throw new Error(
+      `Invalid Tau config ${repository.source}: ${key} may be set only in the user file ${userPath}. Remove ${key} from ${repository.source}.`,
+    );
+  }
+
+  const user = files.find((file) => file.source === userPath)?.value;
+
+  if (!isRecord(user) || !Object.hasOwn(user, key)) {
+    return undefined;
+  }
+
+  return { source: userPath, value: user[key] };
+};

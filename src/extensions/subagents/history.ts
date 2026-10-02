@@ -2,7 +2,7 @@ import { dirname, join } from 'node:path';
 
 import { truncateLine } from '@earendil-works/pi-coding-agent';
 
-import { isMissingFile } from '../../errors/index.js';
+import { isMissingFile } from '../../errors.js';
 import { readWorkerFacts } from './controller/record.js';
 import { nativeHeader } from './native.js';
 import { findSuccessor, readReport, readTask } from './records.js';

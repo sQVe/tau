@@ -12,7 +12,7 @@ import {
 } from '@earendil-works/pi-tui';
 import type { Component, TUI } from '@earendil-works/pi-tui';
 
-import { isBottom, isDown, isTop, isUp } from '../../keys/index.js';
+import { isBottom, isDown, isTop, isUp } from '../../keys.js';
 import { stateLabel } from './presentation.js';
 import { deadlineStates } from './render.js';
 import type { WorkerWidgetRow } from './widget.js';

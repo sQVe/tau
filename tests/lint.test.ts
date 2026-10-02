@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -355,6 +356,33 @@ it('keeps test helpers out of production code and extensions out of shared modul
   expect(result.status).toBe(1);
   expect(diagnostics).toHaveLength(2);
   expect(diagnostics.every((line) => line.includes('/probe.ts:'))).toBe(true);
+}, 30_000);
+
+it('keeps extensions out of flat shared modules but lets the package entry load them', async ({
+  onTestFinished,
+}) => {
+  const probe = join(root, 'src', `tauLintFlat${randomUUID().replaceAll('-', '')}.ts`);
+  onTestFinished(() => rm(probe, { force: true }));
+
+  await writeFile(
+    probe,
+    "import { bulkReadTool } from './extensions/bulkRead/tool.js';\n\nexport const value = bulkReadTool;\n",
+  );
+
+  const result = spawnSync('pnpm', ['lint', probe, join(root, 'src', 'tau.ts')], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+
+  const diagnostics = result.stdout
+    .split('\n')
+    .filter((line) => line.includes('no-restricted-imports'));
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toContain('tauLintFlat');
 }, 30_000);
 
 it('keeps private controller files out of the rest of the subagents extension', async ({

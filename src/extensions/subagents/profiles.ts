@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 import { Value } from 'typebox/value';
 
-import { defaultInstructionSetNames, isInstructionSetName } from '../../instructionSets/index.js';
-import type { InstructionSetName } from '../../instructionSets/index.js';
+import { defaultInstructionSetNames, isInstructionSetName } from '../../instructionSets.js';
+import type { InstructionSetName } from '../../instructionSets.js';
 import { assignmentContractFor, handoffContract } from './handoff.js';
 import { thinkingSchema, toolNamePattern } from './types.js';
 import type { Loadout, Profile, Task } from './types.js';

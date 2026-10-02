@@ -1,7 +1,7 @@
 import { realpathSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 
-import { isMissingFile } from '../../errors/index.js';
+import { isMissingFile } from '../../errors.js';
 import { continuationOrigins } from './continuations.js';
 import { nativeHeader } from './native.js';
 import { readTasks } from './records.js';

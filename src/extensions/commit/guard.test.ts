@@ -9,8 +9,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
+import commitExtension from './commit.js';
 import { commitGuardReason, guardToolCall } from './guard.js';
-import commitExtension from './index.js';
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -170,7 +170,7 @@ describe('guardToolCall', () => {
 
   it.each([
     'git diff src/extensions/commit/guard.ts',
-    'git add skills/commit/SKILL.md',
+    'git add src/skills/commit/SKILL.md',
     'git log -- src/extensions/commit',
     'git checkout src/extensions/commit/tool.ts',
     'git status src/extensions/commit/',

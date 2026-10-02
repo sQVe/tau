@@ -53,9 +53,9 @@ matches the first. Pi falls back to `modifyOtherKeys` when it cannot detect the 
 
 ### Where the keys live
 
-Key predicates live in [`src/keys/`](../../src/keys/index.ts), a primitive under the rule ADR 0001
-sets for code that two or more extensions share. Components ask `isUp`, `isDown`, `isTop`, and
-`isBottom` rather than testing keys themselves, so a change to the set reaches every component.
+Key predicates live in [`src/keys.ts`](../../src/keys.ts), a primitive under the rule ADR 0001 sets
+for code that two or more extensions share. Components ask `isUp`, `isDown`, `isTop`, and `isBottom`
+rather than testing keys themselves, so a change to the set reaches every component.
 
 Pi's `SelectList` cannot be driven directly, so `toCursorKey` rewrites `j` and `k` as the arrow
 sequences it reads, and callers set the ends through its `setSelectedIndex`.

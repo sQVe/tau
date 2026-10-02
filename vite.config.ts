@@ -65,7 +65,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      exclude: ['**/*.test.ts', '**/fixtures/**', 'src/extensions/index.ts'],
+      exclude: ['**/*.test.ts', '**/fixtures/**', 'src/tau.ts'],
     },
   },
   lint: {
@@ -376,8 +376,9 @@ export default defineConfig({
         },
       },
       {
-        // Every module directory under src/ is shared; the next override restores extensions.
-        files: ['src/*/**/*.ts'],
+        // Every module under src/ is shared; the next override restores extensions and the
+        // package entry.
+        files: ['src/*.ts', 'src/*/**/*.ts'],
         rules: {
           'eslint/no-restricted-imports': [
             'error',
@@ -394,7 +395,7 @@ export default defineConfig({
         },
       },
       {
-        files: ['src/extensions/**/*.ts'],
+        files: ['src/tau.ts', 'src/extensions/**/*.ts'],
         rules: {
           'eslint/no-restricted-imports': ['error', { patterns: [testHelperImports] }],
         },

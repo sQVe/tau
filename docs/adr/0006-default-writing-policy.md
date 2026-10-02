@@ -25,9 +25,9 @@ Use a Pi extension to load one writing policy from the Tau package into every or
 ### Policy ownership and scope
 
 Keep the agent instructions beside the writing extension in
-[`src/extensions/writing/instructions.md`](../../src/extensions/writing/instructions.md). Load this
-same file into the agent prompt. It addresses the agent directly; contributor docs may link to it
-when the same rules apply. This ADR records the decision and does not restate the rules.
+[`src/instructions/writing.md`](../../src/instructions/writing.md). Load this same file into the
+agent prompt. It addresses the agent directly; contributor docs may link to it when the same rules
+apply. This ADR records the decision and does not restate the rules.
 
 The rules cover replies, progress updates, commit and PR text, tickets, docs, and code comments.
 They ask for plain language aimed at readers who use English as a second language, and they keep the
@@ -70,5 +70,5 @@ writing guidance without copying the rules. Loading the default policy does not 
 - [ADR-0004: Skill authoring style](./0004-skill-authoring-style.md)
 - [ADR-0008: Coding instructions](./0008-coding-instructions.md). It amends the scope above and
   moves the rules about which comments to keep.
-- [Agent writing instructions](../../src/extensions/writing/instructions.md)
+- [Agent writing instructions](../../src/instructions/writing.md)
 - [ADR-0010: Documentation scope](./0010-documentation-scope.md)

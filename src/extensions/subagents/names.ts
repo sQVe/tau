@@ -5,7 +5,7 @@ import { customAlphabet } from 'nanoid';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isMissingFile } from '../../errors/index.js';
+import { isMissingFile } from '../../errors.js';
 import { namePrefix, readTask } from './records.js';
 import type { Loadout } from './types.js';
 

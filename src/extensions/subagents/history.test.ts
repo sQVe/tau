@@ -19,7 +19,6 @@ import { WorkerController } from './controller/controller.js';
 import { taskStatus } from './controller/record.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { searchHistory } from './history.js';
-import subagentsExtension from './index.js';
 import {
   acceptReport,
   publish,
@@ -28,6 +27,7 @@ import {
   validateTask,
   workerRecordsDirectory,
 } from './records.js';
+import subagentsExtension from './subagents.js';
 
 const setup = () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-history-'));

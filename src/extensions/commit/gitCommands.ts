@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-import { isMissingFile } from '../../errors/index.js';
+import { isMissingFile } from '../../errors.js';
 import { normalizeRepositoryPath } from './validation.js';
 
 interface RunGitOptions {

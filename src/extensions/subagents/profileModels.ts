@@ -1,6 +1,6 @@
-import { parseModelEntry } from '../../models/index.js';
-import { isRecord, readUserOnlyKey } from '../../tauConfig/index.js';
-import type { ConfigLocation } from '../../tauConfig/index.js';
+import { parseModelEntry } from '../../models/models.js';
+import { isRecord, readUserOnlyKey } from '../../tauConfig.js';
+import type { ConfigLocation } from '../../tauConfig.js';
 import type { ProfileModels } from './workerModels.js';
 
 // Entries for profiles that do not exist are kept, since a profile may exist only in one repository.

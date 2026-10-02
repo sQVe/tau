@@ -108,7 +108,7 @@ it.for(Object.keys(passedModels) as (keyof typeof passedModels)[])(
       providers: [sessionModel, configured, override],
       tools: ['fetch_content', 'get_search_content', 'web_search'],
       extensionPaths: [
-        resolve(import.meta.dirname, '../src/extensions/webAccess/index.ts'),
+        resolve(import.meta.dirname, '../src/extensions/webAccess.ts'),
         resolve(import.meta.dirname, '../node_modules/pi-web-access/dist/index.js'),
       ],
       settings: { compaction: { enabled: false }, retry: { enabled: false } },

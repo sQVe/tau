@@ -33,7 +33,7 @@ vi.setConfig({ testTimeout: 60_000 });
 
 const execFileAsync = promisify(execFile);
 
-const tauExtensionsPath = resolve(import.meta.dirname, '../src/extensions');
+const tauExtensionPath = resolve(import.meta.dirname, '../src/tau.ts');
 
 const bundledWebAccessExtensionPath = resolve(
   import.meta.dirname,
@@ -98,7 +98,7 @@ const createHarness = async (
       agentDirectory,
       providers: [faux],
       tools: ['read', 'bash', 'edit', 'write', 'commit'],
-      extensionPaths: [tauExtensionsPath, bundledWebAccessExtensionPath],
+      extensionPaths: [tauExtensionPath, bundledWebAccessExtensionPath],
     },
     hasUI ? { uiContext: createScriptedUI(overlays) } : {},
   );
