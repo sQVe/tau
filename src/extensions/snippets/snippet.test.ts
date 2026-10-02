@@ -5,21 +5,10 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, onTestFinished as afterThisTest } from 'vitest';
 
-import { acceptsSnippets, buildSnippetMessage, loadSnippets } from './snippet.js';
-import type { Snippet } from './types.js';
+import { loadSnippets } from './snippet.js';
 
-const snippetFile = (name: string, placement: string, order: number, body: string) =>
-  `---\nname: ${name}\nplacement: ${placement}\norder: ${order}\n---\n${body}\n`;
-
-const createSnippet = (overrides: Partial<Snippet> = {}): Snippet => ({
-  id: 'example.md',
-  name: 'Example',
-  description: '',
-  placement: 'append',
-  order: 10,
-  body: 'Example body.',
-  ...overrides,
-});
+const snippetFile = (name: string, order: number, body: string) =>
+  `---\nname: ${name}\norder: ${order}\n---\n${body}\n`;
 
 // Each case loads one file the way the extension does, so it covers the parser and the loader together.
 const loadOne = async (filename: string, content: string) => {
@@ -37,7 +26,6 @@ describe('parsing a snippet file', () => {
       '---',
       'name: Ask questions',
       'description: Ask until we agree',
-      'placement: prepend',
       'order: 20',
       '---',
       '',
@@ -46,26 +34,24 @@ describe('parsing a snippet file', () => {
     ].join('\n');
 
     expect(await loadOne('ask-questions.md', raw)).toEqual({
-      id: 'ask-questions.md',
+      id: 'ask-questions',
       name: 'Ask questions',
       description: 'Ask until we agree',
-      placement: 'prepend',
       order: 20,
       body: 'Ask questions until you know what to do.',
     });
   });
 
-  it('falls back to the filename, append placement, and a last-place order', async () => {
+  it('falls back to the filename and a last-place order', async () => {
     const snippet = await loadOne(
       'bare-snippet.md',
       '---\nunrelated: value\n---\nVerify the facts.\n',
     );
 
     expect(snippet).toEqual({
-      id: 'bare-snippet.md',
+      id: 'bare-snippet',
       name: 'bare-snippet',
       description: '',
-      placement: 'append',
       order: 9999,
       body: 'Verify the facts.',
     });
@@ -76,7 +62,7 @@ describe('parsing a snippet file', () => {
       '---',
       'NAME: "Quoted name"',
       "description: 'Quoted description'",
-      'placement:',
+      'order:',
       'unknown: ignored',
       'not a field',
       '---',
@@ -86,33 +72,25 @@ describe('parsing a snippet file', () => {
     expect(await loadOne('quoted.md', raw)).toMatchObject({
       name: 'Quoted name',
       description: 'Quoted description',
-      placement: 'append',
+      order: 9999,
     });
   });
 
   it('reads a file that uses carriage returns and drops them from the body', async () => {
-    const raw =
-      '---\r\nname: Windows\r\nplacement: prepend\r\n---\r\nFirst line.\r\nSecond line.\r\n';
+    const raw = '---\r\nname: Windows\r\norder: 5\r\n---\r\nFirst line.\r\nSecond line.\r\n';
 
     expect(await loadOne('windows.md', raw)).toMatchObject({
       name: 'Windows',
-      placement: 'prepend',
+      order: 5,
       body: 'First line.\nSecond line.',
-    });
-  });
-
-  it.for(['Prepend', 'PREPEND'])('reads %s as the prepend placement', async (placement) => {
-    expect(await loadOne('cased.md', `---\nplacement: ${placement}\n---\nBody.`)).toMatchObject({
-      placement: 'prepend',
     });
   });
 
   it('accepts an empty frontmatter block, since every field is optional', async () => {
     expect(await loadOne('bare.md', '---\n---\nJust a body.\n')).toEqual({
-      id: 'bare.md',
+      id: 'bare',
       name: 'bare',
       description: '',
-      placement: 'append',
       order: 9999,
       body: 'Just a body.',
     });
@@ -132,30 +110,28 @@ describe('parsing a snippet file', () => {
 });
 
 describe('loadSnippets', () => {
-  it('reads markdown files, skips other files, and sorts prepend before append', async ({
-    onTestFinished,
-  }) => {
+  it('reads markdown files, skips other files, and sorts by order', async ({ onTestFinished }) => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-snippets-'));
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
-    await writeFile(join(directory, 'second.md'), snippetFile('Second', 'append', 20, 'Second.'));
-    await writeFile(join(directory, 'first.md'), snippetFile('First', 'prepend', 10, 'First.'));
-    await writeFile(join(directory, 'later.md'), snippetFile('Later', 'prepend', 99, 'Later.'));
-    await writeFile(join(directory, 'notes.txt'), snippetFile('Ignored', 'append', 1, 'Ignored.'));
+    await writeFile(join(directory, 'second.md'), snippetFile('Second', 20, 'Second.'));
+    await writeFile(join(directory, 'first.md'), snippetFile('First', 10, 'First.'));
+    await writeFile(join(directory, 'later.md'), snippetFile('Later', 99, 'Later.'));
+    await writeFile(join(directory, 'notes.txt'), snippetFile('Ignored', 1, 'Ignored.'));
     await writeFile(join(directory, 'broken.md'), 'No frontmatter here.');
 
     const snippets = await loadSnippets(directory);
 
-    expect(snippets.map((snippet) => snippet.name)).toEqual(['First', 'Later', 'Second']);
-    expect(snippets.map((snippet) => snippet.id)).toEqual(['first.md', 'later.md', 'second.md']);
+    expect(snippets.map((snippet) => snippet.name)).toEqual(['First', 'Second', 'Later']);
+    expect(snippets.map((snippet) => snippet.id)).toEqual(['first', 'second', 'later']);
   });
 
   it('sorts snippets with equal orders by name', async ({ onTestFinished }) => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-snippets-'));
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
-    await writeFile(join(directory, 'b.md'), snippetFile('Beta', 'append', 10, 'Beta.'));
-    await writeFile(join(directory, 'a.md'), snippetFile('Alpha', 'append', 10, 'Alpha.'));
+    await writeFile(join(directory, 'b.md'), snippetFile('Beta', 10, 'Beta.'));
+    await writeFile(join(directory, 'a.md'), snippetFile('Alpha', 10, 'Alpha.'));
 
     const snippets = await loadSnippets(directory);
 
@@ -175,7 +151,7 @@ describe('loadSnippets', () => {
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
     await mkdir(join(directory, 'draft.md'));
-    await writeFile(join(directory, 'real.md'), snippetFile('Real', 'append', 10, 'Real body.'));
+    await writeFile(join(directory, 'real.md'), snippetFile('Real', 10, 'Real body.'));
 
     const snippets = await loadSnippets(directory);
 
@@ -197,11 +173,11 @@ describe('the shipped snippets', () => {
     }
   });
 
-  it('loads Check the agreed plan after the existing prepend snippets', async () => {
+  it('loads Check the agreed plan after the approach snippets', async () => {
     const snippets = await loadSnippets(shippedDirectory);
-    const prepends = snippets.filter((snippet) => snippet.placement === 'prepend');
+    const approach = snippets.slice(0, 5);
 
-    expect(prepends.map((snippet) => snippet.name)).toEqual([
+    expect(approach.map((snippet) => snippet.name)).toEqual([
       'Interview me',
       'Read other panes',
       'Push back',
@@ -209,69 +185,17 @@ describe('the shipped snippets', () => {
       'Check the agreed plan',
     ]);
 
-    expect(prepends.at(-1)).toMatchObject({
-      id: 'check-agreed-plan.md',
+    expect(approach.at(-1)).toMatchObject({
+      id: 'check-agreed-plan',
       order: 50,
       body: "Read the relevant ticket, its parent, and linked prerequisites before proposing work. Compare the current plan with the implementation and recent decisions. State this task's scope, exclusions, and blockers. Flag conflicting or outdated requirements rather than silently choosing one. Do not update tickets unless asked.",
     });
   });
 
-  it('gives every snippet a unique order within its placement group', async () => {
+  it('gives every snippet a unique order', async () => {
     const snippets = await loadSnippets(shippedDirectory);
-    const keys = snippets.map((snippet) => `${snippet.placement}:${snippet.order}`);
+    const orders = snippets.map((snippet) => snippet.order);
 
-    expect(new Set(keys).size).toBe(keys.length);
-  });
-});
-
-describe('acceptsSnippets', () => {
-  it.for(['/skill:commit', '/commit stage the fix', '  /skill:commit', '/my-prompt-template'])(
-    'refuses the slash command %s',
-    (text) => {
-      expect(acceptsSnippets(text)).toBe(false);
-    },
-  );
-
-  it.for(['Commit the fix.', 'Look at src/a.ts', 'Use the / operator here.'])(
-    'accepts %s',
-    (text) => {
-      expect(acceptsSnippets(text)).toBe(true);
-    },
-  );
-});
-
-describe('buildSnippetMessage', () => {
-  it('wraps the text with prepend bodies first and append bodies last', () => {
-    const active = [
-      createSnippet({ placement: 'prepend', body: 'Before one.' }),
-      createSnippet({ placement: 'prepend', body: 'Before two.' }),
-      createSnippet({ placement: 'append', body: 'After one.' }),
-    ];
-
-    expect(buildSnippetMessage('My message.', active)).toBe(
-      'Before one.\n\nBefore two.\n\nMy message.\n\nAfter one.',
-    );
-  });
-
-  it('keeps the given order within each group', () => {
-    const active = [
-      createSnippet({ placement: 'append', body: 'Second.' }),
-      createSnippet({ placement: 'append', body: 'Third.' }),
-    ];
-
-    expect(buildSnippetMessage('First.', active)).toBe('First.\n\nSecond.\n\nThird.');
-  });
-
-  it('omits empty text between the snippet bodies', () => {
-    const active = [
-      createSnippet({ placement: 'prepend', body: 'Before.' }),
-      createSnippet({ placement: 'append', body: 'After.' }),
-    ];
-
-    expect(buildSnippetMessage('', active)).toBe('Before.\n\nAfter.');
-  });
-
-  it('returns the text unchanged when nothing is active', () => {
-    expect(buildSnippetMessage('My message.', [])).toBe('My message.');
+    expect(new Set(orders).size).toBe(orders.length);
   });
 });

@@ -3,34 +3,64 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
-import { CustomEditor } from '@earendil-works/pi-coding-agent';
-import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
-import { KeybindingsManager, TUI_KEYBINDINGS } from '@earendil-works/pi-tui';
-import type { EditorComponent, TUI } from '@earendil-works/pi-tui';
+import { CustomEditor, SessionManager } from '@earendil-works/pi-coding-agent';
+import type {
+  AgentSession,
+  AutocompleteProviderFactory,
+  ExtensionUIContext,
+  SessionStartEvent,
+} from '@earendil-works/pi-coding-agent';
+import {
+  CombinedAutocompleteProvider,
+  KeybindingsManager,
+  TUI_KEYBINDINGS,
+} from '@earendil-works/pi-tui';
+import type { AutocompleteProvider, EditorComponent, TUI } from '@earendil-works/pi-tui';
 import type { TestContext } from 'vitest';
 import { expect, it, vi } from 'vitest';
 
+import { loadSnippets } from '../src/extensions/snippets/snippet.js';
 import { createPiSession } from './piSession.js';
 
 type RegisterCleanup = TestContext['onTestFinished'];
 
 type EditorFactory = NonNullable<ReturnType<ExtensionUIContext['getEditorComponent']>>;
 
+interface HarnessOptions {
+  sessionManager?: (directory: string) => SessionManager;
+  sessionStartReason?: SessionStartEvent['reason'];
+  /** Runs on the editor that is active before the extension replaces it. */
+  beforeBind?: (editor: EditorComponent, session: AgentSession) => void;
+}
+
+interface ModelContext {
+  messages: { role: string; content: unknown }[];
+}
+
 // Real Pi sessions need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
 
 const tauExtensionPath = resolve(import.meta.dirname, '../src/tau.ts');
+const shippedSnippets = resolve(import.meta.dirname, '../src/extensions/snippets/snippets');
+const enter = '\r';
+const historyPrevious = '\u001B[A';
 
-/**
- * A custom UI context makes Pi report hasUI=true. Render the menu once before
- * sending the scripted keys so the test follows the terminal input order.
- */
-const createScriptedUI = (
-  overlays: string[],
-  keys: string[],
-  submit: (text: string) => void,
-  previousFactory: EditorFactory | undefined,
-) => {
+const interviewBody = async () => {
+  const snippets = await loadSnippets(shippedSnippets);
+  const interview = snippets.find((snippet) => snippet.id === 'interview-me');
+
+  if (interview === undefined) {
+    throw new Error('The shipped interview-me snippet is missing.');
+  }
+
+  return interview.body;
+};
+
+// A custom UI context makes Pi report hasUI=true. Like Pi's interactive mode, it wraps the base
+// autocomplete provider with each added factory, and a submit adds the text to history before
+// sending it. A replacement editor gets the text, callbacks, and autocomplete of the old one, but
+// not its history.
+const createScriptedUI = (session: AgentSession, cwd: string) => {
   const keybindings = new KeybindingsManager(
     TUI_KEYBINDINGS,
   ) as unknown as Parameters<EditorFactory>[2];
@@ -46,46 +76,37 @@ const createScriptedUI = (
   } as Parameters<EditorFactory>[1];
 
   let editor: EditorComponent = new CustomEditor(terminalUI, editorTheme, keybindings);
-  let editorFactory = previousFactory;
+  let editorFactory: EditorFactory | undefined;
+  const sent: Promise<void>[] = [];
+  let provider: AutocompleteProvider = new CombinedAutocompleteProvider([], cwd);
+
+  const submit = (text: string) => {
+    editor.addToHistory?.(text);
+    sent.push(session.prompt(text));
+  };
+
   editor.onSubmit = submit;
 
-  const widgets = new Map<string, string[] | undefined>();
-
   const target: Record<string | symbol, unknown> = {
-    theme: { fg: (_color: string, text: string) => text, bold: (text: string) => text },
-    setWidget: (key: string, content: string[] | undefined) => {
-      widgets.set(key, content);
-    },
     notify: () => {},
+    setWidget: () => {},
     getEditorText: () => editor.getText(),
     setEditorText: (text: string) => {
       editor.setText(text);
     },
     getEditorComponent: () => editorFactory,
     setEditorComponent: (factory: EditorFactory) => {
+      const replacement = factory(terminalUI, editorTheme, keybindings);
+
+      replacement.onSubmit = submit;
+      replacement.setText(editor.getText());
+      replacement.setAutocompleteProvider?.(provider);
       editorFactory = factory;
-      editor = factory(terminalUI, editorTheme, keybindings);
-      editor.onSubmit = submit;
+      editor = replacement;
     },
-    custom: async (factory: Parameters<ExtensionUIContext['custom']>[0]) => {
-      let result: boolean | undefined;
-
-      const component = await factory(
-        { requestRender: () => {}, terminal: { rows: 60 } } as never,
-        { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
-        {} as never,
-        (value) => {
-          result = value as boolean;
-        },
-      );
-
-      overlays.push(component.render(80).join('\n'));
-
-      for (const key of keys) {
-        component.handleInput?.(key);
-      }
-
-      return result;
+    addAutocompleteProvider: (factory: AutocompleteProviderFactory) => {
+      provider = factory(provider);
+      editor.setAutocompleteProvider?.(provider);
     },
   };
 
@@ -101,17 +122,18 @@ const createScriptedUI = (
 
   return {
     uiContext: scriptedUI as unknown as ExtensionUIContext,
-    press: (key: string) => {
-      editor.handleInput(key);
+    editor: () => editor,
+    isShowingAutocomplete: () => (editor as CustomEditor).isShowingAutocomplete(),
+    sent,
+    type: (text: string) => {
+      for (const character of text) {
+        editor.handleInput(character);
+      }
     },
   };
 };
 
-const createHarness = async (
-  registerCleanup: RegisterCleanup,
-  keys: string[],
-  previousFactory?: EditorFactory,
-) => {
+const createHarness = async (registerCleanup: RegisterCleanup, options: HarnessOptions = {}) => {
   const directory = await mkdtemp(join(tmpdir(), 'tau-snippet-flow-'));
   const agentDirectory = await mkdtemp(join(tmpdir(), 'tau-snippet-agent-'));
   registerCleanup(() => rm(directory, { recursive: true, force: true }));
@@ -126,37 +148,26 @@ const createHarness = async (
     // These tests send no tool calls; the list only has to be valid.
     tools: ['read'],
     extensionPaths: [tauExtensionPath],
+    ...(options.sessionManager === undefined
+      ? {}
+      : { sessionManager: options.sessionManager(directory) }),
+    ...(options.sessionStartReason === undefined
+      ? {}
+      : { sessionStartEvent: { type: 'session_start', reason: options.sessionStartReason } }),
   });
 
   expect(extensionsResult.errors).toEqual([]);
 
-  const overlays: string[] = [];
+  const scripted = createScriptedUI(session, directory);
 
-  const submissions: Promise<void>[] = [];
+  options.beforeBind?.(scripted.editor(), session);
 
-  const { uiContext, press } = createScriptedUI(
-    overlays,
-    keys,
-    (text) => {
-      // Mirror Pi's blank-input guard so the harness does not send text the terminal would drop.
-      if (text.trim() !== '') {
-        submissions.push(session.prompt(text, { streamingBehavior: 'steer' }));
-      }
-    },
-    previousFactory,
-  );
+  await session.bindExtensions({ uiContext: scripted.uiContext, mode: 'tui' });
 
-  await session.bindExtensions({ uiContext, mode: 'tui' });
-
-  const commandNames = extensionsResult.extensions.flatMap((extension) =>
-    Array.from(extension.commands.keys()),
-  );
-
-  return { session, faux, overlays, commandNames, uiContext, press, submissions };
+  return { session, faux, ...scripted };
 };
 
-/** Text of the newest user message, which is what the snippet extension transforms. */
-const promptTextOf = (context: { messages: { role: string; content: unknown }[] }) => {
+const promptTextOf = (context: ModelContext) => {
   const user = context.messages.findLast((message) => message.role === 'user');
 
   if (!Array.isArray(user?.content)) {
@@ -169,170 +180,130 @@ const promptTextOf = (context: { messages: { role: string; content: unknown }[] 
     .join('');
 };
 
-it('registers the snippets command in a real Pi session', async ({ onTestFinished }) => {
-  const { commandNames } = await createHarness(onTestFinished, []);
+const recordReplies = (faux: ReturnType<typeof fauxProvider>, count: number) => {
+  const contexts: ModelContext[] = [];
 
-  expect(commandNames).toContain('snippets');
-});
-
-it('prepends a toggled snippet to the next message and then resets', async ({ onTestFinished }) => {
-  // The cursor starts on the first prepend snippet, so space toggles it.
-  const { session, faux, overlays } = await createHarness(onTestFinished, [' ', '\r']);
-
-  await session.prompt('/snippets');
-
-  expect(overlays).toHaveLength(1);
-  expect(overlays[0]).toContain('Interview me');
-  expect(overlays[0]).toContain('Prompt snippets');
-
-  const sent: string[] = [];
-
-  faux.setResponses([
-    (context) => {
-      sent.push(promptTextOf(context));
-
-      return fauxAssistantMessage('Understood.');
-    },
-    (context) => {
-      sent.push(promptTextOf(context));
-
-      return fauxAssistantMessage('Done.');
-    },
-  ]);
-
-  await session.prompt('Add the retry policy.');
-  await session.prompt('Now ship it.');
-
-  expect(sent[0]).not.toMatch(/\n$/);
-  expect(sent[0]).toMatch(/until I approve the agreed scope\.\n\nAdd the retry policy\.$/);
-  expect(sent[1]).toBe('Now ship it.');
-});
-
-it('sends selected snippets on empty Enter and resets the toggles', async ({ onTestFinished }) => {
-  const { session, faux, uiContext, press, submissions } = await createHarness(onTestFinished, [
-    ' ',
-    '\r',
-  ]);
-
-  await session.prompt('/snippets');
-
-  expect(uiContext.getEditorComponent()).toBeTypeOf('function');
-
-  const sent: string[] = [];
-
-  const finished = new Promise<void>((complete) => {
-    session.subscribe((event) => {
-      if (event.type === 'agent_settled') {
-        complete();
-      }
-    });
-  });
-
-  faux.setResponses([
-    (context) => {
-      sent.push(promptTextOf(context));
-
-      return fauxAssistantMessage('Done.');
-    },
-  ]);
-
-  press('\r');
-  await finished;
-
-  expect(sent).toHaveLength(1);
-  expect(sent[0]).toMatch(/^Interview me before you start\./);
-  expect(sent[0]).not.toMatch(/\n$/);
-  expect(uiContext.getEditorText()).toBe('');
-
-  press('\r');
-  expect(submissions).toHaveLength(0);
-
-  uiContext.setEditorText('Now ship it.');
-  press('\r');
-
-  expect(submissions).toHaveLength(1);
-  await submissions[0];
-
-  const userMessages = session.messages.filter((message) => message.role === 'user');
-
-  expect(userMessages).toHaveLength(2);
-  expect(userMessages[1]?.content).toEqual([{ type: 'text', text: 'Now ship it.' }]);
-});
-
-it('passes submissions through an earlier editor that wraps onSubmit', async ({
-  onTestFinished,
-}) => {
-  const seenByEarlierEditor: string[] = [];
-
-  const earlierFactory: EditorFactory = (terminalUI, theme, keybindings) => {
-    const editor = new CustomEditor(terminalUI, theme, keybindings);
-    let onSubmit = editor.onSubmit;
-
-    Object.defineProperty(editor, 'onSubmit', {
-      configurable: true,
-      get: () => (text: string) => {
-        seenByEarlierEditor.push(text);
-        onSubmit?.(text);
-      },
-      set: (handler: typeof onSubmit) => {
-        onSubmit = handler;
-      },
-    });
-
-    return editor;
-  };
-
-  const { uiContext, press, submissions } = await createHarness(onTestFinished, [], earlierFactory);
-
-  uiContext.setEditorText('Ship it.');
-  press('\r');
-
-  expect(seenByEarlierEditor).toEqual(['Ship it.']);
-  expect(submissions).toHaveLength(1);
-  await submissions[0];
-});
-
-it('keeps a slash command at the start of the text and keeps the toggle on', async ({
-  onTestFinished,
-}) => {
-  const { session, faux } = await createHarness(onTestFinished, [' ', '\r']);
-
-  await session.prompt('/snippets');
-
-  const sent: string[] = [];
-
-  const record = (context: Parameters<typeof promptTextOf>[0]) => {
-    sent.push(promptTextOf(context));
+  const record = (context: ModelContext) => {
+    contexts.push(context);
 
     return fauxAssistantMessage('Done.');
   };
 
-  faux.setResponses([record, record]);
+  faux.setResponses(Array.from({ length: count }, () => record));
 
-  // Pi expands /skill: and prompt templates only at the start of the text.
-  await session.prompt('/skill:commit');
-  await session.prompt('Add the retry policy.');
+  return contexts;
+};
 
-  expect(sent[0]).toBe('/skill:commit');
-  expect(sent[1]).toMatch(/^Interview me before you start\./);
+it('sends exactly the editor text after a snippet is picked and recalls it from history', async ({
+  onTestFinished,
+}) => {
+  const harness = await createHarness(onTestFinished);
+  const contexts = recordReplies(harness.faux, 1);
+  const shown = `Add the retry policy\n\n${await interviewBody()}`;
+
+  harness.type('Add the retry policy #interview');
+
+  await vi.waitFor(() => {
+    expect(harness.isShowingAutocomplete()).toBe(true);
+  });
+
+  harness.editor().handleInput(enter);
+
+  expect(harness.editor().getText()).toBe(shown);
+
+  harness.editor().handleInput(enter);
+  await Promise.all(harness.sent);
+
+  expect(contexts.map(promptTextOf)).toEqual([shown]);
+
+  harness.editor().handleInput(historyPrevious);
+
+  expect(harness.editor().getText()).toBe(shown);
 });
 
-it('leaves the message unchanged when the user cancels the menu', async ({ onTestFinished }) => {
-  const { session, faux } = await createHarness(onTestFinished, [' ', '']);
+it('sends a typed snippet id as plain text', async ({ onTestFinished }) => {
+  const { session, faux } = await createHarness(onTestFinished);
+  const contexts = recordReplies(faux, 1);
 
-  await session.prompt('/snippets');
+  await session.prompt('Add the retry policy #interview-me');
 
-  const sent: string[] = [];
+  expect(contexts.map(promptTextOf)).toEqual(['Add the retry policy #interview-me']);
+});
 
-  faux.setResponses([
-    (context) => {
-      sent.push(promptTextOf(context));
+// Pi's renderInitialMessages adds the text of each user message to history.
+const fillHistory = (editor: EditorComponent, session: AgentSession) => {
+  for (const message of session.messages) {
+    if (message.role === 'user') {
+      editor.addToHistory?.(promptTextOf({ messages: [message] }));
+    }
+  }
+};
 
-      return fauxAssistantMessage('Done.');
-    },
+const createSavedSession = async (registerCleanup: RegisterCleanup) => {
+  const sessionDirectory = await mkdtemp(join(tmpdir(), 'tau-snippet-sessions-'));
+  registerCleanup(() => rm(sessionDirectory, { recursive: true, force: true }));
+
+  const first = await createHarness(registerCleanup, {
+    sessionManager: (cwd) => SessionManager.create(cwd, sessionDirectory),
+  });
+
+  recordReplies(first.faux, 2);
+  await first.session.prompt('Add the retry policy');
+  await first.session.prompt('Now ship it.');
+
+  const sessionFile = first.session.sessionManager.getSessionFile();
+
+  if (sessionFile === undefined) {
+    throw new Error('The first session saved no file.');
+  }
+
+  return () => SessionManager.open(sessionFile, sessionDirectory);
+};
+
+const recallHistory = (harness: Awaited<ReturnType<typeof createHarness>>, presses: number) => {
+  const recalled: string[] = [];
+
+  for (let press = 0; press < presses; press += 1) {
+    harness.editor().handleInput(historyPrevious);
+    recalled.push(harness.editor().getText());
+  }
+
+  return recalled;
+};
+
+it('recalls each sent message once when Pi starts on a saved session', async ({
+  onTestFinished,
+}) => {
+  const openSaved = await createSavedSession(onTestFinished);
+  const started = await createHarness(onTestFinished, { sessionManager: openSaved });
+
+  // At startup Pi fills history after session_start, into the replacement editor.
+  fillHistory(started.editor(), started.session);
+
+  expect(recallHistory(started, 3)).toEqual([
+    'Now ship it.',
+    'Add the retry policy',
+    'Add the retry policy',
   ]);
-
-  await session.prompt('Add the retry policy.');
-
-  expect(sent[0]).toBe('Add the retry policy.');
 });
+
+it.for(['resume', 'fork', 'reload'] as const)(
+  'recalls each sent message once after %s',
+  async (reason, { onTestFinished }) => {
+    const openSaved = await createSavedSession(onTestFinished);
+
+    // On these reasons Pi fills the old editor's history before session_start, and the
+    // replacement editor does not copy it.
+    const switched = await createHarness(onTestFinished, {
+      sessionManager: openSaved,
+      sessionStartReason: reason,
+      beforeBind: fillHistory,
+    });
+
+    expect(recallHistory(switched, 3)).toEqual([
+      'Now ship it.',
+      'Add the retry policy',
+      'Add the retry policy',
+    ]);
+  },
+);

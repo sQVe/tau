@@ -1,6 +1,7 @@
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { stripTerminalSequences, truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 
+import { boxLine, topBorder } from '../../box.js';
 import { stateLabel } from './presentation.js';
 import { workerNamePattern } from './types.js';
 import type { WorkerState } from './types.js';
@@ -365,38 +366,6 @@ const alignRow = (
   return cells.join(' ');
 };
 
-const fitBorder = (
-  left: string,
-  right: string,
-  width: number,
-  theme: Theme | undefined,
-): string => {
-  if (width < 4) {
-    return truncateToWidth('╭─', width);
-  }
-
-  const inside = width - 2;
-  const fittedRight = truncateToWidth(right, inside, '…');
-  const leftWidth = Math.max(0, inside - visibleWidth(fittedRight));
-  const fittedLeft = truncateToWidth(left, leftWidth, '…');
-  const availableFill = Math.max(0, inside - visibleWidth(fittedLeft) - visibleWidth(fittedRight));
-  const line = `${fittedLeft}${'─'.repeat(availableFill)}${fittedRight}`;
-
-  return `${theme?.fg('border', '╭') ?? '╭'}${theme?.fg('accent', truncateToWidth(line, inside)) ?? truncateToWidth(line, inside)}${theme?.fg('border', '╮') ?? '╮'}`;
-};
-
-const boxLine = (content: string, width: number, theme: Theme | undefined): string => {
-  if (width < 4) {
-    return truncateToWidth('│', width);
-  }
-
-  const innerWidth = width - 4;
-  const fitted = truncateToWidth(content, innerWidth, '…');
-  const line = `${theme?.fg('border', '│') ?? '│'} ${fitted}${' '.repeat(Math.max(0, innerWidth - visibleWidth(fitted)))} ${theme?.fg('border', '│') ?? '│'}`;
-
-  return line;
-};
-
 // The idle summary is one muted line instead of a box around records that can no longer change.
 const mutedLine = (content: string, width: number, theme: Theme | undefined): string => {
   const fitted = truncateToWidth(content, width, '…');
@@ -406,7 +375,7 @@ const mutedLine = (content: string, width: number, theme: Theme | undefined): st
 
 // Border fitting is shared by the wide and narrow widget renderings.
 // eslint-disable-next-line eslint/complexity
-const bottomBorder = (
+const footerBorder = (
   left: string,
   right: string,
   width: number,
@@ -518,7 +487,7 @@ export const renderWorkerWidget = (
   const shownLiveLabel =
     visibleWidth(liveLabel(false)) <= headerBudget ? liveLabel(false) : liveLabel(true);
 
-  const lines = [fitBorder('─ Subagents ', ` ${shownLiveLabel} `, boxWidth, theme)];
+  const lines = [topBorder('─ Subagents ', ` ${shownLiveLabel} `, boxWidth, theme)];
 
   const columns = alignedColumns(liveRows, boxWidth - 4, now);
 
@@ -534,7 +503,7 @@ export const renderWorkerWidget = (
 
   const footerLeft = stoppedCount > 0 ? `${stoppedCount} stopped` : '';
 
-  lines.push(bottomBorder(footerLeft, '', boxWidth, theme));
+  lines.push(footerBorder(footerLeft, '', boxWidth, theme));
 
   return lines;
 };

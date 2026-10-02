@@ -1,7 +1,6 @@
 ---
 name: Read other panes
 description: Gather what the other panes in this workspace hold about this task
-placement: prepend
 order: 20
 ---
 

@@ -1,6 +1,6 @@
 # ADR 0013: Snippet placement
 
-- Status: Accepted
+- Status: Superseded by [ADR 0080](./0080-insert-prompt-snippets-through-autocomplete.md)
 - Date: 2026-09-10
 
 ## Context
@@ -49,3 +49,4 @@ the snippet text, whatever the placement.
 
 - [ADR-0009: Prompt snippets](./0009-prompt-snippets.md)
 - [ADR-0010: Documentation scope](./0010-documentation-scope.md)
+- [ADR 0080: Insert prompt snippets through autocomplete](./0080-insert-prompt-snippets-through-autocomplete.md)

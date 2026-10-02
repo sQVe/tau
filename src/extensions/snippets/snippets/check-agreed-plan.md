@@ -1,7 +1,6 @@
 ---
 name: Check the agreed plan
 description: Check ticket scope against implementation and recent decisions
-placement: prepend
 order: 50
 ---
 

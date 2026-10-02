@@ -1,7 +1,6 @@
 ---
 name: Push back
 description: Challenge claims, ideas, and decisions instead of agreeing by default
-placement: prepend
 order: 30
 ---
 
