@@ -54,9 +54,9 @@ commit another worktree from your session, even over bash.
    `.tau/.gitignore` has a `*` line, adding it if needed, so `.tau/` stays out of Git. Take your
    pane from `HERDR_PANE_ID`. Make it self-contained: what to do, the state the receiver needs, what
    it must not touch, and for implementation, a plan status. The plan status is "agreed, nothing
-   open" with the agreed scope, or the open questions. It tells the receiver to ask its user before
-   editing if questions are open or the ticket conflicts with the message. A planning-only handoff
-   tells the receiver to plan with its user and get approval before any edit.
+   open" with the agreed scope. Tell the receiver to ask its user before editing if the ticket
+   conflicts with the message. A planning-only handoff lists the open questions and tells the
+   receiver to plan with its user and get approval before any edit.
 3. Send it and end your turn:
 
    ```bash
