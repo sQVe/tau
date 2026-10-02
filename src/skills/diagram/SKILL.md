@@ -31,9 +31,8 @@ blocks, so they also work in pull request bodies and documents.
   - `erDiagram`.
 - Write valid syntax. When the parser warns, Pi shows the source and a warning instead of the
   drawing.
-- Keep the drawing narrower than the pane. Pi shows a diagram wider than the pane as raw source.
-  Prefer `TD` over `LR` in a flowchart, keep labels to a few words, and aim for under about 80
-  columns.
+- Keep the drawing narrower than the pane, under about 80 columns. Pi shows a diagram wider than the
+  pane as raw source. Keep labels to a few words.
 - Show one idea per diagram, with about 12 nodes or fewer. Split a large diagram into several
   instead of shortening labels until they lose meaning.
 - Pair each diagram with short prose that names the real files or functions behind its nodes.
@@ -42,8 +41,8 @@ blocks, so they also work in pull request bodies and documents.
 
 1. Find the topic. Use the text after `/diagram`. Without it, use the structure the conversation is
    discussing. If there is none, ask what to diagram and stop.
-2. Read the code for the topic: the entry points, the calls or messages between parts, and the
-   states or records involved.
+2. Read the code for the topic: entry points, calls or messages between parts, and the states or
+   records involved.
 3. Decide whether a diagram helps. After `/diagram`, always draw at least one. Otherwise, if one
    sentence explains the topic, write the sentence instead and say that a diagram would add nothing.
 4. Pick the type that matches the idea: `flowchart` for control flow, `sequenceDiagram` for messages
@@ -51,4 +50,4 @@ blocks, so they also work in pull request bodies and documents.
    data relations.
 5. Draft the diagram with short labels, and give a `flowchart` the `TD` direction. Count its nodes
    and estimate its width. Split it when it exceeds about 12 nodes or 80 columns.
-6. Write the prose around each diagram. Name the files or functions each part comes from.
+6. Write the prose around each diagram.
