@@ -99,8 +99,9 @@ preview. It needs the `linear` CLI authenticated for the workspace.
 6. Write with these commands, in the previewed order. Write each `'` in a title or search term as
    `'\''`, so the shell expands nothing in it. After each create, note the identifier the output
    shows. If it shows none, stop and search the parent's children or the team before any retry.
-   - Create a container, bug, or human ticket. Leave out `--project` when the route has none, and
-     add `--label '<label>'` for each label:
+   - Create a container, bug, or human ticket. Leave out `--project` when the route has none. Add
+     `--parent <parent>` when the approved ticket has a parent, and `--label '<label>'` for each
+     label:
      `linear issue create --team <team> --project '<project>' --title '<title>' --description-file <file> --no-interactive`.
    - Create a slice under its container, in the routed team and project, which step 2 matched
      against the container:
