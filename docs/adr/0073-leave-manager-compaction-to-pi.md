@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-30
 - Supersedes: [ADR 0070](./0070-compact-manager-sessions-at-pi-turn-boundaries.md)
+- Extended by: [ADR 0078](./0078-remind-managers-to-compact-and-restore-the-worker-ledger.md)
 
 ## Context
 

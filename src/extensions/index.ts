@@ -7,6 +7,7 @@ import bareRootExtension from './bareRoot/index.js';
 import bulkReadExtension from './bulkRead/index.js';
 import codingExtension from './coding/index.js';
 import commitExtension from './commit/index.js';
+import compactionExtension from './compaction/index.js';
 import herdrBlockedExtension from './herdrBlocked/index.js';
 import snippetsExtension from './snippets/index.js';
 import statusbarExtension from './statusbar/index.js';
@@ -33,6 +34,7 @@ export default async function tauExtension(pi: ExtensionAPI) {
   snippetsExtension(pi);
   statusbarExtension(pi);
   subagentsExtension(pi);
+  compactionExtension(pi);
   bareRootExtension(pi);
   herdrBlockedExtension(pi);
 }

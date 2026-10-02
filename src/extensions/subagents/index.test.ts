@@ -21,6 +21,13 @@ import subagentsExtension, { createNoticeDelivery, delegationGuidelines } from '
 import type { WorkerNotice } from './presentation.js';
 import type { WorkerWidgetRow } from './widget.js';
 
+const emitEvent = (
+  handlers: ReturnType<typeof fakeExtensionApi>['handlers'],
+  name: string,
+  event: unknown = {},
+  context = {} as ExtensionContext,
+) => Promise.all((handlers.get(name) ?? []).map((handler) => handler(event as never, context)));
+
 const registerTools = () => {
   const fake = fakeExtensionApi();
   subagentsExtension(fake.pi);
@@ -57,7 +64,7 @@ const launchContext = (directory: string) =>
     },
   }) as unknown as ExtensionToolContext;
 
-const busyParent = { isIdle: () => false };
+const busyParent = { isIdle: () => false, signal: undefined };
 const testTheme = { fg: (_color: string, text: string) => text };
 const noOperation = (): void => undefined;
 
@@ -263,7 +270,7 @@ const launchDescription = (
   } as unknown as ExtensionContext;
 
   onTestFinished(async () => {
-    await fake.handler('session_shutdown')({ reason: 'quit' }, context);
+    await emitEvent(fake.handlers, 'session_shutdown', { reason: 'quit' }, context);
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
     rmSync(directory, { recursive: true, force: true });
@@ -339,7 +346,7 @@ it('returns from session start while worker reattachment is still pending', asyn
   onTestFinished(async () => {
     released.resolve(undefined);
     await released.promise;
-    await fake.handler('session_shutdown')({ reason: 'quit' }, context);
+    await emitEvent(fake.handlers, 'session_shutdown', { reason: 'quit' }, context);
     vi.restoreAllMocks();
   });
 
@@ -413,7 +420,7 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
   let shutdownFinished = false;
 
   const shutdown = Promise.resolve(
-    fake.handler('session_shutdown')({ reason: 'reload' }, context),
+    emitEvent(fake.handlers, 'session_shutdown', { reason: 'reload' }, context),
   ).then(() => {
     shutdownFinished = true;
   });
@@ -945,9 +952,17 @@ it('defaults the launch timeout by profile role and keeps an explicit timeout', 
   ]);
 });
 
-it('steers a question notice into a busy parent', () => {
-  const sendMessage = vi.fn<() => void>();
-  const pi = fakeExtensionApi({ sendMessage }).pi;
+// A parent with a running turn: Pi is busy and a run has started.
+const runningDelivery = async (pi: ExtensionAPI, handlers: Parameters<typeof emitEvent>[0]) => {
+  const deliver = createNoticeDelivery(pi);
+
+  await emitEvent(handlers, 'agent_start');
+
+  return deliver;
+};
+
+it('steers a question notice into a busy parent', async () => {
+  const fake = fakeExtensionApi();
 
   const content = {
     taskId: 'task-1',
@@ -958,9 +973,9 @@ it('steers a question notice into a busy parent', () => {
 
   const notice: WorkerNotice = { content, details: { full: true }, question: true };
 
-  createNoticeDelivery(pi)(busyParent, notice);
+  (await runningDelivery(fake.pi, fake.handlers))(busyParent, notice);
 
-  expect(sendMessage).toHaveBeenCalledWith(
+  expect(fake.sendMessage).toHaveBeenCalledWith(
     {
       customType: 'tau-worker',
       content: JSON.stringify(content),
@@ -973,19 +988,85 @@ it('steers a question notice into a busy parent', () => {
 
 it.each(['success', 'incomplete', 'failure'])(
   '%s report notices steer to a busy parent',
-  (outcome) => {
-    const sendMessage = vi.fn<() => void>();
-    const pi = fakeExtensionApi({ sendMessage }).pi;
+  async (outcome) => {
+    const fake = fakeExtensionApi();
     const content = { taskId: 'task-1', state: 'stopped', deadline: 1, outcome };
 
-    createNoticeDelivery(pi)(busyParent, { content, details: {}, question: false });
+    (await runningDelivery(fake.pi, fake.handlers))(busyParent, {
+      content,
+      details: {},
+      question: false,
+    });
 
-    expect(sendMessage).toHaveBeenCalledWith(expect.anything(), {
+    expect(fake.sendMessage).toHaveBeenCalledWith(expect.anything(), {
       deliverAs: 'steer',
       triggerTurn: true,
     });
   },
 );
+
+const stoppedNotice = (taskId: string): WorkerNotice => ({
+  content: { taskId, state: 'stopped', deadline: 1, outcome: 'success' },
+  details: { taskId },
+  question: false,
+});
+
+const noticeMessage = (taskId: string) => ({
+  customType: 'tau-worker',
+  content: JSON.stringify(stoppedNotice(taskId).content),
+  display: true,
+  details: { taskId },
+});
+
+// Pi is busy without a run while it compacts manually. A triggerTurn notice would start a turn beside
+// the summary.
+it('queues a notice for the next prompt while Pi is busy without a run', async () => {
+  const fake = fakeExtensionApi();
+  const deliver = createNoticeDelivery(fake.pi);
+
+  await emitEvent(fake.handlers, 'agent_start');
+  await emitEvent(fake.handlers, 'agent_settled');
+  deliver(busyParent, stoppedNotice('task-1'));
+
+  expect(fake.sendMessage.mock.calls).toEqual([
+    [noticeMessage('task-1'), { deliverAs: 'nextTurn' }],
+  ]);
+
+  expect(fake.sendUserMessage).not.toHaveBeenCalled();
+});
+
+const compactionRow = (taskId: string, state: WorkerWidgetRow['state'], questionId?: string) =>
+  ({ name: taskId, taskId, state, questionId }) as WorkerWidgetRow;
+
+it('queues active workers and pending questions for the next prompt after a compaction', async () => {
+  const fake = fakeExtensionApi();
+  let rows = [compactionRow('task-stopped', 'stopped')];
+
+  vi.spyOn(WorkerController.prototype, 'widgetRows').mockImplementation(() => rows);
+
+  finishTest(() => {
+    vi.restoreAllMocks();
+  });
+
+  subagentsExtension(fake.pi);
+
+  const context = {
+    sessionManager: { getSessionId: () => 'parent-session' },
+  } as unknown as ExtensionContext;
+
+  await emitEvent(fake.handlers, 'session_compact', { reason: 'manual' }, context);
+
+  expect(fake.sendMessage).not.toHaveBeenCalled();
+
+  rows = [compactionRow('task-asking', 'awaitingReply', 'question-1')];
+  await emitEvent(fake.handlers, 'session_compact', { reason: 'manual' }, context);
+
+  expect(fake.sendMessage).toHaveBeenCalledTimes(1);
+  expect(fake.sendMessage.mock.calls[0]?.[1]).toEqual({ deliverAs: 'nextTurn' });
+  expect(fake.sendMessage.mock.calls[0]?.[0].content).toContain('task-asking');
+  expect(fake.sendMessage.mock.calls[0]?.[0].content).toContain('question-1');
+  expect(fake.sendUserMessage).not.toHaveBeenCalled();
+});
 
 it('returns allowlisted model content for a follow-up successor and keeps full details', async ({
   onTestFinished,
