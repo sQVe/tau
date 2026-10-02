@@ -2,7 +2,6 @@ import type { TrackerConfig, TrackerSetup } from './trackerConfig.js';
 
 export interface TrackerFacts {
   setup: TrackerSetup;
-  // The `origin` remote URL, or undefined when the checkout has none.
   originUrl: string | undefined;
 }
 
@@ -83,7 +82,6 @@ const repositoryLine = (config: TrackerConfig, originUrl: string | undefined): s
   return `${repositoryPrefix} \`${repository}\` uses team \`${entry.team}\` and ${project}.`;
 };
 
-// Gives the manager prompt lines that name where tracker tickets go, or why Tau cannot tell.
 export const trackerLines = ({ setup, originUrl }: TrackerFacts): string[] => {
   if (setup.status === 'unset') {
     return [];
