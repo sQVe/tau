@@ -84,6 +84,16 @@ ruleTester.run('extension-boundary', extensionBoundaryRule, {
       errors: [{ messageId: 'root', data: { source: 'flat' } }],
     },
     {
+      code: "import tau from './tau.js';\n\nexport default tau;",
+      filename: '/repository/src/keys.ts',
+      errors: [{ messageId: 'root', data: { source: 'keys' } }],
+    },
+    {
+      code: "import tau from '../tau.js';\n\nexport default tau;",
+      filename: '/repository/src/models/models.ts',
+      errors: [{ messageId: 'root', data: { source: 'models' } }],
+    },
+    {
       code: "import { effectiveAllowedModels } from '../../models/allowedModels.js';\n\nexport const value = effectiveAllowedModels;",
       filename,
       errors: [{ messageId: 'private', data: { folder: 'models', file: 'allowedModels' } }],

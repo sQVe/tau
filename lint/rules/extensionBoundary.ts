@@ -70,7 +70,7 @@ export const extensionBoundaryRule: Rule = {
     messages: {
       crossing:
         'Extension "{{source}}" must not import from extension "{{target}}". Move shared code under src/.',
-      root: 'Extension "{{source}}" must not import src/tau.ts, which loads every extension.',
+      root: 'Module "{{source}}" must not import src/tau.ts, which loads every extension.',
       private:
         'Import module "{{folder}}" through its entry file, not its private file "{{file}}". Make the file public in the extension-boundary rule if other modules depend on it.',
     },
@@ -90,6 +90,7 @@ export const extensionBoundaryRule: Rule = {
     const ownSegments = segmentsOf(filename) ?? [];
     const sourceExtension = extensionOf(ownSegments);
     const sourceModule = folderModuleOf(ownSegments)?.folder;
+    const sourceName = sourceExtension ?? withoutExtension(ownSegments[0] ?? '');
     const checksPrivateFiles = !mayImportPrivateFiles(ownSegments);
 
     const checkPrivateFile = (node: ESTree.Node, target: string[]) => {
@@ -107,9 +108,7 @@ export const extensionBoundaryRule: Rule = {
     const checkExtensionBoundary = (node: ESTree.Node, target: string[], source: string) => {
       const targetExtension = extensionOf(target);
 
-      if (isCompositionRoot(target)) {
-        context.report({ node, messageId: 'root', data: { source } });
-      } else if (targetExtension !== undefined && targetExtension !== source) {
+      if (targetExtension !== undefined && targetExtension !== source) {
         context.report({
           node,
           messageId: 'crossing',
@@ -133,7 +132,9 @@ export const extensionBoundaryRule: Rule = {
         checkPrivateFile(node, target);
       }
 
-      if (sourceExtension !== undefined) {
+      if (isCompositionRoot(target)) {
+        context.report({ node, messageId: 'root', data: { source: sourceName } });
+      } else if (sourceExtension !== undefined) {
         checkExtensionBoundary(node, target, sourceExtension);
       }
     };
