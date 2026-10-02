@@ -1,8 +1,6 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
+import { readGitOutput } from '../gitOutput.js';
 import { appendSystemPrompt } from '../systemPrompt.js';
 
 const rule =
@@ -12,26 +10,9 @@ const rule =
   'handoff skill. Writing handoff messages under .tau/handoffs in the root is fine.';
 
 const isBareRoot = async (cwd: string) => {
-  // oxlint-disable-next-line node/no-process-env -- An inherited repository selector would make Git check that repository instead of cwd.
-  const inherited = process.env;
+  const output = await readGitOutput(cwd, ['rev-parse', '--is-bare-repository']);
 
-  const {
-    GIT_DIR: _gitDir,
-    GIT_WORK_TREE: _gitWorkTree,
-    GIT_COMMON_DIR: _gitCommonDir,
-    ...env
-  } = inherited;
-
-  try {
-    const { stdout } = await promisify(execFile)('git', ['rev-parse', '--is-bare-repository'], {
-      cwd,
-      env,
-    });
-
-    return stdout.trim() === 'true';
-  } catch {
-    return false;
-  }
+  return output?.trim() === 'true';
 };
 
 export default function bareRootExtension(pi: ExtensionAPI) {

@@ -1,6 +1,8 @@
+import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import type {
   ExtensionAPI,
@@ -14,6 +16,7 @@ import { Value } from 'typebox/value';
 import { expect, it, vi, onTestFinished as finishTest } from 'vitest';
 
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { createTemporaryRepository, initializeRepository } from '../../../tests/gitRepository.js';
 import { WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { fixtureModel } from './fixtures/controlledProvider.js';
@@ -71,6 +74,7 @@ const emptyConfigContext = () => {
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
 
   finishTest(() => {
+    vi.unstubAllEnvs();
     rmSync(directory, { recursive: true, force: true });
   });
 
@@ -112,20 +116,22 @@ it('appends delegation guidelines for a manager inside herdr', ({ onTestFinished
 
 const loginCommand = 'google-chrome-stable --profile-directory="Agent profile"';
 
-// Answers `git remote get-url origin` with the given URL, or as Git does without an origin.
-const originExec = (originUrl: string | undefined): ExtensionAPI['exec'] =>
-  vi.fn<ExtensionAPI['exec']>(async () =>
-    originUrl === undefined
-      ? { stdout: '', stderr: "error: No such remote 'origin'", code: 2, killed: false }
-      : { stdout: `${originUrl}\n`, stderr: '', code: 0, killed: false },
-  );
+const addOrigin = async (directory: string, originUrl: string) => {
+  await promisify(execFile)('git', ['remote', 'add', 'origin', originUrl], { cwd: directory });
+};
 
 const sessionGuidelines = async (
   onTestFinished: typeof finishTest,
-  config: { user?: unknown; repository?: unknown; originUrl?: string; herdr?: boolean },
+  config: {
+    user?: unknown;
+    repository?: unknown;
+    originUrl?: string;
+    herdr?: boolean;
+    inheritedGitDirectory?: string;
+  },
 ) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-browser-guideline-'));
-  const fake = fakeExtensionApi({ exec: originExec(config.originUrl) });
+  const fake = fakeExtensionApi();
   const notify = vi.fn<ExtensionContext['ui']['notify']>();
 
   const herdr = config.herdr ?? true;
@@ -138,6 +144,15 @@ const sessionGuidelines = async (
 
   if (config.user !== undefined) {
     writeFileSync(join(directory, 'tau.json'), JSON.stringify(config.user));
+  }
+
+  if (config.originUrl !== undefined) {
+    await initializeRepository(directory);
+    await addOrigin(directory, config.originUrl);
+  }
+
+  if (config.inheritedGitDirectory !== undefined) {
+    vi.stubEnv('GIT_DIR', config.inheritedGitDirectory);
   }
 
   if (config.repository !== undefined) {
@@ -258,6 +273,24 @@ it('names the tracker route outside herdr and without the subagent tool', async 
   for (const guideline of delegationGuidelines(undefined)) {
     expect(appendedWithoutTools).not.toContain(guideline);
   }
+});
+
+it('reads the origin of the session directory when Pi inherits GIT_DIR for another repository', async ({
+  onTestFinished,
+}) => {
+  const other = await createTemporaryRepository((cleanup) => {
+    onTestFinished(cleanup);
+  });
+
+  await addOrigin(other, 'git@github.com:sQVe/other.git');
+
+  const { appended } = await sessionGuidelines(onTestFinished, {
+    user: { tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 'ME' } } } },
+    originUrl: 'git@github.com:sQVe/tau.git',
+    inheritedGitDirectory: join(other, '.git'),
+  });
+
+  expect(appended).toContain('Tracker repository: `sQVe/tau` uses team `ME`');
 });
 
 it('states a missing origin remote in the manager prompt', async ({ onTestFinished }) => {

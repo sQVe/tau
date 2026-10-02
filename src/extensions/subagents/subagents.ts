@@ -7,6 +7,7 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import { errorMessage } from '../../errors.js';
+import { readGitOutput } from '../../gitOutput.js';
 import { appendSystemPrompt, appendToolGuidelines } from '../../systemPrompt.js';
 import type { ConfigLocation } from '../../tauConfig.js';
 import { isWorkerProcess } from '../../workerProcess.js';
@@ -680,15 +681,15 @@ const registerSubagentTools = (runtime: SubagentRuntime): void => {
 };
 
 // Outside a repository, or without an origin remote, Git fails and no repository entry applies.
-const readOriginUrl = async (pi: ExtensionAPI, cwd: string): Promise<string | undefined> => {
-  const result = await pi.exec('git', ['remote', 'get-url', 'origin'], { cwd, timeout: 5000 });
+const readOriginUrl = async (cwd: string): Promise<string | undefined> => {
+  const output = await readGitOutput(cwd, ['remote', 'get-url', 'origin']);
 
-  return result.code === 0 && !result.killed ? result.stdout.trim() : undefined;
+  return output?.trim();
 };
 
-const trackerGuidelines = async (pi: ExtensionAPI, location: ConfigLocation) => {
+const trackerGuidelines = async (location: ConfigLocation) => {
   const setup = readTrackerSetup(location);
-  const originUrl = setup.status === 'read' ? await readOriginUrl(pi, location.cwd) : undefined;
+  const originUrl = setup.status === 'read' ? await readOriginUrl(location.cwd) : undefined;
 
   return trackerLines({ setup, originUrl });
 };
@@ -855,7 +856,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       projectTrusted: context.isProjectTrusted(),
     };
 
-    const facts = await trackerGuidelines(pi, location);
+    const facts = await trackerGuidelines(location);
 
     tracker.splice(0, tracker.length, ...facts);
   });
