@@ -51,11 +51,12 @@ preview. It needs the `linear` CLI authenticated for the workspace.
      `Tracker repository:` line. Without a project there, create it without one.
    - An agent ticket goes to the team in the line that starts with `Tracker agent team:`, with no
      project. The agent team is often not in the repository's project.
-   - The `Tracker repository:` route holds for a human ticket with a parent too. Read the parent's
-     team and project with
+   - The `Tracker repository:` route holds for every ticket except an agent ticket, also when it has
+     a parent, such as a slice under its container. Read the parent's team and project with
      `linear api 'query($id: String!) { issue(id: $id) { team { key } project { name } state { name } } }' --variable id=<parent>`.
-     If either differs from the route, stop. Tell the user that the parent is in team `<team>` and
-     project `<project>`, but this repository routes to team `<team>` and project `<project>`.
+     If either differs from the route, stop. Tell the user that the parent is in team
+     `<parent team>` and project `<parent project>`, but this repository routes to team
+     `<route team>` and project `<route project>`.
 
    If a line the ticket needs is missing, stop: the `Tracker repository:` line for every ticket, and
    the `Tracker agent team:` line for an agent ticket. Show each line that starts with
@@ -80,8 +81,13 @@ preview. It needs the `linear` CLI authenticated for the workspace.
    linear issue query --search '<keywords>' --team <team> --project '<project>' --state triage --state backlog --state unstarted --state started --json --no-pager
    ```
 
-   On a match, show it to the user and ask: use or update the match, or create the new ticket
-   anyway. A retry that finds a ticket it created earlier uses that ticket without asking.
+   A search without `--project` also returns tickets in other projects. Before you offer a match,
+   read its team, project, and parent with
+   `linear api 'query($id: String!) { issue(id: $id) { team { key } project { name } parent { identifier } } }' --variable id=<match>`.
+   A match fits when all three equal the planned ticket's. Show each match that fits, and ask: use
+   or update the match, or create the new ticket anyway. Show a match that does not fit only with
+   what differs, and never offer to reuse it. A retry that finds a fitting ticket it created earlier
+   uses that ticket without asking.
 
 4. Write the title and body.
    - Write the title as an imperative in sentence case, about 70 characters at most, with no prefix.
@@ -89,22 +95,23 @@ preview. It needs the `linear` CLI authenticated for the workspace.
    - Fill the template. Leave out a section that has nothing to say, but keep `## Acceptance`.
    - Look up labels with `linear label list --team <team> --json` once per team in the session. Add
      a label only when the list has one that fits, such as `Bug` for a bug, and spell it as the list
-     does. Never create a label.
+     does. Keep each label's `id` too, since an agent ticket takes labels by ID. Never create a
+     label.
    - Save the body in the calling skill's draft directory, or in a file from `mktemp`.
 
 5. Preview the writes, unless the calling skill's preview already shows them: each ticket with its
    type, title, team, project, labels, and parent, and each relation and status change. Approve with
    `ask_user_question`.
 
-6. Write with these commands, in the previewed order. Write each `'` in a title or search term as
-   `'\''`, so the shell expands nothing in it. After each create, note the identifier the output
-   shows. If it shows none, stop and search the parent's children or the team before any retry.
+6. Write with these commands, in the previewed order. Write each `'` in every single-quoted value,
+   such as a title, search term, project, or label, as `'\''`, so the shell expands nothing in it.
+   After each create, note the identifier the output shows. If it shows none, stop and search the
+   parent's children or the team before any retry.
    - Create a container, bug, or human ticket. Leave out `--project` when the route has none. Add
      `--parent <parent>` when the approved ticket has a parent, and `--label '<label>'` for each
      label:
      `linear issue create --team <team> --project '<project>' --title '<title>' --description-file <file> --no-interactive`.
-   - Create a slice under its container, in the routed team and project, which step 2 matched
-     against the container:
+   - Create a slice under its container, in the routed team and project:
      `linear issue create --team <team> --project '<project>' --parent <container> --title '<title>' --description-file <file> --no-interactive`.
    - Create an agent ticket through the API. `linear issue create --parent` copies the parent's
      project, which fails when the agent team is not in that project. Read the agent team's ID with
@@ -112,8 +119,11 @@ preview. It needs the `linear` CLI authenticated for the workspace.
      then:
 
      ```sh
-     linear api 'mutation($team: String!, $parent: String!, $title: String!, $description: String!) { issueCreate(input: { teamId: $team, parentId: $parent, title: $title, description: $description }) { issue { identifier url } } }' --variable team=<team id> --variable parent=<slice> --variable 'title=<title>' --variable description=@<file>
+     linear api 'mutation($team: String!, $parent: String!, $title: String!, $description: String!, $labels: [String!]) { issueCreate(input: { teamId: $team, parentId: $parent, title: $title, description: $description, labelIds: $labels }) { issue { identifier url } } }' --variable team=<team id> --variable parent=<slice> --variable 'title=<title>' --variable description=@<file> --variables-json '{"labels": ["<label id>"]}'
      ```
+
+     Pass the IDs of the approved labels from the agent team's label list, or `[]` when there are
+     none.
 
    - Update a ticket's title or body. Leave out the flag for the part that stays:
      `linear issue update <ticket> --title '<title>' --description-file <file>`.
