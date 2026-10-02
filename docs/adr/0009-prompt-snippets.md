@@ -1,6 +1,6 @@
 # ADR 0009: Prompt snippets
 
-- Status: Accepted; toggling superseded by
+- Status: Accepted; toggling and the `placement` field superseded by
   [ADR 0080](./0080-insert-prompt-snippets-as-inline-tokens.md)
 - Date: 2026-09-09
 

@@ -2,7 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-10-01
-- Supersedes: the toggling rules in [ADR 0009](./0009-prompt-snippets.md)
+- Supersedes: the toggling rules and the `placement` field in [ADR 0009](./0009-prompt-snippets.md),
+  and [ADR 0013](./0013-snippet-placement.md)
 
 ## Context
 
@@ -11,6 +12,8 @@
   same session gave only the typed text, without the snippets.
 - A resumed session fills history from the stored messages, which hold the full snippet bodies.
 - Pi stores custom session entries from extensions and leaves them out of the model context.
+- Each snippet had a `placement` that put its body before or after the whole message. A token typed
+  in the middle of the text had no effect on where its body went.
 
 ## Options considered
 
@@ -20,12 +23,17 @@
   extension data, and history reads only the text.
 - Type each snippet as a `#token` in the message, with autocomplete. Chosen: the choice is part of
   the typed text, so history keeps it, and typing a few letters is faster than the menu.
+- Keep `placement` and wrap the message with the bodies of its tokens. Rejected: the body lands far
+  from where the user typed the token, so the sent message reads in a different order than the typed
+  one.
+- Replace each token with its snippet body where it stands. Chosen: the sent message reads in the
+  order the user typed, and the user decides where each instruction goes.
 
 ## Decision
 
 The user adds a snippet by typing `#` and its id in the message. The id is the snippet's filename
-without `.md`. Tau removes the tokens and wraps the rest of the message with the snippet bodies on
-send.
+without `.md`. On send, Tau replaces each token with its snippet body where the token stands.
+Snippets have no `placement` field.
 
 ### Tokens
 
@@ -37,11 +45,24 @@ send.
   decided for toggled snippets.
 - A message with only tokens is valid.
 
+### Expansion
+
+- Each token becomes its snippet body as its own block, with one blank line between it and the text
+  around it. At each join, Tau removes spaces and tabs on the token's line and blank lines, and
+  drops empty text. A token at the start or end adds no blank lines, and a message with only tokens
+  sends only the bodies.
+- A content line that starts on a new line after a token keeps its indentation, so indented code
+  after a token stays intact. Removing a repeated token follows the same rules.
+- When a token appears more than once, the first one expands and the later ones are removed.
+- A failure to read the snippets stops the send and keeps the typed text in the editor.
+- A `placement` key left in a snippet file is ignored like any other unknown key. Tau reads snippets
+  only from its own package, which no longer ships the key.
+
 ### Autocomplete and widget
 
 - `#` and at least one letter open a list of snippets matched by name and description. A bare `#`
   opens nothing, so headings stay quiet.
-- The widget shows the snippets of the current editor text.
+- The widget lists the names of the snippets in the current editor text, in token order.
 
 ### History
 
@@ -61,9 +82,12 @@ send.
 
 - Recalled prompts keep their tokens, in the same session and in a resumed or forked session.
 - A snippet takes a few typed letters instead of a menu and several key presses.
+- The sent message keeps the order the user typed, so each instruction sits next to the text it
+  applies to.
 - The `ctrl+q` shortcut and the `/snippets` command are gone, so no terminal key binding can hide
   snippets.
 - Cost: the user must know or search for the id. A typo is sent as plain text without a warning.
+- Cost: nothing groups instructions of the same kind. The user decides where each one goes.
 - Cost: each expanded send adds a small entry to the session file.
 - Cost: Tau copies Pi's token boundary because pi-tui does not export it. A change in Pi can make
   them differ.

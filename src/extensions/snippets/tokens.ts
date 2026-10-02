@@ -1,4 +1,4 @@
-import type { Snippet, SnippetPlacement } from './types.js';
+import type { Snippet } from './types.js';
 
 interface TokenMatch {
   id: string;
@@ -38,9 +38,9 @@ export const isTokenId = (id: string) => idPattern.test(id);
 
 /**
  * Pi expands `/skill:name` and prompt templates after the input handlers run,
- * and both require the command at the start of the text. Wrapping the text
- * would leave the command unexpanded, or turn an appended body into its
- * arguments, so snippets never apply to a message that starts with a slash.
+ * and both require the command at the start of the text. An expanded token
+ * would become part of the command's arguments, so snippets never apply to a
+ * message that starts with a slash.
  */
 export const acceptsSnippets = (text: string) => !text.trimStart().startsWith('/');
 
@@ -162,6 +162,13 @@ const skipBlanks = (text: string, position: number) => {
 
 const endsLine = (character: string | undefined) => character === undefined || character === '\n';
 
+// Blank lines at either end go, and so do blanks on the line that held a token. The
+// indentation of a content line that starts after a newline stays, since it can be code.
+const leadingBlanks = /^(?:[\t ]*\n)+|^[\t ]+/;
+const trailingBlanks = /[\t ]*(?:\n[\t ]*)*$/;
+
+const trimSegment = (text: string) => text.replace(leadingBlanks, '').replace(trailingBlanks, '');
+
 const removeTokens = (text: string, tokens: TokenMatch[]) => {
   let result = '';
   let position = 0;
@@ -181,51 +188,92 @@ const removeTokens = (text: string, tokens: TokenMatch[]) => {
     }
   }
 
-  return (result + text.slice(position)).trim();
+  return trimSegment(result + text.slice(position));
+};
+
+// Keeps the first token for each id and returns the later repeats separately.
+const splitRepeats = (tokens: TokenMatch[]) => {
+  const seen = new Set<string>();
+  const first: TokenMatch[] = [];
+  const repeated: TokenMatch[] = [];
+
+  for (const token of tokens) {
+    if (seen.has(token.id)) {
+      repeated.push(token);
+
+      continue;
+    }
+
+    seen.add(token.id);
+    first.push(token);
+  }
+
+  return { first, repeated };
+};
+
+const isInside = (range: Range, token: TokenMatch) =>
+  token.start >= range.start && token.end <= range.end;
+
+// Returns the trimmed text in `range` without the repeated tokens it holds.
+const textBetween = (text: string, range: Range, repeated: TokenMatch[]) => {
+  const tokens = repeated
+    .filter((token) => isInside(range, token))
+    .map((token) => ({
+      id: token.id,
+      start: token.start - range.start,
+      end: token.end - range.start,
+    }));
+
+  return removeTokens(text.slice(range.start, range.end), tokens);
 };
 
 /** Whether `text` holds a token for any id, so the caller knows to load snippets. */
 export const mayHoldTokens = (text: string) => acceptsSnippets(text) && findTokens(text).length > 0;
 
 /**
- * Returns the snippets whose tokens appear in `text`, once each and in the
- * order of `snippets`. A slash command has none.
+ * Returns the snippets whose tokens appear in `text`, once each and in token
+ * order. A slash command has none.
  */
 export const activeSnippets = (text: string, snippets: Snippet[]): Snippet[] => {
   if (!acceptsSnippets(text)) {
     return [];
   }
 
-  const ids = new Set(knownTokens(text, snippets).map((token) => token.id));
+  const { first } = splitRepeats(knownTokens(text, snippets));
+  const byId = new Map(snippets.map((snippet) => [snippet.id, snippet]));
 
-  return snippets.filter((snippet) => ids.has(snippet.id));
+  return first.flatMap((token) => byId.get(token.id) ?? []);
 };
 
 /**
- * Removes the snippet tokens from `text` and wraps the rest with their bodies.
- * `snippets` must already be sorted. Returns undefined when `text` has no
- * known token or is a slash command, so it is sent unchanged.
+ * Replaces the first token for each snippet with its body as its own block and
+ * removes repeated tokens. Returns undefined when `text` has no known token or
+ * is a slash command, so it is sent unchanged.
  */
 export const expandSnippets = (text: string, snippets: Snippet[]): string | undefined => {
   if (!acceptsSnippets(text)) {
     return undefined;
   }
 
-  const tokens = knownTokens(text, snippets);
+  const { first, repeated } = splitRepeats(knownTokens(text, snippets));
 
-  if (tokens.length === 0) {
+  if (first.length === 0) {
     return undefined;
   }
 
-  const ids = new Set(tokens.map((token) => token.id));
-  const active = snippets.filter((snippet) => ids.has(snippet.id));
+  const bodies = new Map(snippets.map((snippet) => [snippet.id, snippet.body]));
+  const blocks: string[] = [];
+  let position = 0;
 
-  const bodiesFor = (placement: SnippetPlacement) =>
-    active.filter((snippet) => snippet.placement === placement).map((snippet) => snippet.body);
+  for (const token of first) {
+    blocks.push(textBetween(text, { start: position, end: token.start }, repeated));
+    blocks.push(bodies.get(token.id) ?? '');
+    position = token.end;
+  }
 
-  return [...bodiesFor('prepend'), removeTokens(text, tokens), ...bodiesFor('append')]
-    .filter((part) => part !== '')
-    .join('\n\n');
+  blocks.push(textBetween(text, { start: position, end: text.length }, repeated));
+
+  return blocks.filter((block) => block !== '').join('\n\n');
 };
 
 /**

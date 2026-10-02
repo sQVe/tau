@@ -1,7 +1,6 @@
 ---
 name: Verify, don't assume
 description: Verify claims against the source before acting on them
-placement: prepend
 order: 40
 ---
 

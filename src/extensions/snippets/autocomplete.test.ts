@@ -8,7 +8,6 @@ const createSnippet = (id: string, name: string, description: string): Snippet =
   id,
   name,
   description,
-  placement: 'prepend',
   order: 10,
   body: `${name}.`,
 });

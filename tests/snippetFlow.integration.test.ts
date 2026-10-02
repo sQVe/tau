@@ -190,11 +190,11 @@ it('sends the snippet bodies of typed tokens and nothing else to the model', asy
   const { session, faux } = await createHarness(onTestFinished);
   const contexts = recordReplies(faux, 2);
 
-  await session.prompt('#interview-me Add the retry policy.');
+  await session.prompt('Add the retry policy #interview-me and keep it short.');
   await session.prompt('Now ship it.');
 
   expect(contexts.map(promptTextOf)).toEqual([
-    `${await interviewBody()}\n\nAdd the retry policy.`,
+    `Add the retry policy\n\n${await interviewBody()}\n\nand keep it short.`,
     'Now ship it.',
   ]);
 
@@ -281,7 +281,7 @@ const createSavedSession = async (registerCleanup: RegisterCleanup) => {
   });
 
   recordReplies(first.faux, 2);
-  await first.session.prompt('#interview-me Add the retry policy.');
+  await first.session.prompt('Add the retry policy #interview-me and keep it short.');
   await first.session.prompt('Now ship it.');
 
   const sessionFile = first.session.sessionManager.getSessionFile();
@@ -316,8 +316,8 @@ it('recalls the typed tokens once each when Pi starts on a saved session', async
 
   expect(recallHistory(started, 3)).toEqual([
     'Now ship it.',
-    '#interview-me Add the retry policy.',
-    '#interview-me Add the retry policy.',
+    'Add the retry policy #interview-me and keep it short.',
+    'Add the retry policy #interview-me and keep it short.',
   ]);
 });
 
@@ -336,8 +336,8 @@ it.for(['resume', 'fork'] as const)(
 
     expect(recallHistory(switched, 3)).toEqual([
       'Now ship it.',
-      '#interview-me Add the retry policy.',
-      '#interview-me Add the retry policy.',
+      'Add the retry policy #interview-me and keep it short.',
+      'Add the retry policy #interview-me and keep it short.',
     ]);
   },
 );

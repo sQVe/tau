@@ -1,7 +1,6 @@
 ---
 name: Interview me
 description: Read the code and docs, then ask me until the work is clear
-placement: prepend
 order: 10
 ---
 

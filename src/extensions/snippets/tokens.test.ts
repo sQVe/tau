@@ -9,45 +9,58 @@ import {
 } from './tokens.js';
 import type { Snippet } from './types.js';
 
-const createSnippet = (id: string, placement: Snippet['placement'], body: string): Snippet => ({
+const createSnippet = (id: string, body: string): Snippet => ({
   id,
   name: id,
   description: '',
-  placement,
   order: 10,
   body,
 });
 
-// Sorted the way loadSnippets returns them: prepend group first.
 const snippets = [
-  createSnippet('push-back', 'prepend', 'Push back.'),
-  createSnippet('verify', 'prepend', 'Verify.'),
-  createSnippet('simplify', 'append', 'Simplify.'),
+  createSnippet('push-back', 'Push back.'),
+  createSnippet('verify', 'Verify.'),
+  createSnippet('simplify', 'Simplify.'),
 ];
 
 describe('expandSnippets', () => {
   it.each([
     { text: '#push-back Ship it.', sent: 'Push back.\n\nShip it.' },
     { text: 'Ship it. #simplify', sent: 'Ship it.\n\nSimplify.' },
-    { text: 'Ship #simplify it.', sent: 'Ship it.\n\nSimplify.' },
-    { text: '#simplify #push-back Ship it.', sent: 'Push back.\n\nShip it.\n\nSimplify.' },
-    { text: '#verify Ship it. #push-back', sent: 'Push back.\n\nVerify.\n\nShip it.' },
-    { text: '#simplify Ship it. #simplify', sent: 'Ship it.\n\nSimplify.' },
+    { text: 'Ship #simplify it.', sent: 'Ship\n\nSimplify.\n\nit.' },
+    {
+      text: 'Review the plan #push-back and keep it short #simplify',
+      sent: 'Review the plan\n\nPush back.\n\nand keep it short\n\nSimplify.',
+    },
+    { text: '#simplify #push-back Ship it.', sent: 'Simplify.\n\nPush back.\n\nShip it.' },
+    { text: '#verify Ship it. #push-back', sent: 'Verify.\n\nShip it.\n\nPush back.' },
+    { text: '#simplify Ship it. #simplify', sent: 'Simplify.\n\nShip it.' },
+    { text: 'Ship #simplify it #simplify now.', sent: 'Ship\n\nSimplify.\n\nit now.' },
     { text: '#push-back #simplify', sent: 'Push back.\n\nSimplify.' },
+    { text: '  #push-back\n', sent: 'Push back.' },
     { text: '#push-back\nShip it.', sent: 'Push back.\n\nShip it.' },
-    { text: 'Ship it (#simplify).', sent: 'Ship it ().\n\nSimplify.' },
-    { text: 'Ship it.\t#simplify\nThen rest.', sent: 'Ship it.\nThen rest.\n\nSimplify.' },
+    { text: 'First.\n\n#verify\n\nSecond.', sent: 'First.\n\nVerify.\n\nSecond.' },
+    { text: 'Ship it (#simplify).', sent: 'Ship it (\n\nSimplify.\n\n).' },
+    { text: 'Ship it.\t#simplify\nThen rest.', sent: 'Ship it.\n\nSimplify.\n\nThen rest.' },
+    {
+      text: 'Review #simplify\n    if ready:\n        ship()',
+      sent: 'Review\n\nSimplify.\n\n    if ready:\n        ship()',
+    },
+    {
+      text: 'Review #simplify #simplify\n\n    if ready:\n        ship()',
+      sent: 'Review\n\nSimplify.\n\n    if ready:\n        ship()',
+    },
     { text: 'Fix #123 now. #simplify', sent: 'Fix #123 now.\n\nSimplify.' },
     { text: '# Heading\n#simplify', sent: '# Heading\n\nSimplify.' },
-    { text: 'Use `#simplify` here. #verify', sent: 'Verify.\n\nUse `#simplify` here.' },
-    { text: 'Use ``a ` #simplify`` here. #verify', sent: 'Verify.\n\nUse ``a ` #simplify`` here.' },
+    { text: 'Use `#simplify` here. #verify', sent: 'Use `#simplify` here.\n\nVerify.' },
+    { text: 'Use ``a ` #simplify`` here. #verify', sent: 'Use ``a ` #simplify`` here.\n\nVerify.' },
     {
       text: '#verify\n```md\n#simplify\n```\nDone.',
       sent: 'Verify.\n\n```md\n#simplify\n```\nDone.',
     },
     { text: '#verify\n~~~\n#simplify', sent: 'Verify.\n\n~~~\n#simplify' },
     { text: 'Unclosed `#simplify', sent: 'Unclosed `\n\nSimplify.' },
-    { text: '` x `` y `` #simplify ` #verify', sent: 'Verify.\n\n` x `` y `` #simplify `' },
+    { text: '` x `` y `` #simplify ` #verify', sent: '` x `` y `` #simplify `\n\nVerify.' },
   ])('sends $text as $sent', ({ text, sent }) => {
     expect(expandSnippets(text, snippets)).toBe(sent);
   });
@@ -71,10 +84,10 @@ describe('expandSnippets', () => {
 });
 
 describe('activeSnippets', () => {
-  it('lists each known token once, in load order', () => {
+  it('lists each known token once, in token order', () => {
     const active = activeSnippets('#simplify #verify #push-back #simplify #nope', snippets);
 
-    expect(active.map((snippet) => snippet.id)).toEqual(['push-back', 'verify', 'simplify']);
+    expect(active.map((snippet) => snippet.id)).toEqual(['simplify', 'verify', 'push-back']);
   });
 
   it('lists nothing for a slash command', () => {

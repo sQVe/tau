@@ -26,7 +26,6 @@ const pushBack: Snippet = {
   id: 'push-back',
   name: 'Push back',
   description: 'Challenge the plan.',
-  placement: 'prepend',
   order: 1,
   body: 'Push back first.',
 };
@@ -35,7 +34,6 @@ const simplify: Snippet = {
   id: 'simplify',
   name: 'Simplify',
   description: 'Prefer less code.',
-  placement: 'append',
   order: 1,
   body: 'Keep it simple.',
 };
@@ -133,12 +131,12 @@ const setup = async (entries: SessionEntry[] = [], reason = 'startup') => {
   return { ui, send, appendEntry, buildEditor, history, widgets, autocompleteFactories };
 };
 
-it('wraps the typed text with the bodies of its tokens', async () => {
+it('replaces each token with its snippet body where it stands', async () => {
   const { send } = await setup();
 
   expect(await send('#simplify Ship #push-back it.')).toEqual({
     action: 'transform',
-    text: 'Push back first.\n\nShip it.\n\nKeep it simple.',
+    text: 'Keep it simple.\n\nShip\n\nPush back first.\n\nit.',
   });
 });
 
@@ -177,7 +175,7 @@ it('uses snippets added to disk after the session started', async () => {
 
   expect(await send('#added Ship it.')).toEqual({
     action: 'transform',
-    text: 'Ship it.\n\nAdded body.',
+    text: 'Added body.\n\nShip it.',
   });
 });
 
@@ -245,16 +243,13 @@ it('adds the typed text to history for a message sent in this session', async ()
   expect(history).toEqual(['Ship it. #simplify']);
 });
 
-it('shows the snippets of the editor text and passes the change on', async () => {
+it('lists the snippet names of the editor text in token order and passes the change on', async () => {
   const { buildEditor, widgets } = await setup();
   const { editor, piChanges } = buildEditor();
 
   editor.onChange?.('#simplify Ship #push-back it.');
 
-  expect(widgets.at(-1)).toEqual([
-    expect.stringContaining('Push back'),
-    expect.stringContaining('Simplify'),
-  ]);
+  expect(widgets.at(-1)).toEqual([expect.stringMatching(/Simplify.*Push back/)]);
 
   editor.onChange?.('Ship it.');
 

@@ -1,8 +1,7 @@
 ---
 name: Score confidence
 description: Score your confidence in each part of this session's work
-placement: append
-order: 70
+order: 90
 ---
 
 Before we wrap up, score this session's work. Change no files yet.

@@ -22,7 +22,7 @@ import {
 } from './history.js';
 import { loadSnippets } from './snippet.js';
 import { activeSnippets, expandSnippets, mayHoldTokens } from './tokens.js';
-import type { Snippet, SnippetPlacement } from './types.js';
+import type { Snippet } from './types.js';
 
 interface SnippetsState {
   // Autocomplete and the widget read this on every keystroke. Sends reload it from disk.
@@ -34,34 +34,15 @@ const snippetsDirectory = fileURLToPath(new URL('./snippets/', import.meta.url))
 const widgetKey = 'prompt-snippets';
 
 const updateWidget = (state: SnippetsState, context: ExtensionContext, text: string): void => {
-  const active = activeSnippets(text, state.snippets);
+  const names = activeSnippets(text, state.snippets).map((snippet) => snippet.name);
 
-  const namesForPlacement = (placement: SnippetPlacement) =>
-    active
-      .filter((snippet) => snippet.placement === placement)
-      .map((snippet) => snippet.name)
-      .join(' · ');
-
-  const prepended = namesForPlacement('prepend');
-  const appended = namesForPlacement('append');
-
-  if (prepended === '' && appended === '') {
+  if (names.length === 0) {
     context.ui.setWidget(widgetKey, undefined);
 
     return;
   }
 
-  const lines: string[] = [];
-
-  if (prepended !== '') {
-    lines.push(context.ui.theme.fg('accent', `↑ prepend: ${prepended}`));
-  }
-
-  if (appended !== '') {
-    lines.push(context.ui.theme.fg('warning', `↓ append: ${appended}`));
-  }
-
-  context.ui.setWidget(widgetKey, lines);
+  context.ui.setWidget(widgetKey, [context.ui.theme.fg('accent', names.join(' · '))]);
 };
 
 // Pi assigns onChange after the factory returns, and an earlier editor may
