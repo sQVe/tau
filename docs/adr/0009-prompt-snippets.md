@@ -1,7 +1,7 @@
 # ADR 0009: Prompt snippets
 
-- Status: Accepted; toggling and the `placement` field superseded by
-  [ADR 0080](./0080-insert-prompt-snippets-as-inline-tokens.md)
+- Status: Accepted; toggling, the `placement` field, and reading snippets before each send
+  superseded by [ADR 0080](./0080-insert-prompt-snippets-through-autocomplete.md)
 - Date: 2026-09-09
 
 ## Context
@@ -63,4 +63,4 @@ ordinary message.
 - [ADR-0001: Application structure](./0001-application-structure.md)
 - [ADR-0007: Vim keys in interactive components](./0007-vim-keys-in-interactive-components.md)
 - [ADR-0013: Snippet placement](./0013-snippet-placement.md)
-- [ADR 0080: Insert prompt snippets as inline tokens](./0080-insert-prompt-snippets-as-inline-tokens.md)
+- [ADR 0080: Insert prompt snippets through autocomplete](./0080-insert-prompt-snippets-through-autocomplete.md)

@@ -199,10 +199,9 @@ that `web_search` returns results, and that `fetch_content` on a URL returns rea
 
 ### Snippets
 
-Type `#push` in the editor and check that the list offers `#push-back`. Press Tab, finish the
-message, and check that the widget names the snippet. Send it and check that Pi receives the snippet
-text where the token stood, without the token. Press the up arrow and check that the editor shows
-the typed message with its token.
+Type `#push` in the editor and check that the list offers `#push-back`. Press Tab and check that the
+editor shows the snippet text in place of `#push`. Send the message and check that Pi receives the
+editor text unchanged. Press the up arrow and check that the editor shows the same text.
 
 ### Statusbar
 

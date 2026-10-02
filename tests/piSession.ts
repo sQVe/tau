@@ -7,7 +7,6 @@ import {
   SettingsManager,
   createAgentSession,
 } from '@earendil-works/pi-coding-agent';
-import type { SessionStartEvent } from '@earendil-works/pi-coding-agent';
 import type { TestContext } from 'vitest';
 
 type LoaderOptions = ConstructorParameters<typeof DefaultResourceLoader>[0];
@@ -23,7 +22,6 @@ interface PiSessionOptions {
   extensionFactories?: NonNullable<LoaderOptions['extensionFactories']>;
   settings?: Parameters<typeof SettingsManager.inMemory>[0];
   sessionManager?: SessionManager;
-  sessionStartEvent?: SessionStartEvent;
 }
 
 // A real Pi session on faux providers that loads only the named extensions and skills. The caller
@@ -73,9 +71,6 @@ export const createPiSession = async (
     sessionManager: options.sessionManager ?? SessionManager.inMemory(cwd),
     settingsManager,
     ...(options.tools === undefined ? {} : { tools: options.tools }),
-    ...(options.sessionStartEvent === undefined
-      ? {}
-      : { sessionStartEvent: options.sessionStartEvent }),
   });
 
   registerCleanup(() => {

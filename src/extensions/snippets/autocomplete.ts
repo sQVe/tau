@@ -1,7 +1,8 @@
 import { fuzzyFilter } from '@earendil-works/pi-tui';
 import type { AutocompleteItem, AutocompleteProvider } from '@earendil-works/pi-tui';
 
-import { isTokenId, snippetQueryAt } from './tokens.js';
+import { insertSnippetBody } from './insertion.js';
+import { snippetQueryAt } from './query.js';
 import type { Snippet } from './types.js';
 
 type EditorPosition = [lines: string[], cursorLine: number, cursorCol: number];
@@ -20,29 +21,19 @@ const endsQuery = (lines: string[], cursorLine: number, cursorCol: number) => {
   return afterWhitespace && queryAt(lines, cursorLine, cursorCol - 1) !== undefined;
 };
 
+const itemValue = (snippet: Snippet) => `#${snippet.id}`;
+
 const suggestionFor = (snippet: Snippet): AutocompleteItem => ({
-  value: `#${snippet.id}`,
-  label: `#${snippet.id}`,
+  value: itemValue(snippet),
+  label: itemValue(snippet),
   description:
     snippet.description === '' ? snippet.name : `${snippet.name} - ${snippet.description}`,
 });
 
-const insertToken = (lines: string[], cursorLine: number, cursorCol: number, token: string) => {
-  const line = lines[cursorLine] ?? '';
-  const query = queryAt(lines, cursorLine, cursorCol) ?? '';
-  const before = line.slice(0, cursorCol - query.length - 1);
-  const after = line.slice(cursorCol);
-  const space = /^\s/.test(after) ? '' : ' ';
-  const updated = [...lines];
-
-  updated[cursorLine] = `${before}${token}${space}${after}`;
-
-  return { lines: updated, cursorLine, cursorCol: before.length + token.length + space.length };
-};
-
 /**
- * Suggests snippet tokens for a `#` query, matched by name and description.
- * Everything else goes to the wrapped provider.
+ * Suggests snippets for a `#` query, matched by id, name, and description, and
+ * replaces the query with the body of the picked snippet. Everything else goes
+ * to the wrapped provider.
  */
 export const snippetAutocomplete =
   (readSnippets: () => Snippet[]) =>
@@ -65,10 +56,8 @@ export const snippetAutocomplete =
         return wrapped.getSuggestions(lines, cursorLine, cursorCol, options);
       }
 
-      const candidates = readSnippets().filter((snippet) => isTokenId(snippet.id));
-
       const matches = fuzzyFilter(
-        candidates,
+        readSnippets(),
         query,
         (snippet) => `${snippet.id} ${snippet.name} ${snippet.description}`,
       );
@@ -79,11 +68,16 @@ export const snippetAutocomplete =
     },
     applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => {
       const query = queryAt(lines, cursorLine, cursorCol);
-      const isSnippet = query !== undefined && prefix === `#${query}`;
+      const isQuery = query !== undefined && prefix === `#${query}`;
+      const snippet = readSnippets().find((candidate) => itemValue(candidate) === item.value);
 
-      return isSnippet
-        ? insertToken(lines, cursorLine, cursorCol, item.value)
-        : wrapped.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
+      if (!isQuery || snippet === undefined) {
+        return wrapped.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
+      }
+
+      const range = { line: cursorLine, start: cursorCol - prefix.length, end: cursorCol };
+
+      return insertSnippetBody(lines, range, snippet.body);
     },
     ...(wrapped.shouldTriggerFileCompletion === undefined
       ? {}

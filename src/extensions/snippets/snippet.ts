@@ -66,8 +66,8 @@ const compareSnippets = (first: Snippet, second: Snippet) =>
  * Reads every markdown snippet in `directory`, sorted by `order`, then by name.
  *
  * Throws when the directory or one of its files cannot be read. A failure here
- * means the package is incomplete, and sending a message without the snippets
- * the user selected would be worse than a visible error.
+ * means the package is incomplete, which the caller shows instead of an empty
+ * list.
  */
 export const loadSnippets = async (directory: string): Promise<Snippet[]> => {
   // A directory named `draft.md` would otherwise reach readFile and throw.

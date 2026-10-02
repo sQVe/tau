@@ -70,22 +70,32 @@ it('finds a query on a later line', async () => {
   expect((await result)?.items.map((item) => item.value)).toEqual(['#simplify']);
 });
 
-it('inserts the token and a space in place of the query', () => {
-  const { provider } = suggest(['#pu'], 0, 3);
-  const item = { value: '#push-back', label: 'Push back' };
+const pick = async (lines: string[], cursorLine: number, cursorCol: number) => {
+  const { provider, result } = suggest(lines, cursorLine, cursorCol);
+  const suggestions = await result;
+  const item = suggestions?.items[0];
 
-  const result = provider.applyCompletion(['Ship it.', '#pu'], 1, 3, item, '#pu');
+  if (suggestions === null || item === undefined) {
+    throw new Error('No snippet was suggested.');
+  }
 
-  expect(result).toEqual({ lines: ['Ship it.', '#push-back '], cursorLine: 1, cursorCol: 11 });
+  return provider.applyCompletion(lines, cursorLine, cursorCol, item, suggestions.prefix);
+};
+
+it('inserts the snippet body in place of the query', async () => {
+  const result = await pick(['Ship it.', '#push'], 1, 5);
+
+  expect(result).toEqual({ lines: ['Ship it.', 'Push back.'], cursorLine: 1, cursorCol: 10 });
 });
 
-it('reuses the space after the cursor', () => {
-  const { provider } = suggest(['Ship #pu now'], 0, 8);
-  const item = { value: '#push-back', label: 'Push back' };
+it('moves the text around the query apart from the body', async () => {
+  const result = await pick(['Ship #push now'], 0, 10);
 
-  const result = provider.applyCompletion(['Ship #pu now'], 0, 8, item, '#pu');
-
-  expect(result).toEqual({ lines: ['Ship #push-back now'], cursorLine: 0, cursorCol: 15 });
+  expect(result).toEqual({
+    lines: ['Ship', '', 'Push back.', '', 'now'],
+    cursorLine: 2,
+    cursorCol: 10,
+  });
 });
 
 it.each([
@@ -110,13 +120,10 @@ it.each(['#', 'Read #', 'Read (#'])('lists every snippet for the bare # in %s', 
   expect(wrapped.getSuggestions).not.toHaveBeenCalled();
 });
 
-it('inserts the token in place of a bare #', () => {
-  const { provider } = suggest(['Read #'], 0, 6);
-  const item = { value: '#push-back', label: 'Push back' };
+it('inserts the body of a snippet picked after a bare #', async () => {
+  const result = await pick(['Read #'], 0, 6);
 
-  const result = provider.applyCompletion(['Read #'], 0, 6, item, '#');
-
-  expect(result).toEqual({ lines: ['Read #push-back '], cursorLine: 0, cursorCol: 16 });
+  expect(result).toEqual({ lines: ['Read', '', 'Push back.'], cursorLine: 2, cursorCol: 10 });
 });
 
 it('closes the list when a space follows a bare #, as in a heading', async () => {
