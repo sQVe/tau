@@ -22,6 +22,7 @@ language, or runs `/bro` with a topic.
 
 ### Without a topic
 
+- If there is no earlier assistant response, say so, ask what to explain, and stop.
 - Restate the last assistant response, not the request that started this skill.
 - Write a few sentences: what happened, what it means, and what to do next.
 - Explain the response. Do not redo it. Beyond loading this skill, make no tool calls, start no new

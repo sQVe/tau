@@ -29,10 +29,13 @@ blocks, so they also work in pull request bodies and documents.
   - `stateDiagram-v2`.
   - `classDiagram`.
   - `erDiagram`.
+- If the user asks for a type not listed here, say it is not supported, offer the nearest supported
+  type, and stop until the user answers.
 - Write valid syntax. When the parser warns, Pi shows the source and a warning instead of the
   drawing.
 - Keep the drawing narrower than the pane, under about 80 columns. Pi shows a diagram wider than the
-  pane as raw source. Keep labels to a few words.
+  pane as raw source. Keep labels to a few words: Pi wraps a node label at 24 columns and cuts an
+  edge label after 28.
 - Show one idea per diagram, with about 12 nodes or fewer. Split a large diagram into several
   instead of shortening labels until they lose meaning.
 - Pair each diagram with short prose that names the real files or functions behind its nodes.
@@ -40,9 +43,9 @@ blocks, so they also work in pull request bodies and documents.
 ## Procedure
 
 1. Find the topic. Use the text after `/diagram`. Without it, use the structure the conversation is
-   discussing. If there is none, ask what to diagram and stop.
+   discussing. If there is none or it is unclear, ask what to diagram and stop.
 2. Read the code for the topic: entry points, calls or messages between parts, and the states or
-   records involved.
+   records involved. If you cannot read the code you need, say what is missing and stop.
 3. Decide whether a diagram helps. After `/diagram`, always draw at least one. Otherwise, if one
    sentence explains the topic, write the sentence instead and say that a diagram would add nothing.
 4. Pick the type that matches the idea: `flowchart` for control flow, `sequenceDiagram` for messages
