@@ -65,7 +65,7 @@ before anything was written to Linear.
    read its children in sub-issue order:
 
    ```sh
-   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description subIssueSortOrder state { type } attachments { nodes { url } } } } } }' --variable id=<container>
+   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description subIssueSortOrder team { key } project { name } state { type } attachments { nodes { url } } } } } }' --variable id=<container>
    ```
 
    Sort the nodes by `subIssueSortOrder`, lowest first. A slice is merged only when one of its
@@ -87,7 +87,8 @@ before anything was written to Linear.
      title.
 
 4. Write the draft in `$slicedir`, one body file per ticket. Write titles and bodies with the
-   [tracker skill](../tracker/SKILL.md), and search for a duplicate of a new container there.
+   [tracker skill](../tracker/SKILL.md). Search there for an open duplicate of each new ticket, the
+   container and every new slice, before you draft it.
    - `container.md`: the container's full description, with the agreed design in its `## Design`
      section. For an existing container, keep all text outside that section unchanged.
    - `slice-<n>.md`, numbered in plan order.
@@ -134,7 +135,9 @@ before anything was written to Linear.
    [tracker skill](../tracker/SKILL.md). After each command that creates a ticket, record its
    identifier in `$slicedir/plan.md` at once. If the output shows no identifier, stop, and read the
    container's children before any retry. On a retry, skip each slice that has an identifier in the
-   draft or a child with the same title, and record that child's identifier.
+   draft or a child with the same title that fits, and record that child's identifier. A child fits
+   when its team and project, read with the query in step 2, match the route. Report a same-title
+   child that does not fit, and stop.
    - Create the container from `$slicedir/container.md` when it does not exist. Otherwise update its
      description.
    - Create each missing slice in order under the container, from `$slicedir/slice-<n>.md`.

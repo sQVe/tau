@@ -31,8 +31,7 @@ Workers then carry out the agent tickets.
 
 - Before the user approves the preview, write only the draft in `$slicedir`. You may run
   `git fetch`, but create or switch no branch and write nothing to Linear. Any change to the
-  approved plan needs a new preview, except an agent ticket added as "Changes after the start"
-  allows.
+  approved plan needs a new preview, an added agent ticket included.
 - Ask every question with the `ask_user_question` tool, including the preview approval. Never end a
   turn with a question in prose.
 - Route, write, and create agent tickets with the [tracker skill](../tracker/SKILL.md). Before you
@@ -88,7 +87,7 @@ Workers then carry out the agent tickets.
    the slice's existing agent tickets:
 
    ```sh
-   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description team { key } } } } }' --variable id=<slice>
+   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description team { key } project { name } } } } }' --variable id=<slice>
    ```
 
    Linear holds the body of each agent ticket that exists. Save its description as its body file
@@ -135,8 +134,9 @@ Workers then carry out the agent tickets.
 
      After each one, record its identifier in `$slicedir/start.md` at once. If the output shows no
      identifier, stop and read the slice's children before any retry. On a retry, skip each agent
-     ticket that has an identifier in the draft or a child with the same title, and record that
-     child's identifier.
+     ticket that has an identifier in the draft or a child with the same title that fits, and record
+     that child's identifier. A child fits when it is in the agent team with no project, as the
+     tracker skill routes agent tickets. Report a same-title child that does not fit, and stop.
 
 9. Report the branch and each agent ticket with its identifier and URL.
 
@@ -147,8 +147,8 @@ Workers then carry out the agent tickets.
 
 ## Changes after the start
 
-- You may add an agent ticket inside the slice's approved outcome without a new preview. Write its
-  body file, add its row to `start.md`, create it as in step 8, and tell the user one line of
-  reason.
+- You may add an agent ticket inside the slice's approved outcome. Write its body file and its row
+  in `start.md`. Preview it as the tracker skill says, with one line of reason, and create it as in
+  step 8 only after the user approves.
 - Work beyond the slice's outcome is a new slice. Re-plan it with the
   [slice skill](../slice/SKILL.md).
