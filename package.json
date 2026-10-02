@@ -20,7 +20,7 @@
     "lint": "vp lint --deny-warnings",
     "style:check": "node scripts/runStyle.ts",
     "style:fix": "node scripts/runStyle.ts --fix",
-    "prepare": "vp config",
+    "prepare": "node scripts/prepare.ts",
     "test": "vp test",
     "test:changed": "vp test --changed",
     "test:coverage": "vp test --coverage",
