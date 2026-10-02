@@ -3,6 +3,7 @@ import type {
   ExtensionContext,
   ExtensionUIContext,
 } from '@earendil-works/pi-coding-agent';
+import { visibleWidth } from '@earendil-works/pi-tui';
 import type { AutocompleteProvider, EditorComponent } from '@earendil-works/pi-tui';
 import { beforeEach, expect, it, vi } from 'vitest';
 
@@ -104,14 +105,18 @@ const suggestedValues = async (factory: AutocompleteProviderFactory | undefined)
 
 const widgetTheme = { fg: (_color: string, text: string) => text } as unknown as WidgetTheme;
 
-// Renders a widget the way Pi renders one above the editor, without its margins.
+// Renders a widget the way Pi renders one above the editor.
 const renderedLines = (content: WidgetContent) => {
   const [terminalUI] = editorParts();
 
   const component = content?.(terminalUI, widgetTheme);
 
-  return component?.render(80).map((line) => line.trim());
+  return component?.render(80);
 };
+
+// The text inside the box frame, without the frame and the padding after each line.
+const boxBody = (lines: string[] | undefined) =>
+  lines?.slice(1, -1).map((line) => line.slice(2, -2).trimEnd());
 
 // Builds the installed editor the way Pi does and renders a frame after each step.
 const startEditor = async () => {
@@ -156,11 +161,14 @@ const startEditor = async () => {
     press,
     type,
     typeUntilListed,
-    preview: () => renderedLines(session.widgets.at(-1)),
+    preview: () => boxBody(renderedLines(session.widgets.at(-1))),
+    frame: () => renderedLines(session.widgets.at(-1)),
   };
 };
 
 const bodyLines = (snippet: Snippet) => snippet.body.split('\n');
+
+const words = (count: number) => Array.from({ length: count }, () => 'alpha').join(' ');
 
 it('suggests the snippets loaded at session start', async () => {
   const { autocompleteFactories, notify } = await startSession('tui');
@@ -205,6 +213,28 @@ it('previews the body of the selected snippet and follows the selection', async 
   harness.press(arrowUp);
 
   expect(harness.preview()).toEqual(bodyLines(simplify));
+});
+
+it('frames the preview in a box titled with the snippet name', async () => {
+  const harness = await startEditor();
+
+  await harness.typeUntilListed('#');
+  const frame = harness.frame();
+
+  expect(frame?.[0]).toBe(`╭ Simplify ${'─'.repeat(68)}╮`);
+  expect(frame?.at(-1)).toBe(`╰${'─'.repeat(78)}╯`);
+  expect(frame?.every((line) => visibleWidth(line) === 80)).toBe(true);
+});
+
+it('wraps a body line wider than the box instead of cutting it', async () => {
+  const long: Snippet = { ...simplify, id: 'long', name: 'Long', body: `  ${words(20)}\n\nEnd.` };
+
+  vi.mocked(loadSnippets).mockResolvedValue([long]);
+  const harness = await startEditor();
+
+  await harness.typeUntilListed('#');
+
+  expect(harness.preview()).toEqual([`  ${words(12)}`, words(8), '', 'End.']);
 });
 
 it('updates the preview only when the selected snippet changes', async () => {

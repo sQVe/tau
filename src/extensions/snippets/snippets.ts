@@ -7,9 +7,10 @@ import type {
   SessionStartEvent,
   Theme,
 } from '@earendil-works/pi-coding-agent';
-import { Text } from '@earendil-works/pi-tui';
-import type { AutocompleteItem } from '@earendil-works/pi-tui';
+import { wrapTextWithAnsi } from '@earendil-works/pi-tui';
+import type { AutocompleteItem, Component } from '@earendil-works/pi-tui';
 
+import { bottomBorder, boxLine, topBorder } from '../../box.js';
 import { errorMessage } from '../../errors.js';
 import { snippetAutocomplete, snippetForItem } from './autocomplete.js';
 import { refillsHistory, sentPromptTexts } from './history.js';
@@ -20,11 +21,27 @@ import type { Snippet } from './types.js';
 const snippetsDirectory = fileURLToPath(new URL('./snippets/', import.meta.url));
 const widgetKey = 'snippet-preview';
 
-const previewText = (snippet: Snippet, theme: Theme) => {
-  const lines = snippet.body.split('\n').map((line) => theme.fg('muted', line));
+const previewLines = (snippet: Snippet, width: number, theme: Theme) => {
+  const innerWidth = Math.max(1, width - 4);
 
-  return new Text(lines.join('\n'), 1, 0);
+  const bodyLines = snippet.body
+    .split('\n')
+    .flatMap((line) => wrapTextWithAnsi(line, innerWidth))
+    .map((line) => boxLine(theme.fg('muted', line), width, theme));
+
+  return [
+    topBorder(` ${snippet.name} `, '', width, theme),
+    ...bodyLines,
+    bottomBorder(width, theme),
+  ];
 };
+
+const previewBox = (snippet: Snippet, theme: Theme): Component => ({
+  render: (width) => previewLines(snippet, width, theme),
+  invalidate() {
+    // No render cache: each render draws the box at the current width.
+  },
+});
 
 // Pi renders the editor on every frame, so the widget changes only when the
 // previewed snippet does.
@@ -47,7 +64,7 @@ const showPreview = (context: ExtensionContext, readSnippets: () => Snippet[]) =
     }
 
     // Pi cuts a string array widget after ten lines, so a component shows the whole body.
-    context.ui.setWidget(widgetKey, (_terminalUI, theme) => previewText(snippet, theme));
+    context.ui.setWidget(widgetKey, (_terminalUI, theme) => previewBox(snippet, theme));
   };
 };
 
