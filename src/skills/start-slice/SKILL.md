@@ -32,19 +32,19 @@ Workers then carry out the agent tickets.
 - Before the user approves the preview, write only the draft in `$slicedir`. You may run
   `git fetch`, but create or switch no branch and write nothing to Linear. Any change to the
   approved plan needs a new preview, an added agent ticket included.
-- Ask every question with the `ask_user_question` tool, including the preview approval. Never end a
-  turn with a question in prose.
-- Route, write, and create agent tickets with the [tracker skill](../tracker/SKILL.md). Before you
-  draft, check that the prompt names both the repository route and the agent team as that skill
-  describes. If either is missing, stop with the tracker skill's setup message.
-- Make no status change except moving the slice to In Progress in step 8, and never change a merged
-  slice.
+- Route, write, and create agent tickets with the [tracker skill](../tracker/SKILL.md), and follow
+  its hard rules on questions and status. The one status change is moving the slice to In Progress
+  in step 8.
+- Before you write the draft, check that the prompt names both the repository route and the agent
+  team as the tracker skill describes. If either is missing, stop with the tracker skill's setup
+  message.
+- Never change a merged slice.
 - If a step fails partway, stop and report what completed. Read the draft and the slice's children
   before you retry anything.
 - Before you save the first file, create the draft directory inside an ignored `.tau/` from the
   repository root. Use the slice's identifier in lower case as `<id>`, such as `eng-123`. Stop
-  unless it prints `slicedir=`, and use the printed path as `$slicedir` for every file you save.
-  Never write scratch files to `/tmp` or another shared path.
+  unless the command prints `slicedir=`. Use the printed path as `$slicedir` for every file you
+  save. Never write scratch files to `/tmp` or another shared path.
 
   ```sh
   ! [ -L .tau ] && ! [ -L .tau/slices ] && ! [ -L .tau/slices/<id> ] && ! [ -L .tau/.gitignore ] &&
@@ -55,10 +55,12 @@ Workers then carry out the agent tickets.
 
 ## Procedure
 
-1. Pick the slice. If the user names no ticket, ask for one. A container is a ticket with children
-   in its own team; those children are its slices. Any other ticket the user names is the slice
-   itself, including a one-slice design with no container. For a container, read its slices in
-   sub-issue order:
+1. Pick the slice. If the user names no ticket, ask for one.
+   - A container is a ticket with children in its own team. Those children are its slices.
+   - Any other ticket the user names is the slice itself, including a one-slice design with no
+     container.
+
+   For a container, read its slices:
 
    ```sh
    linear api 'query($id: String!) { issue(id: $id) { team { key } children { nodes { identifier title subIssueSortOrder team { key } state { type } attachments { nodes { url } } } } } }' --variable id=<container>
@@ -68,30 +70,32 @@ Workers then carry out the agent tickets.
    the first slice that passes step 2. Tell the user in one line why you picked it. If none passes,
    stop and report each slice with what blocks it.
 
-2. Check that the slice is ready, before you draft or write anything. This applies to a slice the
-   user names too. For a named slice, read its state and links:
+2. Check that the slice is ready, before you write anything, the draft included. This applies to a
+   slice the user names too.
+   - For a named slice, read its state and links:
 
-   ```sh
-   linear api 'query($id: String!) { issue(id: $id) { state { type } attachments { nodes { url } } } }' --variable id=<slice>
-   ```
+     ```sh
+     linear api 'query($id: String!) { issue(id: $id) { state { type } attachments { nodes { url } } } }' --variable id=<slice>
+     ```
 
-   A slice is merged only when one of its attachment URLs is a pull request and
-   `gh pr view <url> --json state` returns `MERGED`. Its Linear status is not proof either way. Read
-   its dependencies with `linear issue relation list <slice>`, and keep the lines of the form
-   `<slice> blocked-by <other>`. The slice is ready when it is not merged, its state type is not
-   `canceled`, and every `blocked-by` slice is merged. If its state type is `completed` but no
-   linked PR is merged, stop and ask the user. Otherwise stop and report what blocks it.
+   - A slice is merged only when one of its attachment URLs is a pull request and
+     `gh pr view <url> --json state` returns `MERGED`. Its Linear status is not proof either way.
+   - Read its dependencies with `linear issue relation list <slice>`. Keep the lines of the form
+     `<slice> blocked-by <other>`.
+   - The slice is ready when it is not merged, its state type is not `canceled`, and every
+     `blocked-by` slice is merged. If its state type is `completed` but no linked PR is merged, stop
+     and ask the user. If it is not ready for another reason, stop and report what blocks it.
 
 3. Read the slice with `linear issue view <slice> --json --no-pager`. Note its `branchName`, team,
-   and `## Acceptance`. If `$slicedir/start.md` exists, read it and every body file it names. Read
-   the slice's existing agent tickets:
+   and `## Acceptance`. If `$slicedir/start.md` exists, read it and every body file it names. Then
+   read the slice's existing agent tickets:
 
    ```sh
    linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description team { key } project { name } } } } }' --variable id=<slice>
    ```
 
-   Linear holds the body of each agent ticket that exists. Save its description as its body file
-   when the file is missing or differs, so the worker gets the same task as the ticket.
+   Linear holds the body of each agent ticket that exists. When its body file is missing or differs,
+   save its description as the body file, so the worker gets the same task as the ticket.
 
 4. Choose the base. Run `git fetch origin`, then use the remote's default branch from
    `git symbolic-ref --short refs/remotes/origin/HEAD`, such as `origin/main`. If that ref is
@@ -106,8 +110,8 @@ Workers then carry out the agent tickets.
    - `agent-<n>.md`, numbered in work order, with the agent ticket template in the
      [tracker skill](../tracker/SKILL.md). Keep each ticket to one worker task.
    - `start.md`: the slice identifier, the branch, the base, and one row per agent ticket with its
-     number, title, body file, and Linear identifier. Keep identifiers that already exist. Leave
-     them empty until the ticket exists.
+     number, title, body file, and Linear identifier. Leave the identifier empty until the ticket
+     exists. Keep identifiers that already exist.
 
    Together the agent tickets must cover every acceptance criterion of the slice.
 
@@ -140,10 +144,10 @@ Workers then carry out the agent tickets.
 
 9. Report the branch and each agent ticket with its identifier and URL.
 
-10. Hand off to the usual flow. Delegate each agent ticket to a worker, and pass the path of its
-    body file, such as `$slicedir/agent-1.md`, in the task. Review the change with the
+10. Delegate each agent ticket to a worker, and pass the path of its body file, such as
+    `$slicedir/agent-1.md`, in the task. Review the change with the
     [code-review skill](../code-review/SKILL.md), then open the PR with the
-    [pr skill](../pr/SKILL.md). The PR body says `Fixes <slice>`.
+    [pr skill](../pr/SKILL.md). Link the slice from the PR as the tracker skill says.
 
 ## Changes after the start
 
