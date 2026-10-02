@@ -102,3 +102,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0078: Remind managers to compact and restore the worker ledger after each compaction](./0078-remind-managers-to-compact-and-restore-the-worker-ledger.md)
 - [0079: Grow modules from flat files](./0079-grow-modules-from-flat-files.md)
 - [0080: Insert prompt snippets through autocomplete](./0080-insert-prompt-snippets-through-autocomplete.md)
+- [0081: Sort prompt snippets by id](./0081-sort-prompt-snippets-by-id.md)

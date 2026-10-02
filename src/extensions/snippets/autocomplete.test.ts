@@ -8,13 +8,12 @@ const createSnippet = (id: string, name: string, description: string): Snippet =
   id,
   name,
   description,
-  order: 10,
   body: `${name}.`,
 });
 
 const snippets = [
   createSnippet('push-back', 'Push back', 'Challenge the plan'),
-  createSnippet('verify-not-assume', "Verify, don't assume", 'Check facts first'),
+  createSnippet('verify', "Verify, don't assume", 'Check facts first'),
   createSnippet('simplify', 'Simplify', 'Prefer less code'),
 ];
 
@@ -59,7 +58,7 @@ it('suggests snippets whose name or description match the query', async () => {
   const { result } = suggest(['Ship it #fact'], 0, 13);
 
   expect(await result).toEqual({
-    items: [expect.objectContaining({ value: '#verify-not-assume' })],
+    items: [expect.objectContaining({ value: '#verify' })],
     prefix: '#fact',
   });
 });

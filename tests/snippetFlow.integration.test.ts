@@ -47,10 +47,10 @@ const historyPrevious = '\u001B[A';
 
 const interviewBody = async () => {
   const snippets = await loadSnippets(shippedSnippets);
-  const interview = snippets.find((snippet) => snippet.id === 'interview-me');
+  const interview = snippets.find((snippet) => snippet.id === 'interview');
 
   if (interview === undefined) {
-    throw new Error('The shipped interview-me snippet is missing.');
+    throw new Error('The shipped interview snippet is missing.');
   }
 
   return interview.body;
@@ -225,9 +225,9 @@ it('sends a typed snippet id as plain text', async ({ onTestFinished }) => {
   const { session, faux } = await createHarness(onTestFinished);
   const contexts = recordReplies(faux, 1);
 
-  await session.prompt('Add the retry policy #interview-me');
+  await session.prompt('Add the retry policy #interview');
 
-  expect(contexts.map(promptTextOf)).toEqual(['Add the retry policy #interview-me']);
+  expect(contexts.map(promptTextOf)).toEqual(['Add the retry policy #interview']);
 });
 
 // Pi's renderInitialMessages adds the text of each user message to history.

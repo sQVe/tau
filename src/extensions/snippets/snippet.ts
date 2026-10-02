@@ -8,15 +8,6 @@ const frontmatterPattern = /^---\r?\n((?:[\S\s]*?\r?\n)?)---\r?\n?([\S\s]*)$/;
 const metadataPattern = /^([A-Za-z][\w-]*)\s*:\s*(.*)$/;
 const quotePattern = /^["']|["']$/g;
 
-// Snippets without an order use this value and sort by name when orders match.
-const defaultOrder = 9999;
-
-const readOrder = (value: string | undefined) => {
-  const order = Number.parseInt(value ?? '', 10);
-
-  return Number.isFinite(order) ? order : defaultOrder;
-};
-
 /** Returns null when the file has no frontmatter block or no body text. */
 const parseSnippet = (filename: string, raw: string): Snippet | null => {
   const id = filename.replace(/\.md$/i, '');
@@ -54,16 +45,14 @@ const parseSnippet = (filename: string, raw: string): Snippet | null => {
     id,
     name: metadata.get('name') ?? id,
     description: metadata.get('description') ?? '',
-    order: readOrder(metadata.get('order')),
     body,
   };
 };
 
-const compareSnippets = (first: Snippet, second: Snippet) =>
-  first.order === second.order ? first.name.localeCompare(second.name) : first.order - second.order;
+const compareSnippets = (first: Snippet, second: Snippet) => first.id.localeCompare(second.id);
 
 /**
- * Reads every markdown snippet in `directory`, sorted by `order`, then by name.
+ * Reads every markdown snippet in `directory`, sorted by id.
  *
  * Throws when the directory or one of its files cannot be read. A failure here
  * means the package is incomplete, which the caller shows instead of an empty
