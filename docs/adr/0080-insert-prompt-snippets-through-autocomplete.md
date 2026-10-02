@@ -14,6 +14,10 @@
   the sent text shows up again after `/resume`, a fork, or `/reload`.
 - Each snippet had a `placement` that put its body before or after the whole message, far from where
   the user chose it.
+- The autocomplete list shows only a snippet's id, name, and description, so the user cannot see
+  what a pick inserts.
+- pi-tui's editor does not expose the selected autocomplete item. It reports only whether the list
+  is open.
 
 ## Options considered
 
@@ -25,6 +29,8 @@
   show what the model receives.
 - Pick a snippet from autocomplete after `#` and put its body in the editor. Chosen: the editor
   shows exactly what Pi sends, so Pi's own history is correct without any hidden state.
+- Update the preview after each key press. Rejected: suggestions arrive later, so the preview misses
+  the first list and each list that changes while the user types.
 
 ## Decision
 
@@ -41,6 +47,19 @@ the snippet body. Tau does not change the text on send. Snippets have no `placem
 - Tau reads the snippets once at session start. A read failure shows a warning, and the list stays
   empty.
 
+### Preview
+
+- While the list is open and a snippet is selected, a widget above the editor shows the snippet
+  body. It follows the selection and the list as the user types. It clears when the list closes,
+  after a pick, and when the selected item is not a snippet. The widget is a component that wraps
+  the whole body, because Pi cuts a widget given as lines after ten lines.
+- Tau wraps the editor and reads the selected item from pi-tui's private `autocompleteList` field
+  after each render. Suggestions arrive after a debounce and an async lookup, so no key press marks
+  when the list changes, but pi-tui renders the editor after each change. Tau sets the widget only
+  when the previewed snippet changes.
+- Tau builds its editor from the previous editor factory, or from Pi's `CustomEditor` when there is
+  none.
+
 ### Insertion
 
 - The body replaces the query and keeps its own line breaks and indentation.
@@ -53,13 +72,19 @@ the snippet body. Tau does not change the text on send. Snippets have no `placem
 - What the editor shows is what Pi sends and what history recalls, also after `/resume`, a fork, or
   `/reload`.
 - The user can edit the snippet text for one message before sending it.
-- Tau keeps no session entries, editor wrapper, widget, or send handler for snippets.
+- The user sees the snippet text before picking it.
+- Tau keeps no session entries or send handler for snippets.
 - The `ctrl+q` shortcut and the `/snippets` command are gone, so no terminal key binding can hide
   snippets.
-- Cost: long snippet text fills the editor and each history entry.
+- Cost: long snippet text fills the preview, the editor, and each history entry.
 - Cost: a hand-typed `#id` stays plain text. Only a pick from the list inserts a snippet.
 - Cost: a snippet edited on disk applies only after the next session start or `/reload`.
 - Cost: Tau copies Pi's token boundary because pi-tui does not export it. A change in Pi can make
+  them differ.
+- Cost: the preview reads a private pi-tui field. If Pi renames it, the preview stays empty, and a
+  test against the real editor fails.
+- Cost: Pi does not copy history into a replacement editor. After `/resume`, a fork, or `/reload`,
+  Tau refills it from the user messages in Pi's order. A change in how Pi fills history can make
   them differ.
 
 ## See also

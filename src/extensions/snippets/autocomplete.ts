@@ -23,6 +23,10 @@ const endsQuery = (lines: string[], cursorLine: number, cursorCol: number) => {
 
 const itemValue = (snippet: Snippet) => `#${snippet.id}`;
 
+/** The snippet that a snippet list item inserts, or `undefined` for other items. */
+export const snippetForItem = (snippets: Snippet[], item: AutocompleteItem) =>
+  snippets.find((candidate) => itemValue(candidate) === item.value);
+
 const suggestionFor = (snippet: Snippet): AutocompleteItem => ({
   value: itemValue(snippet),
   label: itemValue(snippet),
@@ -69,7 +73,7 @@ export const snippetAutocomplete =
     applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => {
       const query = queryAt(lines, cursorLine, cursorCol);
       const isQuery = query !== undefined && prefix === `#${query}`;
-      const snippet = readSnippets().find((candidate) => itemValue(candidate) === item.value);
+      const snippet = snippetForItem(readSnippets(), item);
 
       if (!isQuery || snippet === undefined) {
         return wrapped.applyCompletion(lines, cursorLine, cursorCol, item, prefix);

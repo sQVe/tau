@@ -1,23 +1,102 @@
 import { fileURLToPath } from 'node:url';
 
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { CustomEditor, sessionEntryToContextMessages } from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  SessionStartEvent,
+  Theme,
+} from '@earendil-works/pi-coding-agent';
+import { Text } from '@earendil-works/pi-tui';
+import type { AutocompleteItem } from '@earendil-works/pi-tui';
 
 import { errorMessage } from '../../errors.js';
-import { snippetAutocomplete } from './autocomplete.js';
+import { snippetAutocomplete, snippetForItem } from './autocomplete.js';
+import { refillsHistory, sentPromptTexts } from './history.js';
+import { watchSelectedItem } from './preview.js';
 import { loadSnippets } from './snippet.js';
 import type { Snippet } from './types.js';
 
 const snippetsDirectory = fileURLToPath(new URL('./snippets/', import.meta.url));
+const widgetKey = 'snippet-preview';
 
-const handleSessionStart = async (context: ExtensionContext) => {
+const previewText = (snippet: Snippet, theme: Theme) => {
+  const lines = snippet.body.split('\n').map((line) => theme.fg('muted', line));
+
+  return new Text(lines.join('\n'), 1, 0);
+};
+
+// Pi renders the editor on every frame, so the widget changes only when the
+// previewed snippet does.
+const showPreview = (context: ExtensionContext, readSnippets: () => Snippet[]) => {
+  let shown: Snippet | undefined;
+
+  return (item: AutocompleteItem | undefined) => {
+    const snippet = item === undefined ? undefined : snippetForItem(readSnippets(), item);
+
+    if (snippet === shown) {
+      return;
+    }
+
+    shown = snippet;
+
+    if (snippet === undefined) {
+      context.ui.setWidget(widgetKey, undefined);
+
+      return;
+    }
+
+    // Pi cuts a string array widget after ten lines, so a component shows the whole body.
+    context.ui.setWidget(widgetKey, (_terminalUI, theme) => previewText(snippet, theme));
+  };
+};
+
+const sentHistoryFor = (reason: SessionStartEvent['reason'], context: ExtensionContext) => {
+  if (!refillsHistory(reason)) {
+    return [];
+  }
+
+  const messages = context.sessionManager
+    .buildContextEntries()
+    .flatMap((entry) => sessionEntryToContextMessages(entry));
+
+  return sentPromptTexts(messages);
+};
+
+const installEditor = (
+  context: ExtensionContext,
+  readSnippets: () => Snippet[],
+  sentHistory: string[],
+): void => {
+  const previous = context.ui.getEditorComponent();
+
+  context.ui.setEditorComponent((terminalUI, theme, keybindings) => {
+    const editor =
+      previous?.(terminalUI, theme, keybindings) ??
+      new CustomEditor(terminalUI, theme, keybindings, { embedWorkingStatus: true });
+
+    watchSelectedItem(editor, showPreview(context, readSnippets));
+
+    for (const text of sentHistory) {
+      editor.addToHistory?.(text);
+    }
+
+    return editor;
+  });
+};
+
+const handleSessionStart = async (context: ExtensionContext, event: SessionStartEvent) => {
   if (context.mode !== 'tui') {
     return;
   }
 
-  // Autocomplete reads this list on every keystroke, so it is loaded once per session.
+  // Autocomplete and the preview read this list on every keystroke, so it is loaded once per
+  // session.
   let snippets: Snippet[] = [];
+  const readSnippets = () => snippets;
 
-  context.ui.addAutocompleteProvider(snippetAutocomplete(() => snippets));
+  installEditor(context, readSnippets, sentHistoryFor(event.reason, context));
+  context.ui.addAutocompleteProvider(snippetAutocomplete(readSnippets));
 
   try {
     snippets = await loadSnippets(snippetsDirectory);
@@ -27,5 +106,5 @@ const handleSessionStart = async (context: ExtensionContext) => {
 };
 
 export default function snippetsExtension(pi: ExtensionAPI) {
-  pi.on('session_start', (_event, context) => handleSessionStart(context));
+  pi.on('session_start', (event, context) => handleSessionStart(context, event));
 }

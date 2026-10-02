@@ -199,9 +199,13 @@ that `web_search` returns results, and that `fetch_content` on a URL returns rea
 
 ### Snippets
 
-Type `#push` in the editor and check that the list offers `#push-back`. Press Tab and check that the
-editor shows the snippet text in place of `#push`. Send the message and check that Pi receives the
-editor text unchanged. Press the up arrow and check that the editor shows the same text.
+Type `#push` in the editor and check that the list offers `#push-back` and that the text of
+`push-back` shows above the editor. Type `#` alone, press the down arrow, and check that the preview
+follows the selection. Press Escape and check that the preview disappears. Type `#push` again, press
+Tab, and check that the preview disappears and the editor shows the snippet text in place of
+`#push`. Send the message and check that Pi receives the editor text unchanged. Press the up arrow
+and check that the editor shows the same text. Run `/reload`, press the up arrow twice, and check
+that the message appears once.
 
 ### Statusbar
 
