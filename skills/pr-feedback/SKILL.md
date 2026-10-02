@@ -104,12 +104,11 @@ themselves.
      Report the rest: failing on the trunk, caused by a PR below, a cause outside the PR such as a
      network timeout, gone after the rebase, or blocked when you cannot read the log.
 
-4. Verify each remaining finding with the
-   [triage findings](../../src/extensions/snippets/snippets/triage-findings.md) rules. Split a
-   comment with several findings and verify each one. Verify an outdated thread against the pinned
-   code; outdated does not mean fixed. A question from a reviewer needs an answer, not a verdict.
-   Reproduce a failing check locally when you can. In reviewer mode, handle the threads like this,
-   then go to step 8:
+4. Verify each remaining finding with the [triage findings](../triage-findings/SKILL.md) rules.
+   Split a comment with several findings and verify each one. Verify an outdated thread against the
+   pinned code; outdated does not mean fixed. A question from a reviewer needs an answer, not a
+   verdict. Reproduce a failing check locally when you can. In reviewer mode, handle the threads
+   like this, then go to step 8:
    - For each thread the viewer started, check whether the author fixed it. Mark it to resolve when
      fixed. When the author declined with a reason, treat the reason as a claim: mark it to resolve
      when it holds, draft a follow-up when it does not. Draft a follow-up for anything else left.

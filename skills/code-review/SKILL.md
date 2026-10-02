@@ -182,7 +182,8 @@ Use the review assignment, then add:
   capture. Do not infer read coverage from citations.
 - Notes: after the gaps, list areas workers say they read only shallowly. They are not gaps.
 - End with one question. With findings, ask for approval of the proposed actions, such as "Fix 1 and
-  2, and investigate 3?" Approval starts separate work after the review. When a gap, failure, or
+  2, and investigate 3?" Approval starts separate work after the review: act on the approved
+  findings with the [triage-findings](../triage-findings/SKILL.md) skill. When a gap, failure, or
   stale result needs a decision, include it in the question.
 - With no findings from a complete, fresh run, show no table and no fix question. Say the workers
   found no material issues in the target. That covers the scope they read; it does not prove the
