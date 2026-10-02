@@ -63,8 +63,8 @@ tau/
 - A flat module keeps its test beside it, such as `src/keys.ts` and `src/keys.test.ts`.
 - When a flat module needs a second source file, move it into a folder of the same name and keep the
   name for the entry file.
-- `src/extensions/`, `src/skills/`, `src/instructions/`, `fixtures/`, `profiles/`, and `snippets/`
-  group files. They are not modules and have no entry file.
+- `src/extensions/`, `src/skills/`, and `src/instructions/` group files, and so do `fixtures/`,
+  `profiles/`, and `snippets/` folders inside a module. They are not modules and have no entry file.
 - `package.json` points `pi.extensions` at `./src/tau.ts`, a file, so Pi never scans a folder. It
   points `pi.skills` at `./src/skills`.
 - Skill folder names stay public identifiers under
