@@ -1,13 +1,13 @@
 ---
 name: diagram
 description:
-  Draw Mermaid diagrams that Pi renders in the terminal. Use it when a reply explains how parts of a
-  system connect. With a topic after `/diagram`, such as `/diagram the worker lifecycle`, read the
-  relevant code and explain that topic with one or more diagrams.
+  Explain how parts of a system connect with Mermaid diagrams that Pi renders in the terminal. Use
+  it for "/diagram <topic>", "draw a diagram of", "show me how this flows", or when a reply explains
+  control flow, a request path, states, or data relations.
 metadata:
   required-for:
     explaining how parts of a system connect, such as control flow, a request path, states, or data
-    relations
+    relations, including as a step in a larger task
 ---
 
 # Diagram
@@ -15,10 +15,8 @@ metadata:
 ## When to use
 
 Use this skill when a diagram explains a structure faster than prose: control flow, a request path
-between components, states and transitions, or relations between records.
-
-With `/diagram <topic>`, read the code for the topic first. Then explain it with one or more
-diagrams and short prose.
+between components, states and transitions, or relations between records. GitHub renders the same
+blocks, so they also work in pull request bodies and documents.
 
 ## Hard rules
 
@@ -41,12 +39,15 @@ diagrams and short prose.
 
 ## Procedure
 
-1. Decide whether a diagram helps. If one sentence explains the point, write the sentence instead.
-2. Pick the type that matches the idea: `flowchart` for control flow, `sequenceDiagram` for messages
+1. Find the topic. Use the text after `/diagram`. Without it, use the structure the conversation is
+   discussing. If there is none, ask what to diagram and stop.
+2. Read the code for the topic: the entry points, the calls or messages between parts, and the
+   states or records involved.
+3. Decide whether a diagram helps. If one sentence explains the topic, write the sentence instead
+   and say that a diagram would add nothing.
+4. Pick the type that matches the idea: `flowchart` for control flow, `sequenceDiagram` for messages
    between components over time, `stateDiagram-v2` for states, `erDiagram` or `classDiagram` for
    data relations.
-3. Draft the diagram with short labels in `TD` direction. Count its nodes and estimate its width.
+5. Draft the diagram with short labels in `TD` direction. Count its nodes and estimate its width.
    Split it when it exceeds about 12 nodes or 80 columns.
-4. Write the prose around each diagram. Name the files or functions each part comes from.
-
-The same blocks render on GitHub, so you can reuse them in pull request bodies and documents.
+6. Write the prose around each diagram. Name the files or functions each part comes from.
