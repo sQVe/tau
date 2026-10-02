@@ -65,11 +65,6 @@ export const snippetAutocomplete =
         return wrapped.getSuggestions(lines, cursorLine, cursorCol, options);
       }
 
-      // A bare `#` is often a markdown heading, so it opens no list.
-      if (query === '') {
-        return null;
-      }
-
       const candidates = readSnippets().filter((snippet) => isTokenId(snippet.id));
 
       const matches = fuzzyFilter(
@@ -84,7 +79,7 @@ export const snippetAutocomplete =
     },
     applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => {
       const query = queryAt(lines, cursorLine, cursorCol);
-      const isSnippet = query !== undefined && query !== '' && prefix === `#${query}`;
+      const isSnippet = query !== undefined && prefix === `#${query}`;
 
       return isSnippet
         ? insertToken(lines, cursorLine, cursorCol, item.value)

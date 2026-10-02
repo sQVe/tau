@@ -60,8 +60,9 @@ Snippets have no `placement` field.
 
 ### Autocomplete and widget
 
-- `#` and at least one letter open a list of snippets matched by name and description. A bare `#`
-  opens nothing, so headings stay quiet.
+- `#` opens a list of all snippets, and each letter after it narrows the list by name and
+  description. A space after the query closes the list, so a heading such as `# Notes` leaves it
+  closed.
 - The widget lists the names of the snippets in the current editor text, in token order.
 
 ### History

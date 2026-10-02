@@ -99,8 +99,28 @@ it.each([
   expect(wrapped.getSuggestions).toHaveBeenCalledOnce();
 });
 
-it.each(['#', 'Read #', 'Read (#'])('shows no list for the bare # in %s', async (line) => {
+it.each(['#', 'Read #', 'Read (#'])('lists every snippet for the bare # in %s', async (line) => {
   const { wrapped, result } = suggest([line], 0, line.length);
+
+  const suggestions = await result;
+  const values = suggestions?.items.map((item) => item.value);
+
+  expect(values).toEqual(snippets.map((snippet) => `#${snippet.id}`));
+  expect(suggestions?.prefix).toBe('#');
+  expect(wrapped.getSuggestions).not.toHaveBeenCalled();
+});
+
+it('inserts the token in place of a bare #', () => {
+  const { provider } = suggest(['Read #'], 0, 6);
+  const item = { value: '#push-back', label: 'Push back' };
+
+  const result = provider.applyCompletion(['Read #'], 0, 6, item, '#');
+
+  expect(result).toEqual({ lines: ['Read #push-back '], cursorLine: 0, cursorCol: 16 });
+});
+
+it('closes the list when a space follows a bare #, as in a heading', async () => {
+  const { wrapped, result } = suggest(['# '], 0, 2);
 
   expect(await result).toBeNull();
   expect(wrapped.getSuggestions).not.toHaveBeenCalled();
