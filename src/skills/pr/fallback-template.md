@@ -19,6 +19,7 @@ Optional. Consequential choices, each with its reason and trade-off.
 - [x] Fixes accepted without a new review, when there are any, with what they fix.
 - [ ] Failed: a required check that ran and failed, with what failed.
 - [ ] Not run: a required check or review that is still missing, with why.
+- [ ] Untested: an area the checks and review did not cover, with why.
 
 ##### Deferred verification
 
