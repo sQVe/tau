@@ -35,14 +35,14 @@ preview. It needs the `linear` CLI authenticated for the workspace.
 
 1. Pick the ticket type and its template. Every template ends with `## Acceptance` and checkboxes.
    - Human ticket: work for a person that is not a design, a slice, or a bug. Use the
-     [human ticket template](human-ticket.md).
+     [human ticket template](templates/human-ticket.md).
    - Container: a human ticket that holds an agreed design and has slices as children. Use the
-     [container template](container.md).
+     [container template](templates/container.md).
    - Slice: a human sub-ticket of a container that one branch and one PR deliver. Use the
-     [slice template](slice.md).
+     [slice template](templates/slice.md).
    - Agent ticket: a sub-ticket of a slice that one worker carries out. Use the
-     [agent ticket template](agent-ticket.md).
-   - Bug: a defect a person should see. Use the [bug template](bug.md).
+     [agent ticket template](templates/agent-ticket.md).
+   - Bug: a defect a person should see. Use the [bug template](templates/bug.md).
 
 2. Route the ticket. Read the tracker lines Tau adds to the prompt. Every ticket needs the line that
    starts with `Tracker repository:`, agent tickets included, because it ties the work to this
