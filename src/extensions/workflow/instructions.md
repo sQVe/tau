@@ -10,6 +10,12 @@ these defaults.
 - Never discard uncommitted changes you did not make. To set your own work aside, commit it instead
   of stashing.
 
+## Resolve herdr IDs first
+
+- An ID like `wMJ` names a herdr workspace, and `wMJ:p1` a pane in it. Before you search files,
+  branches, worktrees, or Linear, run `herdr workspace get wMJ` with the workspace part only. It
+  shows the workspace checkout and ticket.
+
 ## Run commands
 
 - Append `|| true` only to probes where no match is expected, such as `rg` searches, never to
