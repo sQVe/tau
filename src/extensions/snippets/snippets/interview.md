@@ -1,6 +1,6 @@
 ---
 name: Interview me
-description: Ask me questions until the work is clear
+description: Ask me questions until you understand what I want
 ---
 
-Read the code and docs, then ask me about the open choices before you implement. Recommend a default for each, and ask at most four questions per round.
+Ask me questions until you understand what I want. Read the code and docs first so you ask only what they can't answer. Ask up to four questions per round, recommend defaults, and build on my answers. Then summarize and wait for my confirmation.
