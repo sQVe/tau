@@ -17,8 +17,8 @@ import type {
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { instructionSetNames, readInstructionSet } from '../../instructionSets/index.js';
-import { appendSystemPrompt } from '../../systemPrompt/index.js';
+import { instructionSetNames, readInstructionSet } from '../../instructionSets.js';
+import { appendSystemPrompt } from '../../systemPrompt.js';
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';

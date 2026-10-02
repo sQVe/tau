@@ -60,4 +60,4 @@ agent says so instead of keeping both paths.
 - [ADR 0003: Stability of externally observable identifiers](./0003-externally-observable-identifiers.md)
 - [ADR 0008: Coding instructions](./0008-coding-instructions.md)
 - [ADR 0045: Keep worker records per Tau checkout and worktree files in `.tau/`](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md)
-- [Agent coding instructions](../../src/extensions/coding/instructions.md)
+- [Agent coding instructions](../../src/instructions/coding.md)

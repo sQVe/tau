@@ -1,5 +1,5 @@
-import { isRecord, readUserOnlyKey } from '../../tauConfig/index.js';
-import type { ConfigLocation } from '../../tauConfig/index.js';
+import { isRecord, readUserOnlyKey } from '../../tauConfig.js';
+import type { ConfigLocation } from '../../tauConfig.js';
 
 // The start-slice skill finds the team by this prefix, and stops when the line is missing or
 // reports an error.

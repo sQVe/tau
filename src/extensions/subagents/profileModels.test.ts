@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
-import { readAllowedModels } from '../../models/index.js';
+import { readAllowedModels } from '../../models/models.js';
 import { readProfileModels } from './profileModels.js';
 
 const writeConfig = (path: string, value: unknown) => {

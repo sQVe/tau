@@ -23,9 +23,8 @@ import {
 import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
-import askUserQuestionExtension from '../src/extensions/askUserQuestion/index.js';
+import askUserQuestionExtension from '../src/extensions/askUserQuestion/askUserQuestion.js';
 import { workerArguments } from '../src/extensions/subagents/controller/inspect.js';
-import subagentsExtension from '../src/extensions/subagents/index.js';
 import { nativeIdentity, seedSession, workerTools } from '../src/extensions/subagents/profiles.js';
 import {
   acceptReply,
@@ -38,8 +37,9 @@ import {
   readReport,
   validateTask,
 } from '../src/extensions/subagents/records.js';
+import subagentsExtension from '../src/extensions/subagents/subagents.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
-import { readInstructionSet } from '../src/instructionSets/index.js';
+import { readInstructionSet } from '../src/instructionSets.js';
 import { createPiSession } from './piSession.js';
 
 const handoff =
@@ -143,11 +143,11 @@ it.each(['editing', 'investigation'] as const)(
     );
 
     const questionnaire = fileURLToPath(
-      new URL('../src/extensions/askUserQuestion/index.ts', import.meta.url),
+      new URL('../src/extensions/askUserQuestion/askUserQuestion.ts', import.meta.url),
     );
 
     const instructionExtensions = ['writing', 'coding', 'workflow'].map((name) =>
-      fileURLToPath(new URL(`../src/extensions/${name}/index.ts`, import.meta.url)),
+      fileURLToPath(new URL(`../src/extensions/${name}.ts`, import.meta.url)),
     );
 
     const expectedSource = role === 'editing' ? 'after' : 'before';
@@ -560,7 +560,7 @@ it('starts a worker whose profile lists bulk_read without a bulk_read model', as
       argument === '-e' ? [argumentsList[index + 1]!] : [],
     ),
     safety,
-    fileURLToPath(new URL('../src/extensions/bulkRead/index.ts', import.meta.url)),
+    fileURLToPath(new URL('../src/extensions/bulkRead/bulkRead.ts', import.meta.url)),
   ];
 
   const { session } = await createPiSession(onTestFinished, {

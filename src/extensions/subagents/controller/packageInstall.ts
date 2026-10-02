@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import type { PackageManager, ResolvedPaths } from '@earendil-works/pi-coding-agent';
 
-import { errorMessage } from '../../../errors/index.js';
+import { errorMessage } from '../../../errors.js';
 import type { Loadout } from '../types.js';
 import { isLocalPackage, packagesToLoad } from '../workerPackages.js';
 

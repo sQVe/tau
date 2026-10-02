@@ -13,7 +13,7 @@ import { createBoundSession } from './piSession.js';
 vi.setConfig({ testTimeout: 60_000 });
 
 const packageRoot = resolve(import.meta.dirname, '..');
-const skillsDirectory = join(packageRoot, 'skills');
+const skillsDirectory = join(packageRoot, 'src/skills');
 
 const skillNames = readdirSync(skillsDirectory).filter((name) =>
   existsSync(join(skillsDirectory, name, 'SKILL.md')),
@@ -32,7 +32,7 @@ const createSession = async (registerCleanup: TestContext['onTestFinished']) => 
     agentDirectory,
     providers: [faux],
     tools: ['read'],
-    extensionPaths: [join(packageRoot, 'src/extensions')],
+    extensionPaths: [join(packageRoot, 'src/tau.ts')],
     skillPaths: [skillsDirectory],
   });
 

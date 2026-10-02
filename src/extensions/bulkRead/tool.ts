@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { AgentToolResult, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { errorMessage } from '../../errors/index.js';
+import { errorMessage } from '../../errors.js';
 
 export const bulkReadTool = 'bulk_read';
 

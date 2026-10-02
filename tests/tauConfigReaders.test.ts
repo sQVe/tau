@@ -7,7 +7,7 @@ import { expect, it } from 'vitest';
 import { readBulkReadModel } from '../src/extensions/bulkRead/config.js';
 import { readProfileModels } from '../src/extensions/subagents/profileModels.js';
 import { loadTddConfig } from '../src/extensions/tdd/config.js';
-import { readAllowedModels } from '../src/models/index.js';
+import { readAllowedModels } from '../src/models/models.js';
 
 const writeConfig = (path: string, value: unknown) => {
   writeFileSync(path, JSON.stringify(value));

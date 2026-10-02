@@ -15,24 +15,18 @@ for (const extension of instructionExtensions) {
     const workingDirectory = await mkdtemp(join(tmpdir(), `tau-${extension}-`));
     onTestFinished(() => rm(workingDirectory, { recursive: true, force: true }));
 
-    // Keep the extension's relative imports of the shared modules.
-    const extensionDirectory = join(workingDirectory, 'extensions', extension);
-    const extensionPath = join(extensionDirectory, 'index.ts');
-    const instructionsPath = join(extensionDirectory, 'instructions.md');
+    // Keep the extension's relative imports of the shared modules and their instructions path.
+    const extensionPath = join(workingDirectory, 'extensions', `${extension}.ts`);
+    const instructionsPath = join(workingDirectory, 'instructions', `${extension}.md`);
 
-    await mkdir(extensionDirectory, { recursive: true });
-
-    await copyFile(
-      new URL(`../src/extensions/${extension}/index.ts`, import.meta.url),
-      extensionPath,
-    );
+    await mkdir(join(workingDirectory, 'extensions'));
+    await mkdir(join(workingDirectory, 'instructions'));
+    await copyFile(new URL(`../src/extensions/${extension}.ts`, import.meta.url), extensionPath);
 
     for (const sharedModule of sharedModules) {
-      await mkdir(join(workingDirectory, sharedModule));
-
       await copyFile(
-        new URL(`../src/${sharedModule}/index.ts`, import.meta.url),
-        join(workingDirectory, sharedModule, 'index.ts'),
+        new URL(`../src/${sharedModule}.ts`, import.meta.url),
+        join(workingDirectory, `${sharedModule}.ts`),
       );
     }
 

@@ -4,7 +4,7 @@ Record lasting decisions and the reasons behind them, not how a feature works.
 
 ## Before writing
 
-Follow the [writing instructions](../../src/extensions/writing/instructions.md) and
+Follow the [writing instructions](../../src/instructions/writing.md) and
 [ADR 0010](./0010-documentation-scope.md) for documentation scope. Before opening the
 [template](./TEMPLATE.md), answer:
 

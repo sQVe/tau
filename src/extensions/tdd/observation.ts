@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { access, glob, readFile, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import { isMissingFile } from '../../errors/index.js';
+import { isMissingFile } from '../../errors.js';
 import { classifyPath, configurationGlobs, defaultTddConfig } from './config.js';
 import type { TddConfig } from './config.js';
 import { finishDiagnostics } from './runner/retention.js';

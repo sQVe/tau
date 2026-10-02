@@ -12,9 +12,13 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { Value } from 'typebox/value';
 
-import { parseModelReference, readAllowedModels, requireAllowedModel } from '../../models/index.js';
-import { userConfigPath } from '../../tauConfig/index.js';
-import type { ConfigLocation } from '../../tauConfig/index.js';
+import {
+  parseModelReference,
+  readAllowedModels,
+  requireAllowedModel,
+} from '../../models/models.js';
+import { userConfigPath } from '../../tauConfig.js';
+import type { ConfigLocation } from '../../tauConfig.js';
 import { readProfileModels } from './profileModels.js';
 import { resolveProfile, workerTools } from './profiles.js';
 import { loadoutSchema } from './types.js';

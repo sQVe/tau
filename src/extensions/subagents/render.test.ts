@@ -10,7 +10,6 @@ import { expect, it, vi } from 'vitest';
 /** Pi does not export getThemeByName through the public package API. */
 import { getThemeByName } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import subagentsExtension from './index.js';
 import {
   DefaultRenderingRequiredError,
   collapsedHistoryLines,
@@ -22,6 +21,7 @@ import {
   renderReplyResult,
   renderStatusResult,
 } from './render.js';
+import subagentsExtension from './subagents.js';
 import type { WorkerState } from './types.js';
 
 const states: WorkerState[] = [

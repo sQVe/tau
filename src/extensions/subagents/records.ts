@@ -20,7 +20,7 @@ import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { errorMessage, isMissingFile } from '../../errors/index.js';
+import { errorMessage, isMissingFile } from '../../errors.js';
 import { roleTools } from './profiles.js';
 import {
   eventSchema,

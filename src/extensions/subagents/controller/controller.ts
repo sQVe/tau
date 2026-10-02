@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
-import { isMissingFile } from '../../../errors/index.js';
+import { isMissingFile } from '../../../errors.js';
 import { processAbsent } from '../cancellation.js';
 import { refuseLiveNativeWriter } from '../continuations.js';
 import { authorizeHistoryTask } from '../history.js';

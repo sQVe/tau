@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import type { ExecResult, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { errorMessage, isMissingFile } from '../../errors/index.js';
+import { errorMessage, isMissingFile } from '../../errors.js';
 import {
   currentHead,
   listCommitPaths,

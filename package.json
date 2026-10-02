@@ -65,12 +65,12 @@
   "packageManager": "pnpm@12.3.4",
   "pi": {
     "extensions": [
-      "./src/extensions",
+      "./src/tau.ts",
       "./node_modules/cc-safety-net/dist/pi/index.js",
       "./node_modules/pi-web-access/dist/index.js"
     ],
     "skills": [
-      "./skills"
+      "./src/skills"
     ]
   }
 }

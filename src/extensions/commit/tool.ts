@@ -9,7 +9,7 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 
-import { errorMessage } from '../../errors/index.js';
+import { errorMessage } from '../../errors.js';
 import { executeGroup } from './groupExecution.js';
 import type { GroupOutcome } from './groupExecution.js';
 import type { CommitSuccess } from './types.js';

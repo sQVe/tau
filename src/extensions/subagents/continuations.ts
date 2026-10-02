@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isMissingFile } from '../../errors/index.js';
+import { isMissingFile } from '../../errors.js';
 import { readEvent, readReport } from './records.js';
 import type { Task } from './types.js';
 

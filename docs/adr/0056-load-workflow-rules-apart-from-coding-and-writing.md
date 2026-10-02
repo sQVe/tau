@@ -23,9 +23,9 @@
 
 ## Decision
 
-Add `src/extensions/workflow/`. It loads
-[`instructions.md`](../../src/extensions/workflow/instructions.md) into the system prompt before
-each ordinary agent run, the same way the coding and writing extensions load theirs.
+Add `src/extensions/workflow/`. It loads [`instructions.md`](../../src/instructions/workflow.md)
+into the system prompt before each ordinary agent run, the same way the coding and writing
+extensions load theirs.
 
 ### Boundary
 

@@ -7,7 +7,7 @@ import { expect, it, onTestFinished } from 'vitest';
 import { blockIdentity, findSkillProblems } from './skillFiles.js';
 import type { SkillAllowlists, SkillProblemKind } from './skillFiles.js';
 
-const skillsDirectory = join(import.meta.dirname, '..', 'skills');
+const skillsDirectory = join(import.meta.dirname, '..', 'src', 'skills');
 
 // Existing sections and shell blocks that predate the checks. Remove an entry when its skill
 // changes; never add one.

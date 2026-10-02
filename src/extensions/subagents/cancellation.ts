@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 
-import { hasErrorCode } from '../../errors/index.js';
+import { hasErrorCode } from '../../errors.js';
 
 export interface OwnedWorker {
   // Pi ownership format 2: the pane's shell process is the worker process.

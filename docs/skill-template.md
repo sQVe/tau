@@ -7,7 +7,7 @@ metadata:
   required-for: <the action it must own>, including as a step in a larger task
 ---
 
-<!-- Copy to skills/<skill-name>/SKILL.md and follow docs/skill-authoring.md. Delete metadata when
+<!-- Copy to src/skills/<skill-name>/SKILL.md and follow docs/skill-authoring.md. Delete metadata when
 the agent never takes this action on its own. Delete sections the skill does not need, and this
 comment. -->
 

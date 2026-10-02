@@ -5,8 +5,8 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { configFileName, readTauConfig } from '../../tauConfig/index.js';
-import type { ConfigFile, ConfigLocation } from '../../tauConfig/index.js';
+import { configFileName, readTauConfig } from '../../tauConfig.js';
+import type { ConfigFile, ConfigLocation } from '../../tauConfig.js';
 import { mergeConfigLayers } from './configLayers.js';
 import type { ConfigLayer, MergedTddConfig } from './configLayers.js';
 

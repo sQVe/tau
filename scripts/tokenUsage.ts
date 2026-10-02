@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { isMissingFile } from '../src/errors/index.ts';
+import { isMissingFile } from '../src/errors.ts';
 import {
   formatTokenUsageReport,
   ownsSession,

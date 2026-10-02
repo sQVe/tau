@@ -25,10 +25,10 @@ import type {
 import { expect, it, vi } from 'vitest';
 
 import manifest from '../package.json' with { type: 'json' };
-import { bulkReadGuidelines } from '../src/extensions/bulkRead/index.js';
+import { bulkReadGuidelines } from '../src/extensions/bulkRead/bulkRead.js';
 import { commitToolGuidelines } from '../src/extensions/commit/tool.js';
-import { delegationGuidelines } from '../src/extensions/subagents/index.js';
-import { readInstructionSet } from '../src/instructionSets/index.js';
+import { delegationGuidelines } from '../src/extensions/subagents/subagents.js';
+import { readInstructionSet } from '../src/instructionSets.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 
 it('ships Safety Net as a runtime dependency and explicit extension', () => {
@@ -191,17 +191,17 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
     expect(prompts).toHaveLength(2);
 
     const writingInstructions = await readFile(
-      join(packageRoot, 'src/extensions/writing/instructions.md'),
+      join(packageRoot, 'src/instructions/writing.md'),
       'utf8',
     );
 
     const codingInstructions = await readFile(
-      join(packageRoot, 'src/extensions/coding/instructions.md'),
+      join(packageRoot, 'src/instructions/coding.md'),
       'utf8',
     );
 
     const workflowInstructions = await readFile(
-      join(packageRoot, 'src/extensions/workflow/instructions.md'),
+      join(packageRoot, 'src/instructions/workflow.md'),
       'utf8',
     );
 
@@ -213,7 +213,7 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
 
     expect(codingInstructions).not.toContain('bulk_read');
 
-    const prSkill = await readFile(join(packageRoot, 'skills/pr/SKILL.md'), 'utf8');
+    const prSkill = await readFile(join(packageRoot, 'src/skills/pr/SKILL.md'), 'utf8');
 
     const { metadata } = parseFrontmatter<{ metadata?: Record<string, unknown> }>(
       prSkill,
@@ -274,7 +274,7 @@ it('reports an extension error for a missing bundled web extension', async ({ on
     cwd: workingDirectory,
     agentDir: agentDirectory,
     settingsManager,
-    additionalExtensionPaths: [fileURLToPath(new URL('../src/extensions', import.meta.url))],
+    additionalExtensionPaths: [fileURLToPath(new URL('../src/tau.ts', import.meta.url))],
     noExtensions: true,
     noSkills: true,
     noPromptTemplates: true,

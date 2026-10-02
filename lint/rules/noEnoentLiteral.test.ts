@@ -10,7 +10,7 @@ ruleTester.run('no-enoent-literal', noEnoentLiteralRule, {
       code: "export const missing = Object.assign(new Error('gone'), { code: 'ENOENT' });",
       filename: '/repository/src/fake.test.ts',
     },
-    { code: comparison, filename: '/repository/src/errors/index.ts' },
+    { code: comparison, filename: '/repository/src/errors.ts' },
   ],
   invalid: [
     {

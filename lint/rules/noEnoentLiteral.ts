@@ -1,7 +1,7 @@
 import type { Rule } from '@oxlint/plugins';
 
 const isErrorsModule = (filename: string): boolean =>
-  filename.replaceAll('\\', '/').endsWith('/src/errors/index.ts');
+  filename.replaceAll('\\', '/').endsWith('/src/errors.ts');
 
 export const noEnoentLiteralRule: Rule = {
   meta: {

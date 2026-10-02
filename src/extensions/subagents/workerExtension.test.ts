@@ -12,7 +12,7 @@ import type {
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { readInstructionSet } from '../../instructionSets/index.js';
+import { readInstructionSet } from '../../instructionSets.js';
 import { readWorkerActivity, writeWorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
 import { taskRecordStatus } from './controller/record.js';

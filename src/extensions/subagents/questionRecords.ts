@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { Value } from 'typebox/value';
 
-import { hasErrorCode } from '../../errors/index.js';
+import { hasErrorCode } from '../../errors.js';
 import { publish, readOptionalRecord, readRecord, readTask } from './records.js';
 import {
   acknowledgementSchema,

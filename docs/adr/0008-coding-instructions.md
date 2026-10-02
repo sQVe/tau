@@ -31,10 +31,10 @@ layout checks. The remaining decisions below still apply.
 
 ## Decision
 
-Add `src/extensions/coding/`. It loads
-[`instructions.md`](../../src/extensions/coding/instructions.md) into the system prompt before each
-ordinary agent run, following the runtime integration ADR 0006 describes for writing. Reject
-missing, unreadable, or blank guidance when loading Tau, for the reasons ADR 0006 gives.
+Add `src/extensions/coding/`. It loads [`instructions.md`](../../src/instructions/coding.md) into
+the system prompt before each ordinary agent run, following the runtime integration ADR 0006
+describes for writing. Reject missing, unreadable, or blank guidance when loading Tau, for the
+reasons ADR 0006 gives.
 
 ### Boundary with the writing policy
 
@@ -75,5 +75,5 @@ This extension defines no types of its own and may omit `types.ts`, an exception
 
 - [ADR-0001: Application structure](./0001-application-structure.md)
 - [ADR-0006: Default writing policy](./0006-default-writing-policy.md)
-- [Agent coding instructions](../../src/extensions/coding/instructions.md)
+- [Agent coding instructions](../../src/instructions/coding.md)
 - [ADR-0042: Remove commit comment review](./0042-remove-commit-comment-review.md)

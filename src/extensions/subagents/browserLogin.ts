@@ -1,5 +1,5 @@
-import { isRecord, readUserOnlyKey } from '../../tauConfig/index.js';
-import type { ConfigLocation } from '../../tauConfig/index.js';
+import { isRecord, readUserOnlyKey } from '../../tauConfig.js';
+import type { ConfigLocation } from '../../tauConfig.js';
 
 // The manager asks the user to run this command, so only the user file may set it.
 export const readBrowserLoginCommand = (location: ConfigLocation): string | undefined => {
