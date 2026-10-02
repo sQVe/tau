@@ -85,8 +85,9 @@ you here. It needs the `gh stack` extension and `gh` authenticated for the repos
      not.
 
 5. Sync, only when the user asks for it or to push after a lower PR merged.
-   - Sync rebases and force-pushes too. First run the remote-history check from step 3 on every
-     active branch, and stop if it fails. Sync needs the same push permission as step 4.
+   - Sync rebases and force-pushes too. First run `git fetch --prune <remote>`, then the
+     remote-history check from step 3 on every active branch, and stop if it fails. Sync needs the
+     same push permission as step 4.
    - Run `gh stack sync --remote <remote>`. It fetches, rebases, pushes all branches atomically with
      a lease, and links the open PRs into the stack on GitHub.
    - When the local and remote stacks have diverged, it aborts without pushing in a non-interactive

@@ -21,9 +21,9 @@ PR's host.
 ## Goal
 
 Every review comment that still needs something from us is fixed, declined with a reason, answered,
-or reported as open. Every failing check is fixed or reported with its cause. In author mode, the
-branch no longer conflicts with its base. Replies tell the reviewer only what they cannot see for
-themselves.
+or reported as open. Every failing check is fixed, or reported with its cause when known. In author
+mode, the branch no longer conflicts with its base. Replies tell the reviewer only what they cannot
+see for themselves.
 
 ## Hard rules
 
@@ -58,8 +58,8 @@ themselves.
    - Read the viewer with `gh api user --hostname <host> --jq .login`, and the PR with
      `gh pr view <pr> --repo <repo> --json number,url,state,author,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,mergeable,mergeStateStatus`.
      Stop unless the state is `OPEN`. Choose the mode.
-   - `mergeable` reads `UNKNOWN` while GitHub computes it. Read it again up to three times, then
-     report it and skip the rebase.
+   - `mergeable` reads `UNKNOWN` while GitHub computes it. Read it again up to three times. If it
+     stays `UNKNOWN`, report it and skip the rebase.
    - Read the checks with `gh pr checks <pr> --repo <repo> --json name,bucket,link,workflow`. It
      exits non-zero while checks fail or are pending, so read the JSON anyway. Do not wait for
      pending checks.
