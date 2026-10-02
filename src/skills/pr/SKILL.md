@@ -131,7 +131,8 @@ Approved fixes the user accepts without a new review count as reviewed.
    `.github/`, `docs/`, or a `PULL_REQUEST_TEMPLATE/` directory, and ask when more than one fits.
    Otherwise use the [fallback template](fallback-template.md). Ask before you restructure a body
    that has text you did not write in this session, and keep that text. Match the title to the
-   repository's convention. Write `Fixes <issue>` only for an issue this PR completes, and
+   repository's convention. Link Linear tickets as the [tracker skill](../tracker/SKILL.md) says.
+   For other issues, write `Fixes <issue>` only for an issue this PR completes, and
    `Related to <issue>` for the rest. State the review's result, open findings, and fixes accepted
    without a review in the body, and keep reviewer notes, worker names, and local paths for the
    summary. Write commit SHAs in full as plain text, never in backticks. Save the body as

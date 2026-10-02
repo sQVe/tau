@@ -7,7 +7,9 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import { errorMessage } from '../../errors.js';
-import { appendToolGuidelines } from '../../systemPrompt.js';
+import { readGitOutput } from '../../gitOutput.js';
+import { appendSystemPrompt, appendToolGuidelines } from '../../systemPrompt.js';
+import type { ConfigLocation } from '../../tauConfig.js';
 import { isWorkerProcess } from '../../workerProcess.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
 import { activeStates, compactionWorkerList } from './compactionWorkers.js';
@@ -31,7 +33,8 @@ import {
   renderStatusResult,
   shortId,
 } from './render.js';
-import { agentTeamLine } from './sliceConfig.js';
+import { readTrackerSetup } from './trackerConfig.js';
+import { trackerLines } from './trackerRouting.js';
 import { taskIdSchema } from './types.js';
 import { renderWorkerWidget } from './widget.js';
 import type { WorkerWidgetRow } from './widget.js';
@@ -677,6 +680,20 @@ const registerSubagentTools = (runtime: SubagentRuntime): void => {
   registerCancelTool(runtime);
 };
 
+// Outside a repository, or without an origin remote, Git fails and no repository entry applies.
+const readOriginUrl = async (cwd: string): Promise<string | undefined> => {
+  const output = await readGitOutput(cwd, ['remote', 'get-url', 'origin']);
+
+  return output?.trim();
+};
+
+const trackerGuidelines = async (location: ConfigLocation) => {
+  const setup = readTrackerSetup(location);
+  const originUrl = setup.status === 'read' ? await readOriginUrl(location.cwd) : undefined;
+
+  return trackerLines({ setup, originUrl });
+};
+
 const unitSeconds: Record<string, number> = { '': 1, s: 1, m: 60, h: 3600, d: 86_400 };
 
 // A running tool call holds worker notices back, so a long sleep delays the notice it waits for.
@@ -723,6 +740,16 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   const guidelines = delegating ? delegationGuidelines(undefined) : [];
 
   appendToolGuidelines(pi, 'subagent', guidelines);
+
+  // Any Linear write follows the tracker skill, with or without delegation, so every manager
+  // session gets the tracker lines.
+  const tracker: string[] = [];
+
+  pi.on('before_agent_start', (event) => {
+    if (tracker.length > 0) {
+      appendSystemPrompt(event, tracker.map((line) => `- ${line}`).join('\n'));
+    }
+  });
 
   const refreshWidget = (context: ExtensionContext, currentRows?: WorkerWidgetRow[]): void => {
     if (shuttingDown || !context.hasUI || context.mode !== 'tui') {
@@ -788,7 +815,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     },
   });
 
-  pi.on('session_start', (_event, context) => {
+  pi.on('session_start', async (_event, context) => {
     shuttingDown = false;
     sessionContext = context;
 
@@ -799,17 +826,10 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     registerLaunchTool(runtime, profiles, launchModelLine(context, profiles));
 
     if (delegating) {
-      const location = {
-        cwd: context.cwd,
-        agentDirectory: getAgentDir(),
-        projectTrusted: context.isProjectTrusted(),
-      };
-
       guidelines.splice(
         0,
         guidelines.length,
         ...delegationGuidelines(browserLoginCommand(context)),
-        ...agentTeamLine(location),
       );
     }
 
@@ -829,6 +849,16 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       });
 
     refreshWidget(context);
+
+    const location = {
+      cwd: context.cwd,
+      agentDirectory: getAgentDir(),
+      projectTrusted: context.isProjectTrusted(),
+    };
+
+    const facts = await trackerGuidelines(location);
+
+    tracker.splice(0, tracker.length, ...facts);
   });
 
   pi.on('tool_result', (_event, context) => {

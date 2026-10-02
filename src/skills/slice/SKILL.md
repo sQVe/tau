@@ -55,9 +55,9 @@ before anything was written to Linear.
 ## Procedure
 
 1. Read the design from the Linear ticket, file, or conversation the user names. For a ticket, run
-   `linear issue view <id> --json --no-pager` and note its team and project. For a file or the
-   conversation, ask which Linear team and project the tickets belong in. Ask once whether the
-   design is agreed. If it is not, stop.
+   `linear issue view <id> --json --no-pager`. Route the container and its slices with the
+   [tracker skill](../tracker/SKILL.md), which stops when an existing container is in another team
+   or project. Ask once whether the design is agreed. If it is not, stop.
 
 2. Read the current state. If `$slicedir/plan.md` exists, read it and every body file it names. If
    the container exists, read its current description with
@@ -65,7 +65,7 @@ before anything was written to Linear.
    read its children in sub-issue order:
 
    ```sh
-   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description subIssueSortOrder state { type } attachments { nodes { url } } } } } }' --variable id=<container>
+   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description subIssueSortOrder team { key } project { name } state { type } attachments { nodes { url } } } } } }' --variable id=<container>
    ```
 
    Sort the nodes by `subIssueSortOrder`, lowest first. A slice is merged only when one of its
@@ -86,18 +86,19 @@ before anything was written to Linear.
    - Give every slice a title that no other slice in the plan uses. A retry matches tickets by
      title.
 
-4. Write the draft in `$slicedir`, one body file per ticket.
+4. Write the draft in `$slicedir`, one body file per ticket. Write titles and bodies with the
+   [tracker skill](../tracker/SKILL.md). Search there for an open duplicate of each new ticket, the
+   container and every new slice, before you draft it.
    - `container.md`: the container's full description, with the agreed design in its `## Design`
      section. For an existing container, keep all text outside that section unchanged.
-   - `slice-<n>.md`, numbered in plan order: `## Goal`, `## Delivers`, `## Out of scope`, and
-     `## Acceptance` with checkboxes.
+   - `slice-<n>.md`, numbered in plan order.
    - `plan.md`: the container's identifier, then one row per slice with its number, title, body
      file, `blocked-by` numbers, and Linear identifier. Keep the identifier of each slice that
      already exists, even when the plan renames or renumbers it. Leave it empty until the ticket
      exists.
 
-   For a design with one slice, write `ticket.md` instead of `container.md` and `slice-1.md`: the
-   ticket's full description with the `## Design` section followed by the slice sections.
+   For a design with one slice, write `ticket.md` instead of `container.md` and `slice-1.md`, as the
+   slice template describes.
 
 5. Preview and ask. Show what the user decides on, not how step 6 runs it. Keep it to about 40
    lines, and leave out raw commands and details of the local environment.
@@ -130,39 +131,30 @@ before anything was written to Linear.
    Approve with `ask_user_question` and give the number of writes in the question: approve, change
    the plan, or stop. After any change, write the draft again and show a new preview.
 
-6. Write to Linear in the previewed order. After each command that creates a ticket, record its
+6. Write to Linear in the previewed order, with the commands in the
+   [tracker skill](../tracker/SKILL.md). After each command that creates a ticket, record its
    identifier in `$slicedir/plan.md` at once. If the output shows no identifier, stop, and read the
    container's children before any retry. On a retry, skip each slice that has an identifier in the
-   draft or a child with the same title, and record that child's identifier.
-   - Create the container when it does not exist:
-     `linear issue create --team <team> --project <project> --title "<title>" --description-file $slicedir/container.md --no-interactive`.
-   - Otherwise update its description:
-     `linear issue update <container> --description-file $slicedir/container.md`.
-   - Create each missing slice in order:
-     `linear issue create --team <team> --project <project> --parent <container> --title "<title>" --description-file $slicedir/slice-<n>.md --no-interactive`.
-   - Update a changed slice that is not merged:
-     `linear issue update <slice> --title "<title>" --description-file $slicedir/slice-<n>.md`.
-   - Add each new dependency to a slice that is not merged:
-     `linear issue relation add <slice> blocked-by <earlier slice>`.
-   - Remove each dependency the plan drops from a slice that is not merged:
-     `linear issue relation delete <slice> blocked-by <other>`.
+   draft or a child with the same title that fits, and record that child's identifier. A child fits
+   when its team and project, read with the query in step 2, match the route. Report a same-title
+   child that does not fit, and stop.
+   - Create the container from `$slicedir/container.md` when it does not exist. Otherwise update its
+     description.
+   - Create each missing slice in order under the container, from `$slicedir/slice-<n>.md`.
+   - Update the title and body of a changed slice that is not merged.
+   - Add each new `blocked-by` relation to a slice that is not merged, and remove each one the plan
+     drops.
 
    After creating the container, record its identifier in `plan.md`, then move `$slicedir` to
    `.tau/slices/<identifier in lower case>` and use the new path.
 
-   For a design with one slice, write only that ticket, and skip the dependencies and step 7. Create
-   it with
-   `linear issue create --team <team> --project <project> --title "<title>" --description-file $slicedir/ticket.md --no-interactive`,
-   or update it with `linear issue update <ticket> --description-file $slicedir/ticket.md`.
+   For a design with one slice, create or update only that ticket from `$slicedir/ticket.md`, and
+   skip the dependencies and step 7.
 
 7. Check the order. Read the children again with the query in step 2. If sorting by
    `subIssueSortOrder` does not give the plan order, move each unmerged slice that is out of place
-   to a value between its neighbors in the plan, then read the children again. Repair once; if the
-   order is still wrong, report it. Merged slices keep their place:
-
-   ```sh
-   linear api 'mutation($id: String!, $order: Float!) { issueUpdate(id: $id, input: { subIssueSortOrder: $order }) { success } }' --variable id=<slice> --variable order=<value>
-   ```
+   to a value between its neighbors in the plan with the tracker skill, then read the children
+   again. Repair once; if the order is still wrong, report it. Merged slices keep their place.
 
 8. Report the container and each slice with its identifier and URL, in order, and any slice the user
    should cancel by hand. For a design with one slice, report that ticket alone.

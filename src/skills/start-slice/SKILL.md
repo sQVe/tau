@@ -31,15 +31,14 @@ Workers then carry out the agent tickets.
 
 - Before the user approves the preview, write only the draft in `$slicedir`. You may run
   `git fetch`, but create or switch no branch and write nothing to Linear. Any change to the
-  approved plan needs a new preview, except an agent ticket added as "Changes after the start"
-  allows.
+  approved plan needs a new preview, an added agent ticket included.
 - Ask every question with the `ask_user_question` tool, including the preview approval. Never end a
   turn with a question in prose.
-- Take the agent team only from the prompt line that starts with
-  `The agent team for slice agent tickets is`. If that line is missing, or says the team could not
-  be read, stop. Tell the user to set `slice.agentTeam` to a Linear team key in
-  `~/.pi/agent/tau.json`, and show any error the line gives. Never guess a team.
-- Do not change any ticket's status, and never change a merged slice.
+- Route, write, and create agent tickets with the [tracker skill](../tracker/SKILL.md). Before you
+  draft, check that the prompt names both the repository route and the agent team as that skill
+  describes. If either is missing, stop with the tracker skill's setup message.
+- Make no status change except moving the slice to In Progress in step 8, and never change a merged
+  slice.
 - If a step fails partway, stop and report what completed. Read the draft and the slice's children
   before you retry anything.
 - Before you save the first file, create the draft directory inside an ignored `.tau/` from the
@@ -88,7 +87,7 @@ Workers then carry out the agent tickets.
    the slice's existing agent tickets:
 
    ```sh
-   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description team { key } } } } }' --variable id=<slice>
+   linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description team { key } project { name } } } } }' --variable id=<slice>
    ```
 
    Linear holds the body of each agent ticket that exists. Save its description as its body file
@@ -104,9 +103,8 @@ Workers then carry out the agent tickets.
    `git show <tree>:<path>`. Agent tickets name real files and tests in that tree.
 
 6. Write the draft in `$slicedir`, one body file per agent ticket.
-   - `agent-<n>.md`, numbered in work order: `## Outcome`, `## Files`, `## First test`, and
-     `## Acceptance` with checkboxes. Keep each ticket to one worker task. A cheap worker model
-     needs the files, the first test, and the acceptance checks named exactly.
+   - `agent-<n>.md`, numbered in work order, with the agent ticket template in the
+     [tracker skill](../tracker/SKILL.md). Keep each ticket to one worker task.
    - `start.md`: the slice identifier, the branch, the base, and one row per agent ticket with its
      number, title, body file, and Linear identifier. Keep identifiers that already exist. Leave
      them empty until the ticket exists.
@@ -119,8 +117,8 @@ Workers then carry out the agent tickets.
    - Each agent ticket as `new` or `unchanged`, with its title and one line from its `## Outcome`.
    - Each acceptance criterion of the slice, with the agent ticket numbers that cover it.
    - The writes step 8 makes, numbered, one line each, such as
-     `Create agent tickets 1-3 under ENG-123 in AI` or
-     `Create branch eng-123-add-x from origin/main`.
+     `Create branch eng-123-add-x from origin/main`, `Move ENG-123 to In Progress`, or
+     `Create agent tickets 1-3 under ENG-123 in AI`.
 
    Approve with `ask_user_question`: approve, change the plan, or stop. After any change, write the
    draft again and show a new preview.
@@ -130,21 +128,15 @@ Workers then carry out the agent tickets.
    - Create the branch with `git switch --no-track -c <branchName> <base>`. If
      `git rev-parse --verify --quiet refs/heads/<branchName>` shows it exists already, run
      `git switch <branchName>` instead.
-   - Create each agent ticket through the API. `linear issue create --parent` copies the slice's
-     project, which fails when the agent team is not in that project. Read the agent team's ID with
-     `linear api 'query($key: String!) { team(id: $key) { id } }' --variable key=<agent team>`,
-     then:
-
-     ```sh
-     linear api 'mutation($team: String!, $parent: String!, $title: String!, $description: String!) { issueCreate(input: { teamId: $team, parentId: $parent, title: $title, description: $description }) { issue { identifier url } } }' --variable team=<team id> --variable parent=<slice> --variable 'title=<title>' --variable description=@$slicedir/agent-<n>.md
-     ```
-
-     Write each `'` in the title as `'\''`, so the shell expands nothing in it.
+   - Move the slice to In Progress as the tracker skill says.
+   - Create each agent ticket under the slice in the agent team, with the tracker skill's command
+     for agent tickets.
 
      After each one, record its identifier in `$slicedir/start.md` at once. If the output shows no
      identifier, stop and read the slice's children before any retry. On a retry, skip each agent
-     ticket that has an identifier in the draft or a child with the same title, and record that
-     child's identifier.
+     ticket that has an identifier in the draft or a child with the same title that fits, and record
+     that child's identifier. A child fits when it is in the agent team with no project, as the
+     tracker skill routes agent tickets. Report a same-title child that does not fit, and stop.
 
 9. Report the branch and each agent ticket with its identifier and URL.
 
@@ -155,8 +147,8 @@ Workers then carry out the agent tickets.
 
 ## Changes after the start
 
-- You may add an agent ticket inside the slice's approved outcome without a new preview. Write its
-  body file, add its row to `start.md`, create it as in step 8, and tell the user one line of
-  reason.
+- You may add an agent ticket inside the slice's approved outcome. Write its body file and its row
+  in `start.md`. Preview it as the tracker skill says, with one line of reason, and create it as in
+  step 8 only after the user approves.
 - Work beyond the slice's outcome is a new slice. Re-plan it with the
   [slice skill](../slice/SKILL.md).
