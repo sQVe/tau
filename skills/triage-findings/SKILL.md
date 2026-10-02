@@ -38,9 +38,9 @@ changing and within the requested scope. Explain the rest.
    - Incorrect: the code does not support the finding.
    - Blocked: you cannot settle the finding against the code, or it is valid but you cannot make the
      change without access, a decision, or information you do not have.
-4. Fix the supported findings. Weigh each fix against the branches, guards, and abstractions it
-   adds. Put defensive checks where untrusted input enters, not inside trusted code. When a simpler
-   change covers the concern, make that one instead.
+4. Fix the supported findings that are worth changing and within scope. Weigh each fix against the
+   branches, guards, and abstractions it adds. Put defensive checks where untrusted input enters,
+   not inside trusted code. When a simpler change covers the concern, make that one instead.
 5. Run the checks that cover your changes.
 6. Report every finding under these headings, in this order: Fixed, Not worth changing, Incorrect,
    and Blocked. Write "None" under an empty heading.
