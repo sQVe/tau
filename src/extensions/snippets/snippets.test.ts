@@ -31,7 +31,6 @@ const simplify: Snippet = {
   id: 'simplify',
   name: 'Simplify',
   description: 'Prefer less code.',
-  order: 1,
   body: 'Keep it simple.',
 };
 
@@ -39,7 +38,6 @@ const review: Snippet = {
   id: 'review',
   name: 'Review',
   description: 'Check the change.',
-  order: 2,
   body: 'Review the change.\n\nList each risk.',
 };
 
@@ -47,7 +45,6 @@ const checklist: Snippet = {
   id: 'checklist',
   name: 'Checklist',
   description: 'Walk through each step.',
-  order: 3,
   body: Array.from({ length: 12 }, (_, index) => `Step ${index + 1}.`).join('\n'),
 };
 

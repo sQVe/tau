@@ -7,8 +7,7 @@ import { describe, expect, it, onTestFinished as afterThisTest } from 'vitest';
 
 import { loadSnippets } from './snippet.js';
 
-const snippetFile = (name: string, order: number, body: string) =>
-  `---\nname: ${name}\norder: ${order}\n---\n${body}\n`;
+const snippetFile = (name: string, body: string) => `---\nname: ${name}\n---\n${body}\n`;
 
 // Each case loads one file the way the extension does, so it covers the parser and the loader together.
 const loadOne = async (filename: string, content: string) => {
@@ -26,7 +25,6 @@ describe('parsing a snippet file', () => {
       '---',
       'name: Ask questions',
       'description: Ask until we agree',
-      'order: 20',
       '---',
       '',
       'Ask questions until you know what to do.',
@@ -37,12 +35,11 @@ describe('parsing a snippet file', () => {
       id: 'ask-questions',
       name: 'Ask questions',
       description: 'Ask until we agree',
-      order: 20,
       body: 'Ask questions until you know what to do.',
     });
   });
 
-  it('falls back to the filename and a last-place order', async () => {
+  it('falls back to the filename for the name', async () => {
     const snippet = await loadOne(
       'bare-snippet.md',
       '---\nunrelated: value\n---\nVerify the facts.\n',
@@ -52,7 +49,6 @@ describe('parsing a snippet file', () => {
       id: 'bare-snippet',
       name: 'bare-snippet',
       description: '',
-      order: 9999,
       body: 'Verify the facts.',
     });
   });
@@ -62,7 +58,7 @@ describe('parsing a snippet file', () => {
       '---',
       'NAME: "Quoted name"',
       "description: 'Quoted description'",
-      'order:',
+      'description:',
       'unknown: ignored',
       'not a field',
       '---',
@@ -72,16 +68,14 @@ describe('parsing a snippet file', () => {
     expect(await loadOne('quoted.md', raw)).toMatchObject({
       name: 'Quoted name',
       description: 'Quoted description',
-      order: 9999,
     });
   });
 
   it('reads a file that uses carriage returns and drops them from the body', async () => {
-    const raw = '---\r\nname: Windows\r\norder: 5\r\n---\r\nFirst line.\r\nSecond line.\r\n';
+    const raw = '---\r\nname: Windows\r\n---\r\nFirst line.\r\nSecond line.\r\n';
 
     expect(await loadOne('windows.md', raw)).toMatchObject({
       name: 'Windows',
-      order: 5,
       body: 'First line.\nSecond line.',
     });
   });
@@ -91,13 +85,8 @@ describe('parsing a snippet file', () => {
       id: 'bare',
       name: 'bare',
       description: '',
-      order: 9999,
       body: 'Just a body.',
     });
-  });
-
-  it('treats an unparsable order as a last-place order', async () => {
-    expect(await loadOne('bad.md', '---\norder: soon\n---\nBody.')).toMatchObject({ order: 9999 });
   });
 
   it.for([
@@ -110,32 +99,20 @@ describe('parsing a snippet file', () => {
 });
 
 describe('loadSnippets', () => {
-  it('reads markdown files, skips other files, and sorts by order', async ({ onTestFinished }) => {
+  it('reads markdown files, skips other files, and sorts by id', async ({ onTestFinished }) => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-snippets-'));
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
-    await writeFile(join(directory, 'second.md'), snippetFile('Second', 20, 'Second.'));
-    await writeFile(join(directory, 'first.md'), snippetFile('First', 10, 'First.'));
-    await writeFile(join(directory, 'later.md'), snippetFile('Later', 99, 'Later.'));
-    await writeFile(join(directory, 'notes.txt'), snippetFile('Ignored', 1, 'Ignored.'));
+    await writeFile(join(directory, 'second.md'), snippetFile('Second', 'Second.'));
+    await writeFile(join(directory, 'first.md'), snippetFile('First', 'First.'));
+    await writeFile(join(directory, 'later.md'), snippetFile('Zulu', 'Later.'));
+    await writeFile(join(directory, 'notes.txt'), snippetFile('Ignored', 'Ignored.'));
     await writeFile(join(directory, 'broken.md'), 'No frontmatter here.');
 
     const snippets = await loadSnippets(directory);
 
-    expect(snippets.map((snippet) => snippet.name)).toEqual(['First', 'Second', 'Later']);
-    expect(snippets.map((snippet) => snippet.id)).toEqual(['first', 'second', 'later']);
-  });
-
-  it('sorts snippets with equal orders by name', async ({ onTestFinished }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-snippets-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
-
-    await writeFile(join(directory, 'b.md'), snippetFile('Beta', 10, 'Beta.'));
-    await writeFile(join(directory, 'a.md'), snippetFile('Alpha', 10, 'Alpha.'));
-
-    const snippets = await loadSnippets(directory);
-
-    expect(snippets.map((snippet) => snippet.name)).toEqual(['Alpha', 'Beta']);
+    expect(snippets.map((snippet) => snippet.name)).toEqual(['First', 'Zulu', 'Second']);
+    expect(snippets.map((snippet) => snippet.id)).toEqual(['first', 'later', 'second']);
   });
 
   it('reports a missing directory instead of returning no snippets', async () => {
@@ -151,7 +128,7 @@ describe('loadSnippets', () => {
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
     await mkdir(join(directory, 'draft.md'));
-    await writeFile(join(directory, 'real.md'), snippetFile('Real', 10, 'Real body.'));
+    await writeFile(join(directory, 'real.md'), snippetFile('Real', 'Real body.'));
 
     const snippets = await loadSnippets(directory);
 
@@ -171,31 +148,5 @@ describe('the shipped snippets', () => {
       // A newline with text on both sides is a hard wrap inside a paragraph.
       expect(snippet.body, `${snippet.id} is wrapped`).not.toMatch(/[^\n]\n[^\n]/);
     }
-  });
-
-  it('loads Check the agreed plan after the approach snippets', async () => {
-    const snippets = await loadSnippets(shippedDirectory);
-    const approach = snippets.slice(0, 5);
-
-    expect(approach.map((snippet) => snippet.name)).toEqual([
-      'Interview me',
-      'Read other panes',
-      'Push back',
-      "Verify, don't assume",
-      'Check the agreed plan',
-    ]);
-
-    expect(approach.at(-1)).toMatchObject({
-      id: 'check-agreed-plan',
-      order: 50,
-      body: "Read the relevant ticket, its parent, and linked prerequisites before proposing work. Compare the current plan with the implementation and recent decisions. State this task's scope, exclusions, and blockers. Flag conflicting or outdated requirements rather than silently choosing one. Do not update tickets unless asked.",
-    });
-  });
-
-  it('gives every snippet a unique order', async () => {
-    const snippets = await loadSnippets(shippedDirectory);
-    const orders = snippets.map((snippet) => snippet.order);
-
-    expect(new Set(orders).size).toBe(orders.length);
   });
 });

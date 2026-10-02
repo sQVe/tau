@@ -3,6 +3,5 @@ export interface Snippet {
   id: string;
   name: string;
   description: string;
-  order: number;
   body: string;
 }
