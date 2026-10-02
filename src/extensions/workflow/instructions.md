@@ -12,11 +12,8 @@ these defaults.
 
 ## Resolve herdr IDs first
 
-- An ID like `wMJ` names a herdr workspace, `wMJ:p1` a pane, and `wMJ:t1` a tab.
-- Run `herdr workspace get <id>` before you search files, branches, worktrees, or Linear. Its
-  `worktree.checkout_path` is the workspace checkout, and `tokens.linear` is its ticket.
-- Run `herdr pane list --workspace <id>` and `herdr pane read <pane-id>` to see what its panes hold.
-- You may read files in that checkout. Make changes there through the handoff skill.
+- An ID like `wMJ` or `wMJ:p1` names a herdr workspace or pane. Run `herdr workspace get <id>`
+  before you search files, branches, or Linear. It shows the workspace checkout and ticket.
 
 ## Run commands
 
