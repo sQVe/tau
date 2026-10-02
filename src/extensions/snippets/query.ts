@@ -19,11 +19,14 @@ const tokenStart = `(?<=^|\\s|${cjkPunctuation})[([{<\`]*`;
 const idCharacters = '[\\p{L}\\p{N}_-]';
 const queryPattern = new RegExp(`${tokenStart}#(${idCharacters}*)$`, 'u');
 
-// A fence can sit inside quotes and list items, so quote markers, list markers, and any
-// indentation may come before it. An indented line that starts with a fence is code either way.
-const containerPrefix = String.raw`^(?:[\t ]*>)*[\t ]*(?:(?:[-*+]|\d{1,9}[.)])[\t ]+)?`;
+// A fence can sit inside quotes and list items nested in any order, so quote markers, list
+// markers, and any indentation may come before it. An indented line that starts with a fence is
+// code either way. A list marker starts a new item, so a fence after one opens a block and never
+// closes one.
+const containerPrefix = String.raw`^(?:[\t ]*>|[\t ]*(?:[-*+]|\d{1,9}[.)])[\t ]+)*[\t ]*`;
+const closePrefix = String.raw`^(?:[\t ]*>)*[\t ]*`;
 const fenceOpenPattern = new RegExp(`${containerPrefix}(\`{3,}|~{3,})`);
-const fenceClosePattern = new RegExp(`${containerPrefix}(\`{3,}|~{3,})[\\t ]*$`);
+const fenceClosePattern = new RegExp(`${closePrefix}(\`{3,}|~{3,})[\\t ]*$`);
 const backtickRunPattern = /`+/g;
 
 const closesFence = (line: string, fence: string) => {

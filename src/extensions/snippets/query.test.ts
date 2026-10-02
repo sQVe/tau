@@ -27,6 +27,8 @@ describe('snippetQueryAt', () => {
     { text: '> ```sh\n> #push', offset: 15 },
     { text: '- Step:\n\n    ```sh\n    #push', offset: 28 },
     { text: '1. ```\n   #push', offset: 15 },
+    { text: '- ```\n  run\n- ```\n  #push', offset: 25 },
+    { text: '- > ```sh\n  > #push', offset: 19 },
   ])('reads no query from $text at $offset', ({ text, offset }) => {
     expect(snippetQueryAt(text, offset)).toBeUndefined();
   });
