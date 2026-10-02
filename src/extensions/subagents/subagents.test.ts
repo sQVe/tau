@@ -64,6 +64,19 @@ const launchContext = (directory: string) =>
     },
   }) as unknown as ExtensionToolContext;
 
+// A session context's config fields, with an empty agent directory so no user config is read.
+const emptyConfigContext = () => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-empty-agent-'));
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+
+  finishTest(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  return { cwd: directory, isProjectTrusted: () => false };
+};
+
 const busyParent = { isIdle: () => false, signal: undefined };
 const testTheme = { fg: (_color: string, text: string) => text };
 const noOperation = (): void => undefined;
@@ -99,16 +112,26 @@ it('appends delegation guidelines for a manager inside herdr', ({ onTestFinished
 
 const loginCommand = 'google-chrome-stable --profile-directory="Agent profile"';
 
-const sessionGuidelines = (
+// Answers `git remote get-url origin` with the given URL, or as Git does without an origin.
+const originExec = (originUrl: string | undefined): ExtensionAPI['exec'] =>
+  vi.fn<ExtensionAPI['exec']>(async () =>
+    originUrl === undefined
+      ? { stdout: '', stderr: "error: No such remote 'origin'", code: 2, killed: false }
+      : { stdout: `${originUrl}\n`, stderr: '', code: 0, killed: false },
+  );
+
+const sessionGuidelines = async (
   onTestFinished: typeof finishTest,
-  config: { user?: unknown; repository?: unknown },
+  config: { user?: unknown; repository?: unknown; originUrl?: string; herdr?: boolean },
 ) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-browser-guideline-'));
-  const fake = fakeExtensionApi();
+  const fake = fakeExtensionApi({ exec: originExec(config.originUrl) });
   const notify = vi.fn<ExtensionContext['ui']['notify']>();
 
-  vi.stubEnv('HERDR_ENV', '1');
-  vi.stubEnv('HERDR_PANE_ID', 'parent');
+  const herdr = config.herdr ?? true;
+
+  vi.stubEnv('HERDR_ENV', herdr ? '1' : '0');
+  vi.stubEnv('HERDR_PANE_ID', herdr ? 'parent' : '');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.spyOn(WorkerController.prototype, 'resume').mockResolvedValue(undefined);
@@ -140,13 +163,17 @@ const sessionGuidelines = (
     rmSync(directory, { recursive: true, force: true });
   });
 
-  fake.handler('session_start')({}, context);
+  await fake.handler('session_start')({}, context);
 
-  return { appended: appendedSystemPrompt(fake.handlers, ['subagent']), notify };
+  return {
+    appended: appendedSystemPrompt(fake.handlers, ['subagent']),
+    appendedWithoutTools: appendedSystemPrompt(fake.handlers, []),
+    notify,
+  };
 };
 
-it('gives the manager the configured browser login command', ({ onTestFinished }) => {
-  const { appended, notify } = sessionGuidelines(onTestFinished, {
+it('gives the manager the configured browser login command', async ({ onTestFinished }) => {
+  const { appended, notify } = await sessionGuidelines(onTestFinished, {
     user: { browser: { loginCommand } },
   });
 
@@ -159,10 +186,10 @@ it('gives the manager the configured browser login command', ({ onTestFinished }
   expect(notify).not.toHaveBeenCalled();
 });
 
-it('gives the manager the browser guideline without a command when none is configured', ({
+it('gives the manager the browser guideline without a command when none is configured', async ({
   onTestFinished,
 }) => {
-  const { appended, notify } = sessionGuidelines(onTestFinished, {});
+  const { appended, notify } = await sessionGuidelines(onTestFinished, {});
 
   for (const guideline of delegationGuidelines(undefined)) {
     expect(appended).toContain(guideline);
@@ -185,32 +212,73 @@ it.each([
     },
     commands: [loginCommand, 'open-project-browser'],
   },
-])('reports the error and leaves the login command out when $condition', ({ config, commands }) => {
-  const { appended, notify } = sessionGuidelines(finishTest, config);
+])(
+  'reports the error and leaves the login command out when $condition',
+  async ({ config, commands }) => {
+    const { appended, notify } = await sessionGuidelines(finishTest, config);
 
-  expect(notify).toHaveBeenCalledWith(expect.stringContaining('browser'), 'error');
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('browser'), 'error');
 
-  for (const guideline of delegationGuidelines(undefined)) {
-    expect(appended).toContain(guideline);
-  }
+    for (const guideline of delegationGuidelines(undefined)) {
+      expect(appended).toContain(guideline);
+    }
 
-  for (const command of commands) {
-    expect(appended).not.toContain(command);
-  }
-});
+    for (const command of commands) {
+      expect(appended).not.toContain(command);
+    }
+  },
+);
 
-it('names the configured slice agent team in the manager prompt', ({ onTestFinished }) => {
-  const { appended } = sessionGuidelines(onTestFinished, { user: { slice: { agentTeam: 'AI' } } });
-
-  expect(appended).toContain('`AI`');
-});
-
-it('states an invalid slice agent team in the manager prompt instead of dropping it', ({
+it('names the agent team and the repository team and project in the manager prompt', async ({
   onTestFinished,
 }) => {
-  const { appended } = sessionGuidelines(onTestFinished, { user: { slice: { agentTeam: '' } } });
+  const { appended } = await sessionGuidelines(onTestFinished, {
+    user: {
+      tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 'ME', project: 'Tau' } } },
+    },
+    originUrl: 'git@github.com:sQVe/tau.git',
+  });
 
-  expect(appended).toContain('slice.agentTeam');
+  expect(appended).toContain('Tracker agent team: `AI`.');
+  expect(appended).toContain('Tracker repository: `sQVe/tau` uses team `ME` and project `Tau`.');
+});
+
+it('names the tracker route outside herdr and without the subagent tool', async ({
+  onTestFinished,
+}) => {
+  const { appendedWithoutTools } = await sessionGuidelines(onTestFinished, {
+    user: { tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 'ME' } } } },
+    originUrl: 'https://github.com/sQVe/tau.git',
+    herdr: false,
+  });
+
+  expect(appendedWithoutTools).toContain('Tracker agent team: `AI`.');
+  expect(appendedWithoutTools).toContain('Tracker repository: `sQVe/tau` uses team `ME`');
+
+  for (const guideline of delegationGuidelines(undefined)) {
+    expect(appendedWithoutTools).not.toContain(guideline);
+  }
+});
+
+it('states a missing origin remote in the manager prompt', async ({ onTestFinished }) => {
+  const { appended } = await sessionGuidelines(onTestFinished, {
+    user: { tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 'ME' } } } },
+  });
+
+  expect(appended).toContain('Tracker setup needed: this checkout has no origin remote');
+  expect(appended).not.toContain('Tracker repository:');
+});
+
+it('states an invalid tracker config in the manager prompt instead of dropping it', async ({
+  onTestFinished,
+}) => {
+  const { appended } = await sessionGuidelines(onTestFinished, {
+    user: { slice: { agentTeam: 'AI' } },
+    originUrl: 'git@github.com:sQVe/tau.git',
+  });
+
+  expect(appended).toContain('Tracker setup needed:');
+  expect(appended).toContain('tracker.agentTeam');
 
   for (const guideline of delegationGuidelines(undefined)) {
     expect(appended).toContain(guideline);
@@ -340,6 +408,7 @@ it('returns from session start while worker reattachment is still pending', asyn
   subagentsExtension(fake.pi);
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionContext;
 
@@ -350,9 +419,7 @@ it('returns from session start while worker reattachment is still pending', asyn
     vi.restoreAllMocks();
   });
 
-  const result = fake.handler('session_start')({}, context);
-
-  expect(result).toBeUndefined();
+  await expect(fake.handler('session_start')({}, context)).resolves.toBeUndefined();
 });
 
 it('reports a failed worker reattachment in the UI', async ({ onTestFinished }) => {
@@ -363,6 +430,7 @@ it('reports a failed worker reattachment in the UI', async ({ onTestFinished }) 
   subagentsExtension(fake.pi);
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent' },
     ui: {
       notify: (message: string) => {
@@ -509,6 +577,7 @@ it('updates the parent widget from live worker rows without a model turn', () =>
   subagentsExtension(extension);
 
   const context = {
+    ...emptyConfigContext(),
     mode: 'tui',
     hasUI: true,
     ui: { setWidget },
@@ -594,6 +663,7 @@ it('refreshes history while open, then stops polling after close without a model
   subagentsExtension(extension);
 
   const context = {
+    ...emptyConfigContext(),
     mode: 'tui',
     hasUI: true,
     ui: { setWidget, custom },
@@ -714,6 +784,7 @@ it('keeps editor focus and typing after a click on the passive fullscreen widget
   subagentsExtension(extension);
 
   const context = {
+    ...emptyConfigContext(),
     mode: 'tui',
     hasUI: true,
     ui: { setWidget },
