@@ -32,8 +32,8 @@ before anything was written to Linear.
 - Follow the [tracker skill](../tracker/SKILL.md)'s hard rules on preview approval and on questions.
 - Do not create agent tickets, start a slice, create branches, stack PRs, or change any ticket's
   status. Never change or reorder a merged slice.
-- If a step fails partway, stop and report what completed. Read the draft and the container's
-  children before you retry anything.
+- If a step fails partway, stop and report what completed. Before you retry anything, read the
+  draft, and the container's children when the container exists.
 - Before you save the first file, create the draft directory inside an ignored `.tau/` from the
   repository root. Pick `<id>` in this order:
   - For an existing container, search `.tau/slices/*/plan.md` for its identifier. When one matches,
@@ -143,10 +143,11 @@ before anything was written to Linear.
      drops.
 
    After each command that creates a ticket, record its identifier in `$slicedir/plan.md` at once.
-   If the output shows no identifier, stop, and read the container's children before any retry. On a
-   retry, skip each slice that has an identifier in the draft or a child with the same title that
-   fits, and record that child's identifier. A child fits when its team and project, read with the
-   children query, match the route. Report a same-title child that does not fit, and stop.
+   If the output shows no identifier, stop. Before any retry, search as the tracker skill says: the
+   team for the container, the container's children for a slice. On a retry, skip each slice that
+   has an identifier in the draft or a child with the same title that fits, and record that child's
+   identifier. A child fits when its team and project, read with the children query, match the
+   route. Report a same-title child that does not fit, and stop.
 
    For a design with one slice, create or update only that ticket from `$slicedir/ticket.md`, and
    skip the dependencies and step 7.

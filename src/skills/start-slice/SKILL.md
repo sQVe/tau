@@ -94,8 +94,9 @@ Workers then carry out the agent tickets.
    linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description team { key } project { name } } } } }' --variable id=<slice>
    ```
 
-   Linear holds the body of each agent ticket that exists. When its body file is missing or differs,
-   save its description as the body file, so the worker gets the same task as the ticket.
+   Linear holds the body of each agent ticket that exists. Add a row with its identifier to
+   `start.md` for one that has no row. When its body file is missing or differs, save its
+   description as the body file, so the worker gets the same task as the ticket.
 
 4. Choose the base. Run `git fetch origin`, then use the remote's default branch from
    `git symbolic-ref --short refs/remotes/origin/HEAD`, such as `origin/main`. If that ref is
