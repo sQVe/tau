@@ -89,8 +89,8 @@ before anything was written to Linear.
      title.
 
 4. Write the draft in `$slicedir`, one body file per ticket. Before you write each new ticket, the
-   container and every new slice, search for an open duplicate. Do both as the
-   [tracker skill](../tracker/SKILL.md) says.
+   container and every new slice, search for an open duplicate, then write its title and body.
+   Follow the [tracker skill](../tracker/SKILL.md) for both.
    - `container.md`: the container's full description, with the agreed design in its `## Design`
      section. For an existing container, keep all text outside that section unchanged.
    - `slice-<n>.md`, numbered in plan order.
@@ -136,7 +136,8 @@ before anything was written to Linear.
    [tracker skill](../tracker/SKILL.md).
    - Create the container from `$slicedir/container.md` when it does not exist. Record its
      identifier in `plan.md`, then move `$slicedir` to `.tau/slices/<identifier in lower case>` and
-     use the new path. When the container exists, update its description.
+     use the new path. When the retry search finds the container, record its identifier and move
+     `$slicedir` the same way. When the container exists, update its description.
    - Create each missing slice in order under the container, from `$slicedir/slice-<n>.md`.
    - Update the title and body of a changed slice that is not merged.
    - Add each new `blocked-by` relation to a slice that is not merged, and remove each one the plan
@@ -144,10 +145,10 @@ before anything was written to Linear.
 
    After each command that creates a ticket, record its identifier in `$slicedir/plan.md` at once.
    If the output shows no identifier, stop. Before any retry, search as the tracker skill says: the
-   team for the container, the container's children for a slice. On a retry, skip each slice that
-   has an identifier in the draft or a child with the same title that fits, and record that child's
-   identifier. A child fits when its team and project, read with the children query, match the
-   route. Report a same-title child that does not fit, and stop.
+   team for the container or a one-slice ticket, the container's children for a slice. On a retry,
+   skip each slice that has an identifier in the draft or a child with the same title that fits, and
+   record that child's identifier. A child fits when its team and project, read with the children
+   query, match the route. Report a same-title child that does not fit, and stop.
 
    For a design with one slice, create or update only that ticket from `$slicedir/ticket.md`, and
    skip the dependencies and step 7.
