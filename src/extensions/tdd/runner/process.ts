@@ -4,7 +4,7 @@ import { accessSync, constants, statSync } from 'node:fs';
 import { basename, delimiter, join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
-import type { SpawnFn, SpawnResult } from './types.js';
+import type { SpawnCommand, SpawnResult } from './types.js';
 
 interface SpawnState {
   stdout: string;
@@ -26,9 +26,14 @@ interface SettleRequest {
   clearTimer: () => void;
 }
 
-export const maximumTotalBytes = 32 * 1024;
+const bytesPerKibibyte = 1024;
+const bytesPerMebibyte = bytesPerKibibyte * bytesPerKibibyte;
+const maximumTotalKibibytes = 32;
+const maximumStdoutMebibytes = 8;
+
+export const maximumTotalBytes = maximumTotalKibibytes * bytesPerKibibyte;
 // Bound captured process output separately from the shorter diagnostic messages.
-export const maximumStdoutBytes = 8 * 1024 * 1024;
+export const maximumStdoutBytes = maximumStdoutMebibytes * bytesPerMebibyte;
 
 // Debian-family systems name the runtime `nodejs`, so both spellings count as a Node command.
 const nodeNames = process.platform === 'win32' ? ['node.exe'] : ['node', 'nodejs'];
@@ -50,7 +55,7 @@ const nodeOnPath = (path = process.env.PATH ?? '') =>
 
 // In compiled Pi, process.execPath is the agent and cannot run Vitest. Prefer Node from PATH.
 // Keep the fallback for Node executables with other names, such as `nodejs`.
-export const nodeExecutable = (executablePath = process.execPath) =>
+export const nodeExecutable = (executablePath = process.execPath): string =>
   /^node(\.exe)?$/i.test(basename(executablePath.replaceAll('\\', '/')))
     ? executablePath
     : (nodeOnPath() ?? executablePath);
@@ -141,7 +146,7 @@ const captureSpawnError = (state: SpawnState, error: Error): void => {
   state.stderrBytes += message.length;
 };
 
-export const defaultSpawn: SpawnFn = (command, argumentsList, options) =>
+export const defaultSpawn: SpawnCommand = (command, argumentsList, options) =>
   new Promise<SpawnResult>((resolve) => {
     // detached lets the timeout path signal the whole process group on POSIX.
     // Windows has no equivalent; we fall back to child.kill there.

@@ -45,6 +45,8 @@ interface Rectangle {
 
 // Leave room for pane borders and status rows around 80 columns and 20 useful rows.
 const minimumPane = { width: 82, height: 24 };
+// A tab label lists this many worker names, then a count of the rest.
+const labelledNameCount = 3;
 
 const isPositiveInteger = (value: unknown): boolean =>
   Number.isSafeInteger(value) && Number(value) > 0;
@@ -165,9 +167,10 @@ export class WorkerPlacement {
       .filter((worker) => worker.tabId === tabId)
       .map((worker) => worker.name);
 
-    const shown = names.slice(0, 3).join(', ');
+    const shown = names.slice(0, labelledNameCount).join(', ');
+    const hidden = names.length - labelledNameCount;
 
-    return names.length > 3 ? `${shown} +${names.length - 3}` : shown;
+    return hidden > 0 ? `${shown} +${hidden}` : shown;
   }
 
   // The tab label is cosmetic; a failed rename never fails a launch or a stop.

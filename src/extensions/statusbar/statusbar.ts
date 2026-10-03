@@ -21,7 +21,10 @@ const executeFile = promisify(execFile);
 
 // Bound background Git work. Failures leave the dirty marker hidden.
 const gitTimeoutMilliseconds = 5000;
-const gitMaximumBufferBytes = 10 * 1024 * 1024;
+const gitMaximumBufferMebibytes = 10;
+const bytesPerMebibyte = 1_048_576;
+const gitMaximumBufferBytes = gitMaximumBufferMebibytes * bytesPerMebibyte;
+const shownDirectoryDepth = 2;
 
 const getSessionCost = (context: ExtensionContext): number => {
   let cost = 0;
@@ -132,7 +135,8 @@ const createFooter = (
         return [
           renderFooterLine(
             {
-              directory: context.cwd.split(sep).filter(Boolean).slice(-2).join(sep) || sep,
+              directory:
+                context.cwd.split(sep).filter(Boolean).slice(-shownDirectoryDepth).join(sep) || sep,
               branch: footerData.getGitBranch(),
               dirty: state.dirty,
               cost: getSessionCost(context),
@@ -150,7 +154,7 @@ const createFooter = (
   };
 };
 
-export default function statusbarExtension(pi: ExtensionAPI) {
+export default function statusbarExtension(pi: ExtensionAPI): void {
   const state: StatusbarState = {
     dirty: false,
     requestRender: undefined,

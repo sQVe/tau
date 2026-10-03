@@ -9,7 +9,26 @@ interface FixturePane {
   tab_id: string;
 }
 
-export const placementFixture = (width: number, height: number) => {
+interface FixtureInput {
+  name: string;
+  visibility: Visibility;
+  cwd: string;
+  environment: { TASK: string };
+}
+
+export interface PlacementFixture {
+  placement: WorkerPlacement;
+  client: (argumentsList: string[]) => Promise<string>;
+  input: (visibility: Visibility, name?: string) => FixtureInput;
+  calls: string[][];
+  panes: FixturePane[];
+  titles: Map<string, string>;
+  labels: Map<string, string>;
+  dimensions: Map<string, { width: number; height: number }>;
+  parent: FixturePane;
+}
+
+export const placementFixture = (width: number, height: number): PlacementFixture => {
   const parent: FixturePane = {
     pane_id: 'parent',
     terminal_id: 'parent-terminal',

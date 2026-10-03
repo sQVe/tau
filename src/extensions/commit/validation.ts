@@ -21,7 +21,7 @@ const sensitivePathDenylist = [
   /(^|\/)\.ssh($|\/)/i,
 ] as const;
 
-export const isSensitivePath = (file: string) =>
+export const isSensitivePath = (file: string): boolean =>
   sensitivePathDenylist.some((pattern) => pattern.test(file.replaceAll('\\', '/')));
 
 export const commitToolParameters = Type.Object({
@@ -38,10 +38,10 @@ export const commitToolParameters = Type.Object({
 export type CommitInput = Static<typeof commitToolParameters>;
 
 // Pi forwards only error.message, so include hook diagnostics from both streams.
-export const commitFailedError = (stdout: string, stderr: string) =>
+export const commitFailedError = (stdout: string, stderr: string): Error =>
   new Error(`git commit failed:\n${stdout}${stderr}`);
 
-export const validateSubject = (subject: string) => {
+export const validateSubject = (subject: string): void => {
   if (subject.includes('\0')) {
     throw new Error('Invalid subject: NUL is not allowed.');
   }
@@ -51,7 +51,7 @@ export const validateSubject = (subject: string) => {
   }
 };
 
-export const normalizeRepositoryPath = (file: string) =>
+export const normalizeRepositoryPath = (file: string): string =>
   posix
     .normalize(process.platform === 'win32' ? file.replaceAll('\\', '/') : file)
     .replace(/\/+$/, '');
@@ -65,7 +65,7 @@ const isInvalidPath = (rawFile: string, file: string): boolean => {
 const isOutsideWorktree = (file: string): boolean =>
   posix.isAbsolute(file) || file === '..' || file.startsWith('../');
 
-export const validatePaths = (files: string[]) => {
+export const validatePaths = (files: string[]): void => {
   for (const rawFile of files) {
     // Validate the backslash reading on every platform so a Windows-style traversal or sensitive
     // name is rejected everywhere, while staging keeps the literal name on POSIX.
@@ -87,7 +87,7 @@ export const validatePaths = (files: string[]) => {
   }
 };
 
-export const normalizeBody = (body: string | null) => {
+export const normalizeBody = (body: string | null): string | null => {
   if (body == null || body === '') {
     return body;
   }
@@ -101,5 +101,5 @@ export const normalizeBody = (body: string | null) => {
   return normalized.endsWith('\n') ? normalized : `${normalized}\n`;
 };
 
-export const buildCommitMessage = (subject: string, body: string | null) =>
+export const buildCommitMessage = (subject: string, body: string | null): string =>
   body == null || body === '' ? `${subject}\n` : `${subject}\n\n${body}`;

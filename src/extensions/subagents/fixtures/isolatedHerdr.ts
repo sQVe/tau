@@ -10,11 +10,27 @@ import { onTestFinished } from 'vitest';
 import { runClient } from '../cancellation.js';
 import { socketRequest } from '../controller/inspect.js';
 
+interface HerdrEnvironment {
+  [name: string]: string | undefined;
+  HOME: string;
+  XDG_CONFIG_HOME: string;
+  HERDR_CONFIG_PATH: string;
+  PI_CODING_AGENT_DIR: string;
+  SHELL: string;
+  TERM: string;
+}
+
+interface IsolatedHerdr {
+  root: string;
+  environment: HerdrEnvironment;
+  client: (argumentsList: string[], budget?: number, signal?: AbortSignal) => Promise<string>;
+}
+
 export const isolatedHerdr = async (
   configuration = '',
   // Panes inherit this server's environment, so harness fixtures must be bound here.
   extraEnvironment: Record<string, string> = {},
-) => {
+): Promise<IsolatedHerdr> => {
   const root = mkdtempSync(join(tmpdir(), 'tau-herdr-worker-'));
 
   // Never inherit the active socket, caller IDs, or user configuration.

@@ -67,7 +67,7 @@ const rejectSkillProblems = (
   throw new Error(`Tau skills failed to load:\n${problems.join('\n')}`);
 };
 
-export default function tauSkillsExtension(pi: ExtensionAPI, skillsDirectory: string) {
+export default function tauSkillsExtension(pi: ExtensionAPI, skillsDirectory: string): void {
   const { skills, diagnostics } = loadSkillsFromDir({ dir: skillsDirectory, source: 'tau' });
 
   rejectSkillProblems(skillsDirectory, diagnostics);

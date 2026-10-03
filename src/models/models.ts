@@ -1,3 +1,4 @@
+import type { Api, Model } from '@earendil-works/pi-ai';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
@@ -6,13 +7,19 @@ import { Value } from 'typebox/value';
 import { isRecord, readTauConfig } from '../tauConfig.js';
 import type { ConfigFile, ConfigLocation } from '../tauConfig.js';
 import { effectiveAllowedModels } from './allowedModels.js';
+import type { AllowedModels } from './allowedModels.js';
+
+interface ModelReference {
+  provider: string;
+  id: string;
+}
 
 // The provider ends at the first slash; the model ID may contain more, as in openrouter/meta/llama.
 export const modelReferencePattern = '^[^/\\s]+/[^\\s]+$';
 
 const modelReference = new RegExp(modelReferencePattern);
 
-export const parseModelReference = (reference: string) => {
+export const parseModelReference = (reference: string): ModelReference | undefined => {
   if (!modelReference.test(reference)) {
     return undefined;
   }
@@ -73,7 +80,7 @@ const allowedModelsLayer = ({ source, value }: ConfigFile) => {
 };
 
 // Without allowedModels in either file, the result is undefined and any model is allowed.
-export const readAllowedModels = (location: ConfigLocation) =>
+export const readAllowedModels = (location: ConfigLocation): AllowedModels | undefined =>
   effectiveAllowedModels(readTauConfig(location).files.map(allowedModelsLayer));
 
 // Tau's config may restrict every model Tau selects.
@@ -90,7 +97,7 @@ export const requireAllowedModel = (reference: string, location: ConfigLocation)
 export const resolveAllowedModel = (
   context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'modelRegistry'>,
   reference: string,
-) => {
+): Model<Api> => {
   const parsed = parseModelReference(reference);
 
   if (!parsed) {

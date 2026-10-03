@@ -1,19 +1,31 @@
 import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 
 import { Type } from 'typebox';
+import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { Task } from './types.js';
 
+interface NativeSession {
+  header: NativeHeader;
+  identity: { device: string; inode: string; size: string; modified: string };
+}
+
+const latestSessionVersion = 3;
+const headerByteLimit = 64_000;
+const newlineByte = 0x0a;
+
 const headerSchema = Type.Object({
   type: Type.Literal('session'),
-  version: Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3)]),
+  version: Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(latestSessionVersion)]),
   id: Type.String({ minLength: 1 }),
   parentSession: Type.Optional(Type.String({ minLength: 1 })),
   cwd: Type.Optional(Type.String()),
 });
 
-const readNative = (path: string) => {
+export type NativeHeader = Static<typeof headerSchema>;
+
+const readNative = (path: string): NativeSession => {
   // Nonblocking open prevents a substituted FIFO from hanging prevalidation. Do not follow replacement symlinks.
   const descriptor = openSync(
     path,
@@ -27,10 +39,10 @@ const readNative = (path: string) => {
       throw new Error('Native session must be an existing regular file.');
     }
 
-    const buffer = Buffer.alloc(64_001);
+    const buffer = Buffer.alloc(headerByteLimit + 1);
     let length = 0;
 
-    while (length < buffer.length && buffer.subarray(0, length).indexOf(10) === -1) {
+    while (length < buffer.length && buffer.subarray(0, length).indexOf(newlineByte) === -1) {
       const count = readSync(descriptor, buffer, length, buffer.length - length, length);
 
       if (count === 0) {
@@ -40,10 +52,10 @@ const readNative = (path: string) => {
       length += count;
     }
 
-    const newline = buffer.subarray(0, length).indexOf(10);
+    const newline = buffer.subarray(0, length).indexOf(newlineByte);
     const end = newline === -1 ? length : newline;
 
-    if (end > 64_000) {
+    if (end > headerByteLimit) {
       throw new Error('Session lineage header exceeds 64 KB.');
     }
 
@@ -67,9 +79,9 @@ const readNative = (path: string) => {
   }
 };
 
-export const nativeHeader = (file: string) => readNative(file).header;
+export const nativeHeader = (file: string): NativeHeader => readNative(file).header;
 
-export const validateNative = (task: Task, origin: Task) => {
+export const validateNative = (task: Task, origin: Task): NativeSession => {
   try {
     const native = readNative(task.nativeSessionFile);
 

@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,7 +28,9 @@ it('rejects lint warnings in project checks', async ({ onTestFinished }) => {
   expect(result.stdout).toContain('eslint(no-console)');
 }, 30_000);
 
-it('enforces house style only when explicitly enabled', async ({ onTestFinished }) => {
+it('runs house style only in the style command and Tau rules in both', async ({
+  onTestFinished,
+}) => {
   const directory = await mkdtemp(join(tmpdir(), 'tau-style-'));
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
@@ -37,258 +39,33 @@ it('enforces house style only when explicitly enabled', async ({ onTestFinished 
   await writeFile(
     fixture,
     [
-      'export const MAX_RETRIES = 3;',
-      'export interface requestOptions { request_id: string }',
-      'export const cb = () => 1;',
-      'export const caller = () => helper();',
-      'const helper = () => 1;',
-      'export const normalize = (name: string) => {',
-      '  const trimmed = name.trim(); // Keep with the declaration.',
-      '  return trimmed;',
-      '};',
-      'export const width = 80, height = 24;',
-      'export const read = (value: string) => {',
-      '  let result: string;',
-      '  if ((result = value)) { return result; }',
-      "  return '';",
-      '};',
+      'export const cb = (): number => 1;',
+      '',
+      "export const missing = (error: { code?: string }): boolean => error.code === 'ENOENT';",
+      '',
     ].join('\n'),
   );
 
-  const environment = { ...process.env, TAU_LINT_STYLE: '0' };
-
   const ordinary = spawnSync('pnpm', ['lint', fixture], {
     cwd: root,
-    env: environment,
     encoding: 'utf8',
     timeout: 20_000,
   });
 
-  const style = spawnSync(process.execPath, ['scripts/runStyle.ts', fixture], {
+  const style = spawnSync('pnpm', ['style:check', fixture], {
     cwd: root,
-    env: environment,
     encoding: 'utf8',
     timeout: 20_000,
   });
 
   expect(ordinary.error).toBeUndefined();
-  expect(ordinary.status).toBe(0);
+  expect(ordinary.status).toBe(1);
+  expect(ordinary.stdout).toContain('tau(no-enoent-literal)');
+  expect(ordinary.stdout).not.toContain('seam(no-abbreviations)');
   expect(style.error).toBeUndefined();
   expect(style.status).toBe(1);
-
-  for (const rule of [
-    'naming-convention',
-    'id-denylist',
-    'helper-before-use',
-    'padding-line-between-statements',
-    'one-var',
-    'no-cond-assign',
-  ]) {
-    expect(ordinary.stdout).not.toContain(rule);
-    expect(style.stdout).toContain(rule);
-  }
-}, 60_000);
-
-it('fixes house spacing without changing comments or names', async ({ onTestFinished }) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-style-fix-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
-
-  const fixture = join(directory, 'spacing.ts');
-
-  await writeFile(
-    fixture,
-    [
-      'export const normalize = (name: string) => {',
-      '  const trimmed = name.trim(); // Keep with the declaration.',
-      '  // Keep with the guard.',
-      '  if (!trimmed) {',
-      "    return 'unknown';",
-      '  }',
-      '  return trimmed;',
-      '};',
-      'export const width = 80, height = 24;',
-    ].join('\n'),
-  );
-
-  const result = spawnSync(process.execPath, ['scripts/runStyle.ts', '--fix', fixture], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 20_000,
-  });
-
-  expect(result.error).toBeUndefined();
-  expect(result.stdout + result.stderr).not.toMatch(/\berror\b/);
-  expect(result.status).toBe(0);
-
-  expect(await readFile(fixture, 'utf8')).toBe(
-    [
-      'export const normalize = (name: string) => {',
-      '  const trimmed = name.trim(); // Keep with the declaration.',
-      '',
-      '  // Keep with the guard.',
-      '  if (!trimmed) {',
-      "    return 'unknown';",
-      '  }',
-      '',
-      '  return trimmed;',
-      '};',
-      '',
-      'export const width = 80;',
-      'export const height = 24;',
-      '',
-    ].join('\n'),
-  );
-
-  const fixed = await readFile(fixture, 'utf8');
-
-  const repeated = spawnSync(process.execPath, ['scripts/runStyle.ts', '--fix', fixture], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 20_000,
-  });
-
-  expect(repeated.error).toBeUndefined();
-  expect(repeated.status).toBe(0);
-  expect(await readFile(fixture, 'utf8')).toBe(fixed);
-
-  const manual = join(directory, 'manual.ts');
-
-  await writeFile(
-    manual,
-    'export const MAX_RETRIES=3;\nexport const caller=()=>helper();\nconst helper=()=>1;\n',
-  );
-
-  const manualResult = spawnSync(process.execPath, ['scripts/runStyle.ts', '--fix', manual], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 20_000,
-  });
-
-  expect(manualResult.error).toBeUndefined();
-  expect(manualResult.status).toBe(1);
-
-  expect(await readFile(manual, 'utf8')).toBe(
-    'export const MAX_RETRIES = 3;\nexport const caller = () => helper();\nconst helper = () => 1;\n',
-  );
-}, 60_000);
-
-it('pads loop exits and multiline statements in a form the formatter keeps', async ({
-  onTestFinished,
-}) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-style-multiline-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
-
-  const fixture = join(directory, 'multiline.ts');
-
-  await writeFile(
-    fixture,
-    [
-      'export const limit = 9;',
-      'export const options = {',
-      '  limit,',
-      '};',
-      '',
-      'export const collect = (values: number[]) => {',
-      '  const collected: number[] = [];',
-      '',
-      '  for (const value of values) {',
-      '    if (value < 0) {',
-      '      collected.push(0);',
-      '      continue;',
-      '    }',
-      '',
-      '    if (value > limit) {',
-      '      collected.push(limit);',
-      '      break;',
-      '    }',
-      '',
-      '    collected.push(value);',
-      '  }',
-      '',
-      '  collected.sort((left, right) => left - right);',
-      '  Object.assign(collected, {',
-      '    total: collected.length,',
-      '  });',
-      '  collected.reverse();',
-      '',
-      '  return collected;',
-      '};',
-      '',
-    ].join('\n'),
-  );
-
-  const check = spawnSync(process.execPath, ['scripts/runStyle.ts', fixture], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 20_000,
-  });
-
-  const diagnostics = check.stdout
-    .split('\n')
-    .filter((line) => line.includes('padding-line-between-statements'));
-
-  expect(check.error).toBeUndefined();
-  expect(check.status).toBe(1);
-  expect(diagnostics).toHaveLength(5);
-
-  const fix = spawnSync(process.execPath, ['scripts/runStyle.ts', '--fix', fixture], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 20_000,
-  });
-
-  expect(fix.error).toBeUndefined();
-  expect(fix.status).toBe(0);
-
-  expect(await readFile(fixture, 'utf8')).toBe(
-    [
-      'export const limit = 9;',
-      '',
-      'export const options = {',
-      '  limit,',
-      '};',
-      '',
-      'export const collect = (values: number[]) => {',
-      '  const collected: number[] = [];',
-      '',
-      '  for (const value of values) {',
-      '    if (value < 0) {',
-      '      collected.push(0);',
-      '',
-      '      continue;',
-      '    }',
-      '',
-      '    if (value > limit) {',
-      '      collected.push(limit);',
-      '',
-      '      break;',
-      '    }',
-      '',
-      '    collected.push(value);',
-      '  }',
-      '',
-      '  collected.sort((left, right) => left - right);',
-      '',
-      '  Object.assign(collected, {',
-      '    total: collected.length,',
-      '  });',
-      '',
-      '  collected.reverse();',
-      '',
-      '  return collected;',
-      '};',
-      '',
-    ].join('\n'),
-  );
-
-  const recheck = spawnSync(process.execPath, ['scripts/runStyle.ts', fixture], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 20_000,
-  });
-
-  expect(recheck.error).toBeUndefined();
-  expect(recheck.status).toBe(0);
+  expect(style.stdout).toContain('tau(no-enoent-literal)');
+  expect(style.stdout).toContain('seam(no-abbreviations)');
 }, 60_000);
 
 it('keeps size thresholds advisory without weakening other lint checks', async ({
@@ -302,17 +79,17 @@ it('keeps size thresholds advisory without weakening other lint checks', async (
   await writeFile(
     fixture,
     [
-      'export const sum = (first: number, second: number, third: number, fourth: number, fifth: number) => first + second + third + fourth + fifth;',
+      'export const sum = (first: number, second: number, third: number, fourth: number, fifth: number): number => first + second + third + fourth + fifth;',
       '',
-      'export const longFunction = (values: number[]) => {',
-      ...Array.from({ length: 61 }, (_, index) => `  values.push(${index});`),
+      'export const longFunction = (values: number[]): void => {',
+      ...Array.from({ length: 61 }, () => '  values.push(values.length);'),
       '};',
       '',
       ...Array.from({ length: 501 }, (_, index) => `export const value${index} = ${index};`),
     ].join('\n'),
   );
 
-  const result = spawnSync(process.execPath, ['scripts/runStyle.ts', fixture], {
+  const result = spawnSync('pnpm', ['style:check', fixture], {
     cwd: root,
     encoding: 'utf8',
     timeout: 20_000,

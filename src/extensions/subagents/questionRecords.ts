@@ -13,6 +13,8 @@ import {
 } from './types.js';
 import type { Acknowledgement, Question, Reply } from './types.js';
 
+const questionByteLimit = 64_000;
+
 const questionRecordName = (
   questionId: string,
   kind: 'question' | 'reply' | 'acknowledgement',
@@ -36,7 +38,7 @@ const publishQuestionRecord = (
   name: string,
   value: Question | Reply | Acknowledgement,
 ): void => {
-  if (Buffer.byteLength(JSON.stringify(value)) > 64_000) {
+  if (Buffer.byteLength(JSON.stringify(value)) > questionByteLimit) {
     throw new Error('Question record exceeds 64 KB.');
   }
 
@@ -66,7 +68,7 @@ const publishQuestionRecord = (
 const questionMatchesIdentity = (question: Question, taskId: string, questionId: string): boolean =>
   question.taskId === taskId &&
   question.questionId === questionId &&
-  Buffer.byteLength(JSON.stringify(question)) <= 64_000;
+  Buffer.byteLength(JSON.stringify(question)) <= questionByteLimit;
 
 const savedQuestion = (
   directory: string,
@@ -102,7 +104,7 @@ export const validateQuestion = (value: unknown, taskId: string): Question => {
     throw new Error('Invalid or wrong-task question.');
   }
 
-  if (Buffer.byteLength(JSON.stringify(value)) > 64_000) {
+  if (Buffer.byteLength(JSON.stringify(value)) > questionByteLimit) {
     throw new Error('Question record exceeds 64 KB.');
   }
 
@@ -123,7 +125,7 @@ export const acceptQuestion = (directory: string, taskId: string, value: unknown
 const replyMatchesIdentity = (reply: Reply, taskId: string, questionId: string): boolean =>
   reply.taskId === taskId &&
   reply.questionId === questionId &&
-  Buffer.byteLength(JSON.stringify(reply)) <= 64_000;
+  Buffer.byteLength(JSON.stringify(reply)) <= questionByteLimit;
 
 const savedReply = (directory: string, taskId: string, questionId: string): Reply | undefined => {
   const name = questionRecordName(questionId, 'reply');

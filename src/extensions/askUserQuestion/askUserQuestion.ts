@@ -125,7 +125,7 @@ const responseText = (result: DialogResult | undefined) => {
   return `User has answered your questions: ${segments} You can now continue with the user's answers in mind.`;
 };
 
-export default function askUserQuestionExtension(pi: ExtensionAPI) {
+export default function askUserQuestionExtension(pi: ExtensionAPI): void {
   appendToolGuidelines(pi, 'ask_user_question', promptGuidelines);
 
   pi.registerTool({
@@ -136,7 +136,6 @@ export default function askUserQuestionExtension(pi: ExtensionAPI) {
       'Ask the user up to 4 structured questions (2-4 options each) when requirements are ambiguous',
     parameters: questionParams,
 
-    // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, params, _signal, _onUpdate, context) {
       // `hasUI` is also true in RPC mode, where `ui.custom` resolves without running a component.
       if (context.mode !== 'tui') {

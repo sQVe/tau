@@ -65,11 +65,16 @@ export interface EventDetails {
 }
 
 const recordByteLimit = 128_000;
+const reportByteLimit = 64_000;
+const checkoutHashLength = 8;
+const ownerReadWriteMode = 0o600;
+// Node timers overflow above a signed 32-bit millisecond count.
+const maximumTimerDelay = 2_147_483_647;
 
 // Each Tau checkout keeps its own records, so a branch that changes the record format never
 // breaks another checkout. This module sits three directories below the package root.
 const checkoutRoot = realpathSync(fileURLToPath(new URL('../../../', import.meta.url)));
-const checkoutFolder = `${basename(checkoutRoot)}-${createHash('sha256').update(checkoutRoot).digest('hex').slice(0, 8)}`;
+const checkoutFolder = `${basename(checkoutRoot)}-${createHash('sha256').update(checkoutRoot).digest('hex').slice(0, checkoutHashLength)}`;
 
 export const workerRecordsDirectory = (): string =>
   join(getAgentDir(), 'tau', checkoutFolder, 'workers');
@@ -88,7 +93,7 @@ const serializeRecord = (value: unknown): string => {
 export const publish = (directory: string, name: string, value: unknown): void => {
   const serialized = serializeRecord(value);
   const temporary = join(directory, `.receipt-${randomUUID()}`);
-  const descriptor = openSync(temporary, 'wx', 0o600);
+  const descriptor = openSync(temporary, 'wx', ownerReadWriteMode);
 
   try {
     writeFileSync(descriptor, serialized);
@@ -187,7 +192,7 @@ export const validateTask = (value: unknown): Task => {
 
   if (
     value.deadline <= value.createdAt + value.cancellationBudget ||
-    value.deadline - value.createdAt > 2_147_483_647
+    value.deadline - value.createdAt > maximumTimerDelay
   ) {
     throw new Error('Invalid fixed worker deadline.');
   }
@@ -234,6 +239,7 @@ const hasGenericLoadout = (value: unknown): boolean =>
 // malformed.
 const isNonPiTask = (value: unknown): boolean => {
   const version = savedVersion(value);
+  // eslint-disable-next-line eslint/no-magic-numbers -- Saved record versions are fixed values.
   const retiredVersion = version === 2 || version === 3;
 
   return retiredVersion && hasGenericLoadout(value);
@@ -586,7 +592,7 @@ export const readTasks = (
 const validReport = (value: unknown, taskId: string): value is Report =>
   Value.Check(reportSchema, value) &&
   value.taskId === taskId &&
-  Buffer.byteLength(JSON.stringify(value)) <= 64_000;
+  Buffer.byteLength(JSON.stringify(value)) <= reportByteLimit;
 
 export const acceptReport = (directory: string, taskId: string, value: unknown): Report => {
   if (!validReport(value, taskId)) {

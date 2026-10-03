@@ -7,10 +7,19 @@ import {
   SettingsManager,
   createAgentSession,
 } from '@earendil-works/pi-coding-agent';
-import type { SessionStartEvent } from '@earendil-works/pi-coding-agent';
+import type {
+  AgentSession,
+  LoadExtensionsResult,
+  SessionStartEvent,
+} from '@earendil-works/pi-coding-agent';
 import type { TestContext } from 'vitest';
 
 type LoaderOptions = ConstructorParameters<typeof DefaultResourceLoader>[0];
+
+interface PiSession {
+  session: AgentSession;
+  extensionsResult: LoadExtensionsResult;
+}
 
 interface PiSessionOptions {
   cwd: string;
@@ -31,7 +40,7 @@ interface PiSessionOptions {
 export const createPiSession = async (
   registerCleanup: TestContext['onTestFinished'],
   options: PiSessionOptions,
-) => {
+): Promise<PiSession> => {
   const { cwd, agentDirectory, providers } = options;
 
   const settingsManager = SettingsManager.inMemory(
@@ -93,7 +102,7 @@ export const createBoundSession = async (
   registerCleanup: TestContext['onTestFinished'],
   options: PiSessionOptions,
   bindOptions: BindOptions = {},
-) => {
+): Promise<PiSession> => {
   const created = await createPiSession(registerCleanup, options);
 
   if (created.extensionsResult.errors.length > 0) {

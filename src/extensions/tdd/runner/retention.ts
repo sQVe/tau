@@ -8,7 +8,10 @@ import { isMissingFile } from '../../../errors.js';
 import type { RunDiagnostics } from './types.js';
 
 export const maximumRetainedRuns = 32;
-const retentionMilliseconds = 7 * 24 * 60 * 60 * 1000;
+const retentionDays = 7;
+const millisecondsPerDay = 86_400_000;
+const retentionMilliseconds = retentionDays * millisecondsPerDay;
+const sharedPermissionBits = 0o077;
 
 const diagnosticsRoot = () => join(getAgentDir(), 'test-runs');
 const runDirectoryName = /^run-[a-zA-Z0-9]{6}$/;
@@ -34,7 +37,7 @@ const isPrivateDirectory = (metadata: Stats): boolean => {
     return true;
   }
 
-  return metadata.uid === process.getuid() && (metadata.mode & 0o077) === 0;
+  return metadata.uid === process.getuid() && (metadata.mode & sharedPermissionBits) === 0;
 };
 
 export const createDiagnosticsDirectory = async (): Promise<string> => {

@@ -10,7 +10,7 @@ type ContextMessage = ReturnType<typeof sessionEntryToContextMessages>[number];
  * session_start, and a replacement editor does not copy it. On startup and
  * tree navigation Pi fills the installed editor itself.
  */
-export const refillsHistory = (reason: SessionStartEvent['reason']) =>
+export const refillsHistory = (reason: SessionStartEvent['reason']): boolean =>
   reason === 'resume' || reason === 'fork' || reason === 'reload';
 
 const userText = (message: ContextMessage) => {

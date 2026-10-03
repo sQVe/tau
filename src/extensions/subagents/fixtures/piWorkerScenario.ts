@@ -39,7 +39,7 @@ export const canRunPiWorker = toolAvailable('herdr') && toolAvailable('pi');
 
 export const piWorkerTimeout = 40_000;
 
-export const runPiWorkerScenario = async (scenario: PiWorkerScenario) => {
+export const runPiWorkerScenario = async (scenario: PiWorkerScenario): Promise<void> => {
   const { root, environment, client: isolatedClient } = await isolatedHerdr();
   const answered = ['question completion', 'question restart'].includes(scenario);
   const completes = answered || ['completion', 'follow-up'].includes(scenario);

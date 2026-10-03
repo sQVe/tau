@@ -146,7 +146,11 @@ const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 // A follow-up names its predecessor's session file, and older records keep it beside the task
 // record. Records copied from another agent directory keep stale absolute paths, so compare the
 // file name, which is the unique native session ID.
-export const ownsSession = (task: WorkerTask, taskDirectory: string, sessionPath: string) => {
+export const ownsSession = (
+  task: WorkerTask,
+  taskDirectory: string,
+  sessionPath: string,
+): boolean => {
   const named =
     task.sessionFile !== undefined && fileName(task.sessionFile) === fileName(sessionPath);
 
@@ -535,7 +539,7 @@ const toolTable = (report: TokenUsageReport) => {
   return table(['side', 'tool', 'results', 'characters'], rows);
 };
 
-export const formatTokenUsageReport = (report: TokenUsageReport, top: number) => {
+export const formatTokenUsageReport = (report: TokenUsageReport, top: number): string => {
   const since = new Date(report.window.since).toISOString();
   const until = new Date(report.window.until).toISOString();
 

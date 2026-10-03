@@ -71,7 +71,7 @@ const gitLocation = (url: string): { host: string; path: string } | undefined =>
 const gitIdentity = (source: string): string | undefined => {
   const trimmed = source.trim();
   const prefixed = trimmed.startsWith('git:');
-  const url = (prefixed ? trimmed.slice(4) : trimmed).trim().split('#')[0] ?? '';
+  const url = (prefixed ? trimmed.slice('git:'.length) : trimmed).trim().split('#')[0] ?? '';
 
   if (!prefixed && !/^(?:https?|ssh|git):\/\//i.test(url)) {
     return undefined;
@@ -98,7 +98,7 @@ const gitIdentity = (source: string): string | undefined => {
 const packageIdentity = (source: string): string => {
   // Pi reads ` npm:name` with a leading space as a path, not an npm package.
   if (source.startsWith('npm:')) {
-    return `npm:${npmName(source.slice(4).trim())}`;
+    return `npm:${npmName(source.slice('npm:'.length).trim())}`;
   }
 
   const trimmed = source.trim();

@@ -6,7 +6,7 @@ export const requireRegisteredTools = (
   pi: ExtensionAPI,
   packageName: string,
   requiredToolNames: readonly string[],
-) => {
+): void => {
   // A worker registers only its profile's tools and checks those itself.
   if (isWorkerProcess()) {
     return;

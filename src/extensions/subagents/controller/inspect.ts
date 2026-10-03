@@ -30,6 +30,8 @@ export type HerdrClient = (
 
 const agentSessionSchema = Type.Object({ value: Type.String({ minLength: 1 }) });
 
+const pollInterval = 250;
+
 const missingPiIntegrationMessage =
   "herdr reported no Pi agent session. herdr's Pi integration must be loaded in Pi; install it with `herdr integration install pi`.";
 
@@ -354,7 +356,7 @@ export const waitForPiIdentity = async (
         const remaining = cleanup ? cleanup.remainingBudget() : workBudget(handle);
 
         // oxlint-disable-next-line eslint/no-await-in-loop -- Session discovery uses the existing work or cleanup deadline.
-        await delay(Math.min(250, remaining), undefined, {
+        await delay(Math.min(pollInterval, remaining), undefined, {
           signal: cleanup?.signal ?? handle.abort.signal,
         });
       } catch {
@@ -403,6 +405,8 @@ export const waitForWorkerReadiness = async (
     await inspectWorker(handle, call);
 
     // oxlint-disable-next-line eslint/no-await-in-loop -- Readiness remains inside the original deadline and cancellation signal.
-    await delay(Math.min(250, workBudget(handle)), undefined, { signal: handle.abort.signal });
+    await delay(Math.min(pollInterval, workBudget(handle)), undefined, {
+      signal: handle.abort.signal,
+    });
   }
 };

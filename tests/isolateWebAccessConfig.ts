@@ -6,7 +6,7 @@
 export const isolateWebAccessConfig = (
   agentDirectory: string,
   registerCleanup: (restore: () => void) => void,
-) => {
+): void => {
   const previousAgentDirectory = process.env.PI_CODING_AGENT_DIR;
 
   process.env.PI_CODING_AGENT_DIR = agentDirectory;

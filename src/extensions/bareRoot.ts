@@ -15,7 +15,7 @@ const isBareRoot = async (cwd: string) => {
   return output?.trim() === 'true';
 };
 
-export default function bareRootExtension(pi: ExtensionAPI) {
+export default function bareRootExtension(pi: ExtensionAPI): void {
   let bareRoot = false;
 
   pi.on('session_start', async (_event, context) => {

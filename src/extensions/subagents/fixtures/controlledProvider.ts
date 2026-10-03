@@ -27,7 +27,8 @@ export const fixtureModel = provider.getModel();
 export const fixtureAuth = {
   apiKey: {
     name: 'Fixture',
-    resolve: () => Promise.resolve({ auth: { apiKey: 'fixture-key-not-a-secret' } }),
+    resolve: (): Promise<{ auth: { apiKey: string } }> =>
+      Promise.resolve({ auth: { apiKey: 'fixture-key-not-a-secret' } }),
   },
 };
 
@@ -137,7 +138,7 @@ const registerDefaultProvider = (pi: ExtensionAPI): void => {
   pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
 };
 
-export default function controlledProvider(pi: ExtensionAPI) {
+export default function controlledProvider(pi: ExtensionAPI): void {
   if (savedTask?.predecessorTaskId != null) {
     registerFollowUpProvider(pi);
 

@@ -95,6 +95,10 @@ const findLaunchedTerminal = async (request: StopPiWorkerRequest): Promise<strin
   return found.terminalId;
 };
 
+const emptyPlacementStep = (): Promise<void> => Promise.resolve();
+const gracePeriod = 1000;
+const pollInterval = 25;
+
 // A cancelled launch can stop after herdr started Pi but before Tau read the pane's terminal.
 // `exited` means herdr already removed the launched pane, which it does only after Pi exits.
 const launchedTerminal = async (
@@ -104,7 +108,7 @@ const launchedTerminal = async (
 
   // Placement is serialized, so this empty step runs after an in-flight launch records its pane.
   if (handle.identity.terminalId === undefined && !handle.startup.neverStarted) {
-    await placement.close(() => Promise.resolve(), signal).catch(() => undefined);
+    await placement.close(emptyPlacementStep, signal).catch(() => undefined);
   }
 
   const paneId = handle.identity.paneId;
@@ -225,7 +229,7 @@ export const stopPiWorker = async (
     };
   }
 
-  const graceEnds = performance.now() + (request.graceful ? 1000 : 0);
+  const graceEnds = performance.now() + (request.graceful ? gracePeriod : 0);
   const progress = { terminalId, graceEnds, closed: false };
 
   try {
@@ -238,7 +242,7 @@ export const stopPiWorker = async (
       }
 
       // oxlint-disable-next-line eslint/no-await-in-loop -- Poll within the cleanup budget.
-      await delay(Math.min(25, remainingBudget()), undefined, { signal });
+      await delay(Math.min(pollInterval, remainingBudget()), undefined, { signal });
     }
   } catch (error) {
     return {

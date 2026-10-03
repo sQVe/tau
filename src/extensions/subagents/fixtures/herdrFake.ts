@@ -1,6 +1,7 @@
 import type { HerdrClient } from '../controller/inspect.js';
 import { requireObject, result, text } from '../terminal.js';
 import { placementFixture } from './placement.js';
+import type { PlacementFixture } from './placement.js';
 
 interface ProcessSnapshot {
   paneId: string | undefined;
@@ -9,8 +10,20 @@ interface ProcessSnapshot {
   argv: string[];
 }
 
+interface HerdrFake {
+  client: HerdrClient;
+  state: { stopped: boolean; session: string; process: number };
+  calls: string[][];
+  layout: PlacementFixture;
+}
+
 // Response shapes were checked against herdr 0.9.1.
-export const processInfoResponse = ({ paneId, shellPid, processId, argv }: ProcessSnapshot) =>
+export const processInfoResponse = ({
+  paneId,
+  shellPid,
+  processId,
+  argv,
+}: ProcessSnapshot): string =>
   JSON.stringify({
     result: {
       process_info: {
@@ -22,10 +35,10 @@ export const processInfoResponse = ({ paneId, shellPid, processId, argv }: Proce
     },
   });
 
-export const agentResponse = (agent: Record<string, unknown>) =>
+export const agentResponse = (agent: Record<string, unknown>): string =>
   JSON.stringify({ result: { agent } });
 
-export const paneListResponse = (panes: Record<string, string>[]) =>
+export const paneListResponse = (panes: Record<string, string>[]): string =>
   JSON.stringify({ result: { panes } });
 
 const paneArgument = (argumentsList: string[]) =>
@@ -40,7 +53,7 @@ const herdrError = (message: string, code: string) =>
  */
 // Every worker pane shares one worker state. Keep state per pane when a test needs two
 // workers that differ.
-export const herdrFake = (width = 200, height = 60) => {
+export const herdrFake = (width = 200, height = 60): HerdrFake => {
   const layout = placementFixture(width, height);
 
   const state = {

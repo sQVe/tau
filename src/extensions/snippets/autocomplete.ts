@@ -24,7 +24,7 @@ const endsQuery = (lines: string[], cursorLine: number, cursorCol: number) => {
 const itemValue = (snippet: Snippet) => `#${snippet.id}`;
 
 /** The snippet that a snippet list item inserts, or `undefined` for other items. */
-export const snippetForItem = (snippets: Snippet[], item: AutocompleteItem) =>
+export const snippetForItem = (snippets: Snippet[], item: AutocompleteItem): Snippet | undefined =>
   snippets.find((candidate) => itemValue(candidate) === item.value);
 
 const suggestionFor = (snippet: Snippet): AutocompleteItem => ({

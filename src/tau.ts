@@ -20,7 +20,7 @@ import writingExtension from './extensions/writing.js';
 
 const skillsDirectory = fileURLToPath(new URL('./skills/', import.meta.url));
 
-export default async function tauExtension(pi: ExtensionAPI) {
+export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   await writingExtension(pi);
   await codingExtension(pi);
   await workflowExtension(pi);

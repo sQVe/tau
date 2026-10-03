@@ -12,6 +12,7 @@ import {
 } from '@earendil-works/pi-tui';
 import type { Component, TUI } from '@earendil-works/pi-tui';
 
+import { boxFrameWidth } from '../../box.js';
 import { isBottom, isDown, isTop, isUp } from '../../keys.js';
 import { stateLabel } from './presentation.js';
 import { deadlineStates } from './render.js';
@@ -82,27 +83,15 @@ const rowSearchText = (row: WorkerWidgetRow): string =>
     .join(' ')
     .toLocaleLowerCase();
 
-const groupPriority = (row: WorkerWidgetRow): number => {
-  const group = rowGroup(row);
-
-  if (group === 'STATUS UNKNOWN') {
-    return 0;
-  }
-
-  if (group === 'CLEANUP UNCONFIRMED') {
-    return 1;
-  }
-
-  if (group === 'WAITING FOR REPLY') {
-    return 2;
-  }
-
-  if (group === 'LIVE') {
-    return 3;
-  }
-
-  return 4;
+const groupPriorities: Record<ReturnType<typeof rowGroup>, number> = {
+  'STATUS UNKNOWN': 0,
+  'CLEANUP UNCONFIRMED': 1,
+  'WAITING FOR REPLY': 2,
+  LIVE: 3,
+  STOPPED: 4,
 };
+
+const groupPriority = (row: WorkerWidgetRow): number => groupPriorities[rowGroup(row)];
 
 const sortedHistory = (rows: WorkerWidgetRow[]): WorkerWidgetRow[] =>
   rows.toSorted((left, right) => {
@@ -110,6 +99,16 @@ const sortedHistory = (rows: WorkerWidgetRow[]): WorkerWidgetRow[] =>
 
     return groupDifference || right.createdAt - left.createdAt;
   });
+
+// Columns shrink to these widths before any column goes lower.
+const historyColumnWidths = { time: 6, name: 4, state: 8, label: 4 };
+const maximumTimeWidth = 16;
+// One gap between each of the seven columns; hiding the model removes one.
+const gapsWithModel = 6;
+const minimumDetailLabelWidth = 7;
+const maximumBodyRows = 22;
+// Terminal rows kept outside the overlay body.
+const overlayChromeRows = 7;
 
 const truncateName = (row: WorkerWidgetRow, width: number): string =>
   truncateWorkerName(row.name, width);
@@ -139,7 +138,7 @@ const historyTime = (row: WorkerWidgetRow, now: number): string => {
 // Keep per-column truncation and alignment together for each history row. The task label sits
 // next to the state, the elapsed column is gone because the right time already answers the same
 // question, and the model is the first column to go when the list is too narrow.
-// eslint-disable-next-line eslint/complexity
+// eslint-disable-next-line eslint/complexity -- Per-column truncation and alignment stay together for each row.
 const renderHistoryRow = (
   row: WorkerWidgetRow,
   allRows: WorkerWidgetRow[],
@@ -152,21 +151,36 @@ const renderHistoryRow = (
   const glyphWidth = 1;
 
   const timeWidth = Math.min(
-    16,
-    Math.max(6, ...allRows.map((item) => visibleWidth(historyTime(item, now)))),
+    maximumTimeWidth,
+    Math.max(
+      historyColumnWidths.time,
+      ...allRows.map((item) => visibleWidth(historyTime(item, now))),
+    ),
   );
 
-  const nameWidth = Math.max(4, ...allRows.map((item) => visibleWidth(item.name)));
-  const stateWidth = Math.max(8, ...allRows.map((item) => visibleWidth(rowState(item))));
-  const labelWidth = Math.max(4, ...allRows.map((item) => visibleWidth(shortTaskLabel(item))));
+  const nameWidth = Math.max(
+    historyColumnWidths.name,
+    ...allRows.map((item) => visibleWidth(item.name)),
+  );
+
+  const stateWidth = Math.max(
+    historyColumnWidths.state,
+    ...allRows.map((item) => visibleWidth(rowState(item))),
+  );
+
+  const labelWidth = Math.max(
+    historyColumnWidths.label,
+    ...allRows.map((item) => visibleWidth(shortTaskLabel(item))),
+  );
+
   const modelWidth = Math.max(1, ...allRows.map((item) => visibleWidth(workerModelLabel(item))));
-  const innerWidth = Math.max(0, width - 4);
+  const innerWidth = Math.max(0, width - boxFrameWidth);
   let showModel = true;
   let shownNameWidth = nameWidth;
   let shownStateWidth = stateWidth;
   let shownLabelWidth = labelWidth;
   let shownTimeWidth = timeWidth;
-  const gaps = (): number => (showModel ? 6 : 5);
+  const gaps = (): number => (showModel ? gapsWithModel : gapsWithModel - 1);
 
   const used = (): number =>
     markerWidth +
@@ -182,15 +196,15 @@ const renderHistoryRow = (
     showModel = false;
   }
 
-  while (used() > innerWidth && shownStateWidth > 8) {
+  while (used() > innerWidth && shownStateWidth > historyColumnWidths.state) {
     shownStateWidth -= 1;
   }
 
-  while (used() > innerWidth && shownNameWidth > 4) {
+  while (used() > innerWidth && shownNameWidth > historyColumnWidths.name) {
     shownNameWidth -= 1;
   }
 
-  while (used() > innerWidth && shownLabelWidth > 4) {
+  while (used() > innerWidth && shownLabelWidth > historyColumnWidths.label) {
     shownLabelWidth -= 1;
   }
 
@@ -279,8 +293,12 @@ const wrapDetailValue = (value: string, contentWidth: number): string[] => {
 };
 
 const formatDetailFields = (fields: [string, string][], width: number): string[] => {
-  const labelWidth = Math.max(7, ...fields.map(([name]) => visibleWidth(name)));
-  const contentWidth = Math.max(1, width - 4 - labelWidth - 2);
+  const labelWidth = Math.max(
+    minimumDetailLabelWidth,
+    ...fields.map(([name]) => visibleWidth(name)),
+  );
+
+  const contentWidth = Math.max(1, width - boxFrameWidth - labelWidth - 2);
   const lines: string[] = [];
 
   for (const [name, rawValue] of fields) {
@@ -290,7 +308,7 @@ const formatDetailFields = (fields: [string, string][], width: number): string[]
       const fieldLabel = index === 0 ? name : '';
       const content = `${fieldLabel.padEnd(labelWidth)}  ${line}`;
 
-      lines.push(truncateToWidth(content, width - 4, '…'));
+      lines.push(truncateToWidth(content, width - boxFrameWidth, '…'));
     });
   }
 
@@ -299,8 +317,8 @@ const formatDetailFields = (fields: [string, string][], width: number): string[]
 
 // The full task prompt stays in its own on-demand section so it cannot bury the key facts.
 const promptLines = (row: WorkerWidgetRow, width: number): string[] => {
-  const labelWidth = Math.max(7, visibleWidth('Full prompt'));
-  const contentWidth = Math.max(1, width - 4 - labelWidth - 2);
+  const labelWidth = Math.max(minimumDetailLabelWidth, visibleWidth('Full prompt'));
+  const contentWidth = Math.max(1, width - boxFrameWidth - labelWidth - 2);
   const indent = ' '.repeat(labelWidth + 2);
   const paragraphs = safeMultilineText(row.task ?? '(task text not recorded)').split('\n');
   const lines = ['', 'Full task prompt'];
@@ -317,11 +335,11 @@ const promptLines = (row: WorkerWidgetRow, width: number): string[] => {
     }
   }
 
-  return lines.map((line) => truncateToWidth(line, width - 4, '…'));
+  return lines.map((line) => truncateToWidth(line, width - boxFrameWidth, '…'));
 };
 
 // Key facts come first so a long task prompt never buries the state, model, or recovery fields.
-// eslint-disable-next-line eslint/complexity
+// eslint-disable-next-line eslint/complexity -- Each optional report field adds one branch in display order.
 const reportLines = (row: WorkerWidgetRow, width: number): string[] => {
   const fields: [string, string][] = [];
   const now = Date.now();
@@ -599,7 +617,7 @@ export class WorkerHistoryView implements Component {
     this.tui.requestRender();
   }
 
-  // eslint-disable-next-line eslint/complexity
+  // eslint-disable-next-line eslint/complexity -- Each key binding is one branch of the same dispatch.
   private handleDetailInput(data: string): void {
     const halfPage = Math.max(1, Math.floor(this.viewportHeight / 2));
 
@@ -676,11 +694,10 @@ export class WorkerHistoryView implements Component {
     this.filterInput.invalidate();
   }
 
-  // Keep rendering phases together so selection, list geometry, and modal boundaries stay in sync.
-  // eslint-disable-next-line eslint/complexity
+  // eslint-disable-next-line eslint/complexity -- Selection, list geometry, and modal bounds render together to stay in sync.
   render(width: number): string[] {
     const boxWidth = width;
-    const innerWidth = Math.max(1, boxWidth - 4);
+    const innerWidth = Math.max(1, boxWidth - boxFrameWidth);
     const rows = this.filteredRows();
     const selected = rows[this.selectedIndex];
 
@@ -698,7 +715,11 @@ export class WorkerHistoryView implements Component {
       ? '↑↓ ctrl+d/u scroll · p prompt · [ ] · i · esc'
       : '↑↓ j/k move · enter open · / filter · esc close';
 
-    const visibleHeight = Math.max(2, Math.min(22, this.tui.terminal.rows - 7));
+    const visibleHeight = Math.max(
+      2,
+      Math.min(maximumBodyRows, this.tui.terminal.rows - overlayChromeRows),
+    );
+
     const bodyHeight = visibleHeight - Number(!this.detail && this.filterMode);
 
     this.viewportHeight = bodyHeight;
@@ -777,7 +798,9 @@ export class WorkerHistoryView implements Component {
           addedLines.push(this.theme.fg('muted', group));
         }
 
-        addedLines.push(renderHistoryRow(row, rows, width + 4, row === selected, now, this.theme));
+        addedLines.push(
+          renderHistoryRow(row, rows, width + boxFrameWidth, row === selected, now, this.theme),
+        );
 
         if (rendered.length + addedLines.length > visibleHeight) {
           break;
@@ -811,7 +834,7 @@ export class WorkerHistoryView implements Component {
   }
 
   private boxLine(content: string, width: number): string {
-    const inside = Math.max(0, width - 4);
+    const inside = Math.max(0, width - boxFrameWidth);
     const fitted = truncateToWidth(content, inside, '…');
     const padding = Math.max(0, inside - visibleWidth(fitted));
 

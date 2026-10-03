@@ -476,7 +476,7 @@ it('renames a joined tab through its own label call, not the launch call', async
 
   const hangingRename = async (argumentsList: string[]) => {
     if (argumentsList[0] === 'tab' && argumentsList[1] === 'rename') {
-      return new Promise<string>(() => undefined);
+      return new Promise<string>(() => {});
     }
 
     return client(argumentsList);

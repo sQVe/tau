@@ -4,8 +4,21 @@ import { isAbsolute, resolve } from 'node:path';
 import { isMissingFile } from '../../errors.js';
 import { continuationOrigins } from './continuations.js';
 import { nativeHeader } from './native.js';
+import type { NativeHeader } from './native.js';
 import { readTasks } from './records.js';
 import type { Task } from './types.js';
+
+export interface LineageNode {
+  file: string;
+  header: NativeHeader;
+}
+
+interface HistoryRegistry {
+  saved: { directory: string; task: Task }[];
+  origins: Map<string, Task>;
+  tasks: Map<string, Task>;
+  diagnostics: string[];
+}
 
 export const canonical = (path: string): string => {
   if (!isAbsolute(path)) {
@@ -23,7 +36,9 @@ export const canonical = (path: string): string => {
   }
 };
 
-const readNode = (file: string) => {
+const maximumAncestry = 1024;
+
+const readNode = (file: string): LineageNode => {
   try {
     return { file, header: nativeHeader(file) };
   } catch (error) {
@@ -31,15 +46,15 @@ const readNode = (file: string) => {
   }
 };
 
-export const lineage = (file: string, expectedId?: string) => {
-  const nodes = [];
+export const lineage = (file: string, expectedId?: string): LineageNode[] => {
+  const nodes: LineageNode[] = [];
   const seen = new Set<string>();
   let next: string | undefined = file;
 
   while (next != null && next !== '') {
     const path = canonical(next);
 
-    if (seen.has(path) || seen.size >= 1024) {
+    if (seen.has(path) || seen.size >= maximumAncestry) {
       throw new Error('Cyclic or excessive session ancestry.');
     }
 
@@ -57,8 +72,6 @@ export const lineage = (file: string, expectedId?: string) => {
   return nodes;
 };
 
-export type LineageNode = ReturnType<typeof readNode>;
-
 export const sameRoot = (left: LineageNode | undefined, right: LineageNode): boolean => {
   if (!left) {
     return false;
@@ -67,7 +80,7 @@ export const sameRoot = (left: LineageNode | undefined, right: LineageNode): boo
   return left.file === right.file && left.header.id === right.header.id;
 };
 
-export const historyRegistry = (root: string) => {
+export const historyRegistry = (root: string): HistoryRegistry => {
   const scanDiagnostics: string[] = [];
   const entries = readTasks(root, scanDiagnostics);
   const { origins, diagnostics } = continuationOrigins(entries);

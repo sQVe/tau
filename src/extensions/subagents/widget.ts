@@ -1,7 +1,7 @@
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { stripTerminalSequences, truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 
-import { boxLine, topBorder } from '../../box.js';
+import { boxFrameWidth, boxLine, topBorder } from '../../box.js';
 import { stateLabel } from './presentation.js';
 import { workerNamePattern } from './types.js';
 import type { WorkerState } from './types.js';
@@ -48,10 +48,14 @@ export const safeMultilineText = (value: string): string =>
     .replace(/\t/gu, '  ')
     .replace(/[^\n\P{Cc}]/gu, ' ');
 
+const millisecondsPerSecond = 1000;
+const secondsPerMinute = 60;
+const millisecondsPerMinute = 60_000;
+
 const duration = (milliseconds: number): string => {
-  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
+  const seconds = Math.max(0, Math.floor(milliseconds / millisecondsPerSecond));
+  const minutes = Math.floor(seconds / secondsPerMinute);
+  const remainingSeconds = seconds % secondsPerMinute;
 
   return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
 };
@@ -81,43 +85,35 @@ export const workerGroup = (row: WorkerWidgetRow): WorkerGroup => {
   return 'active';
 };
 
-const workerRowPriority = (row: WorkerWidgetRow): number => {
-  const group = workerGroup(row);
-
-  if (group === 'stopped') {
-    return 3;
-  }
-
-  if (group === 'unresolved') {
-    return 0;
-  }
-
-  if (group === 'waiting') {
-    return 1;
-  }
-
-  return 2;
+const groupPriority: Record<WorkerGroup, number> = {
+  unresolved: 0,
+  waiting: 1,
+  active: 2,
+  stopped: 3,
 };
 
-const widgetDisplayPriority = (row: WorkerWidgetRow): number => {
-  const priority = workerRowPriority(row);
+const workerRowPriority = (row: WorkerWidgetRow): number => groupPriority[workerGroup(row)];
 
-  if (priority === 2) {
-    return 0;
-  }
-
-  if (priority === 1) {
-    return 1;
-  }
-
-  return 2;
+const widgetGroupPriority: Record<WorkerGroup, number> = {
+  active: 0,
+  waiting: 1,
+  unresolved: 2,
+  stopped: 2,
 };
+
+const widgetDisplayPriority = (row: WorkerWidgetRow): number =>
+  widgetGroupPriority[workerGroup(row)];
 
 const stateText = (row: WorkerWidgetRow): string =>
   row.state === 'unknown' ? 'status unavailable' : stateLabel(row.state, row.outcome).text;
 
+// A worker name ends with a dash and two suffix characters.
+const workerNameSuffixLength = 3;
+
 export const truncateWorkerName = (name: string, width: number): string => {
-  const suffix = new RegExp(workerNamePattern).test(name) ? name.slice(-3) : undefined;
+  const suffix = new RegExp(workerNamePattern).test(name)
+    ? name.slice(-workerNameSuffixLength)
+    : undefined;
 
   if (suffix == null || visibleWidth(name) <= width || width <= visibleWidth(suffix)) {
     return truncateToWidth(name, width);
@@ -159,9 +155,10 @@ export const workerElapsed = (row: WorkerWidgetRow, now: number): string => {
 };
 
 export const compactDuration = (milliseconds: number): string => {
-  const minutes = Math.floor(Math.max(0, milliseconds) / 60_000);
+  const minutes = Math.floor(Math.max(0, milliseconds) / millisecondsPerMinute);
+  const seconds = Math.ceil(Math.max(0, milliseconds) / millisecondsPerSecond);
 
-  return minutes > 0 ? `${minutes}m` : `${Math.ceil(Math.max(0, milliseconds) / 1000)}s`;
+  return minutes > 0 ? `${minutes}m` : `${seconds}s`;
 };
 
 export const workerRightTime = (row: WorkerWidgetRow, now: number): string => {
@@ -183,14 +180,15 @@ export const workerRightTime = (row: WorkerWidgetRow, now: number): string => {
   const remainingMilliseconds = row.deadline - now;
 
   const remainingTime =
-    remainingMilliseconds < 60_000
+    remainingMilliseconds < millisecondsPerMinute
       ? compactDuration(remainingMilliseconds)
-      : `${Math.ceil(remainingMilliseconds / 60_000)}m`;
+      : `${Math.ceil(remainingMilliseconds / millisecondsPerMinute)}m`;
 
   return `${remainingTime} left`;
 };
 
 const maxTaskLabelLength = 80;
+const maximumLiveRows = 4;
 
 // Older records have no saved label, so derive a stable human label from the task text.
 const shortTaskLabelFromText = (text: string): string => {
@@ -258,19 +256,34 @@ const statusText = (row: WorkerWidgetRow, now: number): string => {
   return `${status} ${elapsed}`;
 };
 
+// A narrow widget shrinks every column to its readable width before any column goes below it.
+const minimumColumnWidths = { name: 4, status: 6, task: 4 };
+const readableColumnWidths = { name: 4, status: 14, task: 12 };
+
 // Column removal and shrinking must use the same total-width calculation. The model column is
 // dropped first because the full model stays reachable in the details view.
-// eslint-disable-next-line eslint/complexity
 const alignedColumns = (rows: WorkerWidgetRow[], availableWidth: number, now: number) => {
   // Name and status stay adjacent so the row reads as one fact. The model is last because the
   // full value stays reachable in the details view.
   const columns = [
-    { name: 'name', width: Math.max(4, ...rows.map((row) => visibleWidth(row.name))) },
+    {
+      name: 'name',
+      width: Math.max(minimumColumnWidths.name, ...rows.map((row) => visibleWidth(row.name))),
+    },
     {
       name: 'status',
-      width: Math.max(6, ...rows.map((row) => visibleWidth(statusText(row, now)))),
+      width: Math.max(
+        minimumColumnWidths.status,
+        ...rows.map((row) => visibleWidth(statusText(row, now))),
+      ),
     },
-    { name: 'task', width: Math.max(4, ...rows.map((row) => visibleWidth(shortTaskLabel(row)))) },
+    {
+      name: 'task',
+      width: Math.max(
+        minimumColumnWidths.task,
+        ...rows.map((row) => visibleWidth(shortTaskLabel(row))),
+      ),
+    },
     {
       name: 'model',
       width: Math.max(1, ...rows.map((row) => visibleWidth(workerModelLabel(row)))),
@@ -299,9 +312,9 @@ const alignedColumns = (rows: WorkerWidgetRow[], availableWidth: number, now: nu
   };
 
   const shrinkSteps: [string, number][] = [
-    ['task', 12],
-    ['name', 4],
-    ['status', 14],
+    ['task', readableColumnWidths.task],
+    ['name', readableColumnWidths.name],
+    ['status', readableColumnWidths.status],
     ['task', 1],
     ['name', 1],
     ['status', 1],
@@ -340,7 +353,7 @@ const alignRow = (
   const values: Record<string, string> = {
     name: truncateWorkerName(
       row.name,
-      columns.find((column) => column.name === 'name')?.width ?? 4,
+      columns.find((column) => column.name === 'name')?.width ?? minimumColumnWidths.name,
     ),
     status: statusText(row, now),
     task: shortTaskLabel(row),
@@ -373,21 +386,22 @@ const mutedLine = (content: string, width: number, theme: Theme | undefined): st
   return theme?.fg('muted', fitted) ?? fitted;
 };
 
-// Border fitting is shared by the wide and narrow widget renderings.
-// eslint-disable-next-line eslint/complexity
+const footerRightMinimumWidth = 32;
+
+// eslint-disable-next-line eslint/complexity -- The wide and narrow widget renderings share this border fitting.
 const footerBorder = (
   left: string,
   right: string,
   width: number,
   theme: Theme | undefined,
 ): string => {
-  if (width < 4) {
+  if (width < boxFrameWidth) {
     return truncateToWidth('╰─', width);
   }
 
   const inside = width - 2;
   const leftContent = left ? `─ ${left}` : '─';
-  const rightContent = right && width >= 32 ? ` ${right} ─` : '';
+  const rightContent = right && width >= footerRightMinimumWidth ? ` ${right} ─` : '';
 
   if (left && rightContent) {
     const footer = ` ${left} · ${right} ─`;
@@ -442,7 +456,7 @@ export const renderWorkerWidget = (
     );
 
   const liveRows = eligibleRows
-    .slice(0, 4)
+    .slice(0, maximumLiveRows)
     .toSorted(
       (left, right) =>
         widgetDisplayPriority(left) - widgetDisplayPriority(right) ||
@@ -489,7 +503,7 @@ export const renderWorkerWidget = (
 
   const lines = [topBorder('─ Subagents ', ` ${shownLiveLabel} `, boxWidth, theme)];
 
-  const columns = alignedColumns(liveRows, boxWidth - 4, now);
+  const columns = alignedColumns(liveRows, boxWidth - boxFrameWidth, now);
 
   for (const row of liveRows) {
     lines.push(boxLine(alignRow(row, columns, now, theme), boxWidth, theme));

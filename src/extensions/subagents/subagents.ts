@@ -86,6 +86,10 @@ const launchParameters = Type.Object(
 );
 
 const defaultTimeoutSeconds = { investigation: 1800, editing: 3600 };
+const millisecondsPerSecond = 1000;
+const widgetRefreshInterval = 1000;
+// A sleep this long while workers run waits on them, so the call is blocked.
+const blockedSleepSeconds = 30;
 
 const followUpParameters = Type.Object(
   {
@@ -290,7 +294,8 @@ const launchWorker = async (
   const controller = runtime.getController();
   const loadout = resolveLoadout(parameters, context, signal, runtime.pi.getCommands());
 
-  const timeout = (parameters.timeoutSeconds ?? defaultTimeoutSeconds[loadout.role]) * 1000;
+  const timeout =
+    (parameters.timeoutSeconds ?? defaultTimeoutSeconds[loadout.role]) * millisecondsPerSecond;
 
   signal?.throwIfAborted();
 
@@ -343,7 +348,7 @@ const followUpWorker = async (
     status = await controller.followUp(
       {
         ...parameters,
-        timeout: parameters.timeoutSeconds * 1000,
+        timeout: parameters.timeoutSeconds * millisecondsPerSecond,
         parentSession,
         parentSessionId: context.sessionManager.getSessionId(),
       },
@@ -547,7 +552,6 @@ const registerLaunchTool = (
     renderResult(result, options, theme) {
       return renderStatusResult(result.details, options.expanded, theme);
     },
-    // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       return launchWorker(runtime, parameters, signal, context);
     },
@@ -573,7 +577,6 @@ const registerFollowUpTool = (runtime: SubagentRuntime): void => {
     renderResult(result, options, theme) {
       return renderStatusResult(result.details, options.expanded, theme);
     },
-    // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       return followUpWorker(runtime, parameters, signal, context);
     },
@@ -595,7 +598,6 @@ const registerHistoryTool = (runtime: SubagentRuntime): void => {
     renderResult(result, options, theme) {
       return renderHistoryResult(result.details, options.expanded, theme);
     },
-    // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       return searchWorkerHistory(parameters, signal, context, runtime.peekController());
     },
@@ -618,7 +620,6 @@ const registerStatusTool = (runtime: SubagentRuntime): void => {
     renderResult(result, options, theme) {
       return renderStatusResult(result.details, options.expanded, theme);
     },
-    // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     execute(_toolCallId, parameters, _signal, _onUpdate, context) {
       return Promise.resolve().then(() => readWorkerStatus(runtime, parameters, context));
     },
@@ -640,7 +641,6 @@ const registerReplyTool = (runtime: SubagentRuntime): void => {
     renderResult(result, options, theme) {
       return renderReplyResult(result.details, options.expanded, theme);
     },
-    // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     execute(_toolCallId, parameters, _signal, _onUpdate, context) {
       return Promise.resolve(replyToWorker(runtime, parameters, context));
     },
@@ -660,7 +660,6 @@ const registerCancelTool = (runtime: SubagentRuntime): void => {
     renderResult(result, options, theme) {
       return renderStatusResult(result.details, options.expanded, theme);
     },
-    // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, _signal, _onUpdate, context) {
       return cancelWorker(runtime, parameters, context);
     },
@@ -783,7 +782,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     if (refreshIsNeeded) {
       widgetTimer ??= setInterval(() => {
         refreshWidget(context);
-      }, 1000);
+      }, widgetRefreshInterval);
     } else if (widgetTimer) {
       clearInterval(widgetTimer);
       widgetTimer = undefined;
@@ -868,7 +867,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   pi.on('tool_call', (event, context) => {
     const command = event.toolName === 'bash' ? event.input.command : undefined;
 
-    if (typeof command !== 'string' || totalSleepSeconds(command) < 30) {
+    if (typeof command !== 'string' || totalSleepSeconds(command) < blockedSleepSeconds) {
       return undefined;
     }
 

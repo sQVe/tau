@@ -5,12 +5,29 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 
 import { createTemporaryRepository as createRepository } from '../../../../tests/gitRepository.js';
 import { createCommitTool } from '../tool.js';
 import type { CommitInput } from '../validation.js';
+
+type CommitToolResult = ReturnType<ReturnType<typeof createCommitTool>['execute']>;
+
+interface FakeCommit {
+  custom: Mock<() => never>;
+  editor: Mock<() => never>;
+  exec: Mock<ExtensionAPI['exec']>;
+  context: {
+    cwd: string;
+    hasUI: boolean;
+    ui: { custom: Mock<() => never>; editor: Mock<() => never> };
+  };
+  input: CommitInput;
+  execute: (signal?: AbortSignal) => CommitToolResult;
+  gitDirectory: string;
+}
 
 const execFileAsync = promisify(execFile);
 
@@ -74,7 +91,7 @@ export const git = async (
 
 const repositoryCleanups: (() => Promise<void>)[] = [];
 
-export const createTemporaryRepository = () =>
+export const createTemporaryRepository = (): Promise<string> =>
   createRepository((cleanup) => {
     repositoryCleanups.push(cleanup);
   }, 'tau-commit-');
@@ -101,7 +118,7 @@ export const getStoredCommitMessage = async (repositoryDirectory: string): Promi
   return commitObject.slice(separatorIndex + 2);
 };
 
-export const commitContext = (repositoryDirectory: string) =>
+export const commitContext = (repositoryDirectory: string): ExtensionToolContext =>
   ({
     cwd: repositoryDirectory,
     hasUI: true,
@@ -110,16 +127,19 @@ export const commitContext = (repositoryDirectory: string) =>
         throw new Error('Unexpected approval UI');
       },
     },
-  }) as never;
+  }) as unknown as ExtensionToolContext;
 
-export const noUiContext = (repositoryDirectory: string) =>
+export const noUiContext = (repositoryDirectory: string): ExtensionToolContext =>
   ({
     cwd: repositoryDirectory,
     hasUI: false,
     ui: {},
-  }) as never;
+  }) as unknown as ExtensionToolContext;
 
-export const executeCommit = async (repositoryDirectory: string, input: CommitInput) => {
+export const executeCommit = async (
+  repositoryDirectory: string,
+  input: CommitInput,
+): CommitToolResult => {
   const commitTool = createCommitTool({
     exec(command: string, commandArguments: string[], options?: { cwd?: string }) {
       return runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory);
@@ -135,7 +155,7 @@ export const executeCommit = async (repositoryDirectory: string, input: CommitIn
   );
 };
 
-export const fakeCommit = () => {
+export const fakeCommit = (): FakeCommit => {
   const gitDirectory = mkdtempSync(join(tmpdir(), 'tau-mock-git-'));
   temporaryDirectories.push(gitDirectory);
 

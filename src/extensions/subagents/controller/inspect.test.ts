@@ -24,7 +24,9 @@ const herdrSocket = async (reply?: ((request: Record<string, unknown>) => unknow
     });
   });
 
-  await new Promise<void>((resolve) => server.listen(path, resolve));
+  await new Promise<void>((resolve) => {
+    server.listen(path, resolve);
+  });
 
   onTestFinished(() => {
     server.close();

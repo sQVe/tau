@@ -520,11 +520,12 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
 
   let shutdownFinished = false;
 
-  const shutdown = Promise.resolve(
-    emitEvent(fake.handlers, 'session_shutdown', { reason: 'reload' }, context),
-  ).then(() => {
+  const finishShutdown = async () => {
+    await emitEvent(fake.handlers, 'session_shutdown', { reason: 'reload' }, context);
     shutdownFinished = true;
-  });
+  };
+
+  const shutdown = finishShutdown();
 
   await Promise.resolve();
 
@@ -1047,7 +1048,6 @@ it('defaults the launch timeout by profile role and keeps an explicit timeout', 
     { ...input, profile: 'worker' },
     { ...input, profile: 'worker', timeoutSeconds: 10 },
   ]) {
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Each launch reads the spy's next call.
     await tool.execute('call', launchInput, undefined, undefined, context);
   }
 

@@ -94,7 +94,7 @@ it('skips a local profile package that user settings name relative to the agent 
 
 const pendingManager = (): WorkerPackageManager => ({
   listConfiguredPackages: () => [],
-  resolveExtensionSources: () => new Promise(() => undefined),
+  resolveExtensionSources: () => new Promise(() => {}),
 });
 
 it.each([

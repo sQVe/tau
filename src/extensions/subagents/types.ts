@@ -155,6 +155,7 @@ export const taskVersion = 7;
 
 export const taskSchema = versionedTaskSchema(Type.Literal(taskVersion), loadoutSchema);
 
+/* eslint-disable eslint/no-magic-numbers -- Saved record versions are fixed values. */
 export const version6TaskSchema = versionedTaskSchema(Type.Literal(6), version6LoadoutSchema);
 
 export const version5TaskSchema = versionedTaskSchema(Type.Literal(5), version5LoadoutSchema);
@@ -166,6 +167,7 @@ export const previousTaskSchema = versionedTaskSchema(
   Type.Union([Type.Literal(1), Type.Literal(3)]),
   previousLoadoutSchema,
 );
+/* eslint-enable eslint/no-magic-numbers */
 
 // Version 2: the Pi worker is its pane's own process, so shellPid equals processId.
 export const ownedWorkerSchema = Type.Object(

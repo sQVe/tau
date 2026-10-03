@@ -19,7 +19,7 @@ import { readEvent, readTask, readTasks, namePrefix, publish, validateTask } fro
 import { listTerminals, result } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
 import { isTaskId, taskVersion } from '../types.js';
-import type { Loadout, Task } from '../types.js';
+import type { Acknowledgement, Loadout, Question, Reply, Task } from '../types.js';
 import type { WorkerWidgetRow } from '../widget.js';
 import {
   ensureReplyActive,
@@ -27,6 +27,7 @@ import {
   launchTiming,
   remainingLaunchBudget,
   remainingWorkBudget,
+  renameBudget,
 } from './budget.js';
 import {
   herdrClient,
@@ -42,10 +43,19 @@ import type { FollowUpPreparation, LaunchInput } from './launchSupport.js';
 import { InstallQueue, installWorkerPackages, piPackageManager } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 import { EvidenceUnavailableError, handleRecovery, savedRecovery, taskStatus } from './record.js';
+import type { TaskStatus } from './record.js';
 import { createHandle, savedHandle, TaskController } from './task.js';
-import type { TaskContext } from './task.js';
+import type { ReplyReceipt, TaskContext } from './task.js';
 import type { Handle } from './types.js';
 import { widgetRow } from './widgetRows.js';
+
+interface QuestionReceipt {
+  question: Question;
+  reply: Reply | undefined;
+  acknowledgement: Acknowledgement | undefined;
+}
+
+type LaunchStatus = TaskStatus & { placement?: { visibility: Visibility; reason?: string } };
 
 interface StatusFailureRequest {
   taskId: string;
@@ -65,12 +75,16 @@ interface LaunchTaskPlan {
   source?: FollowUpPreparation;
 }
 
+const defaultWorkerCapacity = 4;
+const maximumWorkerCapacity = 256;
+const agentListBudget = 30_000;
+
 const workerCapacity = (): number => {
   // oxlint-disable-next-line node/no-process-env -- Each controller reads its capacity once at construction.
-  const capacity = Number(process.env.TAU_SUBAGENT_CAP ?? 4);
+  const capacity = Number(process.env.TAU_SUBAGENT_CAP ?? defaultWorkerCapacity);
 
-  if (!Number.isInteger(capacity) || capacity < 1 || capacity > 256) {
-    throw new Error('TAU_SUBAGENT_CAP must be an integer from 1 to 256.');
+  if (!Number.isInteger(capacity) || capacity < 1 || capacity > maximumWorkerCapacity) {
+    throw new Error(`TAU_SUBAGENT_CAP must be an integer from 1 to ${maximumWorkerCapacity}.`);
   }
 
   return capacity;
@@ -133,7 +147,7 @@ export class WorkerController {
     return rows.toSorted((left, right) => right.createdAt - left.createdAt);
   }
 
-  status(taskId: string, parentSessionId: string) {
+  status(taskId: string, parentSessionId: string): TaskStatus {
     const directory = this.statusDirectory(taskId, parentSessionId);
     let handle: Handle | undefined;
     let task: Task | undefined;
@@ -257,7 +271,7 @@ export class WorkerController {
     }
   }
 
-  questionReceipt(taskId: string, parentSessionId: string, questionId: string) {
+  questionReceipt(taskId: string, parentSessionId: string, questionId: string): QuestionReceipt {
     const directory = this.directory(taskId, parentSessionId);
     const question = readQuestion(directory, taskId, questionId);
 
@@ -276,7 +290,7 @@ export class WorkerController {
     taskId: string,
     parentSessionId: string,
     answer: { questionId: string; replyId: string; reply: string },
-  ) {
+  ): ReplyReceipt {
     const directory = this.directory(taskId, parentSessionId);
     const worker = this.workers.get(taskId);
 
@@ -291,7 +305,7 @@ export class WorkerController {
     return worker.reply(directory, answer);
   }
 
-  async cancel(taskId: string, parentSessionId: string) {
+  async cancel(taskId: string, parentSessionId: string): Promise<TaskStatus> {
     const directory = this.directory(taskId, parentSessionId);
 
     if (this.closed) {
@@ -350,7 +364,10 @@ export class WorkerController {
     return directory;
   }
 
-  launch(input: LaunchInput, signal: AbortSignal = new AbortController().signal) {
+  launch(
+    input: LaunchInput,
+    signal: AbortSignal = new AbortController().signal,
+  ): Promise<LaunchStatus> {
     return this.launchTask(input, signal);
   }
 
@@ -360,7 +377,7 @@ export class WorkerController {
     },
     context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'isProjectTrusted'>,
     signal: AbortSignal = new AbortController().signal,
-  ) {
+  ): Promise<LaunchStatus> {
     const startedAt = { wall: Date.now(), monotonic: performance.now() };
     const timing = launchTiming(input.timeout, startedAt);
 
@@ -398,7 +415,8 @@ export class WorkerController {
     return this.placement.place(
       {
         name: handle.task.name ?? 'worker',
-        labelCall: (argumentsList) => this.client(argumentsList, 2_000, this.lifetime.signal),
+        labelCall: (argumentsList) =>
+          this.client(argumentsList, renameBudget, this.lifetime.signal),
         ...(input.parentPane != null && input.parentPane !== ''
           ? { parentPane: input.parentPane }
           : {}),
@@ -466,11 +484,7 @@ export class WorkerController {
     input: LaunchInput,
     launchSignal: AbortSignal,
     source?: FollowUpPreparation,
-  ): Promise<
-    ReturnType<WorkerController['status']> & {
-      placement?: { visibility: Visibility; reason?: string };
-    }
-  > {
+  ): Promise<LaunchStatus> {
     if (this.closed) {
       throw new Error('Parent controller stopped.');
     }
@@ -631,7 +645,7 @@ export class WorkerController {
     ]);
 
     const listing = result(
-      await this.client(['agent', 'list'], Math.min(30_000, remaining), listingSignal),
+      await this.client(['agent', 'list'], Math.min(agentListBudget, remaining), listingSignal),
     );
 
     listingSignal.throwIfAborted();
