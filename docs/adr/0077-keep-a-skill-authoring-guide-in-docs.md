@@ -31,7 +31,7 @@
 - A test over `skills/*/SKILL.md` enforces the mechanical rules: valid frontmatter, working local
   links, only the allowed headings, no ADR mentions, one command per shell block, and no
   `## See also` sections.
-- The template stays outside `skills/`, so Pi never loads it as a skill.
+- The template stays outside `src/skills/`, so Pi never loads it as a skill.
 
 ## Tradeoffs
 

@@ -39,7 +39,7 @@ agent needs before designing: the contract test for read paths, and record versi
 
 - Feature code stays in `src/extensions/<feature>/`. Extensions do not import each other.
 - Code moves under `src/` only once two extensions need it. Shared code never imports extensions.
-- `tau/extension-boundary` in `scripts/stylePlugin.ts` and the shared-module override of
+- `tau/extension-boundary` in `lint/plugin.ts` and the shared-module override of
   `eslint/no-restricted-imports` in `vite.config.ts` enforce both rules (ADR 0001).
 - A module that grows subdirectories may mark files private. An override of
   `eslint/no-restricted-imports` in `vite.config.ts` lists the public files, and the rest of the
@@ -66,7 +66,7 @@ agent needs before designing: the contract test for read paths, and record versi
 - Add an `Error` subclass only when production code catches that exact condition, such as
   `EvidenceUnavailableError`.
 - Turn errors into user text once, at the tool boundary. `evidenceResult` in
-  `src/extensions/subagents/index.ts` is the example.
+  `src/extensions/subagents/subagents.ts` is the example.
 - Tau adds no generic `Result` type and does not migrate existing code.
 
 ### Tables keyed by a union
