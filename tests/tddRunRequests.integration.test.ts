@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process';
 import { readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai';
 import { expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
@@ -13,9 +15,13 @@ it('keeps actual test failures when a sibling bash edits inputs during the run',
 }) => {
   const { cwd, session, faux, events } = await createHarness(onTestFinished);
 
+  // Opening a FIFO blocks until both ends are open, and the read ends when bash closes its end.
+  // So bash writes the config only while the test runs, and the test ends only after that write.
+  await promisify(execFile)('mkfifo', [join(cwd, 'barrier')]);
+
   await writeFile(
     join(cwd, 'behavior.test.ts'),
-    "import { it, expect } from 'vitest'; import { writeFile } from 'node:fs/promises'; it('required behavior', async () => { await writeFile('started', ''); await new Promise(r => setTimeout(r, 500)); expect(1).toBe(2); });",
+    "import { it, expect } from 'vitest'; import { readFile } from 'node:fs/promises'; it('required behavior', async () => { await readFile('barrier'); expect(1).toBe(2); });",
   );
 
   faux.setResponses([
@@ -27,8 +33,7 @@ it('keeps actual test failures when a sibling bash edits inputs during the run',
         scope: 'focused',
       }),
       fauxToolCall('bash', {
-        command:
-          "while [ ! -f started ]; do sleep 0.02; done; printf 'export default { test: {} };' > vite.config.ts",
+        command: "{ printf 'export default { test: {} };' > vite.config.ts; } > barrier",
       }),
     ]),
     fauxAssistantMessage('Done.'),
