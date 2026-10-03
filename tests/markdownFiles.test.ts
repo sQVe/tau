@@ -8,7 +8,7 @@ import type { Document, DocumentProblemKind } from './markdownFiles.js';
 const repositoryRoot = join(import.meta.dirname, '..');
 
 // Backticked paths that name no file in this repository on purpose: paths in projects that use
-// Pi, herdr source files, and the former root layout that ADRs 0001 and 0004 describe. Remove an
+// Pi, herdr source files, and the former root layout that older records describe. Remove an
 // entry when no document names it.
 const allowedPaths = [
   '.pi/agents/',
