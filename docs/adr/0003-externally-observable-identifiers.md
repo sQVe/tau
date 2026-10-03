@@ -13,7 +13,7 @@ the command too, which breaks every use of the old name. The same risk applies t
 - Pi tool names registered via `pi.registerTool` and seen by the model.
 - slash command names registered via `pi.registerCommand` and typed by users.
 - event type strings passed to `pi.on`.
-- skill directory names under `skills/`, discovered by Pi.
+- skill directory names under `src/skills/`, discovered by Pi.
 
 ## Options considered
 

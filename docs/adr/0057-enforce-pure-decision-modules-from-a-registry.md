@@ -18,8 +18,8 @@
 
 - Rely on the convention and review. Rejected: the mixed module already shows that copies drift.
 - Ban `node:fs`, or require a file name. Rejected: both are proxies that agents bypass.
-- Add a rule to `scripts/stylePlugin.ts`. Rejected: its registry would live in `vite.config.ts`, and
-  lint fixtures could not register their own modules without test hooks in the configuration.
+- Add a rule to `lint/plugin.ts`. Rejected: its registry would live in `vite.config.ts`, and lint
+  fixtures could not register their own modules without test hooks in the configuration.
 - Keep a registry in `tests/structure.test.ts` and parse each registered module there. Chosen: the
   check follows imports, not names, and needs no test hooks in the configuration.
 

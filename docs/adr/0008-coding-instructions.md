@@ -31,7 +31,7 @@ layout checks. The remaining decisions below still apply.
 
 ## Decision
 
-Add `src/extensions/coding/`. It loads [`instructions.md`](../../src/instructions/coding.md) into
+Add `src/extensions/coding.ts`. It loads [`instructions.md`](../../src/instructions/coding.md) into
 the system prompt before each ordinary agent run, following the runtime integration ADR 0006
 describes for writing. Reject missing, unreadable, or blank guidance when loading Tau, for the
 reasons ADR 0006 gives.
