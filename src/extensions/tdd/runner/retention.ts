@@ -11,7 +11,6 @@ export const maximumRetainedRuns = 32;
 const retentionDays = 7;
 const millisecondsPerDay = 86_400_000;
 const retentionMilliseconds = retentionDays * millisecondsPerDay;
-// Group and other users have no permission bits.
 const sharedPermissionBits = 0o077;
 
 const diagnosticsRoot = () => join(getAgentDir(), 'test-runs');

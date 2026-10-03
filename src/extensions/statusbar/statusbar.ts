@@ -24,7 +24,6 @@ const gitTimeoutMilliseconds = 5000;
 const gitMaximumBufferMebibytes = 10;
 const bytesPerMebibyte = 1_048_576;
 const gitMaximumBufferBytes = gitMaximumBufferMebibytes * bytesPerMebibyte;
-// The footer shows the last two directory names.
 const shownDirectoryDepth = 2;
 
 const getSessionCost = (context: ExtensionContext): number => {
