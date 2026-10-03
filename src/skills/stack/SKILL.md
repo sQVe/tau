@@ -53,11 +53,14 @@ you here. It needs the `gh stack` extension and `gh` authenticated for the repos
    - Run the remote-history check on each active branch, one that is not merged or queued. Note its
      remote tip with `git rev-parse --verify --quiet <remote>/<branch>`. When that prints nothing,
      note the branch as unpublished and skip the check for it. Otherwise check that
-     `git log --oneline <branch>..<remote>/<branch>` lists nothing. For a branch you rebased before
-     this restack, with plain `git rebase` or an earlier restack, use its tip from before the first
-     of those rebases in place of `<branch>`. Stop and report each branch it lists commits for. The
-     rebase skips a branch that has diverged from its remote, and the push would then overwrite
-     those remote commits.
+     `git log --oneline <branch>..<remote>/<branch>` lists nothing.
+     - For a branch you rebased since its last push, with plain `git rebase` or an earlier restack,
+       use its tip from before the first of those rebases in place of `<branch>`.
+     - When it lists commits for a branch you have not rebased since its last push, and
+       `git merge-base --is-ancestor <branch> <remote>/<branch>` succeeds, the branch is only behind
+       its remote. Go on: `gh stack rebase` and `gh stack sync` fast-forward it.
+     - Stop and report each other branch it lists commits for. The rebase skips a branch that has
+       diverged from its remote, and the push would then overwrite those remote commits.
    - From the branch you changed, run `gh stack rebase --upstack --remote <remote>`. It rebases that
      branch onto its parent and each branch above onto the one below it. To bring the whole stack up
      to date with the trunk, run `gh stack rebase --remote <remote>` instead. Both fetch the stack's
