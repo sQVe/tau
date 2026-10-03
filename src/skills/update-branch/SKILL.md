@@ -31,9 +31,9 @@ the [handoff skill](../handoff/SKILL.md).
      Continue it with the [stack skill](../stack/SKILL.md), never with `git rebase --continue`.
    - When a rebase is in progress, first note the tip it started from. Read `orig-head` in
      `$(git rev-parse --git-path rebase-merge)` or, for the apply backend,
-     `$(git rev-parse --git-path rebase-apply)`, whichever exists. Stop if neither holds it. Then
-     run step 2 with the noted tip in place of `HEAD`, go to step 4, and ask if the rebase's target
-     is unclear. Ask before you push the result unless you noted the branch's remote tip before the
+     `$(git rev-parse --git-path rebase-apply)`, whichever exists. Stop if neither holds it. Ask if
+     the rebase's target is unclear. Then run step 2 with the noted tip in place of `HEAD`, and go
+     to step 4. Ask before you push the result unless you noted the branch's remote tip before the
      rebase started.
    - HEAD is detached until that rebase finishes, so the stack skill can detect a stack only then.
      If it finds the branch in a stack, restack the branches above with it before step 5. In its
