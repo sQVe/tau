@@ -1,11 +1,20 @@
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-import { loadSkillsFromDir, parseFrontmatter } from '@earendil-works/pi-coding-agent';
+import {
+  isToolCallEventType,
+  loadSkillsFromDir,
+  parseFrontmatter,
+} from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ResourceDiagnostic, Skill } from '@earendil-works/pi-coding-agent';
 
+import { resolveReadPath } from '../../readPath.js';
 import { appendSystemPrompt } from '../../systemPrompt.js';
 import { isWorkerProcess } from '../../workerProcess.js';
 import { requiredActions } from './requiredFor.js';
+
+// Maps a skill name to the tools that skill turns on when it runs.
+type SkillTools = Readonly<Record<string, readonly string[]>>;
 
 const buildSkillMessage = (skillName: string, argumentsText: string) => {
   const prefix = `/skill:${skillName}`;
@@ -14,13 +23,36 @@ const buildSkillMessage = (skillName: string, argumentsText: string) => {
   return trimmedArguments ? `${prefix} ${trimmedArguments}` : prefix;
 };
 
+// Pi reads the active tools again before each model request, so a tool turned on here is
+// callable on the next request, even in the middle of a run.
+const activateTools = (pi: ExtensionAPI, toolNames: readonly string[]) => {
+  const active = pi.getActiveTools();
+  const missing = toolNames.filter((name) => !active.includes(name));
+
+  if (missing.length === 0) {
+    return;
+  }
+
+  pi.setActiveTools([...active, ...missing]);
+};
+
 // Registers `/<name>` for each Tau skill, so skills stay reachable when Pi's `/skill:<name>`
 // commands are disabled.
-const registerSkillCommands = (pi: ExtensionAPI, skills: readonly Skill[]) => {
+const registerSkillCommands = (
+  pi: ExtensionAPI,
+  skills: readonly Skill[],
+  skillTools: SkillTools,
+) => {
   for (const skill of skills) {
     pi.registerCommand(skill.name, {
       description: `Run the ${skill.name} skill.`,
       handler: (argumentsText, context) => {
+        const toolNames = skillTools[skill.name];
+
+        if (toolNames !== undefined) {
+          activateTools(pi, toolNames);
+        }
+
         pi.sendUserMessage(buildSkillMessage(skill.name, argumentsText), {
           deliverAs: context.isIdle() ? 'followUp' : 'steer',
           expandPromptTemplates: true,
@@ -29,6 +61,47 @@ const registerSkillCommands = (pi: ExtensionAPI, skills: readonly Skill[]) => {
         return Promise.resolve();
       },
     });
+  }
+};
+
+// The model runs a skill listed in the system prompt by reading its SKILL.md.
+const registerSkillReadActivation = (
+  pi: ExtensionAPI,
+  skills: readonly Skill[],
+  skillTools: SkillTools,
+) => {
+  const toolsBySkillFile = new Map(
+    skills.flatMap((skill) => {
+      const toolNames = skillTools[skill.name];
+
+      return toolNames === undefined ? [] : [[resolve(skill.filePath), toolNames] as const];
+    }),
+  );
+
+  if (toolsBySkillFile.size === 0) {
+    return;
+  }
+
+  pi.on('tool_call', (event, context) => {
+    if (!isToolCallEventType('read', event)) {
+      return;
+    }
+
+    const toolNames = toolsBySkillFile.get(resolveReadPath(context.cwd, event.input.path));
+
+    if (toolNames !== undefined) {
+      activateTools(pi, toolNames);
+    }
+  });
+};
+
+const rejectUnknownSkillTools = (skills: readonly Skill[], skillTools: SkillTools) => {
+  const skillNames = new Set(skills.map((skill) => skill.name));
+
+  for (const skillName of Object.keys(skillTools)) {
+    if (!skillNames.has(skillName)) {
+      throw new Error(`Tau skill tools name an unknown skill: ${skillName}`);
+    }
   }
 };
 
@@ -67,14 +140,22 @@ const rejectSkillProblems = (
   throw new Error(`Tau skills failed to load:\n${problems.join('\n')}`);
 };
 
-export default function tauSkillsExtension(pi: ExtensionAPI, skillsDirectory: string): void {
+// A tool tied to a skill should register with `defaultActive: false`, so it stays out of the
+// prompt until the skill runs.
+export default function tauSkillsExtension(
+  pi: ExtensionAPI,
+  skillsDirectory: string,
+  skillTools: SkillTools = {},
+): void {
   const { skills, diagnostics } = loadSkillsFromDir({ dir: skillsDirectory, source: 'tau' });
 
   rejectSkillProblems(skillsDirectory, diagnostics);
+  rejectUnknownSkillTools(skills, skillTools);
 
   const lines = readRequiredForLines(skills);
 
-  registerSkillCommands(pi, skills);
+  registerSkillCommands(pi, skills, skillTools);
+  registerSkillReadActivation(pi, skills, skillTools);
 
   // Workers load only the skills their profile names, so the lines could name a missing skill.
   if (isWorkerProcess() || lines.length === 0) {
