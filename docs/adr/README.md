@@ -104,5 +104,6 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0080: Insert prompt snippets through autocomplete](./0080-insert-prompt-snippets-through-autocomplete.md)
 - [0081: Sort prompt snippets by id](./0081-sort-prompt-snippets-by-id.md)
 - [0082: Own Linear conventions in one tracker skill](./0082-own-linear-conventions-in-one-tracker-skill.md)
+- [0083: Turn on skill tools when the skill runs, and confirm outside writes](./0083-turn-on-skill-tools-when-the-skill-runs-and-confirm-outside-writes.md)
 - [0084: Keep the diagram skill out of worker profiles](./0084-keep-the-diagram-skill-out-of-worker-profiles.md)
 - [0085: Group per-repository settings in the user config](./0085-group-per-repository-settings-in-the-user-config.md)

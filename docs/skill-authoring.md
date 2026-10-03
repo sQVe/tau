@@ -33,27 +33,10 @@ Shell in a skill has no tests, and every copy drifts on its own.
 
 - A step may give one command with its arguments, such as a `gh` or `linear` call.
 - Move a shell block with several commands, conditions, or safety checks into a tested Tau tool. The
-  step names the tool and says what to do with its result.
-- When two skills need the same mechanics, share one tool. Never copy a block into another skill.
+  step names the tool and says what to do with its result. Write the tool with the
+  [tool authoring guide](./tool-authoring.md).
 - The test rejects a new shell block with more than one command and lists the existing ones until a
   tool replaces them.
-
-## Write a skill's tool
-
-A skill's tool owns the mechanics. The skill keeps the judgment.
-
-- Put the call contract in the tool's description: its parameters, results, and errors. The skill
-  says when to call it and what to do with the result, without repeating the contract.
-- Split reading from writing. A read returns the current state and the exact writes it plans. An
-  apply takes that plan and refuses when the state has changed since the read.
-- Ask for confirmation inside the tool with `ctx.ui.confirm` before a write outside the worktree.
-  Write nothing when the user declines or when there is no UI.
-- Make a retry safe. Apply only the writes that are missing, and identify each one by a saved ID,
-  not by a title.
-- Report a partial failure as what was applied and what was not.
-- Parse command output once, at the boundary, and fail with an error that names the bad output.
-- Test with a fake CLI for normal, missing, and malformed output, a declined confirmation, and a
-  retry after a partial failure.
 
 ## Delete before you add
 
