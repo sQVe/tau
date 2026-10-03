@@ -10,7 +10,8 @@ At most three sentences of context: why the change is needed and what the diff c
 
 #### Decisions
 
-Optional. Consequential choices, each with its reason and trade-off.
+Optional. Consequential choices, each with its reason and trade-off. When the PR changes how parts
+connect, add at most one diagram here as a top-level `mermaid` block, drawn with the diagram skill.
 
 #### Verification
 
