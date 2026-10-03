@@ -100,7 +100,6 @@ const registerBulkRead = (pi: ExtensionAPI, state: BulkReadState): void => {
       paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
       question: Type.String({ minLength: 1 }),
     }),
-    // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, params, signal, _onUpdate, context) {
       try {
         const model = resolveBulkReadModel(context);

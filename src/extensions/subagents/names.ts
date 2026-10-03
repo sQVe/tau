@@ -19,6 +19,8 @@ export interface NameAllocation {
 
 export const nameSuffix = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 2);
 
+const maximumNameAttempts = 32;
+
 const liveAgentsSchema = Type.Array(
   Type.Object({
     pane_id: Type.String({ minLength: 1 }),
@@ -70,7 +72,7 @@ export const allocateName = (allocation: NameAllocation): string => {
 
   const prefix = namePrefix(allocation.loadout);
 
-  for (let attempt = 0; attempt < 32; attempt++) {
+  for (let attempt = 0; attempt < maximumNameAttempts; attempt++) {
     const name = `${prefix}-${allocation.suffix()}`;
 
     if (!taken.has(name)) {

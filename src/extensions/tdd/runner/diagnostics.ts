@@ -11,7 +11,11 @@ interface OutputCapture {
   truncated: boolean;
 }
 
-const maximumReportBytes = 8 * 1024 * 1024;
+const bytesPerMebibyte = 1_048_576;
+const maximumReportMebibytes = 8;
+const maximumReportBytes = maximumReportMebibytes * bytesPerMebibyte;
+const maximumExcerptLength = 800;
+const ownerReadWriteMode = 0o600;
 
 const saveOutput = async (
   path: string,
@@ -56,7 +60,7 @@ const retainReport = async (directory: string): Promise<DiagnosticFile | undefin
     throw error;
   }
 
-  await chmod(path, 0o600);
+  await chmod(path, ownerReadWriteMode);
 
   if (bytes > maximumReportBytes) {
     // Keep a raw prefix for inspection, not a parseable replacement for the runner's report.
@@ -91,7 +95,7 @@ export const saveDiagnostics = async (
   diagnostics.report = await retain(() => retainReport(diagnostics.directory));
 
   if (result !== undefined) {
-    diagnostics.excerpt = (result.stderr || result.stdout).slice(0, 800);
+    diagnostics.excerpt = (result.stderr || result.stdout).slice(0, maximumExcerptLength);
 
     diagnostics.stdout = await retain(() =>
       saveOutput(join(diagnostics.directory, 'stdout.txt'), result.stdout, maximumStdoutBytes, {

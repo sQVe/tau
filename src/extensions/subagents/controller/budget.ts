@@ -2,11 +2,30 @@ import { readEvent, readReport } from '../records.js';
 import { replyClosedEventKinds } from '../types.js';
 import type { Handle } from './types.js';
 
-export const monotonicNow = (): number => Number(process.hrtime.bigint()) / 1_000_000;
+interface LaunchTiming {
+  createdAt: number;
+  deadline: number;
+  expires: number;
+  cancellationBudget: number;
+  monotonicDeadline: number;
+}
+
+const nanosecondsPerMillisecond = 1_000_000;
+const maximumCancellationBudget = 5000;
+// Cleanup gets a quarter of a short task's time.
+const cancellationShare = 4;
+
+// A rename is cosmetic, so it gets a short deadline of its own.
+export const renameBudget = 2_000;
+
+export const monotonicNow = (): number =>
+  Number(process.hrtime.bigint()) / nanosecondsPerMillisecond;
 
 // One remainder for every budget question; two clocks disagree within a millisecond.
-export const remainingLaunchBudget = (timing: { expires: number; cancellationBudget: number }) =>
-  Math.floor(timing.expires - timing.cancellationBudget - performance.now());
+export const remainingLaunchBudget = (timing: {
+  expires: number;
+  cancellationBudget: number;
+}): number => Math.floor(timing.expires - timing.cancellationBudget - performance.now());
 
 export const remainingWorkBudget = (handle: Handle): number =>
   remainingLaunchBudget({
@@ -43,10 +62,17 @@ export const ensureReplyActive = (handle: Handle): void => {
   }
 };
 
-export const launchTiming = (timeout: number, startedAt?: { wall: number; monotonic: number }) => {
+export const launchTiming = (
+  timeout: number,
+  startedAt?: { wall: number; monotonic: number },
+): LaunchTiming => {
   const createdAt = startedAt?.wall ?? Date.now();
   const expires = (startedAt?.monotonic ?? performance.now()) + timeout;
-  const cancellationBudget = Math.min(5000, Math.floor(timeout / 4));
+
+  const cancellationBudget = Math.min(
+    maximumCancellationBudget,
+    Math.floor(timeout / cancellationShare),
+  );
 
   if (!Number.isFinite(expires) || performance.now() >= expires - cancellationBudget) {
     throw new Error('The original task work budget expired during loadout resolution.');

@@ -7,7 +7,7 @@ import { defaultSpawn } from './process.js';
 import { defaultResolveVitest, explainSessionCwd, resolutionFailure } from './resolution.js';
 import { createDiagnosticsDirectory } from './retention.js';
 import type {
-  ResolveVitestFn,
+  ResolveVitest,
   RunTestsInput,
   RunnerDeps,
   RunnerResult,
@@ -72,7 +72,12 @@ const readReport = async (path: string): Promise<VitestReport | null> => {
   }
 };
 
-const nameSeparator = (version: string) => (Number.parseInt(version, 10) >= 5 ? ' > ' : ' ');
+// Vitest 5 joins nested test names with ` > `; earlier versions use a space.
+const arrowSeparatorMajor = 5;
+const maximumCandidates = 5;
+
+const nameSeparator = (version: string) =>
+  Number.parseInt(version, 10) >= arrowSeparatorMajor ? ' > ' : ' ';
 
 const assertionFullName = (assertion: VitestAssertionResult, version: string): string => {
   // Vitest 5 filters with " > " but its Jest-compatible JSON fullName still uses spaces.
@@ -345,7 +350,7 @@ const noFilterMatchResult = (
   version: string,
 ): RunnerResult => {
   const candidates = collectTests(report, () => true, version)
-    .slice(0, 5)
+    .slice(0, maximumCandidates)
     .map((test) => `${relative(input.cwd, test.file)}: ${capMessage(test.fullname)}`);
 
   const message = [
@@ -431,7 +436,7 @@ const runInDirectory = async (
     return { report: { kind: 'no-tests-collected', tests: [] } };
   }
 
-  let runner: ReturnType<ResolveVitestFn>;
+  let runner: ReturnType<ResolveVitest>;
 
   try {
     runner = dependencies.resolveVitest(input.cwd);

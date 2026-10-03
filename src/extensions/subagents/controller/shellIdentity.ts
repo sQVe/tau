@@ -23,6 +23,8 @@ export class WorkerExitedError extends Error {
   }
 }
 
+const processStartBudget = 1000;
+
 export const readProcessStart = async (
   handle: Handle,
   processId: number,
@@ -31,7 +33,9 @@ export const readProcessStart = async (
   const processStart = await runClient(
     'ps',
     ['-p', String(processId), '-o', 'lstart='],
-    cleanup ? Math.min(1000, cleanup.remainingBudget()) : workBudget(handle, 1000),
+    cleanup
+      ? Math.min(processStartBudget, cleanup.remainingBudget())
+      : workBudget(handle, processStartBudget),
     { signal: cleanup?.signal ?? handle.abort.signal },
   ).catch((error: unknown) => {
     if (processAbsent(processId)) {

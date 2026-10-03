@@ -74,7 +74,6 @@ const prefixGroupContent = (
   groupLabel: string,
   groupCount: number,
 ): CommitSuccess['content'] =>
-  // oxlint-disable-next-line oxc/no-map-spread -- Prefix copies without mutating the group's original result.
   items.map((item) => ({
     ...item,
     text: groupCount === 1 ? item.text : `Group ${groupLabel}: ${item.text}`,
@@ -179,7 +178,6 @@ export const createCommitTool = (
       'Stage and commit each group sequentially with Git hooks. Hook failures return errors.',
     promptSnippet: 'Create git commits for an ordered groups array in one call.',
     parameters: commitToolParameters,
-    // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       return executeCommitTool({ pi, context, signal }, parameters);
     },

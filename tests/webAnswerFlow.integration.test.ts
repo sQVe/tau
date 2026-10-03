@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
@@ -73,12 +73,12 @@ it.for(Object.keys(passedModels) as (keyof typeof passedModels)[])(
 
     onTestFinished(
       () =>
-        new Promise<void>((resolveClose, reject) => {
+        new Promise<void>((resolve, reject) => {
           server.close((error) => {
             if (error) {
               reject(error);
             } else {
-              resolveClose();
+              resolve();
             }
           });
 
@@ -86,7 +86,10 @@ it.for(Object.keys(passedModels) as (keyof typeof passedModels)[])(
         }),
     );
 
-    await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+
     const address = server.address();
 
     if (address == null || typeof address === 'string') {
@@ -108,8 +111,8 @@ it.for(Object.keys(passedModels) as (keyof typeof passedModels)[])(
       providers: [sessionModel, configured, override],
       tools: ['fetch_content', 'get_search_content', 'web_search'],
       extensionPaths: [
-        resolve(import.meta.dirname, '../src/extensions/webAccess.ts'),
-        resolve(import.meta.dirname, '../node_modules/pi-web-access/dist/index.js'),
+        join(import.meta.dirname, '../src/extensions/webAccess.ts'),
+        join(import.meta.dirname, '../node_modules/pi-web-access/dist/index.js'),
       ],
       settings: { compaction: { enabled: false }, retry: { enabled: false } },
     });

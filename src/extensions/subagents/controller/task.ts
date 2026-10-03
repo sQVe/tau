@@ -13,13 +13,19 @@ import { publish, readEvent, recordEvent } from '../records.js';
 import { resolveTerminal, text } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
 import type { Task } from '../types.js';
-import { remainingCleanupBudget, remainingWorkBudget, workBudget } from './budget.js';
+import { remainingCleanupBudget, remainingWorkBudget, renameBudget, workBudget } from './budget.js';
 import { inspectWorker, waitForPiIdentity, waitForWorkerReadiness } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
 import { handleRecovery, readOwnedWorker, taskStatus } from './record.js';
 import { WorkerExitedError } from './shellIdentity.js';
 import { stopPiWorker } from './stop.js';
 import type { Handle } from './types.js';
+
+export interface ReplyReceipt {
+  replyAccepted: boolean;
+  name: string | undefined;
+  workerAcknowledged: boolean;
+}
 
 // What one worker needs from the coordinator. One context is shared by every task.
 export interface TaskContext {
@@ -40,6 +46,8 @@ interface CleanupOutcomeRequest {
   detail: string;
   stopped: boolean;
 }
+
+const pollInterval = 250;
 
 export const createHandle = (directory: string, task: Task, expires: number): Handle => ({
   directory,
@@ -197,7 +205,7 @@ export class TaskController {
       return;
     }
 
-    const budget = Math.min(2_000, remainingWork);
+    const budget = Math.min(renameBudget, remainingWork);
     const deadline = performance.now() + budget;
     const limit = new AbortController();
 
@@ -225,7 +233,10 @@ export class TaskController {
   }
 
   // The worker watches for the saved reply while its question is pending; no pane input is sent.
-  reply(directory: string, answer: { questionId: string; replyId: string; reply: string }) {
+  reply(
+    directory: string,
+    answer: { questionId: string; replyId: string; reply: string },
+  ): ReplyReceipt {
     const { task } = this.handle;
     const { taskId } = task;
     const { questionId } = answer;
@@ -306,7 +317,7 @@ export class TaskController {
       () => {
         this.pollOnce();
       },
-      Math.max(1, Math.min(250, remainingWorkBudget(handle))),
+      Math.max(1, Math.min(pollInterval, remainingWorkBudget(handle))),
     );
   }
 
@@ -382,40 +393,45 @@ export class TaskController {
 
     const stopped = this.cleanup(reason, failureDetail);
 
-    // A failed notice must not hide a confirmed stop.
-    const cleaned = stopped.then(() => {
+    const notifyAfterStop = async () => {
+      await stopped;
       this.notifyCleanup();
+    };
+
+    // A failed notice must not hide a confirmed stop.
+    const cleaned = notifyAfterStop();
+
+    const finishCleanup = async () => {
+      const [outcome] = await Promise.allSettled([stopped, cleaned]);
+
+      this.context.release(handle.task.taskId);
+
+      // Keep sharing intact until cleanup finishes, including its queued topology change.
+      // Unconfirmed cleanup must still stop contributing placement candidates.
+      if (handle.identity.terminalId != null) {
+        // A pane that may still run keeps its name in the tab label.
+        this.context.placement.release(
+          handle.identity.terminalId,
+          outcome.status === 'fulfilled' && outcome.value
+            ? (argumentsList) =>
+                this.context.client(argumentsList, renameBudget, this.context.lifetime)
+            : undefined,
+        );
+      }
+
+      // Report the cleanup failure only once placement cleanup finishes.
+      await cleaned;
+    };
+
+    handle.cleanup.stopping = finishCleanup().catch((error: unknown) => {
+      handle.cleanup.recordErrors.push(String(error));
+
+      if (this.closed) {
+        return;
+      }
+
+      this.notifySnapshot();
     });
-
-    handle.cleanup.stopping = Promise.allSettled([stopped, cleaned])
-      .then(async ([outcome]) => {
-        this.context.release(handle.task.taskId);
-
-        // Keep sharing intact until cleanup finishes, including its queued topology change.
-        // Unconfirmed cleanup must still stop contributing placement candidates.
-        if (handle.identity.terminalId != null) {
-          // A pane that may still run keeps its name in the tab label. The label is cosmetic, so
-          // its rename gets a short deadline of its own.
-          this.context.placement.release(
-            handle.identity.terminalId,
-            outcome.status === 'fulfilled' && outcome.value
-              ? (argumentsList) => this.context.client(argumentsList, 2_000, this.context.lifetime)
-              : undefined,
-          );
-        }
-
-        // Report the cleanup failure only once placement cleanup finishes.
-        await cleaned;
-      })
-      .catch((error: unknown) => {
-        handle.cleanup.recordErrors.push(String(error));
-
-        if (this.closed) {
-          return;
-        }
-
-        this.notifySnapshot();
-      });
 
     return handle.cleanup.stopping;
   }

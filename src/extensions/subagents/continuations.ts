@@ -14,6 +14,11 @@ interface Entry {
   task: Task;
 }
 
+interface ContinuationOrigins {
+  origins: Map<string, Task>;
+  diagnostics: string[];
+}
+
 export const requireHandover = (directory: string, task: Task): void => {
   if (!readReport(directory, task.taskId)) {
     throw new Error(`Task ${task.taskId} has no valid final handover. Follow-up refused.`);
@@ -34,12 +39,14 @@ const hasMatchingChain = (entry: Entry, predecessor: Entry): boolean =>
   sharesNativeSession(entry, predecessor) &&
   isDeepStrictEqual(entry.task.loadout, predecessor.task.loadout);
 
+const maximumChainLength = 1024;
+
 const walkToOrigin = (entry: Entry, byId: Map<string, Entry>): Task => {
   let current = entry;
   const seen = new Set<string>();
 
   while (current.task.predecessorTaskId != null) {
-    if (seen.has(current.task.taskId) || seen.size >= 1024) {
+    if (seen.has(current.task.taskId) || seen.size >= maximumChainLength) {
       throw new Error('Cyclic or excessive continuation chain.');
     }
 
@@ -57,7 +64,7 @@ const walkToOrigin = (entry: Entry, byId: Map<string, Entry>): Task => {
   return current.task;
 };
 
-export const continuationOrigins = (entries: Entry[]) => {
+export const continuationOrigins = (entries: Entry[]): ContinuationOrigins => {
   const byId = new Map(entries.map((entry) => [entry.task.taskId, entry]));
   const origins = new Map<string, Task>();
   const diagnostics: string[] = [];

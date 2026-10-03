@@ -4,7 +4,7 @@ import { readInstructionSet } from '../instructionSets.js';
 import { appendSystemPrompt } from '../systemPrompt.js';
 import { isWorkerProcess } from '../workerProcess.js';
 
-export default async function workflowExtension(pi: ExtensionAPI) {
+export default async function workflowExtension(pi: ExtensionAPI): Promise<void> {
   const instructions = await readInstructionSet('workflow');
 
   // A worker appends the instruction sets its saved task lists.

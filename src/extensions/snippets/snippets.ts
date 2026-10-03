@@ -10,7 +10,7 @@ import type {
 import { wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import type { AutocompleteItem, Component } from '@earendil-works/pi-tui';
 
-import { bottomBorder, boxLine, topBorder } from '../../box.js';
+import { bottomBorder, boxFrameWidth, boxLine, topBorder } from '../../box.js';
 import { errorMessage } from '../../errors.js';
 import { snippetAutocomplete, snippetForItem } from './autocomplete.js';
 import { refillsHistory, sentPromptTexts } from './history.js';
@@ -22,7 +22,7 @@ const snippetsDirectory = fileURLToPath(new URL('./snippets/', import.meta.url))
 const widgetKey = 'snippet-preview';
 
 const previewLines = (snippet: Snippet, width: number, theme: Theme) => {
-  const innerWidth = Math.max(1, width - 4);
+  const innerWidth = Math.max(1, width - boxFrameWidth);
 
   const bodyLines = snippet.body
     .split('\n')
@@ -122,6 +122,6 @@ const handleSessionStart = async (context: ExtensionContext, event: SessionStart
   }
 };
 
-export default function snippetsExtension(pi: ExtensionAPI) {
+export default function snippetsExtension(pi: ExtensionAPI): void {
   pi.on('session_start', (event, context) => handleSessionStart(context, event));
 }

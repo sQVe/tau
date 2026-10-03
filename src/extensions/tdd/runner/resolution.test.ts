@@ -7,7 +7,7 @@ import { beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 import { createTestObservation } from '../observation.js';
 import { runContext, summarize } from '../render.js';
 import { defaultResolveVitest } from './resolution.js';
-import type { SpawnFn } from './types.js';
+import type { SpawnCommand } from './types.js';
 import { runTests } from './vitest.js';
 
 let cwd: string;
@@ -63,7 +63,7 @@ it('names the package root when requested files belong to another package, such 
   const run = (files: string[]) =>
     runTests(
       { scope: 'changed', cwd, files },
-      { resolveVitest: defaultResolveVitest, spawn: vi.fn<SpawnFn>(), timeoutMs: 30_000 },
+      { resolveVitest: defaultResolveVitest, spawn: vi.fn<SpawnCommand>(), timeoutMs: 30_000 },
     );
 
   const elsewhere = await run(['other/src/value.test.ts']);
@@ -154,7 +154,7 @@ it('does not classify a throwing resolver dependency error as an absent Vitest p
       resolveVitest: () => {
         throw Object.assign(new Error('private dependency'), { code: 'MODULE_NOT_FOUND' });
       },
-      spawn: vi.fn<SpawnFn>(),
+      spawn: vi.fn<SpawnCommand>(),
       timeoutMs: 30_000,
     },
   );
@@ -173,7 +173,7 @@ it('does not classify a throwing resolver dependency error as an absent Vitest p
 });
 
 it('retains safe diagnostics when an injected resolver throws without starting execution', async () => {
-  const spawn = vi.fn<SpawnFn>();
+  const spawn = vi.fn<SpawnCommand>();
   const secret = 'https://user:credential@example.invalid/token';
 
   const error = Object.assign(new TypeError(`\u001b[31m${secret}\n${'x'.repeat(10_000)}`), {
@@ -210,7 +210,7 @@ it('bounds and sanitizes resolution paths without copying error messages', async
       resolveVitest: () => {
         throw new Error('private-message');
       },
-      spawn: vi.fn<SpawnFn>(),
+      spawn: vi.fn<SpawnCommand>(),
       timeoutMs: 30_000,
     },
   );
@@ -239,7 +239,7 @@ it('does not echo arbitrary resolver error names codes or thrown values', async 
           // oxlint-disable-next-line typescript/only-throw-error -- A resolver can throw a non-Error value; its text must stay private.
           throw error;
         },
-        spawn: vi.fn<SpawnFn>(),
+        spawn: vi.fn<SpawnCommand>(),
         timeoutMs: 30_000,
       },
     );

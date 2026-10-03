@@ -4,6 +4,7 @@ import { requireHandover } from '../continuations.js';
 import { validateNative } from '../native.js';
 import type { Visibility } from '../placement.js';
 import { nativeIdentity } from '../profiles.js';
+import type { NativeIdentity } from '../profiles.js';
 import { findSuccessor, mayFollow, readTask, readTasks } from '../records.js';
 import type { UnreadableTask } from '../records.js';
 import type { Loadout, Task } from '../types.js';
@@ -27,7 +28,10 @@ export interface FollowUpPreparation {
   native: ReturnType<typeof validateNative>;
 }
 
-export const nativeReference = (directory: string, source?: FollowUpPreparation) => {
+export const nativeReference = (
+  directory: string,
+  source?: FollowUpPreparation,
+): NativeIdentity & { predecessorTaskId?: string } => {
   if (source) {
     return {
       predecessorTaskId: source.task.taskId,

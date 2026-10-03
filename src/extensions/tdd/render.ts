@@ -23,8 +23,18 @@ const printable = (text: string) =>
     character === '\n' || character === '\t' ? character : ' ',
   );
 
+const cutMarker = ' [cut]';
+const maximumFilesLength = 500;
+const maximumNamesLength = 700;
+const maximumTestNameLength = 200;
+const maximumErrorLength = 400;
+const maximumResultLength = 4000;
+const maximumConfigLength = 1500;
+// Room kept for the lines after the failures.
+const trailingLinesRoom = 60;
+
 const cap = (text: string, limit: number) =>
-  text.length > limit ? `${text.slice(0, limit - 6)} [cut]` : text;
+  text.length > limit ? `${text.slice(0, limit - cutMarker.length)}${cutMarker}` : text;
 
 export const selectionSummary = (behavior: Partial<Behavior>, scope?: string): string => {
   if (scope === 'full') {
@@ -43,8 +53,8 @@ export const selectionSummary = (behavior: Partial<Behavior>, scope?: string): s
 
   return [
     'Scope: focused',
-    `Files (${files.length}): ${cap(printable(files.join(', ')), 500)}`,
-    `Exact names (${names.length}): ${cap(printable(names.join('\n  ')), 700)}`,
+    `Files (${files.length}): ${cap(printable(files.join(', ')), maximumFilesLength)}`,
+    `Exact names (${names.length}): ${cap(printable(names.join('\n  ')), maximumNamesLength)}`,
   ].join('\n');
 };
 
@@ -83,7 +93,9 @@ const focusedDurations = (report: RunnerResult): DurationList => {
 
   return {
     header: null,
-    entries: timed.map((test) => `  ${cap(printable(test.fullname), 200)}: ${test.durationMs} ms`),
+    entries: timed.map(
+      (test) => `  ${cap(printable(test.fullname), maximumTestNameLength)}: ${test.durationMs} ms`,
+    ),
     limit: maximumFocusedDurations,
   };
 };
@@ -102,7 +114,7 @@ const slowTests = (cwd: string, report: RunnerResult): DurationList => {
     entries: slow.map((test) => {
       const file = isAbsolute(test.file) ? relative(cwd, test.file) : test.file;
 
-      return `  ${cap(printable(`${file} › ${test.fullname}`), 200)}: ${test.durationMs} ms`;
+      return `  ${cap(printable(`${file} › ${test.fullname}`), maximumTestNameLength)}: ${test.durationMs} ms`;
     }),
     limit: maximumSlowTests,
   };
@@ -163,7 +175,7 @@ export const summarize = (cwd: string, observation: Observation): string => {
     const file = isAbsolute(failure.file) ? relative(cwd, failure.file) : failure.file;
     const entry = `✗ ${file} › ${failure.fullname}\n    ${failure.message}`;
 
-    if ([...lines, entry].join('\n').length > maximumSummaryCharacters - 60) {
+    if ([...lines, entry].join('\n').length > maximumSummaryCharacters - trailingLinesRoom) {
       break;
     }
 
@@ -232,7 +244,7 @@ const savedFileLines = (diagnostics: NonNullable<RunnerResult['diagnostics']>): 
   }
 
   if (diagnostics.error !== undefined) {
-    lines.push(cap(printable(diagnostics.error), 400));
+    lines.push(cap(printable(diagnostics.error), maximumErrorLength));
   }
 
   return lines;
@@ -275,7 +287,7 @@ export const runContext = (behavior: Behavior, observation: Observation): string
     lines.push(`Runner output excerpt (not a test verdict):\n${printable(diagnostics.excerpt)}`);
   }
 
-  return cap(lines.join('\n'), 4000);
+  return cap(lines.join('\n'), maximumResultLength);
 };
 
 const configLabels: Record<keyof TddConfig, string> = {
@@ -300,5 +312,5 @@ export const configSummary = ({ config, sources, ignored }: LoadedTddConfig): st
     lines.push(`Ignored ${ignored}: the project is not trusted.`);
   }
 
-  return cap(printable(lines.join('\n')), 1500);
+  return cap(printable(lines.join('\n')), maximumConfigLength);
 };

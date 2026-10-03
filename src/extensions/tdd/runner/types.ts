@@ -95,7 +95,7 @@ interface SpawnOptions {
   signal?: AbortSignal | undefined;
 }
 
-export type SpawnFn = (
+export type SpawnCommand = (
   command: string,
   argumentsList: string[],
   options: SpawnOptions,
@@ -106,10 +106,10 @@ interface ResolvedVitest {
   version: string;
 }
 
-export type ResolveVitestFn = (cwd: string) => ResolvedVitest | VitestResolutionFailure;
+export type ResolveVitest = (cwd: string) => ResolvedVitest | VitestResolutionFailure;
 
 export interface RunnerDeps {
-  resolveVitest: ResolveVitestFn;
-  spawn: SpawnFn;
+  resolveVitest: ResolveVitest;
+  spawn: SpawnCommand;
   timeoutMs: number;
 }

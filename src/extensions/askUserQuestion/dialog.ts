@@ -23,9 +23,18 @@ export interface DialogResult {
   answers: Answer[];
 }
 
+type DialogFactory = (
+  terminal: TUI,
+  theme: Theme,
+  keybindings: unknown,
+  done: (result: DialogResult) => void,
+) => QuestionDialog;
+
 const customLabel = 'Type something.';
 // Pi renders its widgets and a footer of two or more lines below the dialog.
 const piChromeRows = 6;
+// A preview needs a border above and below its content.
+const minimumPreviewRows = 3;
 
 const readKey = (data: string): KeyPress => {
   if (matchesKey(data, Key.enter)) {
@@ -252,7 +261,7 @@ class QuestionDialog implements Component {
     const cursor = this.state.questions[this.state.tab]?.cursor ?? 0;
     const preview = facts.options[cursor]?.preview;
 
-    if (preview === undefined || preview === '' || rows < 3) {
+    if (preview === undefined || preview === '' || rows < minimumPreviewRows) {
       return [];
     }
 
@@ -285,6 +294,6 @@ class QuestionDialog implements Component {
 }
 
 export const questionDialog =
-  (questions: DialogQuestion[]) =>
-  (terminal: TUI, theme: Theme, _keybindings: unknown, done: (result: DialogResult) => void) =>
+  (questions: DialogQuestion[]): DialogFactory =>
+  (terminal, theme, _keybindings, done) =>
     new QuestionDialog(questions, theme, terminal, done);

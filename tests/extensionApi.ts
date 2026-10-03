@@ -6,12 +6,24 @@ import type {
   ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 import { vi } from 'vitest';
+import type { Mock } from 'vitest';
 
 type Handler = (event: never, context: ExtensionContext) => unknown;
 type Command = Parameters<ExtensionAPI['registerCommand']>[1];
 
+interface FakeExtensionApi {
+  pi: ExtensionAPI;
+  handlers: Map<string, Handler[]>;
+  handler: (name: string) => (event: unknown, context: ExtensionContext) => unknown;
+  tools: Map<string, ToolDefinition>;
+  commands: Map<string, Command>;
+  messageRenderers: Map<string, MessageRenderer>;
+  sendUserMessage: Mock<ExtensionAPI['sendUserMessage']>;
+  sendMessage: Mock<ExtensionAPI['sendMessage']>;
+}
+
 // Records what an extension registers so a test can drive its handlers without a Pi session.
-export const fakeExtensionApi = (overrides: Partial<ExtensionAPI> = {}) => {
+export const fakeExtensionApi = (overrides: Partial<ExtensionAPI> = {}): FakeExtensionApi => {
   const handlers = new Map<string, Handler[]>();
   const tools = new Map<string, ToolDefinition>();
   const commands = new Map<string, Command>();
@@ -53,7 +65,7 @@ export const appendedSystemPrompt = (
   handlers: Map<string, Handler[]>,
   selectedTools: string[],
   context = {} as ExtensionContext,
-) => {
+): string => {
   const event = { systemPromptOptions: { appendSystemPrompt: '', selectedTools } };
 
   for (const handler of handlers.get('before_agent_start') ?? []) {

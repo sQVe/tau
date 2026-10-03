@@ -35,6 +35,8 @@ interface LaunchRequest {
 
 const nodeRequire = createRequire(import.meta.url);
 
+const resolutionTimeout = 10_000;
+
 // Tau's package loads this file; the worker accepts no other extension under the Safety Net name.
 const safetyExtension = (): string =>
   realpathSync(
@@ -141,7 +143,7 @@ const resolveLaunchPlan = (
 export const resolveLoadout = (
   input: LaunchRequest,
   context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'scopedModels' | 'isProjectTrusted'>,
-  signal: AbortSignal = AbortSignal.timeout(10_000),
+  signal: AbortSignal = AbortSignal.timeout(resolutionTimeout),
   commands: SlashCommandInfo[] = [],
 ): Loadout => {
   signal.throwIfAborted();

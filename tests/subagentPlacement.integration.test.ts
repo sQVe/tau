@@ -344,7 +344,6 @@ it.runIf(hasHerdr)(
     expect(await resolveTerminal(unrelated.terminalId, client)).toEqual(unrelated);
 
     for (const worker of workers) {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Check real geometry of every created terminal, not a fixed tab capacity.
       const layout = requireObject(
         result(await client(['pane', 'layout', '--pane', worker.paneId])).layout,
       );

@@ -5,7 +5,7 @@ import { resolveAllowedModel } from '../models/models.js';
 
 const requiredWebAccessTools = ['web_search', 'fetch_content'];
 
-export default function webAccessExtension(pi: ExtensionAPI) {
+export default function webAccessExtension(pi: ExtensionAPI): void {
   requireRegisteredTools(pi, 'pi-web-access', requiredWebAccessTools);
 
   // pi-web-access treats a blank answerModel as absent and uses its own fetch.answerModel setting,

@@ -38,7 +38,7 @@ export const initialState = (count: number): QuestionnaireState => ({
   answers: Array.from({ length: count }, () => undefined),
 });
 
-export const isCustomChecked = (text: string) => text.trim() !== '';
+export const isCustomChecked = (text: string): boolean => text.trim() !== '';
 
 const withQuestion = (
   state: QuestionnaireState,
@@ -59,7 +59,7 @@ const reopened = (state: QuestionnaireState): QuestionnaireState => ({
   answers: state.answers.with(state.tab, undefined),
 });
 
-export const withCustomText = (state: QuestionnaireState, text: string) => {
+export const withCustomText = (state: QuestionnaireState, text: string): QuestionnaireState => {
   const unchanged = state.questions[state.tab]?.customText === text;
   const updated = withQuestion(state, { customText: text });
 

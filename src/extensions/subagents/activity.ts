@@ -63,12 +63,14 @@ export const parsePhaseDescription = (value: string): string => {
   return trimmed;
 };
 
+const ownerReadWriteMode = 0o600;
+
 const activityFile = (directory: string): string => join(directory, 'activity.json');
 
 export const writeWorkerActivity = (directory: string, activity: WorkerActivity): void => {
   const path = activityFile(directory);
   const temporary = `${path}.${randomUUID()}.tmp`;
-  const descriptor = openSync(temporary, 'wx', 0o600);
+  const descriptor = openSync(temporary, 'wx', ownerReadWriteMode);
 
   try {
     writeFileSync(descriptor, `${JSON.stringify(activity)}\n`);

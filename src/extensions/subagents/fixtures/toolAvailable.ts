@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 
-export const toolAvailable = (command: string) => {
+export const toolAvailable = (command: string): boolean => {
   const available =
     spawnSync(command, ['--version'], { timeout: 2000, stdio: 'ignore' }).status === 0;
 

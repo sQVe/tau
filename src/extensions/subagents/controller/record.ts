@@ -4,6 +4,7 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { readWorkerActivity } from '../activity.js';
+import type { WorkerActivity } from '../activity.js';
 import type { OwnedWorker } from '../cancellation.js';
 import { readPendingQuestion, readReply } from '../questionRecords.js';
 import {
@@ -16,10 +17,44 @@ import {
   readTasks,
 } from '../records.js';
 import { ownedWorkerSchema } from '../types.js';
-import type { Report, Task, TaskEvent } from '../types.js';
+import type { Report, Task, TaskEvent, WorkerState } from '../types.js';
 import { deriveWorkerState, taskEndedEventKinds } from '../workerState.js';
 import type { WorkerFacts } from '../workerState.js';
 import type { Handle } from './types.js';
+
+interface PaneRecovery {
+  paneId?: string;
+  directory: string;
+  nativeSessionFile: string;
+}
+
+interface SavedRecovery {
+  directory: string;
+  nativeSessionFile?: string;
+}
+
+export interface TaskStatus {
+  taskId: string;
+  name: string | undefined;
+  state: WorkerState;
+  outcome?: string;
+  predecessorTaskId: string | undefined;
+  predecessorName: string | undefined;
+  successorTaskId: string | undefined;
+  deadline: number;
+  stoppedAt?: number | undefined;
+  cleanupConfirmed: boolean;
+  nativeSessionId: string;
+  nativeSessionFile: string;
+  usage: { available: false; reason: string };
+  directory: string;
+  activity: WorkerActivity | undefined;
+  report: Report | undefined;
+  pendingQuestion: WorkerFacts['pendingQuestion'];
+  failure: string | undefined;
+  cleanup: string | undefined;
+  recovery?: PaneRecovery;
+}
 
 export interface EvidenceUnavailableInput {
   taskId: string;
@@ -90,7 +125,7 @@ const taskOutcome = (
   return report?.outcome ?? (settledOrCleaned ? 'incomplete' : undefined);
 };
 
-const taskRecovery = (task: Task, directory: string) => {
+const taskRecovery = (task: Task, directory: string): PaneRecovery => {
   const paneId = readPane(directory);
 
   return {
@@ -101,14 +136,14 @@ const taskRecovery = (task: Task, directory: string) => {
 };
 
 // Evidence notices read only handle memory; a corrupt record cannot build this recovery hint.
-export const handleRecovery = (handle: Handle) => ({
+export const handleRecovery = (handle: Handle): PaneRecovery => ({
   ...(handle.identity.paneId === undefined ? {} : { paneId: handle.identity.paneId }),
   directory: handle.directory,
   nativeSessionFile: handle.task.nativeSessionFile,
 });
 
 // Without a handle, recovery falls back to the task directory and the saved Pi session path.
-export const savedRecovery = (task: Task | undefined, directory: string) => {
+export const savedRecovery = (task: Task | undefined, directory: string): SavedRecovery => {
   if (task) {
     return { directory, nativeSessionFile: task.nativeSessionFile };
   }
@@ -191,7 +226,7 @@ export const taskRecordStatus = (
   controlled = false,
   // A caller that builds many statuses passes one snapshot so each status skips its own scan.
   entries: { directory: string; task: Task }[] = readTasks(dirname(directory)),
-) => {
+): TaskStatus => {
   const facts = readWorkerFacts(directory, task.taskId);
   const { events, report } = facts;
   const failure = events.startupFailure;
@@ -239,7 +274,7 @@ export const taskRecordStatus = (
   };
 };
 
-export const taskStatus = (directory: string, controlled = false) => {
+export const taskStatus = (directory: string, controlled = false): TaskStatus => {
   const task = readTask(directory);
 
   return taskRecordStatus(directory, task, controlled);

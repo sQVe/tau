@@ -1771,7 +1771,6 @@ it('refuses full-cap native follow-up before publishing an attempt', async () =>
   const fixture = await completed();
 
   for (let index = 0; index < 4; index++) {
-    // oxlint-disable-next-line eslint/no-await-in-loop -- Fill the shared cap before attempting native follow-up.
     await fixture.controller.launch({ ...fixture.input, loadout: fixture.source.loadout });
   }
 
@@ -3129,7 +3128,10 @@ it('waits for an in-flight launch before confirming shutdown cleanup', async ({
   vi.spyOn(fixture.fake, 'client').mockImplementation(async (argumentsList, budget, signal) => {
     if (argumentsList[0] === 'layout') {
       enteredStart.resolve(undefined);
-      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50);
+      });
     }
 
     return client(argumentsList, budget, signal);
@@ -4263,7 +4265,7 @@ it('stops waiting for a pending package install when the launch is cancelled', a
       installing.resolve(undefined);
 
       // A stalled npm install.
-      return new Promise(() => undefined);
+      return new Promise(() => {});
     },
   });
 
@@ -4329,7 +4331,7 @@ it('refuses a launch whose slot another launch took during its package install',
 
 const stalledInstall = (): WorkerPackageManager => ({
   listConfiguredPackages: () => [],
-  resolveExtensionSources: () => new Promise(() => undefined),
+  resolveExtensionSources: () => new Promise(() => {}),
 });
 
 it('names the package whose install outlasts the launch budget', async ({ onTestFinished }) => {
@@ -4410,7 +4412,7 @@ it('never runs two profile package installs at once across parallel launches', a
       firstStarted.resolve(undefined);
 
       // A stalled npm install.
-      return new Promise(() => undefined);
+      return new Promise(() => {});
     },
   });
 
@@ -4435,7 +4437,10 @@ it('never runs two profile package installs at once across parallel launches', a
   });
 
   // Run every pending step of the second launch while the first install still runs.
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+
   expect(started).toEqual(['npm:first']);
 
   cancelSecond.abort();

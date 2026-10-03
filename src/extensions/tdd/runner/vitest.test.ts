@@ -16,7 +16,7 @@ import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { defaultSpawn, maximumStdoutBytes, maximumTotalBytes, nodeExecutable } from './process.js';
 import { defaultResolveVitest, extractBinPath } from './resolution.js';
-import type { RunTestsInput, RunnerDeps, SpawnFn, SpawnResult } from './types.js';
+import type { RunTestsInput, RunnerDeps, SpawnCommand, SpawnResult } from './types.js';
 import { defaultDeps, maximumFailures, runTests as runTestsWithDiagnostics } from './vitest.js';
 
 const reportLimit = 8 * 1024 * 1024;
@@ -45,7 +45,7 @@ const outputFileFrom = (argumentsList: string[]) => {
 };
 
 const fakeSpawn =
-  ({ report, ...result }: Partial<SpawnResult> & { report?: unknown }): SpawnFn =>
+  ({ report, ...result }: Partial<SpawnResult> & { report?: unknown }): SpawnCommand =>
   async (command, argumentsList) => {
     if (report !== undefined) {
       await writeFile(outputFileFrom(argumentsList), JSON.stringify(report));
@@ -117,7 +117,7 @@ describe('runTests', () => {
         failureMessages: ['expected 1 to be 2'],
       };
 
-      const spawn = vi.fn<SpawnFn>(
+      const spawn = vi.fn<SpawnCommand>(
         fakeSpawn({
           code: 1,
           report: {
@@ -181,7 +181,7 @@ describe('runTests', () => {
   it.for(['4.1.11', '5.0.1'])(
     'explains unmatched Vitest %s names without retrying or broadening selection',
     async (version) => {
-      const spawn = vi.fn<SpawnFn>(
+      const spawn = vi.fn<SpawnCommand>(
         fakeSpawn({
           report: {
             numTotalTests: 1,
@@ -1164,7 +1164,7 @@ describe('runTests', () => {
     };
 
     const deps = makeDeps({
-      spawn: async (_cmd, args) => {
+      spawn: async (_command, args) => {
         captured = args;
         await writeFile(outputFileFrom(args), JSON.stringify(report));
 
@@ -1465,7 +1465,7 @@ describe('runTests', () => {
     };
 
     const deps = makeDeps({
-      spawn: async (_cmd, args) => {
+      spawn: async (_command, args) => {
         captured = args;
         await writeFile(outputFileFrom(args), JSON.stringify(report));
 
@@ -1500,7 +1500,7 @@ describe('runTests', () => {
     };
 
     const deps = makeDeps({
-      spawn: async (_cmd, args) => {
+      spawn: async (_command, args) => {
         captured = args;
         await writeFile(outputFileFrom(args), JSON.stringify(report));
 

@@ -30,6 +30,26 @@ interface Candidate {
   report?: Report;
 }
 
+interface AuthorizedHistoryTask {
+  directory: string;
+  task: Task;
+  origin: Task;
+}
+
+interface HistorySearch {
+  outcome: string;
+  candidates: Candidate[];
+  diagnostics: string[];
+}
+
+interface HistoryPage {
+  outcome: string;
+  totalMatches: number;
+  nextOffset?: number;
+  candidates: CandidatePreview[];
+  diagnostics?: string[];
+}
+
 type Ownership = (taskId: string) => boolean;
 
 type InScope = (file: string, id?: string) => boolean;
@@ -49,7 +69,7 @@ export const authorizeHistoryTask = (
   root: string,
   current: { file: string; id: string },
   taskId: string,
-) => {
+): AuthorizedHistoryTask => {
   if (!isTaskId(taskId)) {
     throw new Error('Follow-up requires an exact saved task ID.');
   }
@@ -285,7 +305,7 @@ export const searchHistory = async (
   current: { file: string; id: string; sessionDirectory: string },
   query = '',
   ownership: Ownership = () => false,
-) => {
+): Promise<HistorySearch> => {
   const { saved, tasks, diagnostics } = historyRegistry(root);
   const ancestors = lineage(current.file, current.id);
   const origin = ancestors.at(-1);
@@ -342,16 +362,19 @@ const candidateReport = (
   };
 };
 
+const previewEvidenceCount = 3;
+const evidencePreviewLength = 200;
+
 const candidatePreview = (candidate: Candidate) => {
   const truncatedFields: string[] = [];
   const report = candidate.report;
   const summary = report ? preview(report.summary, 'report.summary', truncatedFields) : undefined;
 
   const evidence = report?.evidence
-    .slice(0, 3)
-    .map((entry) => preview(entry, 'report.evidence', truncatedFields, 200));
+    .slice(0, previewEvidenceCount)
+    .map((entry) => preview(entry, 'report.evidence', truncatedFields, evidencePreviewLength));
 
-  if (report && report.evidence.length > 3) {
+  if (report && report.evidence.length > previewEvidenceCount) {
     truncatedFields.push('report.evidence');
   }
 
@@ -379,17 +402,22 @@ const candidatePreview = (candidate: Candidate) => {
     : result;
 };
 
+type CandidatePreview = ReturnType<typeof candidatePreview>;
+
 const isHistoryOffsetValid = (offset: number): boolean =>
   Number.isSafeInteger(offset) && offset >= 0;
 
+const maximumHistoryLimit = 10;
+const previewDiagnosticCount = 5;
+
 const isHistoryLimitValid = (limit: number): boolean =>
-  Number.isSafeInteger(limit) && limit >= 1 && limit <= 10;
+  Number.isSafeInteger(limit) && limit >= 1 && limit <= maximumHistoryLimit;
 
 export const historyPage = (
-  history: Awaited<ReturnType<typeof searchHistory>>,
+  history: HistorySearch,
   offset = 0,
-  limit = 10,
-) => {
+  limit = maximumHistoryLimit,
+): HistoryPage => {
   if (!isHistoryOffsetValid(offset) || !isHistoryLimitValid(limit)) {
     throw new Error('History offset must be nonnegative and limit must be between 1 and 10.');
   }
@@ -397,10 +425,10 @@ export const historyPage = (
   const diagnosticFields: string[] = [];
 
   const diagnostics = history.diagnostics
-    .slice(0, 5)
+    .slice(0, previewDiagnosticCount)
     .map((entry) => preview(entry, 'diagnostics', diagnosticFields));
 
-  const candidates: ReturnType<typeof candidatePreview>[] = [];
+  const candidates: CandidatePreview[] = [];
 
   const page = (nextOffset?: number) => ({
     outcome: history.outcome,

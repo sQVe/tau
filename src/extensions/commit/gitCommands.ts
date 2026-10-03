@@ -11,16 +11,18 @@ interface RunGitOptions {
   timeout?: number | null;
 }
 
+const defaultTimeoutMilliseconds = 30_000;
+
 export const runGit = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
   commandArguments: string[],
   options: RunGitOptions = {},
-) => {
+): Promise<string> => {
   const result = await pi.exec('git', commandArguments, {
     cwd: workingDirectory,
     ...(options.signal ? { signal: options.signal } : {}),
-    ...(options.timeout === null ? {} : { timeout: options.timeout ?? 30_000 }),
+    ...(options.timeout === null ? {} : { timeout: options.timeout ?? defaultTimeoutMilliseconds }),
   });
 
   if (result.code !== 0 || result.killed) {
@@ -30,20 +32,25 @@ export const runGit = async (
   return result.stdout;
 };
 
-export const readIndex = (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) =>
-  runGit(pi, workingDirectory, ['ls-files', '--stage', '--debug', '-v', '-z']);
+export const readIndex = (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+): Promise<string> => runGit(pi, workingDirectory, ['ls-files', '--stage', '--debug', '-v', '-z']);
 
 export const writeTree = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
   signal: AbortSignal | undefined,
-) => {
+): Promise<string> => {
   const tree = await runGit(pi, workingDirectory, ['write-tree'], { signal });
 
   return tree.trim();
 };
 
-export const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
+export const listStagedPaths = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+): Promise<string[]> => {
   const output = await runGit(
     pi,
     workingDirectory,
@@ -57,7 +64,10 @@ export const listStagedPaths = async (pi: Pick<ExtensionAPI, 'exec'>, workingDir
     .map((file) => normalizeRepositoryPath(file));
 };
 
-export const validateFileRequests = async (workingDirectory: string, files: string[]) => {
+export const validateFileRequests = async (
+  workingDirectory: string,
+  files: string[],
+): Promise<void> => {
   await Promise.all(
     files.map(async (file) => {
       const status = await lstat(join(workingDirectory, file)).catch((error: unknown) => {
@@ -82,7 +92,7 @@ export const stageFiles = (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
   files: string[],
-) =>
+): Promise<string> =>
   runGit(pi, workingDirectory, ['--literal-pathspecs', 'add', '--', ...files], {
     timeout: null,
   });
@@ -92,7 +102,7 @@ export const readIndexEntries = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
   files: string[],
-) => {
+): Promise<Map<string, string>> => {
   const output = await runGit(
     pi,
     workingDirectory,
@@ -119,7 +129,7 @@ export const restoreIndexEntries = (
   workingDirectory: string,
   entries: string[],
   removedFiles: string[],
-) =>
+): Promise<string> =>
   runGit(
     pi,
     workingDirectory,
@@ -138,7 +148,7 @@ export const unstageFiles = (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
   files: string[],
-) =>
+): Promise<string> =>
   runGit(pi, workingDirectory, ['--literal-pathspecs', 'reset', '--', ...files], {
     timeout: null,
   });
@@ -148,7 +158,7 @@ export const unstageFiles = (
 export const repositoryPathPrefix = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
-) => {
+): Promise<string> => {
   const output = await runGit(
     pi,
     workingDirectory,
@@ -169,7 +179,10 @@ export const repositoryPathPrefix = async (
 };
 
 // HEAD is unresolved before the first commit.
-export const currentHead = async (pi: Pick<ExtensionAPI, 'exec'>, workingDirectory: string) => {
+export const currentHead = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+): Promise<string | null> => {
   const result = await pi.exec('git', ['rev-parse', 'HEAD'], { cwd: workingDirectory });
 
   return result.code === 0 ? result.stdout.trim() : null;
@@ -179,7 +192,7 @@ export const listCommitPaths = async (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,
   commitHash: string,
-) => {
+): Promise<string[]> => {
   const output = await runGit(
     pi,
     workingDirectory,

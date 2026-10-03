@@ -130,7 +130,7 @@ const isMultiCommandShellBlock = (match: RegExpMatchArray) => {
 };
 
 // Trimming each line keeps a block's identity when its list indentation changes.
-export const blockIdentity = (body: string) => {
+export const blockIdentity = (body: string): string => {
   const lines = body.split('\n').map((line) => line.trim());
 
   return createHash('sha256').update(lines.join('\n')).digest('hex').slice(0, 12);

@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from
 import { stripVTControlCharacters } from 'node:util';
 
 import type {
-  ResolveVitestFn,
+  ResolveVitest,
   VitestResolutionDiagnostic,
   VitestResolutionFailure,
 } from './types.js';
@@ -46,10 +46,15 @@ const resolutionMessages: Record<string, string> = {
   INVALID_VERSION: 'Vitest manifest has no valid version for test-name decoding.',
 };
 
+const maximumPathLength = 400;
+const cutMarker = ' [cut]';
+const maximumVersionLength = 128;
+
 const diagnosticPath = (path: string) => {
   const printable = stripVTControlCharacters(path).replace(/\p{Cc}/gu, ' ');
+  const kept = printable.slice(0, maximumPathLength - cutMarker.length);
 
-  return printable.length > 400 ? `${printable.slice(0, 394)} [cut]` : printable;
+  return printable.length > maximumPathLength ? `${kept}${cutMarker}` : printable;
 };
 
 const resolutionErrorDetails = (error: unknown) => {
@@ -73,7 +78,7 @@ const resolutionErrorDetails = (error: unknown) => {
 
 const validVersion = (version: unknown): version is string =>
   typeof version === 'string' &&
-  version.length <= 128 &&
+  version.length <= maximumVersionLength &&
   /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version);
 
 const resolutionExplanation = (
@@ -234,7 +239,7 @@ const resolveBinary = (
   return { path: binaryPath };
 };
 
-export const defaultResolveVitest: ResolveVitestFn = (cwd) => {
+export const defaultResolveVitest: ResolveVitest = (cwd) => {
   let stage: VitestResolutionDiagnostic['stage'] = 'lookup';
   const paths: { manifestPath?: string; binaryPath?: string } = {};
 

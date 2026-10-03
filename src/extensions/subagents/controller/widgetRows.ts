@@ -19,8 +19,13 @@ const readWidgetStatus = (
   }
 };
 
+const activityFreshness = 60_000;
+const shortTaskIdLength = 6;
+
 const currentActivity = (activity: ReturnType<typeof readWorkerActivity>, now: number): boolean =>
-  activity !== undefined && activity.updatedAt <= now && now - activity.updatedAt < 60_000;
+  activity !== undefined &&
+  activity.updatedAt <= now &&
+  now - activity.updatedAt < activityFreshness;
 
 const phaseActivityText = (
   activity: ReturnType<typeof readWorkerActivity>,
@@ -247,7 +252,7 @@ const buildWidgetRow = (
   const showPhase = state === 'starting' || state === 'running';
 
   return {
-    name: task.name ?? `${namePrefix(task.loadout)}-${task.taskId.slice(0, 6)}`,
+    name: task.name ?? `${namePrefix(task.loadout)}-${task.taskId.slice(0, shortTaskIdLength)}`,
     ...(task.label === undefined ? {} : { label: task.label }),
     taskId: task.taskId,
     task: task.task,

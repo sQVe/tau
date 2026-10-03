@@ -136,7 +136,6 @@ const registerRunTestsTool = (pi: ExtensionAPI, tracker: ObservationTracker): vo
           0,
         );
       },
-      // eslint-disable-next-line eslint/max-params -- Pi calls execute with five positional arguments.
       async execute(_toolCallId, parameters, signal, onUpdate, context) {
         const { scope, ...behavior } = parameters;
 
@@ -174,7 +173,7 @@ const registerRunTestsTool = (pi: ExtensionAPI, tracker: ObservationTracker): vo
   );
 };
 
-export default function tddExtension(pi: ExtensionAPI) {
+export default function tddExtension(pi: ExtensionAPI): void {
   const tracker: ObservationTracker = { current: undefined, reportedConfigError: undefined };
 
   pi.on('session_start', () => {

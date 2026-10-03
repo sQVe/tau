@@ -72,6 +72,14 @@ interface WorkerExtensionState {
     | undefined;
 }
 
+const millisecondsPerSecond = 1000;
+const millisecondsPerMinute = 60_000;
+const parentWatchInterval = 1000;
+const dispatchWatchInterval = 50;
+// Streaming updates record activity at most this often.
+const streamingActivityInterval = 500;
+const minimumBlockerLength = 200;
+
 const reportParameters = Type.Object({
   outcome: StringEnum(['success', 'failure', 'incomplete']),
   summary: Type.String({ minLength: 1, maxLength: 32_000 }),
@@ -304,7 +312,7 @@ const startParentWatch = (
     } finally {
       context.shutdown();
     }
-  }, 1000);
+  }, parentWatchInterval);
 };
 
 const askParent = (
@@ -415,14 +423,14 @@ const refuseEarlyIncomplete = (
   if (step === 'refuseTime') {
     state.remindAfterRefusal = true;
     throw new Error(
-      `Report refused: ${Math.floor(remaining / 1000)} seconds remain. Continue the remaining assigned work now. Do not sleep, poll, or retry the report only to wait out the time. Report incomplete only when a concrete blocker stops you.`,
+      `Report refused: ${Math.floor(remaining / millisecondsPerSecond)} seconds remain. Continue the remaining assigned work now. Do not sleep, poll, or retry the report only to wait out the time. Report incomplete only when a concrete blocker stops you.`,
     );
   }
 
   state.incompleteRefused = true;
   state.remindAfterRefusal = true;
   throw new Error(
-    `Report refused: ${Math.floor(remaining / 60_000)} minutes remain. Finish the remaining assigned work. Report incomplete only when a concrete blocker stops you.`,
+    `Report refused: ${Math.floor(remaining / millisecondsPerMinute)} minutes remain. Finish the remaining assigned work. Report incomplete only when a concrete blocker stops you.`,
   );
 };
 
@@ -445,7 +453,7 @@ const withBlocker = (summary: string, blocker: string | undefined): string => {
     return summary;
   }
 
-  const room = Math.max(200, textLimit - summary.length - 'Blocker: \n\n'.length);
+  const room = Math.max(minimumBlockerLength, textLimit - summary.length - 'Blocker: \n\n'.length);
 
   return `Blocker: ${blocker.slice(0, room)}\n\n${summary}`.slice(0, textLimit);
 };
@@ -524,7 +532,7 @@ const startDispatchWatch = (
       recordEvent(state.directory, task.taskId, 'startupFailure', String(error));
       context.shutdown();
     }
-  }, 50);
+  }, dispatchWatchInterval);
 };
 
 const refuseAcceptedTask = (
@@ -723,7 +731,7 @@ const registerActivityHandlers = (pi: ExtensionAPI, state: WorkerExtensionState)
     state.activityTimer = setTimeout(() => {
       state.activityTimer = undefined;
       recordWorkerActivity(state, context, 'active', 'Pi response streaming');
-    }, 500);
+    }, streamingActivityInterval);
   });
 
   pi.on('tool_execution_start', (event, context) => {
@@ -781,7 +789,7 @@ const armDeadlineWarning = (pi: ExtensionAPI, state: WorkerExtensionState, task:
         return;
       }
 
-      const seconds = Math.max(0, Math.floor(remainingWork(state, task) / 1000));
+      const seconds = Math.max(0, Math.floor(remainingWork(state, task) / millisecondsPerSecond));
 
       pi.sendMessage(
         {

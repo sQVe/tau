@@ -3,8 +3,12 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
-import type { FauxResponseStep, JsonObject } from '@earendil-works/pi-ai';
-import type { AgentSessionEvent, ExtensionFactory } from '@earendil-works/pi-coding-agent';
+import type { FauxProviderHandle, FauxResponseStep, JsonObject } from '@earendil-works/pi-ai';
+import type {
+  AgentSession,
+  AgentSessionEvent,
+  ExtensionFactory,
+} from '@earendil-works/pi-coding-agent';
 import type { TestContext } from 'vitest';
 import { expect } from 'vitest';
 
@@ -18,9 +22,24 @@ interface ToolResult {
   content: { type: 'text'; text: string }[];
 }
 
+type ToolExecutionEnd = Extract<AgentSessionEvent, { type: 'tool_execution_end' }>;
+
+interface Harness {
+  cwd: string;
+  session: AgentSession;
+  faux: FauxProviderHandle;
+  events: AgentSessionEvent[];
+  run: (overrides?: Partial<JsonObject>) => Promise<ToolResult>;
+  call: (
+    toolName: string,
+    input: JsonObject,
+    between?: FauxResponseStep[],
+  ) => Promise<ToolExecutionEnd>;
+}
+
 let counter = 0;
 
-export const createWorktree = async (cleanup: TestContext['onTestFinished']) => {
+export const createWorktree = async (cleanup: TestContext['onTestFinished']): Promise<string> => {
   const cwd = await mkdtemp(join(tmpdir(), 'tau-tdd-'));
   cleanup(() => rm(cwd, { recursive: true, force: true }));
 
@@ -41,7 +60,7 @@ export const createHarness = async (
   cleanup: TestContext['onTestFinished'],
   extensionFactories: ExtensionFactory[] = [],
   reused?: string,
-) => {
+): Promise<Harness> => {
   const cwd = reused ?? (await createWorktree(cleanup));
   const agentDirectory = join(cwd, 'agent');
 
@@ -87,7 +106,7 @@ export const createHarness = async (
     return event;
   };
 
-  const run = async (overrides = {}) => {
+  const run = async (overrides: Partial<JsonObject> = {}) => {
     const event = await call('run_tests', {
       behavior: 'required behavior',
       testFullName: 'required behavior',

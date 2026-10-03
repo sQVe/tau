@@ -31,6 +31,9 @@ const ansiCEscapes: Record<string, string> = {
   v: '\v',
 };
 
+// `\cX` keeps the low five bits of X.
+const controlCharacterMask = 0b1_1111;
+
 const decodeAnsiCEscape = (escape: string): string => {
   const kind = escape[0] ?? '';
 
@@ -43,7 +46,7 @@ const decodeAnsiCEscape = (escape: string): string => {
   }
 
   if (kind === 'c') {
-    return String.fromCodePoint((escape.codePointAt(1) ?? 0) & 31);
+    return String.fromCodePoint((escape.codePointAt(1) ?? 0) & controlCharacterMask);
   }
 
   return ansiCEscapes[escape] ?? escape;
@@ -58,6 +61,7 @@ const decodeAnsiC = (text: string) =>
 
 const blankCharacters = new Set([' ', '\t']);
 const separatorCharacters = new Set([';', '&', '|', '\n', '(', ')']);
+const longestRedirection = '<<<';
 
 // Split shell source into simple commands after quote removal. Commands inside `$(...)`,
 // backticks, process substitutions, and expanding heredoc bodies are listed as well, because the
@@ -377,10 +381,10 @@ class ShellParser {
 
   // Consume one redirection operator. Returns heredoc options when the operator starts a heredoc.
   private readRedirection(): { stripsTabs: boolean } | undefined {
-    const rest = this.source.slice(this.position, this.position + 3);
+    const rest = this.source.slice(this.position, this.position + longestRedirection.length);
 
-    if (rest === '<<<') {
-      this.position += 3;
+    if (rest === longestRedirection) {
+      this.position += longestRedirection.length;
 
       return undefined;
     }
@@ -388,7 +392,7 @@ class ShellParser {
     if (rest.startsWith('<<')) {
       const stripsTabs = rest === '<<-';
 
-      this.position += stripsTabs ? 3 : 2;
+      this.position += stripsTabs ? '<<-'.length : '<<'.length;
 
       return { stripsTabs };
     }

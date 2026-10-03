@@ -17,6 +17,11 @@ interface TaskRecord {
   directory: string;
 }
 
+interface UsageRecords {
+  sessions: SessionFile[];
+  skipped: { unreadableFiles: number; otherHarnessTasks: WorkerTask[] };
+}
+
 const usage = `Usage: node scripts/tokenUsage.ts [--since 7d] [--until <time>] [--top 10]
 
 --since and --until take an ISO date or time, or an age such as 12h or 3d.`;
@@ -54,7 +59,10 @@ const readSession = async (path: string, side: Side, tasks: WorkerTask[], since:
 };
 
 // Reads parent sessions under `sessions/` and worker sessions beside a task record under `tau/`.
-export const readUsageRecords = async (agentDirectory: string, since: number) => {
+export const readUsageRecords = async (
+  agentDirectory: string,
+  since: number,
+): Promise<UsageRecords> => {
   const parentPaths = await listFiles(join(agentDirectory, 'sessions'));
   const workerFiles = await listFiles(join(agentDirectory, 'tau'));
   const taskPaths = workerFiles.filter((path) => basename(path) === 'task.json');
@@ -100,13 +108,16 @@ export const readUsageRecords = async (agentDirectory: string, since: number) =>
   };
 };
 
-export const parseTime = (value: string, now: number) => {
+const hoursPerDay = 24;
+const millisecondsPerHour = 3_600_000;
+
+export const parseTime = (value: string, now: number): number => {
   const age = /^(\d+)([hd])$/.exec(value);
 
   if (age !== null) {
-    const hours = age[2] === 'd' ? Number(age[1]) * 24 : Number(age[1]);
+    const hours = age[2] === 'd' ? Number(age[1]) * hoursPerDay : Number(age[1]);
 
-    return now - hours * 3_600_000;
+    return now - hours * millisecondsPerHour;
   }
 
   // Date.parse reads a bare number as a year or month, such as 7 as July 2001.

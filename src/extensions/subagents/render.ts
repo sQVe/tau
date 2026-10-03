@@ -274,7 +274,10 @@ const historyView = (details: unknown): HistoryView | undefined => {
   };
 };
 
-export const shortId = (taskId: string | undefined): string => (taskId ?? '').slice(0, 8);
+const shortIdLength = 8;
+
+export const shortId = (taskId: string | undefined): string =>
+  (taskId ?? '').slice(0, shortIdLength);
 
 const displayName = (details: { taskId?: string | undefined; name?: string | undefined }): string =>
   details.name ??

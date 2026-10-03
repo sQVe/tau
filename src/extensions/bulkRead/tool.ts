@@ -29,6 +29,13 @@ const buildPayload = (files: { path: string; content: string }[]): string =>
     )
     .join('\n\n');
 
+// The per-file cap keeps one large file from filling the whole request.
+const maximumFileBytes = 400_000;
+const maximumRequestCharacters = 1_000_000;
+const requestTimeoutMilliseconds = 120_000;
+// Three characters per token is a conservative estimate to avoid overflowing the model window.
+const charactersPerToken = 3;
+
 const stripLinePrefixes = (text: string): string => text.replace(/^\d+→/gm, '');
 
 const inputError = (message: string, cause?: unknown) =>
@@ -85,7 +92,7 @@ const loadPayload = async (
   for (const { path, size } of await statPaths(cwd, paths, signal)) {
     signal?.throwIfAborted();
 
-    if (size > 400_000) {
+    if (size > maximumFileBytes) {
       throw inputError(`Input is too large: ${path}. Split the request`);
     }
 
@@ -124,9 +131,13 @@ export const bulkRead = async (
   signal: AbortSignal | undefined,
 ): Promise<AgentToolResult<Record<string, never>>> => {
   const reference = `${model.provider}/${model.id}`;
-  // Three characters per token is a conservative estimate to avoid overflowing the model window,
-  // and the output allowance is reserved so a request at the cap leaves room for the answer.
-  const maxCharacters = Math.min(1_000_000, (model.contextWindow - model.maxTokens) * 3);
+
+  // The output allowance is reserved so a request at the cap leaves room for the answer.
+  const maxCharacters = Math.min(
+    maximumRequestCharacters,
+    (model.contextWindow - model.maxTokens) * charactersPerToken,
+  );
+
   const input = await loadPayload(context.cwd, params.paths, maxCharacters, signal);
   const content = `Question: ${params.question}\n\n${input.payload}`;
 
@@ -134,7 +145,7 @@ export const bulkRead = async (
     throw inputError('Input is too large. Split the request');
   }
 
-  const signals = [AbortSignal.timeout(120_000)];
+  const signals = [AbortSignal.timeout(requestTimeoutMilliseconds)];
 
   if (signal) {
     signals.push(signal);

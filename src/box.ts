@@ -1,8 +1,11 @@
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 
+// Two border columns and two padding columns.
+export const boxFrameWidth = 4;
+
 export const topBorder = (left: string, right: string, width: number, theme?: Theme): string => {
-  if (width < 4) {
+  if (width < boxFrameWidth) {
     return truncateToWidth('╭─', width);
   }
 
@@ -17,11 +20,11 @@ export const topBorder = (left: string, right: string, width: number, theme?: Th
 };
 
 export const boxLine = (content: string, width: number, theme?: Theme): string => {
-  if (width < 4) {
+  if (width < boxFrameWidth) {
     return truncateToWidth('│', width);
   }
 
-  const innerWidth = width - 4;
+  const innerWidth = width - boxFrameWidth;
   const fitted = truncateToWidth(content, innerWidth, '…');
   const line = `${theme?.fg('border', '│') ?? '│'} ${fitted}${' '.repeat(Math.max(0, innerWidth - visibleWidth(fitted)))} ${theme?.fg('border', '│') ?? '│'}`;
 
@@ -29,7 +32,7 @@ export const boxLine = (content: string, width: number, theme?: Theme): string =
 };
 
 export const bottomBorder = (width: number, theme?: Theme): string => {
-  if (width < 4) {
+  if (width < boxFrameWidth) {
     return truncateToWidth('╰─', width);
   }
 

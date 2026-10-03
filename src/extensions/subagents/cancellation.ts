@@ -20,8 +20,12 @@ interface ClientOptions {
   environment?: NodeJS.ProcessEnv | undefined;
 }
 
+// Node timers overflow above a signed 32-bit millisecond count.
+const maximumTimerDelay = 2_147_483_647;
+const bytesPerMebibyte = 1_048_576;
+
 const validateBudget = (budget: number) => {
-  if (!Number.isSafeInteger(budget) || budget <= 0 || budget > 2_147_483_647) {
+  if (!Number.isSafeInteger(budget) || budget <= 0 || budget > maximumTimerDelay) {
     throw new Error('The budget must be a positive timer-safe integer in milliseconds.');
   }
 };
@@ -43,10 +47,10 @@ export const runClient = (
     const child = execFile(
       executable,
       argumentsList,
-      { env: environment, maxBuffer: 1024 * 1024 },
+      { env: environment, maxBuffer: bytesPerMebibyte },
       (error, stdout, stderr) => {
         clearTimeout(timer);
-        // eslint-disable-next-line tau/helper-before-use -- Child completion and abort cleanup share callbacks.
+        // eslint-disable-next-line seam/helper-before-use -- Child completion and abort cleanup share callbacks.
         signal?.removeEventListener('abort', abort);
 
         if (error) {
@@ -66,7 +70,7 @@ export const runClient = (
       child.stdout?.destroy();
       child.stderr?.destroy();
       clearTimeout(timer);
-      // eslint-disable-next-line tau/helper-before-use -- stop and abort need each other for listener cleanup.
+      // eslint-disable-next-line seam/helper-before-use -- stop and abort need each other for listener cleanup.
       signal?.removeEventListener('abort', abort);
     };
 
@@ -111,7 +115,7 @@ const foregroundProcessMatches = (value: unknown, owned: OwnedWorker): boolean =
   return process.pid === owned.processId && processIdentityMatches(process, owned);
 };
 
-export const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker) =>
+export const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker): boolean =>
   sameWorkerOwner(info, owned) &&
   Array.isArray(info.foreground_processes) &&
   info.foreground_processes.some((value) => foregroundProcessMatches(value, owned));

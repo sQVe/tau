@@ -9,26 +9,35 @@ import type { FooterInput } from './types.js';
 const sanitizeText = (text: string): string =>
   stripVTControlCharacters(text).replace(/\p{Cc}/gu, ' ');
 
+const thousand = 1000;
+const million = 1_000_000;
+// Counts below ten units keep one decimal, such as 1.5k.
+const decimalLimit = 10;
+
 // Match Pi's footer token formatting without importing its internal component.
 const formatTokens = (count: number): string => {
-  if (count < 1000) {
+  if (count < thousand) {
     return count.toString();
   }
 
-  if (count < 10000) {
-    return `${(count / 1000).toFixed(1)}k`;
+  if (count < decimalLimit * thousand) {
+    return `${(count / thousand).toFixed(1)}k`;
   }
 
-  if (count < 1000000) {
-    return `${Math.round(count / 1000)}k`;
+  if (count < million) {
+    return `${Math.round(count / thousand)}k`;
   }
 
-  if (count < 10000000) {
-    return `${(count / 1000000).toFixed(1)}M`;
+  if (count < decimalLimit * million) {
+    return `${(count / million).toFixed(1)}M`;
   }
 
-  return `${Math.round(count / 1000000)}M`;
+  return `${Math.round(count / million)}M`;
 };
+
+const contextErrorPercent = 90;
+const contextWarningPercent = 70;
+const costDecimals = 3;
 
 const thinkingColors = {
   off: 'thinkingOff',
@@ -61,9 +70,9 @@ export const renderFooterLine = (
   const percent = input.contextPercent;
   let contextColor: ThemeColor = 'text';
 
-  if (percent !== null && percent > 90) {
+  if (percent !== null && percent > contextErrorPercent) {
     contextColor = 'error';
-  } else if (percent !== null && percent > 70) {
+  } else if (percent !== null && percent > contextWarningPercent) {
     contextColor = 'warning';
   }
 
@@ -77,7 +86,7 @@ export const renderFooterLine = (
   }
 
   const right = [
-    theme.fg('muted', `$${input.cost.toFixed(3)}`),
+    theme.fg('muted', `$${input.cost.toFixed(costDecimals)}`),
     theme.fg(contextColor, context),
     model,
   ].join('  ');

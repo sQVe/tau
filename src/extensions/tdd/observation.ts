@@ -476,5 +476,5 @@ export const createTestObservation = (
   };
 };
 
-export const observationDirectory = async (directory: string) =>
+export const observationDirectory = async (directory: string): Promise<string> =>
   realpath(directory).catch(() => resolve(directory));

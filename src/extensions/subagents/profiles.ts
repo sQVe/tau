@@ -13,6 +13,11 @@ import { thinkingSchema, toolNamePattern } from './types.js';
 import type { Loadout, Profile, Task } from './types.js';
 import { defaultProfileName } from './workerModels.js';
 
+export interface NativeIdentity {
+  nativeSessionId: string;
+  nativeSessionFile: string;
+}
+
 export interface ProfileSummary {
   name: string;
   description?: string;
@@ -217,7 +222,7 @@ const scanProfiles = (cwd: string, agentDirectory: string, trusted: boolean) => 
       .toSorted()) {
       const source = join(directory, file);
       const content = readFileSync(source, 'utf8');
-      const fallbackName = file.slice(0, -3);
+      const fallbackName = file.slice(0, -'.md'.length);
 
       const fields = content
         .replaceAll('\r\n', '\n')
@@ -286,7 +291,7 @@ export const seedSession = (task: Task): void => {
   });
 };
 
-export const nativeIdentity = (directory: string) => {
+export const nativeIdentity = (directory: string): NativeIdentity => {
   const nativeSessionId = randomUUID();
 
   return { nativeSessionId, nativeSessionFile: join(directory, `${nativeSessionId}.jsonl`) };
