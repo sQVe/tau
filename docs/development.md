@@ -4,8 +4,9 @@ Set up a checkout, try Tau in Pi, and check changes before release.
 
 ## Local setup
 
-Use the Node.js version required by `engines.node` and the pnpm version specified by
-`packageManager` in [package.json](../package.json). Run these commands from the Tau checkout:
+Use Node.js 24.21.0 or later and the pnpm version specified by `packageManager` in
+[package.json](../package.json). Development needs a newer Node.js than `engines.node` because
+`@sqve/seam` requires 24.21.0. Run these commands from the Tau checkout:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -32,12 +33,14 @@ Pi loads the TypeScript source directly; there is no build step.
 Tests use temporary directories and need no model API. Changed-test selection follows imports;
 changes to `vite.config.ts` or `package.json` run the full suite.
 
-Style commands accept file paths, for example `pnpm style:fix tests/lint.test.ts`. Rename bindings
-and move helpers manually. Staged-file hooks enforce the same rules. Do not set `TAU_LINT_STYLE`
-globally; the style commands set it for their child linter.
+Style commands run [Seam](https://github.com/sQVe/seam) and accept file paths, for example
+`pnpm style:fix tests/lint.test.ts`. Rename bindings and move helpers manually. Staged-file hooks
+enforce the same rules.
 
-Configure linting and formatting in [vite.config.ts](../vite.config.ts). Keep the installed Vitest
-version the same as the version bundled with Vite+.
+Seam provides the shared lint and format settings. Configure Tau's own settings in
+[vite.config.ts](../vite.config.ts), and Tau's own lint rules in
+[lint/plugin.ts](../lint/plugin.ts). Keep the installed Vitest version the same as the version
+bundled with Vite+.
 
 ## Try Tau
 
