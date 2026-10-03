@@ -42,9 +42,10 @@ commit another worktree from your session, even over bash.
    - With no match, the target is not ambiguous: start Pi in the workspace's manager pane. That pane
      is in the first tab, which has the lowest `number` in `herdr tab list --workspace <workspace>`.
      `herdr pane list` shows each pane's tab by `tab_id`. Other tabs hold workers and servers.
-   - If the first tab has exactly one pane and it is at its shell prompt, run
-     `herdr agent start <worktree-name> --kind pi --pane <pane>` and use the `pane_id` it returns.
-     Otherwise ask the user.
+   - If the first tab has exactly one pane, read it with `herdr pane read <pane>`. If the output
+     clearly shows a shell prompt, run `herdr agent start <worktree-name> --kind pi --pane <pane>`
+     and use the `pane_id` it returns.
+   - With several panes in the first tab, or without a clear shell prompt, ask the user.
 2. Write the message with the file tool to
    `<session-directory>/.tau/handoffs/<your-pane>-<timestamp>.md`.
    - The session directory is your worktree or the bare repository root. Take your pane from
