@@ -26,7 +26,7 @@ blocks, so they also work in pull request bodies and documents.
   `gitGraph`, or C4, as raw source.
   - `flowchart` or `graph`: directions `TD`, `TB`, `BT`, `LR`, and `RL`, subgraphs, and edge labels.
   - `sequenceDiagram`: notes, `loop`, `alt`, `opt`, and `autonumber`.
-  - `stateDiagram-v2`.
+  - `stateDiagram-v2` or `stateDiagram`.
   - `classDiagram`.
   - `erDiagram`.
 - If the user asks for a type not listed here, say it is not supported, offer the nearest supported
@@ -46,8 +46,9 @@ blocks, so they also work in pull request bodies and documents.
    discussing. If there is none or it is unclear, ask what to diagram and stop.
 2. Read the code for the topic: entry points, calls or messages between parts, and the states or
    records involved. If you cannot read the code you need, say what is missing and stop.
-3. Decide whether a diagram helps. After `/diagram`, always draw at least one. Otherwise, if one
-   sentence explains the topic, write the sentence instead and say that a diagram would add nothing.
+3. Decide whether a diagram helps. After `/diagram`, draw at least one unless an earlier rule or
+   step told you to stop. Otherwise, if one sentence explains the topic, write the sentence instead
+   and say that a diagram would add nothing.
 4. Pick the type that matches the idea: `flowchart` for control flow, `sequenceDiagram` for messages
    between components over time, `stateDiagram-v2` for states, `erDiagram` or `classDiagram` for
    data relations.
