@@ -41,7 +41,8 @@ make it pass, then verify the whole suite once.
 5. Report the outcome and the freshness as separate facts.
    - `stale` means tracked inputs changed. `unknown` means Tau could not read them. The runner
      report stays available in both cases.
-   - Rerun tests on the current inputs before you claim current verification.
+   - When the freshness is stale or unknown, rerun tests on the current inputs before you claim
+     current verification.
 
 Tau keeps one active behavior per session and directory, not a history of RED results. A full pass
 starts the next cycle. Tau detects external edits only when a test run or a write, edit, or bash
