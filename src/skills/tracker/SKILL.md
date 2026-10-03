@@ -44,36 +44,33 @@ preview. It needs the `linear` CLI authenticated for the workspace.
      [agent ticket template](templates/agent-ticket.md).
    - Bug: a defect a person should see. Use the [bug template](templates/bug.md).
 
-2. Route the ticket. Read the tracker lines Tau adds to the prompt. Every ticket needs the line that
-   starts with `Tracker repository:`, agent tickets included, because it ties the work to this
-   repository.
-   - A container, slice, bug, or human ticket goes to the team and project in the
-     `Tracker repository:` line. Without a project there, create it without one.
+2. Route the ticket from the tracker lines Tau adds to the prompt.
+   - Every ticket needs the line that starts with `Tracker repository:`, agent tickets included,
+     because it ties the work to this repository. A container, slice, bug, or human ticket goes to
+     the team and project in that line. Without a project there, create it without one.
    - An agent ticket goes to the team in the line that starts with `Tracker agent team:`, with no
-     project. The agent team is often not in the repository's project.
-   - The `Tracker repository:` route holds for every ticket except an agent ticket, also when it has
-     a parent, such as a slice under its container. Read the parent's team and project with
+     project.
+   - A ticket with a parent, other than an agent ticket, still takes the `Tracker repository:`
+     route. An example is a slice under its container. Read the parent's team and project with
      `linear api 'query($id: String!) { issue(id: $id) { team { key } project { name } state { name } } }' --variable id=<parent>`.
      If either differs from the route, stop. Tell the user that the parent is in team
      `<parent team>` and project `<parent project>`, but this repository routes to team
      `<route team>` and project `<route project>`.
+   - If a line the ticket needs is missing, stop. Show each line that starts with
+     `Tracker setup needed:`, and tell the user to add the missing part to `~/.pi/agent/tau.json`,
+     then run `/reload` or start a new session. The repository key is the `origin` remote's
+     `owner/name`, and `project` is optional:
 
-   If a line the ticket needs is missing, stop: the `Tracker repository:` line for every ticket, and
-   the `Tracker agent team:` line for an agent ticket. Show each line that starts with
-   `Tracker setup needed:`, and tell the user to add the missing part to `~/.pi/agent/tau.json`,
-   then run `/reload` or start a new session. The repository key is the `origin` remote's
-   `owner/name`, and `project` is optional:
-
-   ```json
-   {
-     "tracker": {
-       "agentTeam": "AI",
-       "repositories": { "<owner>/<name>": { "team": "<team key>", "project": "<project name>" } }
+     ```json
+     {
+       "tracker": {
+         "agentTeam": "AI",
+         "repositories": { "<owner>/<name>": { "team": "<team key>", "project": "<project name>" } }
+       }
      }
-   }
-   ```
+     ```
 
-3. Search for an open duplicate before you draft a new ticket. Search the target team, and its
+3. Search for an open duplicate before you write a new ticket. Search the target team, and its
    project when it has one, with a few keywords from the title. Leave out `--project` for an agent
    ticket:
 
@@ -136,10 +133,10 @@ preview. It needs the `linear` CLI authenticated for the workspace.
      linear api 'mutation($id: String!, $order: Float!) { issueUpdate(id: $id, input: { subIssueSortOrder: $order }) { success } }' --variable id=<ticket> --variable order=<value>
      ```
 
-   - Move a slice to In Progress when it starts. Read its state name with the query in step 2. If
-     the name is `In Progress`, skip the move; any other state, `In Review` included, moves. Move it
-     with `linear issue update <slice> --state 'In Progress'`. If the team has no state with that
-     name, stop and ask the user.
+   - Move a slice to In Progress when it starts. Read its state name with the step 2 query, run on
+     the slice. If the name is `In Progress`, skip the move; any other state, `In Review` included,
+     moves. Move it with `linear issue update <slice> --state 'In Progress'`. If the team has no
+     state with that name, stop and ask the user.
 
 7. Link the ticket from the PR. Write `Fixes <id>` in the PR body only for the ticket the PR
    completes, such as the slice, and `Related to <id>` for every other ticket it touches. Never list
