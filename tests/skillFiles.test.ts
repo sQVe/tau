@@ -105,6 +105,11 @@ it.each<[string, string, SkillProblemKind]>([
     'broken-link',
   ],
   [
+    'a link to a missing heading',
+    `${validFrontmatter('demo')}Jump to [the steps](#procedure).\n`,
+    'missing-heading',
+  ],
+  [
     'a missing reference link target',
     `${validFrontmatter('demo')}Use [the template][template].\n\n[template]: template.md\n`,
     'broken-link',
@@ -328,7 +333,7 @@ it('accepts valid links, code, words that contain adr, and one-command shell blo
 
   const directory = await createSkills({
     demo: `---\nname: demo\ndescription: Does a thing.\nmetadata:\n  required-for: pushing a branch\n---\n${body}`,
-    commit: `${validFrontmatter('commit')}Body.\n`,
+    commit: `${validFrontmatter('commit')}## Procedure\n`,
   });
 
   expect(findSkillProblems(directory, noAllowlists)).toEqual([]);
