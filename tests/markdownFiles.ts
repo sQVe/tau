@@ -30,6 +30,10 @@ export interface Document {
   markdown: string;
 }
 
+// Maps each backticked path that names no repository file on purpose to the documents that may
+// name it.
+export type AllowedPaths = Readonly<Record<string, readonly string[]>>;
+
 // Fences in list items are indented, so any indentation opens a block. A closing fence may be
 // longer than the opening one.
 export const fencedCodeBlock =
@@ -71,13 +75,14 @@ const linkTargets = (markdown: string) =>
   );
 
 // A Setext underline needs a one-line paragraph above it, so a `---` rule after a list or a blank
-// line stays a rule.
+// line stays a rule. A heading line ends the block before it like a blank line does.
 const isSetextHeading = (lines: readonly string[], index: number) => {
   const line = lines[index] ?? '';
   const previous = lines[index - 1] ?? '';
   const next = lines[index + 1] ?? '';
+  const startsBlock = previous.trim() === '' || atxHeading.test(previous);
 
-  return previous.trim() === '' && paragraphLine.test(line) && setextUnderline.test(next);
+  return startsBlock && paragraphLine.test(line) && setextUnderline.test(next);
 };
 
 const headingsOf = (markdown: string) => {
@@ -274,21 +279,24 @@ const repositoryFilesOf = (
   );
 
   return {
-    exists: (path: string) => repositoryPaths.has(relative(root, path)),
+    exists: (path: string) => {
+      const relativePath = relative(root, path);
+
+      return relativePath === '' || repositoryPaths.has(relativePath);
+    },
     readMarkdown: (path: string) => markdownByFile.get(path) ?? '',
   };
 };
 
 /**
  * Checks Markdown files given as paths relative to `root`. `allFiles` lists every file in the
- * repository. `allowedPaths` lists backticked paths that name no repository file on purpose, such
- * as examples or files in other projects.
+ * repository.
  */
 export const documentProblems = (
   root: string,
   documents: readonly Document[],
   allFiles: readonly string[],
-  allowedPaths: readonly string[],
+  allowedPaths: AllowedPaths,
 ): DocumentProblem[] => {
   const repositoryPaths = repositoryPathsOf(allFiles);
   const files = repositoryFilesOf(root, documents, repositoryPaths);
@@ -303,9 +311,11 @@ export const documentProblems = (
     const paths = historyFiles.has(file) ? [] : backtickedPaths(markdown, repositoryPaths);
 
     for (const path of paths) {
-      named.add(path);
+      const allowed = allowedPaths[path]?.includes(file) ?? false;
 
-      if (!pathExists(path, repositoryPaths) && !allowedPaths.includes(path)) {
+      named.add(`${file}\0${path}`);
+
+      if (!pathExists(path, repositoryPaths) && !allowed) {
         problems.push({ file, kind: 'missing-path', detail: `names missing path ${path}` });
       }
     }
@@ -320,13 +330,15 @@ export const documentProblems = (
     detail,
   }));
 
-  const staleEntries = allowedPaths
-    .filter((path) => !named.has(path) || pathExists(path, repositoryPaths))
-    .map((path) => ({
-      file: 'tests/markdownFiles.test.ts',
-      kind: 'stale-allowlist' as const,
-      detail: `allows ${path}, which no document names as a missing path`,
-    }));
+  const staleEntries = Object.entries(allowedPaths).flatMap(([path, allowedFiles]) =>
+    allowedFiles
+      .filter((file) => !named.has(`${file}\0${path}`) || pathExists(path, repositoryPaths))
+      .map((file) => ({
+        file: 'tests/markdownFiles.test.ts',
+        kind: 'stale-allowlist' as const,
+        detail: `allows ${path} in ${file}, which does not name it as a missing path`,
+      })),
+  );
 
   return [...problems, ...indexProblems, ...staleEntries];
 };
@@ -342,7 +354,7 @@ const listRepositoryFiles = (root: string) =>
 
 export const findDocumentProblems = (
   root: string,
-  allowedPaths: readonly string[],
+  allowedPaths: AllowedPaths,
 ): DocumentProblem[] => {
   const allFiles = [...new Set(listRepositoryFiles(root))];
 

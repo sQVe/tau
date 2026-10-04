@@ -40,7 +40,7 @@ tau/
 - `src/extensions/<name>/` holds the code for one feature, including Pi setup, state, types, rules,
   and handlers.
 - `src/<primitive>/` holds code shared by extensions.
-- `src/skills/` holds SKILL.md files.
+- `skills/` at the root holds SKILL.md files.
 
 A primitive is code that two or more extensions could share. Code for one feature stays in that
 extension.
@@ -61,10 +61,10 @@ Each command, event, and tool belongs to an extension. Register them inside the 
 function via `pi.registerCommand`, `pi.on`, and `pi.registerTool`. No global handlers live at the
 top level.
 
-Skills are the exception: Pi discovers them from `src/skills/`, declared in `package.json`. Skills
-are SKILL.md files, not TypeScript modules.
+Skills are the exception: Pi discovers them from `skills/` at the root, declared in `package.json`.
+Skills are SKILL.md files, not TypeScript modules.
 
-`src/tau.ts` stays thin: import extensions, install them at startup. No feature logic.
+`src/extensions/index.ts` stays thin: import extensions, install them at startup. No feature logic.
 
 ### Primitive shape
 

@@ -3,22 +3,39 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 
 import { documentProblems, findDocumentProblems } from './markdownFiles.js';
-import type { Document, DocumentProblemKind } from './markdownFiles.js';
+import type { AllowedPaths, Document, DocumentProblemKind } from './markdownFiles.js';
 
 const repositoryRoot = join(import.meta.dirname, '..');
 
-// Backticked paths that name no file in this repository on purpose: paths in projects that use
-// Pi, herdr source files, and the former root layout that older records describe. Remove an
-// entry when no document names it.
-const allowedPaths = [
-  '.pi/agents/',
-  '.pi/settings.json',
-  'extensions/',
-  'skills/',
-  'src/agent_resume.rs',
-  'src/app/agent_resume.rs',
-  'src/persist/restore.rs',
-];
+// Backticked paths that name no file in this repository on purpose, with the documents that may
+// name them: paths in projects that use Pi, herdr source files, and the layout that older records
+// describe. Remove a document when it stops naming the path.
+const allowedPaths: AllowedPaths = {
+  '.pi/agents/': [
+    'docs/adr/0047-default-bundled-worker-profiles-to-opus-5-5.md',
+    'docs/adr/0071-set-worker-models-in-the-user-config.md',
+  ],
+  '.pi/settings.json': [
+    'docs/adr/0061-layer-tau-config-from-user-and-repository-files.md',
+    'docs/development.md',
+  ],
+  'extensions/': ['docs/adr/0001-application-structure.md'],
+  'skills/': [
+    'docs/adr/0001-application-structure.md',
+    'docs/adr/0003-externally-observable-identifiers.md',
+    'docs/adr/0004-skill-authoring-style.md',
+    'docs/adr/0077-keep-a-skill-authoring-guide-in-docs.md',
+  ],
+  'src/agent_resume.rs': ['docs/adr/0059-run-each-pi-worker-as-its-panes-own-process.md'],
+  'src/app/agent_resume.rs': ['docs/adr/0059-run-each-pi-worker-as-its-panes-own-process.md'],
+  'src/extensions/coding/': ['docs/adr/0008-coding-instructions.md'],
+  'src/extensions/index.ts': ['docs/adr/0001-application-structure.md'],
+  'src/extensions/workflow/': [
+    'docs/adr/0056-load-workflow-rules-apart-from-coding-and-writing.md',
+  ],
+  'src/persist/restore.rs': ['docs/adr/0059-run-each-pi-worker-as-its-panes-own-process.md'],
+  'src/tauConfig/': ['docs/adr/0063-narrow-allowed-models-from-user-to-repository.md'],
+};
 
 const root = '/repository';
 const firstAdr = { file: 'docs/adr/0001-first.md', markdown: '# ADR 0001: First\n' };
@@ -32,7 +49,7 @@ const indexOf = (...entries: string[]) => ({
 const guide = (markdown: string) => ({ file: 'docs/guide.md', markdown });
 const sourceFiles = ['src/tau.ts', 'src/extensions/coding.ts'];
 
-const problemsIn = (documents: readonly Document[], allowed: readonly string[] = []) =>
+const problemsIn = (documents: readonly Document[], allowed: AllowedPaths = {}) =>
   documentProblems(
     root,
     documents,
@@ -110,12 +127,23 @@ it.each<[string, string[], Document]>([
   expect(problems).toEqual([{ file: 'docs/adr/README.md', kind: 'adr-index' }]);
 });
 
-it('reports an allowed path that no document names as missing', () => {
+it('reports an allowed path that its document does not name as missing', () => {
   const documents = [indexOf(firstEntry), firstAdr, guide('Edit `src/tau.ts`.\n')];
 
-  expect(problemsIn(documents, ['src/gone.ts', 'src/tau.ts'])).toEqual([
+  expect(
+    problemsIn(documents, { 'src/gone.ts': ['docs/guide.md'], 'src/tau.ts': ['docs/guide.md'] }),
+  ).toEqual([
     { file: 'tests/markdownFiles.test.ts', kind: 'stale-allowlist' },
     { file: 'tests/markdownFiles.test.ts', kind: 'stale-allowlist' },
+  ]);
+});
+
+it('reports a path allowed for one document in another document', () => {
+  const adr = { ...firstAdr, markdown: '# ADR 0001: First\n\nAdd `src/gone/`.\n' };
+  const documents = [indexOf(firstEntry), adr, guide('Read `src/gone/`.\n')];
+
+  expect(problemsIn(documents, { 'src/gone/': [firstAdr.file] })).toEqual([
+    { file: 'docs/guide.md', kind: 'missing-path' },
   ]);
 });
 
@@ -139,8 +167,13 @@ it('accepts valid links, headings, paths, and code spans that are not paths', ()
     'Setext section',
     '--------------',
     '',
+    '# Intro',
+    'Setext after a heading',
+    '----------------------',
+    '',
     'Jump to [checks](#run-pnpm-check-first), [notes](#notes-1-1), and [link](#linked-heading-with-punctuation).',
-    'Jump to [the title](#setext-title) and [the section](#setext-section).',
+    'Jump to [the title](#setext-title), [the section](#setext-section), and [the next](#setext-after-a-heading).',
+    'Open [the repository](../) and [its root](..).',
     'Read [ADR 0001](adr/0001-first.md#adr-0001-first) and [the index][index].',
     'Open [the source](../src/tau.ts#L1), [the folder](../src/extensions/), and [the site](https://example.com/x.md#y).',
     '',
@@ -165,5 +198,5 @@ it('accepts valid links, headings, paths, and code spans that are not paths', ()
     { file: 'CHANGELOG.md', markdown: '- Removed `src/extensions/index.ts`.\n' },
   ];
 
-  expect(problemsIn(documents, ['src/example.rs'])).toEqual([]);
+  expect(problemsIn(documents, { 'src/example.rs': ['docs/guide.md'] })).toEqual([]);
 });

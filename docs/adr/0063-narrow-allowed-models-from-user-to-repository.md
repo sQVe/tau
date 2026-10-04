@@ -42,7 +42,7 @@ The repository list can only narrow the user list.
   launch, an environment or profile model, and a saved worker replay all pass through `findModel`.
 - Entries use the same parser as other model references. An invalid entry or a non-array value is an
   error that names the file, like the rest of Tau config.
-- The shared file reading from ADR 0061 moves to `src/tauConfig.ts`. Each consumer validates its own
+- The shared file reading from ADR 0061 moves to `src/tauConfig/`. Each consumer validates its own
   top-level key, so a broken `tdd` block never blocks model selection and a broken `allowedModels`
   never pauses TDD hints.
 
