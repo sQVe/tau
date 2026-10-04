@@ -29,6 +29,7 @@ Writes:
 
 - [ ] The tool asks with `ctx.ui.confirm` before a write outside the worktree, such as a Linear
       ticket, a GitHub change, or a file outside the checkout.
+- [ ] The confirm shows the exact writes the tool will make, so the user sees what they approve.
 - [ ] The tool writes nothing when the user declines or when the session has no UI.
 - [ ] A retry applies only the writes that are missing, and identifies each one by a saved ID, not
       by a title.
