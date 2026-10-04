@@ -34,9 +34,9 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 - Commit with the [commit skill](../commit/SKILL.md). Never stash, discard, or commit unrelated
   changes. Ask when ownership is unclear or unrelated changes could affect review or checks.
 - On the user's own PR or branch, as the [code-review skill](../code-review/SKILL.md) defines it,
-  fix supported, in-scope review findings and the in-scope causes of failing checks without asking.
-  On anyone else's, fix only with the user's approval. Never weaken a check or add a retry to hide a
-  failure.
+  fix supported, in-scope review findings and the in-scope causes of failing checks without asking,
+  unless the user asked for a read-only review or no changes. On anyone else's, fix only with the
+  user's approval. Never weaken a check or add a retry to hide a failure.
 - On updates, keep title and body text you did not write this session. Change only wrong or missing
   facts, and preview each change.
 - After a partial failure, stop and report what completed. Read the remote branch and PR before
@@ -73,8 +73,9 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      [stack skill](../stack/SKILL.md), or the default branch. Fetch it and pin the merge base with
      `git merge-base <remote>/<base> HEAD`.
    - Outside a stack, when the branch conflicts with the base or needs a base change for its checks,
-     rebase it locally with the update-branch skill and tell the user. Do not ask first, even when
-     the branch was already pushed. Note the remote tip before the rebase as `<old-tip>`; step 8
+     rebase it locally with the update-branch skill and tell the user. Do not ask to approve the
+     rebase, even when the branch was already pushed. The update-branch question about a dirty
+     working tree still applies. Note the remote tip before the rebase as `<old-tip>`; step 8
      previews the force-push it needs. Stop the rebase and ask when a conflict needs a product
      decision. Pin the merge base again after the rebase.
    - Read issues linked by the user, branch name, commits, and existing body with their service's
