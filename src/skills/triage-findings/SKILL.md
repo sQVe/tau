@@ -3,16 +3,17 @@ name: triage-findings
 description:
   Verify review findings or comments the user asked you to act on, fix the supported ones in scope,
   and report each one as Fixed, Not worth changing, Incorrect, or Blocked. Use it for "triage these
-  findings", "fix these review comments", or "act on the findings I approved". Do not start it for
-  findings the user has not approved, such as `code-review` output that waits for an answer.
+  findings", "fix these review comments", or "act on the findings I approved". `code-review`, `pr`,
+  and `start-slice` also start it after a review of the user's own work.
 ---
 
 # Triage findings
 
 ## When to use
 
-Use this skill when the user asks you to act on review findings or comments. Do not start it on your
-own for findings the user has not approved yet.
+Use this skill when the user asks you to act on review findings or comments, or after a review of
+the user's own work, as the [code-review skill](../code-review/SKILL.md) defines it. Do not start it
+on your own for findings on someone else's work, or after a request for a read-only review.
 
 ## Goal
 
@@ -21,8 +22,13 @@ changing and within the requested scope. Explain the rest.
 
 ## Hard rules
 
-- This skill alone does not authorize commits, pushes, ticket updates, or posted replies.
-- Ask before expanding scope.
+- When the workflow that started this skill commits, such as `pr`, commit the fixes on its feature
+  branch with the [commit skill](../commit/SKILL.md). Otherwise leave them uncommitted. This skill
+  never authorizes pushes, ticket updates, or posted replies.
+- Ask before expanding scope. Mark a finding Blocked when its fix needs a decision about scope,
+  intended product behavior, or policy, or when you cannot settle a disputed claim against the code.
+  Fixing a defect so the code does what the task intends needs no decision. Make the safe fixes
+  first, then ask about the Blocked findings.
 - Making the reviewer happy is not a reason to change code.
 
 ## Procedure

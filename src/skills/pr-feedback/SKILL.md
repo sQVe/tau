@@ -184,7 +184,8 @@ see for themselves.
   point back to them. No thanks, praise, or sign-off.
 - A fixed thread usually needs one line: "Done in <sha>." Add a clause only for something the
   reviewer cannot know, such as a side effect or a deliberate difference from the suggestion. When
-  an earlier commit fixed it, find that commit, for example with `git log -L`, and ask when unsure.
+  an earlier commit fixed it, find that commit, for example with `git log -L`. Ask only when the
+  history cannot show which commit fixed it.
 - A declined thread gives the reason in one or two sentences, with the source that settles it.
 - A valid finding outside the PR's scope gets `Tracked in <issue>.`
 - A thread that needs nothing from us gets a short acknowledgement or no reply.

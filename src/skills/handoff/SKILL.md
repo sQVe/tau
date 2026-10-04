@@ -21,9 +21,11 @@ commit another worktree from your session, even over bash.
 
 - Requires `HERDR_ENV=1`. Otherwise tell the user you cannot reach the other workspace and stop.
 - The message is one-way. Do not ask for a reply, poll, or wait for the receiver to finish.
-- Work is ready to implement when the ticket states, or the user has approved, the goal, the scope
+- Work is ready to implement when the ticket or a task the user approved states the goal, the scope
   and what it excludes, the acceptance criteria, and every choice that changes the result. Its
-  blockers must be merged. A choice you made that the user has not seen is open.
+  blockers must be merged. A choice you made that changes the result and that the user has not seen
+  is open. Implementation details that leave the result unchanged belong to the implementing agent
+  and need no approval.
 - Before a handoff that asks for implementation, check that the work is ready. Investigation that
   changes no files skips this check.
   - If anything is open, list the open questions for the user and do not send.

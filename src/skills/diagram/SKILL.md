@@ -29,8 +29,10 @@ blocks, so they also work in pull request bodies and documents.
   - `stateDiagram-v2` or `stateDiagram`.
   - `classDiagram`.
   - `erDiagram`.
-- If the user asks for a type not listed here, say it is not supported, offer the nearest supported
-  type, and stop until the user answers.
+- If the user asks for a type not listed here, use the nearest supported type when it shows the same
+  information. Name the requested type and the type you used instead. When it would lose information
+  the user asked for, say the type is not supported, offer the nearest one, and stop until the user
+  answers.
 - Write valid syntax. When the parser warns, Pi shows the source and a warning instead of the
   drawing.
 - Keep the drawing narrower than the pane, under about 80 columns. Pi shows a diagram wider than the
