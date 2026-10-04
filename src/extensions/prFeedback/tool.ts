@@ -1,3 +1,5 @@
+import { isAbsolute, join, relative, resolve } from 'node:path';
+
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
@@ -5,29 +7,42 @@ import { Type } from 'typebox';
 
 import type { Exec } from '../../exec.js';
 import { readGitOutput } from '../../gitOutput.js';
-import { createFreshTauDirectory } from '../../tauDirectory.js';
+import { checkTauDirectory, createFreshTauDirectory } from '../../tauDirectory.js';
 import { parseRepository } from './github.js';
 import type { Runtime } from './github.js';
+import { postReplies } from './post.js';
 import { readFeedback } from './read.js';
+import { writePullRequestRecord } from './replies.js';
+
+const feedbackPath = 'pr-feedback';
 
 export const prFeedbackToolParameters = Type.Object({
-  action: Type.Union([Type.Literal('read')]),
+  action: Type.Union([Type.Literal('read'), Type.Literal('post')]),
   repository: Type.Optional(
     Type.String({ description: 'read: <host>/<owner>/<name>, such as github.com/sQVe/tau.' }),
   ),
   pr: Type.Optional(Type.Integer({ minimum: 1, description: 'read: the pull request number.' })),
+  directory: Type.Optional(Type.String({ description: 'post: the directory that read returned.' })),
+  stateToken: Type.Optional(Type.String({ description: 'post: the stateToken from read.' })),
+  head: Type.Optional(
+    Type.String({ description: 'post: the SHA the pull request head must be at.' }),
+  ),
 });
 
 export type PrFeedbackInput = Static<typeof prFeedbackToolParameters>;
 
-const description = `Read a pull request's review feedback on GitHub. Call it as the pr-feedback skill directs.
+const description = `Read a pull request's review feedback on GitHub and post replies to it. Call it as the pr-feedback skill directs.
 - read {repository, pr}: repository is <host>/<owner>/<name>, such as github.com/sQVe/tau. Reads the viewer, the pull request, its review threads, reviews, and conversation comments with gh, and creates a fresh ignored directory .tau/pr-feedback/<pr>-XXXXXX for this round. Returns {directory, viewer, pr {number, url, author, headRefOid}, threads, reviews, comments, stateToken}.
   - threads: unresolved threads only, each {id, path, line, isOutdated, viewerCanReply, viewerCanResolve, replyTo (the first comment's ID, to reply to), fromPerson (any comment not by a bot), startedByViewer, comments [{id, author, isBot, body, url, createdAt, updatedAt}]}.
   - reviews: review summaries with a body, each {id, author, isBot, state, body, url}.
   - comments: conversation comments, each {id, author, isBot, body, url}.
   - isBot is true only when GitHub marks the author as a bot. author is null for a deleted account, which counts as a person.
   - stateToken changes when a person other than the viewer adds, edits, or deletes a comment, in any thread, review, or conversation comment. Bot comments, the viewer's comments, and resolving a thread do not change it.
-Errors: a repository or pr of another shape, a failing gh call, gh output that is not JSON or misses a field, a pull request that is not OPEN, or a thread too long to read in full. Nothing is created in those cases.`;
+  - Errors: a repository or pr of another shape, a failing gh call, gh output that is not JSON or misses a field, a pull request that is not OPEN, or a thread too long to read in full. Nothing is created in those cases.
+- post {directory, stateToken, head}: directory and stateToken come from read. head is the SHA the pull request head must be at: the round's push, or pr.headRefOid when the round pushed nothing. Write <directory>/replies.json first:
+  {"version": 1, "threads": [{"id": "<thread id>", "reply": "<text or null>", "resolve": true}], "comment": {"body": "<text>", "answers": ["<review or comment id>"]}}
+  comment may be null. Leave the other files in the directory alone. Reads the feedback again, then posts in file order: per thread the reply, then the resolve, and the PR comment last. A write goes to a person when its thread has fromPerson, or, for the PR comment, when it answers a review or comment from a person or answers nothing. When any write goes to a person, asks the user to confirm once; writes to bots only post without asking. Records each write in <directory>/posted.json as it succeeds, and a retry with the same directory skips recorded writes. Returns {status: posted|declined|unchanged, posted, skipped}, each write with kind, thread, url, and text; posted writes also carry commentId. unchanged means every write was already posted.
+  - Errors: a directory read did not return; a missing, malformed, or newer replies.json; a thread that is unknown, resolved, or listed twice; an entry with no reply and no resolve; a reply where viewerCanReply is false or a resolve where viewerCanResolve is false; an answers ID that is no review or comment; a stateToken that no longer matches, because a person added, edited, or deleted a comment (read again); a head that differs from the pull request head; or a write to a person with no UI. Nothing is posted in those cases. A failed write throws with posted and notPosted. A write where gh succeeded but printed output the tool cannot read counts as posted, with commentId null.`;
 
 const findRoot = async (cwd: string) => {
   const output = await readGitOutput(cwd, ['rev-parse', '--show-toplevel']);
@@ -52,6 +67,44 @@ const parsePullRequestNumber = (pr: number | undefined) => {
   return pr;
 };
 
+// Refuses any directory but .tau/pr-feedback/<name>, so post reads and writes only a round's files.
+const feedbackDirectory = async (root: string, directory: string | undefined) => {
+  if (directory === undefined) {
+    throw new Error('post needs the directory that read returned.');
+  }
+
+  const absolute = resolve(root, directory);
+  const name = relative(join(root, '.tau', feedbackPath), absolute);
+  const outside = name === '' || name.startsWith('..') || isAbsolute(name);
+  const nested = name.includes('/') || name.includes('\\');
+
+  if (outside || nested) {
+    throw new Error(`The directory must be .tau/${feedbackPath}/<name>, not ${directory}.`);
+  }
+
+  await checkTauDirectory(root, `${feedbackPath}/${name}`);
+
+  return absolute;
+};
+
+const post = async (runtime: Runtime, context: ExtensionContext, parameters: PrFeedbackInput) => {
+  const root = await findRoot(runtime.cwd);
+  const directory = await feedbackDirectory(root, parameters.directory);
+
+  if (parameters.stateToken === undefined) {
+    throw new Error('post needs the stateToken that read returned.');
+  }
+
+  if (parameters.head === undefined) {
+    throw new Error('post needs head.');
+  }
+
+  return postReplies(runtime, context, directory, {
+    stateToken: parameters.stateToken,
+    head: parameters.head,
+  });
+};
+
 const read = async (runtime: Runtime, parameters: PrFeedbackInput) => {
   if (parameters.repository === undefined) {
     throw new Error('read needs repository.');
@@ -61,7 +114,9 @@ const read = async (runtime: Runtime, parameters: PrFeedbackInput) => {
   const pr = parsePullRequestNumber(parameters.pr);
   const root = await findRoot(runtime.cwd);
   const feedback = await readFeedback(runtime, repository, pr);
-  const directory = await createFreshTauDirectory(root, 'pr-feedback', `${pr}-`);
+  const directory = await createFreshTauDirectory(root, feedbackPath, `${pr}-`);
+
+  await writePullRequestRecord(directory, { repository, pr });
 
   return { directory, ...feedback };
 };
@@ -71,7 +126,13 @@ const runAction = (
   context: ExtensionContext,
   parameters: PrFeedbackInput,
   signal: AbortSignal | undefined,
-): Promise<Record<string, unknown>> => read({ exec, cwd: context.cwd, signal }, parameters);
+): Promise<Record<string, unknown>> => {
+  const runtime = { exec, cwd: context.cwd, signal };
+
+  return parameters.action === 'read'
+    ? read(runtime, parameters)
+    : post(runtime, context, parameters);
+};
 
 export const createPrFeedbackTool = (
   exec: Exec,
@@ -80,7 +141,7 @@ export const createPrFeedbackTool = (
     name: 'pr_feedback',
     label: 'PR feedback',
     description,
-    promptSnippet: "Read a pull request's review feedback.",
+    promptSnippet: "Read a pull request's review feedback and post replies.",
     parameters: prFeedbackToolParameters,
     defaultActive: false,
     executionMode: 'sequential',

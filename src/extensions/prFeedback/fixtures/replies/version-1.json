@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "threads": [
+    { "id": "thread-person", "reply": "Renamed in abc123.", "resolve": true },
+    { "id": "thread-bot", "reply": null, "resolve": true }
+  ],
+  "comment": { "body": "Thanks for the review.", "answers": ["301"] }
+}

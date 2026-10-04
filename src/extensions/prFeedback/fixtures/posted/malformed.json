@@ -1,0 +1,4 @@
+{
+  "version": 1,
+  "writes": [{ "kind": "edit", "thread": "thread-person" }]
+}

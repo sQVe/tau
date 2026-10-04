@@ -39,7 +39,16 @@ interface FakeCall {
   commandArguments: string[];
 }
 
-type CommandKey = 'user' | 'pr view' | 'graphql' | 'reviews' | 'comments';
+type ReadKey = 'user' | 'pr view' | 'graphql' | 'reviews' | 'comments';
+
+type WriteKey = 'reply' | 'resolve' | 'issue comment';
+
+type CommandKey = ReadKey | WriteKey;
+
+type FakeWrite =
+  | { kind: 'reply'; replyTo: number; body: string }
+  | { kind: 'resolve'; threadId: string }
+  | { kind: 'comment'; body: string };
 
 export interface GhFake {
   exec: Exec;
@@ -49,8 +58,10 @@ export interface GhFake {
   threads: FakeThread[];
   reviews: FakeReview[];
   comments: FakeComment[];
+  writes: FakeWrite[];
   overrideOutput: (key: CommandKey, stdout: string) => void;
   failCommand: (key: CommandKey) => void;
+  failWrite: (number: number) => void;
 }
 
 const repository = 'github.com/sQVe/tau';
@@ -66,7 +77,24 @@ const graphqlAuthor = (author: FakeAuthor | null) =>
 // `gh --paginate --slurp` prints an array of pages. One item per page exercises the merging.
 const pages = <T>(items: T[]): T[][] => (items.length === 0 ? [[]] : items.map((item) => [item]));
 
-const commandKey = (commandArguments: readonly string[]): CommandKey | undefined => {
+const argumentValue = (commandArguments: readonly string[], prefix: string) =>
+  commandArguments.find((argument) => argument.startsWith(prefix))?.slice(prefix.length) ?? '';
+
+const writeKey = (commandArguments: readonly string[]): WriteKey | undefined => {
+  if (argumentValue(commandArguments, 'query=').startsWith('mutation')) {
+    return 'resolve';
+  }
+
+  if (!commandArguments.includes('POST')) {
+    return undefined;
+  }
+
+  const path = argumentValue(commandArguments, 'repos/');
+
+  return path.endsWith('/replies') ? 'reply' : 'issue comment';
+};
+
+const readKey = (commandArguments: readonly string[]): ReadKey | undefined => {
   if (commandArguments[0] === 'pr' && commandArguments[1] === 'view') {
     return 'pr view';
   }
@@ -88,10 +116,19 @@ const commandKey = (commandArguments: readonly string[]): CommandKey | undefined
   return path?.endsWith('/comments') === true ? 'comments' : undefined;
 };
 
+const commandKey = (commandArguments: readonly string[]): CommandKey | undefined =>
+  writeKey(commandArguments) ?? readKey(commandArguments);
+
+const isWriteKey = (key: CommandKey): key is WriteKey =>
+  key === 'reply' || key === 'resolve' || key === 'issue comment';
+
 export const createGhFake = (): GhFake => {
   const calls: FakeCall[] = [];
   const overrides = new Map<CommandKey, string>();
   const failures = new Set<CommandKey>();
+  const failingWrites = new Set<number>();
+  let writeAttempts = 0;
+  let nextCommentId = 1000;
 
   const fake: GhFake = {
     exec: async () => ({ code: 1, killed: false, stdout: '', stderr: 'not set up' }),
@@ -101,12 +138,61 @@ export const createGhFake = (): GhFake => {
     threads: [],
     reviews: [],
     comments: [],
+    writes: [],
     overrideOutput: (key, stdout) => {
       overrides.set(key, stdout);
     },
     failCommand: (key) => {
       failures.add(key);
     },
+    failWrite: (number) => {
+      failingWrites.add(number);
+    },
+  };
+
+  const viewerAuthor = () => ({ login: fake.viewer, bot: false });
+
+  const findThread = (predicate: (thread: FakeThread) => boolean) => {
+    const found = fake.threads.find((thread) => predicate(thread));
+
+    if (found === undefined) {
+      throw new Error('Could not resolve to a node');
+    }
+
+    return found;
+  };
+
+  const postReply = (commandArguments: readonly string[]) => {
+    const path = argumentValue(commandArguments, 'repos/');
+    const replyTo = Number(/comments\/(\d+)\/replies$/u.exec(path)?.[1]);
+    const body = argumentValue(commandArguments, 'body=');
+    const thread = findThread((candidate) => candidate.comments[0]?.id === replyTo);
+    const id = nextCommentId++;
+
+    thread.comments.push({ id, author: viewerAuthor(), body });
+    fake.writes.push({ kind: 'reply', replyTo, body });
+
+    return { id, html_url: commentUrl(id) };
+  };
+
+  const resolveThread = (commandArguments: readonly string[]) => {
+    const threadId = argumentValue(commandArguments, 'id=');
+    const thread = findThread((candidate) => candidate.id === threadId);
+
+    thread.isResolved = true;
+    fake.writes.push({ kind: 'resolve', threadId });
+
+    return { data: { resolveReviewThread: { thread: { isResolved: true } } } };
+  };
+
+  const postComment = (commandArguments: readonly string[]) => {
+    const body = argumentValue(commandArguments, 'body=');
+    const id = nextCommentId++;
+
+    fake.comments.push({ id, author: viewerAuthor(), body });
+    fake.writes.push({ kind: 'comment', body });
+
+    return { id, html_url: `https://${repository}/pull/7#issuecomment-${id}` };
   };
 
   const threadNode = (thread: FakeThread) => ({
@@ -177,12 +263,35 @@ export const createGhFake = (): GhFake => {
       html_url: `https://${repository}/pull/7#issuecomment-${comment.id}`,
     }));
 
-  const responses: Record<CommandKey, () => unknown> = {
+  const responses: Record<ReadKey, () => unknown> = {
     user: () => ({ login: fake.viewer, type: 'User' }),
     'pr view': pullRequest,
     graphql: threadPages,
     reviews: () => pages(reviewItems()),
     comments: () => pages(commentItems()),
+  };
+
+  const writers: Record<WriteKey, (commandArguments: readonly string[]) => unknown> = {
+    reply: postReply,
+    resolve: resolveThread,
+    'issue comment': postComment,
+  };
+
+  // A write that prints overridden output still takes effect, as when gh prints something odd.
+  const respond = (key: CommandKey, commandArguments: readonly string[]) => {
+    const value = isWriteKey(key) ? writers[key](commandArguments) : responses[key]();
+
+    return overrides.get(key) ?? JSON.stringify(value);
+  };
+
+  const failsNow = (key: CommandKey) => {
+    if (!isWriteKey(key)) {
+      return failures.has(key);
+    }
+
+    writeAttempts += 1;
+
+    return failures.has(key) || failingWrites.has(writeAttempts);
   };
 
   fake.exec = async (command, commandArguments) => {
@@ -194,12 +303,12 @@ export const createGhFake = (): GhFake => {
       return { code: 1, killed: false, stdout: '', stderr: `unknown command: ${command}` };
     }
 
-    if (failures.has(key)) {
+    if (failsNow(key)) {
       return { code: 1, killed: false, stdout: '', stderr: 'HTTP 502: Bad Gateway' };
     }
 
     try {
-      const stdout = overrides.get(key) ?? JSON.stringify(responses[key]());
+      const stdout = respond(key, commandArguments);
 
       return { code: 0, killed: false, stdout, stderr: '' };
     } catch (error) {

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "writes": [
+    {
+      "kind": "reply",
+      "thread": "thread-person",
+      "url": "https://github.com/sQVe/tau/pull/7#discussion_r101",
+      "text": "Renamed in abc123.",
+      "commentId": 1000
+    },
+    {
+      "kind": "resolve",
+      "thread": "thread-person",
+      "url": "https://github.com/sQVe/tau/pull/7#discussion_r101",
+      "text": null,
+      "commentId": null
+    }
+  ]
+}

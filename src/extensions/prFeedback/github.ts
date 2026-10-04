@@ -2,6 +2,7 @@ import { Type } from 'typebox';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { errorMessage } from '../../errors.js';
 import type { Exec } from '../../exec.js';
 import type { IssueCommentItem, ReviewItem, ThreadNode } from './threads.js';
 
@@ -53,6 +54,9 @@ const threadsQuery = `query ($owner: String!, $name: String!, $number: Int!, $en
     }
   }
 }`;
+
+const resolveMutation =
+  'mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }';
 
 const outputPreviewLength = 200;
 
@@ -135,7 +139,25 @@ const commentPagesSchema = Type.Array(
   ),
 );
 
+const createdCommentSchema = Type.Object({ id: Type.Integer() });
+
+const resolvedThreadSchema = Type.Object({
+  data: Type.Object({
+    resolveReviewThread: Type.Object({
+      thread: Type.Object({ isResolved: Type.Boolean() }),
+    }),
+  }),
+});
+
 export type PullRequest = Static<typeof pullRequestSchema>;
+
+// gh exited with 0, so GitHub made the write, but the tool could not read what gh printed.
+export class UnreadWriteOutputError extends Error {
+  constructor(message: string, options: ErrorOptions) {
+    super(message, options);
+    this.name = 'UnreadWriteOutputError';
+  }
+}
 
 const repositoryPart = /^[\w.-]+$/u;
 const hostPattern = /^[\w.-]+(?::\d+)?$/u;
@@ -153,8 +175,11 @@ export const parseRepository = (repository: string): Repository => {
   return { host, owner, name };
 };
 
+const isLongValue = (argument: string) =>
+  argument.startsWith('query=') || argument.startsWith('body=');
+
 const label = (commandArguments: readonly string[]) =>
-  ['gh', ...commandArguments.filter((argument) => !argument.startsWith('query='))].join(' ');
+  ['gh', ...commandArguments.filter((argument) => !isLongValue(argument))].join(' ');
 
 const preview = (stdout: string) => stdout.slice(0, outputPreviewLength);
 
@@ -179,9 +204,7 @@ const describeProblem = (schema: TSchema, value: unknown) => {
   return error === undefined ? 'unknown problem' : `${error.instancePath || '/'} ${error.message}`;
 };
 
-const readJson = async (runtime: Runtime, commandArguments: string[]): Promise<unknown> => {
-  const stdout = await run(runtime, commandArguments);
-
+const parseJson = (commandArguments: readonly string[], stdout: string): unknown => {
   try {
     return JSON.parse(stdout);
   } catch (error) {
@@ -191,6 +214,9 @@ const readJson = async (runtime: Runtime, commandArguments: string[]): Promise<u
     );
   }
 };
+
+const readJson = async (runtime: Runtime, commandArguments: string[]): Promise<unknown> =>
+  parseJson(commandArguments, await run(runtime, commandArguments));
 
 // Names the command and the first field that does not match.
 const checkOutput: CheckOutput = (commandArguments, schema, value) => {
@@ -294,4 +320,88 @@ export const readIssueComments = async (
   checkOutput(commandArguments, commentPagesSchema, pages);
 
   return pages.flat();
+};
+
+const writeJson = async (runtime: Runtime, commandArguments: string[]): Promise<unknown> => {
+  const stdout = await run(runtime, commandArguments);
+
+  try {
+    return parseJson(commandArguments, stdout);
+  } catch (error) {
+    throw new UnreadWriteOutputError(errorMessage(error), { cause: error });
+  }
+};
+
+const checkWriteOutput: CheckOutput = (commandArguments, schema, value) => {
+  try {
+    checkOutput(commandArguments, schema, value);
+  } catch (error) {
+    throw new UnreadWriteOutputError(errorMessage(error), { cause: error });
+  }
+};
+
+const postArguments = (repository: Repository, path: string, body: string) => [
+  'api',
+  '--hostname',
+  repository.host,
+  '-X',
+  'POST',
+  `repos/${repository.owner}/${repository.name}/${path}`,
+  '-f',
+  `body=${body}`,
+];
+
+// Returns the ID of the new comment.
+export const postReply = async (
+  runtime: Runtime,
+  repository: Repository,
+  reply: { pr: number; replyTo: number; body: string },
+): Promise<number> => {
+  const path = `pulls/${reply.pr}/comments/${reply.replyTo}/replies`;
+  const commandArguments = postArguments(repository, path, reply.body);
+  const created = await writeJson(runtime, commandArguments);
+
+  checkWriteOutput(commandArguments, createdCommentSchema, created);
+
+  return created.id;
+};
+
+// Returns the ID of the new comment.
+export const postIssueComment = async (
+  runtime: Runtime,
+  repository: Repository,
+  comment: { pr: number; body: string },
+): Promise<number> => {
+  const path = `issues/${comment.pr}/comments`;
+  const commandArguments = postArguments(repository, path, comment.body);
+  const created = await writeJson(runtime, commandArguments);
+
+  checkWriteOutput(commandArguments, createdCommentSchema, created);
+
+  return created.id;
+};
+
+export const resolveThread = async (
+  runtime: Runtime,
+  repository: Repository,
+  threadId: string,
+): Promise<void> => {
+  const commandArguments = [
+    'api',
+    'graphql',
+    '--hostname',
+    repository.host,
+    '-f',
+    `query=${resolveMutation}`,
+    '-F',
+    `id=${threadId}`,
+  ];
+
+  const result = await writeJson(runtime, commandArguments);
+
+  checkWriteOutput(commandArguments, resolvedThreadSchema, result);
+
+  if (!result.data.resolveReviewThread.thread.isResolved) {
+    throw new Error(`${label(commandArguments)} left the thread unresolved.`);
+  }
 };
