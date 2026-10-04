@@ -71,8 +71,27 @@ const isNewerVersion = (value: unknown) => {
   return typeof version === 'number' && version > currentVersion;
 };
 
+// Apply writes one Linear issue per identifier, so a repeated identifier would write one issue twice.
+const rejectRepeatedIdentifiers = (path: string, plan: Plan) => {
+  const identifiers = new Set<string>();
+
+  for (const { identifier } of [plan.container, ...plan.slices]) {
+    if (identifier === null) {
+      continue;
+    }
+
+    if (identifiers.has(identifier)) {
+      throw new Error(`Malformed slice draft ${path}: ${identifier} appears more than once.`);
+    }
+
+    identifiers.add(identifier);
+  }
+};
+
 const rejectBadReferences = (path: string, plan: Plan) => {
   const titles = new Set<string>();
+
+  rejectRepeatedIdentifiers(path, plan);
 
   for (const [index, slice] of plan.slices.entries()) {
     const number = index + 1;

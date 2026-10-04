@@ -94,6 +94,26 @@ describe('readDraft', () => {
     expect(outcome.error).toMatch(/names slice-1\.md/);
   });
 
+  it.each([
+    { case: 'two slices', container: null, slices: ['ME-2', 'ME-2'] },
+    { case: 'the container and a slice', container: 'ME-2', slices: ['ME-2', null] },
+  ])('rejects an identifier that $case share', async ({ container, slices }) => {
+    const directory = await draftDirectory('version-1.json');
+    const plan = (await readPlan(directory))!;
+
+    plan.container.identifier = container;
+
+    for (const [index, slice] of plan.slices.entries()) {
+      slice.identifier = slices[index] ?? null;
+    }
+
+    await writePlan(directory, plan);
+
+    const outcome = await readWithoutChanges(directory, () => readPlan(directory));
+
+    expect(outcome.error).toMatch(/^Malformed slice draft.*ME-2/);
+  });
+
   it('rejects a malformed plan', async () => {
     const directory = await draftDirectory('malformed.json');
 
