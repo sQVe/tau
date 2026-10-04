@@ -115,6 +115,8 @@ it('keeps the questionnaire available to the parent', async () => {
           {
             header: 'Fixture',
             question: 'Which file?',
+            context:
+              'The fixture has a source file and a test file. The answer picks which one to inspect.',
             options: [
               { label: 'Source', description: 'Inspect source.' },
               { label: 'Test', description: 'Inspect tests.' },
@@ -308,6 +310,8 @@ it.each(['editing', 'investigation'] as const)(
             {
               header: 'Fixture',
               question: 'Which file?',
+              context:
+                'The fixture has a source file and a test file. The answer picks which one to inspect.',
               options: [
                 { label: 'Source', description: 'Inspect source.' },
                 { label: 'Test', description: 'Inspect tests.' },

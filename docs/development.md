@@ -199,7 +199,8 @@ rendering and live network access manually in a session started as above:
 Ask Pi something underspecified so it calls `ask_user_question`. Check that the questionnaire
 renders, that arrow keys and Enter select an option, and that Esc abandons it. In a multi-select
 question, check that Space checks options, that typed text checks the "Type something." row, and
-that Enter submits from any row.
+that Enter submits from any row. When a preview is clipped, check that Ctrl+O shows it in full, that
+the arrow keys scroll it, and that Esc returns to the options without closing the questionnaire.
 
 ### Web access
 

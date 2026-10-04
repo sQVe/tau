@@ -15,16 +15,23 @@ const optionSchema = Type.Object({
   label: Type.String({
     maxLength: 60,
     description:
-      'MAX 60 CHARACTERS — hard limit, requests over the limit are rejected. The display text for this option that the user will see and select. Should be concise (1-5 words) and clearly describe the choice.',
+      'MAX 60 CHARACTERS — hard limit, requests over the limit are rejected. The display text for this option that the user will see and select. Should be concise (1-5 words) and say what the choice is. No option letters or internal codes.',
   }),
   description: Type.String({
+    maxLength: 220,
     description:
-      'Explanation of what this option means or what will happen if chosen. Useful for providing context about trade-offs or implications.',
+      'MAX 220 CHARACTERS. What happens if the user picks this option, then its main benefit and main cost. Skip the cost for a harmless preference instead of inventing one.',
   }),
+  recommended: Type.Optional(
+    Type.Boolean({
+      description:
+        'Set on at most one option per question when you recommend it. Put that option first and say why in its description. The dialog shows a badge; do not add "(Recommended)" to the label.',
+    }),
+  ),
   preview: Type.Optional(
     Type.String({
       description:
-        'Optional preview content rendered when this option is focused. Use for mockups, code snippets, or visual comparisons that help users compare options. See the tool description for the expected content format.',
+        'Optional preformatted example of what this option produces, shown when the option is focused. If one option of a question has a preview, every option needs one. See the tool description.',
     }),
   ),
 });
@@ -33,6 +40,11 @@ const questionSchema = Type.Object({
   question: Type.String({
     description:
       'The complete question to ask the user. Should be clear, specific, and end with a question mark. Example: "Which library should we use for date formatting?" If multiSelect is true, phrase it accordingly, e.g. "Which features do you want to enable?"',
+  }),
+  context: Type.String({
+    maxLength: 400,
+    description:
+      'MAX 400 CHARACTERS. 1-3 sentences for a user who has not read your discussion: what is being decided, why it needs deciding now, and what the answer changes or blocks. Do not repeat the question.',
   }),
   header: Type.String({
     maxLength: 16,
@@ -58,7 +70,8 @@ const questionParams = Type.Object({
   questions: Type.Array(questionSchema, {
     minItems: 1,
     maxItems: 4,
-    description: 'Questions to ask the user (1-4 questions)',
+    description:
+      'Questions to ask the user (1-4 questions). Ask one by default. Add more only when they do not depend on each other.',
   }),
 });
 
@@ -68,26 +81,91 @@ const toolDescription = `Ask the user one or more structured questions during ex
 3. Get decisions on implementation choices as you work
 4. Offer choices to the user about what direction to take
 
+Write for a user who returns cold. They have not read your discussion, so every question must stand alone:
+- \`context\` says what is being decided, why now, and what the answer changes or blocks.
+- Each option \`description\` says what happens if chosen, then the main benefit and cost.
+- Say what a thing is. Never name who proposed an option (models, agents, reviewers). Never use option letters, internal codes, or unexplained ADR or ticket numbers.
+
 Usage notes:
 - Users can type a custom answer via the automatically appended "Type something." row on every question or press Esc to abandon the questionnaire. Do NOT author "Other" or "Type something." labels yourself — reserved labels are rejected at runtime.
 - Use multiSelect: true when multiple answers are valid. A typed answer is returned together with the checked options.
-- If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label.
+- If you recommend an option, put it first and set \`recommended: true\` on it. At most one option per question may be recommended. The answer returns the plain label.
 
 Preview feature:
-Use the optional \`preview\` field on options when presenting concrete artifacts that users need to visually compare:
-- ASCII mockups of UI layouts or components
-- Code snippets showing different implementations
-- Diagram variations
-- Configuration examples
+Add a \`preview\` to every option when the options change something you can show: a layout, a config file, a command, a code shape, output, or a draft. If one option has a preview, all options of that question need one; show the unchanged state for an option such as "Keep as is". Use the same example scenario in every preview and keep each one short, about 10 lines. Skip previews for plain preferences where the labels and descriptions suffice.
 
-Preview content renders as preformatted text below the option list while its option is focused. Multi-line text with newlines is supported. Do not use previews for simple preference questions where labels and descriptions suffice.`;
+Preview content renders as preformatted text below the option list while its option is focused. The user can press Ctrl+O to see a long preview in full.
+
+Example question:
+{
+  "question": "Where should the cache live?",
+  "context": "Startup reads every config file, which takes 2 seconds. A cache removes that wait, and its location decides who can clear it.",
+  "header": "Cache",
+  "options": [
+    { "label": "Project folder", "description": "Writes .cache/ next to the code. Easy to find and delete; each clone builds its own cache.", "recommended": true, "preview": "repo/\\n  .cache/config.json" },
+    { "label": "Home folder", "description": "Writes ~/.cache/tool/. One cache for all clones; stale entries are harder to spot.", "preview": "~/.cache/tool/repo-hash.json" }
+  ]
+}`;
 
 const promptGuidelines = [
   "Use ask_user_question whenever the user's request is underspecified and you cannot proceed without concrete decisions — you can ask up to 4 questions per invocation.",
-  'Each question MUST have 2-4 options. Every option requires a concise label (1-5 words) and a description explaining what the choice means or its trade-offs. Do NOT author "Other" or "Type something." labels yourself.',
-  'Do not stack multiple ask_user_question calls back-to-back — group all clarifying questions into one invocation.',
+  'Each question MUST have 2-4 options and a context that lets a user who has not read your discussion understand it on its own. Every option requires a concise label (1-5 words) and a description of what happens if chosen and its trade-off. Do NOT author "Other" or "Type something." labels yourself.',
+  'Never name who proposed an option, and never use option letters, internal codes, or unexplained ADR or ticket numbers. Say what the thing is.',
+  'Ask one question by default. Group only questions that do not depend on each other. Ask a question that depends on an earlier answer after you have that answer.',
   'If the user closes the dialog without an answer, state the blocked decision and stop. Closing the dialog is not approval, and do not ask the same question again in prose.',
 ];
+
+const isBlank = (text: string) => text.trim() === '';
+
+const validateContext = (question: QuestionParams['questions'][number]) => {
+  if (isBlank(question.context)) {
+    throw new Error(`Question "${question.question}" needs a context.`);
+  }
+
+  if (question.context.trim() === question.question.trim()) {
+    throw new Error(
+      `The context of "${question.question}" repeats the question. Say what is being decided and what the answer changes.`,
+    );
+  }
+};
+
+const validatePreviews = (question: QuestionParams['questions'][number]) => {
+  const previews = question.options.map((option) => option.preview);
+
+  if (previews.some((preview) => preview !== undefined && isBlank(preview))) {
+    throw new Error(`A preview of "${question.question}" is blank. Remove it or show content.`);
+  }
+
+  const withPreview = previews.filter((preview) => preview !== undefined).length;
+
+  if (withPreview > 0 && withPreview < previews.length) {
+    throw new Error(
+      `Give every option of "${question.question}" a preview, or none. For an option such as "Keep as is", show the unchanged state.`,
+    );
+  }
+};
+
+const validateOptions = (question: QuestionParams['questions'][number]) => {
+  const labels = question.options.map((option) => option.label);
+
+  if (labels.some((label) => reservedLabels.has(label))) {
+    throw new Error(`Option label is reserved (${[...reservedLabels].join(', ')}).`);
+  }
+
+  if (labels.some((label) => /\(recommended\)/iu.test(label))) {
+    throw new Error(
+      'Set `recommended: true` on the option instead of "(Recommended)" in its label.',
+    );
+  }
+
+  if (new Set(labels).size !== labels.length) {
+    throw new Error('Option labels must be unique within a question.');
+  }
+
+  if (question.options.filter((option) => option.recommended === true).length > 1) {
+    throw new Error(`Set recommended: true on at most one option of "${question.question}".`);
+  }
+};
 
 const validate = ({ questions }: QuestionParams) => {
   const texts = questions.map((question) => question.question);
@@ -97,15 +175,9 @@ const validate = ({ questions }: QuestionParams) => {
   }
 
   for (const question of questions) {
-    const labels = question.options.map((option) => option.label);
-
-    if (labels.some((label) => reservedLabels.has(label))) {
-      throw new Error(`Option label is reserved (${[...reservedLabels].join(', ')}).`);
-    }
-
-    if (new Set(labels).size !== labels.length) {
-      throw new Error('Option labels must be unique within a question.');
-    }
+    validateContext(question);
+    validateOptions(question);
+    validatePreviews(question);
   }
 };
 
