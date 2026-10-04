@@ -240,6 +240,16 @@ describe('slice tool apply', () => {
     });
   });
 
+  it('lists no order repair when the order is in place and no slice is created', async () => {
+    const { directory, apply } = await appliedPlan();
+
+    await writeFile(join(directory, 'slice-2.md'), 'Slice two, revised.\n');
+    const result = await apply(undefined, directory);
+    const applied = result['applied'] as { kind: string }[];
+
+    expect(applied.map((step) => step.kind)).toEqual(['updateSlice']);
+  });
+
   it('repairs the slice order once', async () => {
     const { fake, directory, apply } = await appliedPlan();
 

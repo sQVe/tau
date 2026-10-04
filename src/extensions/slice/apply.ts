@@ -237,6 +237,10 @@ const moveStep = (runtime: Runtime, progress: ApplyProgress): Step => ({
   run: () => moveDraft(runtime, progress),
 });
 
+// New slices can land out of order, so creating one also checks the order after the writes.
+const needsOrderRepair = (orderInPlace: boolean, writes: readonly SliceWrite[]) =>
+  !orderInPlace || writes.some((write) => write.kind === 'createSlice');
+
 const buildSteps = (runtime: Runtime, progress: ApplyProgress, writes: readonly SliceWrite[]) => {
   const steps: Step[] = [];
 
@@ -255,7 +259,7 @@ const buildSteps = (runtime: Runtime, progress: ApplyProgress, writes: readonly 
     }
   }
 
-  if (progress.plan.slices.length > 0) {
+  if (needsOrderRepair(progress.orderInPlace, writes)) {
     steps.push({
       summary: { kind: 'repairOrder', text: 'Fix the slice order' },
       run: () => repairOrder(runtime, progress),
