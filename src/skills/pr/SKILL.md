@@ -27,13 +27,16 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
   Any change after approval needs a new preview.
 - Ask every question with `ask_user_question`, including review approval and preview approval. Never
   ask in prose.
-- Follow the push rules in the [update-branch skill](../update-branch/SKILL.md). Except for stack
-  restacking in step 5, never rebase or force-push unless the user asks. Step 5 restacks locally;
-  preview approval covers the stack's force-push.
+- Follow the push rules in the [update-branch skill](../update-branch/SKILL.md). Never force-push
+  unless the user asks or approves a preview that shows the force-push. Step 5 restacks locally;
+  preview approval covers the stack's force-push. Outside a stack, rebase only as step 1 allows or
+  when the user asks.
 - Commit with the [commit skill](../commit/SKILL.md). Never stash, discard, or commit unrelated
   changes. Ask when ownership is unclear or unrelated changes could affect review or checks.
-- Fix review findings or failing checks only with the user's approval. Rerun a review after fixes
-  only when the user chooses that in step 6.
+- On the user's own PR or branch, as the [code-review skill](../code-review/SKILL.md) defines it,
+  fix supported, in-scope review findings and the in-scope causes of failing checks without asking.
+  On anyone else's, fix only with the user's approval. Never weaken a check or add a retry to hide a
+  failure.
 - On updates, keep title and body text you did not write this session. Change only wrong or missing
   facts, and preview each change.
 - After a partial failure, stop and report what completed. Read the remote branch and PR before
@@ -69,6 +72,11 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    - Base: the open PR's base, the user-named base, the parent found by the
      [stack skill](../stack/SKILL.md), or the default branch. Fetch it and pin the merge base with
      `git merge-base <remote>/<base> HEAD`.
+   - Outside a stack, when the branch conflicts with the base or needs a base change for its checks,
+     rebase it locally with the update-branch skill and tell the user. Do not ask first, even when
+     the branch was already pushed. Note the remote tip before the rebase as `<old-tip>`; step 8
+     previews the force-push it needs. Stop the rebase and ask when a conflict needs a product
+     decision. Pin the merge base again after the rebase.
    - Read issues linked by the user, branch name, commits, and existing body with their service's
      CLI. Use returned issue IDs, not branch aliases. Note unreadable issues.
 
@@ -96,8 +104,9 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    - Callers and rules outside the capture have no relevant changes.
 
    Otherwise run the [code-review skill](../code-review/SKILL.md) in fast mode on the range. If the
-   skill or worker tools are missing, report a gap; do not review in their place. Ask its approval
-   question for findings.
+   skill or worker tools are missing, report a gap; do not review in their place. On the user's own
+   PR or branch, let it continue into the [triage-findings skill](../triage-findings/SKILL.md),
+   which commits its fixes with the commit skill. On anyone else's, ask its approval question.
 
 5. Run checks. Reuse passing required pre-merge checks only with evidence of matching content.
    Otherwise run them once on the committed tree.
@@ -110,22 +119,24 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 6. Choose draft status. Any gap means draft. A gap is one of:
    - A required check that failed or did not run. Only checks that can run solely after deployment
      are deferred instead of gaps.
-   - A review that does not cover the pushed content. Approved fixes the user accepted without a new
-     review count as covered.
-   - An open finding. A finding closes when it is fixed and reviewed again, when the user accepts
-     its fix without review, or when the user dismisses it as not a defect. Record the dismissal
-     reason in the session report. Deferred or unfixed findings stay open.
+   - A review that does not cover the pushed content. A checked fix counts as covered: it changes
+     only what its finding or failing check needs, and the checks that cover it passed after it.
+   - An open finding. A finding closes when its fix is checked as above or reviewed again, or when
+     the user dismisses it as not a defect. Record the dismissal reason in the session report.
+     Deferred, Blocked, or unfixed findings stay open.
 
-   Areas a worker read shallowly are session-report notes, not gaps. If post-review commits make
-   review coverage the only gap, ask once: run a new fast review or open as draft. Offer to accept
-   the commits without review only when all of them are approved fixes. After a new review, choose
+   Areas a worker read shallowly are session-report notes, not gaps. Accept checked fixes without
+   asking, and list them in the session report. If other post-review commits make review coverage
+   the only gap, such as a fix that changes behavior beyond its finding, ask once: run a new fast
+   review or open as draft. Run a new review when the user asks for one. After a new review, choose
    status again. For an existing ready PR with a gap, offer conversion to draft.
 
 7. Write the title and body. Save the body as `$prdir/body.md`.
    - Template: for a new PR or a body not following the template, find `pull_request_template.md`
      case-insensitively in the root, `.github/`, `docs/`, or a `PULL_REQUEST_TEMPLATE/` directory.
-     Ask if several fit. Without one, use the [fallback template](fallback-template.md). Ask before
-     restructuring text you did not write this session, and keep it.
+     When several fit, use the repository's clear default and name it in the preview; ask when they
+     imply different requirements. Without one, use the [fallback template](fallback-template.md).
+     Keep text you did not write this session. Show any restructuring it needs in the preview.
    - Title: match the repository's convention.
    - Summary: lead with one sentence on what changes, then at most three on why and what the diff
      cannot show: external causes, constraints, or rejected approaches. Do not repeat the diff or
@@ -143,6 +154,8 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 8. Preview and ask for approval. Show title, full body, base repository and branch, head, draft
    status, commits to push, and push command. For a new PR, show the `@codex review` comment that
    step 11 posts.
+   - After a rebase in step 1 of a branch with a remote tip, say that the push is a force-push and
+     show it with `--force-with-lease=refs/heads/<branch>:<old-tip>`.
    - In a stack, list each branch to push with its local SHA and explain that each is force-pushed
      with a lease. Show the `gh stack link` command, or why step 9 cannot link.
    - Include the session report: commits made, comment removals, review and check sources, reviewer
@@ -152,8 +165,9 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    - Compare HEAD, local status, and commits to push with the preview; read the PR again. In a
      stack, compare each branch's SHA too. If anything changed, stop, refresh affected evidence, and
      preview again without losing new edits.
-   - Push with `git push <remote> HEAD:refs/heads/<branch>`; add `-u` for a new branch. In a stack,
-     use the stack skill instead. Stop and report a rejected push.
+   - Push with `git push <remote> HEAD:refs/heads/<branch>`; add `-u` for a new branch. After a
+     rebase in step 1, push with the previewed `--force-with-lease` command instead. In a stack, use
+     the stack skill instead. Stop and report a rejected push.
    - Create with `gh pr create`: specify approved base, head, title, and `--body-file`. Add
      `--draft` for approved draft status and `--head <owner>:<branch>` for a fork. Update with
      `gh pr edit`. Change existing draft status with `gh pr ready`, adding `--undo` for draft.

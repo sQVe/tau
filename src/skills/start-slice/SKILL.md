@@ -55,7 +55,8 @@ Workers then carry out the agent tickets.
 
 ## Procedure
 
-1. Pick the slice. If the user names no ticket, ask for one.
+1. Pick the slice. If the user names no ticket, use the one ticket the conversation already names as
+   the slice or container, and name it in the step 7 preview. Ask when none or several fit.
    - A container is a ticket with children in its own team. Those children are its slices.
    - Any other ticket the user names is the slice itself, including a one-slice design with no
      container.
@@ -148,7 +149,9 @@ Workers then carry out the agent tickets.
 
 10. Delegate each agent ticket to a worker, and pass the path of its body file, such as
     `$slicedir/agent-1.md`, in the task. Review the change with the
-    [code-review skill](../code-review/SKILL.md), then open the PR with the
+    [code-review skill](../code-review/SKILL.md). When the code-review skill's ownership rule finds
+    the slice branch the user's own, let the review continue into fixing its findings without
+    asking. This applies to a reused branch too. Then open the PR with the
     [pr skill](../pr/SKILL.md). Link the slice from the PR as the tracker skill says.
 
 ## Changes after the start
