@@ -25,6 +25,7 @@ type StepSummary = (
   | SliceWrite
   | { kind: 'moveDraft' }
   | { kind: 'repairOrder' }
+  | { kind: 'moveIssue'; identifier: string }
   | { kind: 'saveIdentifier'; identifier: string }
 ) & {
   text: string;
@@ -79,6 +80,18 @@ class IdentifierSaveError extends Error {
     super(`Linear created ${created.identifier}, but saving its identifier failed.`, options);
     this.name = 'IdentifierSaveError';
     this.created = created;
+  }
+}
+
+// Linear already holds the moves made before a failed move or order read, so the caller reports
+// them as applied.
+class OrderMoveError extends Error {
+  readonly moved: StepSummary[];
+
+  constructor(moved: StepSummary[], options: ErrorOptions) {
+    super(`Fixing the slice order failed: ${errorMessage(options.cause)}`, options);
+    this.name = 'OrderMoveError';
+    this.moved = moved;
   }
 }
 
@@ -224,12 +237,24 @@ const repairOrder = async (runtime: Runtime, progress: ApplyProgress) => {
     return;
   }
 
-  for (const move of moves) {
-    // oxlint-disable-next-line no-await-in-loop -- Stop at the first failed move.
-    await moveIssue(runtime.exec, runtime.root, move.identifier, move.sortOrder);
-  }
+  const moved: StepSummary[] = [];
 
-  progress.orderInPlace = isInPlanOrder(await readOrder(runtime, progress));
+  try {
+    for (const move of moves) {
+      // oxlint-disable-next-line no-await-in-loop -- Stop at the first failed move.
+      await moveIssue(runtime.exec, runtime.root, move.identifier, move.sortOrder);
+
+      moved.push({
+        kind: 'moveIssue',
+        identifier: move.identifier,
+        text: `Move ${move.identifier} into plan order`,
+      });
+    }
+
+    progress.orderInPlace = isInPlanOrder(await readOrder(runtime, progress));
+  } catch (error) {
+    throw new OrderMoveError(moved, { cause: error });
+  }
 };
 
 const moveStep = (runtime: Runtime, progress: ApplyProgress): Step => ({
@@ -270,8 +295,16 @@ const buildSteps = (runtime: Runtime, progress: ApplyProgress, writes: readonly 
 };
 
 // A failed save follows a create that Linear made, so the create counts as applied and the save
-// does not.
+// does not. Moves made before a failed move count as applied, and the order repair does not.
 const splitSteps = (summaries: readonly StepSummary[], index: number, error: unknown) => {
+  if (error instanceof OrderMoveError) {
+    return {
+      created: undefined,
+      applied: [...summaries.slice(0, index), ...error.moved],
+      notApplied: summaries.slice(index),
+    };
+  }
+
   if (!(error instanceof IdentifierSaveError)) {
     return {
       created: undefined,

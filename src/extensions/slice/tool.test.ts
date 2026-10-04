@@ -281,6 +281,64 @@ describe('slice tool apply', () => {
     expect(orders[0]).toBeLessThan(orders[1]!);
   });
 
+  it('reports each order move that ran before a later move failed', async () => {
+    const { fake, directory, apply } = await setUp();
+
+    const plan = JSON.parse(await readFile(join(directory, 'plan.json'), 'utf8')) as {
+      slices: { identifier: null; title: string; file: string; blockedBy: number[] }[];
+    };
+
+    plan.slices.push({ identifier: null, title: 'Third', file: 'slice-3.md', blockedBy: [] });
+    await writeFile(join(directory, 'plan.json'), JSON.stringify(plan));
+    await writeFile(join(directory, 'slice-3.md'), 'Slice three.\n');
+
+    const moved = (await apply()).directory;
+
+    fake.issues.get('ME-2')!.sortOrder = 5;
+    fake.issues.get('ME-3')!.sortOrder = 1;
+    fake.issues.get('ME-4')!.sortOrder = 0;
+    fake.failWrite(fake.writes().length + 2);
+
+    await expect(apply(undefined, moved)).rejects.toMatchObject({
+      applied: [{ kind: 'moveIssue', identifier: 'ME-3' }],
+      notApplied: [{ kind: 'repairOrder' }],
+    });
+  });
+
+  it('reports an order move that ran before the order read failed', async () => {
+    const { fake, context, directory } = await appliedPlan();
+
+    fake.issues.get('ME-2')!.sortOrder = 5;
+    fake.issues.get('ME-3')!.sortOrder = 1;
+
+    const writesBefore = fake.writes().length;
+    const { stateToken } = await run(fake, context, { action: 'read', directory });
+
+    // Fails each container read once a move has reached Linear.
+    const tool = createSliceTool(async (command, commandArguments, options) => {
+      const moved = fake.writes().length > writesBefore;
+
+      if (moved && commandArguments[1]?.includes('children') === true) {
+        return { code: 1, killed: false, stdout: '', stderr: 'network error' };
+      }
+
+      return fake.exec(command, commandArguments, options);
+    });
+
+    const failure = tool.execute(
+      'call',
+      { action: 'apply', directory, stateToken: String(stateToken) },
+      undefined,
+      undefined,
+      context,
+    );
+
+    await expect(failure).rejects.toMatchObject({
+      applied: [{ kind: 'moveIssue', identifier: 'ME-3' }],
+      notApplied: [{ kind: 'repairOrder' }],
+    });
+  });
+
   it('refuses when the draft changes during the confirm', async () => {
     const { root, fake, directory, apply } = await setUp();
 
