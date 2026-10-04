@@ -1,6 +1,7 @@
 # ADR 0082: Own Linear conventions in one tracker skill
 
-- Status: Accepted
+- Status: Accepted; config location amended by
+  [ADR 0085](./0085-group-per-repository-settings-in-the-user-config.md)
 - Date: 2026-10-02
 
 ## Context
