@@ -27,11 +27,11 @@ target. Give each finding a status that says how it was checked.
   commit, push, or publish. Do not check out, reset, or stash to reach a target. Stop when the user
   says stop.
 - Decide ownership from the branch, never from the checkout alone: the user often checks out other
-  people's PRs. The branch is the user's own when its PR author is the `gh api user --jq .login`
-  login, or, with no PR, when each of its commits has the author email `git config user.email`. A
-  branch with no commits of its own counts when nothing points to another author. Uncommitted work
-  is the user's own only on such a branch. Anything else, or anything unclear, is not the user's
-  own.
+  people's PRs. The branch is the user's own when its PR author is the
+  `gh api user --hostname <host> --jq .login` login, using the PR's host, or, with no PR, when each
+  of its commits has the author email `git config user.email`. A branch with no commits of its own
+  counts when nothing points to another author. Uncommitted work is the user's own only on a branch
+  these rules find to be the user's own. Anything else, or anything unclear, is not the user's own.
 - After the report, fix findings automatically only on the user's own work, and never after a
   request for a read-only review or "no changes". Fixing is never approval to publish, post, or
   absorb unrelated changes.
