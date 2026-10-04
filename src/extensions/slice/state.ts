@@ -51,14 +51,29 @@ const readTitleMatches = async (
   });
 };
 
+// Apply reads without a requested container, so read must not use one the draft does not record.
 const containerIdentifier = (draft: Draft | undefined, requested: string | undefined) => {
-  const saved = draft?.plan.container.identifier ?? undefined;
+  if (draft === undefined) {
+    return requested;
+  }
 
-  if (saved !== undefined && requested !== undefined && saved !== requested) {
+  const saved = draft.plan.container.identifier;
+
+  if (requested === undefined) {
+    return saved ?? undefined;
+  }
+
+  if (saved === null) {
+    throw new Error(
+      `The draft records no container identifier, so read cannot use ${requested}. Record ${requested} in plan.json, or read without container.`,
+    );
+  }
+
+  if (saved !== requested) {
     throw new Error(`The draft records container ${saved}, not ${requested}.`);
   }
 
-  return saved ?? requested;
+  return saved;
 };
 
 // Reads the draft, its bodies, and Linear once. The token covers everything the writes depend on.

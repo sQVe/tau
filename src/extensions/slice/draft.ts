@@ -1,11 +1,13 @@
-import { constants, open, readFile, readdir } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { lstat, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { hasErrorCode, isMissingFile } from '../../errors.js';
+import { isMissingFile } from '../../errors.js';
+import { blockerProblem } from './blockers.js';
 
 export interface Draft {
   plan: Plan;
@@ -88,24 +90,21 @@ const rejectRepeatedIdentifiers = (path: string, plan: Plan) => {
   }
 };
 
+const rejectBadBlockers = (path: string, plan: Plan) => {
+  const problem = blockerProblem(plan.slices.map((slice) => slice.blockedBy));
+
+  if (problem !== undefined) {
+    throw new Error(`Malformed slice draft ${path}: ${problem}`);
+  }
+};
+
 const rejectBadReferences = (path: string, plan: Plan) => {
   const titles = new Set<string>();
 
   rejectRepeatedIdentifiers(path, plan);
+  rejectBadBlockers(path, plan);
 
-  for (const [index, slice] of plan.slices.entries()) {
-    const number = index + 1;
-
-    const unknownBlocker = slice.blockedBy.find(
-      (blocker) => blocker > plan.slices.length || blocker === number,
-    );
-
-    if (unknownBlocker !== undefined) {
-      throw new Error(
-        `Malformed slice draft ${path}: slice ${number} is blocked by ${unknownBlocker}, which is not another slice in the plan.`,
-      );
-    }
-
+  for (const slice of plan.slices) {
     if (titles.has(slice.title)) {
       throw new Error(`Malformed slice draft ${path}: two slices use the title "${slice.title}".`);
     }
@@ -183,7 +182,14 @@ export const readDraft = async (directory: string): Promise<Draft | undefined> =
   return { plan, containerBody, sliceBodies };
 };
 
-// A linked draft file could send the model's or the tool's writes outside the repository.
+const hasOtherHardLinks = async (path: string) => {
+  const stats = await lstat(path);
+
+  return stats.nlink > 1;
+};
+
+// A linked draft file could send the model's or the tool's writes outside the repository, and a
+// body read through a hard link could send another file's contents to Linear.
 export const rejectLinkedDraftFiles = async (directory: string): Promise<void> => {
   const entries = await readdir(directory, { withFileTypes: true });
   const link = entries.find((entry) => entry.isSymbolicLink());
@@ -191,29 +197,50 @@ export const rejectLinkedDraftFiles = async (directory: string): Promise<void> =
   if (link !== undefined) {
     throw new Error(`Refusing to write through a symlink: ${join(directory, link.name)}`);
   }
+
+  const files = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => join(directory, entry.name));
+
+  const hardLinked = await Promise.all(files.map((file) => hasOtherHardLinks(file)));
+  const firstHardLinked = files.find((_, index) => hardLinked[index] === true);
+
+  if (firstHardLinked !== undefined) {
+    throw new Error(`Refusing a draft file with another hard link: ${firstHardLinked}`);
+  }
 };
 
-const openPlanForWrite = async (path: string) => {
+const isSymlink = async (path: string) => {
   try {
-    return await open(
-      path,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
-    );
+    const stats = await lstat(path);
+
+    return stats.isSymbolicLink();
   } catch (error) {
-    if (hasErrorCode(error, 'ELOOP')) {
-      throw new Error(`Refusing to write through a symlink: ${path}`, { cause: error });
+    if (isMissingFile(error)) {
+      return false;
     }
 
     throw error;
   }
 };
 
+// Writes a new file and renames it over plan.json, so a failed save keeps the saved identifiers.
+// The rename replaces a link at plan.json instead of following it.
 export const writePlan = async (directory: string, plan: Plan): Promise<void> => {
-  const file = await openPlanForWrite(join(directory, planFileName));
+  const path = join(directory, planFileName);
+  const content = `${JSON.stringify(plan, null, 2)}\n`;
+  const temporary = join(directory, `.${planFileName}.${randomUUID()}`);
+
+  if (await isSymlink(path)) {
+    throw new Error(`Refusing to write through a symlink: ${path}`);
+  }
 
   try {
-    await file.writeFile(`${JSON.stringify(plan, null, 2)}\n`);
-  } finally {
-    await file.close();
+    await writeFile(temporary, content, { flag: 'wx' });
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true });
+
+    throw error;
   }
 };

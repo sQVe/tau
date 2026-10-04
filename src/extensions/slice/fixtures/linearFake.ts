@@ -15,6 +15,12 @@ interface FakeIssue {
   blockedBy: string[];
 }
 
+interface FakeProject {
+  id: string;
+  name: string;
+  teamId: string;
+}
+
 interface FakeCall {
   command: string;
   commandArguments: string[];
@@ -25,6 +31,7 @@ export interface LinearFake {
   calls: FakeCall[];
   issues: Map<string, FakeIssue>;
   addIssue: (issue: Partial<FakeIssue> & { title: string }) => FakeIssue;
+  addProject: (project: FakeProject) => void;
   mergedPullRequests: Set<string>;
   failWrite: (count: number) => void;
   overrideOutput: (key: string, stdout: string) => void;
@@ -32,7 +39,6 @@ export interface LinearFake {
 }
 
 const teams = new Map([['ME', { id: 'team-me', key: 'ME' }]]);
-const projects = new Map([['Tau', { id: 'project-tau', name: 'Tau' }]]);
 
 // `linear api --variable` turns numbers, booleans, and null into those JSON types.
 const coerceVariable = (text: string): unknown => {
@@ -101,6 +107,7 @@ export const createLinearFake = (): LinearFake => {
   const calls: FakeCall[] = [];
   const overrides = new Map<string, string>();
   const failures = new Set<number>();
+  const projects: FakeProject[] = [{ id: 'project-tau', name: 'Tau', teamId: 'team-me' }];
   let nextNumber = 1;
 
   const addIssue = (issue: Partial<FakeIssue> & { title: string }): FakeIssue => {
@@ -125,8 +132,17 @@ export const createLinearFake = (): LinearFake => {
     return created;
   };
 
-  const project = (id: string | null) =>
-    [...projects.values()].find((candidate) => candidate.id === id) ?? null;
+  const project = (id: string | null) => {
+    const found = projects.find((candidate) => candidate.id === id);
+
+    return found === undefined ? null : { id: found.id, name: found.name };
+  };
+
+  const projectIdsNamed = (name: string, teamId?: string) =>
+    projects
+      .filter((candidate) => candidate.name === name)
+      .filter((candidate) => teamId === undefined || candidate.teamId === teamId)
+      .map((candidate) => ({ id: candidate.id }));
 
   const team = (id: string) => [...teams.values()].find((candidate) => candidate.id === id)!;
 
@@ -201,13 +217,15 @@ export const createLinearFake = (): LinearFake => {
       project?: { name: { eq: string } };
     };
 
-    const projectId =
-      filter.project === undefined ? undefined : projects.get(filter.project.name.eq)?.id;
+    const projectIds =
+      filter.project === undefined
+        ? undefined
+        : projectIdsNamed(filter.project.name.eq).map((candidate) => candidate.id);
 
     const nodes = [...issues.values()]
       .filter((issue) => issue.teamId === teams.get(filter.team.key.eq)?.id)
       .filter((issue) => issue.title === filter.title.eq && !issue.completed)
-      .filter((issue) => filter.project === undefined || issue.projectId === projectId)
+      .filter((issue) => projectIds === undefined || projectIds.includes(issue.projectId ?? ''))
       .map((issue) => ({ identifier: issue.identifier }));
 
     return { issues: { nodes } };
@@ -242,13 +260,19 @@ export const createLinearFake = (): LinearFake => {
       return containerData(String(variables['id']));
     }
 
-    if (query.includes('team(')) {
-      return { team: teams.get(String(variables['key'])) ?? null };
+    const found = teams.get(String(variables['key']));
+
+    if (found === undefined) {
+      return { team: null };
     }
 
-    const found = projects.get(String(variables['name']));
+    if (!query.includes('projects(')) {
+      return { team: { id: found.id } };
+    }
 
-    return { projects: { nodes: found === undefined ? [] : [{ id: found.id }] } };
+    const nodes = projectIdsNamed(String(variables['name']), found.id);
+
+    return { team: { id: found.id, projects: { nodes } } };
   };
 
   const issueCommand = (commandArguments: readonly string[]) => {
@@ -327,6 +351,9 @@ export const createLinearFake = (): LinearFake => {
     calls,
     issues,
     addIssue,
+    addProject: (added: FakeProject): void => {
+      projects.push(added);
+    },
     mergedPullRequests,
     // Fails the nth write call, counted from the first write the fake sees.
     failWrite: (count: number): void => {

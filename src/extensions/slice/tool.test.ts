@@ -1,9 +1,11 @@
 import {
+  chmod,
   cp,
   copyFile,
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   stat,
   symlink,
@@ -40,9 +42,17 @@ const savedPlan = async (directory: string) =>
     slices: { identifier: string | null }[];
   };
 
+const snapshotDraft = async (directory: string) => {
+  const names = await readdir(directory);
+
+  return Promise.all(
+    names.toSorted().map(async (name) => [name, await readFile(join(directory, name), 'utf8')]),
+  );
+};
+
 // Runs a read and checks that it changed no draft file and made no Linear write.
 const expectReadOnly = async (fake: Fake, directory: string, read: () => Promise<unknown>) => {
-  const planBefore = await readFile(join(directory, 'plan.json'), 'utf8');
+  const draftBefore = await snapshotDraft(directory);
   const writesBefore = fake.writes().length;
 
   const outcome: { value?: unknown; error?: string } = await read().then(
@@ -50,7 +60,7 @@ const expectReadOnly = async (fake: Fake, directory: string, read: () => Promise
     (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }),
   );
 
-  expect(await readFile(join(directory, 'plan.json'), 'utf8')).toBe(planBefore);
+  expect(await snapshotDraft(directory)).toEqual(draftBefore);
   expect(fake.writes()).toHaveLength(writesBefore);
 
   return outcome;
@@ -103,6 +113,12 @@ const outsideDirectory = async () => {
   return directory;
 };
 
+const exists = (path: string) =>
+  stat(path).then(
+    () => true,
+    () => false,
+  );
+
 // Creates the container and both slices, then returns the moved draft directory.
 const appliedPlan = async () => {
   const setup = await setUp();
@@ -152,6 +168,15 @@ describe('slice tool apply', () => {
     });
 
     expect(fake.issues.get('ME-3')).toMatchObject({ parent: 'ME-1', blockedBy: ['ME-2'] });
+  });
+
+  it('creates the container in the route project when another team has a project with that name', async () => {
+    const { fake, apply } = await setUp();
+
+    fake.addProject({ id: 'project-other-tau', name: 'Tau', teamId: 'team-other' });
+    await apply();
+
+    expect(fake.issues.get('ME-1')).toMatchObject({ teamId: 'team-me', projectId: 'project-tau' });
   });
 
   it('refuses when the container project differs from the route', async () => {
@@ -682,10 +707,40 @@ describe('slice tool read', () => {
   });
 
   it('reports a container that Linear does not have', async () => {
-    const { fake, directory, read } = await setUp();
-    const outcome = await expectReadOnly(fake, directory, () => read('ME-77'));
+    const root = await temporaryRepository();
+    const fake = createLinearFake();
+    const context = confirmContext(root, async () => true);
+    const { directory } = await run(fake, context, { action: 'prepare', id: 'me-77' });
+
+    const outcome = await expectReadOnly(fake, directory, () =>
+      run(fake, context, { action: 'read', directory, container: 'ME-77' }),
+    );
 
     expect(outcome.error).toMatch(/no issue ME-77/);
+  });
+
+  it('refuses a container for a draft that records none', async () => {
+    const { fake, directory, read } = await setUp();
+
+    fake.addIssue({ identifier: 'ME-4', title: 'Existing' });
+    const outcome = await expectReadOnly(fake, directory, () => read('ME-4'));
+
+    expect(outcome.error).toMatch(/records no container identifier.*ME-4/);
+  });
+
+  it('names a linear call that was killed', async () => {
+    const { fake, context, directory } = await appliedPlan();
+
+    const tool = createSliceTool(async (command, commandArguments, options) => ({
+      ...(await fake.exec(command, commandArguments, options)),
+      killed: true,
+    }));
+
+    const outcome = await expectReadOnly(fake, directory, () =>
+      tool.execute('call', { action: 'read', directory }, undefined, undefined, context),
+    );
+
+    expect(outcome.error).toMatch(/^linear api .* failed/);
   });
 
   it('names malformed linear output', async () => {
@@ -794,6 +849,43 @@ describe('slice tool prepare', () => {
     },
   );
 
+  it('refuses a draft named id that records another container', async () => {
+    const { fake, context, directory } = await setUp();
+    const plan = await savedPlan(directory);
+
+    plan.container.identifier = 'ME-5';
+    await writeFile(join(directory, 'plan.json'), JSON.stringify(plan));
+
+    await expect(run(fake, context, { action: 'prepare', id: 'planning' })).rejects.toThrow(
+      /planning records container ME-5/,
+    );
+  });
+
+  it('reuses a draft named id that records no container', async () => {
+    const { fake, context, directory } = await setUp();
+
+    const prepared = await run(fake, context, { action: 'prepare', id: 'planning' });
+
+    expect(prepared.directory).toBe(directory);
+  });
+
+  it('refuses to prepare when it cannot list the drafts', async () => {
+    const { root, fake, context } = await setUp();
+    const slices = join(root, '.tau', 'slices');
+
+    await chmod(slices, 0o300);
+
+    const outcome = await run(fake, context, { action: 'prepare', id: 'other' }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    await chmod(slices, 0o755);
+
+    expect(outcome).toMatchObject({ code: 'EACCES' });
+    expect(await exists(join(slices, 'other'))).toBe(false);
+  });
+
   it('refuses a selected draft that it cannot read', async () => {
     const { fake, context, directory } = await setUp('malformed.json');
 
@@ -802,12 +894,6 @@ describe('slice tool prepare', () => {
     );
   });
 });
-
-const exists = (path: string) =>
-  stat(path).then(
-    () => true,
-    () => false,
-  );
 
 describe('slice tool draft directory', () => {
   it('reads a missing draft without creating anything', async () => {
@@ -826,6 +912,18 @@ describe('slice tool draft directory', () => {
     expect(result['draft']).toBeNull();
     expect(await exists(join(root, '.tau', '.gitignore'))).toBe(false);
     expect(await exists(join(root, '.tau', 'slices'))).toBe(false);
+  });
+
+  it('refuses a draft directory nested with a backslash without creating anything', async () => {
+    const root = await temporaryRepository();
+    const fake = createLinearFake();
+    const context = confirmContext(root, async () => true);
+
+    await expect(
+      run(fake, context, { action: 'read', directory: String.raw`.tau/slices/parent\child` }),
+    ).rejects.toThrow(/must be \.tau\/slices\/<id>/);
+
+    expect(await exists(join(root, '.tau'))).toBe(false);
   });
 
   it('refuses to apply a missing draft without creating anything', async () => {

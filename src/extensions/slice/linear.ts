@@ -33,8 +33,8 @@ const issuesQuery =
 
 const teamQuery = 'query($key: String!) { team(id: $key) { id } }';
 
-const projectQuery =
-  'query($name: String!) { projects(filter: { name: { eq: $name } }) { nodes { id } } }';
+const teamProjectQuery =
+  'query($key: String!, $name: String!) { team(id: $key) { id projects(filter: { name: { eq: $name } }) { nodes { id } } } }';
 
 // `linear issue create --parent` copies the parent's project, so create through the API with the
 // team, project, and parent set explicitly.
@@ -85,8 +85,14 @@ const teamSchema = Type.Object({
   team: Type.Union([Type.Object({ id: Type.String() }), Type.Null()]),
 });
 
-const projectSchema = Type.Object({
-  projects: Type.Object({ nodes: Type.Array(Type.Object({ id: Type.String() })) }),
+const teamProjectSchema = Type.Object({
+  team: Type.Union([
+    Type.Object({
+      id: Type.String(),
+      projects: Type.Object({ nodes: Type.Array(Type.Object({ id: Type.String() })) }),
+    }),
+    Type.Null(),
+  ]),
 });
 
 const createSchema = Type.Object({
@@ -115,7 +121,7 @@ const run = async (
 ): Promise<string> => {
   const result = await exec(command, commandArguments, { cwd });
 
-  if (result.code !== 0) {
+  if (result.code !== 0 || result.killed) {
     const output = (result.stderr || result.stdout).trim();
 
     throw new Error(`${describe(command, commandArguments)} failed: ${output}`);
@@ -271,41 +277,64 @@ export const findOpenIssues = async (
   return response.data.issues.nodes.map((issue) => issue.identifier);
 };
 
-export const readRouteIds = async (
-  exec: Exec,
-  cwd: string,
-  route: { team: string; project: string | null },
-): Promise<{ team: string; project: string | null }> => {
-  const teamResponse = await api(exec, cwd, teamQuery, { key: route.team });
+const readTeamId = async (exec: Exec, cwd: string, key: string) => {
+  const response = await api(exec, cwd, teamQuery, { key });
 
-  if (!Value.Check(teamSchema, teamResponse.data)) {
-    throw unexpectedOutput(teamResponse);
+  if (!Value.Check(teamSchema, response.data)) {
+    throw unexpectedOutput(response);
   }
 
-  const { team } = teamResponse.data;
+  const { team } = response.data;
+
+  if (team === null) {
+    throw new Error(`Linear has no team ${key}.`);
+  }
+
+  return team.id;
+};
+
+// Looks the project up among the team's projects, since another team may use the same name.
+const readTeamProjectIds = async (
+  exec: Exec,
+  cwd: string,
+  route: { team: string; project: string },
+) => {
+  const response = await api(exec, cwd, teamProjectQuery, {
+    key: route.team,
+    name: route.project,
+  });
+
+  if (!Value.Check(teamProjectSchema, response.data)) {
+    throw unexpectedOutput(response);
+  }
+
+  const { team } = response.data;
 
   if (team === null) {
     throw new Error(`Linear has no team ${route.team}.`);
   }
 
-  if (route.project === null) {
-    return { team: team.id, project: null };
-  }
-
-  const projectResponse = await api(exec, cwd, projectQuery, { name: route.project });
-
-  if (!Value.Check(projectSchema, projectResponse.data)) {
-    throw unexpectedOutput(projectResponse);
-  }
-
-  const { projects } = projectResponse.data;
-  const [project, ...others] = projects.nodes;
+  const [project, ...others] = team.projects.nodes;
 
   if (project === undefined || others.length > 0) {
-    throw new Error(`Linear does not have exactly one project named ${route.project}.`);
+    throw new Error(
+      `Linear team ${route.team} does not have exactly one project named ${route.project}.`,
+    );
   }
 
   return { team: team.id, project: project.id };
+};
+
+export const readRouteIds = async (
+  exec: Exec,
+  cwd: string,
+  route: { team: string; project: string | null },
+): Promise<{ team: string; project: string | null }> => {
+  if (route.project === null) {
+    return { team: await readTeamId(exec, cwd, route.team), project: null };
+  }
+
+  return readTeamProjectIds(exec, cwd, { team: route.team, project: route.project });
 };
 
 export const createIssue = async (

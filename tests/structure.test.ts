@@ -27,6 +27,7 @@ const pureModules = [
   'src/models/allowedModels.ts',
   'src/extensions/askUserQuestion/questionnaire.ts',
   'src/extensions/compaction/reminder.ts',
+  'src/extensions/slice/blockers.ts',
   'src/extensions/slice/writes.ts',
   'src/extensions/snippets/history.ts',
   'src/extensions/snippets/insertion.ts',

@@ -41,7 +41,7 @@ const description = `Read and write a slice plan in Linear. Call it as the slice
 - prepare {id}: creates the ignored draft directory .tau/slices/<id>, or returns the existing one whose plan.json records container <id>. Returns {directory}.
 - read {directory, container?}: reads directory/plan.json (version 1: {version, route {team, project|null}, container {identifier|null, title, file}, slices [{identifier|null, title, file, blockedBy [slice numbers]}]}) and its body files, the container, and its children in Linear order with merged (a linked PR is merged), completed, and blockedBy. Returns {directory, draft, container, writes, problems, dropped, orderInPlace, stateToken}. writes lists the Linear writes apply would make, in order, each with kind and text. problems lists what stops apply, such as a route mismatch, a completed slice with no merged PR, an unrecorded slice whose title matches a child, or an unrecorded container whose title matches an open issue in the route. dropped lists children the plan leaves out; they stay in Linear.
 - apply {directory, stateToken}: asks the user to confirm the writes, then makes them in order, records each new identifier in plan.json at once, moves the draft to .tau/slices/<container identifier> after creating the container, and repairs the slice order once. It reads again after the confirm and writes only the checked contents. Returns {status: applied|declined|unchanged, directory, container, slices, applied, orderInPlace}; orderInPlace is false when the order is still wrong.
-Errors: a malformed or newer plan.json, a missing body file, bad linear or gh output, a stateToken that no longer matches (read again), problems, or no UI. Nothing is written in those cases. A failed step, or an abort before a step, throws with directory, applied, and notApplied, each step with kind and text. When an order move fails, the moves before it are applied as moveIssue steps with an identifier. When Linear created a ticket but its identifier could not be saved, created holds {identifier, url}, the create is applied, and saveIdentifier is not applied: record that identifier in plan.json before a retry; read again before a retry, which also finishes a failed draft move. Merged tickets are never written.`;
+Errors: a malformed or newer plan.json, a missing body file, a prepare id whose draft records another container, a read container when plan.json records none, bad linear or gh output, a stateToken that no longer matches (read again), problems, or no UI. Nothing is written in those cases. A failed step, or an abort before a step, throws with directory, applied, and notApplied, each step with kind and text. When an order move fails, the moves before it are applied as moveIssue steps with an identifier. When Linear created a ticket but its identifier could not be saved, created holds {identifier, url}, the create is applied, and saveIdentifier is not applied: record that identifier in plan.json before a retry; read again before a retry, which also finishes a failed draft move. Merged tickets are never written.`;
 
 const findRoot = async (cwd: string) => {
   const output = await readGitOutput(cwd, ['rev-parse', '--show-toplevel']);
@@ -102,8 +102,9 @@ const draftName = (root: string, directory: string | undefined) => {
   const absolute = resolve(root, directory);
   const fromSlices = relative(join(root, '.tau', slicesPath), absolute);
   const outside = fromSlices === '' || fromSlices.startsWith('..') || isAbsolute(fromSlices);
+  const nested = fromSlices.includes('/') || fromSlices.includes('\\');
 
-  if (outside || fromSlices.includes('/')) {
+  if (outside || nested) {
     throw new Error(`The draft directory must be .tau/slices/<id>, not ${directory}.`);
   }
 
@@ -118,11 +119,20 @@ const readSavedPlan = (directory: string) =>
     (error: unknown) => ({ directory, plan: undefined, error: toError(error) }),
   );
 
-// Picks the draft that records the container, or else the draft named id. An unreadable draft
-// stops prepare only when it is the one picked.
+const readDraftEntries = (slices: string) =>
+  readdir(slices, { withFileTypes: true }).catch((error: unknown) => {
+    if (isMissingFile(error)) {
+      return [];
+    }
+
+    throw error;
+  });
+
+// Picks the draft that records the container, or else the draft named id when it records no other
+// container. An unreadable draft stops prepare only when it is the one picked.
 const findDraftFor = async (root: string, id: string) => {
   const slices = join(root, '.tau', slicesPath);
-  const entries = await readdir(slices, { withFileTypes: true }).catch(() => []);
+  const entries = await readDraftEntries(slices);
 
   const directories = entries
     .filter((entry) => entry.isDirectory())
@@ -132,11 +142,21 @@ const findDraftFor = async (root: string, id: string) => {
   const recorded = saved.find((draft) => draft.plan?.container.identifier?.toLowerCase() === id);
   const selected = recorded ?? saved.find((draft) => basename(draft.directory) === id);
 
-  if (selected?.error !== undefined) {
+  if (selected === undefined) {
+    return id;
+  }
+
+  if (selected.error !== undefined) {
     throw selected.error;
   }
 
-  return selected === undefined ? id : basename(selected.directory);
+  const container = selected.plan?.container.identifier ?? null;
+
+  if (container !== null && container.toLowerCase() !== id) {
+    throw new Error(`The draft ${selected.directory} records container ${container}, not ${id}.`);
+  }
+
+  return basename(selected.directory);
 };
 
 const prepare = async (root: string, id: string | undefined) => {

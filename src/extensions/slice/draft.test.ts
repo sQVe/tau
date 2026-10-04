@@ -1,10 +1,21 @@
-import { copyFile, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  link,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it, onTestFinished } from 'vitest';
 
-import { readDraft, readPlan, writePlan } from './draft.js';
+import type { Plan } from './draft.js';
+import { readDraft, readPlan, rejectLinkedDraftFiles, writePlan } from './draft.js';
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'plans');
 
@@ -114,6 +125,32 @@ describe('readDraft', () => {
     expect(outcome.error).toMatch(/^Malformed slice draft.*ME-2/);
   });
 
+  it.each([
+    {
+      case: 'a repeated blocker',
+      blockedBy: [[], [1, 1]],
+      error: /slice 2 .*slice 1 more than once/,
+    },
+    { case: 'a two-slice cycle', blockedBy: [[2], [1]], error: /slices 1, 2/ },
+    { case: 'a three-slice cycle', blockedBy: [[3], [1], [2]], error: /slices 1, 3, 2/ },
+  ])('rejects $case', async ({ blockedBy, error }) => {
+    const directory = await draftDirectory('version-1.json');
+    const plan = (await readPlan(directory))!;
+
+    plan.slices.push({ identifier: null, title: 'Third', file: 'slice-3.md', blockedBy: [] });
+
+    for (const [index, slice] of plan.slices.entries()) {
+      slice.blockedBy = blockedBy[index] ?? [];
+    }
+
+    await writeFile(join(directory, 'plan.json'), JSON.stringify(plan));
+
+    const outcome = await readWithoutChanges(directory, () => readPlan(directory));
+
+    expect(outcome.error).toMatch(/^Malformed slice draft/);
+    expect(outcome.error).toMatch(error);
+  });
+
   it('rejects a malformed plan', async () => {
     const directory = await draftDirectory('malformed.json');
 
@@ -137,5 +174,43 @@ describe('writePlan', () => {
     ).rejects.toThrow(/symlink/);
 
     expect(await readFile(join(outside, 'plan.json'), 'utf8')).toBe(before);
+  });
+
+  it('keeps the saved plan when the save fails', async () => {
+    const directory = await draftDirectory('version-1.json');
+    const before = await readFile(join(directory, 'plan.json'), 'utf8');
+    const plan = (await readPlan(directory))!;
+
+    // JSON.stringify throws on a bigint, so the save fails before it writes anything.
+    const unsaveable = { ...plan, version: 1n } as unknown as Plan;
+
+    await expect(writePlan(directory, unsaveable)).rejects.toThrow(/BigInt/);
+
+    expect(await readFile(join(directory, 'plan.json'), 'utf8')).toBe(before);
+    expect(await readdir(directory)).toEqual(['plan.json']);
+  });
+
+  it('leaves no temporary file when the plan cannot be replaced', async () => {
+    const directory = await draftDirectory(undefined);
+    const plan = (await readPlan(await draftDirectory('version-1.json')))!;
+
+    await mkdir(join(directory, 'plan.json', 'inside'), { recursive: true });
+
+    await expect(writePlan(directory, plan)).rejects.toThrow(/plan\.json/);
+
+    expect(await readdir(directory)).toEqual(['plan.json']);
+  });
+});
+
+describe('rejectLinkedDraftFiles', () => {
+  it('refuses a draft file with another hard link', async () => {
+    const directory = await draftDirectory('version-1.json');
+    const outside = join(await draftDirectory(undefined), 'secret.md');
+
+    await writeFile(outside, 'Not for Linear.\n');
+    await link(outside, join(directory, 'slice-1.md'));
+
+    await expect(rejectLinkedDraftFiles(directory)).rejects.toThrow(/hard link: .*slice-1\.md$/);
+    expect(await readFile(outside, 'utf8')).toBe('Not for Linear.\n');
   });
 });
