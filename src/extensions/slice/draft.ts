@@ -1,11 +1,11 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { constants, open, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isMissingFile } from '../../errors.js';
+import { hasErrorCode, isMissingFile } from '../../errors.js';
 
 export interface Draft {
   plan: Plan;
@@ -165,6 +165,37 @@ export const readDraft = async (directory: string): Promise<Draft | undefined> =
   return { plan, containerBody, sliceBodies };
 };
 
+// A linked draft file could send the model's or the tool's writes outside the repository.
+export const rejectLinkedDraftFiles = async (directory: string): Promise<void> => {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const link = entries.find((entry) => entry.isSymbolicLink());
+
+  if (link !== undefined) {
+    throw new Error(`Refusing to write through a symlink: ${join(directory, link.name)}`);
+  }
+};
+
+const openPlanForWrite = async (path: string) => {
+  try {
+    return await open(
+      path,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+    );
+  } catch (error) {
+    if (hasErrorCode(error, 'ELOOP')) {
+      throw new Error(`Refusing to write through a symlink: ${path}`, { cause: error });
+    }
+
+    throw error;
+  }
+};
+
 export const writePlan = async (directory: string, plan: Plan): Promise<void> => {
-  await writeFile(join(directory, planFileName), `${JSON.stringify(plan, null, 2)}\n`);
+  const file = await openPlanForWrite(join(directory, planFileName));
+
+  try {
+    await file.writeFile(`${JSON.stringify(plan, null, 2)}\n`);
+  } finally {
+    await file.close();
+  }
 };

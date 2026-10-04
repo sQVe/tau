@@ -83,9 +83,20 @@ const rejectUnignored = async (root: string, relativeDirectory: string) => {
   }
 };
 
+// Refuses `<root>/.tau/<path>` when a path a write would go through is a symlink, since the link
+// could send writes outside the repository, or when Git would not ignore files in it. Changes
+// nothing, so a read can run it.
+export const checkTauDirectory = async (root: string, path: string): Promise<void> => {
+  const segments = parseSegments(path);
+
+  await rejectSymlinks(root, writtenPaths(segments));
+  await rejectUnignored(root, ['.tau', ...segments].join('/'));
+};
+
 // Creates `<root>/.tau/<path>` and makes Git ignore everything in `.tau/`. Refuses before it
-// creates anything when a path it would write through is a symlink, since the link could send
-// writes outside the repository. Refuses before it creates the target when Git would not ignore it. A path swapped between the check and the write can still escape.
+// creates anything when a path it would write through is a symlink, and before it creates the
+// target when Git would not ignore it. A path swapped between the check and the write can still
+// escape.
 export const ensureTauDirectory = async (root: string, path: string): Promise<string> => {
   const segments = parseSegments(path);
 
@@ -93,7 +104,7 @@ export const ensureTauDirectory = async (root: string, path: string): Promise<st
 
   await mkdir(join(root, '.tau'), { recursive: true });
   await ignoreTauDirectory(root);
-  await rejectUnignored(root, ['.tau', ...segments].join('/'));
+  await checkTauDirectory(root, path);
 
   const directory = join(root, '.tau', ...segments);
 

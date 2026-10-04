@@ -1,15 +1,16 @@
-import { readdir } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { lstat, readdir } from 'node:fs/promises';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
+import { isMissingFile } from '../../errors.js';
 import { readGitOutput } from '../../gitOutput.js';
-import { ensureTauDirectory } from '../../tauDirectory.js';
+import { checkTauDirectory, ensureTauDirectory } from '../../tauDirectory.js';
 import { applySlicePlan } from './apply.js';
-import { readPlan } from './draft.js';
+import { readPlan, rejectLinkedDraftFiles } from './draft.js';
 import type { Exec } from './linear.js';
 import { readState, slicesPath } from './state.js';
 import type { Runtime } from './state.js';
@@ -53,7 +54,47 @@ const findRoot = async (cwd: string) => {
   return root;
 };
 
-const resolveDraftDirectory = (root: string, directory: string | undefined) => {
+const isMissing = (path: string) =>
+  lstat(path).then(
+    () => false,
+    (error: unknown) => {
+      if (isMissingFile(error)) {
+        return true;
+      }
+
+      throw error;
+    },
+  );
+
+// Creates the draft directory and refuses one that a link could send writes outside the checkout.
+const createDraftDirectory = async (root: string, name: string) => {
+  const directory = await ensureTauDirectory(root, `${slicesPath}/${name}`);
+
+  await rejectLinkedDraftFiles(directory);
+
+  return directory;
+};
+
+// Runs the same refusals as createDraftDirectory without changing anything. A missing draft has
+// nothing to check: read reports no draft, and apply refuses it.
+const checkDraftDirectory = async (root: string, name: string, action: 'read' | 'apply') => {
+  const directory = join(root, '.tau', slicesPath, name);
+
+  if (await isMissing(directory)) {
+    if (action === 'apply') {
+      throw new Error(`The draft directory ${directory} does not exist. Nothing was written.`);
+    }
+
+    return directory;
+  }
+
+  await checkTauDirectory(root, `${slicesPath}/${name}`);
+  await rejectLinkedDraftFiles(directory);
+
+  return directory;
+};
+
+const draftName = (root: string, directory: string | undefined) => {
   if (directory === undefined) {
     throw new Error('read and apply need the directory that prepare returned.');
   }
@@ -66,9 +107,19 @@ const resolveDraftDirectory = (root: string, directory: string | undefined) => {
     throw new Error(`The draft directory must be .tau/slices/<id>, not ${directory}.`);
   }
 
-  return absolute;
+  return fromSlices;
 };
 
+const toError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)));
+
+const readSavedPlan = (directory: string) =>
+  readPlan(directory).then(
+    (plan) => ({ directory, plan, error: undefined }),
+    (error: unknown) => ({ directory, plan: undefined, error: toError(error) }),
+  );
+
+// Picks the draft that records the container, or else the draft named id. An unreadable draft
+// stops prepare only when it is the one picked.
 const findDraftFor = async (root: string, id: string) => {
   const slices = join(root, '.tau', slicesPath);
   const entries = await readdir(slices, { withFileTypes: true }).catch(() => []);
@@ -77,9 +128,15 @@ const findDraftFor = async (root: string, id: string) => {
     .filter((entry) => entry.isDirectory())
     .map((entry) => join(slices, entry.name));
 
-  const plans = await Promise.all(directories.map((directory) => readPlan(directory)));
+  const saved = await Promise.all(directories.map((directory) => readSavedPlan(directory)));
+  const recorded = saved.find((draft) => draft.plan?.container.identifier?.toLowerCase() === id);
+  const selected = recorded ?? saved.find((draft) => basename(draft.directory) === id);
 
-  return directories.find((_, index) => plans[index]?.container.identifier?.toLowerCase() === id);
+  if (selected?.error !== undefined) {
+    throw selected.error;
+  }
+
+  return selected === undefined ? id : basename(selected.directory);
 };
 
 const prepare = async (root: string, id: string | undefined) => {
@@ -87,9 +144,7 @@ const prepare = async (root: string, id: string | undefined) => {
     throw new Error('prepare needs id.');
   }
 
-  const existing = await findDraftFor(root, id);
-
-  return existing ?? ensureTauDirectory(root, `${slicesPath}/${id}`);
+  return createDraftDirectory(root, await findDraftFor(root, id));
 };
 
 const read = async (runtime: Runtime, directory: string, container: string | undefined) => {
@@ -126,7 +181,8 @@ const runAction = async (
     return { directory: await prepare(root, parameters.id) };
   }
 
-  const directory = resolveDraftDirectory(root, parameters.directory);
+  const name = draftName(root, parameters.directory);
+  const directory = await checkDraftDirectory(root, name, parameters.action);
 
   if (parameters.action === 'read') {
     return read(runtime, directory, parameters.container);

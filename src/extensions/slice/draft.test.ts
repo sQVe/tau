@@ -1,10 +1,10 @@
-import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it, onTestFinished } from 'vitest';
 
-import { readDraft, readPlan } from './draft.js';
+import { readDraft, readPlan, writePlan } from './draft.js';
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'plans');
 
@@ -100,5 +100,22 @@ describe('readDraft', () => {
     const outcome = await readWithoutChanges(directory, () => readDraft(directory));
 
     expect(outcome.error).toMatch(/^Malformed slice draft/);
+  });
+});
+
+describe('writePlan', () => {
+  it('refuses to save through a linked plan', async () => {
+    const directory = await draftDirectory(undefined);
+    const outside = await draftDirectory('version-1.json');
+    const plan = await readPlan(outside);
+
+    await symlink(join(outside, 'plan.json'), join(directory, 'plan.json'));
+    const before = await readFile(join(outside, 'plan.json'), 'utf8');
+
+    await expect(
+      writePlan(directory, { ...plan!, container: { ...plan!.container, identifier: 'ME-9' } }),
+    ).rejects.toThrow(/symlink/);
+
+    expect(await readFile(join(outside, 'plan.json'), 'utf8')).toBe(before);
   });
 });

@@ -1,4 +1,15 @@
-import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  cp,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
@@ -82,6 +93,14 @@ const setUp = async (fixture = 'version-1.json') => {
   };
 
   return { root, fake, context, approve, directory, read, apply };
+};
+
+const outsideDirectory = async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-slice-outside-'));
+
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+  return directory;
 };
 
 // Creates the container and both slices, then returns the moved draft directory.
@@ -554,4 +573,127 @@ describe('slice tool prepare', () => {
     expect(prepared.directory).toBe(directory);
     expect(directory.startsWith(join(root, '.tau', 'slices'))).toBe(true);
   });
+
+  it('refuses a reused draft behind a linked .tau', async () => {
+    const { root, fake, context } = await appliedPlan();
+    const outside = await outsideDirectory();
+
+    await cp(join(root, '.tau'), outside, { recursive: true });
+    await rm(join(root, '.tau'), { recursive: true });
+    await symlink(outside, join(root, '.tau'));
+    const outsidePlan = join(outside, 'slices', 'me-1', 'plan.json');
+    const planBefore = await readFile(outsidePlan, 'utf8');
+
+    await expect(run(fake, context, { action: 'prepare', id: 'me-1' })).rejects.toThrow(
+      /symlink: \.tau$/,
+    );
+
+    expect(await readFile(outsidePlan, 'utf8')).toBe(planBefore);
+  });
+
+  it.each(['malformed.json', 'newer.json'])(
+    'prepares a new draft next to an unrelated %s draft',
+    async (fixture) => {
+      const { root, fake, context } = await setUp();
+      const unrelated = join(root, '.tau', 'slices', 'unrelated');
+
+      await mkdir(unrelated);
+      await copyFile(join(fixtures, fixture), join(unrelated, 'plan.json'));
+
+      const prepared = await run(fake, context, { action: 'prepare', id: 'other-design' });
+
+      expect(prepared.directory).toBe(join(root, '.tau', 'slices', 'other-design'));
+    },
+  );
+
+  it('refuses a selected draft that it cannot read', async () => {
+    const { fake, context, directory } = await setUp('malformed.json');
+
+    await expect(run(fake, context, { action: 'prepare', id: 'planning' })).rejects.toThrow(
+      new RegExp(`Malformed slice draft ${join(directory, 'plan.json')}`),
+    );
+  });
+});
+
+const exists = (path: string) =>
+  stat(path).then(
+    () => true,
+    () => false,
+  );
+
+describe('slice tool draft directory', () => {
+  it('reads a missing draft without creating anything', async () => {
+    const root = await temporaryRepository();
+    const fake = createLinearFake();
+    const context = confirmContext(root, async () => true);
+
+    await mkdir(join(root, '.tau'));
+    await writeFile(join(root, '.tau', 'note.md'), 'Not ignored.\n');
+
+    const result = await run(fake, context, {
+      action: 'read',
+      directory: '.tau/slices/missing',
+    });
+
+    expect(result['draft']).toBeNull();
+    expect(await exists(join(root, '.tau', '.gitignore'))).toBe(false);
+    expect(await exists(join(root, '.tau', 'slices'))).toBe(false);
+  });
+
+  it('refuses to apply a missing draft without creating anything', async () => {
+    const root = await temporaryRepository();
+    const fake = createLinearFake();
+    const context = confirmContext(root, async () => true);
+
+    await expect(
+      run(fake, context, { action: 'apply', directory: '.tau/slices/missing', stateToken: 'any' }),
+    ).rejects.toThrow(/does not exist/);
+
+    expect(await exists(join(root, '.tau'))).toBe(false);
+    expect(fake.writes()).toEqual([]);
+  });
+
+  it.each(
+    (['prepare', 'read', 'apply'] as const).flatMap((action) =>
+      ['plan.json', 'slice-1.md'].map((file) => [action, file] as const),
+    ),
+  )('refuses to %s a draft whose %s is a symlink', async (action, file) => {
+    const { fake, context, directory } = await setUp();
+    const outside = join(await outsideDirectory(), file);
+
+    await copyFile(join(directory, file), outside);
+    await rm(join(directory, file));
+    await symlink(outside, join(directory, file));
+    const before = await readFile(outside, 'utf8');
+
+    const input =
+      action === 'prepare'
+        ? ({ action, id: 'planning' } as const)
+        : ({ action, directory, stateToken: 'any' } as const);
+
+    await expect(run(fake, context, input)).rejects.toThrow(new RegExp(`symlink: .*${file}$`));
+
+    expect(await readFile(outside, 'utf8')).toBe(before);
+    expect(fake.writes()).toEqual([]);
+  });
+
+  it.each(['read', 'apply'] as const)(
+    'refuses to %s a draft behind a linked .tau/slices',
+    async (action) => {
+      const { root, fake, context, directory } = await setUp();
+      const outside = await outsideDirectory();
+
+      await cp(join(root, '.tau', 'slices'), outside, { recursive: true });
+      await rm(join(root, '.tau', 'slices'), { recursive: true });
+      await symlink(outside, join(root, '.tau', 'slices'));
+      const planBefore = await readFile(join(outside, 'planning', 'plan.json'), 'utf8');
+
+      await expect(run(fake, context, { action, directory, stateToken: 'any' })).rejects.toThrow(
+        /symlink: \.tau\/slices$/,
+      );
+
+      expect(await readFile(join(outside, 'planning', 'plan.json'), 'utf8')).toBe(planBefore);
+      expect(fake.writes()).toEqual([]);
+    },
+  );
 });
