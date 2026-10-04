@@ -11,9 +11,10 @@ metadata:
 
 ## When to use
 
-Use this skill when the user asks for a worktree for a ticket or a piece of work. Agreeing to a
-change is not a request for a worktree. Grove creates the worktree and runs the repository's add
-hooks, such as dependency installs.
+Use this skill when the user asks for a worktree for a ticket or a piece of work. When you work from
+the bare repository root, an approved implementation task is such a request: create the worktree and
+tell the user. Otherwise, agreeing to a change is not a request for a worktree. Grove creates the
+worktree and runs the repository's add hooks, such as dependency installs.
 
 ## Hard rules
 

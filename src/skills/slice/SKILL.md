@@ -57,7 +57,9 @@ before anything was written to Linear.
 1. Read the design from the Linear ticket, file, or conversation the user names. For a ticket, run
    `linear issue view <id> --json --no-pager`. Route the container and its slices with the
    [tracker skill](../tracker/SKILL.md), which stops when an existing container is in another team
-   or project. Ask once whether the design is agreed. If it is not, stop.
+   or project. Ask no separate question about whether the design is agreed. When the conversation or
+   ticket does not show the user's agreement, say so in the step 5 preview, so that its approval
+   also agrees to the design.
 
 2. Read the current state.
    - If `$slicedir/plan.md` exists, read it and every body file it names.
