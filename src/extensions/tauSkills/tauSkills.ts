@@ -63,6 +63,16 @@ const registerSkillCommands = (
   }
 };
 
+// A path that cannot resolve, such as a file URL with a host, names no skill. The read tool reports
+// the error itself.
+const resolveSkillFile = (cwd: string, path: string) => {
+  try {
+    return resolveReadPath(cwd, path);
+  } catch {
+    return undefined;
+  }
+};
+
 // The model runs a skill listed in the system prompt by reading its SKILL.md.
 const registerSkillReadActivation = (
   pi: ExtensionAPI,
@@ -86,7 +96,8 @@ const registerSkillReadActivation = (
       return;
     }
 
-    const toolNames = toolsBySkillFile.get(resolveReadPath(context.cwd, event.input.path));
+    const skillFile = resolveSkillFile(context.cwd, event.input.path);
+    const toolNames = skillFile === undefined ? undefined : toolsBySkillFile.get(skillFile);
 
     if (toolNames !== undefined) {
       activateTools(pi, toolNames);

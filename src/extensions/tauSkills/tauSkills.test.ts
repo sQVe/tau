@@ -109,6 +109,19 @@ describe('tauSkillsExtension', () => {
     expect(fake.activeTools()).toEqual(['read', 'bro_tool']);
   });
 
+  it('turns on no tools for a read of a file URL it cannot parse', async () => {
+    const fake = fakeWithActiveTools(['read']);
+
+    tauSkillsExtension(fake.pi, skillsDirectory, { bro: ['bro_tool'] });
+
+    const path = 'file://host/x';
+    const event = { type: 'tool_call', toolCallId: path, toolName: 'read', input: { path } };
+
+    await fake.handler('tool_call')(event, { cwd: skillsDirectory } as never);
+
+    expect(fake.activeTools()).toEqual(['read']);
+  });
+
   it('refuses tools tied to an unknown skill and registers nothing', () => {
     const fake = fakeWithActiveTools(['read']);
 
