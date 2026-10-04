@@ -95,13 +95,24 @@ const rejectLaterExceptions = async (root: string) => {
   }
 };
 
-// Git does not ignore a file it tracks, so ask Git whether a file in the target is ignored.
+// Git does not ignore a file it tracks, so ask Git whether a file in the target is ignored, and
+// whether it tracks any file there already.
 const rejectUnignored = async (root: string, relativeDirectory: string) => {
   const probe = `${relativeDirectory}/file`;
   const output = await readGitOutput(root, ['check-ignore', '--', probe]);
 
   if (output === undefined || output.trim() === '') {
     throw new Error(`Git does not ignore files in ${relativeDirectory}`);
+  }
+
+  const tracked = await readGitOutput(root, ['ls-files', '--', relativeDirectory]);
+
+  if (tracked === undefined) {
+    throw new Error(`Git could not list the tracked files in ${relativeDirectory}`);
+  }
+
+  if (tracked.trim() !== '') {
+    throw new Error(`Git tracks files in ${relativeDirectory}`);
   }
 };
 

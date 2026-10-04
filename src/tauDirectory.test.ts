@@ -168,6 +168,19 @@ it('refuses when Git tracks a file in the target', async ({ onTestFinished }) =>
   );
 });
 
+it('refuses when Git tracks a file in an ignored target', async ({ onTestFinished }) => {
+  const repository = await createTemporaryRepository(onTestFinished);
+  const tracked = join(repository, '.tau/slices/me-479/plan.json');
+
+  await ensureTauDirectory(repository, 'slices/me-479');
+  await writeFile(tracked, '{}\n');
+  await promisify(execFile)('git', ['add', '--force', tracked], { cwd: repository });
+
+  await expect(checkTauDirectory(repository, 'slices/me-479')).rejects.toThrow(
+    '.tau/slices/me-479',
+  );
+});
+
 it.for(['..', '.', ''])(
   'refuses the fresh directory prefix %j and creates nothing',
   async (prefix, { onTestFinished }) => {
