@@ -174,6 +174,7 @@ it('accepts valid links, headings, paths, and code spans that are not paths', ()
     'Jump to [checks](#run-pnpm-check-first), [notes](#notes-1-1), and [link](#linked-heading-with-punctuation).',
     'Jump to [the title](#setext-title), [the section](#setext-section), and [the next](#setext-after-a-heading).',
     'Open [the repository](../) and [its root](..).',
+    'Read [the plain index](adr/README.md?plain=1#index).',
     'Read [ADR 0001](adr/0001-first.md#adr-0001-first) and [the index][index].',
     'Open [the source](../src/tau.ts#L1), [the folder](../src/extensions/), and [the site](https://example.com/x.md#y).',
     '',

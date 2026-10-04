@@ -147,7 +147,9 @@ const targetProblem = (
   files: Files,
 ): LinkProblem | undefined => {
   const fragmentStart = target.indexOf('#');
-  const encodedPath = fragmentStart === -1 ? target : target.slice(0, fragmentStart);
+  const encodedReference = fragmentStart === -1 ? target : target.slice(0, fragmentStart);
+  const queryStart = encodedReference.indexOf('?');
+  const encodedPath = queryStart === -1 ? encodedReference : encodedReference.slice(0, queryStart);
   const path = decoded(encodedPath);
 
   if (path === undefined) {
