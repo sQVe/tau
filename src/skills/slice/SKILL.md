@@ -66,8 +66,9 @@ before anything was written to Linear.
    - Mark a slice `blocked-by` another only when it cannot work or merge without it.
    - Give every slice a title that no other slice in the plan uses.
 
-4. Write the draft in the directory, one body file per ticket. For a new container or one-slice
-   ticket, search for an open duplicate with the [tracker skill](../tracker/SKILL.md) first.
+4. Write the draft in the directory, one body file per ticket. Before you write each new ticket, the
+   container and every new slice, search for an open duplicate with the
+   [tracker skill](../tracker/SKILL.md).
    - `container.md`: the container's full description in the
      [container template](../tracker/templates/container.md), with the agreed design in its
      `## Design` section. For an existing container, keep all text outside that section unchanged.
