@@ -1,6 +1,7 @@
 # ADR 0061: Layer Tau config from user and repository files
 
-- Status: Accepted
+- Status: Accepted; unknown top-level keys amended by
+  [ADR 0085](./0085-group-per-repository-settings-in-the-user-config.md)
 - Date: 2026-09-28
 
 ## Context
