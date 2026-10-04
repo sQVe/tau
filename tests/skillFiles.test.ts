@@ -21,7 +21,6 @@ const tauAllowlists: SkillAllowlists = {
     'code-review': ['e0e500f34f20', '892f0371f08b'],
     handoff: ['1927769d42b4'],
     pr: ['0e303365f0fe', 'e16c689d6943'],
-    slice: ['d4b87a0380fb'],
     'start-slice': ['16e2bc9782a1'],
   },
 };
