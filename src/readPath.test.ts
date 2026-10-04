@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { expect, it } from 'vitest';
@@ -15,7 +15,7 @@ it.for([
   {
     spelling: 'a file URL',
     path: pathToFileURL('/other/my skill/SKILL.md').href,
-    expected: '/other/my skill/SKILL.md',
+    expected: resolve('/other/my skill/SKILL.md'),
   },
 ])('resolves $spelling the way Pi reads it', ({ path, expected }) => {
   expect(resolveReadPath(cwd, path)).toBe(expected);

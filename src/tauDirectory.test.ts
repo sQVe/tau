@@ -101,16 +101,43 @@ it.for(['', '../outside', 'slices/../..', '/tmp/outside', 'slices//me-479'])(
   },
 );
 
-it('refuses a fresh directory prefix with a slash and creates nothing', async ({
-  onTestFinished,
-}) => {
-  const root = await createTemporaryDirectory(onTestFinished);
+it.for([String.raw`..\outside`, String.raw`slices\me-479`])(
+  'refuses the path %j with a backslash in a repository and creates nothing',
+  async (path, { onTestFinished }) => {
+    const repository = await createTemporaryRepository(onTestFinished);
+    const before = await readdir(repository);
 
-  await expect(createFreshTauDirectory(root, 'workers', '../review-')).rejects.toThrow(
-    '../review-',
+    await expect(ensureTauDirectory(repository, path)).rejects.toThrow(path);
+
+    expect(await readdir(repository)).toEqual(before);
+  },
+);
+
+it.for(['../review-', String.raw`..\review-`])(
+  'refuses the fresh directory prefix %j with a separator and creates nothing',
+  async (prefix, { onTestFinished }) => {
+    const root = await createTemporaryDirectory(onTestFinished);
+
+    await expect(createFreshTauDirectory(root, 'workers', prefix)).rejects.toThrow(prefix);
+
+    expect(await readdir(root)).toEqual([]);
+  },
+);
+
+it('refuses a tracked .tau/.gitignore before it changes anything', async ({ onTestFinished }) => {
+  const repository = await createTemporaryRepository(onTestFinished);
+  const ignoreFile = join(repository, '.tau/.gitignore');
+
+  await mkdir(join(repository, '.tau'));
+  await writeFile(ignoreFile, 'state.json\n');
+  await promisify(execFile)('git', ['add', '--force', ignoreFile], { cwd: repository });
+
+  await expect(ensureTauDirectory(repository, 'slices/me-479')).rejects.toThrow(
+    'Git tracks files in .tau/.gitignore',
   );
 
-  expect(await readdir(root)).toEqual([]);
+  expect(await readFile(ignoreFile, 'utf8')).toBe('state.json\n');
+  expect(await readdir(join(repository, '.tau'))).toEqual(['.gitignore']);
 });
 
 it('overrides a .tau/.gitignore exception for a file in the target', async ({ onTestFinished }) => {
@@ -166,6 +193,23 @@ it('refuses when Git tracks a file in the target', async ({ onTestFinished }) =>
   await expect(ensureTauDirectory(repository, 'slices/me-479')).rejects.toThrow(
     '.tau/slices/me-479',
   );
+});
+
+it('refuses a tracked file in the target before it creates .tau/.gitignore', async ({
+  onTestFinished,
+}) => {
+  const repository = await createTemporaryRepository(onTestFinished);
+  const tracked = join(repository, '.tau/slices/me-479/plan.json');
+
+  await mkdir(dirname(tracked), { recursive: true });
+  await writeFile(tracked, '{}\n');
+  await promisify(execFile)('git', ['add', '--force', tracked], { cwd: repository });
+
+  await expect(ensureTauDirectory(repository, 'slices/me-479')).rejects.toThrow(
+    'Git tracks files in .tau/slices/me-479',
+  );
+
+  expect(await readdir(join(repository, '.tau'))).toEqual(['slices']);
 });
 
 it('refuses when Git tracks a file in an ignored target', async ({ onTestFinished }) => {
