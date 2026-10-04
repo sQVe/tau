@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-import type { Exec } from '../linear.js';
+import type { Exec } from '../../../exec.js';
 
 interface FakeIssue {
   identifier: string;
