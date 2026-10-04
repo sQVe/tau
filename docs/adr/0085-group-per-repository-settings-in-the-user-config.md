@@ -55,8 +55,8 @@ one key per feature. Global settings stay at the top level.
 - A per-repository key appears only inside a `repositories` entry, never at the top level. A global
   key appears only at the top level.
 - The top-level `slice` key stays removed. Only `repositories[...].slice` is read.
-- `qa` names a command that prints the test account, as `browser.loginCommand` names a command. The
-  file holds no password.
+- `qa.testAccountCommand` names a command that prints the test account, as `browser.loginCommand`
+  names a command. The file holds no password.
 
 ### Repository identity
 
@@ -80,8 +80,9 @@ one key per feature. Global settings stay at the top level.
   may set each.
 - Each feature rejects unknown keys inside its own block. The error names the file and the field and
   lists the known keys.
-- An unknown top-level key or `repositories` entry key produces one warning per session that names
-  the key and the file. Tau keeps reading the other keys.
+- In the user file, an unknown top-level key or `repositories` entry key produces one warning per
+  session that names the key and the file. Tau keeps reading the other keys. In `.pi/tau.json`, an
+  unknown key is an error, as every key other than `tdd` and `allowedModels` is.
 - A known key in the wrong place, such as a top-level `qa` or `repositories[...].tdd`, is an error
   that says where to move it.
 - A removed or renamed key stays on a list of removed keys with a message that says what to set
