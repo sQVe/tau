@@ -62,18 +62,40 @@ const readIgnoreFile = async (path: string) => {
   }
 };
 
+const isRule = (line: string) => line.trim() !== '' && !line.startsWith('#');
+
+// Git applies the last rule that matches, so `*` must come after any `!` exception.
+const endsWithIgnoreEverything = (content: string) =>
+  content.split('\n').findLast(isRule) === ignoreEverything;
+
 const ignoreTauDirectory = async (root: string) => {
   const ignoreFile = join(root, '.tau/.gitignore');
   const content = await readIgnoreFile(ignoreFile);
 
-  if (content.split('\n').includes(ignoreEverything)) {
+  if (endsWithIgnoreEverything(content)) {
     return;
   }
 
   await appendFile(ignoreFile, `\n${ignoreEverything}\n`);
 };
 
-// A later `!` rule can undo the `*` rule, so ask Git whether a file in the target is ignored.
+const hasExceptionAfterIgnoreEverything = (content: string) => {
+  const rules = content.split('\n').filter(isRule);
+  const laterRules = rules.slice(rules.lastIndexOf(ignoreEverything) + 1);
+
+  return laterRules.some((rule) => rule.startsWith('!'));
+};
+
+// The probe below checks one file name only, so an exception for another file would pass it.
+const rejectLaterExceptions = async (root: string) => {
+  const content = await readIgnoreFile(join(root, '.tau/.gitignore'));
+
+  if (hasExceptionAfterIgnoreEverything(content)) {
+    throw new Error(`An exception follows the last ${ignoreEverything} rule in .tau/.gitignore`);
+  }
+};
+
+// Git does not ignore a file it tracks, so ask Git whether a file in the target is ignored.
 const rejectUnignored = async (root: string, relativeDirectory: string) => {
   const probe = `${relativeDirectory}/file`;
   const output = await readGitOutput(root, ['check-ignore', '--', probe]);
@@ -90,6 +112,7 @@ export const checkTauDirectory = async (root: string, path: string): Promise<voi
   const segments = parseSegments(path);
 
   await rejectSymlinks(root, writtenPaths(segments));
+  await rejectLaterExceptions(root);
   await rejectUnignored(root, ['.tau', ...segments].join('/'));
 };
 

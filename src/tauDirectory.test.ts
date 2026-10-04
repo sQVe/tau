@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { expect, it } from 'vitest';
 
 import { createTemporaryRepository } from '../tests/gitRepository.js';
-import { createFreshTauDirectory, ensureTauDirectory } from './tauDirectory.js';
+import { checkTauDirectory, createFreshTauDirectory, ensureTauDirectory } from './tauDirectory.js';
 
 const isIgnored = async (repository: string, path: string) => {
   try {
@@ -113,16 +113,59 @@ it('refuses a fresh directory prefix with a slash and creates nothing', async ({
   expect(await readdir(root)).toEqual([]);
 });
 
-it('refuses when .tau/.gitignore rules leave the target unignored', async ({ onTestFinished }) => {
+it('overrides a .tau/.gitignore exception for a file in the target', async ({ onTestFinished }) => {
   const repository = await createTemporaryRepository(onTestFinished);
   await mkdir(join(repository, '.tau'));
-  await writeFile(join(repository, '.tau/.gitignore'), '*\n!slices/\n!slices/**\n');
+
+  await writeFile(
+    join(repository, '.tau/.gitignore'),
+    '*\n!slices/\n!slices/me-479/\n!slices/me-479/plan.json\n',
+  );
+
+  await ensureTauDirectory(repository, 'slices/me-479');
+
+  expect(await isIgnored(repository, '.tau/slices/me-479/plan.json')).toBe(true);
+});
+
+it('check refuses an exception added after the ignore rule and changes nothing', async ({
+  onTestFinished,
+}) => {
+  const repository = await createTemporaryRepository(onTestFinished);
+  const ignoreFile = join(repository, '.tau/.gitignore');
+
+  await ensureTauDirectory(repository, 'slices/me-479');
+  await writeFile(ignoreFile, '!slices/me-479/plan.json\n', { flag: 'a' });
+
+  const before = await readFile(ignoreFile, 'utf8');
+
+  await expect(checkTauDirectory(repository, 'slices/me-479')).rejects.toThrow('.tau/.gitignore');
+
+  expect(await readFile(ignoreFile, 'utf8')).toBe(before);
+});
+
+it('check accepts a directory that the root .gitignore ignores without .tau/.gitignore', async ({
+  onTestFinished,
+}) => {
+  const repository = await createTemporaryRepository(onTestFinished);
+
+  await writeFile(join(repository, '.gitignore'), '.tau/\n');
+  await mkdir(join(repository, '.tau/slices/me-479'), { recursive: true });
+
+  await expect(checkTauDirectory(repository, 'slices/me-479')).resolves.toBeUndefined();
+  expect(await readdir(join(repository, '.tau'))).toEqual(['slices']);
+});
+
+it('refuses when Git tracks a file in the target', async ({ onTestFinished }) => {
+  const repository = await createTemporaryRepository(onTestFinished);
+  const tracked = join(repository, '.tau/slices/me-479/file');
+
+  await mkdir(dirname(tracked), { recursive: true });
+  await writeFile(tracked, 'tracked\n');
+  await promisify(execFile)('git', ['add', '--force', tracked], { cwd: repository });
 
   await expect(ensureTauDirectory(repository, 'slices/me-479')).rejects.toThrow(
     '.tau/slices/me-479',
   );
-
-  expect(await readdir(join(repository, '.tau'))).toEqual(['.gitignore']);
 });
 
 it.for(['..', '.', ''])(
