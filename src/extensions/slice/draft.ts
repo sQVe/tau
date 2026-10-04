@@ -95,7 +95,6 @@ const rejectBadReferences = (path: string, plan: Plan) => {
   }
 };
 
-// Parses the saved plan once, at the boundary.
 const parsePlan = (path: string, text: string): Plan => {
   let value: unknown;
 

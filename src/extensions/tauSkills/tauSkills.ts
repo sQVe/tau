@@ -13,7 +13,6 @@ import { appendSystemPrompt } from '../../systemPrompt.js';
 import { isWorkerProcess } from '../../workerProcess.js';
 import { requiredActions } from './requiredFor.js';
 
-// Maps a skill name to the tools that skill turns on when it runs.
 type SkillTools = Readonly<Record<string, readonly string[]>>;
 
 const buildSkillMessage = (skillName: string, argumentsText: string) => {
