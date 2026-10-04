@@ -129,13 +129,6 @@ export const commitContext = (repositoryDirectory: string): ExtensionToolContext
     },
   }) as unknown as ExtensionToolContext;
 
-export const noUiContext = (repositoryDirectory: string): ExtensionToolContext =>
-  ({
-    cwd: repositoryDirectory,
-    hasUI: false,
-    ui: {},
-  }) as unknown as ExtensionToolContext;
-
 export const executeCommit = async (
   repositoryDirectory: string,
   input: CommitInput,

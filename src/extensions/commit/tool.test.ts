@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { noUiContext } from '../../../tests/toolContext.js';
 import {
   runCommand,
   git,
@@ -10,7 +11,6 @@ import {
   writeRepositoryFile,
   getStoredCommitMessage,
   commitContext,
-  noUiContext,
   executeCommit,
   fakeCommit,
 } from './fixtures/commitTool.js';
