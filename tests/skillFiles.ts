@@ -1,17 +1,19 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import { loadSkillsFromDir, parseFrontmatter } from '@earendil-works/pi-coding-agent';
 
 import { parseShellCommands } from '../src/extensions/commit/shellCommands.js';
 import { requiredActions } from '../src/extensions/tauSkills/requiredFor.js';
+import { diskFiles, fencedCodeBlock, linkProblems, withoutCode } from './markdownFiles.js';
 
 export type SkillProblemKind =
   | 'adr-reference'
   | 'see-also-heading'
   | 'bad-frontmatter'
   | 'broken-link'
+  | 'missing-heading'
   | 'unknown-heading'
   | 'multi-command-shell-block'
   | 'stale-allowlist';
@@ -34,47 +36,9 @@ const consolePrompt = '$ ';
 const topLevelKeys = new Set(['name', 'description', 'metadata']);
 const metadataKeys = new Set(['required-for']);
 
-// Fences in list items are indented, so any indentation opens a block. A closing fence may be
-// longer than the opening one.
-const fencedCodeBlock =
-  /^[ \t]*(([`~])\2{2,})([^\n]*)\n([\s\S]*?)(?:^[ \t]*\1\2*[ \t]*$|(?![\s\S]))/gm;
-
-const inlineCode = /(`+)[\s\S]*?\1/g;
-
-const inlineLink =
-  /\[[^\]]*\]\(\s*(?:<([^>\n]*)>|([^\s)]*))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
-
-const referenceDefinition = /^ {0,3}\[[^\]]+\]:[ \t]*(?:<([^>\n]*)>|(\S+))/gm;
 const adrWord = /\bADRs?\b/i;
 const sectionHeading = /^ {0,3}##[ \t]+(.+?)[ \t]*#*[ \t]*$/gm;
 const seeAlsoHeading = /^ {0,3}#{1,6}[ \t]+see also[ \t]*#*[ \t]*$/im;
-const externalTarget = /^(?:https?|mailto):/i;
-
-const withoutCode = (markdown: string) =>
-  markdown.replaceAll(fencedCodeBlock, '').replaceAll(inlineCode, '');
-
-const linkTargets = (markdown: string) =>
-  [...markdown.matchAll(inlineLink), ...markdown.matchAll(referenceDefinition)].map(
-    (match) => match[1] ?? match[2] ?? '',
-  );
-
-const isLocalTarget = (target: string) => !externalTarget.test(target) && !target.startsWith('#');
-
-const targetExists = (file: string, target: string) => {
-  const [path = ''] = target.split('#');
-
-  try {
-    return existsSync(resolve(dirname(file), decodeURIComponent(path)));
-  } catch {
-    return false;
-  }
-};
-
-const brokenLinks = (file: string, markdown: string) =>
-  linkTargets(withoutCode(markdown))
-    .filter(isLocalTarget)
-    .filter((target) => !targetExists(file, target))
-    .map((target) => `links to missing ${target}`);
 
 const sectionHeadingsOf = (markdown: string) =>
   [...withoutCode(markdown).matchAll(sectionHeading)].map((match) => match[1] ?? '');
@@ -251,7 +215,7 @@ const skillProblems = (
     ...problemsOf('adr-reference', adrMentions),
     ...problemsOf('see-also-heading', seeAlso),
     ...problemsOf('bad-frontmatter', frontmatterProblems(name, file, markdown)),
-    ...problemsOf('broken-link', brokenLinks(file, markdown)),
+    ...linkProblems(file, markdown, diskFiles).map(({ kind, detail }) => ({ file, kind, detail })),
     ...problemsOf('unknown-heading', unknownHeadings(headings, extraHeadings)),
     ...problemsOf(
       'multi-command-shell-block',
