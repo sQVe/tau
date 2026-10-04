@@ -25,8 +25,8 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 
 - Push, create or edit a PR, or change its draft status only after the user approves the preview.
   Any change after approval needs a new preview.
-- Ask every question with `ask_user_question`, including review approval, preview approval, and bot
-  choice. Never ask in prose.
+- Ask every question with `ask_user_question`, including review approval and preview approval. Never
+  ask in prose.
 - Follow the push rules in the [update-branch skill](../update-branch/SKILL.md). Except for stack
   restacking in step 5, never rebase or force-push unless the user asks. Step 5 restacks locally;
   preview approval covers the stack's force-push.
@@ -141,7 +141,8 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      names, and local paths in the session report.
 
 8. Preview and ask for approval. Show title, full body, base repository and branch, head, draft
-   status, commits to push, and push command.
+   status, commits to push, and push command. For a new PR, show the `@codex review` comment that
+   step 11 posts.
    - In a stack, list each branch to push with its local SHA and explain that each is force-pushed
      with a lease. Show the `gh stack link` command, or why step 9 cannot link.
    - Include the session report: commits made, comment removals, review and check sources, reviewer
@@ -180,12 +181,8 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 
     Report differences and the PR URL. Stop if the check fails or shows a difference.
 
-11. Offer bot reviews with a skip option. Publication approval does not cover them. Suggest bots
-    documented or configured by the repository, such as CodeRabbit for `.coderabbit.yaml`, or Codex
-    if none exist.
-    - Read existing requests and reviews first. Skip requests known to cover the current head; ask
-      when coverage is unclear.
-    - For Codex, run `gh pr comment <number> --repo <repo> --body '@codex review'`. Use documented
-      triggers for other bots; never invent them.
-    - Report sent and skipped requests, then stop. Posting a request does not prove a review
-      started.
+11. Request a Codex review without asking. If this run created the PR, run
+    `gh pr comment <number> --repo <repo> --body '@codex review'`. When a retry follows a partial
+    failure, count a PR the earlier attempt created as created by this run. Post only if the PR has
+    no `@codex review` comment yet. On an update to an existing PR, post nothing. Report the
+    request, then stop. Posting a request does not prove a review started.
