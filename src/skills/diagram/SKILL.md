@@ -38,14 +38,16 @@ blocks, so they also work in pull request bodies and documents.
   edge label after 28.
 - Show one idea per diagram, with about 12 nodes or fewer. Split a large diagram into several
   instead of shortening labels until they lose meaning.
-- Pair each diagram with short prose that names the real files or functions behind its nodes.
+- Pair each diagram with short prose that names the real files, functions, or records behind its
+  nodes.
 
 ## Procedure
 
 1. Find the topic. Use the text after `/diagram`. Without it, use the structure the conversation is
    discussing. If there is none or it is unclear, ask what to diagram and stop.
-2. Read the code for the topic: entry points, calls or messages between parts, and the states or
-   records involved. If you cannot read the code you need, say what is missing and stop.
+2. Read the code or records for the topic: entry points, calls or messages between parts, and the
+   states or records involved. A plan, such as slice tickets, is its own record. If you cannot read
+   what you need, say what is missing and stop.
 3. Decide whether a diagram helps. After `/diagram`, draw at least one unless an earlier rule or
    step told you to stop. Otherwise, if one sentence explains the topic, write the sentence instead
    and say that a diagram would add nothing.

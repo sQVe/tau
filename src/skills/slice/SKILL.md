@@ -117,6 +117,9 @@ before anything was written to Linear.
                       Out of scope: starting a slice.
      ```
 
+   - When the slices branch or join, a `flowchart TD` of the `blocked-by` edges, drawn with the
+     [diagram skill](../diagram/SKILL.md) as a top-level block after the tree. Keep the tree; it
+     holds the status, size, and scope a flowchart cannot.
    - One line of reason for each dependency, or missing dependency, that is not obvious.
    - Each acceptance criterion of the design, with the slice numbers that cover it.
    - Each choice in the `## Design` section that the agreed design did not already state, one line
