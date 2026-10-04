@@ -22,11 +22,13 @@ changing and within the requested scope. Explain the rest.
 
 ## Hard rules
 
-- Commit fixes on a feature branch only when the workflow that started this skill already commits,
-  such as `pr`. This skill never authorizes pushes, ticket updates, or posted replies.
-- Ask before expanding scope. Mark a finding Blocked when it changes scope, product behavior, or
-  policy, or when you cannot settle a disputed claim against the code. Make the safe fixes first,
-  then ask about the Blocked findings.
+- When the workflow that started this skill commits, such as `pr`, commit the fixes on its feature
+  branch with the [commit skill](../commit/SKILL.md). Otherwise leave them uncommitted. This skill
+  never authorizes pushes, ticket updates, or posted replies.
+- Ask before expanding scope. Mark a finding Blocked when its fix needs a decision about scope,
+  intended product behavior, or policy, or when you cannot settle a disputed claim against the code.
+  Fixing a defect so the code does what the task intends needs no decision. Make the safe fixes
+  first, then ask about the Blocked findings.
 - Making the reviewer happy is not a reason to change code.
 
 ## Procedure
