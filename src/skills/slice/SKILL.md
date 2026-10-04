@@ -33,25 +33,12 @@ before anything was written to Linear.
 - Follow the [tracker skill](../tracker/SKILL.md)'s hard rules on preview approval and on questions.
 - Do not create agent tickets, start a slice, create branches, stack PRs, or change any ticket's
   status. Never change or reorder a merged slice.
-- If a step fails partway, stop and report what completed. Before you retry anything, read the
-  draft, and the container's children when the container exists.
-- Before you save the first file, create the draft directory inside an ignored `.tau/` from the
-  repository root. Pick `<id>` in this order:
-  - For an existing container, search `.tau/slices/*/plan.md` for its identifier. When one matches,
-    reuse that directory as `<id>`.
-  - Otherwise use the container's identifier in lower case, such as `eng-123`.
-  - For a container that does not exist yet, use a short slug of its title with only `a-z`, `0-9`,
-    and `-`.
-
-  Stop unless the command prints `slicedir=`. Use the printed path as `$slicedir` for every file you
-  save. Never write scratch files to `/tmp` or another shared path.
-
-  ```sh
-  ! [ -L .tau ] && ! [ -L .tau/slices ] && ! [ -L .tau/slices/<id> ] && ! [ -L .tau/.gitignore ] &&
-    mkdir -p .tau/slices/<id> &&
-    { grep -qsx '\*' .tau/.gitignore || printf '\n*\n' >> .tau/.gitignore; } &&
-    git check-ignore -q .tau/slices/<id>/plan.md && echo "slicedir=.tau/slices/<id>"
-  ```
+- Use the `slice` tool for the draft directory, for reading the container and its slices, and for
+  every write to them. Save drafts only in the directory the tool returned last, since `apply` moves
+  the draft after it creates the container.
+- If `apply` fails, stop and report the steps it applied and the steps it did not. Before any retry,
+  follow the tool's recovery steps for that error, including a ticket whose identifier was not
+  saved.
 
 ## Procedure
 
@@ -62,22 +49,11 @@ before anything was written to Linear.
    ticket does not show the user's agreement, say so in the step 5 preview, so that its approval
    also agrees to the design.
 
-2. Read the current state.
-   - If `$slicedir/plan.md` exists, read it and every body file it names.
-   - If the container exists, read its current description with
-     `linear issue view <container> --json --no-pager`, even when the design came from elsewhere.
-     Then read its children with this children query:
-
-     ```sh
-     linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description subIssueSortOrder team { key } project { name } state { type } attachments { nodes { url } } } } } }' --variable id=<container>
-     ```
-
-   - Sort the nodes by `subIssueSortOrder`, lowest first.
-   - A slice is merged only when one of its attachment URLs is a pull request and
-     `gh pr view <url> --json state` returns `MERGED`. Its Linear status is not proof either way. If
-     a slice's state type is `completed` but no linked PR is merged, stop and ask the user.
-   - For each slice that exists, read its dependencies with `linear issue relation list <slice>`.
-     Keep the lines of the form `<slice> blocked-by <other>`.
+2. Read the current state. Call `slice` with `prepare`, then with `read`.
+   - Use the draft it returns as the last plan, and the container's description and children as
+     Linear now, even when the design came from elsewhere.
+   - Show each entry in `problems` and ask the user how to resolve it. Never call `apply` while
+     `problems` is not empty.
 
 3. Split the design into slices.
    - Each slice leaves `main` working and fits one review sitting, ideally a few hundred changed
@@ -88,21 +64,22 @@ before anything was written to Linear.
    - Use one slice only when the work cannot split, and say why. Then the ticket is the slice, and
      there is no container.
    - Mark a slice `blocked-by` another only when it cannot work or merge without it.
-   - Give every slice a title that no other slice in the plan uses. A retry matches tickets by
-     title.
+   - Give every slice a title that no other slice in the plan uses.
 
-4. Write the draft in `$slicedir`, one body file per ticket. Before you write each new ticket, the
-   container and every new slice, search for an open duplicate, then write its title and body.
-   Follow the [tracker skill](../tracker/SKILL.md) for both.
-   - `container.md`: the container's full description, with the agreed design in its `## Design`
-     section. For an existing container, keep all text outside that section unchanged.
-   - `slice-<n>.md`, numbered in plan order.
-   - `plan.md`: the container's identifier, then one row per slice with its number, title, body
-     file, `blocked-by` numbers, and Linear identifier. Leave the identifier empty until the ticket
-     exists. Keep it for each slice that exists, even when the plan renames or renumbers the slice.
+4. Write the draft in the directory, one body file per ticket. Before you write each new ticket, the
+   container and every new slice, search for an open duplicate with the
+   [tracker skill](../tracker/SKILL.md).
+   - `container.md`: the container's full description in the
+     [container template](../tracker/templates/container.md), with the agreed design in its
+     `## Design` section. For an existing container, keep all text outside that section unchanged.
+   - `slice-<n>.md`, numbered in plan order, in the [slice template](../tracker/templates/slice.md).
+   - `plan.json`: the route from the tracker skill, the container, and the slices in plan order.
+     Keep the identifier of each ticket that exists, even when the plan renames or renumbers it.
 
-   For a design with one slice, write `ticket.md` instead of `container.md` and `slice-1.md`, as the
-   slice template describes.
+   For a design with one slice, write `ticket.md` as the container's file, as the slice template
+   describes, and list no slices.
+
+   Then call `read` again. Resolve its `problems` as in step 2, and use its result for the preview.
 
 5. Preview and ask. Show what the user decides on, not how step 6 runs it. Keep it to about 40
    lines, and leave out raw commands and details of the local environment.
@@ -128,41 +105,22 @@ before anything was written to Linear.
    - Each choice in the `## Design` section that the agreed design did not already state, one line
      each, and the path of the draft that holds the full section. For an existing container, say
      that the text outside that section stays unchanged.
-   - The Linear writes step 6 will make, in order and numbered, one line each, such as
-     `Create slices 1-3 under ENG-120` or `Mark 2 blocked by 1`. Say that step 7 may fix the order
-     of the slices, and that created tickets stay in Linear until the user cancels them by hand.
+   - The number of `writes` from `read`. Say that step 6 shows each write for a last confirm and may
+     fix the order of the slices. Say that created tickets stay in Linear until the user cancels
+     them by hand.
    - On a later run, what the draft changes compared with Linear now, including `blocked-by`
-     relations to add and remove. Slices dropped from the plan stay in Linear: list them for the
-     user to cancel by hand.
+     relations to add and remove. List each slice in `dropped` for the user to cancel by hand: it
+     stays in Linear.
 
-   Approve with `ask_user_question` and give the number of writes in the question: approve, change
-   the plan, or stop. After any change, write the draft again and show a new preview.
+   Approve the plan with `ask_user_question`: approve, change the plan, or stop. After any change,
+   write the draft again, call `read` again, and show a new preview.
 
-6. Write to Linear in the previewed order, with the commands in the
-   [tracker skill](../tracker/SKILL.md).
-   - Create the container from `$slicedir/container.md` when it does not exist. Record its
-     identifier in `plan.md`, then move `$slicedir` to `.tau/slices/<identifier in lower case>` and
-     use the new path. When the retry search finds the container, record its identifier and move
-     `$slicedir` the same way. When the container exists, update its description.
-   - Create each missing slice in order under the container, from `$slicedir/slice-<n>.md`.
-   - Update the title and body of a changed slice that is not merged.
-   - Add each new `blocked-by` relation to a slice that is not merged, and remove each one the plan
-     drops.
+6. Call `slice` with `apply` for the read you previewed. Its confirm lists the exact writes and is
+   their approval, so do not ask about the writes yourself.
+   - When the user declines, ask with `ask_user_question` whether to change the plan or stop.
+   - When it says the state changed, call `read` again and preview again.
+   - When it returns `unchanged`, report that Linear already matches the plan.
+   - When `orderInPlace` is false, report that the slice order is still wrong.
 
-   After each command that creates a ticket, record its identifier in `$slicedir/plan.md` at once.
-   If the output shows no identifier, stop. Before any retry, search as the tracker skill says: the
-   team for the container or a one-slice ticket, the container's children for a slice. On a retry,
-   skip each slice that has an identifier in the draft or a child with the same title that fits, and
-   record that child's identifier. A child fits when its team and project, read with the children
-   query, match the route. Report a same-title child that does not fit, and stop.
-
-   For a design with one slice, create or update only that ticket from `$slicedir/ticket.md`, and
-   skip the dependencies and step 7.
-
-7. Check the order. Read the children again with the children query. If sorting by
-   `subIssueSortOrder` does not give the plan order, move each unmerged slice that is out of place
-   to a value between its neighbors in the plan with the tracker skill, then read the children
-   again. Repair once; if the order is still wrong, report it. Merged slices keep their place.
-
-8. Report the container and each slice with its identifier and URL, in order, and any slice the user
+7. Report the container and each slice with its identifier and URL, in order, and any slice the user
    should cancel by hand. For a design with one slice, report that ticket alone.

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "route": { "team": "ME", "project": "Tau" },
+  "container": { "identifier": null, "title": "Add PR-sized planning", "file": "container.md" },
+  "slices": [
+    { "identifier": null, "title": "Record the lifecycle", "file": "slice-1.md", "blockedBy": [] },
+    { "identifier": null, "title": "Add the slice skill", "file": "slice-2.md", "blockedBy": [1] }
+  ]
+}

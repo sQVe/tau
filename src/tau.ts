@@ -9,6 +9,7 @@ import codingExtension from './extensions/coding.js';
 import commitExtension from './extensions/commit/commit.js';
 import compactionExtension from './extensions/compaction/compaction.js';
 import herdrBlockedExtension from './extensions/herdrBlocked.js';
+import sliceExtension from './extensions/slice/slice.js';
 import snippetsExtension from './extensions/snippets/snippets.js';
 import statusbarExtension from './extensions/statusbar/statusbar.js';
 import subagentsExtension from './extensions/subagents/subagents.js';
@@ -25,13 +26,14 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   await codingExtension(pi);
   await workflowExtension(pi);
 
-  tauSkillsExtension(pi, skillsDirectory);
+  tauSkillsExtension(pi, skillsDirectory, { slice: ['slice'] });
   commitExtension(pi);
   tddExtension(pi);
   bulkReadExtension(pi);
   askUserQuestionExtension(pi);
   webAccessExtension(pi);
   snippetsExtension(pi);
+  sliceExtension(pi);
   statusbarExtension(pi);
   subagentsExtension(pi);
   compactionExtension(pi);

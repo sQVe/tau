@@ -95,3 +95,4 @@ reference files, scripts, or other files. Use relative links so the agent can lo
 
 - [ADR-0001: Application structure](./0001-application-structure.md)
 - [ADR-0003: Externally observable identifiers](./0003-externally-observable-identifiers.md)
+- [ADR 0083: Turn on skill tools when the skill runs, and confirm outside writes](./0083-turn-on-skill-tools-when-the-skill-runs-and-confirm-outside-writes.md)

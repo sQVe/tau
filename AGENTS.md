@@ -17,6 +17,8 @@ verification.
 - Follow the [workflow instructions](src/instructions/workflow.md) for how you run commands and
   scope work.
 - Before writing or changing a skill, read the [skill authoring guide](docs/skill-authoring.md).
+- Before writing or changing a tool that a skill calls, read the
+  [tool authoring guide](docs/tool-authoring.md).
 - Before finishing a document, verify the commands it gives against the repository.
 - Follow the module, query, and failure conventions in
   [ADR 0055](docs/adr/0055-record-tau-coding-conventions-in-agents-md.md). Give each new public read

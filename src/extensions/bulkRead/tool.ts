@@ -1,11 +1,10 @@
 import { readFile, stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { resolve } from 'node:path';
 
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { AgentToolResult, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../errors.js';
+import { resolveReadPath } from '../../readPath.js';
 
 export const bulkReadTool = 'bulk_read';
 
@@ -41,10 +40,6 @@ const stripLinePrefixes = (text: string): string => text.replace(/^\d+→/gm, ''
 const inputError = (message: string, cause?: unknown) =>
   new BulkReadRecoverableError(message, { cause });
 
-// Pi's unexported read helper strips @ and expands ~, so bulk_read accepts the same spellings.
-const resolvePath = (cwd: string, path: string): string =>
-  resolve(cwd, path.replace(/^@/, '').replace(/^~(?=\/|$)/, homedir()));
-
 // One refusal names every bad path, so a guessed path does not cost a retry per file.
 const statPaths = async (cwd: string, paths: string[], signal: AbortSignal | undefined) => {
   const files: { path: string; size: number }[] = [];
@@ -55,7 +50,7 @@ const statPaths = async (cwd: string, paths: string[], signal: AbortSignal | und
 
     try {
       // oxlint-disable-next-line eslint/no-await-in-loop -- Serial stats keep the work bounded for long path lists.
-      const stats = await stat(resolvePath(cwd, path));
+      const stats = await stat(resolveReadPath(cwd, path));
 
       // A FIFO reports size 0 and then blocks the read until a writer appears, past every timeout.
       if (stats.isFile()) {
@@ -97,7 +92,7 @@ const loadPayload = async (
     }
 
     // oxlint-disable-next-line eslint/no-await-in-loop -- Serial reads preserve request order and stop at the first invalid input.
-    const content = await readFile(resolvePath(cwd, path), 'utf8').catch((error: unknown) => {
+    const content = await readFile(resolveReadPath(cwd, path), 'utf8').catch((error: unknown) => {
       throw inputError(errorMessage(error), error);
     });
 
