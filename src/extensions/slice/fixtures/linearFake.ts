@@ -192,6 +192,27 @@ export const createLinearFake = (): LinearFake => {
     };
   };
 
+  // Supports the filter that findOpenIssues sends: team key, exact title, optional project name,
+  // and open states.
+  const issuesData = (variables: Record<string, unknown>) => {
+    const filter = variables['filter'] as {
+      team: { key: { eq: string } };
+      title: { eq: string };
+      project?: { name: { eq: string } };
+    };
+
+    const projectId =
+      filter.project === undefined ? undefined : projects.get(filter.project.name.eq)?.id;
+
+    const nodes = [...issues.values()]
+      .filter((issue) => issue.teamId === teams.get(filter.team.key.eq)?.id)
+      .filter((issue) => issue.title === filter.title.eq && !issue.completed)
+      .filter((issue) => filter.project === undefined || issue.projectId === projectId)
+      .map((issue) => ({ identifier: issue.identifier }));
+
+    return { issues: { nodes } };
+  };
+
   const apiData = (query: string, variables: Record<string, unknown>) => {
     if (query.includes('issueCreate')) {
       return createData(variables);
@@ -211,6 +232,10 @@ export const createLinearFake = (): LinearFake => {
       issue.sortOrder = input.subIssueSortOrder ?? issue.sortOrder;
 
       return { issueUpdate: { success: true } };
+    }
+
+    if (query.includes('issues(')) {
+      return issuesData(variables);
     }
 
     if (query.includes('children')) {

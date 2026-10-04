@@ -64,6 +64,14 @@ describe('planWrites', () => {
       problems: [],
     },
     {
+      case: 'open issue with the container title',
+      draft: draft([null]),
+      container: undefined,
+      titleMatches: ['ME-9'],
+      writes: [{ kind: 'createContainer' }, { kind: 'createSlice', number: 1 }],
+      problems: [expect.stringMatching(/^The draft has no container identifier, but ME-9/)],
+    },
+    {
       case: 'slice blocked by a later new slice',
       draft: draft([null, null], [[2], []]),
       container: container([]),
@@ -169,22 +177,30 @@ describe('planWrites', () => {
         ),
       ],
     },
-  ])('$case', ({ draft: saved, container: linear, writes, problems }) => {
-    const plan = planWrites(saved, linear);
+  ])('$case', ({ draft: saved, container: linear, titleMatches, writes, problems }) => {
+    const plan = planWrites(saved, linear, titleMatches ?? []);
 
     expect(plan.writes).toEqual(writes);
     expect(plan.problems).toEqual(problems);
   });
 
   it('lists children the plan leaves out as dropped', () => {
-    expect(planWrites(draft(['ME-2']), container([child(1), child(5)])).dropped).toEqual(['ME-6']);
+    const plan = planWrites(draft(['ME-2']), container([child(1), child(5)]), []);
+
+    expect(plan.dropped).toEqual(['ME-6']);
   });
 });
 
-const ordered = (sortOrder: number, merged = false, identifier = `ME-${sortOrder}`) => ({
+const ordered = (
+  sortOrder: number,
+  merged = false,
+  identifier = `ME-${sortOrder}`,
+  completed = merged,
+) => ({
   identifier,
   sortOrder,
   merged,
+  completed,
 });
 
 const applyMoves = (slices: OrderedSlice[]) => {
@@ -213,6 +229,11 @@ describe('orderMoves', () => {
       case: 'unmerged slice between merged neighbors',
       slices: [ordered(1, true, 'A'), ordered(9, false, 'B'), ordered(3, true, 'C')],
       moves: [{ identifier: 'B', sortOrder: 2 }],
+    },
+    {
+      case: 'completed slice without merged PR',
+      slices: [ordered(5, false, 'A'), ordered(3, false, 'B', true)],
+      moves: [{ identifier: 'A', sortOrder: 2 }],
     },
     {
       case: 'merged slices out of order stay',

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import type { Draft } from './draft.js';
 import { readDraft } from './draft.js';
-import { readContainer } from './linear.js';
+import { findOpenIssues, readContainer } from './linear.js';
 import type { Exec } from './linear.js';
 import { isInPlanOrder, planWrites } from './writes.js';
 import type { LinearContainer, OrderedSlice, WritePlan } from './writes.js';
@@ -10,6 +10,7 @@ import type { LinearContainer, OrderedSlice, WritePlan } from './writes.js';
 export interface Runtime {
   exec: Exec;
   root: string;
+  signal: AbortSignal | undefined;
 }
 
 export interface SliceState {
@@ -30,6 +31,23 @@ export const orderedSlices = (draft: Draft, container: LinearContainer): Ordered
     const child = slice.identifier === null ? undefined : children.get(slice.identifier);
 
     return child === undefined ? [] : [child];
+  });
+};
+
+// Without a recorded identifier, an open issue with the container title may come from a create
+// whose output was lost.
+const readTitleMatches = async (
+  runtime: Runtime,
+  draft: Draft | undefined,
+  identifier: string | undefined,
+) => {
+  if (draft === undefined || identifier !== undefined) {
+    return [];
+  }
+
+  return findOpenIssues(runtime.exec, runtime.root, {
+    ...draft.plan.route,
+    title: draft.plan.container.title,
   });
 };
 
@@ -61,8 +79,12 @@ export const readState = async (
     throw new Error(`Linear has no issue ${identifier}.`);
   }
 
+  const titleMatches = await readTitleMatches(runtime, draft, identifier);
+
   const writePlan =
-    draft === undefined ? { writes: [], problems: [], dropped: [] } : planWrites(draft, container);
+    draft === undefined
+      ? { writes: [], problems: [], dropped: [] }
+      : planWrites(draft, container, titleMatches);
 
   const orderInPlace =
     draft === undefined || container === undefined
@@ -70,7 +92,7 @@ export const readState = async (
       : isInPlanOrder(orderedSlices(draft, container));
 
   const stateToken = createHash('sha256')
-    .update(JSON.stringify({ directory, draft, container }))
+    .update(JSON.stringify({ directory, draft, container, titleMatches }))
     .digest('hex');
 
   return { directory, draft, container, writePlan, orderInPlace, stateToken };

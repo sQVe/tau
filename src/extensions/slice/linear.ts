@@ -28,6 +28,9 @@ interface IssueInput {
 const containerQuery =
   'query($id: String!) { issue(id: $id) { id identifier title description url state { type } attachments { nodes { url } } team { id key } project { id name } children { nodes { identifier title description url subIssueSortOrder state { type } attachments { nodes { url } } inverseRelations { nodes { type issue { identifier } } } } } } }';
 
+const issuesQuery =
+  'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { nodes { identifier } } }';
+
 const teamQuery = 'query($key: String!) { team(id: $key) { id } }';
 
 const projectQuery =
@@ -72,6 +75,10 @@ const containerSchema = Type.Object({
     }),
     Type.Null(),
   ]),
+});
+
+const issuesSchema = Type.Object({
+  issues: Type.Object({ nodes: Type.Array(Type.Object({ identifier: Type.String() })) }),
 });
 
 const teamSchema = Type.Object({
@@ -236,6 +243,32 @@ export const readContainer = async (
     project: issue.project,
     children,
   };
+};
+
+// Lists the open issues in the route's team, and its project when the route names one, whose title
+// is exactly the given title.
+export const findOpenIssues = async (
+  exec: Exec,
+  cwd: string,
+  search: { team: string; project: string | null; title: string },
+): Promise<string[]> => {
+  const filter: Record<string, unknown> = {
+    team: { key: { eq: search.team } },
+    title: { eq: search.title },
+    state: { type: { nin: ['completed', 'canceled'] } },
+  };
+
+  if (search.project !== null) {
+    filter['project'] = { name: { eq: search.project } };
+  }
+
+  const response = await api(exec, cwd, issuesQuery, { filter });
+
+  if (!Value.Check(issuesSchema, response.data)) {
+    throw unexpectedOutput(response);
+  }
+
+  return response.data.issues.nodes.map((issue) => issue.identifier);
 };
 
 export const readRouteIds = async (

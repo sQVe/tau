@@ -223,6 +223,88 @@ describe('slice tool apply', () => {
     expect(fake.writes()).toHaveLength(writesBefore);
   });
 
+  it('refuses to create a container again after a create whose output was lost', async () => {
+    const { fake, context, directory, apply } = await setUp();
+    const { stateToken } = await run(fake, context, { action: 'read', directory });
+
+    // Linear creates the container, but the call fails as if the output were lost.
+    const tool = createSliceTool(async (command, commandArguments, options) => {
+      const result = await fake.exec(command, commandArguments, options);
+      const created = commandArguments[1]?.includes('issueCreate') === true;
+
+      return created ? { code: 1, killed: false, stdout: '', stderr: 'timeout' } : result;
+    });
+
+    await expect(
+      tool.execute(
+        'call',
+        { action: 'apply', directory, stateToken: String(stateToken) },
+        undefined,
+        undefined,
+        context,
+      ),
+    ).rejects.toMatchObject({ applied: [] });
+
+    await expect(apply(undefined, directory)).rejects.toThrow(/no container identifier, but ME-1/);
+    expect([...fake.issues.keys()]).toEqual(['ME-1']);
+    expect(await savedPlan(directory)).toMatchObject({ container: { identifier: null } });
+  });
+
+  it('shows the new title and the body file of an update in the confirm', async () => {
+    const { root, fake, directory, apply } = await appliedPlan();
+
+    const plan = JSON.parse(await readFile(join(directory, 'plan.json'), 'utf8')) as {
+      slices: { title: string }[];
+    };
+
+    plan.slices[0]!.title = 'Record the renamed lifecycle';
+    await writeFile(join(directory, 'plan.json'), JSON.stringify(plan));
+    await writeFile(join(directory, 'slice-2.md'), 'Slice two, revised.\n');
+
+    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => false);
+
+    await apply(confirmContext(root, confirm), directory);
+    const message = confirm.mock.calls[0]?.[1] ?? '';
+
+    expect(message).toContain('Record the renamed lifecycle');
+    expect(message).toContain('slice-2.md');
+    expect(message).not.toContain('Slice two, revised.');
+    expect(fake.issues.get('ME-2')?.title).toBe('Record the lifecycle');
+  });
+
+  it('stops before the next step when the call is aborted', async () => {
+    const { fake, context, directory } = await setUp();
+    const { stateToken } = await run(fake, context, { action: 'read', directory });
+    const controller = new AbortController();
+
+    // Aborts once Linear creates the container.
+    const tool = createSliceTool(async (command, commandArguments, options) => {
+      const result = await fake.exec(command, commandArguments, options);
+
+      if (commandArguments[1]?.includes('issueCreate') === true) {
+        controller.abort();
+      }
+
+      return result;
+    });
+
+    await expect(
+      tool.execute(
+        'call',
+        { action: 'apply', directory, stateToken: String(stateToken) },
+        controller.signal,
+        undefined,
+        context,
+      ),
+    ).rejects.toMatchObject({
+      applied: [{ kind: 'createContainer' }],
+      notApplied: [{ kind: 'moveDraft' }, { kind: 'createSlice', number: 1 }, {}, {}, {}],
+    });
+
+    expect([...fake.issues.keys()]).toEqual(['ME-1']);
+    expect(await savedPlan(directory)).toMatchObject({ container: { identifier: 'ME-1' } });
+  });
+
   it('never changes a merged slice', async () => {
     const { fake, directory, apply } = await appliedPlan();
 
@@ -303,6 +385,54 @@ describe('slice tool apply', () => {
       applied: [{ kind: 'moveIssue', identifier: 'ME-3' }],
       notApplied: [{ kind: 'repairOrder' }],
     });
+  });
+
+  it('stops the order repair when the call is aborted after a move', async () => {
+    const { fake, context, directory, apply } = await setUp();
+
+    const plan = JSON.parse(await readFile(join(directory, 'plan.json'), 'utf8')) as {
+      slices: { identifier: null; title: string; file: string; blockedBy: number[] }[];
+    };
+
+    plan.slices.push({ identifier: null, title: 'Third', file: 'slice-3.md', blockedBy: [] });
+    await writeFile(join(directory, 'plan.json'), JSON.stringify(plan));
+    await writeFile(join(directory, 'slice-3.md'), 'Slice three.\n');
+
+    const created = await apply();
+
+    fake.issues.get('ME-2')!.sortOrder = 5;
+    fake.issues.get('ME-3')!.sortOrder = 1;
+    fake.issues.get('ME-4')!.sortOrder = 0;
+
+    const read = await run(fake, context, { action: 'read', directory: created.directory });
+    const writesBefore = fake.writes().length;
+    const controller = new AbortController();
+
+    // Aborts once the first order move reaches Linear.
+    const tool = createSliceTool(async (command, commandArguments, options) => {
+      const result = await fake.exec(command, commandArguments, options);
+
+      if (fake.writes().length > writesBefore) {
+        controller.abort();
+      }
+
+      return result;
+    });
+
+    await expect(
+      tool.execute(
+        'call',
+        { action: 'apply', directory: created.directory, stateToken: String(read.stateToken) },
+        controller.signal,
+        undefined,
+        context,
+      ),
+    ).rejects.toMatchObject({
+      applied: [{ kind: 'moveIssue', identifier: 'ME-3' }],
+      notApplied: [{ kind: 'repairOrder' }],
+    });
+
+    expect(fake.writes()).toHaveLength(writesBefore + 1);
   });
 
   it('reports an order move that ran before the order read failed', async () => {

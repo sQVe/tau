@@ -241,6 +241,10 @@ const repairOrder = async (runtime: Runtime, progress: ApplyProgress) => {
 
   try {
     for (const move of moves) {
+      if (runtime.signal?.aborted === true) {
+        throw new Error('The call was aborted.');
+      }
+
       // oxlint-disable-next-line no-await-in-loop -- Stop at the first failed move.
       await moveIssue(runtime.exec, runtime.root, move.identifier, move.sortOrder);
 
@@ -348,10 +352,18 @@ const failedApply = (
   );
 };
 
-const runSteps = async (progress: ApplyProgress, steps: readonly Step[]) => {
+const runSteps = async (
+  progress: ApplyProgress,
+  steps: readonly Step[],
+  signal: AbortSignal | undefined,
+) => {
   const summaries = steps.map((step) => step.summary);
 
   for (const [index, step] of steps.entries()) {
+    if (signal?.aborted === true) {
+      throw failedApply(progress, summaries, index, new Error('The call was aborted.'));
+    }
+
     try {
       // oxlint-disable-next-line no-await-in-loop -- Steps run in plan order, and a create records its identifier before the next step.
       await step.run();
@@ -464,7 +476,7 @@ export const applySlicePlan = async (
 
   rejectChangedState(await readState(runtime, directory, undefined), state.stateToken);
 
-  const applied = await runSteps(progress, steps);
+  const applied = await runSteps(progress, steps, runtime.signal);
 
   return {
     status: 'applied',

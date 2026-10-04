@@ -28,6 +28,7 @@ export interface OrderedSlice {
   identifier: string;
   sortOrder: number;
   merged: boolean;
+  completed: boolean;
 }
 
 export interface OrderMove {
@@ -97,6 +98,12 @@ const childProblems = (draft: Draft, container: LinearContainer) => {
 
   return problems;
 };
+
+const containerTitleProblems = (draft: Draft, titleMatches: readonly string[]) =>
+  titleMatches.map(
+    (identifier) =>
+      `The draft has no container identifier, but ${identifier} is an open issue in team ${draft.plan.route.team} with the title "${draft.plan.container.title}". An earlier create may have succeeded. Record it in the draft or rename the container.`,
+  );
 
 const completedProblem = (identifier: string) =>
   `${identifier} is completed in Linear, but no linked pull request is merged. Ask the user how to treat it.`;
@@ -209,7 +216,12 @@ const writeRanks: Record<SliceWrite['kind'], number> = {
 // Lists the Linear writes that make Linear match the draft, in the order to apply them: every create,
 // then updates, then relations, so a relation never names a slice that does not exist yet. A slice
 // counts as present only through the identifier the draft records. Merged tickets are never written.
-export const planWrites = (draft: Draft, container: LinearContainer | undefined): WritePlan => {
+// titleMatches lists the open issues in the route whose title is the container title.
+export const planWrites = (
+  draft: Draft,
+  container: LinearContainer | undefined,
+  titleMatches: readonly string[],
+): WritePlan => {
   const planned = new Set(draft.plan.slices.map((slice) => slice.identifier));
 
   const dropped =
@@ -219,7 +231,7 @@ export const planWrites = (draft: Draft, container: LinearContainer | undefined)
 
   const fixedProblems =
     container === undefined
-      ? []
+      ? containerTitleProblems(draft, titleMatches)
       : [...routeProblems(draft, container), ...childProblems(draft, container)];
 
   const top = containerWrites(draft, container);
@@ -236,8 +248,11 @@ export const planWrites = (draft: Draft, container: LinearContainer | undefined)
   };
 };
 
-const nextMergedOrder = (slices: readonly OrderedSlice[], start: number) =>
-  slices.slice(start).find((slice) => slice.merged)?.sortOrder ?? Number.POSITIVE_INFINITY;
+// A merged or completed slice is never written, so it cannot move.
+const isFixed = (slice: OrderedSlice) => slice.merged || slice.completed;
+
+const nextFixedOrder = (slices: readonly OrderedSlice[], start: number) =>
+  slices.slice(start).find((slice) => isFixed(slice))?.sortOrder ?? Number.POSITIVE_INFINITY;
 
 const placeBetween = (lower: number, upper: number) => {
   if (lower === Number.NEGATIVE_INFINITY) {
@@ -247,17 +262,17 @@ const placeBetween = (lower: number, upper: number) => {
   return upper === Number.POSITIVE_INFINITY ? lower + 1 : (lower + upper) / 2;
 };
 
-// Moves each unmerged slice that is out of plan order between its neighbors. Merged slices keep
-// their place, so a merged slice that is itself out of order stays wrong.
+// Moves each open slice that is out of plan order between its neighbors. Merged and completed
+// slices keep their place, so one that is itself out of order stays wrong.
 export const orderMoves = (slicesInPlanOrder: readonly OrderedSlice[]): OrderMove[] => {
   const moves: OrderMove[] = [];
   let previous = Number.NEGATIVE_INFINITY;
 
   for (const [index, slice] of slicesInPlanOrder.entries()) {
-    const upper = nextMergedOrder(slicesInPlanOrder, index + 1);
+    const upper = nextFixedOrder(slicesInPlanOrder, index + 1);
     const inPlace = slice.sortOrder > previous && slice.sortOrder < upper;
 
-    if (slice.merged || inPlace) {
+    if (isFixed(slice) || inPlace) {
       previous = slice.sortOrder;
 
       continue;
@@ -282,10 +297,30 @@ export const isInPlanOrder = (slicesInPlanOrder: readonly OrderedSlice[]): boole
 const sliceLabel = (plan: Plan, number: number) =>
   `slice ${number} "${plan.slices[number - 1]?.title ?? ''}"`;
 
-const changedParts = (write: { title: boolean; description: boolean }) =>
-  [write.title ? 'title' : '', write.description ? 'description' : '']
-    .filter((part) => part !== '')
-    .join(' and ');
+const changedParts = (
+  write: { title: boolean; description: boolean },
+  draftPart: { title: string; file: string },
+) => {
+  const parts: string[] = [];
+
+  if (write.title) {
+    parts.push(`title to "${draftPart.title}"`);
+  }
+
+  if (write.description) {
+    parts.push(`description from ${draftPart.file}`);
+  }
+
+  return parts.join(' and ');
+};
+
+const updatedPart = (
+  plan: Plan,
+  write: SliceWrite & { kind: 'updateContainer' | 'updateSlice' },
+) =>
+  write.kind === 'updateContainer'
+    ? plan.container
+    : (plan.slices[write.number - 1] ?? { title: '', file: '' });
 
 export const describeWrite = (plan: Plan, write: SliceWrite): string => {
   if (write.kind === 'createContainer') {
@@ -304,5 +339,5 @@ export const describeWrite = (plan: Plan, write: SliceWrite): string => {
     return `Remove ${write.identifier} blocked by ${write.blocker}`;
   }
 
-  return `Update the ${changedParts(write)} of ${write.identifier}`;
+  return `Update the ${changedParts(write, updatedPart(plan, write))} of ${write.identifier}`;
 };
