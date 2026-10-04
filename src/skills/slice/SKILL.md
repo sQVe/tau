@@ -15,9 +15,10 @@ metadata:
 
 ## When to use
 
-Use this skill after the user and the manager agree on a design, to plan the work as slices in
-Linear. Each slice becomes one branch and one PR. Run it again on the same design to change the
-plan. It needs the `linear` CLI authenticated for the workspace.
+Use this skill to plan an agreed design as slices in Linear. When the user has not agreed to the
+design yet, the step 5 preview asks for that agreement. Each slice becomes one branch and one PR.
+Run it again on the same design to change the plan. It needs the `linear` CLI authenticated for the
+workspace.
 
 Do not use it to guide the design conversation, or to split commits or a branch that already exist.
 
