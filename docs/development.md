@@ -93,19 +93,6 @@ pi install git:github.com/sqve/tau@v1.0.0
 
 ### Tool models
 
-Tau names no model in code. Set the model for `bulk_read` as `bulkRead.model` in
-`~/.pi/agent/tau.json`:
-
-```json
-{ "bulkRead": { "model": "openai-codex/gpt-5.6-luna" } }
-```
-
-Use the exact provider and model ID from `pi --list-models`, including router prefixes such as
-`openrouter/anthropic/model-id`. The model needs working credentials, and it does not change the
-session model. Only the user file may set `bulkRead`, and `profiles.default` does not apply to it.
-Without a usable `bulkRead.model`, a session starts with `bulk_read` inactive and reads are not
-clamped.
-
 Answer-mode `fetch_content` uses `fetch.answerProvider` and `fetch.answerModel` in pi-web-access's
 `web-search.json`, or the session model without them. Tau checks only an `answerModel` passed on the
 call against `allowedModels`. See the
@@ -207,6 +194,12 @@ the arrow keys scroll it, and that Esc returns to the options without closing th
 With a search provider configured, ask Pi to search the web. Check that Pi calls `web_enable` first,
 that `web_search` returns results, and that `fetch_content` on a URL returns readable markdown.
 
+### Worker codemode
+
+Launch a `scout` worker whose task is to report the names of its tools. Check that the list includes
+`codemode`. Launch a `qa` worker with the same task. Check that its list does not include
+`codemode`.
+
 ### Snippets
 
 Type `#push` in the editor and check that the list offers `#push-back` and that the text of
@@ -231,14 +224,6 @@ Use a temporary repository.
    prompt.
 2. Install a `pre-commit` hook that exits with an error and call `commit` again. Check that the hook
    output returns as a tool error without a prompt or a new commit, and that the file is unstaged.
-
-### Bulk read
-
-With a working `bulkRead.model`, read a file longer than 400 lines without a limit. Check that the
-result ends with a `bulk_read` hint instead of `Use offset=`. Ask `bulk_read` a question using
-`paths` and `question`, then read a bounded range before editing. Check that the `bulk_read` model's
-usage appears in the session totals. Restart without `bulkRead.model`. Check that `bulk_read` is not
-among the active tools and that reads are not clamped.
 
 ## Versioning
 
@@ -279,34 +264,3 @@ so check it before comparing two reports.
 Claude and Codex workers write no Pi session, so the report cannot measure their tokens. The second
 line counts those that started in the window. A cut looks larger than it is when work moves from Pi
 workers to them.
-
-## Measuring bulk reads
-
-Repeat this when the `bulk_read` model or the session model changes;
-[ADR 0014](adr/0014-delegate-model-for-bulk-reads.md) records what the last run found. Measure with
-real providers on a session too small to compact, using one semantic question spanning three files
-above the threshold. Compare a local build with trimming off and `bulk_read` present against the
-shipped setup, since there is no shipped trimming flag. Run each twice with the same prompt and
-files and keep the medians.
-
-Sum usage by role from the session JSONL. Pi's `/session` can hide per-model rows when catalog cost
-is zero or only one model was used:
-
-```sh
-jq -rs '[.[] | select(.type=="message") | .message | select(.role=="assistant" or .role=="toolResult")]
-  | group_by(.role)[]
-  | [.[0].role, (map(.usage.input // 0) | add), (map(.usage.cacheRead // 0) | add), (map(.usage.cacheWrite // 0) | add), (map(.usage.output // 0) | add), (map(.usage.cost.total // 0) | add)]
-  | @tsv' session.jsonl
-```
-
-It prints one row per role: input, cache read, cache write, output, and cost.
-
-To count how often sessions reach the clamp, run
-[scripts/bulk-read-population.sh](../scripts/bulk-read-population.sh) from a clean shell. It reads
-`~/.pi/agent/sessions` unless given another directory and prints session count, read calls,
-unbounded reads, truncated-or-hinted results, offset pages, `bulk_read` calls, and cost by role.
-
-Record configuration, session input, cache read, cache write, output, `bulk_read` model input,
-`bulk_read` model output, assistant turns, `offset` pages after a clamped read, wall clock, and
-catalog cost as a ratio, not an invoice. Offline faux tests prove usage plumbing and result size,
-not savings.

@@ -21,7 +21,7 @@ The block accepts `productionGlobs`, `testGlobs`, `testSupportGlobs`, `excludedG
 `verificationArgv`. Each key you set replaces its default. The repository file overrides the user
 file, and Tau reads it only in a trusted project. `run_tests` output shows the config in use.
 
-To limit the models Tau picks for workers and `bulk_read`, add `allowedModels` to either file:
+To limit the models Tau picks for workers, add `allowedModels` to either file:
 
 ```json
 { "allowedModels": ["openai-codex/gpt-5.6-luna", "claude-bridge/claude-opus-5-5"] }
@@ -30,20 +30,21 @@ To limit the models Tau picks for workers and `bulk_read`, add `allowedModels` t
 The repository list can only remove models from your list. Tau refuses any other model instead of
 falling back.
 
-Tau names no model of its own. Set the models for workers and `bulk_read` in `~/.pi/agent/tau.json`.
-A worker launch needs a model passed on the launch, `profiles.<name>.model` for its profile, or
-`profiles.default.model`, which covers every profile without its own entry. `bulk_read` needs
-`bulkRead.model`:
+Tau names no model of its own. Set the models for workers in `~/.pi/agent/tau.json`. A worker launch
+needs a model passed on the launch, `profiles.<name>.model` for its profile, or
+`profiles.default.model`, which covers every profile without its own entry:
 
 ```json
 {
   "profiles": {
     "default": { "model": "claude-bridge/claude-opus-5-5" },
     "scout": { "model": "openai-codex/gpt-6.1-sol" }
-  },
-  "bulkRead": { "model": "openai-codex/gpt-5.6-luna" }
+  }
 }
 ```
+
+The bundled `scout`, `reviewer`, and `worker` profiles gather evidence with `codemode` scripts and
+cite only what a script returned. The `qa` and `browser` profiles do not get `codemode`.
 
 The `tracker` skill writes Linear tickets. It sends agent tickets to the team that
 `tracker.agentTeam` names in `~/.pi/agent/tau.json`. Other tickets go to the team and optional

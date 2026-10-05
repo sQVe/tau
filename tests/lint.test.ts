@@ -107,11 +107,11 @@ it('keeps test helpers out of production code and extensions out of shared modul
   const directory = await mkdtemp(join(root, 'src', 'tau-lint-imports-'));
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
   const helper = "import { initializeRepository } from '../../tests/gitRepository.js';\n";
-  const extension = "import { bulkReadTool } from '../extensions/bulkRead/tool.js';\n";
+  const extension = "import { commitToolGuidelines } from '../extensions/commit/tool.js';\n";
 
   await writeFile(
     join(directory, 'probe.ts'),
-    `${helper}${extension}\nexport const value = [initializeRepository, bulkReadTool];\n`,
+    `${helper}${extension}\nexport const value = [initializeRepository, commitToolGuidelines];\n`,
   );
 
   await writeFile(
@@ -143,7 +143,7 @@ it('keeps extensions out of flat shared modules but lets the package entry load 
 
   await writeFile(
     probe,
-    "import { bulkReadTool } from './extensions/bulkRead/tool.js';\n\nexport const value = bulkReadTool;\n",
+    "import { commitToolGuidelines } from './extensions/commit/tool.js';\n\nexport const value = commitToolGuidelines;\n",
   );
 
   const result = spawnSync('pnpm', ['lint', probe, join(root, 'src', 'tau.ts')], {
