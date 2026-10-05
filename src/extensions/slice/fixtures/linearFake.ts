@@ -195,10 +195,11 @@ export const createLinearFake = (): LinearFake => {
       .filter((other) => other.parent === parent)
       .map((other) => other.sortOrder);
 
-    const sortOrder = variables['subIssueSortOrder'];
+    const sortOrder =
+      variables['preserveSortOrderOnCreate'] === true ? variables['subIssueSortOrder'] : undefined;
 
-    // Without a sort order, the fake puts a new child first, so a create that skips it lands out of
-    // plan order.
+    // The fake keeps a passed sort order only when the create asks to preserve it, as Linear's schema
+    // documents. Otherwise it puts a new child first, so the child lands out of plan order.
     const created = addIssue({
       title,
       description,
