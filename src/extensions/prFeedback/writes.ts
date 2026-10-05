@@ -127,12 +127,16 @@ const threadWrites = (
   return writes;
 };
 
-// A PR comment that answers nothing in particular speaks to everyone, people included.
+// A PR comment that answers nothing in particular speaks to everyone, people included. GitHub
+// numbers reviews and comments separately, so an ID is a bot only when every source with it is.
 const commentToPerson = (comment: CommentEntry, facts: WriteFacts) => {
   const sources = new Map<string, boolean>();
 
   for (const source of [...facts.reviews, ...facts.comments]) {
-    sources.set(String(source.id), source.isBot);
+    const id = String(source.id);
+    const otherIsBot = sources.get(id) ?? true;
+
+    sources.set(id, otherIsBot && source.isBot);
   }
 
   const answeredBots = comment.answers.map((id) => {

@@ -110,6 +110,24 @@ describe('planWrites', () => {
       writes: [{ kind: 'comment', thread: null, url: prUrl, text: 'Done.', toPerson: true }],
     },
     {
+      case: 'same ID: person review, bot comment',
+      facts: facts({
+        reviews: [review(500, false)],
+        comments: [comment(500, true)],
+        comment: { body: 'Done.', answers: ['500'] },
+      }),
+      writes: [{ kind: 'comment', thread: null, url: prUrl, text: 'Done.', toPerson: true }],
+    },
+    {
+      case: 'same ID: bot review, person comment',
+      facts: facts({
+        reviews: [review(500, true)],
+        comments: [comment(500, false)],
+        comment: { body: 'Done.', answers: ['500'] },
+      }),
+      writes: [{ kind: 'comment', thread: null, url: prUrl, text: 'Done.', toPerson: true }],
+    },
+    {
       case: 'PR comment answering only bots',
       facts: facts({ comment: { body: 'Done.', answers: ['302', '401'] } }),
       writes: [{ kind: 'comment', thread: null, url: prUrl, text: 'Done.', toPerson: false }],
