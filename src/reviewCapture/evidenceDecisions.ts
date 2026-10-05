@@ -118,11 +118,15 @@ const parentOf = (path: string) => path.split('/').slice(0, -1).join('/');
 
 const lastSegment = (path: string) => path.split('/').at(-1) ?? path;
 
+// A `..` without a directory to leave stays in the path, so a path that escapes the repository
+// never equals a module inside it.
 const normalizePath = (path: string) => {
   const segments: string[] = [];
 
   for (const segment of path.split('/')) {
-    if (segment === '..') {
+    const leavesDirectory = segment === '..' && segments.length > 0 && segments.at(-1) !== '..';
+
+    if (leavesDirectory) {
       segments.pop();
     } else if (segment !== '.' && segment !== '') {
       segments.push(segment);
