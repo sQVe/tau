@@ -223,7 +223,6 @@ describe('slice tool apply', () => {
       notApplied: [
         { kind: 'createSlice', number: 2 },
         { kind: 'addBlockedBy', number: 2, blocker: 1 },
-        { kind: 'repairOrder' },
       ],
     });
 
@@ -323,7 +322,12 @@ describe('slice tool apply', () => {
       ),
     ).rejects.toMatchObject({
       applied: [{ kind: 'createContainer' }],
-      notApplied: [{ kind: 'moveDraft' }, { kind: 'createSlice', number: 1 }, {}, {}, {}],
+      notApplied: [
+        { kind: 'moveDraft' },
+        { kind: 'createSlice', number: 1 },
+        { kind: 'createSlice', number: 2 },
+        { kind: 'addBlockedBy', number: 2, blocker: 1 },
+      ],
     });
 
     expect([...fake.issues.keys()]).toEqual(['ME-1']);
@@ -366,7 +370,7 @@ describe('slice tool apply', () => {
     });
   });
 
-  it('lists no order repair when the order is in place and no slice is created', async () => {
+  it('lists no order move when the order is in place', async () => {
     const { directory, apply } = await appliedPlan();
 
     await writeFile(join(directory, 'slice-2.md'), 'Slice two, revised.\n');
@@ -376,16 +380,71 @@ describe('slice tool apply', () => {
     expect(applied.map((step) => step.kind)).toEqual(['updateSlice']);
   });
 
-  it('repairs the slice order once', async () => {
-    const { fake, directory, apply } = await appliedPlan();
+  it('creates new slices at their plan position without an order move', async () => {
+    const { fake, apply } = await setUp();
 
-    fake.issues.get('ME-2')!.sortOrder = 5;
-    fake.issues.get('ME-3')!.sortOrder = 1;
-    const result = await apply(undefined, directory);
+    const result = await apply();
+    const applied = result['applied'] as { kind: string }[];
     const orders = ['ME-2', 'ME-3'].map((identifier) => fake.issues.get(identifier)!.sortOrder);
 
+    expect(applied.map((step) => step.kind)).not.toContain('moveSlice');
     expect(result['orderInPlace']).toBe(true);
     expect(orders[0]).toBeLessThan(orders[1]!);
+  });
+
+  it('creates a slice between two existing slices without moving them', async () => {
+    const { fake, directory, apply } = await appliedPlan();
+
+    const plan = JSON.parse(await readFile(join(directory, 'plan.json'), 'utf8')) as {
+      slices: { identifier: string | null; title: string; file: string; blockedBy: number[] }[];
+    };
+
+    plan.slices.splice(1, 0, {
+      identifier: null,
+      title: 'Middle',
+      file: 'slice-3.md',
+      blockedBy: [],
+    });
+
+    await writeFile(join(directory, 'plan.json'), JSON.stringify(plan));
+    await writeFile(join(directory, 'slice-3.md'), 'Slice three.\n');
+    const writesBefore = fake.writes().length;
+
+    const result = await apply(undefined, directory);
+
+    const orders = ['ME-2', 'ME-4', 'ME-3'].map(
+      (identifier) => fake.issues.get(identifier)!.sortOrder,
+    );
+
+    expect(result['applied']).toMatchObject([{ kind: 'createSlice', number: 2 }]);
+    expect(fake.writes()).toHaveLength(writesBefore + 1);
+    expect(orders).toEqual(orders.toSorted((left, right) => left - right));
+  });
+
+  it('names the route project of a new container in the confirm', async () => {
+    const { root, apply } = await setUp();
+    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => false);
+
+    await apply(confirmContext(root, confirm));
+
+    expect(confirm.mock.calls[0]?.[1]).toContain('in team ME and project Tau');
+  });
+
+  it('lists each order move in the confirm and makes only those moves', async () => {
+    const { root, fake, directory, apply } = await appliedPlan();
+
+    fake.issues.get('ME-2')!.sortOrder = 5;
+    const writesBefore = fake.writes().length;
+    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => true);
+
+    const result = await apply(confirmContext(root, confirm), directory);
+    const message = confirm.mock.calls[0]?.[1] ?? '';
+    const moves = fake.writes().slice(writesBefore);
+
+    expect(message).toBe('1. Move ME-3 into plan order');
+    expect(moves).toHaveLength(1);
+    expect(moves[0]?.commandArguments.at(-1)).toContain('"id":"ME-3"');
+    expect(result['orderInPlace']).toBe(true);
   });
 
   it('reports each order move that ran before a later move failed', async () => {
@@ -407,12 +466,12 @@ describe('slice tool apply', () => {
     fake.failWrite(fake.writes().length + 2);
 
     await expect(apply(undefined, moved)).rejects.toMatchObject({
-      applied: [{ kind: 'moveIssue', identifier: 'ME-3' }],
-      notApplied: [{ kind: 'repairOrder' }],
+      applied: [{ kind: 'moveSlice', identifier: 'ME-3' }],
+      notApplied: [{ kind: 'moveSlice', identifier: 'ME-4' }],
     });
   });
 
-  it('stops the order repair when the call is aborted after a move', async () => {
+  it('stops the order moves when the call is aborted after a move', async () => {
     const { fake, context, directory, apply } = await setUp();
 
     const plan = JSON.parse(await readFile(join(directory, 'plan.json'), 'utf8')) as {
@@ -453,14 +512,14 @@ describe('slice tool apply', () => {
         context,
       ),
     ).rejects.toMatchObject({
-      applied: [{ kind: 'moveIssue', identifier: 'ME-3' }],
-      notApplied: [{ kind: 'repairOrder' }],
+      applied: [{ kind: 'moveSlice', identifier: 'ME-3' }],
+      notApplied: [{ kind: 'moveSlice', identifier: 'ME-4' }],
     });
 
     expect(fake.writes()).toHaveLength(writesBefore + 1);
   });
 
-  it('reports an order move that ran before the order read failed', async () => {
+  it('reports every order move as applied when the order read after the writes fails', async () => {
     const { fake, context, directory } = await appliedPlan();
 
     fake.issues.get('ME-2')!.sortOrder = 5;
@@ -489,8 +548,8 @@ describe('slice tool apply', () => {
     );
 
     await expect(failure).rejects.toMatchObject({
-      applied: [{ kind: 'moveIssue', identifier: 'ME-3' }],
-      notApplied: [{ kind: 'repairOrder' }],
+      applied: [{ kind: 'moveSlice', identifier: 'ME-3' }],
+      notApplied: [],
     });
   });
 
@@ -588,7 +647,6 @@ describe('slice tool apply', () => {
       notApplied: [
         { kind: 'moveDraft' },
         { kind: 'createSlice', number: 1 },
-        expect.anything(),
         expect.anything(),
         expect.anything(),
       ],

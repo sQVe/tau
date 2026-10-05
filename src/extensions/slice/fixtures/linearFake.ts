@@ -189,12 +189,23 @@ export const createLinearFake = (): LinearFake => {
       );
     }
 
+    const parent = parentByLinearId(variables['parent']);
+
+    const siblingOrders = [...issues.values()]
+      .filter((other) => other.parent === parent)
+      .map((other) => other.sortOrder);
+
+    const sortOrder = variables['subIssueSortOrder'];
+
+    // Without a sort order, the fake puts a new child first, so a create that skips it lands out of
+    // plan order.
     const created = addIssue({
       title,
       description,
-      parent: parentByLinearId(variables['parent']),
+      parent,
       teamId: String(variables['team']),
       projectId: (variables['project'] as string | null) ?? null,
+      sortOrder: typeof sortOrder === 'number' ? sortOrder : Math.min(0, ...siblingOrders) - 1,
     });
 
     return {

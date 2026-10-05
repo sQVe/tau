@@ -37,7 +37,7 @@ const teamProjectQuery =
 // `linear issue create --parent` copies the parent's project, so create through the API with the
 // team, project, and parent set explicitly.
 const createMutation =
-  'mutation($team: String!, $project: String, $parent: String, $title: String!, $description: String!) { issueCreate(input: { teamId: $team, projectId: $project, parentId: $parent, title: $title, description: $description }) { issue { id identifier url } } }';
+  'mutation($team: String!, $project: String, $parent: String, $title: String!, $description: String!, $subIssueSortOrder: Float) { issueCreate(input: { teamId: $team, projectId: $project, parentId: $parent, title: $title, description: $description, subIssueSortOrder: $subIssueSortOrder }) { issue { id identifier url } } }';
 
 const updateMutation =
   'mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }';
@@ -344,6 +344,7 @@ export const createIssue = async (
     parent: string | null;
     title: string;
     description: string;
+    subIssueSortOrder: number | undefined;
   },
 ): Promise<CreatedIssue> => {
   const response = await api(exec, cwd, createMutation, issue);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Draft } from './draft.js';
-import { isInPlanOrder, orderMoves, planWrites } from './writes.js';
+import { describeWrite, isInPlanOrder, planWrites, plannedSortOrders } from './writes.js';
 import type { LinearChild, LinearContainer, OrderedSlice } from './writes.js';
 
 const draft = (identifiers: (string | null)[], blockedBy: number[][] = []): Draft => ({
@@ -57,8 +57,8 @@ describe('planWrites', () => {
       container: undefined,
       writes: [
         { kind: 'createContainer' },
-        { kind: 'createSlice', number: 1 },
-        { kind: 'createSlice', number: 2 },
+        { kind: 'createSlice', number: 1, sortOrder: 0 },
+        { kind: 'createSlice', number: 2, sortOrder: 1 },
         { kind: 'addBlockedBy', number: 2, blocker: 1 },
       ],
       problems: [],
@@ -68,7 +68,7 @@ describe('planWrites', () => {
       draft: draft([null]),
       container: undefined,
       titleMatches: ['ME-9'],
-      writes: [{ kind: 'createContainer' }, { kind: 'createSlice', number: 1 }],
+      writes: [{ kind: 'createContainer' }, { kind: 'createSlice', number: 1, sortOrder: 0 }],
       problems: [expect.stringMatching(/^The draft has no container identifier, but ME-9/)],
     },
     {
@@ -76,8 +76,8 @@ describe('planWrites', () => {
       draft: draft([null, null], [[2], []]),
       container: container([]),
       writes: [
-        { kind: 'createSlice', number: 1 },
-        { kind: 'createSlice', number: 2 },
+        { kind: 'createSlice', number: 1, sortOrder: 0 },
+        { kind: 'createSlice', number: 2, sortOrder: 1 },
         { kind: 'addBlockedBy', number: 1, blocker: 2 },
       ],
       problems: [],
@@ -107,7 +107,14 @@ describe('planWrites', () => {
       case: 'retry creates only the unrecorded slice',
       draft: draft(['ME-2', null]),
       container: container([child(1)]),
-      writes: [{ kind: 'createSlice', number: 2 }],
+      writes: [{ kind: 'createSlice', number: 2, sortOrder: 2 }],
+      problems: [],
+    },
+    {
+      case: 'slice out of plan order',
+      draft: draft(['ME-2', 'ME-3']),
+      container: container([child(1, { sortOrder: 5 }), child(2)]),
+      writes: [{ kind: 'moveSlice', identifier: 'ME-3', sortOrder: 6 }],
       problems: [],
     },
     {
@@ -156,14 +163,14 @@ describe('planWrites', () => {
       case: 'unrecorded slice with the title of a child',
       draft: draft([null]),
       container: container([child(1)]),
-      writes: [{ kind: 'createSlice', number: 1 }],
+      writes: [{ kind: 'createSlice', number: 1, sortOrder: 0 }],
       problems: [expect.stringMatching(/^Slice 1 has no identifier, but ME-2/)],
     },
     {
       case: 'recorded identifier that is not a child',
       draft: draft(['ME-8']),
       container: container([]),
-      writes: [{ kind: 'createSlice', number: 1 }],
+      writes: [{ kind: 'createSlice', number: 1, sortOrder: 0 }],
       problems: [expect.stringMatching(/^Slice 1 records ME-8, which is not a child/)],
     },
     {
@@ -191,6 +198,16 @@ describe('planWrites', () => {
   });
 });
 
+describe('describeWrite', () => {
+  it('says that a container create has no project when the route names none', () => {
+    const { plan } = draft([]);
+
+    plan.route.project = null;
+
+    expect(describeWrite(plan, { kind: 'createContainer' })).toMatch(/with no project/);
+  });
+});
+
 const ordered = (
   sortOrder: number,
   merged = false,
@@ -203,51 +220,76 @@ const ordered = (
   completed,
 });
 
-const applyMoves = (slices: OrderedSlice[]) => {
-  const moves = new Map(orderMoves(slices).map((move) => [move.identifier, move.sortOrder]));
+const applyOrders = (slices: (OrderedSlice | undefined)[]) => {
+  const orders = plannedSortOrders(slices);
 
-  return slices.map((slice) => ({
-    ...slice,
-    sortOrder: moves.get(slice.identifier) ?? slice.sortOrder,
+  return slices.map((slice, index) => ({
+    identifier: slice?.identifier ?? `new-${index}`,
+    merged: slice?.merged ?? false,
+    completed: slice?.completed ?? false,
+    sortOrder: orders[index] ?? slice?.sortOrder ?? Number.NaN,
   }));
 };
 
-describe('orderMoves', () => {
+describe('plannedSortOrders', () => {
   it.each([
-    { case: 'in order', slices: [ordered(1), ordered(2)], moves: [] },
+    { case: 'in order', slices: [ordered(1), ordered(2)], orders: [undefined, undefined] },
     {
       case: 'swapped unmerged slices',
       slices: [ordered(2, false, 'A'), ordered(1, false, 'B')],
-      moves: [{ identifier: 'B', sortOrder: 3 }],
+      orders: [undefined, 3],
     },
     {
-      case: 'new slice first before a merged one',
+      case: 'open slice before a merged one',
       slices: [ordered(5, false, 'A'), ordered(3, true, 'B')],
-      moves: [{ identifier: 'A', sortOrder: 2 }],
+      orders: [2, undefined],
     },
     {
       case: 'unmerged slice between merged neighbors',
       slices: [ordered(1, true, 'A'), ordered(9, false, 'B'), ordered(3, true, 'C')],
-      moves: [{ identifier: 'B', sortOrder: 2 }],
+      orders: [undefined, 2, undefined],
     },
     {
       case: 'completed slice without merged PR',
       slices: [ordered(5, false, 'A'), ordered(3, false, 'B', true)],
-      moves: [{ identifier: 'A', sortOrder: 2 }],
+      orders: [2, undefined],
     },
     {
       case: 'merged slices out of order stay',
       slices: [ordered(3, true, 'A'), ordered(1, true, 'B')],
-      moves: [],
+      orders: [undefined, undefined],
     },
-  ])('$case', ({ slices, moves }) => {
-    expect(orderMoves(slices)).toEqual(moves);
+    { case: 'new slices only', slices: [undefined, undefined], orders: [0, 1] },
+    {
+      case: 'new slice between slices in order',
+      slices: [ordered(1, false, 'A'), undefined, ordered(2, false, 'B')],
+      orders: [undefined, 1.5, undefined],
+    },
+    {
+      case: 'new slice first',
+      slices: [undefined, ordered(1, false, 'A')],
+      orders: [0, undefined],
+    },
+    {
+      case: 'new slice before a slice out of place',
+      slices: [ordered(5, false, 'A'), undefined, ordered(1, false, 'B')],
+      orders: [undefined, 6, 7],
+    },
+    {
+      case: 'moved slice below the next slice that stays',
+      slices: [ordered(1, false, 'A'), ordered(0, false, 'B'), ordered(1.5, false, 'C')],
+      orders: [undefined, 1.25, undefined],
+    },
+  ])('$case', ({ slices, orders }) => {
+    expect(plannedSortOrders(slices)).toEqual(orders);
   });
 
   it.each([
     [[ordered(2, false, 'A'), ordered(1, false, 'B'), ordered(0, false, 'C')]],
     [[ordered(4, false, 'A'), ordered(1, true, 'B'), ordered(2, false, 'C')]],
+    [[undefined, ordered(2, false, 'A'), undefined, ordered(1, false, 'B'), undefined]],
+    [[ordered(3, true, 'A'), undefined, ordered(4, true, 'B'), undefined]],
   ])('puts unmerged slices in plan order', (slices) => {
-    expect(isInPlanOrder(applyMoves(slices))).toBe(true);
+    expect(isInPlanOrder(applyOrders(slices))).toBe(true);
   });
 });
