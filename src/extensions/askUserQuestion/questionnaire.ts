@@ -37,6 +37,12 @@ export interface QuestionnaireState {
   fullPreview: { offset: number } | undefined;
 }
 
+// The full preview shows `rows` of the focused preview's `lineCount` rows after wrapping.
+export interface PreviewViewport {
+  rows: number;
+  lineCount: number;
+}
+
 export type KeyOutcome =
   | { kind: 'update'; state: QuestionnaireState }
   | { kind: 'type' }
@@ -195,10 +201,9 @@ const openPreview = (state: QuestionnaireState, preview: string | undefined): Ke
 const scrollPreview = (
   state: QuestionnaireState,
   key: KeyPress,
-  lineCount: number,
-  previewRows: number,
+  viewport: PreviewViewport,
 ): KeyOutcome => {
-  const lastOffset = Math.max(0, lineCount - previewRows);
+  const lastOffset = Math.max(0, viewport.lineCount - viewport.rows);
   // A taller terminal can leave the saved offset past the last page.
   const offset = Math.min(state.fullPreview?.offset ?? 0, lastOffset);
 
@@ -222,14 +227,13 @@ const scrollPreview = (
 const handlePreviewKey = (
   state: QuestionnaireState,
   key: KeyPress,
-  preview: string,
-  previewRows: number,
+  viewport: PreviewViewport,
 ): KeyOutcome => {
   if (key.kind === 'preview' || key.kind === 'cancel') {
     return { kind: 'update', state: { ...state, fullPreview: undefined } };
   }
 
-  return scrollPreview(state, key, preview.split('\n').length, previewRows);
+  return scrollPreview(state, key, viewport);
 };
 
 const handleListKey = (
@@ -259,13 +263,13 @@ const handleListKey = (
 
 /**
  * The last row of each question is the custom text row, which returns `type` for keys the caller
- * should pass to its text input. `previewRows` is how many preview lines the full preview shows.
+ * should pass to its text input. `viewport` describes the focused option's full preview.
  */
 export const handleKey = (
   state: QuestionnaireState,
   key: KeyPress,
   questions: readonly QuestionFacts[],
-  previewRows: number,
+  viewport: PreviewViewport,
 ): KeyOutcome => {
   const facts = questions[state.tab];
   const question = state.questions[state.tab];
@@ -277,7 +281,7 @@ export const handleKey = (
   const preview = facts.options[question.cursor]?.preview;
 
   if (state.fullPreview !== undefined && preview !== undefined) {
-    return handlePreviewKey(state, key, preview, previewRows);
+    return handlePreviewKey(state, key, viewport);
   }
 
   if (key.kind === 'preview') {

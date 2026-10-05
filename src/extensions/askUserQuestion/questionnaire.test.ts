@@ -15,8 +15,8 @@ const single: QuestionFacts = {
   options: [{ label: 'Luxon', preview: 'luxon()' }, { label: 'Temporal' }],
 };
 
-// Rows the dialog has for the full preview.
-const previewRows = 3;
+// The full preview shows 3 rows of the 5-line layout preview below.
+const viewport = { rows: 3, lineCount: 5 };
 
 const press = (kind: KeyPress['kind'], typed = false) => ({ kind, typed }) as KeyPress;
 
@@ -43,7 +43,7 @@ const run = (questions: QuestionFacts[], state: QuestionnaireState, keys: KeyPre
   let current = state;
 
   for (const key of keys) {
-    const outcome = handleKey(current, key, questions, previewRows);
+    const outcome = handleKey(current, key, questions, viewport);
 
     if (outcome.kind !== 'update') {
       return outcome;
@@ -117,7 +117,7 @@ it.each([
     key: press('other'),
   },
 ])('$rule', ({ questions, state, key }) => {
-  expect(handleKey(state, key, questions, previewRows)).toEqual({ kind: 'type' });
+  expect(handleKey(state, key, questions, viewport)).toEqual({ kind: 'type' });
 });
 
 it.each([
@@ -158,14 +158,14 @@ it.each([
     selected: ['date-fns'],
   },
 ])('$rule', ({ questions, state, selected }) => {
-  expect(handleKey(state, press('enter'), questions, previewRows)).toEqual({
+  expect(handleKey(state, press('enter'), questions, viewport)).toEqual({
     kind: 'submit',
     answers: [{ question: questions[0]?.question, selected }],
   });
 });
 
 it('returns the preview of a picked single-select option', () => {
-  expect(handleKey(at([single], 0), press('enter'), [single], previewRows)).toEqual({
+  expect(handleKey(at([single], 0), press('enter'), [single], viewport)).toEqual({
     kind: 'submit',
     answers: [{ question: 'Which library?', selected: ['Luxon'], preview: 'luxon()' }],
   });
@@ -175,7 +175,7 @@ it.each([
   { rule: 'nothing checked in multi-select', questions: [multi], state: at([multi], 0) },
   { rule: 'an empty custom row in single-select', questions: [single], state: at([single], 2) },
 ])('ignores Enter with $rule', ({ questions, state }) => {
-  expect(handleKey(state, press('enter'), questions, previewRows)).toEqual({
+  expect(handleKey(state, press('enter'), questions, viewport)).toEqual({
     kind: 'update',
     state,
   });
@@ -233,7 +233,7 @@ it.each([
 ])('switches questions with $key.kind from $from', ({ key, from, tab }) => {
   const state = { ...initialState(2), tab: from };
 
-  expect(handleKey(state, key, [single, multi], previewRows)).toMatchObject({
+  expect(handleKey(state, key, [single, multi], viewport)).toMatchObject({
     kind: 'update',
     state: { tab },
   });
@@ -243,7 +243,7 @@ it.each([
   { row: 'an option', state: at([multi], 0) },
   { row: 'the custom row', state: at([multi], 3, { customText: 'Docs' }) },
 ])('cancels with Esc on $row', ({ state }) => {
-  expect(handleKey(state, press('cancel'), [multi], previewRows)).toEqual({ kind: 'cancel' });
+  expect(handleKey(state, press('cancel'), [multi], viewport)).toEqual({ kind: 'cancel' });
 });
 
 it('submits a changed answer after returning to an answered question', () => {
@@ -355,7 +355,7 @@ it.each([
 it('ignores Ctrl+O on an option without a preview', () => {
   const state = at([single], 1);
 
-  expect(handleKey(state, press('preview'), [single], previewRows)).toEqual({
+  expect(handleKey(state, press('preview'), [single], viewport)).toEqual({
     kind: 'update',
     state,
   });
@@ -364,7 +364,7 @@ it('ignores Ctrl+O on an option without a preview', () => {
 it('does not type Ctrl+O into the custom row', () => {
   const state = at([single], 2, { customText: 'date' });
 
-  expect(handleKey(state, press('preview'), [single], previewRows)).toEqual({
+  expect(handleKey(state, press('preview'), [single], viewport)).toEqual({
     kind: 'update',
     state,
   });
@@ -394,8 +394,17 @@ it('keeps the answers when the full preview closes', () => {
 it('scrolls up from the last page after the terminal grows', () => {
   const state = { ...at([layout], 0), fullPreview: { offset: 4 } };
 
-  expect(handleKey(state, press('up'), [layout], previewRows)).toEqual({
+  expect(handleKey(state, press('up'), [layout], viewport)).toEqual({
     kind: 'update',
     state: { ...state, fullPreview: { offset: 1 } },
+  });
+});
+
+it('scrolls the full preview by its wrapped rows', () => {
+  const state = { ...at([layout], 0), fullPreview: { offset: 0 } };
+
+  expect(handleKey(state, press('bottom'), [layout], { rows: 3, lineCount: 8 })).toEqual({
+    kind: 'update',
+    state: { ...state, fullPreview: { offset: 5 } },
   });
 });

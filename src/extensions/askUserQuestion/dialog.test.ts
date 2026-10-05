@@ -26,9 +26,9 @@ const layoutQuestion = (options: DialogQuestion['options']): DialogQuestion => (
   options,
 });
 
-const open = (questions: DialogQuestion[], rows = 24) => {
+const open = (questions: DialogQuestion[], rows = 24, columns = 60) => {
   const results: DialogResult[] = [];
-  const terminal = { terminal: { rows }, requestRender: () => undefined };
+  const terminal = { terminal: { rows, columns }, requestRender: () => undefined };
 
   const dialog = questionDialog(questions)(
     terminal as unknown as TUI,
@@ -37,7 +37,7 @@ const open = (questions: DialogQuestion[], rows = 24) => {
     (result) => results.push(result),
   );
 
-  return { dialog, results };
+  return { dialog, results, terminal: terminal.terminal };
 };
 
 const tallPreview = (rows = 24, question: Partial<DialogQuestion> = {}) =>
@@ -143,6 +143,15 @@ it('offers the full preview only when the focused preview is clipped', () => {
   const lines = dialog.render(60);
 
   expect(lines.some((line) => line.includes('Preview: Split'))).toBe(true);
+  expect(lines.some((line) => line.includes('Ctrl+O'))).toBe(false);
+});
+
+it('offers no full preview for an option without a preview', () => {
+  const { dialog } = open([layoutQuestion([{ label: 'Stacked', description }])]);
+
+  const lines = dialog.render(60);
+
+  expect(lines.some((line) => line.includes('> 1. Stacked'))).toBe(true);
   expect(lines.some((line) => line.includes('Ctrl+O'))).toBe(false);
 });
 
@@ -280,7 +289,7 @@ it('keeps the question and context over wrapped tabs', () => {
     [
       {
         ...layoutQuestion([
-          { label: 'Stacked', description, preview },
+          { label: 'Stacked', description: 'One column.', preview },
           { label: 'Split', description, preview: 'split' },
         ]),
         header: 'Dashboard layout',
@@ -310,4 +319,142 @@ it('fits the full preview into a 9-row terminal', () => {
   expect(lines.some((line) => line.includes('Preview: Stacked'))).toBe(true);
   expect(lines.some((line) => line.endsWith('line 1'))).toBe(true);
   expect(lines.some((line) => line.includes('Esc back'))).toBe(true);
+});
+
+const cache = (label: string, cost: string) => ({
+  label,
+  description: `Stores cached config in the ${label.toLowerCase()} so the files stay easy to inspect and debug for every clone. ${cost}`,
+  preview: `${label}/config.json`,
+});
+
+it('clips the context instead of the focused description', () => {
+  const { dialog } = open([
+    {
+      ...layoutQuestion([
+        cache('Project folder', 'The cost is that secrets can be committed.'),
+        cache('Home folder', 'The cost is that other programs can read secrets.'),
+      ]),
+      context: `Startup reads configuration before it shows the dashboard. ${'This choice decides who can clear cached files and who can read them. '.repeat(4)}`,
+    },
+  ]);
+
+  const first = dialog.render(60);
+
+  dialog.handleInput(down);
+
+  const second = dialog.render(60);
+
+  expect(first.length).toBeLessThanOrEqual(18);
+  expect(first.some((line) => line.includes('Which layout?'))).toBe(true);
+  expect(first.some((line) => line.includes('Startup reads configuration'))).toBe(true);
+  expect(first.some((line) => line.includes('secrets can be committed.'))).toBe(true);
+  expect(first.some((line) => line.includes('Preview: Project folder'))).toBe(true);
+  expect(second.length).toBeLessThanOrEqual(18);
+  expect(second.some((line) => line.includes('programs can read secrets.'))).toBe(true);
+  expect(second.some((line) => line.includes('Preview: Home folder'))).toBe(true);
+});
+
+it('hides the compact preview before it clips a focused description that fits', () => {
+  const { dialog } = open(
+    [
+      layoutQuestion([
+        cache(
+          'Project folder',
+          'It never reads stale values. The cost is that secrets can be committed.',
+        ),
+        cache('Home folder', 'The cost is that other programs can read secrets.'),
+      ]),
+    ],
+    16,
+    40,
+  );
+
+  const lines = dialog.render(40);
+
+  expect(lines.length).toBeLessThanOrEqual(10);
+  expect(lines.some((line) => line.includes('Which layout?'))).toBe(true);
+  expect(lines.some((line) => line.includes('committed.'))).toBe(true);
+  expect(lines.some((line) => line.includes('Ctrl+O full preview'))).toBe(true);
+});
+
+const command = (index: number) =>
+  `find .cache/${index} -type f -name cached-configuration-for-dashboard.json -delete`;
+
+const widePreview = (columns = 60) =>
+  open(
+    [
+      layoutQuestion([
+        {
+          label: 'Clean',
+          description: 'Removes cached files.',
+          preview: Array.from({ length: 20 }, (_line, index) => command(index + 1)).join('\n'),
+        },
+        { label: 'Keep', description: 'Leaves cached files.', preview: command(0) },
+      ]),
+    ],
+    24,
+    columns,
+  );
+
+it('offers the full preview when a preview line is wider than the dialog', () => {
+  const { dialog } = widePreview();
+
+  dialog.handleInput(down);
+
+  const lines = dialog.render(60);
+
+  expect(lines.some((line) => line.includes('Preview: Keep'))).toBe(true);
+  expect(lines.some((line) => line.includes('Ctrl+O full preview'))).toBe(true);
+});
+
+it('wraps wide lines in the full preview and scrolls by wrapped rows', () => {
+  const { dialog } = widePreview();
+
+  dialog.handleInput(ctrlO);
+
+  const top = dialog.render(60);
+
+  dialog.handleInput('G');
+
+  const bottom = dialog.render(60);
+  const rows = top.filter((line) => line.startsWith(' │ ') && !line.includes('more lines'));
+
+  expect(top.length).toBeLessThanOrEqual(18);
+  expect(rows.every((line) => line.length <= 60)).toBe(true);
+  expect(top.some((line) => line.endsWith('-delete'))).toBe(true);
+  expect(top.some((line) => line.includes(`… ${40 - rows.length} more lines`))).toBe(true);
+  expect(top.some((line) => line.includes('↑↓ scroll'))).toBe(true);
+  expect(bottom.length).toBeLessThanOrEqual(18);
+  expect(bottom.some((line) => line.includes('find .cache/20 '))).toBe(true);
+  expect(bottom.at(-4)).toMatch(/-delete$/u);
+});
+
+it('shows the full preview hint first on a narrow multi-select dialog', () => {
+  const { dialog } = tallPreview(16, { multiSelect: true });
+
+  const lines = dialog.render(40);
+
+  expect(lines.some((line) => line.includes('more lines'))).toBe(true);
+  expect(lines.some((line) => line.includes('Ctrl+O full preview'))).toBe(true);
+});
+
+it.each([
+  { rule: 'before the first render', firstWidth: undefined },
+  { rule: 'after a resize before the next render', firstWidth: 100 },
+])('scrolls the full preview to its last wrapped row $rule', ({ firstWidth }) => {
+  const { dialog, terminal } = widePreview(firstWidth ?? 60);
+
+  dialog.handleInput(ctrlO);
+
+  if (firstWidth !== undefined) {
+    dialog.render(firstWidth);
+    terminal.columns = 60;
+  }
+
+  dialog.handleInput('G');
+
+  const lines = dialog.render(60);
+
+  expect(lines.some((line) => line.includes('find .cache/20 '))).toBe(true);
+  expect(lines.some((line) => line.includes('more lines'))).toBe(false);
 });
