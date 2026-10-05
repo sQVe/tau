@@ -84,8 +84,9 @@ target. Give each finding a status that says how it was checked.
 
 5. Gather the evidence with one read-only `codemode` script. It calls `code_review` with `evidence`
    and `$dir`, then reads bounded, line-numbered excerpts of the readable rule files that bear on
-   the changed paths. It returns the identity, paths, rule excerpts, test bodies, callers, check
-   references, and gaps.
+   the changed paths. For a `range` or `rootCommit` target, it reads them at the pinned commit with
+   `git show <sha>:<path>`. It returns the identity, paths, rule excerpts, test bodies, callers,
+   check references, and gaps.
    - Save the returned evidence as `$dir/evidence.md`, outside the script. List every gap it returns
      in the report.
    - If the script fails, report the evidence as a gap and continue with `input.md` alone.
