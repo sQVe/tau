@@ -111,3 +111,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0087: Gather evidence with codemode](./0087-gather-evidence-with-codemode.md)
 - [0088: Grow skills into tools and templates](./0088-grow-skills-into-tools-and-templates.md)
 - [0089: Capture review targets with a code_review tool](./0089-capture-review-targets-with-a-code-review-tool.md)
+- [0090: Own each workstream with one worktree](./0090-own-each-workstream-with-one-worktree.md)
