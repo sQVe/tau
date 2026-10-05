@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 
 import { expect, it } from 'vitest';
 
+import codeReviewExtension from '../src/extensions/codeReview/codeReview.js';
 import prFeedbackExtension from '../src/extensions/prFeedback/prFeedback.js';
 import sliceExtension from '../src/extensions/slice/slice.js';
 import tauSkillsExtension from '../src/extensions/tauSkills/tauSkills.js';
@@ -13,6 +14,7 @@ const skillsDirectory = resolve(import.meta.dirname, '../src/skills');
 it.each([
   { skill: 'slice', tool: 'slice' },
   { skill: 'pr-feedback', tool: 'pr_feedback' },
+  { skill: 'code-review', tool: 'code_review' },
 ])('keeps $tool off until the $skill skill runs', async ({ skill, tool }) => {
   let active: string[] = [];
 
@@ -26,6 +28,7 @@ it.each([
   tauSkillsExtension(fake.pi, skillsDirectory, skillTools);
   sliceExtension(fake.pi);
   prFeedbackExtension(fake.pi);
+  codeReviewExtension(fake.pi);
 
   expect(fake.tools.get(tool)?.defaultActive).toBe(false);
 

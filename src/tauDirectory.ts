@@ -57,6 +57,24 @@ const rejectSymlinks = async (root: string, relativePaths: readonly string[]) =>
   }
 };
 
+// A hard link shares its file with another path, maybe outside the checkout, so an append to
+// .tau/.gitignore would change that file too.
+const rejectHardLinkedIgnoreFile = async (root: string) => {
+  const path = '.tau/.gitignore';
+
+  try {
+    const stats = await lstat(join(root, path));
+
+    if (stats.nlink > 1) {
+      throw new Error(`Refusing to write through a file with another hard link: ${path}`);
+    }
+  } catch (error) {
+    if (!isMissingFile(error)) {
+      throw error;
+    }
+  }
+};
+
 const readIgnoreFile = async (path: string) => {
   try {
     return await readFile(path, 'utf8');
@@ -127,25 +145,28 @@ const rejectUnignored = async (root: string, relativeDirectory: string) => {
   await rejectTracked(root, relativeDirectory);
 };
 
-// Refuses `<root>/.tau/<path>` when a path a write would go through is a symlink, since the link
-// could send writes outside the repository, or when Git would not ignore files in it. Changes
-// nothing, so a read can run it.
+// Refuses `<root>/.tau/<path>` when a path a write would go through is a symlink, or
+// `.tau/.gitignore` has another hard link, since either could send writes outside the repository,
+// or when Git would not ignore files in it. Changes nothing, so a read can run it.
 export const checkTauDirectory = async (root: string, path: string): Promise<void> => {
   const segments = parseSegments(path);
 
   await rejectSymlinks(root, writtenPaths(segments));
+  await rejectHardLinkedIgnoreFile(root);
   await rejectLaterExceptions(root);
   await rejectUnignored(root, ['.tau', ...segments].join('/'));
 };
 
 // Creates `<root>/.tau/<path>` and makes Git ignore everything in `.tau/`. Refuses before it
-// creates anything when a path it would write through is a symlink, or when Git tracks
+// creates anything when a path it would write through is a symlink, when `.tau/.gitignore` has
+// another hard link, or when Git tracks
 // `.tau/.gitignore` or a file in the target. Refuses before it creates the target when Git would
 // not ignore it. A path swapped between the check and the write can still escape.
 export const ensureTauDirectory = async (root: string, path: string): Promise<string> => {
   const segments = parseSegments(path);
 
   await rejectSymlinks(root, writtenPaths(segments));
+  await rejectHardLinkedIgnoreFile(root);
   await rejectTracked(root, '.tau/.gitignore');
   await rejectTracked(root, ['.tau', ...segments].join('/'));
 

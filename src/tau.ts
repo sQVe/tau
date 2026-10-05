@@ -5,6 +5,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import askUserQuestionExtension from './extensions/askUserQuestion/askUserQuestion.js';
 import bareRootExtension from './extensions/bareRoot.js';
 import bulkReadExtension from './extensions/bulkRead/bulkRead.js';
+import codeReviewExtension from './extensions/codeReview/codeReview.js';
 import codingExtension from './extensions/coding.js';
 import commitExtension from './extensions/commit/commit.js';
 import compactionExtension from './extensions/compaction/compaction.js';
@@ -22,7 +23,11 @@ import writingExtension from './extensions/writing.js';
 
 const skillsDirectory = fileURLToPath(new URL('./skills/', import.meta.url));
 
-export const skillTools = { slice: ['slice'], 'pr-feedback': ['pr_feedback'] };
+export const skillTools = {
+  'code-review': ['code_review'],
+  slice: ['slice'],
+  'pr-feedback': ['pr_feedback'],
+};
 
 export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   await writingExtension(pi);
@@ -38,6 +43,7 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   snippetsExtension(pi);
   sliceExtension(pi);
   prFeedbackExtension(pi);
+  codeReviewExtension(pi);
   statusbarExtension(pi);
   subagentsExtension(pi);
   compactionExtension(pi);
