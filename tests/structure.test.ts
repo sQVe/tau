@@ -39,6 +39,7 @@ const pureModules = [
   'src/extensions/snippets/query.ts',
   'src/extensions/tauSkills/requiredFor.ts',
   'src/extensions/tdd/configLayers.ts',
+  'src/extensions/tracker/candidateFit.ts',
   'src/extensions/subagents/bashOutputCap.ts',
   'src/extensions/subagents/compactionWorkers.ts',
   'src/extensions/subagents/incompleteReport.ts',

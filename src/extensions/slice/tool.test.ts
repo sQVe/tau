@@ -18,8 +18,8 @@ import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { createLinearFake } from '../../../tests/linearFake.js';
 import { confirmContext, noUiContext } from '../../../tests/toolContext.js';
-import { createLinearFake } from './fixtures/linearFake.js';
 import { createSliceTool } from './tool.js';
 import type { SliceInput } from './tool.js';
 
