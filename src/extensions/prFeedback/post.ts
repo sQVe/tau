@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util';
+
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../errors.js';
@@ -6,7 +8,7 @@ import type { Repository, Runtime } from './github.js';
 import { readFeedback } from './read.js';
 import type { PullRequestFeedback } from './read.js';
 import { readPosted, readPullRequestRecord, readReplies, writePosted } from './replies.js';
-import type { PostedWrite } from './replies.js';
+import type { Posted, PostedWrite, Replies } from './replies.js';
 import { personWrites, planWrites } from './writes.js';
 import type { PlannedWrite } from './writes.js';
 
@@ -19,6 +21,11 @@ interface WriteTarget {
   runtime: Runtime;
   repository: Repository;
   pr: number;
+}
+
+interface SavedWork {
+  replies: Replies;
+  posted: Posted;
 }
 
 interface WriteSummary {
@@ -178,6 +185,44 @@ const makeWrites = async (
 const confirmMessage = (writes: readonly PlannedWrite[]) =>
   writes.map((write, index) => `${index + 1}. ${describeWrite(write)}`).join('\n\n');
 
+const planFromFeedback = (saved: SavedWork, feedback: PullRequestFeedback) =>
+  planWrites({
+    entries: saved.replies.threads,
+    comment: saved.replies.comment,
+    threads: feedback.threads,
+    reviews: feedback.reviews,
+    comments: feedback.comments,
+    prUrl: feedback.pr.url,
+    recorded: saved.posted.writes,
+  });
+
+const changedPlan = (reason: string, options?: ErrorOptions) =>
+  new Error(
+    `The pull request changed during the confirm, so the writes differ from the confirmed ones: ${reason}. Call read again. Nothing was posted.`,
+    options,
+  );
+
+// A thread can be resolved, or a permission can change, without changing the token or the head.
+const rejectChangedPlan = async (
+  target: WriteTarget,
+  input: PostInput,
+  saved: SavedWork,
+  confirmed: readonly PlannedWrite[],
+) => {
+  const feedback = await readCheckedFeedback(target, input);
+  let writes: PlannedWrite[];
+
+  try {
+    writes = planFromFeedback(saved, feedback);
+  } catch (error) {
+    throw changedPlan(errorMessage(error), { cause: error });
+  }
+
+  if (!isDeepStrictEqual(writes, confirmed)) {
+    throw changedPlan('the planned writes are different');
+  }
+};
+
 // Posts only the writes the read checked. The feedback is read again after the confirm, since the
 // user can take any time to answer.
 export const postReplies = async (
@@ -190,18 +235,9 @@ export const postReplies = async (
   const target = { runtime, repository, pr };
   const replies = await readReplies(directory);
   const posted = await readPosted(directory);
+  const saved = { replies, posted };
   const feedback = await readCheckedFeedback(target, input);
-
-  const writes = planWrites({
-    entries: replies.threads,
-    comment: replies.comment,
-    threads: feedback.threads,
-    reviews: feedback.reviews,
-    comments: feedback.comments,
-    prUrl: feedback.pr.url,
-    recorded: posted.writes,
-  });
-
+  const writes = planFromFeedback(saved, feedback);
   const skipped = posted.writes;
 
   if (writes.length === 0) {
@@ -226,7 +262,7 @@ export const postReplies = async (
       return { status: 'declined', posted: [], skipped };
     }
 
-    await readCheckedFeedback(target, input);
+    await rejectChangedPlan(target, input, saved, writes);
   }
 
   return {

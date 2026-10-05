@@ -165,6 +165,38 @@ describe('post refusals', () => {
     expect(fake.writes).toEqual([]);
   });
 
+  it.each([
+    {
+      change: 'resolves a target thread',
+      arrange: (target: FakeThread) => {
+        target.isResolved = true;
+      },
+    },
+    {
+      change: 'blocks replies to a target thread',
+      arrange: (target: FakeThread) => {
+        target.viewerCanReply = false;
+      },
+    },
+  ])('posts nothing when GitHub $change during the confirm', async ({ arrange }) => {
+    const { root, fake, read, post } = await setUp();
+    const target = personThread();
+
+    fake.threads = [botThread(), target];
+
+    const details = await read();
+
+    await writeReplies(details.directory, mixedReplies);
+
+    const { context } = recordingConfirm(root, true, () => {
+      arrange(target);
+    });
+
+    await expect(post(details, context)).rejects.toThrow(/read again/u);
+    expect(fake.writes).toEqual([]);
+    expect(await readPosted(details.directory)).toBeUndefined();
+  });
+
   it('posts nothing when the head moved', async () => {
     const { fake, read, post } = await setUp();
 
