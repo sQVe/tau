@@ -35,6 +35,22 @@ export interface WriteFacts {
   recorded: { kind: WriteKind; thread: string | null }[];
 }
 
+export interface RecordedWrite {
+  kind: WriteKind;
+  thread: string | null;
+  url: string;
+  text: string | null;
+  state: 'posted' | 'uncertain';
+  commentId: number | null;
+}
+
+export interface SettleFacts {
+  recorded: RecordedWrite[];
+  viewer: string;
+  threads: Thread[];
+  comments: Comment[];
+}
+
 const writeKey = (write: { kind: WriteKind; thread: string | null }): string =>
   `${write.kind}:${write.thread ?? ''}`;
 
@@ -187,3 +203,60 @@ export const planWrites = (facts: WriteFacts): PlannedWrite[] => {
 
 export const personWrites = (writes: readonly PlannedWrite[]): PlannedWrite[] =>
   writes.filter((write) => write.toPerson);
+
+const writtenComments = (write: RecordedWrite, facts: SettleFacts) => {
+  if (write.kind === 'comment') {
+    return facts.comments;
+  }
+
+  return facts.threads.find((thread) => thread.id === write.thread)?.comments ?? [];
+};
+
+// Review replies and PR comments come from separate GitHub endpoints, so their IDs can repeat.
+const claimKey = (kind: RecordedWrite['kind'], commentId: number) => `${kind}:${commentId}`;
+
+// Returns the newest comment by the viewer with the write's text that no posted write claims.
+const findWrittenComment = (write: RecordedWrite, facts: SettleFacts, claimed: Set<string>) => {
+  const matches = writtenComments(write, facts).filter(
+    (comment) => comment.author === facts.viewer && comment.body === write.text,
+  );
+
+  return matches.findLast((comment) => !claimed.has(claimKey(write.kind, comment.id)));
+};
+
+const settleWrite = (write: RecordedWrite, facts: SettleFacts, claimed: Set<string>) => {
+  if (write.state === 'posted') {
+    return [write];
+  }
+
+  // The fresh read lists only unresolved threads, so a missing thread was resolved.
+  if (write.kind === 'resolve') {
+    const unresolved = facts.threads.some((thread) => thread.id === write.thread);
+
+    return unresolved ? [] : [{ ...write, state: 'posted' as const }];
+  }
+
+  const comment = findWrittenComment(write, facts, claimed);
+
+  if (comment === undefined) {
+    return [];
+  }
+
+  claimed.add(claimKey(write.kind, comment.id));
+
+  return [{ ...write, state: 'posted' as const, commentId: comment.id }];
+};
+
+// Decides each uncertain write from a fresh read: a write GitHub has becomes posted, and any other
+// is dropped so the plan makes it again. GitHub can hold a write whose gh call failed.
+export const settleWrites = (facts: SettleFacts): RecordedWrite[] => {
+  const claimed = new Set<string>();
+
+  for (const write of facts.recorded) {
+    if (write.state === 'posted' && write.commentId !== null) {
+      claimed.add(claimKey(write.kind, write.commentId));
+    }
+  }
+
+  return facts.recorded.flatMap((write) => settleWrite(write, facts, claimed));
+};

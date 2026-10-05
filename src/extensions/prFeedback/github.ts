@@ -151,6 +151,14 @@ const resolvedThreadSchema = Type.Object({
 
 export type PullRequest = Static<typeof pullRequestSchema>;
 
+// gh failed or was killed during a write, so GitHub may or may not have made it.
+export class UncertainWriteError extends Error {
+  constructor(message: string, options: ErrorOptions) {
+    super(message, options);
+    this.name = 'UncertainWriteError';
+  }
+}
+
 // gh exited with 0, so GitHub made the write, but the tool could not read what gh printed.
 export class UnreadWriteOutputError extends Error {
   constructor(message: string, options: ErrorOptions) {
@@ -322,8 +330,16 @@ export const readIssueComments = async (
   return pages.flat();
 };
 
+const runWrite = async (runtime: Runtime, commandArguments: string[]) => {
+  try {
+    return await run(runtime, commandArguments);
+  } catch (error) {
+    throw new UncertainWriteError(errorMessage(error), { cause: error });
+  }
+};
+
 const writeJson = async (runtime: Runtime, commandArguments: string[]): Promise<unknown> => {
-  const stdout = await run(runtime, commandArguments);
+  const stdout = await runWrite(runtime, commandArguments);
 
   try {
     return parseJson(commandArguments, stdout);

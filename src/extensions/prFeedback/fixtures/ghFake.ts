@@ -62,6 +62,7 @@ export interface GhFake {
   overrideOutput: (key: CommandKey, stdout: string) => void;
   failCommand: (key: CommandKey) => void;
   failWrite: (number: number) => void;
+  loseWriteResponse: (number: number) => void;
 }
 
 const repository = 'github.com/sQVe/tau';
@@ -127,6 +128,7 @@ export const createGhFake = (): GhFake => {
   const overrides = new Map<CommandKey, string>();
   const failures = new Set<CommandKey>();
   const failingWrites = new Set<number>();
+  const lostResponses = new Set<number>();
   let writeAttempts = 0;
   let nextCommentId = 1000;
 
@@ -147,6 +149,9 @@ export const createGhFake = (): GhFake => {
     },
     failWrite: (number) => {
       failingWrites.add(number);
+    },
+    loseWriteResponse: (number) => {
+      lostResponses.add(number);
     },
   };
 
@@ -309,6 +314,11 @@ export const createGhFake = (): GhFake => {
 
     try {
       const stdout = respond(key, commandArguments);
+
+      // GitHub made the write, but Pi killed gh before it printed the response.
+      if (lostResponses.has(writeAttempts) && isWriteKey(key)) {
+        return { code: 0, killed: true, stdout: '', stderr: '' };
+      }
 
       return { code: 0, killed: false, stdout, stderr: '' };
     } catch (error) {

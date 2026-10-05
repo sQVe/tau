@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
@@ -111,6 +111,27 @@ const mixedReplies = {
   comment: null,
 };
 
+const recordedWrite = (
+  kind: string,
+  threadId: string,
+  text: string | null,
+  commentId: number | null,
+) => ({
+  kind,
+  thread: threadId,
+  url: `https://github.com/sQVe/tau/pull/7#discussion_r${threadId === 'thread-bot' ? 201 : 101}`,
+  text,
+  state: 'posted',
+  commentId,
+});
+
+const postFailure = (promise: Promise<unknown>) =>
+  promise.then(
+    () => undefined,
+    (error: unknown) =>
+      error as { message: string; posted: unknown[]; notPosted: unknown[]; uncertain: unknown[] },
+  );
+
 describe('post refusals', () => {
   it.each([
     {
@@ -202,6 +223,33 @@ describe('post refusals', () => {
     await expect(post(details, context)).rejects.toThrow(/read again/u);
     expect(fake.writes).toEqual([]);
     expect(await readPosted(details.directory)).toBeUndefined();
+  });
+
+  it('posts nothing when another session posts the round during the confirm', async () => {
+    const { root, fake, read, post } = await setUp();
+
+    fake.threads = [botThread(), personThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, mixedReplies);
+
+    const otherSession = {
+      version: 2,
+      writes: [
+        recordedWrite('reply', 'thread-bot', 'Added.', 900),
+        recordedWrite('resolve', 'thread-bot', null, null),
+        recordedWrite('reply', 'thread-person', 'Renamed.', 901),
+      ],
+    };
+
+    const { context } = recordingConfirm(root, true, () =>
+      writeFile(join(details.directory, 'posted.json'), JSON.stringify(otherSession)),
+    );
+
+    await expect(post(details, context)).rejects.toThrow(/read again/u);
+    expect(fake.writes).toEqual([]);
+    expect(await readPosted(details.directory)).toEqual(otherSession);
   });
 
   it('posts nothing when pull-request.json names another pull request', async () => {
@@ -342,7 +390,7 @@ describe('post', () => {
     });
 
     expect(await readPosted(details.directory)).toEqual({
-      version: 1,
+      version: 2,
       writes: (result as { posted: unknown[] }).posted,
     });
   });
@@ -487,13 +535,15 @@ describe('post', () => {
     expect(failure?.posted).toMatchObject([{ kind: 'reply', thread: 'thread-person' }]);
 
     expect(failure?.notPosted).toMatchObject([
-      { kind: 'resolve', thread: 'thread-person' },
       { kind: 'resolve', thread: 'thread-bot' },
       { kind: 'comment', thread: null, text: 'Thanks.' },
     ]);
 
     expect(await readPosted(details.directory)).toMatchObject({
-      writes: [{ kind: 'reply', thread: 'thread-person', commentId: 1000 }],
+      writes: [
+        { kind: 'reply', thread: 'thread-person', state: 'posted', commentId: 1000 },
+        { kind: 'resolve', thread: 'thread-person', state: 'uncertain' },
+      ],
     });
 
     const retry = await post(details, recordingConfirm(root, true).context);
@@ -536,9 +586,10 @@ describe('post save failure', () => {
       comment: null,
     });
 
-    // A directory in its place makes every save of posted.json fail.
+    // A read-only round directory makes every save of posted.json fail, and reads still work.
     const { context } = recordingConfirm(root, true, async () => {
-      await mkdir(join(details.directory, 'posted.json'));
+      await chmod(details.directory, 0o500);
+      onTestFinished(() => chmod(details.directory, 0o700));
     });
 
     const failure = await post(details, context).then(
@@ -555,6 +606,42 @@ describe('post save failure', () => {
     expect(failure?.message).not.toContain('posted.json records the posted writes');
     expect(failure?.posted).toMatchObject([{ kind: 'reply', thread: 'thread-person' }]);
     expect(failure?.notPosted).toMatchObject([{ kind: 'resolve', thread: 'thread-person' }]);
+  });
+});
+
+describe('post uncertain save failure', () => {
+  it('names the uncertain write that posted.json could not record', async () => {
+    const { root, fake, read, post } = await setUp();
+
+    fake.threads = [personThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-person', 'Renamed.')],
+      comment: null,
+    });
+
+    fake.loseWriteResponse(1);
+
+    const { context } = recordingConfirm(root, true, async () => {
+      await chmod(details.directory, 0o500);
+      onTestFinished(() => chmod(details.directory, 0o700));
+    });
+
+    const failure = await post(details, context).then(
+      () => undefined,
+      (error: unknown) => error as { message: string; uncertain: unknown[]; notPosted: unknown[] },
+    );
+
+    expect(failure?.message).toContain(
+      'Reply to https://github.com/sQVe/tau/pull/7#discussion_r101:\nRenamed.\nCheck the pull request for it before a retry',
+    );
+
+    expect(failure?.uncertain).toMatchObject([{ kind: 'reply', thread: 'thread-person' }]);
+    expect(failure?.notPosted).toMatchObject([{ kind: 'resolve', thread: 'thread-person' }]);
+    expect(await readPosted(details.directory)).toBeUndefined();
   });
 });
 
@@ -609,25 +696,160 @@ describe('post write output', () => {
       expect(fake.writes).toHaveLength(index + 1);
 
       expect(await readPosted(details.directory)).toEqual({
-        version: 1,
+        version: 2,
         writes: failure?.posted,
       });
     },
   );
 
-  it.each(kinds)('records nothing for a failed $key command', async ({ key, index }) => {
+  it.each(kinds)('records a failed $key command as uncertain', async ({ key, index }) => {
     const { fake, details, post } = await writeFixture();
 
     fake.failCommand(key);
 
     const failure = await post(details).then(
       () => undefined,
-      (error: unknown) => error as { message: string; posted: unknown[]; notPosted: unknown[] },
+      (error: unknown) =>
+        error as { message: string; posted: unknown[]; notPosted: unknown[]; uncertain: unknown[] },
     );
 
     expect(failure?.message).toContain('HTTP 502');
     expect(failure?.posted).toHaveLength(index);
-    expect(failure?.notPosted).toHaveLength(3 - index);
+    expect(failure?.uncertain).toMatchObject([{ kind: writeKinds[index] }]);
+    expect(failure?.notPosted).toHaveLength(2 - index);
     expect(fake.writes).toHaveLength(index);
+  });
+});
+
+describe('post uncertain writes', () => {
+  const writeFixture = async () => {
+    const context = await setUp();
+
+    context.fake.threads = [botThread()];
+    context.fake.comments = [{ id: 302, author: bot, body: 'Summary.' }];
+
+    const details = await context.read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-bot', 'Added.', false)],
+      comment: { body: 'Done.', answers: ['302'] },
+    });
+
+    return { ...context, details };
+  };
+
+  const kinds = [
+    { kind: 'reply', attempt: 1, write: { kind: 'reply', replyTo: 201, body: 'Added.' } },
+    { kind: 'comment', attempt: 2, write: { kind: 'comment', body: 'Done.' } },
+  ];
+
+  it.each(kinds)(
+    'saves a $kind as uncertain when gh is killed after GitHub took it',
+    async ({ kind, attempt }) => {
+      const { fake, details, post } = await writeFixture();
+
+      fake.loseWriteResponse(attempt);
+
+      const failure = await postFailure(post(details));
+
+      expect(failure?.message).toMatch(/outcome is uncertain.*A retry checks GitHub/su);
+      expect(failure?.uncertain).toMatchObject([{ kind }]);
+      expect(failure?.posted).toHaveLength(attempt - 1);
+      expect(failure?.notPosted).toHaveLength(2 - attempt);
+
+      expect(await readPosted(details.directory)).toMatchObject({
+        version: 2,
+        writes: [
+          ...failure!.posted,
+          {
+            kind,
+            text: kind === 'reply' ? 'Added.' : 'Done.',
+            state: 'uncertain',
+            commentId: null,
+          },
+        ],
+      });
+    },
+  );
+
+  it.each(kinds)(
+    'settles an uncertain $kind that GitHub has without posting it again',
+    async ({ kind, attempt, write }) => {
+      const { fake, details, post } = await writeFixture();
+
+      fake.loseWriteResponse(attempt);
+      await postFailure(post(details));
+
+      const retry = await post(details);
+
+      expect(fake.writes.filter((made) => made.kind === kind)).toEqual([write]);
+      expect(fake.writes).toHaveLength(2);
+      expect(retry).toMatchObject({ status: kind === 'reply' ? 'posted' : 'unchanged' });
+
+      expect(await readPosted(details.directory)).toMatchObject({
+        writes: expect.arrayContaining([
+          expect.objectContaining({ kind, state: 'posted', commentId: 999 + attempt }),
+        ]) as unknown,
+      });
+    },
+  );
+
+  it.each(kinds)(
+    'posts an uncertain $kind once when GitHub does not have it',
+    async ({ kind, attempt, write }) => {
+      const { fake, details, post } = await writeFixture();
+
+      fake.failWrite(attempt);
+      await postFailure(post(details));
+
+      expect(fake.writes.filter((made) => made.kind === kind)).toEqual([]);
+
+      await post(details);
+
+      expect(fake.writes.filter((made) => made.kind === kind)).toEqual([write]);
+      expect(fake.writes).toHaveLength(2);
+    },
+  );
+
+  it.each([
+    {
+      outcome: 'took',
+      lose: (fake: GhFake) => {
+        fake.loseWriteResponse(1);
+      },
+      retried: false,
+    },
+    {
+      outcome: 'did not take',
+      lose: (fake: GhFake) => {
+        fake.failWrite(1);
+      },
+      retried: true,
+    },
+  ])('settles an uncertain resolve that GitHub $outcome', async ({ lose, retried }) => {
+    const { fake, read, post } = await setUp();
+
+    fake.threads = [botThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-bot', null)],
+      comment: null,
+    });
+
+    lose(fake);
+    await postFailure(post(details));
+
+    const retry = await post(details);
+
+    expect(fake.writes).toEqual([{ kind: 'resolve', threadId: 'thread-bot' }]);
+    expect(retry).toMatchObject({ status: retried ? 'posted' : 'unchanged' });
+
+    expect(await readPosted(details.directory)).toMatchObject({
+      writes: [{ kind: 'resolve', state: 'posted' }],
+    });
   });
 });

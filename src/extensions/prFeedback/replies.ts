@@ -50,19 +50,34 @@ const repliesSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const postedVersion = 2;
+
+const postedWriteFields = {
+  kind: Type.Union([Type.Literal('reply'), Type.Literal('resolve'), Type.Literal('comment')]),
+  thread: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+  url: Type.String(),
+  text: Type.Union([Type.String(), Type.Null()]),
+  commentId: Type.Union([Type.Integer(), Type.Null()]),
+};
+
 const postedWriteSchema = Type.Object(
   {
-    kind: Type.Union([Type.Literal('reply'), Type.Literal('resolve'), Type.Literal('comment')]),
-    thread: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
-    url: Type.String(),
-    text: Type.Union([Type.String(), Type.Null()]),
-    commentId: Type.Union([Type.Integer(), Type.Null()]),
+    ...postedWriteFields,
+    state: Type.Union([Type.Literal('posted'), Type.Literal('uncertain')]),
   },
   { additionalProperties: false },
 );
 
 const postedSchema = Type.Object(
-  { version: Type.Literal(currentVersion), writes: Type.Array(postedWriteSchema) },
+  { version: Type.Literal(postedVersion), writes: Type.Array(postedWriteSchema) },
+  { additionalProperties: false },
+);
+
+const postedVersion1Schema = Type.Object(
+  {
+    version: Type.Literal(1),
+    writes: Type.Array(Type.Object(postedWriteFields, { additionalProperties: false })),
+  },
   { additionalProperties: false },
 );
 
@@ -86,10 +101,10 @@ const pullRequestFileName = 'pull-request.json';
 const savedVersion = (value: unknown) =>
   typeof value === 'object' && value !== null && 'version' in value ? value.version : undefined;
 
-const isNewerVersion = (value: unknown) => {
+const isNewerVersion = (value: unknown, current: number) => {
   const version = savedVersion(value);
 
-  return typeof version === 'number' && version > currentVersion;
+  return typeof version === 'number' && version > current;
 };
 
 const schemaProblem = (schema: TSchema, value: unknown) => {
@@ -98,7 +113,7 @@ const schemaProblem = (schema: TSchema, value: unknown) => {
   return error === undefined ? 'unknown problem' : `${error.instancePath || '/'} ${error.message}`;
 };
 
-const parseRecordJson = (path: string, text: string): unknown => {
+const parseRecordJson = (path: string, text: string, current = currentVersion): unknown => {
   let value: unknown;
 
   try {
@@ -107,7 +122,7 @@ const parseRecordJson = (path: string, text: string): unknown => {
     throw new Error(`Malformed ${path}: not JSON.`, { cause: error });
   }
 
-  if (isNewerVersion(value)) {
+  if (isNewerVersion(value, current)) {
     throw new Error(
       `${path} has a newer format than this Tau reads. Update Tau, then restart the session.`,
     );
@@ -162,15 +177,27 @@ export const readReplies = async (directory: string): Promise<Replies> => {
   return replies;
 };
 
+// Version 1 saved only writes that GitHub took.
+const fromPostedVersion1 = (record: Static<typeof postedVersion1Schema>): Posted => ({
+  version: postedVersion,
+  writes: record.writes.map((write) => ({ ...write, state: 'posted' as const })),
+});
+
 export const readPosted = async (directory: string): Promise<Posted> => {
   const path = join(directory, postedFileName);
   const text = await readOptionalFile(path);
 
   if (text === undefined) {
-    return { version: currentVersion, writes: [] };
+    return { version: postedVersion, writes: [] };
   }
 
-  const posted = parseRecordJson(path, text);
+  const posted = parseRecordJson(path, text, postedVersion);
+
+  if (savedVersion(posted) === 1) {
+    checkRecord(path, postedVersion1Schema, posted);
+
+    return fromPostedVersion1(posted);
+  }
 
   checkRecord(path, postedSchema, posted);
 
@@ -178,7 +205,7 @@ export const readPosted = async (directory: string): Promise<Posted> => {
 };
 
 export const writePosted = (directory: string, writes: readonly PostedWrite[]): Promise<void> =>
-  writeRecord(join(directory, postedFileName), { version: currentVersion, writes });
+  writeRecord(join(directory, postedFileName), { version: postedVersion, writes });
 
 export const readPullRequestRecord = async (directory: string): Promise<PullRequestRecord> => {
   const path = join(directory, pullRequestFileName);
