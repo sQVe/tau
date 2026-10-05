@@ -271,9 +271,12 @@ export const readChecks = async (
     return { pr, checks: [], gaps: [list.gap] };
   }
 
-  const checks = await Promise.all(
-    list.checks.map((check) => readCheck(runtime, repository, check)),
-  );
+  const checks: Check[] = [];
+
+  for (const check of list.checks) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- One gh run view at a time, so many failing jobs start no burst of calls.
+    checks.push(await readCheck(runtime, repository, check));
+  }
 
   const gaps = checks.flatMap((check) => (check.gap === undefined ? [] : [check.gap]));
 

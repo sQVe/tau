@@ -136,6 +136,46 @@ describe('checks', () => {
     },
   );
 
+  it('reads failed logs one at a time in check order', async () => {
+    const { fake, readChecks } = await setUp();
+    const events: string[] = [];
+    const exec = fake.exec;
+
+    fake.exec = async (command, commandArguments, options) => {
+      const job = commandArguments.at(-2) ?? '';
+      const isRunView = commandArguments.slice(0, 2).join(' ') === 'run view';
+
+      if (isRunView) {
+        events.push(`start ${job}`);
+      }
+
+      const result = await exec(command, commandArguments, options);
+
+      if (isRunView) {
+        events.push(`end ${job}`);
+      }
+
+      return result;
+    };
+
+    fake.checks = [
+      check({ name: 'test', bucket: 'fail', state: 'FAILURE', link: jobLink(11, 21) }),
+      check({ name: 'lint', bucket: 'cancel', state: 'CANCELLED', link: jobLink(12, 22) }),
+      check({ name: 'build', bucket: 'fail', state: 'FAILURE', link: jobLink(13, 23) }),
+    ];
+
+    fake.jobLogs = {
+      '21': { log: 'Error: test\n' },
+      '22': { log: 'Error: lint\n' },
+      '23': { log: 'Error: build\n' },
+    };
+
+    const result = await readChecks();
+
+    expect(result.gaps).toEqual([]);
+    expect(events).toEqual(['start 21', 'end 21', 'start 22', 'end 22', 'start 23', 'end 23']);
+  });
+
   it('keeps the last whole lines that fit in 20000 characters', async () => {
     const { fake, readChecks } = await setUp();
     // 20 lines of 999 characters and their 19 line breaks fill 19999 characters.
