@@ -11,11 +11,23 @@ import type { Component, TUI } from '@earendil-works/pi-tui';
 
 import { isBottom, isDown, isTop, isUp } from '../../keys.js';
 import { handleKey, initialState, isCustomChecked, withCustomText } from './questionnaire.js';
-import type { Answer, KeyPress, QuestionFacts, QuestionnaireState } from './questionnaire.js';
+import type {
+  Answer,
+  KeyPress,
+  PreviewViewport,
+  QuestionFacts,
+  QuestionnaireState,
+} from './questionnaire.js';
 
 export interface DialogQuestion extends QuestionFacts {
   header: string;
-  options: { label: string; description: string; preview?: string }[];
+  context: string;
+  options: {
+    label: string;
+    description: string;
+    recommended?: boolean;
+    preview?: string;
+  }[];
 }
 
 export interface DialogResult {
@@ -30,13 +42,36 @@ type DialogFactory = (
   done: (result: DialogResult) => void,
 ) => QuestionDialog;
 
+interface PreviewSpace {
+  room: number;
+  optionRows: number;
+  focusedRows: number;
+  minimum: number;
+}
+
 const customLabel = 'Type something.';
+const previewBar = ' │ ';
 // Pi renders its widgets and a footer of two or more lines below the dialog.
 const piChromeRows = 6;
-// A preview needs a border above and below its content.
-const minimumPreviewRows = 3;
+// Below this many rows the dialog drops its borders and blank rows.
+const compactRows = 12;
+// The border, the question, the context, and the blank row below them.
+const decoratedHeaderRows = 4;
+// A blank row, the key hints, and the border close the dialog.
+const footerRows = 3;
+// The full preview adds a border, a title, a blank row, and the hidden-line count to the footer.
+const fullPreviewChromeRows = 7;
+// The compact full preview keeps the title, the hidden-line count, and the key hints.
+const compactFullPreviewChromeRows = 3;
+
+const fullPreviewChrome = (compact: boolean) =>
+  compact ? compactFullPreviewChromeRows : fullPreviewChromeRows;
 
 const readKey = (data: string): KeyPress => {
+  if (matchesKey(data, Key.ctrl('o'))) {
+    return { kind: 'preview' };
+  }
+
   if (matchesKey(data, Key.enter)) {
     return { kind: 'enter' };
   }
@@ -87,6 +122,11 @@ const wrapWithPrefix = (prefix: string, text: string, width: number): string[] =
   return wrapped.map((line, index) => `${index === 0 ? prefix : indent}${line}`);
 };
 
+const previewWidth = (width: number) => Math.max(1, width - visibleWidth(previewBar));
+
+const wrapPreview = (preview: string, width: number): string[] =>
+  preview.split('\n').flatMap((line) => wrapTextWithAnsi(line, previewWidth(width)));
+
 // Scrolls the option rows so the focused option stays visible within `room` lines.
 const visibleOptions = (blocks: string[][], cursor: number, room: number): string[] => {
   const lines = blocks.flat();
@@ -100,6 +140,32 @@ const visibleOptions = (blocks: string[][], cursor: number, room: number): strin
   const first = Math.min(start, Math.max(0, end - room));
 
   return lines.slice(first, first + Math.max(1, room));
+};
+
+// The preview takes its rows before the options: at least its minimum, up to half the room, or all
+// the rows the options leave free. It never hides part of a focused option that fits the room. When
+// the focused option does not fit, the preview keeps its minimum and one row stays for the label.
+const previewRoom = (space: PreviewSpace, previewHeight: number) => {
+  const { room, optionRows, focusedRows, minimum } = space;
+  const wanted = Math.max(room - optionRows, Math.floor(room / 2), minimum);
+  const limit = focusedRows <= room ? room - focusedRows : Math.min(minimum, room - 1);
+  const rows = Math.min(previewHeight, wanted, limit);
+
+  return rows < minimum ? 0 : rows;
+};
+
+const clipLines = (lines: string[], rows: number, width: number): string[] => {
+  if (rows <= 0) {
+    return [];
+  }
+
+  if (lines.length <= rows) {
+    return lines;
+  }
+
+  const last = lines[rows - 1] ?? '';
+
+  return [...lines.slice(0, rows - 1), truncateToWidth(`${last} …`, width)];
 };
 
 class QuestionDialog implements Component {
@@ -133,7 +199,7 @@ class QuestionDialog implements Component {
   }
 
   handleInput(data: string): void {
-    const outcome = handleKey(this.state, readKey(data), this.questions);
+    const outcome = handleKey(this.state, readKey(data), this.questions, this.previewViewport());
 
     if (outcome.kind === 'cancel') {
       this.done({ cancelled: true, answers: [] });
@@ -166,30 +232,151 @@ class QuestionDialog implements Component {
   }
 
   render(width: number): string[] {
-    const { theme } = this;
     const facts = this.questions[this.state.tab];
-    const border = theme.fg('accent', '─'.repeat(width));
+    const border = this.theme.fg('accent', '─'.repeat(width));
 
     if (facts === undefined) {
       return [border, border];
     }
 
-    const header = [
-      border,
-      ...this.tabBar(width),
-      ...wrapTextWithAnsi(theme.bold(` ${facts.question}`), width),
-      '',
-    ];
+    const preview = this.focusedOption(facts)?.preview;
 
-    const bottom = ['', truncateToWidth(theme.fg('dim', ` ${this.hint(facts)}`), width), border];
-    // Pi shows only the last rows of a component taller than the terminal, hiding the question.
-    const room = this.terminal.terminal.rows - piChromeRows - header.length - bottom.length;
+    if (this.state.fullPreview !== undefined && preview !== undefined) {
+      return this.renderFullPreview(facts, preview, width);
+    }
+
+    return this.renderOptions(facts, width);
+  }
+
+  // Pi shows only the last rows of a component taller than the terminal, hiding the question.
+  private availableRows(): number {
+    return this.terminal.terminal.rows - piChromeRows;
+  }
+
+  private compact(): boolean {
+    return this.availableRows() < compactRows;
+  }
+
+  // A title, and a blank row above it unless compact.
+  private previewTitleRows(): number {
+    return this.compact() ? 1 : 2;
+  }
+
+  // The title rows and the line that counts hidden lines.
+  private minimumPreviewRows(): number {
+    return this.previewTitleRows() + 1;
+  }
+
+  // The compact footer keeps only the key hints.
+  private footerRows(): number {
+    return this.compact() ? 1 : footerRows;
+  }
+
+  private fullPreviewRows(): number {
+    return Math.max(1, this.availableRows() - fullPreviewChrome(this.compact()));
+  }
+
+  private previewViewport(): PreviewViewport {
+    const facts = this.questions[this.state.tab];
+    const preview = facts === undefined ? undefined : this.focusedOption(facts)?.preview;
+    // Pi renders the dialog at the terminal width, which can change before the next render.
+    const lineCount = wrapPreview(preview ?? '', this.terminal.terminal.columns).length;
+
+    return { rows: this.fullPreviewRows(), lineCount };
+  }
+
+  private focusedOption(facts: DialogQuestion): DialogQuestion['options'][number] | undefined {
+    return facts.options[this.state.questions[this.state.tab]?.cursor ?? 0];
+  }
+
+  private footer(keys: string[], width: number): string[] {
+    const hint = truncateToWidth(this.theme.fg('dim', ` ${keys.join(' • ')}`), width);
+
+    return this.compact() ? [hint] : ['', hint, this.theme.fg('accent', '─'.repeat(width))];
+  }
+
+  // Fits the header into `rows`. The question and the context keep a row each before the border,
+  // the blank row, or the tabs get any, and the tabs are dropped when they do not fit whole.
+  private header(facts: DialogQuestion, width: number, rows: number): string[] {
+    const decorated = !this.compact() && rows >= decoratedHeaderRows;
+    const textRows = Math.max(2, decorated ? rows - 2 : rows);
+    const question = wrapWithPrefix(' ', this.theme.bold(facts.question), width);
+    const context = wrapWithPrefix(' ', this.theme.fg('muted', facts.context), width);
+    const shownQuestion = clipLines(question, Math.max(1, textRows - 1), width);
+    const shownContext = clipLines(context, textRows - shownQuestion.length, width);
+    const tabs = this.tabBar(width);
+    const tabRows = textRows - shownQuestion.length - shownContext.length;
+    const text = [...(tabs.length <= tabRows ? tabs : []), ...shownQuestion, ...shownContext];
+
+    if (!decorated) {
+      return text;
+    }
+
+    return [this.theme.fg('accent', '─'.repeat(width)), ...text, ''];
+  }
+
+  // The footer, the focused option, and the smallest preview come before the header.
+  private fitHeader(facts: DialogQuestion, width: number, focusedRows: number, minimum: number) {
+    const headerRows = this.availableRows() - this.footerRows() - focusedRows - minimum;
+    const header = this.header(facts, width, headerRows);
+    const room = this.availableRows() - header.length - this.footerRows();
+
+    return { header, room };
+  }
+
+  private renderOptions(facts: DialogQuestion, width: number): string[] {
+    const previewLines = this.focusedOption(facts)?.preview?.split('\n') ?? [];
+    const minimum = previewLines.length === 0 ? 0 : this.minimumPreviewRows();
     const blocks = [...this.optionBlocks(facts, width), [this.customRow(facts, width)]];
     const cursor = this.state.questions[this.state.tab]?.cursor ?? 0;
-    const options = visibleOptions(blocks, cursor, room);
-    const preview = this.preview(facts, width, room - options.length);
+    const focusedRows = blocks[cursor]?.length ?? 1;
+    const previewHeight = previewLines.length + this.previewTitleRows();
 
-    return [...header, ...options, ...preview, ...bottom];
+    const { header, room } = this.fitHeader(facts, width, focusedRows, minimum);
+    const space = { room, optionRows: blocks.flat().length, focusedRows, minimum };
+    const preview = this.preview(facts, width, previewRoom(space, previewHeight));
+    const options = visibleOptions(blocks, cursor, room - preview.length);
+
+    const tooTall = preview.length < previewHeight;
+    const tooWide = previewLines.some((line) => visibleWidth(line) > previewWidth(width));
+    const hidesPart = tooTall || tooWide;
+    const clipped = previewLines.length > 0 && hidesPart;
+
+    return [
+      ...header,
+      ...options,
+      ...preview,
+      ...this.footer(this.hintKeys(facts, clipped), width),
+    ];
+  }
+
+  private renderFullPreview(facts: DialogQuestion, preview: string, width: number): string[] {
+    const { theme } = this;
+    const all = wrapPreview(preview, width);
+    const rows = this.fullPreviewRows();
+    const offset = Math.min(this.state.fullPreview?.offset ?? 0, Math.max(0, all.length - rows));
+    const bar = theme.fg('muted', previewBar);
+    const shown = all.slice(offset, offset + rows);
+    const lines = shown.map((line) => truncateToWidth(`${bar}${line}`, width));
+    const hidden = all.length - offset - shown.length;
+
+    // The smallest compact view has no row left for the hidden-line count.
+    const countFits = lines.length + fullPreviewChrome(this.compact()) <= this.availableRows();
+
+    if (hidden > 0 && countFits) {
+      lines.push(truncateToWidth(bar + theme.fg('dim', `… ${hidden} more lines`), width));
+    }
+
+    const label = this.focusedOption(facts)?.label ?? '';
+    const title = truncateToWidth(theme.bold(` Preview: ${label}`), width);
+    const keys = all.length > rows ? ['↑↓ scroll', 'Ctrl+O or Esc back'] : ['Ctrl+O or Esc back'];
+    const footer = this.footer(keys, width);
+
+    if (this.compact()) {
+      return [title, ...lines, ...footer];
+    }
+
+    return [theme.fg('accent', '─'.repeat(width)), title, '', ...lines, ...footer];
   }
 
   private tabBar(width: number): string[] {
@@ -208,7 +395,9 @@ class QuestionDialog implements Component {
       return this.theme.fg(answered ? 'success' : 'muted', text);
     });
 
-    return [...wrapTextWithAnsi(` ${tabs.join(' ')}`, width), ''];
+    const tabRows = wrapTextWithAnsi(` ${tabs.join(' ')}`, width);
+
+    return this.compact() ? tabRows : [...tabRows, ''];
   }
 
   private rowPrefix(facts: DialogQuestion, index: number, checked: boolean): string {
@@ -226,9 +415,10 @@ class QuestionDialog implements Component {
     return facts.options.map((option, index) => {
       const prefix = this.rowPrefix(facts, index, question?.checked.includes(index) === true);
       const label = theme.fg(question?.cursor === index ? 'accent' : 'text', option.label);
+      const badge = option.recommended === true ? ` ${theme.fg('success', '★ Recommended')}` : '';
 
       return [
-        ...wrapWithPrefix(prefix, label, width),
+        ...wrapWithPrefix(prefix, label + badge, width),
         ...wrapWithPrefix('      ', theme.fg('muted', option.description), width),
       ];
     });
@@ -258,30 +448,36 @@ class QuestionDialog implements Component {
   }
 
   private preview(facts: DialogQuestion, width: number, rows: number): string[] {
-    const cursor = this.state.questions[this.state.tab]?.cursor ?? 0;
-    const preview = facts.options[cursor]?.preview;
+    const option = this.focusedOption(facts);
 
-    if (preview === undefined || preview === '' || rows < minimumPreviewRows) {
+    if (option?.preview === undefined || rows < this.minimumPreviewRows()) {
       return [];
     }
 
-    const all = preview.split('\n');
-    const shown = all.length < rows ? all : all.slice(0, rows - 2);
+    const all = option.preview.split('\n');
+    const fits = all.length + this.previewTitleRows() <= rows;
+    const shown = fits ? all : all.slice(0, rows - this.minimumPreviewRows());
     const hidden = all.length - shown.length;
-    const bar = this.theme.fg('muted', ' │ ');
+    const bar = this.theme.fg('muted', previewBar);
+    const title = truncateToWidth(this.theme.fg('muted', ` Preview: ${option.label}`), width);
     const lines = shown.map((line) => truncateToWidth(`${bar}${line}`, width));
 
     if (hidden > 0) {
-      lines.push(bar + this.theme.fg('dim', `… ${hidden} more lines`));
+      lines.push(truncateToWidth(bar + this.theme.fg('dim', `… ${hidden} more lines`), width));
     }
 
-    return ['', ...lines];
+    return this.compact() ? [title, ...lines] : ['', title, ...lines];
   }
 
-  private hint(facts: DialogQuestion): string {
+  private hintKeys(facts: DialogQuestion, previewClipped: boolean): string[] {
     const keys = facts.multiSelect
       ? ['↑↓ move', 'Space check', 'Enter submit']
       : ['↑↓ move', 'Enter select'];
+
+    // The footer truncates to one row, so the only way to read a clipped preview comes first.
+    if (previewClipped) {
+      keys.unshift('Ctrl+O full preview');
+    }
 
     if (this.questions.length > 1) {
       keys.push('Tab switch question');
@@ -289,7 +485,7 @@ class QuestionDialog implements Component {
 
     keys.push('Esc cancel');
 
-    return keys.join(' • ');
+    return keys;
   }
 }
 

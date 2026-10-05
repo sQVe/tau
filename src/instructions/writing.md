@@ -40,6 +40,9 @@ A skill's own reply or question format takes precedence over this section.
 - Give options as letters. Put your recommendation first and mark it. Say in one line what happens
   with each option.
 - For yes or no questions, state the default you will use if the user does not answer.
+- Questions in `ask_user_question` follow the same rules, but its options are labels, not letters.
+  Give each question a context, make it readable without earlier messages, and ask one decision per
+  question. Mark the recommendation with `recommended: true`, not with text in its label.
 
 ## Cut what adds nothing
 

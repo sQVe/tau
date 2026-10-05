@@ -6,7 +6,16 @@ export interface QuestionFacts {
 
 export type KeyPress =
   | { kind: 'up' | 'down' | 'top' | 'bottom'; typed: boolean }
-  | { kind: 'space' | 'enter' | 'nextQuestion' | 'previousQuestion' | 'cancel' | 'other' };
+  | {
+      kind:
+        | 'space'
+        | 'enter'
+        | 'nextQuestion'
+        | 'previousQuestion'
+        | 'preview'
+        | 'cancel'
+        | 'other';
+    };
 
 export interface Answer {
   question: string;
@@ -24,6 +33,14 @@ export interface QuestionnaireState {
   tab: number;
   questions: QuestionState[];
   answers: (Answer | undefined)[];
+  // Set while the focused option's preview fills the dialog, scrolled down by `offset` lines.
+  fullPreview: { offset: number } | undefined;
+}
+
+// The full preview shows `rows` of the focused preview's `lineCount` rows after wrapping.
+export interface PreviewViewport {
+  rows: number;
+  lineCount: number;
 }
 
 export type KeyOutcome =
@@ -36,6 +53,7 @@ export const initialState = (count: number): QuestionnaireState => ({
   tab: 0,
   questions: Array.from({ length: count }, () => ({ cursor: 0, checked: [], customText: '' })),
   answers: Array.from({ length: count }, () => undefined),
+  fullPreview: undefined,
 });
 
 export const isCustomChecked = (text: string): boolean => text.trim() !== '';
@@ -171,24 +189,61 @@ const handleOptionKey = (
   return { kind: 'update', state };
 };
 
-/**
- * The last row of each question is the custom text row, which returns `type` for keys the caller
- * should pass to its text input.
- */
-export const handleKey = (
-  state: QuestionnaireState,
-  key: KeyPress,
-  questions: readonly QuestionFacts[],
-): KeyOutcome => {
-  const facts = questions[state.tab];
-  const question = state.questions[state.tab];
-
-  if (key.kind === 'cancel') {
-    return { kind: 'cancel' };
+// Ctrl+O never types: an option without a preview, such as the custom row, ignores it.
+const openPreview = (state: QuestionnaireState, preview: string | undefined): KeyOutcome => {
+  if (preview === undefined) {
+    return { kind: 'update', state };
   }
 
-  if (facts === undefined || question === undefined) {
+  return { kind: 'update', state: { ...state, fullPreview: { offset: 0 } } };
+};
+
+const scrollPreview = (
+  state: QuestionnaireState,
+  key: KeyPress,
+  viewport: PreviewViewport,
+): KeyOutcome => {
+  const lastOffset = Math.max(0, viewport.lineCount - viewport.rows);
+  // A taller terminal can leave the saved offset past the last page.
+  const offset = Math.min(state.fullPreview?.offset ?? 0, lastOffset);
+
+  const offsets: Partial<Record<KeyPress['kind'], number>> = {
+    up: Math.max(0, offset - 1),
+    down: Math.min(lastOffset, offset + 1),
+    top: 0,
+    bottom: lastOffset,
+  };
+
+  const next = offsets[key.kind];
+
+  if (next === undefined) {
     return { kind: 'update', state };
+  }
+
+  return { kind: 'update', state: { ...state, fullPreview: { offset: next } } };
+};
+
+// Esc leaves the full preview instead of cancelling the questionnaire.
+const handlePreviewKey = (
+  state: QuestionnaireState,
+  key: KeyPress,
+  viewport: PreviewViewport,
+): KeyOutcome => {
+  if (key.kind === 'preview' || key.kind === 'cancel') {
+    return { kind: 'update', state: { ...state, fullPreview: undefined } };
+  }
+
+  return scrollPreview(state, key, viewport);
+};
+
+const handleListKey = (
+  state: QuestionnaireState,
+  key: KeyPress,
+  facts: QuestionFacts,
+  question: QuestionState,
+): KeyOutcome => {
+  if (key.kind === 'cancel') {
+    return { kind: 'cancel' };
   }
 
   if (question.cursor === facts.options.length && typesText(key)) {
@@ -204,4 +259,34 @@ export const handleKey = (
   }
 
   return handleOptionKey(state, key, facts, question);
+};
+
+/**
+ * The last row of each question is the custom text row, which returns `type` for keys the caller
+ * should pass to its text input. `viewport` describes the focused option's full preview.
+ */
+export const handleKey = (
+  state: QuestionnaireState,
+  key: KeyPress,
+  questions: readonly QuestionFacts[],
+  viewport: PreviewViewport,
+): KeyOutcome => {
+  const facts = questions[state.tab];
+  const question = state.questions[state.tab];
+
+  if (facts === undefined || question === undefined) {
+    return key.kind === 'cancel' ? { kind: 'cancel' } : { kind: 'update', state };
+  }
+
+  const preview = facts.options[question.cursor]?.preview;
+
+  if (state.fullPreview !== undefined && preview !== undefined) {
+    return handlePreviewKey(state, key, viewport);
+  }
+
+  if (key.kind === 'preview') {
+    return openPreview(state, preview);
+  }
+
+  return handleListKey(state, key, facts, question);
 };
