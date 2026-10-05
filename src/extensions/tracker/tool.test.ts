@@ -283,6 +283,11 @@ it.each([
     input: { team: 'AI', agentTicket: true },
     error: 'An agent ticket has no project',
   },
+  {
+    case: 'an agent ticket without a parent',
+    input: { team: 'AI', project: null, agentTicket: true },
+    error: 'An agent ticket is a sub-ticket of a slice',
+  },
 ])('refuses $case before it reads Linear', async ({ input, error }) => {
   const fake = createLinearFake();
 

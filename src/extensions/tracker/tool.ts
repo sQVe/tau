@@ -79,6 +79,10 @@ const checkInput = (input: TrackerEvidenceInput) => {
   if (input.agentTicket && input.project !== null) {
     throw new Error('An agent ticket has no project, so pass project: null.');
   }
+
+  if (input.agentTicket && input.parent === null) {
+    throw new Error('An agent ticket is a sub-ticket of a slice, so pass the slice as parent.');
+  }
 };
 
 const gatherCandidates = async (exec: Exec, cwd: string, input: TrackerEvidenceInput) => {
