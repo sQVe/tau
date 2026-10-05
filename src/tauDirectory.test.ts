@@ -1,5 +1,15 @@
 import { execFile } from 'node:child_process';
-import { lstat, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  link as hardLink,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -55,6 +65,38 @@ for (const { name, link } of symlinkCases) {
     expect((await lstat(join(root, link))).isSymbolicLink()).toBe(true);
   });
 }
+
+const hardLinkedIgnoreFile = async (registerCleanup: (cleanup: () => Promise<void>) => void) => {
+  const root = await createTemporaryRepository(registerCleanup);
+  const outside = await createTemporaryDirectory(registerCleanup);
+  const outsideFile = join(outside, 'ignore');
+
+  await writeFile(outsideFile, 'outside bytes\n');
+  await mkdir(join(root, '.tau'));
+  await hardLink(outsideFile, join(root, '.tau', '.gitignore'));
+
+  return { root, outsideFile };
+};
+
+it('refuses a hard-linked .tau/.gitignore and leaves the linked file unchanged', async ({
+  onTestFinished,
+}) => {
+  const { root, outsideFile } = await hardLinkedIgnoreFile(onTestFinished);
+  const before = await listTree(root);
+
+  await expect(ensureTauDirectory(root, 'slices/me-479')).rejects.toThrow('hard link');
+
+  expect(await readFile(outsideFile, 'utf8')).toBe('outside bytes\n');
+  expect(await listTree(root)).toEqual(before);
+});
+
+it('check refuses a hard-linked .tau/.gitignore', async ({ onTestFinished }) => {
+  const { root, outsideFile } = await hardLinkedIgnoreFile(onTestFinished);
+
+  await writeFile(outsideFile, '*\n');
+
+  await expect(checkTauDirectory(root, 'slices')).rejects.toThrow('hard link');
+});
 
 it('creates the directory and makes Git ignore everything in .tau', async ({ onTestFinished }) => {
   const repository = await createTemporaryRepository(onTestFinished);
