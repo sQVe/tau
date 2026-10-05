@@ -35,8 +35,8 @@ A worktree holds one workstream. A workstream is one standalone slice or one who
 
 - One worktree, one manager, and one herdr workspace own a workstream.
 - A stack stays in one worktree. Its manager switches between the stack's branches.
-- The manager switches branches, restacks, or syncs only on a clean tree and with none of its
-  workers running in the worktree.
+- The manager switches branches, restacks, or syncs only on a clean tree and when every one of its
+  workers in the worktree has stopped.
 - [ADR 0075](./0075-plan-work-as-pr-sized-slices-in-linear.md) maps one slice to one branch and one
   PR, not to one folder.
 
