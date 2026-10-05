@@ -151,7 +151,10 @@ it.each([
   },
   {
     change: 'a person approves without a body',
-    after: { ...base, reviews: [review(201, restPerson), review(202, restPerson, '')] },
+    after: {
+      ...base,
+      reviews: [review(201, restPerson), { ...review(202, restPerson, ''), state: 'APPROVED' }],
+    },
     changes: false,
   },
   {
