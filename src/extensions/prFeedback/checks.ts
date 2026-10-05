@@ -1,43 +1,31 @@
 import { Type } from 'typebox';
-import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import {
+  checkListEvidence,
+  failedLogEvidence,
+  isFailing,
+  jobOf,
+  repositoryName,
+  unreadableLinkGap,
+} from './checkEvidence.js';
+import type {
+  CheckGap,
+  CheckItem,
+  CheckListValidation,
+  CommandResult,
+  LogExcerpt,
+} from './checkEvidence.js';
 import { describeProblem, readPullRequest } from './github.js';
 import type { Repository, Runtime } from './github.js';
 
-interface CheckGap {
-  check: string | null;
-  command: string | null;
-  code: number | null;
-  stderr: string | null;
-  reason: string;
-}
-
-interface LogExcerpt {
-  excerpt: string;
-  omittedLines: number;
-}
+type Check = CheckItem & { log?: LogExcerpt; gap?: CheckGap };
 
 export interface PullRequestChecks {
   pr: number;
   checks: Check[];
   gaps: CheckGap[];
 }
-
-interface CommandResult {
-  command: string;
-  code: number;
-  killed: boolean;
-  stdout: string;
-  stderr: string;
-}
-
-const excerptLineLimit = 200;
-const excerptCharacterLimit = 20_000;
-const outputPreviewLength = 200;
-const failingChecksExitCode = 1;
-const pendingChecksExitCode = 8;
-const listedExitCodes = new Set([0, failingChecksExitCode, pendingChecksExitCode]);
 
 const checkListSchema = Type.Array(
   Type.Object({
@@ -55,14 +43,10 @@ const checkListSchema = Type.Array(
   }),
 );
 
-type CheckItem = Static<typeof checkListSchema>[number];
-
-type Check = Static<typeof checkListSchema>[number] & { log?: LogExcerpt; gap?: CheckGap };
-
-const jobLinkPattern = /^https:\/\/([^/]+)\/([^/]+)\/([^/]+)\/actions\/runs\/(\d+)\/job\/(\d+)$/u;
-
-const repositoryName = (repository: Repository) =>
-  `${repository.host}/${repository.owner}/${repository.name}`;
+const validateCheckList: CheckListValidation = (value) =>
+  Value.Check(checkListSchema, value)
+    ? { checks: value }
+    : { problem: `printed unexpected output: ${describeProblem(checkListSchema, value)}` };
 
 const runGh = async (runtime: Runtime, commandArguments: string[]): Promise<CommandResult> => {
   const result = await runtime.exec('gh', commandArguments, {
@@ -71,37 +55,6 @@ const runGh = async (runtime: Runtime, commandArguments: string[]): Promise<Comm
   });
 
   return { command: ['gh', ...commandArguments].join(' '), ...result };
-};
-
-const commandGap = (check: string | null, result: CommandResult, reason: string): CheckGap => ({
-  check,
-  command: result.command,
-  code: result.code,
-  stderr: result.stderr.trim(),
-  reason,
-});
-
-const failedCommandReason = (result: CommandResult) =>
-  result.killed ? `${result.command} was stopped.` : `${result.command} failed.`;
-
-const parseCheckList = (stdout: string): { checks: CheckItem[] } | { problem: string } => {
-  if (stdout.trim() === '') {
-    return { problem: 'printed no output' };
-  }
-
-  let value: unknown;
-
-  try {
-    value = JSON.parse(stdout);
-  } catch {
-    return { problem: `printed output that is not JSON: ${stdout.slice(0, outputPreviewLength)}` };
-  }
-
-  if (!Value.Check(checkListSchema, value)) {
-    return { problem: `printed unexpected output: ${describeProblem(checkListSchema, value)}` };
-  }
-
-  return { checks: value };
 };
 
 const readCheckList = async (
@@ -121,66 +74,7 @@ const readCheckList = async (
 
   const result = await runGh(runtime, commandArguments);
 
-  if (result.killed) {
-    return { gap: commandGap(null, result, failedCommandReason(result)) };
-  }
-
-  // gh pr checks exits 1 while a check fails and 8 while one is pending, and still prints the
-  // list. Exit 1 can also mean gh failed, so only the output tells those apart.
-  if (!listedExitCodes.has(result.code)) {
-    return { gap: commandGap(null, result, `${result.command} exited with code ${result.code}.`) };
-  }
-
-  const parsed = parseCheckList(result.stdout);
-
-  if ('problem' in parsed) {
-    return { gap: commandGap(null, result, `${result.command} ${parsed.problem}`) };
-  }
-
-  const { checks } = parsed;
-
-  if (checks.length === 0) {
-    return { gap: commandGap(null, result, 'The pull request has no checks.') };
-  }
-
-  return { checks };
-};
-
-// Keeps the last lines that fit both limits. A last line longer than the character limit keeps
-// its end.
-const boundedExcerpt = (log: string): LogExcerpt => {
-  const lines = log.replace(/\n+$/u, '').split('\n');
-  const kept: string[] = [];
-  let length = 0;
-
-  for (const line of lines.slice(-excerptLineLimit).toReversed()) {
-    length += line.length + (kept.length === 0 ? 0 : 1);
-
-    if (length > excerptCharacterLimit) {
-      break;
-    }
-
-    kept.unshift(line);
-  }
-
-  if (kept.length === 0) {
-    const lastLine = lines.at(-1) ?? '';
-
-    return { excerpt: lastLine.slice(-excerptCharacterLimit), omittedLines: lines.length - 1 };
-  }
-
-  return { excerpt: kept.join('\n'), omittedLines: lines.length - kept.length };
-};
-
-const isFailing = (check: CheckItem) => check.bucket === 'fail' || check.bucket === 'cancel';
-
-const sameRepository = (repository: Repository, host: string, owner: string, name: string) =>
-  repositoryName(repository).toLowerCase() === `${host}/${owner}/${name}`.toLowerCase();
-
-const jobOf = (repository: Repository, link: string) => {
-  const [, host = '', owner = '', name = '', run = '', job = ''] = jobLinkPattern.exec(link) ?? [];
-
-  return sameRepository(repository, host, owner, name) ? { run, job } : undefined;
+  return checkListEvidence(result, validateCheckList);
 };
 
 const readFailedLog = async (
@@ -191,15 +85,7 @@ const readFailedLog = async (
   const job = jobOf(repository, check.link);
 
   if (job === undefined) {
-    return {
-      gap: {
-        check: check.name,
-        command: null,
-        code: null,
-        stderr: null,
-        reason: `The link "${check.link}" is not a GitHub Actions job of ${repositoryName(repository)}, so its log was not read.`,
-      },
-    };
+    return { gap: unreadableLinkGap(repository, check) };
   }
 
   const commandArguments = [
@@ -215,21 +101,7 @@ const readFailedLog = async (
 
   const result = await runGh(runtime, commandArguments);
 
-  if (result.code !== 0 || result.killed) {
-    return { gap: commandGap(check.name, result, failedCommandReason(result)) };
-  }
-
-  if (result.stdout.trim() === '') {
-    return {
-      gap: commandGap(
-        check.name,
-        result,
-        'The failed-step log is empty. A cancelled job may have none.',
-      ),
-    };
-  }
-
-  return { log: boundedExcerpt(result.stdout) };
+  return failedLogEvidence(check, result);
 };
 
 const readCheck = async (

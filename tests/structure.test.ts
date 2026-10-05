@@ -30,6 +30,7 @@ const pureModules = [
   'src/extensions/askUserQuestion/questionnaire.ts',
   'src/extensions/askUserQuestion/validation.ts',
   'src/extensions/compaction/reminder.ts',
+  'src/extensions/prFeedback/checkEvidence.ts',
   'src/extensions/prFeedback/threads.ts',
   'src/extensions/prFeedback/writes.ts',
   'src/extensions/slice/blockers.ts',

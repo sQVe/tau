@@ -175,31 +175,6 @@ describe('checks', () => {
     expect(result.gaps).toEqual([]);
     expect(events).toEqual(['start 21', 'end 21', 'start 22', 'end 22', 'start 23', 'end 23']);
   });
-
-  it('keeps the last whole lines that fit in 20000 characters', async () => {
-    const { fake, readChecks } = await setUp();
-    // 20 lines of 999 characters and their 19 line breaks fill 19999 characters.
-    const lines = Array.from({ length: 100 }, (_, index) => String(index).padStart(999, 'x'));
-
-    fake.checks = [failingCheck];
-    fake.jobLogs = { '21': { log: lines.join('\n') } };
-
-    const [returned] = (await readChecks()).checks;
-
-    expect(returned?.log).toEqual({ excerpt: lines.slice(-20).join('\n'), omittedLines: 80 });
-  });
-
-  it('keeps the end of a last line that alone passes the character limit', async () => {
-    const { fake, readChecks } = await setUp();
-    const lastLine = `${'x'.repeat(100_000)}end`;
-
-    fake.checks = [failingCheck];
-    fake.jobLogs = { '21': { log: `first\n${lastLine}` } };
-
-    const [returned] = (await readChecks()).checks;
-
-    expect(returned?.log).toEqual({ excerpt: lastLine.slice(-20_000), omittedLines: 1 });
-  });
 });
 
 describe('checks gaps', () => {
