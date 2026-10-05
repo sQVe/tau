@@ -74,10 +74,12 @@ target. Give each finding a status that says how it was checked.
 
 4. Call `code_review` with `capture`, `$dir`, and the target from step 1.
    - If the call fails, stop and tell the user what it reports.
-   - Before anything else, ask the user about each `unmatched` gap. List every gap in the report.
-   - If `empty` is true, there is nothing to review. Say so and stop.
-   - If `head` or `base` differs from the SHAs in `input.md`, the target moved while you wrote it.
-     Start again from step 1.
+   - Before anything else, ask the user about each `unmatched` gap. If the user corrects a path,
+     start again from step 1 with the corrected target. List every gap in the report.
+   - If `empty` is true and `gaps` is empty, there is nothing to review. Say so and stop. If `empty`
+     is true with gaps, nothing readable was captured: report the gaps and stop.
+   - If `head` differs from the repository HEAD in `input.md`, or `base` from its base SHA, the
+     target moved while you wrote it. Start again from step 1.
    - Keep `hash` for the report. Never edit or trim the capture in `input.md`.
 
 5. Run the mode.

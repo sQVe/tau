@@ -10,7 +10,9 @@ after it.
 
 ## Target
 
-The target, the mode, the base and HEAD SHAs, and the exclusions the user declared.
+The target, the mode, and the exclusions the user declared. The base SHA, which is the start of a
+range, or none for a root commit. The repository HEAD from `git rev-parse HEAD`, even when a range
+ends at another commit.
 
 ## Rules
 
