@@ -51,6 +51,36 @@ describe('saved records', () => {
     await expect(read(directory)).rejects.toThrow(/has a newer format than this Tau reads/u);
   });
 
+  it('reads a version 2 posted.json as saved', async () => {
+    const directory = await roundDirectory({
+      kind: 'posted',
+      name: 'version-2.json',
+      file: 'posted.json',
+    });
+
+    expect((await readPosted(directory)).writes.map((write) => write.state)).toEqual([
+      'posted',
+      'uncertain',
+      'uncertain',
+    ]);
+  });
+
+  it('reads every write in a version 1 posted.json as posted', async () => {
+    const directory = await roundDirectory({
+      kind: 'posted',
+      name: 'version-1.json',
+      file: 'posted.json',
+    });
+
+    expect(await readPosted(directory)).toMatchObject({
+      version: 2,
+      writes: [
+        { kind: 'reply', state: 'posted', commentId: 1000 },
+        { kind: 'resolve', state: 'posted', commentId: null },
+      ],
+    });
+  });
+
   it('rejects text that is not JSON', async () => {
     const directory = await roundDirectory();
 
@@ -64,7 +94,7 @@ describe('missing records', () => {
   it('reads a missing posted.json as no writes', async () => {
     const directory = await roundDirectory();
 
-    expect(await readPosted(directory)).toEqual({ version: 1, writes: [] });
+    expect(await readPosted(directory)).toEqual({ version: 2, writes: [] });
   });
 
   it('refuses a missing replies.json', async () => {
@@ -88,14 +118,22 @@ describe('writing records', () => {
     const repository = { host: 'ghe.example.com', owner: 'sQVe', name: 'tau' };
 
     const writes = [
-      { kind: 'comment' as const, thread: null, url: 'u', text: 'Thanks.', commentId: 5 },
+      {
+        kind: 'comment' as const,
+        thread: null,
+        url: 'u',
+        text: 'Thanks.',
+        state: 'posted' as const,
+        commentId: 5,
+        earlierCommentIds: [],
+      },
     ];
 
     await writePullRequestRecord(directory, { repository, pr: 7 });
     await writePosted(directory, writes);
 
     expect(await readPullRequestRecord(directory)).toEqual({ repository, pr: 7 });
-    expect(await readPosted(directory)).toEqual({ version: 1, writes });
+    expect(await readPosted(directory)).toEqual({ version: 2, writes });
     expect((await readdir(directory)).toSorted()).toEqual(['posted.json', 'pull-request.json']);
   });
 });

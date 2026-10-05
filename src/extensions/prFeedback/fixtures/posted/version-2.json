@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "writes": [
+    {
+      "kind": "reply",
+      "thread": "thread-person",
+      "url": "https://github.com/sQVe/tau/pull/7#discussion_r101",
+      "text": "Renamed in abc123.",
+      "state": "posted",
+      "commentId": 1000,
+      "earlierCommentIds": []
+    },
+    {
+      "kind": "resolve",
+      "thread": "thread-person",
+      "url": "https://github.com/sQVe/tau/pull/7#discussion_r101",
+      "text": null,
+      "state": "uncertain",
+      "commentId": null,
+      "earlierCommentIds": []
+    },
+    {
+      "kind": "comment",
+      "thread": null,
+      "url": "https://github.com/sQVe/tau/pull/7",
+      "text": "Thanks for the review.",
+      "state": "uncertain",
+      "commentId": null,
+      "earlierCommentIds": [301]
+    }
+  ]
+}

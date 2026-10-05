@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Comment, Review, Thread } from './threads.js';
-import { personWrites, planWrites } from './writes.js';
-import type { WriteFacts } from './writes.js';
+import { personWrites, planWrites, settleWrites } from './writes.js';
+import type { RecordedWrite, SettleFacts, WriteFacts } from './writes.js';
 
 const thread = (id: string, change: Partial<Thread> = {}): Thread => ({
   id,
@@ -225,5 +225,162 @@ describe('personWrites', () => {
     expect(personWrites(writes)).toEqual([
       { kind: 'resolve', thread: 'person', url: url('person'), text: null, toPerson: true },
     ]);
+  });
+});
+
+const viewerComment = (id: number, body: string, author = 'sqve') => ({
+  id,
+  author,
+  isBot: false,
+  body,
+  url: url(`discussion_r${id}`),
+  createdAt: '2026-10-01T10:00:00Z',
+  updatedAt: '2026-10-01T10:00:00Z',
+});
+
+const recordedWrite = (
+  kind: RecordedWrite['kind'],
+  change: Partial<RecordedWrite> = {},
+): RecordedWrite => ({
+  kind,
+  thread: kind === 'comment' ? null : 'person',
+  url: kind === 'comment' ? prUrl : url('person'),
+  text: kind === 'resolve' ? null : 'Renamed.',
+  state: 'uncertain',
+  commentId: null,
+  earlierCommentIds: [],
+  ...change,
+});
+
+const settleFacts = (change: Partial<SettleFacts>): SettleFacts => ({
+  recorded: [],
+  viewer: 'sqve',
+  threads: [thread('person'), thread('bot', { fromPerson: false, replyTo: 201 })],
+  comments: [comment(301, false)],
+  unmatched: 'drop',
+  ...change,
+});
+
+const threadWithReply = (reply: ReturnType<typeof viewerComment>) => {
+  const target = thread('person');
+
+  return thread('person', { comments: [...target.comments, reply] });
+};
+
+const issueComment = (id: number, body: string, author = 'sqve') => ({
+  id,
+  author,
+  isBot: false,
+  body,
+  url: `${prUrl}#issuecomment-${id}`,
+});
+
+describe('settleWrites', () => {
+  it.each([
+    {
+      case: 'posted write',
+      facts: settleFacts({ recorded: [recordedWrite('reply', { state: 'posted', commentId: 7 })] }),
+      settled: [recordedWrite('reply', { state: 'posted', commentId: 7 })],
+    },
+    {
+      case: 'uncertain reply the thread holds',
+      facts: settleFacts({
+        recorded: [recordedWrite('reply')],
+        threads: [threadWithReply(viewerComment(900, 'Renamed.'))],
+      }),
+      settled: [recordedWrite('reply', { state: 'posted', commentId: 900 })],
+    },
+    {
+      case: 'uncertain reply matching only an earlier comment',
+      facts: settleFacts({
+        recorded: [recordedWrite('reply', { earlierCommentIds: [101, 900] })],
+        threads: [threadWithReply(viewerComment(900, 'Renamed.'))],
+      }),
+      settled: [],
+    },
+    {
+      case: 'kept uncertain reply the thread lacks',
+      facts: settleFacts({ recorded: [recordedWrite('reply')], unmatched: 'keep' }),
+      settled: [recordedWrite('reply')],
+    },
+    {
+      case: 'kept uncertain resolve of an open thread',
+      facts: settleFacts({ recorded: [recordedWrite('resolve')], unmatched: 'keep' }),
+      settled: [recordedWrite('resolve')],
+    },
+    {
+      case: 'uncertain reply the thread lacks',
+      facts: settleFacts({ recorded: [recordedWrite('reply')] }),
+      settled: [],
+    },
+    {
+      case: 'uncertain reply with other text in the thread',
+      facts: settleFacts({
+        recorded: [recordedWrite('reply')],
+        threads: [threadWithReply(viewerComment(900, 'Renamed it.'))],
+      }),
+      settled: [],
+    },
+    {
+      case: 'uncertain reply where another author has the text',
+      facts: settleFacts({
+        recorded: [recordedWrite('reply')],
+        threads: [threadWithReply(viewerComment(900, 'Renamed.', 'reviewer'))],
+      }),
+      settled: [],
+    },
+    {
+      case: 'uncertain reply whose match a posted reply already claims',
+      facts: settleFacts({
+        recorded: [
+          recordedWrite('reply', { state: 'posted', commentId: 900 }),
+          recordedWrite('reply'),
+        ],
+        threads: [threadWithReply(viewerComment(900, 'Renamed.'))],
+      }),
+      settled: [recordedWrite('reply', { state: 'posted', commentId: 900 })],
+    },
+    {
+      case: 'uncertain reply whose match has the ID of a posted PR comment',
+      facts: settleFacts({
+        recorded: [
+          recordedWrite('comment', { state: 'posted', commentId: 900 }),
+          recordedWrite('reply'),
+        ],
+        threads: [threadWithReply(viewerComment(900, 'Renamed.'))],
+      }),
+      settled: [
+        recordedWrite('comment', { state: 'posted', commentId: 900 }),
+        recordedWrite('reply', { state: 'posted', commentId: 900 }),
+      ],
+    },
+    {
+      case: 'uncertain PR comment the pull request holds',
+      facts: settleFacts({
+        recorded: [recordedWrite('comment', { text: 'Thanks.' })],
+        comments: [comment(301, false), issueComment(901, 'Thanks.')],
+      }),
+      settled: [recordedWrite('comment', { text: 'Thanks.', state: 'posted', commentId: 901 })],
+    },
+    {
+      case: 'uncertain PR comment the pull request lacks',
+      facts: settleFacts({
+        recorded: [recordedWrite('comment', { text: 'Thanks.' })],
+        comments: [issueComment(901, 'Thanks.', 'reviewer')],
+      }),
+      settled: [],
+    },
+    {
+      case: 'uncertain resolve of an unresolved thread',
+      facts: settleFacts({ recorded: [recordedWrite('resolve')] }),
+      settled: [],
+    },
+    {
+      case: 'uncertain resolve of a thread that is resolved now',
+      facts: settleFacts({ recorded: [recordedWrite('resolve')], threads: [] }),
+      settled: [recordedWrite('resolve', { state: 'posted' })],
+    },
+  ])('settles $case', ({ facts: given, settled }) => {
+    expect(settleWrites(given)).toEqual(settled);
   });
 });

@@ -1,4 +1,14 @@
 {
-  "version": 1,
-  "writes": [{ "kind": "edit", "thread": "thread-person" }]
+  "version": 2,
+  "writes": [
+    {
+      "kind": "reply",
+      "thread": "thread-person",
+      "url": "https://github.com/sQVe/tau/pull/7#discussion_r101",
+      "text": "Renamed in abc123.",
+      "state": "maybe",
+      "commentId": null,
+      "earlierCommentIds": []
+    }
+  ]
 }
