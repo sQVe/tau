@@ -13,7 +13,6 @@ export interface CandidateFit {
 
 const placementFields: PlacementField[] = ['team', 'project', 'parent'];
 
-// A candidate fits when its team, project, and parent all equal the planned ticket's.
 export const decideCandidateFit = (planned: Placement, candidate: Placement): CandidateFit => {
   const differences = placementFields.filter((field) => planned[field] !== candidate[field]);
 
