@@ -25,16 +25,6 @@ these defaults.
 - Run commands so they never wait for input. Pass every value a prompt would ask for, and set
   `GIT_EDITOR=true` for `git rebase --continue`.
 
-## Gather evidence with codemode
-
-- When the `codemode` tool is available, use it to gather evidence. Without it, skip this section.
-- Plan one script per evidence set.
-- Keep raw output out of context. Return bounded, line-numbered excerpts with command status and
-  gaps.
-- Cite only what the script returned. If a fact was filtered out, gather and return it before citing
-  it.
-- Never call report, question, progress, or orchestration tools from a script.
-
 ## Keep to the task
 
 - Editing comments does not give permission to refactor code or expand the task.
