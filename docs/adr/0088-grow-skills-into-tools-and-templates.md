@@ -7,8 +7,8 @@
 ## Context
 
 - ADR 0004 allowed a `## Principles` section and let a large skill grow into scripts.
-- `tests/skillFiles.test.ts` accepts only five body headings and rejects new shell blocks with more
-  than one command.
+- `tests/skillFiles.test.ts` rejects body headings outside five sections and new shell blocks with
+  more than one command. It lists the existing exceptions by name.
 - Shell in a skill has no tests, and each copy drifts on its own.
 - A body or preview shape written inline in a skill mixes the shape the user sees with the steps
   that produce it.
