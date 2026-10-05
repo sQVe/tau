@@ -1,4 +1,4 @@
-import { copyFile, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
@@ -85,12 +85,12 @@ const botThread = () =>
 
 const replyTo = (id: string, reply: string | null, resolve = true) => ({ id, reply, resolve });
 
-const recordingConfirm = (root: string, answer: boolean, during?: () => void) => {
+const recordingConfirm = (root: string, answer: boolean, during?: () => void | Promise<void>) => {
   const prompts: { title: string; message: string }[] = [];
 
   const context = confirmContext(root, async (title, message) => {
     prompts.push({ title, message });
-    during?.();
+    await during?.();
 
     return answer;
   });
@@ -512,6 +512,42 @@ describe('post', () => {
 
     expect(again).toMatchObject({ status: 'unchanged', posted: [] });
     expect(fake.writes).toHaveLength(4);
+  });
+});
+
+describe('post save failure', () => {
+  it('names the write that posted.json could not record', async () => {
+    const { root, fake, read, post } = await setUp();
+
+    fake.threads = [personThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-person', 'Renamed.')],
+      comment: null,
+    });
+
+    // A directory in its place makes every save of posted.json fail.
+    const { context } = recordingConfirm(root, true, async () => {
+      await mkdir(join(details.directory, 'posted.json'));
+    });
+
+    const failure = await post(details, context).then(
+      () => undefined,
+      (error: unknown) => error as { message: string; posted: unknown[]; notPosted: unknown[] },
+    );
+
+    expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 101, body: 'Renamed.' }]);
+
+    expect(failure?.message).toContain(
+      'Reply to https://github.com/sQVe/tau/pull/7#discussion_r101:\nRenamed.\nAdd it to posted.json before a retry',
+    );
+
+    expect(failure?.message).not.toContain('posted.json records the posted writes');
+    expect(failure?.posted).toMatchObject([{ kind: 'reply', thread: 'thread-person' }]);
+    expect(failure?.notPosted).toMatchObject([{ kind: 'resolve', thread: 'thread-person' }]);
   });
 });
 

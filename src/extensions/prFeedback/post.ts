@@ -126,17 +126,6 @@ const postWrite = async (target: WriteTarget, write: PlannedWrite) => {
   }
 };
 
-const savePosted = async (directory: string, writes: readonly PostedWrite[]) => {
-  try {
-    await writePosted(directory, writes);
-  } catch (error) {
-    throw new Error(
-      `GitHub has the last posted write, but saving ${directory}/posted.json failed: ${errorMessage(error)}. Add that write to posted.json before a retry.`,
-      { cause: error },
-    );
-  }
-};
-
 const failedPost = (
   directory: string,
   failure: { posted: PostedWrite[]; notPosted: WriteSummary[] },
@@ -148,6 +137,21 @@ const failedPost = (
     { cause: error },
   );
 
+const unsavedPost = (
+  directory: string,
+  failure: { posted: PostedWrite[]; notPosted: WriteSummary[] },
+  unsaved: PostedWrite,
+  error: unknown,
+) =>
+  new PostError(
+    `GitHub has this write, but saving ${directory}/posted.json failed: ${errorMessage(error)}\n${describeWrite(unsaved)}\nAdd it to posted.json before a retry, or the retry posts it again.\nPosted:\n${bulletList(failure.posted)}\nNot posted:\n${bulletList(failure.notPosted)}\nposted.json records the other posted writes, and a retry skips them.`,
+    failure,
+    { cause: error },
+  );
+
+const summarizeFrom = (writes: readonly PlannedWrite[], start: number) =>
+  writes.slice(start).map((write) => summarize(write));
+
 // Records each write as soon as GitHub has it, so a retry skips it.
 const makeWrites = async (
   target: WriteTarget,
@@ -158,24 +162,28 @@ const makeWrites = async (
   const posted: PostedWrite[] = [];
 
   for (const [index, write] of writes.entries()) {
-    const postedBefore = posted.length;
+    let outcome: Awaited<ReturnType<typeof postWrite>>;
 
     try {
       // oxlint-disable-next-line no-await-in-loop -- Writes run in file order and stop at the first failure.
-      const outcome = await postWrite(target, write);
-
-      posted.push(outcome.record);
-      // oxlint-disable-next-line no-await-in-loop -- Each write is recorded before the next one starts.
-      await savePosted(directory, [...recorded, ...posted]);
-
-      if (outcome.unread !== undefined) {
-        throw outcome.unread;
-      }
+      outcome = await postWrite(target, write);
     } catch (error) {
-      const firstNotPosted = posted.length > postedBefore ? index + 1 : index;
-      const notPosted = writes.slice(firstNotPosted).map((other) => summarize(other));
+      throw failedPost(directory, { posted, notPosted: summarizeFrom(writes, index) }, error);
+    }
 
-      throw failedPost(directory, { posted, notPosted }, error);
+    posted.push(outcome.record);
+
+    const notPosted = summarizeFrom(writes, index + 1);
+
+    try {
+      // oxlint-disable-next-line no-await-in-loop -- Each write is recorded before the next one starts.
+      await writePosted(directory, [...recorded, ...posted]);
+    } catch (error) {
+      throw unsavedPost(directory, { posted, notPosted }, outcome.record, error);
+    }
+
+    if (outcome.unread !== undefined) {
+      throw failedPost(directory, { posted, notPosted }, outcome.unread);
     }
   }
 
