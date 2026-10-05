@@ -1,6 +1,7 @@
 # ADR 0072: Keep model defaults out of code
 
-- Status: Accepted
+- Status: Accepted; the `bulk_read` section superseded by
+  [ADR 0087](./0087-gather-evidence-with-codemode.md)
 - Date: 2026-09-30
 - Supersedes: [ADR 0027](./0027-share-one-delegate-model.md),
   [ADR 0044](./0044-restore-gpt-5-6-luna-as-the-delegate-default.md), and the built-in worker model

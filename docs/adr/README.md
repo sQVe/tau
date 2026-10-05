@@ -108,3 +108,4 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0084: Keep the diagram skill out of worker profiles](./0084-keep-the-diagram-skill-out-of-worker-profiles.md)
 - [0085: Group per-repository settings in the user config](./0085-group-per-repository-settings-in-the-user-config.md)
 - [0086: Post to GitHub bots without a confirm](./0086-post-to-github-bots-without-a-confirm.md)
+- [0087: Gather evidence with codemode](./0087-gather-evidence-with-codemode.md)

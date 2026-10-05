@@ -1,6 +1,7 @@
 # ADR 0085: Group per-repository settings in the user config
 
-- Status: Accepted
+- Status: Accepted; `bulkRead` key handling superseded by
+  [ADR 0087](./0087-gather-evidence-with-codemode.md)
 - Date: 2026-10-03
 
 ## Context
