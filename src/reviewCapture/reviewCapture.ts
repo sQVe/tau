@@ -471,7 +471,7 @@ const uniqueGaps = (gaps: Gap[]) => [
 ];
 
 // Captures the target as Git prints it. Changes no staged contents, .git/index, or Git objects.
-// The hash equals `git hash-object` of the bytes.
+// The hash equals `git hash-object --no-filters` of the bytes, so .gitattributes cannot change it.
 export const captureTarget = async (root: string, target: PinnedTarget): Promise<Capture> => {
   const parts = [
     await captureDiff(root, target),
