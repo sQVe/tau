@@ -1,5 +1,5 @@
 ---
-'tau': patch
+'tau': minor
 ---
 
 `ask_user_question` questions now need a `context` of 1-3 sentences. It says what is being decided,
