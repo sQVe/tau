@@ -228,7 +228,7 @@ describe('read errors', () => {
         fake.failCommand('graphql');
       },
       error:
-        'gh api graphql --hostname github.com --paginate --slurp -F owner=sQVe -F name=tau -F number=7 -f failed: HTTP 502',
+        'gh api graphql --hostname github.com --paginate --slurp -f owner=sQVe -f name=tau -F number=7 -f failed: HTTP 502',
     },
     {
       name: 'output that is not JSON',
