@@ -79,7 +79,8 @@ see for themselves.
 3. Collect the comments.
    - Call the `pr_feedback` tool with `read` for the threads, review summaries, and conversation
      comments. Keep its result for steps 8 and 9. If it fails, stop and report. If its `headRefOid`
-     differs from step 1's, stop and report that the PR moved, since step 2 pinned the older head.
+     differs from the head this round expects, stop and report that the PR moved. The expected head
+     is step 1's `headRefOid`, or the head of step 7's push when step 9 reads again.
    - Skip bot walkthroughs, link comments, and summaries that hold no findings.
    - Read what we already posted, and judge whether each thread or comment still needs something
      from us. It does not when our reply settled it and the reviewer has not pushed back. It does
