@@ -1,9 +1,10 @@
-import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
+import { errorMessage } from '../errors.js';
 import { readCaptureRecord, recordFileName, writeCaptureRecord } from './record.js';
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'records');
@@ -19,11 +20,39 @@ const reviewDirectory = async (fixture?: string) => {
   return directory;
 };
 
+const snapshotDirectory = async (directory: string) =>
+  Promise.all(
+    (await readdir(directory))
+      .toSorted()
+      .map(async (name) => [name, await readFile(join(directory, name))] as const),
+  );
+
+// Reads the record and checks that the read changed no saved file.
+const readUnchanged = async (directory: string) => {
+  const before = await snapshotDirectory(directory);
+
+  const outcome = await readCaptureRecord(directory).then(
+    (record) => ({ record, error: undefined }),
+    (error: unknown) => ({
+      record: undefined,
+      error: error instanceof Error ? error : new Error(errorMessage(error)),
+    }),
+  );
+
+  expect(await snapshotDirectory(directory)).toEqual(before);
+
+  if (outcome.error !== undefined) {
+    throw outcome.error;
+  }
+
+  return outcome.record;
+};
+
 it('reads a version 1 record', async () => {
   const directory = await reviewDirectory('version-1.json');
   const saved = JSON.parse(await readFile(join(fixtures, 'version-1.json'), 'utf8')) as unknown;
 
-  expect(await readCaptureRecord(directory)).toEqual(saved);
+  expect(await readUnchanged(directory)).toEqual(saved);
 });
 
 it('reads back the record it writes', async () => {
@@ -45,19 +74,19 @@ it('reads back the record it writes', async () => {
 it('refuses a missing record', async () => {
   const directory = await reviewDirectory();
 
-  await expect(readCaptureRecord(directory)).rejects.toThrow(join(directory, recordFileName));
+  await expect(readUnchanged(directory)).rejects.toThrow(join(directory, recordFileName));
 });
 
 it.each(['malformed.json', 'newer.json'])('refuses the %s record', async (fixture) => {
   const directory = await reviewDirectory(fixture);
 
-  await expect(readCaptureRecord(directory)).rejects.toThrow(join(directory, recordFileName));
+  await expect(readUnchanged(directory)).rejects.toThrow(join(directory, recordFileName));
 });
 
 it('refuses a saved target revision that is not a full object name and names the field', async () => {
   const directory = await reviewDirectory('option-revision.json');
 
-  await expect(readCaptureRecord(directory)).rejects.toThrow('/target/base');
+  await expect(readUnchanged(directory)).rejects.toThrow('/target/base');
 });
 
 it('refuses a record that is not JSON', async () => {
