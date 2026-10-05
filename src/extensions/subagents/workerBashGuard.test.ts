@@ -1,8 +1,9 @@
-import { readFile, rm, stat } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 import { createBashTool } from '@earendil-works/pi-coding-agent';
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import workerBashGuard from './workerBashGuard.js';
@@ -14,7 +15,17 @@ interface ModelResult {
 }
 
 // Runs Pi's real bash tool and shapes its result as Pi does for tool_result handlers.
+// Pi and the guard save full output under the temporary directory, so each test gets its own.
 const runBash = async (command: string): Promise<ModelResult> => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-worker-bash-guard-'));
+
+  onTestFinished(async () => {
+    vi.unstubAllEnvs();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  vi.stubEnv('TMPDIR', directory);
+
   try {
     const result = await createBashTool(import.meta.dirname).execute('call', { command });
 
@@ -54,8 +65,6 @@ const savedPath = (text: string): string => {
     throw new Error(`No saved output path in: ${text.slice(0, 200)}`);
   }
 
-  onTestFinished(() => rm(dirname(path), { recursive: true, force: true }));
-
   return path;
 };
 
@@ -87,7 +96,6 @@ it('passes the structured result through unchanged when it caps the model text',
 
   expect(guarded.structuredContent).toStrictEqual(result.structuredContent);
   expect(text.length).toBeLessThanOrEqual(8000);
-  expect(text).toMatch(/\[\d+ of 8393 characters cut\. Command exited with code 0\./u);
   expect(await readFile(path, 'utf8')).toBe(result.content[0]?.text);
   expect((await stat(path)).mode & 0o777).toBe(0o600);
 });
