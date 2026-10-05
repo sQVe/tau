@@ -82,7 +82,17 @@ target. Give each finding a status that says how it was checked.
      target moved while you wrote it. Start again from step 1.
    - Keep `hash` for the report. Never edit or trim the capture in `input.md`.
 
-5. Run the mode.
+5. Gather the evidence with one read-only `codemode` script. It calls `code_review` with `evidence`
+   and `$dir`, then reads bounded, line-numbered excerpts of the readable rule files that bear on
+   the changed paths. It returns the identity, paths, rule excerpts, test bodies, callers, check
+   references, and gaps.
+   - Save the returned evidence as `$dir/evidence.md`, outside the script. List every gap it returns
+     in the report.
+   - If the script fails, report the evidence as a gap and continue with `input.md` alone.
+   - The script gathers evidence only. Target resolution, the capture, approvals, and review
+     judgment stay outside it. It never trims or replaces `input.md`.
+
+6. Run the mode.
    - Fast: launch one reviewer with the [review assignment](review-assignment.md). Add "Try to
      disprove each finding before you report it."
    - Deep: launch a finder with the review assignment, adding "Report every plausible material
@@ -97,14 +107,14 @@ target. Give each finding a status that says how it was checked.
      incomplete.
    - Always report finished results, even after the aim has passed.
 
-6. Call `code_review` with `freshness` and `$dir`.
+7. Call `code_review` with `freshness` and `$dir`.
    - `fresh`: report the review as fresh.
    - `stale`: label the review stale, give the reasons, and ask whether to run a new one.
    - `unknown`, or a failed call: report the freshness as unknown, with the reasons or the error.
      Still save and report the finished results.
    - The check is not atomic. It covers only the captured target, not callers or rules outside it.
 
-7. Save the files and reply to the user with the [report template](report.md).
+8. Save the files and reply to the user with the [report template](report.md).
    - With findings on the user's own work, unless the user asked for a read-only review or "no
      changes", continue without asking: act on them with the
      [triage-findings](../triage-findings/SKILL.md) skill. Ask afterward about findings it leaves

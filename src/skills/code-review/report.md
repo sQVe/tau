@@ -30,9 +30,11 @@ Use this shape for the files in the review directory and for the reply to the us
   only exact duplicates and style points no rule supports, and name each in one line. Show refuted
   candidates only when one affects a decision. The checker's verdict is advice, not proof.
 - Gaps: after the table, list every gap from the capture (exclusions, binary files, unreadable files
-  and directories, submodules, and named paths that list no file), areas workers say they left
-  unread, worker failures, stale or unknown freshness, and a check result that may not match the
-  capture. Do not infer read coverage from citations.
+  and directories, submodules, and named paths that list no file), every gap from the evidence (such
+  as a stale capture, a cut list or body, a missing rule or check file, or a caller search that
+  failed or skipped paths), areas workers say they left unread, worker failures, stale or unknown
+  freshness, and a check result that may not match the capture. Do not infer read coverage from
+  citations.
 - Notes: after the gaps, list areas workers say they read only shallowly. They are not gaps.
 - With no findings from a complete, fresh run, show no table. Say the workers found no material
   issues in the target. That covers the scope they read; it does not prove the change correct.
