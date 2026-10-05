@@ -31,6 +31,16 @@ interface Part {
   errors: string[];
 }
 
+interface DiffEntry {
+  path: string;
+  binary: boolean;
+}
+
+interface DiffSummary {
+  entries: DiffEntry[];
+  gitLinks: string[];
+}
+
 type FileList =
   | { files: string[]; unreadable: string[]; error?: undefined }
   | { files?: undefined; unreadable?: undefined; error: string };
@@ -234,119 +244,129 @@ const diffArguments = (target: PinnedTarget, extra: string[], skipped: string[] 
   return [...diff, '--end-of-options', target.base, ...spec];
 };
 
-const numstatLine = /^(-|\d+)\t(-|\d+)\t(.*)$/s;
+// Reads the NUL-terminated field at offset. Undefined when no NUL follows, so the output ended.
+const readField = (output: Buffer, offset: number) => {
+  const end = output.indexOf(0, offset);
 
-// The counts field, then the old and new paths.
-const renameFieldCount = 3;
+  return end === -1 ? undefined : { text: output.toString('utf8', offset, end), next: end + 1 };
+};
 
-// Reads `git diff --numstat -z`. A rename prints an empty path followed by the old and new paths.
-const parseNumstat = (output: string) => {
-  const fields = output.replace(/^\n+/, '').split('\0');
-  const entries: { path: string; binary: boolean }[] = [];
-  let index = 0;
+const readPaths = (output: Buffer, offset: number, count: number) => {
+  const paths: string[] = [];
+  let next = offset;
 
-  while (index < fields.length) {
-    const field = fields[index] ?? '';
+  for (let index = 0; index < count; index += 1) {
+    const field = readField(output, next);
 
-    if (field === '') {
-      index += 1;
-
-      continue;
+    if (field === undefined) {
+      throw new Error('Git ended the diff summary in the middle of an entry.');
     }
 
-    const match = numstatLine.exec(field);
-
-    if (match === null) {
-      throw new Error(`Git printed a numstat line it should not: ${JSON.stringify(field)}`);
-    }
-
-    const binary = match[1] === '-';
-    const path = match[3] ?? '';
-    const renamed = path === '';
-    const paths = renamed ? fields.slice(index + 1, index + renameFieldCount) : [path];
-
-    entries.push(...paths.map((entryPath) => ({ path: entryPath, binary })));
-    index += renamed ? renameFieldCount : 1;
+    paths.push(field.text);
+    next = field.next;
   }
 
-  return entries;
+  return { paths, next };
 };
 
 const gitLinkMode = '160000';
 
-// Reads `git diff --raw -z`: `:<old mode> <new mode> <old> <new> <status>`, then one path, or two
-// for a rename or copy. Returns the paths whose mode is a Git link on either side.
-const parseGitLinks = (output: string) => {
-  const fields = output.split('\0');
-  const links: string[] = [];
-  let index = 0;
+// Raw records: `:<old mode> <new mode> <old> <new> <status>`, then one path, or two for a rename or
+// copy. Collects the paths whose mode is a Git link on either side.
+const readRawSection = (output: Buffer, summary: DiffSummary) => {
+  let next = 0;
+  let field = readField(output, next);
 
-  while (index < fields.length) {
-    const header = fields[index] ?? '';
-
-    if (!header.startsWith(':')) {
-      index += 1;
-
-      continue;
-    }
-
-    const [oldMode, newMode] = header.slice(1).split(' ');
-    const status = header.split(' ').at(-1) ?? '';
-    const pathCount = /^[RC]/.test(status) ? 2 : 1;
-    const paths = fields.slice(index + 1, index + 1 + pathCount);
+  while (field?.text.startsWith(':') === true) {
+    const [oldMode, newMode] = field.text.slice(1).split(' ');
+    const status = field.text.split(' ').at(-1) ?? '';
+    const read = readPaths(output, field.next, /^[RC]/.test(status) ? 2 : 1);
 
     if (oldMode === gitLinkMode || newMode === gitLinkMode) {
-      links.push(...paths);
+      summary.gitLinks.push(...read.paths);
     }
 
-    index += 1 + pathCount;
+    next = read.next;
+    field = readField(output, next);
   }
 
-  return links;
+  return next;
 };
 
+const numstatLine = /^(-|\d+)\t(-|\d+)\t(.*)$/s;
+
+// Numstat records: `<added>\t<deleted>\t<path>`. A rename has an empty path, then the old and new
+// paths. An empty field ends the section; the patch follows it.
+const readNumstatSection = (output: Buffer, offset: number, summary: DiffSummary) => {
+  let field = readField(output, offset);
+
+  while (field !== undefined && field.text !== '') {
+    const match = numstatLine.exec(field.text);
+
+    if (match === null) {
+      throw new Error(`Git printed a numstat line it should not: ${JSON.stringify(field.text)}`);
+    }
+
+    const binary = match[1] === '-';
+    const path = match[3] ?? '';
+
+    const read =
+      path === '' ? readPaths(output, field.next, 2) : { paths: [path], next: field.next };
+
+    summary.entries.push(...read.paths.map((entryPath) => ({ path: entryPath, binary })));
+    field = readField(output, read.next);
+  }
+
+  if (field === undefined) {
+    throw new Error('Git printed no end to the diff summary before the patch.');
+  }
+
+  return field.next;
+};
+
+// Splits the output of one `--raw --numstat -p -z` run into its summary and the patch. The patch is
+// byte for byte what the same diff prints without those options.
+const splitDiffOutput = (output: Buffer) => {
+  const summary: DiffSummary = { entries: [], gitLinks: [] };
+
+  if (output.length === 0) {
+    return { summary, patch: output };
+  }
+
+  const patchStart = readNumstatSection(output, readRawSection(output, summary), summary);
+
+  return { summary, patch: output.subarray(patchStart) };
+};
+
+// One Git run gives both the patch and its summary, so the paths and gaps always describe the
+// captured bytes, even when the working tree changes during the capture.
 const captureDiffOnce = async (
   root: string,
   target: PinnedTarget,
   skipped: string[],
 ): Promise<Part> => {
-  const diffCommand = diffArguments(target, [], skipped);
+  const diffCommand = diffArguments(target, ['--raw', '--numstat', '-p', '-z'], skipped);
   const diff = await runCaptureCommand(root, diffCommand);
 
   if (diff.stdout === undefined) {
     return failure(diffCommand, diff.error);
   }
 
-  const numstatCommand = diffArguments(target, ['--numstat', '-z'], skipped);
-  const numstat = await runCaptureCommand(root, numstatCommand);
-
-  if (numstat.stdout === undefined) {
-    return failure(numstatCommand, numstat.error);
-  }
-
-  const rawCommand = diffArguments(target, ['--raw', '-z'], skipped);
-  const raw = await runCaptureCommand(root, rawCommand);
-
-  if (raw.stdout === undefined) {
-    return failure(rawCommand, raw.error);
-  }
-
   try {
-    const entries = parseNumstat(numstat.stdout.toString('utf8'));
-    const binaries = entries.filter((entry) => entry.binary);
-    const gitLinks = parseGitLinks(raw.stdout.toString('utf8'));
+    const { summary, patch } = splitDiffOutput(diff.stdout);
+    const binaries = summary.entries.filter((entry) => entry.binary);
 
     return {
-      bytes: diff.stdout,
-      paths: entries.map((entry) => entry.path),
+      bytes: patch,
+      paths: summary.entries.map((entry) => entry.path),
       gaps: [
         ...binaries.map((entry) => ({ kind: 'binary' as const, path: entry.path })),
-        ...gitLinks.map((path) => ({ kind: 'submodule' as const, path })),
+        ...summary.gitLinks.map((path) => ({ kind: 'submodule' as const, path })),
       ],
       errors: [],
     };
   } catch (error) {
-    return failure(numstatCommand, errorMessage(error));
+    return failure(diffCommand, errorMessage(error));
   }
 };
 

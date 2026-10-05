@@ -123,6 +123,115 @@ const moveGitLink = async (root: string) => {
   await git(join(root, 'module'), ['commit', '--quiet', '-am', 'inner change']);
 };
 
+// A repository with a committed text file, binary file, file to rename, Git link, and paths with a
+// tab and a newline, all changed in the working tree.
+const mixedChanges = async () => {
+  const root = await committedRepository();
+
+  await writeFile(join(root, 'image.bin'), Buffer.from([0, 1, 2, 0, 255]));
+  await writeFile(join(root, 'old.txt'), 'move me\nmore\nlines\n');
+  await writeFile(join(root, 'tab\tname.txt'), 'tab\n');
+  await writeFile(join(root, 'line\nname.txt'), 'line\n');
+  await git(root, ['add', '.']);
+  await git(root, ['commit', '--quiet', '-m', 'files']);
+  await committedGitLink(root);
+  await moveGitLink(root);
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+  await writeFile(join(root, 'image.bin'), Buffer.from([0, 3, 4, 0, 255]));
+  await git(root, ['mv', 'old.txt', 'new.txt']);
+  await writeFile(join(root, 'tab\tname.txt'), 'tab two\n');
+  await writeFile(join(root, 'line\nname.txt'), 'line two\n');
+
+  return root;
+};
+
+const plainDiff = async (root: string, revisions: string[]) => {
+  const options = ['--no-ext-diff', '--no-textconv', '--no-color'];
+
+  const { stdout } = await promisify(execFile)('git', ['diff', ...options, ...revisions], {
+    cwd: root,
+    encoding: 'buffer',
+  });
+
+  return stdout;
+};
+
+it('reports paths, binary gaps, and Git link gaps for a mixed diff', async () => {
+  const root = await mixedChanges();
+  const target = await pinTarget(root, { kind: 'workingTree', base: 'HEAD' });
+  const capture = await captureTarget(root, target);
+
+  expect(capture.errors).toEqual([]);
+
+  expect(capture.paths).toEqual([
+    'image.bin',
+    'line\nname.txt',
+    'module',
+    'new.txt',
+    'old.txt',
+    'tab\tname.txt',
+    'tracked.txt',
+  ]);
+
+  expect(capture.gaps).toEqual([
+    { kind: 'binary', path: 'image.bin' },
+    { kind: 'submodule', path: 'module' },
+  ]);
+});
+
+it('captures exactly the bytes a plain git diff prints for the target', async () => {
+  const root = await mixedChanges();
+  const workingTree = await pinTarget(root, { kind: 'workingTree', base: 'HEAD' });
+  const range = await pinTarget(root, { kind: 'range', from: 'HEAD~2', to: 'HEAD' });
+
+  expect((await captureTarget(root, workingTree)).bytes).toEqual(await plainDiff(root, ['HEAD']));
+
+  expect((await captureTarget(root, range)).bytes).toEqual(
+    await plainDiff(root, ['HEAD~2', 'HEAD']),
+  );
+});
+
+// Puts a git wrapper first on PATH. After the first diff it runs, the wrapper rewrites
+// tracked.txt as binary, as if the working tree changed during the capture.
+const changeTreeAfterFirstDiff = async (root: string) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-capture-race-'));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+  const { stdout } = await promisify(execFile)('sh', ['-c', 'command -v git']);
+  const marker = join(directory, 'changed');
+  const file = join(root, 'tracked.txt');
+
+  const script = [
+    '#!/bin/sh',
+    `'${stdout.trim()}' "$@"`,
+    'status=$?',
+    `case " $* " in *" diff "*) if [ ! -e '${marker}' ]; then : > '${marker}'; printf 'x\\000y' > '${file}'; fi;; esac`,
+    'exit $status',
+  ].join('\n');
+
+  await writeFile(join(directory, 'git'), `${script}\n`, { mode: 0o755 });
+  vi.stubEnv('PATH', `${directory}:${process.env['PATH'] ?? ''}`);
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+};
+
+it('describes the same diff it captures when the working tree changes during the capture', async () => {
+  const root = await committedRepository();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  const target = await pinTarget(root, { kind: 'workingTree', base: 'HEAD' });
+
+  await changeTreeAfterFirstDiff(root);
+
+  const capture = await captureTarget(root, target);
+
+  expect(capture.bytes.toString('utf8')).toContain('+two');
+  expect(capture.gaps).toEqual([]);
+});
+
 it('reports a changed Git link as a gap in a working tree capture', async () => {
   const root = await committedRepository();
 
