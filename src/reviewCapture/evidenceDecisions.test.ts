@@ -130,6 +130,18 @@ it.each([
   },
   {
     importer: 'src/use.ts',
+    text: "const slash = /\\//; const a = require('./a.js');",
+    module: 'src/a.ts',
+    imports: true,
+  },
+  {
+    importer: 'src/use.ts',
+    text: "const slash = /\\//; await import('./a.js');",
+    module: 'src/a.ts',
+    imports: true,
+  },
+  {
+    importer: 'src/use.ts',
     text: "load(); // await import('./a.js');",
     module: 'src/a.ts',
     imports: false,

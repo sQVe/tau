@@ -46,6 +46,8 @@
   show up as callers.
 - Cost: callers are read one line at a time. A string that holds `import('./a.js')`,
   `require('./a.js')`, or a statement such as `; import a from './a.js'` still counts as a caller.
+  So does a trailing comment without whitespace before its `//`, because a regular expression such
+  as `/\//` can end in two slashes.
 
 ## See also
 

@@ -145,7 +145,12 @@ const isCommentLine = (text: string) => /^\s*(?:\/\/|\/\*|\*)/.test(text);
 
 const isQuote = (character: string) => character === '"' || character === "'" || character === '`';
 
-// Cuts the line at a `//` outside a string, where a trailing comment starts.
+// A trailing comment starts with `//` after whitespace. Without the whitespace, the slashes can end
+// a regular expression such as `/\//`, so the line goes on as code.
+const startsComment = (text: string, index: number) =>
+  text.startsWith('//', index) && /\s/.test(text.charAt(index - 1));
+
+// Cuts the line at a trailing comment outside a string.
 const codeBeforeComment = (text: string) => {
   let quote: string | undefined;
 
@@ -153,7 +158,7 @@ const codeBeforeComment = (text: string) => {
     const character = text.charAt(index);
 
     if (quote === undefined) {
-      if (text.startsWith('//', index)) {
+      if (startsComment(text, index)) {
         return text.slice(0, index);
       }
 
