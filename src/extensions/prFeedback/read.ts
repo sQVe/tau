@@ -12,7 +12,7 @@ import {
   conversationComments,
   rejectLongThreads,
   reviewsWithBody,
-  stateEntries,
+  stateText,
   unresolvedThreads,
 } from './threads.js';
 import type { Comment, Review, Thread } from './threads.js';
@@ -48,9 +48,9 @@ export const readFeedback = async (
 
   const feedback = { viewer, threads: threadNodes, reviews: reviewItems, comments: commentItems };
 
-  const stateToken = createHash('sha256')
-    .update(JSON.stringify(stateEntries(feedback)))
-    .digest('hex');
+  const { host, owner, name } = repository;
+  const text = stateText(`${host}/${owner}/${name}#${pr}`, feedback);
+  const token = createHash('sha256').update(text).digest('hex');
 
   return {
     viewer,
@@ -63,6 +63,6 @@ export const readFeedback = async (
     threads: unresolvedThreads(feedback),
     reviews: reviewsWithBody(feedback),
     comments: conversationComments(feedback),
-    stateToken,
+    stateToken: token,
   };
 };

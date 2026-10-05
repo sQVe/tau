@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { stateEntries } from './threads.js';
+import { stateEntries, stateText } from './threads.js';
 import type {
   Feedback,
   GraphqlAuthor,
@@ -168,4 +168,15 @@ it.each([
   const changed = JSON.stringify(stateEntries(after)) !== JSON.stringify(stateEntries(base));
 
   expect(changed).toBe(changes);
+});
+
+it.each([
+  { other: 'github.com/sQVe/tau#8', differs: true },
+  { other: 'github.com/sQVe/other#7', differs: true },
+  { other: 'ghe.example.com/sQVe/tau#7', differs: true },
+  { other: 'github.com/sQVe/tau#7', differs: false },
+])('the state of $other differs from github.com/sQVe/tau#7: $differs', ({ other, differs }) => {
+  const changed = stateText(other, base) !== stateText('github.com/sQVe/tau#7', base);
+
+  expect(changed).toBe(differs);
 });

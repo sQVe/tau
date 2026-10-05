@@ -197,6 +197,29 @@ describe('post refusals', () => {
     expect(await readPosted(details.directory)).toBeUndefined();
   });
 
+  it('posts nothing when pull-request.json names another pull request', async () => {
+    const { fake, read, post } = await setUp();
+
+    fake.threads = [botThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-bot', 'Added.')],
+      comment: null,
+    });
+
+    await writeFile(
+      join(details.directory, 'pull-request.json'),
+      JSON.stringify({ version: 1, repository: 'github.com/sQVe/tau', pr: 8 }),
+    );
+
+    await expect(post(details)).rejects.toThrow(/read again/u);
+    expect(fake.writes).toEqual([]);
+    expect(await readPosted(details.directory)).toBeUndefined();
+  });
+
   it('posts nothing when the head moved', async () => {
     const { fake, read, post } = await setUp();
 

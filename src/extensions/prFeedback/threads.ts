@@ -214,3 +214,8 @@ export const stateEntries = (feedback: Feedback): StateEntry[] => {
     .map(({ kind, source }) => toStateEntry(kind, source))
     .toSorted(compareEntries);
 };
+
+// The text the state token hashes. It names the pull request, so a token from one pull request
+// never matches another.
+export const stateText = (pullRequest: string, feedback: Feedback): string =>
+  JSON.stringify({ pullRequest, entries: stateEntries(feedback) });
