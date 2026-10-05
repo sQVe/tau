@@ -1,4 +1,4 @@
-import { access, constants, readFile } from 'node:fs/promises';
+import { access, constants, lstat, readFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
@@ -81,9 +81,19 @@ const isBinary = (bytes: Buffer) => bytes.includes(0);
 const textRead = (bytes: Buffer): FileRead =>
   isBinary(bytes) ? { kind: 'binary' } : { kind: 'text', text: bytes.toString('utf8') };
 
+// A link can point outside the checkout, and a FIFO would block the read, so only a regular file
+// is read, and the read refuses a link put in its place after the check.
 const readWorkingFile = async (root: string, path: string): Promise<FileRead> => {
+  const file = join(root, path);
+
   try {
-    return textRead(await readFile(join(root, path)));
+    const entry = await lstat(file);
+
+    if (!entry.isFile()) {
+      return { kind: 'unreadable' };
+    }
+
+    return textRead(await readFile(file, { flag: constants.O_RDONLY | constants.O_NOFOLLOW }));
   } catch (error) {
     return isMissingFile(error) ? { kind: 'absent' } : { kind: 'unreadable' };
   }

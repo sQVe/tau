@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -147,6 +147,27 @@ it('finds callers outside test files and the module itself in a working tree tar
       text: "import { add } from './math.js';",
     },
   ]);
+});
+
+it('does not read a sibling test that links outside the repository', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const outside = await mkdtemp(join(tmpdir(), 'tau-review-outside-'));
+  onTestFinished(() => rm(outside, { recursive: true, force: true }));
+
+  const base = await commit(root, { 'src/math.ts': sourceFiles['src/math.ts'] }, 'first');
+
+  await writeFile(join(outside, 'secret.ts'), 'secret\n');
+  await symlink(join(outside, 'secret.ts'), join(root, 'src/math.test.ts'));
+
+  await writeFiles(root, {
+    'src/math.ts': 'export const add = (a: number, b: number) => b + a;\n',
+  });
+
+  const directory = await savedCapture(root, { kind: 'files', paths: ['src/math.ts'], base });
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.tests).toEqual([]);
+  expect(evidence.gaps).toContainEqual({ kind: 'unreadable', path: 'src/math.test.ts' });
 });
 
 it('writes nothing to the review directory except the freshness recapture', async () => {
