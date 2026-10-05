@@ -383,8 +383,10 @@ it('reports a cut list and a cut body as gaps', async () => {
     paths: 2,
     testFiles: 5,
     bodyLines: 1,
+    bodyCharacters: 1000,
     callersPerModule: 5,
     callers: 5,
+    callerLineCharacters: 1000,
     namedPaths: 5,
   };
 
@@ -397,7 +399,48 @@ it('reports a cut list and a cut body as gaps', async () => {
   expect(evidence.gaps).toContainEqual({
     kind: 'truncatedBody',
     path: 'src/math.test.ts',
+    limit: 'lines',
     kept: 1,
     total: 3,
+  });
+});
+
+it('cuts a test body and a caller line at their character limits', async () => {
+  const { root, from, to } = await rangeRepository();
+  const directory = await savedCapture(root, { kind: 'range', from, to });
+
+  const limits = {
+    paths: 5,
+    testFiles: 5,
+    bodyLines: 5,
+    bodyCharacters: 10,
+    callersPerModule: 5,
+    callers: 5,
+    callerLineCharacters: 6,
+    namedPaths: 5,
+  };
+
+  const evidence = await readReviewEvidence(root, directory, limits);
+
+  expect(evidence.tests).toEqual([
+    { path: 'src/math.test.ts', lines: [{ line: 1, text: 'import { a' }] },
+  ]);
+
+  expect(evidence.callers.map((caller) => caller.text)).toEqual(['import']);
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'truncatedBody',
+    path: 'src/math.test.ts',
+    limit: 'characters',
+    kept: 1,
+    total: 3,
+  });
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'truncatedLine',
+    path: 'src/use.ts',
+    line: 1,
+    kept: 6,
+    total: 32,
   });
 });

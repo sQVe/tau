@@ -11,7 +11,14 @@ export type EvidenceGap =
   | { kind: 'incompleteCapture'; reasons: string[] }
   | { kind: 'evidenceMismatch'; recordedHash: string; evidenceHash: string }
   | { kind: 'truncatedList'; list: EvidenceList; path?: string; kept: number; total: number }
-  | { kind: 'truncatedBody'; path: string; kept: number; total: number }
+  | {
+      kind: 'truncatedBody';
+      path: string;
+      limit: 'lines' | 'characters';
+      kept: number;
+      total: number;
+    }
+  | { kind: 'truncatedLine'; path: string; line: number; kept: number; total: number }
   | { kind: 'absent'; path: string }
   | { kind: 'missing'; path: string; section: NamedSection }
   | { kind: 'unsearched'; path: string; reason: string }
@@ -21,9 +28,16 @@ export interface EvidenceLimits {
   paths: number;
   testFiles: number;
   bodyLines: number;
+  bodyCharacters: number;
   callersPerModule: number;
   callers: number;
+  callerLineCharacters: number;
   namedPaths: number;
+}
+
+export interface BodyLimits {
+  lines: number;
+  characters: number;
 }
 
 export interface NumberedLine {
@@ -55,8 +69,10 @@ export const defaultEvidenceLimits: EvidenceLimits = {
   paths: 500,
   testFiles: 30,
   bodyLines: 400,
+  bodyCharacters: 40_000,
   callersPerModule: 20,
   callers: 200,
+  callerLineCharacters: 500,
   namedPaths: 50,
 };
 
@@ -206,19 +222,55 @@ export const boundList = <T>(
   return { items: items.slice(0, limit), gaps: [gap] };
 };
 
+// Keeps whole lines until the character budget runs out, then the start of the line that
+// crosses it.
+const cutAtCharacters = (lines: readonly string[], characters: number) => {
+  const kept: string[] = [];
+  let remaining = characters;
+
+  for (const line of lines) {
+    if (line.length > remaining) {
+      const start = line.slice(0, remaining);
+
+      return { kept: start === '' ? kept : [...kept, start], cut: true };
+    }
+
+    kept.push(line);
+    remaining -= line.length;
+  }
+
+  return { kept, cut: false };
+};
+
 export const numberedBody = (
   path: string,
   text: string,
-  limit: number,
+  limits: BodyLimits,
 ): { lines: NumberedLine[]; gaps: EvidenceGap[] } => {
   const withoutFinalNewline = text.endsWith('\n') ? text.slice(0, -1) : text;
   const all = withoutFinalNewline === '' ? [] : withoutFinalNewline.split('\n');
-  const lines = all.slice(0, limit).map((line, index) => ({ line: index + 1, text: line }));
+  const { kept, cut } = cutAtCharacters(all.slice(0, limits.lines), limits.characters);
+  const lines = kept.map((line, index) => ({ line: index + 1, text: line }));
+  const truncated = { kind: 'truncatedBody' as const, path, kept: kept.length, total: all.length };
 
-  const gaps: EvidenceGap[] =
-    all.length > limit ? [{ kind: 'truncatedBody', path, kept: limit, total: all.length }] : [];
+  if (cut) {
+    return { lines, gaps: [{ ...truncated, limit: 'characters' }] };
+  }
 
-  return { lines, gaps };
+  return { lines, gaps: all.length > limits.lines ? [{ ...truncated, limit: 'lines' }] : [] };
+};
+
+export const callerText = (
+  { path, line, text }: GrepMatch,
+  limit: number,
+): { text: string; gaps: EvidenceGap[] } => {
+  if (text.length <= limit) {
+    return { text, gaps: [] };
+  }
+
+  const gap: EvidenceGap = { kind: 'truncatedLine', path, line, kept: limit, total: text.length };
+
+  return { text: text.slice(0, limit), gaps: [gap] };
 };
 
 const lineNumber = /^[1-9]\d*$/;

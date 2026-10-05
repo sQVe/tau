@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 
 import {
   boundList,
+  callerText,
   freshnessGaps,
   importPattern,
   importsModule,
@@ -134,19 +135,50 @@ it.each([
 });
 
 it.each([
-  { text: 'one\ntwo\n', limit: 5, lines: ['one', 'two'], gaps: [] },
-  { text: '', limit: 5, lines: [], gaps: [] },
+  { text: 'one\ntwo\n', limit: { lines: 5, characters: 50 }, lines: ['one', 'two'], gaps: [] },
+  { text: '', limit: { lines: 5, characters: 50 }, lines: [], gaps: [] },
   {
     text: 'one\ntwo\nthree',
-    limit: 2,
+    limit: { lines: 2, characters: 50 },
     lines: ['one', 'two'],
-    gaps: [{ kind: 'truncatedBody', path: 'a.test.ts', kept: 2, total: 3 }],
+    gaps: [{ kind: 'truncatedBody', path: 'a.test.ts', limit: 'lines', kept: 2, total: 3 }],
+  },
+  { text: 'one\n\ntwo', limit: { lines: 5, characters: 6 }, lines: ['one', '', 'two'], gaps: [] },
+  {
+    text: 'one\ntwo\nthree',
+    limit: { lines: 5, characters: 5 },
+    lines: ['one', 'tw'],
+    gaps: [{ kind: 'truncatedBody', path: 'a.test.ts', limit: 'characters', kept: 2, total: 3 }],
+  },
+  {
+    text: 'x'.repeat(100),
+    limit: { lines: 5, characters: 4 },
+    lines: ['xxxx'],
+    gaps: [{ kind: 'truncatedBody', path: 'a.test.ts', limit: 'characters', kept: 1, total: 1 }],
+  },
+  {
+    text: 'one\ntwo\nthree',
+    limit: { lines: 1, characters: 2 },
+    lines: ['on'],
+    gaps: [{ kind: 'truncatedBody', path: 'a.test.ts', limit: 'characters', kept: 1, total: 3 }],
   },
 ])('numbers the body $text with limit $limit', ({ text, limit, lines, gaps }) => {
   expect(numberedBody('a.test.ts', text, limit)).toEqual({
     lines: lines.map((line, index) => ({ line: index + 1, text: line })),
     gaps,
   });
+});
+
+it.each([
+  { text: 'import a', limit: 8, kept: 'import a', gaps: [] },
+  {
+    text: 'import a from',
+    limit: 8,
+    kept: 'import a',
+    gaps: [{ kind: 'truncatedLine', path: 'src/use.ts', line: 3, kept: 8, total: 13 }],
+  },
+])('bounds the caller text $text to $limit characters', ({ text, limit, kept, gaps }) => {
+  expect(callerText({ path: 'src/use.ts', line: 3, text }, limit)).toEqual({ text: kept, gaps });
 });
 
 const fresh = { status: 'fresh' as const, reasons: [] };

@@ -5,6 +5,7 @@ import { errorMessage, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
 import {
   boundList,
+  callerText,
   defaultEvidenceLimits,
   freshnessGaps,
   importPattern,
@@ -130,7 +131,8 @@ const readTestBody = async (
   const read = await readSourceFile(root, revision, path);
 
   if (read.kind === 'text') {
-    const { lines, gaps } = numberedBody(path, read.text, limits.bodyLines);
+    const bodyLimits = { lines: limits.bodyLines, characters: limits.bodyCharacters };
+    const { lines, gaps } = numberedBody(path, read.text, bodyLimits);
 
     return { items: [{ path, lines }], gaps };
   }
@@ -209,12 +211,23 @@ const findModuleCallers = async (
 
   const callers = found.matches
     .filter((match) => isCaller(match.path, module))
-    .filter((match) => importsModule(match.path, match.text, module))
-    .map(({ path, line, text }) => ({ module, path, line, text }));
+    .filter((match) => importsModule(match.path, match.text, module));
 
   const bounded = boundList(callers, limits.callersPerModule, { list: 'callers', path: module });
 
-  return { items: bounded.items, gaps: [...searchGaps(module, found.warning), ...bounded.gaps] };
+  const cut = bounded.items.map((match) => ({
+    match,
+    ...callerText(match, limits.callerLineCharacters),
+  }));
+
+  return {
+    items: cut.map(({ match: { path, line }, text }) => ({ module, path, line, text })),
+    gaps: [
+      ...searchGaps(module, found.warning),
+      ...cut.flatMap((caller) => caller.gaps),
+      ...bounded.gaps,
+    ],
+  };
 };
 
 const findCallers = async (
