@@ -170,6 +170,38 @@ it('does not read a sibling test that links outside the repository', async () =>
   expect(evidence.gaps).toContainEqual({ kind: 'unreadable', path: 'src/math.test.ts' });
 });
 
+const linkedDirectoryRepository = async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const outside = await mkdtemp(join(tmpdir(), 'tau-review-outside-'));
+  onTestFinished(() => rm(outside, { recursive: true, force: true }));
+
+  const base = await commit(root, { 'src/a.test.ts': 'tracked\n' }, 'first');
+
+  await writeFile(join(outside, 'a.test.ts'), 'secret\n');
+  await rm(join(root, 'src'), { recursive: true });
+  await symlink(outside, join(root, 'src'));
+
+  return { root, base };
+};
+
+it.each([
+  {
+    kind: 'files',
+    target: (base: string) => ({ kind: 'files' as const, paths: ['src/a.test.ts'], base }),
+  },
+  { kind: 'workingTree', target: (base: string) => ({ kind: 'workingTree' as const, base }) },
+])(
+  'does not read a $kind test through a directory that links outside the repository',
+  async ({ target }) => {
+    const { root, base } = await linkedDirectoryRepository();
+    const directory = await savedCapture(root, target(base));
+    const evidence = await readReviewEvidence(root, directory);
+
+    expect(evidence.tests).toEqual([]);
+    expect(evidence.gaps).toContainEqual({ kind: 'unreadable', path: 'src/a.test.ts' });
+  },
+);
+
 it('writes nothing to the review directory except the freshness recapture', async () => {
   const { root, from, to } = await rangeRepository();
   const directory = await savedCapture(root, { kind: 'range', from, to });
