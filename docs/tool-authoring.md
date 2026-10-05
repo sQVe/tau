@@ -28,9 +28,11 @@ A skill's tool owns the mechanics. The skill keeps the judgment.
 Writes:
 
 - [ ] The tool asks with `ctx.ui.confirm` before a write outside the worktree, such as a Linear
-      ticket, a GitHub change, or a file outside the checkout.
+      ticket, a GitHub change, or a file outside the checkout. A write to a GitHub bot needs no
+      confirm; see [ADR 0086](./adr/0086-post-to-github-bots-without-a-confirm.md).
 - [ ] The confirm shows the exact writes the tool will make, so the user sees what they approve.
-- [ ] The tool writes nothing when the user declines or when the session has no UI.
+- [ ] When a call has a write that needs a confirm, the tool writes nothing if the user declines or
+      the session has no UI.
 - [ ] A retry applies only the writes that are missing, and identifies each one by a saved ID, not
       by a title.
 - [ ] A partial failure reports what was applied and what was not.

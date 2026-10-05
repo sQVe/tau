@@ -37,9 +37,8 @@ see for themselves.
     conflicts without fixing them. Resolve only threads the viewer started.
 - A request to draft only, investigate only, or approve first limits this skill. Follow it.
 - Show drafts to the user before you post to a person, and ask with `ask_user_question`. Post to a
-  bot directly. The author is a bot only when GitHub says so: `__typename` `Bot` in GraphQL, or
-  `user.type` `Bot` in REST. A thread with any comment from a person is a person's thread. In author
-  mode on a PR the viewer did not write, show every draft.
+  bot directly. The `pr_feedback` tool decides who is a bot and which writes go to a person. In
+  author mode on a PR the viewer did not write, show every draft.
 - Commit with the [commit skill](../commit/SKILL.md). Rebase and force-push only as steps 2 and 7
   say. Run every stack command through the [stack skill](../stack/SKILL.md).
 - Never rerun a check, or add retries, skips, or longer timeouts, to make a failure pass.
@@ -50,9 +49,10 @@ see for themselves.
 1. Resolve the target.
    - Take the PR from the request. Otherwise, when the stack skill finds the current branch in a
      stack, read each open PR's `mergeable`, checks, threads, review summaries, and conversation
-     comments with the commands below and in step 3. List the PRs with a conflict, failing checks,
-     or comments that step 3 keeps, and ask which to handle with `ask_user_question`. Otherwise use
-     `gh pr view --json number` on the current branch. Ask when nothing gives a PR.
+     comments with the commands below and the `pr_feedback` tool as in step 3. List the PRs with a
+     conflict, failing checks, or comments that step 3 keeps, and ask which to handle with
+     `ask_user_question`. Otherwise use `gh pr view --json number` on the current branch. Ask when
+     nothing gives a PR.
    - Run `gh auth status --active --hostname <host>` and stop if it fails. Use
      `<host>/<owner>/<name>` as `<repo>`, and pass `--hostname <host>` to every `gh api` call.
    - Read the viewer with `gh api user --hostname <host> --jq .login`, and the PR with
@@ -77,14 +77,10 @@ see for themselves.
      files with `git show <headRefOid>:<path>`.
 
 3. Collect the comments.
-   - Threads:
-     `gh api graphql --hostname <host> --paginate -F owner=<owner> -F name=<name> -F number=<pr> -F query=@<skill dir>/threads.graphql`.
-     Keep unresolved threads. When a thread's `comments.pageInfo.hasNextPage` is true, stop and
-     report that the thread is too long to read in full.
-   - Review summaries:
-     `gh api --hostname <host> --paginate repos/<owner>/<name>/pulls/<pr>/reviews`. Conversation
-     comments: `gh api --hostname <host> --paginate repos/<owner>/<name>/issues/<pr>/comments`. Skip
-     bot walkthroughs, link comments, and summaries that hold no findings.
+   - Call the `pr_feedback` tool with `read` for the threads, review summaries, and conversation
+     comments. Keep its result for steps 8 and 9. If it fails, stop and report. If its `headRefOid`
+     differs from step 1's, stop and report that the PR moved, since step 2 pinned the older head.
+   - Skip bot walkthroughs, link comments, and summaries that hold no findings.
    - Read what we already posted, and judge whether each thread or comment still needs something
      from us. It does not when our reply settled it and the reviewer has not pushed back. It does
      again when the reviewer answered, or when our reply promised a fix that is not in the code.
@@ -144,26 +140,24 @@ see for themselves.
    - Otherwise push with `git push <remote> HEAD:refs/heads/<headRefName>`.
    - If the push or the lease is rejected, stop and report.
 
-8. Draft the replies with the rules in Replies below. Show all drafts for people in one
+8. Draft the replies with the rules in Replies below. In author mode, answer findings from review
+   summaries and conversation comments in one PR comment that links each source comment. Show all
+   drafts for people, or every draft in author mode on a PR the viewer did not write, in one
    `ask_user_question` question, with options to post all or skip all. The user types which drafts
-   to edit or skip. A skipped thread stays open.
+   to edit or skip. A skipped thread stays open. Write the approved drafts and the resolves from
+   step 9 to `replies.json` in the directory that step 3's `read` returned.
 
-9. Post and resolve.
-   - Read `headRefOid` and every source from step 3 again. Stop and report if the head moved other
-     than by your push, or if a person added, edited, or deleted a comment since step 3. Bot replies
-     and threads marked outdated by your push do not stop the round.
-   - Reply to a thread with
-     `gh api --hostname <host> -X POST repos/<owner>/<name>/pulls/<pr>/comments/<databaseId>/replies -f body=<text>`,
-     using the `databaseId` of its first comment. When `viewerCanReply` is false, report the thread
-     instead of replying.
-   - Resolve a thread that is fixed, declined, or tracked, or that reviewer mode marked to resolve,
-     with
-     `gh api graphql --hostname <host> -f query='mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }' -F id=<thread id>`.
-     Leave a thread open when it holds an answered question or the reviewer owns the next step. When
-     `viewerCanResolve` is false, reply and report that you could not resolve it.
-   - Author mode: answer findings from review summaries and conversation comments in one PR comment
-     with `gh pr comment <pr> --repo <repo> --body <text>`. Link each source comment.
-   - If a post fails, stop and report which replies were posted.
+9. Post and resolve with the `pr_feedback` tool's `post`. Pass the PR's head after step 7's push as
+   `head`, or `headRefOid` from step 3 when the round did not push.
+   - Resolve a thread that is fixed, declined, or tracked, or that reviewer mode marked to resolve.
+     Leave a thread open when it holds an answered question or the reviewer owns the next step.
+   - When `viewerCanReply` is false, report the thread instead of replying. When `viewerCanResolve`
+     is false, reply and report that you could not resolve it.
+   - When a person changed a comment since step 3, read again, redo steps 3, 4, and 8 for what
+     changed, and post with the new result. When the head moved other than by your push, stop and
+     report.
+   - When the user declines, post nothing and report the drafts. If a post fails, stop and report
+     which replies were posted.
 
 10. Report.
     - Author mode: use the headings Fixed, Not worth changing, Incorrect, and Blocked from the

@@ -1,8 +1,8 @@
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import type { Exec } from '../../exec.js';
 import type { LinearChild, LinearContainer } from './writes.js';
 
 export interface CreatedIssue {
@@ -10,8 +10,6 @@ export interface CreatedIssue {
   identifier: string;
   url: string;
 }
-
-export type Exec = Pick<ExtensionAPI, 'exec'>['exec'];
 
 interface ApiResponse {
   label: string;

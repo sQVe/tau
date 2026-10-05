@@ -7,11 +7,11 @@ import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
 import { isMissingFile } from '../../errors.js';
+import type { Exec } from '../../exec.js';
 import { readGitOutput } from '../../gitOutput.js';
 import { checkTauDirectory, ensureTauDirectory } from '../../tauDirectory.js';
 import { applySlicePlan } from './apply.js';
 import { readPlan, rejectLinkedDraftFiles } from './draft.js';
-import type { Exec } from './linear.js';
 import { readState, slicesPath } from './state.js';
 import type { Runtime } from './state.js';
 import { describeWrite } from './writes.js';
