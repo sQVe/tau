@@ -2,6 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
+import { isNestedControlCall, nestedControlCallReason } from '../../controlTools.js';
 import { appendToolGuidelines } from '../../systemPrompt.js';
 import { questionDialog } from './dialog.js';
 import type { DialogResult } from './dialog.js';
@@ -128,8 +129,17 @@ const responseText = (result: DialogResult | undefined) => {
 export default function askUserQuestionExtension(pi: ExtensionAPI): void {
   appendToolGuidelines(pi, 'ask_user_question', promptGuidelines);
 
+  pi.on('tool_call', (event) => {
+    if (event.toolName !== 'ask_user_question' || !isNestedControlCall(event)) {
+      return undefined;
+    }
+
+    return { block: true, reason: nestedControlCallReason };
+  });
+
   pi.registerTool({
     name: 'ask_user_question',
+    exposure: 'model-only',
     label: 'Ask User Question',
     description: toolDescription,
     promptSnippet:
