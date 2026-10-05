@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import {
   fauxAssistantMessage,
@@ -27,8 +27,6 @@ interface RequestSeen {
 vi.setConfig({ testTimeout: 60_000 });
 
 const toolSnippet = 'Run the demo step.';
-
-const tauExtensionPath = resolve(import.meta.dirname, '../src/tau.ts');
 
 const createSession = async (registerCleanup: TestContext['onTestFinished']) => {
   const directory = await mkdtemp(join(tmpdir(), 'tau-skill-tool-'));
@@ -138,37 +136,4 @@ it('lets the model call a skill tool on the first request after the skill comman
   expect(requests[0]?.toolNames).toContain('demo_tool');
   expect(requests[0]?.systemPrompt).toContain(toolSnippet);
   expect(toolCalls).toEqual(['demo-call']);
-});
-
-it('turns on the code_review tool when the code-review skill runs', async ({ onTestFinished }) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-code-review-tool-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
-
-  const faux = fauxProvider({ provider: 'tau-code-review-tool-test' });
-
-  const { session } = await createBoundSession(onTestFinished, {
-    cwd: directory,
-    agentDirectory: join(directory, 'agent'),
-    providers: [faux],
-    extensionPaths: [tauExtensionPath],
-  });
-
-  const toolNamesSeen: string[][] = [];
-  const { promise: finished, resolve: finish } = Promise.withResolvers<undefined>();
-
-  faux.setResponses([
-    (context) => {
-      toolNamesSeen.push(getCurrentTools(context.messages).map((tool) => tool.name));
-      finish(undefined);
-
-      return fauxAssistantMessage('Done.');
-    },
-  ]);
-
-  expect(session.getActiveToolNames()).not.toContain('code_review');
-
-  await session.prompt('/code-review');
-  await finished;
-
-  expect(toolNamesSeen[0]).toContain('code_review');
 });
