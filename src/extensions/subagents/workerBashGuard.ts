@@ -27,7 +27,12 @@ const capBashOutput = async (event: ToolResultEvent) => {
   const path = await saveFullOutput(text);
   const marker = `[${cut} of ${text.length} characters cut. Command exited with code 0. Full output: ${path}]`;
 
-  return { content: [{ type: 'text' as const, text: `${head}\n\n${marker}\n\n${tail}` }] };
+  return {
+    content: [{ type: 'text' as const, text: `${head}\n\n${marker}\n\n${tail}` }],
+    ...(event.structuredContent === undefined
+      ? {}
+      : { structuredContent: event.structuredContent }),
+  };
 };
 
 export default function workerBashGuard(pi: ExtensionAPI): void {
