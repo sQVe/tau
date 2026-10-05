@@ -29,8 +29,9 @@ Tau has one review tool, `code_review`. It prepares a review directory, captures
 capture record, and checks whether the capture is still fresh.
 
 - Review stays in the `code-review` skill. Findings stay advisory.
-- The capture record is the only review state. It holds the pinned target and the capture hash, so
-  freshness can compare them with the checkout.
+- The review directory holds the captured input, the capture record, and the freshness recapture.
+  The record holds the pinned target and the capture hash, so freshness can compare them with the
+  checkout.
 - The tool does not register candidates, bind verdicts to workers, or prove a verdict.
 
 ## Tradeoffs
