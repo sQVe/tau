@@ -1,5 +1,5 @@
 ---
-'tau': patch
+'tau': minor
 ---
 
 `tracker` gathers duplicate candidates, parent routing, and label IDs with one read-only `codemode`
