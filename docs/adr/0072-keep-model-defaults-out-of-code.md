@@ -1,43 +1,33 @@
 # ADR 0072: Keep model defaults out of code
 
-- Status: Accepted; the `bulk_read` section superseded by
-  [ADR 0087](./0087-gather-evidence-with-codemode.md)
-- Date: 2026-09-30
-- Supersedes: [ADR 0027](./0027-share-one-delegate-model.md),
-  [ADR 0044](./0044-restore-gpt-5-6-luna-as-the-delegate-default.md), and the built-in worker model
-  in [ADR 0071](./0071-set-worker-models-in-the-user-config.md)
+**Date**: 2026-09-30\
+**Status**: Accepted; the `bulk_read` section superseded by
+[ADR 0087 (Gather evidence with codemode)](./0087-gather-evidence-with-codemode.md)\
+**Supersedes**: [ADR 0027 (Share one delegate model across bounded tool tasks)](./0027-share-one-delegate-model.md),
+[ADR 0044 (Restore gpt-5.6-luna as the delegate default)](./0044-restore-gpt-5-6-luna-as-the-delegate-default.md),
+and the built-in worker model in
+[ADR 0071 (Set worker models in the user config)](./0071-set-worker-models-in-the-user-config.md)\
+**Related**: [ADR 0063 (Narrow allowed models from the user file to the repository file)](./0063-narrow-allowed-models-from-user-to-repository.md)
 
 ## Context
 
-- Tau named two models in code: `claude-bridge/claude-opus-5-5` for workers without a configured
-  model, and `openai-codex/gpt-5.6-luna` for `bulk_read` and web answers. Each assumes one user's
-  providers and subscriptions, so another user gets refusals or spends quota they did not choose.
-- The model for `bulk_read` and web answers was set with `TAU_DELEGATE_MODEL`, apart from the other
-  model settings in `tau.json`. "Delegate" was an internal word that did not say what it controlled.
-- `pi-web-access` already reads its own default answer model from `fetch.answerProvider` and
-  `fetch.answerModel` in `web-search.json`. Tau set `answerModel` on every call only to apply its
-  own default.
+Tau named two models in code: `claude-bridge/claude-opus-5-5` for workers without a configured
+model, and `openai-codex/gpt-5.6-luna` for `bulk_read` and web answers. Each assumes one user's
+providers and subscriptions, so another user gets refusals or spends quota they did not choose.
 
-## Options considered
+The model for `bulk_read` and web answers was set with `TAU_DELEGATE_MODEL`, apart from the other
+model settings in `tau.json`. "Delegate" was an internal word that did not say what it controlled.
 
-- Keep the defaults and let config override them. Rejected: Tau would still work out of the box only
-  for users with the same providers.
-- Fall back to the parent session's model. Rejected:
-  [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md) keeps workers off the parent's
-  runtime settings.
-- One shared key for helper tasks, such as `smallModel`. Rejected: it names a model size, not a job,
-  and Tau would keep choosing web answer models for another package.
-- One `models` block for every model setting, or user-named aliases. Rejected: both move settings
-  away from the consumer that owns them, and aliases add a lookup close to the tiers ADR 0071
-  deferred.
-- A key per tool, owned by that tool, and web answers left to `pi-web-access`. Chosen: each name
-  says what it controls, and it follows the per-consumer keys in
-  [ADR 0061](./0061-layer-tau-config-from-user-and-repository-files.md).
+`pi-web-access` already reads its own default answer model from `fetch.answerProvider` and
+`fetch.answerModel` in `web-search.json`. Tau set `answerModel` on every call only to apply its own
+default.
 
 ## Decision
 
 Tau's code names no model. Every model Tau uses comes from a launch or call argument, or from the
-user's `<agentDir>/tau.json`.
+user's `<agentDir>/tau.json`. Each tool owns a key for its model, and web answers are left to
+`pi-web-access`. Each name then says what it controls, and it follows the per-consumer keys in
+[ADR 0061](./0061-layer-tau-config-from-user-and-repository-files.md).
 
 ### Workers
 
@@ -58,21 +48,45 @@ apply. `TAU_DELEGATE_MODEL` is removed.
 Tau no longer sets `answerModel`. `pi-web-access` uses its own `fetch.answerModel` setting, or an
 `answerModel` the caller passes. Tau still refuses a passed `answerModel` outside `allowedModels`.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Tau makes no provider assumption, so another user configures only the models they have.
 - Each setting's name says what it controls, and each tool can add settings under its own key.
-- Cost: a new user must write `tau.json` before workers or `bulk_read` run. The errors name the key
-  to set.
-- Cost: web answer models are set in `pi-web-access`'s own file. Without that setting,
-  `pi-web-access` answers with the session model.
-- Cost: `allowedModels` no longer covers `pi-web-access`'s configured answer model, only one passed
-  per call. Tau's refusal of a router model standing in for an unavailable native model also covers
-  only a passed model. `pi-web-access` may route its configured model, limited to Pi's scoped
-  models.
-- Cost: `bulk_read` and web answers no longer share one setting, so switching both means editing two
+
+### Negative
+
+- A new user must write `tau.json` before workers or `bulk_read` run. The errors name the key to
+  set.
+- Web answer models are set in `pi-web-access`'s own file. Without that setting, `pi-web-access`
+  answers with the session model.
+- `allowedModels` no longer covers `pi-web-access`'s configured answer model, only one passed per
+  call. Tau's refusal of a router model standing in for an unavailable native model also covers only
+  a passed model. `pi-web-access` may route its configured model, limited to Pi's scoped models.
+- `bulk_read` and web answers no longer share one setting, so switching both means editing two
   files.
 
-## See also
+## Alternatives considered
 
-- [ADR 0063: Narrow allowed models from the user file to the repository file](./0063-narrow-allowed-models-from-user-to-repository.md)
+### Defaults with config overrides
+
+Keep the defaults and let config override them. Rejected because Tau would still work out of the box
+only for users with the same providers.
+
+### Parent session's model
+
+Fall back to the parent session's model. Rejected because
+[ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md) keeps workers off the parent's
+runtime settings.
+
+### One shared key for helper tasks
+
+Use one shared key for helper tasks, such as `smallModel`. Rejected because it names a model size,
+not a job, and Tau would keep choosing web answer models for another package.
+
+### One `models` block or aliases
+
+Use one `models` block for every model setting, or user-named aliases. Rejected because both move
+settings away from the consumer that owns them, and aliases add a lookup close to the tiers ADR 0071
+deferred.

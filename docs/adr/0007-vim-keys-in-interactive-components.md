@@ -1,7 +1,9 @@
 # ADR 0007: Vim keys in interactive components
 
-- Status: Accepted
-- Date: 2026-09-08
+**Date**: 2026-09-08\
+**Status**: Accepted\
+**Related**: [ADR 0001 (Application structure)](./0001-application-structure.md),
+[ADR 0003 (Stability of externally observable identifiers)](./0003-externally-observable-identifiers.md)
 
 [ADR 0024](./0024-commit-without-human-approval.md) removed the commit overlay and its tests. The
 `SelectList` adapter described below was removed with the follow-up cleanup. Those details record
@@ -9,31 +11,21 @@ the original decision; the navigation rule still applies to remaining components
 
 ## Context
 
-- Tau draws two interactive components: the snippet menu with its preview pane, and the commit
-  overlay with its choice list and comment review report.
-- Each component read its own keys, and moved on arrow keys, `home`, and `end` only. With no rule,
-  each new component invented its own keys.
-- An extension can read Pi's bindings but cannot register a binding that Pi lists in help or lets
-  users rebind.
-- Pi's `SelectList` reads input itself and keeps `selectedIndex` private. It has no binding for
-  jumping to either end.
+Tau draws two interactive components: the snippet menu with its preview pane, and the commit overlay
+with its choice list and comment review report. Each component read its own keys, and moved on arrow
+keys, `home`, and `end` only. With no rule, each new component invented its own keys.
 
-## Options considered
+An extension can read Pi's bindings but cannot register a binding that Pi lists in help or lets
+users rebind.
 
-- Leave each component to choose its keys. Rejected: it costs nothing now, but keys become less
-  consistent as components are added.
-- Ask users to rebind Pi's own bindings, such as `tui.select.up`, in their settings. Rejected: this
-  covers Pi's components but not the parts of Tau that read input directly. Every user must repeat
-  the same configuration.
-- Read Pi's bindings and follow whatever the user set. Rejected: Tau then matches Pi, but arrow keys
-  stay the default. Users must configure vim keys themselves.
-- Carry the keys in Tau and apply them to every component. Chosen: every component gets the same
-  keys, and users configure nothing.
+Pi's `SelectList` reads input itself and keeps `selectedIndex` private. It has no binding for
+jumping to either end.
 
 ## Decision
 
 Every interactive component in Tau accepts vim navigation keys, alongside the keys it already
-accepted.
+accepted. Tau carries the keys and applies them to every component, so every component gets the same
+keys, and users configure nothing.
 
 ### The bindings
 
@@ -76,19 +68,37 @@ No half-page scrolling on `ctrl+d` and `ctrl+u`: `ctrl+d` is Pi's exit binding. 
 single letter that aborts a commit is too easy to press by accident, and `esc` already cancels
 everywhere. Both could be added, but familiarity alone is not enough reason.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - One rule covers every component Tau draws now and every component it adds later.
 - Users get vim keys without configuring anything.
-- Cost: the bindings do not appear in Pi's help and users cannot rebind them. Pi accepts no new
-  binding identifiers from an extension. A user who wants different keys has to change Tau.
-- Cost: action letters compete with navigation letters, and navigation wins. Moving `k` to `x`
-  changed a shortcut that users had already learned.
-- Cost: driving `SelectList` through rewritten input depends on the escape sequences it reads. A Pi
+
+### Negative
+
+- The bindings do not appear in Pi's help and users cannot rebind them. Pi accepts no new binding
+  identifiers from an extension. A user who wants different keys has to change Tau.
+- Action letters compete with navigation letters, and navigation wins. Moving `k` to `x` changed a
+  shortcut that users had already learned.
+- Driving `SelectList` through rewritten input depends on the escape sequences it reads. A Pi
   release that changes them breaks navigation without an error. The original overlay tests covered
   this.
 
-## See also
+## Alternatives considered
 
-- [ADR-0001: Application structure](./0001-application-structure.md)
-- [ADR-0003: Stability of externally observable identifiers](./0003-externally-observable-identifiers.md)
+### Each component chooses its keys
+
+Leave each component to choose its keys. Rejected because, although it costs nothing now, keys
+become less consistent as components are added.
+
+### Users rebind Pi's bindings
+
+Ask users to rebind Pi's own bindings, such as `tui.select.up`, in their settings. Rejected because
+this covers Pi's components but not the parts of Tau that read input directly. Every user must
+repeat the same configuration.
+
+### Follow Pi's bindings
+
+Read Pi's bindings and follow whatever the user set. Rejected because, although Tau then matches Pi,
+arrow keys stay the default. Users must configure vim keys themselves.

@@ -1,30 +1,29 @@
 # ADR 0013: Snippet placement
 
-- Status: Superseded by [ADR 0080](./0080-insert-prompt-snippets-through-autocomplete.md)
-- Date: 2026-09-10
+**Date**: 2026-09-10\
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0080 (Insert prompt snippets through autocomplete)](./0080-insert-prompt-snippets-through-autocomplete.md)\
+**Related**:
+[ADR 0009 (Prompt snippets)](./0009-prompt-snippets.md),
+[ADR 0010 (Documentation scope)](./0010-documentation-scope.md),
+[ADR 0080 (Insert prompt snippets through autocomplete)](./0080-insert-prompt-snippets-through-autocomplete.md)
 
 ## Context
 
-- [ADR 0009](./0009-prompt-snippets.md) gave snippets a `placement` field and a default, but said
-  nothing about how to choose a value.
-- Each snippet author picked a placement by feel. Two snippets with the same kind of instruction
-  ended up on opposite sides of the user's message.
-- Nothing recorded what placement does and does not do, so authors could read it as a way to make an
-  instruction stronger.
+[ADR 0009](./0009-prompt-snippets.md) gave snippets a `placement` field and a default, but said
+nothing about how to choose a value. Each snippet author picked a placement by feel. Two snippets
+with the same kind of instruction ended up on opposite sides of the user's message.
 
-## Options considered
-
-- Leave the choice to the author. Rejected: it needs no rule, but the set keeps drifting as snippets
-  are added.
-- Sort by snippet age or by the order the author wants the model to work in. Rejected: it is easy to
-  apply, but the model does not run the instructions in order, so the grouping tells the reader
-  nothing.
-- Choose by the snippet's main purpose. Chosen: it puts instructions of the same kind together and
-  gives a new author a rule to follow.
+Nothing recorded what placement does and does not do, so authors could read it as a way to make an
+instruction stronger.
 
 ## Decision
 
-Choose placement by the snippet's main purpose.
+Choose placement by the snippet's main purpose. This puts instructions of the same kind together and
+gives a new author a rule to follow.
+
+### Placement rules
 
 - **Prepend** sets how to approach the work: gather context, clarify the request, question
   assumptions, or verify claims.
@@ -37,16 +36,28 @@ Placement groups instructions of the same kind so the message reads as one reque
 enforce execution order and does not give an instruction extra authority. State safety boundaries in
 the snippet text, whatever the placement.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - A new snippet has a rule to follow instead of a judgment call.
 - Related instructions sit together, so the assembled message reads in one voice.
-- Cost: a snippet that fits both groups needs the author to name a main purpose, and reasonable
-  authors can disagree.
-- Cost: the rule is prose. Nothing in the code rejects a snippet placed against it.
 
-## See also
+### Negative
 
-- [ADR-0009: Prompt snippets](./0009-prompt-snippets.md)
-- [ADR-0010: Documentation scope](./0010-documentation-scope.md)
-- [ADR 0080: Insert prompt snippets through autocomplete](./0080-insert-prompt-snippets-through-autocomplete.md)
+- A snippet that fits both groups needs the author to name a main purpose, and reasonable authors
+  can disagree.
+- The rule is prose. Nothing in the code rejects a snippet placed against it.
+
+## Alternatives considered
+
+### Author's choice
+
+Leave the choice to the author. Rejected because, although it needs no rule, the set keeps drifting
+as snippets are added.
+
+### Snippet age or work order
+
+Sort by snippet age or by the order the author wants the model to work in. Rejected because,
+although it is easy to apply, the model does not run the instructions in order, so the grouping
+tells the reader nothing.

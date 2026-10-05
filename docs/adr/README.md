@@ -14,11 +14,13 @@ Follow the [writing instructions](../../src/instructions/writing.md) and
 If the answers only restate what the code does, do not write an ADR. Code and tests hold behavior. A
 feature change does not require a new document.
 
-Use a title that names the choice, and state that choice at the start of the Decision section. An
-ADR is not a feature summary, implementation plan, or acceptance checklist.
+Use a title that names the choice, and state that choice in the first sentence of the Decision
+section. Give each rejected or deferred alternative its own heading under Alternatives considered.
+An ADR is not a feature summary, implementation plan, or acceptance checklist.
 
 A new ADR is Accepted. Merging its PR is the approval, so there is no Proposed stage. When a later
-decision replaces it, change its status to Superseded with a link to the replacement.
+decision replaces it, keep its reasoning, change its status to Superseded, and add a Superseded by
+line that links to the replacement.
 
 ## Index
 

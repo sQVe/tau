@@ -1,41 +1,34 @@
 # ADR 0080: Insert prompt snippets through autocomplete
 
-- Status: Accepted
-- Date: 2026-10-01
-- Supersedes: the toggling rules, the `placement` field, and the reading of snippets before each
-  send in [ADR 0009](./0009-prompt-snippets.md), and [ADR 0013](./0013-snippet-placement.md)
+**Date**: 2026-10-01\
+**Status**: Accepted\
+**Supersedes**: the toggling rules, the `placement` field, and the reading of snippets before each
+send in [ADR 0009 (Prompt snippets)](./0009-prompt-snippets.md), and
+[ADR 0013 (Snippet placement)](./0013-snippet-placement.md)\
+**Related**: [ADR 0009 (Prompt snippets)](./0009-prompt-snippets.md),
+[ADR 0013 (Snippet placement)](./0013-snippet-placement.md)
 
 ## Context
 
-- Turning on a snippet took a menu and many key presses for each message.
-- Pi adds the editor text to history before extensions change the sent text. A snippet that Tau adds
-  on send is missing when the user recalls the prompt.
-- A resumed session fills history from the stored messages, so any difference between the typed and
-  the sent text shows up again after `/resume`, a fork, or `/reload`.
-- Each snippet had a `placement` that put its body before or after the whole message, far from where
-  the user chose it.
-- The autocomplete list shows only a snippet's id, name, and description, so the user cannot see
-  what a pick inserts.
-- pi-tui's editor does not expose the selected autocomplete item. It reports only whether the list
-  is open.
+Turning on a snippet took a menu and many key presses for each message.
 
-## Options considered
+Pi adds the editor text to history before extensions change the sent text. A snippet that Tau adds
+on send is missing when the user recalls the prompt. A resumed session fills history from the stored
+messages, so any difference between the typed and the sent text shows up again after `/resume`, a
+fork, or `/reload`.
 
-- Keep the toggle menu and add faster keys. Rejected: the snippet choice still lives outside the
-  text, so history loses it.
-- Type each snippet as a `#token` and replace the token with the body on send. Rejected: history
-  needs saved session entries and a wrapped editor to show the typed tokens, and Tau must refill
-  history after `/resume`, a fork, and `/reload` by copying Pi's rules. The editor also does not
-  show what the model receives.
-- Pick a snippet from autocomplete after `#` and put its body in the editor. Chosen: the editor
-  shows exactly what Pi sends, so Pi's own history is correct without any hidden state.
-- Update the preview after each key press. Rejected: suggestions arrive later, so the preview misses
-  the first list and each list that changes while the user types.
+Each snippet had a `placement` that put its body before or after the whole message, far from where
+the user chose it.
+
+The autocomplete list shows only a snippet's id, name, and description, so the user cannot see what
+a pick inserts. pi-tui's editor does not expose the selected autocomplete item. It reports only
+whether the list is open.
 
 ## Decision
 
 The user types `#` and picks a snippet from the autocomplete list. Tau replaces the `#query` with
-the snippet body. Tau does not change the text on send. Snippets have no `placement` field.
+the snippet body. Tau does not change the text on send. Snippets have no `placement` field. The
+editor then shows exactly what Pi sends, so Pi's own history is correct without any hidden state.
 
 ### Autocomplete
 
@@ -67,7 +60,9 @@ the snippet body. Tau does not change the text on send. Snippets have no `placem
   after the cursor on that line moves below the body, after one blank line.
 - The cursor ends after the body.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - What the editor shows is what Pi sends and what history recalls, also after `/resume`, a fork, or
   `/reload`.
@@ -76,18 +71,35 @@ the snippet body. Tau does not change the text on send. Snippets have no `placem
 - Tau keeps no session entries or send handler for snippets.
 - The `ctrl+q` shortcut and the `/snippets` command are gone, so no terminal key binding can hide
   snippets.
-- Cost: long snippet text fills the preview, the editor, and each history entry.
-- Cost: a hand-typed `#id` stays plain text. Only a pick from the list inserts a snippet.
-- Cost: a snippet edited on disk applies only after the next session start or `/reload`.
-- Cost: Tau copies Pi's token boundary because pi-tui does not export it. A change in Pi can make
-  them differ.
-- Cost: the preview reads a private pi-tui field. If Pi renames it, the preview stays empty, and a
-  test against the real editor fails.
-- Cost: Pi does not copy history into a replacement editor. After `/resume`, a fork, or `/reload`,
-  Tau refills it from the user messages in Pi's order. A change in how Pi fills history can make
-  them differ.
 
-## See also
+### Negative
 
-- [ADR 0009: Prompt snippets](./0009-prompt-snippets.md)
-- [ADR 0013: Snippet placement](./0013-snippet-placement.md)
+- Long snippet text fills the preview, the editor, and each history entry.
+- A hand-typed `#id` stays plain text. Only a pick from the list inserts a snippet.
+- A snippet edited on disk applies only after the next session start or `/reload`.
+- Tau copies Pi's token boundary because pi-tui does not export it. A change in Pi can make them
+  differ.
+- The preview reads a private pi-tui field. If Pi renames it, the preview stays empty, and a test
+  against the real editor fails.
+- Pi does not copy history into a replacement editor. After `/resume`, a fork, or `/reload`, Tau
+  refills it from the user messages in Pi's order. A change in how Pi fills history can make them
+  differ.
+
+## Alternatives considered
+
+### Toggle menu with faster keys
+
+Keep the toggle menu and add faster keys. Rejected because the snippet choice still lives outside
+the text, so history loses it.
+
+### `#token` replaced on send
+
+Type each snippet as a `#token` and replace the token with the body on send. Rejected because
+history needs saved session entries and a wrapped editor to show the typed tokens, and Tau must
+refill history after `/resume`, a fork, and `/reload` by copying Pi's rules. The editor also does
+not show what the model receives.
+
+### Preview updated on each key press
+
+Update the preview after each key press. Rejected because suggestions arrive later, so the preview
+misses the first list and each list that changes while the user types.

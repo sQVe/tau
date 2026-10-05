@@ -1,9 +1,9 @@
 # ADR 0026: Let Git hooks own commit checks
 
-- Status: Accepted; comment-review rules superseded by
-  [ADR 0038](./0038-block-commits-only-on-comment-inaccuracies.md), then removed by
-  [ADR 0042](./0042-remove-commit-comment-review.md)
-- Date: 2026-09-15
+**Date**: 2026-09-15\
+**Status**: Accepted; comment-review rules superseded by
+[ADR 0038 (Block commits only on comment inaccuracies)](./0038-block-commits-only-on-comment-inaccuracies.md),
+then removed by [ADR 0042 (Remove commit comment review)](./0042-remove-commit-comment-review.md)
 
 ## Context
 
@@ -11,18 +11,13 @@ Git hooks already express repository commit policy. Undoing successful hook rewr
 hooks require another commit call. Unlimited comment-review retries could repeat findings without
 progress.
 
-## Options considered
-
-- Reject hook rewrites to preserve the reviewed tree. Rejected: this treats successful formatting as
-  failure and requires changing history after Git succeeds.
-- Accept hook changes and report them. Chosen: this preserves Git's result without a second check
-  policy.
-- Leave review retries unlimited. Rejected: this allows corrections but risks automatic loops.
-
 ## Decision
 
-Let installed Git hooks own commit checks and the final content and message. Never bypass hooks, run
-separate project or message checks, or read commit configuration from `tau.json`.
+Let installed Git hooks own commit checks and the final content and message. Accepting hook changes
+and reporting them preserves Git's result without a second check policy.
+
+Never bypass hooks, run separate project or message checks, or read commit configuration from
+`tau.json`.
 
 Keep and report successful hook rewrites and added paths, even if later reporting fails. Never undo
 successful commits. Stop the batch when a group has no staged changes, rather than invoking hooks on
@@ -44,13 +39,27 @@ This supersedes [ADR 0015](./0015-explicit-repository-commit-commands.md),
 [ADR 0025](./0025-use-git-hooks-without-preparation.md). Only that ADR's hook-rewrite restrictions
 and deferred review limits change; its staging and preparation-removal decisions remain in force.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Repository owners maintain one check policy for Tau and human commits.
 - Successful hook changes stay committed; bounded review retries prevent automatic loops.
-- Cost: trusted hooks can commit unreviewed changes, including paths the request denylist would
-  reject.
-- Cost: hooks see unrelated working edits. Concurrent staging of the same requested paths is
-  unsupported.
-- Cost: review limits are session-local and bounded, not restrictions on manual Git use or new
-  sessions.
+
+### Negative
+
+- Trusted hooks can commit unreviewed changes, including paths the request denylist would reject.
+- Hooks see unrelated working edits. Concurrent staging of the same requested paths is unsupported.
+- Review limits are session-local and bounded, not restrictions on manual Git use or new sessions.
+
+## Alternatives considered
+
+### Reject hook rewrites
+
+Reject hook rewrites to preserve the reviewed tree. Rejected because this treats successful
+formatting as failure and requires changing history after Git succeeds.
+
+### Unlimited review retries
+
+Leave review retries unlimited. Rejected because, although this allows corrections, it risks
+automatic loops.

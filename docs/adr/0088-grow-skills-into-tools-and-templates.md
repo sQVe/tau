@@ -1,30 +1,26 @@
 # ADR 0088: Grow skills into tools and templates
 
-- Status: Accepted
-- Date: 2026-10-05
-- Supersedes: the body structure and growth path in [ADR 0004](./0004-skill-authoring-style.md)
+**Date**: 2026-10-05\
+**Status**: Accepted\
+**Supersedes**: the body structure and growth path in
+[ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md)\
+**Related**: [ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md),
+[Skill authoring guide](../skill-authoring.md), [Tool authoring guide](../tool-authoring.md)
 
 ## Context
 
-- ADR 0004 allowed a `## Principles` section and let a large skill grow into scripts.
-- `tests/skillFiles.test.ts` rejects body headings outside five sections and new shell blocks with
-  more than one command. It lists the existing exceptions by name.
-- Shell in a skill has no tests, and each copy drifts on its own.
-- A body or preview shape written inline in a skill mixes the shape the user sees with the steps
-  that produce it.
+ADR 0004 allowed a `## Principles` section and let a large skill grow into scripts.
+`tests/skillFiles.test.ts` rejects body headings outside five sections and new shell blocks with
+more than one command. It lists the existing exceptions by name.
 
-## Options considered
-
-- Keep ADR 0004's body structure and growth path. Rejected: the checks and the
-  [skill authoring guide](../skill-authoring.md) already reject both, so the ADR would contradict
-  them.
-- Move command mechanics into tested Tau tools and body or preview shapes into template files.
-  Chosen: tests cover the mechanics, and the skill keeps only judgment and order.
+Shell in a skill has no tests, and each copy drifts on its own. A body or preview shape written
+inline in a skill mixes the shape the user sees with the steps that produce it.
 
 ## Decision
 
 A skill body uses only the sections it needs from a fixed set. A skill grows by moving mechanics
-into tested tools and shapes into templates, not into scripts.
+into tested tools and shapes into templates, not into scripts. Tests then cover the mechanics, and
+the skill keeps only judgment and order.
 
 ### Body structure
 
@@ -42,15 +38,22 @@ into tested tools and shapes into templates, not into scripts.
 - A step may give one command with its arguments. A shell block with several commands, conditions,
   or safety checks becomes a tool instead.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Tests cover command mechanics that skills used to hold as shell.
 - The skill reads as judgment and steps, and templates show the output shape in one place.
-- Cost: a new tool takes more work than a shell block in the skill.
-- Cost: a skill that needs advice outside the five headings must fit it into `Hard rules` or a step.
 
-## See also
+### Negative
 
-- [ADR 0004: Skill authoring style](./0004-skill-authoring-style.md)
-- [Skill authoring guide](../skill-authoring.md)
-- [Tool authoring guide](../tool-authoring.md)
+- A new tool takes more work than a shell block in the skill.
+- A skill that needs advice outside the five headings must fit it into `Hard rules` or a step.
+
+## Alternatives considered
+
+### Keep ADR 0004's structure
+
+Keep ADR 0004's body structure and growth path. Rejected because the checks and the
+[skill authoring guide](../skill-authoring.md) already reject both, so the ADR would contradict
+them.

@@ -1,7 +1,9 @@
 # ADR 0040: Release undispatched follow-up claims after confirmed cleanup
 
-- Status: Superseded by [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
-- Date: 2026-09-23
+**Date**: 2026-09-23\
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0043 (Own only the worker guarantees herdr lacks)](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 
 ## Context
 
@@ -9,20 +11,15 @@ A failed start can leave no worker and still consume the predecessor's only foll
 that claim cannot prevent duplicate work when the parent never dispatched the assignment. A start
 error alone does not prove absence: the worker may have launched before the response failed.
 
-## Options considered
-
-- Keep every claim permanently. Rejected: this avoids reclaim races but blocks conversations after
-  confirmed pre-dispatch failures.
-- Release claims after a start error or a timeout. Rejected: neither proves that the worker stopped.
-- Release the owning controller's claim after confirmed cleanup, only without dispatch, acceptance,
-  or report evidence. Chosen: this permits retries without treating uncertain delivery as rejection.
-
 ## Decision
 
 Allow the owning controller to release a follow-up claim after confirmed cleanup when no assignment
-was dispatched, accepted, or reported. Preserve the failed task and its cleanup evidence. Do not
-release another attempt's claim or reclaim by age. A new attempt must pass native-session and
-live-writer validation again.
+was dispatched, accepted, or reported. Releasing only the owning controller's claim, only after
+confirmed cleanup and only without dispatch, acceptance, or report evidence, permits retries without
+treating uncertain delivery as rejection.
+
+Preserve the failed task and its cleanup evidence. Do not release another attempt's claim or reclaim
+by age. A new attempt must pass native-session and live-writer validation again.
 
 This replaces the permanent-claim rule in
 [ADR 0030](./0030-claim-native-follow-ups-before-opening.md) for this bounded case. Keep pre-opening
@@ -32,9 +29,26 @@ A structured `agent_pane_busy` rejection may be retried once within the original
 after verifying an unchanged bare shell and no agent. Record the retry before sending it. This is
 not permission to retry an uncertain start response.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Confirmed pre-dispatch failures do not permanently block a conversation.
 - Uncertain cleanup and dispatched assignments still retain their claims.
-- Cost: old unconfirmed tasks still need manual investigation. Missing evidence is not proof of
-  absence, and this decision does not authorize rewriting their cleanup records.
+
+### Negative
+
+- Old unconfirmed tasks still need manual investigation. Missing evidence is not proof of absence,
+  and this decision does not authorize rewriting their cleanup records.
+
+## Alternatives considered
+
+### Keep every claim permanently
+
+Keep every claim permanently. Rejected because, although this avoids reclaim races, it blocks
+conversations after confirmed pre-dispatch failures.
+
+### Release after a start error or timeout
+
+Release claims after a start error or a timeout. Rejected because neither proves that the worker
+stopped.

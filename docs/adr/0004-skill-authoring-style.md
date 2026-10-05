@@ -1,36 +1,34 @@
 # ADR 0004: Skill authoring style
 
-- Status: Accepted; skill location superseded by [ADR 0079](./0079-grow-modules-from-flat-files.md);
-  body structure and growth path superseded by
-  [ADR 0088](./0088-grow-skills-into-tools-and-templates.md)
-- Date: 2026-04-10
+**Date**: 2026-04-10\
+**Status**: Accepted; skill location superseded by
+[ADR 0079 (Grow modules from flat files)](./0079-grow-modules-from-flat-files.md); body structure
+and growth path superseded by
+[ADR 0088 (Grow skills into tools and templates)](./0088-grow-skills-into-tools-and-templates.md)\
+**Related**: [ADR 0001 (Application structure)](./0001-application-structure.md),
+[ADR 0003 (Stability of externally observable identifiers)](./0003-externally-observable-identifiers.md),
+[ADR 0079 (Grow modules from flat files)](./0079-grow-modules-from-flat-files.md),
+[ADR 0083 (Turn on skill tools when the skill runs, and confirm outside writes)](./0083-turn-on-skill-tools-when-the-skill-runs-and-confirm-outside-writes.md),
+[ADR 0088 (Grow skills into tools and templates)](./0088-grow-skills-into-tools-and-templates.md)
 
 ## Context
 
-- Tau ships Pi skills from `skills/` at the package root but has no shared writing rules for them.
-- Pi implements the Agent Skills standard and allows any structure in the SKILL.md body.
-- Without shared rules:
-  - some skills read like prose and others like command instructions.
-  - contributors import Claude Code or Codex conventions Pi does not require.
-  - skills send the model to repository documents instead of stating the rule a step needs.
-  - vague descriptions make it harder for Pi to choose a skill.
+Tau ships Pi skills from `skills/` at the package root but has no shared writing rules for them. Pi
+implements the Agent Skills standard and allows any structure in the SKILL.md body.
 
-## Options considered
-
-- Let each author choose the format. Rejected: it allows more freedom but makes skills less
-  consistent.
-- Use XML-like tags such as `<skill_overview>` and `<critical_rules>`. Rejected: they are familiar
-  from Claude Code skills, but not part of Pi's format.
-- Use Markdown. Chosen: it reads well as plain text and matches Pi's format.
-- Keep rules only in ADRs and link to them from skills. Rejected: the model had to leave the step to
-  find the rule in a record written for maintainers, and the user kept removing those links.
-- State each rule a step needs in the skill. Chosen: the model acts on the rule where it reads it.
+Without shared rules, some skills read like prose and others like command instructions. Contributors
+import Claude Code or Codex conventions Pi does not require. Skills send the model to repository
+documents instead of stating the rule a step needs. Vague descriptions make it harder for Pi to
+choose a skill.
 
 ## Decision
 
 Write Tau skills in Markdown using Pi's skill format. Start from the
 [skill template](../skill-template.md) and check the skill against the
 [skill authoring guide](../skill-authoring.md).
+
+Markdown reads well as plain text and matches Pi's format. Each skill states the rules its steps
+need, so the model acts on a rule where it reads it.
 
 ### Required shape
 
@@ -83,20 +81,34 @@ Use principles and checklists for advice. Use numbered steps for a procedure.
 When a skill outgrows one file, keep `SKILL.md` as the entry point and move details into nearby
 reference files, scripts, or other files. Use relative links so the agent can load them when needed.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Tau skills match Pi's format.
 - Skills stay easy to read, review, and edit.
 - Descriptions help Pi choose the right skill.
 - The model reads each rule where it acts on it.
-- Cost: a rule that changes must be updated in every skill that states it.
-- Cost: contributors used to Claude Code may expect custom tags.
-- Cost: authors used to XML-like tags must learn the Markdown section names.
 
-## See also
+### Negative
 
-- [ADR-0001: Application structure](./0001-application-structure.md)
-- [ADR-0003: Externally observable identifiers](./0003-externally-observable-identifiers.md)
-- [ADR 0079: Grow modules from flat files](./0079-grow-modules-from-flat-files.md)
-- [ADR 0083: Turn on skill tools when the skill runs, and confirm outside writes](./0083-turn-on-skill-tools-when-the-skill-runs-and-confirm-outside-writes.md)
-- [ADR 0088: Grow skills into tools and templates](./0088-grow-skills-into-tools-and-templates.md)
+- A rule that changes must be updated in every skill that states it.
+- Contributors used to Claude Code may expect custom tags.
+- Authors used to XML-like tags must learn the Markdown section names.
+
+## Alternatives considered
+
+### Author's choice of format
+
+Let each author choose the format. Rejected because, although it allows more freedom, it makes
+skills less consistent.
+
+### XML-like tags
+
+Use XML-like tags such as `<skill_overview>` and `<critical_rules>`. Rejected because, although they
+are familiar from Claude Code skills, they are not part of Pi's format.
+
+### Rules only in ADRs
+
+Keep rules only in ADRs and link to them from skills. Rejected because the model had to leave the
+step to find the rule in a record written for maintainers, and the user kept removing those links.

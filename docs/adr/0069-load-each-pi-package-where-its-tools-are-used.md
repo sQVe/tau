@@ -1,34 +1,28 @@
 # ADR 0069: Load each Pi package where its tools are used
 
-- Status: Accepted
-- Date: 2026-09-29
+**Date**: 2026-09-29\
+**Status**: Accepted\
+**Related**: [ADR 0067 (Give workers only their profile's tools and skills)](./0067-give-workers-only-their-profile-tools-and-skills.md),
+[ADR 0028 (Keep worker control in the parent)](./0028-keep-worker-control-in-the-parent.md)
 
 ## Context
 
-- A session sends the tools, guidelines, and skills of every package it loads on every request.
-- Workers load the parent's settings and narrow them to their profile
-  ([ADR 0067](./0067-give-workers-only-their-profile-tools-and-skills.md)). So the parent must load
-  every package any profile needs, and it grows with each new profile.
-- The parent rarely uses some of these packages. The image and browser packages appeared in few
-  saved parent sessions, yet took about a fifth of every parent request.
-- Pi can load a package for one run with `-e <source>`, including its skills.
-- Tau bundles `cc-safety-net` and `pi-web-access` because its own code depends on them.
+A session sends the tools, guidelines, and skills of every package it loads on every request.
+Workers load the parent's settings and narrow them to their profile
+([ADR 0067](./0067-give-workers-only-their-profile-tools-and-skills.md)). So the parent must load
+every package any profile needs, and it grows with each new profile.
 
-## Options considered
+The parent rarely uses some of these packages. The image and browser packages appeared in few saved
+parent sessions, yet took about a fifth of every parent request.
 
-- Keep loading every package in the parent's settings, and narrow workers with profile allowlists.
-  Rejected: the parent pays for every profile's tools, used or not.
-- Deactivate unused tools in the parent with `setActiveTools`. Rejected: an extension can activate
-  its tool again, as the questionnaire does, and the parent still lists the package's skills.
-- Filter a rarely used package out of the user's settings. Rejected: the parent stops paying, but no
-  profile can use the package either.
-- Let a profile name the packages its workers need, and load them only in those workers. Chosen: a
-  profile's packages stay out of the parent's prompt, and each profile keeps the packages it needs.
+Pi can load a package for one run with `-e <source>`, including its skills. Tau bundles
+`cc-safety-net` and `pi-web-access` because its own code depends on them.
 
 ## Decision
 
 Load a Pi package in the session that uses its tools: Tau's bundle, the user's settings, or a worker
-profile.
+profile. When a profile names the packages its workers need and only those workers load them, a
+profile's packages stay out of the parent's prompt, and each profile keeps the packages it needs.
 
 ### Where a package belongs
 
@@ -55,18 +49,35 @@ profile.
   user's settings.
 - When the cost sits in a package's own prompt text, file an issue with that package.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - A new profile adds no package tools or skills to the parent's prompt. It still adds its name and
   description to the `subagent` tool.
 - The user keeps control of the packages the parent loads, and Tau works without them.
-- Cost: the parent cannot call a profile's tools directly. It must start a worker for that work.
-- Cost: a profile gets every tool and skill of the packages it names. Its tool allowlist narrows the
+
+### Negative
+
+- The parent cannot call a profile's tools directly. It must start a worker for that work.
+- A profile gets every tool and skill of the packages it names. Its tool allowlist narrows the
   tools, but not the skills.
-- Cost: a worker launch fails when a named package cannot be installed or loaded.
-- Cost: Pi keeps an unpinned npm package at the version it first cached. Pin a version to update it.
+- A worker launch fails when a named package cannot be installed or loaded.
+- Pi keeps an unpinned npm package at the version it first cached. Pin a version to update it.
 
-## See also
+## Alternatives considered
 
-- [ADR 0067: Give workers only their profile's tools and skills](./0067-give-workers-only-their-profile-tools-and-skills.md)
-- [ADR 0028: Keep worker control in the parent](./0028-keep-worker-control-in-the-parent.md)
+### Load every package in the parent
+
+Keep loading every package in the parent's settings, and narrow workers with profile allowlists.
+Rejected because the parent pays for every profile's tools, used or not.
+
+### Deactivate unused tools in the parent
+
+Deactivate unused tools in the parent with `setActiveTools`. Rejected because an extension can
+activate its tool again, as the questionnaire does, and the parent still lists the package's skills.
+
+### Filter the package out of the user's settings
+
+Filter a rarely used package out of the user's settings. Rejected because, although the parent stops
+paying, no profile can use the package either.

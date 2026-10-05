@@ -1,24 +1,26 @@
 # ADR 0012: Shared TDD state
 
-- Status: Superseded by [ADR 0023](./0023-advisory-tdd-observations.md)
-- Date: 2026-09-10
+**Date**: 2026-09-10\
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0023 (Use advisory TDD observations instead of edit permissions)](./0023-advisory-tdd-observations.md)\
+**Related**:
+[ADR 0001 (Application structure)](./0001-application-structure.md),
+[ADR 0010 (Documentation scope)](./0010-documentation-scope.md)
 
 ## Context
 
 Several Pi sessions can use one worktree. An evidence cache can retain permission after another
 session turns the gate on. A stale writer can also erase another session's evidence or gate switch.
 
-## Options considered
-
-- Keep per-session caches. Rejected: they cannot reliably reflect changes from other processes.
-- Use only an in-process queue. Rejected: it cannot protect state shared by separate Pi processes.
-- Read disk state for each decision and lock read-modify-write operations across processes. Chosen:
-  this keeps one source of truth without adding a database or lock service.
-
 ## Decision
 
-Use disk state as the source of truth. Use the canonical worktree path for state and evidence.
-Permission and status use the same gate-off conditions. Protected paths remain blocked.
+Use disk state as the source of truth, read it for each decision, and lock read-modify-write
+operations across processes. This keeps one source of truth without adding a database or lock
+service.
+
+Use the canonical worktree path for state and evidence. Permission and status use the same gate-off
+conditions. Protected paths remain blocked.
 
 Use an exclusive directory lock for state updates. Run tests outside the lock so gate switches can
 finish during long runs, but read the resulting state inside it: callers correlate the returned
@@ -34,10 +36,15 @@ Bound lock waits and report failures. Never remove a lock because of its age: th
 paused rather than dead. Recovery from an abandoned lock requires stopping other Tau sessions before
 removing it. Reject symlinked state paths.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Sessions no longer retain stale permission or overwrite unrelated state from another session.
 - Reads do not write evidence or wait for a state lock.
+
+### Negative
+
 - A process crash can leave a lock that needs manual removal.
 - Holding the read inside the lock hashes the worktree twice per run, so the lock wait is set well
   above that cost rather than risking a timeout that discards a finished test run.
@@ -45,7 +52,13 @@ removing it. Reject symlinked state paths.
   the worktree with updated processes.
 - The file-tool guard still cannot prevent changes made through bash or external programs.
 
-## See also
+## Alternatives considered
 
-- [ADR 0001: Application structure](./0001-application-structure.md)
-- [ADR 0010: Documentation scope](./0010-documentation-scope.md)
+### Per-session caches
+
+Keep per-session caches. Rejected because they cannot reliably reflect changes from other processes.
+
+### In-process queue
+
+Use only an in-process queue. Rejected because it cannot protect state shared by separate Pi
+processes.

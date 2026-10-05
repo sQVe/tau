@@ -1,7 +1,7 @@
 # ADR 0046: Declare types before values, except types derived with `typeof`
 
-- Status: Accepted
-- Date: 2026-09-25
+**Date**: 2026-09-25\
+**Status**: Accepted
 
 ## Context
 
@@ -13,18 +13,6 @@ Some types mirror a value in the same module, such as `Static<typeof schema>` fo
 or `ReturnType<typeof build>`. TypeScript resolves type aliases lazily, so these could move above
 their value and still compile. The value and its type then sit apart.
 
-## Options considered
-
-- Leave placement to review. Rejected: it costs nothing, but placement stays inconsistent.
-- Hoist every type. Rejected: it separates each TypeBox type from its schema.
-- Exempt types built with named helpers such as `Static` or `ReturnType`. Rejected: it needs a list
-  that grows with every new helper and misses `typeof value` alone.
-- Exempt a type that references an exempt type. Rejected: it keeps chains such as
-  `Extract<Task, { version: 1 }>` together, but an interface that only uses a TypeBox type in one
-  field would never move.
-- Exempt a type only when it applies `typeof` to a value declared in the same module. Chosen: it
-  uses the reference itself, so it needs no list.
-
 ## Decision
 
 Declare module-level types and interfaces, exported or not, below the imports and above values. The
@@ -32,13 +20,39 @@ Declare module-level types and interfaces, exported or not, below the imports an
 directly above it.
 
 A type that applies `typeof` to a value declared in the same module is exempt and stays beside that
-value. A type derived only from such a type is not exempt. The rule applies to tests and fixtures as
-well.
+value. This exemption uses the reference itself, so it needs no list. A type derived only from such
+a type is not exempt. The rule applies to tests and fixtures as well.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Types are found at the top of each module.
 - TypeBox types stay beside their schemas without a list of helper names.
-- Cost: a type built from a `typeof`-derived type, such as `NativeTask` from `Task`, moves away from
-  it.
-- Cost: moved types keep their order but are each separated by a blank line.
+
+### Negative
+
+- A type built from a `typeof`-derived type, such as `NativeTask` from `Task`, moves away from it.
+- Moved types keep their order but are each separated by a blank line.
+
+## Alternatives considered
+
+### Leave placement to review
+
+Leave placement to review. Rejected because, although it costs nothing, placement stays
+inconsistent.
+
+### Hoist every type
+
+Hoist every type. Rejected because it separates each TypeBox type from its schema.
+
+### Exempt types built with named helpers
+
+Exempt types built with named helpers such as `Static` or `ReturnType`. Rejected because it needs a
+list that grows with every new helper and misses `typeof value` alone.
+
+### Exempt types that reference an exempt type
+
+Exempt a type that references an exempt type. Rejected because, although it keeps chains such as
+`Extract<Task, { version: 1 }>` together, an interface that only uses a TypeBox type in one field
+would never move.

@@ -1,7 +1,10 @@
 # ADR 0022: Gate the clamped read hint on the remainder
 
-- Status: Superseded by [ADR 0087](./0087-gather-evidence-with-codemode.md)
-- Date: 2026-09-13
+**Date**: 2026-09-13\
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0087 (Gather evidence with codemode)](./0087-gather-evidence-with-codemode.md)\
+**Related**: [ADR 0014 (Delegate model for bulk reads)](./0014-delegate-model-for-bulk-reads.md)
 
 ## Context
 
@@ -14,19 +17,13 @@ Pi's notice already carries the remaining line count, in both its line-count for
 "Showing lines" form. The hook reads only that text, because Pi sets no truncation flag on the
 clamped path and ADR 0014 rejected a second file read.
 
-## Options considered
-
-- Keep the fixed hint. Rejected: every clamped read still points at `bulk_read`, and small
-  remainders keep paying the delegate cost.
-- Have the delegate pick the ranges to return. Deferred: this is a separate excerpt experiment and
-  is out of scope here.
-- Compute the remaining range from the notice and gate the `bulk_read` sentence on the clamp
-  threshold. Chosen: it uses information Pi already gives, with no extra read.
-
 ## Decision
 
 The rewritten hint states the remaining line range and names `bulk_read` only when more than 400
-lines remain.
+lines remain. Computing the remaining range from the notice and gating the `bulk_read` sentence on
+the clamp threshold uses information Pi already gives, with no extra read.
+
+### Hint rules
 
 - Above the threshold, the hint suggests `bulk_read` for questions and a bounded read with `offset`
   and `limit` for edits.
@@ -37,15 +34,28 @@ lines remain.
 
 This replaces the second bullet under "Clamping reads" in ADR 0014. The rest of that ADR stands.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - The model sees the exact remainder and can choose the cheaper continuation.
 - Small remainders avoid a delegate call.
-- Cost: the hint depends on the exact text of Pi's notice. A change to that text in Pi disables the
+
+### Negative
+
+- The hint depends on the exact text of Pi's notice. A change to that text in Pi disables the
   rewrite until the pattern is updated.
-- Cost: a 400-line file with a trailing newline now gets a hint to read one empty line, which is a
-  more precise version of the edge case ADR 0014 accepts.
+- A 400-line file with a trailing newline now gets a hint to read one empty line, which is a more
+  precise version of the edge case ADR 0014 accepts.
 
-## See also
+## Alternatives considered
 
-- [ADR 0014: Delegate model for bulk reads](./0014-delegate-model-for-bulk-reads.md)
+### Fixed hint
+
+Keep the fixed hint. Rejected because every clamped read still points at `bulk_read`, and small
+remainders keep paying the delegate cost.
+
+### Delegate picks the ranges
+
+Have the delegate pick the ranges to return. Deferred because this is a separate excerpt experiment
+and is out of scope here.

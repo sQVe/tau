@@ -1,9 +1,9 @@
 # ADR 0025: Use Git hooks without preparation
 
-- Status: Accepted; hook-rewrite restrictions and deferred review limits superseded by
-  [ADR 0026](./0026-let-git-hooks-own-commit-checks.md); comment review removed by
-  [ADR 0042](./0042-remove-commit-comment-review.md)
-- Date: 2026-09-15
+**Date**: 2026-09-15\
+**Status**: Accepted; hook-rewrite restrictions and deferred review limits superseded by
+[ADR 0026 (Let Git hooks own commit checks)](./0026-let-git-hooks-own-commit-checks.md); comment
+review removed by [ADR 0042 (Remove commit comment review)](./0042-remove-commit-comment-review.md)
 
 ## Context
 
@@ -12,18 +12,14 @@ working edits, and recovery archives. Git hooks already provide a repository-own
 checks. Keeping Tau-run checks while removing recovery would require a temporary replacement for how
 those checks see staged content.
 
-## Options considered
-
-- Remove preparation and recovery first, then remove Tau-run checks. Rejected: this preserves the
-  planned ticket sequence but adds temporary check behavior that the next change would delete.
-- Remove preparation, recovery, and Tau-run checks together. Chosen: Tau uses the real index, and
-  installed Git hooks run checks without a second Tau-specific configuration.
-
 ## Decision
 
-Use installed Git hooks instead of Tau-owned preparation and check commands. Stage requested files
-directly on the real index. Do not copy or hide working files, create recovery archives, or read
-commit policy from `tau.json`.
+Use installed Git hooks instead of Tau-owned preparation and check commands. Preparation, recovery,
+and Tau-run checks are removed together, so Tau uses the real index, and installed Git hooks run
+checks without a second Tau-specific configuration.
+
+Stage requested files directly on the real index. Do not copy or hide working files, create recovery
+archives, or read commit policy from `tau.json`.
 
 Remove the old configuration without compatibility handling. Only the maintainers currently use Tau,
 so these settings do not need a migration layer.
@@ -39,10 +35,23 @@ This supersedes [ADR 0015](./0015-explicit-repository-commit-commands.md),
 rules in [ADR 0024](./0024-commit-without-human-approval.md), which already superseded
 [ADR 0017](./0017-preparation-addition-assignment.md).
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Repository owners maintain one commit-check path for Tau and human commits.
 - Tau no longer needs backup and restoration rules for work it hides or changes before review.
-- Cost: hooks see the current checkout, including unrelated working edits.
-- Cost: formatting must happen before the call or through hooks. A hook that changes committed
-  content still requires inspection and a new call under the retained guards.
+
+### Negative
+
+- Hooks see the current checkout, including unrelated working edits.
+- Formatting must happen before the call or through hooks. A hook that changes committed content
+  still requires inspection and a new call under the retained guards.
+
+## Alternatives considered
+
+### Remove preparation and recovery first
+
+Remove preparation and recovery first, then remove Tau-run checks. Rejected because, although this
+preserves the planned ticket sequence, it adds temporary check behavior that the next change would
+delete.

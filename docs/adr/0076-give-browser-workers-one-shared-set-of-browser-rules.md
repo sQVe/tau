@@ -1,35 +1,33 @@
 # ADR 0076: Give browser workers one shared set of browser rules
 
-- Status: Accepted
-- Date: 2026-10-01
-- Supersedes: the set names, `qa` sets, and delivery order in
-  [ADR 0068](./0068-load-only-the-instruction-sets-each-worker-profile-needs.md)
+**Date**: 2026-10-01\
+**Status**: Accepted\
+**Supersedes**: the set names, `qa` sets, and delivery order in
+[ADR 0068 (Load only the instruction sets each worker profile needs)](./0068-load-only-the-instruction-sets-each-worker-profile-needs.md)\
+**Related**:
+[ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
+[ADR 0068 (Load only the instruction sets each worker profile needs)](./0068-load-only-the-instruction-sets-each-worker-profile-needs.md),
+[ADR 0069 (Load each Pi package where its tools are used)](./0069-load-each-pi-package-where-its-tools-are-used.md),
+[Vision](../vision.md)
 
 ## Context
 
-- The user signs in to sites once in an agent-only Chrome profile. The browser package opens a copy
-  of that profile, but only for automatic sessions without an explicit profile.
-- Agents used fresh sessions, passed their own profile folders, or signed in inside the browser. A
-  login inside the agent browser never reaches the Chrome profile it copied, so other and later
-  workers did not get it, and the user signed in again and again.
-- Browser work other than QA had no profile, so the manager used the browser itself, and nothing
-  told any agent how to keep the configured profile.
-- The rules apply to every profile that uses the browser, and the manager should not pay for them on
-  each turn.
+The user signs in to sites once in an agent-only Chrome profile. The browser package opens a copy of
+that profile, but only for automatic sessions without an explicit profile.
 
-## Options considered
+Agents used fresh sessions, passed their own profile folders, or signed in inside the browser. A
+login inside the agent browser never reaches the Chrome profile it copied, so other and later
+workers did not get it, and the user signed in again and again.
 
-- Copy the rules into each profile body that uses the browser. Rejected: the copies drift apart.
-- Put the rules in a skill. Rejected: a worker loads a skill only when it decides to, and the rules
-  must apply from the first browser call.
-- Add a `browser` instruction set that profiles opt into with `instruction-sets:`. Chosen: the rules
-  live in one file, only workers that name the set receive them, and a follow-up keeps them.
-- Add the rules to the default sets. Rejected: profiles without the browser would pay for them on
-  every turn.
+Browser work other than QA had no profile, so the manager used the browser itself, and nothing told
+any agent how to keep the configured profile. The rules apply to every profile that uses the
+browser, and the manager should not pay for them on each turn.
 
 ## Decision
 
-Browser work runs in workers that load the `browser` instruction set, not in the manager.
+Browser work runs in workers that load the `browser` instruction set, not in the manager. Profiles
+opt into the set with `instruction-sets:`, so the rules live in one file, only workers that name the
+set receive them, and a follow-up keeps them.
 
 ### Profiles
 
@@ -61,21 +59,35 @@ Browser work runs in workers that load the `browser` instruction set, not in the
   saved. Tasks saved in earlier formats get `writing`, `coding`, and `workflow`, which is what they
   had.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Each worker is its own root Pi session, so it gets its own browser and a fresh copy of the
   profile. Tau does not set `PI_SUBAGENT_ROOT_SESSION_ID`. If workers shared the manager's root,
   they would share one browser, and "sign in, then start a new worker" would stop working.
 - Logins made once in the agent profile reach every later browser worker.
 - The manager's prompt does not grow with the browser rules.
-- Cost: a login needs the user, and a running worker cannot pick it up; the manager starts a new
-  one.
-- Cost: the manager loses the browser once the user removes the package from their own settings.
-  Until then, it may still use the browser itself without these rules.
 
-## See also
+### Negative
 
-- [ADR 0053: Version each saved record format](./0053-version-each-saved-record-format.md)
-- [ADR 0068: Load only the instruction sets each worker profile needs](./0068-load-only-the-instruction-sets-each-worker-profile-needs.md)
-- [ADR 0069: Load each Pi package where its tools are used](./0069-load-each-pi-package-where-its-tools-are-used.md)
-- [Vision](../vision.md)
+- A login needs the user, and a running worker cannot pick it up; the manager starts a new one.
+- The manager loses the browser once the user removes the package from their own settings. Until
+  then, it may still use the browser itself without these rules.
+
+## Alternatives considered
+
+### Copy the rules into each profile
+
+Copy the rules into each profile body that uses the browser. Rejected because the copies drift
+apart.
+
+### Skill
+
+Put the rules in a skill. Rejected because a worker loads a skill only when it decides to, and the
+rules must apply from the first browser call.
+
+### Default sets
+
+Add the rules to the default sets. Rejected because profiles without the browser would pay for them
+on every turn.

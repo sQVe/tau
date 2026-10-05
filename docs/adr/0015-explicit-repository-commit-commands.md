@@ -1,7 +1,13 @@
 # ADR 0015: Explicit repository commit commands
 
-- Status: Superseded by [ADR 0026](./0026-let-git-hooks-own-commit-checks.md)
-- Date: 2026-09-10
+**Date**: 2026-09-10\
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0026 (Let Git hooks own commit checks)](./0026-let-git-hooks-own-commit-checks.md)\
+**Related**: [ADR 0023 (Use advisory TDD observations instead of edit permissions)](./0023-advisory-tdd-observations.md)
+replaces evidence-based edit permissions; preparation can still make test results stale,
+[ADR 0020 (Run staged checks in the existing checkout)](./0020-checks-in-the-existing-checkout.md)
+replaces temporary checkouts and dependency sharing
 
 ## Context
 
@@ -13,20 +19,14 @@ Formatting hooks can rewrite approved content. The commit tool then undoes the c
 another check, review, and approval. Preparation before review avoids that retry. Checks must still
 validate the staged content, not unrelated working changes.
 
-## Options considered
-
-- Discover commands from package scripts or hooks. Rejected: it requires ecosystem-specific rules
-  and can run unrelated actions.
-- Let repository owners configure executable and argument arrays. Chosen: it makes command selection
-  explicit without requiring Tau to understand the build system.
-- Keep preparation in hooks. Rejected: it preserves the undo-and-retry cycle when hooks rewrite
-  approved content.
-
 ## Decision
 
-Repository owners choose commit commands in a version-controlled `tau.json` at the Git root. The
-commit tool requires a Git repository; outside one, it rejects the call before running commands or
-changing files. Nested directories do not define separate commit configuration.
+Repository owners choose commit commands in a version-controlled `tau.json` at the Git root.
+Configured executable and argument arrays make command selection explicit without requiring Tau to
+understand the build system.
+
+The commit tool requires a Git repository; outside one, it rejects the call before running commands
+or changing files. Nested directories do not define separate commit configuration.
 
 Use optional `prepare` and `check` executable/argument arrays without an implicit shell. Explicit
 arguments avoid shell quoting rules and ecosystem-specific command discovery. Do not infer commands
@@ -46,7 +46,9 @@ requires a separate decision about generated and unrequested changes. Formatting
 separate. Reserve and reject `checkMessage` and `hooks` until their behavior is implemented. Their
 later contract is optional message-check argv and `hooks: run|skip`, defaulting to `run`.
 
-## Tradeoffs
+## Consequences
+
+### Negative
 
 - Owners must configure commands, but Tau does not need ecosystem-specific discovery rules.
 - Preparation can still invalidate earlier TDD evidence and change unrequested working files. Those
@@ -55,9 +57,14 @@ later contract is optional message-check argv and `hooks: run|skip`, defaulting 
 - Command selection is ecosystem-neutral, but dependency sharing is not: existing optional
   `node_modules` sharing remains. General dependency setup is outside this decision.
 
-## See also
+## Alternatives considered
 
-- [Advisory TDD observations](./0023-advisory-tdd-observations.md) replaces evidence-based edit
-  permissions. Preparation can still make test results stale.
-- [Checks in the existing checkout](./0020-checks-in-the-existing-checkout.md) replaces temporary
-  checkouts and dependency sharing.
+### Discover commands
+
+Discover commands from package scripts or hooks. Rejected because it requires ecosystem-specific
+rules and can run unrelated actions.
+
+### Preparation in hooks
+
+Keep preparation in hooks. Rejected because it preserves the undo-and-retry cycle when hooks rewrite
+approved content.

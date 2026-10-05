@@ -1,28 +1,22 @@
 # ADR 0001: Application structure
 
-- Status: Accepted; layout, skills location, extension shape, and primitive shape superseded by
-  [ADR 0079](./0079-grow-modules-from-flat-files.md)
-- Date: 2026-04-10
+**Date**: 2026-04-10\
+**Status**: Accepted; layout, skills location, extension shape, and primitive shape superseded by
+[ADR 0079 (Grow modules from flat files)](./0079-grow-modules-from-flat-files.md)\
+**Related**: [ADR 0079 (Grow modules from flat files)](./0079-grow-modules-from-flat-files.md)
 
 ## Context
 
-- `extensions/` sits outside `src/`, so application code has two locations.
-- Directory names mix kebab-case and camelCase with no stated rule.
-- Names like `rules/` do not say what their files control.
-- Commands, events, tools, and skills need clear places in the project.
+`extensions/` sits outside `src/`, so application code has two locations. Directory names mix
+kebab-case and camelCase with no stated rule. Names like `rules/` do not say what their files
+control.
 
-## Options considered
-
-- Keep `extensions/`, `src/`, `skills/`, and `rules/` at the root. Rejected: it mixes application
-  code with tool settings and leaves code in several places.
-- Put everything under `src/`, including skills. Rejected: it keeps code together, but does not
-  match Pi's discovery of skills from a root directory declared in `package.json`.
-- Put application code under `src/` and skills at the package root. Chosen: it matches how Pi finds
-  skills and gives code one home.
+Commands, events, tools, and skills need clear places in the project.
 
 ## Decision
 
-Application code lives under `src/`, and skills stay at the package root for Pi discovery.
+Application code lives under `src/`, and skills stay at the package root for Pi discovery. This
+matches how Pi finds skills and gives code one home.
 
 ```text
 tau/
@@ -81,13 +75,26 @@ Shared code under `src/<primitive>/` follows the same layout:
 - Directories under `src/` use camelCase.
 - Keep unit tests next to the code they test.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - One rule for where application code lives and what an extension looks like.
 - Vocabulary matches Pi (`events/`, not `hooks/`).
-- Cost: moving `extensions/` under `src/` touches imports and tooling paths.
-- Cost: deciding whether code belongs in a shared module or one extension still needs judgment.
 
-## See also
+### Negative
 
-- [ADR 0079: Grow modules from flat files](./0079-grow-modules-from-flat-files.md)
+- Moving `extensions/` under `src/` touches imports and tooling paths.
+- Deciding whether code belongs in a shared module or one extension still needs judgment.
+
+## Alternatives considered
+
+### Keep the root directories
+
+Keep `extensions/`, `src/`, `skills/`, and `rules/` at the root. Rejected because it mixes
+application code with tool settings and leaves code in several places.
+
+### Everything under `src/`
+
+Put everything under `src/`, including skills. Rejected because, although it keeps code together, it
+does not match Pi's discovery of skills from a root directory declared in `package.json`.
