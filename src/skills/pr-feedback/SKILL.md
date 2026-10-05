@@ -158,9 +158,9 @@ see for themselves.
      Leave a thread open when it holds an answered question or the reviewer owns the next step.
    - When `viewerCanReply` is false, report the thread instead of replying. When `viewerCanResolve`
      is false, reply and report that you could not resolve it.
-   - When a person changed a comment since step 1, read again with `read`, redo steps 3, 4, and 8
-     for what changed, and post with the new result. When the head moved other than by your push,
-     stop and report.
+   - When a person changed a comment since step 1, run step 1's evidence script again, redo steps 3,
+     4, and 8 for what changed, and post with the new result. When the head moved other than by your
+     push, stop and report.
    - When the user declines, post nothing and report the drafts. If a post fails, stop and report
      which replies were posted.
 
