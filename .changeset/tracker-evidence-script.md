@@ -6,3 +6,6 @@
 script that calls the new `tracker_evidence` tool once per planned ticket. It offers reuse only for
 a candidate that fits, and it shows a failed search in the preview instead of reporting no
 duplicate.
+
+Tracker team keys in `tau.json` are read in upper case, so a lowercase key such as `me` finds the
+tickets of team `ME`.

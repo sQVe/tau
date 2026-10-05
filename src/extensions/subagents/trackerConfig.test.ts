@@ -48,6 +48,19 @@ it('reads the agent team and repositories from the user file', ({ onTestFinished
   expect(readTrackerSetup(location).status).toBe('read');
 });
 
+it('reads team keys in upper case, as Linear stores them', ({ onTestFinished }) => {
+  const { location, userFile } = configFixture(onTestFinished);
+
+  writeConfig(userFile, {
+    tracker: { agentTeam: 'ai', repositories: { 'sQVe/tau': { team: 'me', project: 'Tau' } } },
+  });
+
+  expect(readTrackerConfig(location)).toEqual({
+    agentTeam: 'AI',
+    repositories: new Map([['sQVe/tau', { team: 'ME', project: 'Tau' }]]),
+  });
+});
+
 it('reads no tracker config without config files or a tracker block', ({ onTestFinished }) => {
   const { location, userFile } = configFixture(onTestFinished);
 

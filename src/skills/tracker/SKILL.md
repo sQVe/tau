@@ -70,9 +70,10 @@ preview. It needs the `linear` CLI authenticated for the workspace.
    script that calls the `tracker_evidence` tool once per planned ticket, with its route and parent
    from step 2 and a few keywords from its title. Return the results unchanged. Then, for each
    ticket:
-   - If the parent does not match the route, stop. Tell the user that the parent is in team
-     `<parent team>` and project `<parent project>`, but this repository routes to team
-     `<route team>` and project `<route project>`.
+   - If the result says the parent does not match the route, stop. An agent ticket's parent is not
+     compared. Tell the user that the parent is in team `<parent team>` and project
+     `<parent project>`, but this repository routes to team `<route team>` and project
+     `<route project>`.
    - Show each candidate that fits, and ask: use or update the candidate, or create the new ticket
      anyway. Show a candidate that does not fit only with what differs, and never offer to reuse it.
      A retry that finds a fitting ticket it created earlier uses that ticket without asking.
