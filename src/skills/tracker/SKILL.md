@@ -93,7 +93,7 @@ preview. It needs the `linear` CLI authenticated for the workspace.
    - Look up labels with `linear label list --team <team> --json` once per team in the session. Add
      a label only when the list has one that fits, such as `Bug` for a bug, and spell it as the list
      does. Keep each label's `id` too, since an agent ticket takes labels by ID. Never create a
-     label.
+     label. Containers and slices take no labels, since the `slice` tool creates them without any.
    - Save the body in the calling skill's draft directory, or in a file from `mktemp`.
 
 5. Preview the writes, unless the calling skill's preview already shows them: each ticket with its
@@ -104,9 +104,9 @@ preview. It needs the `linear` CLI authenticated for the workspace.
    such as a title, search term, project, or label, as `'\''`, so the shell expands nothing in it.
    After each create, note the identifier the output shows. If it shows none, stop and search the
    parent's children or the team before any retry.
-   - Make every write to a container and its slices with the `slice` tool, through the
-     [slice skill](../slice/SKILL.md): creating them, editing them, their `blocked-by` relations,
-     and their order.
+   - Create containers and slices, edit their titles and bodies, and write the `blocked-by`
+     relations between slices and their order with the `slice` tool, through the
+     [slice skill](../slice/SKILL.md). Move a slice to In Progress with the command below.
    - Create a bug or human ticket. Leave out `--project` when the route has none. Add
      `--parent <parent>` when the approved ticket has a parent, and `--label '<label>'` for each
      label:
@@ -123,8 +123,11 @@ preview. It needs the `linear` CLI authenticated for the workspace.
      Pass the IDs of the approved labels from the agent team's label list, or `[]` when there are
      none.
 
-   - Update a ticket's title or body. Leave out the flag for the part that stays:
-     `linear issue update <ticket> --title '<title>' --description-file <file>`.
+   - Update the title or body of a bug, human ticket, or agent ticket. Leave out the flag for the
+     part that stays: `linear issue update <ticket> --title '<title>' --description-file <file>`.
+   - Add a dependency that the `slice` tool does not write, such as one on a ticket outside the
+     container: `linear issue relation add <ticket> blocked-by <other>`. Remove one with
+     `linear issue relation delete <ticket> blocked-by <other>`.
    - Move a slice to In Progress when it starts. Read its state name with the step 2 query, run on
      the slice. If the name is `In Progress`, skip the move; any other state, `In Review` included,
      moves. Move it with `linear issue update <slice> --state 'In Progress'`. If the team has no
