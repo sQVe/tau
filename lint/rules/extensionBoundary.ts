@@ -17,6 +17,7 @@ const publicFiles = new Set([
   'extensions/subagents/controller/controller',
   'extensions/subagents/controller/record',
   'extensions/subagents/controller/budget',
+  'reviewCapture/evidence',
   'reviewCapture/record',
 ]);
 
