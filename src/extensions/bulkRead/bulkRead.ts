@@ -135,7 +135,7 @@ const registerTrimHook = (pi: ExtensionAPI, state: BulkReadState): void => {
 
 const rewriteToolResult = (
   state: BulkReadState,
-  event: Pick<ToolResultEvent, 'toolCallId' | 'content'>,
+  event: Pick<ToolResultEvent, 'toolCallId' | 'content' | 'structuredContent'>,
 ) => {
   if (!state.clamped.delete(event.toolCallId)) {
     return undefined;
@@ -145,6 +145,9 @@ const rewriteToolResult = (
     content: event.content.map((part) =>
       part.type === 'text' ? { ...part, text: rewriteContinuationNotice(part.text) } : part,
     ),
+    ...(event.structuredContent === undefined
+      ? {}
+      : { structuredContent: event.structuredContent }),
   };
 };
 
