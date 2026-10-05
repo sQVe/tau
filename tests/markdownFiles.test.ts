@@ -64,6 +64,18 @@ it('finds no problems in the tracked documents', () => {
 it.each<[string, Document[], DocumentProblemKind, string]>([
   ['a broken link', [guide('Read [the plan](plan.md).\n')], 'broken-link', 'docs/guide.md'],
   [
+    'a broken link after an escaped comment opener',
+    [guide('\\<!-- text\n\n[the plan](plan.md)\n\n<!-- note -->\n')],
+    'broken-link',
+    'docs/guide.md',
+  ],
+  [
+    'a broken link after a link title that looks like a comment opener',
+    [guide('[the index](adr/README.md "<!--") and [the plan](plan.md)\n\n<!-- note -->\n')],
+    'broken-link',
+    'docs/guide.md',
+  ],
+  [
     'a link to a missing heading in another file',
     [guide('Read [the index](adr/README.md#history).\n')],
     'missing-heading',
@@ -184,6 +196,9 @@ it('accepts valid links, headings, paths, and code spans that are not paths', ()
     'Run `pnpm test src/gone.test.ts`, match `src/**/*.ts`, or fill `src/<name>/index.ts`.',
     'Read `~/.pi/agent/tau.json`, `$dir/report.md`, `bulkRead/index.ts`, and `origin/main`.',
     'Allow `src/example.rs`.',
+    '',
+    '<!-- Link the record: [ADR NNNN](./NNNN-file-name.md)',
+    'or [the plan](plan.md). -->',
     '',
     '```markdown',
     '[fenced](missing.md) and `src/fenced.ts`',
