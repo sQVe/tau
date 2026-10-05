@@ -7,6 +7,7 @@ import {
   importPattern,
   importsModule,
   isCaller,
+  isSearchable,
   namedPaths,
   numberedBody,
   parseGrepOutput,
@@ -86,6 +87,15 @@ it.each([
   { importer: 'docs/use.md', caller: false },
 ])('decides that $importer calls src/a.ts: $caller', ({ importer, caller }) => {
   expect(isCaller(importer, 'src/a.ts')).toBe(caller);
+});
+
+it.each([
+  { module: 'src/a.ts', searchable: true },
+  { module: 'src/new\nline/a.ts', searchable: true },
+  { module: 'src/new\nline.ts', searchable: false },
+  { module: 'src/new\nline/index.ts', searchable: false },
+])('decides that git grep can search for $module: $searchable', ({ module, searchable }) => {
+  expect(isSearchable(module)).toBe(searchable);
 });
 
 it.each([

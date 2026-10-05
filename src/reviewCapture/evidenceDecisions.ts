@@ -50,7 +50,7 @@ interface Bounded<T> {
   gaps: EvidenceGap[];
 }
 
-interface GrepMatch {
+export interface GrepMatch {
   path: string;
   line: number;
   text: string;
@@ -173,6 +173,9 @@ export const importPattern = (module: string): string => {
 
   return `['"]\\.{1,2}/([^'"]*/)?(${alternatives})(\\.[a-z]+)?['"]`;
 };
+
+// git grep reads a newline in a pattern as a pattern separator, and no line can hold one.
+export const isSearchable = (module: string): boolean => !importPattern(module).includes('\n');
 
 export const isCaller = (importer: string, module: string): boolean =>
   importer !== module && !isTestPath(importer) && scriptExtension.test(importer);

@@ -333,6 +333,12 @@ it('keeps a newline in a caller path', async () => {
     ['src/newline\ncaller.ts', 1],
     ['src/use.ts', 1],
   ]);
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'unsearched',
+    path: 'src/newline\ncaller.ts',
+    reason: expect.any(String) as unknown,
+  });
 });
 
 it('lists a caller that holds a NUL byte', async () => {
@@ -442,5 +448,63 @@ it('cuts a test body and a caller line at their character limits', async () => {
     line: 1,
     kept: 6,
     total: 32,
+  });
+});
+
+it('finds the callers of each changed module within the per-module and total limits', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const base = await commit(
+    root,
+    {
+      ...sourceFiles,
+      'src/more.ts': "import { add } from './math.js';\n",
+      'src/other.ts': 'export const other = 1;\n',
+      'src/third.ts': 'export const third = 1;\n',
+      'src/useOther.ts': "import { other } from './other.js';\n",
+      'src/useThird.ts': "import { third } from './third.js';\n",
+    },
+    'first',
+  );
+
+  await writeFiles(root, {
+    'src/math.ts': 'export const add = (a: number, b: number) => b + a;\n',
+    'src/other.ts': 'export const other = 2;\n',
+    'src/third.ts': 'export const third = 2;\n',
+  });
+
+  const directory = await savedCapture(root, { kind: 'workingTree', base });
+
+  const limits = {
+    paths: 5,
+    testFiles: 5,
+    bodyLines: 5,
+    bodyCharacters: 1000,
+    callersPerModule: 1,
+    callers: 2,
+    callerLineCharacters: 1000,
+    namedPaths: 5,
+  };
+
+  const evidence = await readReviewEvidence(root, directory, limits);
+
+  expect(evidence.callers.map((caller) => [caller.module, caller.path])).toEqual([
+    ['src/math.ts', 'src/more.ts'],
+    ['src/other.ts', 'src/useOther.ts'],
+  ]);
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'truncatedList',
+    list: 'callers',
+    path: 'src/math.ts',
+    kept: 1,
+    total: 2,
+  });
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'truncatedList',
+    list: 'callers',
+    kept: 2,
+    total: 3,
   });
 });

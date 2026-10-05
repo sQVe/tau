@@ -11,6 +11,7 @@ import {
   importPattern,
   importsModule,
   isCaller,
+  isSearchable,
   isSourcePath,
   namedPaths,
   numberedBody,
@@ -21,6 +22,7 @@ import {
 import type {
   EvidenceGap,
   EvidenceLimits,
+  GrepMatch,
   NamedSection,
   NumberedLine,
 } from './evidenceDecisions.js';
@@ -176,9 +178,15 @@ const readTests = async (
 
 const scriptPathspecs = ['*.ts', '*.tsx', '*.mts', '*.cts', '*.js', '*.jsx', '*.mjs', '*.cjs'];
 
-// -a searches a script that holds a NUL byte as text; Git would otherwise skip it as binary.
-const grepModule = async (root: string, revision: string | undefined, module: string) => {
-  const options = ['grep', '--no-color', '-n', '-z', '-a', '-E', '-e', importPattern(module)];
+// One search finds the lines that may import any changed module. -a searches a script that holds a
+// NUL byte as text; Git would otherwise skip it as binary.
+const grepModules = async (
+  root: string,
+  revision: string | undefined,
+  modules: readonly string[],
+) => {
+  const patterns = modules.flatMap((module) => ['-e', importPattern(module)]);
+  const options = ['grep', '--no-color', '-n', '-z', '-a', '-E', ...patterns];
   const scope = revision === undefined ? ['--untracked'] : [revision];
   const result = await runGit(root, [...options, ...scope, '--', ...scriptPathspecs]);
 
@@ -194,22 +202,18 @@ const grepModule = async (root: string, revision: string | undefined, module: st
 const searchGaps = (module: string, warning: string): EvidenceGap[] =>
   warning.trim() === '' ? [] : [{ kind: 'incompleteSearch', path: module, reason: warning.trim() }];
 
-const findModuleCallers = async (
-  root: string,
-  revision: string | undefined,
+const unsearchableGap = (path: string): EvidenceGap => ({
+  kind: 'unsearched',
+  path,
+  reason: 'git grep cannot search for a module name that holds a newline.',
+});
+
+const moduleCallers = (
   module: string,
+  matches: readonly GrepMatch[],
   limits: EvidenceLimits,
-): Promise<Collected<CallerLine>> => {
-  const found = await grepModule(root, revision, module).catch((error: unknown) => ({
-    error: errorMessage(error),
-    warning: '',
-  }));
-
-  if (found.error !== undefined) {
-    return { items: [], gaps: [{ kind: 'unsearched', path: module, reason: found.error }] };
-  }
-
-  const callers = found.matches
+): Collected<CallerLine> => {
+  const callers = matches
     .filter((match) => isCaller(match.path, module))
     .filter((match) => importsModule(match.path, match.text, module));
 
@@ -222,11 +226,7 @@ const findModuleCallers = async (
 
   return {
     items: cut.map(({ match: { path, line }, text }) => ({ module, path, line, text })),
-    gaps: [
-      ...searchGaps(module, found.warning),
-      ...cut.flatMap((caller) => caller.gaps),
-      ...bounded.gaps,
-    ],
+    gaps: [...cut.flatMap((caller) => caller.gaps), ...bounded.gaps],
   };
 };
 
@@ -236,20 +236,42 @@ const findCallers = async (
   paths: readonly string[],
   limits: EvidenceLimits,
 ): Promise<Collected<CallerLine>> => {
-  const results: Collected<CallerLine>[] = [];
+  const sources = paths.filter((path) => isSourcePath(path));
+  const modules = sources.filter((path) => isSearchable(path));
+  const unsearchable = sources.filter((path) => !isSearchable(path)).map(unsearchableGap);
 
-  for (const module of paths.filter((path) => isSourcePath(path))) {
-    // oxlint-disable-next-line no-await-in-loop -- one Git process at a time.
-    results.push(await findModuleCallers(root, revision, module, limits));
+  if (modules.length === 0) {
+    return { items: [], gaps: unsearchable };
   }
 
-  const found = boundList(
+  const found = await grepModules(root, revision, modules).catch((error: unknown) => ({
+    error: errorMessage(error),
+    warning: '',
+  }));
+
+  if (found.error !== undefined) {
+    const reason = found.error;
+    const failed = modules.map((path): EvidenceGap => ({ kind: 'unsearched', path, reason }));
+
+    return { items: [], gaps: [...unsearchable, ...failed] };
+  }
+
+  const results = modules.map((module) => {
+    const { items, gaps } = moduleCallers(module, found.matches, limits);
+
+    return { items, gaps: [...searchGaps(module, found.warning), ...gaps] };
+  });
+
+  const bounded = boundList(
     results.flatMap((result) => result.items),
     limits.callers,
     { list: 'callers' },
   );
 
-  return { items: found.items, gaps: [...results.flatMap((result) => result.gaps), ...found.gaps] };
+  return {
+    items: bounded.items,
+    gaps: [...unsearchable, ...results.flatMap((result) => result.gaps), ...bounded.gaps],
+  };
 };
 
 const repositoryPath = (root: string, path: string) => {
