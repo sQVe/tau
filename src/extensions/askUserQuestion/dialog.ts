@@ -380,7 +380,7 @@ class QuestionDialog implements Component {
     const countFits = lines.length + fullPreviewChrome(this.compact()) <= this.availableRows();
 
     if (hidden > 0 && countFits) {
-      lines.push(bar + theme.fg('dim', `… ${hidden} more lines`));
+      lines.push(truncateToWidth(bar + theme.fg('dim', `… ${hidden} more lines`), width));
     }
 
     const label = this.focusedOption(facts)?.label ?? '';
@@ -479,7 +479,7 @@ class QuestionDialog implements Component {
     const lines = shown.map((line) => truncateToWidth(`${bar}${line}`, width));
 
     if (hidden > 0) {
-      lines.push(bar + this.theme.fg('dim', `… ${hidden} more lines`));
+      lines.push(truncateToWidth(bar + this.theme.fg('dim', `… ${hidden} more lines`), width));
     }
 
     return this.compact() ? [title, ...lines] : ['', title, ...lines];

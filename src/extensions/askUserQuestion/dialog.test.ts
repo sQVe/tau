@@ -1,4 +1,5 @@
 import type { Theme } from '@earendil-works/pi-coding-agent';
+import { visibleWidth } from '@earendil-works/pi-tui';
 import type { TUI } from '@earendil-works/pi-tui';
 import { expect, it } from 'vitest';
 
@@ -481,4 +482,29 @@ it('gives the context the rows of a preview that cannot fit', () => {
   expect(lines.some((line) => line.includes('Decides how the first'))).toBe(true);
   expect(lines.some((line) => line.includes('committed.'))).toBe(true);
   expect(lines.some((line) => line.includes('Ctrl+O'))).toBe(true);
+});
+
+it.each([
+  { view: 'the option list', keys: [] },
+  { view: 'the full preview', keys: [ctrlO] },
+])('keeps the hidden-line count within a narrow width in $view', ({ keys }) => {
+  const { dialog } = open(
+    [
+      layoutQuestion([
+        { label: 'Stacked', description: 'One.', preview },
+        { label: 'Split', description: 'Two.', preview: 'split' },
+      ]),
+    ],
+    24,
+    12,
+  );
+
+  for (const key of keys) {
+    dialog.handleInput(key);
+  }
+
+  const lines = dialog.render(12);
+
+  expect(lines.some((line) => line.includes('…'))).toBe(true);
+  expect(lines.every((line) => visibleWidth(line) <= 12)).toBe(true);
 });
