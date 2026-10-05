@@ -56,6 +56,76 @@ it('captures a tracked change and an untracked file with the hash Git gives the 
   expect(capture.hash).toBe(await hashObject(capture.bytes));
 });
 
+it('reads the repository index even when the caller names another one', async () => {
+  const root = await committedRepository();
+  const directory = await mkdtemp(join(tmpdir(), 'tau-capture-index-'));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+  vi.stubEnv('GIT_INDEX_FILE', join(directory, 'empty-index'));
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const target = await pinTarget(root, { kind: 'workingTree', base: 'HEAD' });
+  const capture = await captureTarget(root, target);
+
+  expect(capture.errors).toEqual([]);
+  expect(capture.paths).toEqual([]);
+  expect(capture.bytes.length).toBe(0);
+});
+
+// Puts a git wrapper first on PATH. After the first diff it runs, the wrapper runs the shell
+// command `change`, as if the working tree changed during the capture.
+const changeTreeAfterFirstDiff = async (change: string) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-capture-race-'));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+  const { stdout } = await promisify(execFile)('sh', ['-c', 'command -v git']);
+  const marker = join(directory, 'changed');
+
+  const script = [
+    '#!/bin/sh',
+    `'${stdout.trim()}' "$@"`,
+    'status=$?',
+    `case " $* " in *" diff "*) if [ ! -e '${marker}' ]; then : > '${marker}'; ${change}; fi;; esac`,
+    'exit $status',
+  ].join('\n');
+
+  await writeFile(join(directory, 'git'), `${script}\n`, { mode: 0o755 });
+  vi.stubEnv('PATH', `${directory}:${process.env['PATH'] ?? ''}`);
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+};
+
+it('fails the capture when an unchanged named file disappears after the diff', async () => {
+  const root = await committedRepository();
+  const target = await pinTarget(root, { kind: 'files', paths: ['tracked.txt'] });
+
+  await changeTreeAfterFirstDiff(`rm '${join(root, 'tracked.txt')}'`);
+
+  const capture = await captureTarget(root, target);
+
+  expect(capture.errors).toHaveLength(1);
+  expect(capture.errors[0]).toContain('tracked.txt');
+});
+
+it('captures a deleted named file as a deletion without a gap', async () => {
+  const root = await committedRepository();
+
+  await rm(join(root, 'tracked.txt'));
+
+  const target = await pinTarget(root, { kind: 'files', paths: ['tracked.txt'] });
+  const capture = await captureTarget(root, target);
+
+  expect(capture.errors).toEqual([]);
+  expect(capture.paths).toEqual(['tracked.txt']);
+  expect(capture.gaps).toEqual([]);
+  expect(capture.bytes.toString('utf8')).toContain('deleted file mode');
+});
+
 it('lists both paths of a renamed file', async () => {
   const root = await committedRepository();
 
@@ -191,32 +261,6 @@ it('captures exactly the bytes a plain git diff prints for the target', async ()
   );
 });
 
-// Puts a git wrapper first on PATH. After the first diff it runs, the wrapper rewrites
-// tracked.txt as binary, as if the working tree changed during the capture.
-const changeTreeAfterFirstDiff = async (root: string) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-capture-race-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
-
-  const { stdout } = await promisify(execFile)('sh', ['-c', 'command -v git']);
-  const marker = join(directory, 'changed');
-  const file = join(root, 'tracked.txt');
-
-  const script = [
-    '#!/bin/sh',
-    `'${stdout.trim()}' "$@"`,
-    'status=$?',
-    `case " $* " in *" diff "*) if [ ! -e '${marker}' ]; then : > '${marker}'; printf 'x\\000y' > '${file}'; fi;; esac`,
-    'exit $status',
-  ].join('\n');
-
-  await writeFile(join(directory, 'git'), `${script}\n`, { mode: 0o755 });
-  vi.stubEnv('PATH', `${directory}:${process.env['PATH'] ?? ''}`);
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-};
-
 it('describes the same diff it captures when the working tree changes during the capture', async () => {
   const root = await committedRepository();
 
@@ -224,7 +268,7 @@ it('describes the same diff it captures when the working tree changes during the
 
   const target = await pinTarget(root, { kind: 'workingTree', base: 'HEAD' });
 
-  await changeTreeAfterFirstDiff(root);
+  await changeTreeAfterFirstDiff(`printf 'x\\000y' > '${join(root, 'tracked.txt')}'`);
 
   const capture = await captureTarget(root, target);
 

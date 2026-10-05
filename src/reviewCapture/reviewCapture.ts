@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
-import { errorMessage, hasErrorCode } from '../errors.js';
+import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
 import { decideFreshness } from './freshness.js';
 import type { CaptureState, Freshness } from './freshness.js';
@@ -39,7 +39,12 @@ interface DiffEntry {
 interface DiffSummary {
   entries: DiffEntry[];
   gitLinks: string[];
+  deleted: string[];
 }
+
+// The diff part also names the files it shows as deleted, so the whole-file step can tell a
+// deletion from a file that went missing during the capture.
+type DiffPart = Part & { deleted: string[] };
 
 type FileList =
   | { files: string[]; unreadable: string[]; error?: undefined }
@@ -272,7 +277,7 @@ const readPaths = (output: Buffer, offset: number, count: number) => {
 const gitLinkMode = '160000';
 
 // Raw records: `:<old mode> <new mode> <old> <new> <status>`, then one path, or two for a rename or
-// copy. Collects the paths whose mode is a Git link on either side.
+// copy. Collects the paths whose mode is a Git link on either side, and the deleted paths.
 const readRawSection = (output: Buffer, summary: DiffSummary) => {
   let next = 0;
   let field = readField(output, next);
@@ -284,6 +289,10 @@ const readRawSection = (output: Buffer, summary: DiffSummary) => {
 
     if (oldMode === gitLinkMode || newMode === gitLinkMode) {
       summary.gitLinks.push(...read.paths);
+    }
+
+    if (status === 'D') {
+      summary.deleted.push(...read.paths);
     }
 
     next = read.next;
@@ -327,7 +336,7 @@ const readNumstatSection = (output: Buffer, offset: number, summary: DiffSummary
 // Splits the output of one `--raw --numstat -p -z` run into its summary and the patch. The patch is
 // byte for byte what the same diff prints without those options.
 const splitDiffOutput = (output: Buffer) => {
-  const summary: DiffSummary = { entries: [], gitLinks: [] };
+  const summary: DiffSummary = { entries: [], gitLinks: [], deleted: [] };
 
   if (output.length === 0) {
     return { summary, patch: output };
@@ -344,12 +353,12 @@ const captureDiffOnce = async (
   root: string,
   target: PinnedTarget,
   skipped: string[],
-): Promise<Part> => {
+): Promise<DiffPart> => {
   const diffCommand = diffArguments(target, ['--raw', '--numstat', '-p', '-z'], skipped);
   const diff = await runCaptureCommand(root, diffCommand);
 
   if (diff.stdout === undefined) {
-    return failure(diffCommand, diff.error);
+    return { ...failure(diffCommand, diff.error), deleted: [] };
   }
 
   try {
@@ -364,16 +373,17 @@ const captureDiffOnce = async (
         ...summary.gitLinks.map((path) => ({ kind: 'submodule' as const, path })),
       ],
       errors: [],
+      deleted: summary.deleted,
     };
   } catch (error) {
-    return failure(diffCommand, errorMessage(error));
+    return { ...failure(diffCommand, errorMessage(error)), deleted: [] };
   }
 };
 
-const isReadable = (path: string) =>
+const accessError = (path: string) =>
   access(path, constants.R_OK).then(
-    () => true,
-    () => false,
+    () => undefined,
+    (error: unknown) => error,
   );
 
 // A deleted file is missing, not unreadable, so only a refused read counts.
@@ -400,7 +410,7 @@ const unreadableChangedPaths = async (root: string, target: PinnedTarget) => {
 
 // Git fails the whole diff on one unreadable file, so a failed diff runs again without the files
 // the user cannot read, and reports them as gaps. Any other failure stays a failure.
-const captureDiff = async (root: string, target: PinnedTarget): Promise<Part> => {
+const captureDiff = async (root: string, target: PinnedTarget): Promise<DiffPart> => {
   const first = await captureDiffOnce(root, target, []);
 
   if (first.errors.length === 0) {
@@ -426,7 +436,13 @@ const isBinaryDiff = (output: Buffer) =>
     .some((line) => line.startsWith('Binary files '));
 
 // Shows a file in full as an added file. Exit 1 is normal: it means the file differs from empty.
-const captureWholeFile = async (root: string, path: string): Promise<Part> => {
+// A missing file adds nothing only when the diff shows it as deleted; otherwise it went missing
+// during the capture, and the capture fails.
+const captureWholeFile = async (
+  root: string,
+  path: string,
+  deleted: ReadonlySet<string>,
+): Promise<Part> => {
   const options = ['--no-ext-diff', '--no-textconv', '--no-color', '--no-index'];
   const command = ['diff', ...options, '--', '/dev/null', path];
 
@@ -440,7 +456,13 @@ const captureWholeFile = async (root: string, path: string): Promise<Part> => {
       return { bytes: result.stdout, paths: [path], gaps, errors: [] };
     }
 
-    if (!(await isReadable(join(root, path)))) {
+    const error = await accessError(join(root, path));
+
+    if (isMissingFile(error) && deleted.has(path)) {
+      return emptyPart;
+    }
+
+    if (hasErrorCode(error, 'EACCES')) {
       return { ...emptyPart, gaps: [{ kind: 'unreadable', path }] };
     }
 
@@ -570,7 +592,11 @@ const submoduleGap = (file: string): Part => {
   return { ...emptyPart, gaps: [{ kind: 'submodule', path }] };
 };
 
-const captureWholeFiles = async (root: string, target: PinnedTarget): Promise<Part[]> => {
+const captureWholeFiles = async (
+  root: string,
+  target: PinnedTarget,
+  deleted: ReadonlySet<string>,
+): Promise<Part[]> => {
   const listed = await wholeFileList(target, root);
   const gitLinks = await cachedGitLinks(root, target);
 
@@ -594,7 +620,7 @@ const captureWholeFiles = async (root: string, target: PinnedTarget): Promise<Pa
     }
 
     // oxlint-disable-next-line no-await-in-loop -- the files run one at a time on purpose.
-    parts.push(await captureWholeFile(root, file));
+    parts.push(await captureWholeFile(root, file, deleted));
   }
 
   return parts;
@@ -625,9 +651,11 @@ const uniqueGaps = (gaps: Gap[]) => [
 // Captures the target as Git prints it. Changes no staged contents, .git/index, or Git objects.
 // The hash equals `git hash-object --no-filters` of the bytes, so .gitattributes cannot change it.
 export const captureTarget = async (root: string, target: PinnedTarget): Promise<Capture> => {
+  const diff = await captureDiff(root, target);
+
   const parts = [
-    await captureDiff(root, target),
-    ...(await captureWholeFiles(root, target)),
+    diff,
+    ...(await captureWholeFiles(root, target, new Set(diff.deleted))),
     await unmatchedPaths(root, target),
   ];
 
