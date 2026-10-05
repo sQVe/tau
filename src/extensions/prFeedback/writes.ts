@@ -42,6 +42,7 @@ export interface RecordedWrite {
   text: string | null;
   state: 'posted' | 'uncertain';
   commentId: number | null;
+  earlierCommentIds: number[];
 }
 
 export interface SettleFacts {
@@ -49,6 +50,7 @@ export interface SettleFacts {
   viewer: string;
   threads: Thread[];
   comments: Comment[];
+  unmatched: 'drop' | 'keep';
 }
 
 const writeKey = (write: { kind: WriteKind; thread: string | null }): string =>
@@ -204,25 +206,41 @@ export const planWrites = (facts: WriteFacts): PlannedWrite[] => {
 export const personWrites = (writes: readonly PlannedWrite[]): PlannedWrite[] =>
   writes.filter((write) => write.toPerson);
 
-const writtenComments = (write: RecordedWrite, facts: SettleFacts) => {
+const targetComments = (
+  write: { kind: WriteKind; thread: string | null },
+  feedback: { threads: readonly Thread[]; comments: readonly Comment[] },
+) => {
   if (write.kind === 'comment') {
-    return facts.comments;
+    return feedback.comments;
   }
 
-  return facts.threads.find((thread) => thread.id === write.thread)?.comments ?? [];
+  return feedback.threads.find((thread) => thread.id === write.thread)?.comments ?? [];
 };
+
+// Lists the comments a write's thread, or the pull request for a PR comment, holds before the write.
+export const targetCommentIds = (
+  write: { kind: WriteKind; thread: string | null },
+  feedback: { threads: readonly Thread[]; comments: readonly Comment[] },
+): number[] => targetComments(write, feedback).map((comment) => comment.id);
 
 // Review replies and PR comments come from separate GitHub endpoints, so their IDs can repeat.
 const claimKey = (kind: RecordedWrite['kind'], commentId: number) => `${kind}:${commentId}`;
 
-// Returns the newest comment by the viewer with the write's text that no posted write claims.
+// Returns the newest comment by the viewer with the write's text that no posted write claims. A
+// comment from before the write, such as one from an earlier round, is not the write.
 const findWrittenComment = (write: RecordedWrite, facts: SettleFacts, claimed: Set<string>) => {
-  const matches = writtenComments(write, facts).filter(
-    (comment) => comment.author === facts.viewer && comment.body === write.text,
+  const earlier = new Set(write.earlierCommentIds);
+
+  const matches = targetComments(write, facts).filter(
+    (comment) =>
+      comment.author === facts.viewer && comment.body === write.text && !earlier.has(comment.id),
   );
 
   return matches.findLast((comment) => !claimed.has(claimKey(write.kind, comment.id)));
 };
+
+const unmatchedWrite = (write: RecordedWrite, facts: SettleFacts) =>
+  facts.unmatched === 'keep' ? [write] : [];
 
 const settleWrite = (write: RecordedWrite, facts: SettleFacts, claimed: Set<string>) => {
   if (write.state === 'posted') {
@@ -233,13 +251,13 @@ const settleWrite = (write: RecordedWrite, facts: SettleFacts, claimed: Set<stri
   if (write.kind === 'resolve') {
     const unresolved = facts.threads.some((thread) => thread.id === write.thread);
 
-    return unresolved ? [] : [{ ...write, state: 'posted' as const }];
+    return unresolved ? unmatchedWrite(write, facts) : [{ ...write, state: 'posted' as const }];
   }
 
   const comment = findWrittenComment(write, facts, claimed);
 
   if (comment === undefined) {
-    return [];
+    return unmatchedWrite(write, facts);
   }
 
   claimed.add(claimKey(write.kind, comment.id));
@@ -247,8 +265,9 @@ const settleWrite = (write: RecordedWrite, facts: SettleFacts, claimed: Set<stri
   return [{ ...write, state: 'posted' as const, commentId: comment.id }];
 };
 
-// Decides each uncertain write from a fresh read: a write GitHub has becomes posted, and any other
-// is dropped so the plan makes it again. GitHub can hold a write whose gh call failed.
+// Decides each uncertain write from a fresh read: a write GitHub has becomes posted. With unmatched
+// 'drop', any other is dropped so the plan makes it again. With 'keep', it stays uncertain, since
+// the read can predate a write another session saved. GitHub can hold a write whose gh call failed.
 export const settleWrites = (facts: SettleFacts): RecordedWrite[] => {
   const claimed = new Set<string>();
 

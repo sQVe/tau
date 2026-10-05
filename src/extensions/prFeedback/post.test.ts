@@ -2,7 +2,7 @@ import { chmod, copyFile, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { confirmContext, noUiContext } from '../../../tests/toolContext.js';
@@ -17,6 +17,28 @@ interface ReadDetails {
   stateToken: string;
   pr: { headRefOid: string };
 }
+
+// Lets a test act as another session right after post reads posted.json.
+const postedHooks = vi.hoisted(() => ({
+  afterRead: undefined as (() => Promise<void>) | undefined,
+}));
+
+vi.mock(import('./replies.js'), async (importOriginal) => {
+  const original = await importOriginal();
+
+  return {
+    ...original,
+    readPosted: async (directory: string) => {
+      const posted = await original.readPosted(directory);
+      const afterRead = postedHooks.afterRead;
+
+      postedHooks.afterRead = undefined;
+      await afterRead?.();
+
+      return posted;
+    },
+  };
+});
 
 const person = { login: 'reviewer', bot: false };
 const bot = { login: 'coderabbitai', bot: true };
@@ -123,6 +145,7 @@ const recordedWrite = (
   text,
   state: 'posted',
   commentId,
+  earlierCommentIds: [],
 });
 
 const postFailure = (promise: Promise<unknown>) =>
@@ -767,6 +790,7 @@ describe('post uncertain writes', () => {
             text: kind === 'reply' ? 'Added.' : 'Done.',
             state: 'uncertain',
             commentId: null,
+            earlierCommentIds: kind === 'reply' ? [201] : [302],
           },
         ],
       });
@@ -850,6 +874,119 @@ describe('post uncertain writes', () => {
 
     expect(await readPosted(details.directory)).toMatchObject({
       writes: [{ kind: 'resolve', state: 'posted' }],
+    });
+  });
+});
+
+describe('post settled writes', () => {
+  it('posts an uncertain reply again when only an earlier comment has its text', async () => {
+    const { root, fake, read, post } = await setUp();
+    const target = botThread();
+
+    target.comments.push({ id: 150, author: { login: 'sqve', bot: false }, body: 'Added.' });
+    fake.threads = [target];
+
+    const details = await read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-bot', 'Added.', false)],
+      comment: null,
+    });
+
+    fake.failWrite(1);
+    await postFailure(post(details, recordingConfirm(root, true).context));
+
+    const retry = await post(details, recordingConfirm(root, true).context);
+
+    expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 201, body: 'Added.' }]);
+    expect(retry).toMatchObject({ status: 'posted', posted: [{ kind: 'reply', commentId: 1000 }] });
+  });
+
+  it('keeps the writes another session saves while post settles', async () => {
+    const { fake, read, post } = await setUp();
+
+    fake.threads = [botThread()];
+    fake.comments = [{ id: 302, author: bot, body: 'Summary.' }];
+
+    const details = await read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-bot', 'Added.', false)],
+      comment: { body: 'Done.', answers: ['302'] },
+    });
+
+    fake.loseWriteResponse(2);
+    await postFailure(post(details));
+
+    const otherSession = recordedWrite('resolve', 'thread-bot', null, null);
+
+    postedHooks.afterRead = async () => {
+      const saved = JSON.parse(await readFile(join(details.directory, 'posted.json'), 'utf8')) as {
+        writes: unknown[];
+      };
+
+      await writeFile(
+        join(details.directory, 'posted.json'),
+        JSON.stringify({ version: 2, writes: [...saved.writes, otherSession] }),
+      );
+    };
+
+    const retry = await post(details);
+
+    expect(retry).toMatchObject({ status: 'unchanged' });
+    expect(fake.writes).toHaveLength(2);
+
+    expect(await readPosted(details.directory)).toMatchObject({
+      writes: [
+        { kind: 'reply', state: 'posted', commentId: 1000 },
+        { kind: 'comment', state: 'posted', commentId: 1001 },
+        otherSession,
+      ],
+    });
+  });
+
+  it('keeps an uncertain write another session saves while post settles', async () => {
+    const { fake, read, post } = await setUp();
+
+    fake.threads = [botThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-bot', 'Added.', false)],
+      comment: null,
+    });
+
+    fake.loseWriteResponse(1);
+    await postFailure(post(details));
+
+    const otherSession = {
+      ...recordedWrite('reply', 'thread-bot', 'Also added.', null),
+      state: 'uncertain',
+      earlierCommentIds: [201, 1000],
+    };
+
+    postedHooks.afterRead = async () => {
+      const saved = JSON.parse(await readFile(join(details.directory, 'posted.json'), 'utf8')) as {
+        writes: unknown[];
+      };
+
+      await writeFile(
+        join(details.directory, 'posted.json'),
+        JSON.stringify({ version: 2, writes: [...saved.writes, otherSession] }),
+      );
+    };
+
+    const retry = await post(details);
+
+    expect(retry).toMatchObject({ status: 'unchanged' });
+    expect(fake.writes).toHaveLength(1);
+
+    expect(await readPosted(details.directory)).toMatchObject({
+      writes: [{ kind: 'reply', state: 'posted', commentId: 1000 }, otherSession],
     });
   });
 });

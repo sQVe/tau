@@ -248,6 +248,7 @@ const recordedWrite = (
   text: kind === 'resolve' ? null : 'Renamed.',
   state: 'uncertain',
   commentId: null,
+  earlierCommentIds: [],
   ...change,
 });
 
@@ -256,6 +257,7 @@ const settleFacts = (change: Partial<SettleFacts>): SettleFacts => ({
   viewer: 'sqve',
   threads: [thread('person'), thread('bot', { fromPerson: false, replyTo: 201 })],
   comments: [comment(301, false)],
+  unmatched: 'drop',
   ...change,
 });
 
@@ -287,6 +289,24 @@ describe('settleWrites', () => {
         threads: [threadWithReply(viewerComment(900, 'Renamed.'))],
       }),
       settled: [recordedWrite('reply', { state: 'posted', commentId: 900 })],
+    },
+    {
+      case: 'uncertain reply matching only an earlier comment',
+      facts: settleFacts({
+        recorded: [recordedWrite('reply', { earlierCommentIds: [101, 900] })],
+        threads: [threadWithReply(viewerComment(900, 'Renamed.'))],
+      }),
+      settled: [],
+    },
+    {
+      case: 'kept uncertain reply the thread lacks',
+      facts: settleFacts({ recorded: [recordedWrite('reply')], unmatched: 'keep' }),
+      settled: [recordedWrite('reply')],
+    },
+    {
+      case: 'kept uncertain resolve of an open thread',
+      facts: settleFacts({ recorded: [recordedWrite('resolve')], unmatched: 'keep' }),
+      settled: [recordedWrite('resolve')],
     },
     {
       case: 'uncertain reply the thread lacks',

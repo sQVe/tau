@@ -64,6 +64,7 @@ const postedWriteSchema = Type.Object(
   {
     ...postedWriteFields,
     state: Type.Union([Type.Literal('posted'), Type.Literal('uncertain')]),
+    earlierCommentIds: Type.Array(Type.Integer()),
   },
   { additionalProperties: false },
 );
@@ -180,7 +181,11 @@ export const readReplies = async (directory: string): Promise<Replies> => {
 // Version 1 saved only writes that GitHub took.
 const fromPostedVersion1 = (record: Static<typeof postedVersion1Schema>): Posted => ({
   version: postedVersion,
-  writes: record.writes.map((write) => ({ ...write, state: 'posted' as const })),
+  writes: record.writes.map((write) => ({
+    ...write,
+    state: 'posted' as const,
+    earlierCommentIds: [],
+  })),
 });
 
 export const readPosted = async (directory: string): Promise<Posted> => {

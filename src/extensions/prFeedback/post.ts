@@ -15,7 +15,7 @@ import { readFeedback } from './read.js';
 import type { PullRequestFeedback } from './read.js';
 import { readPosted, readPullRequestRecord, readReplies, writePosted } from './replies.js';
 import type { PostedWrite, Replies } from './replies.js';
-import { personWrites, planWrites, settleWrites } from './writes.js';
+import { personWrites, planWrites, settleWrites, targetCommentIds } from './writes.js';
 import type { PlannedWrite } from './writes.js';
 
 export interface PostInput {
@@ -122,26 +122,39 @@ const makeWrite = async (target: WriteTarget, write: PlannedWrite) => {
   return postIssueComment(runtime, repository, { pr, body: write.text });
 };
 
+const postedRecord = (write: PlannedWrite, commentId: number | null): PostedWrite => ({
+  ...summarize(write),
+  state: 'posted',
+  commentId,
+  earlierCommentIds: [],
+});
+
 // A write whose output gh printed but the tool could not read counts as posted, without an ID. A
-// write whose gh call failed is uncertain, since GitHub may have taken it before gh stopped.
-const postWrite = async (target: WriteTarget, write: PlannedWrite) => {
+// write whose gh call failed is uncertain, since GitHub may have taken it before gh stopped. It
+// keeps the IDs its target held before the write, so a retry does not take one of them for it.
+const postWrite = async (
+  target: WriteTarget,
+  write: PlannedWrite,
+  feedback: PullRequestFeedback,
+) => {
   try {
     const commentId = await makeWrite(target, write);
 
-    return {
-      record: { ...summarize(write), state: 'posted' as const, commentId },
-      error: undefined,
-    };
+    return { record: postedRecord(write, commentId), error: undefined };
   } catch (error) {
     if (error instanceof UnreadWriteOutputError) {
-      return { record: { ...summarize(write), state: 'posted' as const, commentId: null }, error };
+      return { record: postedRecord(write, null), error };
     }
 
     if (error instanceof UncertainWriteError) {
-      return {
-        record: { ...summarize(write), state: 'uncertain' as const, commentId: null },
-        error,
+      const record: PostedWrite = {
+        ...summarize(write),
+        state: 'uncertain',
+        commentId: null,
+        earlierCommentIds: targetCommentIds(write, feedback),
       };
+
+      return { record, error };
     }
 
     throw error;
@@ -212,6 +225,7 @@ const makeWrites = async (
   target: WriteTarget,
   directory: string,
   writes: readonly PlannedWrite[],
+  feedback: PullRequestFeedback,
   recorded: readonly PostedWrite[],
 ) => {
   const posted: PostedWrite[] = [];
@@ -221,7 +235,7 @@ const makeWrites = async (
 
     try {
       // oxlint-disable-next-line no-await-in-loop -- Writes run in file order and stop at the first failure.
-      outcome = await postWrite(target, write);
+      outcome = await postWrite(target, write, feedback);
     } catch (error) {
       throw failedPost(directory, { posted, notPosted: summarizeFrom(writes, index) }, error);
     }
@@ -270,20 +284,29 @@ const changedPlan = (reason: string, options?: ErrorOptions) =>
     options,
   );
 
-// posted.json can hold uncertain writes, so it is read with the feedback that settles them.
-const readRecorded = async (directory: string, feedback: PullRequestFeedback) => {
-  const posted = await readPosted(directory);
-
-  return settleWrites({
-    recorded: posted.writes,
+const settleFrom = (
+  recorded: PostedWrite[],
+  feedback: PullRequestFeedback,
+  unmatched: 'drop' | 'keep',
+) =>
+  settleWrites({
+    recorded,
+    unmatched,
     viewer: feedback.viewer,
     threads: feedback.threads,
     comments: feedback.comments,
   });
+
+// posted.json can hold uncertain writes, so it is read with the feedback that settles them.
+const readRecorded = async (directory: string, feedback: PullRequestFeedback) => {
+  const posted = await readPosted(directory);
+
+  return settleFrom(posted.writes, feedback, 'drop');
 };
 
 // A thread can be resolved, a permission can change, or another session can post the round,
-// without changing the token or the head. Returns the writes posted.json records now.
+// without changing the token or the head. Returns the fresh feedback and the writes posted.json
+// records now.
 const rejectChangedPlan = async (
   target: WriteTarget,
   directory: string,
@@ -305,15 +328,19 @@ const rejectChangedPlan = async (
     throw changedPlan('the planned writes are different');
   }
 
-  return recorded;
+  return { feedback, recorded };
 };
 
-// Saves the uncertain writes that GitHub turned out to have, when no write is left to post.
-const saveSettled = async (directory: string, recorded: readonly PostedWrite[]) => {
+// Saves the uncertain writes that GitHub turned out to have, when no write is left to post. It
+// settles posted.json as read now, so writes another session saved since the first read stay. An
+// uncertain write the feedback does not show stays uncertain for the next post to settle.
+const saveSettled = async (directory: string, feedback: PullRequestFeedback) => {
   const saved = await readPosted(directory);
 
-  if (!isDeepStrictEqual(saved.writes, recorded)) {
-    await writePosted(directory, recorded);
+  const settled = settleFrom(saved.writes, feedback, 'keep');
+
+  if (!isDeepStrictEqual(saved.writes, settled)) {
+    await writePosted(directory, settled);
   }
 };
 
@@ -329,12 +356,13 @@ export const postReplies = async (
   const target = { runtime, repository, pr };
   const replies = await readReplies(directory);
   const feedback = await readCheckedFeedback(target, input);
-  let recorded = await readRecorded(directory, feedback);
+  const recorded = await readRecorded(directory, feedback);
   const writes = planFromFeedback({ replies, recorded }, feedback);
   const skipped = recorded;
+  let round = { feedback, recorded };
 
   if (writes.length === 0) {
-    await saveSettled(directory, recorded);
+    await saveSettled(directory, feedback);
 
     return { status: 'unchanged', posted: [], skipped };
   }
@@ -357,12 +385,12 @@ export const postReplies = async (
       return { status: 'declined', posted: [], skipped };
     }
 
-    recorded = await rejectChangedPlan(target, directory, input, replies, writes);
+    round = await rejectChangedPlan(target, directory, input, replies, writes);
   }
 
   return {
     status: 'posted',
-    posted: await makeWrites(target, directory, writes, recorded),
+    posted: await makeWrites(target, directory, writes, round.feedback, round.recorded),
     skipped,
   };
 };

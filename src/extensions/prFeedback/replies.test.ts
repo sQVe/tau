@@ -125,6 +125,7 @@ describe('writing records', () => {
         text: 'Thanks.',
         state: 'posted' as const,
         commentId: 5,
+        earlierCommentIds: [],
       },
     ];
 
