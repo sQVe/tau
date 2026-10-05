@@ -60,14 +60,16 @@ see for themselves.
    - `mergeable` reads `UNKNOWN` while GitHub computes it. Read it again up to three times. If it
      stays `UNKNOWN`, report it and skip the rebase.
    - Gather the evidence with one read-only `codemode` script. It calls the `pr_feedback` tool's
-     `read` and `checks` with `<repo>` and the PR number, and keeps each call's outcome when the
-     other fails. It returns each call's status, the viewer, the author, `headRefOid`, the threads,
-     reviews, and comments, `stateToken`, `directory`, the checks with their failed-log excerpts,
-     and one list of gaps: every gap from `checks`, and the error of a call that failed. The script
-     never calls `post`, and writes nothing beyond the directory `read` creates.
+     `read` with `<repo>` and the PR number, then `checks` with `read`'s `headRefOid` as `head`.
+     When `read` fails, it skips `checks` and records that as a gap. It returns each call's status,
+     the viewer, the author, `headRefOid`, the threads, reviews, and comments, `stateToken`,
+     `directory`, the checks with their failed-log excerpts, and one list of gaps: every gap from
+     `checks`, and the error of a call that failed or did not run. The script never calls `post`,
+     and writes nothing beyond the directory `read` creates.
    - The script is the only source of threads, comments, the viewer, the author, the head, checks,
      and check logs. Cite only what it returned. Do not wait for pending checks.
    - When `read` failed, stop and report its error. A thread too long to read is such a failure.
+   - When `checks` refused because the PR head moved, stop and report that the PR moved.
    - Choose the mode from the script's viewer and author.
    - A gap means unread evidence. Never count a check with a gap, or checks behind a gap with no
      check, as passing or fixed.

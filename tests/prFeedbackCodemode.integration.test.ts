@@ -38,6 +38,7 @@ interface EvidenceResult {
   };
   checks: {
     status: string;
+    reason?: string;
     value?: { checks: { name: string; bucket: string; log?: unknown; gap?: unknown }[] };
   };
   gaps: Gap[];
@@ -48,22 +49,28 @@ vi.setConfig({ testTimeout: 60_000 });
 
 const skillsDirectory = resolve(import.meta.dirname, '../src/skills');
 
-// The evidence script the pr-feedback skill describes: both reads run, each outcome is kept, and
-// every failed or incomplete read becomes a gap.
+// The evidence script the pr-feedback skill describes: read runs first, and checks runs at read's
+// head. Each outcome is kept, and every failed, skipped, or incomplete read becomes a gap.
 const evidenceScript = `
 const repository = 'github.com/sQVe/tau';
 const pr = 7;
-const call = async (action) => JSON.parse(await tools.pr_feedback({ action, repository, pr }));
-const [read, checks] = await Promise.allSettled([call('read'), call('checks')]);
-const outcome = (settled) =>
-  settled.status === 'fulfilled'
-    ? { status: 'fulfilled', value: settled.value }
-    : { status: 'rejected', reason: String(settled.reason?.message ?? settled.reason) };
+const call = async (input) => JSON.parse(await tools.pr_feedback({ repository, pr, ...input }));
+const settle = (promise) =>
+  promise.then(
+    (value) => ({ status: 'fulfilled', value }),
+    (error) => ({ status: 'rejected', reason: String(error?.message ?? error) }),
+  );
+const read = await settle(call({ action: 'read' }));
 const gaps = [];
-if (read.status === 'rejected') gaps.push({ action: 'read', reason: outcome(read).reason });
-if (checks.status === 'rejected') gaps.push({ action: 'checks', reason: outcome(checks).reason });
+if (read.status === 'rejected') {
+  gaps.push({ action: 'read', reason: read.reason });
+  gaps.push({ action: 'checks', reason: 'checks did not run, because read failed.' });
+  return { read, checks: { status: 'not run' }, gaps };
+}
+const checks = await settle(call({ action: 'checks', head: read.value.pr.headRefOid }));
+if (checks.status === 'rejected') gaps.push({ action: 'checks', reason: checks.reason });
 else gaps.push(...checks.value.gaps.map((gap) => ({ action: 'checks', ...gap })));
-return { read: outcome(read), checks: outcome(checks), gaps };
+return { read, checks, gaps };
 `;
 
 // A script's `return` value is the last text block of the codemode result, as JSON.
@@ -223,7 +230,7 @@ it('returns a gap for a failing check with no readable log', async () => {
   expect(result.gaps).toEqual([expect.objectContaining({ action: 'checks', check: 'test' })]);
 });
 
-it('keeps the checks result and returns the read error as a gap when a thread is too long to read', async () => {
+it('returns the read error and a skipped checks call as gaps when a thread is too long to read', async () => {
   const fake = createGhFake();
 
   fake.threads = [thread('t1', { hasMoreComments: true })];
@@ -233,8 +240,34 @@ it('keeps the checks result and returns the read error as a gap when a thread is
 
   expect(result.read).toMatchObject({ status: 'rejected' });
   expect(result.read).not.toHaveProperty('value');
-  expect(result.checks.value?.checks).toEqual([expect.objectContaining({ name: 'lint' })]);
-  expect(result.gaps).toEqual([{ action: 'read', reason: anyReason }]);
+  expect(result.checks).toEqual({ status: 'not run' });
+
+  expect(result.gaps).toEqual([
+    { action: 'read', reason: anyReason },
+    { action: 'checks', reason: anyReason },
+  ]);
+
+  expect(fake.calls.some((call) => call.commandArguments[1] === 'checks')).toBe(false);
+});
+
+it('returns the refusal instead of checks when the head moves after read', async () => {
+  const fake = createGhFake();
+
+  fake.checks = [passingCheck];
+  // read, then checks before and after its list.
+  fake.nextHeads = ['abc123', 'abc123', 'def456'];
+
+  const result = await runEvidenceScript(fake);
+
+  expect(result.read.value?.pr.headRefOid).toBe('abc123');
+  expect(result.checks).not.toHaveProperty('value');
+
+  expect(result.checks).toEqual({
+    status: 'rejected',
+    reason: expect.stringContaining('The pull request head is def456, not abc123.') as unknown,
+  });
+
+  expect(result.gaps).toEqual([{ action: 'checks', reason: result.checks.reason }]);
 });
 
 it('returns a gap and no passing checks when the check list cannot be read', async () => {

@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { describeProblem } from './github.js';
+import { describeProblem, readPullRequest } from './github.js';
 import type { Repository, Runtime } from './github.js';
 
 interface CheckGap {
@@ -240,14 +240,32 @@ const readCheck = async (
   return { ...metadata, ...(await readFailedLog(runtime, repository, check)) };
 };
 
-// Reads the checks of a pull request and the failed-step logs of its failing jobs. Writes nothing.
-// Returns a gap for each piece of evidence it could not read instead of failing.
+// gh pr checks reads the live head, so a push during the read can mix in another head's checks.
+const requireHead = async (runtime: Runtime, repository: Repository, pr: number, head: string) => {
+  const pullRequest = await readPullRequest(runtime, repository, pr);
+
+  if (pullRequest.headRefOid !== head) {
+    throw new Error(
+      `The pull request head is ${pullRequest.headRefOid}, not ${head}. The checks may belong to another head. Read the pull request again.`,
+    );
+  }
+};
+
+// Reads the checks of a pull request at head and the failed-step logs of its failing jobs. Writes
+// nothing. Returns a gap for each piece of evidence it could not read instead of failing, and
+// throws when the head is not head before or after the check list.
 export const readChecks = async (
   runtime: Runtime,
   repository: Repository,
-  pr: number,
+  pull: { pr: number; head: string },
 ): Promise<PullRequestChecks> => {
+  const { pr, head } = pull;
+
+  await requireHead(runtime, repository, pr, head);
+
   const list = await readCheckList(runtime, repository, pr);
+
+  await requireHead(runtime, repository, pr, head);
 
   if ('gap' in list) {
     return { pr, checks: [], gaps: [list.gap] };

@@ -37,7 +37,7 @@ const setUp = async () => {
 
     const result = await tool.execute(
       'call',
-      { action: 'checks', repository: 'github.com/sQVe/tau', pr: 7, ...input },
+      { action: 'checks', repository: 'github.com/sQVe/tau', pr: 7, head: 'abc123', ...input },
       undefined,
       undefined,
       noUiContext(root),
@@ -349,6 +349,44 @@ describe('checks killed commands', () => {
   });
 });
 
+describe('checks head', () => {
+  it.each([
+    { name: 'before', nextHeads: ['def456'] },
+    { name: 'during', nextHeads: ['abc123', 'def456'] },
+  ])('refuses and reads no log when the head moves $name gh pr checks', async ({ nextHeads }) => {
+    const { fake, readChecks } = await setUp();
+
+    fake.checks = [failingCheck];
+    fake.checksExitCode = 1;
+    fake.jobLogs = { '21': { log: 'Error: boom\n' } };
+    fake.nextHeads = nextHeads;
+
+    await expect(readChecks()).rejects.toThrow(
+      'The pull request head is def456, not abc123. The checks may belong to another head.',
+    );
+
+    expect(runViewCalls(fake)).toEqual([]);
+  });
+
+  it('reads the head before and after the check list', async () => {
+    const { fake, readChecks } = await setUp();
+
+    fake.checks = [check({ name: 'lint' })];
+
+    const result = await readChecks();
+
+    expect(result.checks).toEqual([
+      { name: 'lint', workflow: 'CI', bucket: 'pass', state: 'SUCCESS', link: jobLink(11, 21) },
+    ]);
+
+    expect(fake.calls.map((call) => call.commandArguments.slice(0, 2).join(' '))).toEqual([
+      'pr view',
+      'pr checks',
+      'pr view',
+    ]);
+  });
+});
+
 describe('checks input', () => {
   it('passes a non-github.com host in --repo to every gh call', async () => {
     const { fake, readChecks } = await setUp();
@@ -362,7 +400,18 @@ describe('checks input', () => {
     expect(result.gaps).toEqual([]);
     expect(result.checks[0]?.log).toEqual({ excerpt: 'Error: boom', omittedLines: 0 });
 
+    const view = [
+      'pr',
+      'view',
+      '7',
+      '--repo',
+      'ghe.example.com/sQVe/tau',
+      '--json',
+      'number,url,state,author,headRefOid',
+    ];
+
     expect(fake.calls.map((call) => call.commandArguments)).toEqual([
+      view,
       [
         'pr',
         'checks',
@@ -372,6 +421,7 @@ describe('checks input', () => {
         '--json',
         'name,bucket,link,workflow,state',
       ],
+      view,
       ['run', 'view', '11', '--repo', 'ghe.example.com/sQVe/tau', '--job', '21', '--log-failed'],
     ]);
   });
@@ -381,7 +431,10 @@ describe('checks input', () => {
     { repository: 'sQVe/tau', pr: 7, error: 'repository must be <host>/<owner>/<name>' },
     { repository: 'github.com/sQVe/tau', pr: undefined, error: 'checks needs pr.' },
     { repository: 'github.com/sQVe/tau', pr: 0, error: 'pr must be a pull request number' },
-  ])('rejects repository $repository with pr $pr', async ({ repository, pr, error }) => {
+    { repository: 'github.com/sQVe/tau', pr: 7, head: undefined, error: 'checks needs head.' },
+  ])('rejects repository $repository with pr $pr and head $head', async (row) => {
+    const { repository, pr, error } = row;
+    const head = 'head' in row ? row.head : 'abc123';
     const { fake } = await setUp();
     const tool = createPrFeedbackTool(fake.exec);
     const root = await createTemporaryRepository(onTestFinished);
@@ -390,6 +443,7 @@ describe('checks input', () => {
       action: 'checks' as const,
       ...(repository === undefined ? {} : { repository }),
       ...(pr === undefined ? {} : { pr }),
+      ...(head === undefined ? {} : { head }),
     };
 
     await expect(

@@ -67,6 +67,8 @@ export interface GhFake {
   calls: FakeCall[];
   viewer: string;
   pullRequest: FakePullRequest | undefined;
+  // Each gh pr view moves the head to the next SHA here first, as a push between reads does.
+  nextHeads: string[];
   threads: FakeThread[];
   reviews: FakeReview[];
   comments: FakeComment[];
@@ -163,6 +165,7 @@ export const createGhFake = (): GhFake => {
     calls,
     viewer: 'sqve',
     pullRequest: { number: 7, state: 'OPEN', author: 'sqve', headRefOid: 'abc123' },
+    nextHeads: [],
     threads: [],
     reviews: [],
     comments: [],
@@ -268,6 +271,12 @@ export const createGhFake = (): GhFake => {
   const pullRequest = () => {
     if (fake.pullRequest === undefined) {
       throw new Error('no pull requests found');
+    }
+
+    const nextHead = fake.nextHeads.shift();
+
+    if (nextHead !== undefined) {
+      fake.pullRequest.headRefOid = nextHead;
     }
 
     const { number, state, author, headRefOid } = fake.pullRequest;
