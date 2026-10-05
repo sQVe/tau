@@ -203,16 +203,19 @@ it('reports a stale capture as a gap and still returns the evidence', async () =
 });
 
 it('marks named rule and check paths readable or missing', async () => {
-  const { root, from, to } = await rangeRepository();
+  const root = await createTemporaryRepository(onTestFinished);
+  const base = await commit(root, { ...sourceFiles, 'AGENTS.md': '# Rules\n' }, 'first');
 
-  await writeFiles(root, { 'AGENTS.md': '# Rules\n' });
+  await writeFiles(root, {
+    'src/math.ts': 'export const add = (a: number, b: number) => b + a;\n',
+  });
 
   const input = inputText(
     '- `AGENTS.md`\n- [ADR](docs/adr/0001.md)\n- run `pnpm check`',
     'Saved at `.tau/check.log`.',
   );
 
-  const directory = await savedCapture(root, { kind: 'range', from, to }, input);
+  const directory = await savedCapture(root, { kind: 'workingTree', base }, input);
   const evidence = await readReviewEvidence(root, directory);
 
   expect(evidence.rules).toEqual([
@@ -235,18 +238,95 @@ it('marks named rule and check paths readable or missing', async () => {
   });
 });
 
-it.skipIf(isRoot)('reports an unreadable named rule file as a gap', async () => {
+it('checks rule paths of a range at its end and check paths on the filesystem', async () => {
   const { root, from, to } = await rangeRepository();
+
+  await writeFiles(root, { 'AGENTS.md': '# Rules\n', '.tau/check.log': 'passed\n' });
+  await rm(join(root, 'src/use.ts'));
+
+  const input = inputText('- `AGENTS.md`\n- `src/use.ts`', 'Saved at `.tau/check.log`.');
+  const directory = await savedCapture(root, { kind: 'range', from, to }, input);
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.rules).toEqual([
+    { path: 'AGENTS.md', status: 'missing' },
+    { path: 'src/use.ts', status: 'readable' },
+  ]);
+
+  expect(evidence.checks).toEqual([{ path: '.tau/check.log', status: 'readable' }]);
+  expect(evidence.gaps).toContainEqual({ kind: 'missing', path: 'AGENTS.md', section: 'rules' });
+});
+
+it.skipIf(isRoot)('reports an unreadable named rule file as a gap', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const base = await commit(root, sourceFiles, 'first');
 
   await writeFiles(root, { 'private.md': 'hidden\n' });
   await chmod(join(root, 'private.md'), 0o000);
 
   const input = inputText('- `private.md`', 'none');
-  const directory = await savedCapture(root, { kind: 'range', from, to }, input);
+  const directory = await savedCapture(root, { kind: 'workingTree', base }, input);
   const evidence = await readReviewEvidence(root, directory);
 
   expect(evidence.rules).toEqual([{ path: 'private.md', status: 'unreadable' }]);
   expect(evidence.gaps).toContainEqual({ kind: 'unreadable', path: 'private.md' });
+});
+
+it.skipIf(isRoot)('keeps callers and reports a caller search that skipped paths', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const base = await commit(root, sourceFiles, 'first');
+
+  await writeFiles(root, {
+    'src/math.ts': 'export const add = (a: number, b: number) => b + a;\n',
+    'src/private/hidden.ts': "import { add } from '../math.js';\n",
+  });
+
+  await chmod(join(root, 'src/private'), 0o000);
+  onTestFinished(() => chmod(join(root, 'src/private'), 0o700));
+
+  const directory = await savedCapture(root, { kind: 'workingTree', base });
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.callers.map((caller) => caller.path)).toEqual(['src/use.ts']);
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'incompleteSearch',
+    path: 'src/math.ts',
+    reason: expect.stringContaining('private') as unknown,
+  });
+});
+
+it('keeps a newline in a caller path', async () => {
+  const { root, from } = await rangeRepository();
+
+  const to = await commit(
+    root,
+    { 'src/newline\ncaller.ts': "import { add } from './math.js';\n" },
+    'third',
+  );
+
+  const directory = await savedCapture(root, { kind: 'range', from, to });
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.callers.map((caller) => [caller.path, caller.line])).toEqual([
+    ['src/newline\ncaller.ts', 1],
+    ['src/use.ts', 1],
+  ]);
+});
+
+it('does not count a plain path string as a caller', async () => {
+  const { root, from } = await rangeRepository();
+
+  const to = await commit(
+    root,
+    { 'src/probe.ts': "export const examplePath = './math.js';\n" },
+    'third',
+  );
+
+  const directory = await savedCapture(root, { kind: 'range', from, to });
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.callers.map((caller) => caller.path)).toEqual(['src/use.ts']);
 });
 
 it('reports a cut list and a cut body as gaps', async () => {

@@ -1,5 +1,5 @@
 import { access, constants, readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
@@ -13,6 +13,7 @@ import {
   isSourcePath,
   namedPaths,
   numberedBody,
+  parseGrepOutput,
   sourceRevision,
   testPaths,
 } from './evidenceDecisions.js';
@@ -88,11 +89,16 @@ const readWorkingFile = async (root: string, path: string): Promise<FileRead> =>
   }
 };
 
+const existsInCommit = async (root: string, revision: string, path: string) => {
+  const result = await runGit(root, ['cat-file', '-e', `${revision}:${path}`]);
+
+  return result.exitCode === 0;
+};
+
 const readCommitFile = async (root: string, revision: string, path: string): Promise<FileRead> => {
   const object = `${revision}:${path}`;
-  const exists = await runGit(root, ['cat-file', '-e', object]);
 
-  if (exists.exitCode !== 0) {
+  if (!(await existsInCommit(root, revision, path))) {
     return { kind: 'absent' };
   }
 
@@ -158,18 +164,6 @@ const readTests = async (
 
 const scriptPathspecs = ['*.ts', '*.tsx', '*.mts', '*.cts', '*.js', '*.jsx', '*.mjs', '*.cjs'];
 
-// `git grep -z` prints `[<revision>:]<path>\0<line>\0<text>` for each match.
-const parseGrepOutput = (output: string, revision: string | undefined) =>
-  output
-    .split('\n')
-    .filter((record) => record !== '')
-    .map((record) => {
-      const [name = '', line = '', ...text] = record.split('\0');
-      const path = revision === undefined ? name : name.slice(revision.length + 1);
-
-      return { path, line: Number(line), text: text.join('\0') };
-    });
-
 const grepModule = async (root: string, revision: string | undefined, module: string) => {
   const options = ['grep', '--no-color', '-n', '-z', '-I', '-E', '-e', importPattern(module)];
   const scope = revision === undefined ? ['--untracked'] : [revision];
@@ -180,8 +174,12 @@ const grepModule = async (root: string, revision: string | undefined, module: st
     return { error: result.stderr.trim() || `git grep exited ${result.exitCode}` };
   }
 
-  return { matches: parseGrepOutput(result.stdout.toString('utf8'), revision) };
+  // git grep exits 0 or 1 after it skips a path it cannot read, and says so on stderr.
+  return { ...parseGrepOutput(result.stdout.toString('utf8'), revision), warning: result.stderr };
 };
+
+const searchGaps = (module: string, warning: string): EvidenceGap[] =>
+  warning.trim() === '' ? [] : [{ kind: 'incompleteSearch', path: module, reason: warning.trim() }];
 
 const findModuleCallers = async (
   root: string,
@@ -191,6 +189,7 @@ const findModuleCallers = async (
 ): Promise<Collected<CallerLine>> => {
   const found = await grepModule(root, revision, module).catch((error: unknown) => ({
     error: errorMessage(error),
+    warning: '',
   }));
 
   if (found.error !== undefined) {
@@ -202,7 +201,9 @@ const findModuleCallers = async (
     .filter((match) => importsModule(match.path, match.text, module))
     .map(({ path, line, text }) => ({ module, path, line, text }));
 
-  return boundList(callers, limits.callersPerModule, { list: 'callers', path: module });
+  const bounded = boundList(callers, limits.callersPerModule, { list: 'callers', path: module });
+
+  return { items: bounded.items, gaps: [...searchGaps(module, found.warning), ...bounded.gaps] };
 };
 
 const findCallers = async (
@@ -227,7 +228,14 @@ const findCallers = async (
   return { items: found.items, gaps: [...results.flatMap((result) => result.gaps), ...found.gaps] };
 };
 
-const namedPathStatus = async (root: string, path: string): Promise<NamedPath['status']> => {
+const repositoryPath = (root: string, path: string) => {
+  const fromRoot = relative(root, resolve(root, path));
+  const outside = fromRoot.startsWith('..') || isAbsolute(fromRoot);
+
+  return outside || fromRoot === '' ? undefined : fromRoot;
+};
+
+const filesystemStatus = async (root: string, path: string): Promise<NamedPath['status']> => {
   try {
     await access(resolve(root, path), constants.R_OK);
 
@@ -235,6 +243,22 @@ const namedPathStatus = async (root: string, path: string): Promise<NamedPath['s
   } catch (error) {
     return isMissingFile(error) ? 'missing' : 'unreadable';
   }
+};
+
+// A commit target's rules are the files at its pinned commit. Check results and paths outside the
+// repository are saved artifacts, so they are read from the filesystem.
+const namedPathStatus = async (
+  root: string,
+  revision: string | undefined,
+  path: string,
+): Promise<NamedPath['status']> => {
+  const inRepository = revision === undefined ? undefined : repositoryPath(root, path);
+
+  if (revision === undefined || inRepository === undefined) {
+    return filesystemStatus(root, path);
+  }
+
+  return (await existsInCommit(root, revision, inRepository)) ? 'readable' : 'missing';
 };
 
 const namedPathGap = (path: NamedPath, section: NamedSection): EvidenceGap[] => {
@@ -247,6 +271,7 @@ const namedPathGap = (path: NamedPath, section: NamedSection): EvidenceGap[] => 
 
 const checkNamedPaths = async (
   root: string,
+  revision: string | undefined,
   paths: readonly string[],
   section: NamedSection,
   limits: EvidenceLimits,
@@ -254,7 +279,10 @@ const checkNamedPaths = async (
   const bounded = boundList(paths, limits.namedPaths, { list: section });
 
   const items = await Promise.all(
-    bounded.items.map(async (path) => ({ path, status: await namedPathStatus(root, path) })),
+    bounded.items.map(async (path) => ({
+      path,
+      status: await namedPathStatus(root, revision, path),
+    })),
   );
 
   return {
@@ -265,6 +293,7 @@ const checkNamedPaths = async (
 
 const readNamedPaths = async (
   root: string,
+  revision: string | undefined,
   directory: string,
   limits: EvidenceLimits,
 ): Promise<NamedPaths> => {
@@ -280,8 +309,8 @@ const readNamedPaths = async (
   }
 
   const named = namedPaths(input);
-  const rules = await checkNamedPaths(root, named.rules, 'rules', limits);
-  const checks = await checkNamedPaths(root, named.checks, 'checks', limits);
+  const rules = await checkNamedPaths(root, revision, named.rules, 'rules', limits);
+  const checks = await checkNamedPaths(root, undefined, named.checks, 'checks', limits);
 
   return { rules, checks, gaps: [] };
 };
@@ -299,7 +328,7 @@ export const readReviewEvidence = async (
   const revision = sourceRevision(record.target);
   const tests = await readTests(root, revision, paths.items, limits);
   const callers = await findCallers(root, revision, paths.items, limits);
-  const named = await readNamedPaths(root, directory, limits);
+  const named = await readNamedPaths(root, revision, directory, limits);
 
   const captureErrors: EvidenceGap[] =
     captured.errors.length > 0 ? [{ kind: 'incompleteCapture', reasons: captured.errors }] : [];

@@ -13,7 +13,8 @@ export type EvidenceGap =
   | { kind: 'truncatedBody'; path: string; kept: number; total: number }
   | { kind: 'absent'; path: string }
   | { kind: 'missing'; path: string; section: NamedSection }
-  | { kind: 'unsearched'; path: string; reason: string };
+  | { kind: 'unsearched'; path: string; reason: string }
+  | { kind: 'incompleteSearch'; path: string; reason: string };
 
 export interface EvidenceLimits {
   paths: number;
@@ -33,6 +34,14 @@ interface Bounded<T> {
   items: T[];
   gaps: EvidenceGap[];
 }
+
+interface GrepMatch {
+  path: string;
+  line: number;
+  text: string;
+}
+
+type GrepRecord = { match: GrepMatch; next: number; error?: undefined } | { error: string };
 
 export const defaultEvidenceLimits: EvidenceLimits = {
   paths: 500,
@@ -99,8 +108,14 @@ const normalizePath = (path: string) => {
   return segments.join('/');
 };
 
+// A relative specifier after `from`, a side-effect `import`, `import(`, or `require(`.
+const importSyntax =
+  /(?:(?:^|[\s}])from|^\s*import|\bimport\s*\(|\brequire\s*\()\s*(['"])(\.{1,2}\/[^'"]*)\1/g;
+
+const isCommentLine = (text: string) => /^\s*(?:\/\/|\/\*|\*)/.test(text);
+
 const relativeSpecifiers = (text: string) =>
-  [...text.matchAll(/['"](\.{1,2}\/[^'"]*)['"]/g)].map((match) => match[1] ?? '');
+  isCommentLine(text) ? [] : [...text.matchAll(importSyntax)].map((match) => match[2] ?? '');
 
 // The import names a module by its path without the extension, or a directory by its index file.
 const namesModule = (resolved: string, module: string) => {
@@ -196,6 +211,53 @@ export const numberedBody = (
     all.length > limit ? [{ kind: 'truncatedBody', path, kept: limit, total: all.length }] : [];
 
   return { lines, gaps };
+};
+
+const lineNumber = /^[1-9]\d*$/;
+
+// `git grep -z` prints `[<revision>:]<path>\0<line>\0<text>\n`. A path can hold a newline, so
+// the NUL-terminated fields are read before the newline-terminated text.
+const parseGrepRecord = (output: string, start: number, prefix: string): GrepRecord => {
+  const nameEnd = output.indexOf('\0', start);
+  const lineEnd = nameEnd === -1 ? -1 : output.indexOf('\0', nameEnd + 1);
+  const textEnd = lineEnd === -1 ? -1 : output.indexOf('\n', lineEnd + 1);
+  const name = output.slice(start, nameEnd);
+  const line = output.slice(nameEnd + 1, lineEnd);
+  const malformed = `git grep printed a malformed record: ${JSON.stringify(output.slice(start))}`;
+
+  if (textEnd === -1 || !lineNumber.test(line)) {
+    return { error: malformed };
+  }
+
+  if (!name.startsWith(prefix)) {
+    return { error: malformed };
+  }
+
+  const match = { path: name.slice(prefix.length), line: Number(line) };
+
+  return { match: { ...match, text: output.slice(lineEnd + 1, textEnd) }, next: textEnd + 1 };
+};
+
+export const parseGrepOutput = (
+  output: string,
+  revision: string | undefined,
+): { matches: GrepMatch[]; error?: undefined } | { matches?: undefined; error: string } => {
+  const prefix = revision === undefined ? '' : `${revision}:`;
+  const matches: GrepMatch[] = [];
+  let offset = 0;
+
+  while (offset < output.length) {
+    const record = parseGrepRecord(output, offset, prefix);
+
+    if (record.error !== undefined) {
+      return { error: record.error };
+    }
+
+    matches.push(record.match);
+    offset = record.next;
+  }
+
+  return { matches };
 };
 
 export const freshnessGaps = ({ status, reasons }: Freshness): EvidenceGap[] =>

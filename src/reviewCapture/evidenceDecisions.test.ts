@@ -8,6 +8,7 @@ import {
   isCaller,
   namedPaths,
   numberedBody,
+  parseGrepOutput,
   sourceRevision,
   testPaths,
 } from './evidenceDecisions.js';
@@ -45,6 +46,28 @@ it.each([
   { importer: 'src/use.ts', text: "export * from './x';", module: 'src/x/index.ts', imports: true },
   { importer: 'src/use.ts', text: "import a from './x/a.js';", module: 'src/a.ts', imports: false },
   { importer: 'src/use.ts', text: "import a from 'a';", module: 'src/a.ts', imports: false },
+  { importer: 'src/use.ts', text: "import './a.js';", module: 'src/a.ts', imports: true },
+  { importer: 'src/use.ts', text: "} from './a.js';", module: 'src/a.ts', imports: true },
+  { importer: 'src/use.ts', text: "await import('./a.js');", module: 'src/a.ts', imports: true },
+  { importer: 'src/use.ts', text: "require('./a.js');", module: 'src/a.ts', imports: true },
+  {
+    importer: 'src/use.ts',
+    text: "export const examplePath = './a.js';",
+    module: 'src/a.ts',
+    imports: false,
+  },
+  {
+    importer: 'src/use.ts',
+    text: "// import { a } from './a.js';",
+    module: 'src/a.ts',
+    imports: false,
+  },
+  {
+    importer: 'src/use.ts',
+    text: "  * import a from './a.js';",
+    module: 'src/a.ts',
+    imports: false,
+  },
   {
     importer: 'src/use.ts',
     text: "import b from './b.js'; import a from './a.js';",
@@ -138,4 +161,40 @@ it.each([
   },
 ])('turns $freshness.status freshness into gaps', ({ freshness, gaps }) => {
   expect(freshnessGaps(freshness)).toEqual(gaps);
+});
+
+it.each([
+  { output: '', revision: undefined, result: { matches: [] } },
+  {
+    output: 'src/a\nb.ts\u00003\u0000import a from "./a";\n',
+    revision: undefined,
+    result: { matches: [{ path: 'src/a\nb.ts', line: 3, text: 'import a from "./a";' }] },
+  },
+  {
+    output: `${from}:src/a.ts\u00001\u0000x\n${from}:src/b.ts\u00002\u0000y\n`,
+    revision: from,
+    result: {
+      matches: [
+        { path: 'src/a.ts', line: 1, text: 'x' },
+        { path: 'src/b.ts', line: 2, text: 'y' },
+      ],
+    },
+  },
+  {
+    output: 'src/a.ts\u0000one\u0000x\n',
+    revision: undefined,
+    result: { error: 'git grep printed a malformed record: "src/a.ts\\u0000one\\u0000x\\n"' },
+  },
+  {
+    output: 'src/a.ts\u00001\u0000x',
+    revision: undefined,
+    result: { error: 'git grep printed a malformed record: "src/a.ts\\u00001\\u0000x"' },
+  },
+  {
+    output: 'src/a.ts\u00001\u0000x\n',
+    revision: from,
+    result: { error: 'git grep printed a malformed record: "src/a.ts\\u00001\\u0000x\\n"' },
+  },
+])('parses git grep output $output', ({ output, revision, result }) => {
+  expect(parseGrepOutput(output, revision)).toEqual(result);
 });
