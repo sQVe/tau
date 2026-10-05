@@ -3,7 +3,8 @@
 - Status: Accepted
 - Date: 2026-10-01
 - Supersedes: the layout, skills location, extension shape, and primitive shape in
-  [ADR 0001](./0001-application-structure.md), and the `index.ts` rule in
+  [ADR 0001](./0001-application-structure.md), the skill location in
+  [ADR 0004](./0004-skill-authoring-style.md), and the `index.ts` rule in
   [ADR 0002](./0002-file-naming-conventions.md)
 
 ## Context
