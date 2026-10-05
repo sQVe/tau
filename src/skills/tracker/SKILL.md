@@ -2,10 +2,9 @@
 name: tracker
 description:
   Write Linear tickets by Tau's rules. Picks the ticket type and its template, routes it to the
-  right team and project, searches for an open duplicate, and runs the `linear` commands for
-  tickets, relations, and the one allowed status change. Use it for "file a bug", "create a ticket",
-  "write this up in Linear", or "add a follow-up ticket". It does not split a design into slices or
-  start a slice.
+  right team and project, searches for an open duplicate, and runs the `linear` commands for tickets
+  and the one allowed status change. Use it for "file a bug", "create a ticket", "write this up in
+  Linear", or "add a follow-up ticket". It does not split a design into slices or start a slice.
 metadata:
   required-for:
     creating or updating a Linear ticket, its relations, or its status, including as a step in a
@@ -34,6 +33,7 @@ preview. It needs the `linear` CLI authenticated for the workspace.
 ## Procedure
 
 1. Pick the ticket type and its template. Every template ends with `## Acceptance` and checkboxes.
+   The [slice skill](../slice/SKILL.md) writes containers and slices.
    - Human ticket: work for a person that is not a design, a slice, or a bug. Use the
      [human ticket template](templates/human-ticket.md).
    - Container: a human ticket that holds an agreed design and has slices as children. Use the
@@ -104,12 +104,13 @@ preview. It needs the `linear` CLI authenticated for the workspace.
    such as a title, search term, project, or label, as `'\''`, so the shell expands nothing in it.
    After each create, note the identifier the output shows. If it shows none, stop and search the
    parent's children or the team before any retry.
-   - Create a container, bug, or human ticket. Leave out `--project` when the route has none. Add
+   - Make every write to a container and its slices with the `slice` tool, through the
+     [slice skill](../slice/SKILL.md): creating them, editing them, their `blocked-by` relations,
+     and their order.
+   - Create a bug or human ticket. Leave out `--project` when the route has none. Add
      `--parent <parent>` when the approved ticket has a parent, and `--label '<label>'` for each
      label:
      `linear issue create --team <team> --project '<project>' --title '<title>' --description-file <file> --no-interactive`.
-   - Create a slice under its container, in the routed team and project:
-     `linear issue create --team <team> --project '<project>' --parent <container> --title '<title>' --description-file <file> --no-interactive`.
    - Create an agent ticket through the API. `linear issue create --parent` copies the parent's
      project, which fails when the agent team is not in that project. Read the agent team's ID with
      `linear api 'query($key: String!) { team(id: $key) { id } }' --variable key=<agent team>`,
@@ -124,15 +125,6 @@ preview. It needs the `linear` CLI authenticated for the workspace.
 
    - Update a ticket's title or body. Leave out the flag for the part that stays:
      `linear issue update <ticket> --title '<title>' --description-file <file>`.
-   - Add a dependency: `linear issue relation add <ticket> blocked-by <other>`. Remove one with
-     `linear issue relation delete <ticket> blocked-by <other>`.
-   - Move a sub-ticket to a place among its siblings, between the `subIssueSortOrder` values of its
-     neighbors:
-
-     ```sh
-     linear api 'mutation($id: String!, $order: Float!) { issueUpdate(id: $id, input: { subIssueSortOrder: $order }) { success } }' --variable id=<ticket> --variable order=<value>
-     ```
-
    - Move a slice to In Progress when it starts. Read its state name with the step 2 query, run on
      the slice. If the name is `In Progress`, skip the move; any other state, `In Review` included,
      moves. Move it with `linear issue update <slice> --state 'In Progress'`. If the team has no
