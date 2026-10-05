@@ -1,6 +1,6 @@
 # ADR 0022: Gate the clamped read hint on the remainder
 
-- Status: Accepted
+- Status: Superseded by [ADR 0087](./0087-gather-evidence-with-codemode.md)
 - Date: 2026-09-13
 
 ## Context

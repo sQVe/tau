@@ -6,6 +6,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
+import { isNestedControlCall, nestedControlCallReason } from '../../controlTools.js';
 import { errorMessage } from '../../errors.js';
 import { readGitOutput } from '../../gitOutput.js';
 import { appendSystemPrompt, appendToolGuidelines } from '../../systemPrompt.js';
@@ -532,6 +533,7 @@ const registerLaunchTool = (
 ): void => {
   runtime.pi.registerTool({
     name: 'subagent',
+    exposure: 'model-only',
     label: 'Launch worker',
     description: [
       'Launch a Pi worker in a herdr pane. cwd must match this session.',
@@ -561,6 +563,7 @@ const registerLaunchTool = (
 const registerFollowUpTool = (runtime: SubagentRuntime): void => {
   runtime.pi.registerTool({
     name: 'subagent_follow_up',
+    exposure: 'model-only',
     label: 'Follow up completed worker',
     description: [
       'Give a stopped worker a new task in its saved session and settings.',
@@ -629,6 +632,7 @@ const registerStatusTool = (runtime: SubagentRuntime): void => {
 const registerReplyTool = (runtime: SubagentRuntime): void => {
   runtime.pi.registerTool({
     name: 'subagent_reply',
+    exposure: 'model-only',
     label: 'Reply to worker',
     description: [
       "Answer a worker's pending question with the questionId from its notice and a unique replyId. Resending the same reply is safe.",
@@ -650,6 +654,7 @@ const registerReplyTool = (runtime: SubagentRuntime): void => {
 const registerCancelTool = (runtime: SubagentRuntime): void => {
   runtime.pi.registerTool({
     name: 'subagent_cancel',
+    exposure: 'model-only',
     label: 'Cancel worker',
     description:
       'Cancel a worker this session owns. cleanupUnconfirmed in the result needs manual cleanup.',
@@ -865,6 +870,10 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   });
 
   pi.on('tool_call', (event, context) => {
+    if (isNestedControlCall(event)) {
+      return { block: true, reason: nestedControlCallReason };
+    }
+
     const command = event.toolName === 'bash' ? event.input.command : undefined;
 
     if (typeof command !== 'string' || totalSleepSeconds(command) < blockedSleepSeconds) {

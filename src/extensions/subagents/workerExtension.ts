@@ -17,6 +17,7 @@ import type {
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
+import { isNestedControlCall, nestedControlCallReason } from '../../controlTools.js';
 import { instructionSetNames, readInstructionSet } from '../../instructionSets.js';
 import { appendSystemPrompt } from '../../systemPrompt.js';
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
@@ -614,6 +615,10 @@ const handleToolCall = (
   event: ToolCallEvent,
   context: ExtensionContext,
 ): ToolCallEventResult | undefined => {
+  if (isNestedControlCall(event)) {
+    return { block: true, reason: nestedControlCallReason };
+  }
+
   if (!isTaskActive(state) || state.pendingQuestion) {
     return {
       block: true,
@@ -649,6 +654,7 @@ const handleToolCall = (
 const registerQuestionTool = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.registerTool({
     name: 'subagent_question',
+    exposure: 'model-only',
     label: 'Ask parent',
     description:
       'Ask the parent one question and wait for the reply. The deadline keeps running, and the reply cannot widen scope. Call alone.',
@@ -670,6 +676,7 @@ const progressParameters = Type.Object(
 const registerProgressTool = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.registerTool({
     name: 'subagent_progress',
+    exposure: 'model-only',
     label: 'Report progress',
     description:
       'Publish a short one-line phase, such as "Running focused tests", only when the work phase changes. It never wakes the parent or extends the deadline.',
@@ -688,6 +695,7 @@ const registerProgressTool = (pi: ExtensionAPI, state: WorkerExtensionState): vo
 const registerReportTool = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   pi.registerTool({
     name: 'subagent_report',
+    exposure: 'model-only',
     label: 'Worker report',
     description: [
       'Submit the final report once. Put the report sections in summary; evidence holds references, not the Evidence section.',

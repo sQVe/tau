@@ -1,6 +1,7 @@
 # ADR 0067: Give workers only their profile's tools and skills
 
-- Status: Accepted
+- Status: Accepted; bundled tool lists superseded by
+  [ADR 0087](./0087-gather-evidence-with-codemode.md)
 - Date: 2026-09-29
 
 ## Context
