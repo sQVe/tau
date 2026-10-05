@@ -132,6 +132,8 @@ Workers then carry out the agent tickets.
 
 8. Start the slice in the previewed order.
    - Check that `git status --porcelain` prints nothing. If it prints anything, stop and report it.
+   - Check that every one of your workers in the worktree is `stopped`, as the
+     [stack skill](../stack/SKILL.md) checks before a switch. If one is not, stop and report it.
    - Create the branch with `git switch --no-track -c <branchName> <base>`. If
      `git rev-parse --verify --quiet refs/heads/<branchName>` shows it exists already, run
      `git switch <branchName>` instead.
