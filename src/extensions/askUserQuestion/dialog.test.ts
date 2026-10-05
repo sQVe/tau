@@ -270,7 +270,8 @@ it('fits both views into a terminal under 14 rows', () => {
   expect(options.length).toBeLessThanOrEqual(7);
   expect(options.some((line) => line.includes('Which layout?'))).toBe(true);
   expect(options.some((line) => line.includes('> 1. Stacked'))).toBe(true);
-  expect(options.some((line) => line.includes('Preview: Stacked'))).toBe(true);
+  expect(options.some((line) => line.includes('Decides how'))).toBe(true);
+  expect(options.some((line) => line.includes('Ctrl+O full preview'))).toBe(true);
   expect(full.length).toBeLessThanOrEqual(7);
   expect(full.some((line) => line.endsWith('line 1'))).toBe(true);
   expect(full.some((line) => line.includes('Esc back'))).toBe(true);
@@ -460,7 +461,7 @@ it.each([
   expect(lines.some((line) => line.includes('more lines'))).toBe(false);
 });
 
-it('gives the context the rows of a preview that cannot fit', () => {
+it('drops the header border before the context, description, or preview', () => {
   const { dialog } = open(
     [
       layoutQuestion([
@@ -481,7 +482,7 @@ it('gives the context the rows of a preview that cannot fit', () => {
   expect(lines.some((line) => line.includes('Which layout?'))).toBe(true);
   expect(lines.some((line) => line.includes('Decides how the first'))).toBe(true);
   expect(lines.some((line) => line.includes('committed.'))).toBe(true);
-  expect(lines.some((line) => line.includes('Ctrl+O'))).toBe(true);
+  expect(lines.some((line) => line.includes('Preview: Project folder'))).toBe(true);
 });
 
 it.each([
@@ -507,4 +508,29 @@ it.each([
 
   expect(lines.some((line) => line.includes('…'))).toBe(true);
   expect(lines.every((line) => visibleWidth(line) <= 12)).toBe(true);
+});
+
+it('keeps a context row when a long focused description fills a short terminal', () => {
+  const { dialog } = open(
+    [
+      layoutQuestion([
+        {
+          ...cache(
+            'Project folder',
+            'It never reads stale values from another clone. The cost is that secrets can be committed.',
+          ),
+          recommended: true,
+        },
+        cache('Home folder', 'The cost is that other programs can read secrets.'),
+      ]),
+    ],
+    18,
+    40,
+  );
+
+  const lines = dialog.render(40);
+
+  expect(lines.length).toBeLessThanOrEqual(12);
+  expect(lines.some((line) => line.includes('Which layout?'))).toBe(true);
+  expect(lines.some((line) => line.includes('Decides how'))).toBe(true);
 });

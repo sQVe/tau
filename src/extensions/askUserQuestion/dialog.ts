@@ -55,6 +55,8 @@ const previewBar = ' │ ';
 const piChromeRows = 6;
 // Below this many rows the dialog drops its borders and blank rows.
 const compactRows = 12;
+// The border, the question, the context, and the blank row below them.
+const decoratedHeaderRows = 4;
 // A blank row, the key hints, and the border close the dialog.
 const footerRows = 3;
 // The full preview adds a border, a title, a blank row, and the hidden-line count to the footer.
@@ -293,11 +295,11 @@ class QuestionDialog implements Component {
     return this.compact() ? [hint] : ['', hint, this.theme.fg('accent', '─'.repeat(width))];
   }
 
-  // Fits the header into `rows`. The question and the context keep a row each before the tabs get
-  // any, and the tabs are dropped when they do not fit whole.
+  // Fits the header into `rows`. The question and the context keep a row each before the border,
+  // the blank row, or the tabs get any, and the tabs are dropped when they do not fit whole.
   private header(facts: DialogQuestion, width: number, rows: number): string[] {
-    // The border and the blank row below the context take two rows unless compact.
-    const textRows = Math.max(1, this.compact() ? rows : rows - 2);
+    const decorated = !this.compact() && rows >= decoratedHeaderRows;
+    const textRows = Math.max(2, decorated ? rows - 2 : rows);
     const question = wrapWithPrefix(' ', this.theme.bold(facts.question), width);
     const context = wrapWithPrefix(' ', this.theme.fg('muted', facts.context), width);
     const shownQuestion = clipLines(question, Math.max(1, textRows - 1), width);
@@ -306,7 +308,7 @@ class QuestionDialog implements Component {
     const tabRows = textRows - shownQuestion.length - shownContext.length;
     const text = [...(tabs.length <= tabRows ? tabs : []), ...shownQuestion, ...shownContext];
 
-    if (this.compact()) {
+    if (!decorated) {
       return text;
     }
 
@@ -322,24 +324,6 @@ class QuestionDialog implements Component {
     return { header, room };
   }
 
-  // Sizes the header and the preview. A preview that cannot keep its minimum gives its reserved
-  // rows back to the header.
-  private layout(
-    facts: DialogQuestion,
-    width: number,
-    space: Omit<PreviewSpace, 'room'>,
-    previewHeight: number,
-  ) {
-    const reserved = this.fitHeader(facts, width, space.focusedRows, space.minimum);
-    const previewRows = previewRoom({ ...space, room: reserved.room }, previewHeight);
-
-    if (previewRows > 0 || space.minimum === 0) {
-      return { ...reserved, previewRows };
-    }
-
-    return { ...this.fitHeader(facts, width, space.focusedRows, 0), previewRows };
-  }
-
   private renderOptions(facts: DialogQuestion, width: number): string[] {
     const previewLines = this.focusedOption(facts)?.preview?.split('\n') ?? [];
     const minimum = previewLines.length === 0 ? 0 : this.minimumPreviewRows();
@@ -348,9 +332,9 @@ class QuestionDialog implements Component {
     const focusedRows = blocks[cursor]?.length ?? 1;
     const previewHeight = previewLines.length + this.previewTitleRows();
 
-    const space = { optionRows: blocks.flat().length, focusedRows, minimum };
-    const { header, room, previewRows } = this.layout(facts, width, space, previewHeight);
-    const preview = this.preview(facts, width, previewRows);
+    const { header, room } = this.fitHeader(facts, width, focusedRows, minimum);
+    const space = { room, optionRows: blocks.flat().length, focusedRows, minimum };
+    const preview = this.preview(facts, width, previewRoom(space, previewHeight));
     const options = visibleOptions(blocks, cursor, room - preview.length);
 
     const tooTall = preview.length < previewHeight;
