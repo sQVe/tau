@@ -3,7 +3,7 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { Exec } from '../../exec.js';
-import { api, run, unexpectedOutput } from '../../linear.js';
+import { api, openStateTypes, run, unexpectedOutput } from '../../linear.js';
 import type { LinearChild, LinearContainer } from './writes.js';
 
 export interface CreatedIssue {
@@ -196,7 +196,7 @@ export const findOpenIssues = async (
   const filter: Record<string, unknown> = {
     team: { key: { eq: search.team } },
     title: { eq: search.title },
-    state: { type: { nin: ['completed', 'canceled'] } },
+    state: { type: { in: openStateTypes } },
   };
 
   if (search.project !== null) {

@@ -149,6 +149,18 @@ it('returns an empty candidate list and no gap when nothing matches', async () =
   expect(evidence).toEqual({ candidates: [], parent: null, labels: [bugLabel], gaps: [] });
 });
 
+it('leaves canceled and duplicate matches out of the candidates', async () => {
+  const fake = createLinearFake();
+
+  fake.addIssue({ identifier: 'ME-4', title: 'Gather evidence', stateType: 'canceled' });
+  fake.addIssue({ identifier: 'ME-5', title: 'Gather evidence', stateType: 'duplicate' });
+
+  const evidence = await gather(fake);
+
+  expect(evidence.candidates).toEqual([]);
+  expect(evidence.gaps).toEqual([]);
+});
+
 it('lists a match in another project as not fitting, with project as the difference', async () => {
   const fake = createLinearFake();
 

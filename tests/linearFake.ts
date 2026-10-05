@@ -2,6 +2,19 @@ import { readFileSync } from 'node:fs';
 
 import type { Exec } from '../src/exec.js';
 
+type StateType =
+  | 'triage'
+  | 'backlog'
+  | 'unstarted'
+  | 'started'
+  | 'completed'
+  | 'canceled'
+  | 'duplicate';
+
+interface StateFilter {
+  type: { in: string[] };
+}
+
 interface FakeIssue {
   identifier: string;
   title: string;
@@ -10,7 +23,7 @@ interface FakeIssue {
   teamId: string;
   projectId: string | null;
   sortOrder: number;
-  completed: boolean;
+  stateType: StateType;
   pullRequests: string[];
   blockedBy: string[];
 }
@@ -88,7 +101,7 @@ const childNode = (issue: FakeIssue) => ({
   description: issue.description,
   url: `https://linear.app/me/issue/${issue.identifier}`,
   subIssueSortOrder: issue.sortOrder,
-  state: { type: issue.completed ? 'completed' : 'started' },
+  state: { type: issue.stateType },
   attachments: { nodes: issue.pullRequests.map((url) => ({ url })) },
   inverseRelations: {
     nodes: issue.blockedBy.map((identifier) => ({ type: 'blocks', issue: { identifier } })),
@@ -127,7 +140,7 @@ export const createLinearFake = (): LinearFake => {
       teamId: 'team-me',
       projectId: 'project-tau',
       sortOrder: [...issues.values()].filter((other) => other.parent === issue.parent).length,
-      completed: false,
+      stateType: 'started',
       pullRequests: [],
       blockedBy: [],
       ...issue,
@@ -228,12 +241,13 @@ export const createLinearFake = (): LinearFake => {
   };
 
   // Supports the filter that findOpenIssues sends: team key, exact title, optional project name,
-  // and open states.
+  // and an allow-list of state types.
   const issuesData = (variables: Record<string, unknown>) => {
     const filter = variables['filter'] as {
       team: { key: { eq: string } };
       title: { eq: string };
       project?: { name: { eq: string } };
+      state: StateFilter;
     };
 
     const projectIds =
@@ -243,19 +257,21 @@ export const createLinearFake = (): LinearFake => {
 
     const nodes = [...issues.values()]
       .filter((issue) => issue.teamId === teams.get(filter.team.key.eq)?.id)
-      .filter((issue) => issue.title === filter.title.eq && !issue.completed)
+      .filter((issue) => issue.title === filter.title.eq)
+      .filter((issue) => filter.state.type.in.includes(issue.stateType))
       .filter((issue) => projectIds === undefined || projectIds.includes(issue.projectId ?? ''))
       .map((issue) => ({ identifier: issue.identifier }));
 
     return { issues: { nodes } };
   };
 
-  // Supports the filter that the tracker search sends: team key, optional project name, and open
-  // states. An issue matches when its title holds any word of the term.
+  // Supports the filter that the tracker search sends: team key, optional project name, and an
+  // allow-list of state types. An issue matches when its title holds any word of the term.
   const searchData = (variables: Record<string, unknown>) => {
     const filter = variables['filter'] as {
       team: { key: { eq: string } };
       project?: { name: { eq: string } };
+      state: StateFilter;
     };
 
     const words = String(variables['term']).toLowerCase().split(/\s+/u);
@@ -266,14 +282,15 @@ export const createLinearFake = (): LinearFake => {
         : projectIdsNamed(filter.project.name.eq).map((candidate) => candidate.id);
 
     const nodes = [...issues.values()]
-      .filter((issue) => issue.teamId === teams.get(filter.team.key.eq)?.id && !issue.completed)
+      .filter((issue) => issue.teamId === teams.get(filter.team.key.eq)?.id)
+      .filter((issue) => filter.state.type.in.includes(issue.stateType))
       .filter((issue) => words.some((word) => issue.title.toLowerCase().includes(word)))
       .filter((issue) => projectIds === undefined || projectIds.includes(issue.projectId ?? ''))
       .map((issue) => ({
         identifier: issue.identifier,
         title: issue.title,
         url: `https://linear.app/me/issue/${issue.identifier}`,
-        state: { type: 'started' },
+        state: { type: issue.stateType },
         team: { key: team(issue.teamId).key },
         project: issue.projectId === null ? null : { name: project(issue.projectId)!.name },
         parent: issue.parent === null ? null : { identifier: issue.parent },
@@ -295,7 +312,7 @@ export const createLinearFake = (): LinearFake => {
       issue: {
         team: { key: team(issue.teamId).key },
         project: found === null ? null : { name: found.name },
-        state: { name: issue.completed ? 'Done' : 'In Progress' },
+        state: { name: issue.stateType === 'completed' ? 'Done' : 'In Progress' },
       },
     };
   };

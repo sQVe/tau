@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { Exec } from '../../exec.js';
-import { api, unexpectedOutput } from '../../linear.js';
+import { api, openStateTypes, unexpectedOutput } from '../../linear.js';
 
 export interface FoundIssue {
   identifier: string;
@@ -97,7 +97,7 @@ export const searchIssues = async (
 ): Promise<IssueSearch> => {
   const filter: Record<string, unknown> = {
     team: { key: { eq: search.team } },
-    state: { type: { nin: ['completed', 'canceled'] } },
+    state: { type: { in: openStateTypes } },
   };
 
   if (search.project !== null) {

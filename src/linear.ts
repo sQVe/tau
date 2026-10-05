@@ -8,6 +8,10 @@ export interface ApiResponse {
 
 const outputPreviewLength = 200;
 
+// Linear also has closed state types besides `completed` and `canceled`, such as `duplicate`, so open
+// issues are matched by an allow-list.
+export const openStateTypes = ['triage', 'backlog', 'unstarted', 'started'];
+
 const errorMessage = (error: unknown) => {
   const message: unknown =
     typeof error === 'object' && error !== null && 'message' in error ? error.message : undefined;
