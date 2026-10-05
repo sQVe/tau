@@ -35,6 +35,9 @@ interface CommandResult {
 const excerptLineLimit = 200;
 const excerptCharacterLimit = 20_000;
 const outputPreviewLength = 200;
+const failingChecksExitCode = 1;
+const pendingChecksExitCode = 8;
+const listedExitCodes = new Set([0, failingChecksExitCode, pendingChecksExitCode]);
 
 const checkListSchema = Type.Array(
   Type.Object({
@@ -123,7 +126,11 @@ const readCheckList = async (
   }
 
   // gh pr checks exits 1 while a check fails and 8 while one is pending, and still prints the
-  // list. Only its output shows whether it failed.
+  // list. Exit 1 can also mean gh failed, so only the output tells those apart.
+  if (!listedExitCodes.has(result.code)) {
+    return { gap: commandGap(null, result, `${result.command} exited with code ${result.code}.`) };
+  }
+
   const parsed = parseCheckList(result.stdout);
 
   if ('problem' in parsed) {

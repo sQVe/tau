@@ -274,6 +274,29 @@ describe('checks gaps', () => {
     expect(runViewCalls(fake)).toEqual([]);
   });
 
+  it('returns one gap and no checks when gh pr checks prints valid JSON but exits 4', async () => {
+    const { fake, readChecks } = await setUp();
+
+    fake.checks = [failingCheck];
+    fake.checksExitCode = 4;
+
+    expect(await readChecks()).toEqual({
+      pr: 7,
+      checks: [],
+      gaps: [
+        {
+          check: null,
+          command: checksCommand,
+          code: 4,
+          stderr: '',
+          reason: `${checksCommand} exited with code 4.`,
+        },
+      ],
+    });
+
+    expect(runViewCalls(fake)).toEqual([]);
+  });
+
   it.each([
     { bucket: 'fail', link: 'https://buildkite.com/sqve/tau/builds/9' },
     { bucket: 'cancel', link: '' },
