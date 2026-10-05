@@ -174,21 +174,23 @@ const relativeSpecifiers = (text: string) =>
     ? []
     : [...codeBeforeComment(text).matchAll(importSyntax)].map((match) => match[2] ?? '');
 
-// The import names a module by its path without the extension, or a directory by its index file.
+// The import names a module by its path with or without the extension. Only a path without an
+// extension can name a directory by its index file.
 const namesModule = (resolved: string, module: string) => {
   const stem = withoutScriptExtension(module);
   const isIndex = lastSegment(stem) === 'index';
+  const hasExtension = scriptExtension.test(resolved);
 
-  const namesDirectory = isIndex && resolved === parentOf(stem);
+  const namesDirectory = isIndex && !hasExtension && resolved === parentOf(stem);
 
-  return resolved === stem || namesDirectory;
+  return withoutScriptExtension(resolved) === stem || namesDirectory;
 };
 
 export const importsModule = (importer: string, text: string, module: string): boolean =>
   relativeSpecifiers(text).some((specifier) => {
     const resolved = normalizePath(`${parentOf(importer)}/${specifier}`);
 
-    return namesModule(withoutScriptExtension(resolved), module);
+    return namesModule(resolved, module);
   });
 
 const escapeExtendedPattern = (text: string) => text.replaceAll(/[.[\]()*+?{}|^$\\]/g, '\\$&');
