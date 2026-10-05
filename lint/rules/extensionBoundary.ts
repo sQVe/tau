@@ -17,6 +17,7 @@ const publicFiles = new Set([
   'extensions/subagents/controller/controller',
   'extensions/subagents/controller/record',
   'extensions/subagents/controller/budget',
+  'reviewCapture/record',
 ]);
 
 const withoutExtension = (name: string): string => name.replace(/\.[jt]s$/, '');

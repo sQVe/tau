@@ -25,6 +25,7 @@ const pureModules = [
   'scripts/piVersionDrift.ts',
   'scripts/tokenUsageReport.ts',
   'src/models/allowedModels.ts',
+  'src/reviewCapture/freshness.ts',
   'src/extensions/askUserQuestion/questionnaire.ts',
   'src/extensions/askUserQuestion/validation.ts',
   'src/extensions/compaction/reminder.ts',
