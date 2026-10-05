@@ -1,6 +1,7 @@
 # ADR 0060: Keep local code review in a skill
 
-- Status: Accepted
+- Status: Accepted; the rule "Add no review tools or review state" superseded by
+  [ADR 0089](./0089-capture-review-targets-with-a-code-review-tool.md)
 - Date: 2026-09-28
 
 ## Context

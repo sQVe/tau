@@ -109,3 +109,5 @@ decision replaces it, change its status to Superseded with a link to the replace
 - [0085: Group per-repository settings in the user config](./0085-group-per-repository-settings-in-the-user-config.md)
 - [0086: Post to GitHub bots without a confirm](./0086-post-to-github-bots-without-a-confirm.md)
 - [0087: Gather evidence with codemode](./0087-gather-evidence-with-codemode.md)
+- [0088: Grow skills into tools and templates](./0088-grow-skills-into-tools-and-templates.md)
+- [0089: Capture review targets with a code_review tool](./0089-capture-review-targets-with-a-code-review-tool.md)

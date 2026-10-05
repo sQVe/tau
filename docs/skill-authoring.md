@@ -58,7 +58,8 @@ Inputs:
 Writes:
 
 - [ ] Each write comes after the user approves a preview that shows it. A write is a push, a pull
-      request, a ticket, a comment, or a shared file.
+      request, a ticket, a comment, or a shared file. A reply to a GitHub bot posts without
+      approval, but a write that answers a person still needs it.
 - [ ] Nothing changes between the preview and the write. If it does, preview again.
 - [ ] Each hard rule holds on every path, including the retry and continue paths.
 - [ ] Scratch files use a task-named path or `mktemp`, never a shared name in `/tmp`.
