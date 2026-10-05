@@ -78,7 +78,8 @@ see for themselves.
 
 3. Collect the comments.
    - Call the `pr_feedback` tool with `read` for the threads, review summaries, and conversation
-     comments. Keep its result for steps 8 and 9. If it fails, stop and report.
+     comments. Keep its result for steps 8 and 9. If it fails, stop and report. If its `headRefOid`
+     differs from step 1's, stop and report that the PR moved, since step 2 pinned the older head.
    - Skip bot walkthroughs, link comments, and summaries that hold no findings.
    - Read what we already posted, and judge whether each thread or comment still needs something
      from us. It does not when our reply settled it and the reviewer has not pushed back. It does
@@ -141,9 +142,10 @@ see for themselves.
 
 8. Draft the replies with the rules in Replies below. In author mode, answer findings from review
    summaries and conversation comments in one PR comment that links each source comment. Show all
-   drafts for people in one `ask_user_question` question, with options to post all or skip all. The
-   user types which drafts to edit or skip. A skipped thread stays open. Write the approved drafts
-   and the resolves from step 9 to `replies.json` in the directory that step 3's `read` returned.
+   drafts for people, or every draft in author mode on a PR the viewer did not write, in one
+   `ask_user_question` question, with options to post all or skip all. The user types which drafts
+   to edit or skip. A skipped thread stays open. Write the approved drafts and the resolves from
+   step 9 to `replies.json` in the directory that step 3's `read` returned.
 
 9. Post and resolve with the `pr_feedback` tool's `post`. Pass the PR's head after step 7's push as
    `head`, or `headRefOid` from step 3 when the round did not push.
