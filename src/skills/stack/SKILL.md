@@ -24,8 +24,11 @@ you here. It needs the `gh stack` extension and `gh` authenticated for the repos
 - Treat a stack that `gh stack` does not track, such as PRs chained by hand with `--base`, as a set
   of standalone PRs. Do not work out a stack from the bases yourself. When a PR's base is not the
   default branch, suggest `gh stack init <branches, bottom to top>` to start tracking it.
-- Change branches only on a clean working tree. Follow the rebase, abort, and push rules in the
-  [update-branch skill](../update-branch/SKILL.md).
+- Switch, restack, or sync only on a clean working tree and when none of your workers is running in
+  the worktree. Workers share its files, so a branch change moves them under a running worker. Find
+  your workers with `subagent_history` and read their state with `subagent_status`. Wait for running
+  workers or ask the user before you cancel one.
+- Follow the rebase, abort, and push rules in the [update-branch skill](../update-branch/SKILL.md).
 
 ## Procedure
 
