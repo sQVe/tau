@@ -8,15 +8,16 @@
 - A skill tool asks the user with `ctx.ui.confirm` before any write outside the worktree.
 - On a pull request, most review threads come from review bots. A round often replies to and
   resolves many of them.
-- A reply to a bot reaches no person, and nobody needs to approve it. A confirm for each round of
-  bot replies adds a prompt that the user approves without reading.
+- A reply to a bot answers no person. People who follow the pull request can read it, but nobody
+  waits on it. A confirm for each round of bot replies adds a prompt that the user approves without
+  reading.
 
 ## Options considered
 
 - Confirm every GitHub write. Rejected: the user approves bot replies by habit, and the habit
   weakens the confirm for writes to people.
 - Post to bots without a confirm, and confirm writes to people. Chosen: the confirm appears only
-  when a person will read the write.
+  when the write answers a person.
 
 ## Decision
 
@@ -31,7 +32,7 @@ person.
 ## Tradeoffs
 
 - Rounds with only bot threads post without a prompt.
-- The confirm shows up only for writes a person reads.
+- The confirm shows up only for writes that answer a person.
 - Cost: a wrong or noisy reply to a bot posts without review.
 - Cost: the tool must tell bots from people, and a wrong answer skips the confirm for a person.
 
