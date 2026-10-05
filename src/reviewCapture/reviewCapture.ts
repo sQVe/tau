@@ -11,7 +11,7 @@ import { decideFreshness } from './freshness.js';
 import type { CaptureState, Freshness } from './freshness.js';
 
 export interface Gap {
-  kind: 'binary' | 'unreadable' | 'excluded' | 'unmatched';
+  kind: 'binary' | 'unreadable' | 'excluded' | 'unmatched' | 'submodule';
   path: string;
 }
 
@@ -430,17 +430,60 @@ const unmatchedPaths = async (root: string, target: PinnedTarget): Promise<Part>
   return { ...emptyPart, gaps, errors };
 };
 
+const gitLinkMode = '160000';
+
+// Cached Git links, such as submodules, in a files target. `ls-files -s -z` prints
+// `<mode> <object> <stage>\t<path>` for each entry.
+const cachedGitLinks = async (root: string, target: PinnedTarget) => {
+  if (target.kind !== 'files') {
+    return { links: new Set<string>() };
+  }
+
+  const commandArguments = ['ls-files', '-z', '-s', ...pathspec(target)];
+  const listed = await runCaptureCommand(root, commandArguments);
+
+  if (listed.stdout === undefined) {
+    return { error: `${describeCommand(commandArguments)} failed: ${listed.error}` };
+  }
+
+  const entries = listed.stdout.toString('utf8').split('\0');
+  const links = entries.filter((entry) => entry.startsWith(`${gitLinkMode} `));
+
+  return { links: new Set(links.map((entry) => entry.slice(entry.indexOf('\t') + 1))) };
+};
+
+// `ls-files -o` lists an untracked nested repository as its directory with a trailing slash.
+const isNestedRepository = (file: string) => file.endsWith('/');
+
+// A Git link has no file contents to show in full; its commit change stays in the diff.
+const submoduleGap = (file: string): Part => {
+  const path = isNestedRepository(file) ? file.slice(0, -1) : file;
+
+  return { ...emptyPart, gaps: [{ kind: 'submodule', path }] };
+};
+
 const captureWholeFiles = async (root: string, target: PinnedTarget): Promise<Part[]> => {
   const listed = await wholeFileList(target, root);
+  const gitLinks = await cachedGitLinks(root, target);
 
   if (listed.error !== undefined) {
     return [{ ...emptyPart, errors: [listed.error] }];
+  }
+
+  if (gitLinks.error !== undefined) {
+    return [{ ...emptyPart, errors: [gitLinks.error] }];
   }
 
   const parts: Part[] = [];
 
   // One Git process at a time keeps a large untracked tree from starting thousands at once.
   for (const file of listed.files) {
+    if (gitLinks.links.has(file) || isNestedRepository(file)) {
+      parts.push(submoduleGap(file));
+
+      continue;
+    }
+
     // oxlint-disable-next-line no-await-in-loop -- the files run one at a time on purpose.
     parts.push(await captureWholeFile(root, file));
   }

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -66,6 +66,64 @@ it('lists both paths of a renamed file', async () => {
 
   expect(capture.errors).toEqual([]);
   expect(capture.paths).toEqual(['renamed.txt', 'tracked.txt']);
+});
+
+const nestedRepository = async (root: string) => {
+  const module = join(root, 'module');
+
+  await mkdir(module);
+  await git(module, ['init', '--quiet', '--initial-branch=main']);
+  await writeFile(join(module, 'inner.txt'), 'inner\n');
+  await git(module, ['add', 'inner.txt']);
+  await git(module, ['commit', '--quiet', '-m', 'inner']);
+};
+
+it('reports a committed Git link as a gap and keeps the other named files', async () => {
+  const root = await committedRepository();
+
+  await nestedRepository(root);
+  await git(root, ['add', 'module']);
+  await git(root, ['commit', '--quiet', '-m', 'module']);
+
+  const target = await pinTarget(root, { kind: 'files', paths: ['module', 'tracked.txt'] });
+  const capture = await captureTarget(root, target);
+
+  expect(capture.errors).toEqual([]);
+  expect(capture.paths).toEqual(['tracked.txt']);
+  expect(capture.gaps).toEqual([{ kind: 'submodule', path: 'module' }]);
+  expect(capture.bytes.toString('utf8')).toContain('+one');
+});
+
+it('keeps the commit change of a changed Git link in the diff', async () => {
+  const root = await committedRepository();
+
+  await nestedRepository(root);
+  await git(root, ['add', 'module']);
+  await git(root, ['commit', '--quiet', '-m', 'module']);
+  await writeFile(join(root, 'module', 'inner.txt'), 'changed\n');
+  await git(join(root, 'module'), ['commit', '--quiet', '-am', 'inner change']);
+
+  const target = await pinTarget(root, { kind: 'files', paths: ['module'] });
+  const capture = await captureTarget(root, target);
+
+  expect(capture.errors).toEqual([]);
+  expect(capture.paths).toEqual(['module']);
+  expect(capture.gaps).toEqual([{ kind: 'submodule', path: 'module' }]);
+  expect(capture.bytes.toString('utf8')).toContain('+Subproject commit');
+});
+
+it('reports an untracked nested repository as a gap', async () => {
+  const root = await committedRepository();
+
+  await nestedRepository(root);
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  const target = await pinTarget(root, { kind: 'workingTree', base: 'HEAD' });
+  const capture = await captureTarget(root, target);
+
+  expect(capture.errors).toEqual([]);
+  expect(capture.paths).toEqual(['tracked.txt']);
+  expect(capture.gaps).toEqual([{ kind: 'submodule', path: 'module' }]);
 });
 
 it('reports a binary file as a gap', async () => {
