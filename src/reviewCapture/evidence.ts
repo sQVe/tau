@@ -1,5 +1,5 @@
 import { access, constants, lstat, readFile } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
@@ -274,9 +274,13 @@ const findCallers = async (
   };
 };
 
+// Only a whole `..` segment leaves the root; `..rules.md` is a name inside it.
+const leavesRoot = (fromRoot: string) =>
+  fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot);
+
 const repositoryPath = (root: string, path: string) => {
   const fromRoot = relative(root, resolve(root, path));
-  const outside = fromRoot.startsWith('..') || isAbsolute(fromRoot);
+  const outside = leavesRoot(fromRoot);
 
   return outside || fromRoot === '' ? undefined : fromRoot;
 };

@@ -508,3 +508,20 @@ it('finds the callers of each changed module within the per-module and total lim
     total: 3,
   });
 });
+
+it('checks a rule file whose name starts with two dots at the end of a range', async () => {
+  const { root, from } = await rangeRepository();
+  const to = await commit(root, { '..rules.md': '# Rules\n' }, 'third');
+
+  await rm(join(root, '..rules.md'));
+
+  const directory = await savedCapture(
+    root,
+    { kind: 'range', from, to },
+    inputText('- `..rules.md`', 'none'),
+  );
+
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.rules).toEqual([{ path: '..rules.md', status: 'readable' }]);
+});
