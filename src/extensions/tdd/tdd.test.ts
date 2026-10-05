@@ -447,6 +447,27 @@ it('isolates cwd and preserves arbitrary tool content, details, and errors', asy
   expect(await application.edit(join(cwd, 'second'))).not.toBeUndefined();
 });
 
+it('keeps structuredContent when it appends a hint', async ({ onTestFinished }) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-hint-structured-'));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const application = setup();
+  const content = [{ type: 'text', text: 'Original result' }];
+  const structuredContent = { output: 'Original result', exit_code: 0 };
+
+  const patch = await application.emit('tool_result', cwd, {
+    toolName: 'write',
+    input: { path: 'src/value.ts' },
+    isError: false,
+    content,
+    structuredContent,
+  });
+
+  expect(patch).toEqual({
+    content: [...content, { type: 'text', text: redHint }],
+    structuredContent,
+  });
+});
+
 it('does not let a late run completion restore observations after a session reset', async ({
   onTestFinished,
 }) => {

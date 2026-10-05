@@ -186,6 +186,23 @@ it('rewrites the trailing continuation notice of a clamped read into the hint', 
   expect(app.emit('tool_result', event)).toBeUndefined();
 });
 
+it('keeps structuredContent when it rewrites a clamped read result', () => {
+  const app = setup();
+  app.emit('tool_call', readCall());
+  const structuredContent = { output: `head\n\n${notice}`, truncated: true };
+
+  const result = app.emit('tool_result', {
+    toolCallId: 'read',
+    content: [{ type: 'text', text: `head\n\n${notice}` }],
+    structuredContent,
+  });
+
+  expect(result).toEqual({
+    content: [{ type: 'text', text: `head\n\n${hint}` }],
+    structuredContent,
+  });
+});
+
 const delegation =
   'For questions, call bulk_read with paths and question. To edit, use a bounded read with offset and limit.';
 

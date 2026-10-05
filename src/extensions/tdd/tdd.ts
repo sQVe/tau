@@ -78,7 +78,12 @@ const withNotice = (
     context.ui.notify(text, level);
   }
 
-  return { content: [...event.content, { type: 'text' as const, text }] };
+  return {
+    content: [...event.content, { type: 'text' as const, text }],
+    ...(event.structuredContent === undefined
+      ? {}
+      : { structuredContent: event.structuredContent }),
+  };
 };
 
 const handleToolResult = async (
