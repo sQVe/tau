@@ -28,6 +28,8 @@ const scriptBash = async (command: string): Promise<BashValue> => {
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+  // The guard and Pi save full output under the temporary directory, so cleanup removes it too.
+  vi.stubEnv('TMPDIR', directory);
   const provider = fauxProvider({ provider: 'tau-worker-bash' });
 
   // A worker passes the guard with -e, so Pi loads it before the Tau package and its TDD hook.
