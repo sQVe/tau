@@ -458,3 +458,27 @@ it.each([
   expect(lines.some((line) => line.includes('find .cache/20 '))).toBe(true);
   expect(lines.some((line) => line.includes('more lines'))).toBe(false);
 });
+
+it('gives the context the rows of a preview that cannot fit', () => {
+  const { dialog } = open(
+    [
+      layoutQuestion([
+        cache(
+          'Project folder',
+          'It never reads stale values from another clone. The cost is that secrets can be committed.',
+        ),
+        cache('Home folder', 'The cost is that other programs can read secrets.'),
+      ]),
+    ],
+    24,
+    30,
+  );
+
+  const lines = dialog.render(30);
+
+  expect(lines.length).toBeLessThanOrEqual(18);
+  expect(lines.some((line) => line.includes('Which layout?'))).toBe(true);
+  expect(lines.some((line) => line.includes('Decides how the first'))).toBe(true);
+  expect(lines.some((line) => line.includes('committed.'))).toBe(true);
+  expect(lines.some((line) => line.includes('Ctrl+O'))).toBe(true);
+});

@@ -313,20 +313,44 @@ class QuestionDialog implements Component {
     return [this.theme.fg('accent', '─'.repeat(width)), ...text, ''];
   }
 
+  // The footer, the focused option, and the smallest preview come before the header.
+  private fitHeader(facts: DialogQuestion, width: number, focusedRows: number, minimum: number) {
+    const headerRows = this.availableRows() - this.footerRows() - focusedRows - minimum;
+    const header = this.header(facts, width, headerRows);
+    const room = this.availableRows() - header.length - this.footerRows();
+
+    return { header, room };
+  }
+
+  // Sizes the header and the preview. A preview that cannot keep its minimum gives its reserved
+  // rows back to the header.
+  private layout(
+    facts: DialogQuestion,
+    width: number,
+    space: Omit<PreviewSpace, 'room'>,
+    previewHeight: number,
+  ) {
+    const reserved = this.fitHeader(facts, width, space.focusedRows, space.minimum);
+    const previewRows = previewRoom({ ...space, room: reserved.room }, previewHeight);
+
+    if (previewRows > 0 || space.minimum === 0) {
+      return { ...reserved, previewRows };
+    }
+
+    return { ...this.fitHeader(facts, width, space.focusedRows, 0), previewRows };
+  }
+
   private renderOptions(facts: DialogQuestion, width: number): string[] {
     const previewLines = this.focusedOption(facts)?.preview?.split('\n') ?? [];
     const minimum = previewLines.length === 0 ? 0 : this.minimumPreviewRows();
     const blocks = [...this.optionBlocks(facts, width), [this.customRow(facts, width)]];
     const cursor = this.state.questions[this.state.tab]?.cursor ?? 0;
     const focusedRows = blocks[cursor]?.length ?? 1;
-    // The footer, the focused option, and the smallest preview come before the header.
-    const headerRows = this.availableRows() - this.footerRows() - focusedRows - minimum;
-    const header = this.header(facts, width, headerRows);
-    const room = this.availableRows() - header.length - this.footerRows();
-
     const previewHeight = previewLines.length + this.previewTitleRows();
-    const space = { room, optionRows: blocks.flat().length, focusedRows, minimum };
-    const preview = this.preview(facts, width, previewRoom(space, previewHeight));
+
+    const space = { optionRows: blocks.flat().length, focusedRows, minimum };
+    const { header, room, previewRows } = this.layout(facts, width, space, previewHeight);
+    const preview = this.preview(facts, width, previewRows);
     const options = visibleOptions(blocks, cursor, room - preview.length);
 
     const tooTall = preview.length < previewHeight;
