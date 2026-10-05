@@ -1,6 +1,7 @@
 # ADR 0001: Application structure
 
-- Status: Accepted
+- Status: Accepted; layout, skills location, extension shape, and primitive shape superseded by
+  [ADR 0079](./0079-grow-modules-from-flat-files.md)
 - Date: 2026-04-10
 
 ## Context
@@ -86,3 +87,7 @@ Shared code under `src/<primitive>/` follows the same layout:
 - Vocabulary matches Pi (`events/`, not `hooks/`).
 - Cost: moving `extensions/` under `src/` touches imports and tooling paths.
 - Cost: deciding whether code belongs in a shared module or one extension still needs judgment.
+
+## See also
+
+- [ADR 0079: Grow modules from flat files](./0079-grow-modules-from-flat-files.md)
