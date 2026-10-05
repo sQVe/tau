@@ -83,20 +83,7 @@ before anything was written to Linear.
 
 5. Preview and ask. Show what the user decides on, not how step 6 runs it. Keep it to about 40
    lines, and leave out raw commands and details of the local environment.
-   - The Linear layout as an ASCII tree with aligned columns. Mark each ticket as `new`, `update`,
-     or `unchanged`, and give each slice its `blocked-by` numbers and rough size in changed lines.
-     Under each slice, add one line on what it delivers and one line from its `## Out of scope`:
-
-     ```text
-     ENG-120  update  Add PR-sized planning
-     ├─ 1     new     Record the lifecycle                   ~150
-     │                The decision record for the slice lifecycle.
-     │                Out of scope: the skill itself.
-     └─ 2     new     Add the slice skill    blocked-by 1    ~300
-                      The /slice skill and its tests.
-                      Out of scope: starting a slice.
-     ```
-
+   - The Linear layout in the [preview template](templates/preview.md).
    - When the slices branch or join, a `flowchart TD` of the `blocked-by` edges, drawn with the
      [diagram skill](../diagram/SKILL.md) as a top-level block after the tree. Keep the tree; it
      holds the status, size, and scope a flowchart cannot.
@@ -105,9 +92,9 @@ before anything was written to Linear.
    - Each choice in the `## Design` section that the agreed design did not already state, one line
      each, and the path of the draft that holds the full section. For an existing container, say
      that the text outside that section stays unchanged.
-   - The number of `writes` from `read`. Say that step 6 shows each write for a last confirm and may
-     fix the order of the slices. Say that created tickets stay in Linear until the user cancels
-     them by hand.
+   - The number of `writes` from `read`. Say that step 6 shows each write for a last confirm, and
+     that the confirm lists each move of an existing slice into plan order. Say that created tickets
+     stay in Linear until the user cancels them by hand.
    - On a later run, what the draft changes compared with Linear now, including `blocked-by`
      relations to add and remove. List each slice in `dropped` for the user to cancel by hand: it
      stays in Linear.
