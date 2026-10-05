@@ -1,15 +1,11 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
-import type { Static } from 'typebox';
 
 import { appendToolGuidelines } from '../../systemPrompt.js';
 import { questionDialog } from './dialog.js';
 import type { DialogResult } from './dialog.js';
 import type { Answer } from './questionnaire.js';
-
-type QuestionParams = Static<typeof questionParams>;
-
-const reservedLabels = new Set(['Other', 'Type something.']);
+import { validateQuestions } from './validation.js';
 
 const optionSchema = Type.Object({
   label: Type.String({
@@ -115,72 +111,6 @@ const promptGuidelines = [
   'If the user closes the dialog without an answer, state the blocked decision and stop. Closing the dialog is not approval, and do not ask the same question again in prose.',
 ];
 
-const isBlank = (text: string) => text.trim() === '';
-
-const validateContext = (question: QuestionParams['questions'][number]) => {
-  if (isBlank(question.context)) {
-    throw new Error(`Question "${question.question}" needs a context.`);
-  }
-
-  if (question.context.trim() === question.question.trim()) {
-    throw new Error(
-      `The context of "${question.question}" repeats the question. Say what is being decided and what the answer changes.`,
-    );
-  }
-};
-
-const validatePreviews = (question: QuestionParams['questions'][number]) => {
-  const previews = question.options.map((option) => option.preview);
-
-  if (previews.some((preview) => preview !== undefined && isBlank(preview))) {
-    throw new Error(`A preview of "${question.question}" is blank. Remove it or show content.`);
-  }
-
-  const withPreview = previews.filter((preview) => preview !== undefined).length;
-
-  if (withPreview > 0 && withPreview < previews.length) {
-    throw new Error(
-      `Give every option of "${question.question}" a preview, or none. For an option such as "Keep as is", show the unchanged state.`,
-    );
-  }
-};
-
-const validateOptions = (question: QuestionParams['questions'][number]) => {
-  const labels = question.options.map((option) => option.label);
-
-  if (labels.some((label) => reservedLabels.has(label))) {
-    throw new Error(`Option label is reserved (${[...reservedLabels].join(', ')}).`);
-  }
-
-  if (labels.some((label) => /\(recommended\)/iu.test(label))) {
-    throw new Error(
-      'Set `recommended: true` on the option instead of "(Recommended)" in its label.',
-    );
-  }
-
-  if (new Set(labels).size !== labels.length) {
-    throw new Error('Option labels must be unique within a question.');
-  }
-
-  if (question.options.filter((option) => option.recommended === true).length > 1) {
-    throw new Error(`Set recommended: true on at most one option of "${question.question}".`);
-  }
-};
-
-const validate = ({ questions }: QuestionParams) => {
-  const texts = questions.map((question) => question.question);
-
-  if (new Set(texts).size !== texts.length) {
-    throw new Error('Question text must be unique within an invocation.');
-  }
-
-  for (const question of questions) {
-    validateContext(question);
-    validateOptions(question);
-    validatePreviews(question);
-  }
-};
-
 const answerSegment = (answer: Answer) => {
   const preview = answer.preview === undefined ? '' : ` selected preview: ${answer.preview}.`;
 
@@ -214,7 +144,7 @@ export default function askUserQuestionExtension(pi: ExtensionAPI): void {
         throw new Error('The questionnaire needs the terminal UI. Ask in plain text instead.');
       }
 
-      validate(params);
+      validateQuestions(params.questions);
 
       const questions = params.questions.map((question) => ({
         ...question,

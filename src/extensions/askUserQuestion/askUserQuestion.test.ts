@@ -75,31 +75,6 @@ it('opens the dialog for a valid question', async () => {
 it.each([
   { rule: 'a missing context', question: { ...layout, context: undefined }, error: /context/u },
   { rule: 'a blank context', question: { ...layout, context: ' \n ' }, error: /context/u },
-  {
-    rule: 'a context that repeats the question',
-    question: { ...layout, context: ` ${layout.question} ` },
-    error: /context/u,
-  },
-  {
-    rule: 'more than one recommended option',
-    question: withOptions([{ recommended: true }, { recommended: true }]),
-    error: /recommended/u,
-  },
-  {
-    rule: 'a "(Recommended)" label',
-    question: withOptions([{ label: 'Stacked (Recommended)' }]),
-    error: /Recommended/u,
-  },
-  {
-    rule: 'a preview on only some options',
-    question: withOptions([{ preview: 'one' }]),
-    error: /preview/u,
-  },
-  {
-    rule: 'a blank preview',
-    question: withOptions([{ preview: ' ' }, { preview: 'two' }]),
-    error: /preview/u,
-  },
 ])('rejects $rule without opening the dialog', async ({ question, error }) => {
   const { call, custom } = ask(question);
 

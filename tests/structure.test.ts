@@ -26,6 +26,7 @@ const pureModules = [
   'scripts/tokenUsageReport.ts',
   'src/models/allowedModels.ts',
   'src/extensions/askUserQuestion/questionnaire.ts',
+  'src/extensions/askUserQuestion/validation.ts',
   'src/extensions/compaction/reminder.ts',
   'src/extensions/snippets/history.ts',
   'src/extensions/snippets/insertion.ts',
