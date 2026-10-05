@@ -189,12 +189,24 @@ export const createLinearFake = (): LinearFake => {
       );
     }
 
+    const parent = parentByLinearId(variables['parent']);
+
+    const siblingOrders = [...issues.values()]
+      .filter((other) => other.parent === parent)
+      .map((other) => other.sortOrder);
+
+    const sortOrder =
+      variables['preserveSortOrderOnCreate'] === true ? variables['subIssueSortOrder'] : undefined;
+
+    // The fake keeps a passed sort order only when the create asks to preserve it, as Linear's schema
+    // documents. Otherwise it puts a new child first, so the child lands out of plan order.
     const created = addIssue({
       title,
       description,
-      parent: parentByLinearId(variables['parent']),
+      parent,
       teamId: String(variables['team']),
       projectId: (variables['project'] as string | null) ?? null,
+      sortOrder: typeof sortOrder === 'number' ? sortOrder : Math.min(0, ...siblingOrders) - 1,
     });
 
     return {

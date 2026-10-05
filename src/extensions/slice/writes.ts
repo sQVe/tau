@@ -31,15 +31,10 @@ export interface OrderedSlice {
   completed: boolean;
 }
 
-export interface OrderMove {
-  identifier: string;
-  sortOrder: number;
-}
-
 export type SliceWrite =
   | { kind: 'createContainer' }
   | { kind: 'updateContainer'; identifier: string; title: boolean; description: boolean }
-  | { kind: 'createSlice'; number: number }
+  | { kind: 'createSlice'; number: number; sortOrder: number }
   | {
       kind: 'updateSlice';
       number: number;
@@ -48,7 +43,8 @@ export type SliceWrite =
       description: boolean;
     }
   | { kind: 'addBlockedBy'; number: number; blocker: number }
-  | { kind: 'removeBlockedBy'; identifier: string; blocker: string };
+  | { kind: 'removeBlockedBy'; identifier: string; blocker: string }
+  | { kind: 'moveSlice'; identifier: string; sortOrder: number };
 
 export interface WritePlan {
   writes: SliceWrite[];
@@ -111,18 +107,102 @@ const completedProblem = (identifier: string) =>
 const blockerIdentifier = (draft: Draft, blocker: number) =>
   draft.plan.slices[blocker - 1]?.identifier ?? null;
 
+// A merged or completed slice is never written, so it cannot move.
+const isFixed = (slice: OrderedSlice) => slice.merged || slice.completed;
+
+const nextFixedOrder = (slices: readonly (OrderedSlice | undefined)[], start: number) =>
+  slices.slice(start).find((slice) => slice !== undefined && isFixed(slice))?.sortOrder ??
+  Number.POSITIVE_INFINITY;
+
+// A merged or completed slice keeps its place, and so does an open one between its neighbors.
+const keepsPlace = (
+  slices: readonly (OrderedSlice | undefined)[],
+  index: number,
+  previous: number,
+) => {
+  const slice = slices[index];
+
+  if (slice === undefined) {
+    return false;
+  }
+
+  const between = slice.sortOrder > previous && slice.sortOrder < nextFixedOrder(slices, index + 1);
+
+  return isFixed(slice) || between;
+};
+
+// The first later slice that keeps its place bounds a placed slice, so placing one never pushes a
+// later slice out of place.
+const upperOrder = (
+  slices: readonly (OrderedSlice | undefined)[],
+  start: number,
+  previous: number,
+) => {
+  for (let index = start; index < slices.length; index += 1) {
+    const slice = slices[index];
+
+    if (slice !== undefined && keepsPlace(slices, index, previous)) {
+      return slice.sortOrder;
+    }
+  }
+
+  return Number.POSITIVE_INFINITY;
+};
+
+const placeBetween = (lower: number, upper: number) => {
+  if (lower === Number.NEGATIVE_INFINITY) {
+    return upper === Number.POSITIVE_INFINITY ? 0 : upper - 1;
+  }
+
+  return upper === Number.POSITIVE_INFINITY ? lower + 1 : (lower + upper) / 2;
+};
+
+// Takes the slices in plan order, undefined for a slice the plan creates, and returns the sort order
+// each one gets: one for every new slice and every open slice that is out of place, undefined for a
+// slice that keeps its place. Merged and completed slices keep their place, so one that is itself
+// out of order stays wrong.
+export const plannedSortOrders = (
+  slicesInPlanOrder: readonly (OrderedSlice | undefined)[],
+): (number | undefined)[] => {
+  const orders: (number | undefined)[] = [];
+  let previous = Number.NEGATIVE_INFINITY;
+
+  for (const [index, slice] of slicesInPlanOrder.entries()) {
+    if (slice !== undefined && keepsPlace(slicesInPlanOrder, index, previous)) {
+      orders.push(undefined);
+      previous = slice.sortOrder;
+
+      continue;
+    }
+
+    const sortOrder = placeBetween(previous, upperOrder(slicesInPlanOrder, index + 1, previous));
+
+    orders.push(sortOrder);
+    previous = sortOrder;
+  }
+
+  return orders;
+};
+
 const sliceWrites = (draft: Draft, container: LinearContainer | undefined) => {
   const writes: SliceWrite[] = [];
   const problems: string[] = [];
   const children = new Map(container?.children.map((child) => [child.identifier, child]));
   const siblings = new Set(children.keys());
 
+  const slots = draft.plan.slices.map((slice) =>
+    slice.identifier === null ? undefined : children.get(slice.identifier),
+  );
+
+  const sortOrders = plannedSortOrders(slots);
+
   for (const [index, slice] of draft.plan.slices.entries()) {
     const number = index + 1;
-    const child = slice.identifier === null ? undefined : children.get(slice.identifier);
+    const child = slots[index];
+    const sortOrder = sortOrders[index];
 
     if (child === undefined) {
-      writes.push({ kind: 'createSlice', number });
+      writes.push({ kind: 'createSlice', number, sortOrder: sortOrder ?? 0 });
 
       writes.push(
         ...slice.blockedBy.map((blocker) => ({ kind: 'addBlockedBy' as const, number, blocker })),
@@ -179,6 +259,10 @@ const sliceWrites = (draft: Draft, container: LinearContainer | undefined) => {
     }
 
     writes.push(...sliceChanges);
+
+    if (sortOrder !== undefined) {
+      writes.push({ kind: 'moveSlice', identifier: child.identifier, sortOrder });
+    }
   }
 
   return { writes, problems };
@@ -211,11 +295,13 @@ const writeRanks: Record<SliceWrite['kind'], number> = {
   updateSlice: 1,
   addBlockedBy: 2,
   removeBlockedBy: 2,
+  moveSlice: 3,
 };
 
 // Lists the Linear writes that make Linear match the draft, in the order to apply them: every create,
-// then updates, then relations, so a relation never names a slice that does not exist yet. A slice
-// counts as present only through the identifier the draft records. Merged tickets are never written.
+// then updates, then relations, then sort order moves, so a relation never names a slice that does
+// not exist yet. Each new slice is created at its plan position. A slice counts as present only
+// through the identifier the draft records. Merged tickets are never written.
 // titleMatches lists the open issues in the route whose title is the container title.
 export const planWrites = (
   draft: Draft,
@@ -246,45 +332,6 @@ export const planWrites = (
     problems: [...fixedProblems, ...top.problems, ...slices.problems],
     dropped,
   };
-};
-
-// A merged or completed slice is never written, so it cannot move.
-const isFixed = (slice: OrderedSlice) => slice.merged || slice.completed;
-
-const nextFixedOrder = (slices: readonly OrderedSlice[], start: number) =>
-  slices.slice(start).find((slice) => isFixed(slice))?.sortOrder ?? Number.POSITIVE_INFINITY;
-
-const placeBetween = (lower: number, upper: number) => {
-  if (lower === Number.NEGATIVE_INFINITY) {
-    return upper === Number.POSITIVE_INFINITY ? 0 : upper - 1;
-  }
-
-  return upper === Number.POSITIVE_INFINITY ? lower + 1 : (lower + upper) / 2;
-};
-
-// Moves each open slice that is out of plan order between its neighbors. Merged and completed
-// slices keep their place, so one that is itself out of order stays wrong.
-export const orderMoves = (slicesInPlanOrder: readonly OrderedSlice[]): OrderMove[] => {
-  const moves: OrderMove[] = [];
-  let previous = Number.NEGATIVE_INFINITY;
-
-  for (const [index, slice] of slicesInPlanOrder.entries()) {
-    const upper = nextFixedOrder(slicesInPlanOrder, index + 1);
-    const inPlace = slice.sortOrder > previous && slice.sortOrder < upper;
-
-    if (isFixed(slice) || inPlace) {
-      previous = slice.sortOrder;
-
-      continue;
-    }
-
-    const sortOrder = placeBetween(previous, upper);
-
-    moves.push({ identifier: slice.identifier, sortOrder });
-    previous = sortOrder;
-  }
-
-  return moves;
 };
 
 export const isInPlanOrder = (slicesInPlanOrder: readonly OrderedSlice[]): boolean =>
@@ -324,7 +371,10 @@ const updatedPart = (
 
 export const describeWrite = (plan: Plan, write: SliceWrite): string => {
   if (write.kind === 'createContainer') {
-    return `Create container "${plan.container.title}" in team ${plan.route.team}`;
+    const project =
+      plan.route.project === null ? 'with no project' : `and project ${plan.route.project}`;
+
+    return `Create container "${plan.container.title}" in team ${plan.route.team} ${project}`;
   }
 
   if (write.kind === 'createSlice') {
@@ -333,6 +383,10 @@ export const describeWrite = (plan: Plan, write: SliceWrite): string => {
 
   if (write.kind === 'addBlockedBy') {
     return `Mark slice ${write.number} blocked by slice ${write.blocker}`;
+  }
+
+  if (write.kind === 'moveSlice') {
+    return `Move ${write.identifier} into plan order`;
   }
 
   if (write.kind === 'removeBlockedBy') {

@@ -35,9 +35,10 @@ const teamProjectQuery =
   'query($key: String!, $name: String!) { team(id: $key) { id projects(filter: { name: { eq: $name } }) { nodes { id } } } }';
 
 // `linear issue create --parent` copies the parent's project, so create through the API with the
-// team, project, and parent set explicitly.
+// team, project, and parent set explicitly. Linear's schema documents
+// preserveSortOrderOnCreate as the way to keep a passed sort order, and Linear rejects null for it.
 const createMutation =
-  'mutation($team: String!, $project: String, $parent: String, $title: String!, $description: String!) { issueCreate(input: { teamId: $team, projectId: $project, parentId: $parent, title: $title, description: $description }) { issue { id identifier url } } }';
+  'mutation($team: String!, $project: String, $parent: String, $title: String!, $description: String!, $subIssueSortOrder: Float, $preserveSortOrderOnCreate: Boolean) { issueCreate(input: { teamId: $team, projectId: $project, parentId: $parent, title: $title, description: $description, subIssueSortOrder: $subIssueSortOrder, preserveSortOrderOnCreate: $preserveSortOrderOnCreate }) { issue { id identifier url } } }';
 
 const updateMutation =
   'mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }';
@@ -344,9 +345,11 @@ export const createIssue = async (
     parent: string | null;
     title: string;
     description: string;
+    subIssueSortOrder: number | undefined;
   },
 ): Promise<CreatedIssue> => {
-  const response = await api(exec, cwd, createMutation, issue);
+  const preserveSortOrderOnCreate = issue.subIssueSortOrder !== undefined;
+  const response = await api(exec, cwd, createMutation, { ...issue, preserveSortOrderOnCreate });
 
   if (!Value.Check(createSchema, response.data)) {
     throw unexpectedOutput(response);

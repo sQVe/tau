@@ -18,14 +18,12 @@ import {
 import type { CreatedIssue } from './linear.js';
 import { orderedSlices, readState, slicesPath } from './state.js';
 import type { Runtime, SliceState } from './state.js';
-import { describeWrite, isInPlanOrder, orderMoves } from './writes.js';
+import { describeWrite, isInPlanOrder } from './writes.js';
 import type { LinearContainer, SliceWrite } from './writes.js';
 
 type StepSummary = (
   | SliceWrite
   | { kind: 'moveDraft' }
-  | { kind: 'repairOrder' }
-  | { kind: 'moveIssue'; identifier: string }
   | { kind: 'saveIdentifier'; identifier: string }
 ) & {
   text: string;
@@ -45,7 +43,6 @@ interface ApplyProgress {
   teamId: string | undefined;
   projectId: string | null;
   urls: Map<string, string>;
-  orderInPlace: boolean;
 }
 
 interface FailedApply {
@@ -80,18 +77,6 @@ class IdentifierSaveError extends Error {
     super(`Linear created ${created.identifier}, but saving its identifier failed.`, options);
     this.name = 'IdentifierSaveError';
     this.created = created;
-  }
-}
-
-// Linear already holds the moves made before a failed move or order read, so the caller reports
-// them as applied.
-class OrderMoveError extends Error {
-  readonly moved: StepSummary[];
-
-  constructor(moved: StepSummary[], options: ErrorOptions) {
-    super(`Fixing the slice order failed: ${errorMessage(options.cause)}`, options);
-    this.name = 'OrderMoveError';
-    this.moved = moved;
   }
 }
 
@@ -151,6 +136,7 @@ const createContainer = async (runtime: Runtime, progress: ApplyProgress) => {
     parent: null,
     title: plan.container.title,
     description: progress.draft.containerBody,
+    subIssueSortOrder: undefined,
   });
 
   plan.container.identifier = created.identifier;
@@ -160,15 +146,20 @@ const createContainer = async (runtime: Runtime, progress: ApplyProgress) => {
   await saveIdentifier(progress, created);
 };
 
-const createSlice = async (runtime: Runtime, progress: ApplyProgress, number: number) => {
-  const slice = planSlice(progress.plan, number);
+const createSlice = async (
+  runtime: Runtime,
+  progress: ApplyProgress,
+  write: SliceWrite & { kind: 'createSlice' },
+) => {
+  const slice = planSlice(progress.plan, write.number);
 
   const created = await createIssue(runtime.exec, runtime.root, {
     team: requireValue(progress.teamId, 'The container team'),
     project: progress.projectId,
     parent: requireValue(progress.containerId, 'The container ID'),
     title: slice.title,
-    description: progress.draft.sliceBodies[number - 1] ?? '',
+    description: progress.draft.sliceBodies[write.number - 1] ?? '',
+    subIssueSortOrder: write.sortOrder,
   });
 
   slice.identifier = created.identifier;
@@ -184,7 +175,11 @@ const applyWrite = async (runtime: Runtime, progress: ApplyProgress, write: Slic
   }
 
   if (write.kind === 'createSlice') {
-    return createSlice(runtime, progress, write.number);
+    return createSlice(runtime, progress, write);
+  }
+
+  if (write.kind === 'moveSlice') {
+    return moveIssue(exec, root, write.identifier, write.sortOrder);
   }
 
   if (write.kind === 'updateContainer') {
@@ -216,59 +211,10 @@ const applyWrite = async (runtime: Runtime, progress: ApplyProgress, write: Slic
   });
 };
 
-const readOrder = async (runtime: Runtime, progress: ApplyProgress) => {
-  const identifier = requireValue(progress.plan.container.identifier, 'The container identifier');
-  const container = await readContainer(runtime.exec, runtime.root, identifier);
-
-  if (container === undefined) {
-    throw new Error(`Could not read ${identifier} again to check the slice order.`);
-  }
-
-  return orderedSlices({ ...progress.draft, plan: progress.plan }, container);
-};
-
-const repairOrder = async (runtime: Runtime, progress: ApplyProgress) => {
-  const before = await readOrder(runtime, progress);
-  const moves = orderMoves(before);
-
-  if (moves.length === 0) {
-    progress.orderInPlace = isInPlanOrder(before);
-
-    return;
-  }
-
-  const moved: StepSummary[] = [];
-
-  try {
-    for (const move of moves) {
-      if (runtime.signal?.aborted === true) {
-        throw new Error('The call was aborted.');
-      }
-
-      // oxlint-disable-next-line no-await-in-loop -- Stop at the first failed move.
-      await moveIssue(runtime.exec, runtime.root, move.identifier, move.sortOrder);
-
-      moved.push({
-        kind: 'moveIssue',
-        identifier: move.identifier,
-        text: `Move ${move.identifier} into plan order`,
-      });
-    }
-
-    progress.orderInPlace = isInPlanOrder(await readOrder(runtime, progress));
-  } catch (error) {
-    throw new OrderMoveError(moved, { cause: error });
-  }
-};
-
 const moveStep = (runtime: Runtime, progress: ApplyProgress): Step => ({
   summary: { kind: 'moveDraft', text: 'Move the draft to its container identifier' },
   run: () => moveDraft(runtime, progress),
 });
-
-// New slices can land out of order, so creating one also checks the order after the writes.
-const needsOrderRepair = (orderInPlace: boolean, writes: readonly SliceWrite[]) =>
-  !orderInPlace || writes.some((write) => write.kind === 'createSlice');
 
 const buildSteps = (runtime: Runtime, progress: ApplyProgress, writes: readonly SliceWrite[]) => {
   const steps: Step[] = [];
@@ -288,27 +234,12 @@ const buildSteps = (runtime: Runtime, progress: ApplyProgress, writes: readonly 
     }
   }
 
-  if (needsOrderRepair(progress.orderInPlace, writes)) {
-    steps.push({
-      summary: { kind: 'repairOrder', text: 'Fix the slice order' },
-      run: () => repairOrder(runtime, progress),
-    });
-  }
-
   return steps;
 };
 
 // A failed save follows a create that Linear made, so the create counts as applied and the save
-// does not. Moves made before a failed move count as applied, and the order repair does not.
+// does not.
 const splitSteps = (summaries: readonly StepSummary[], index: number, error: unknown) => {
-  if (error instanceof OrderMoveError) {
-    return {
-      created: undefined,
-      applied: [...summaries.slice(0, index), ...error.moved],
-      notApplied: summaries.slice(index),
-    };
-  }
-
   if (!(error instanceof IdentifierSaveError)) {
     return {
       created: undefined,
@@ -395,6 +326,30 @@ const rejectChangedState = (state: SliceState, stateToken: string | undefined) =
   return state.draft;
 };
 
+const readOrderInPlace = async (runtime: Runtime, progress: ApplyProgress) => {
+  const identifier = requireValue(progress.plan.container.identifier, 'The container identifier');
+  const container = await readContainer(runtime.exec, runtime.root, identifier);
+
+  if (container === undefined) {
+    throw new Error(`Could not read ${identifier} again to check the slice order.`);
+  }
+
+  return isInPlanOrder(orderedSlices({ ...progress.draft, plan: progress.plan }, container));
+};
+
+// Every step has reached Linear, so a failed order check reports them all as applied.
+const checkOrder = async (
+  runtime: Runtime,
+  progress: ApplyProgress,
+  applied: readonly StepSummary[],
+) => {
+  try {
+    return await readOrderInPlace(runtime, progress);
+  } catch (error) {
+    throw failedApply(progress, applied, applied.length, error);
+  }
+};
+
 const confirmMessage = (steps: readonly Step[]) =>
   steps.map((step, index) => `${index + 1}. ${step.summary.text}`).join('\n');
 
@@ -430,7 +385,6 @@ const startProgress = (state: SliceState, draft: Draft): ApplyProgress => ({
   teamId: state.container?.team.id,
   projectId: state.container?.project?.id ?? null,
   urls: new Map(),
-  orderInPlace: state.orderInPlace,
 });
 
 // Writes only the draft contents and Linear state that the read checked. The state is read again
@@ -445,14 +399,13 @@ export const applySlicePlan = async (
   const draft = rejectChangedState(state, stateToken);
   const progress = startProgress(state, draft);
   const steps = buildSteps(runtime, progress, state.writePlan.writes);
-  const onlyOrderCheck = steps.every((step) => step.summary.kind === 'repairOrder');
 
-  if (onlyOrderCheck && state.orderInPlace) {
+  if (steps.length === 0) {
     return {
       status: 'unchanged',
       ...summary(progress, state.container),
       applied: [],
-      orderInPlace: true,
+      orderInPlace: state.orderInPlace,
     };
   }
 
@@ -477,11 +430,12 @@ export const applySlicePlan = async (
   rejectChangedState(await readState(runtime, directory, undefined), state.stateToken);
 
   const applied = await runSteps(progress, steps, runtime.signal);
+  const orderInPlace = await checkOrder(runtime, progress, applied);
 
   return {
     status: 'applied',
     ...summary(progress, state.container),
     applied,
-    orderInPlace: progress.orderInPlace,
+    orderInPlace,
   };
 };
