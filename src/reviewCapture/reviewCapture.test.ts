@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
 import { captureTarget, pinTarget } from './reviewCapture.js';
@@ -111,6 +111,148 @@ it('keeps the commit change of a changed Git link in the diff', async () => {
   expect(capture.gaps).toEqual([{ kind: 'submodule', path: 'module' }]);
   expect(capture.bytes.toString('utf8')).toContain('+Subproject commit');
 });
+
+const committedGitLink = async (root: string) => {
+  await nestedRepository(root);
+  await git(root, ['add', 'module']);
+  await git(root, ['commit', '--quiet', '-m', 'module']);
+};
+
+const moveGitLink = async (root: string) => {
+  await writeFile(join(root, 'module', 'inner.txt'), 'changed\n');
+  await git(join(root, 'module'), ['commit', '--quiet', '-am', 'inner change']);
+};
+
+it('reports a changed Git link as a gap in a working tree capture', async () => {
+  const root = await committedRepository();
+
+  await committedGitLink(root);
+  await moveGitLink(root);
+
+  const target = await pinTarget(root, { kind: 'workingTree', base: 'HEAD' });
+  const capture = await captureTarget(root, target);
+
+  expect(capture.errors).toEqual([]);
+  expect(capture.gaps).toEqual([{ kind: 'submodule', path: 'module' }]);
+  expect(capture.bytes.toString('utf8')).toContain('+Subproject commit');
+});
+
+it('reports a Git link added in a range as a gap', async () => {
+  const root = await committedRepository();
+
+  await committedGitLink(root);
+
+  const target = await pinTarget(root, { kind: 'range', from: 'HEAD~1', to: 'HEAD' });
+  const capture = await captureTarget(root, target);
+
+  expect(capture.errors).toEqual([]);
+  expect(capture.paths).toEqual(['module']);
+  expect(capture.gaps).toEqual([{ kind: 'submodule', path: 'module' }]);
+  expect(capture.bytes.toString('utf8')).toContain('+Subproject commit');
+});
+
+it.skipIf(isRoot)(
+  'reports an unreadable directory as a gap and keeps the readable changes (skipped as root, who can read every directory)',
+  async () => {
+    const root = await committedRepository();
+
+    await mkdir(join(root, 'private'));
+    await writeFile(join(root, 'private', 'file.txt'), 'secret\n');
+    await git(root, ['add', 'private']);
+    await git(root, ['commit', '--quiet', '-m', 'private']);
+    await writeFile(join(root, 'private', 'file.txt'), 'changed secret\n');
+    await writeFile(join(root, 'tracked.txt'), 'two\n');
+    await chmod(join(root, 'private'), 0o000);
+    onTestFinished(() => chmod(join(root, 'private'), 0o755));
+
+    const target = await pinTarget(root, { kind: 'workingTree', base: 'HEAD' });
+    const capture = await captureTarget(root, target);
+
+    expect(capture.errors).toEqual([]);
+    expect(capture.paths).toEqual(['tracked.txt']);
+
+    expect(capture.gaps).toEqual([
+      { kind: 'unreadable', path: 'private/file.txt' },
+      { kind: 'unreadable', path: 'private' },
+    ]);
+
+    expect(capture.bytes.toString('utf8')).toContain('+two');
+  },
+);
+
+const blockDirectory = async (root: string, directory: string) => {
+  await chmod(join(root, directory), 0o000);
+  onTestFinished(() => chmod(join(root, directory), 0o755));
+};
+
+it.skipIf(isRoot)(
+  'keeps a readable file in a directory Git cannot list (skipped as root, who can list every directory)',
+  async () => {
+    const root = await committedRepository();
+
+    await mkdir(join(root, 'private'));
+    await writeFile(join(root, 'private', 'readable.txt'), 'readable\n');
+    await writeFile(join(root, 'public.txt'), 'public\n');
+    await git(root, ['add', 'private', 'public.txt']);
+    await git(root, ['commit', '--quiet', '-m', 'private']);
+    await chmod(join(root, 'private'), 0o111);
+    onTestFinished(() => chmod(join(root, 'private'), 0o755));
+
+    const target = await pinTarget(root, { kind: 'files', paths: ['private', 'public.txt'] });
+    const capture = await captureTarget(root, target);
+
+    expect(capture.errors).toEqual([]);
+    expect(capture.paths).toEqual(['private/readable.txt', 'public.txt']);
+    expect(capture.gaps).toEqual([{ kind: 'unreadable', path: 'private' }]);
+    expect(capture.bytes.toString('utf8')).toContain('+readable');
+  },
+);
+
+it.skipIf(isRoot)(
+  'keeps a readable file whose path differs from an unreadable directory only in case (skipped as root, who can read every directory)',
+  async () => {
+    const root = await committedRepository();
+
+    await git(root, ['config', 'core.ignoreCase', 'true']);
+    await mkdir(join(root, 'private'));
+    await writeFile(join(root, 'private', 'hidden.txt'), 'hidden\n');
+    await mkdir(join(root, 'PRIVATE'));
+    await writeFile(join(root, 'PRIVATE', 'readable'), 'readable\n');
+    await blockDirectory(root, 'private');
+
+    const target = await pinTarget(root, { kind: 'workingTree', base: 'HEAD' });
+    const capture = await captureTarget(root, target);
+
+    expect(capture.errors).toEqual([]);
+    expect(capture.paths).toEqual(['PRIVATE/readable']);
+    expect(capture.gaps).toEqual([{ kind: 'unreadable', path: 'private' }]);
+  },
+);
+
+it.skipIf(isRoot)(
+  'reports an unreadable directory as a gap when Git would print messages in another language (skipped as root, who can read every directory)',
+  async () => {
+    const root = await committedRepository();
+
+    await mkdir(join(root, 'private'));
+    await writeFile(join(root, 'private', 'hidden.txt'), 'hidden\n');
+    await writeFile(join(root, 'tracked.txt'), 'two\n');
+    await blockDirectory(root, 'private');
+    vi.stubEnv('LC_ALL', 'sv_SE.UTF-8');
+    vi.stubEnv('LANGUAGE', 'sv');
+
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    const target = await pinTarget(root, { kind: 'workingTree', base: 'HEAD' });
+    const capture = await captureTarget(root, target);
+
+    expect(capture.errors).toEqual([]);
+    expect(capture.paths).toEqual(['tracked.txt']);
+    expect(capture.gaps).toEqual([{ kind: 'unreadable', path: 'private' }]);
+  },
+);
 
 it('reports an untracked nested repository as a gap', async () => {
   const root = await committedRepository();

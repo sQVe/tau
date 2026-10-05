@@ -46,17 +46,19 @@ export const readGitOutput = async (
 const maxOutputBytes = 1_073_741_824;
 
 // Runs Git on the repository at cwd and resolves its exit code with the raw output, so a caller can
-// accept a nonzero exit. Rejects when Git cannot start, prints more than 1 GiB, or runs past the
-// timeout.
+// accept a nonzero exit. Git prints its messages in English, so a caller can match them. Rejects
+// when Git cannot start, prints more than 1 GiB, or runs past the timeout.
 export const runGit = (
   cwd: string,
   commandArguments: string[],
   timeoutMilliseconds = 60_000,
 ): Promise<GitResult> =>
   new Promise((resolve, reject) => {
+    const { LANGUAGE: _language, ...env } = gitEnvironment();
+
     const options = {
       cwd,
-      env: gitEnvironment(),
+      env: { ...env, LC_ALL: 'C' },
       timeout: timeoutMilliseconds,
       encoding: 'buffer' as const,
       maxBuffer: maxOutputBytes,

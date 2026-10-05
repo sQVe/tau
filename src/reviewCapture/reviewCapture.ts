@@ -31,7 +31,9 @@ interface Part {
   errors: string[];
 }
 
-type FileList = { files: string[]; error?: undefined } | { files?: undefined; error: string };
+type FileList =
+  | { files: string[]; unreadable: string[]; error?: undefined }
+  | { files?: undefined; unreadable?: undefined; error: string };
 
 type HeadRead = { head: string; error?: undefined } | { head?: undefined; error: string };
 
@@ -270,6 +272,39 @@ const parseNumstat = (output: string) => {
   return entries;
 };
 
+const gitLinkMode = '160000';
+
+// Reads `git diff --raw -z`: `:<old mode> <new mode> <old> <new> <status>`, then one path, or two
+// for a rename or copy. Returns the paths whose mode is a Git link on either side.
+const parseGitLinks = (output: string) => {
+  const fields = output.split('\0');
+  const links: string[] = [];
+  let index = 0;
+
+  while (index < fields.length) {
+    const header = fields[index] ?? '';
+
+    if (!header.startsWith(':')) {
+      index += 1;
+
+      continue;
+    }
+
+    const [oldMode, newMode] = header.slice(1).split(' ');
+    const status = header.split(' ').at(-1) ?? '';
+    const pathCount = /^[RC]/.test(status) ? 2 : 1;
+    const paths = fields.slice(index + 1, index + 1 + pathCount);
+
+    if (oldMode === gitLinkMode || newMode === gitLinkMode) {
+      links.push(...paths);
+    }
+
+    index += 1 + pathCount;
+  }
+
+  return links;
+};
+
 const captureDiffOnce = async (
   root: string,
   target: PinnedTarget,
@@ -289,14 +324,25 @@ const captureDiffOnce = async (
     return failure(numstatCommand, numstat.error);
   }
 
+  const rawCommand = diffArguments(target, ['--raw', '-z'], skipped);
+  const raw = await runCaptureCommand(root, rawCommand);
+
+  if (raw.stdout === undefined) {
+    return failure(rawCommand, raw.error);
+  }
+
   try {
     const entries = parseNumstat(numstat.stdout.toString('utf8'));
     const binaries = entries.filter((entry) => entry.binary);
+    const gitLinks = parseGitLinks(raw.stdout.toString('utf8'));
 
     return {
       bytes: diff.stdout,
       paths: entries.map((entry) => entry.path),
-      gaps: binaries.map((entry) => ({ kind: 'binary' as const, path: entry.path })),
+      gaps: [
+        ...binaries.map((entry) => ({ kind: 'binary' as const, path: entry.path })),
+        ...gitLinks.map((path) => ({ kind: 'submodule' as const, path })),
+      ],
       errors: [],
     };
   } catch (error) {
@@ -384,20 +430,64 @@ const captureWholeFile = async (root: string, path: string): Promise<Part> => {
   }
 };
 
-const listFiles = async (root: string, options: string[], spec: string[]): Promise<FileList> => {
-  const commandArguments = ['ls-files', '-z', ...options, '--exclude-standard', ...spec];
-  const listed = await runCaptureCommand(root, commandArguments);
+const unopenedDirectory = /^warning: could not open directory '(.+)\/': Permission denied$/;
 
-  if (listed.stdout === undefined) {
-    return { error: `${describeCommand(commandArguments)} failed: ${listed.error}` };
+const runListFiles = async (root: string, commandArguments: string[]) => {
+  try {
+    return await runGit(root, commandArguments);
+  } catch (error) {
+    return { exitCode: -1, stdout: Buffer.alloc(0), stderr: errorMessage(error) };
+  }
+};
+
+// Directories that `ls-files` warned it could not open and that the user cannot read. Undefined
+// when stderr holds anything else, so that message stays an error.
+const confirmedUnopenedDirectories = async (root: string, stderr: string) => {
+  const lines = stderr.trim().split('\n');
+  const directories = lines.map((line) => unopenedDirectory.exec(line)?.[1]);
+
+  if (directories.some((directory) => directory === undefined)) {
+    return undefined;
   }
 
-  const files = listed.stdout
+  const confirmed = directories.filter((directory) => directory !== undefined);
+  const refused = await Promise.all(confirmed.map((directory) => isRefused(join(root, directory))));
+
+  return refused.every(Boolean) ? confirmed : undefined;
+};
+
+const splitFileList = (stdout: Buffer) =>
+  stdout
     .toString('utf8')
     .split('\0')
     .filter((file) => file !== '');
 
-  return { files };
+// Git skips a directory it cannot open and warns on stderr. A warning for a directory the user
+// cannot read becomes an unreadable entry, since its untracked contents are missing.
+const listFiles = async (root: string, options: string[], spec: string[]): Promise<FileList> => {
+  const commandArguments = ['ls-files', '-z', ...options, '--exclude-standard', ...spec];
+  const result = await runListFiles(root, commandArguments);
+  const clean = result.exitCode === 0 && result.stderr.trim() === '';
+
+  if (clean) {
+    return { files: splitFileList(result.stdout), unreadable: [] };
+  }
+
+  const failed = `${describeCommand(commandArguments)} failed`;
+
+  if (result.exitCode !== 0) {
+    return { error: `${failed}: exit ${result.exitCode}: ${result.stderr.trim()}` };
+  }
+
+  const unreadable = await confirmedUnopenedDirectories(root, result.stderr);
+
+  if (unreadable === undefined) {
+    return { error: `${failed}: ${result.stderr.trim()}` };
+  }
+
+  // Git still lists tracked files below a directory it cannot list, and the whole-file capture
+  // checks each one, so every listed file is kept.
+  return { files: splitFileList(result.stdout), unreadable };
 };
 
 // Untracked files for a working tree; every file a named pathspec lists for a files target, so
@@ -411,7 +501,7 @@ const wholeFileList = (target: PinnedTarget, root: string): Promise<FileList> =>
     return listFiles(root, ['-c', '-o'], pathspec(target));
   }
 
-  return Promise.resolve({ files: [] });
+  return Promise.resolve({ files: [], unreadable: [] });
 };
 
 const unmatchedPaths = async (root: string, target: PinnedTarget): Promise<Part> => {
@@ -429,8 +519,6 @@ const unmatchedPaths = async (root: string, target: PinnedTarget): Promise<Part>
 
   return { ...emptyPart, gaps, errors };
 };
-
-const gitLinkMode = '160000';
 
 // Cached Git links, such as submodules, in a files target. `ls-files -s -z` prints
 // `<mode> <object> <stage>\t<path>` for each entry.
@@ -474,7 +562,8 @@ const captureWholeFiles = async (root: string, target: PinnedTarget): Promise<Pa
     return [{ ...emptyPart, errors: [gitLinks.error] }];
   }
 
-  const parts: Part[] = [];
+  const unreadable = listed.unreadable.map((path) => ({ kind: 'unreadable' as const, path }));
+  const parts: Part[] = [{ ...emptyPart, gaps: unreadable }];
 
   // One Git process at a time keeps a large untracked tree from starting thousands at once.
   for (const file of listed.files) {
