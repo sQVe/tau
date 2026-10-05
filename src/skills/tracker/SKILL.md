@@ -79,8 +79,9 @@ preview. It needs the `linear` CLI authenticated for the workspace.
      A retry that finds a fitting ticket it created earlier uses that ticket without asking.
    - If the search left a gap, show the gap in the preview and ask whether to search again or create
      the ticket anyway. Never call it "no duplicate".
-   - If the parent or label read left a gap, stop and report the gap. Never guess a parent's route
-     or a label.
+   - If the parent read left a gap, stop and report the gap. Never guess a parent's route.
+   - If the label read left a gap, create the ticket without labels and show the label gap in the
+     preview. Never guess a label.
 
 4. Write the title and body.
    - Write the title as an imperative in sentence case, about 70 characters at most, with no prefix.
