@@ -9,6 +9,7 @@ export type EvidenceGap =
   | Gap
   | { kind: 'freshness'; status: 'stale' | 'unknown'; reasons: string[] }
   | { kind: 'incompleteCapture'; reasons: string[] }
+  | { kind: 'evidenceMismatch'; recordedHash: string; evidenceHash: string }
   | { kind: 'truncatedList'; list: EvidenceList; path?: string; kept: number; total: number }
   | { kind: 'truncatedBody'; path: string; kept: number; total: number }
   | { kind: 'absent'; path: string }
@@ -42,6 +43,13 @@ interface GrepMatch {
 }
 
 type GrepRecord = { match: GrepMatch; next: number; error?: undefined } | { error: string };
+
+export interface FreshnessGapFacts {
+  freshness: Freshness;
+  recordedHash: string;
+  // The hash of the capture the evidence was read from, taken after the freshness check.
+  evidenceHash: string;
+}
 
 export const defaultEvidenceLimits: EvidenceLimits = {
   paths: 500,
@@ -260,5 +268,22 @@ export const parseGrepOutput = (
   return { matches };
 };
 
-export const freshnessGaps = ({ status, reasons }: Freshness): EvidenceGap[] =>
-  status === 'fresh' ? [] : [{ kind: 'freshness', status, reasons }];
+// The target can change between the freshness check and the evidence capture, so a fresh result
+// alone does not show that the evidence matches the saved capture.
+export const freshnessGaps = ({
+  freshness: { status, reasons },
+  recordedHash,
+  evidenceHash,
+}: FreshnessGapFacts): EvidenceGap[] => {
+  const gaps: EvidenceGap[] = [];
+
+  if (status !== 'fresh') {
+    gaps.push({ kind: 'freshness', status, reasons });
+  }
+
+  if (evidenceHash !== recordedHash) {
+    gaps.push({ kind: 'evidenceMismatch', recordedHash, evidenceHash });
+  }
+
+  return gaps;
+};

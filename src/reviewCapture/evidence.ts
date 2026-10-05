@@ -164,8 +164,9 @@ const readTests = async (
 
 const scriptPathspecs = ['*.ts', '*.tsx', '*.mts', '*.cts', '*.js', '*.jsx', '*.mjs', '*.cjs'];
 
+// -a searches a script that holds a NUL byte as text; Git would otherwise skip it as binary.
 const grepModule = async (root: string, revision: string | undefined, module: string) => {
-  const options = ['grep', '--no-color', '-n', '-z', '-I', '-E', '-e', importPattern(module)];
+  const options = ['grep', '--no-color', '-n', '-z', '-a', '-E', '-e', importPattern(module)];
   const scope = revision === undefined ? ['--untracked'] : [revision];
   const result = await runGit(root, [...options, ...scope, '--', ...scriptPathspecs]);
 
@@ -334,7 +335,7 @@ export const readReviewEvidence = async (
     captured.errors.length > 0 ? [{ kind: 'incompleteCapture', reasons: captured.errors }] : [];
 
   const gaps = [
-    ...freshnessGaps(freshness),
+    ...freshnessGaps({ freshness, recordedHash: record.hash, evidenceHash: captured.hash }),
     ...captureErrors,
     ...captured.gaps,
     ...paths.gaps,

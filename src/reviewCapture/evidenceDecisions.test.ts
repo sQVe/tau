@@ -149,19 +149,35 @@ it.each([
   });
 });
 
+const fresh = { status: 'fresh' as const, reasons: [] };
+const stale = { status: 'stale' as const, reasons: ['HEAD moved.'] };
+const unknown = { status: 'unknown' as const, reasons: ['git diff failed'] };
+const mismatch = { kind: 'evidenceMismatch', recordedHash: 'hash-one', evidenceHash: 'hash-two' };
+
 it.each([
-  { freshness: { status: 'fresh' as const, reasons: [] }, gaps: [] },
+  { freshness: fresh, evidenceHash: 'hash-one', gaps: [] },
+  { freshness: fresh, evidenceHash: 'hash-two', gaps: [mismatch] },
   {
-    freshness: { status: 'stale' as const, reasons: ['HEAD moved.'] },
+    freshness: stale,
+    evidenceHash: 'hash-one',
     gaps: [{ kind: 'freshness', status: 'stale', reasons: ['HEAD moved.'] }],
   },
   {
-    freshness: { status: 'unknown' as const, reasons: ['git diff failed'] },
+    freshness: stale,
+    evidenceHash: 'hash-two',
+    gaps: [{ kind: 'freshness', status: 'stale', reasons: ['HEAD moved.'] }, mismatch],
+  },
+  {
+    freshness: unknown,
+    evidenceHash: 'hash-one',
     gaps: [{ kind: 'freshness', status: 'unknown', reasons: ['git diff failed'] }],
   },
-])('turns $freshness.status freshness into gaps', ({ freshness, gaps }) => {
-  expect(freshnessGaps(freshness)).toEqual(gaps);
-});
+])(
+  'turns $freshness.status freshness and evidence hash $evidenceHash into gaps',
+  ({ freshness, evidenceHash, gaps }) => {
+    expect(freshnessGaps({ freshness, recordedHash: 'hash-one', evidenceHash })).toEqual(gaps);
+  },
+);
 
 it.each([
   { output: '', revision: undefined, result: { matches: [] } },
@@ -179,6 +195,11 @@ it.each([
         { path: 'src/b.ts', line: 2, text: 'y' },
       ],
     },
+  },
+  {
+    output: 'src/a.mjs\u00002\u0000import a from "./a"; // \u0000\n',
+    revision: undefined,
+    result: { matches: [{ path: 'src/a.mjs', line: 2, text: 'import a from "./a"; // \u0000' }] },
   },
   {
     output: 'src/a.ts\u0000one\u0000x\n',

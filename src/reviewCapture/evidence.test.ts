@@ -314,6 +314,31 @@ it('keeps a newline in a caller path', async () => {
   ]);
 });
 
+it('lists a caller that holds a NUL byte', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const base = await commit(
+    root,
+    {
+      ...sourceFiles,
+      'src/binary.mjs': "import { add } from './math.js';\nconst marker = '\0';\n",
+    },
+    'first',
+  );
+
+  await writeFiles(root, {
+    'src/math.ts': 'export const add = (a: number, b: number) => b + a;\n',
+  });
+
+  const directory = await savedCapture(root, { kind: 'workingTree', base });
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.callers.map((caller) => [caller.path, caller.line])).toEqual([
+    ['src/binary.mjs', 1],
+    ['src/use.ts', 1],
+  ]);
+});
+
 it('does not count a plain path string as a caller', async () => {
   const { root, from } = await rangeRepository();
 
