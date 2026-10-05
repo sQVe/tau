@@ -151,8 +151,11 @@ const gapLabels: Record<Gap['kind'], string> = {
   submodule: 'submodule or nested repository, contents not shown',
 };
 
+// JSON keeps a path with a newline on one line, and an escaped backtick cannot end the code span.
+const quotePath = (path: string) => JSON.stringify(path).replaceAll('`', String.raw`\u0060`);
+
 const gapsSection = (gaps: Gap[]) => {
-  const lines = gaps.map((gap) => `- \`${gap.path}\`: ${gapLabels[gap.kind]}`);
+  const lines = gaps.map((gap) => `- \`${quotePath(gap.path)}\`: ${gapLabels[gap.kind]}`);
   const body = lines.length === 0 ? 'None.' : lines.join('\n');
 
   return `\n## Gaps\n\n${body}\n`;

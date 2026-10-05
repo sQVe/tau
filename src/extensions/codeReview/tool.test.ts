@@ -125,6 +125,25 @@ it('appends the capture and its gaps after the Capture heading and saves the rec
   });
 });
 
+it('writes a gap path with a newline and a backtick on one list line', async () => {
+  const { root, directory } = await preparedReview();
+  const path = 'odd`name\n- injected';
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  await run(root, {
+    action: 'capture',
+    directory,
+    target: { kind: 'workingTree', base: 'HEAD', exclude: [path] },
+  });
+
+  const input = await readFile(join(directory, 'input.md'), 'utf8');
+  const gaps = input.slice(input.indexOf('## Gaps')).split('\n');
+
+  expect(gaps.filter((line) => line.startsWith('- '))).toHaveLength(1);
+  expect(gaps.some((line) => line.startsWith('- injected'))).toBe(false);
+});
+
 it('returns empty for an empty capture and writes nothing', async () => {
   const { root, directory } = await preparedReview();
   const before = await listDirectory(directory);
