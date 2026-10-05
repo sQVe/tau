@@ -75,7 +75,7 @@ const temporaryDirectory = (prefix: string): string => {
   return directory;
 };
 
-// Starts a worker session from a bundled or custom profile, as a launched Pi worker would.
+// Starts a worker session from a bundled profile, as a launched Pi worker would.
 const startProfileWorker = async (directory: string, profileName: string) => {
   const taskDirectory = join(directory, 'task');
   mkdirSync(taskDirectory);
@@ -220,24 +220,6 @@ it('refuses a scout script call to a tool the profile does not list', async () =
   expect(result?.isError).toBe(true);
   expect(result?.text).toContain('tools.edit does not exist');
   expect(readFileSync(join(directory, 'source.txt'), 'utf8')).toBe('fixture-source');
-});
-
-it('refuses to start a custom profile that lists bulk_read', async () => {
-  const directory = temporaryDirectory('tau-bulk-read-profile-');
-  mkdirSync(join(directory, 'agents'));
-
-  writeFileSync(
-    join(directory, 'agents', 'legacy.md'),
-    '---\nname: legacy\nrole: investigation\ntools: read, bulk_read\n---\nInspect.\n',
-  );
-
-  const worker = await startProfileWorker(directory, 'legacy');
-
-  expect(readEvent(worker.taskDirectory, worker.taskId, 'startupFailure')?.detail).toContain(
-    'Worker profile tools are not registered: bulk_read.',
-  );
-
-  expect(readEvent(worker.taskDirectory, worker.taskId, 'ready')).toBeUndefined();
 });
 
 it.for([
