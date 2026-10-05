@@ -5,6 +5,7 @@ import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { noUiContext } from '../../../tests/toolContext.js';
+import { isMissingFile } from '../../errors.js';
 import { createGhFake } from './fixtures/ghFake.js';
 import type { FakeThread, GhFake } from './fixtures/ghFake.js';
 import { createPrFeedbackTool } from './tool.js';
@@ -47,7 +48,13 @@ const setUp = async () => {
 };
 
 const feedbackDirectories = (root: string) =>
-  readdir(join(root, '.tau', 'pr-feedback')).catch(() => []);
+  readdir(join(root, '.tau', 'pr-feedback')).catch((error: unknown) => {
+    if (isMissingFile(error)) {
+      return [];
+    }
+
+    throw error;
+  });
 
 const holdFeedback = (fake: GhFake) => {
   fake.threads = [

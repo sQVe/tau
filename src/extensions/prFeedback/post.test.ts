@@ -6,6 +6,7 @@ import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { confirmContext, noUiContext } from '../../../tests/toolContext.js';
+import { isMissingFile } from '../../errors.js';
 import { createGhFake } from './fixtures/ghFake.js';
 import type { FakeThread, GhFake } from './fixtures/ghFake.js';
 import { createPrFeedbackTool } from './tool.js';
@@ -74,7 +75,13 @@ const writeReplies = (directory: string, replies: unknown) =>
 const readPosted = (directory: string) =>
   readFile(join(directory, 'posted.json'), 'utf8').then(
     (text) => JSON.parse(text) as unknown,
-    () => undefined,
+    (error: unknown) => {
+      if (isMissingFile(error)) {
+        return undefined;
+      }
+
+      throw error;
+    },
   );
 
 const personThread = () =>
