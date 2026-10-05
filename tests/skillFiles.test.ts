@@ -13,12 +13,10 @@ const skillsDirectory = join(import.meta.dirname, '..', 'src', 'skills');
 // changes; never add one.
 const tauAllowlists: SkillAllowlists = {
   extraHeadings: {
-    'code-review': ['Review assignment', 'Checker assignment', 'Report'],
     'pr-feedback': ['Replies'],
     'start-slice': ['Changes after the start'],
   },
   multiCommandShellBlocks: {
-    'code-review': ['e0e500f34f20', '892f0371f08b'],
     handoff: ['1927769d42b4'],
     pr: ['0e303365f0fe', 'e16c689d6943'],
     'start-slice': ['16e2bc9782a1'],
