@@ -44,6 +44,8 @@
 - Cost: the tool grows, and the result shape becomes a contract its consumers depend on.
 - Cost: callers are found by relative import paths only, so package imports and aliased paths do not
   show up as callers.
+- Cost: callers are read one line at a time. A string that holds `import('./a.js')`,
+  `require('./a.js')`, or a statement such as `; import a from './a.js'` still counts as a caller.
 
 ## See also
 

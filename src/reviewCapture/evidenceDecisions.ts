@@ -136,14 +136,43 @@ const normalizePath = (path: string) => {
   return segments.join('/');
 };
 
-// A relative specifier after `from`, a side-effect `import`, `import(`, or `require(`.
+// A relative specifier after `import ... from` or `export ... from` that starts a statement, after a
+// `} from` that starts the line and closes a multi-line import, after a side-effect `import` that
+// starts a statement, or inside `import(` or `require(`.
 const importSyntax =
-  /(?:(?:^|[\s}])from|^\s*import|\bimport\s*\(|\brequire\s*\()\s*(['"])(\.{1,2}\/[^'"]*)\1/g;
+  /(?:(?:^|;)\s*(?:(?:import|export)\b[^'"]*?\bfrom|import)|^\s*\}\s*from|\b(?:import|require)\s*\()\s*(['"])(\.{1,2}\/[^'"]*)\1/g;
 
 const isCommentLine = (text: string) => /^\s*(?:\/\/|\/\*|\*)/.test(text);
 
+const isQuote = (character: string) => character === '"' || character === "'" || character === '`';
+
+// Cuts the line at a `//` outside a string, where a trailing comment starts.
+const codeBeforeComment = (text: string) => {
+  let quote: string | undefined;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text.charAt(index);
+
+    if (quote === undefined) {
+      if (text.startsWith('//', index)) {
+        return text.slice(0, index);
+      }
+
+      quote = isQuote(character) ? character : undefined;
+    } else if (character === '\\') {
+      index += 1;
+    } else if (character === quote) {
+      quote = undefined;
+    }
+  }
+
+  return text;
+};
+
 const relativeSpecifiers = (text: string) =>
-  isCommentLine(text) ? [] : [...text.matchAll(importSyntax)].map((match) => match[2] ?? '');
+  isCommentLine(text)
+    ? []
+    : [...codeBeforeComment(text).matchAll(importSyntax)].map((match) => match[2] ?? '');
 
 // The import names a module by its path without the extension, or a directory by its index file.
 const namesModule = (resolved: string, module: string) => {
