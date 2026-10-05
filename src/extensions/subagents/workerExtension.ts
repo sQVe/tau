@@ -25,7 +25,7 @@ import type { WorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
 import { blockerKinds, decideIncompleteReport, timeBlockerReserve } from './incompleteReport.js';
 import { checkWorkerRuntime } from './loadout.js';
-import { handoffSections } from './presentation.js';
+import { handoverSections } from './presentation.js';
 import { workerInstructions, workerPrompt } from './profiles.js';
 import {
   acceptAcknowledgement,
@@ -436,7 +436,7 @@ const refuseEarlyIncomplete = (
 };
 
 const refuseMissingSections = (state: WorkerExtensionState, summary: string) => {
-  const missing = handoffSections({ summary })?.missing ?? [];
+  const missing = handoverSections({ summary })?.missing ?? [];
 
   if (missing.length === 0) {
     return;

@@ -8,7 +8,7 @@ import { Value } from 'typebox/value';
 
 import { defaultInstructionSetNames, isInstructionSetName } from '../../instructionSets.js';
 import type { InstructionSetName } from '../../instructionSets.js';
-import { assignmentContractFor, handoffContract } from './handoff.js';
+import { assignmentContractFor, handoverContract } from './handover.js';
 import { thinkingSchema, toolNamePattern } from './types.js';
 import type { Loadout, Profile, Task } from './types.js';
 import { defaultProfileName } from './workerModels.js';
@@ -301,7 +301,7 @@ export const nativeIdentity = (directory: string): NativeIdentity => {
 export const workerInstructions = (loadout: Loadout): string =>
   [
     loadout.instructions,
-    `${assignmentContractFor(loadout.role)}${handoffContract}`,
+    `${assignmentContractFor(loadout.role)}${handoverContract}`,
     [
       'Your tools and CC Safety Net are not a sandbox.',
       'Do not commit, merge, or reset unless the task says so, and never run extra model trials.',

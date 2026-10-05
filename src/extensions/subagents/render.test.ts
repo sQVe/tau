@@ -531,14 +531,14 @@ it('offers follow-up only to a reported worker without a successor', () => {
   expect(followedUp).toContain('successor-abcdef01');
 });
 
-it('shows which handoff sections the saved report is missing', () => {
+it('shows which handover sections the saved report is missing', () => {
   const subject = theme();
 
   const legacy = stripVTControlCharacters(
     expandedStatusLines(statusFixture('stopped'), subject).join('\n'),
   );
 
-  expect(legacy).toContain('Handoff sections missing: Changes, Evidence, Decisions, Concerns');
+  expect(legacy).toContain('Handover sections missing: Changes, Evidence, Decisions, Concerns');
 
   const completeReport = {
     ...statusFixture('stopped'),
@@ -553,7 +553,7 @@ it('shows which handoff sections the saved report is missing', () => {
     expandedStatusLines(completeReport, subject).join('\n'),
   );
 
-  expect(complete).not.toContain('Handoff sections missing');
+  expect(complete).not.toContain('Handover sections missing');
 });
 
 it('shows a requested question receipt on ctrl+o', () => {

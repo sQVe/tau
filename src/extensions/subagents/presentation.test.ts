@@ -73,7 +73,7 @@ const expectKeys = (state: WorkerState) => {
     'predecessorTaskId',
     'successorTaskId',
     'report',
-    'handoffSections',
+    'handoverSections',
     'pendingQuestion',
     'failure',
     'cleanup',
@@ -196,7 +196,7 @@ it('shows only the phase and time of activity without a description or usage', (
   expect(content.activity).toEqual({ phase: 'starting', updatedAt: 5 });
 });
 
-it('marks handoff sections present and missing without inventing evidence', () => {
+it('marks handover sections present and missing without inventing evidence', () => {
   const legacy = modelStatus({
     taskId: 'task-1',
     state: 'stopped',
@@ -210,7 +210,7 @@ it('marks handoff sections present and missing without inventing evidence', () =
     },
   });
 
-  expect(legacy.handoffSections).toEqual({
+  expect(legacy.handoverSections).toEqual({
     present: [],
     missing: ['Changes', 'Evidence', 'Decisions', 'Concerns'],
   });
@@ -229,16 +229,16 @@ it('marks handoff sections present and missing without inventing evidence', () =
     },
   });
 
-  expect(complete.handoffSections).toEqual({
+  expect(complete.handoverSections).toEqual({
     present: ['Changes', 'Evidence', 'Decisions', 'Concerns'],
     missing: [],
   });
 
   const withoutReport = modelStatus({ taskId: 'task-1', state: 'running', deadline: 10 });
-  expect(withoutReport).not.toHaveProperty('handoffSections');
+  expect(withoutReport).not.toHaveProperty('handoverSections');
 });
 
-it('counts only real handoff headings, including a generic report without an Evidence section', () => {
+it('counts only real handover headings, including a generic report without an Evidence section', () => {
   const prose = modelStatus({
     taskId: 'task-1',
     state: 'stopped',
@@ -252,7 +252,7 @@ it('counts only real handoff headings, including a generic report without an Evi
     },
   });
 
-  expect(prose.handoffSections).toEqual({
+  expect(prose.handoverSections).toEqual({
     present: [],
     missing: ['Changes', 'Evidence', 'Decisions', 'Concerns'],
   });
@@ -270,7 +270,7 @@ it('counts only real handoff headings, including a generic report without an Evi
     },
   });
 
-  expect(genericWithoutEvidence.handoffSections).toEqual({
+  expect(genericWithoutEvidence.handoverSections).toEqual({
     present: ['Changes', 'Decisions', 'Concerns'],
     missing: ['Evidence'],
   });
@@ -290,7 +290,7 @@ it('counts parenthesized and quoted headings that the report tool accepts', () =
     },
   });
 
-  expect(status.handoffSections).toEqual({
+  expect(status.handoverSections).toEqual({
     present: ['Changes', 'Evidence', 'Decisions', 'Concerns'],
     missing: [],
   });
@@ -326,7 +326,7 @@ it('caps a long report and points to the unchanged saved report', ({ onTestFinis
   expect(readFileSync(content.reportFile as string, 'utf8')).toBe(saved);
   expect(status.report).toEqual(JSON.parse(saved));
 
-  expect(content.handoffSections).toEqual({
+  expect(content.handoverSections).toEqual({
     present: ['Changes'],
     missing: ['Evidence', 'Decisions', 'Concerns'],
   });

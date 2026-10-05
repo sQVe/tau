@@ -16,7 +16,7 @@ import { readInstructionSet } from '../../instructionSets.js';
 import { readWorkerActivity, writeWorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
 import { taskRecordStatus } from './controller/record.js';
-import { assignmentContract, handoffContract } from './handoff.js';
+import { assignmentContract, handoverContract } from './handover.js';
 import { checkWorkerRuntime } from './loadout.js';
 import * as questions from './questionRecords.js';
 import { publish, readEvent, readReport, readTask, recordEvent } from './records.js';
@@ -547,10 +547,10 @@ it.each([
 
     expect(appended.startsWith('user append\n\n')).toBe(true);
     expect(appended).toContain(instructions);
-    expect(appended).toContain(handoffContract);
+    expect(appended).toContain(handoverContract);
     expect(appended.includes(assignmentContract)).toBe(assignment);
     expect(prompt).not.toContain(instructions);
-    expect(prompt).not.toContain(handoffContract);
+    expect(prompt).not.toContain(handoverContract);
     await worker.emit('session_shutdown');
   },
 );
@@ -624,7 +624,7 @@ it.each([
   },
 );
 
-it('saves the handoff sections and work reference from a Pi report', async () => {
+it('saves the handover sections and work reference from a Pi report', async () => {
   const worker = await waitingWorker('editing');
   const report = worker.tools.get('subagent_report');
 
@@ -655,7 +655,7 @@ it('saves the handoff sections and work reference from a Pi report', async () =>
   await worker.emit('session_shutdown');
 });
 
-it('refuses a report that misses handoff sections until the worker resends them', async () => {
+it('refuses a report that misses handover sections until the worker resends them', async () => {
   const worker = await waitingWorker('editing');
   const report = worker.tools.get('subagent_report');
 

@@ -686,7 +686,7 @@ it('refreshes history while open, then stops polling after close without a model
       issue: 'inspect recovery',
       model: 'requested faux/test · observed unavailable',
       usage: { available: false, reason: 'Pi session usage was not recorded' },
-      report: { summary: 'Partial handoff', evidence: ['output.log'] },
+      report: { summary: 'Partial handover', evidence: ['output.log'] },
     },
   ];
 

@@ -68,7 +68,7 @@ export const requireUnclaimed = (root: string, source: { directory: string; task
   requireHandover(source.directory, source.task);
 };
 
-export const checkHandoff = (source: FollowUpPreparation): void => {
+export const checkHandover = (source: FollowUpPreparation): void => {
   if (!isDeepStrictEqual(readTask(source.directory), source.task)) {
     throw new Error('Source task changed during follow-up validation.');
   }
