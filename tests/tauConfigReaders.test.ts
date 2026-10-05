@@ -4,7 +4,6 @@ import { join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
-import { readBulkReadModel } from '../src/extensions/bulkRead/config.js';
 import { readProfileModels } from '../src/extensions/subagents/profileModels.js';
 import { loadTddConfig } from '../src/extensions/tdd/config.js';
 import { readAllowedModels } from '../src/models/models.js';
@@ -45,7 +44,24 @@ it('leaves TDD config, profiles, and allowed models readable when bulkRead is br
 
   writeConfig(repositoryFile, { bulkRead: {}, tdd: { productionGlobs: ['lib/**'] } });
 
-  expect(() => readBulkReadModel(location)).toThrow('bulkRead');
+  expect(readAllowedModels(location)?.models).toEqual(['a/one']);
+  expect(readProfileModels(location)).toEqual(new Map([['scout', 'a/one']]));
+  expect(loadTddConfig(location).config.productionGlobs).toEqual(['lib/**']);
+});
+
+it('leaves TDD config, profiles, and allowed models readable next to a bulkRead model', ({
+  onTestFinished,
+}) => {
+  const { location, userFile, repositoryFile } = configFixture(onTestFinished);
+
+  writeConfig(userFile, {
+    allowedModels: ['a/one'],
+    profiles: { scout: { model: 'a/one' } },
+    bulkRead: { model: 'openai-codex/gpt-5.6-luna' },
+  });
+
+  writeConfig(repositoryFile, { tdd: { productionGlobs: ['lib/**'] } });
+
   expect(readAllowedModels(location)?.models).toEqual(['a/one']);
   expect(readProfileModels(location)).toEqual(new Map([['scout', 'a/one']]));
   expect(loadTddConfig(location).config.productionGlobs).toEqual(['lib/**']);

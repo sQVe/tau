@@ -37,6 +37,8 @@ Shell in a skill has no tests, and every copy drifts on its own.
   [tool authoring guide](./tool-authoring.md).
 - The test rejects a new shell block with more than one command and lists the existing ones until a
   tool replaces them.
+- A step may gather evidence with one read-only `codemode` script that composes tested readers, such
+  as Tau tools. Target resolution, approvals, writes, and review judgment stay outside the script.
 
 ## Delete before you add
 

@@ -46,20 +46,20 @@ ruleTester.run('extension-boundary', extensionBoundaryRule, {
   ],
   invalid: [
     {
-      code: "import { bulkReadTool } from '../bulkRead/tool.js';\n\nexport const value = bulkReadTool;",
+      code: "import { commitToolGuidelines } from '../commit/tool.js';\n\nexport const value = commitToolGuidelines;",
       filename,
       errors: [
-        { messageId: 'private', data: { folder: 'extensions/bulkRead', file: 'tool' } },
-        { messageId: 'crossing', data: { source: 'probe', target: 'bulkRead' } },
+        { messageId: 'private', data: { folder: 'extensions/commit', file: 'tool' } },
+        { messageId: 'crossing', data: { source: 'probe', target: 'commit' } },
       ],
     },
     {
-      code: "export { bulkReadTool } from '../bulkRead/tool.js';",
+      code: "export { commitToolGuidelines } from '../commit/tool.js';",
       filename,
       errors: [{ messageId: 'private' }, { messageId: 'crossing' }],
     },
     {
-      code: "export const load = () => import('../bulkRead/tool.js');",
+      code: "export const load = () => import('../commit/tool.js');",
       filename,
       errors: [{ messageId: 'private' }, { messageId: 'crossing' }],
     },
@@ -69,9 +69,9 @@ ruleTester.run('extension-boundary', extensionBoundaryRule, {
       errors: [{ messageId: 'crossing', data: { source: 'probe', target: 'coding' } }],
     },
     {
-      code: "import bulkRead from './bulkRead/bulkRead.js';\n\nexport default bulkRead;",
+      code: "import commit from './commit/commit.js';\n\nexport default commit;",
       filename: flatFilename,
-      errors: [{ messageId: 'crossing', data: { source: 'flat', target: 'bulkRead' } }],
+      errors: [{ messageId: 'crossing', data: { source: 'flat', target: 'commit' } }],
     },
     {
       code: "import tau from '../../tau.js';\n\nexport default tau;",

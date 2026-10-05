@@ -25,7 +25,6 @@ import type {
 import { expect, it, vi } from 'vitest';
 
 import manifest from '../package.json' with { type: 'json' };
-import { bulkReadGuidelines } from '../src/extensions/bulkRead/bulkRead.js';
 import { commitToolGuidelines } from '../src/extensions/commit/tool.js';
 import { delegationGuidelines } from '../src/extensions/subagents/subagents.js';
 import { readInstructionSet } from '../src/instructionSets.js';
@@ -100,7 +99,6 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
 
     const tauExtension = extensions.find((extension) => extension.tools.has('commit'));
 
-    expect(tauExtension?.tools.has('bulk_read')).toBe(true);
     expect(tauExtension?.tools.has('run_tests')).toBe(true);
     expect(extensions.some((extension) => extension.tools.has('ask_user_question'))).toBe(true);
 
@@ -166,7 +164,7 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
       resourceLoader: loader,
       sessionManager: SessionManager.inMemory(workingDirectory),
       settingsManager,
-      tools: ['subagent', 'bulk_read', 'commit'],
+      tools: ['subagent', 'commit'],
     });
 
     onTestFinished(() => {
@@ -213,8 +211,6 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
 
     expect(codingInstructions).toContain('Separate the logical steps in every function');
 
-    expect(codingInstructions).not.toContain('bulk_read');
-
     const prSkill = await readFile(join(packageRoot, 'src/skills/pr/SKILL.md'), 'utf8');
 
     const { metadata } = parseFrontmatter<{ metadata?: Record<string, unknown> }>(
@@ -231,7 +227,6 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
       workflowInstructions.trim(),
       String(prRequiredFor),
       ...delegationGuidelines(undefined),
-      ...bulkReadGuidelines,
       ...commitToolGuidelines,
     ];
 

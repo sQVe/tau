@@ -74,7 +74,8 @@ failures throw rather than return error metadata.
   the continuation offset from Pi's notice, for offset reads and the 50KB limit alike.
   [ADR 0022](./0022-gate-the-clamped-read-hint-on-the-remainder.md) replaces this rule.
 - Keep the threshold at the value the
-  [development guide's measurement](../development.md#measuring-bulk-reads) tested.
+  [development guide's measurement](https://github.com/sQVe/tau/blob/2e566525e41a2472c5f52abe4a32186f1a5eddf7/docs/development.md#measuring-bulk-reads)
+  tested.
 
 Pi reports no truncation flag on the result, so the hook matches the notice text and accepts two
 edge cases rather than reading the file a second time:
@@ -141,17 +142,19 @@ edge cases rather than reading the file a second time:
   an 11% saving inside run-to-run variance. The median wall clock was 42 seconds against 66 seconds.
   The one run that clamped and then delegated was 32% cheaper than the comparable full-read run and
   twice as slow. These results accepted this ADR.
-  [Development](../development.md#measuring-bulk-reads) has the procedure to repeat them.
-- The [population script](../../scripts/bulk-read-population.sh) run on 2026-09-12 counted 194
-  sessions, 2,981 reads, 2,137 unbounded reads, 568 truncated or hinted results (19.1%), and at most
-  470 offset pages. That day's review had counted 2.3% truncated or hinted. The rest comes from Pi's
-  own continuation notice, which the query also matches. Nine `bulk_read` calls cost
-  $0.08 against $84.65 of assistant spend in the seven sessions that used it. Cumulative catalog
-  cost to that date was $555.49 for `assistant` and $0.08 for `toolResult`. The counts include
-  sessions before `bulk_read` shipped, and files under 400 lines count as unbounded reads. The
-  offset count is an upper bound without a same-path join. These counts compare no thresholds and
-  establish no savings. Measure savings in sessions using delegation before expanding delegation
-  work, including code writers.
+  [Development](https://github.com/sQVe/tau/blob/2e566525e41a2472c5f52abe4a32186f1a5eddf7/docs/development.md#measuring-bulk-reads)
+  has the procedure to repeat them.
+- The
+  [population script](https://github.com/sQVe/tau/blob/2e566525e41a2472c5f52abe4a32186f1a5eddf7/scripts/bulk-read-population.sh)
+  run on 2026-09-12 counted 194 sessions, 2,981 reads, 2,137 unbounded reads, 568 truncated or
+  hinted results (19.1%), and at most 470 offset pages. That day's review had counted 2.3% truncated
+  or hinted. The rest comes from Pi's own continuation notice, which the query also matches. Nine
+  `bulk_read` calls cost $0.08 against $84.65 of assistant spend in the seven sessions that used it.
+  Cumulative catalog cost to that date was $555.49 for `assistant` and $0.08 for `toolResult`. The
+  counts include sessions before `bulk_read` shipped, and files under 400 lines count as unbounded
+  reads. The offset count is an upper bound without a same-path join. These counts compare no
+  thresholds and establish no savings. Measure savings in sessions using delegation before expanding
+  delegation work, including code writers.
 - The session model often avoids bulk reads on its own, grepping and reading bounded ranges the
   clamp leaves alone, and those runs cost the same either way. The threshold stays at 400, and code
   writers do not earn a ticket on this evidence.

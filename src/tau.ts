@@ -4,7 +4,6 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import askUserQuestionExtension from './extensions/askUserQuestion/askUserQuestion.js';
 import bareRootExtension from './extensions/bareRoot.js';
-import bulkReadExtension from './extensions/bulkRead/bulkRead.js';
 import codeReviewExtension from './extensions/codeReview/codeReview.js';
 import codingExtension from './extensions/coding.js';
 import commitExtension from './extensions/commit/commit.js';
@@ -37,7 +36,6 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   tauSkillsExtension(pi, skillsDirectory, skillTools);
   commitExtension(pi);
   tddExtension(pi);
-  bulkReadExtension(pi);
   askUserQuestionExtension(pi);
   webAccessExtension(pi);
   snippetsExtension(pi);
