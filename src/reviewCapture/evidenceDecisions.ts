@@ -19,7 +19,6 @@ export type EvidenceGap =
       total: number;
     }
   | { kind: 'truncatedLine'; path: string; line: number; kept: number; total: number }
-  | { kind: 'absent'; path: string }
   | { kind: 'missing'; path: string; section: NamedSection }
   | { kind: 'unsearched'; path: string; reason: string }
   | { kind: 'incompleteSearch'; path: string; reason: string };

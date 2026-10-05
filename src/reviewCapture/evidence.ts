@@ -127,7 +127,7 @@ const readSourceFile = (root: string, revision: string | undefined, path: string
 const readTestBody = async (
   root: string,
   revision: string | undefined,
-  { path, changed }: { path: string; changed: boolean },
+  path: string,
   limits: EvidenceLimits,
 ): Promise<Collected<FileBody>> => {
   const read = await readSourceFile(root, revision, path);
@@ -139,9 +139,9 @@ const readTestBody = async (
     return { items: [{ path, lines }], gaps };
   }
 
-  // A sibling test that does not exist is not evidence the capture lacks.
+  // A missing sibling test is not evidence the capture lacks, and the capture shows a deleted test.
   if (read.kind === 'absent') {
-    return { items: [], gaps: changed ? [{ kind: 'absent', path }] : [] };
+    return { items: [], gaps: [] };
   }
 
   return { items: [], gaps: [{ kind: read.kind, path }] };
@@ -154,17 +154,11 @@ const readTests = async (
   limits: EvidenceLimits,
 ): Promise<Collected<FileBody>> => {
   const { changed, siblings } = testPaths(paths);
-
-  const candidates = [
-    ...changed.map((path) => ({ path, changed: true })),
-    ...siblings.map((path) => ({ path, changed: false })),
-  ];
-
   const results: Collected<FileBody>[] = [];
 
-  for (const candidate of candidates) {
+  for (const path of [...changed, ...siblings]) {
     // oxlint-disable-next-line no-await-in-loop -- one Git process at a time.
-    results.push(await readTestBody(root, revision, candidate, limits));
+    results.push(await readTestBody(root, revision, path, limits));
   }
 
   const found = boundList(

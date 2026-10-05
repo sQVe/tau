@@ -525,3 +525,18 @@ it('checks a rule file whose name starts with two dots at the end of a range', a
 
   expect(evidence.rules).toEqual([{ path: '..rules.md', status: 'readable' }]);
 });
+
+it('reports no gap for the old path of a test file renamed in a range', async () => {
+  const { root, to: from } = await rangeRepository();
+
+  await git(root, ['mv', 'src/math.test.ts', 'src/add.test.ts']);
+  await git(root, ['commit', '--quiet', '-m', 'rename']);
+  const to = await git(root, ['rev-parse', 'HEAD']);
+
+  const directory = await savedCapture(root, { kind: 'range', from, to });
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.paths).toEqual(['src/add.test.ts', 'src/math.test.ts']);
+  expect(evidence.tests.map((test) => test.path)).toEqual(['src/add.test.ts']);
+  expect(evidence.gaps).toEqual([]);
+});
