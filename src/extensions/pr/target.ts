@@ -3,6 +3,7 @@ import { Type } from 'typebox';
 import { checkOutput, parseRepository, readJson, run } from '../../github.js';
 import type { Repository, Runtime } from '../../github.js';
 import { runGit } from '../../gitOutput.js';
+import { readGit, readOptionalGit } from './git.js';
 import {
   formatRepository,
   pickBaseBranch,
@@ -63,31 +64,6 @@ const pullRequestListSchema = Type.Array(
 
 const pullRequestFields =
   'number,url,state,title,body,baseRefName,isDraft,headRefOid,headRepositoryOwner';
-
-// Resolves the trimmed output, or undefined when Git exits with 1.
-const readOptionalGit = async (cwd: string, commandArguments: string[]) => {
-  const result = await runGit(cwd, commandArguments);
-
-  if (result.exitCode === 1) {
-    return undefined;
-  }
-
-  if (result.exitCode !== 0) {
-    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
-  }
-
-  return result.stdout.toString('utf8').trim();
-};
-
-const readGit = async (cwd: string, commandArguments: string[]) => {
-  const result = await runGit(cwd, commandArguments);
-
-  if (result.exitCode !== 0) {
-    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
-  }
-
-  return result.stdout.toString('utf8').trim();
-};
 
 // Git exits with 128 when the branch has no upstream, so any failure means no push target.
 const readPushTarget = async (cwd: string) => {
