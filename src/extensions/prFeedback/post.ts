@@ -307,7 +307,6 @@ const quote = (body: string) => {
 const threadPlace = (thread: Thread) =>
   thread.line === null ? thread.path : `${thread.path}:${thread.line}`;
 
-// Describes a thread by the comment the reply answers, its author, and its place in the diff.
 const threadSummary = (thread: Thread) => {
   const answered =
     thread.comments.find((comment) => comment.id === thread.replyTo) ?? thread.comments[0];
