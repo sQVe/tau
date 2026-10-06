@@ -14,7 +14,7 @@ export interface ObservationResult {
   kind: RunnerResult['kind'];
   scope: TestScope;
   freshness: Freshness;
-  inputs: { before: string | null; after: string | null };
+  inputs: { before: string | null; after: string | null; error?: string };
   runPath: string | undefined;
   report: RunnerResult;
   hint: string | undefined;
