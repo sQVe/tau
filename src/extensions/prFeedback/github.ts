@@ -206,7 +206,7 @@ const run = async (runtime: Runtime, commandArguments: string[]) => {
   return result.stdout;
 };
 
-const describeProblem = (schema: TSchema, value: unknown) => {
+export const describeProblem = (schema: TSchema, value: unknown): string => {
   const [error] = Value.Errors(schema, value);
 
   return error === undefined ? 'unknown problem' : `${error.instancePath || '/'} ${error.message}`;

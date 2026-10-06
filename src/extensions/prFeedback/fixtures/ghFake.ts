@@ -34,16 +34,28 @@ interface FakePullRequest {
   headRefOid: string;
 }
 
+export interface FakeCheck {
+  name: string;
+  workflow: string;
+  bucket: string;
+  state: string;
+  link: string;
+}
+
+// A job's `gh run view --log-failed` result: the log it prints, or how the command fails. killed
+// means Pi stopped gh after it printed the log.
+type FakeJobLog = { log: string; killed?: boolean } | { code: number; stderr: string };
+
 interface FakeCall {
   command: string;
   commandArguments: string[];
 }
 
-type ReadKey = 'user' | 'pr view' | 'graphql' | 'reviews' | 'comments';
+type ReadKey = 'user' | 'pr view' | 'pr checks' | 'graphql' | 'reviews' | 'comments';
 
 type WriteKey = 'reply' | 'resolve' | 'issue comment';
 
-type CommandKey = ReadKey | WriteKey;
+type CommandKey = ReadKey | WriteKey | 'run view';
 
 type FakeWrite =
   | { kind: 'reply'; replyTo: number; body: string }
@@ -55,10 +67,18 @@ export interface GhFake {
   calls: FakeCall[];
   viewer: string;
   pullRequest: FakePullRequest | undefined;
+  // Each gh pr view moves the head to the next SHA here first, as a push between reads does.
+  nextHeads: string[];
   threads: FakeThread[];
   reviews: FakeReview[];
   comments: FakeComment[];
   writes: FakeWrite[];
+  checks: FakeCheck[];
+  // gh pr checks exits 1 while a check fails and 8 while one is pending, and still prints JSON.
+  checksExitCode: number;
+  // Pi stops gh pr checks after it printed the list.
+  checksKilled: boolean;
+  jobLogs: Record<string, FakeJobLog>;
   overrideOutput: (key: CommandKey, stdout: string) => void;
   failCommand: (key: CommandKey) => void;
   failWrite: (number: number) => void;
@@ -95,9 +115,17 @@ const writeKey = (commandArguments: readonly string[]): WriteKey | undefined => 
   return path.endsWith('/replies') ? 'reply' : 'issue comment';
 };
 
-const readKey = (commandArguments: readonly string[]): ReadKey | undefined => {
-  if (commandArguments[0] === 'pr' && commandArguments[1] === 'view') {
-    return 'pr view';
+const subcommandKeys: Record<string, CommandKey> = {
+  'pr view': 'pr view',
+  'pr checks': 'pr checks',
+  'run view': 'run view',
+};
+
+const readKey = (commandArguments: readonly string[]): CommandKey | undefined => {
+  const subcommandKey = subcommandKeys[commandArguments.slice(0, 2).join(' ')];
+
+  if (subcommandKey !== undefined) {
+    return subcommandKey;
   }
 
   if (commandArguments.includes('graphql')) {
@@ -137,10 +165,15 @@ export const createGhFake = (): GhFake => {
     calls,
     viewer: 'sqve',
     pullRequest: { number: 7, state: 'OPEN', author: 'sqve', headRefOid: 'abc123' },
+    nextHeads: [],
     threads: [],
     reviews: [],
     comments: [],
     writes: [],
+    checks: [],
+    checksExitCode: 0,
+    checksKilled: false,
+    jobLogs: {},
     overrideOutput: (key, stdout) => {
       overrides.set(key, stdout);
     },
@@ -240,6 +273,12 @@ export const createGhFake = (): GhFake => {
       throw new Error('no pull requests found');
     }
 
+    const nextHead = fake.nextHeads.shift();
+
+    if (nextHead !== undefined) {
+      fake.pullRequest.headRefOid = nextHead;
+    }
+
     const { number, state, author, headRefOid } = fake.pullRequest;
 
     return {
@@ -271,6 +310,7 @@ export const createGhFake = (): GhFake => {
   const responses: Record<ReadKey, () => unknown> = {
     user: () => ({ login: fake.viewer, type: 'User' }),
     'pr view': pullRequest,
+    'pr checks': () => fake.checks,
     graphql: threadPages,
     reviews: () => pages(reviewItems()),
     comments: () => pages(commentItems()),
@@ -282,8 +322,19 @@ export const createGhFake = (): GhFake => {
     'issue comment': postComment,
   };
 
+  const jobLog = (commandArguments: readonly string[]) => {
+    const job = commandArguments[commandArguments.indexOf('--job') + 1] ?? '';
+    const found = fake.jobLogs[job] ?? { code: 1, stderr: `job ${job} not found` };
+
+    if ('log' in found) {
+      return { code: 0, killed: found.killed === true, stdout: found.log, stderr: '' };
+    }
+
+    return { code: found.code, killed: false, stdout: '', stderr: found.stderr };
+  };
+
   // A write that prints overridden output still takes effect, as when gh prints something odd.
-  const respond = (key: CommandKey, commandArguments: readonly string[]) => {
+  const respond = (key: Exclude<CommandKey, 'run view'>, commandArguments: readonly string[]) => {
     const value = isWriteKey(key) ? writers[key](commandArguments) : responses[key]();
 
     return overrides.get(key) ?? JSON.stringify(value);
@@ -312,12 +363,20 @@ export const createGhFake = (): GhFake => {
       return { code: 1, killed: false, stdout: '', stderr: 'HTTP 502: Bad Gateway' };
     }
 
+    if (key === 'run view') {
+      return jobLog(commandArguments);
+    }
+
     try {
       const stdout = respond(key, commandArguments);
 
       // GitHub made the write, but Pi killed gh before it printed the response.
       if (lostResponses.has(writeAttempts) && isWriteKey(key)) {
         return { code: 0, killed: true, stdout: '', stderr: '' };
+      }
+
+      if (key === 'pr checks') {
+        return { code: fake.checksExitCode, killed: fake.checksKilled, stdout, stderr: '' };
       }
 
       return { code: 0, killed: false, stdout, stderr: '' };

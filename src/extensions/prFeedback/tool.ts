@@ -8,6 +8,7 @@ import { Type } from 'typebox';
 import type { Exec } from '../../exec.js';
 import { readGitOutput } from '../../gitOutput.js';
 import { checkTauDirectory, createFreshTauDirectory } from '../../tauDirectory.js';
+import { readChecks } from './checks.js';
 import { parseRepository } from './github.js';
 import type { Runtime } from './github.js';
 import { postReplies } from './post.js';
@@ -17,21 +18,27 @@ import { writePullRequestRecord } from './replies.js';
 const feedbackPath = 'pr-feedback';
 
 export const prFeedbackToolParameters = Type.Object({
-  action: Type.Union([Type.Literal('read'), Type.Literal('post')]),
+  action: Type.Union([Type.Literal('read'), Type.Literal('checks'), Type.Literal('post')]),
   repository: Type.Optional(
-    Type.String({ description: 'read: <host>/<owner>/<name>, such as github.com/sQVe/tau.' }),
+    Type.String({
+      description: 'read, checks: <host>/<owner>/<name>, such as github.com/sQVe/tau.',
+    }),
   ),
-  pr: Type.Optional(Type.Integer({ minimum: 1, description: 'read: the pull request number.' })),
+  pr: Type.Optional(
+    Type.Integer({ minimum: 1, description: 'read, checks: the pull request number.' }),
+  ),
   directory: Type.Optional(Type.String({ description: 'post: the directory that read returned.' })),
   stateToken: Type.Optional(Type.String({ description: 'post: the stateToken from read.' })),
   head: Type.Optional(
-    Type.String({ description: 'post: the SHA the pull request head must be at.' }),
+    Type.String({
+      description: 'post, checks: the SHA the pull request head must be at.',
+    }),
   ),
 });
 
 export type PrFeedbackInput = Static<typeof prFeedbackToolParameters>;
 
-const description = `Read a pull request's review feedback on GitHub and post replies to it. Call it as the pr-feedback skill directs.
+const description = `Read a pull request's review feedback and checks on GitHub and post replies to it. Call it as the pr-feedback skill directs.
 - read {repository, pr}: repository is <host>/<owner>/<name>, such as github.com/sQVe/tau. Reads the viewer, the pull request, its review threads, reviews, and conversation comments with gh, and creates a fresh ignored directory .tau/pr-feedback/<pr>-XXXXXX for this round. Returns {directory, viewer, pr {number, url, author, headRefOid}, threads, reviews, comments, stateToken}.
   - threads: unresolved threads only, each {id, path, line, isOutdated, viewerCanReply, viewerCanResolve, replyTo (the first comment's ID, to reply to), fromPerson (any comment not by a bot), startedByViewer, comments [{id, author, isBot, body, url, createdAt, updatedAt}]}.
   - reviews: review summaries with a body, each {id, author, isBot, state, body, url}.
@@ -39,6 +46,10 @@ const description = `Read a pull request's review feedback on GitHub and post re
   - isBot is true only when GitHub marks the author as a bot. author is null for a deleted account, which counts as a person.
   - stateToken changes when a person other than the viewer adds, edits, or deletes a comment, in any thread, review, or conversation comment. Bot comments, the viewer's comments, and resolving a thread do not change it.
   - Errors: a repository or pr of another shape, a failing gh call, gh output that is not JSON or misses a field, a pull request that is not OPEN, or a thread too long to read in full. Nothing is created in those cases.
+- checks {repository, pr, head}: repository is <host>/<owner>/<name>, as for read. head is the SHA the checks must belong to, such as read's pr.headRefOid. Reads the pull request head before and after the check list, then the checks with gh, and the failed-step log of each failing or cancelled GitHub Actions job. Writes nothing. Returns {pr, checks, gaps}.
+  - checks: each {name, workflow, bucket, state, link}. bucket is pass, fail, pending, skipping, or cancel. A check with bucket fail or cancel also has either log {excerpt, omittedLines} or gap. excerpt holds the end of the log, at most 200 lines and 20000 characters; omittedLines counts the lines left out.
+  - gaps: one {check, command, code, stderr, reason} for each piece of evidence the tool could not read: a failing check whose link is not a GitHub Actions job of the repository (command is null), a gh run view that failed, or an empty log. gh pr checks exits 1 while a check fails and 8 while one is pending; on exit 0, 1, or 8 with valid JSON it still returns the checks. When gh pr checks exits with another code, prints no JSON, JSON of another shape (such as an unknown bucket), or an empty list, or when it is stopped, checks is empty and one gap has check null. A gap means unread evidence, never a passing check.
+  - Errors: a repository, pr, or head of another shape or missing; a pull request head that differs from head before or after the check list (read again); or a failing gh pr view. Any other failing gh call returns a gap instead.
 - post {directory, stateToken, head}: directory and stateToken come from read. head is the SHA the pull request head must be at: the round's push, or pr.headRefOid when the round pushed nothing. Write <directory>/replies.json first:
   {"version": 1, "threads": [{"id": "<thread id>", "reply": "<text or null>", "resolve": true}], "comment": {"body": "<text>", "answers": ["<review or comment id>"]}}
   comment may be null. Leave the other files in the directory alone. Reads the feedback again, then posts in file order: per thread the reply, then the resolve, and the PR comment last. A write goes to a person when its thread has fromPerson, or, for the PR comment, when it answers a review or comment from a person or answers nothing. When any write goes to a person, asks the user to confirm once; writes to bots only post without asking. Records each write in <directory>/posted.json as it succeeds, and a retry with the same directory skips recorded writes. When gh fails during a write, GitHub may still have it, so posted.json records it as uncertain. A retry reads GitHub first: an uncertain reply or PR comment counts as posted when you have a comment with the same text in that thread or on the pull request that was not there before the write; posted.json saves the IDs of the comments that were there as earlierCommentIds, and an uncertain resolve counts as posted when the thread is resolved. Any other uncertain write posts again. Returns {status: posted|declined|unchanged, posted, skipped}, each write with kind, thread, url, text, state, commentId, and earlierCommentIds. unchanged means every write was already posted.
@@ -55,9 +66,9 @@ const findRoot = async (cwd: string) => {
   return root;
 };
 
-const parsePullRequestNumber = (pr: number | undefined) => {
+const parsePullRequestNumber = (action: string, pr: number | undefined) => {
   if (pr === undefined) {
-    throw new Error('read needs pr.');
+    throw new Error(`${action} needs pr.`);
   }
 
   if (!Number.isSafeInteger(pr) || pr < 1) {
@@ -111,7 +122,7 @@ const read = async (runtime: Runtime, parameters: PrFeedbackInput) => {
   }
 
   const repository = parseRepository(parameters.repository);
-  const pr = parsePullRequestNumber(parameters.pr);
+  const pr = parsePullRequestNumber('read', parameters.pr);
   const root = await findRoot(runtime.cwd);
   const feedback = await readFeedback(runtime, repository, pr);
   const directory = await createFreshTauDirectory(root, feedbackPath, `${pr}-`);
@@ -119,6 +130,21 @@ const read = async (runtime: Runtime, parameters: PrFeedbackInput) => {
   await writePullRequestRecord(directory, { repository, pr });
 
   return { directory, ...feedback };
+};
+
+const checks = async (runtime: Runtime, parameters: PrFeedbackInput) => {
+  if (parameters.repository === undefined) {
+    throw new Error('checks needs repository.');
+  }
+
+  const repository = parseRepository(parameters.repository);
+  const pr = parsePullRequestNumber('checks', parameters.pr);
+
+  if (parameters.head === undefined) {
+    throw new Error('checks needs head.');
+  }
+
+  return { ...(await readChecks(runtime, repository, { pr, head: parameters.head })) };
 };
 
 const runAction = (
@@ -129,8 +155,12 @@ const runAction = (
 ): Promise<Record<string, unknown>> => {
   const runtime = { exec, cwd: context.cwd, signal };
 
-  return parameters.action === 'read'
-    ? read(runtime, parameters)
+  if (parameters.action === 'read') {
+    return read(runtime, parameters);
+  }
+
+  return parameters.action === 'checks'
+    ? checks(runtime, parameters)
     : post(runtime, context, parameters);
 };
 
