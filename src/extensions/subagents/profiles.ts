@@ -1,14 +1,13 @@
 // Adapted from pi-interactive-subagents c3e8b53c0754ae5ccc19fdab5a7481ec039bc2f7, index.ts and session.ts.
 import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Value } from 'typebox/value';
 
 import { defaultInstructionSetNames, isInstructionSetName } from '../../instructionSets.js';
 import type { InstructionSetName } from '../../instructionSets.js';
-import { skillTools } from '../../skillTools.js';
 import { assignmentContractFor, handoverContract } from './handover.js';
 import { thinkingSchema, toolNamePattern } from './types.js';
 import type { Loadout, Profile, Task } from './types.js';
@@ -104,24 +103,6 @@ const parseRole = (fields: Map<string, string>): Profile['role'] => {
 export const roleTools: Record<Profile['role'], string[]> = {
   investigation: ['read', 'bash'],
   editing: ['read', 'bash', 'edit', 'write'],
-};
-
-export const workerTools = (loadout: Loadout): string[] => {
-  const loadedSkillTools = loadout.skills.flatMap((path) => {
-    const skillName = basename(dirname(path));
-
-    return skillTools[skillName] ?? [];
-  });
-
-  return [
-    ...new Set([
-      ...loadout.tools,
-      'subagent_progress',
-      'subagent_report',
-      'subagent_question',
-      ...loadedSkillTools,
-    ]),
-  ];
 };
 
 const parseList = (key: string, value: string | undefined): string[] | undefined => {

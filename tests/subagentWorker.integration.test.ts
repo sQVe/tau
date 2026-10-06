@@ -25,7 +25,7 @@ import { expect, it, vi, onTestFinished } from 'vitest';
 
 import askUserQuestionExtension from '../src/extensions/askUserQuestion/askUserQuestion.js';
 import { workerArguments } from '../src/extensions/subagents/controller/inspect.js';
-import { nativeIdentity, seedSession, workerTools } from '../src/extensions/subagents/profiles.js';
+import { nativeIdentity, seedSession } from '../src/extensions/subagents/profiles.js';
 import {
   acceptReply,
   readAcknowledgement,
@@ -41,7 +41,9 @@ import subagentsExtension, {
   registerCapacityRefusal,
 } from '../src/extensions/subagents/subagents.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
+import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { readInstructionSet } from '../src/instructionSets.js';
+import { skillTools } from '../src/skillTools.js';
 
 const handover =
   'Changes: edited source.txt\nEvidence: command-ok\nDecisions: None\nConcerns: Safety Net blocked deletion';
@@ -388,7 +390,7 @@ it.each(['editing', 'investigation'] as const)(
     });
 
     await session.bindExtensions({ uiContext, mode: 'tui' });
-    const allowed = workerTools(task.loadout).toSorted();
+    const allowed = workerTools(task.loadout, skillTools).toSorted();
     expect(session.getActiveToolNames().toSorted()).toEqual(allowed);
 
     const subagentTools = session

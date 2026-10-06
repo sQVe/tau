@@ -11,7 +11,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import askUserQuestionExtension from '../src/extensions/askUserQuestion/askUserQuestion.js';
 import { readWorkerActivity } from '../src/extensions/subagents/activity.js';
 import { fixtureLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
-import { nativeIdentity, seedSession, workerTools } from '../src/extensions/subagents/profiles.js';
+import { nativeIdentity, seedSession } from '../src/extensions/subagents/profiles.js';
 import { readPendingQuestion } from '../src/extensions/subagents/questionRecords.js';
 import {
   publish,
@@ -24,6 +24,8 @@ import subagentsExtension, {
   registerCapacityRefusal,
 } from '../src/extensions/subagents/subagents.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
+import { workerTools } from '../src/extensions/subagents/workerTools.js';
+import { skillTools } from '../src/skillTools.js';
 import { createBoundSession } from './piSession.js';
 
 interface ToolOutcome {
@@ -109,7 +111,7 @@ const runWorker = async (responses: FauxResponseStep[]) => {
     cwd: directory,
     agentDirectory: directory,
     providers: [provider],
-    tools: workerTools(task.loadout),
+    tools: workerTools(task.loadout, skillTools),
     sessionManager: SessionManager.open(task.nativeSessionFile),
     settings: { compaction: { enabled: false }, retry: { enabled: false } },
     extensionPaths: [safetyExtension],

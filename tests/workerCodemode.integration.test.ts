@@ -20,11 +20,12 @@ import {
   nativeIdentity,
   resolveProfile,
   seedSession,
-  workerTools,
 } from '../src/extensions/subagents/profiles.js';
 import { publish, readEvent, validateTask } from '../src/extensions/subagents/records.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
+import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import workflowExtension, { codemodeGuidelines } from '../src/extensions/workflow.js';
+import { skillTools } from '../src/skillTools.js';
 import { createBoundSession } from './piSession.js';
 
 interface ToolOutcome {
@@ -147,7 +148,7 @@ const startProfileWorker = async (
     cwd: directory,
     agentDirectory: directory,
     providers: [provider],
-    tools: workerTools(task.loadout),
+    tools: workerTools(task.loadout, skillTools),
     sessionManager: SessionManager.open(task.nativeSessionFile),
     settings: { compaction: { enabled: false }, retry: { enabled: false } },
     extensionPaths: [safetyExtension],
