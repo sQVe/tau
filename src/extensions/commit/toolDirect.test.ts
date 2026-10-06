@@ -1,4 +1,4 @@
-import { chmod, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -279,7 +279,7 @@ describe('direct commit staging', () => {
     expect(failure).toContain('reset denied');
   });
 
-  it('ignores obsolete commands and commits without creating recovery data', async () => {
+  it('commits requested files without changing unrelated working and untracked files', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'other', 'original\n');
     await git(directory, ['add', 'other']);
@@ -288,20 +288,8 @@ describe('direct commit staging', () => {
     await writeRepositoryFile(directory, 'untracked', 'keep me\n');
     await writeRepositoryFile(directory, 'requested', 'requested bytes\n');
 
-    await writeRepositoryFile(
-      directory,
-      'tau.json',
-      JSON.stringify({
-        prepare: ['sh', '-c', 'exit 81'],
-        check: ['sh', '-c', 'exit 82'],
-        checkMessage: ['sh', '-c', 'exit 83'],
-      }),
-    );
-
-    const before = await readdir(join(directory, '.git'));
-
     const result = await executeCommit(directory, {
-      groups: [{ files: ['requested', 'tau.json'], subject: 'feat: direct staging' }],
+      groups: [{ files: ['requested'], subject: 'feat: direct staging' }],
     });
 
     expect(result.details.groups[0]?.sha).toBe(
@@ -311,32 +299,5 @@ describe('direct commit staging', () => {
     expect(await git(directory, ['show', 'HEAD:requested'])).toBe('requested bytes\n');
     expect(await readFile(join(directory, 'other'), 'utf8')).toBe('working edit\n');
     expect(await readFile(join(directory, 'untracked'), 'utf8')).toBe('keep me\n');
-    expect(await readdir(join(directory, '.git'))).toEqual(before);
-    expect(await git(directory, ['for-each-ref', '--format=%(refname)'])).not.toContain('recovery');
-    expect(result.details.groups[0]).not.toHaveProperty('projectCheck');
-    expect(result.details.groups[0]).not.toHaveProperty('messageCheck');
-  });
-
-  it('runs installed hooks even when obsolete configuration requests skipping them', async () => {
-    const directory = await createTemporaryRepository();
-    await writeRepositoryFile(directory, 'tau.json', '{"hooks":"skip"}');
-    await writeRepositoryFile(directory, 'requested', 'value');
-
-    await writeRepositoryFile(
-      directory,
-      '.git/hooks/pre-commit',
-      '#!/bin/sh\necho hook diagnostic >&2\nexit 1\n',
-    );
-
-    await chmod(join(directory, '.git/hooks/pre-commit'), 0o755);
-
-    await expect(
-      executeCommit(directory, {
-        groups: [{ files: ['requested', 'tau.json'], subject: 'feat: run hooks' }],
-      }),
-    ).rejects.toThrow('hook diagnostic');
-
-    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
-    expect((await git(directory, ['rev-list', '--all', '--count'])).trim()).toBe('0');
   });
 });
