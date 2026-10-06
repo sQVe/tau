@@ -24,7 +24,8 @@ describe('worker widget', () => {
     const labelledRow: WorkerWidgetRow = {
       ...row,
       label: 'Inspect worker',
-      model: 'Pi-selected openai-codex/gpt-5.6-luna · requested openai-codex/gpt-5.6-luna',
+      requestedModel: 'openai-codex/gpt-5.6-luna',
+      observedModel: 'openai-codex/gpt-5.6-luna',
     };
 
     const lines = renderWorkerWidget([labelledRow], 80, now, theme as never);
@@ -62,7 +63,8 @@ describe('worker widget', () => {
       name: 'scout-abcdef',
       label: 'Reading the subagent controller source',
       state: 'running',
-      model: 'Pi-selected openai-codex/gpt-5.6-luna · requested openai-codex/gpt-5.6-luna',
+      requestedModel: 'openai-codex/gpt-5.6-luna',
+      observedModel: 'openai-codex/gpt-5.6-luna',
     };
 
     const lines = renderWorkerWidget([longRow], 160, now, theme as never);
@@ -79,7 +81,8 @@ describe('worker widget', () => {
     const modelRow: WorkerWidgetRow = {
       ...row,
       label: 'Inspect a worker',
-      model: 'Pi-selected openai-codex/gpt-5.6-luna · requested openai-codex/gpt-5.6-luna',
+      requestedModel: 'openai-codex/gpt-5.6-luna',
+      observedModel: 'openai-codex/gpt-5.6-luna',
     };
 
     for (const width of [160, 300]) {
@@ -94,12 +97,12 @@ describe('worker widget', () => {
 
   it('shows aligned columns, drops the model first when narrow, and stops at terminal width', () => {
     const rows: WorkerWidgetRow[] = [
-      { ...row, name: 'worker-k7', label: 'Read config', model: 'Pi-selected gpt-6' },
+      { ...row, name: 'worker-k7', label: 'Read config', observedModel: 'gpt-6' },
       {
         ...row,
         name: 'scout-p2',
         label: 'Trace herdr',
-        model: 'Pi-selected gpt-6',
+        observedModel: 'gpt-6',
       },
       {
         ...row,

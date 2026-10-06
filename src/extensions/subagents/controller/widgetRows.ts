@@ -64,12 +64,12 @@ const widgetModel = (
   task: Task,
   activity: ReturnType<typeof readWorkerActivity>,
   isCurrent: boolean,
-): string => {
+): Pick<WorkerWidgetRow, 'requestedModel' | 'observedModel'> => {
   if (isCurrent && activity?.model != null && activity.model !== '') {
-    return `Pi-selected ${activity.model} · requested ${task.loadout.model}`;
+    return { requestedModel: task.loadout.model, observedModel: activity.model };
   }
 
-  return `requested ${task.loadout.model} · observed unavailable`;
+  return { requestedModel: task.loadout.model };
 };
 
 const widgetUsage = (activity: ReturnType<typeof readWorkerActivity>): WorkerWidgetRow['usage'] => {
@@ -260,7 +260,7 @@ const buildWidgetRow = (
     deadline: task.deadline,
     createdAt: task.createdAt,
     activity: widgetActivity(activity, isCurrent, showPhase),
-    model: widgetModel(task, activity, isCurrent),
+    ...widgetModel(task, activity, isCurrent),
     usage: widgetUsage(activity),
     ...widgetActivityTime(activity, isCurrent),
     ...widgetPhase(activity),

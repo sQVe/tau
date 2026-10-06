@@ -2,4 +2,5 @@
 'tau': patch
 ---
 
-Simplify the subagents widget footer while keeping stopped counts and narrow layouts unchanged.
+Simplify subagents widget rendering while keeping stopped counts, model labels, and narrow layouts
+unchanged.

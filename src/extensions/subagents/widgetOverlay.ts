@@ -421,25 +421,17 @@ const reportLines = (row: WorkerWidgetRow, width: number): string[] => {
     fields.push(['Recovery', row.recovery]);
   }
 
-  if (row.model !== undefined) {
-    const modelParts = row.model.split(' · ');
-    const requested = modelParts.find((part) => part.startsWith('requested '));
+  if (row.requestedModel !== undefined) {
+    fields.push(['Model', `requested ${row.requestedModel}`]);
 
-    const observed = modelParts.find(
-      (part) => part.startsWith('observed ') || part.startsWith('Pi-selected '),
-    );
+    const observed =
+      row.observedModel === undefined
+        ? 'observed unavailable'
+        : `observed Pi-selected ${row.observedModel}`;
 
-    if (requested != null && observed != null) {
-      fields.push(['Model', requested]);
-
-      const observedValue = observed.startsWith('Pi-selected ')
-        ? `observed Pi-selected ${observed.slice('Pi-selected '.length)}`
-        : observed;
-
-      fields.push(['', observedValue]);
-    } else {
-      fields.push(['Model', row.model]);
-    }
+    fields.push(['', observed]);
+  } else if (row.observedModel !== undefined) {
+    fields.push(['Model', `Pi-selected ${row.observedModel}`]);
   }
 
   fields.push([

@@ -69,7 +69,8 @@ const rows: WorkerWidgetRow[] = Array.from({ length: 30 }, (_value, index) => {
     recovery:
       state === 'cleanupUnconfirmed' ? 'Pane worker-01 may still exist. No retry.' : undefined,
     workerType: 'Pi worker',
-    model: 'Pi-selected openai-codex/gpt-5.6-luna · requested openai-codex/gpt-5.6-luna',
+    requestedModel: 'openai-codex/gpt-5.6-luna',
+    observedModel: 'openai-codex/gpt-5.6-luna',
     usage: { available: false, reason: 'Pi session usage was not recorded' },
   };
 });
@@ -284,7 +285,8 @@ it('keeps details readable, aligned, sanitized, and within narrow and tiny width
     details: 'Pi trusted tools + verified safety',
     recovery: 'No recovery action required.',
     workerType: 'Pi worker',
-    model: 'Pi-selected openai-codex/gpt-5.6-luna · requested openai-codex/gpt-5.6-luna',
+    requestedModel: 'openai-codex/gpt-5.6-luna',
+    observedModel: 'openai-codex/gpt-5.6-luna',
     detailPath: `/records/${'very-long-path-'.repeat(8)}task.json`,
   };
 
@@ -390,6 +392,62 @@ it('shows the model column when width allows, hides it when narrow, and keeps fu
 
   view.handleInput('\r');
   expect(view.render(60).join('\n')).toContain('openai-codex/gpt-5.6-luna');
+});
+
+it('shows differing requested and observed models in details but hides them in narrow history', () => {
+  const modelRow: WorkerWidgetRow = {
+    ...rows[10]!,
+    requestedModel: 'faux/requested',
+    observedModel: 'other/observed',
+  };
+
+  const view = new WorkerHistoryView(
+    { terminal: { rows: 40 }, requestRender: noOperation } as never,
+    theme as never,
+    keybindings as never,
+    [modelRow],
+    noOperation,
+  );
+
+  const wide = view.render(160).join('\n');
+  const narrow = view.render(40).join('\n');
+
+  expect(wide).toContain('other/observed');
+  expect(wide).not.toContain('faux/requested');
+  expect(narrow).not.toContain('other/observed');
+  expect(narrow).not.toContain('faux/requested');
+
+  view.handleInput('\r');
+  const details = view.render(160).join('\n');
+
+  expect(details).toMatch(/Model\s+requested faux\/requested/u);
+  expect(details).toContain('observed Pi-selected other/observed');
+});
+
+it.each([
+  { observedModel: undefined, expected: undefined },
+  { observedModel: 'other/observed', expected: 'Pi-selected other/observed' },
+])('renders model details for $observedModel', ({ observedModel, expected }) => {
+  const view = new WorkerHistoryView(
+    { terminal: { rows: 40 }, requestRender: noOperation } as never,
+    theme as never,
+    keybindings as never,
+    [{ ...rows[10]!, requestedModel: undefined, observedModel }],
+    noOperation,
+  );
+
+  view.handleInput('\r');
+  const details = view.render(160).join('\n');
+
+  if (expected === undefined) {
+    // eslint-disable-next-line vitest/no-conditional-expect -- Missing model fields must omit the whole detail row.
+    expect(details).not.toContain('Model');
+  } else {
+    // eslint-disable-next-line vitest/no-conditional-expect -- Observed-only fields must show the model without a requested label.
+    expect(details).toMatch(/Model\s+Pi-selected other\/observed/u);
+    // eslint-disable-next-line vitest/no-conditional-expect -- Observed-only fields must show the model without a requested label.
+    expect(details).not.toContain('requested');
+  }
 });
 
 it('groups unresolved records under their exact state instead of a generic label', () => {

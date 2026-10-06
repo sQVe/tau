@@ -721,7 +721,7 @@ it('refreshes history while open, then stops polling after close without a model
       details: 'Pi trusted tools + verified safety · manual cleanup pane-7',
       detailPath: '/records/task-full-id/task.json',
       issue: 'inspect recovery',
-      model: 'requested faux/test · observed unavailable',
+      requestedModel: 'faux/test',
       usage: { available: false, reason: 'Pi session usage was not recorded' },
       report: { summary: 'Partial handover', evidence: ['output.log'] },
     },

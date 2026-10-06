@@ -31,7 +31,8 @@ export interface WorkerWidgetRow {
   questionId?: string | undefined;
   issue?: string | undefined;
   usage: { available: false; reason: string } | { available: true; label: string };
-  model?: string | undefined;
+  requestedModel?: string | undefined;
+  observedModel?: string | undefined;
   report?: { summary: string; evidence: string[] } | undefined;
 }
 
@@ -226,20 +227,11 @@ export const shortTaskLabel = (row: WorkerWidgetRow): string => {
 
 // Show an observed model as observed, keep a requested-only value labelled, and never invent one.
 export const workerModelLabel = (row: WorkerWidgetRow): string => {
-  if (row.model === undefined) {
-    return '—';
+  if (row.observedModel !== undefined) {
+    return row.observedModel;
   }
 
-  const parts = row.model.split(' · ');
-  const observed = parts.find((part) => part.startsWith('Pi-selected '));
-
-  if (observed != null) {
-    return observed.slice('Pi-selected '.length);
-  }
-
-  const requested = parts.find((part) => part.startsWith('requested '));
-
-  return requested ?? row.model;
+  return row.requestedModel === undefined ? '—' : `requested ${row.requestedModel}`;
 };
 
 const statusText = (row: WorkerWidgetRow, now: number): string => {
