@@ -93,7 +93,6 @@ const feedbackDirectory = async (root: string, directory: string | undefined) =>
 
 const post = async (runtime: Runtime, context: ExtensionContext, parameters: PrFeedbackInput) => {
   const root = await findCheckoutRoot(runtime.cwd, 'pr_feedback');
-  const directory = await feedbackDirectory(root, parameters.directory);
 
   if (parameters.stateToken === undefined) {
     throw new Error('post needs the stateToken that read returned.');
@@ -103,7 +102,7 @@ const post = async (runtime: Runtime, context: ExtensionContext, parameters: PrF
     throw new Error('post needs head.');
   }
 
-  return postReplies(runtime, context, directory, {
+  return postReplies(runtime, context, () => feedbackDirectory(root, parameters.directory), {
     stateToken: parameters.stateToken,
     head: parameters.head,
   });

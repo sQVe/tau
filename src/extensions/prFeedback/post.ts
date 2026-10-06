@@ -423,9 +423,10 @@ const saveSettled = async (directory: string, feedback: PullRequestFeedback) => 
 export const postReplies = async (
   runtime: Runtime,
   context: ExtensionContext,
-  directory: string,
+  checkDirectory: () => Promise<string>,
   input: PostInput,
 ): Promise<Record<string, unknown>> => {
+  const directory = await checkDirectory();
   const { repository, pr } = await readPullRequestRecord(directory);
   const target = { runtime, repository, pr };
   const replies = await readReplies(directory);
@@ -454,6 +455,7 @@ export const postReplies = async (
       return { status: 'declined', posted: [], skipped };
     }
 
+    await checkDirectory();
     round = await rejectChangedPlan(target, directory, input, replies, writes);
   }
 
