@@ -349,6 +349,23 @@ it.each([
   ]);
 });
 
+it('reads the server branch through a custom fetch mapping', async () => {
+  const { root, fake, run } = await setUp();
+
+  await pushFeature(root);
+  await git(root, 'config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/cache/*');
+  await git(root, 'fetch', '--quiet', 'origin');
+  holdPullRequests(fake, 'github.com/sQVe/tau', [pullRequest()]);
+
+  const details = await run({ action: 'target' });
+
+  expect(details).toMatchObject({
+    head: { remote: 'origin', branch: 'feature' },
+    base: { remote: 'origin', branch: 'main' },
+    pr: { number: 7 },
+  });
+});
+
 it('stops before other gh calls when gh auth status fails', async () => {
   const { root, fake, run } = await setUp();
 

@@ -14,7 +14,7 @@ import {
   rejectDefaultBranch,
   upstreamRepository,
 } from './targetDecisions.js';
-import type { PullRequest, Remote, ViewedRepository } from './targetDecisions.js';
+import type { PullRequest, PushTarget, Remote, ViewedRepository } from './targetDecisions.js';
 
 export interface TargetRequest {
   remote: string | undefined;
@@ -34,6 +34,7 @@ export interface Target {
 interface RemoteUrls {
   url: string | undefined;
   pushUrl: string | undefined;
+  fetchRefspecs: string[];
 }
 
 interface RemoteLocation {
@@ -77,35 +78,28 @@ const pullRequestListLimit = 100;
 const pullRequestFields =
   'number,url,state,title,body,baseRefName,isDraft,headRefOid,headRepositoryOwner';
 
-// The settings Git reads to find where a branch pushes. With none of them set, the branch has no
-// push target.
-const pushSettings = (branch: string) => [
-  `branch.${branch}.pushRemote`,
-  `branch.${branch}.remote`,
-  'remote.pushDefault',
-];
+// Git prints the push remote only when branch.<name>.pushRemote, branch.<name>.remote, or
+// remote.pushDefault names one, so an empty remote means the branch has no push target. With a
+// push remote but no push ref, such as for a removed remote, the setting is broken.
+const readPushTarget = async (cwd: string, branch: string): Promise<PushTarget | undefined> => {
+  const output = await readGit(cwd, [
+    'for-each-ref',
+    '--format=%(push)%00%(push:remotename)%00%(push:remoteref)',
+    `refs/heads/${branch}`,
+  ]);
 
-const hasPushSetting = async (cwd: string, branch: string) => {
-  const values = await Promise.all(
-    pushSettings(branch).map((key) => readOptionalGit(cwd, ['config', '--get', key])),
-  );
+  const [trackingRef = '', remote = '', remoteRef = ''] = output.split('\0');
 
-  return values.some((value) => value !== undefined);
-};
-
-// Resolves undefined only when no push setting exists for the branch. When one exists and Git
-// still cannot resolve @{push}, such as for a removed remote, the setting is broken.
-const readPushTarget = async (cwd: string, branch: string) => {
-  const commandArguments = ['rev-parse', '--abbrev-ref', '@{push}'];
-  const result = await runGit(cwd, commandArguments);
-
-  if (result.exitCode === 0) {
-    return result.stdout.toString('utf8').trim();
-  }
-
-  if (!(await hasPushSetting(cwd, branch))) {
+  if (remote === '') {
     return undefined;
   }
+
+  if (trackingRef !== '') {
+    return { remote, trackingRef, remoteRef: remoteRef === '' ? undefined : remoteRef };
+  }
+
+  const commandArguments = ['rev-parse', '--abbrev-ref', '@{push}'];
+  const result = await runGit(cwd, commandArguments);
 
   throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
 };
@@ -185,14 +179,15 @@ const sshHostResolver = (runtime: Runtime): ResolveHost => {
   };
 };
 
-const remoteUrlKey = /^remote\.(.+)\.(url|pushurl)$/u;
+const remoteUrlKey = /^remote\.(.+)\.(url|pushurl|fetch)$/u;
 
-// Reads the first url and pushurl of each remote. Git pushes to pushurl when it is set.
+// Reads the first url and pushurl and every fetch refspec of each remote. Git pushes to pushurl
+// when it is set.
 const readRemoteUrls = async (cwd: string) => {
   const output = await readOptionalGit(cwd, [
     'config',
     '--get-regexp',
-    String.raw`^remote\..*\.(push)?url$`,
+    String.raw`^remote\..*\.((push)?url|fetch)$`,
   ]);
 
   const urls = new Map<string, RemoteUrls>();
@@ -200,7 +195,7 @@ const readRemoteUrls = async (cwd: string) => {
   for (const line of lines(output)) {
     const [key = '', value = ''] = line.split(' ', 2);
     const [, name = '', kind] = remoteUrlKey.exec(key) ?? [];
-    const remote = urls.get(name) ?? { url: undefined, pushUrl: undefined };
+    const remote = urls.get(name) ?? { url: undefined, pushUrl: undefined, fetchRefspecs: [] };
 
     if (kind === 'url') {
       remote.url ??= value;
@@ -208,6 +203,10 @@ const readRemoteUrls = async (cwd: string) => {
 
     if (kind === 'pushurl') {
       remote.pushUrl ??= value;
+    }
+
+    if (kind === 'fetch') {
+      remote.fetchRefspecs.push(value);
     }
 
     urls.set(name, remote);
@@ -248,6 +247,7 @@ const readRemote = async (
     pushUrl: pushed.url,
     repository: fetched.repository,
     pushRepository: pushed.repository,
+    fetchRefspecs: urls.fetchRefspecs,
   };
 };
 

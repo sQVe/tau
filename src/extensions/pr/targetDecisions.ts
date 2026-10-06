@@ -7,6 +7,17 @@ export interface Remote {
   repository: Repository | undefined;
   // The repository Git pushes to, from remote.<name>.pushurl when set, otherwise the fetch URL.
   pushRepository: Repository | undefined;
+  // The remote.<name>.fetch values, such as +refs/heads/*:refs/remotes/origin/*.
+  fetchRefspecs: readonly string[];
+}
+
+// Where Git pushes a branch, as `git for-each-ref` prints it through %(push).
+export interface PushTarget {
+  remote: string;
+  // The remote-tracking ref of the pushed branch, such as refs/remotes/origin/feature.
+  trackingRef: string;
+  // The ref on the server, which Git prints only when a remote.<name>.push refspec decides it.
+  remoteRef: string | undefined;
 }
 
 export interface RepositoryView {
@@ -26,8 +37,7 @@ export interface BaseRepository {
 
 export interface HeadFacts {
   branch: string;
-  // What `git rev-parse --abbrev-ref @{push}` prints, such as origin/feature.
-  pushTarget: string | undefined;
+  pushTarget: PushTarget | undefined;
   requestedRemote: string | undefined;
   remotes: readonly Remote[];
   // Remotes with a remote-tracking ref for the local branch name.
@@ -82,16 +92,73 @@ const sameRepository = (left: Repository, right: Repository): boolean =>
 
 const remoteNames = (remotes: readonly Remote[]) => remotes.map((remote) => remote.name);
 
-// Remote names can contain a slash, so remotes foo and foo/bar both match foo/bar/feature. The
-// longest matching name is the remote.
-const pushHead = (pushTarget: string, remotes: readonly Remote[]): Head | undefined => {
-  const [remote] = remotes
-    .filter((candidate) => pushTarget.startsWith(`${candidate.name}/`))
-    .toSorted((left, right) => right.name.length - left.name.length);
+const branchPrefix = 'refs/heads/';
 
-  return remote === undefined
-    ? undefined
-    : { remote: remote.name, branch: pushTarget.slice(remote.name.length + 1) };
+// Maps a ref back through one fetch refspec: the source ref whose fetch writes ref, if any.
+const refspecSource = (refspec: string, ref: string): string | undefined => {
+  const [source = '', destination] = refspec.replace(/^\+/u, '').split(':', 2);
+
+  if (refspec.startsWith('^') || destination === undefined) {
+    return undefined;
+  }
+
+  const [prefix = '', suffix] = destination.split('*', 2);
+
+  if (suffix === undefined) {
+    return destination === ref ? source : undefined;
+  }
+
+  const matches = ref.startsWith(prefix) && ref.endsWith(suffix);
+  const captured = ref.slice(prefix.length, ref.length - suffix.length);
+
+  return matches && captured !== '' ? source.replace('*', captured) : undefined;
+};
+
+// Git maps the server branch forward through the fetch refspecs to name the tracking ref, so the
+// reverse mapping finds the server branch. Two refspecs can map different branches to one ref.
+const serverBranch = (branch: string, target: PushTarget, remote: Remote) => {
+  if (target.remoteRef !== undefined) {
+    if (!target.remoteRef.startsWith(branchPrefix)) {
+      throw new Error(
+        `Branch ${branch} pushes to ${target.remoteRef} on ${remote.name}, which is not a branch.`,
+      );
+    }
+
+    return target.remoteRef.slice(branchPrefix.length);
+  }
+
+  const sources = remote.fetchRefspecs
+    .map((refspec) => refspecSource(refspec, target.trackingRef))
+    .filter((source) => source?.startsWith(branchPrefix) === true)
+    .map((source) => (source ?? '').slice(branchPrefix.length));
+
+  const [sole, ...others] = [...new Set(sources)];
+
+  if (sole === undefined) {
+    throw new Error(
+      `Branch ${branch} pushes to ${target.trackingRef}, which no fetch refspec of ${remote.name} maps from a branch. Pass remote.`,
+    );
+  }
+
+  if (others.length > 0) {
+    throw new Error(
+      `Branch ${branch} pushes to ${target.trackingRef}, which the fetch refspecs of ${remote.name} map from several branches: ${[sole, ...others].join(', ')}. Pass remote.`,
+    );
+  }
+
+  return sole;
+};
+
+const pushHead = (branch: string, target: PushTarget, remotes: readonly Remote[]): Head => {
+  const remote = remotes.find((candidate) => candidate.name === target.remote);
+
+  if (remote === undefined) {
+    throw new Error(
+      `Branch ${branch} pushes to remote ${target.remote}, which is not a Git remote of this checkout.`,
+    );
+  }
+
+  return { remote: remote.name, branch: serverBranch(branch, target, remote) };
 };
 
 // A named remote wins over the push target, since the caller chose it.
@@ -106,10 +173,8 @@ export const pickHead = (facts: HeadFacts): Head => {
     return { remote: requestedRemote, branch };
   }
 
-  const fromPush = facts.pushTarget === undefined ? undefined : pushHead(facts.pushTarget, remotes);
-
-  if (fromPush !== undefined) {
-    return fromPush;
+  if (facts.pushTarget !== undefined) {
+    return pushHead(branch, facts.pushTarget, remotes);
   }
 
   const [sole, ...others] = facts.remotesWithBranch;

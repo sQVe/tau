@@ -14,14 +14,23 @@ import type { HeadFacts, ListedPullRequest, PullRequest, Remote } from './target
 const upstream = { host: 'github.com', owner: 'sQVe', name: 'tau' };
 const fork = { host: 'github.com', owner: 'fork', name: 'tau' };
 
+const remote = (
+  name: string,
+  repository: Remote['repository'],
+  pushRepository: Remote['pushRepository'],
+  fetchRefspecs = [`+refs/heads/*:refs/remotes/${name}/*`],
+): Remote => ({ name, repository, pushRepository, fetchRefspecs });
+
+const pushTarget = (name: string, trackingRef: string, remoteRef?: string) => ({
+  remote: name,
+  trackingRef,
+  remoteRef,
+});
+
 const remotes: Remote[] = [
-  { name: 'origin', repository: fork, pushRepository: fork },
-  { name: 'local', repository: undefined, pushRepository: undefined },
-  {
-    name: 'upstream',
-    repository: { host: 'github.com', owner: 'sqve', name: 'Tau' },
-    pushRepository: undefined,
-  },
+  remote('origin', fork, fork),
+  remote('local', undefined, undefined),
+  remote('upstream', { host: 'github.com', owner: 'sqve', name: 'Tau' }, undefined),
 ];
 
 const headFacts = (facts: Partial<HeadFacts> = {}): HeadFacts => ({
@@ -33,18 +42,29 @@ const headFacts = (facts: Partial<HeadFacts> = {}): HeadFacts => ({
   ...facts,
 });
 
+const cacheRemotes = [remote('origin', fork, fork, ['+refs/heads/*:refs/remotes/origin/cache/*'])];
+
+const overlappingRemotes = [
+  remote('origin', fork, fork, [
+    '+refs/heads/*:refs/remotes/origin/*',
+    '+refs/heads/team/*:refs/remotes/origin/*',
+  ]),
+];
+
 it.each([
   {
-    facts: headFacts({ requestedRemote: 'upstream', pushTarget: 'origin/feature' }),
+    facts: headFacts({
+      requestedRemote: 'upstream',
+      pushTarget: pushTarget('origin', 'refs/remotes/origin/feature'),
+    }),
     head: { remote: 'upstream', branch: 'feature' },
   },
   {
-    facts: headFacts({ pushTarget: 'origin/topic/feature', remotesWithBranch: ['upstream'] }),
+    facts: headFacts({
+      pushTarget: pushTarget('origin', 'refs/remotes/origin/topic/feature'),
+      remotesWithBranch: ['upstream'],
+    }),
     head: { remote: 'origin', branch: 'topic/feature' },
-  },
-  {
-    facts: headFacts({ pushTarget: 'gone/feature', remotesWithBranch: ['upstream'] }),
-    head: { remote: 'upstream', branch: 'feature' },
   },
   {
     facts: headFacts({ remotesWithBranch: ['origin'] }),
@@ -52,13 +72,38 @@ it.each([
   },
   {
     facts: headFacts({
-      pushTarget: 'foo/bar/feature',
-      remotes: [
-        { name: 'foo', repository: fork, pushRepository: fork },
-        { name: 'foo/bar', repository: upstream, pushRepository: upstream },
-      ],
+      pushTarget: pushTarget('foo/bar', 'refs/remotes/foo/bar/feature'),
+      remotes: [remote('foo', fork, fork), remote('foo/bar', upstream, upstream)],
     }),
     head: { remote: 'foo/bar', branch: 'feature' },
+  },
+  {
+    facts: headFacts({
+      pushTarget: pushTarget('origin', 'refs/remotes/origin/cache/feature'),
+      remotes: cacheRemotes,
+    }),
+    head: { remote: 'origin', branch: 'feature' },
+  },
+  {
+    facts: headFacts({
+      pushTarget: pushTarget('origin', 'refs/remotes/origin/cache/other', 'refs/heads/other'),
+      remotes: cacheRemotes,
+    }),
+    head: { remote: 'origin', branch: 'other' },
+  },
+  {
+    facts: headFacts({
+      pushTarget: pushTarget('origin', 'refs/remotes/origin/feature'),
+      remotes: [
+        remote('origin', fork, fork, [
+          '^refs/heads/secret/*',
+          'refs/tags/*:refs/tags/*',
+          '+refs/heads/main:refs/remotes/origin/main',
+          '+refs/heads/*:refs/remotes/origin/*',
+        ]),
+      ],
+    }),
+    head: { remote: 'origin', branch: 'feature' },
   },
 ])('picks the head $head.remote/$head.branch', ({ facts, head }) => {
   expect(pickHead(facts)).toEqual(head);
@@ -71,18 +116,44 @@ it.each([
     facts: headFacts({ remotesWithBranch: ['origin', 'upstream'] }),
     error: 'Remotes origin, upstream all have a branch named feature. Pass remote.',
   },
+  {
+    facts: headFacts({ pushTarget: pushTarget('gone', 'refs/remotes/gone/feature') }),
+    error: 'Branch feature pushes to remote gone, which is not a Git remote of this checkout.',
+  },
+  {
+    facts: headFacts({
+      pushTarget: pushTarget('origin', 'refs/remotes/origin/team/feature'),
+      remotes: overlappingRemotes,
+    }),
+    error:
+      'Branch feature pushes to refs/remotes/origin/team/feature, which the fetch refspecs of origin map from several branches: team/feature, team/team/feature. Pass remote.',
+  },
+  {
+    facts: headFacts({
+      pushTarget: pushTarget('origin', 'refs/remotes/elsewhere/feature'),
+      remotes: cacheRemotes,
+    }),
+    error:
+      'Branch feature pushes to refs/remotes/elsewhere/feature, which no fetch refspec of origin maps from a branch. Pass remote.',
+  },
+  {
+    facts: headFacts({
+      pushTarget: pushTarget('origin', 'refs/remotes/origin/for/main', 'refs/for/main'),
+    }),
+    error: 'Branch feature pushes to refs/for/main on origin, which is not a branch.',
+  },
 ])('refuses to pick a head: $error', ({ facts, error }) => {
   expect(() => pickHead(facts)).toThrow(error);
 });
 
 const sameFetchRemotes: Remote[] = [
-  { name: 'mirror', repository: upstream, pushRepository: upstream },
-  { name: 'upstream', repository: upstream, pushRepository: upstream },
+  remote('mirror', upstream, upstream),
+  remote('upstream', upstream, upstream),
 ];
 
 const swappedRemotes: Remote[] = [
-  { name: 'origin', repository: fork, pushRepository: upstream },
-  { name: 'upstream', repository: upstream, pushRepository: upstream },
+  remote('origin', fork, upstream),
+  remote('upstream', upstream, upstream),
 ];
 
 it.each([
@@ -97,7 +168,7 @@ it.each([
 });
 
 it('refuses a base repository that no remote fetches from', () => {
-  const pushOnly: Remote[] = [{ name: 'origin', repository: fork, pushRepository: upstream }];
+  const pushOnly: Remote[] = [remote('origin', fork, upstream)];
 
   expect(() => pickBaseRemote(pushOnly, 'origin', upstream)).toThrow(
     'No Git remote fetches from github.com/sQVe/tau. Add one.',
