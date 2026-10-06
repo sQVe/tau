@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it, onTestFinished } from 'vitest';
@@ -96,6 +96,8 @@ describe('read', () => {
 
     expect(result).toEqual({
       directory: result.directory,
+      feedback: join(result.directory, 'feedback.json'),
+      gaps: [],
       viewer: 'sqve',
       pr: {
         number: 7,
@@ -170,6 +172,95 @@ describe('read', () => {
     expect(result.stateToken).toMatch(/^[0-9a-f]{64}$/u);
 
     expect(await feedbackDirectories(root)).toHaveLength(1);
+  });
+
+  it.each([
+    { name: 'plain text', body: 'a'.repeat(65_536) },
+    { name: 'escaped text', body: '\u0000'.repeat(65_536) },
+    {
+      name: 'a split surrogate pair',
+      body: `${'a'.repeat(3999)}\uD83D\uDE00${'b'.repeat(61_535)}`,
+    },
+  ])('saves readable chunks of $name without losing body text', async ({ body }) => {
+    const { fake, read } = await setUp();
+
+    fake.threads = [thread({ id: 'long', comments: [{ id: 101, author: person, body }] })];
+    fake.reviews = [{ id: 201, author: person, state: 'COMMENTED', body }];
+    fake.comments = [{ id: 301, author: person, body }];
+
+    const result = await read();
+    const text = await readFile(String(result.feedback), 'utf8');
+
+    const saved = JSON.parse(text) as {
+      comments: { body: string[] }[];
+      reviews: { body: string[] }[];
+      threads: { comments: { body: string[] }[] }[];
+    };
+
+    const bodies = [
+      ...saved.comments.map((comment) => comment.body),
+      ...saved.reviews.map((review) => review.body),
+      ...saved.threads.flatMap((item) => item.comments.map((comment) => comment.body)),
+    ];
+
+    expect(Math.max(...text.split('\n').map((line) => Buffer.byteLength(line)))).toBeLessThan(
+      50 * 1024,
+    );
+
+    expect(bodies.every((chunks) => Array.isArray(chunks))).toBe(true);
+    expect(bodies.map((chunks) => chunks.join(''))).toEqual([body, body, body]);
+    expect(bodies.flat().every((chunk) => chunk.length <= 4000)).toBe(true);
+
+    expect(result.threads).toEqual([
+      expect.objectContaining({
+        comments: [expect.objectContaining({ body: body.slice(0, 4000) })],
+      }),
+    ]);
+  });
+
+  it('saves full feedback and returns bounded bodies and lists with gaps', async () => {
+    const { fake, read } = await setUp();
+    const body = 'a'.repeat(12_000);
+
+    fake.threads = [thread({ id: 'thread-long', comments: [{ id: 101, author: person, body }] })];
+    fake.reviews = [{ id: 201, author: person, state: 'COMMENTED', body }];
+
+    fake.comments = Array.from({ length: 30 }, (_, index) => ({
+      id: 301 + index,
+      author: person,
+      body,
+    }));
+
+    const result = await read();
+
+    const saved = JSON.parse(await readFile(String(result.feedback), 'utf8')) as {
+      stateToken: string;
+      comments: { body: string[] }[];
+      threads: { comments: { body: string[] }[] }[];
+      reviews: { body: string[] }[];
+    };
+
+    expect(result.feedback).toBe(join(result.directory, 'feedback.json'));
+    expect(JSON.stringify(result, null, 2).length).toBeLessThanOrEqual(40_000);
+    expect(saved.stateToken).toBe(result.stateToken);
+    expect(saved.comments).toHaveLength(30);
+    expect(saved.comments[29]?.body.join('')).toBe(body);
+    expect(saved.threads[0]?.comments[0]?.body.join('')).toBe(body);
+    expect(saved.reviews[0]?.body.join('')).toBe(body);
+
+    expect(result.gaps).toEqual(
+      expect.arrayContaining([
+        { kind: 'truncatedBody', list: 'threads', id: 101, kept: 4000, total: 12_000 },
+        { kind: 'truncatedBody', list: 'reviews', id: 201, kept: 4000, total: 12_000 },
+        expect.objectContaining({ kind: 'truncatedList', list: 'comments', total: 30 }),
+      ]),
+    );
+
+    fake.comments[29] = { id: 330, author: person, body: `${body}changed outside the excerpt` };
+
+    const next = await read();
+
+    expect(next.stateToken).not.toBe(result.stateToken);
   });
 
   it('returns a new stateToken only after a person comments', async () => {

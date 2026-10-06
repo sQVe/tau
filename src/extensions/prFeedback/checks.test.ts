@@ -59,6 +59,113 @@ const runViewCalls = (fake: GhFake) =>
   fake.calls.filter((call) => call.commandArguments.slice(0, 2).join(' ') === 'run view');
 
 describe('checks', () => {
+  it.each([
+    { name: 'escaped logs', log: '\u0000'.repeat(20_000), stderr: undefined },
+    { name: 'long command errors', log: undefined, stderr: 'x'.repeat(10_000) },
+    { name: 'escaped command errors', log: undefined, stderr: '\u0000'.repeat(10_000) },
+  ])(
+    'bounds the serialized result with $name and reports omitted checks',
+    async ({ log, stderr }) => {
+      const { root, fake } = await setUp();
+
+      fake.checks = Array.from({ length: 20 }, (_, index) =>
+        check({ name: `job-${index}`, bucket: 'fail', link: jobLink(11, 21 + index) }),
+      );
+
+      for (let index = 0; index < 20; index += 1) {
+        fake.jobLogs[String(21 + index)] = log === undefined ? { code: 1, stderr } : { log };
+      }
+
+      const tool = createPrFeedbackTool(fake.exec);
+
+      const response = await tool.execute(
+        'call',
+        { action: 'checks', repository: 'github.com/sQVe/tau', pr: 7, head: 'abc123' },
+        undefined,
+        undefined,
+        noUiContext(root),
+      );
+
+      const result = response.details as unknown as ChecksResult;
+
+      const text = response.content
+        .filter((item) => item.type === 'text')
+        .map((item) => item.text)
+        .join('');
+
+      expect(text.length).toBeLessThanOrEqual(40_000);
+      expect(result.checks.length).toBeLessThan(20);
+
+      expect(result.checks.map((item) => item.name)).toEqual(
+        fake.checks.slice(0, result.checks.length).map((item) => item.name),
+      );
+
+      expect(result.gaps).toContainEqual(
+        expect.objectContaining({
+          kind: 'truncatedList',
+          list: 'checks',
+          kept: result.checks.length,
+          total: 20,
+          command:
+            'gh api --hostname github.com repos/sQVe/tau/commits/abc123/check-runs --paginate && gh api --hostname github.com repos/sQVe/tau/commits/abc123/status --paginate',
+        }),
+      );
+
+      expect(result.gaps.length).toBeLessThanOrEqual(result.checks.length + 1);
+      expect(await readdir(root)).not.toContain('.tau');
+    },
+  );
+
+  it('shares a character budget across failed logs and reports how to read omitted text', async () => {
+    const { root, fake, readChecks } = await setUp();
+
+    fake.checks = Array.from({ length: 3 }, (_, index) =>
+      check({ name: `job-${index}`, bucket: 'fail', link: jobLink(11, 21 + index) }),
+    );
+
+    fake.jobLogs = {
+      '21': { log: 'a'.repeat(20_000) },
+      '22': { log: 'b'.repeat(20_000) },
+      '23': { log: 'c'.repeat(20_000) },
+    };
+
+    const result = await readChecks();
+
+    const logs = result.checks.map(
+      (item) => item.log as { excerpt: string; command?: string; budgetLimited?: boolean },
+    );
+
+    expect(logs.map((log) => log.excerpt.length)).toEqual([20_000, 10_000, 0]);
+
+    expect(logs[1]).toMatchObject({
+      budgetLimited: true,
+      command: 'gh run view 11 --repo github.com/sQVe/tau --job 22 --log-failed',
+    });
+
+    expect(logs[2]).toMatchObject({
+      budgetLimited: true,
+      command: 'gh run view 11 --repo github.com/sQVe/tau --job 23 --log-failed',
+    });
+
+    expect(await readdir(root)).not.toContain('.tau');
+  });
+
+  it('caps error text in gaps and reports omitted characters', async () => {
+    const { fake, readChecks } = await setUp();
+
+    fake.checks = [failingCheck];
+    fake.jobLogs = { '21': { code: 1, stderr: 'x'.repeat(10_000) } };
+
+    const result = await readChecks();
+
+    expect(result.gaps[0]?.stderr).toHaveLength(2000);
+    expect(result.gaps[0]?.omittedStderrCharacters).toBe(8000);
+
+    expect(result.gaps[0]?.command).toBe(
+      'gh run view 11 --repo github.com/sQVe/tau --job 21 --log-failed',
+    );
+  });
+
   it('returns a bounded log excerpt for a failing check while gh pr checks exits 1', async () => {
     const { fake, readChecks } = await setUp();
     const lines = logLines(5000);
@@ -388,6 +495,26 @@ describe('checks killed commands', () => {
 });
 
 describe('checks head', () => {
+  it('pins omitted checks and statuses to the validated head and host', async () => {
+    const { fake, readChecks } = await setUp();
+    const head = 'a'.repeat(40);
+    const host = 'ghe.example.com';
+
+    fake.pullRequest = { number: 7, state: 'OPEN', author: 'sqve', headRefOid: head };
+    fake.checks = [check({ name: 'huge', workflow: 'x'.repeat(40_000) })];
+
+    const result = await readChecks({ repository: `${host}/sQVe/tau`, head });
+
+    expect(result.gaps).toContainEqual(
+      expect.objectContaining({
+        kind: 'truncatedList',
+        command: `gh api --hostname ${host} repos/sQVe/tau/commits/${head}/check-runs --paginate && gh api --hostname ${host} repos/sQVe/tau/commits/${head}/status --paginate`,
+      }),
+    );
+
+    expect(JSON.stringify(result, null, 2).length).toBeLessThanOrEqual(40_000);
+  });
+
   it.each([
     { name: 'before', nextHeads: ['def456'] },
     { name: 'during', nextHeads: ['abc123', 'def456'] },

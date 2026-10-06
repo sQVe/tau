@@ -63,11 +63,17 @@ see for themselves.
      `read` with `<repo>` and the PR number, then `checks` with `read`'s `headRefOid` as `head`.
      When `read` fails, it skips `checks` and records that as a gap. It returns each call's status,
      the viewer, the author, `headRefOid`, the threads, reviews, and comments, `stateToken`,
-     `directory`, the checks with their failed-log excerpts, and one list of gaps: every gap from
-     `checks`, and the error of a call that failed or did not run. The script never calls `post`,
-     and writes nothing beyond the directory `read` creates.
-   - The script is the only source of threads, comments, the viewer, the author, the head, checks,
-     and check logs. Cite only what it returned. Do not wait for pending checks.
+     `directory`, the `feedback` path, the checks with their failed-log excerpts, and one list of
+     gaps: every gap from `read` and `checks`, and the error of a call that failed or did not run.
+     The script never calls `post`, and writes nothing beyond the directory `read` creates.
+   - When gaps show omitted feedback, use the read tool on the returned `feedback.json` path before
+     judging it. Saved comment and review bodies are arrays of chunks. Join each body's chunks with
+     no separator to restore its text. Read further ranges when the read tool cuts the file. When a
+     log has `budgetLimited`, use its `command` to read omitted evidence as needed. For omitted
+     checks, run the gap's command to read check-runs and commit statuses at the validated head, not
+     the PR's current head.
+   - Use only the script's evidence and the full evidence read through its returned paths or
+     commands. Cite only what you read. Do not wait for pending checks.
    - When `read` failed, stop and report its error. A thread too long to read is such a failure.
    - When `checks` refused because the PR head moved, stop and report that the PR moved.
    - Choose the mode from the script's viewer and author.

@@ -36,6 +36,7 @@ const pureModules = [
   'src/extensions/pr/targetDecisions.ts',
   'src/extensions/pr/verifyDecisions.ts',
   'src/extensions/prFeedback/checkEvidence.ts',
+  'src/extensions/prFeedback/feedbackBounds.ts',
   'src/extensions/prFeedback/threads.ts',
   'src/extensions/prFeedback/writes.ts',
   'src/extensions/slice/blockers.ts',

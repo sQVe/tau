@@ -4,29 +4,25 @@ import { Value } from 'typebox/value';
 import { describeProblem } from '../../github.js';
 import type { Repository, Runtime } from '../../github.js';
 import {
+  boundChecks,
   checkListEvidence,
   failedLogEvidence,
   isFailing,
   jobOf,
+  logCharacterBudget,
   repositoryName,
   unreadableLinkGap,
 } from './checkEvidence.js';
 import type {
+  Check,
   CheckGap,
   CheckItem,
   CheckListValidation,
   CommandResult,
   LogExcerpt,
+  PullRequestChecks,
 } from './checkEvidence.js';
 import { readPullRequest } from './github.js';
-
-type Check = CheckItem & { log?: LogExcerpt; gap?: CheckGap };
-
-export interface PullRequestChecks {
-  pr: number;
-  checks: Check[];
-  gaps: CheckGap[];
-}
 
 const checkListSchema = Type.Array(
   Type.Object({
@@ -58,11 +54,7 @@ const runGh = async (runtime: Runtime, commandArguments: string[]): Promise<Comm
   return { command: ['gh', ...commandArguments].join(' '), ...result };
 };
 
-const readCheckList = async (
-  runtime: Runtime,
-  repository: Repository,
-  pr: number,
-): Promise<{ checks: CheckItem[] } | { gap: CheckGap }> => {
+const readCheckList = async (runtime: Runtime, repository: Repository, pr: number) => {
   const commandArguments = [
     'pr',
     'checks',
@@ -82,6 +74,7 @@ const readFailedLog = async (
   runtime: Runtime,
   repository: Repository,
   check: CheckItem,
+  remainingCharacters: number,
 ): Promise<{ log: LogExcerpt } | { gap: CheckGap }> => {
   const job = jobOf(repository, check.link);
 
@@ -102,13 +95,14 @@ const readFailedLog = async (
 
   const result = await runGh(runtime, commandArguments);
 
-  return failedLogEvidence(check, result);
+  return failedLogEvidence(check, result, remainingCharacters);
 };
 
 const readCheck = async (
   runtime: Runtime,
   repository: Repository,
   check: CheckItem,
+  remainingCharacters: number,
 ): Promise<Check> => {
   const { name, workflow, bucket, state, link } = check;
   const metadata = { name, workflow, bucket, state, link };
@@ -117,7 +111,7 @@ const readCheck = async (
     return metadata;
   }
 
-  return { ...metadata, ...(await readFailedLog(runtime, repository, check)) };
+  return { ...metadata, ...(await readFailedLog(runtime, repository, check, remainingCharacters)) };
 };
 
 // gh pr checks reads the live head, so a push during the read can mix in another head's checks.
@@ -148,17 +142,21 @@ export const readChecks = async (
   await requireHead(runtime, repository, pr, head);
 
   if ('gap' in list) {
-    return { pr, checks: [], gaps: [list.gap] };
+    return boundChecks({ pr, checks: [], gaps: [list.gap] }, repository, head);
   }
 
   const checks: Check[] = [];
+  let remainingCharacters = logCharacterBudget;
 
   for (const check of list.checks) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- One gh run view at a time, so many failing jobs start no burst of calls.
-    checks.push(await readCheck(runtime, repository, check));
+    const evidence = await readCheck(runtime, repository, check, remainingCharacters);
+
+    checks.push(evidence);
+    remainingCharacters -= evidence.log?.excerpt.length ?? 0;
   }
 
   const gaps = checks.flatMap((check) => (check.gap === undefined ? [] : [check.gap]));
 
-  return { pr, checks, gaps };
+  return boundChecks({ pr, checks, gaps }, repository, head);
 };
