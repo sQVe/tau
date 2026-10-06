@@ -32,7 +32,8 @@ export interface GhFake {
   repositories: Record<string, FakeRepository>;
   // Keyed by the base repository, <host>/<owner>/<name>.
   pullRequests: Record<string, FakePullRequest[]>;
-  // The hostname `ssh -G <alias>` prints for each SSH host alias. ssh fails for any other host.
+  // The hostname `ssh -G` prints, keyed by the arguments after -G, such as `-p 2222 git@alias`.
+  // ssh fails for any other arguments.
   sshHostnames: Record<string, string>;
   overrideOutput: (key: CommandKey, stdout: string) => void;
   failCommand: (key: CommandKey) => void;
@@ -160,7 +161,7 @@ export const createGhFake = (): GhFake => {
   };
 
   const sshConfig = (commandArguments: readonly string[]) => {
-    const hostname = fake.sshHostnames[commandArguments[1] ?? ''];
+    const hostname = fake.sshHostnames[commandArguments.slice(1).join(' ')];
 
     return hostname === undefined
       ? { code: 255, killed: false, stdout: '', stderr: 'ssh: Could not resolve hostname' }

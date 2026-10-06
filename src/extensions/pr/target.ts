@@ -37,14 +37,20 @@ interface RemoteUrls {
   fetchRefspecs: string[];
 }
 
+// SSH reads the host as a Host alias from its config, which can also match on the user and port.
+interface SshDestination {
+  host: string;
+  user: string;
+  port: string;
+}
+
 interface RemoteLocation {
   host: string;
   path: string;
-  // SSH reads the host as a Host alias from its config.
-  overSsh: boolean;
+  ssh: SshDestination | undefined;
 }
 
-type ResolveHost = (host: string) => Promise<string>;
+type ResolveHost = (destination: SshDestination) => Promise<string>;
 
 interface RemoteUrl extends Remote {
   pushUrl: string;
@@ -109,18 +115,22 @@ const lines = (text: string | undefined) => (text ?? '').split('\n').filter((lin
 // Reads https://host/owner/name.git, ssh://git@host:port/owner/name.git, and
 // git@host:owner/name.git. The port of an ssh:// URL is the SSH port, not part of the web host.
 const parseRemoteUrl = (url: string): RemoteLocation | undefined => {
-  const scp = /^(?:[\w.-]+@)?([\w.-]+):(?!\/)(.+)$/u.exec(url);
+  const scp = /^(?:([\w.-]+)@)?([\w.-]+):(?!\/)(.+)$/u.exec(url);
 
   if (scp !== null) {
-    return { host: scp[1] ?? '', path: scp[2] ?? '', overSsh: true };
+    const host = scp[2] ?? '';
+
+    return { host, path: scp[3] ?? '', ssh: { host, user: scp[1] ?? '', port: '' } };
   }
 
   try {
     const parsed = new URL(url);
     const overSsh = parsed.protocol === 'ssh:';
     const host = overSsh ? parsed.hostname : parsed.host;
+    const user = decodeURIComponent(parsed.username);
+    const ssh = overSsh ? { host, user, port: parsed.port } : undefined;
 
-    return { host, path: parsed.pathname.slice(1), overSsh };
+    return { host, path: parsed.pathname.slice(1), ssh };
   } catch {
     return undefined;
   }
@@ -143,7 +153,7 @@ const remoteRepository = async (url: string, resolveHost: ResolveHost) => {
     return undefined;
   }
 
-  const host = location.overSsh ? await resolveHost(location.host) : location.host;
+  const host = location.ssh === undefined ? location.host : await resolveHost(location.ssh);
 
   return locatedRepository(host, location.path);
 };
@@ -154,26 +164,44 @@ const sshHostname = (output: string) =>
     ?.slice('hostname '.length)
     .trim();
 
-// Resolves an SSH Host alias, such as github-work, to the hostname SSH connects to. Keeps the host
-// when ssh fails or prints no hostname.
+const sshTarget = ({ host, user }: SshDestination) => (user === '' ? host : `${user}@${host}`);
+
+const sshArguments = (destination: SshDestination) => {
+  const commandArguments = destination.port === '' ? [] : ['-p', destination.port];
+
+  commandArguments.push(sshTarget(destination));
+
+  return commandArguments;
+};
+
+// Resolves an SSH Host alias, such as github-work, to the hostname SSH connects to for that user and
+// port. Keeps the host when ssh fails or prints no hostname, and never passes ssh a destination
+// that it would read as an option.
 const sshHostResolver = (runtime: Runtime): ResolveHost => {
   const resolved = new Map<string, Promise<string>>();
 
-  const resolve = async (host: string) => {
-    const result = await runtime.exec('ssh', ['-G', host], {
+  const resolve = async (destination: SshDestination, commandArguments: string[]) => {
+    const result = await runtime.exec('ssh', ['-G', ...commandArguments], {
       cwd: runtime.cwd,
       ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
     });
 
     const hostname = result.code === 0 && !result.killed ? sshHostname(result.stdout) : undefined;
 
-    return hostname === undefined || hostname === '' ? host : hostname;
+    return hostname === undefined || hostname === '' ? destination.host : hostname;
   };
 
-  return (host) => {
-    const known = resolved.get(host) ?? resolve(host);
+  return async (destination) => {
+    if (sshTarget(destination).startsWith('-')) {
+      return destination.host;
+    }
 
-    resolved.set(host, known);
+    const commandArguments = sshArguments(destination);
+    const key = commandArguments.join(' ');
+
+    const known = resolved.get(key) ?? resolve(destination, commandArguments);
+
+    resolved.set(key, known);
 
     return known;
   };

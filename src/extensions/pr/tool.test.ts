@@ -321,15 +321,22 @@ const aliasOrigin = async (root: string, url: string) => {
   await git(root, 'remote', 'set-url', 'origin', url);
 };
 
+// SSH config can match on the user and port, such as with `Match user git`, so the alias alone
+// resolves to another host here.
 it.each([
-  { url: 'git@github-work:sQVe/tau.git', alias: 'github-work' },
-  { url: 'ssh://git@github-alt:2222/sQVe/tau.git', alias: 'github-alt' },
-])('resolves the SSH host alias in $url', async ({ url, alias }) => {
+  { url: 'git@github-work:sQVe/tau.git', alias: 'github-work', destination: 'git@github-work' },
+  {
+    url: 'ssh://git@github-alt:2222/sQVe/tau.git',
+    alias: 'github-alt',
+    destination: '-p 2222 git@github-alt',
+  },
+])('resolves the SSH destination in $url', async ({ url, alias, destination }) => {
   const { root, fake, run } = await setUp();
 
   await aliasOrigin(root, url);
   await pushFeature(root);
-  fake.sshHostnames[alias] = 'github.com';
+  fake.sshHostnames[alias] = 'wrong.example.com';
+  fake.sshHostnames[destination] = 'github.com';
 
   const details = await run({ action: 'target' });
 
