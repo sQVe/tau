@@ -2,9 +2,9 @@ import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { confirm } from '../../confirm.js';
 import { errorMessage } from '../../errors.js';
 import type { Repository, Runtime } from '../../github.js';
+import { confirmWithUser } from '../../userConfirmation.js';
 import {
   postIssueComment,
   postReply,
@@ -444,17 +444,11 @@ export const postReplies = async (
   const toPeople = personWrites(writes);
 
   if (toPeople.length > 0) {
-    if (!context.hasUI) {
-      throw new Error(
-        "Posting to a person needs the user's confirmation, which a worker session cannot give. Nothing was written. Use a session with UI.",
-      );
-    }
-
-    const confirmed = await confirm(
-      context,
-      confirmTitle(toPeople, feedback.pr.number),
-      confirmMessage(toPeople, feedback),
-    );
+    const confirmed = await confirmWithUser(context, {
+      action: 'Posting to a person',
+      title: confirmTitle(toPeople, feedback.pr.number),
+      message: confirmMessage(toPeople, feedback),
+    });
 
     if (!confirmed) {
       return { status: 'declined', posted: [], skipped };

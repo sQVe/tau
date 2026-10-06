@@ -340,9 +340,36 @@ describe('post refusals', () => {
     const before = await snapshotRound(details.directory);
 
     await expect(post(details)).rejects.toThrow(
-      /needs the user's confirmation.*worker session cannot give.*Nothing was written/u,
+      /needs the user's confirmation.*session without UI cannot give.*Nothing was written/u,
     );
 
+    expect(fake.writes).toEqual([]);
+    expect(await snapshotRound(details.directory)).toEqual(before);
+  });
+
+  it('posts nothing and asks nothing in a worker with UI', async () => {
+    vi.stubEnv('TAU_WORKER_RECORD', '/records/task-one');
+
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    const { root, fake, read, post } = await setUp();
+
+    fake.threads = [botThread(), personThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, mixedReplies);
+
+    const before = await snapshotRound(details.directory);
+    const confirm = recordingConfirm(root, true);
+
+    await expect(post(details, confirm.context)).rejects.toThrow(
+      /needs the user's confirmation.*worker cannot give.*Nothing was written/u,
+    );
+
+    expect(confirm.prompts).toEqual([]);
     expect(fake.writes).toEqual([]);
     expect(await snapshotRound(details.directory)).toEqual(before);
   });

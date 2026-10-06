@@ -26,8 +26,9 @@ SKILL.md paths and use the same tool list for launch and runtime checks. The sav
 stays unchanged.
 
 This replaces only ADR 0083's activation policy. Its confirm rule still holds, with the existing
-exception for GitHub bot writes. A step that needs the user's confirmation refuses a worker session
-before any remote write or local record change.
+exception for GitHub bot writes. A step that needs the user's confirmation refuses in a worker, even
+though a worker's pane has UI, before any remote write or local record change. The user does not
+watch a worker's pane, so a confirm there could approve a write that nobody saw.
 
 ## Consequences
 
