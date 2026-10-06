@@ -393,9 +393,10 @@ const startProgress = (state: SliceState, draft: Draft): ApplyProgress => ({
 export const applySlicePlan = async (
   runtime: Runtime,
   context: ExtensionContext,
-  directory: string,
+  checkDirectory: () => Promise<string>,
   stateToken: string | undefined,
 ): Promise<Record<string, unknown>> => {
+  const directory = await checkDirectory();
   const state = await readState(runtime, directory, undefined);
   const draft = rejectChangedState(state, stateToken);
   const progress = startProgress(state, draft);
@@ -425,6 +426,7 @@ export const applySlicePlan = async (
     };
   }
 
+  await checkDirectory();
   rejectChangedState(await readState(runtime, directory, undefined), state.stateToken);
 
   const applied = await runSteps(progress, steps, runtime.signal);
