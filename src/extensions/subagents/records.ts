@@ -64,7 +64,7 @@ export interface EventDetails {
   processId?: number;
 }
 
-const firstSupportedTaskVersion = 3;
+const retiredTaskVersionCutoff = 3;
 const recordByteLimit = 128_000;
 const reportByteLimit = 64_000;
 const checkoutHashLength = 8;
@@ -345,7 +345,7 @@ const isRetiredHarness = (
 const isRetiredTask = (value: unknown): boolean => {
   const version = savedVersion(value);
 
-  if (typeof version === 'number' && version >= firstSupportedTaskVersion) {
+  if (typeof version === 'number' && version >= retiredTaskVersionCutoff) {
     return false;
   }
 
