@@ -96,8 +96,16 @@ const saveCheck = async (root: string, mergeBase: string, body = 'tests passed\n
 
   const path = join(directory, 'test.log');
   const head = await git(root, 'rev-parse', 'HEAD');
-  const status = await outputHash(root, ['status', '--porcelain']);
-  const diff = await outputHash(root, ['diff', mergeBase, 'HEAD']);
+  const status = await outputHash(root, ['--no-optional-locks', 'status', '--porcelain']);
+
+  const diff = await outputHash(root, [
+    'diff',
+    '--no-ext-diff',
+    '--no-textconv',
+    '--no-color',
+    mergeBase,
+    'HEAD',
+  ]);
 
   await writeFile(path, `HEAD: ${head}\nStatus: ${status}\nDiff: ${diff}\n${body}`);
 

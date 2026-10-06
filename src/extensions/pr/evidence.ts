@@ -97,8 +97,15 @@ const hashOutput = async (root: string, commandArguments: string[]) => {
 
 const readCheckIdentity = async (root: string, mergeBase: string): Promise<CheckIdentity> => ({
   head: await readGit(root, ['rev-parse', 'HEAD']),
-  status: await hashOutput(root, ['status', '--porcelain']),
-  diff: await hashOutput(root, ['diff', mergeBase, 'HEAD']),
+  status: await hashOutput(root, ['--no-optional-locks', 'status', '--porcelain']),
+  diff: await hashOutput(root, [
+    'diff',
+    '--no-ext-diff',
+    '--no-textconv',
+    '--no-color',
+    mergeBase,
+    'HEAD',
+  ]),
 });
 
 export const readCheckHeader = async (

@@ -1,5 +1,16 @@
 import { execFile } from 'node:child_process';
-import { link, mkdir, mkdtemp, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import {
+  link,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
@@ -202,6 +213,63 @@ it.each([
     expect(await git(root, 'rev-parse', 'HEAD')).toBe(head);
     expect(await git(root, 'status', '--porcelain')).toBe(status);
     expect(fake.calls).toEqual([]);
+  },
+);
+
+it('reads check identity without refreshing the Git index', async () => {
+  const { root, forkPoint, run } = await setUp();
+  const path = join(root, 'feature.txt');
+
+  await writeFile(path, 'tracked\n');
+  await git(root, 'add', 'feature.txt');
+  await git(root, 'commit', '--quiet', '-m', 'tracked file');
+  await utimes(path, 1, 1);
+
+  const index = join(root, '.git', 'index');
+  const before = await readFile(index);
+
+  await run({ action: 'checkHeader', mergeBase: forkPoint });
+
+  expect(await readFile(index)).toEqual(before);
+});
+
+it.each([
+  { name: 'color', key: 'color.diff', value: 'always' },
+  { name: 'external diff', key: 'diff.external', value: 'false' },
+  { name: 'text conversion', key: 'diff.test.textconv', value: 'false' },
+])(
+  'keeps check headers and evidence independent of $name configuration',
+  async ({ key, value }) => {
+    const { root, forkPoint, run } = await setUp();
+
+    await writeFile(join(root, 'feature.txt'), 'tracked\n');
+    await writeFile(join(root, '.gitattributes'), 'feature.txt diff=test\n');
+    await git(root, 'add', 'feature.txt', '.gitattributes');
+    await git(root, 'commit', '--quiet', '-m', 'tracked file');
+
+    const { directory } = await run({ action: 'prepare' });
+    const checks = join(String(directory), 'checks');
+
+    await mkdir(checks);
+
+    const canonical = await run({ action: 'checkHeader', mergeBase: forkPoint });
+
+    await git(root, 'config', key, value);
+
+    const configured = await run({ action: 'checkHeader', mergeBase: forkPoint });
+
+    expect(configured).toEqual(canonical);
+
+    const path = join(checks, 'test.log');
+    const lines = configured['lines'] as string[];
+
+    await writeFile(path, `${lines.join('\n')}\ntests passed\n`);
+
+    const evidence = await run({ action: 'evidence', remote: 'origin' });
+
+    expect(evidence['checks']).toEqual([
+      { path, matches: true, reasons: [], excerpt: 'tests passed', truncated: false },
+    ]);
   },
 );
 

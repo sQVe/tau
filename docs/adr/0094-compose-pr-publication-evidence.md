@@ -25,12 +25,15 @@ publication verdict. The action inherits the target reader's base fetch and the 
 freshness recapture. It writes no other worktree files.
 
 Check logs carry three initial header lines: `HEAD: <sha>`, `Status: <hash>`, and `Diff: <hash>`.
-Status and diff hashes use SHA-256 over the exact output bytes of `git status --porcelain` and
-`git diff <mergeBase> HEAD`, including trailing newlines. A caller asks the `pr` tool's read-only
-`checkHeader` action for the lines and records them before its check. Header production and evidence
-matching share one identity reader, so byte handling and Git output limits cannot drift. Explicit
-byte hashing avoids shell whitespace changes and works independently of Git's object format. A
-missing or malformed header cannot establish a match.
+Status and diff hashes use SHA-256 over the exact output bytes of
+`git --no-optional-locks status --porcelain` and
+`git diff --no-ext-diff --no-textconv --no-color <mergeBase> HEAD`, including trailing newlines.
+Disabling optional locks keeps status from refreshing the index. Disabling external diff helpers,
+text conversion, and color keeps those settings out of the check identity. A caller asks the `pr`
+tool's read-only `checkHeader` action for the lines and records them before its check. Header
+production and evidence matching share one identity reader, so byte handling and Git output limits
+cannot drift. Explicit byte hashing avoids shell whitespace changes and works independently of Git's
+object format. A missing or malformed header cannot establish a match.
 
 Only the newest log for each check file name counts, selected by the file's modification time. Older
 runs are history, not missing publication evidence. A changed identity prevents reuse but is not a
