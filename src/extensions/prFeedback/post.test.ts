@@ -1,4 +1,15 @@
-import { chmod, copyFile, readFile, readdir, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  copyFile,
+  cp,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
@@ -222,6 +233,28 @@ describe('post refusals', () => {
 
     await expect(post(details, context)).rejects.toThrow(/read again/u);
     expect(fake.writes).toEqual([]);
+  });
+
+  it('posts nothing when the feedback directory becomes a symlink during the confirm', async () => {
+    const { root, fake, read, post } = await setUp();
+    const outside = await mkdtemp(join(tmpdir(), 'tau-pr-feedback-outside-'));
+
+    onTestFinished(() => rm(outside, { recursive: true, force: true }));
+    fake.threads = [botThread(), personThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, mixedReplies);
+
+    const { context } = recordingConfirm(root, true, async () => {
+      await cp(details.directory, outside, { recursive: true });
+      await rm(details.directory, { recursive: true });
+      await symlink(outside, details.directory);
+    });
+
+    await expect(post(details, context)).rejects.toThrow(/symlink/u);
+    expect(fake.writes).toEqual([]);
+    expect(await readPosted(outside)).toBeUndefined();
   });
 
   it.each([

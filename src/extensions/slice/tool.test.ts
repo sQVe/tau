@@ -597,6 +597,27 @@ describe('slice tool apply', () => {
     expect(fake.writes()).toEqual([]);
   });
 
+  it('refuses when the draft directory becomes a symlink during the confirm', async () => {
+    const { root, fake, directory, apply } = await setUp();
+    const outside = await outsideDirectory();
+    const originalPlan = await savedPlan(directory);
+
+    const swapDuringConfirm = vi.fn<() => Promise<boolean>>(async () => {
+      await cp(directory, outside, { recursive: true });
+      await rm(directory, { recursive: true });
+      await symlink(outside, directory);
+
+      return true;
+    });
+
+    await expect(apply(confirmContext(root, swapDuringConfirm), directory)).rejects.toThrow(
+      /symlink/u,
+    );
+
+    expect(fake.writes()).toEqual([]);
+    expect(await savedPlan(outside)).toEqual(originalPlan);
+  });
+
   it('never changes a merged one-slice ticket', async () => {
     const { fake, directory, read, apply } = await setUp();
     const url = 'https://github.com/sQVe/tau/pull/7';
