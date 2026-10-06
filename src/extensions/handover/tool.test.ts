@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { link, mkdir, readdir, readFile, stat, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, readdir, readFile, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -50,6 +50,60 @@ it('prepares at the checkout root from a nested directory', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const nested = join(root, 'nested');
 
+  await mkdir(nested);
+
+  expect(await prepare(nested)).toEqual({ directory: join(root, '.tau', 'handovers') });
+});
+
+it('prepares at the bare root from a nested directory', async () => {
+  const root = await createTemporaryBareRoot(onTestFinished);
+  const nested = join(root, 'nested');
+
+  await mkdir(nested);
+
+  expect(await prepare(nested)).toEqual({ directory: join(root, '.tau', 'handovers') });
+});
+
+it.each(['missing', 'directory', 'malformed', 'different target', 'missing target'])(
+  'prepares in a plain bare Git directory when the parent .git is %s',
+  async (kind) => {
+    const container = await createTemporaryBareRoot(onTestFinished);
+    const gitFile = join(container, '.git');
+    const root = join(container, 'plain.git');
+    const nested = join(root, 'nested');
+
+    await git(container, 'init', '--bare', root);
+    await unlink(gitFile);
+
+    if (kind === 'directory') {
+      await mkdir(gitFile);
+    }
+
+    if (kind === 'malformed') {
+      await writeFile(gitFile, 'not a Git directory pointer\n');
+    }
+
+    if (kind === 'different target') {
+      await writeFile(gitFile, 'gitdir: .bare\n');
+    }
+
+    if (kind === 'missing target') {
+      await writeFile(gitFile, 'gitdir: absent\n');
+    }
+
+    await mkdir(nested);
+
+    expect(await prepare(nested)).toEqual({ directory: join(root, '.tau', 'handovers') });
+    expect(await readdir(nested)).toEqual([]);
+  },
+);
+
+it('matches the bare root Git file through a symlink target', async () => {
+  const root = await createTemporaryBareRoot(onTestFinished);
+  const nested = join(root, 'nested');
+
+  await symlink(join(root, '.bare'), join(root, 'git-alias'));
+  await writeFile(join(root, '.git'), 'gitdir: git-alias\n');
   await mkdir(nested);
 
   expect(await prepare(nested)).toEqual({ directory: join(root, '.tau', 'handovers') });
