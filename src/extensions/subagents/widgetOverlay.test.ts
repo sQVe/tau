@@ -373,6 +373,37 @@ it('keeps the selected task when fresh rows resort after a worker stops', () => 
   expect(details).toContain('failure');
 });
 
+it('shrinks history state, name, label, and finally time at tiny widths', () => {
+  const historyRow: WorkerWidgetRow = {
+    ...rows[10]!,
+    name: 'worker-ab',
+    state: 'unknown',
+    label: 'Task label',
+    activityAt: now,
+  };
+
+  const view = new WorkerHistoryView(
+    { terminal: { rows: 24 }, requestRender: noOperation } as never,
+    theme as never,
+    keybindings as never,
+    [historyRow],
+    noOperation,
+  );
+
+  for (const width of [55, 45, 35, 30, 25, 23, 22, 20, 18, 16, 4, 1, 0]) {
+    expect(view.render(width).every((line) => visibleWidth(line) <= width)).toBe(true);
+  }
+
+  const narrowRow = stripTerminalSequences(
+    view.render(20).find((line) => line.includes('▶')) ?? '',
+  );
+
+  expect(narrowRow).toContain('…-ab');
+  expect(narrowRow).not.toContain('Task label');
+  expect(narrowRow).not.toContain('status unavailable');
+  expect(narrowRow).toMatch(/@\d… │$/u);
+});
+
 it('shows the model column when width allows, hides it when narrow, and keeps full detail', () => {
   const view = new WorkerHistoryView(
     { terminal: { rows: 24 }, requestRender: noOperation } as never,
