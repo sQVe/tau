@@ -11,6 +11,7 @@ import type { ExtensionAPI, ResourceDiagnostic, Skill } from '@earendil-works/pi
 import { resolveReadPath } from '../../readPath.js';
 import { appendSystemPrompt } from '../../systemPrompt.js';
 import { isWorkerProcess } from '../../workerProcess.js';
+import { missingToolHint } from './missingToolHint.js';
 import { requiredActions } from './requiredFor.js';
 
 type SkillTools = Readonly<Record<string, readonly string[]>>;
@@ -150,8 +151,34 @@ const rejectSkillProblems = (
   throw new Error(`Tau skills failed to load:\n${problems.join('\n')}`);
 };
 
-// A tool tied to a skill should register with `defaultActive: false`, so it stays out of the
-// prompt until the skill runs.
+const registerMissingToolHint = (pi: ExtensionAPI, skillTools: SkillTools) => {
+  pi.on('tool_result', (event) => {
+    if (event.toolName !== 'codemode' || !event.isError) {
+      return undefined;
+    }
+
+    const errorText = event.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n');
+
+    const hint = missingToolHint(errorText, skillTools);
+
+    if (hint === undefined) {
+      return undefined;
+    }
+
+    return {
+      content: [...event.content, { type: 'text' as const, text: hint }],
+      ...(event.structuredContent === undefined
+        ? {}
+        : { structuredContent: event.structuredContent }),
+    };
+  });
+};
+
+// Skill tools register with `exposure: 'deferred'` so scripts can call them while their
+// declarations stay out of the prompt until the skill runs.
 export default function tauSkillsExtension(
   pi: ExtensionAPI,
   skillsDirectory: string,
@@ -166,6 +193,7 @@ export default function tauSkillsExtension(
 
   registerSkillCommands(pi, skills, skillTools);
   registerSkillReadActivation(pi, skills, skillTools);
+  registerMissingToolHint(pi, skillTools);
 
   // Workers load only the skills their profile names, so the lines could name a missing skill.
   if (isWorkerProcess() || lines.length === 0) {

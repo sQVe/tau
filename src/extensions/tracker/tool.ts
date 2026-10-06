@@ -170,7 +170,7 @@ export const createTrackerEvidenceTool = (
     description,
     promptSnippet: 'Read duplicate candidates, parent routing, and labels for a planned ticket.',
     parameters: trackerEvidenceParameters,
-    defaultActive: false,
+    exposure: 'deferred',
     async execute(_toolCallId, parameters, _signal, _onUpdate, context) {
       const details = await gatherEvidence(exec, context.cwd, parameters);
 

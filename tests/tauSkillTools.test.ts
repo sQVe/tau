@@ -13,13 +13,11 @@ import { fakeExtensionApi } from './extensionApi.js';
 
 const skillsDirectory = resolve(import.meta.dirname, '../src/skills');
 
-it.each([
-  { skill: 'slice', tool: 'slice' },
-  { skill: 'pr', tool: 'pr' },
-  { skill: 'pr-feedback', tool: 'pr_feedback' },
-  { skill: 'code-review', tool: 'code_review' },
-  { skill: 'tracker', tool: 'tracker_evidence' },
-])('keeps $tool off until the $skill skill runs', async ({ skill, tool }) => {
+const skillToolEntries = Object.entries(skillTools).flatMap(([skill, tools]) =>
+  tools.map((tool) => ({ skill, tool })),
+);
+
+it.each(skillToolEntries)('defers $tool until the $skill skill runs', async ({ skill, tool }) => {
   let active: string[] = [];
 
   const fake = fakeExtensionApi({
@@ -36,7 +34,7 @@ it.each([
   codeReviewExtension(fake.pi);
   trackerExtension(fake.pi);
 
-  expect(fake.tools.get(tool)?.defaultActive).toBe(false);
+  expect(fake.tools.get(tool)?.exposure).toBe('deferred');
 
   await fake.commands.get(skill)?.handler('', { isIdle: () => true } as never);
 

@@ -41,6 +41,61 @@ const fakeWithActiveTools = (initial: string[]) => {
 };
 
 describe('tauSkillsExtension', () => {
+  it('appends a missing-tool hint while keeping the failed codemode content', async () => {
+    const fake = fakeExtensionApi();
+
+    tauSkillsExtension(fake.pi, skillsDirectory, { 'code-review': ['code_review'] });
+
+    const content = [
+      { type: 'image', data: 'aW1hZ2U=', mimeType: 'image/png' },
+      { type: 'text', text: 'TypeError: tools.code_review does not exist. Available: read' },
+    ];
+
+    const structuredContent = { error: 'missing tool' };
+
+    const result = await fake.handler('tool_result')(
+      {
+        toolName: 'codemode',
+        isError: true,
+        content,
+        structuredContent,
+      },
+      {} as never,
+    );
+
+    const hint: unknown = expect.stringContaining('code_review');
+
+    expect(result).toEqual({
+      content: [...content, { type: 'text', text: hint }],
+      structuredContent,
+    });
+
+    expect(JSON.stringify(result)).toContain('--tools');
+    expect(content).toHaveLength(2);
+  });
+
+  it.each([
+    { toolName: 'codemode', isError: false, text: 'tools.code_review does not exist' },
+    { toolName: 'bash', isError: true, text: 'tools.code_review does not exist' },
+    { toolName: 'codemode', isError: true, text: 'tools.unknown does not exist' },
+    { toolName: 'codemode', isError: true, text: 'tools.code_review failed' },
+  ])('leaves unrelated tool results unchanged %#', async ({ toolName, isError, text }) => {
+    const fake = fakeExtensionApi();
+
+    tauSkillsExtension(fake.pi, skillsDirectory, { 'code-review': ['code_review'] });
+
+    const result = await fake.handler('tool_result')(
+      {
+        toolName,
+        isError,
+        content: [{ type: 'text', text }],
+      },
+      {} as never,
+    );
+
+    expect(result).toBeUndefined();
+  });
+
   it('registers a command for every skill directory', () => {
     const fake = fakeExtensionApi();
 

@@ -7,9 +7,10 @@ checklist.
 
 - Put the tool in its own extension under `src/extensions/<feature>/`, and call the extension from
   `src/tau.ts`.
-- Register a tool that serves one skill with `defaultActive: false`. Add the skill name and the tool
-  name to the skill tools map, the third argument of `tauSkillsExtension` in `src/tau.ts`. Running
-  `/<name>`, or a `read` of the skill's `SKILL.md`, then turns the tool on.
+- Register a tool that serves one skill with `exposure: 'deferred'`. Scripts can call it without
+  activation, but its declaration stays out of the prompt. Add the skill name and the tool name to
+  the skill tools map, the third argument of `tauSkillsExtension` in `src/tau.ts`. Running
+  `/<name>`, or a `read` of the loaded skill's `SKILL.md`, declares the tool for direct calls.
 - When two skills need the same mechanics, share one tool or module. Never copy the mechanics into
   another tool or skill. Create a scratch directory inside an ignored `.tau/` with
   `src/tauDirectory.ts`.

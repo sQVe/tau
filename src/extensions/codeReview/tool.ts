@@ -207,7 +207,7 @@ export const createCodeReviewTool = (): ToolDefinition<
     promptSnippet:
       'Prepare a review directory, capture the review target, check freshness, and read review evidence.',
     parameters: codeReviewToolParameters,
-    defaultActive: false,
+    exposure: 'deferred',
     // Two capture calls that ran at once could both append to one input.md.
     executionMode: 'sequential',
     async execute(_toolCallId, parameters, _signal, _onUpdate, context) {

@@ -1,8 +1,10 @@
 # ADR 0083: Turn on skill tools when the skill runs, and confirm outside writes
 
 **Date**: 2026-10-03\
-**Status**: Accepted\
-**Related**: [ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md),
+**Status**: Accepted; activation superseded by
+[ADR 0093 (Defer skill tool declarations without blocking scripts)](./0093-defer-skill-tool-declarations-without-blocking-scripts.md)\
+**Related**:
+[ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md),
 [ADR 0010 (Documentation scope)](./0010-documentation-scope.md),
 [ADR 0077 (Keep a skill authoring guide in docs)](./0077-keep-a-skill-authoring-guide-in-docs.md),
 [ADR 0086 (Post to GitHub bots without a confirm)](./0086-post-to-github-bots-without-a-confirm.md)

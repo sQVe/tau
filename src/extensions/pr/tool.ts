@@ -124,7 +124,7 @@ export const createPrTool = (
     promptSnippet:
       "Prepare a pull request run, resolve the branch's pull request target, check review reuse, and verify the published pull request.",
     parameters: prToolParameters,
-    defaultActive: false,
+    exposure: 'deferred',
     executionMode: 'sequential',
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       const details = await runAction(exec, context.cwd, parameters, signal);
