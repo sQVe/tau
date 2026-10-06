@@ -25,6 +25,8 @@ export interface ModifiedCheckLog {
   check: CheckLog;
 }
 
+type TimedCheckLog = ModifiedCheckLog & { modifiedAt: number };
+
 export type PublicationGap =
   | { kind: 'noReview' | 'noChecks' }
   | { kind: 'target' | 'branch' | 'subjects' | 'reuse' | 'review' | 'checks'; reason: string }
@@ -112,27 +114,21 @@ export const matchCheckLog = (
   return { path, matches: true, reasons: [], excerpt, truncated };
 };
 
-const isNewerLog = (candidate: ModifiedCheckLog, previous: ModifiedCheckLog) => {
+const isNewerLog = (candidate: TimedCheckLog, previous: TimedCheckLog) => {
   if (candidate.modifiedAt === previous.modifiedAt) {
     return candidate.check.path > previous.check.path;
-  }
-
-  // An unreadable timestamp cannot establish that this evidence was superseded.
-  if (candidate.modifiedAt === null) {
-    return true;
-  }
-
-  if (previous.modifiedAt === null) {
-    return false;
   }
 
   return candidate.modifiedAt > previous.modifiedAt;
 };
 
-export const selectLatestChecks = (logs: readonly ModifiedCheckLog[]): CheckLog[] => {
-  const latest = new Map<string, ModifiedCheckLog>();
+const hasTimestamp = (log: ModifiedCheckLog): log is TimedCheckLog => log.modifiedAt !== null;
 
-  for (const candidate of logs) {
+// A log without a readable timestamp is never treated as superseded, and never supersedes another.
+export const selectLatestChecks = (logs: readonly ModifiedCheckLog[]): CheckLog[] => {
+  const latest = new Map<string, TimedCheckLog>();
+
+  for (const candidate of logs.filter(hasTimestamp)) {
     const previous = latest.get(candidate.name);
 
     if (previous === undefined || isNewerLog(candidate, previous)) {
@@ -140,7 +136,9 @@ export const selectLatestChecks = (logs: readonly ModifiedCheckLog[]): CheckLog[
     }
   }
 
-  return [...latest.values()]
+  const untimed = logs.filter((log) => !hasTimestamp(log));
+
+  return [...latest.values(), ...untimed]
     .map((log) => log.check)
     .toSorted((left, right) => left.path.localeCompare(right.path));
 };

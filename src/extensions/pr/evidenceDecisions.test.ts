@@ -177,11 +177,20 @@ it.each([
     logs: [newerLog, { ...olderLog, modifiedAt: 300 }],
     selected: [olderLog.check],
   },
-  { name: 'unknown timestamp', logs: [unknownTimeLog, newerLog], selected: [unknownTimeLog.check] },
+  {
+    name: 'unknown timestamp',
+    logs: [unknownTimeLog, newerLog],
+    selected: [newerLog.check, unknownTimeLog.check],
+  },
   {
     name: 'unknown timestamp read last',
     logs: [newerLog, unknownTimeLog],
-    selected: [unknownTimeLog.check],
+    selected: [newerLog.check, unknownTimeLog.check],
+  },
+  {
+    name: 'several unknown timestamps',
+    logs: [savedLog('run-a', null, 'unreadable'), unknownTimeLog],
+    selected: [savedLog('run-a', null, 'unreadable').check, unknownTimeLog.check],
   },
   {
     name: 'equal timestamps',
