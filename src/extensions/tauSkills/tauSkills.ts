@@ -67,8 +67,6 @@ const rejectSkillProblems = (
   throw new Error(`Tau skills failed to load:\n${problems.join('\n')}`);
 };
 
-// Skill tools are active from registration. Skill commands and required-for lines do not
-// control tool availability.
 export default function tauSkillsExtension(pi: ExtensionAPI, skillsDirectory: string): void {
   const { skills, diagnostics } = loadSkillsFromDir({ dir: skillsDirectory, source: 'tau' });
 
