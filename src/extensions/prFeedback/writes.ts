@@ -1,6 +1,7 @@
+import type { PostedWrite } from './replies.js';
 import type { Comment, Review, Thread } from './threads.js';
 
-type WriteKind = 'reply' | 'resolve' | 'comment';
+type WriteKind = PostedWrite['kind'];
 
 interface WriteTarget {
   url: string;
@@ -35,18 +36,8 @@ export interface WriteFacts {
   recorded: { kind: WriteKind; thread: string | null }[];
 }
 
-export interface RecordedWrite {
-  kind: WriteKind;
-  thread: string | null;
-  url: string;
-  text: string | null;
-  state: 'posted' | 'uncertain';
-  commentId: number | null;
-  earlierCommentIds: number[];
-}
-
 export interface SettleFacts {
-  recorded: RecordedWrite[];
+  recorded: PostedWrite[];
   viewer: string;
   threads: Thread[];
   comments: Comment[];
@@ -203,9 +194,6 @@ export const planWrites = (facts: WriteFacts): PlannedWrite[] => {
   return [...writes, ...commentWrites(facts, recorded)];
 };
 
-export const personWrites = (writes: readonly PlannedWrite[]): PlannedWrite[] =>
-  writes.filter((write) => write.toPerson);
-
 const targetComments = (
   write: { kind: WriteKind; thread: string | null },
   feedback: { threads: readonly Thread[]; comments: readonly Comment[] },
@@ -224,11 +212,11 @@ export const targetCommentIds = (
 ): number[] => targetComments(write, feedback).map((comment) => comment.id);
 
 // Review replies and PR comments come from separate GitHub endpoints, so their IDs can repeat.
-const claimKey = (kind: RecordedWrite['kind'], commentId: number) => `${kind}:${commentId}`;
+const claimKey = (kind: PostedWrite['kind'], commentId: number) => `${kind}:${commentId}`;
 
 // Returns the newest comment by the viewer with the write's text that no posted write claims. A
 // comment from before the write, such as one from an earlier round, is not the write.
-const findWrittenComment = (write: RecordedWrite, facts: SettleFacts, claimed: Set<string>) => {
+const findWrittenComment = (write: PostedWrite, facts: SettleFacts, claimed: Set<string>) => {
   const earlier = new Set(write.earlierCommentIds);
 
   const matches = targetComments(write, facts).filter(
@@ -239,10 +227,10 @@ const findWrittenComment = (write: RecordedWrite, facts: SettleFacts, claimed: S
   return matches.findLast((comment) => !claimed.has(claimKey(write.kind, comment.id)));
 };
 
-const unmatchedWrite = (write: RecordedWrite, facts: SettleFacts) =>
+const unmatchedWrite = (write: PostedWrite, facts: SettleFacts) =>
   facts.unmatched === 'keep' ? [write] : [];
 
-const settleWrite = (write: RecordedWrite, facts: SettleFacts, claimed: Set<string>) => {
+const settleWrite = (write: PostedWrite, facts: SettleFacts, claimed: Set<string>) => {
   if (write.state === 'posted') {
     return [write];
   }
@@ -268,7 +256,7 @@ const settleWrite = (write: RecordedWrite, facts: SettleFacts, claimed: Set<stri
 // Decides each uncertain write from a fresh read: a write GitHub has becomes posted. With unmatched
 // 'drop', any other is dropped so the plan makes it again. With 'keep', it stays uncertain, since
 // the read can predate a write another session saved. GitHub can hold a write whose gh call failed.
-export const settleWrites = (facts: SettleFacts): RecordedWrite[] => {
+export const settleWrites = (facts: SettleFacts): PostedWrite[] => {
   const claimed = new Set<string>();
 
   for (const write of facts.recorded) {

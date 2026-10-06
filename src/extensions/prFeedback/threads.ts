@@ -1,48 +1,11 @@
-// The query reads `__typename` under the alias `typename`.
-export interface GraphqlAuthor {
-  login: string;
-  typename: string;
-}
-
-export interface RestUser {
-  login: string;
-  type: string;
-}
-
-export interface ThreadCommentNode {
-  databaseId: number;
-  author: GraphqlAuthor | null;
-  body: string;
-  url: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ThreadNode {
-  id: string;
-  isResolved: boolean;
-  isOutdated: boolean;
-  path: string;
-  line: number | null;
-  viewerCanReply: boolean;
-  viewerCanResolve: boolean;
-  comments: { pageInfo: { hasNextPage: boolean }; nodes: ThreadCommentNode[] };
-}
-
-export interface ReviewItem {
-  id: number;
-  user: RestUser | null;
-  state: string;
-  body: string;
-  html_url: string;
-}
-
-export interface IssueCommentItem {
-  id: number;
-  user: RestUser | null;
-  body: string;
-  html_url: string;
-}
+import type {
+  GraphqlAuthor,
+  IssueCommentItem,
+  RestUser,
+  ReviewItem,
+  ThreadCommentNode,
+  ThreadNode,
+} from './github.js';
 
 interface Author {
   author: string | null;
@@ -98,12 +61,12 @@ export interface StateEntry {
 }
 
 // GitHub alone says what is a bot. A missing author is a deleted account, which was a person.
-const fromGraphqlAuthor = (author: GraphqlAuthor | null): Author => ({
+const fromGraphqlAuthor = (author: GraphqlAuthor): Author => ({
   author: author?.login ?? null,
   isBot: author?.typename === 'Bot',
 });
 
-const fromRestUser = (user: RestUser | null): Author => ({
+const fromRestUser = (user: RestUser): Author => ({
   author: user?.login ?? null,
   isBot: user?.type === 'Bot',
 });

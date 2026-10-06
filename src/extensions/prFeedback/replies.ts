@@ -9,6 +9,7 @@ import { Value } from 'typebox/value';
 import { errorMessage, isMissingFile } from '../../errors.js';
 import { parseRepository } from '../../github.js';
 import type { Repository } from '../../github.js';
+import { repositoryName } from './checkEvidence.js';
 
 export interface PullRequestRecord {
   repository: Repository;
@@ -235,11 +236,9 @@ export const writePullRequestRecord = (
   directory: string,
   record: PullRequestRecord,
 ): Promise<void> => {
-  const { host, owner, name } = record.repository;
-
   return writeRecord(join(directory, pullRequestFileName), {
     version: currentVersion,
-    repository: `${host}/${owner}/${name}`,
+    repository: repositoryName(record.repository),
     pr: record.pr,
   });
 };

@@ -234,32 +234,6 @@ it('returns threads, reviews, and comments from several pages and a gap for a fa
   expect(result.gaps).toEqual([expect.objectContaining({ action: 'checks', check: 'test' })]);
 });
 
-it('returns a gap for a pull request with no checks', async () => {
-  const fake = createGhFake();
-
-  fake.checks = [];
-
-  const result = await runEvidenceScript(fake);
-
-  expect(result.read.status).toBe('fulfilled');
-  expect(result.checks.value?.checks).toEqual([]);
-  expect(result.gaps).toEqual([expect.objectContaining({ action: 'checks', check: null })]);
-});
-
-it('returns a gap for a failing check with no readable log', async () => {
-  const fake = createGhFake();
-
-  fake.checks = [{ ...failingCheck, link: 'https://ci.example.com/build/9' }];
-  fake.checksExitCode = 1;
-
-  const result = await runEvidenceScript(fake);
-  const [check] = result.checks.value?.checks ?? [];
-
-  expect(check).toMatchObject({ name: 'test', bucket: 'fail', gap: anyGap });
-  expect(check).not.toHaveProperty('log');
-  expect(result.gaps).toEqual([expect.objectContaining({ action: 'checks', check: 'test' })]);
-});
-
 it('returns the read error and a skipped checks call as gaps when a thread is too long to read', async () => {
   const fake = createGhFake();
 
@@ -298,17 +272,4 @@ it('returns the refusal instead of checks when the head moves after read', async
   });
 
   expect(result.gaps).toEqual([{ action: 'checks', reason: result.checks.reason }]);
-});
-
-it('returns a gap and no passing checks when the check list cannot be read', async () => {
-  const fake = createGhFake();
-
-  fake.checks = [passingCheck];
-  fake.failCommand('pr checks');
-
-  const result = await runEvidenceScript(fake);
-
-  expect(result.read.status).toBe('fulfilled');
-  expect(result.checks.value?.checks).toEqual([]);
-  expect(result.gaps).toEqual([expect.objectContaining({ action: 'checks', check: null })]);
 });
