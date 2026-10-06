@@ -1,7 +1,10 @@
 # ADR 0085: Group per-repository settings in the user config
 
 **Date**: 2026-10-03\
-**Status**: Accepted; `bulkRead` key handling superseded by
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0095 (Keep repository routing in tracker config)](./0095-keep-repository-routing-in-tracker-config.md);
+`bulkRead` key handling superseded by
 [ADR 0087 (Gather evidence with codemode)](./0087-gather-evidence-with-codemode.md)\
 **Related**: [ADR 0061 (Layer Tau config from user and repository files)](./0061-layer-tau-config-from-user-and-repository-files.md),
 [ADR 0063 (Narrow allowed models from the user file to the repository file)](./0063-narrow-allowed-models-from-user-to-repository.md),
