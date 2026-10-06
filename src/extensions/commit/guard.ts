@@ -4,7 +4,8 @@ import type { ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-codi
 import { parseShellCommands } from './shellCommands.js';
 import type { ShellCommand } from './shellCommands.js';
 
-export const commitGuardReason = 'Blocked git commit via bash. Use the `commit` tool instead.';
+export const commitGuardReason =
+  'Blocked git commit via bash. Use the `commit` tool instead. To amend the last commit when it is not a merge or root commit, run `git reset --soft HEAD~1`, then call `commit` with the files of both changes. To fix up an older commit, call `commit` for the fix, then mark it `fixup` in `git rebase -i` with `GIT_SEQUENCE_EDITOR`.';
 
 // Used only when the command does not parse. It matches `commit` anywhere after `git` in a
 // statement, so it blocks mentions in quoted text too.
@@ -36,26 +37,38 @@ const unescapeShellWord = (command: string) =>
 const commandName = (word: string) => word.slice(word.lastIndexOf('/') + 1).toLowerCase();
 
 // Matches `commit` and plumbing such as `commit-tree`, and also `commit-graph`: blocking wins.
-// A substitution or `key=value` word that mentions `commit` may produce the subcommand or define an
-// alias for it, as in `git -c alias.x=commit x`, so it matches too. That also blocks
-// `git log --grep=commit`.
+// Substitutions may produce the subcommand, and alias values may define it. Environment-backed
+// aliases fail closed because their values are unknown. Other option values are data here;
+// scriptsOf reparses them to find commands that Git runs as shell code.
 const isCommitWord = (word: string) => {
   const lowerWord = word.toLowerCase();
-  const mayProduceCommit = ['$(', '`', '='].some((marker) => lowerWord.includes(marker));
-  const producesCommit = mayProduceCommit && lowerWord.includes('commit');
+
+  if (/^--config-env=alias\.[^=]+=/.test(lowerWord)) {
+    return true;
+  }
+
+  const isSubstitution = lowerWord.includes('$(') || lowerWord.includes('`');
+  const isAlias = lowerWord.startsWith('alias.') && lowerWord.includes('=');
+  const mayProduceCommit = isSubstitution || isAlias;
+  const value = isAlias ? lowerWord.slice(lowerWord.indexOf('=') + 1) : lowerWord;
+  const producesCommit = mayProduceCommit && /(?<![\w/-])commit(?![\w/])/.test(value);
 
   return /^commit(?:-|$)/.test(lowerWord) || producesCommit;
 };
 
 // Any word named `git` counts, so wrappers such as `env`, `sudo`, and `xargs` need no list, and
-// options between `git` and `commit` are skipped. Variable indirection (`c=commit; git $c`) still
-// bypasses this.
+// options between `git` and `commit` are skipped. Alias definitions and substitutions can also
+// supply a commit subcommand. Variable indirection (`c=commit; git $c`) still bypasses this.
 const runsGitCommit = ({ words }: ShellCommand) => {
   const names = words.map(commandName);
   const gitIndex = names.indexOf('git');
   const laterWords = gitIndex === -1 ? [] : words.slice(gitIndex + 1);
 
-  return names.includes('git-commit') || laterWords.some(isCommitWord);
+  const optionWords = laterWords.map((word, index) =>
+    laterWords[index - 1]?.toLowerCase() === '--config-env' ? `--config-env=${word}` : word,
+  );
+
+  return names.includes('git-commit') || optionWords.some(isCommitWord);
 };
 
 const runsShell = ({ words }: ShellCommand) =>
@@ -65,12 +78,21 @@ const runsShell = ({ words }: ShellCommand) =>
 const runsGit = ({ words }: ShellCommand) => words.some((word) => commandName(word) === 'git');
 
 const scriptsOf = (commands: ShellCommand[]) =>
-  commands.flatMap(({ words, heredocs }) => [
-    ...words.filter((word) => shellSyntaxPattern.test(word)),
-    ...heredocs,
-  ]);
+  commands.flatMap(({ words, heredocs }) => {
+    const scripts = words.filter((word) => shellSyntaxPattern.test(word));
 
-// Substitutions keep their source text, so `bash $(bash)` would reparse itself without a limit.
+    for (const word of words) {
+      const equalsIndex = word.indexOf('=');
+
+      if (equalsIndex !== -1) {
+        scripts.push(word.slice(equalsIndex + 1));
+      }
+    }
+
+    return [...scripts, ...heredocs];
+  });
+
+// Fail closed when nested scripts exceed the parser's inspection budget.
 const maximumScriptDepth = 8;
 
 const createsCommit = (source: string, depth = 0): boolean => {
@@ -91,7 +113,7 @@ const createsCommit = (source: string, depth = 0): boolean => {
   const scriptCommands = commands.some(runsShell) ? commands : commands.filter(runsGit);
   const scripts = scriptsOf(scriptCommands);
 
-  return scripts.some((script) => createsCommit(script, depth + 1));
+  return scripts.some((script) => script !== source && createsCommit(script, depth + 1));
 };
 
 export const guardToolCall = (event: ToolCallEvent): ToolCallEventResult | undefined => {

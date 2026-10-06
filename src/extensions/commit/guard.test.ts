@@ -229,8 +229,13 @@ describe('guardToolCall', () => {
     "bash -c $'git\\x20commit -m x'",
     'bash -c "echo \\"\\$(git commit -m x)\\""',
     "git commit -m 'unterminated",
-    'bash $(bash)',
     'git -c alias.x=commit x -m y',
+    'git -c Alias.x=commit x',
+    'commit_alias=commit git --config-env=alias.x=commit_alias x --allow-empty -m y',
+    'v=commit git --config-env=alias.x=v x',
+    'v=commit git --config-env=Alias.x=v x',
+    'v=commit git --config-env alias.x=v x',
+    "git rebase --exec='git commit --amend --no-edit' HEAD~1",
     "git -c alias.ci='commit -m y' ci",
     "git rebase -x 'git commit --amend --no-edit' HEAD~1",
     "git submodule foreach 'git commit -m y'",
@@ -239,6 +244,19 @@ describe('guardToolCall', () => {
       block: true,
       reason: commitGuardReason,
     });
+  });
+
+  it.each([
+    'git for-each-ref --sort=-committerdate refs/heads',
+    'commits="$(git log --oneline)"; echo "$commits"',
+    "for c in $(git rev-list HEAD); do git show --format='### commit %H %s' $c; done",
+    'for p in $(pgrep -u "$USER" -x zsh); do [ "$(readlink /proc/$p/cwd)" = "$PWD" ] && echo $p; done',
+    'git log --grep=commit',
+    'git log $(cat "$commits_file")',
+    'git log `cat "$commits_file"`',
+    'bash $(bash)',
+  ])('allows git data and shell substitutions that do not commit: %s', (command) => {
+    expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
   });
 
   it.each([
