@@ -14,6 +14,7 @@ import type {
 import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
+import tauExtension from '../src/tau.js';
 import { createTemporaryRepository } from './gitRepository.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
@@ -32,8 +33,6 @@ interface Harness {
 vi.setConfig({ testTimeout: 60_000 });
 
 const execFileAsync = promisify(execFile);
-
-const tauExtensionPath = resolve(import.meta.dirname, '../src/tau.ts');
 
 const bundledWebAccessExtensionPath = resolve(
   import.meta.dirname,
@@ -98,7 +97,8 @@ const createHarness = async (
       agentDirectory,
       providers: [faux],
       tools: ['read', 'bash', 'edit', 'write', 'commit'],
-      extensionPaths: [tauExtensionPath, bundledWebAccessExtensionPath],
+      extensionPaths: [bundledWebAccessExtensionPath],
+      extensionFactories: [tauExtension],
     },
     hasUI ? { uiContext: createScriptedUI(overlays) } : {},
   );

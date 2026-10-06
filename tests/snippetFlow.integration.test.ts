@@ -20,6 +20,7 @@ import type { TestContext } from 'vitest';
 import { expect, it, vi } from 'vitest';
 
 import { loadSnippets } from '../src/extensions/snippets/snippet.js';
+import tauExtension from '../src/tau.js';
 import { createPiSession } from './piSession.js';
 
 type RegisterCleanup = TestContext['onTestFinished'];
@@ -40,7 +41,6 @@ interface ModelContext {
 // Real Pi sessions need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
 
-const tauExtensionPath = resolve(import.meta.dirname, '../src/tau.ts');
 const shippedSnippets = resolve(import.meta.dirname, '../src/extensions/snippets/snippets');
 const enter = '\r';
 const historyPrevious = '\u001B[A';
@@ -147,7 +147,7 @@ const createHarness = async (registerCleanup: RegisterCleanup, options: HarnessO
     providers: [faux],
     // These tests send no tool calls; the list only has to be valid.
     tools: ['read'],
-    extensionPaths: [tauExtensionPath],
+    extensionFactories: [tauExtension],
     ...(options.sessionManager === undefined
       ? {}
       : { sessionManager: options.sessionManager(directory) }),
