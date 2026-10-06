@@ -51,7 +51,7 @@ const scriptValue = (outcomes: ToolOutcome[]): unknown => {
   return JSON.parse(output);
 };
 
-const handoff = 'Changes: None\nEvidence: None\nDecisions: None\nConcerns: None';
+const handover = 'Changes: None\nEvidence: None\nDecisions: None\nConcerns: None';
 
 const codemodeCall = (code: string) => fauxAssistantMessage([fauxToolCall('codemode', { code })]);
 
@@ -258,7 +258,7 @@ const stopWithoutReport = [
 ];
 
 it('fails a script call to subagent_report without saving a report', async () => {
-  const report = JSON.stringify({ outcome: 'success', summary: handoff, evidence: [] });
+  const report = JSON.stringify({ outcome: 'success', summary: handover, evidence: [] });
 
   const { taskDirectory, taskId, outcomes } = await runWorker([
     codemodeCall(`${settle([`tools.subagent_report(${report})`])}\nreturn outcomes;`),
@@ -270,7 +270,7 @@ it('fails a script call to subagent_report without saving a report', async () =>
 });
 
 it('hides worker control tools from scripts and saves no record for their calls', async () => {
-  const report = JSON.stringify({ outcome: 'success', summary: handoff, evidence: [] });
+  const report = JSON.stringify({ outcome: 'success', summary: handover, evidence: [] });
 
   const questionnaire = JSON.stringify({
     questions: [
@@ -313,7 +313,7 @@ it('hides worker control tools from scripts and saves no record for their calls'
 });
 
 it('returns ordinary results beside a refused control call in one script', async () => {
-  const report = JSON.stringify({ outcome: 'success', summary: handoff, evidence: [] });
+  const report = JSON.stringify({ outcome: 'success', summary: handover, evidence: [] });
 
   const script = [
     settle([

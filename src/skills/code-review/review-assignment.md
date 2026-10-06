@@ -18,6 +18,6 @@ Add the line for the mode that the skill names.
   that can represent the state is not enough.
 - Name the areas you left unread. Separately, name the areas you read only shallowly.
 - Save details that do not fit the report in `$dir/details.md`.
-- Handoff: "Changes: None, read-only. Baseline: `$dir/input.md` at HEAD `<sha>`." Do not recapture
-  Git state or run full checks for the handoff.
+- Handover: "Changes: None, read-only. Baseline: `$dir/input.md` at HEAD `<sha>`." Do not recapture
+  Git state or run full checks for the handover.
 ```

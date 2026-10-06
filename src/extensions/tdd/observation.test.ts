@@ -156,7 +156,7 @@ it('recommends full verification without RED and deduplicates until the next cyc
   expect(passed.hint).not.toContain('RED');
 
   expect(
-    (await observation.run({ ...regression, behavior: 'handoff verification' }, 'focused')).hint,
+    (await observation.run({ ...regression, behavior: 'handover verification' }, 'focused')).hint,
   ).toBeUndefined();
 
   expect(await observation.checkpoint(false)).toBeUndefined();

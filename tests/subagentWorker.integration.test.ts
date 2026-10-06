@@ -41,7 +41,7 @@ import subagentsExtension from '../src/extensions/subagents/subagents.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { readInstructionSet } from '../src/instructionSets.js';
 
-const handoff =
+const handover =
   'Changes: edited source.txt\nEvidence: command-ok\nDecisions: None\nConcerns: Safety Net blocked deletion';
 
 it('keeps the questionnaire available to the parent', async () => {
@@ -351,7 +351,7 @@ it.each(['editing', 'investigation'] as const)(
         return fauxAssistantMessage([
           fauxToolCall('subagent_report', {
             outcome: 'success',
-            summary: handoff,
+            summary: handover,
             evidence: ['source.txt', 'command-ok', 'Safety Net blocked deletion'],
           }),
         ]);
@@ -471,7 +471,7 @@ it.each(['editing', 'investigation'] as const)(
       ),
     ).toBe(true);
 
-    expect(readReport(taskDirectory, task.taskId)?.summary).toBe(handoff);
+    expect(readReport(taskDirectory, task.taskId)?.summary).toBe(handover);
     expect(readEvent(taskDirectory, task.taskId, 'accepted')).toBeDefined();
     expect(readEvent(taskDirectory, task.taskId, 'settled')?.stopped).toBe(true);
 

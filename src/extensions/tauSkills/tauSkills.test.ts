@@ -145,7 +145,7 @@ describe('tauSkillsExtension', () => {
 
     expect(requiredSkills).toEqual(
       expect.arrayContaining([
-        'handoff',
+        'handover',
         'pr',
         'pr-feedback',
         'stack',

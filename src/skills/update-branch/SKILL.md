@@ -13,7 +13,7 @@ metadata:
 ## When to use
 
 Use this skill to start or continue a rebase in this session's worktree. For another worktree, use
-the [handoff skill](../handoff/SKILL.md).
+the [handover skill](../handover/SKILL.md).
 
 ## Hard rules
 

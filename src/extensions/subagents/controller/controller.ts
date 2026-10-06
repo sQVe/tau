@@ -38,7 +38,7 @@ import {
   workerEnvironment,
 } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
-import { checkHandoff, nativeReference, requireUnclaimed } from './launchSupport.js';
+import { checkHandover, nativeReference, requireUnclaimed } from './launchSupport.js';
 import type { FollowUpPreparation, LaunchInput } from './launchSupport.js';
 import { InstallQueue, installWorkerPackages, piPackageManager } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
@@ -503,7 +503,7 @@ export class WorkerController {
 
       // A Pi worker opens the saved session as soon as placement starts it.
       if (source) {
-        checkHandoff(source);
+        checkHandover(source);
       }
 
       const location = await this.placeWorker(input, handle, call);

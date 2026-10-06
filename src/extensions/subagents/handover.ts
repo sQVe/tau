@@ -3,7 +3,7 @@ export const assignmentContract = [
   'Tests, docs, and checks the assignment names are part of the work, not follow-ups.',
   'The parent assigns one editor per worktree, and you are it for this assignment.',
   'Report changes you did not make instead of claiming them.',
-  'A failed approach or a blocked tool call is not a handoff: correct it within the safety rules and continue.',
+  'A failed approach or a blocked tool call is not a handover: correct it within the safety rules and continue.',
   'Ask the parent only about ambiguous requirements, changed scope or authority, external blockers, or exhausted limits, not ordinary implementation decisions.',
 ].join(' ');
 
@@ -11,7 +11,7 @@ export const assignmentContract = [
 export const assignmentContractFor = (role: 'editing' | 'investigation'): string =>
   role === 'editing' ? `${assignmentContract}\n\n` : '';
 
-export const handoffContract = [
+export const handoverContract = [
   [
     'Report when the assignment is done or a blocker stops you.',
     'success means every acceptance criterion is met and checked; failure means it cannot be met;',

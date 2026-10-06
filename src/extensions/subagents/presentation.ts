@@ -66,9 +66,9 @@ export interface WorkerNotice {
   question: boolean;
 }
 
-export interface HandoffSections {
-  present: HandoffSection[];
-  missing: HandoffSection[];
+export interface HandoverSections {
+  present: HandoverSection[];
+  missing: HandoverSection[];
 }
 
 export const stateLabels: Record<WorkerState, StateLabel> = {
@@ -112,28 +112,28 @@ const addField = (target: Record<string, unknown>, key: string, value: unknown):
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
-const handoffSectionNames = ['Changes', 'Evidence', 'Decisions', 'Concerns'] as const;
+const handoverSectionNames = ['Changes', 'Evidence', 'Decisions', 'Concerns'] as const;
 
-type HandoffSection = (typeof handoffSectionNames)[number];
+type HandoverSection = (typeof handoverSectionNames)[number];
 
 // A heading starts its line, may carry Markdown marks, and ends at a colon, parenthesis, or line end.
 const summaryHasHeading = (summary: string, name: string): boolean =>
   new RegExp(`^[\\s#*>-]*${name}\\**\\s*(?::|\\(|$)`, 'im').test(summary);
 
 // Presence means the saved summary contains a section heading with that name. The scan reports the
-// missing handoff sections; it does not read evidence strings, verify content, or claim freshness.
-export const handoffSections = (report: unknown): HandoffSections | undefined => {
+// missing handover sections; it does not read evidence strings, verify content, or claim freshness.
+export const handoverSections = (report: unknown): HandoverSections | undefined => {
   if (!isRecord(report)) {
     return undefined;
   }
 
   const summary = typeof report.summary === 'string' ? report.summary : '';
-  const present = handoffSectionNames.filter((name) => summaryHasHeading(summary, name));
+  const present = handoverSectionNames.filter((name) => summaryHasHeading(summary, name));
   const presentSet = new Set(present);
 
   return {
     present,
-    missing: handoffSectionNames.filter((name) => !presentSet.has(name)),
+    missing: handoverSectionNames.filter((name) => !presentSet.has(name)),
   };
 };
 
@@ -236,7 +236,7 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
   addField(result, 'predecessorTaskId', status.predecessorTaskId);
   addField(result, 'successorTaskId', status.successorTaskId);
   addReport(result, status);
-  addField(result, 'handoffSections', handoffSections(status.report));
+  addField(result, 'handoverSections', handoverSections(status.report));
   addField(result, 'pendingQuestion', modelQuestion(status.pendingQuestion));
   addField(result, 'failure', status.failure);
   addField(result, 'cleanup', status.cleanup);

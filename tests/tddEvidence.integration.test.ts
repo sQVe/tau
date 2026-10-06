@@ -147,7 +147,7 @@ it.for([
   },
 );
 
-it('recommends full verification for regression checks across Pi session handoffs', async ({
+it('recommends full verification for regression checks across Pi session handovers', async ({
   onTestFinished,
 }) => {
   const first = await createHarness(onTestFinished);
@@ -163,11 +163,11 @@ it('recommends full verification for regression checks across Pi session handoff
   expect(regression.content[0]?.text).toContain('scope "full"');
   expect(JSON.stringify(regression.content)).not.toContain('RED');
   const second = await createHarness(onTestFinished, [], first.cwd);
-  const handoff = await second.run();
+  const handover = await second.run();
 
-  expect(handoff.details).toMatchObject({ kind: 'pass', freshness: 'fresh' });
-  expect(handoff.content[0]?.text).toContain('scope "full"');
-  expect(JSON.stringify(handoff.content)).not.toContain('RED');
+  expect(handover.details).toMatchObject({ kind: 'pass', freshness: 'fresh' });
+  expect(handover.content[0]?.text).toContain('scope "full"');
+  expect(JSON.stringify(handover.content)).not.toContain('RED');
   expect((await second.run()).content).toHaveLength(3);
 });
 

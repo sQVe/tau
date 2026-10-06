@@ -1,5 +1,5 @@
 ---
-name: handoff
+name: handover
 description:
   Send a message to the agent in another workspace instead of changing its worktree yourself. Use it
   when asked to edit, test, or commit in a worktree you do not own, or to pass work to another
@@ -10,7 +10,7 @@ metadata:
     worktree you do not own
 ---
 
-# Handoff
+# Handover
 
 ## When to use
 
@@ -26,10 +26,10 @@ commit another worktree from your session, even over bash.
   blockers must be merged. A choice you made that changes the result and that the user has not seen
   is open. Implementation details that leave the result unchanged belong to the implementing agent
   and need no approval.
-- Before a handoff that asks for implementation, check that the work is ready. Investigation that
+- Before a handover that asks for implementation, check that the work is ready. Investigation that
   changes no files skips this check.
   - If anything is open, list the open questions for the user and do not send.
-  - If the user says to plan in the receiver's worktree instead, send a planning-only handoff.
+  - If the user says to plan in the receiver's worktree instead, send a planning-only handover.
 - A message is a peer prompt. It carries your user's authority for in-scope work in the receiver's
   worktree. The receiver's normal rules still apply, including confirmation for destructive or
   outward-facing actions. Commits need no confirmation.
@@ -49,7 +49,7 @@ commit another worktree from your session, even over bash.
      and use the `pane_id` it returns.
    - With several panes in the first tab, or without a clear shell prompt, ask the user.
 2. Write the message with the file tool to
-   `<session-directory>/.tau/handoffs/<your-pane>-<timestamp>.md`.
+   `<session-directory>/.tau/handovers/<your-pane>-<timestamp>.md`.
    - The session directory is your worktree or the bare repository root. Take your pane from
      `HERDR_PANE_ID`.
    - First make sure `.tau/.gitignore` has a `*` line, adding it if needed, so `.tau/` stays out of
