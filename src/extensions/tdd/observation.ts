@@ -1,10 +1,9 @@
-import { createHash } from 'node:crypto';
-import { access, glob, readFile, realpath, writeFile } from 'node:fs/promises';
+import { access, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import { isMissingFile } from '../../errors.js';
-import { classifyPath, configurationGlobs, defaultTddConfig } from './config.js';
+import { classifyPath, defaultTddConfig } from './config.js';
 import type { TddConfig } from './config.js';
+import { fingerprintInputs } from './inputFingerprint.js';
 import { finishDiagnostics } from './runner/retention.js';
 import type { RunDiagnostics, RunnerResult } from './runner/types.js';
 import { runTests } from './runner/vitest.js';
@@ -87,58 +86,6 @@ const compareInputs = (before: string | null, after: string | null): Freshness =
   }
 
   return before === after ? 'fresh' : 'stale';
-};
-
-// Content is checked at bounded checkpoints, not as an atomic snapshot.
-const fingerprint = async (
-  cwd: string,
-  config: TddConfig,
-  files: string[],
-): Promise<string | null> => {
-  try {
-    const paths = [...files];
-
-    for await (const file of glob(
-      [
-        ...config.productionGlobs,
-        ...config.testGlobs,
-        ...config.testSupportGlobs,
-        ...configurationGlobs,
-      ],
-      { cwd, exclude: config.excludedGlobs, withFileTypes: true },
-    )) {
-      // A glob such as `src/**` also matches directories, which cannot be hashed. Symbolic links
-      // stay, so a linked source file is still read through its link.
-      if (!file.isDirectory()) {
-        paths.push(join(file.parentPath, file.name));
-      }
-    }
-
-    const digest = createHash('sha256');
-
-    const entries = await Promise.all(
-      [...new Set(paths.map((path) => resolve(cwd, path)))].toSorted().map(async (file) => {
-        try {
-          const content = await readFile(file);
-
-          return [file, createHash('sha256').update(content).digest('hex')];
-        } catch (error) {
-          if (!isMissingFile(error)) {
-            throw error;
-          }
-
-          return [file, null];
-        }
-      }),
-    );
-
-    digest.update(JSON.stringify(entries));
-
-    return digest.digest('hex');
-  } catch {
-    // A reminder must not discard a test report or turn a successful edit into an error.
-    return null;
-  }
 };
 
 const selectedFailed = (cwd: string, behavior: Behavior, report: RunnerResult) =>
@@ -324,7 +271,7 @@ const checkpointWork = async (
 
   if (latest !== null && latest.fingerprint !== null) {
     if (latest.freshness !== 'stale' || canSuggestRed) {
-      current = await fingerprint(state.cwd, state.config, latest.behavior.files);
+      current = await fingerprintInputs(state.cwd, state.config, latest.behavior.files);
 
       if (current === null) {
         latest.freshness = 'unknown';
@@ -383,12 +330,12 @@ const performRun = async (
 
   state.active = key;
 
-  const before = await fingerprint(state.cwd, state.config, behavior.files);
+  const before = await fingerprintInputs(state.cwd, state.config, behavior.files);
 
   request.onStart?.(behavior);
 
   const report = await runTestsFor(state, behavior, request);
-  const after = await fingerprint(state.cwd, state.config, behavior.files);
+  const after = await fingerprintInputs(state.cwd, state.config, behavior.files);
   const freshness = compareInputs(before, after);
   const previous = state.latest;
 
