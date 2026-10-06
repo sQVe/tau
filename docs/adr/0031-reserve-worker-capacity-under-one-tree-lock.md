@@ -1,8 +1,13 @@
 # ADR 0031: Reserve worker capacity under one tree lock
 
-- Status: Superseded by [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md), which also
-  ends holding capacity after unconfirmed cleanup
-- Date: 2026-09-17
+**Date**: 2026-09-17\
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0043 (Own only the worker guarantees herdr lacks)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
+which also ends holding capacity after unconfirmed cleanup\
+**Related**: [ADR 0028 (Keep worker control in the parent)](./0028-keep-worker-control-in-the-parent.md),
+[ADR 0029 (Version worker provider fingerprints)](./0029-version-worker-provider-fingerprints.md),
+[ADR 0030 (Claim native follow-ups before opening)](./0030-claim-native-follow-ups-before-opening.md)
 
 ## Context
 
@@ -11,19 +16,12 @@ before publishing a new task permits concurrent callers to exceed the cap. Waiti
 consume resources. Parent exit does not prove that their work stopped. Custom profiles and
 environment values must not grant authority that their parent did not hold.
 
-## Options considered
-
-- Count published tasks without exclusion. Rejected: concurrent callers can both admit the last
-  slot.
-- Run a separate admission service. Rejected: this adds a service lifetime beyond the required
-  parent-owned control.
-- Use one filesystem lock per root tree with durable reservations. Chosen: this coordinates
-  cooperating processes on Linux and macOS without another service.
-
 ## Decision
 
-Reserve capacity under one root-tree filesystem lock. Keep the transaction synchronous, without
-harness calls. Contention and full capacity return distinct refusals, not queued work.
+Reserve capacity under one root-tree filesystem lock. One filesystem lock per root tree with durable
+reservations coordinates cooperating processes on Linux and macOS without another service. Keep the
+transaction synchronous, without harness calls. Contention and full capacity return distinct
+refusals, not queued work.
 
 Save the root cap once. Keep reservations immutable and derive release from matching, confirmed
 parent cleanup. A report, idle turn, missing owner, or expired timestamp cannot release capacity.
@@ -50,20 +48,30 @@ Adapt spawn-time restrictions, running-child settlement, and their test cases fr
 Replace environment-based profile allowlists and process-local counts with checked saved authority
 and atomic tree admission. Do not port restricted tool classes, self-spawn bans, or tmux control.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Concurrent cooperating processes share one cap without a detached supervisor.
 - Duplicate receipts cannot decrement capacity twice or free another task's reservation.
-- Cost: crashes can leave locks or reservations that require manual inspection.
-- Cost: unresolved legacy work can block admission when its tree cannot be established. Confirmed
-  stopped legacy work needs no ancestry reconstruction for capacity accounting.
-- Cost: fully permitted workers can edit records directly. This is not adversarial storage or
-  containment of arbitrary manually spawned processes.
-- Cost: deadlines and cleanup remain parent-scoped. Recovery does not imply enforcement after parent
-  exit.
 
-## See also
+### Negative
 
-- [ADR 0028: Keep worker control in the parent](./0028-keep-worker-control-in-the-parent.md)
-- [ADR 0029: Version worker provider fingerprints](./0029-version-worker-provider-fingerprints.md)
-- [ADR 0030: Claim native follow-ups before opening](./0030-claim-native-follow-ups-before-opening.md)
+- Crashes can leave locks or reservations that require manual inspection.
+- Unresolved legacy work can block admission when its tree cannot be established. Confirmed stopped
+  legacy work needs no ancestry reconstruction for capacity accounting.
+- Fully permitted workers can edit records directly. This is not adversarial storage or containment
+  of arbitrary manually spawned processes.
+- Deadlines and cleanup remain parent-scoped. Recovery does not imply enforcement after parent exit.
+
+## Alternatives considered
+
+### Count published tasks without exclusion
+
+Count published tasks without a lock. Rejected because concurrent callers can both admit the last
+slot.
+
+### Separate admission service
+
+Run a separate admission service. Rejected because this adds a service lifetime beyond the required
+parent-owned control.

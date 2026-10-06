@@ -1,9 +1,15 @@
 # ADR 0027: Share one delegate model across bounded tool tasks
 
-- Status: Superseded by [ADR 0072](./0072-keep-model-defaults-out-of-code.md); default earlier
-  superseded by [ADR 0044](./0044-restore-gpt-5-6-luna-as-the-delegate-default.md); comment review
-  removed from the delegate by [ADR 0042](./0042-remove-commit-comment-review.md)
-- Date: 2026-09-16
+**Date**: 2026-09-16\
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0072 (Keep model defaults out of code)](./0072-keep-model-defaults-out-of-code.md); default
+earlier superseded by
+[ADR 0044 (Restore gpt-5.6-luna as the delegate default)](./0044-restore-gpt-5-6-luna-as-the-delegate-default.md);
+comment review removed from the delegate by
+[ADR 0042 (Remove commit comment review)](./0042-remove-commit-comment-review.md)\
+**Related**: [ADR 0014 (Delegate model for bulk reads)](./0014-delegate-model-for-bulk-reads.md),
+[Development](../development.md)
 
 ## Context
 
@@ -14,20 +20,14 @@ review can block commits, so lower catalog prices alone do not justify changing 
 The owner chose lower cost with preserved review quality over lower latency. The owner also approved
 removing `TAU_BULK_READ_MODEL` without compatibility handling because Tau has no other users.
 
-## Options considered
-
-1. Keep comment review on the session model. Rejected: this avoids a new review-quality risk but
-   ties a bounded tool call to the model chosen for implementation work.
-2. Share one configurable delegate after a labeled comparison. Chosen: the existing delegate passed
-   the agreed review gate at lower measured catalog cost.
-3. Add task routing or a settings UI. Rejected: the three callers need one independent default, not
-   another model-selection system.
-
 ## Decision
 
-Use one configurable delegate for bulk reads, web answer mode, and commit comment review. Replace
-ADR 0014's environment setting and its requirement to keep comment review on the session model. Keep
-its other bulk-read decisions unchanged.
+Use one configurable delegate for bulk reads, web answer mode, and commit comment review. The
+delegate is shared after a labeled comparison, and the existing delegate passed the agreed review
+gate at lower measured catalog cost.
+
+Replace ADR 0014's environment setting and its requirement to keep comment review on the session
+model. Keep its other bulk-read decisions unchanged.
 
 Use `TAU_DELEGATE_MODEL=provider/model-id`, defaulting to `openai-codex/gpt-5.6-luna` when unset or
 empty. Resolve references exactly through Pi's registry and credentials. Remove the old setting
@@ -119,18 +119,28 @@ The complete rerun's inputs, outputs, timings, and usage are saved locally under
 these totals. The tables record the evidence used for this decision without requiring that local
 artifact directory.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - One setting selects an independent model without a routing framework.
 - The labeled review comparison supports a cheaper default for these bounded tasks.
-- Cost: six small synthetic review cases do not establish equal quality on large or unfamiliar
-  changes.
-- Cost: model availability and quality can change. Repeat the comparison before changing the
-  default.
-- Cost: an unavailable delegate blocks commits until its configuration or authentication is fixed.
-- Cost: removing the old setting requires the owner to change their launch environment.
 
-## See also
+### Negative
 
-- [ADR 0014: Delegate model for bulk reads](./0014-delegate-model-for-bulk-reads.md)
-- [Development](../development.md)
+- Six small synthetic review cases do not establish equal quality on large or unfamiliar changes.
+- Model availability and quality can change. Repeat the comparison before changing the default.
+- An unavailable delegate blocks commits until its configuration or authentication is fixed.
+- Removing the old setting requires the owner to change their launch environment.
+
+## Alternatives considered
+
+### Comment review on the session model
+
+Keep comment review on the session model. Rejected because, although this avoids a new
+review-quality risk, it ties a bounded tool call to the model chosen for implementation work.
+
+### Task routing or a settings UI
+
+Add task routing or a settings UI. Rejected because the three callers need one independent default,
+not another model-selection system.

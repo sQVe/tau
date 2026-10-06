@@ -1,44 +1,45 @@
 # ADR 0058: Run subagents only as Pi workers
 
-- Status: Accepted
-- Date: 2026-09-28
-- Supersedes: [ADR 0032](./0032-run-claude-workers-through-a-parent-owned-channel.md),
-  [ADR 0033](./0033-use-one-generic-native-worker-workflow.md),
-  [ADR 0037](./0037-launch-native-workers-without-parent-approval.md), the generic workflow rule in
-  [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md), the generic steps in
-  [ADR 0050](./0050-split-worker-control-into-a-coordinator-and-one-controller-per-worker.md), and
-  the non-Pi report area in
-  [ADR 0045](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md), and the task
-  record policy in [ADR 0053](./0053-version-each-saved-record-format.md)
+**Date**: 2026-09-28\
+**Status**: Accepted\
+**Supersedes**: [ADR 0032 (Run Claude workers through a parent-owned channel)](./0032-run-claude-workers-through-a-parent-owned-channel.md),
+[ADR 0033 (Use one generic native worker workflow)](./0033-use-one-generic-native-worker-workflow.md),
+[ADR 0037 (Launch native workers without parent approval)](./0037-launch-native-workers-without-parent-approval.md),
+the generic workflow rule in
+[ADR 0043 (Own only the worker guarantees herdr lacks)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
+the generic steps in
+[ADR 0050 (Split worker control into a coordinator and one controller per worker)](./0050-split-worker-control-into-a-coordinator-and-one-controller-per-worker.md),
+and the non-Pi report area in
+[ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md),
+and the task record policy in
+[ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md)\
+**Related**: [ADR 0052 (Drop backwards compatibility by default)](./0052-drop-backwards-compatibility-by-default.md),
+[ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
+[Vision](../vision.md)
 
 ## Context
 
-- Tau-owned subagents had two lifecycles: Pi workers with structured controls, and a generic herdr
-  workflow for every other kind (ADR 0033). Every lifecycle change had to carry both, such as the
-  controller split (ADR 0050) and the pure decision modules.
-- The generic path added Pi and non-Pi branches across many files. Its parameters filled the tool
-  descriptions that every parent session loads, and the two reply rules confused agents.
-- Almost all worker runs in the 30 days before 2026-09-28 were Pi. The few non-Pi runs match the
-  proof runs for the generic workflow.
-- Pi already runs Claude and GPT models through its providers, so a Pi worker covers model variety.
-- The vision says to hand off to the tool that already does the job, such as a browser task to
-  Claude Code. The handoff skill already sends such work to the agent in another workspace, and Tau
-  does not own that agent's lifecycle.
+Tau-owned subagents had two lifecycles: Pi workers with structured controls, and a generic herdr
+workflow for every other kind (ADR 0033). Every lifecycle change had to carry both, such as the
+controller split (ADR 0050) and the pure decision modules. The generic path added Pi and non-Pi
+branches across many files. Its parameters filled the tool descriptions that every parent session
+loads, and the two reply rules confused agents.
 
-## Options considered
+Almost all worker runs in the 30 days before 2026-09-28 were Pi. The few non-Pi runs match the proof
+runs for the generic workflow. Pi already runs Claude and GPT models through its providers, so a Pi
+worker covers model variety.
 
-- Keep the generic workflow. Rejected: it serves no regular use and keeps doubling every lifecycle
-  change.
-- Move non-Pi workers into a separate tool. Rejected: tool descriptions get shorter, but the
-  controller still carries both lifecycles.
-- Run subagents only as Pi workers, and send work for Claude Code or Codex through a handoff to a
-  workspace. Chosen: one lifecycle remains, and the handoff already covers other agents.
+The vision says to hand off to the tool that already does the job, such as a browser task to Claude
+Code. The handoff skill already sends such work to the agent in another workspace, and Tau does not
+own that agent's lifecycle.
 
 ## Decision
 
 Tau-owned subagents run only as Pi workers. Claude and GPT models still run as Pi workers through
 Pi's providers. A task for Claude Code, Codex, or another agent goes to that agent's workspace
-through a handoff. The handoff is not a subagent.
+through a handoff. The handoff is not a subagent. Running subagents only as Pi workers, and sending
+work for Claude Code or Codex through a handoff to a workspace, leaves one lifecycle, and the
+handoff already covers other agents.
 
 ### Tool surface
 
@@ -65,18 +66,29 @@ or report files in those task folders.
 Following [ADR 0052](./0052-drop-backwards-compatibility-by-default.md), no other generic path
 stays.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - One worker lifecycle, one reply rule, and shorter tool descriptions in every parent session.
 - Future lifecycle changes and pure modules no longer carry a second harness.
-- Cost: a subagent cannot run the Claude Code or Codex harness itself, with its own tools and
+
+### Negative
+
+- A subagent cannot run the Claude Code or Codex harness itself, with its own tools and
   integrations. That work goes to a workspace, where Tau has no deadline, report, or widget.
-- Cost: saved generic tasks can no longer be read, reattached, or cancelled through Tau. Their panes
-  and report files stay until the user removes them.
-- Cost: a profile that sets another `cli:` stops working until the user removes the setting.
+- Saved generic tasks can no longer be read, reattached, or cancelled through Tau. Their panes and
+  report files stay until the user removes them.
+- A profile that sets another `cli:` stops working until the user removes the setting.
 
-## See also
+## Alternatives considered
 
-- [ADR 0052: Drop backwards compatibility by default](./0052-drop-backwards-compatibility-by-default.md)
-- [ADR 0053: Version each saved record format](./0053-version-each-saved-record-format.md)
-- [Vision](../vision.md)
+### Keep the generic workflow
+
+Keep the generic workflow. Rejected because it serves no regular use and keeps doubling every
+lifecycle change.
+
+### Separate tool for non-Pi workers
+
+Move non-Pi workers into a separate tool. Rejected because, although tool descriptions get shorter,
+the controller still carries both lifecycles.

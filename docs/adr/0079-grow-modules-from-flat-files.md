@@ -1,43 +1,37 @@
 # ADR 0079: Grow modules from flat files
 
-- Status: Accepted
-- Date: 2026-10-01
-- Supersedes: the layout, skills location, extension shape, and primitive shape in
-  [ADR 0001](./0001-application-structure.md), the skill location in
-  [ADR 0004](./0004-skill-authoring-style.md), and the `index.ts` rule in
-  [ADR 0002](./0002-file-naming-conventions.md)
+**Date**: 2026-10-01\
+**Status**: Accepted\
+**Supersedes**: the layout, skills location, extension shape, and primitive shape in
+[ADR 0001 (Application structure)](./0001-application-structure.md), the skill location in
+[ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md), and the `index.ts` rule in
+[ADR 0002 (File and directory naming conventions)](./0002-file-naming-conventions.md)\
+**Related**: [ADR 0001 (Application structure)](./0001-application-structure.md),
+[ADR 0002 (File and directory naming conventions)](./0002-file-naming-conventions.md),
+[ADR 0057 (Enforce pure decision modules from a registry)](./0057-enforce-pure-decision-modules-from-a-registry.md)
 
 ## Context
 
-- ADR 0001 gave every module a folder with `index.ts`. 13 of the 24 module folders under `src/` held
-  one source file, so the folder added a path segment and nothing else.
-- Many files named `index.ts` look the same in editor tabs, search results, and stack traces.
-- Pi loads a package folder through its `index.ts`. A folder without one loads every `.ts` file in
-  it, tests included. The package entry must therefore be a named file.
-- Instruction files lived in extension folders, which kept three one-file extensions as folders.
-- ADR 0001 kept skills at the package root for Pi's discovery. Pi reads the skills path from
-  `package.json`, so any folder works.
-- Gremlin's ADR 0004, "Capability modules with an enforced import table", adopted the same
-  flat-first rule.
+ADR 0001 gave every module a folder with `index.ts`. 13 of the 24 module folders under `src/` held
+one source file, so the folder added a path segment and nothing else. Many files named `index.ts`
+look the same in editor tabs, search results, and stack traces.
 
-## Options considered
+Pi loads a package folder through its `index.ts`. A folder without one loads every `.ts` file in it,
+tests included. The package entry must therefore be a named file.
 
-- Keep a folder with `index.ts` for every module. Rejected: most folders hold one file, and the
-  names do not say which module a file belongs to.
-- Keep folders, but name the entry after the folder. Rejected: it fixes the names and keeps the
-  empty folders.
-- Start each module as a flat file and turn it into a folder at its second source file. Chosen: the
-  path shows the module's size, and every file name says what it holds.
-- Keep skills and instruction files at the package root. Rejected: what the package ships would live
-  in several places, and Pi does not require the root.
-- Copy Gremlin's import table. Rejected: Tau's modules are extensions and shared code, and the
-  existing extension boundary rule already sets the direction.
+Instruction files lived in extension folders, which kept three one-file extensions as folders. ADR
+0001 kept skills at the package root for Pi's discovery. Pi reads the skills path from
+`package.json`, so any folder works.
+
+Gremlin's ADR 0004, "Capability modules with an enforced import table", adopted the same flat-first
+rule.
 
 ## Decision
 
 Everything the package ships lives in `src/`. A module is a flat file until it has two production
 source files. Then it becomes a folder whose entry file is named after the folder. `src/` has no
-`index.*` files.
+`index.*` files. Starting each module as a flat file and turning it into a folder at its second
+source file makes the path show the module's size, and every file name says what it holds.
 
 ```text
 tau/
@@ -86,18 +80,39 @@ tau/
   of another module's private files.
 - The extension boundary rule and the shared-module guard cover flat files as well as folders.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - The path shows how large a module is, and each file name says which module it belongs to.
 - Pi loads exactly one file, so a stray test file in a folder cannot become an extension.
 - Everything the package ships sits under one folder, so one path filter covers it.
-- Cost: relative links between skills, instructions, and docs change with the extra folder level.
-- Cost: a module's second file moves its first file, which touches every import of it.
-- Cost: file names repeat their folder, as in `src/extensions/commit/commit.ts`.
-- Cost: other worktrees that change `src/` must rebase over the moves.
 
-## See also
+### Negative
 
-- [ADR 0001: Application structure](./0001-application-structure.md)
-- [ADR 0002: File and directory naming conventions](./0002-file-naming-conventions.md)
-- [ADR 0057: Enforce pure decision modules from a registry](./0057-enforce-pure-decision-modules-from-a-registry.md)
+- Relative links between skills, instructions, and docs change with the extra folder level.
+- A module's second file moves its first file, which touches every import of it.
+- File names repeat their folder, as in `src/extensions/commit/commit.ts`.
+- Other worktrees that change `src/` must rebase over the moves.
+
+## Alternatives considered
+
+### Folder with `index.ts` for every module
+
+Keep a folder with `index.ts` for every module. Rejected because most folders hold one file, and the
+names do not say which module a file belongs to.
+
+### Folders with entries named after the folder
+
+Keep folders, but name the entry after the folder. Rejected because it fixes the names and keeps the
+empty folders.
+
+### Skills and instructions at the package root
+
+Keep skills and instruction files at the package root. Rejected because what the package ships would
+live in several places, and Pi does not require the root.
+
+### Gremlin's import table
+
+Copy Gremlin's import table. Rejected because Tau's modules are extensions and shared code, and the
+existing extension boundary rule already sets the direction.

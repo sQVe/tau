@@ -1,7 +1,7 @@
 # ADR 0075: Plan work as PR-sized slices in Linear
 
-- Status: Accepted
-- Date: 2026-09-30
+**Date**: 2026-09-30\
+**Status**: Accepted
 
 ## Context
 
@@ -11,23 +11,11 @@ plan that fixes every step up front goes stale when earlier work changes the cod
 holds human tickets, so the plan needs a shape there that maps cleanly to branches, PRs, and
 closing.
 
-## Options considered
-
-- Map slices to PRs by size, so one PR may cover several slices. Rejected: it needs extra mapping
-  and closing rules.
-- Add a plan layer of AI tickets between the human ticket and the slices. Rejected: it adds one more
-  state to reconcile with the tickets it describes.
-- Put worker instructions only in the task text, with no agent tickets. Rejected: progress is lost
-  across sessions.
-- Create all agent tickets when the design is split. Rejected: they go stale as earlier slices
-  change the code.
-- Make each slice exactly one PR, with agent tickets created when that slice starts. Chosen: every
-  ticket maps to one branch or one worker task, and each detailed plan meets the current code.
-
 ## Decision
 
 Plan each agreed design as an ordered list of slices, where one slice is exactly one branch and one
-PR against `main`.
+PR against `main`. Agent tickets are created when their slice starts. Every ticket then maps to one
+branch or one worker task, and each detailed plan meets the current code.
 
 ### Lifecycle
 
@@ -64,11 +52,38 @@ PR against `main`.
 - A Done status is not proof. Compare the acceptance checks and the PR state.
 - The container closes by hand once every slice is done.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - The plan survives the session in Linear, and each PR maps to exactly one ticket.
 - Detailed plans stay current, because agent tickets are written just before the work.
 - The user approves at two fixed points: the split and each slice start.
-- Cost: a design split into many slices makes many PRs, each with its own review and check run.
-- Cost: later slices are planned only roughly until they start, so their size can change.
-- Cost: agent tickets live in a second team, so the manager reads two teams to see progress.
+
+### Negative
+
+- A design split into many slices makes many PRs, each with its own review and check run.
+- Later slices are planned only roughly until they start, so their size can change.
+- Agent tickets live in a second team, so the manager reads two teams to see progress.
+
+## Alternatives considered
+
+### Slices mapped to PRs by size
+
+Map slices to PRs by size, so one PR may cover several slices. Rejected because it needs extra
+mapping and closing rules.
+
+### Plan layer of AI tickets
+
+Add a plan layer of AI tickets between the human ticket and the slices. Rejected because it adds one
+more state to reconcile with the tickets it describes.
+
+### Task text only
+
+Put worker instructions only in the task text, with no agent tickets. Rejected because progress is
+lost across sessions.
+
+### All agent tickets at the split
+
+Create all agent tickets when the design is split. Rejected because they go stale as earlier slices
+change the code.

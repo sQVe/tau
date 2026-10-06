@@ -1,27 +1,19 @@
 # ADR 0054: Show one foreground worker per parent
 
-- Status: Accepted
-- Date: 2026-09-27
-- Supersedes: the placement rule in [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
+**Date**: 2026-09-27\
+**Status**: Accepted\
+**Supersedes**: the placement rule in
+[ADR 0043 (Own only the worker guarantees herdr lacks)](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 
 ## Context
 
-- Every launch defaulted to foreground. Foreground workers split the parent tab until panes became
-  too small, and some sessions had up to 6 visible at once.
-- Most reviewer launches used the foreground default, but the parent reads their report, not their
-  pane.
-- Agents pass `foreground` out of habit, in almost half of Pi worker launches. An explicit value
-  does not show that the user asked for a pane.
-- Users ask for one worker pane at a time, usually the editing worker.
+Every launch defaulted to foreground. Foreground workers split the parent tab until panes became too
+small, and some sessions had up to 6 visible at once.
 
-## Options considered
-
-- Keep the parent's choice and document when to use each visibility. Rejected: agents already ignore
-  the existing description, and nothing stops panes from piling up across turns.
-- Let an explicit `foreground` exceed the limit. Rejected: most explicit values are habit, so the
-  limit would rarely apply.
-- Count worker panes in the tab through herdr. Rejected: this also limits several parents sharing
-  one tab, but it adds herdr reads to every placement for a case the logs do not show.
+Most reviewer launches used the foreground default, but the parent reads their report, not their
+pane. Agents pass `foreground` out of habit, in almost half of Pi worker launches. An explicit value
+does not show that the user asked for a pane. Users ask for one worker pane at a time, usually the
+editing worker.
 
 ## Decision
 
@@ -50,14 +42,35 @@ pane. A foreground worker splits beside the parent when that leaves both panes u
 The launch result reports the visibility used. When a foreground request lands in the background, it
 also reports why, so the parent does not tell the user a worker is beside them when it is not.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - The user sees the editing worker and not the reports the parent reads.
 - The parent tab keeps two readable panes instead of several narrow ones.
-- Cost: no request can show two workers beside one parent. The user can close the visible worker
-  first.
-- Cost: several parents in one tab can each show one worker.
-- Cost: a background worker stays in the background after the foreground worker ends. Herdr cannot
-  move a pane between tabs without disturbing the layout.
-- Cost: after the parent reloads, live workers are not counted, so the next foreground launch can
-  add a second visible pane.
+
+### Negative
+
+- No request can show two workers beside one parent. The user can close the visible worker first.
+- Several parents in one tab can each show one worker.
+- A background worker stays in the background after the foreground worker ends. Herdr cannot move a
+  pane between tabs without disturbing the layout.
+- After the parent reloads, live workers are not counted, so the next foreground launch can add a
+  second visible pane.
+
+## Alternatives considered
+
+### Keep the parent's choice
+
+Keep the parent's choice and document when to use each visibility. Rejected because agents already
+ignore the existing description, and nothing stops panes from piling up across turns.
+
+### Let an explicit `foreground` exceed the limit
+
+Let an explicit `foreground` exceed the limit. Rejected because most explicit values are habit, so
+the limit would rarely apply.
+
+### Count worker panes in the tab through herdr
+
+Count worker panes in the tab through herdr. Rejected because, although this also limits several
+parents sharing one tab, it adds herdr reads to every placement for a case the logs do not show.

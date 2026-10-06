@@ -1,7 +1,9 @@
 # ADR 0017: Ask before adding generated files
 
-- Status: Superseded by [ADR 0024](./0024-commit-without-human-approval.md)
-- Date: 2026-09-10
+**Date**: 2026-09-10\
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0024 (Commit without human approval)](./0024-commit-without-human-approval.md)
 
 ## Context
 
@@ -9,20 +11,14 @@ Preparation is a command configured by the repository in `tau.json` that may for
 files. Its output can include files outside the planned commit. A file with no prior edits is not
 necessarily a file the user wants to commit.
 
-## Options considered
-
-- Always stop and require a new commit tool call. Rejected: it is safe, but it interrupts users who
-  can decide immediately.
-- Add generated files automatically. Rejected: this confuses generated output with permission to
-  commit it.
-- Ask before including generated files. Chosen: it keeps the choice explicit without repeating
-  preparation.
-
 ## Decision
 
 Require explicit assignment before checks and review: the user chooses whether preparation-generated
-files belong in the current commit. Commit approval is a separate decision covering all selected
-changes. Assigning files does not approve the commit or waive review.
+files belong in the current commit. Asking before including generated files keeps the choice
+explicit without repeating preparation.
+
+Commit approval is a separate decision covering all selected changes. Assigning files does not
+approve the commit or waive review.
 
 Ask for assignment during interactive calls, where Pi can prompt the user. Never include preexisting
 unrelated edits or files planned for another commit, even if preparation changes them. The commit
@@ -35,8 +31,22 @@ explicit assignment in a new commit tool call.
 
 Keep the separate staging and backup decision in [ADR 0016](./0016-staged-preparation-ownership.md).
 
-## Tradeoffs
+## Consequences
 
-Interactive users make two decisions: which files belong together, then whether to commit them.
-Unattended calls stop when preparation produces unassigned files rather than guessing the user's
-intent.
+### Negative
+
+- Interactive users make two decisions: which files belong together, then whether to commit them.
+- Unattended calls stop when preparation produces unassigned files rather than guessing the user's
+  intent.
+
+## Alternatives considered
+
+### Always stop for a new call
+
+Always stop and require a new commit tool call. Rejected because, although it is safe, it interrupts
+users who can decide immediately.
+
+### Add generated files automatically
+
+Add generated files automatically. Rejected because this confuses generated output with permission
+to commit it.

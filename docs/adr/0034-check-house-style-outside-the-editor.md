@@ -1,8 +1,8 @@
 # ADR 0034: Check house style outside the editor
 
-- Status: Accepted; size limits superseded by
-  [ADR 0035](./0035-use-size-thresholds-as-review-guidance.md)
-- Date: 2026-09-21
+**Date**: 2026-09-21\
+**Status**: Accepted; size limits superseded by
+[ADR 0035 (Use size thresholds as review guidance)](./0035-use-size-thresholds-as-review-guidance.md)
 
 ## Context
 
@@ -13,21 +13,13 @@ violation while typing would crowd out correctness diagnostics.
 Oxlint can now run ESLint-compatible JavaScript plugins, so style rules no longer need a second
 linter. Its plugin interface remains alpha.
 
-## Options considered
-
-- Keep instructions alone. Rejected: it avoids tooling work but cannot enforce the mechanical rules.
-- Enable every rule in the editor. Rejected: it gives immediate feedback but adds unwanted style
-  diagnostics.
-- Add a separate ESLint runner. Rejected: it reuses ESLint rules but duplicates the lint pipeline
-  and configuration.
-- Enable house-style rules only in explicit commands and required checks. Chosen: it keeps the
-  existing runner and separates style enforcement from live diagnostics.
-
 ## Decision
 
 Enforce house style through explicit commands, project checks, and staged-file hooks, not live
-editor diagnostics. This replaces ADR 0008's decision against mechanical layout checks. Its coding
-instructions still cover judgments that lint cannot make, including where logical steps begin.
+editor diagnostics. Enabling house-style rules only in explicit commands and required checks keeps
+the existing runner and separates style enforcement from live diagnostics. This replaces ADR 0008's
+decision against mechanical layout checks. Its coding instructions still cover judgments that lint
+cannot make, including where logical steps begin.
 
 Prefer native Oxlint rules, then compatible plugins, then local rules. Local rules are needed for
 naming because the typescript-eslint naming rule requires parser services this integration lacks.
@@ -40,9 +32,31 @@ Biome use. Test files are exempt from the size limits.
 Keep renames and helper movement manual. Allow narrow, explained suppressions for external contracts
 and callback cycles.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Required checks enforce style without adding live editor diagnostics.
-- Cost: style violations appear only when the developer runs a style command or required check.
-- Cost: plugin compatibility must be tested when updating Vite+ or ESLint Stylistic.
-- Cost: syntax-only rules cannot judge every naming or ordering case.
+
+### Negative
+
+- Style violations appear only when the developer runs a style command or required check.
+- Plugin compatibility must be tested when updating Vite+ or ESLint Stylistic.
+- Syntax-only rules cannot judge every naming or ordering case.
+
+## Alternatives considered
+
+### Instructions alone
+
+Keep instructions alone. Rejected because, although it avoids tooling work, it cannot enforce the
+mechanical rules.
+
+### Every rule in the editor
+
+Enable every rule in the editor. Rejected because, although it gives immediate feedback, it adds
+unwanted style diagnostics.
+
+### Separate ESLint runner
+
+Add a separate ESLint runner. Rejected because, although it reuses ESLint rules, it duplicates the
+lint pipeline and configuration.

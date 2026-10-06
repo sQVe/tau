@@ -1,37 +1,32 @@
 # ADR 0067: Give workers only their profile's tools and skills
 
-- Status: Accepted; bundled tool lists superseded by
-  [ADR 0087](./0087-gather-evidence-with-codemode.md)
-- Date: 2026-09-29
+**Date**: 2026-09-29\
+**Status**: Accepted; bundled tool lists superseded by
+[ADR 0087 (Gather evidence with codemode)](./0087-gather-evidence-with-codemode.md)\
+**Related**: [ADR 0028 (Keep worker control in the parent)](./0028-keep-worker-control-in-the-parent.md),
+[ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
+[ADR 0058 (Run subagents only as Pi workers)](./0058-run-subagents-only-as-pi-workers.md),
+[ADR 0069 (Load each Pi package where its tools are used)](./0069-load-each-pi-package-where-its-tools-are-used.md)
 
 ## Context
 
-- A worker loads the parent's whole Pi configuration, so it kept every extension tool and listed
-  every skill. The tool schemas and the skill list are sent again on every turn.
-- In one measured bundled worker, tools and the skill list took over half of a 66k-character first
-  request.
-- Saved worker sessions show that workers use few of those tools and skills. Only scouts used the
-  web tools often.
-- Every extension must still load. The worker refuses to start without CC Safety Net from Tau's
-  bundled file, [ADR 0028](./0028-keep-worker-control-in-the-parent.md) rejects restricted extension
-  loadouts, and reloading extensions once left the Claude bridge provider unregistered.
-- Activating tools after startup does not hold. Some extensions, such as the questionnaire, activate
-  their tool again before every prompt.
+A worker loads the parent's whole Pi configuration, so it kept every extension tool and listed every
+skill. The tool schemas and the skill list are sent again on every turn. In one measured bundled
+worker, tools and the skill list took over half of a 66k-character first request. Saved worker
+sessions show that workers use few of those tools and skills. Only scouts used the web tools often.
 
-## Options considered
+Every extension must still load. The worker refuses to start without CC Safety Net from Tau's
+bundled file, [ADR 0028](./0028-keep-worker-control-in-the-parent.md) rejects restricted extension
+loadouts, and reloading extensions once left the Claude bridge provider unregistered.
 
-- Keep every tool and skill. Rejected: this costs about 9k tokens per worker turn for tools and
-  skills that workers do not use.
-- Restrict which extensions load, as Pi Herdsman does with `noExtensions`. Rejected: every extension
-  must still load, as Context explains.
-- Set the active tools after startup only. Rejected: any extension can activate its tool again, as
-  the questionnaire does.
-- Launch the worker with Pi's `--tools` allowlist and `--no-skills`, and check the allowlist after
-  the Safety Net check. Chosen: every extension still loads, but Pi registers only the listed tools.
+Activating tools after startup does not hold. Some extensions, such as the questionnaire, activate
+their tool again before every prompt.
 
 ## Decision
 
-Each worker gets only the tools and skills its profile names.
+Each worker gets only the tools and skills its profile names. It launches with Pi's `--tools`
+allowlist and `--no-skills`, and checks the allowlist after the Safety Net check. Every extension
+still loads, but Pi registers only the listed tools.
 
 ### Tools
 
@@ -72,17 +67,32 @@ The investigation profiles get `write` because their instructions save long deta
 Task record format 4 saves the tool allowlist and the skill paths in the loadout. A follow-up of a
 task saved in format 1 or 3 gets its role's default tools and no skills.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - The measured fixed prompt of a bundled worker drops from 66k characters to 24k to 34k.
 - A tool that disappears from the configuration stops the worker at startup with its name.
-- Cost: a worker that needs another tool or skill needs a profile that lists it.
-- Cost: `agent_browser_tools` cannot enable advanced browser tools unless the profile lists them.
-- Cost: a skill path saved at launch must still exist when the task is followed up.
 
-## See also
+### Negative
 
-- [ADR 0028: Keep worker control in the parent](./0028-keep-worker-control-in-the-parent.md)
-- [ADR 0053: Version each saved record format](./0053-version-each-saved-record-format.md)
-- [ADR 0058: Run subagents only as Pi workers](./0058-run-subagents-only-as-pi-workers.md)
-- [ADR 0069: Load each Pi package where its tools are used](./0069-load-each-pi-package-where-its-tools-are-used.md)
+- A worker that needs another tool or skill needs a profile that lists it.
+- `agent_browser_tools` cannot enable advanced browser tools unless the profile lists them.
+- A skill path saved at launch must still exist when the task is followed up.
+
+## Alternatives considered
+
+### Keep every tool and skill
+
+Keep every tool and skill. Rejected because this costs about 9k tokens per worker turn for tools and
+skills that workers do not use.
+
+### Restrict which extensions load
+
+Restrict which extensions load, as Pi Herdsman does with `noExtensions`. Rejected because every
+extension must still load, as Context explains.
+
+### Set active tools after startup
+
+Set the active tools after startup only. Rejected because any extension can activate its tool again,
+as the questionnaire does.

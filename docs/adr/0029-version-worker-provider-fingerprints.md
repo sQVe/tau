@@ -1,7 +1,11 @@
 # ADR 0029: Version worker provider fingerprints
 
-- Status: Superseded by [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
-- Date: 2026-09-16
+**Date**: 2026-09-16\
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0043 (Own only the worker guarantees herdr lacks)](./0043-own-only-the-worker-guarantees-herdr-lacks.md)\
+**Related**:
+[ADR 0028 (Keep worker control in the parent)](./0028-keep-worker-control-in-the-parent.md)
 
 ## Context
 
@@ -9,20 +13,12 @@ Pi resolves and refreshes provider credentials. Including the resolved API key i
 fingerprint makes ordinary token rotation look like a configuration change. Other resolved auth
 fields can select an endpoint, account header, region, or proxy.
 
-## Options considered
-
-- Keep credential-sensitive fingerprints for every task. Rejected: this preserves existing behavior
-  but refuses otherwise unchanged settings after token rotation.
-- Exclude all resolved auth. Rejected: this could silently accept changed routing or provider
-  settings.
-- Version the fingerprints and exclude only the resolved API-key field for new records. Chosen: this
-  allows narrow credential rotation without reinterpreting existing hashes.
-
 ## Decision
 
-Use explicit fingerprint versions. New records exclude only the resolved `auth.apiKey` field.
-Missing versions retain the original credential-sensitive semantics. Never migrate a fingerprint by
-guessing what its hash included.
+Use explicit fingerprint versions. New records exclude only the resolved `auth.apiKey` field. This
+allows narrow credential rotation without reinterpreting existing hashes. Missing versions retain
+the original credential-sensitive semantics. Never migrate a fingerprint by guessing what its hash
+included.
 
 Keep configuration, resolved headers, endpoint, environment, model, and integration checks. Check
 provider callback identity against a reconstruction in the parent process. Pi owns refresh; Tau must
@@ -41,16 +37,28 @@ literal configuration; public APIs cannot distinguish them, so refuse both witho
 At worker startup, reconstruct Pi settings using the runtime's public provider declarations. Do not
 run extension factories again inside an active worker; doing so can change extension state.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - API-key-field rotation between resolution and startup can preserve saved settings for new records.
-- Cost: rotation during validation or runtime-only credentials can fail the strict current
-  comparison.
-- Cost: legacy credential changes and header-only credential rotation still refuse replay.
-- Cost: any `models.json` edit, including unrelated providers or formatting, requires a fresh task.
-- Cost: generic auth APIs do not establish that a rotated credential belongs to the same account.
-- Cost: entry-file fingerprints do not freeze dependency graphs or all current Pi resource settings.
 
-## See also
+### Negative
 
-- [ADR 0028: Keep worker control in the parent](./0028-keep-worker-control-in-the-parent.md)
+- Rotation during validation or runtime-only credentials can fail the strict current comparison.
+- Legacy credential changes and header-only credential rotation still refuse replay.
+- Any `models.json` edit, including unrelated providers or formatting, requires a fresh task.
+- Generic auth APIs do not establish that a rotated credential belongs to the same account.
+- Entry-file fingerprints do not freeze dependency graphs or all current Pi resource settings.
+
+## Alternatives considered
+
+### Credential-sensitive fingerprints for every task
+
+Keep credential-sensitive fingerprints for every task. Rejected because, although this preserves
+existing behavior, it refuses otherwise unchanged settings after token rotation.
+
+### Exclude all resolved auth
+
+Exclude all resolved auth. Rejected because this could silently accept changed routing or provider
+settings.

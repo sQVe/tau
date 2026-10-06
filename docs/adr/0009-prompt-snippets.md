@@ -1,31 +1,32 @@
 # ADR 0009: Prompt snippets
 
-- Status: Accepted; toggling, the `placement` field, and reading snippets before each send
-  superseded by [ADR 0080](./0080-insert-prompt-snippets-through-autocomplete.md), and the `order`
-  field by [ADR 0081](./0081-sort-prompt-snippets-by-id.md)
-- Date: 2026-09-09
+**Date**: 2026-09-09\
+**Status**: Accepted; toggling, the `placement` field, and reading snippets before each send
+superseded by
+[ADR 0080 (Insert prompt snippets through autocomplete)](./0080-insert-prompt-snippets-through-autocomplete.md),
+and the `order` field by
+[ADR 0081 (Sort prompt snippets by id)](./0081-sort-prompt-snippets-by-id.md)\
+**Related**: [ADR 0001 (Application structure)](./0001-application-structure.md),
+[ADR 0007 (Vim keys in interactive components)](./0007-vim-keys-in-interactive-components.md),
+[ADR 0013 (Snippet placement)](./0013-snippet-placement.md),
+[ADR 0080 (Insert prompt snippets through autocomplete)](./0080-insert-prompt-snippets-through-autocomplete.md),
+[ADR 0081 (Sort prompt snippets by id)](./0081-sort-prompt-snippets-by-id.md)
 
 ## Context
 
-- Some instructions apply to one message only, such as asking for a review instead of a change.
-- Skills provide procedures. The model can load them, and users can invoke them with `/skill:name`.
-  Snippets instead add short instructions to one message.
-- Instructions added to the system prompt apply to every run and cannot be turned off for one
-  message.
-- Users need a way to write these short instructions themselves, without changing Tau's code.
+Some instructions apply to one message only, such as asking for a review instead of a change.
 
-## Options considered
+Skills provide procedures. The model can load them, and users can invoke them with `/skill:name`.
+Snippets instead add short instructions to one message. Instructions added to the system prompt
+apply to every run and cannot be turned off for one message.
 
-- Use skills. Rejected: users can invoke them explicitly, but a procedure is more than a short
-  instruction added to a message.
-- Let users paste the text each time. Rejected: it needs no code, but the wording drifts and long
-  instructions are tiring to retype.
-- Store the instructions as files and let the user toggle them per message. Chosen: it keeps the
-  wording stable and gives the user control over each send.
+Users need a way to write these short instructions themselves, without changing Tau's code.
 
 ## Decision
 
-Tau reads prompt snippets from markdown files and adds the active ones to the next message.
+Tau reads prompt snippets from markdown files and adds the active ones to the next message. Storing
+the instructions as files and letting the user toggle them per message keeps the wording stable and
+gives the user control over each send.
 
 ### Snippet files
 
@@ -52,17 +53,26 @@ Toggles turn off after snippets are applied to a message and when the user start
 forks a session. Slash commands and failed snippet loading leave the toggles on for the next
 ordinary message.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - The user decides which instruction applies to which message.
 - Snippet wording stays stable and is edited as ordinary markdown.
-- Cost: snippets ship inside Tau, so a user's own snippet is a change to the repository.
-- Cost: the menu requires the terminal UI. It is unavailable in RPC and print mode.
 
-## See also
+### Negative
 
-- [ADR-0001: Application structure](./0001-application-structure.md)
-- [ADR-0007: Vim keys in interactive components](./0007-vim-keys-in-interactive-components.md)
-- [ADR-0013: Snippet placement](./0013-snippet-placement.md)
-- [ADR 0080: Insert prompt snippets through autocomplete](./0080-insert-prompt-snippets-through-autocomplete.md)
-- [ADR 0081: Sort prompt snippets by id](./0081-sort-prompt-snippets-by-id.md)
+- Snippets ship inside Tau, so a user's own snippet is a change to the repository.
+- The menu requires the terminal UI. It is unavailable in RPC and print mode.
+
+## Alternatives considered
+
+### Skills
+
+Use skills. Rejected because, although users can invoke them explicitly, a procedure is more than a
+short instruction added to a message.
+
+### Paste the text each time
+
+Let users paste the text each time. Rejected because, although it needs no code, the wording drifts
+and long instructions are tiring to retype.

@@ -1,38 +1,55 @@
 # ADR NNNN: Short title naming the choice
 
-- Status: Accepted
-- Date: YYYY-MM-DD
+**Date**: YYYY-MM-DD\
+**Status**: Accepted
 
-<!-- Draft only after identifying a choice, its lasting reason, and a credible alternative.
-Merging the PR is the approval, so a new ADR is Accepted. Use Superseded or Rejected when
-applicable. Preserve historical reasoning when superseding a decision and link to its replacement. -->
+<!-- Draft only after you can name a choice, the lasting reason for it, and a credible
+alternative. Merging the PR is the approval, so a new ADR is Accepted. Use Superseded or Rejected
+when they apply. When a later ADR replaces this one, keep its reasoning, change the status, and add
+a Superseded by line. When it replaces only part, keep the status and name the part, as in
+`Accepted; <part> superseded by [ADR NNNN (Title)](./NNNN-file-name.md)`. Put optional lines
+after Status in this order: Superseded by, Supersedes, Extends, Extended by, Related. A short
+note may follow a link on its line. End every metadata line with a backslash except the last,
+so Markdown keeps the line breaks:
+
+**Date**: YYYY-MM-DD\
+**Status**: Superseded\
+**Superseded by**: [ADR NNNN (Title)](./NNNN-file-name.md)\
+**Related**: [ADR NNNN (Title)](./NNNN-file-name.md), [Source](https://example.com) -->
 
 ## Context
 
-State the problem, the constraints, and what forced a choice, in 2 to 6 short sentences or a short
-list. Leave out the investigation story, the step-by-step history of the old mechanism, ticket IDs,
-and implementation mechanics. Leave out measurements the decision does not rest on; summarize one
-that it does rest on in one sentence. Leave out prices and exact version or byte counts that go
-stale.
-
-## Options considered
-
-Name the credible alternatives in one or two sentences each. Start the reason with `Chosen:`,
-`Rejected:`, or `Deferred:`. Include keeping the current approach when viable. Do not invent options
-to fill this section.
+<!-- State the problem, the constraints, and what forced a choice, in short paragraphs. Keep the
+"because" links between facts, so a reader sees why each one matters. Leave out the investigation
+story, the history of the old mechanism, ticket IDs, and implementation steps. Leave out
+measurements the decision does not rest on, and summarize one it does rest on in one sentence.
+Leave out prices and exact versions or byte counts that go stale. -->
 
 ## Decision
 
-State the choice first. Then add the rules it establishes, grouped under `###` headings when there
-are several. Include a detail only when changing it would change the decision or its rationale.
+<!-- Start with one sentence that states the choice. Then give the reasons in prose. When the
+decision sets several groups of rules, give each group a ### heading, and use bullets only for
+parallel rules under such a heading. Include a detail only when changing it would change the
+decision or its reasons. -->
 
-## Tradeoffs
+## Consequences
 
-State what this choice gains and what costs or limits we accept, in one list. Write benefits as
-plain bullets and prefix each cost or limit with `Cost:`. Include consequences of the choice, not a
-checklist for implementing it.
+### Positive
 
-## See also
+<!-- What this choice gains, one bullet each. -->
 
-<!-- Optional. Link to related decisions or sources that informed the choice. If superseded, link to
-the replacement. Omit this section when there are no useful links. -->
+### Negative
+
+<!-- The costs and limits we accept, one bullet each. Describe consequences of the choice, not
+steps to implement it. -->
+
+## Alternatives considered
+
+<!-- One ### heading per credible alternative. Under it, write one short paragraph that says what
+the alternative is and why we did not choose it, starting the reason with "Rejected because" or
+"Deferred because". Include keeping the current approach when it was viable. Do not invent
+alternatives to fill this section. -->
+
+### Name of the alternative
+
+What it is, in one or two sentences. Rejected because ...
