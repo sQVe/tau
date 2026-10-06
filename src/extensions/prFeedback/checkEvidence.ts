@@ -167,7 +167,18 @@ const boundedExcerpt = (log: string, characterLimit: number): LogExcerpt => {
 
 const serializedSize = (result: PullRequestChecks) => JSON.stringify(result, null, 2).length;
 
-export const boundChecks = (full: PullRequestChecks, command: string): PullRequestChecks => {
+const checksRecoveryCommand = (repository: Repository, head: string) => {
+  const command = `gh api --hostname ${repository.host}`;
+  const commitPath = `repos/${repository.owner}/${repository.name}/commits/${head}`;
+
+  return `${command} ${commitPath}/check-runs --paginate && ${command} ${commitPath}/status --paginate`;
+};
+
+export const boundChecks = (
+  full: PullRequestChecks,
+  repository: Repository,
+  head: string,
+): PullRequestChecks => {
   if (serializedSize(full) <= resultCharacterLimit) {
     return full;
   }
@@ -175,6 +186,7 @@ export const boundChecks = (full: PullRequestChecks, command: string): PullReque
   const hasChecks = full.checks.length > 0;
   const list = hasChecks ? 'checks' : 'gaps';
   const total = hasChecks ? full.checks.length : full.gaps.length;
+  const command = checksRecoveryCommand(repository, head);
 
   const gap: CheckListGap = {
     kind: 'truncatedList',

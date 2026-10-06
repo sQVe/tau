@@ -67,8 +67,11 @@ see for themselves.
      gaps: every gap from `read` and `checks`, and the error of a call that failed or did not run.
      The script never calls `post`, and writes nothing beyond the directory `read` creates.
    - When gaps show omitted feedback, use the read tool on the returned `feedback.json` path before
-     judging it. Read further ranges when the read tool cuts the file. When a log has
-     `budgetLimited`, use its `command` to read omitted evidence as needed.
+     judging it. Saved comment and review bodies are arrays of chunks. Join each body's chunks with
+     no separator to restore its text. Read further ranges when the read tool cuts the file. When a
+     log has `budgetLimited`, use its `command` to read omitted evidence as needed. For omitted
+     checks, run the gap's command to read check-runs and commit statuses at the validated head, not
+     the PR's current head.
    - Use only the script's evidence and the full evidence read through its returned paths or
      commands. Cite only what you read. Do not wait for pending checks.
    - When `read` failed, stop and report its error. A thread too long to read is such a failure.

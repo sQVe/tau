@@ -106,7 +106,8 @@ describe('checks', () => {
           list: 'checks',
           kept: result.checks.length,
           total: 20,
-          command: checksCommand,
+          command:
+            'gh api --hostname github.com repos/sQVe/tau/commits/abc123/check-runs --paginate && gh api --hostname github.com repos/sQVe/tau/commits/abc123/status --paginate',
         }),
       );
 
@@ -494,6 +495,26 @@ describe('checks killed commands', () => {
 });
 
 describe('checks head', () => {
+  it('pins omitted checks and statuses to the validated head and host', async () => {
+    const { fake, readChecks } = await setUp();
+    const head = 'a'.repeat(40);
+    const host = 'ghe.example.com';
+
+    fake.pullRequest = { number: 7, state: 'OPEN', author: 'sqve', headRefOid: head };
+    fake.checks = [check({ name: 'huge', workflow: 'x'.repeat(40_000) })];
+
+    const result = await readChecks({ repository: `${host}/sQVe/tau`, head });
+
+    expect(result.gaps).toContainEqual(
+      expect.objectContaining({
+        kind: 'truncatedList',
+        command: `gh api --hostname ${host} repos/sQVe/tau/commits/${head}/check-runs --paginate && gh api --hostname ${host} repos/sQVe/tau/commits/${head}/status --paginate`,
+      }),
+    );
+
+    expect(JSON.stringify(result, null, 2).length).toBeLessThanOrEqual(40_000);
+  });
+
   it.each([
     { name: 'before', nextHeads: ['def456'] },
     { name: 'during', nextHeads: ['abc123', 'def456'] },

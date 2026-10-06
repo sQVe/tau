@@ -67,7 +67,7 @@ const readCheckList = async (runtime: Runtime, repository: Repository, pr: numbe
 
   const result = await runGh(runtime, commandArguments);
 
-  return { evidence: checkListEvidence(result, validateCheckList), command: result.command };
+  return checkListEvidence(result, validateCheckList);
 };
 
 const readFailedLog = async (
@@ -137,12 +137,12 @@ export const readChecks = async (
 
   await requireHead(runtime, repository, pr, head);
 
-  const { evidence: list, command } = await readCheckList(runtime, repository, pr);
+  const list = await readCheckList(runtime, repository, pr);
 
   await requireHead(runtime, repository, pr, head);
 
   if ('gap' in list) {
-    return boundChecks({ pr, checks: [], gaps: [list.gap] }, command);
+    return boundChecks({ pr, checks: [], gaps: [list.gap] }, repository, head);
   }
 
   const checks: Check[] = [];
@@ -158,5 +158,5 @@ export const readChecks = async (
 
   const gaps = checks.flatMap((check) => (check.gap === undefined ? [] : [check.gap]));
 
-  return boundChecks({ pr, checks, gaps }, command);
+  return boundChecks({ pr, checks, gaps }, repository, head);
 };

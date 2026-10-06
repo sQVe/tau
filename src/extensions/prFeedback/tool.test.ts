@@ -174,6 +174,50 @@ describe('read', () => {
     expect(await feedbackDirectories(root)).toHaveLength(1);
   });
 
+  it.each([
+    { name: 'plain text', body: 'a'.repeat(65_536) },
+    { name: 'escaped text', body: '\u0000'.repeat(65_536) },
+    {
+      name: 'a split surrogate pair',
+      body: `${'a'.repeat(3999)}\uD83D\uDE00${'b'.repeat(61_535)}`,
+    },
+  ])('saves readable chunks of $name without losing body text', async ({ body }) => {
+    const { fake, read } = await setUp();
+
+    fake.threads = [thread({ id: 'long', comments: [{ id: 101, author: person, body }] })];
+    fake.reviews = [{ id: 201, author: person, state: 'COMMENTED', body }];
+    fake.comments = [{ id: 301, author: person, body }];
+
+    const result = await read();
+    const text = await readFile(String(result.feedback), 'utf8');
+
+    const saved = JSON.parse(text) as {
+      comments: { body: string[] }[];
+      reviews: { body: string[] }[];
+      threads: { comments: { body: string[] }[] }[];
+    };
+
+    const bodies = [
+      ...saved.comments.map((comment) => comment.body),
+      ...saved.reviews.map((review) => review.body),
+      ...saved.threads.flatMap((item) => item.comments.map((comment) => comment.body)),
+    ];
+
+    expect(Math.max(...text.split('\n').map((line) => Buffer.byteLength(line)))).toBeLessThan(
+      50 * 1024,
+    );
+
+    expect(bodies.every((chunks) => Array.isArray(chunks))).toBe(true);
+    expect(bodies.map((chunks) => chunks.join(''))).toEqual([body, body, body]);
+    expect(bodies.flat().every((chunk) => chunk.length <= 4000)).toBe(true);
+
+    expect(result.threads).toEqual([
+      expect.objectContaining({
+        comments: [expect.objectContaining({ body: body.slice(0, 4000) })],
+      }),
+    ]);
+  });
+
   it('saves full feedback and returns bounded bodies and lists with gaps', async () => {
     const { fake, read } = await setUp();
     const body = 'a'.repeat(12_000);
@@ -191,18 +235,18 @@ describe('read', () => {
 
     const saved = JSON.parse(await readFile(String(result.feedback), 'utf8')) as {
       stateToken: string;
-      comments: { body: string }[];
-      threads: { comments: { body: string }[] }[];
-      reviews: { body: string }[];
+      comments: { body: string[] }[];
+      threads: { comments: { body: string[] }[] }[];
+      reviews: { body: string[] }[];
     };
 
     expect(result.feedback).toBe(join(result.directory, 'feedback.json'));
     expect(JSON.stringify(result, null, 2).length).toBeLessThanOrEqual(40_000);
     expect(saved.stateToken).toBe(result.stateToken);
     expect(saved.comments).toHaveLength(30);
-    expect(saved.comments[29]?.body).toBe(body);
-    expect(saved.threads[0]?.comments[0]?.body).toBe(body);
-    expect(saved.reviews[0]?.body).toBe(body);
+    expect(saved.comments[29]?.body.join('')).toBe(body);
+    expect(saved.threads[0]?.comments[0]?.body.join('')).toBe(body);
+    expect(saved.reviews[0]?.body.join('')).toBe(body);
 
     expect(result.gaps).toEqual(
       expect.arrayContaining([

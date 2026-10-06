@@ -26,8 +26,37 @@ interface BoundedFeedback extends PullRequestFeedback {
   gaps: FeedbackGap[];
 }
 
+type ChunkedBody<T> = Omit<T, 'body'> & { body: string[] };
+
+interface SavedFeedback extends Omit<PullRequestFeedback, FeedbackList> {
+  threads: (Omit<Thread, 'comments'> & { comments: ChunkedBody<Thread['comments'][number]>[] })[];
+  reviews: ChunkedBody<Review>[];
+  comments: ChunkedBody<Comment>[];
+}
+
 const bodyCharacterLimit = 4000;
 const resultCharacterLimit = 40_000;
+
+const chunkBody = <T extends { body: string }>(item: T) => {
+  const { body, ...metadata } = item;
+  const chunks: string[] = [];
+
+  for (let index = 0; index < body.length; index += bodyCharacterLimit) {
+    chunks.push(body.slice(index, index + bodyCharacterLimit));
+  }
+
+  return { ...metadata, body: chunks };
+};
+
+export const chunkFeedbackBodies = (full: PullRequestFeedback): SavedFeedback => ({
+  ...full,
+  threads: full.threads.map((thread) => ({
+    ...thread,
+    comments: thread.comments.map(chunkBody),
+  })),
+  reviews: full.reviews.map(chunkBody),
+  comments: full.comments.map(chunkBody),
+});
 
 const boundBody = <T extends Comment>(item: T, list: FeedbackList, gaps: FeedbackGap[]): T => {
   if (item.body.length <= bodyCharacterLimit) {

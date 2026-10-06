@@ -23,6 +23,9 @@ const listCommand =
 
 const logCommand = 'gh run view 11 --repo github.com/sQVe/tau --job 21 --log-failed';
 
+const recoveryCommand =
+  'gh api --hostname github.com repos/sQVe/tau/commits/abc123/check-runs --paginate && gh api --hostname github.com repos/sQVe/tau/commits/abc123/status --paginate';
+
 const failingCheck: CheckItem = {
   name: 'test',
   workflow: 'CI',
@@ -77,7 +80,7 @@ it.each([
     full: { pr: 7, checks: [], gaps: [{ ...failureGap, check: null }] },
   },
 ])('keeps $name intact', ({ full }) => {
-  expect(boundChecks(full, listCommand)).toEqual(full);
+  expect(boundChecks(full, repository, 'abc123')).toEqual(full);
 });
 
 it.each([
@@ -117,7 +120,7 @@ it.each([
   },
 ])('bounds $name including its recovery gap', ({ full, kept, total, list }) => {
   const original = structuredClone(full);
-  const bounded = boundChecks(full, listCommand);
+  const bounded = boundChecks(full, repository, 'abc123');
 
   expect(JSON.stringify(bounded, null, 2).length).toBeLessThanOrEqual(40_000);
   expect(bounded.checks).toEqual(full.checks.slice(0, kept));
@@ -128,7 +131,7 @@ it.each([
       list,
       kept,
       total,
-      command: listCommand,
+      command: recoveryCommand,
     }),
   );
 
@@ -143,7 +146,9 @@ it('refuses an oversized recovery command without changing the evidence', () => 
   const full = fullChecks([{ ...failingCheck, workflow: 'x'.repeat(40_000) }]);
   const original = structuredClone(full);
 
-  expect(() => boundChecks(full, 'x'.repeat(40_000))).toThrow('recovery command');
+  const oversizedRepository = { ...repository, host: 'x'.repeat(40_000) };
+
+  expect(() => boundChecks(full, oversizedRepository, 'abc123')).toThrow('recovery command');
   expect(full).toEqual(original);
 });
 

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { boundFeedback } from './feedbackBounds.js';
+import { boundFeedback, chunkFeedbackBodies } from './feedbackBounds.js';
 import type { PullRequestFeedback } from './read.js';
 import type { Comment, Review, Thread } from './threads.js';
 
@@ -45,6 +45,34 @@ const feedback = (overrides: Partial<PullRequestFeedback> = {}): PullRequestFeed
 });
 
 const paths = { directory: '/round', feedback: '/round/feedback.json' };
+
+it.each([
+  { name: 'an empty body', body: '', count: 0 },
+  { name: 'a short body', body: 'body', count: 1 },
+  { name: 'a body at the chunk limit', body: 'a'.repeat(4000), count: 1 },
+  { name: 'a body past the chunk limit', body: 'a'.repeat(4001), count: 2 },
+])('chunks $name for storage without changing the source', ({ body, count }) => {
+  const full = feedback({
+    threads: [thread('one', [body])],
+    reviews: [review(201, body)],
+    comments: [comment(301, body)],
+  });
+
+  const original = structuredClone(full);
+  const saved = chunkFeedbackBodies(full);
+
+  const bodies = [
+    ...saved.comments.map((item) => item.body),
+    ...saved.reviews.map((item) => item.body),
+    ...saved.threads.flatMap((item) => item.comments.map((entry) => entry.body)),
+  ];
+
+  expect(bodies.map((chunks) => chunks.length)).toEqual([count, count, count]);
+  expect(bodies.map((chunks) => chunks.join(''))).toEqual([body, body, body]);
+  expect(bodies.flat().every((chunk) => chunk.length <= 4000)).toBe(true);
+  expect(saved.stateToken).toBe(full.stateToken);
+  expect(full).toEqual(original);
+});
 
 it.each([
   { name: 'empty feedback', full: feedback(), gaps: [] },
