@@ -11,6 +11,7 @@ const facts = (saved: Partial<IncompleteReportFacts> = {}): IncompleteReportFact
   remaining: hour,
   window: hour,
   refusedBefore: false,
+  onlyParentCanClear: false,
   ...saved,
 });
 
@@ -44,6 +45,11 @@ it.each([
   { facts: facts({ window: fourMinutes, remaining: 300_000 }), step: 'refuseFirst' },
   { facts: facts({ window: fourMinutes, remaining: 299_999 }), step: 'accept' },
   { facts: facts({ window: fourMinutes, remaining: 207_000 }), step: 'accept' },
+  // A blocker only the parent or user can clear is accepted at once; a time blocker keeps its rule.
+  { facts: facts({ onlyParentCanClear: true }), step: 'accept' },
+  { facts: facts({ blockerKind: 'decision', onlyParentCanClear: true }), step: 'accept' },
+  { facts: facts({ blockerKind: 'limit', onlyParentCanClear: true }), step: 'accept' },
+  { facts: facts({ blockerKind: 'time', onlyParentCanClear: true }), step: 'refuseTime' },
 ] as const)(
   'decides $step for $facts.blockerKind with $facts.remaining ms left %#',
   ({ facts: saved, step }) => {

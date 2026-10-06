@@ -103,6 +103,12 @@ const reportParameters = Type.Object({
         'Required for incomplete. time: the deadline is nearly reached; dependency: an external dependency; decision: a parent decision; limit: another exhausted limit.',
     }),
   ),
+  onlyParentCanClear: Type.Optional(
+    Type.Boolean({
+      description:
+        'For incomplete: true when only the parent or user can clear the blocker, such as a server you may not restart or an expired login. Such a report is accepted on the first call.',
+    }),
+  ),
 });
 
 type ReportInput = Static<typeof reportParameters>;
@@ -404,7 +410,11 @@ const remainingWork = (state: WorkerExtensionState, task: Task): number =>
 const refuseEarlyIncomplete = (
   state: WorkerExtensionState,
   task: Task,
-  { blocker, blockerKind }: Pick<ReportInput, 'blocker' | 'blockerKind'>,
+  {
+    blocker,
+    blockerKind,
+    onlyParentCanClear = false,
+  }: Pick<ReportInput, 'blocker' | 'blockerKind' | 'onlyParentCanClear'>,
 ) => {
   if (blocker === undefined || blocker.trim() === '' || blockerKind === undefined) {
     state.remindAfterRefusal = true;
@@ -420,6 +430,7 @@ const refuseEarlyIncomplete = (
     remaining,
     window: task.deadline - task.createdAt,
     refusedBefore: state.incompleteRefused,
+    onlyParentCanClear,
   });
 
   if (step === 'accept') {
@@ -436,7 +447,7 @@ const refuseEarlyIncomplete = (
   state.incompleteRefused = true;
   state.remindAfterRefusal = true;
   throw new Error(
-    `Report refused: ${Math.floor(remaining / millisecondsPerMinute)} minutes remain. Finish the remaining assigned work. Report incomplete only when a concrete blocker stops you.`,
+    `Report refused: ${Math.floor(remaining / millisecondsPerMinute)} minutes remain. Finish the remaining assigned work. Report incomplete only when a concrete blocker stops you. Set onlyParentCanClear when only the parent or user can clear it.`,
   );
 };
 
@@ -473,7 +484,13 @@ const reportToParent = (
   }
 
   const task = state.task;
-  const { blocker, blockerKind: _blockerKind, ...handover } = parameters;
+
+  const {
+    blocker,
+    blockerKind: _blockerKind,
+    onlyParentCanClear: _onlyParentCanClear,
+    ...handover
+  } = parameters;
 
   // Check what will be saved: a blocker can push the last section past the size limit.
   const summary = withBlocker(

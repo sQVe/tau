@@ -9,6 +9,8 @@ export interface IncompleteReportFacts {
   window: number;
   // An earlier non-time blocker was refused.
   refusedBefore: boolean;
+  // The worker says only the parent or user can clear the blocker.
+  onlyParentCanClear: boolean;
 }
 
 export type IncompleteReportStep = 'accept' | 'refuseTime' | 'refuseFirst';
@@ -26,7 +28,7 @@ const earlyBlockerReserve = 300_000;
 
 // Refuse once so an early handback costs a named blocker, but never so late that the report is lost.
 export const decideIncompleteReport = (facts: IncompleteReportFacts): IncompleteReportStep => {
-  const { blockerKind, remaining, window, refusedBefore } = facts;
+  const { blockerKind, remaining, window, refusedBefore, onlyParentCanClear } = facts;
 
   // A time blocker is true only in the last tenth of the work window or its reserve, however often
   // it is repeated.
@@ -36,7 +38,12 @@ export const decideIncompleteReport = (facts: IncompleteReportFacts): Incomplete
       : 'refuseTime';
   }
 
-  if (refusedBefore || remaining < Math.max(earlyBlockerShare * window, earlyBlockerReserve)) {
+  // Refusing a blocker the worker cannot clear only costs another report call.
+  if (onlyParentCanClear || refusedBefore) {
+    return 'accept';
+  }
+
+  if (remaining < Math.max(earlyBlockerShare * window, earlyBlockerReserve)) {
     return 'accept';
   }
 
