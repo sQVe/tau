@@ -3,7 +3,7 @@ name: browser
 description: Does delegated browser work, such as lookups, forms, page checks, and screenshots.
 role: investigation
 tools: read, bash, write, agent_browser, agent_browser_code
-packages: npm:pi-agent-browser-native
+packages: npm:pi-agent-browser-native@0.9.3
 instruction-sets: writing, workflow, browser
 ---
 

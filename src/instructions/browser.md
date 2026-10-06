@@ -14,4 +14,9 @@ the user's agent Chrome profile, so it starts with the logins saved there.
 - On a login wall, sign in only with credentials the task gives you, such as a test account.
   Otherwise, stop and ask the parent. A login inside the agent browser never reaches the Chrome
   profile it copied, so other and later workers do not get it.
+- After `eval`, `back`, `forward`, `reload`, `state load`, or a tab switch, run `get url` next.
+  These commands leave the page unverified, and the tool blocks most commands, such as `snapshot`
+  and `click`, until `get url` or `open` runs. When a call fails with "The active page became
+  unverified", run `get url` and retry the same call. In a `batch`, use `--bail` and put `get url`
+  right after the command that changed the page.
 - Finish with the `close` command. Do not close a headed window by hand.

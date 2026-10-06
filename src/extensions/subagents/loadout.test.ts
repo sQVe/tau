@@ -825,7 +825,7 @@ it('saves the profile packages, or none without the setting', async ({ onTestFin
   ).toEqual(['npm:pi-codex-image-gen@1.2.3', './probe']);
 
   expect(parseSettings('').packages).toEqual([]);
-  expect(resolve('qa').packages).toEqual(['npm:pi-agent-browser-native']);
+  expect(resolve('qa').packages).toEqual(['npm:pi-agent-browser-native@0.9.3']);
   expect(resolve('worker').packages).toEqual([]);
 });
 

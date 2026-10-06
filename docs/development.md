@@ -136,9 +136,10 @@ package name when an install fails. An unpinned npm package stays at the version
 cached, so pin a version to update it. See the
 [package decision](adr/0069-load-each-pi-package-where-its-tools-are-used.md).
 
-The bundled `browser` and `qa` profiles set `packages: npm:pi-agent-browser-native` for their
-browser tools. If the parent session does not use the browser itself, remove
-`npm:pi-agent-browser-native` from the `packages` list in `~/.pi/agent/settings.json`.
+The bundled `browser` and `qa` profiles set `packages: npm:pi-agent-browser-native@0.9.3` for their
+browser tools. Its `agent_browser_code` tool needs Node on `PATH` when Pi runs as the compiled
+binary. If the parent session does not use the browser itself, remove `npm:pi-agent-browser-native`
+from the `packages` list in `~/.pi/agent/settings.json`.
 
 When a browser worker needs a login, the manager asks you to sign in once in the browser package's
 Chrome profile. To have it name the command that opens that profile, set `browser.loginCommand` in
