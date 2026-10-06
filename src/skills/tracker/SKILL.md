@@ -114,11 +114,11 @@ preview. It needs the `linear` CLI authenticated for the workspace.
      then:
 
      ```sh
-     linear api 'mutation($team: String!, $parent: String!, $title: String!, $description: String!, $labels: [String!]) { issueCreate(input: { teamId: $team, parentId: $parent, title: $title, description: $description, labelIds: $labels }) { issue { identifier url } } }' --variable team=<team id> --variable parent=<slice> --variable 'title=<title>' --variable description=@<file> --variables-json '{"labels": ["<label id>"]}'
+     linear api 'mutation($team: String!, $parent: String!, $title: String!, $description: String!, $labels: [String!]) { issueCreate(input: { teamId: $team, parentId: $parent, title: $title, description: $description, labelIds: $labels }) { issue { identifier url } } }' --variable team=<team id> --variable parent=<slice> --variable description=@<file> --variables-json '{"title": "<title>", "labels": ["<label id>"]}'
      ```
 
-     Pass the IDs of the approved labels from the agent team's label list, or `[]` when there are
-     none.
+     Write the title as a JSON string, escaping `"` and `\`. Pass the IDs of the approved labels
+     from the agent team's label list, or `[]` when there are none.
 
    - Update the title or body of a bug, human ticket, or agent ticket. Leave out the flag for the
      part that stays: `linear issue update <ticket> --title '<title>' --description-file <file>`.
