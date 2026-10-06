@@ -1,26 +1,26 @@
 # ADR 0006: Default writing policy
 
-- Status: Accepted
-- Date: 2026-09-07
+**Date**: 2026-09-07\
+**Status**: Accepted\
+**Related**: [ADR 0001 (Application structure)](./0001-application-structure.md),
+[ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md),
+[ADR 0008 (Coding instructions)](./0008-coding-instructions.md), which amends the scope above and
+moves the rules about which comments to keep,
+[Agent writing instructions](../../src/instructions/writing.md),
+[ADR 0010 (Documentation scope)](./0010-documentation-scope.md)
 
 ## Context
 
-- Tau needs clear, consistent writing in replies and documents.
-- Pi loads a skill when needed, so its full rules may be missing from an ordinary reply.
-- ADR 0004 puts rules in ADRs or code, and task instructions in skills.
-- Writing defaults must respect the task and repository rules.
+Tau needs clear, consistent writing in replies and documents. Pi loads a skill when needed, so its
+full rules may be missing from an ordinary reply.
 
-## Options considered
-
-- Keep current behavior. Rejected: it sets no default writing rules.
-- Ship only an unslop skill. Rejected: it helps with editing requests but must be loaded first.
-- Load a policy through a Pi extension. Chosen: it includes the same rules in each ordinary agent
-  run.
-- Rewrite responses automatically. Rejected: it takes more time and risks changing meaning.
+ADR 0004 puts rules in ADRs or code, and task instructions in skills. Writing defaults must respect
+the task and repository rules.
 
 ## Decision
 
 Use a Pi extension to load one writing policy from the Tau package into every ordinary agent run.
+The extension includes the same rules in each ordinary agent run.
 
 ### Policy ownership and scope
 
@@ -55,20 +55,31 @@ This extension defines no types of its own and may omit `types.ts`, an exception
 Defer a separate editing skill until editing requests need a shared procedure. It will link to the
 writing guidance without copying the rules. Loading the default policy does not depend on a skill.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - One file supplies the instructions for the agent and a reference for contributors.
 - Ordinary replies receive the rules without loading a skill.
-- Cost: the policy uses space in the prompt on each run.
-- Cost: prompt instructions cannot guarantee good writing, and other extensions can replace them.
-- Cost: the package must include the policy file. A load error disables Tau and blocks CLI startup.
-- Cost: compaction and branch summaries do not receive the policy.
 
-## See also
+### Negative
 
-- [ADR-0001: Application structure](./0001-application-structure.md)
-- [ADR-0004: Skill authoring style](./0004-skill-authoring-style.md)
-- [ADR-0008: Coding instructions](./0008-coding-instructions.md). It amends the scope above and
-  moves the rules about which comments to keep.
-- [Agent writing instructions](../../src/instructions/writing.md)
-- [ADR-0010: Documentation scope](./0010-documentation-scope.md)
+- The policy uses space in the prompt on each run.
+- Prompt instructions cannot guarantee good writing, and other extensions can replace them.
+- The package must include the policy file. A load error disables Tau and blocks CLI startup.
+- Compaction and branch summaries do not receive the policy.
+
+## Alternatives considered
+
+### Keep current behavior
+
+Keep current behavior. Rejected because it sets no default writing rules.
+
+### Only an unslop skill
+
+Ship only an unslop skill. Rejected because, although it helps with editing requests, it must be
+loaded first.
+
+### Automatic rewriting
+
+Rewrite responses automatically. Rejected because it takes more time and risks changing meaning.

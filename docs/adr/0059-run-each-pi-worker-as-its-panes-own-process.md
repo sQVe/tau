@@ -1,10 +1,11 @@
 # ADR 0059: Run each Pi worker as its pane's own process
 
-- Status: Accepted
-- Date: 2026-09-28
-- Supersedes: the "failed cleanup can require manual action" cost in
-  [ADR 0028](./0028-keep-worker-control-in-the-parent.md) and the manual cleanup rule in
-  [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
+**Date**: 2026-09-28\
+**Status**: Accepted\
+**Supersedes**: the "failed cleanup can require manual action" cost in
+[ADR 0028 (Keep worker control in the parent)](./0028-keep-worker-control-in-the-parent.md) and the
+manual cleanup rule in
+[ADR 0043 (Own only the worker guarantees herdr lacks)](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 
 ## Context
 
@@ -17,20 +18,10 @@ check, the stop keys did not stop Pi, and `pi` can be a shell function.
 Herdr can run a command as a pane's own process, with no shell. The pane closes when that process
 exits. Herdr can also close such a pane and move it beside another pane.
 
-## Options considered
-
-- Keep the shell and fix each check. Rejected: each fix depends on the user's shell and key
-  bindings.
-- Start the shell with `exec pi …`. Rejected: the shell still runs prompt hooks first, and `exec pi`
-  finds the shell function, not the executable.
-- Run Pi as the pane's own process. Chosen: the pane lives exactly as long as Pi, and no shell state
-  remains to check.
-- Ask herdr for a lease that closes a worker pane when its owner goes away. Deferred: this is a
-  herdr change and out of scope here.
-
 ## Decision
 
-Every Pi worker runs as its pane's own process, so a pane lives exactly as long as its Pi.
+Every Pi worker runs as its pane's own process, so a pane lives exactly as long as its Pi, and no
+shell state remains to check.
 
 ### Launch
 
@@ -72,14 +63,36 @@ command has neither Tau's environment nor its worker extensions. Any other pane 
 So direct panes do not prevent a restored worker, and the restored-session guard is still needed.
 Source: herdr v0.9.1 `src/persist/restore.rs`, `src/app/agent_resume.rs`, and `src/agent_resume.rs`.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - A finished or stopped Pi worker leaves no pane or tab behind, whatever the user's shell and key
   bindings are.
 - Stopping no longer waits for a bare shell, so a stop takes one checked close instead of a keypress
   loop.
-- Cost: `layout.apply` has no CLI command in herdr 0.9.1, so Tau sends it over herdr's socket.
-- Cost: every worker first appears in its own tab, and then moves. A tab can flash in the tab bar
-  during placement.
-- Cost: until the follow-ups land, a worker whose parent dies keeps running, and herdr can restore a
+
+### Negative
+
+- `layout.apply` has no CLI command in herdr 0.9.1, so Tau sends it over herdr's socket.
+- Every worker first appears in its own tab, and then moves. A tab can flash in the tab bar during
+  placement.
+- Until the follow-ups land, a worker whose parent dies keeps running, and herdr can restore a
   worker session outside Tau.
+
+## Alternatives considered
+
+### Keep the shell and fix each check
+
+Keep the shell and fix each check. Rejected because each fix depends on the user's shell and key
+bindings.
+
+### Start the shell with `exec pi …`
+
+Start the shell with `exec pi …`. Rejected because the shell still runs prompt hooks first, and
+`exec pi` finds the shell function, not the executable.
+
+### Herdr lease for worker panes
+
+Ask herdr for a lease that closes a worker pane when its owner goes away. Deferred because this is a
+herdr change and out of scope here.

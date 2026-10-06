@@ -1,22 +1,18 @@
 # ADR 0002: File and directory naming conventions
 
-- Status: Accepted
-- Date: 2026-04-10
+**Date**: 2026-04-10\
+**Status**: Accepted\
+**Related**: [ADR 0001 (Application structure)](./0001-application-structure.md)
 
 ## Context
 
-- ADR 0001 set the directory layout but left file names and contents undecided.
-- Files use different naming rules with no shared reference.
-
-## Options considered
-
-- Let each module choose its style. Rejected: file names become less consistent.
-- Use one rule for TypeScript files. Chosen: it makes names consistent, though it can be awkward for
-  files with many classes.
+ADR 0001 set the directory layout but left file names and contents undecided. Files use different
+naming rules with no shared reference.
 
 ## Decision
 
-Use the following naming rules for TypeScript, tests, docs, special files, and config.
+Use the following naming rules for TypeScript, tests, docs, special files, and config. One rule for
+TypeScript files makes names consistent, though it can be awkward for files with many classes.
 
 ### TypeScript source
 
@@ -53,14 +49,21 @@ Uppercase filenames exist only when an external convention requires them: `LICEN
 
 Root config files, such as `tsconfig.json`, follow the naming rules of their tools.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - One rule per question a contributor might ask about file naming.
 - The `index.ts` rule prevents files that only re-export other modules.
 - `tests/` has a clear purpose before end-to-end tests arrive.
-- Cost: a growing module may need restructuring to avoid files that only re-export other modules.
-- Cost: new uppercase file names need individual review.
 
-## See also
+### Negative
 
-- [ADR-0001: Application structure](./0001-application-structure.md)
+- A growing module may need restructuring to avoid files that only re-export other modules.
+- New uppercase file names need individual review.
+
+## Alternatives considered
+
+### Per-module style
+
+Let each module choose its style. Rejected because file names become less consistent.

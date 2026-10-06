@@ -1,7 +1,14 @@
 # ADR 0030: Claim native follow-ups before opening
 
-- Status: Superseded by [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
-- Date: 2026-09-17
+**Date**: 2026-09-17\
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0043 (Own only the worker guarantees herdr lacks)](./0043-own-only-the-worker-guarantees-herdr-lacks.md)\
+**Related**:
+[ADR 0040 (Release undispatched follow-up claims after confirmed cleanup)](./0040-release-undispatched-follow-up-claims-after-cleanup.md)
+narrows the permanent-claim rule for confirmed pre-dispatch failures,
+[ADR 0028 (Keep worker control in the parent)](./0028-keep-worker-control-in-the-parent.md),
+[ADR 0029 (Version worker provider fingerprints)](./0029-version-worker-provider-fingerprints.md)
 
 ## Context
 
@@ -9,20 +16,14 @@ Opening a Pi session can repair or migrate its file. Uncertain startup does not 
 session stayed unopened or that its worker stopped. Reusing a completed task's records would also
 mix new work with its previous outcome and deadline.
 
-## Options considered
-
-- Restart the previous task and reset its deadline. Rejected: this changes the meaning of accepted
-  records and can repeat work after uncertain delivery.
-- Reclaim abandoned continuation locks by age. Rejected: time alone cannot prove that a native
-  writer stopped.
-- Keep immutable task records and claim one successor before native opening. Chosen: this separates
-  new authority from old evidence and lets filesystem exclusion coordinate cooperating parents.
-
 ## Decision
 
-Claim one successor per predecessor before opening the native session. Give each follow-up its own
-task identity and parent-owned deadline. Preserve the native identity, original lineage, and saved
-settings. Keep prior task and report records unchanged.
+Claim one successor per predecessor before opening the native session. Keeping immutable task
+records and claiming one successor before native opening separates new authority from old evidence
+and lets filesystem exclusion coordinate cooperating parents.
+
+Give each follow-up its own task identity and parent-owned deadline. Preserve the native identity,
+original lineage, and saved settings. Keep prior task and report records unchanged.
 
 Require final handover and parent-confirmed stopped cleanup. Worker settlement alone does not prove
 process exit. Refuse uncertain claims and prepared attempts without automatically retrying or
@@ -32,19 +33,28 @@ can follow it.
 Read-only history may expose related tasks across the root-session tree. It does not transfer live
 reply or cancellation ownership. An explicit follow-up creates new authority for its current parent.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Independent parents and processes cannot claim different successors for the same predecessor.
 - New deadlines do not extend or reinterpret old tasks.
-- Cost: failed preparation or startup can leave a conversation unavailable for automatic follow-up.
-- Cost: bounded file inspection and live-writer checks are not a universal native-session lock.
-  Manual Pi writers that bypass Tau can still race the handoff.
-- Cost: native opening may perform Pi's own repair or migration after the claim succeeds.
 
-## See also
+### Negative
 
-- [ADR 0040: Release undispatched follow-up claims after confirmed cleanup](./0040-release-undispatched-follow-up-claims-after-cleanup.md)
-  narrows the permanent-claim rule for confirmed pre-dispatch failures.
+- Failed preparation or startup can leave a conversation unavailable for automatic follow-up.
+- Bounded file inspection and live-writer checks are not a universal native-session lock. Manual Pi
+  writers that bypass Tau can still race the handoff.
+- Native opening may perform Pi's own repair or migration after the claim succeeds.
 
-- [ADR 0028: Keep worker control in the parent](./0028-keep-worker-control-in-the-parent.md)
-- [ADR 0029: Version worker provider fingerprints](./0029-version-worker-provider-fingerprints.md)
+## Alternatives considered
+
+### Restart the previous task
+
+Restart the previous task and reset its deadline. Rejected because this changes the meaning of
+accepted records and can repeat work after uncertain delivery.
+
+### Reclaim abandoned locks by age
+
+Reclaim abandoned continuation locks by age. Rejected because time alone cannot prove that a native
+writer stopped.

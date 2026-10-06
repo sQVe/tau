@@ -1,7 +1,7 @@
 # ADR 0049: Treat the bash commit guard as guidance
 
-- Status: Accepted
-- Date: 2026-09-25
+**Date**: 2026-09-25\
+**Status**: Accepted
 
 ## Context
 
@@ -13,19 +13,13 @@ A review of a parsing fix listed many shell constructs that still run `git commi
 blocked: odd quoting, arithmetic, expansions as the command name, `trap`, `source`, and interpreter
 code such as `python3 -c`.
 
-## Options considered
-
-- Keep the regex. Rejected: it blocks harmless commands and trains agents to reword around it.
-- Treat the guard as a security boundary and close every bypass, with a full shell parser dependency
-  or ever more parser cases. Rejected: the commit tool exists for workflow, not containment, and an
-  agent that wants to evade the guard has many other ways to run Git.
-- Treat the guard as guidance. Chosen: block the forms an agent writes by accident and let quoted
-  data pass.
-
 ## Decision
 
 Treat the bash commit guard as guidance that steers agents to the `commit` tool, not as a security
-boundary.
+boundary. As guidance, the guard blocks the forms an agent writes by accident and lets quoted data
+pass.
+
+### Guard rules
 
 - Block `git commit` where the shell runs it directly, and in text that a shell or Git runs as code.
 - Let quoted arguments, comments, and heredoc bodies pass as data.
@@ -33,10 +27,27 @@ boundary.
 - Accept bypasses through deliberate evasion, such as variables, unusual quoting, or other
   interpreters.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Commands that only mention a commit in data no longer block.
 - A small parser covers the forms agents actually write.
-- Cost: an agent that tries to evade the guard can still run `git commit` through bash.
-- Cost: some false positives remain, such as `git log --grep commit` and quoted mentions in a
-  command that also runs a shell.
+
+### Negative
+
+- An agent that tries to evade the guard can still run `git commit` through bash.
+- Some false positives remain, such as `git log --grep commit` and quoted mentions in a command that
+  also runs a shell.
+
+## Alternatives considered
+
+### Keep the regex
+
+Keep the regex. Rejected because it blocks harmless commands and trains agents to reword around it.
+
+### Treat the guard as a security boundary
+
+Treat the guard as a security boundary and close every bypass, with a full shell parser dependency
+or ever more parser cases. Rejected because the commit tool exists for workflow, not containment,
+and an agent that wants to evade the guard has many other ways to run Git.

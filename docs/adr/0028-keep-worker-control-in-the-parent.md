@@ -1,31 +1,24 @@
 # ADR 0028: Keep worker control in the parent
 
-- Status: Accepted; settings reproduction, evidence-only recovery, foreground placement rebalancing,
-  and cancellation-during-placement rules superseded by
-  [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md). Herdr owns layout after
-  placement. The manual cleanup cost is superseded by
-  [ADR 0059](./0059-run-each-pi-worker-as-its-panes-own-process.md).
-- Date: 2026-09-16
+**Date**: 2026-09-16\
+**Status**: Accepted; settings reproduction, evidence-only recovery, foreground placement
+rebalancing, and cancellation-during-placement rules superseded by
+[ADR 0043 (Own only the worker guarantees herdr lacks)](./0043-own-only-the-worker-guarantees-herdr-lacks.md).
+Herdr owns layout after placement. The manual cleanup cost is superseded by
+[ADR 0059 (Run each Pi worker as its pane's own process)](./0059-run-each-pi-worker-as-its-panes-own-process.md).
 
 ## Context
 
 Worker timeouts must work on Linux and macOS while the parent Pi runs. The user chose trusted
 full-tool workers with CC Safety Net, not separate permission classes or process containment.
 
-## Options considered
-
-- Adapt the upstream profiles and sessions, but keep control in the parent. Chosen: this fits the
-  required lifetime without a separate service.
-- Run an independent supervisor. Rejected: this would add recovery and process ownership rules for a
-  lifetime the user does not require.
-- Retain upstream restricted extension loadouts. Rejected: this could remove the user's safety
-  integration and would restore the discarded isolation model.
-
 ## Decision
 
-Keep worker control in the parent Pi process. Use one monotonic deadline, including bounded cleanup
-attempts. Recovery reads durable evidence without implying that an absent parent enforced a
-deadline.
+Keep worker control in the parent Pi process. Adapting the upstream profiles and sessions while
+keeping control in the parent fits the required lifetime without a separate service.
+
+Use one monotonic deadline, including bounded cleanup attempts. Recovery reads durable evidence
+without implying that an absent parent enforced a deadline.
 
 ### Upstream adaptation
 
@@ -62,11 +55,28 @@ Worker roles describe assigned work, not security boundaries. Retain CC Safety N
 provider integrations. Refuse settings that cannot be reproduced rather than silently choosing a
 model, provider, or unrestricted configuration.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Saved handovers and native references remain available after parent exit.
-- Cost: failed cleanup can require manual action. Detached descendants are not contained.
-- Cost: trusted workers can modify files directly. Receipt validation is not tamper-proof storage.
-- Cost: provider credentials or settings changing between resolution and startup can cause refusal.
-- Cost: macOS runtime behavior remains untested here; portable primitives do not establish a runtime
+
+### Negative
+
+- Failed cleanup can require manual action. Detached descendants are not contained.
+- Trusted workers can modify files directly. Receipt validation is not tamper-proof storage.
+- Provider credentials or settings changing between resolution and startup can cause refusal.
+- macOS runtime behavior remains untested here; portable primitives do not establish a runtime
   result.
+
+## Alternatives considered
+
+### Independent supervisor
+
+Run an independent supervisor. Rejected because this would add recovery and process ownership rules
+for a lifetime the user does not require.
+
+### Upstream restricted extension loadouts
+
+Retain upstream restricted extension loadouts. Rejected because this could remove the user's safety
+integration and would restore the discarded isolation model.

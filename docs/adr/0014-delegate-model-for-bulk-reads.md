@@ -1,9 +1,16 @@
 # ADR 0014: Delegate model for bulk reads
 
-- Status: Superseded by [ADR 0087](./0087-gather-evidence-with-codemode.md). Before that, the
-  `TAU_BULK_READ_MODEL` setting was replaced by the shared delegate setting in
-  [ADR 0027](./0027-share-one-delegate-model.md)
-- Date: 2026-09-10
+**Date**: 2026-09-10\
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0087 (Gather evidence with codemode)](./0087-gather-evidence-with-codemode.md). Before that,
+the `TAU_BULK_READ_MODEL` setting was replaced by the shared delegate setting in
+[ADR 0027 (Share one delegate model across bounded tool tasks)](./0027-share-one-delegate-model.md)\
+**Related**: [ADR 0027 (Share one delegate model across bounded tool tasks)](./0027-share-one-delegate-model.md)
+replaces the environment setting and the restriction on delegating comment review,
+[Vision](../vision.md), [ADR 0008 (Coding instructions)](./0008-coding-instructions.md),
+[ADR 0005 (Integration testing against a real Pi session)](./0005-integration-testing-with-pi.md),
+[ADR 0022 (Gate the clamped read hint on the remainder)](./0022-gate-the-clamped-read-hint-on-the-remainder.md)
 
 ## Context
 
@@ -17,26 +24,14 @@ no single hardcoded delegate works for every user. The owner chose `openai-codex
 the default because its catalog price per token is about 40 to 50 times lower than the session
 model's.
 
-## Options considered
-
-1. Do nothing and rely on grep and bounded reads. Rejected: this is cheapest for locating symbols,
-   but it cannot answer semantic questions across several large files.
-2. Use deterministic outlines from rtk or `tsc`. Rejected: rtk either passed a file through
-   unchanged or truncated statements and dropped line numbers, and `tsc` works only for TypeScript.
-   Tau must work on any codebase.
-3. Use a delegate model. Chosen: it is the only proposed replacement that works across languages and
-   answers questions instead of listing structure.
-4. Use cheap code writers. Deferred: Portal by Spotify lists its inability to enforce a code-writer
-   mode as a known limitation. Code writers were allowed only if options 1 and 2 showed a measured
-   saving. Bulk-read delegation does not authorize code writing.
-
 ## Decision
 
 Propose one user-configured delegate model for bulk file reads. It returns summaries, test
 inventories, and line-cited evidence from supplied files so the session model need not read every
-file in full. Correctness and branch review judgments stay with the session model, which verifies
-consequential claims against production callers and the actual diff. Keep grep and bounded reads for
-questions they already answer.
+file in full. A delegate model is the only proposed replacement that works across languages and
+answers questions instead of listing structure. Correctness and branch review judgments stay with
+the session model, which verifies consequential claims against production callers and the actual
+diff. Keep grep and bounded reads for questions they already answer.
 
 ### Scope of this decision
 
@@ -123,13 +118,18 @@ edge cases rather than reading the file a second time:
   result size, not real-model answer quality or billing savings.
 - Require measured savings before expanding the scope to code writers.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - The session model can receive an answer instead of several full files, regardless of their
   language. The delegate can still omit relevant facts or misunderstand code.
 - The pre-call hook clamps rather than blocks, so an oversized read returns the file head plus a
   hint in the same turn. The hint is advisory; the model can still page with `offset`, which costs
   more than a plain read.
+
+### Negative
+
 - Portal reports 10-30 seconds per delegation; the measurement saw about 50 seconds for a 24k-token
   payload. Delegation trades latency for a modest reduction in session-model tokens, and the
   delegate is asked for the fewest bullets that answer the question because answer length was the
@@ -179,11 +179,22 @@ edge cases rather than reading the file a second time:
 - On a subscription, reported cost is catalog pricing. Treat it as a ratio, not an invoice. User
   configuration also means each account can have different working models and costs.
 
-## See also
+## Alternatives considered
 
-- [ADR 0027: Share one delegate model](./0027-share-one-delegate-model.md) replaces the environment
-  setting and the restriction on delegating comment review.
-- [Vision](../vision.md)
-- [ADR 0008: Coding instructions](./0008-coding-instructions.md)
-- [ADR 0005: Integration testing against a real Pi session](./0005-integration-testing-with-pi.md)
-- [ADR 0022: Gate the clamped read hint on the remainder](./0022-gate-the-clamped-read-hint-on-the-remainder.md)
+### Grep and bounded reads only
+
+Do nothing and rely on grep and bounded reads. Rejected because, although this is cheapest for
+locating symbols, it cannot answer semantic questions across several large files.
+
+### Deterministic outlines
+
+Use deterministic outlines from rtk or `tsc`. Rejected because rtk either passed a file through
+unchanged or truncated statements and dropped line numbers, and `tsc` works only for TypeScript. Tau
+must work on any codebase.
+
+### Cheap code writers
+
+Use cheap code writers. Deferred because Portal by Spotify lists its inability to enforce a
+code-writer mode as a known limitation. Code writers were allowed only if the two options above,
+grep and bounded reads only and deterministic outlines, both showed a measured saving. Bulk-read
+delegation does not authorize code writing.

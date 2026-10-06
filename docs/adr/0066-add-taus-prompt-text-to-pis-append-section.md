@@ -1,7 +1,9 @@
 # ADR 0066: Add Tau's prompt text to Pi's append section
 
-- Status: Accepted
-- Date: 2026-09-29
+**Date**: 2026-09-29\
+**Status**: Accepted\
+**Related**: [ADR 0062 (Put worker instructions in the system prompt)](./0062-put-worker-instructions-in-the-system-prompt.md),
+[elidickinson/pi-claude-bridge#135](https://github.com/elidickinson/pi-claude-bridge/issues/135)
 
 ## Context
 
@@ -17,25 +19,13 @@ Pi lets `before_agent_start` change `systemPromptOptions` and recommends that ov
 prompt. Pi sends a direct provider a prompt change only when the rendered prompt differs from the
 last one.
 
-## Options considered
-
-- Return a whole `systemPrompt`. Rejected: direct providers get it, but the bridge drops it.
-- Set `systemPromptOptions.sections.<name>`. Rejected: Pi's docs prefer sections, but the bridge
-  does not forward them, so Claude would lose the text again without an error.
-- Return a `message` from `before_agent_start`, or edit the last user message in `context`.
-  Rejected: both reach Claude, but they add the text to the conversation on every prompt.
-- Pass worker instructions with `--append-system-prompt`. Rejected: it reaches Claude, but the flag
-  replaces Pi's discovered `APPEND_SYSTEM.md`, so workers would lose the user's own appended prompt.
-- Add a `contextFiles` entry. Rejected: the bridge forwards it, but Claude would read Tau's rules as
-  a project file.
-- Append to `systemPromptOptions.appendSystemPrompt`. Chosen: the bridge and direct providers both
-  receive it.
-
 ## Decision
 
 Tau appends every system prompt addition to `systemPromptOptions.appendSystemPrompt` in
 `before_agent_start`. No Tau handler returns `systemPrompt`, sets `forceSystemPrompt`, or writes
-`sections`.
+`sections`. The bridge and direct providers both receive the append section.
+
+### Append rules
 
 - Tools do not declare `promptGuidelines`. Tau appends a tool's guidelines while the tool is active.
 - A worker reads its instructions from its saved task and appends them the same way as a parent, so
@@ -46,18 +36,46 @@ Tau appends every system prompt addition to `systemPromptOptions.appendSystemPro
   append section and the bridge fails the turn.
 - Test the append section as the bridge reads it: the options object at `agent_start`.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Claude models through the bridge and direct providers receive the same text.
 - Direct providers get each block once per session. Pi sends no prompt change while the text stays
   the same.
 - Workers keep the user's `APPEND_SYSTEM.md`, and no launch argument carries the prompt.
-- Cost: the bridge sends the whole append section with each Claude Code request. It is part of the
-  cached system prompt, not the conversation, so it does not grow with the session.
-- Cost: this depends on which fields the bridge forwards. A bridge change can drop the text again,
-  so check a real `prompt_snapshot` after upgrading the bridge.
 
-## See also
+### Negative
 
-- [ADR 0062: Put worker instructions in the system prompt](./0062-put-worker-instructions-in-the-system-prompt.md)
-- [elidickinson/pi-claude-bridge#135](https://github.com/elidickinson/pi-claude-bridge/issues/135)
+- The bridge sends the whole append section with each Claude Code request. It is part of the cached
+  system prompt, not the conversation, so it does not grow with the session.
+- This depends on which fields the bridge forwards. A bridge change can drop the text again, so
+  check a real `prompt_snapshot` after upgrading the bridge.
+
+## Alternatives considered
+
+### Whole `systemPrompt`
+
+Return a whole `systemPrompt`. Rejected because, although direct providers get it, the bridge drops
+it.
+
+### Prompt sections
+
+Set `systemPromptOptions.sections.<name>`. Rejected because, although Pi's docs prefer sections, the
+bridge does not forward them, so Claude would lose the text again without an error.
+
+### Message or edited user message
+
+Return a `message` from `before_agent_start`, or edit the last user message in `context`. Rejected
+because, although both reach Claude, they add the text to the conversation on every prompt.
+
+### `--append-system-prompt` for worker instructions
+
+Pass worker instructions with `--append-system-prompt`. Rejected because, although it reaches
+Claude, the flag replaces Pi's discovered `APPEND_SYSTEM.md`, so workers would lose the user's own
+appended prompt.
+
+### Context file entry
+
+Add a `contextFiles` entry. Rejected because, although the bridge forwards it, Claude would read
+Tau's rules as a project file.

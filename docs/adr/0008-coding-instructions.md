@@ -1,33 +1,27 @@
 # ADR 0008: Coding instructions
 
-- Status: Accepted; the duplicated comment rules were removed by
-  [ADR 0042](./0042-remove-commit-comment-review.md)
-- Date: 2026-09-09
+**Date**: 2026-09-09\
+**Status**: Accepted; the duplicated comment rules were removed by
+[ADR 0042 (Remove commit comment review)](./0042-remove-commit-comment-review.md)\
+**Related**: [ADR 0001 (Application structure)](./0001-application-structure.md),
+[ADR 0006 (Default writing policy)](./0006-default-writing-policy.md),
+[Agent coding instructions](../../src/instructions/coding.md),
+[ADR 0042 (Remove commit comment review)](./0042-remove-commit-comment-review.md)
 
 [ADR 0034](./0034-check-house-style-outside-the-editor.md) replaces the decision against mechanical
 layout checks. The remaining decisions below still apply.
 
 ## Context
 
-- ADR 0006 loads one writing policy into every ordinary agent run. It covers replies, commit and PR
-  text, tickets, docs, and code comments.
-- Nothing tells the agent how to shape code. Rules such as separating the logical steps inside a
-  function with a blank line have no home in Tau.
-- Tools cannot enforce these rules. Oxlint ships no layout rules, and the formatter keeps the blank
-  lines an author writes but never adds them.
-- The writing policy mixes two concerns in its comment rules: how a comment reads, and whether the
-  comment should exist at all.
+ADR 0006 loads one writing policy into every ordinary agent run. It covers replies, commit and PR
+text, tickets, docs, and code comments.
 
-## Options considered
+Nothing tells the agent how to shape code. Rules such as separating the logical steps inside a
+function with a blank line have no home in Tau. Tools cannot enforce these rules. Oxlint ships no
+layout rules, and the formatter keeps the blank lines an author writes but never adds them.
 
-- Add the rules to the writing policy. Rejected: one extension already loads instructions, but a
-  prose policy should not also govern code structure.
-- Enforce the rules with lint. Rejected: Oxlint has no layout rules, and adding a second linter for
-  them was rejected. A rule that matches statement types cannot see logical steps anyway.
-- Extend the comment review gate to block unreadable code. Rejected: the gate gives evidence for
-  concrete defects. Readability is a judgment call, so it would block commits on opinion.
-- Load a second policy through its own extension. Chosen: it matches ADR 0006 and keeps one concern
-  per file.
+The writing policy mixes two concerns in its comment rules: how a comment reads, and whether the
+comment should exist at all.
 
 ## Decision
 
@@ -35,6 +29,8 @@ Add `src/extensions/coding/`. It loads [`instructions.md`](../../src/instruction
 the system prompt before each ordinary agent run, following the runtime integration ADR 0006
 describes for writing. Reject missing, unreadable, or blank guidance when loading Tau, for the
 reasons ADR 0006 gives.
+
+Loading a second policy through its own extension matches ADR 0006 and keeps one concern per file.
 
 ### Boundary with the writing policy
 
@@ -63,17 +59,32 @@ are the only statement.
 
 This extension defines no types of its own and may omit `types.ts`, an exception to ADR 0001.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - Each concern has one file, so a rule about code is not read as a rule about prose.
 - Ordinary runs receive the rules without loading a skill.
-- Cost: a second policy uses more space in the prompt on every run.
-- Cost: two instruction files can drift apart. Keep comment rules on one side of the boundary.
-- Cost: prompt instructions cannot guarantee readable code, and other extensions can replace them.
 
-## See also
+### Negative
 
-- [ADR-0001: Application structure](./0001-application-structure.md)
-- [ADR-0006: Default writing policy](./0006-default-writing-policy.md)
-- [Agent coding instructions](../../src/instructions/coding.md)
-- [ADR-0042: Remove commit comment review](./0042-remove-commit-comment-review.md)
+- A second policy uses more space in the prompt on every run.
+- Two instruction files can drift apart. Keep comment rules on one side of the boundary.
+- Prompt instructions cannot guarantee readable code, and other extensions can replace them.
+
+## Alternatives considered
+
+### Rules in the writing policy
+
+Add the rules to the writing policy. Rejected because, although one extension already loads
+instructions, a prose policy should not also govern code structure.
+
+### Lint
+
+Enforce the rules with lint. Rejected because Oxlint has no layout rules, and adding a second linter
+for them was rejected. A rule that matches statement types cannot see logical steps anyway.
+
+### Comment review gate
+
+Extend the comment review gate to block unreadable code. Rejected because the gate gives evidence
+for concrete defects. Readability is a judgment call, so it would block commits on opinion.

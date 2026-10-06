@@ -1,13 +1,21 @@
 # ADR 0033: Use one generic native worker workflow
 
-- Status: Superseded by [ADR 0058](./0058-run-subagents-only-as-pi-workers.md). Before that,
-  parent-user approval rules superseded by
-  [ADR 0037](./0037-launch-native-workers-without-parent-approval.md); report area rule superseded
-  by [ADR 0045](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md); the saved Pi
-  record shape (fingerprints, `noExtensions`, tree ancestry) superseded by
-  [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
-- Date: 2026-09-19
-- Supersedes: [ADR 0032](./0032-run-claude-workers-through-a-parent-owned-channel.md)
+**Date**: 2026-09-19\
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0058 (Run subagents only as Pi workers)](./0058-run-subagents-only-as-pi-workers.md). Before
+that, parent-user approval rules superseded by
+[ADR 0037 (Launch native workers without parent approval)](./0037-launch-native-workers-without-parent-approval.md);
+report area rule superseded by
+[ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md);
+the saved Pi record shape (fingerprints, `noExtensions`, tree ancestry) superseded by
+[ADR 0043 (Own only the worker guarantees herdr lacks)](./0043-own-only-the-worker-guarantees-herdr-lacks.md)\
+**Supersedes**:
+[ADR 0032 (Run Claude workers through a parent-owned channel)](./0032-run-claude-workers-through-a-parent-owned-channel.md)\
+**Related**:
+[ADR 0028 (Keep worker control in the parent)](./0028-keep-worker-control-in-the-parent.md),
+[ADR 0030 (Claim native follow-ups before opening)](./0030-claim-native-follow-ups-before-opening.md),
+[ADR 0031 (Reserve worker capacity under one tree lock)](./0031-reserve-worker-capacity-under-one-tree-lock.md)
 
 ## Context
 
@@ -18,18 +26,12 @@ would make Tau responsible for unrelated permission systems and native session f
 The user chose native safety controls for non-Pi workers. Herdr provides shared terminal operations,
 but it cannot certify native permissions, model selection, task acceptance, or conversation replay.
 
-## Options considered
-
-- Keep the Claude bridge and add harness-specific adapters. Rejected: this preserves deeper
-  integration for Claude, but makes each new harness another permission and lifecycle implementation
-  to maintain.
-- Use one herdr workflow for every non-Pi kind and state its weaker guarantees. Chosen: this keeps
-  Tau's ownership rules shared without treating unrelated native controls as equivalent to Pi's SDK.
-
 ## Decision
 
 Use one generic herdr workflow for all supported non-Pi kinds. Keep Pi's structured controls and
-verified safety integration separate.
+verified safety integration separate. One herdr workflow for every non-Pi kind, with its weaker
+guarantees stated, keeps Tau's ownership rules shared without treating unrelated native controls as
+equivalent to Pi's SDK.
 
 Treat native launch arguments as a literal list, not shell code or profile authority. Leave native
 defaults, integrations, and approval dialogs intact. Refuse requests for stronger guarantees rather
@@ -53,19 +55,26 @@ not reconstruct missing fields or read an older credential-sensitive fingerprint
 native continuation because opaque native references do not prove that an unchanged configuration
 can be reproduced. A new contract requires a fresh task.
 
-## Tradeoffs
+## Consequences
+
+### Positive
 
 - One controller owns capacity and deadlines across Pi and native workers.
 - Existing native integrations stay under user control.
-- Cost: native permissions and model selection remain unverified by Tau.
-- Cost: non-Pi workers have no Tau nesting channel or structured question acknowledgement.
-- Cost: terminal interrupts are best-effort, not containment. Uncertain cleanup requires manual
+
+### Negative
+
+- Native permissions and model selection remain unverified by Tau.
+- Non-Pi workers have no Tau nesting channel or structured question acknowledgement.
+- Terminal interrupts are best-effort, not containment. Uncertain cleanup requires manual
   inspection. Tau does not promise enforcement after parent exit.
-- Cost: reports require an existing writable area and leave task files there. A saved receipt proves
+- Reports require an existing writable area and leave task files there. A saved receipt proves
   delivery, not answer correctness.
 
-## See also
+## Alternatives considered
 
-- [ADR 0028: Keep worker control in the parent](./0028-keep-worker-control-in-the-parent.md)
-- [ADR 0030: Claim native follow-ups before opening](./0030-claim-native-follow-ups-before-opening.md)
-- [ADR 0031: Reserve worker capacity under one tree lock](./0031-reserve-worker-capacity-under-one-tree-lock.md)
+### Claude bridge with harness-specific adapters
+
+Keep the Claude bridge and add harness-specific adapters. Rejected because, although this preserves
+deeper integration for Claude, it makes each new harness another permission and lifecycle
+implementation to maintain.

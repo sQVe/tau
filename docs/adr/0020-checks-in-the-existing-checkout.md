@@ -1,7 +1,9 @@
 # ADR 0020: Run staged checks in the existing checkout
 
-- Status: Superseded by [ADR 0026](./0026-let-git-hooks-own-commit-checks.md)
-- Date: 2026-09-11
+**Date**: 2026-09-11\
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0026 (Let Git hooks own commit checks)](./0026-let-git-hooks-own-commit-checks.md)
 
 ## Context
 
@@ -11,20 +13,14 @@ the original checkout. For example, an app's installed dependency can link to a 
 source directory. Reusing that link in a temporary checkout checks the working library, not its
 selected content.
 
-## Options considered
-
-- Share dependencies with a temporary checkout. Rejected: links can resolve to the wrong sources.
-- Copy the repository and install dependencies again. Rejected: it is slow and requires
-  repository-specific setup.
-- Check in the current checkout. Chosen: it preserves dependency links, but it temporarily changes
-  visible files.
-
 ## Decision
 
-Run staged checks in the current checkout with its installed dependencies. Save and verify a backup
-before temporarily hiding unrelated working edits and presenting the content selected for the
-commit. Hiding those edits prevents them from affecting the check result. Restore them before any
-review or approval.
+Run staged checks in the current checkout with its installed dependencies. This preserves dependency
+links, but it temporarily changes visible files.
+
+Save and verify a backup before temporarily hiding unrelated working edits and presenting the
+content selected for the commit. Hiding those edits prevents them from affecting the check result.
+Restore them before any review or approval.
 
 If another process writes during checks and makes restoration unsafe, stop further commits and
 retain the backup rather than overwrite work. Reject unsupported states before hiding edits, such as
@@ -36,7 +32,25 @@ This replaces temporary checkouts and dependency sharing from
 in [ADR 0019](./0019-verified-raw-recovery.md). It changes where checks run, not which checks,
 reviews, approvals, or Git hooks are required.
 
-## Tradeoffs
+## Consequences
 
-Checks avoid new installs, but temporarily change what editors and other processes see. Backups need
-storage; interrupted checks or uncertain file changes may require manual recovery.
+### Positive
+
+- Checks avoid new installs.
+
+### Negative
+
+- Checks temporarily change what editors and other processes see.
+- Backups need storage; interrupted checks or uncertain file changes may require manual recovery.
+
+## Alternatives considered
+
+### Share dependencies with a temporary checkout
+
+Share dependencies with a temporary checkout. Rejected because links can resolve to the wrong
+sources.
+
+### Copy and reinstall
+
+Copy the repository and install dependencies again. Rejected because it is slow and requires
+repository-specific setup.
