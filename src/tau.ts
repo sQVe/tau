@@ -9,6 +9,7 @@ import codingExtension from './extensions/coding.js';
 import commitExtension from './extensions/commit/commit.js';
 import compactionExtension from './extensions/compaction/compaction.js';
 import herdrBlockedExtension from './extensions/herdrBlocked.js';
+import prExtension from './extensions/pr/pr.js';
 import prFeedbackExtension from './extensions/prFeedback/prFeedback.js';
 import sliceExtension from './extensions/slice/slice.js';
 import snippetsExtension from './extensions/snippets/snippets.js';
@@ -26,6 +27,7 @@ const skillsDirectory = fileURLToPath(new URL('./skills/', import.meta.url));
 export const skillTools = {
   'code-review': ['code_review'],
   slice: ['slice'],
+  pr: ['pr'],
   'pr-feedback': ['pr_feedback'],
   tracker: ['tracker_evidence'],
 };
@@ -43,6 +45,7 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   snippetsExtension(pi);
   sliceExtension(pi);
   trackerExtension(pi);
+  prExtension(pi);
   prFeedbackExtension(pi);
   codeReviewExtension(pi);
   statusbarExtension(pi);
