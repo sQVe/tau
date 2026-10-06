@@ -15,6 +15,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { nestedChangeCallReason } from '../src/controlTools.js';
 import {
   nativeIdentity,
   resolveProfile,
@@ -50,14 +51,19 @@ const packageTools = [
   'agent_browser_code',
 ];
 
-const registerPackageTools = (pi: ExtensionAPI) => {
+// Records each package tool that runs in `executed`.
+const packageToolFixtures = (executed: string[]) => (pi: ExtensionAPI) => {
   for (const name of packageTools) {
     pi.registerTool({
       name,
       label: name,
       description: `Fixture ${name}.`,
       parameters: Type.Object({}),
-      execute: () => Promise.resolve({ content: [{ type: 'text', text: name }], details: {} }),
+      execute: () => {
+        executed.push(name);
+
+        return Promise.resolve({ content: [{ type: 'text', text: name }], details: {} });
+      },
     });
   }
 };
@@ -75,8 +81,13 @@ const temporaryDirectory = (prefix: string): string => {
   return directory;
 };
 
-// Starts a worker session from a bundled profile, as a launched Pi worker would.
-const startProfileWorker = async (directory: string, profileName: string) => {
+// Starts a worker session from a bundled profile, as a launched Pi worker would. A launched worker
+// may run without Tau, so `workflow: false` leaves out the workflow extension.
+const startProfileWorker = async (
+  directory: string,
+  profileName: string,
+  { workflow = true }: { workflow?: boolean } = {},
+) => {
   const taskDirectory = join(directory, 'task');
   mkdirSync(taskDirectory);
   vi.stubEnv('TAU_WORKER_RECORD', taskDirectory);
@@ -119,6 +130,18 @@ const startProfileWorker = async (directory: string, profileName: string) => {
   publish(taskDirectory, 'task.json', task);
   seedSession(task);
   writeFileSync(join(directory, 'source.txt'), 'fixture-source');
+  const executed: string[] = [];
+
+  const extensionFactories = [
+    createCodemodeExtension({ mode: 'on' }),
+    packageToolFixtures(executed),
+  ];
+
+  if (workflow) {
+    extensionFactories.push(workflowExtension);
+  }
+
+  extensionFactories.push(workerExtension);
 
   const { session } = await createBoundSession(onTestFinished, {
     cwd: directory,
@@ -128,15 +151,10 @@ const startProfileWorker = async (directory: string, profileName: string) => {
     sessionManager: SessionManager.open(task.nativeSessionFile),
     settings: { compaction: { enabled: false }, retry: { enabled: false } },
     extensionPaths: [safetyExtension],
-    extensionFactories: [
-      createCodemodeExtension({ mode: 'on' }),
-      registerPackageTools,
-      workflowExtension,
-      workerExtension,
-    ],
+    extensionFactories,
   });
 
-  return { session, provider, taskDirectory, taskId: task.taskId };
+  return { session, provider, taskDirectory, taskId: task.taskId, executed };
 };
 
 // Dispatches the task and waits until the worker's model follows `responses` to the end.
@@ -266,3 +284,128 @@ it.for([
     expect(hasCodemodeGuidelines(captured.systemPrompt)).toBe(expected);
   },
 );
+
+// Calls each change tool from one script and prints each refusal or result.
+const changeToolScript = `
+const calls = [
+  () => tools.write({ path: 'source.txt', content: 'written' }),
+  () => tools.edit({ path: 'source.txt', edits: [{ oldText: 'fixture', newText: 'edited' }] }),
+  () => tools.commit({}),
+  () => tools.run_tests({}),
+];
+for (const call of calls) {
+  try {
+    await call();
+    text('change-tool-ran');
+  } catch (error) {
+    text(error.message);
+  }
+}
+`;
+
+const directChangeCalls = fauxAssistantMessage([
+  fauxToolCall('write', { path: 'written.txt', content: 'written' }),
+  fauxToolCall('edit', { path: 'source.txt', edits: [{ oldText: 'fixture', newText: 'edited' }] }),
+  fauxToolCall('commit', {}),
+  fauxToolCall('run_tests', {}),
+]);
+
+// Starts a manager session with codemode, the built-in change tools, and package tool fixtures.
+const startManager = async (directory: string) => {
+  vi.stubEnv('TAU_WORKER_RECORD', '');
+  writeFileSync(join(directory, 'source.txt'), 'fixture-source');
+  const provider = fauxProvider({ provider: 'tau-manager-change-tools' });
+  const executed: string[] = [];
+
+  const { session } = await createBoundSession(onTestFinished, {
+    cwd: directory,
+    agentDirectory: directory,
+    providers: [provider],
+    tools: ['read', 'write', 'edit', 'codemode', 'commit', 'run_tests'],
+    settings: { compaction: { enabled: false }, retry: { enabled: false } },
+    extensionFactories: [
+      createCodemodeExtension({ mode: 'on' }),
+      packageToolFixtures(executed),
+      workflowExtension,
+    ],
+  });
+
+  const run = async (responses: FauxResponseStep[]): Promise<ToolOutcome[]> => {
+    const outcomes: ToolOutcome[] = [];
+
+    session.subscribe((event) => {
+      if (event.type === 'tool_execution_end') {
+        outcomes.push({
+          toolName: event.toolName,
+          isError: event.isError,
+          text: JSON.stringify(event.result),
+        });
+      }
+    });
+
+    provider.setResponses(responses);
+    await session.prompt('Change the fixture.');
+
+    return outcomes;
+  };
+
+  return { run, executed };
+};
+
+it('refuses change tools called from a worker script and changes nothing', async () => {
+  const directory = temporaryDirectory('tau-worker-change-script-');
+  const worker = await startProfileWorker(directory, 'worker', { workflow: false });
+
+  const outcomes = await runTask(worker, [
+    fauxAssistantMessage([fauxToolCall('codemode', { code: changeToolScript })]),
+    ...stopWithoutReport,
+  ]);
+
+  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+
+  expect(result?.text).toContain(nestedChangeCallReason);
+  expect(result?.text).not.toContain('change-tool-ran');
+  expect(readFileSync(join(directory, 'source.txt'), 'utf8')).toBe('fixture-source');
+  expect(worker.executed).toEqual([]);
+});
+
+it('runs change tools a worker calls directly', async () => {
+  const directory = temporaryDirectory('tau-worker-change-direct-');
+  const worker = await startProfileWorker(directory, 'worker', { workflow: false });
+
+  const outcomes = await runTask(worker, [directChangeCalls, ...stopWithoutReport]);
+
+  expect(outcomes.filter((outcome) => outcome.isError)).toEqual([]);
+  expect(readFileSync(join(directory, 'written.txt'), 'utf8')).toBe('written');
+  expect(readFileSync(join(directory, 'source.txt'), 'utf8')).toBe('edited-source');
+  expect(worker.executed.toSorted()).toEqual(['commit', 'run_tests']);
+});
+
+it('refuses change tools called from a manager script and changes nothing', async () => {
+  const directory = temporaryDirectory('tau-manager-change-script-');
+  const manager = await startManager(directory);
+
+  const outcomes = await manager.run([
+    fauxAssistantMessage([fauxToolCall('codemode', { code: changeToolScript })]),
+    fauxAssistantMessage('Done.'),
+  ]);
+
+  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+
+  expect(result?.text).toContain(nestedChangeCallReason);
+  expect(result?.text).not.toContain('change-tool-ran');
+  expect(readFileSync(join(directory, 'source.txt'), 'utf8')).toBe('fixture-source');
+  expect(manager.executed).toEqual([]);
+});
+
+it('runs change tools a manager calls directly', async () => {
+  const directory = temporaryDirectory('tau-manager-change-direct-');
+  const manager = await startManager(directory);
+
+  const outcomes = await manager.run([directChangeCalls, fauxAssistantMessage('Done.')]);
+
+  expect(outcomes.filter((outcome) => outcome.isError)).toEqual([]);
+  expect(readFileSync(join(directory, 'written.txt'), 'utf8')).toBe('written');
+  expect(readFileSync(join(directory, 'source.txt'), 'utf8')).toBe('edited-source');
+  expect(manager.executed.toSorted()).toEqual(['commit', 'run_tests']);
+});
