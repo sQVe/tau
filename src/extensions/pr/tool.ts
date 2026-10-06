@@ -5,7 +5,7 @@ import { Type } from 'typebox';
 
 import type { Exec } from '../../exec.js';
 import type { Runtime } from '../../github.js';
-import { readGitOutput } from '../../gitOutput.js';
+import { findCheckoutRoot } from '../../gitOutput.js';
 import { createFreshTauDirectory } from '../../tauDirectory.js';
 import { readReuse } from './reuse.js';
 import { readTarget } from './target.js';
@@ -68,25 +68,14 @@ const description = `Prepare a pull request run, resolve its target, check wheth
   - Returns {url, matches, differences}. matches is true when differences is empty. Each difference is {field, expected, actual}, where field is title, body, base, draft, or head.
   - Errors: a missing parameter; a repository that is not <host>/<owner>/<name>; a pr that is not an integer, or is below 1; a directory outside .tau/pr, nested below a run directory, not named run-*, or that goes through a symlink; a missing body.md, or one that is a symlink or has another hard link; a failing git rev-parse HEAD; a failing gh pr view; gh output the tool cannot read, named with the command.`;
 
-const findRoot = async (cwd: string) => {
-  const output = await readGitOutput(cwd, ['rev-parse', '--show-toplevel']);
-  const root = output?.trim();
-
-  if (root === undefined || root === '') {
-    throw new Error(`The pr tool needs a Git checkout, and ${cwd} is not in one.`);
-  }
-
-  return root;
-};
-
 const prepare = async (runtime: Runtime) => {
-  const root = await findRoot(runtime.cwd);
+  const root = await findCheckoutRoot(runtime.cwd, 'pr');
 
   return { directory: await createFreshTauDirectory(root, runPath, runPrefix) };
 };
 
 const reuse = async (runtime: Runtime, parameters: PrInput) => {
-  const root = await findRoot(runtime.cwd);
+  const root = await findCheckoutRoot(runtime.cwd, 'pr');
 
   const { directory, mergeBase } = parameters;
   const result = await readReuse(root, { directory, mergeBase });
@@ -95,7 +84,7 @@ const reuse = async (runtime: Runtime, parameters: PrInput) => {
 };
 
 const verify = async (runtime: Runtime, parameters: PrInput) => {
-  const root = await findRoot(runtime.cwd);
+  const root = await findCheckoutRoot(runtime.cwd, 'pr');
 
   const result = await readVerify(runtime, root, parameters);
 

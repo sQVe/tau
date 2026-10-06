@@ -6,7 +6,7 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
-import { readGitOutput } from '../../gitOutput.js';
+import { findCheckoutRoot } from '../../gitOutput.js';
 import { readReviewEvidence } from '../../reviewCapture/evidence.js';
 import {
   inputFileName,
@@ -56,17 +56,6 @@ const description = `Capture a code review target, check that it is still fresh,
 - freshness {directory}: captures the saved target again into directory/recheck.diff and compares its hash and HEAD with capture.json. Returns {status, reasons}: fresh when both match, stale when either differs, unknown when the recapture fails. reasons says what changed or failed. A failed recapture leaves no recheck.diff.
 - evidence {directory}: runs freshness, then reads the review evidence for the saved capture. It writes nothing else. Returns {target, base, head, hash, freshness, paths, tests, callers, rules, checks, gaps}. target, base, head, and hash come from capture.json, and freshness is the freshness result. paths lists the files the saved target captures now. A range reads source at to, a rootCommit at commit, and workingTree and files read the working tree. tests lists {path, lines: [{line, text}]} for each changed test file and the sibling *.test file of each changed source file that exists in the source; a deleted or renamed test path is no gap, since the capture shows it. callers lists {module, path, line, text} for each line outside test files and outside the module that imports a changed source module by a relative path through an import or export-from that starts its statement, a "} from" that starts its line, import(), or require(), outside a trailing comment that starts with // after whitespace. rules and checks list {path, status} for each code span or link path in the "## Rules" and "## Checks" sections of input.md, with status readable, missing, or unreadable. A range or rootCommit checks rule paths inside the repository at its pinned commit; check paths and paths outside the repository are checked on the filesystem. gaps lists every capture gap, plus {kind: "freshness", status, reasons} for a stale or unknown capture, {kind: "incompleteCapture", reasons}, {kind: "evidenceMismatch", recordedHash, evidenceHash} when the capture the evidence was read from does not match capture.json, even after a fresh result, {kind: "truncatedList", list, path?, kept, total}, {kind: "truncatedBody", path, limit, kept, total} for a body cut at its line or character limit, with kept and total in lines, {kind: "truncatedLine", path, line, kept, total} for a caller line text cut at its character limit, with kept and total in characters, {kind: "missing", path, section}, {kind: "unreadable", path}, also for a working tree test path that is a symlink, is not a regular file, or sits in a directory that resolves outside the repository, which is never read, {kind: "binary", path}, and {kind: "unsearched", path, reason} for each module of a failed caller search or malformed git grep output, and for a module whose name holds a newline, and {kind: "incompleteSearch", path, reason} for a caller search that skipped paths; its callers are kept. The result holds evidence only, never a verdict.
 Errors: a directory that is not .tau/workers/review-* or goes through a symlink, a revision that starts with - or that Git cannot resolve, a rootCommit with a parent, an input.md that does not end with "## Capture", a directory that already holds capture.json, any Git error during capture, and a missing, malformed, or newer capture.json for freshness and evidence, including a saved target revision that is not a full object name, named by its field. Nothing is written in those cases. The capture never changes staged contents, .git/index, or Git objects.`;
-
-const findRoot = async (cwd: string) => {
-  const output = await readGitOutput(cwd, ['rev-parse', '--show-toplevel']);
-  const root = output?.trim();
-
-  if (root === undefined || root === '') {
-    throw new Error(`The code_review tool needs a Git checkout, and ${cwd} is not in one.`);
-  }
-
-  return root;
-};
 
 const lastHeading = (text: string) =>
   text
@@ -184,7 +173,7 @@ const freshness = async (root: string, directory: string) => {
 };
 
 const runAction = async (cwd: string, parameters: CodeReviewInput): Promise<object> => {
-  const root = await findRoot(cwd);
+  const root = await findCheckoutRoot(cwd, 'code_review');
 
   if (parameters.action === 'prepare') {
     return { directory: await createFreshTauDirectory(root, workersPath, reviewPrefix) };
