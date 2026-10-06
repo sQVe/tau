@@ -20,6 +20,8 @@ export interface FakePullRequest {
   isDraft: boolean;
   headRefOid: string;
   headOwner: string;
+  // The head repository's name. The fake owner's repository is named tau unless a test says so.
+  headRepository?: string;
   headBranch: string;
 }
 
@@ -116,6 +118,7 @@ export const createGhFake = (): GhFake => {
       isDraft: pr.isDraft,
       headRefOid: pr.headRefOid,
       headRepositoryOwner: { id: `U_${pr.headOwner}`, login: pr.headOwner },
+      headRepository: { id: `R_${pr.headOwner}`, name: pr.headRepository ?? 'tau' },
     }));
   };
 

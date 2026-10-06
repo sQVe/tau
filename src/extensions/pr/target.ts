@@ -79,13 +79,14 @@ const pullRequestListSchema = Type.Array(
     isDraft: Type.Boolean(),
     headRefOid: Type.String(),
     headRepositoryOwner: Type.Object({ login: Type.String() }),
+    headRepository: Type.Union([Type.Object({ name: Type.String() }), Type.Null()]),
   }),
 );
 
 const pullRequestListLimit = 100;
 
 const pullRequestFields =
-  'number,url,state,title,body,baseRefName,isDraft,headRefOid,headRepositoryOwner';
+  'number,url,state,title,body,baseRefName,isDraft,headRefOid,headRepositoryOwner,headRepository';
 
 // Git prints the push remote only when branch.<name>.pushRemote, branch.<name>.remote, or
 // remote.pushDefault names one, so an empty remote means the branch has no push target. With a
@@ -445,7 +446,7 @@ export const readTarget = async (runtime: Runtime, request: TargetRequest): Prom
 
   const baseRemote = pickBaseRemote(head.remotes, head.remote, base.repository);
   const listed = await readPullRequestList(runtime, base.repository, head.branch);
-  const { pr, closedPrs } = pickPullRequests(listed, head.repository.owner);
+  const { pr, closedPrs } = pickPullRequests(listed, head.repository);
 
   const baseBranch = pickBaseBranch({
     pr,

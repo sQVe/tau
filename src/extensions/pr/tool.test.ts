@@ -387,6 +387,33 @@ it('refuses a head remote whose push URLs name different repositories', async ()
   expect(fake.calls).toEqual([]);
 });
 
+it("leaves out a pull request from another repository of the head's owner", async () => {
+  const { root, fake, run } = await setUp('team/myfork');
+  const upstreamUrl = githubUrl('team/project');
+  const upstream = await createBareRemote(upstreamUrl, root);
+
+  await git(root, 'push', '--quiet', upstream, 'main');
+  await git(root, 'remote', 'add', 'upstream', upstreamUrl);
+  await pushFeature(root);
+
+  fake.repositories['github.com/team/myfork'] = { defaultBranch: 'main', parent: 'team/project' };
+  fake.repositories['github.com/team/project'] = { defaultBranch: 'main' };
+
+  holdPullRequests(fake, 'github.com/team/project', [
+    pullRequest({ headOwner: 'team', headRepository: 'project' }),
+    pullRequest({ number: 8, state: 'CLOSED', headOwner: 'team', headRepository: 'myfork' }),
+  ]);
+
+  const details = await run({ action: 'target' });
+
+  expect(details).toMatchObject({
+    repository: 'github.com/team/project',
+    head: { repository: 'github.com/team/myfork', owner: 'team', branch: 'feature' },
+    pr: null,
+    closedPrs: [{ number: 8 }],
+  });
+});
+
 it('stops before other gh calls when gh auth status fails', async () => {
   const { root, fake, run } = await setUp();
 

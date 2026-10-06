@@ -66,9 +66,11 @@ export interface ListedPullRequest {
   isDraft: boolean;
   headRefOid: string;
   headRepositoryOwner: { login: string };
+  // null when GitHub no longer has the head repository, such as a deleted fork.
+  headRepository: { name: string } | null;
 }
 
-export type PullRequest = Omit<ListedPullRequest, 'headRepositoryOwner'>;
+export type PullRequest = Omit<ListedPullRequest, 'headRepositoryOwner' | 'headRepository'>;
 
 export interface PullRequestChoice {
   pr: PullRequest | null;
@@ -292,16 +294,26 @@ export const rejectDefaultBranch = (facts: DefaultBranchFacts): void => {
   }
 };
 
-const withoutOwner = ({ headRepositoryOwner: _owner, ...pr }: ListedPullRequest): PullRequest => pr;
+const withoutHead = ({
+  headRepositoryOwner: _owner,
+  headRepository: _repository,
+  ...pr
+}: ListedPullRequest): PullRequest => pr;
 
-// Keeps the head owner's pull requests, since another owner's fork can use the same branch name.
+const fromHeadRepository = (pr: ListedPullRequest, head: Repository) => {
+  const sameOwner = pr.headRepositoryOwner.login.toLowerCase() === head.owner.toLowerCase();
+  const sameName = pr.headRepository?.name.toLowerCase() === head.name.toLowerCase();
+
+  return sameOwner && sameName;
+};
+
+// Keeps the head repository's pull requests, since another fork, or another repository of the
+// same owner, can use the same branch name.
 export const pickPullRequests = (
   listed: readonly ListedPullRequest[],
-  headOwner: string,
+  headRepository: Repository,
 ): PullRequestChoice => {
-  const owned = listed
-    .filter((pr) => pr.headRepositoryOwner.login.toLowerCase() === headOwner.toLowerCase())
-    .map(withoutOwner);
+  const owned = listed.filter((pr) => fromHeadRepository(pr, headRepository)).map(withoutHead);
 
   const open = owned.filter((pr) => pr.state === 'OPEN');
   const closedPrs = owned.filter((pr) => pr.state !== 'OPEN');
