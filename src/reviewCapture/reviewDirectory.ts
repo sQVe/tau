@@ -1,9 +1,9 @@
 import type { Stats } from 'node:fs';
 import { lstat } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import { isMissingFile } from '../errors.js';
-import { checkTauDirectory } from '../tauDirectory.js';
+import { checkTauDirectory, locateTauChild } from '../tauDirectory.js';
 import { inputFileName, recheckFileName, recordFileName } from './record.js';
 
 export const workersPath = 'workers';
@@ -32,18 +32,15 @@ const rejectLinkedFile = async (path: string) => {
 };
 
 const reviewName = (root: string, directory: string) => {
-  const fromWorkers = relative(join(root, '.tau', workersPath), resolve(root, directory));
-  const outside = fromWorkers.startsWith('..') || isAbsolute(fromWorkers);
-  const nested = fromWorkers.includes('/') || fromWorkers.includes('\\');
-  const named = fromWorkers.startsWith(reviewPrefix) && fromWorkers.length > reviewPrefix.length;
+  const located = locateTauChild(root, workersPath, reviewPrefix, directory);
 
-  if (outside || nested || !named) {
+  if (located.kind !== 'child') {
     throw new Error(
       `The review directory must be .tau/workers/review-* from prepare, not ${directory}.`,
     );
   }
 
-  return fromWorkers;
+  return located.name;
 };
 
 // Refuses a review directory that a link could send outside the checkout, and changes nothing.

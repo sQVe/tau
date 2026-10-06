@@ -1,8 +1,14 @@
 import { appendFile, lstat, mkdir, mkdtemp, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 
 import { isMissingFile } from './errors.js';
 import { readGitOutput } from './gitOutput.js';
+
+export type TauChild =
+  | { kind: 'outside' }
+  | { kind: 'nested' }
+  | { kind: 'unnamed' }
+  | { kind: 'child'; name: string };
 
 const ignoreEverything = '*';
 
@@ -202,4 +208,29 @@ export const createFreshTauDirectory = async (
   const parent = await ensureTauDirectory(root, parentPath);
 
   return mkdtemp(join(parent, prefix));
+};
+
+// Places directory against `<root>/.tau/<parentPath>`: a child is one segment directly in it that
+// starts with prefix and has more after it.
+export const locateTauChild = (
+  root: string,
+  parentPath: string,
+  prefix: string,
+  directory: string,
+): TauChild => {
+  const name = relative(join(root, '.tau', parentPath), resolve(root, directory));
+
+  if (name.startsWith('..') || isAbsolute(name)) {
+    return { kind: 'outside' };
+  }
+
+  if (name.includes('/') || hasBackslash(name)) {
+    return { kind: 'nested' };
+  }
+
+  if (!name.startsWith(prefix) || name.length <= prefix.length) {
+    return { kind: 'unnamed' };
+  }
+
+  return { kind: 'child', name };
 };
