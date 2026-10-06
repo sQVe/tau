@@ -461,6 +461,36 @@ it('pins the merge base when the fetch refspec leaves out the base branch', asyn
   });
 });
 
+it('targets the named remote when the configured remote does not exist', async () => {
+  const { root, run } = await setUp();
+
+  await pushFeature(root);
+  await git(root, 'config', 'branch.feature.remote', 'gone');
+
+  const details = await run({ action: 'target', remote: 'origin' });
+
+  expect(details).toMatchObject({
+    head: { remote: 'origin' },
+    base: { remote: 'origin', branch: 'main' },
+  });
+});
+
+it('gathers evidence with the named remote when the configured remote does not exist', async () => {
+  const { root, run } = await setUp();
+
+  await pushFeature(root);
+  await git(root, 'config', 'branch.feature.remote', 'gone');
+
+  const evidence = await run({ action: 'evidence', remote: 'origin' });
+
+  expect(evidence).toMatchObject({
+    target: {
+      head: { remote: 'origin' },
+      base: { remote: 'origin', branch: 'main' },
+    },
+  });
+});
+
 it('refuses a branch whose configured remote does not exist', async () => {
   const { root, fake, run } = await setUp();
 

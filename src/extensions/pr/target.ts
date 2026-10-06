@@ -376,14 +376,16 @@ const resolveHead = async (runtime: Runtime, request: TargetRequest) => {
   const { cwd } = runtime;
   const branch = await readBranch(cwd);
   const remotes = await readRemotes(runtime);
-  const pushTarget = await readPushTarget(cwd, branch);
+  const inferRemote = request.remote === undefined;
+  const pushTarget = inferRemote ? await readPushTarget(cwd, branch) : undefined;
+  const remotesWithBranch = inferRemote ? await readRemotesWithBranch(cwd, remotes, branch) : [];
 
   const head = pickHead({
     branch,
     pushTarget,
     requestedRemote: request.remote,
     remotes,
-    remotesWithBranch: await readRemotesWithBranch(cwd, remotes, branch),
+    remotesWithBranch,
   });
 
   const remote = remotes.find((candidate) => candidate.name === head.remote);
