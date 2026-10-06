@@ -300,6 +300,19 @@ it('pins the merge base when the fetch refspec leaves out the base branch', asyn
   });
 });
 
+it('refuses a branch whose configured remote does not exist', async () => {
+  const { root, fake, run } = await setUp();
+
+  await pushFeature(root);
+  await git(root, 'config', 'branch.feature.remote', 'gone');
+
+  await expect(run({ action: 'target' })).rejects.toThrow(
+    "git rev-parse --abbrev-ref @{push} failed: fatal: upstream branch 'refs/heads/feature' not stored as a remote-tracking branch",
+  );
+
+  expect(fake.calls).toEqual([]);
+});
+
 it('stops before other gh calls when gh auth status fails', async () => {
   const { root, fake, run } = await setUp();
 

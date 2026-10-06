@@ -68,11 +68,37 @@ const pullRequestListLimit = 100;
 const pullRequestFields =
   'number,url,state,title,body,baseRefName,isDraft,headRefOid,headRepositoryOwner';
 
-// Git exits with 128 when the branch has no upstream, so any failure means no push target.
-const readPushTarget = async (cwd: string) => {
-  const result = await runGit(cwd, ['rev-parse', '--abbrev-ref', '@{push}']);
+// The settings Git reads to find where a branch pushes. With none of them set, the branch has no
+// push target.
+const pushSettings = (branch: string) => [
+  `branch.${branch}.pushRemote`,
+  `branch.${branch}.remote`,
+  'remote.pushDefault',
+];
 
-  return result.exitCode === 0 ? result.stdout.toString('utf8').trim() : undefined;
+const hasPushSetting = async (cwd: string, branch: string) => {
+  const values = await Promise.all(
+    pushSettings(branch).map((key) => readOptionalGit(cwd, ['config', '--get', key])),
+  );
+
+  return values.some((value) => value !== undefined);
+};
+
+// Resolves undefined only when no push setting exists for the branch. When one exists and Git
+// still cannot resolve @{push}, such as for a removed remote, the setting is broken.
+const readPushTarget = async (cwd: string, branch: string) => {
+  const commandArguments = ['rev-parse', '--abbrev-ref', '@{push}'];
+  const result = await runGit(cwd, commandArguments);
+
+  if (result.exitCode === 0) {
+    return result.stdout.toString('utf8').trim();
+  }
+
+  if (!(await hasPushSetting(cwd, branch))) {
+    return undefined;
+  }
+
+  throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
 };
 
 const lines = (text: string | undefined) => (text ?? '').split('\n').filter((line) => line !== '');
@@ -240,7 +266,7 @@ const readPullRequestList = async (runtime: Runtime, repository: Repository, bra
 const resolveHead = async (cwd: string, request: TargetRequest) => {
   const branch = await readBranch(cwd);
   const remotes = await readRemotes(cwd);
-  const pushTarget = await readPushTarget(cwd);
+  const pushTarget = await readPushTarget(cwd, branch);
 
   const head = pickHead({
     branch,
