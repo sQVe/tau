@@ -3,6 +3,7 @@ import { basename, join } from 'node:path';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
+import { confirm } from '../../confirm.js';
 import { errorMessage } from '../../errors.js';
 import { ensureTauDirectory } from '../../tauDirectory.js';
 import type { Draft, Plan } from './draft.js';
@@ -413,7 +414,8 @@ export const applySlicePlan = async (
     throw new Error('Writing to Linear needs a session with UI to confirm. Nothing was written.');
   }
 
-  const confirmed = await context.ui.confirm(
+  const confirmed = await confirm(
+    context,
     'Write the slice plan to Linear?',
     confirmMessage(steps),
   );

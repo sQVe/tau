@@ -288,8 +288,10 @@ describe('slice tool apply', () => {
     const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => false);
 
     await apply(confirmContext(root, confirm), directory);
+    const title = confirm.mock.calls[0]?.[0];
     const message = confirm.mock.calls[0]?.[1] ?? '';
 
+    expect(title).toBe('Write the slice plan to Linear?');
     expect(message).toContain('Record the renamed lifecycle');
     expect(message).toContain('slice-2.md');
     expect(message).not.toContain('Slice two, revised.');

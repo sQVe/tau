@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
+import { confirm } from '../../confirm.js';
 import { errorMessage } from '../../errors.js';
 import {
   postIssueComment,
@@ -450,7 +451,8 @@ export const postReplies = async (
       );
     }
 
-    const confirmed = await context.ui.confirm(
+    const confirmed = await confirm(
+      context,
       confirmTitle(toPeople, feedback.pr.number),
       confirmMessage(toPeople, feedback),
     );

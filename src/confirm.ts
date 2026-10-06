@@ -1,0 +1,83 @@
+import { DynamicBorder } from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
+import { Container, Spacer, Text } from '@earendil-works/pi-tui';
+import type { Component } from '@earendil-works/pi-tui';
+
+const renderOptions = (options: Container, selected: number, theme: Theme) => {
+  options.clear();
+
+  for (const [index, label] of ['Yes', 'No'].entries()) {
+    const text =
+      index === selected
+        ? theme.fg('accent', '→ ') + theme.fg('accent', label)
+        : `  ${theme.fg('text', label)}`;
+
+    options.addChild(new Text(text, 1, 0));
+  }
+};
+
+export const confirm = async (
+  context: ExtensionContext,
+  title: string,
+  message: string,
+): Promise<boolean> => {
+  if (context.mode !== 'tui') {
+    return context.ui.confirm(title, message);
+  }
+
+  const answer = await context.ui.custom<boolean | undefined>(
+    (terminal, theme, keybindings, done) => {
+      const dialog: Container & Component = new Container();
+      const options = new Container();
+      const boldTitle = theme.bold(title);
+      const selectKeys = keybindings.getKeys('tui.select.confirm').join('/');
+      const cancelKeys = keybindings.getKeys('tui.select.cancel').join('/');
+
+      const hint =
+        theme.fg('dim', '↑↓') +
+        theme.fg('muted', ' navigate  ') +
+        theme.fg('dim', selectKeys) +
+        theme.fg('muted', ' select  ') +
+        theme.fg('dim', cancelKeys) +
+        theme.fg('muted', ' cancel');
+
+      let selected = 0;
+
+      dialog.addChild(new DynamicBorder((text) => theme.fg('border', text)));
+      dialog.addChild(new Spacer(1));
+      dialog.addChild(new Text(theme.fg('accent', boldTitle), 1, 0));
+      dialog.addChild(new Spacer(1));
+      dialog.addChild(new Text(theme.fg('text', message), 1, 0));
+      dialog.addChild(new Spacer(1));
+      dialog.addChild(options);
+      dialog.addChild(new Spacer(1));
+      dialog.addChild(new Text(hint, 1, 0));
+      dialog.addChild(new Spacer(1));
+      dialog.addChild(new DynamicBorder((text) => theme.fg('border', text)));
+      renderOptions(options, selected, theme);
+
+      dialog.handleInput = (data) => {
+        if (keybindings.matches(data, 'tui.select.up') || data === 'k') {
+          selected = Math.max(0, selected - 1);
+        } else if (keybindings.matches(data, 'tui.select.down') || data === 'j') {
+          selected = Math.min(1, selected + 1);
+        } else if (keybindings.matches(data, 'tui.select.confirm') || data === '\n') {
+          done(selected === 0);
+
+          return;
+        } else if (keybindings.matches(data, 'tui.select.cancel')) {
+          done(false);
+
+          return;
+        }
+
+        renderOptions(options, selected, theme);
+        terminal.requestRender();
+      };
+
+      return dialog;
+    },
+  );
+
+  return answer ?? false;
+};
