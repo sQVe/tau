@@ -15,6 +15,7 @@ import { readFeedback } from './read.js';
 import type { PullRequestFeedback } from './read.js';
 import { readPosted, readPullRequestRecord, readReplies, writePosted } from './replies.js';
 import type { PostedWrite, Replies } from './replies.js';
+import type { Thread } from './threads.js';
 import { personWrites, planWrites, settleWrites, targetCommentIds } from './writes.js';
 import type { PlannedWrite } from './writes.js';
 
@@ -264,8 +265,81 @@ const makeWrites = async (
   return posted;
 };
 
-const confirmMessage = (writes: readonly PlannedWrite[]) =>
-  writes.map((write, index) => `${index + 1}. ${describeWrite(write)}`).join('\n\n');
+const quoteLength = 72;
+
+const plural = (count: number, singular: string, several: string) =>
+  `${count} ${count === 1 ? singular : several}`;
+
+const confirmTitle = (writes: readonly PlannedWrite[], pr: number) => {
+  const resolves = writes.filter((write) => write.kind === 'resolve').length;
+  const replies = writes.length - resolves;
+  const actions: string[] = [];
+
+  if (replies > 0) {
+    actions.push(`post ${plural(replies, 'reply', 'replies')} to people`);
+  }
+
+  if (resolves > 0) {
+    actions.push(`resolve ${plural(resolves, 'thread', 'threads')}`);
+  }
+
+  const sentence = `${actions.join(' and ')} on PR #${pr}?`;
+
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}`;
+};
+
+const indent = (text: string) =>
+  text
+    .split('\n')
+    .map((line) => (line === '' ? '' : `   ${line}`))
+    .join('\n');
+
+const quote = (body: string) => {
+  const line = body.replaceAll(/\s+/gu, ' ').trim();
+  const ellipsis = '...';
+  const kept = quoteLength - ellipsis.length;
+  const shortened = line.length > quoteLength ? `${line.slice(0, kept)}${ellipsis}` : line;
+
+  return `> ${shortened}`;
+};
+
+const threadPlace = (thread: Thread) =>
+  thread.line === null ? thread.path : `${thread.path}:${thread.line}`;
+
+// Describes a thread by the comment the reply answers, its author, and its place in the diff.
+const threadSummary = (thread: Thread) => {
+  const answered =
+    thread.comments.find((comment) => comment.id === thread.replyTo) ?? thread.comments[0];
+
+  const author = answered?.author ?? null;
+  const who = author === null ? 'A deleted user' : `@${author}`;
+  const quoted = answered === undefined ? [] : [quote(answered.body)];
+
+  return { heading: `${who} on ${threadPlace(thread)}`, quoted };
+};
+
+const confirmItem = (write: PlannedWrite, feedback: PullRequestFeedback) => {
+  if (write.kind === 'comment') {
+    return [`Comment on PR #${feedback.pr.number}`, indent(write.text)].join('\n');
+  }
+
+  const thread = feedback.threads.find((candidate) => candidate.id === write.thread);
+
+  if (thread === undefined) {
+    return describeWrite(write);
+  }
+
+  const { heading, quoted } = threadSummary(thread);
+
+  if (write.kind === 'resolve') {
+    return [`Resolve the thread of ${heading}`, ...quoted.map((line) => indent(line))].join('\n');
+  }
+
+  return [heading, ...quoted.map((line) => indent(line)), indent(write.text)].join('\n');
+};
+
+const confirmMessage = (writes: readonly PlannedWrite[], feedback: PullRequestFeedback) =>
+  writes.map((write, index) => `${index + 1}. ${confirmItem(write, feedback)}`).join('\n\n');
 
 const planFromFeedback = (saved: SavedWork, feedback: PullRequestFeedback) =>
   planWrites({
@@ -377,8 +451,8 @@ export const postReplies = async (
     }
 
     const confirmed = await context.ui.confirm(
-      'Post these replies to people on the pull request?',
-      confirmMessage(toPeople),
+      confirmTitle(toPeople, feedback.pr.number),
+      confirmMessage(toPeople, feedback),
     );
 
     if (!confirmed) {
