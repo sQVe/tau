@@ -50,6 +50,16 @@ it.each([
     facts: headFacts({ remotesWithBranch: ['origin'] }),
     head: { remote: 'origin', branch: 'feature' },
   },
+  {
+    facts: headFacts({
+      pushTarget: 'foo/bar/feature',
+      remotes: [
+        { name: 'foo', repository: fork, pushRepository: fork },
+        { name: 'foo/bar', repository: upstream, pushRepository: upstream },
+      ],
+    }),
+    head: { remote: 'foo/bar', branch: 'feature' },
+  },
 ])('picks the head $head.remote/$head.branch', ({ facts, head }) => {
   expect(pickHead(facts)).toEqual(head);
 });

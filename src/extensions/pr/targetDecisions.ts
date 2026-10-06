@@ -82,8 +82,12 @@ const sameRepository = (left: Repository, right: Repository): boolean =>
 
 const remoteNames = (remotes: readonly Remote[]) => remotes.map((remote) => remote.name);
 
+// Remote names can contain a slash, so remotes foo and foo/bar both match foo/bar/feature. The
+// longest matching name is the remote.
 const pushHead = (pushTarget: string, remotes: readonly Remote[]): Head | undefined => {
-  const remote = remotes.find((candidate) => pushTarget.startsWith(`${candidate.name}/`));
+  const [remote] = remotes
+    .filter((candidate) => pushTarget.startsWith(`${candidate.name}/`))
+    .toSorted((left, right) => right.name.length - left.name.length);
 
   return remote === undefined
     ? undefined
