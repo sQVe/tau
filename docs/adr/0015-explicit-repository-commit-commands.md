@@ -48,14 +48,19 @@ later contract is optional message-check argv and `hooks: run|skip`, defaulting 
 
 ## Consequences
 
+### Positive
+
+- Tau does not need ecosystem-specific discovery rules.
+- Command selection is ecosystem-neutral.
+
 ### Negative
 
-- Owners must configure commands, but Tau does not need ecosystem-specific discovery rules.
+- Owners must configure commands.
 - Preparation can still invalidate earlier TDD evidence and change unrequested working files. Those
   files stay outside the commit unless requested.
 - Preparation must be safe to rerun; Tau does not undo its working changes.
-- Command selection is ecosystem-neutral, but dependency sharing is not: existing optional
-  `node_modules` sharing remains. General dependency setup is outside this decision.
+- Dependency sharing is not ecosystem-neutral: existing optional `node_modules` sharing remains.
+  General dependency setup is outside this decision.
 
 ## Alternatives considered
 
