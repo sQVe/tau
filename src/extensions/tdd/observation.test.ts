@@ -865,6 +865,24 @@ it('keeps reports and successful edits when fingerprints fail', async ({ onTestF
   await expect(observation.checkpoint(true)).resolves.toBeUndefined();
 });
 
+it('reports why input hashing failed', async ({ onTestFinished }) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  const report = result('passed');
+  vi.mocked(runTests).mockResolvedValue(report);
+  await makeUnreadable(join(cwd, 'package.json'));
+
+  const observed = await observation.run(behavior, 'full');
+
+  expect(observed).toMatchObject({
+    kind: 'pass',
+    freshness: 'unknown',
+    inputs: { before: null, after: null },
+  });
+
+  expect(observed.inputs.error).toContain('package.json');
+  expect(observed.report).toBe(report);
+});
+
 it.each([
   'cancelled',
   'timeout',

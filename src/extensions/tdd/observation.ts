@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto';
-import { access, glob, readFile, realpath, writeFile } from 'node:fs/promises';
+import { access, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import { isMissingFile } from '../../errors.js';
-import { classifyPath, configurationGlobs, defaultTddConfig } from './config.js';
+import { errorMessage } from '../../errors.js';
+import { classifyPath, defaultTddConfig } from './config.js';
 import type { TddConfig } from './config.js';
+import { fingerprintInputs } from './inputFingerprint.js';
 import { finishDiagnostics } from './runner/retention.js';
 import type { RunDiagnostics, RunnerResult } from './runner/types.js';
 import { runTests } from './runner/vitest.js';
@@ -22,6 +22,11 @@ interface LatestRun {
   kind: RunnerResult['kind'];
   fingerprint: string | null;
   freshness: Freshness;
+}
+
+interface InputHash {
+  hash: string | null;
+  error: string | undefined;
 }
 
 interface RunRequest {
@@ -89,56 +94,19 @@ const compareInputs = (before: string | null, after: string | null): Freshness =
   return before === after ? 'fresh' : 'stale';
 };
 
-// Content is checked at bounded checkpoints, not as an atomic snapshot.
-const fingerprint = async (
-  cwd: string,
-  config: TddConfig,
-  files: string[],
-): Promise<string | null> => {
+const hashInputs = async (state: ObservationState, files: string[]): Promise<InputHash> => {
   try {
-    const paths = [...files];
-
-    for await (const file of glob(
-      [
-        ...config.productionGlobs,
-        ...config.testGlobs,
-        ...config.testSupportGlobs,
-        ...configurationGlobs,
-      ],
-      { cwd, exclude: config.excludedGlobs, withFileTypes: true },
-    )) {
-      // A glob such as `src/**` also matches directories, which cannot be hashed. Symbolic links
-      // stay, so a linked source file is still read through its link.
-      if (!file.isDirectory()) {
-        paths.push(join(file.parentPath, file.name));
-      }
-    }
-
-    const digest = createHash('sha256');
-
-    const entries = await Promise.all(
-      [...new Set(paths.map((path) => resolve(cwd, path)))].toSorted().map(async (file) => {
-        try {
-          const content = await readFile(file);
-
-          return [file, createHash('sha256').update(content).digest('hex')];
-        } catch (error) {
-          if (!isMissingFile(error)) {
-            throw error;
-          }
-
-          return [file, null];
-        }
-      }),
-    );
-
-    digest.update(JSON.stringify(entries));
-
-    return digest.digest('hex');
-  } catch {
+    return { hash: await fingerprintInputs(state.cwd, state.config, files), error: undefined };
+  } catch (error) {
     // A reminder must not discard a test report or turn a successful edit into an error.
-    return null;
+    return { hash: null, error: errorMessage(error) };
   }
+};
+
+const reportedInputs = (before: InputHash, after: InputHash): ObservationResult['inputs'] => {
+  const error = before.error ?? after.error;
+
+  return { before: before.hash, after: after.hash, ...(error === undefined ? {} : { error }) };
 };
 
 const selectedFailed = (cwd: string, behavior: Behavior, report: RunnerResult) =>
@@ -324,7 +292,9 @@ const checkpointWork = async (
 
   if (latest !== null && latest.fingerprint !== null) {
     if (latest.freshness !== 'stale' || canSuggestRed) {
-      current = await fingerprint(state.cwd, state.config, latest.behavior.files);
+      const inputs = await hashInputs(state, latest.behavior.files);
+
+      current = inputs.hash;
 
       if (current === null) {
         latest.freshness = 'unknown';
@@ -383,20 +353,20 @@ const performRun = async (
 
   state.active = key;
 
-  const before = await fingerprint(state.cwd, state.config, behavior.files);
+  const before = await hashInputs(state, behavior.files);
 
   request.onStart?.(behavior);
 
   const report = await runTestsFor(state, behavior, request);
-  const after = await fingerprint(state.cwd, state.config, behavior.files);
-  const freshness = compareInputs(before, after);
+  const after = await hashInputs(state, behavior.files);
+  const freshness = compareInputs(before.hash, after.hash);
   const previous = state.latest;
 
   state.latest = {
     behavior,
     scope: request.scope,
     kind: report.kind,
-    fingerprint: after,
+    fingerprint: after.hash,
     freshness,
   };
 
@@ -419,7 +389,7 @@ const performRun = async (
     state.shownHints.clear();
   }
 
-  const inputs = { before, after };
+  const inputs = reportedInputs(before, after);
 
   const runPath = await saveRunRecord(report.diagnostics, {
     cwd: state.cwd,
@@ -427,7 +397,7 @@ const performRun = async (
     scope: request.scope,
     kind: report.kind,
     freshness,
-    inputs,
+    inputs: { before: inputs.before, after: inputs.after },
     diagnostics: report.diagnostics,
   });
 
@@ -442,8 +412,8 @@ const performRun = async (
     report,
     hint:
       thrownType === null
-        ? hint(state, runHint(state, request.scope, report, freshness), after)
-        : hint(state, 'thrown', after, thrownType),
+        ? hint(state, runHint(state, request.scope, report, freshness), after.hash)
+        : hint(state, 'thrown', after.hash, thrownType),
   };
 };
 
