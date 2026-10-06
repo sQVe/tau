@@ -627,6 +627,33 @@ describe('slice tool apply', () => {
     expect(fake.issues.get('ME-1')).toMatchObject({ title: 'Old title', description: 'Old.\n' });
   });
 
+  it('keeps agent children out of dropped slices', async () => {
+    const { fake, directory, read } = await setUp();
+
+    fake.addIssue({ identifier: 'ME-1', title: 'Container' });
+    fake.addIssue({ identifier: 'ME-2', title: 'Slice', parent: 'ME-1' });
+
+    fake.addIssue({
+      identifier: 'AI-1',
+      title: 'Agent task',
+      parent: 'ME-1',
+      teamId: 'team-ai',
+      projectId: null,
+    });
+
+    await writeFile(
+      join(directory, 'plan.json'),
+      JSON.stringify({
+        version: 1,
+        route: { team: 'ME', project: 'Tau' },
+        container: { identifier: 'ME-1', title: 'Container', file: 'container.md' },
+        slices: [{ identifier: 'ME-2', title: 'Slice', file: 'slice-1.md', blockedBy: [] }],
+      }),
+    );
+
+    await expect(read()).resolves.toMatchObject({ dropped: [], problems: [] });
+  });
+
   it('creates every slice before it marks one blocked by a later slice', async () => {
     const { fake, directory, apply } = await setUp();
 
