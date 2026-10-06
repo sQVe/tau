@@ -116,26 +116,26 @@ export const pickHead = (facts: HeadFacts): Head => {
   return { remote: sole, branch };
 };
 
-// The remote to fetch the base from: the head remote when the base is its repository, otherwise
-// the first remote that points at the base repository.
+const fetchesFrom = (remote: Remote, repository: Repository) =>
+  remote.repository !== undefined && sameRepository(remote.repository, repository);
+
+// The remote to fetch the base from, chosen by fetch repository only, since a remote can push to
+// one repository and fetch from another: the head remote when it fetches the base repository,
+// otherwise the first remote that does.
 export const pickBaseRemote = (
   remotes: readonly Remote[],
-  head: { remote: string; repository: Repository },
+  headRemote: string,
   baseRepository: Repository,
 ): string => {
-  if (sameRepository(head.repository, baseRepository)) {
-    return head.remote;
-  }
+  const head = remotes.find((remote) => remote.name === headRemote);
+  const headFetchesBase = head !== undefined && fetchesFrom(head, baseRepository);
 
-  const remote = remotes.find(
-    (candidate) =>
-      candidate.repository !== undefined && sameRepository(candidate.repository, baseRepository),
-  );
+  const remote = headFetchesBase
+    ? head
+    : remotes.find((candidate) => fetchesFrom(candidate, baseRepository));
 
   if (remote === undefined) {
-    throw new Error(
-      `No Git remote points at ${formatRepository(baseRepository)}, the upstream of ${formatRepository(head.repository)}. Add one.`,
-    );
+    throw new Error(`No Git remote fetches from ${formatRepository(baseRepository)}. Add one.`);
   }
 
   return remote.name;

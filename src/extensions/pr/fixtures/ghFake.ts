@@ -42,6 +42,9 @@ const argumentAfter = (commandArguments: readonly string[], flag: string) => {
   return index === -1 ? '' : (commandArguments[index + 1] ?? '');
 };
 
+// gh pr list prints at most 30 pull requests unless --limit says otherwise.
+const defaultListLimit = 30;
+
 const commandKeys: Record<string, CommandKey> = {
   'auth status': 'auth status',
   'repo view': 'repo view',
@@ -95,7 +98,9 @@ export const createGhFake = (): GhFake => {
   const pullRequestList = (commandArguments: readonly string[]) => {
     const repository = argumentAfter(commandArguments, '--repo');
     const head = argumentAfter(commandArguments, '--head');
-    const listed = (fake.pullRequests[repository] ?? []).filter((pr) => pr.headBranch === head);
+    const limit = Number(argumentAfter(commandArguments, '--limit') || defaultListLimit);
+    const matching = (fake.pullRequests[repository] ?? []).filter((pr) => pr.headBranch === head);
+    const listed = matching.slice(0, limit);
 
     return listed.map((pr) => ({
       number: pr.number,

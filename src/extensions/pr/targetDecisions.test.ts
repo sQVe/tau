@@ -64,19 +64,32 @@ it.each([
   expect(() => pickHead(facts)).toThrow(error);
 });
 
+const sameFetchRemotes: Remote[] = [
+  { name: 'mirror', repository: upstream, pushRepository: upstream },
+  { name: 'upstream', repository: upstream, pushRepository: upstream },
+];
+
+const swappedRemotes: Remote[] = [
+  { name: 'origin', repository: fork, pushRepository: upstream },
+  { name: 'upstream', repository: upstream, pushRepository: upstream },
+];
+
 it.each([
-  { head: { remote: 'origin', repository: fork }, base: fork, remote: 'origin' },
-  { head: { remote: 'origin', repository: fork }, base: upstream, remote: 'upstream' },
-  { head: { remote: 'mine', repository: upstream }, base: upstream, remote: 'mine' },
-])('fetches the base from $remote', ({ head, base, remote }) => {
-  expect(pickBaseRemote(remotes, head, base)).toBe(remote);
+  { remotes, head: 'origin', base: fork, remote: 'origin' },
+  { remotes, head: 'origin', base: upstream, remote: 'upstream' },
+  { remotes, head: 'local', base: upstream, remote: 'upstream' },
+  { remotes: sameFetchRemotes, head: 'upstream', base: upstream, remote: 'upstream' },
+  { remotes: sameFetchRemotes, head: 'origin', base: upstream, remote: 'mirror' },
+  { remotes: swappedRemotes, head: 'origin', base: upstream, remote: 'upstream' },
+])('fetches the base from $remote when the head remote is $head', (row) => {
+  expect(pickBaseRemote(row.remotes, row.head, row.base)).toBe(row.remote);
 });
 
-it('refuses a fork whose upstream has no Git remote', () => {
-  const head = { remote: 'origin', repository: fork };
+it('refuses a base repository that no remote fetches from', () => {
+  const pushOnly: Remote[] = [{ name: 'origin', repository: fork, pushRepository: upstream }];
 
-  expect(() => pickBaseRemote(remotes.slice(0, 2), head, upstream)).toThrow(
-    'No Git remote points at github.com/sQVe/tau, the upstream of github.com/fork/tau.',
+  expect(() => pickBaseRemote(pushOnly, 'origin', upstream)).toThrow(
+    'No Git remote fetches from github.com/sQVe/tau. Add one.',
   );
 });
 

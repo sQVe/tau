@@ -1,6 +1,6 @@
 import { Type } from 'typebox';
 
-import { checkOutput, parseRepository, readJson, run } from '../../github.js';
+import { checkOutput, label, parseRepository, readJson, run } from '../../github.js';
 import type { Repository, Runtime } from '../../github.js';
 import { runGit } from '../../gitOutput.js';
 import { readGit, readOptionalGit } from './git.js';
@@ -61,6 +61,8 @@ const pullRequestListSchema = Type.Array(
     headRepositoryOwner: Type.Object({ login: Type.String() }),
   }),
 );
+
+const pullRequestListLimit = 100;
 
 const pullRequestFields =
   'number,url,state,title,body,baseRefName,isDraft,headRefOid,headRepositoryOwner';
@@ -139,15 +141,35 @@ const readRemoteUrls = async (cwd: string) => {
   return urls;
 };
 
+// Git applies insteadOf and pushInsteadOf rewrites to the URLs it uses. A rewrite to a URL that
+// names no GitHub repository, such as a local mirror path, keeps the configured URL.
+const effectiveRepository = async (cwd: string, commandArguments: string[], configured: string) => {
+  const expanded = await readOptionalGit(cwd, ['remote', 'get-url', ...commandArguments]);
+  const url = expanded ?? configured;
+  const repository = remoteRepository(url);
+
+  return repository === undefined
+    ? { url: configured, repository: remoteRepository(configured) }
+    : { url, repository };
+};
+
+const readRemote = async (cwd: string, name: string, urls: RemoteUrls): Promise<RemoteUrl> => {
+  const { url = '', pushUrl = url } = urls;
+  const fetched = await effectiveRepository(cwd, [name], url);
+  const pushed = await effectiveRepository(cwd, ['--push', name], pushUrl);
+
+  return {
+    name,
+    pushUrl: pushed.url,
+    repository: fetched.repository,
+    pushRepository: pushed.repository,
+  };
+};
+
 const readRemotes = async (cwd: string): Promise<RemoteUrl[]> => {
   const urls = await readRemoteUrls(cwd);
 
-  return [...urls].map(([name, { url = '', pushUrl = url }]) => ({
-    name,
-    pushUrl,
-    repository: remoteRepository(url),
-    pushRepository: remoteRepository(pushUrl),
-  }));
+  return Promise.all([...urls].map(([name, remoteUrls]) => readRemote(cwd, name, remoteUrls)));
 };
 
 const readBranch = async (cwd: string) => {
@@ -184,6 +206,7 @@ const readRepositoryView = async (runtime: Runtime, repository: Repository) => {
   return view;
 };
 
+// gh pr list prints at most --limit pull requests and does not say when it left some out.
 const readPullRequestList = async (runtime: Runtime, repository: Repository, branch: string) => {
   const commandArguments = [
     'pr',
@@ -194,6 +217,8 @@ const readPullRequestList = async (runtime: Runtime, repository: Repository, bra
     branch,
     '--state',
     'all',
+    '--limit',
+    String(pullRequestListLimit),
     '--json',
     pullRequestFields,
   ];
@@ -201,6 +226,12 @@ const readPullRequestList = async (runtime: Runtime, repository: Repository, bra
   const listed = await readJson(runtime, commandArguments);
 
   checkOutput(commandArguments, pullRequestListSchema, listed);
+
+  if (listed.length >= pullRequestListLimit) {
+    throw new Error(
+      `${label(commandArguments)} printed ${listed.length} pull requests, the limit, so the list may be incomplete. Check the pull requests for this branch on GitHub.`,
+    );
+  }
 
   return listed;
 };
@@ -277,7 +308,7 @@ export const readTarget = async (runtime: Runtime, request: TargetRequest): Prom
     );
   }
 
-  const baseRemote = pickBaseRemote(head.remotes, head, base.repository);
+  const baseRemote = pickBaseRemote(head.remotes, head.remote, base.repository);
   const listed = await readPullRequestList(runtime, base.repository, head.branch);
   const { pr, closedPrs } = pickPullRequests(listed, head.repository.owner);
 

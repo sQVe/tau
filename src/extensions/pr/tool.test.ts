@@ -221,6 +221,68 @@ it('takes the head repository from the push URL of a remote that fetches from th
   });
 });
 
+it('fetches the base from the remote that fetches the base repository, not one that pushes to it', async () => {
+  const { root, fake, forkPoint, run } = await setUp('fork/tau');
+  const upstreamUrl = githubUrl('sQVe/tau');
+  const forkRemote = await git(root, 'remote', 'get-url', 'origin');
+
+  await createBareRemote(upstreamUrl, root);
+  await git(root, 'push', '--quiet', forkRemote, 'feature:main');
+  await git(root, 'config', 'remote.origin.pushurl', upstreamUrl);
+  await git(root, 'push', '--quiet', upstreamUrl, 'main');
+  await git(root, 'remote', 'add', 'upstream', upstreamUrl);
+  await pushFeature(root);
+
+  fake.repositories['github.com/sQVe/tau'] = { defaultBranch: 'main' };
+
+  const details = await run({ action: 'target' });
+
+  expect(details).toMatchObject({
+    head: { remote: 'origin', repository: 'github.com/sQVe/tau' },
+    base: { remote: 'upstream', branch: 'main' },
+    mergeBase: forkPoint,
+  });
+});
+
+it('takes the head repository from a pushInsteadOf rewrite', async () => {
+  const { root, fake, run } = await setUp();
+
+  await pushFeature(root);
+  await git(root, 'config', `url.${githubUrl('fork/tau')}.pushInsteadOf`, githubUrl('sQVe/tau'));
+
+  fake.repositories['github.com/fork/tau'] = { defaultBranch: 'main', parent: 'sQVe/tau' };
+
+  holdPullRequests(fake, 'github.com/sQVe/tau', [
+    pullRequest({ number: 4, headOwner: 'sQVe' }),
+    pullRequest({ headOwner: 'fork' }),
+  ]);
+
+  const details = await run({ action: 'target' });
+
+  expect(details).toMatchObject({
+    repository: 'github.com/sQVe/tau',
+    head: { remote: 'origin', repository: 'github.com/fork/tau', owner: 'fork' },
+    base: { remote: 'origin', branch: 'main' },
+    pr: { number: 7 },
+  });
+});
+
+it('refuses a pull request list that reaches the limit, since it may be incomplete', async () => {
+  const { root, fake, run } = await setUp();
+
+  await pushFeature(root);
+
+  const closed = Array.from({ length: 100 }, (_, index) =>
+    pullRequest({ number: index + 100, state: 'CLOSED', headOwner: 'someone' }),
+  );
+
+  holdPullRequests(fake, 'github.com/sQVe/tau', [...closed, pullRequest()]);
+
+  await expect(run({ action: 'target' })).rejects.toThrow(
+    /^gh pr list --repo github.com\/sQVe\/tau .* printed 100 pull requests, the limit, so the list may be incomplete\./u,
+  );
+});
+
 it('pins the merge base when the fetch refspec leaves out the base branch', async () => {
   const { root, forkPoint, run } = await setUp();
 
