@@ -373,6 +373,20 @@ it('reads the server branch through a custom fetch mapping', async () => {
   });
 });
 
+it('refuses a head remote whose push URLs name different repositories', async () => {
+  const { root, fake, run } = await setUp();
+
+  await pushFeature(root);
+  await git(root, 'config', '--add', 'remote.origin.pushurl', githubUrl('sQVe/tau'));
+  await git(root, 'config', '--add', 'remote.origin.pushurl', githubUrl('other/tau'));
+
+  await expect(run({ action: 'target' })).rejects.toThrow(
+    'Remote origin pushes to several repositories: github.com/sQVe/tau, github.com/other/tau.',
+  );
+
+  expect(fake.calls).toEqual([]);
+});
+
 it('stops before other gh calls when gh auth status fails', async () => {
   const { root, fake, run } = await setUp();
 

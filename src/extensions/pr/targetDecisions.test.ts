@@ -1,11 +1,13 @@
 import { expect, it } from 'vitest';
 
+import type { Repository } from '../../github.js';
 import {
   pickBaseBranch,
   pickBaseRemote,
   pickBaseRepository,
   pickHead,
   pickPullRequests,
+  pickPushRepository,
   rejectDefaultBranch,
   upstreamRepository,
 } from './targetDecisions.js';
@@ -17,9 +19,14 @@ const fork = { host: 'github.com', owner: 'fork', name: 'tau' };
 const remote = (
   name: string,
   repository: Remote['repository'],
-  pushRepository: Remote['pushRepository'],
+  pushRepository: Repository | undefined,
   fetchRefspecs = [`+refs/heads/*:refs/remotes/${name}/*`],
-): Remote => ({ name, repository, pushRepository, fetchRefspecs });
+): Remote => ({
+  name,
+  repository,
+  pushes: [{ url: `https://example.com/${name}.git`, repository: pushRepository }],
+  fetchRefspecs,
+});
 
 const pushTarget = (name: string, trackingRef: string, remoteRef?: string) => ({
   remote: name,
@@ -280,4 +287,36 @@ it.each([
   expect(() => {
     rejectDefaultBranch(facts);
   }).toThrow(error);
+});
+
+const push = (url: string, repository: Repository | undefined) => ({ url, repository });
+const forkUrl = 'git@github.com:fork/tau.git';
+const upstreamUrl = 'https://github.com/sQVe/tau.git';
+
+it.each([
+  { pushes: [push(forkUrl, fork)], repository: fork },
+  {
+    pushes: [push(forkUrl, fork), push('https://github.com/FORK/Tau', { ...fork, owner: 'FORK' })],
+    repository: fork,
+  },
+])('pushes to one repository through $pushes.length URLs', ({ pushes, repository }) => {
+  expect(pickPushRepository({ ...remote('origin', fork, fork), pushes })).toEqual(repository);
+});
+
+it.each([
+  {
+    pushes: [],
+    error: 'Remote origin has no push URL.',
+  },
+  {
+    pushes: [push('/srv/mirror.git', undefined)],
+    error: 'The push URL of remote origin, /srv/mirror.git, does not name a GitHub repository.',
+  },
+  {
+    pushes: [push(forkUrl, fork), push(upstreamUrl, upstream)],
+    error:
+      'Remote origin pushes to several repositories: github.com/fork/tau, github.com/sQVe/tau. Keep one push URL for it, or pass another remote.',
+  },
+])('refuses the push URLs of a remote: $error', ({ pushes, error }) => {
+  expect(() => pickPushRepository({ ...remote('origin', fork, fork), pushes })).toThrow(error);
 });

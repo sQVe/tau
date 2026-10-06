@@ -11,10 +11,17 @@ import {
   pickBaseRepository,
   pickHead,
   pickPullRequests,
+  pickPushRepository,
   rejectDefaultBranch,
   upstreamRepository,
 } from './targetDecisions.js';
-import type { PullRequest, PushTarget, Remote, ViewedRepository } from './targetDecisions.js';
+import type {
+  PullRequest,
+  PushTarget,
+  Remote,
+  RemotePush,
+  ViewedRepository,
+} from './targetDecisions.js';
 
 export interface TargetRequest {
   remote: string | undefined;
@@ -32,8 +39,8 @@ export interface Target {
 }
 
 interface RemoteUrls {
-  url: string | undefined;
-  pushUrl: string | undefined;
+  urls: string[];
+  pushUrls: string[];
   fetchRefspecs: string[];
 }
 
@@ -51,10 +58,6 @@ interface RemoteLocation {
 }
 
 type ResolveHost = (destination: SshDestination) => Promise<string>;
-
-interface RemoteUrl extends Remote {
-  pushUrl: string;
-}
 
 const repositoryViewSchema = Type.Object({
   isFork: Type.Boolean(),
@@ -209,8 +212,7 @@ const sshHostResolver = (runtime: Runtime): ResolveHost => {
 
 const remoteUrlKey = /^remote\.(.+)\.(url|pushurl|fetch)$/u;
 
-// Reads the first url and pushurl and every fetch refspec of each remote. Git pushes to pushurl
-// when it is set.
+// Reads every url, pushurl, and fetch refspec of each remote.
 const readRemoteUrls = async (cwd: string) => {
   const output = await readOptionalGit(cwd, [
     'config',
@@ -223,14 +225,14 @@ const readRemoteUrls = async (cwd: string) => {
   for (const line of lines(output)) {
     const [key = '', value = ''] = line.split(' ', 2);
     const [, name = '', kind] = remoteUrlKey.exec(key) ?? [];
-    const remote = urls.get(name) ?? { url: undefined, pushUrl: undefined, fetchRefspecs: [] };
+    const remote = urls.get(name) ?? { urls: [], pushUrls: [], fetchRefspecs: [] };
 
     if (kind === 'url') {
-      remote.url ??= value;
+      remote.urls.push(value);
     }
 
     if (kind === 'pushurl') {
-      remote.pushUrl ??= value;
+      remote.pushUrls.push(value);
     }
 
     if (kind === 'fetch') {
@@ -246,12 +248,10 @@ const readRemoteUrls = async (cwd: string) => {
 // Git applies insteadOf and pushInsteadOf rewrites to the URLs it uses. A rewrite to a URL that
 // names no GitHub repository, such as a local mirror path, keeps the configured URL.
 const effectiveRepository = async (
-  cwd: string,
   resolveHost: ResolveHost,
-  commandArguments: string[],
+  expanded: string | undefined,
   configured: string,
-) => {
-  const expanded = await readOptionalGit(cwd, ['remote', 'get-url', ...commandArguments]);
+): Promise<RemotePush> => {
   const url = expanded ?? configured;
   const repository = await remoteRepository(url, resolveHost);
 
@@ -260,26 +260,45 @@ const effectiveRepository = async (
     : { url, repository };
 };
 
+// git push sends to every push URL, so read them all. Git lists them in config order, as read.
+const readPushes = async (
+  cwd: string,
+  resolveHost: ResolveHost,
+  name: string,
+  configured: readonly string[],
+) => {
+  const output = await readOptionalGit(cwd, ['remote', 'get-url', '--push', '--all', name]);
+  const expanded = lines(output);
+  const count = Math.max(expanded.length, configured.length);
+
+  return Promise.all(
+    Array.from({ length: count }, (_, index) =>
+      effectiveRepository(resolveHost, expanded[index], configured[index] ?? ''),
+    ),
+  );
+};
+
 const readRemote = async (
   cwd: string,
   resolveHost: ResolveHost,
   name: string,
   urls: RemoteUrls,
-): Promise<RemoteUrl> => {
-  const { url = '', pushUrl = url } = urls;
-  const fetched = await effectiveRepository(cwd, resolveHost, [name], url);
-  const pushed = await effectiveRepository(cwd, resolveHost, ['--push', name], pushUrl);
+): Promise<Remote> => {
+  // Git fetches from the first url, and pushes to every url when no pushurl is set.
+  const [url = ''] = urls.urls;
+  const pushUrls = urls.pushUrls.length === 0 ? urls.urls : urls.pushUrls;
+  const fetchUrl = await readOptionalGit(cwd, ['remote', 'get-url', name]);
+  const fetched = await effectiveRepository(resolveHost, fetchUrl, url);
 
   return {
     name,
-    pushUrl: pushed.url,
     repository: fetched.repository,
-    pushRepository: pushed.repository,
+    pushes: await readPushes(cwd, resolveHost, name, pushUrls),
     fetchRefspecs: urls.fetchRefspecs,
   };
 };
 
-const readRemotes = async (runtime: Runtime): Promise<RemoteUrl[]> => {
+const readRemotes = async (runtime: Runtime): Promise<Remote[]> => {
   const urls = await readRemoteUrls(runtime.cwd);
   const resolveHost = sshHostResolver(runtime);
 
@@ -368,13 +387,11 @@ const resolveHead = async (runtime: Runtime, request: TargetRequest) => {
 
   const remote = remotes.find((candidate) => candidate.name === head.remote);
 
-  if (remote?.pushRepository === undefined) {
-    throw new Error(
-      `The push URL of remote ${head.remote}, ${remote?.pushUrl ?? 'none'}, does not name a GitHub repository.`,
-    );
+  if (remote === undefined) {
+    throw new Error(`remote ${head.remote} is not a Git remote of this checkout.`);
   }
 
-  return { localBranch: branch, remotes, ...head, repository: remote.pushRepository };
+  return { localBranch: branch, remotes, ...head, repository: pickPushRepository(remote) };
 };
 
 const viewRepository = async (

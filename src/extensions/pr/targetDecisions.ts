@@ -1,12 +1,19 @@
 import type { Repository } from '../../github.js';
 
+export interface RemotePush {
+  url: string;
+  // undefined when the URL names no GitHub repository.
+  repository: Repository | undefined;
+}
+
 export interface Remote {
   name: string;
   // The repository Git fetches from. undefined when the URL names no GitHub repository, such as a
   // local path.
   repository: Repository | undefined;
-  // The repository Git pushes to, from remote.<name>.pushurl when set, otherwise the fetch URL.
-  pushRepository: Repository | undefined;
+  // Every URL `git push <name>` pushes to: each remote.<name>.pushurl when one is set, otherwise
+  // each url.
+  pushes: readonly RemotePush[];
   // The remote.<name>.fetch values, such as +refs/heads/*:refs/remotes/origin/*.
   fetchRefspecs: readonly string[];
 }
@@ -192,6 +199,37 @@ export const pickHead = (facts: HeadFacts): Head => {
   }
 
   return { remote: sole, branch };
+};
+
+// git push sends the branch to every push URL, so a head remote must push to one repository.
+export const pickPushRepository = (remote: Remote): Repository => {
+  const unnamed = remote.pushes.find((push) => push.repository === undefined);
+
+  if (unnamed !== undefined) {
+    throw new Error(
+      `The push URL of remote ${remote.name}, ${unnamed.url}, does not name a GitHub repository.`,
+    );
+  }
+
+  const repositories = remote.pushes.flatMap((push) => push.repository ?? []);
+  const [first] = repositories;
+
+  if (first === undefined) {
+    throw new Error(`Remote ${remote.name} has no push URL.`);
+  }
+
+  const distinct = repositories.filter(
+    (repository, index) =>
+      repositories.findIndex((earlier) => sameRepository(earlier, repository)) === index,
+  );
+
+  if (distinct.length > 1) {
+    throw new Error(
+      `Remote ${remote.name} pushes to several repositories: ${distinct.map(formatRepository).join(', ')}. Keep one push URL for it, or pass another remote.`,
+    );
+  }
+
+  return first;
 };
 
 const fetchesFrom = (remote: Remote, repository: Repository) =>
