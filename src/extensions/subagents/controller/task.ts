@@ -391,36 +391,30 @@ export class TaskController {
       handle.cleanup.recordErrors.push(String(error));
     }
 
-    const stopped = this.cleanup(reason, failureDetail);
-
-    const notifyAfterStop = async () => {
-      await stopped;
-      this.notifyCleanup();
-    };
-
-    // A failed notice must not hide a confirmed stop.
-    const cleaned = notifyAfterStop();
-
     const finishCleanup = async () => {
-      const [outcome] = await Promise.allSettled([stopped, cleaned]);
+      let stopped = false;
 
-      this.context.release(handle.task.taskId);
+      try {
+        stopped = await this.cleanup(reason, failureDetail);
+      } finally {
+        // A failed notice must not hide a confirmed stop.
+        this.context.release(handle.task.taskId);
 
-      // Keep sharing intact until cleanup finishes, including its queued topology change.
-      // Unconfirmed cleanup must still stop contributing placement candidates.
-      if (handle.identity.terminalId != null) {
-        // A pane that may still run keeps its name in the tab label.
-        this.context.placement.release(
-          handle.identity.terminalId,
-          outcome.status === 'fulfilled' && outcome.value
-            ? (argumentsList) =>
-                this.context.client(argumentsList, renameBudget, this.context.lifetime)
-            : undefined,
-        );
+        // Keep sharing intact until cleanup finishes, including its queued topology change.
+        // Unconfirmed cleanup must still stop contributing placement candidates.
+        if (handle.identity.terminalId != null) {
+          // A pane that may still run keeps its name in the tab label.
+          this.context.placement.release(
+            handle.identity.terminalId,
+            stopped
+              ? (argumentsList) =>
+                  this.context.client(argumentsList, renameBudget, this.context.lifetime)
+              : undefined,
+          );
+        }
       }
 
-      // Report the cleanup failure only once placement cleanup finishes.
-      await cleaned;
+      this.notifyCleanup();
     };
 
     handle.cleanup.stopping = finishCleanup().catch((error: unknown) => {
