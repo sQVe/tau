@@ -19,7 +19,7 @@ interface IssueInput {
 }
 
 const containerQuery =
-  'query($id: String!) { issue(id: $id) { id identifier title description url state { type } attachments { nodes { url } } team { id key } project { id name } children { nodes { identifier title description url subIssueSortOrder state { type } attachments { nodes { url } } inverseRelations { nodes { type issue { identifier } } } } } } }';
+  'query($id: String!) { issue(id: $id) { id identifier title description url state { type } attachments { nodes { url } } team { id key } project { id name } children { nodes { identifier title description url team { id } subIssueSortOrder state { type } attachments { nodes { url } } inverseRelations { nodes { type issue { identifier } } } } } } }';
 
 const issuesQuery =
   'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { nodes { identifier } } }';
@@ -44,6 +44,7 @@ const childSchema = Type.Object({
   description: Type.Union([Type.String(), Type.Null()]),
   url: Type.String(),
   subIssueSortOrder: Type.Number(),
+  team: Type.Object({ id: Type.String() }),
   state: Type.Object({ type: Type.String() }),
   attachments: Type.Object({ nodes: Type.Array(Type.Object({ url: Type.String() })) }),
   inverseRelations: Type.Object({
@@ -165,9 +166,9 @@ export const readContainer = async (
     return undefined;
   }
 
-  const nodes = issue.children.nodes.toSorted(
-    (left, right) => left.subIssueSortOrder - right.subIssueSortOrder,
-  );
+  const nodes = issue.children.nodes
+    .filter((child) => child.team.id === issue.team.id)
+    .toSorted((left, right) => left.subIssueSortOrder - right.subIssueSortOrder);
 
   const children = await Promise.all(nodes.map((node) => toChild(exec, cwd, node)));
   const attachmentUrls = issue.attachments.nodes.map((attachment) => attachment.url);

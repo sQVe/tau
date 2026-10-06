@@ -101,6 +101,7 @@ const childNode = (issue: FakeIssue) => ({
   description: issue.description,
   url: `https://linear.app/me/issue/${issue.identifier}`,
   subIssueSortOrder: issue.sortOrder,
+  team: [...teams.values()].find((candidate) => candidate.id === issue.teamId)!,
   state: { type: issue.stateType },
   attachments: { nodes: issue.pullRequests.map((url) => ({ url })) },
   inverseRelations: {
