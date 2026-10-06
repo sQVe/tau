@@ -175,9 +175,12 @@ export const readDraft = async (directory: string): Promise<Draft | undefined> =
 
   const containerBody = await readBody(directory, plan.container.file);
 
-  const sliceBodies = await Promise.all(
-    plan.slices.map((slice) => readBody(directory, slice.file)),
-  );
+  const sliceBodies: string[] = [];
+
+  for (const slice of plan.slices) {
+    // oxlint-disable-next-line no-await-in-loop -- Reading in plan order names the first missing file.
+    sliceBodies.push(await readBody(directory, slice.file));
+  }
 
   return { plan, containerBody, sliceBodies };
 };

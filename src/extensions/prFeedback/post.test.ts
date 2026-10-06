@@ -501,13 +501,12 @@ describe('post', () => {
     const { context, prompts } = recordingConfirm(root, true);
     const result = await post(details, context);
 
-    expect(prompts).toHaveLength(1);
-
-    expect(prompts[0]?.message).toContain(
-      'Reply to https://github.com/sQVe/tau/pull/7#discussion_r101:\nRenamed.',
-    );
-
-    expect(prompts[0]?.message).not.toContain('discussion_r201');
+    expect(prompts).toEqual([
+      {
+        title: 'Post 1 reply to people on PR #7?',
+        message: '1. @reviewer on src/tau.ts:12\n   > Rename this.\n   Renamed.',
+      },
+    ]);
 
     expect(fake.writes).toEqual([
       { kind: 'reply', replyTo: 201, body: 'Added.' },
@@ -516,6 +515,59 @@ describe('post', () => {
     ]);
 
     expect(result).toMatchObject({ status: 'posted' });
+  });
+
+  it('names the author, place, and answered comment of each person write in the confirm', async () => {
+    const { root, fake, read, post } = await setUp();
+
+    fake.threads = [
+      thread({
+        id: 'thread-person',
+        line: null,
+        comments: [{ id: 101, author: person, body: `Rename this.\n\n${'Why? '.repeat(20)}` }],
+      }),
+      thread({
+        id: 'thread-ghost',
+        comments: [{ id: 102, author: null, body: 'Add a test.' }],
+      }),
+    ];
+
+    const details = await read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [
+        replyTo('thread-person', 'Renamed.\n\nIt reads better.'),
+        replyTo('thread-ghost', null),
+      ],
+      comment: { body: 'Thanks.', answers: [] },
+    });
+
+    const { context, prompts } = recordingConfirm(root, false);
+
+    await post(details, context);
+
+    expect(prompts).toEqual([
+      {
+        title: 'Post 2 replies to people and resolve 2 threads on PR #7?',
+        message: [
+          '1. @reviewer on src/tau.ts',
+          `   > Rename this. ${'Why? '.repeat(11)}W...`,
+          '   Renamed.',
+          '',
+          '   It reads better.',
+          '',
+          '2. Resolve the thread of @reviewer on src/tau.ts',
+          `   > Rename this. ${'Why? '.repeat(11)}W...`,
+          '',
+          '3. Resolve the thread of A deleted user on src/tau.ts:12',
+          '   > Add a test.',
+          '',
+          '4. Comment on PR #7',
+          '   Thanks.',
+        ].join('\n'),
+      },
+    ]);
   });
 
   it('posts nothing, bot writes included, when the user declines', async () => {
