@@ -20,6 +20,10 @@ it.each([
   { name: 'upper boundary', keys: ['k', '\r'], answer: true },
   { name: 'lower boundary', keys: ['j', 'j', '\r'], answer: false },
   { name: 'line feed', keys: ['\n'], answer: true },
+  { name: 'No with G', keys: ['G', '\r'], answer: false },
+  { name: 'Yes with g', keys: ['G', 'g', '\r'], answer: true },
+  { name: 'No with End', keys: ['\u001B[F', '\r'], answer: false },
+  { name: 'Yes with Home', keys: ['\u001B[F', '\u001B[H', '\r'], answer: true },
   { name: 'undefined custom result', keys: [], answer: false },
 ])('returns the answer for $name', async ({ keys, answer }) => {
   const context = customContext((component) => {

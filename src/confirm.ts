@@ -3,6 +3,8 @@ import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import { Container, Spacer, Text } from '@earendil-works/pi-tui';
 import type { Component } from '@earendil-works/pi-tui';
 
+import { isBottom, isDown, isTop, isUp } from './keys.js';
+
 const renderOptions = (options: Container, selected: number, theme: Theme) => {
   options.clear();
 
@@ -59,10 +61,14 @@ export const confirm = async (
       dialog.handleInput = (data) => {
         if (keybindings.matches(data, 'app.tools.expand')) {
           context.ui.setToolsExpanded(!context.ui.getToolsExpanded());
-        } else if (keybindings.matches(data, 'tui.select.up') || data === 'k') {
+        } else if (keybindings.matches(data, 'tui.select.up') || isUp(data)) {
           selected = Math.max(0, selected - 1);
-        } else if (keybindings.matches(data, 'tui.select.down') || data === 'j') {
+        } else if (keybindings.matches(data, 'tui.select.down') || isDown(data)) {
           selected = Math.min(1, selected + 1);
+        } else if (isTop(data)) {
+          selected = 0;
+        } else if (isBottom(data)) {
+          selected = 1;
         } else if (keybindings.matches(data, 'tui.select.confirm') || data === '\n') {
           done(selected === 0);
 
