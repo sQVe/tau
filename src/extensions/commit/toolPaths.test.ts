@@ -63,6 +63,56 @@ describe('commit path requests', () => {
     expect(await readFile(join(workingDirectory, 'real.ts'), 'utf8')).toBe('changed\n');
   });
 
+  it.each([
+    {
+      scenario: 'a later unknown path',
+      firstFiles: ['real.ts'],
+      secondFiles: ['missing.ts'],
+      error: /Unknown paths: missing\.ts/,
+    },
+    {
+      scenario: 'unknown paths across groups',
+      firstFiles: ['real.ts', 'missing.ts'],
+      secondFiles: ['also-missing.ts'],
+      error: /Unknown paths: missing\.ts, also-missing\.ts/,
+    },
+    {
+      scenario: 'a later directory request',
+      firstFiles: ['real.ts'],
+      secondFiles: ['sources'],
+      error: /Directory requests are not supported: sources/,
+    },
+  ])(
+    'rejects $scenario before any group changes Git state',
+    async ({ firstFiles, secondFiles, error }) => {
+      const repositoryDirectory = await createTemporaryRepository();
+      const workingDirectory = join(repositoryDirectory, 'sub');
+
+      await writeRepositoryFile(workingDirectory, 'real.ts', 'original\n');
+      await git(workingDirectory, ['add', 'real.ts']);
+      await git(workingDirectory, ['commit', '-m', 'feat: add source']);
+      await writeRepositoryFile(workingDirectory, 'real.ts', 'changed\n');
+      await writeRepositoryFile(workingDirectory, 'sources/other.ts', 'other\n');
+
+      const indexBefore = await readFile(join(repositoryDirectory, '.git/index'));
+      const headBefore = await git(repositoryDirectory, ['rev-parse', 'HEAD']);
+
+      await expect(
+        executeCommit(workingDirectory, {
+          groups: [
+            { files: firstFiles, subject: 'fix: update source' },
+            { files: secondFiles, subject: 'feat: add sources' },
+          ],
+        }),
+      ).rejects.toThrow(error);
+
+      expect(await git(repositoryDirectory, ['rev-parse', 'HEAD'])).toBe(headBefore);
+      expect(await readFile(join(repositoryDirectory, '.git/index'))).toEqual(indexBefore);
+      expect(await readFile(join(workingDirectory, 'real.ts'), 'utf8')).toBe('changed\n');
+      expect(await readFile(join(workingDirectory, 'sources/other.ts'), 'utf8')).toBe('other\n');
+    },
+  );
+
   it.each(['.', 'sub'])(
     'commits a tracked deletion that is not staged from %s',
     async (directory) => {

@@ -15,7 +15,6 @@ import {
   runGit,
   stageFiles,
   unstageFiles,
-  validateFileRequests,
   writeTree,
 } from './gitCommands.js';
 import type { CommitSuccess } from './types.js';
@@ -87,7 +86,6 @@ const repositoryPath = (prefix: string, file: string) =>
 const validateStagingArea = async (
   execution: GroupExecution,
   requestedFiles: Set<string>,
-  prefix: string,
 ): Promise<string[]> => {
   const stagedPaths = await listStagedPaths(execution.pi, execution.context.cwd);
   const unrelatedStagedPaths = stagedPaths.filter((file) => !requestedFiles.has(file));
@@ -97,20 +95,6 @@ const validateStagingArea = async (
       `Cannot commit only the requested files while other paths are already staged: ${unrelatedStagedPaths.join(', ')}`,
     );
   }
-
-  const indexEntries = await readIndexEntries(
-    execution.pi,
-    execution.context.cwd,
-    execution.parameters.files,
-  );
-
-  const requests = execution.parameters.files.map((file) => {
-    const path = repositoryPath(prefix, file);
-
-    return { file, indexed: indexEntries.has(path), staged: stagedPaths.includes(path) };
-  });
-
-  await validateFileRequests(execution.context.cwd, requests);
 
   return stagedPaths;
 };
@@ -474,7 +458,7 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
   const stagedBefore = await readStagedBefore(
     execution,
     prefix,
-    await validateStagingArea(execution, requestedFiles, prefix),
+    await validateStagingArea(execution, requestedFiles),
   );
 
   const run: GroupRun = {

@@ -30,7 +30,7 @@ describe('direct commit staging', () => {
       return queryFlags || commands;
     });
 
-    expect(untimedCalls).toHaveLength(5);
+    expect(untimedCalls).toHaveLength(7);
 
     for (const call of untimedCalls) {
       expect(call[2]).toEqual({ cwd: '/repo' });
