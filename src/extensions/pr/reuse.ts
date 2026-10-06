@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { isMissingFile } from '../../errors.js';
 import { readCaptureRecord, recheckFileName } from '../../reviewCapture/record.js';
-import { fixedPrefixes } from '../../reviewCapture/reviewCapture.js';
+import { fixedPrefixes, hashBytes } from '../../reviewCapture/reviewCapture.js';
 import { checkReviewDirectory, existingEntry } from '../../reviewCapture/reviewDirectory.js';
 import { readGit, readGitBytes, readOptionalGit } from './git.js';
 import { compareDiffs, decideReuse } from './reuseDecisions.js';
@@ -86,7 +86,12 @@ export const readReuse = async (root: string, request: ReuseRequest): Promise<Re
   const record = await readCaptureRecord(directory);
   const recheckPath = join(directory, recheckFileName);
   const recheck = await readRecheck(recheckPath);
-  const recheckHash = await readGit(root, ['hash-object', '--no-filters', '--', recheckPath]);
+  const hashed = await hashBytes(root, recheck);
+
+  if (hashed.error !== undefined) {
+    throw new Error(hashed.error);
+  }
+
   const mergeBase = await resolveCommit(root, request.mergeBase);
   const recordedBase = record.base;
   const baseIsAncestor = recordedBase !== null && (await isAncestor(root, recordedBase, mergeBase));
@@ -94,7 +99,7 @@ export const readReuse = async (root: string, request: ReuseRequest): Promise<Re
 
   const decision = decideReuse({
     recordedHash: record.hash,
-    recheckHash,
+    recheckHash: hashed.hash,
     recordedBase,
     mergeBase,
     baseIsAncestor,
