@@ -10,6 +10,12 @@ import type {
 import { defineTool } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../errors.js';
+import {
+  listStagedPaths,
+  readIndexEntries,
+  repositoryPathPrefix,
+  validateFileRequests,
+} from './gitCommands.js';
 import { executeGroup } from './groupExecution.js';
 import type { GroupOutcome } from './groupExecution.js';
 import type { CommitSuccess } from './types.js';
@@ -67,6 +73,25 @@ const validateCommitGroups = (parameters: CommitInput): void => {
       assigned.add(file);
     }
   }
+};
+
+const validateGroupFileRequests = async (
+  runtime: CommitToolRuntime,
+  parameters: CommitInput,
+): Promise<void> => {
+  const { pi, context } = runtime;
+  const files = parameters.groups.flatMap((group) => group.files);
+  const prefix = await repositoryPathPrefix(pi, context.cwd);
+  const stagedPaths = await listStagedPaths(pi, context.cwd);
+  const indexEntries = await readIndexEntries(pi, context.cwd, files);
+
+  const requests = files.map((file) => {
+    const path = normalizeRepositoryPath(`${prefix}${file}`);
+
+    return { file, indexed: indexEntries.has(path), staged: stagedPaths.includes(path) };
+  });
+
+  await validateFileRequests(context.cwd, requests);
 };
 
 const prefixGroupContent = (
@@ -140,6 +165,8 @@ const executeCommitTool = async (
   if (runtime.signal?.aborted === true) {
     return finish([{ type: 'text', text: 'Commit cancelled' }]);
   }
+
+  await validateGroupFileRequests(runtime, parameters);
 
   /* oxlint-disable eslint/no-await-in-loop -- Each group must finish before the next stages its files. */
   for (const [index, group] of parameters.groups.entries()) {

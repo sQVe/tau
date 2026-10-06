@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { isMissingFile } from '../../errors.js';
+import { unknownPaths } from './fileRequests.js';
+import type { FileRequest } from './fileRequests.js';
 import { normalizeRepositoryPath } from './validation.js';
 
 interface RunGitOptions {
@@ -54,7 +56,15 @@ export const listStagedPaths = async (
   const output = await runGit(
     pi,
     workingDirectory,
-    ['diff', '--cached', '--no-relative', '--name-only', '--diff-filter=ACMRDT', '-z'],
+    [
+      'diff',
+      '--cached',
+      '--no-relative',
+      '--no-renames',
+      '--name-only',
+      '--diff-filter=ACMRDT',
+      '-z',
+    ],
     { timeout: null },
   );
 
@@ -66,11 +76,11 @@ export const listStagedPaths = async (
 
 export const validateFileRequests = async (
   workingDirectory: string,
-  files: string[],
+  requests: Omit<FileRequest, 'exists'>[],
 ): Promise<void> => {
-  await Promise.all(
-    files.map(async (file) => {
-      const status = await lstat(join(workingDirectory, file)).catch((error: unknown) => {
+  const facts = await Promise.all(
+    requests.map(async (request) => {
+      const status = await lstat(join(workingDirectory, request.file)).catch((error: unknown) => {
         if (isMissingFile(error)) {
           return null;
         }
@@ -80,11 +90,21 @@ export const validateFileRequests = async (
 
       if (status?.isDirectory() === true) {
         throw new Error(
-          `Directory requests are not supported: ${file}. Name each file explicitly.`,
+          `Directory requests are not supported: ${request.file}. Name each file explicitly.`,
         );
       }
+
+      return { ...request, exists: status !== null };
     }),
   );
+
+  const unknown = unknownPaths(facts);
+
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unknown paths: ${unknown.join(', ')}. Name only files that exist or that Git tracks.`,
+    );
+  }
 };
 
 // Literal pathspecs prevent glob expansion from staging unrequested files.

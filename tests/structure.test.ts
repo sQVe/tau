@@ -30,6 +30,7 @@ const pureModules = [
   'src/reviewCapture/freshness.ts',
   'src/extensions/askUserQuestion/questionnaire.ts',
   'src/extensions/askUserQuestion/validation.ts',
+  'src/extensions/commit/fileRequests.ts',
   'src/extensions/compaction/reminder.ts',
   'src/extensions/pr/reuseDecisions.ts',
   'src/extensions/pr/targetDecisions.ts',

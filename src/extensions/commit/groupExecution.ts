@@ -15,7 +15,6 @@ import {
   runGit,
   stageFiles,
   unstageFiles,
-  validateFileRequests,
   writeTree,
 } from './gitCommands.js';
 import type { CommitSuccess } from './types.js';
@@ -81,6 +80,9 @@ const buildCancelledResult = (
   details: { sha: '', files, subject, body },
 });
 
+const repositoryPath = (prefix: string, file: string) =>
+  normalizeRepositoryPath(`${prefix}${file}`);
+
 const validateStagingArea = async (
   execution: GroupExecution,
   requestedFiles: Set<string>,
@@ -94,13 +96,8 @@ const validateStagingArea = async (
     );
   }
 
-  await validateFileRequests(execution.context.cwd, execution.parameters.files);
-
   return stagedPaths;
 };
-
-const repositoryPath = (prefix: string, file: string) =>
-  normalizeRepositoryPath(`${prefix}${file}`);
 
 const readStagedBefore = async (
   execution: GroupExecution,
