@@ -85,8 +85,12 @@ runtime settings.
 Use one shared key for helper tasks, such as `smallModel`. Rejected because it names a model size,
 not a job, and Tau would keep choosing web answer models for another package.
 
-### One `models` block or aliases
+### One `models` block
 
-Use one `models` block for every model setting, or user-named aliases. Rejected because both move
-settings away from the consumer that owns them, and aliases add a lookup close to the tiers ADR 0071
-deferred.
+Use one `models` block for every model setting. Rejected because it moves settings away from the
+consumer that owns them.
+
+### User-named aliases
+
+Use user-named aliases. Rejected because they move settings away from the consumer that owns them,
+and they add a lookup close to the tiers ADR 0071 deferred.
