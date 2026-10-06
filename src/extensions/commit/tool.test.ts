@@ -463,7 +463,7 @@ describe('commitTool.execute', () => {
           },
         ],
       }),
-    ).rejects.toThrow(/git --literal-pathspecs add -- \* failed/i);
+    ).rejects.toThrow(/Unknown paths: \*/i);
 
     const revListResult = await runCommand(
       'git',
@@ -662,10 +662,10 @@ describe('commitTool.execute', () => {
 
   it.each([
     {
-      failure: 'staging',
+      failure: 'path validation',
       files: ['README.md', 'old.md', 'new.md', 'missing.md'],
       hook: '',
-      error: "pathspec 'missing.md' did not match",
+      error: 'Unknown paths: missing.md',
     },
     {
       failure: 'hook',
@@ -926,24 +926,19 @@ describe('commit execution', () => {
 
   it('unstages without opening UI if cancelled while staging', async () => {
     const controller = new AbortController();
-    const { execute, exec, custom, gitDirectory } = fakeCommit();
+    const { execute, exec, custom } = fakeCommit();
+    const readGit = exec.getMockImplementation();
 
-    exec.mockImplementation((_command, commandArguments) => {
+    if (readGit === undefined) {
+      throw new Error('fakeCommit has no Git implementation');
+    }
+
+    exec.mockImplementation((command, commandArguments, options) => {
       if (commandArguments.includes('add')) {
         controller.abort();
       }
 
-      let stdout = '';
-
-      if (commandArguments.includes('--absolute-git-dir')) {
-        stdout = `${gitDirectory}\n`;
-      } else if (commandArguments.includes('--show-toplevel')) {
-        stdout = '/repo\n';
-      } else if (commandArguments.includes('--show-prefix')) {
-        stdout = 'true\n\n';
-      }
-
-      return Promise.resolve({ code: 0, killed: false, stdout, stderr: '' });
+      return readGit(command, commandArguments, options);
     });
 
     await execute(controller.signal);

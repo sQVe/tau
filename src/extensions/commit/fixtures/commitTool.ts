@@ -183,6 +183,12 @@ export const fakeCommit = (): FakeCommit => {
       stagedFiles = [];
     }
 
+    if (commandArguments.includes('ls-files') && commandArguments.includes('--full-name')) {
+      const files = commandArguments.slice(commandArguments.indexOf('--') + 1);
+
+      stdout = files.map((file) => `100644 abc123 0\t${file}\0`).join('');
+    }
+
     if (commandArguments[0] === 'cat-file') {
       stdout = `tree abc123\nparent abc123\n\n${storedMessage}`;
     }

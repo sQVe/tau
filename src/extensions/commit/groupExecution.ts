@@ -81,9 +81,13 @@ const buildCancelledResult = (
   details: { sha: '', files, subject, body },
 });
 
+const repositoryPath = (prefix: string, file: string) =>
+  normalizeRepositoryPath(`${prefix}${file}`);
+
 const validateStagingArea = async (
   execution: GroupExecution,
   requestedFiles: Set<string>,
+  prefix: string,
 ): Promise<string[]> => {
   const stagedPaths = await listStagedPaths(execution.pi, execution.context.cwd);
   const unrelatedStagedPaths = stagedPaths.filter((file) => !requestedFiles.has(file));
@@ -94,13 +98,22 @@ const validateStagingArea = async (
     );
   }
 
-  await validateFileRequests(execution.context.cwd, execution.parameters.files);
+  const indexEntries = await readIndexEntries(
+    execution.pi,
+    execution.context.cwd,
+    execution.parameters.files,
+  );
+
+  const requests = execution.parameters.files.map((file) => {
+    const path = repositoryPath(prefix, file);
+
+    return { file, indexed: indexEntries.has(path), staged: stagedPaths.includes(path) };
+  });
+
+  await validateFileRequests(execution.context.cwd, requests);
 
   return stagedPaths;
 };
-
-const repositoryPath = (prefix: string, file: string) =>
-  normalizeRepositoryPath(`${prefix}${file}`);
 
 const readStagedBefore = async (
   execution: GroupExecution,
@@ -461,7 +474,7 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
   const stagedBefore = await readStagedBefore(
     execution,
     prefix,
-    await validateStagingArea(execution, requestedFiles),
+    await validateStagingArea(execution, requestedFiles, prefix),
   );
 
   const run: GroupRun = {
