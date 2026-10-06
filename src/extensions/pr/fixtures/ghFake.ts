@@ -23,7 +23,7 @@ export interface FakePullRequest {
   headBranch: string;
 }
 
-type CommandKey = 'auth status' | 'repo view' | 'pr list';
+type CommandKey = 'auth status' | 'repo view' | 'pr list' | 'pr view';
 
 export interface GhFake {
   exec: Exec;
@@ -46,6 +46,7 @@ const commandKeys: Record<string, CommandKey> = {
   'auth status': 'auth status',
   'repo view': 'repo view',
   'pr list': 'pr list',
+  'pr view': 'pr view',
 };
 
 const parentOutput = (parent: string | undefined) => {
@@ -109,13 +110,43 @@ export const createGhFake = (): GhFake => {
     }));
   };
 
+  const pullRequestView = (commandArguments: readonly string[]) => {
+    const repository = argumentAfter(commandArguments, '--repo');
+    const number = Number(commandArguments[2]);
+    const pr = (fake.pullRequests[repository] ?? []).find((listed) => listed.number === number);
+
+    if (pr === undefined) {
+      return undefined;
+    }
+
+    return {
+      url: `https://${repository}/pull/${pr.number}`,
+      title: pr.title,
+      body: pr.body,
+      baseRefName: pr.baseRefName,
+      isDraft: pr.isDraft,
+      headRefOid: pr.headRefOid,
+    };
+  };
+
+  const view = (key: Exclude<CommandKey, 'auth status'>, commandArguments: readonly string[]) => {
+    if (key === 'repo view') {
+      return repositoryView(commandArguments);
+    }
+
+    if (key === 'pr list') {
+      return pullRequestList(commandArguments);
+    }
+
+    return pullRequestView(commandArguments);
+  };
+
   const output = (key: CommandKey, commandArguments: readonly string[]) => {
     if (key === 'auth status') {
       return '';
     }
 
-    const value =
-      key === 'repo view' ? repositoryView(commandArguments) : pullRequestList(commandArguments);
+    const value = view(key, commandArguments);
 
     return value === undefined ? undefined : JSON.stringify(value);
   };

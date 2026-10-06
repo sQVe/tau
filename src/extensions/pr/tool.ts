@@ -9,28 +9,44 @@ import { readGitOutput } from '../../gitOutput.js';
 import { createFreshTauDirectory } from '../../tauDirectory.js';
 import { readReuse } from './reuse.js';
 import { readTarget } from './target.js';
+import { readVerify, runPath, runPrefix } from './verify.js';
 
 export const prToolParameters = Type.Object({
-  action: Type.Union([Type.Literal('prepare'), Type.Literal('target'), Type.Literal('reuse')]),
+  action: Type.Union([
+    Type.Literal('prepare'),
+    Type.Literal('target'),
+    Type.Literal('reuse'),
+    Type.Literal('verify'),
+  ]),
   remote: Type.Optional(
     Type.String({ description: 'target: the Git remote to push the branch to.' }),
   ),
   base: Type.Optional(
     Type.String({
-      description: 'target: the base branch to use when no open pull request names one.',
+      description:
+        'target: the base branch to use when no open pull request names one. verify: the approved base branch.',
     }),
   ),
   directory: Type.Optional(
-    Type.String({ description: 'reuse: the .tau/workers/review-* directory of a saved review.' }),
+    Type.String({
+      description:
+        'reuse: the .tau/workers/review-* directory of a saved review. verify: the .tau/pr/run-* directory from prepare.',
+    }),
   ),
   mergeBase: Type.Optional(
     Type.String({ description: 'reuse: the merge base of the branch, such as target returns.' }),
   ),
+  repository: Type.Optional(
+    Type.String({ description: 'verify: the base repository as <host>/<owner>/<name>.' }),
+  ),
+  pr: Type.Optional(Type.Integer({ description: 'verify: the pull request number.' })),
+  title: Type.Optional(Type.String({ description: 'verify: the approved title.' })),
+  draft: Type.Optional(Type.Boolean({ description: 'verify: the approved draft status.' })),
 });
 
 export type PrInput = Static<typeof prToolParameters>;
 
-const description = `Prepare a pull request run, resolve its target, and check whether a saved review covers the branch.
+const description = `Prepare a pull request run, resolve its target, check whether a saved review covers the branch, and verify the published pull request.
 
 - action prepare: creates a fresh, Git-ignored run directory for the files of one run. Returns {directory}, an absolute path to .tau/pr/run-XXXXXX.
 - action target {remote?, base?}: resolves where the current branch's pull request goes. It does not rebase, push, or write to GitHub.
@@ -45,7 +61,12 @@ const description = `Prepare a pull request run, resolve its target, and check w
   - Reads directory/capture.json and directory/recheck.diff, which code_review freshness writes.
   - Splits recheck.diff and git diff --no-ext-diff --no-textconv --no-color <mergeBase> HEAD at each "diff --git" line. Each path's section must be byte-identical, including mode, deletion, rename, and binary lines, and neither side may have an extra path. Path order does not matter.
   - Returns {status, reasons, recordedBase, paths: {differing, missing, extra}, reports}. status is match when there is no reason, else mismatch. Reasons: recheck.diff's git hash-object --no-filters is not the recorded capture hash; the recorded base is null (a root commit capture) or is neither mergeBase nor an ancestor of it; and the differing, missing, and extra paths. recordedBase is the base from capture.json. differing lists paths whose sections differ, missing lists paths only in the review, and extra lists paths only in the branch diff. A rename path reads "a/<old> b/<new>". reports lists which of reviewer.md, finder.md, and checker.md exist in directory as regular files.
-  - Errors: no directory or mergeBase; a directory that is not .tau/workers/review-* or goes through a symlink; a missing, malformed, or newer capture.json; a missing recheck.diff; a mergeBase that is not a commit; any Git error.`;
+  - Errors: no directory or mergeBase; a directory that is not .tau/workers/review-* or goes through a symlink; a missing, malformed, or newer capture.json; a missing recheck.diff; a mergeBase that is not a commit; any Git error.
+- action verify {repository, pr, directory, title, base, draft}: compares the published pull request with the approved preview. It reads only and never writes to GitHub.
+  - Reads the approved body from directory/body.md, reads local HEAD with git rev-parse HEAD, and runs gh pr view <pr> --repo <repository> --json url,title,body,baseRefName,isDraft,headRefOid.
+  - Compares title, body, base, and draft with the pull request, and local HEAD with its headRefOid. Bodies match when they differ only by trailing newlines, which GitHub drops.
+  - Returns {url, matches, differences}. matches is true when differences is empty. Each difference is {field, expected, actual}, where field is title, body, base, draft, or head.
+  - Errors: a missing parameter; a repository that is not <host>/<owner>/<name>; a pr that is not an integer, or is below 1; a directory outside .tau/pr, nested below a run directory, not named run-*, or that goes through a symlink; a missing or linked body.md; a failing git rev-parse HEAD; a failing gh pr view; gh output the tool cannot read, named with the command.`;
 
 const findRoot = async (cwd: string) => {
   const output = await readGitOutput(cwd, ['rev-parse', '--show-toplevel']);
@@ -61,7 +82,7 @@ const findRoot = async (cwd: string) => {
 const prepare = async (runtime: Runtime) => {
   const root = await findRoot(runtime.cwd);
 
-  return { directory: await createFreshTauDirectory(root, 'pr', 'run-') };
+  return { directory: await createFreshTauDirectory(root, runPath, runPrefix) };
 };
 
 const reuse = async (runtime: Runtime, parameters: PrInput) => {
@@ -69,6 +90,14 @@ const reuse = async (runtime: Runtime, parameters: PrInput) => {
 
   const { directory, mergeBase } = parameters;
   const result = await readReuse(root, { directory, mergeBase });
+
+  return { ...result };
+};
+
+const verify = async (runtime: Runtime, parameters: PrInput) => {
+  const root = await findRoot(runtime.cwd);
+
+  const result = await readVerify(runtime, root, parameters);
 
   return { ...result };
 };
@@ -89,6 +118,10 @@ const runAction = async (
     return reuse(runtime, parameters);
   }
 
+  if (parameters.action === 'verify') {
+    return verify(runtime, parameters);
+  }
+
   return { ...(await readTarget(runtime, { remote: parameters.remote, base: parameters.base })) };
 };
 
@@ -100,7 +133,7 @@ export const createPrTool = (
     label: 'PR',
     description,
     promptSnippet:
-      "Prepare a pull request run, resolve the branch's pull request target, and check review reuse.",
+      "Prepare a pull request run, resolve the branch's pull request target, check review reuse, and verify the published pull request.",
     parameters: prToolParameters,
     defaultActive: false,
     executionMode: 'sequential',

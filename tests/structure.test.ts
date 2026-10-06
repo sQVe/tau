@@ -33,6 +33,7 @@ const pureModules = [
   'src/extensions/compaction/reminder.ts',
   'src/extensions/pr/reuseDecisions.ts',
   'src/extensions/pr/targetDecisions.ts',
+  'src/extensions/pr/verifyDecisions.ts',
   'src/extensions/prFeedback/checkEvidence.ts',
   'src/extensions/prFeedback/threads.ts',
   'src/extensions/prFeedback/writes.ts',
