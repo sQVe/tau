@@ -479,26 +479,9 @@ describe('commitTool.execute', () => {
 
     await writeRepositoryFile(repositoryDirectory, 'sub/a.txt', 'hello\n');
 
-    await writeRepositoryFile(
-      repositoryDirectory,
-      'sub/tau.json',
-      JSON.stringify({
-        prepare: ['sh', '-c', 'exit 81'],
-        check: ['sh', '-c', 'exit 82'],
-      }),
-    );
-
-    await writeRepositoryFile(
-      repositoryDirectory,
-      'tau.json',
-      JSON.stringify({
-        prepare: ['sh', '-c', 'printf "prepared\\n" > sub/a.txt'],
-        check: ['grep', '-qx', 'prepared', 'sub/a.txt'],
-      }),
-    );
-
-    await git(repositoryDirectory, ['add', 'tau.json', 'sub/tau.json']);
-    await git(repositoryDirectory, ['commit', '-m', 'chore: configure commands']);
+    await writeRepositoryFile(repositoryDirectory, 'baseline', 'baseline\n');
+    await git(repositoryDirectory, ['add', 'baseline']);
+    await git(repositoryDirectory, ['commit', '-m', 'test: baseline']);
 
     const commitTool = createCommitTool({
       exec(command: string, commandArguments: string[], options?: { cwd?: string }) {
@@ -860,7 +843,7 @@ describe('commits without approvals', () => {
     expect(custom).not.toHaveBeenCalled();
   });
 
-  it('ignores obsolete project checks without a UI', async () => {
+  it('commits without a UI', async () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     const tool = createCommitTool({
@@ -868,17 +851,13 @@ describe('commits without approvals', () => {
         runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
     });
 
-    await writeRepositoryFile(
-      repositoryDirectory,
-      'tau.json',
-      JSON.stringify({ check: ['node', '-e', 'process.exit(1)'] }),
-    );
+    await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
 
     await expect(
       tool.execute(
         'call',
         {
-          groups: [{ files: ['tau.json'], subject: 'feat: add package' }],
+          groups: [{ files: ['README.md'], subject: 'feat: add readme' }],
         },
         undefined,
         undefined,
