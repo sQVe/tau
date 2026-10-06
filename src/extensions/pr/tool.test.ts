@@ -112,6 +112,24 @@ it('returns the open pull request, its base, the head SHA, and the merge base', 
   });
 });
 
+it('returns publication evidence through the tool', async () => {
+  const { root, forkPoint, run } = await setUp();
+
+  await pushFeature(root);
+
+  const evidence = await run({ action: 'evidence' });
+
+  expect(evidence).toMatchObject({
+    target: { mergeBase: forkPoint, head: { branch: 'feature' }, pr: null, closedPrs: [] },
+    branch: 'feature',
+    subjects: ['feature'],
+    reuse: null,
+    review: null,
+    checks: [],
+    gaps: [{ kind: 'noReview' }, { kind: 'noChecks' }],
+  });
+});
+
 it('bases a branch with no pull request on the default branch', async () => {
   const { root, forkPoint, run } = await setUp();
 

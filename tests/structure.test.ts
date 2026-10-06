@@ -33,6 +33,7 @@ const pureModules = [
   'src/extensions/askUserQuestion/validation.ts',
   'src/extensions/commit/fileRequests.ts',
   'src/extensions/compaction/reminder.ts',
+  'src/extensions/pr/evidenceDecisions.ts',
   'src/extensions/pr/reuseDecisions.ts',
   'src/extensions/pr/targetDecisions.ts',
   'src/extensions/pr/verifyDecisions.ts',

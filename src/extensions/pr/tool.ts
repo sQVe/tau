@@ -7,6 +7,7 @@ import type { Exec } from '../../exec.js';
 import type { Runtime } from '../../github.js';
 import { findCheckoutRoot } from '../../gitOutput.js';
 import { createFreshTauDirectory } from '../../tauDirectory.js';
+import { readPublicationEvidence } from './evidence.js';
 import { readReuse } from './reuse.js';
 import { readTarget } from './target.js';
 import { readVerify, runPath, runPrefix } from './verify.js';
@@ -15,22 +16,28 @@ export const prToolParameters = Type.Object({
   action: Type.Union([
     Type.Literal('prepare'),
     Type.Literal('target'),
+    Type.Literal('evidence'),
     Type.Literal('reuse'),
     Type.Literal('verify'),
   ]),
   remote: Type.Optional(
-    Type.String({ description: 'target: the Git remote to push the branch to.' }),
+    Type.String({ description: 'target, evidence: the Git remote to push the branch to.' }),
   ),
   base: Type.Optional(
     Type.String({
       description:
-        'target: the base branch to use when no open pull request names one. verify: the approved base branch.',
+        'target, evidence: the base branch to use when no open pull request names one. verify: the approved base branch.',
     }),
   ),
   directory: Type.Optional(
     Type.String({
       description:
         'reuse: the .tau/workers/review-* directory of a saved review. verify: the .tau/pr/run-* directory from prepare.',
+    }),
+  ),
+  review: Type.Optional(
+    Type.String({
+      description: 'evidence: the .tau/workers/review-* directory of a saved review.',
     }),
   ),
   mergeBase: Type.Optional(
@@ -57,6 +64,10 @@ const description = `Prepare a pull request run, resolve its target, check wheth
   - Base branch: the open pull request's base, else base, else the base repository's default branch. Fetches it into <remote>/<base> from the base remote: the head remote when it fetches from the base repository, otherwise the first remote that does. Pins the merge base with HEAD.
   - Returns {host, repository, head: {remote, repository, owner, branch, sha}, base: {remote, branch}, mergeBase, pr, closedPrs}. repository is the base repository as <host>/<owner>/<name>. head.sha is the local HEAD. pr is the open pull request or null. closedPrs lists merged and closed ones. Each pull request has number, url, state, title, body, baseRefName, isDraft, and headRefOid.
   - Errors: a detached HEAD; a push setting for the branch that Git cannot resolve, such as a removed remote; a push tracking ref that the fetch refspecs map from no branch or from several, or a push ref that is not a branch; a local branch or push branch that is the head repository's default branch; a remote that is not a Git remote; no head remote found, or several; a head remote push URL that names no GitHub repository; head remote push URLs that name different repositories; a failing gh auth status; no Git remote that fetches from the base repository; gh output the tool cannot read, named with the command; more than one open pull request for the branch; a pull request list that reaches 100, so it may be incomplete; a failed fetch of the base branch.
+- action evidence {remote?, base?, review?}: gathers publication facts in one result by composing target, reuse, and code_review evidence. It does not read Linear or write to GitHub. It fetches the base branch the way target does and writes only the review reader's freshness recapture, not check logs or other worktree files.
+  - Returns {target, branch, subjects, reuse, review, checks, gaps}. target is the unchanged target result, including pr and closedPrs. branch is the local branch name; subjects lists commit subjects in <mergeBase>..HEAD. reuse is the unchanged reuse result. review is the unchanged ReviewEvidence result, including freshness and its gaps. Unavailable objects are null.
+  - Reads .tau/pr/run-*/checks/*.log in this worktree. The first three lines must be HEAD: <sha>, Status: <hash>, and Diff: <hash>. Status and Diff are SHA-256 of the exact output bytes of git status --porcelain and git diff <mergeBase> HEAD, including trailing newlines. HEAD is git rev-parse HEAD. Each check returns {path, matches, reasons, excerpt, truncated}. Only all three equal values give matches: true; that does not imply the check passed. Matching excerpts keep the last 20 lines, capped at 4000 characters. Nonmatching excerpts are null.
+  - Gaps include noReview, noChecks, failed reads with their errors, reuseMismatch, wrapped reviewEvidence gaps, check header or identity mismatches, and checkExcerpt cuts. A target error becomes a gap; reads that need its merge base are skipped. Each review read can fail without hiding the other. Linked directories and nonregular log files are not read. Errors before collection, such as no Git checkout, throw.
 - action reuse {directory, mergeBase}: checks whether the saved code review in directory covers git diff <mergeBase> HEAD. It writes nothing.
   - Reads directory/capture.json and directory/recheck.diff, which code_review freshness writes.
   - Splits recheck.diff and git diff --no-ext-diff --no-textconv --no-color <mergeBase> HEAD at each "diff --git" line. Each path's section must be byte-identical, including mode, deletion, rename, and binary lines, and neither side may have an extra path. Path order does not matter.
@@ -111,6 +122,12 @@ const runAction = async (
     return verify(runtime, parameters);
   }
 
+  if (parameters.action === 'evidence') {
+    const root = await findCheckoutRoot(cwd, 'pr');
+
+    return { ...(await readPublicationEvidence(runtime, root, parameters)) };
+  }
+
   return { ...(await readTarget(runtime, { remote: parameters.remote, base: parameters.base })) };
 };
 
@@ -122,7 +139,7 @@ export const createPrTool = (
     label: 'PR',
     description,
     promptSnippet:
-      "Prepare a pull request run, resolve the branch's pull request target, check review reuse, and verify the published pull request.",
+      'Gather PR publication evidence, prepare a pull request run, resolve its target, check review reuse, and verify the published pull request.',
     parameters: prToolParameters,
     executionMode: 'sequential',
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
