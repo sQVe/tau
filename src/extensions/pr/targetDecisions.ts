@@ -58,6 +58,15 @@ export interface PullRequestChoice {
   closedPrs: PullRequest[];
 }
 
+export interface DefaultBranchFacts {
+  localBranch: string;
+  // The branch on the head remote that the local branch pushes to.
+  pushBranch: string;
+  headRepository: Repository;
+  // The default branch of the head repository, which may differ from its upstream's.
+  defaultBranch: string;
+}
+
 export interface BaseBranchFacts {
   pr: PullRequest | null;
   requestedBase: string | undefined;
@@ -158,6 +167,22 @@ export const pickBaseRepository = (
   const base = upstream ?? head;
 
   return { repository: base.repository, defaultBranch: base.view.defaultBranch };
+};
+
+export const rejectDefaultBranch = (facts: DefaultBranchFacts): void => {
+  const repository = formatRepository(facts.headRepository);
+
+  if (facts.localBranch === facts.defaultBranch) {
+    throw new Error(
+      `${facts.localBranch} is the default branch of ${repository}. Check out a feature branch.`,
+    );
+  }
+
+  if (facts.pushBranch === facts.defaultBranch) {
+    throw new Error(
+      `${facts.localBranch} pushes to ${facts.pushBranch}, the default branch of ${repository}. Push to a feature branch.`,
+    );
+  }
 };
 
 const withoutOwner = ({ headRepositoryOwner: _owner, ...pr }: ListedPullRequest): PullRequest => pr;

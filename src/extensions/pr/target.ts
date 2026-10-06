@@ -11,6 +11,7 @@ import {
   pickBaseRepository,
   pickHead,
   pickPullRequests,
+  rejectDefaultBranch,
   upstreamRepository,
 } from './targetDecisions.js';
 import type { PullRequest, Remote, ViewedRepository } from './targetDecisions.js';
@@ -281,7 +282,7 @@ const resolveBaseRepository = async (runtime: Runtime, headRepository: Repositor
   const upstream = upstreamRepository(headRepository, head.view);
   const upstreamView = upstream === undefined ? undefined : await viewRepository(runtime, upstream);
 
-  return pickBaseRepository(head, upstreamView);
+  return { headDefaultBranch: head.view.defaultBranch, ...pickBaseRepository(head, upstreamView) };
 };
 
 // Fetches into the tracking ref itself, since the remote's fetch refspec may leave the base out.
@@ -302,11 +303,12 @@ export const readTarget = async (runtime: Runtime, request: TargetRequest): Prom
 
   const base = await resolveBaseRepository(runtime, head.repository);
 
-  if (head.localBranch === base.defaultBranch) {
-    throw new Error(
-      `${head.localBranch} is the default branch of ${formatRepository(base.repository)}. Check out a feature branch.`,
-    );
-  }
+  rejectDefaultBranch({
+    localBranch: head.localBranch,
+    pushBranch: head.branch,
+    headRepository: head.repository,
+    defaultBranch: base.headDefaultBranch,
+  });
 
   const baseRemote = pickBaseRemote(head.remotes, head.remote, base.repository);
   const listed = await readPullRequestList(runtime, base.repository, head.branch);

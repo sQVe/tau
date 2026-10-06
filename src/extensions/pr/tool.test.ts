@@ -345,6 +345,46 @@ it('refuses the default branch', async () => {
   );
 });
 
+it('refuses a branch that pushes to the default branch', async () => {
+  const { root, run } = await setUp();
+
+  await git(root, 'checkout', '--quiet', '-b', 'work');
+  await git(root, 'branch', '--quiet', '--set-upstream-to', 'origin/main');
+  await git(root, 'config', 'push.default', 'upstream');
+
+  await expect(run({ action: 'target' })).rejects.toThrow(
+    'work pushes to main, the default branch of github.com/sQVe/tau',
+  );
+});
+
+it("checks branches against the fork's default branch, not the upstream's", async () => {
+  const { root, fake, run } = await setUp('fork/tau');
+  const upstreamUrl = githubUrl('sQVe/tau');
+  const upstream = await createBareRemote(upstreamUrl, root);
+
+  await git(root, 'push', '--quiet', upstream, 'main');
+  await git(root, 'remote', 'add', 'upstream', upstreamUrl);
+  await git(root, 'checkout', '--quiet', 'main');
+  await git(root, 'push', '--quiet', '-u', 'origin', 'main');
+
+  fake.repositories['github.com/fork/tau'] = { defaultBranch: 'trunk', parent: 'sQVe/tau' };
+  fake.repositories['github.com/sQVe/tau'] = { defaultBranch: 'main' };
+
+  const details = await run({ action: 'target' });
+
+  expect(details).toMatchObject({
+    head: { repository: 'github.com/fork/tau', branch: 'main' },
+    base: { remote: 'upstream', branch: 'main' },
+  });
+
+  await git(root, 'checkout', '--quiet', '-b', 'trunk');
+  await git(root, 'push', '--quiet', '-u', 'origin', 'trunk');
+
+  await expect(run({ action: 'target' })).rejects.toThrow(
+    'trunk is the default branch of github.com/fork/tau',
+  );
+});
+
 it('prepares a fresh run directory that Git ignores', async () => {
   const { root, run } = await setUp();
 

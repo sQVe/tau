@@ -6,6 +6,7 @@ import {
   pickBaseRepository,
   pickHead,
   pickPullRequests,
+  rejectDefaultBranch,
   upstreamRepository,
 } from './targetDecisions.js';
 import type { HeadFacts, ListedPullRequest, PullRequest, Remote } from './targetDecisions.js';
@@ -161,4 +162,41 @@ it.each([
   { upstream: upstreamView, base: { repository: upstream, defaultBranch: 'main' } },
 ])('bases the pull request on $base.repository.owner/$base.defaultBranch', (row) => {
   expect(pickBaseRepository(headView, row.upstream)).toEqual(row.base);
+});
+
+const branches = (localBranch: string, pushBranch: string) => ({
+  localBranch,
+  pushBranch,
+  headRepository: fork,
+  defaultBranch: 'trunk',
+});
+
+it.each([
+  { facts: branches('feature', 'feature') },
+  { facts: branches('main', 'main') },
+  { facts: branches('work', 'feature') },
+])('accepts $facts.localBranch pushing to $facts.pushBranch', ({ facts }) => {
+  expect(() => {
+    rejectDefaultBranch(facts);
+  }).not.toThrow();
+});
+
+it.each([
+  {
+    facts: branches('trunk', 'trunk'),
+    error: 'trunk is the default branch of github.com/fork/tau. Check out a feature branch.',
+  },
+  {
+    facts: branches('trunk', 'feature'),
+    error: 'trunk is the default branch of github.com/fork/tau. Check out a feature branch.',
+  },
+  {
+    facts: branches('work', 'trunk'),
+    error:
+      'work pushes to trunk, the default branch of github.com/fork/tau. Push to a feature branch.',
+  },
+])('refuses $facts.localBranch pushing to $facts.pushBranch', ({ facts, error }) => {
+  expect(() => {
+    rejectDefaultBranch(facts);
+  }).toThrow(error);
 });
