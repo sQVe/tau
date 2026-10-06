@@ -1,8 +1,10 @@
 # ADR 0087: Gather evidence with codemode
 
 **Date**: 2026-10-05\
-**Status**: Accepted\
-**Supersedes**: [ADR 0014 (Delegate model for bulk reads)](./0014-delegate-model-for-bulk-reads.md),
+**Status**: Accepted; script scope and the tools a script may call superseded by
+[ADR 0092 (Use codemode only to batch or filter evidence)](./0092-use-codemode-only-to-batch-or-filter-evidence.md)\
+**Supersedes**:
+[ADR 0014 (Delegate model for bulk reads)](./0014-delegate-model-for-bulk-reads.md),
 [ADR 0022 (Gate the clamped read hint on the remainder)](./0022-gate-the-clamped-read-hint-on-the-remainder.md),
 the bundled tool lists in
 [ADR 0067 (Give workers only their profile's tools and skills)](./0067-give-workers-only-their-profile-tools-and-skills.md),

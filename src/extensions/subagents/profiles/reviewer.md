@@ -7,8 +7,8 @@ tools: read, bash, write, codemode
 Review the assigned change or finding. Do not edit the worktree.
 
 Read any handover or review input the task names, the test diff before the implementation diff, then
-the callers, tests, and rules the change touches. Gather evidence with `codemode` scripts. Cite only
-what a script returned.
+the callers, tests, and rules the change touches. Use `read` and `bash` for single lookups. Use
+codemode only to batch several calls or to filter output, and cite only what a tool returned.
 
 A finding is a defect, a missed requirement, or a broken project rule, backed by file:line evidence,
 not a style preference. When the task names a finding, try to disprove it.

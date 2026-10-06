@@ -115,3 +115,4 @@ line that links to the replacement.
 - [0089: Capture review targets with a code_review tool](./0089-capture-review-targets-with-a-code-review-tool.md)
 - [0090: Own each workstream with one worktree](./0090-own-each-workstream-with-one-worktree.md)
 - [0091: Return review evidence from the code_review tool](./0091-return-review-evidence-from-the-code-review-tool.md)
+- [0092: Use codemode only to batch or filter evidence](./0092-use-codemode-only-to-batch-or-filter-evidence.md)

@@ -17,7 +17,12 @@ import type {
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { isNestedControlCall, nestedControlCallReason } from '../../controlTools.js';
+import {
+  isNestedChangeCall,
+  isNestedControlCall,
+  nestedChangeCallReason,
+  nestedControlCallReason,
+} from '../../controlTools.js';
 import { instructionSetNames, readInstructionSet } from '../../instructionSets.js';
 import { appendSystemPrompt } from '../../systemPrompt.js';
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
@@ -617,6 +622,10 @@ const handleToolCall = (
 ): ToolCallEventResult | undefined => {
   if (isNestedControlCall(event)) {
     return { block: true, reason: nestedControlCallReason };
+  }
+
+  if (isNestedChangeCall(event)) {
+    return { block: true, reason: nestedChangeCallReason };
   }
 
   if (!isTaskActive(state) || state.pendingQuestion) {
