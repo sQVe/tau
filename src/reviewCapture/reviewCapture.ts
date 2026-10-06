@@ -52,6 +52,8 @@ type FileList =
 
 type HeadRead = { head: string; error?: undefined } | { head?: undefined; error: string };
 
+type HashedBytes = { hash: string; error?: undefined } | { hash?: undefined; error: string };
+
 const revisionSchema = Type.String({ minLength: 1 });
 
 const exclude = Type.Optional(
@@ -630,7 +632,7 @@ const captureWholeFiles = async (
   return parts;
 };
 
-const hashBytes = async (root: string, bytes: Buffer) => {
+export const hashBytes = async (root: string, bytes: Buffer): Promise<HashedBytes> => {
   const commandArguments = ['rev-parse', '--show-object-format'];
   const { stdout, error } = await runCaptureCommand(root, commandArguments);
   const format = stdout?.toString('utf8').trim();

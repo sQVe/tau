@@ -1,9 +1,10 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createCodeReviewTool } from '../src/extensions/codeReview/tool.js';
 import type { CodeReviewInput } from '../src/extensions/codeReview/tool.js';
@@ -69,14 +70,20 @@ const readEvidence = async (directory: string) =>
       .map(async (name) => [name, await readFile(join(directory, name))] as const),
   );
 
-// Captures forkPoint..HEAD and writes recheck.diff with freshness.
-const captureReview = async (root: string, directory: string, forkPoint: string) => {
+// Captures changes from forkPoint and writes recheck.diff with freshness.
+const captureReview = async (
+  root: string,
+  directory: string,
+  forkPoint: string,
+  kind: 'range' | 'workingTree' = 'range',
+) => {
   const to = await git(root, 'rev-parse', 'HEAD');
+  const target = kind === 'range' ? { kind, from: forkPoint, to } : { kind, base: forkPoint };
 
   await runCodeReview(root, {
     action: 'capture',
     directory,
-    target: { kind: 'range', from: forkPoint, to },
+    target,
   });
 
   await runCodeReview(root, { action: 'freshness', directory });
@@ -118,6 +125,39 @@ it('reuses a review after a rebase onto a base that changes other files', async 
   });
 });
 
+it('reuses an unchanged review in a SHA-256 repository', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tau-reuse-sha256-'));
+
+  onTestFinished(() => rm(root, { recursive: true, force: true }));
+  await git(root, 'init', '--quiet', '--initial-branch=main', '--object-format=sha256');
+
+  const forkPoint = await commitFile(root, 'feature.txt', 'one\n');
+
+  await git(root, 'checkout', '--quiet', '-b', 'feature');
+  await commitFile(root, 'feature.txt', 'two\n');
+
+  const { directory } = (await runCodeReview(root, { action: 'prepare' })) as {
+    directory: string;
+  };
+
+  await writeFile(join(directory, 'input.md'), '# Review input\n\n## Capture\n');
+  await captureReview(root, directory, forkPoint);
+
+  const evidence = await readEvidence(directory);
+  const tool = createPrTool(createGhFake().exec);
+
+  const result = await tool.execute(
+    'call',
+    { action: 'reuse', directory, mergeBase: forkPoint },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  expect(result.details).toMatchObject({ status: 'match', reasons: [], paths: noPaths });
+  expect(await readEvidence(directory)).toEqual(evidence);
+});
+
 it('refuses reuse when a file changed after the review', async () => {
   const { root, directory, forkPoint, run } = await setUpReview();
 
@@ -135,6 +175,48 @@ it('refuses reuse when a file changed after the review', async () => {
     paths: { ...noPaths, differing: ['feature.txt'] },
     reports: ['reviewer.md'],
   });
+});
+
+it('refuses reuse when recheck.diff is replaced after reuse reads it', async () => {
+  const { root, directory, forkPoint, run } = await setUpReview();
+
+  await captureReview(root, directory, forkPoint, 'workingTree');
+
+  const recheckPath = join(directory, 'recheck.diff');
+  const reviewedBytes = await readFile(recheckPath);
+  const wrapperDirectory = await mkdtemp(join(tmpdir(), 'tau-reuse-race-'));
+
+  onTestFinished(() => rm(wrapperDirectory, { recursive: true, force: true }));
+
+  const reviewedPath = join(wrapperDirectory, 'reviewed.diff');
+
+  await writeFile(reviewedPath, reviewedBytes);
+  await commitFile(root, 'feature.txt', 'three\n');
+  await runCodeReview(root, { action: 'freshness', directory });
+
+  const { stdout } = await promisify(execFile)('sh', ['-c', 'command -v git']);
+  const realGit = stdout.trim();
+
+  const script = [
+    '#!/bin/sh',
+    `if [ "$1" = hash-object ]; then cp '${reviewedPath}' '${recheckPath}'; fi`,
+    `exec '${realGit}' "$@"`,
+  ].join('\n');
+
+  await writeFile(join(wrapperDirectory, 'git'), `${script}\n`, { mode: 0o755 });
+  vi.stubEnv('PATH', `${wrapperDirectory}:${process.env['PATH'] ?? ''}`);
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const record = await readFile(join(directory, 'capture.json'));
+  const head = await git(root, 'rev-parse', 'HEAD');
+  const details = await run({ action: 'reuse', directory, mergeBase: forkPoint });
+
+  expect(details).toMatchObject({ status: 'mismatch', paths: noPaths });
+  expect(await readFile(join(directory, 'capture.json'))).toEqual(record);
+  expect(await git(root, 'rev-parse', 'HEAD')).toBe(head);
 });
 
 it('refuses reuse when recheck.diff does not have the recorded hash', async () => {
