@@ -9,7 +9,7 @@ export interface GitResult {
 
 // An inherited repository selector would make Git read that repository instead of the one at cwd,
 // and an inherited index file, such as one a Git hook exports, would replace its index.
-const gitEnvironment = () => {
+export const gitEnvironment = (): NodeJS.ProcessEnv => {
   // oxlint-disable-next-line node/no-process-env -- Git inherits the user's environment apart from the repository selectors and index file.
   const inherited = process.env;
 

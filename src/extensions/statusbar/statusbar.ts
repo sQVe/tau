@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
+import { gitEnvironment } from '../../gitOutput.js';
 import { footerTheme } from './colors.js';
 import { renderFooterLine } from './render.js';
 
@@ -50,8 +51,7 @@ const readDirty = async (context: ExtensionContext): Promise<boolean> => {
       ['status', '--porcelain', '--untracked-files=normal'],
       {
         cwd: context.cwd,
-        // oxlint-disable-next-line node/no-process-env -- Status inherits Git configuration but must not lock the index.
-        env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+        env: { ...gitEnvironment(), GIT_OPTIONAL_LOCKS: '0' },
         timeout: gitTimeoutMilliseconds,
         maxBuffer: gitMaximumBufferBytes,
       },

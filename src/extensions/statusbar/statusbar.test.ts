@@ -77,6 +77,61 @@ const setup = (directory: string, mode = 'tui') => {
 };
 
 describe('statusbar extension', () => {
+  it('shows a clean checkout as clean when Pi inherits a missing index', async ({
+    onTestFinished,
+  }) => {
+    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    await initializeRepository(directory);
+    await writeFile(join(directory, 'tracked'), 'original bytes');
+    await executeFile('git', ['add', 'tracked'], { cwd: directory });
+    await executeFile('git', ['commit', '-qm', 'base'], { cwd: directory });
+
+    vi.stubEnv('GIT_INDEX_FILE', join(directory, 'missing-index'));
+
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    const application = setup(directory);
+    await application.emit('session_start');
+    const footer = application.mount();
+    onTestFinished(() => footer.component.dispose?.());
+
+    await vi.waitFor(() => {
+      expect(footer.requestRender).toHaveBeenCalled();
+    });
+
+    expect(footer.component.render(100)[0]).not.toContain('main*');
+  });
+
+  it('shows an edited checkout as dirty when Pi inherits an invalid GIT_DIR', async ({
+    onTestFinished,
+  }) => {
+    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    await initializeRepository(directory);
+    await writeFile(join(directory, 'tracked'), 'original bytes');
+    await executeFile('git', ['add', 'tracked'], { cwd: directory });
+    await executeFile('git', ['commit', '-qm', 'base'], { cwd: directory });
+    await writeFile(join(directory, 'tracked'), 'edited bytes');
+
+    vi.stubEnv('GIT_DIR', join(directory, 'missing-git-directory'));
+
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    const application = setup(directory);
+    await application.emit('session_start');
+    const footer = application.mount();
+    onTestFinished(() => footer.component.dispose?.());
+
+    await vi.waitFor(() => {
+      expect(footer.component.render(100)[0]).toContain('main*');
+    });
+  });
+
   it('reads dirty state without refreshing the shared index', async ({ onTestFinished }) => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
     onTestFinished(() => rm(directory, { recursive: true, force: true }));
