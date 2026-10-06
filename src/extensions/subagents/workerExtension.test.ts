@@ -1037,6 +1037,29 @@ it('accepts a success report after refusing an incomplete one', async () => {
   expect(readReport(worker.directory, 'task')?.summary).toBe(`All done.${sections}`);
 });
 
+it('accepts a first report that uses the headings the summary schema names', async () => {
+  const worker = await waitingWorker();
+  const report = worker.tools.get('subagent_report');
+
+  if (!report) {
+    throw new Error('Missing report tool.');
+  }
+
+  const schema = report.parameters as { properties: { summary: { description?: string } } };
+  const headings = schema.properties.summary.description?.match(/## \w+/g) ?? [];
+  const summary = ['Done.', ...headings.map((heading) => `${heading}\nNone`)].join('\n\n');
+
+  await report.execute(
+    'report',
+    { outcome: 'success', summary, evidence: [] },
+    undefined,
+    undefined,
+    worker.context,
+  );
+
+  expect(readReport(worker.directory, 'task')?.summary).toBe(summary);
+});
+
 it('stops waiting after uncertain question publication once the deadline passes', async () => {
   const { directory, createdAt, emit, ask, shutdown } = await waitingWorker();
 

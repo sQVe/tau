@@ -16,7 +16,7 @@ export const handoverContract = [
     'Report when the assignment is done or a blocker stops you.',
     'success means every acceptance criterion is met and checked; failure means it cannot be met;',
     'incomplete means a named blocker stops you. Remaining steps are not a blocker.',
-    'Write each section as a heading with compact bullets, None when empty, and name saved files instead of pasting logs, diffs, or long output.',
+    'Write each section under its own `## Name` heading, such as `## Changes`, with compact bullets, None when empty, and name saved files instead of pasting logs, diffs, or long output.',
   ].join(' '),
   [
     '- Changes: the worktree, the assignment baseline or that none was given, the changed files including relevant untracked ones,',
