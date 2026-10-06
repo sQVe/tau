@@ -26,14 +26,6 @@ const validatePreviews = (question: QuestionInput) => {
   if (previews.some((preview) => preview !== undefined && isBlank(preview))) {
     throw new Error(`A preview of "${question.question}" is blank. Remove it or show content.`);
   }
-
-  const withPreview = previews.filter((preview) => preview !== undefined).length;
-
-  if (withPreview > 0 && withPreview < previews.length) {
-    throw new Error(
-      `Give every option of "${question.question}" a preview, or none. For an option such as "Keep as is", show the unchanged state.`,
-    );
-  }
 };
 
 const validateRecommendation = (question: QuestionInput) => {

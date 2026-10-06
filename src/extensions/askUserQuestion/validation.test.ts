@@ -20,6 +20,7 @@ it.each([
     rule: 'a recommended first option and a preview on every option',
     questions: [withOptions([{ recommended: true, preview: 'one' }, { preview: 'two' }])],
   },
+  { rule: 'a preview on only some options', questions: [withOptions([{ preview: 'one' }])] },
 ])('accepts $rule', ({ questions }) => {
   expect(() => {
     validateQuestions(questions);
@@ -58,11 +59,6 @@ it.each([
     rule: 'a "(Recommended)" label',
     questions: [withOptions([{ label: 'Stacked (Recommended)' }])],
     error: /Recommended/u,
-  },
-  {
-    rule: 'a preview on only some options',
-    questions: [withOptions([{ preview: 'one' }])],
-    error: /every option/u,
   },
   {
     rule: 'a blank preview',
