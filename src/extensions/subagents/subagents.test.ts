@@ -8,6 +8,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   ExtensionToolContext,
+  ToolCallEventResult,
 } from '@earendil-works/pi-coding-agent';
 import { createEventBus } from '@earendil-works/pi-coding-agent';
 import { TuiAltScreen, VStack } from '@earendil-works/pi-tui';
@@ -17,30 +18,61 @@ import { expect, it, vi, onTestFinished as finishTest } from 'vitest';
 
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository, initializeRepository } from '../../../tests/gitRepository.js';
-import { WorkerController } from './controller/controller.js';
+import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { fixtureModel } from './fixtures/controlledProvider.js';
 import type { WorkerNotice } from './presentation.js';
-import subagentsExtension, { createNoticeDelivery, delegationGuidelines } from './subagents.js';
+import subagentsExtension, {
+  createNoticeDelivery,
+  delegationGuidelines,
+  registerCapacityRefusal,
+} from './subagents.js';
 import type { WorkerWidgetRow } from './widget.js';
 
-const emitEvent = (
+const emitEvent = async (
   handlers: ReturnType<typeof fakeExtensionApi>['handlers'],
   name: string,
   event: unknown = {},
   context = {} as ExtensionContext,
-) => Promise.all((handlers.get(name) ?? []).map((handler) => handler(event as never, context)));
+): Promise<void> => {
+  await Promise.all((handlers.get(name) ?? []).map((handler) => handler(event as never, context)));
+};
+
+// These widget tests keep one handler per event, so a registered latch would be overwritten.
+const inertCapacityRefusal = { refuse: () => undefined };
+
+const emitToolCall = async (
+  handlers: ReturnType<typeof fakeExtensionApi>['handlers'],
+  event: unknown,
+  context: ExtensionContext,
+): Promise<ToolCallEventResult | undefined> => {
+  let result: ToolCallEventResult | undefined;
+
+  for (const handler of handlers.get('tool_call') ?? []) {
+    const current = (await handler(event as never, context)) as ToolCallEventResult | undefined;
+
+    if (current) {
+      result = current;
+
+      if (current.block === true) {
+        return current;
+      }
+    }
+  }
+
+  return result;
+};
 
 const registerTools = () => {
   const fake = fakeExtensionApi();
-  subagentsExtension(fake.pi);
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
   return fake.tools;
 };
 
 const managerGuidelines = () => {
   const fake = fakeExtensionApi();
-  subagentsExtension(fake.pi);
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
   return appendedSystemPrompt(fake.handlers, ['subagent']);
 };
@@ -160,7 +192,7 @@ const sessionGuidelines = async (
     writeFileSync(join(directory, '.pi', 'tau.json'), JSON.stringify(config.repository));
   }
 
-  subagentsExtension(fake.pi);
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
   const context = {
     cwd: directory,
@@ -178,7 +210,7 @@ const sessionGuidelines = async (
     rmSync(directory, { recursive: true, force: true });
   });
 
-  await fake.handler('session_start')({}, context);
+  await emitEvent(fake.handlers, 'session_start', {}, context);
 
   return {
     appended: appendedSystemPrompt(fake.handlers, ['subagent']),
@@ -340,13 +372,16 @@ it('keeps parent tools, delegation guidelines, and handlers unavailable when a t
   vi.stubEnv('TAU_WORKER_RECORD', '/fixture/worker');
   const fake = fakeExtensionApi();
 
-  subagentsExtension(fake.pi);
+  const capacityRefusal = registerCapacityRefusal(fake.pi);
+
+  subagentsExtension(fake.pi, capacityRefusal);
+  capacityRefusal.refuse();
 
   expect(fake.tools.size).toBe(0);
   expect(fake.handlers.size).toBe(0);
 });
 
-const launchDescription = (
+const launchDescription = async (
   onTestFinished: typeof finishTest,
   setup: (directory: string) => void,
   scopedModels: string[] = [],
@@ -357,7 +392,7 @@ const launchDescription = (
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.spyOn(WorkerController.prototype, 'resume').mockResolvedValue(undefined);
   setup(directory);
-  subagentsExtension(fake.pi);
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
   const context = {
     cwd: directory,
@@ -377,13 +412,15 @@ const launchDescription = (
     rmSync(directory, { recursive: true, force: true });
   });
 
-  fake.handler('session_start')({}, context);
+  await emitEvent(fake.handlers, 'session_start', {}, context);
 
   return fake.tools.get('subagent')?.description ?? '';
 };
 
-it('lists user profiles in the launch description after session start', ({ onTestFinished }) => {
-  const description = launchDescription(onTestFinished, (directory) => {
+it('lists user profiles in the launch description after session start', async ({
+  onTestFinished,
+}) => {
+  const description = await launchDescription(onTestFinished, (directory) => {
     mkdirSync(join(directory, 'agents'));
 
     writeFileSync(
@@ -396,10 +433,10 @@ it('lists user profiles in the launch description after session start', ({ onTes
   expect(description).toContain('Sorts bug reports');
 });
 
-it('lists allowed scoped models and each profile default in the launch description', ({
+it('lists allowed scoped models and each profile default in the launch description', async ({
   onTestFinished,
 }) => {
-  const description = launchDescription(
+  const description = await launchDescription(
     onTestFinished,
     (directory) => {
       writeFileSync(
@@ -417,10 +454,10 @@ it('lists allowed scoped models and each profile default in the launch descripti
   expect(description).not.toContain('a/hidden');
 });
 
-it('leaves the model line out of the launch description when the config is broken', ({
+it('leaves the model line out of the launch description when the config is broken', async ({
   onTestFinished,
 }) => {
-  const description = launchDescription(
+  const description = await launchDescription(
     onTestFinished,
     (directory) => {
       writeFileSync(join(directory, 'tau.json'), JSON.stringify({ profiles: { scout: 'a/two' } }));
@@ -438,7 +475,7 @@ it('returns from session start while worker reattachment is still pending', asyn
   const fake = fakeExtensionApi();
   const released = Promise.withResolvers<undefined>();
   vi.spyOn(WorkerController.prototype, 'resume').mockReturnValue(released.promise);
-  subagentsExtension(fake.pi);
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
   const context = {
     ...emptyConfigContext(),
@@ -452,7 +489,7 @@ it('returns from session start while worker reattachment is still pending', asyn
     vi.restoreAllMocks();
   });
 
-  await expect(fake.handler('session_start')({}, context)).resolves.toBeUndefined();
+  await expect(emitEvent(fake.handlers, 'session_start', {}, context)).resolves.toBeUndefined();
 });
 
 it('reports a failed worker reattachment in the UI', async ({ onTestFinished }) => {
@@ -460,7 +497,7 @@ it('reports a failed worker reattachment in the UI', async ({ onTestFinished }) 
   const failed = Promise.withResolvers<undefined>();
   const notices: string[] = [];
   vi.spyOn(WorkerController.prototype, 'resume').mockReturnValue(failed.promise);
-  subagentsExtension(fake.pi);
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
   const context = {
     ...emptyConfigContext(),
@@ -477,7 +514,7 @@ it('reports a failed worker reattachment in the UI', async ({ onTestFinished }) 
     vi.restoreAllMocks();
   });
 
-  fake.handler('session_start')({}, context);
+  await emitEvent(fake.handlers, 'session_start', {}, context);
   failed.reject(new Error('Injected records failure.'));
 
   await vi.waitFor(() => {
@@ -507,7 +544,7 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
     vi.restoreAllMocks();
   });
 
-  subagentsExtension(fake.pi);
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
   const tools = fake.tools;
 
   const context = {
@@ -554,28 +591,28 @@ it('blocks long parent sleeps only while this session has an active worker', asy
     vi.restoreAllMocks();
   });
 
-  subagentsExtension(fake.pi);
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
   const context = {
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
   const bash = (command: string) =>
-    fake.handler('tool_call')({ toolName: 'bash', input: { command } }, context);
+    emitToolCall(fake.handlers, { toolName: 'bash', input: { command } }, context);
 
-  expect(bash('sleep 900; git status --short')).toBeUndefined();
+  expect(await bash('sleep 900; git status --short')).toBeUndefined();
 
   await fake.tools
     .get('subagent_status')!
     .execute('status', { taskId: 'task-1' }, undefined, undefined, context);
 
-  expect(bash('sleep 900; git status --short')).toMatchObject({ block: true });
-  expect(bash('sleep 2m')).toMatchObject({ block: true });
-  expect(bash('sleep 20 20')).toMatchObject({ block: true });
-  expect(bash('sleep 20; sleep 20')).toMatchObject({ block: true });
-  expect(bash('sleep 5 && ls')).toBeUndefined();
+  expect(await bash('sleep 900; git status --short')).toMatchObject({ block: true });
+  expect(await bash('sleep 2m')).toMatchObject({ block: true });
+  expect(await bash('sleep 20 20')).toMatchObject({ block: true });
+  expect(await bash('sleep 20; sleep 20')).toMatchObject({ block: true });
+  expect(await bash('sleep 5 && ls')).toBeUndefined();
   state = 'stopped';
-  expect(bash('sleep 900')).toBeUndefined();
+  expect(await bash('sleep 900')).toBeUndefined();
 });
 
 it('updates the parent widget from live worker rows without a model turn', () => {
@@ -608,7 +645,7 @@ it('updates the parent widget from live worker rows without a model turn', () =>
     },
   ]);
 
-  subagentsExtension(extension);
+  subagentsExtension(extension, inertCapacityRefusal);
 
   const context = {
     ...emptyConfigContext(),
@@ -694,7 +731,7 @@ it('refreshes history while open, then stops polling after close without a model
     .spyOn(WorkerController.prototype, 'widgetRows')
     .mockImplementation(() => historyRows);
 
-  subagentsExtension(extension);
+  subagentsExtension(extension, inertCapacityRefusal);
 
   const context = {
     ...emptyConfigContext(),
@@ -815,7 +852,7 @@ it('keeps editor focus and typing after a click on the passive fullscreen widget
     },
   ]);
 
-  subagentsExtension(extension);
+  subagentsExtension(extension, inertCapacityRefusal);
 
   const context = {
     ...emptyConfigContext(),
@@ -870,7 +907,7 @@ it('places follow-ups with explicit visibility and the current parent terminal',
   onTestFinished,
 }) => {
   const fake = fakeExtensionApi();
-  subagentsExtension(fake.pi);
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
   const tools = fake.tools;
   const tool = tools.get('subagent_follow_up');
 
@@ -963,7 +1000,7 @@ it('launches a Pi worker through the tool and refuses a launch outside herdr', a
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
   const fake = fakeExtensionApi();
-  subagentsExtension(fake.pi);
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
   const tools = fake.tools;
 
   const launch = vi
@@ -993,7 +1030,9 @@ it('launches a Pi worker through the tool and refuses a launch outside herdr', a
   expect(Value.Check(reply.parameters, answer)).toBe(false);
   expect(Value.Check(reply.parameters, { ...answer, questionId: 'question' })).toBe(true);
 
-  await tool.execute('pi-call', input, undefined, undefined, context);
+  const result = await tool.execute('pi-call', input, undefined, undefined, context);
+
+  expect(result).not.toHaveProperty('terminate');
 
   expect(launch.mock.calls[0]?.[0].loadout).toMatchObject({
     harness: 'pi',
@@ -1152,7 +1191,7 @@ it('queues active workers and pending questions for the next prompt after a comp
     vi.restoreAllMocks();
   });
 
-  subagentsExtension(fake.pi);
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
   const context = {
     sessionManager: { getSessionId: () => 'parent-session' },
@@ -1176,7 +1215,7 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
   onTestFinished,
 }) => {
   const fake = fakeExtensionApi();
-  subagentsExtension(fake.pi);
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
   const tools = fake.tools;
   const tool = tools.get('subagent_follow_up');
 
@@ -1380,6 +1419,87 @@ it('returns the unreadable-evidence object when status records fail', async ({
       nativeSessionFile: '/abs/records/task-1/session.jsonl',
     },
   });
+});
+
+it.each([
+  { name: 'subagent', method: 'launch' },
+  { name: 'subagent_follow_up', method: 'followUp' },
+] as const)('ends the turn when $name refuses a full worker cap', async ({ name, method }) => {
+  const { cwd } = emptyConfigContext();
+
+  finishTest(() => {
+    vi.restoreAllMocks();
+  });
+
+  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('HERDR_ENV', '1');
+  vi.stubEnv('HERDR_PANE_ID', 'parent');
+  vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
+
+  const refusal = new WorkerCapacityFullError('Worker capacity full');
+  const launch = vi.spyOn(WorkerController.prototype, method).mockRejectedValue(refusal);
+  const fake = fakeExtensionApi();
+
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
+
+  const tool = fake.tools.get(name);
+
+  if (!tool) {
+    throw new Error('Missing worker tool.');
+  }
+
+  const input = {
+    profile: 'worker',
+    model: fixtureModelReference,
+    sourceTaskId: 'source',
+    task: 'Inspect fixture.',
+    timeoutSeconds: 10,
+  };
+
+  const context = launchContext(cwd);
+
+  const toolCall = (toolName: string) =>
+    emitToolCall(fake.handlers, { toolName, input: { command: 'pwd' } }, context);
+
+  expect(await toolCall('bash')).toBeUndefined();
+
+  const result = await tool.execute('call', input, undefined, undefined, context);
+
+  expect(result).toMatchObject({
+    content: [{ type: 'text', text: refusal.message }],
+    isError: true,
+    terminate: true,
+  });
+
+  for (const toolName of ['bash', 'read', 'subagent', 'subagent_follow_up']) {
+    expect(await toolCall(toolName)).toMatchObject({ block: true, terminate: true });
+  }
+
+  for (const message of [
+    { role: 'assistant' },
+    { role: 'toolResult' },
+    { role: 'custom', customType: 'unrelated' },
+  ]) {
+    await emitEvent(fake.handlers, 'message_start', { message }, context);
+    expect(await toolCall('bash')).toMatchObject({ block: true, terminate: true });
+  }
+
+  for (const message of [{ role: 'custom', customType: 'tau-worker' }, { role: 'user' }]) {
+    await emitEvent(fake.handlers, 'message_start', { message }, context);
+    expect(await toolCall('bash')).toBeUndefined();
+
+    await tool.execute('call', input, undefined, undefined, context);
+    expect(await toolCall('bash')).toMatchObject({ block: true, terminate: true });
+  }
+
+  await emitEvent(fake.handlers, 'message_start', { message: { role: 'user' } }, context);
+
+  const otherError = new Error('Another launch failure');
+
+  launch.mockRejectedValue(otherError);
+
+  await expect(tool.execute('call', input, undefined, undefined, context)).rejects.toBe(otherError);
+  expect(await toolCall('bash')).toBeUndefined();
 });
 
 const evidenceError = (taskId: string) =>

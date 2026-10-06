@@ -27,7 +27,7 @@ import {
   validateTask,
   workerRecordsDirectory,
 } from './records.js';
-import subagentsExtension from './subagents.js';
+import subagentsExtension, { registerCapacityRefusal } from './subagents.js';
 
 const setup = () => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-history-'));
@@ -115,7 +115,11 @@ const historyTool = async (fixture: ReturnType<typeof setup>, file: string, id: 
     noSkills: true,
     noPromptTemplates: true,
     noThemes: true,
-    extensionFactories: [subagentsExtension],
+    extensionFactories: [
+      (pi) => {
+        subagentsExtension(pi, registerCapacityRefusal(pi));
+      },
+    ],
   });
 
   await loader.reload();

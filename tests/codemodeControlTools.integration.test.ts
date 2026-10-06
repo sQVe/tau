@@ -20,7 +20,9 @@ import {
   validateTask,
   workerRecordsDirectory,
 } from '../src/extensions/subagents/records.js';
-import subagentsExtension from '../src/extensions/subagents/subagents.js';
+import subagentsExtension, {
+  registerCapacityRefusal,
+} from '../src/extensions/subagents/subagents.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { createBoundSession } from './piSession.js';
 
@@ -193,7 +195,9 @@ const runManager = async (responses: FauxResponseStep[]) => {
     extensionFactories: [
       createCodemodeExtension({ mode: 'on' }),
       askUserQuestionExtension,
-      subagentsExtension,
+      (pi) => {
+        subagentsExtension(pi, registerCapacityRefusal(pi));
+      },
     ],
   });
 

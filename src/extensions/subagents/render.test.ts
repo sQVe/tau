@@ -21,7 +21,7 @@ import {
   renderReplyResult,
   renderStatusResult,
 } from './render.js';
-import subagentsExtension from './subagents.js';
+import subagentsExtension, { registerCapacityRefusal } from './subagents.js';
 import type { WorkerState } from './types.js';
 
 const states: WorkerState[] = [
@@ -120,7 +120,7 @@ const historyFixture = (count: number) => ({
 
 const renderers = () => {
   const fake = fakeExtensionApi();
-  subagentsExtension(fake.pi);
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
   return { tools: fake.tools, messageRenderers: fake.messageRenderers };
 };

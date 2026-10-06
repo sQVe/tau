@@ -14,7 +14,7 @@ import prFeedbackExtension from './extensions/prFeedback/prFeedback.js';
 import sliceExtension from './extensions/slice/slice.js';
 import snippetsExtension from './extensions/snippets/snippets.js';
 import statusbarExtension from './extensions/statusbar/statusbar.js';
-import subagentsExtension from './extensions/subagents/subagents.js';
+import subagentsExtension, { registerCapacityRefusal } from './extensions/subagents/subagents.js';
 import tauSkillsExtension from './extensions/tauSkills/tauSkills.js';
 import tddExtension from './extensions/tdd/tdd.js';
 import trackerExtension from './extensions/tracker/tracker.js';
@@ -33,6 +33,9 @@ export const skillTools = {
 };
 
 export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
+  // Pi stops at the first blocking hook, so capacity refusal must run before other guards.
+  const capacityRefusal = registerCapacityRefusal(pi);
+
   await writingExtension(pi);
   await codingExtension(pi);
   await workflowExtension(pi);
@@ -49,7 +52,7 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   prFeedbackExtension(pi);
   codeReviewExtension(pi);
   statusbarExtension(pi);
-  subagentsExtension(pi);
+  subagentsExtension(pi, capacityRefusal);
   compactionExtension(pi);
   bareRootExtension(pi);
   herdrBlockedExtension(pi);

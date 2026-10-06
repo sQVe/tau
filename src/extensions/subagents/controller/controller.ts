@@ -95,6 +95,10 @@ class TaskAccessError extends Error {
   override name = 'TaskAccessError';
 }
 
+export class WorkerCapacityFullError extends Error {
+  override name = 'WorkerCapacityFullError';
+}
+
 // Registry, capacity, launch allocation, and ownership checks for all workers; each worker runs its own lifecycle.
 export class WorkerController {
   private readonly root: string;
@@ -604,7 +608,7 @@ export class WorkerController {
         return live ? `${live.name ?? id} until ${new Date(live.deadline).toISOString()}` : id;
       });
 
-      throw new Error(
+      throw new WorkerCapacityFullError(
         `Worker capacity full (${this.live.size}/${this.capacity}): ${workers.join(', ')}. No queue. End your turn and retry after a notice reports a worker stopped or cleanupUnconfirmed.`,
       );
     }

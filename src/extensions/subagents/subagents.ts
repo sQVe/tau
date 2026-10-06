@@ -13,8 +13,9 @@ import { appendSystemPrompt, appendToolGuidelines } from '../../systemPrompt.js'
 import type { ConfigLocation } from '../../tauConfig.js';
 import { isWorkerProcess } from '../../workerProcess.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
+import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.js';
 import { activeStates, compactionWorkerList } from './compactionWorkers.js';
-import { WorkerController } from './controller/controller.js';
+import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { historyPage, searchHistory } from './history.js';
 import { launchModels, resolveLoadout } from './loadout.js';
@@ -43,10 +44,15 @@ import { openWorkerHistory } from './widgetOverlay.js';
 import type { WorkerHistoryView } from './widgetOverlay.js';
 import { workerModelLine } from './workerModels.js';
 
+interface CapacityRefusal {
+  refuse: () => void;
+}
+
 interface SubagentRuntime {
   pi: ExtensionAPI;
   getController: () => WorkerController;
   peekController: () => WorkerController | undefined;
+  refuseCapacity: () => void;
 }
 
 type NoticeDelivery = (
@@ -274,6 +280,21 @@ const evidenceResult = (error: unknown) => {
   };
 };
 
+const launchErrorResult = (runtime: SubagentRuntime, error: unknown) => {
+  if (error instanceof WorkerCapacityFullError) {
+    runtime.refuseCapacity();
+
+    return {
+      content: [{ type: 'text' as const, text: error.message }],
+      details: undefined,
+      isError: true,
+      terminate: true,
+    };
+  }
+
+  return evidenceResult(error);
+};
+
 const launchWorker = async (
   runtime: SubagentRuntime,
   parameters: LaunchParameters,
@@ -317,7 +338,7 @@ const launchWorker = async (
       signal,
     );
   } catch (error) {
-    return evidenceResult(error);
+    return launchErrorResult(runtime, error);
   }
 
   return {
@@ -357,7 +378,7 @@ const followUpWorker = async (
       signal,
     );
   } catch (error) {
-    return evidenceResult(error);
+    return launchErrorResult(runtime, error);
   }
 
   return {
@@ -714,7 +735,36 @@ const totalSleepSeconds = (command: string): number => {
   return total;
 };
 
-export default function subagentsExtension(pi: ExtensionAPI): void {
+export const registerCapacityRefusal = (pi: ExtensionAPI): CapacityRefusal => {
+  if (isWorkerProcess()) {
+    return { refuse: () => undefined };
+  }
+
+  let capacityRefused = false;
+
+  pi.on('session_start', () => {
+    capacityRefused = false;
+  });
+
+  pi.on('message_start', (event) => {
+    if (clearsCapacityRefusal(event.message)) {
+      capacityRefused = false;
+    }
+  });
+
+  pi.on('tool_call', () => capacityRefusalBlock(capacityRefused));
+
+  return {
+    refuse: () => {
+      capacityRefused = true;
+    },
+  };
+};
+
+export default function subagentsExtension(
+  pi: ExtensionAPI,
+  capacityRefusal: CapacityRefusal,
+): void {
   if (isWorkerProcess()) {
     return;
   }
@@ -735,6 +785,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       return controller;
     },
     peekController: () => controller,
+    refuseCapacity: capacityRefusal.refuse,
   };
 
   registerSubagentTools(runtime);
