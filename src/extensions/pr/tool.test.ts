@@ -38,6 +38,8 @@ const setUp = async (origin = 'sQVe/tau') => {
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createGhFake();
 
+  await git(root, 'config', 'maintenance.auto', 'false');
+  await git(root, 'config', 'gc.auto', '0');
   await createBareRemote(githubUrl(origin), root);
   await git(root, 'remote', 'add', 'origin', githubUrl(origin));
   await git(root, 'commit', '--quiet', '--allow-empty', '-m', 'base');
