@@ -3,18 +3,13 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { Exec } from '../../exec.js';
+import { api, openStateTypes, run, unexpectedOutput } from '../../linear.js';
 import type { LinearChild, LinearContainer } from './writes.js';
 
 export interface CreatedIssue {
   id: string;
   identifier: string;
   url: string;
-}
-
-interface ApiResponse {
-  label: string;
-  stdout: string;
-  data: unknown;
 }
 
 interface IssueInput {
@@ -103,68 +98,9 @@ const createSchema = Type.Object({
 const updateSchema = Type.Object({ issueUpdate: Type.Object({ success: Type.Literal(true) }) });
 const pullRequestSchema = Type.Object({ state: Type.String() });
 
-const outputPreviewLength = 200;
-
 const pullRequestUrl = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/u;
 
 type ChildNode = Static<typeof childSchema>;
-
-const describe = (command: string, commandArguments: readonly string[]) =>
-  [command, ...commandArguments.slice(0, 2)].join(' ');
-
-const run = async (
-  exec: Exec,
-  cwd: string,
-  command: string,
-  commandArguments: string[],
-): Promise<string> => {
-  const result = await exec(command, commandArguments, { cwd });
-
-  if (result.code !== 0 || result.killed) {
-    const output = (result.stderr || result.stdout).trim();
-
-    throw new Error(`${describe(command, commandArguments)} failed: ${output}`);
-  }
-
-  return result.stdout;
-};
-
-const unexpectedOutput = ({ label, stdout }: ApiResponse) =>
-  new Error(`${label} printed unexpected output: ${stdout.slice(0, outputPreviewLength)}`);
-
-const api = async (
-  exec: Exec,
-  cwd: string,
-  query: string,
-  variables: Record<string, unknown>,
-): Promise<ApiResponse> => {
-  const label = `linear api ${query.slice(0, query.indexOf('('))}`;
-
-  // `--variable` turns values such as `123`, `true`, and `null` into other JSON types, so every
-  // value goes through `--variables-json`.
-  const stdout = await run(exec, cwd, 'linear', [
-    'api',
-    query,
-    '--variables-json',
-    JSON.stringify(variables),
-  ]);
-
-  let value: unknown;
-
-  try {
-    value = JSON.parse(stdout);
-  } catch (error) {
-    throw new Error(
-      `${label} printed output that is not JSON: ${stdout.slice(0, outputPreviewLength)}`,
-      { cause: error },
-    );
-  }
-
-  const data: unknown =
-    typeof value === 'object' && value !== null && 'data' in value ? value.data : undefined;
-
-  return { label, stdout, data };
-};
 
 const readPullRequestState = async (exec: Exec, cwd: string, url: string) => {
   const stdout = await run(exec, cwd, 'gh', ['pr', 'view', url, '--json', 'state']);
@@ -260,7 +196,7 @@ export const findOpenIssues = async (
   const filter: Record<string, unknown> = {
     team: { key: { eq: search.team } },
     title: { eq: search.title },
-    state: { type: { nin: ['completed', 'canceled'] } },
+    state: { type: { in: openStateTypes } },
   };
 
   if (search.project !== null) {

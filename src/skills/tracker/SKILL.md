@@ -51,11 +51,7 @@ preview. It needs the `linear` CLI authenticated for the workspace.
    - An agent ticket goes to the team in the line that starts with `Tracker agent team:`, with no
      project.
    - A ticket with a parent, other than an agent ticket, still takes the `Tracker repository:`
-     route. An example is a slice under its container. Read the parent's team and project with
-     `linear api 'query($id: String!) { issue(id: $id) { team { key } project { name } state { name } } }' --variable id=<parent>`.
-     If either differs from the route, stop. Tell the user that the parent is in team
-     `<parent team>` and project `<parent project>`, but this repository routes to team
-     `<route team>` and project `<route project>`.
+     route. An example is a slice under its container.
    - If a line the ticket needs is missing, stop. Show each line that starts with
      `Tracker setup needed:`, and tell the user to add the missing part to `~/.pi/agent/tau.json`,
      then run `/reload` or start a new session. The repository key is the `origin` remote's
@@ -70,30 +66,31 @@ preview. It needs the `linear` CLI authenticated for the workspace.
      }
      ```
 
-3. Search for an open duplicate before you write a new ticket. Search the target team, and its
-   project when it has one, with a few keywords from the title. Leave out `--project` for an agent
+3. Gather the evidence for every planned ticket before you write it. Run one read-only `codemode`
+   script that calls the `tracker_evidence` tool once per planned ticket, with its route and parent
+   from step 2 and a few keywords from its title. Return the results unchanged. Then, for each
    ticket:
-
-   ```sh
-   linear issue query --search '<keywords>' --team <team> --project '<project>' --state triage --state backlog --state unstarted --state started --json --no-pager
-   ```
-
-   A search without `--project` also returns tickets in other projects. Before you offer a match,
-   read its team, project, and parent with
-   `linear api 'query($id: String!) { issue(id: $id) { team { key } project { name } parent { identifier } } }' --variable id=<match>`.
-   A match fits when all three equal the planned ticket's. Show each match that fits, and ask: use
-   or update the match, or create the new ticket anyway. Show a match that does not fit only with
-   what differs, and never offer to reuse it. A retry that finds a fitting ticket it created earlier
-   uses that ticket without asking.
+   - If the result says the parent does not match the route, stop. An agent ticket's parent is not
+     compared. Tell the user that the parent is in team `<parent team>` and project
+     `<parent project>`, but this repository routes to team `<route team>` and project
+     `<route project>`.
+   - Show each candidate that fits, and ask: use or update the candidate, or create the new ticket
+     anyway. Show a candidate that does not fit only with what differs, and never offer to reuse it.
+     A retry that finds a fitting ticket it created earlier uses that ticket without asking.
+   - If the search left a gap, show the gap in the preview and ask whether to search again or create
+     the ticket anyway. Never call it "no duplicate".
+   - If the parent read left a gap, stop and report the gap. Never guess a parent's route.
+   - If the label read left a gap, create the ticket without labels and show the label gap in the
+     preview. Never guess a label.
 
 4. Write the title and body.
    - Write the title as an imperative in sentence case, about 70 characters at most, with no prefix.
      Start a bug title with `Fix <symptom>`.
    - Fill the template. Leave out a section that has nothing to say, but keep `## Acceptance`.
-   - Look up labels with `linear label list --team <team> --json` once per team in the session. Add
-     a label only when the list has one that fits, such as `Bug` for a bug, and spell it as the list
-     does. Keep each label's `id` too, since an agent ticket takes labels by ID. Never create a
-     label. Containers and slices take no labels, since the `slice` tool creates them without any.
+   - Add a label only when the ticket's labels from step 3 have one that fits, such as `Bug` for a
+     bug, and spell it as the list does. Keep each label's `id` too, since an agent ticket takes
+     labels by ID. Never create a label. Containers and slices take no labels, since the `slice`
+     tool creates them without any.
    - Save the body in the calling skill's draft directory, or in a file from `mktemp`.
 
 5. Preview the writes, unless the calling skill's preview already shows them: each ticket with its
@@ -128,10 +125,11 @@ preview. It needs the `linear` CLI authenticated for the workspace.
    - Add a dependency that the `slice` tool does not write, such as one on a ticket outside the
      container: `linear issue relation add <ticket> blocked-by <other>`. Remove one with
      `linear issue relation delete <ticket> blocked-by <other>`.
-   - Move a slice to In Progress when it starts. Read its state name with the step 2 query, run on
-     the slice. If the name is `In Progress`, skip the move; any other state, `In Review` included,
-     moves. Move it with `linear issue update <slice> --state 'In Progress'`. If the team has no
-     state with that name, stop and ask the user.
+   - Move a slice to In Progress when it starts. Read its state name with
+     `linear api 'query($id: String!) { issue(id: $id) { state { name } } }' --variable id=<slice>`.
+     If the name is `In Progress`, skip the move; any other state, `In Review` included, moves. Move
+     it with `linear issue update <slice> --state 'In Progress'`. If the team has no state with that
+     name, stop and ask the user.
 
 7. Link the ticket from the PR. Write `Fixes <id>` in the PR body only for the ticket the PR
    completes, such as the slice, and `Related to <id>` for every other ticket it touches. Never list

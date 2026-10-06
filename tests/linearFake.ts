@@ -1,6 +1,19 @@
 import { readFileSync } from 'node:fs';
 
-import type { Exec } from '../../../exec.js';
+import type { Exec } from '../src/exec.js';
+
+type StateType =
+  | 'triage'
+  | 'backlog'
+  | 'unstarted'
+  | 'started'
+  | 'completed'
+  | 'canceled'
+  | 'duplicate';
+
+interface StateFilter {
+  type: { in: string[] };
+}
 
 interface FakeIssue {
   identifier: string;
@@ -10,7 +23,7 @@ interface FakeIssue {
   teamId: string;
   projectId: string | null;
   sortOrder: number;
-  completed: boolean;
+  stateType: StateType;
   pullRequests: string[];
   blockedBy: string[];
 }
@@ -35,10 +48,16 @@ export interface LinearFake {
   mergedPullRequests: Set<string>;
   failWrite: (count: number) => void;
   overrideOutput: (key: string, stdout: string) => void;
+  failCall: (key: string, stderr: string) => void;
   writes: () => FakeCall[];
 }
 
-const teams = new Map([['ME', { id: 'team-me', key: 'ME' }]]);
+const teams = new Map([
+  ['ME', { id: 'team-me', key: 'ME' }],
+  ['AI', { id: 'team-ai', key: 'AI' }],
+]);
+
+const labels = [{ id: 'label-bug', name: 'Bug', teamId: 'team-me' }];
 
 // `linear api --variable` turns numbers, booleans, and null into those JSON types.
 const coerceVariable = (text: string): unknown => {
@@ -82,7 +101,7 @@ const childNode = (issue: FakeIssue) => ({
   description: issue.description,
   url: `https://linear.app/me/issue/${issue.identifier}`,
   subIssueSortOrder: issue.sortOrder,
-  state: { type: issue.completed ? 'completed' : 'started' },
+  state: { type: issue.stateType },
   attachments: { nodes: issue.pullRequests.map((url) => ({ url })) },
   inverseRelations: {
     nodes: issue.blockedBy.map((identifier) => ({ type: 'blocks', issue: { identifier } })),
@@ -106,6 +125,7 @@ export const createLinearFake = (): LinearFake => {
   const mergedPullRequests = new Set<string>();
   const calls: FakeCall[] = [];
   const overrides = new Map<string, string>();
+  const callFailures = new Map<string, string>();
   const failures = new Set<number>();
   const projects: FakeProject[] = [{ id: 'project-tau', name: 'Tau', teamId: 'team-me' }];
   let nextNumber = 1;
@@ -120,7 +140,7 @@ export const createLinearFake = (): LinearFake => {
       teamId: 'team-me',
       projectId: 'project-tau',
       sortOrder: [...issues.values()].filter((other) => other.parent === issue.parent).length,
-      completed: false,
+      stateType: 'started',
       pullRequests: [],
       blockedBy: [],
       ...issue,
@@ -221,12 +241,13 @@ export const createLinearFake = (): LinearFake => {
   };
 
   // Supports the filter that findOpenIssues sends: team key, exact title, optional project name,
-  // and open states.
+  // and an allow-list of state types.
   const issuesData = (variables: Record<string, unknown>) => {
     const filter = variables['filter'] as {
       team: { key: { eq: string } };
       title: { eq: string };
       project?: { name: { eq: string } };
+      state: StateFilter;
     };
 
     const projectIds =
@@ -236,11 +257,78 @@ export const createLinearFake = (): LinearFake => {
 
     const nodes = [...issues.values()]
       .filter((issue) => issue.teamId === teams.get(filter.team.key.eq)?.id)
-      .filter((issue) => issue.title === filter.title.eq && !issue.completed)
+      .filter((issue) => issue.title === filter.title.eq)
+      .filter((issue) => filter.state.type.in.includes(issue.stateType))
       .filter((issue) => projectIds === undefined || projectIds.includes(issue.projectId ?? ''))
       .map((issue) => ({ identifier: issue.identifier }));
 
     return { issues: { nodes } };
+  };
+
+  // Supports the filter that the tracker search sends: team key, optional project name, and an
+  // allow-list of state types. An issue matches when its title holds any word of the term.
+  const searchData = (variables: Record<string, unknown>) => {
+    const filter = variables['filter'] as {
+      team: { key: { eq: string } };
+      project?: { name: { eq: string } };
+      state: StateFilter;
+    };
+
+    const words = String(variables['term']).toLowerCase().split(/\s+/u);
+
+    const projectIds =
+      filter.project === undefined
+        ? undefined
+        : projectIdsNamed(filter.project.name.eq).map((candidate) => candidate.id);
+
+    const nodes = [...issues.values()]
+      .filter((issue) => issue.teamId === teams.get(filter.team.key.eq)?.id)
+      .filter((issue) => filter.state.type.in.includes(issue.stateType))
+      .filter((issue) => words.some((word) => issue.title.toLowerCase().includes(word)))
+      .filter((issue) => projectIds === undefined || projectIds.includes(issue.projectId ?? ''))
+      .map((issue) => ({
+        identifier: issue.identifier,
+        title: issue.title,
+        url: `https://linear.app/me/issue/${issue.identifier}`,
+        state: { type: issue.stateType },
+        team: { key: team(issue.teamId).key },
+        project: issue.projectId === null ? null : { name: project(issue.projectId)!.name },
+        parent: issue.parent === null ? null : { identifier: issue.parent },
+      }));
+
+    return { searchIssues: { nodes, pageInfo: { hasNextPage: false } } };
+  };
+
+  const routingData = (identifier: string) => {
+    const issue = issues.get(identifier);
+
+    if (issue === undefined) {
+      return { issue: null };
+    }
+
+    const found = project(issue.projectId);
+
+    return {
+      issue: {
+        team: { key: team(issue.teamId).key },
+        project: found === null ? null : { name: found.name },
+        state: { name: issue.stateType === 'completed' ? 'Done' : 'In Progress' },
+      },
+    };
+  };
+
+  const labelsData = (key: string) => {
+    const found = teams.get(key);
+
+    if (found === undefined) {
+      return { team: null };
+    }
+
+    const nodes = labels
+      .filter((label) => label.teamId === found.id)
+      .map((label) => ({ id: label.id, name: label.name }));
+
+    return { team: { labels: { nodes, pageInfo: { hasNextPage: false } } } };
   };
 
   const apiData = (query: string, variables: Record<string, unknown>) => {
@@ -264,12 +352,24 @@ export const createLinearFake = (): LinearFake => {
       return { issueUpdate: { success: true } };
     }
 
+    if (query.includes('searchIssues(')) {
+      return searchData(variables);
+    }
+
     if (query.includes('issues(')) {
       return issuesData(variables);
     }
 
     if (query.includes('children')) {
       return containerData(String(variables['id']));
+    }
+
+    if (query.includes('issue(')) {
+      return routingData(String(variables['id']));
+    }
+
+    if (query.includes('labels(')) {
+      return labelsData(String(variables['key']));
     }
 
     const found = teams.get(String(variables['key']));
@@ -347,6 +447,12 @@ export const createLinearFake = (): LinearFake => {
     }
 
     const calledWith = commandArguments.slice(0, 2).join(' ');
+    const failure = [...callFailures].find(([key]) => calledWith.includes(key))?.[1];
+
+    if (failure !== undefined) {
+      return { code: 1, killed: false, stdout: '', stderr: failure };
+    }
+
     const override = [...overrides].find(([key]) => calledWith.includes(key))?.[1];
 
     try {
@@ -374,6 +480,10 @@ export const createLinearFake = (): LinearFake => {
     // Prints this stdout for calls whose first two arguments contain the key, such as a query.
     overrideOutput: (key: string, stdout: string): void => {
       overrides.set(key, stdout);
+    },
+    // Fails calls whose first two arguments contain the key with this stderr.
+    failCall: (key: string, stderr: string): void => {
+      callFailures.set(key, stderr);
     },
     writes: (): FakeCall[] => calls.filter(isLinearWrite),
   };

@@ -16,6 +16,7 @@ import statusbarExtension from './extensions/statusbar/statusbar.js';
 import subagentsExtension from './extensions/subagents/subagents.js';
 import tauSkillsExtension from './extensions/tauSkills/tauSkills.js';
 import tddExtension from './extensions/tdd/tdd.js';
+import trackerExtension from './extensions/tracker/tracker.js';
 import webAccessExtension from './extensions/webAccess.js';
 import workflowExtension from './extensions/workflow.js';
 import writingExtension from './extensions/writing.js';
@@ -26,6 +27,7 @@ export const skillTools = {
   'code-review': ['code_review'],
   slice: ['slice'],
   'pr-feedback': ['pr_feedback'],
+  tracker: ['tracker_evidence'],
 };
 
 export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
@@ -40,6 +42,7 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   webAccessExtension(pi);
   snippetsExtension(pi);
   sliceExtension(pi);
+  trackerExtension(pi);
   prFeedbackExtension(pi);
   codeReviewExtension(pi);
   statusbarExtension(pi);

@@ -47,7 +47,8 @@ const readTeamKey = (source: string, field: string, value: unknown): string => {
     );
   }
 
-  return value;
+  // Linear stores team keys in upper case, and its key filters compare case-sensitively.
+  return value.toUpperCase();
 };
 
 const readProject = (source: string, field: string, value: unknown): string | undefined => {
