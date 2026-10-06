@@ -70,6 +70,12 @@ it.each<[string, Document[], DocumentProblemKind, string]>([
     'docs/guide.md',
   ],
   [
+    'a broken link after a comment that closes inside a code span',
+    [guide('<!-- note: `-->`\n\n[the plan](plan.md)\n\n<!-- later -->\n')],
+    'broken-link',
+    'docs/guide.md',
+  ],
+  [
     'a broken link after a link title that looks like a comment opener',
     [guide('[the index](adr/README.md "<!--") and [the plan](plan.md)\n\n<!-- note -->\n')],
     'broken-link',
@@ -203,6 +209,8 @@ it('accepts valid links, headings, paths, and code spans that are not paths', ()
     '```markdown',
     '[fenced](missing.md) and `src/fenced.ts`',
     '```',
+    '',
+    '<!-- An unclosed comment runs to the end: [draft](draft.md)',
     '',
   ].join('\n');
 

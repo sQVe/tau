@@ -45,8 +45,9 @@ const inlineLink =
   /\[[^\]]*\]\(\s*(?:<([^>\n]*)>|([^\s)]*))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
 
 // Only a comment that opens a line starts an HTML block. An escaped opener or one inside a link
-// title is text, so the links after it still render.
-const htmlCommentBlock = /^ {0,3}<!--[\s\S]*?-->/gm;
+// title is text, so the links after it still render. The block ends at the first `-->`, even
+// inside backticks, or at the end of the document.
+const htmlCommentBlock = /^ {0,3}<!--[\s\S]*?(?:-->|(?![\s\S]))/gm;
 
 const referenceDefinition = /^ {0,3}\[[^\]]+\]:[ \t]*(?:<([^>\n]*)>|(\S+))/gm;
 const externalTarget = /^[a-z][a-z\d+.-]*:/i;
@@ -181,7 +182,7 @@ const targetProblem = (
 };
 
 export const linkProblems = (file: string, markdown: string, files: Files): LinkProblem[] =>
-  linkTargets(withoutCode(markdown).replaceAll(htmlCommentBlock, ''))
+  linkTargets(withoutFences(markdown).replaceAll(htmlCommentBlock, '').replaceAll(inlineCode, ''))
     .filter((target) => !externalTarget.test(target))
     .flatMap((target) => targetProblem(file, markdown, target, files) ?? []);
 
