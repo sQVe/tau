@@ -1,8 +1,10 @@
 # ADR 0089: Capture review targets with a code_review tool
 
 **Date**: 2026-10-05\
-**Status**: Accepted\
-**Supersedes**: the rule "Add no review tools or review state" in
+**Status**: Accepted; the scope "capture and freshness mechanics" superseded by
+[ADR 0091 (Return review evidence from the code_review tool)](./0091-return-review-evidence-from-the-code-review-tool.md)\
+**Supersedes**:
+the rule "Add no review tools or review state" in
 [ADR 0060 (Keep local code review in a skill)](./0060-keep-local-code-review-in-a-skill.md)\
 **Related**: [ADR 0060 (Keep local code review in a skill)](./0060-keep-local-code-review-in-a-skill.md),
 [ADR 0088 (Grow skills into tools and templates)](./0088-grow-skills-into-tools-and-templates.md)

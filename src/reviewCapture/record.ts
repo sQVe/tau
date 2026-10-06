@@ -9,6 +9,8 @@ import { isMissingFile } from '../errors.js';
 import { objectNameSchema, pinnedTargetSchema, pinnedTargetSchemas } from './reviewCapture.js';
 
 export const recordFileName = 'capture.json';
+export const inputFileName = 'input.md';
+export const recheckFileName = 'recheck.diff';
 
 const currentVersion = 1;
 

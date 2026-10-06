@@ -6,8 +6,10 @@ Add the line for the mode that the skill names.
 ```markdown
 - Run tests or probes only in a trusted project, and only when a result decides a claim. Reuse a
   matching existing result instead of rerunning it.
-- Read `$dir/input.md` in full, continuing with offsets. Commits are pinned: read their files with
-  `git show <sha>:<path>`, not from the working tree.
+- Read `$dir/input.md` in full, continuing with offsets, and read `$dir/evidence.md` when it exists.
+  Commits are pinned: read their files with `git show <sha>:<path>`, not from the working tree.
+- Cite only source, lines, and results that the capture, the evidence file, or your own script
+  returned. Before you cite a fact that a script filtered out, gather it and return it.
 - Review by risk across the whole target: the changed hunks and enclosing code, affected callers and
   contracts, the bodies of relevant tests, and material project rules and design. Follow real risk
   beyond the target. Do not audit unrelated code.

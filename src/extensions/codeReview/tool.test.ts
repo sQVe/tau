@@ -338,3 +338,21 @@ it('refuses freshness without a saved record', async () => {
 
   expect(await failureOf(root, { action: 'freshness', directory })).toContain('capture.json');
 });
+
+it('returns the evidence for a saved capture', async () => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  const captured = await captureWorkingTree(root, directory);
+  const evidence = await run(root, { action: 'evidence', directory });
+
+  expect(evidence).toMatchObject({
+    hash: captured['hash'],
+    head: captured['head'],
+    base: captured['base'],
+    freshness: { status: 'fresh', reasons: [] },
+    paths: ['tracked.txt'],
+    gaps: [],
+  });
+});
