@@ -1,0 +1,11 @@
+---
+'tau': patch
+---
+
+The `qa` and `browser` worker profiles now load `pi-agent-browser-native` 0.9.3. With the earlier
+cached version, every `agent_browser_code` call timed out before it reached the browser when Pi runs
+as the compiled binary. The tool now needs Node on `PATH`. If your Pi settings load
+`pi-agent-browser-native`, workers use that version instead, so update it to 0.9.1 or later. The
+browser instructions now say to run `get url` after `eval`, `back`, `forward`, `reload`,
+`state load`, or a tab switch. When a call fails because the page is unverified, they say to run
+`get url` and retry.
