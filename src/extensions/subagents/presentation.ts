@@ -112,7 +112,7 @@ const addField = (target: Record<string, unknown>, key: string, value: unknown):
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
-const handoverSectionNames = ['Changes', 'Evidence', 'Decisions', 'Concerns'] as const;
+export const handoverSectionNames = ['Changes', 'Evidence', 'Decisions', 'Concerns'] as const;
 
 type HandoverSection = (typeof handoverSectionNames)[number];
 

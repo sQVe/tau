@@ -30,7 +30,7 @@ import type { WorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
 import { blockerKinds, decideIncompleteReport, timeBlockerReserve } from './incompleteReport.js';
 import { checkWorkerRuntime } from './loadout.js';
-import { handoverSections } from './presentation.js';
+import { handoverSectionNames, handoverSections } from './presentation.js';
 import { workerInstructions, workerPrompt } from './profiles.js';
 import {
   acceptAcknowledgement,
@@ -86,9 +86,15 @@ const dispatchWatchInterval = 50;
 const streamingActivityInterval = 500;
 const minimumBlockerLength = 200;
 
+const summaryHeadings = handoverSectionNames.map((name) => `## ${name}`).join(', ');
+
 const reportParameters = Type.Object({
   outcome: StringEnum(['success', 'failure', 'incomplete']),
-  summary: Type.String({ minLength: 1, maxLength: 32_000 }),
+  summary: Type.String({
+    minLength: 1,
+    maxLength: 32_000,
+    description: `A short lead, then exactly these headings: ${summaryHeadings}. Write None under an empty one. A report without them is refused.`,
+  }),
   evidence: Type.Array(Type.String({ minLength: 1, maxLength: 32_000 }), { maxItems: 100 }),
   blocker: Type.Optional(
     Type.String({
