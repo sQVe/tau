@@ -1,7 +1,13 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { Snippet } from './types.js';
+export interface Snippet {
+  /** Markdown filename without `.md`, such as `ask-questions`. Listed as `#ask-questions`. */
+  id: string;
+  name: string;
+  description: string;
+  body: string;
+}
 
 // Header fields are optional, so an empty frontmatter block still parses.
 const frontmatterPattern = /^---\r?\n((?:[\S\s]*?\r?\n)?)---\r?\n?([\S\s]*)$/;

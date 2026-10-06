@@ -3,7 +3,7 @@ import type { AutocompleteItem, AutocompleteProvider } from '@earendil-works/pi-
 
 import { insertSnippetBody } from './insertion.js';
 import { snippetQueryAt } from './query.js';
-import type { Snippet } from './types.js';
+import type { Snippet } from './snippet.js';
 
 type EditorPosition = [lines: string[], cursorLine: number, cursorCol: number];
 

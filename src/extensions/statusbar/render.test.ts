@@ -4,8 +4,7 @@ import type { Theme } from '@earendil-works/pi-coding-agent';
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 import { describe, expect, it, vi } from 'vitest';
 
-import { footerTheme } from './colors.js';
-import { renderFooterLine } from './render.js';
+import { footerTheme, renderFooterLine } from './render.js';
 
 const input = {
   directory: 'tau/abu-347',

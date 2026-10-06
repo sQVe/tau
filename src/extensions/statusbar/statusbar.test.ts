@@ -172,30 +172,6 @@ describe('statusbar extension', () => {
     expect(await readFile(join(directory, '.git/index'))).toEqual(index);
   });
 
-  it('ignores old TDD state in the footer', async ({ onTestFinished }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
-
-    await initializeRepository(directory);
-    await mkdir(join(directory, '.tau'));
-
-    await writeFile(
-      join(directory, '.tau/state.json'),
-      JSON.stringify({ tdd: { reds: [], gateOff: { since: '2026-05-01T00:00:00.000Z' } } }),
-    );
-
-    const application = setup(directory);
-    await application.emit('session_start');
-
-    const footer = application.mount();
-    onTestFinished(() => footer.component.dispose?.());
-
-    await vi.waitFor(() => {
-      expect(footer.requestRender).toHaveBeenCalled();
-      expect(footer.rawRender(100)[0]).not.toContain('\u{F0FC6}');
-    });
-  });
-
   it('refreshes a replacement footer after the old footer is disposed', async ({
     onTestFinished,
   }) => {

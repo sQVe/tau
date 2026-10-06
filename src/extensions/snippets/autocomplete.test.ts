@@ -2,7 +2,7 @@ import type { AutocompleteItem, AutocompleteProvider } from '@earendil-works/pi-
 import { expect, it, vi } from 'vitest';
 
 import { snippetAutocomplete } from './autocomplete.js';
-import type { Snippet } from './types.js';
+import type { Snippet } from './snippet.js';
 
 const createSnippet = (id: string, name: string, description: string): Snippet => ({
   id,
