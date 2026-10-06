@@ -235,6 +235,8 @@ describe('guardToolCall', () => {
     'v=commit git --config-env=alias.x=v x',
     'v=commit git --config-env=Alias.x=v x',
     'v=commit git --config-env alias.x=v x',
+    'git $(basename /tmp/commit) --allow-empty -m x',
+    'git $(echo commit-tree) $tree -m x',
     "git rebase --exec='git commit --amend --no-edit' HEAD~1",
     "git -c alias.ci='commit -m y' ci",
     "git rebase -x 'git commit --amend --no-edit' HEAD~1",

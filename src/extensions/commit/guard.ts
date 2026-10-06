@@ -51,7 +51,7 @@ const isCommitWord = (word: string) => {
   const isAlias = lowerWord.startsWith('alias.') && lowerWord.includes('=');
   const mayProduceCommit = isSubstitution || isAlias;
   const value = isAlias ? lowerWord.slice(lowerWord.indexOf('=') + 1) : lowerWord;
-  const producesCommit = mayProduceCommit && /(?<![\w/-])commit(?![\w/])/.test(value);
+  const producesCommit = mayProduceCommit && /(?<![\w-])commit(?!\w)/.test(value);
 
   return /^commit(?:-|$)/.test(lowerWord) || producesCommit;
 };
