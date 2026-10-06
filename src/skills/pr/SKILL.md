@@ -48,21 +48,40 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 
 ## Procedure
 
-1. Resolve the target with the `pr` tool's `target` action. Pass the user-named remote as `remote`.
-   Pass the user-named base, or the parent found by the [stack skill](../stack/SKILL.md), as `base`.
-   - If it finds no head remote or several, ask which remote to use and call it again. On any other
-     error, tell the user and stop.
-   - Use the returned `repository` as `--repo <repo>` for repository-scoped `gh` commands, `head`
-     for the push remote and branch, and `mergeBase` as the merge base.
-   - Use the open PR in `pr`. If `pr` is null and `closedPrs` lists merged or closed PRs, ask.
+1. Gather publication evidence with one read-only `codemode` script for both creates and updates.
+   Start it with `// @options: {"max_output_tokens": 4000}`. Filter before printing, print strings
+   as plain lines rather than result objects, and keep the output within that limit.
+   - Call the `pr` tool's `evidence` action. Pass the user-named remote as `remote`, when given.
+     Pass the user-named base, or the parent found by the [stack skill](../stack/SKILL.md), as
+     `base`. An open PR's base takes precedence. Pass the newest `.tau/workers/review-*` directory
+     saved for this branch as `review`, when one exists. Use saved review input or session evidence
+     to check its branch; report unclear ownership as a gap rather than guessing.
+   - The result has `target`, `branch`, `subjects`, `reuse`, `review`, `checks`, and `gaps`.
+     Unavailable objects are null. In the same script, find ticket IDs in the user's links,
+     `branch`, commit `subjects`, and `target.pr.body`. Read each distinct ticket with its service's
+     CLI, such as `linear issue view <id> --json --no-pager --no-download`. Use returned issue IDs,
+     not branch aliases. Keep only each ticket's title and `## Acceptance` section as intent.
+   - Print the target's head, base, merge base, repository, open PR fields, and closed PRs; ticket
+     intent; reuse status, reasons, and available reports; review freshness and evidence gaps; and
+     matching check-log paths with their bounded excerpts. Print one combined list of gaps from the
+     tool, failed or skipped reads, missing ticket intent, and anything omitted to fit the limit. A
+     check with `matches: true` has matching inputs, not a passing result. Read the log's result
+     before judging it; read omitted evidence through its returned path when needed.
+   - The script gathers evidence only. It never calls `prepare` or `verify`, and writes nothing
+     itself. The evidence action fetches the base and may write the review reader's freshness
+     recapture. Target questions, rebases, review runs, previews, and approvals stay outside it.
+   - If `target` is null because no head remote or several were found, ask which remote to use and
+     rerun the script. On any other target error or a failed evidence call, tell the user and stop.
+   - Use `target.repository` as `--repo <repo>` for repository-scoped `gh` commands, `target.head`
+     for the push remote and branch, and `target.mergeBase` as the merge base.
+   - Use the open PR in `target.pr`. If it is null and `target.closedPrs` lists merged or closed
+     PRs, ask before continuing.
    - Outside a stack, when the branch conflicts with the base or needs a base change for its checks,
      rebase it locally with the update-branch skill and tell the user. Do not ask to approve the
      rebase, even when the branch was already pushed. The update-branch question about a dirty
      working tree still applies. Note the remote tip before the rebase as `<old-tip>`; step 8
      previews the force-push it needs. Stop the rebase and ask when a conflict needs a product
-     decision. Call `target` again after the rebase to pin the new merge base.
-   - Read issues linked by the user, branch name, commits, and existing body with their service's
-     CLI. Use returned issue IDs, not branch aliases. Note unreadable issues.
+     decision. Rerun the evidence script after the rebase to pin the new merge base.
 
 2. Commit the task's changes and required release notes, such as a `.changeset` file. List unrelated
    changes in the session report.
@@ -75,12 +94,15 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    - Remove only failing comments and commit the removal. Report each removal in the session report,
      not the PR body. Repeat for comments added by later commits before previewing.
 
-4. Review `<merge base>..HEAD`, with both ends pinned. Reuse an earlier review only if:
+4. Review `<merge base>..HEAD`, with both ends pinned. Rerun step 1's evidence script if the branch
+   or saved evidence changed since collection. Reuse an earlier review only if:
    - The session or saved `.tau/workers/review-*/` files show every worker reported (`reviewer.md`,
      or `finder.md` and `checker.md`), freshness passed, and no gaps remain besides areas a worker
      read shallowly. Unstated status is unknown; do not reuse it.
    - It covered the whole branch, not only some of its commits.
-   - The `pr` tool's `reuse` action, given the review directory and the merge base, returns `match`.
+   - The script's `reuse.status` is `match` for that review and the current merge base.
+   - The script's review freshness passed. A changed head or stale capture blocks reuse, even when
+     the branch diff matches. A missing or unknown result is not a pass.
    - Callers and rules outside the capture have no relevant changes.
 
    Otherwise run the [code-review skill](../code-review/SKILL.md) in fast mode on the range. If the
@@ -88,13 +110,34 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    PR or branch, let it continue into the [triage-findings skill](../triage-findings/SKILL.md),
    which commits its fixes with the commit skill. On anyone else's, ask its approval question.
 
-5. Run checks. Reuse passing required pre-merge checks only with evidence of matching content.
-   Otherwise run them once on the committed tree.
+5. Run checks. Reuse a required pre-merge check only when the evidence script lists its log as
+   matching and reading its result shows it passed. Otherwise run it once on the committed tree.
    - In a stack, first restack branches above with the stack skill. Check the PR's branch and every
      branch above changed by restacking, because step 9 pushes them all. After later commits,
      restack and rerun affected checks before previewing.
-   - Save real output in `$prdir`, never a summary. At the top, record HEAD,
-     `git status --porcelain`, and the hash of `git diff <merge base> HEAD`, taken before the run.
+   - Save real output, never a summary, as `$prdir/checks/<name>.log`. Create `checks` under the
+     prepared directory. Before the run, record the first three lines in this order: `HEAD: <sha>`,
+     `Status: <sha256>`, `Diff: <sha256>`. Use these commands for their values, substituting the
+     pinned merge base for `<mergeBase>`:
+
+     ```sh
+     git rev-parse HEAD
+     ```
+
+     ```sh
+     node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:child_process").execFileSync("git", ["status", "--porcelain"])).digest("hex") + "\n")'
+     ```
+
+     ```sh
+     node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:child_process").execFileSync("git", ["diff", process.argv[1], "HEAD"])).digest("hex") + "\n")' '<mergeBase>'
+     ```
+
+     Hash the exact output bytes, including trailing newlines; do not hash trimmed shell output.
+     Stop if a header command fails. Append the check's output and exit status after the headers.
+
+   - Rerun the evidence script before reusing saved checks. A match only binds the recorded inputs;
+     it does not prove success or detect every edit to an already dirty file. Rerun affected checks
+     after relevant changes, even if their headers still match.
 
 6. Choose draft status. Any gap means draft. A gap is one of:
    - A required check that failed or did not run. Only checks that can run solely after deployment
