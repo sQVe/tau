@@ -116,3 +116,4 @@ line that links to the replacement.
 - [0090: Own each workstream with one worktree](./0090-own-each-workstream-with-one-worktree.md)
 - [0091: Return review evidence from the code_review tool](./0091-return-review-evidence-from-the-code-review-tool.md)
 - [0092: Use codemode only to batch or filter evidence](./0092-use-codemode-only-to-batch-or-filter-evidence.md)
+- [0093: Enable skill tools from session start](./0093-enable-skill-tools-from-session-start.md)

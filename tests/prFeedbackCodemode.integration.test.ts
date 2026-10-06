@@ -1,6 +1,11 @@
 import { resolve } from 'node:path';
 
-import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxToolCall,
+  getCurrentTools,
+} from '@earendil-works/pi-ai';
 import { createCodemodeExtension } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
@@ -13,7 +18,6 @@ import type {
 } from '../src/extensions/prFeedback/fixtures/ghFake.js';
 import { createPrFeedbackTool } from '../src/extensions/prFeedback/tool.js';
 import tauSkillsExtension from '../src/extensions/tauSkills/tauSkills.js';
-import { skillTools } from '../src/tau.js';
 import { createTemporaryRepository } from './gitRepository.js';
 import { createBoundSession } from './piSession.js';
 
@@ -81,14 +85,13 @@ const scriptValue = (result: unknown): EvidenceResult => {
   return JSON.parse(output) as EvidenceResult;
 };
 
-// Runs the evidence script in a Pi session after `/pr-feedback` turns the tool on.
-const runEvidenceScript = async (fake: GhFake) => {
+const runEvidenceScript = async (fake: GhFake, activate = true) => {
   const directory = await createTemporaryRepository(onTestFinished, 'tau-pr-feedback-codemode-');
   const provider = fauxProvider({ provider: 'tau-pr-feedback-codemode' });
 
   const registerTools = (pi: ExtensionAPI) => {
     pi.registerTool(createPrFeedbackTool(fake.exec));
-    tauSkillsExtension(pi, skillsDirectory, skillTools);
+    tauSkillsExtension(pi, skillsDirectory);
   };
 
   const { session } = await createBoundSession(onTestFinished, {
@@ -116,19 +119,33 @@ const runEvidenceScript = async (fake: GhFake) => {
     }
   });
 
+  const declarations: string[][] = [];
+
   provider.setResponses([
-    fauxAssistantMessage([fauxToolCall('codemode', { code: evidenceScript })]),
+    (context) => {
+      declarations.push(getCurrentTools(context.messages).map((tool) => tool.name));
+
+      return fauxAssistantMessage([fauxToolCall('codemode', { code: evidenceScript })]);
+    },
     fauxAssistantMessage('Done.'),
   ]);
 
   // The command queues the skill message as a follow-up, so the run starts after prompt returns.
-  await session.prompt('/pr-feedback 7');
+  const prompt = activate ? '/pr-feedback 7' : 'Gather the evidence.';
+
+  await session.prompt(prompt);
   await settled.promise;
 
   const [script] = scripts;
 
   if (script === undefined || script.isError) {
     throw new Error(`Script did not complete: ${JSON.stringify(script?.result)}`);
+  }
+
+  if (!activate) {
+    expect(declarations).toHaveLength(1);
+    expect(declarations[0]).toContain('pr_feedback');
+    expect(session.getActiveToolNames()).toContain('pr_feedback');
   }
 
   return scriptValue(script.result);
@@ -166,6 +183,19 @@ const failingCheck: FakeCheck = {
   state: 'FAILURE',
   link: 'https://github.com/sQVe/tau/actions/runs/11/job/21',
 };
+
+it('calls a declared skill tool from codemode on the first request without activation', async () => {
+  const fake = createGhFake();
+
+  fake.checks = [passingCheck];
+
+  const result = await runEvidenceScript(fake, false);
+
+  expect(result.read.status).toBe('fulfilled');
+  expect(result.read.value?.viewer).toBe('sqve');
+  expect(result.checks.status).toBe('fulfilled');
+  expect(result.checks.value?.checks).toHaveLength(1);
+});
 
 it('returns threads, reviews, and comments from several pages and a gap for a failing check whose log command failed', async () => {
   const fake = createGhFake();

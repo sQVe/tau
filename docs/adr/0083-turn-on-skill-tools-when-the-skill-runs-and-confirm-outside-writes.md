@@ -1,7 +1,8 @@
 # ADR 0083: Turn on skill tools when the skill runs, and confirm outside writes
 
 **Date**: 2026-10-03\
-**Status**: Accepted\
+**Status**: Accepted; activation superseded by
+[ADR 0093 (Enable skill tools from session start)](./0093-enable-skill-tools-from-session-start.md)\
 **Related**: [ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md),
 [ADR 0010 (Documentation scope)](./0010-documentation-scope.md),
 [ADR 0077 (Keep a skill authoring guide in docs)](./0077-keep-a-skill-authoring-guide-in-docs.md),

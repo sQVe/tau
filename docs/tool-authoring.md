@@ -7,9 +7,9 @@ checklist.
 
 - Put the tool in its own extension under `src/extensions/<feature>/`, and call the extension from
   `src/tau.ts`.
-- Register a tool that serves one skill with `defaultActive: false`. Add the skill name and the tool
-  name to the skill tools map, the third argument of `tauSkillsExtension` in `src/tau.ts`. Running
-  `/<name>`, or a `read` of the skill's `SKILL.md`, then turns the tool on.
+- Register a skill tool as a normal direct tool, active on registration. Add the skill name and tool
+  name to `src/skillTools.ts`. Managers get every skill tool from session start. Workers get the
+  tools for their loaded skills through the same map.
 - When two skills need the same mechanics, share one tool or module. Never copy the mechanics into
   another tool or skill. Create a scratch directory inside an ignored `.tau/` with
   `src/tauDirectory.ts`.
@@ -27,12 +27,14 @@ A skill's tool owns the mechanics. The skill keeps the judgment.
 
 Writes:
 
-- [ ] The tool asks with the shared `confirm` helper before a write outside the worktree, such as a
-      Linear ticket, a GitHub change, or a file outside the checkout. A write to a GitHub bot needs
-      no confirm; see [ADR 0086](./adr/0086-post-to-github-bots-without-a-confirm.md).
+- [ ] The tool asks with `confirmWithUser` in `src/userConfirmation.ts` before a write outside the
+      worktree, such as a Linear ticket, a GitHub change, or a file outside the checkout. It refuses
+      in a worker, even one with UI, because the user does not watch the worker's pane. A write to a
+      GitHub bot needs no confirm; see
+      [ADR 0086](./adr/0086-post-to-github-bots-without-a-confirm.md).
 - [ ] The confirm shows the exact writes the tool will make, so the user sees what they approve.
 - [ ] When a call has a write that needs a confirm, the tool writes nothing if the user declines or
-      the session has no UI.
+      the session is a worker or has no UI.
 - [ ] A retry applies only the writes that are missing, and identifies each one by a saved ID, not
       by a title.
 - [ ] A partial failure reports what was applied and what was not.
@@ -45,5 +47,5 @@ Parsing:
 Tests:
 
 - [ ] Tests use a fake CLI for normal, missing, and malformed output.
-- [ ] Tests cover a declined confirmation, a session without UI, and a retry after a partial
-      failure.
+- [ ] Tests cover a declined confirmation, a worker, a session without UI, and a retry after a
+      partial failure.

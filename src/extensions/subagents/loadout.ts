@@ -17,13 +17,15 @@ import {
   readAllowedModels,
   requireAllowedModel,
 } from '../../models/models.js';
+import { skillTools } from '../../skillTools.js';
 import { userConfigPath } from '../../tauConfig.js';
 import type { ConfigLocation } from '../../tauConfig.js';
 import { readProfileModels } from './profileModels.js';
-import { resolveProfile, workerTools } from './profiles.js';
+import { resolveProfile } from './profiles.js';
 import { loadoutSchema } from './types.js';
 import type { Loadout, Profile } from './types.js';
 import { availableModels, selectWorkerModel } from './workerModels.js';
+import { workerTools } from './workerTools.js';
 
 type ModelContext = Pick<ExtensionContext, 'modelRegistry' | 'scopedModels'>;
 
@@ -251,7 +253,7 @@ export const checkWorkerRuntime = (
 
   // Pi's --tools skips unknown names without an error.
   const registered = new Set(pi.getAllTools().map((tool) => tool.name));
-  const tools = workerTools(loadout);
+  const tools = workerTools(loadout, skillTools);
   const missing = tools.filter((tool) => !registered.has(tool));
 
   if (missing.length > 0) {

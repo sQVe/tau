@@ -105,10 +105,6 @@ export const roleTools: Record<Profile['role'], string[]> = {
   editing: ['read', 'bash', 'edit', 'write'],
 };
 
-export const workerTools = (loadout: Loadout): string[] => [
-  ...new Set([...loadout.tools, 'subagent_progress', 'subagent_report', 'subagent_question']),
-];
-
 const parseList = (key: string, value: string | undefined): string[] | undefined => {
   if (value === undefined) {
     return undefined;

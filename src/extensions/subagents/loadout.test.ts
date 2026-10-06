@@ -468,6 +468,31 @@ it('refuses worker startup without the saved model, cwd, CC Safety Net, or profi
   ).toThrow('CC Safety Net');
 
   expect(setActiveTools).toHaveBeenCalledOnce();
+
+  const withSkill = { ...loadout, skills: ['/skills/tracker/SKILL.md'] };
+
+  expect(startup(withSkill, pi, worker)).toThrow('tracker_evidence');
+  expect(setActiveTools).toHaveBeenCalledOnce();
+
+  checkWorkerRuntime(
+    withSkill,
+    {
+      ...pi,
+      getAllTools: () => [...pi.getAllTools(), { name: 'tracker_evidence' }],
+    } as typeof pi,
+    worker,
+  );
+
+  expect(setActiveTools).toHaveBeenLastCalledWith([
+    'read',
+    'bash',
+    'edit',
+    'write',
+    'subagent_progress',
+    'subagent_report',
+    'subagent_question',
+    'tracker_evidence',
+  ]);
 });
 
 it.for(['reviewer', 'qa'])(
