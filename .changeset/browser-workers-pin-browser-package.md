@@ -7,5 +7,5 @@ cached version, every `agent_browser_code` call timed out before it reached the 
 as the compiled binary. The tool now needs Node on `PATH`. If your Pi settings load
 `pi-agent-browser-native`, workers use that version instead, so update it to 0.9.1 or later. The
 browser instructions now say to run `get url` after `eval`, `back`, `forward`, `reload`,
-`state load`, or a tab switch, and to retry with `get url` when a call fails because the page is
-unverified.
+`state load`, or a tab switch. When a call fails because the page is unverified, they say to run
+`get url` and retry.
