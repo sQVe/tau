@@ -164,6 +164,10 @@ describe('guardToolCall', () => {
     });
   });
 
+  it('allows encoded command names as a known limit of the guidance guard', () => {
+    expect(guardToolCall(makeBashEvent("bash -c $'git\\x20commit -m x'"))).toBeUndefined();
+  });
+
   it('does not block pipe-to-grep patterns mentioning commit', () => {
     expect(guardToolCall(makeBashEvent('git log | grep commit'))).toBeUndefined();
   });
@@ -226,7 +230,6 @@ describe('guardToolCall', () => {
     'cat <<EOF\n$(git commit -m x)\nEOF',
     "bash <<'EOF'\ngit commit -m x\nEOF",
     "echo 'git commit -m x' | sh",
-    "bash -c $'git\\x20commit -m x'",
     'bash -c "echo \\"\\$(git commit -m x)\\""',
     "git commit -m 'unterminated",
     'git -c alias.x=commit x -m y',

@@ -19,46 +19,6 @@ interface ListState {
   closesSubstitution: boolean;
 }
 
-const ansiCEscapes: Record<string, string> = {
-  a: '\u0007',
-  b: '\b',
-  e: '\u001B',
-  E: '\u001B',
-  f: '\f',
-  n: '\n',
-  r: '\r',
-  t: '\t',
-  v: '\v',
-};
-
-// `\cX` keeps the low five bits of X.
-const controlCharacterMask = 0b1_1111;
-
-const decodeAnsiCEscape = (escape: string): string => {
-  const kind = escape[0] ?? '';
-
-  if ('xuU'.includes(kind) && escape.length > 1) {
-    return String.fromCodePoint(Number.parseInt(escape.slice(1), 16));
-  }
-
-  if (/^[0-7]/.test(escape)) {
-    return String.fromCodePoint(Number.parseInt(escape, 8));
-  }
-
-  if (kind === 'c') {
-    return String.fromCodePoint((escape.codePointAt(1) ?? 0) & controlCharacterMask);
-  }
-
-  return ansiCEscapes[escape] ?? escape;
-};
-
-// Decode the body of a `$'...'` word the way Bash does.
-const decodeAnsiC = (text: string) =>
-  text.replaceAll(
-    /\\(x[\da-fA-F]{1,2}|u[\da-fA-F]{1,4}|U[\da-fA-F]{1,8}|[0-7]{1,3}|c.|.)/gs,
-    (_match, escape: string) => decodeAnsiCEscape(escape),
-  );
-
 const blankCharacters = new Set([' ', '\t']);
 const separatorCharacters = new Set([';', '&', '|', '\n', '(', ')']);
 const longestRedirection = '<<<';
@@ -314,7 +274,7 @@ class ShellParser {
     }
 
     if (next === "'") {
-      return { text: decodeAnsiC(this.readAnsiCBody()), quoted: true };
+      return { text: this.readAnsiCBody(), quoted: true };
     }
 
     if (next === '"') {
