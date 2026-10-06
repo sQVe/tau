@@ -11,10 +11,15 @@ export const customContext = (
   interact: (component: Component) => Promise<void> | void,
   theme: Theme,
   keybindings = new KeybindingsManager(tuiKeybindings),
+  dimensions?: { rows: number; columns: number },
 ): ExtensionToolContext => {
   const custom: ExtensionUIContext['custom'] = async (factory) => {
     let result;
-    const terminal = { requestRender: () => undefined } as unknown as TUI;
+
+    const terminal = {
+      requestRender: () => undefined,
+      terminal: dimensions ?? { rows: 40, columns: 100 },
+    } as unknown as TUI;
 
     const component = await factory(
       terminal,

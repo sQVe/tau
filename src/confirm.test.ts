@@ -93,6 +93,125 @@ it('renders the title in bold accent and the message in normal text', async () =
   expect(rendered).not.toContain('<bold>Message');
 });
 
+const plainTheme = {
+  fg: (_color: string, text: string) => text,
+  bold: (text: string) => text,
+} as unknown as Theme;
+
+it.each([12, 24])('keeps long confirmations within a %s-row terminal', async (rows) => {
+  const message = Array.from({ length: 40 }, (_, index) => `Write ${index + 1}`).join('\n');
+  const pages: string[][] = [];
+
+  const context = customContext(
+    (component) => {
+      pages.push(component.render(80));
+
+      for (let index = 0; index < 45; index += 1) {
+        component.handleInput?.('\u001B[6~');
+        pages.push(component.render(80));
+      }
+
+      component.handleInput?.('\r');
+    },
+    plainTheme,
+    undefined,
+    { rows, columns: 80 },
+  );
+
+  expect(await confirm(context, 'Review writes', message)).toBe(true);
+
+  for (const page of pages) {
+    expect(page.length).toBeLessThanOrEqual(rows - 6);
+    expect(page.join('\n')).toContain('Review writes');
+    expect(page.join('\n')).toContain('Yes');
+    expect(page.join('\n')).toContain('No');
+  }
+
+  expect(pages[0]?.join('\n')).toContain('Write 1');
+  expect(pages[0]?.join('\n')).not.toContain('Write 40');
+  expect(pages.at(-1)?.join('\n')).toContain('Write 40');
+
+  for (const line of message.split('\n')) {
+    const visited = pages.some((page) => page.some((row) => row.trim() === line));
+
+    expect(visited).toBe(true);
+  }
+});
+
+it('scrolls wrapped message rows both ways without changing No selection', async () => {
+  const pages: string[] = [];
+  const message = `${'word '.repeat(180)}last-write`;
+
+  const context = customContext(
+    (component) => {
+      component.handleInput?.('j');
+      pages.push(component.render(50).join('\n'));
+
+      for (let index = 0; index < 40; index += 1) {
+        component.handleInput?.('\u001B[6~');
+        component.render(50);
+      }
+
+      pages.push(component.render(50).join('\n'));
+
+      for (let index = 0; index < 40; index += 1) {
+        component.handleInput?.('\u001B[5~');
+        component.render(50);
+      }
+
+      pages.push(component.render(50).join('\n'));
+      component.handleInput?.('\r');
+    },
+    plainTheme,
+    undefined,
+    { rows: 18, columns: 50 },
+  );
+
+  expect(await confirm(context, 'Review writes', message)).toBe(false);
+  expect(pages[0]).not.toContain('last-write');
+  expect(pages[1]).toContain('last-write');
+  expect(pages[2]).toBe(pages[0]);
+});
+
+it('refits the message after terminal height and width changes', async () => {
+  const dimensions = { rows: 18, columns: 80 };
+  const message = Array.from({ length: 30 }, (_, index) => `Write ${index + 1}`).join('\n');
+  const pages: string[][] = [];
+
+  const context = customContext(
+    (component) => {
+      component.render(dimensions.columns);
+
+      for (let index = 0; index < 30; index += 1) {
+        component.handleInput?.('\u001B[6~');
+        component.render(dimensions.columns);
+      }
+
+      dimensions.rows = 24;
+      dimensions.columns = 40;
+      component.invalidate();
+      pages.push(component.render(dimensions.columns));
+      dimensions.rows = 80;
+      pages.push(component.render(dimensions.columns));
+      dimensions.rows = 12;
+      pages.push(component.render(dimensions.columns));
+      component.handleInput?.('\u001B');
+    },
+    plainTheme,
+    undefined,
+    dimensions,
+  );
+
+  expect(await confirm(context, 'Review writes', message)).toBe(false);
+  expect(pages[0]?.length).toBeLessThanOrEqual(18);
+  expect(pages[0]?.join('\n')).toContain('Write 30');
+  expect(pages[1]?.join('\n')).toContain('Write 1');
+  expect(pages[1]?.join('\n')).toContain('Write 30');
+  expect(pages[2]?.length).toBeLessThanOrEqual(6);
+  expect(pages[2]?.join('\n')).toContain('Write 1');
+  expect(pages[2]?.join('\n')).not.toContain('Write 30');
+});
+
 it.each([true, false])('returns the non-TUI confirm answer %s', async (answer) => {
   const fallback = vi
     .fn<(title: string, message: string) => Promise<boolean>>()
