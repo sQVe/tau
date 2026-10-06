@@ -446,7 +446,7 @@ export const postReplies = async (
   if (toPeople.length > 0) {
     if (!context.hasUI) {
       throw new Error(
-        'Posting to a person needs a session with UI to confirm. Nothing was posted.',
+        "Posting to a person needs the user's confirmation, which a worker session cannot give. Nothing was written. Use a session with UI.",
       );
     }
 

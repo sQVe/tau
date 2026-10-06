@@ -1,4 +1,4 @@
-import { chmod, copyFile, readFile, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
@@ -93,6 +93,14 @@ const setUp = async () => {
 
 const writeReplies = (directory: string, replies: unknown) =>
   writeFile(join(directory, 'replies.json'), JSON.stringify(replies));
+
+const snapshotRound = async (directory: string) => {
+  const names = await readdir(directory);
+
+  return Promise.all(
+    names.toSorted().map(async (name) => [name, await readFile(join(directory, name), 'utf8')]),
+  );
+};
 
 const readPosted = (directory: string) =>
   readFile(join(directory, 'posted.json'), 'utf8').then(
@@ -329,9 +337,14 @@ describe('post refusals', () => {
 
     await writeReplies(details.directory, mixedReplies);
 
-    await expect(post(details)).rejects.toThrow(/needs a session with UI to confirm/u);
+    const before = await snapshotRound(details.directory);
+
+    await expect(post(details)).rejects.toThrow(
+      /needs the user's confirmation.*worker session cannot give.*Nothing was written/u,
+    );
+
     expect(fake.writes).toEqual([]);
-    expect(await readPosted(details.directory)).toBeUndefined();
+    expect(await snapshotRound(details.directory)).toEqual(before);
   });
 
   it.each([

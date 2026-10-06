@@ -411,7 +411,9 @@ export const applySlicePlan = async (
   }
 
   if (!context.hasUI) {
-    throw new Error('Writing to Linear needs a session with UI to confirm. Nothing was written.');
+    throw new Error(
+      "Writing to Linear needs the user's confirmation, which a worker session cannot give. Nothing was written. Use a session with UI.",
+    );
   }
 
   const confirmed = await confirm(

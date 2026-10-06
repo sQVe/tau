@@ -172,7 +172,6 @@ export const createPrFeedbackTool = (
     description,
     promptSnippet: "Read a pull request's review feedback and post replies.",
     parameters: prFeedbackToolParameters,
-    exposure: 'deferred',
     executionMode: 'sequential',
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       const details = await runAction(exec, context, parameters, signal);

@@ -143,8 +143,14 @@ describe('slice tool apply', () => {
   it('makes no Linear write in a session without UI', async () => {
     const { root, fake, directory, apply } = await setUp();
 
-    await expect(apply(noUiContext(root), directory)).rejects.toThrow(/needs a session with UI/);
+    const before = await snapshotDraft(directory);
+
+    await expect(apply(noUiContext(root), directory)).rejects.toThrow(
+      /needs the user's confirmation.*worker session cannot give.*Nothing was written/u,
+    );
+
     expect(fake.writes()).toEqual([]);
+    expect(await snapshotDraft(directory)).toEqual(before);
   });
 
   it('creates the container and slices in order and records each identifier', async () => {

@@ -18,7 +18,7 @@ import { expect, it, vi } from 'vitest';
 
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { checkWorkerRuntime, resolveLoadout, validateSavedLoadout } from './loadout.js';
-import { listProfiles, resolveProfile, parseProfile } from './profiles.js';
+import { listProfiles, resolveProfile, parseProfile, workerTools } from './profiles.js';
 
 const profile = (body: string) => `---\nname: worker\nrole: editing\nthinking: off\n---\n${body}`;
 
@@ -468,6 +468,47 @@ it('refuses worker startup without the saved model, cwd, CC Safety Net, or profi
   ).toThrow('CC Safety Net');
 
   expect(setActiveTools).toHaveBeenCalledOnce();
+
+  const withSkill = { ...loadout, skills: ['/skills/tracker/SKILL.md'] };
+
+  expect(startup(withSkill, pi, worker)).toThrow('tracker_evidence');
+  expect(setActiveTools).toHaveBeenCalledOnce();
+
+  checkWorkerRuntime(
+    withSkill,
+    {
+      ...pi,
+      getAllTools: () => [...pi.getAllTools(), { name: 'tracker_evidence' }],
+    } as typeof pi,
+    worker,
+  );
+
+  expect(setActiveTools).toHaveBeenLastCalledWith([
+    'read',
+    'bash',
+    'edit',
+    'write',
+    'subagent_progress',
+    'subagent_report',
+    'subagent_question',
+    'tracker_evidence',
+  ]);
+});
+
+it.each([
+  { skills: [], expected: [] },
+  { skills: ['/skills/tracker/SKILL.md'], expected: ['tracker_evidence'] },
+  { skills: ['/skills/tdd/SKILL.md'], expected: [] },
+])('adds only the tools for loaded skills: $skills', ({ skills, expected }) => {
+  const loadout = { ...fixtureLoadout('/repository'), tools: ['read'], skills };
+
+  expect(workerTools(loadout)).toEqual([
+    'read',
+    'subagent_progress',
+    'subagent_report',
+    'subagent_question',
+    ...expected,
+  ]);
 });
 
 it.for(['reviewer', 'qa'])(

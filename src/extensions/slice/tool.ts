@@ -210,7 +210,6 @@ export const createSliceTool = (
     description,
     promptSnippet: 'Prepare, read, and apply a slice plan in Linear.',
     parameters: sliceToolParameters,
-    exposure: 'deferred',
     // Two apply calls that ran at once could both pass the stateToken check.
     executionMode: 'sequential',
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {

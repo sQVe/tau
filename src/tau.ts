@@ -24,14 +24,6 @@ import writingExtension from './extensions/writing.js';
 
 const skillsDirectory = fileURLToPath(new URL('./skills/', import.meta.url));
 
-export const skillTools = {
-  'code-review': ['code_review'],
-  slice: ['slice'],
-  pr: ['pr'],
-  'pr-feedback': ['pr_feedback'],
-  tracker: ['tracker_evidence'],
-};
-
 export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   // Pi stops at the first blocking hook, so capacity refusal must run before other guards.
   const capacityRefusal = registerCapacityRefusal(pi);
@@ -40,7 +32,7 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   await codingExtension(pi);
   await workflowExtension(pi);
 
-  tauSkillsExtension(pi, skillsDirectory, skillTools);
+  tauSkillsExtension(pi, skillsDirectory);
   commitExtension(pi);
   tddExtension(pi);
   askUserQuestionExtension(pi);

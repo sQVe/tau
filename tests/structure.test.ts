@@ -44,7 +44,6 @@ const pureModules = [
   'src/extensions/snippets/history.ts',
   'src/extensions/snippets/insertion.ts',
   'src/extensions/snippets/query.ts',
-  'src/extensions/tauSkills/missingToolHint.ts',
   'src/extensions/tauSkills/requiredFor.ts',
   'src/extensions/tdd/configLayers.ts',
   'src/extensions/tracker/candidateFit.ts',

@@ -2615,15 +2615,15 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
 
   const narrowed = {
     ...task,
-    loadout: { ...task.loadout, tools: ['read'], skills: ['/s/SKILL.md'] },
+    loadout: { ...task.loadout, tools: ['read'], skills: ['/skills/tracker/SKILL.md'] },
   };
 
   expect(workerArguments(narrowed, []).slice(9, 14)).toEqual([
     '--tools',
-    'read,subagent_progress,subagent_report,subagent_question',
+    'read,subagent_progress,subagent_report,subagent_question,tracker_evidence',
     '--no-skills',
     '--skill',
-    '/s/SKILL.md',
+    '/skills/tracker/SKILL.md',
   ]);
 
   expect(launched.state).toBe('starting');

@@ -18,7 +18,6 @@ import type {
 } from '../src/extensions/prFeedback/fixtures/ghFake.js';
 import { createPrFeedbackTool } from '../src/extensions/prFeedback/tool.js';
 import tauSkillsExtension from '../src/extensions/tauSkills/tauSkills.js';
-import { skillTools } from '../src/tau.js';
 import { createTemporaryRepository } from './gitRepository.js';
 import { createBoundSession } from './piSession.js';
 
@@ -92,7 +91,7 @@ const runEvidenceScript = async (fake: GhFake, activate = true) => {
 
   const registerTools = (pi: ExtensionAPI) => {
     pi.registerTool(createPrFeedbackTool(fake.exec));
-    tauSkillsExtension(pi, skillsDirectory, skillTools);
+    tauSkillsExtension(pi, skillsDirectory);
   };
 
   const { session } = await createBoundSession(onTestFinished, {
@@ -145,8 +144,8 @@ const runEvidenceScript = async (fake: GhFake, activate = true) => {
 
   if (!activate) {
     expect(declarations).toHaveLength(1);
-    expect(declarations[0]).not.toContain('pr_feedback');
-    expect(session.getActiveToolNames()).not.toContain('pr_feedback');
+    expect(declarations[0]).toContain('pr_feedback');
+    expect(session.getActiveToolNames()).toContain('pr_feedback');
   }
 
   return scriptValue(script.result);
@@ -185,7 +184,7 @@ const failingCheck: FakeCheck = {
   link: 'https://github.com/sQVe/tau/actions/runs/11/job/21',
 };
 
-it('calls a skill tool from codemode without activation or a model declaration', async () => {
+it('calls a declared skill tool from codemode on the first request without activation', async () => {
   const fake = createGhFake();
 
   fake.checks = [passingCheck];

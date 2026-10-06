@@ -27,75 +27,7 @@ const requiredForOf = (skillName: string) => {
   return metadata?.['required-for'];
 };
 
-const fakeWithActiveTools = (initial: string[]) => {
-  let active = initial;
-
-  const fake = fakeExtensionApi({
-    getActiveTools: () => active,
-    setActiveTools: (toolNames: string[]) => {
-      active = toolNames;
-    },
-  });
-
-  return { ...fake, activeTools: () => active };
-};
-
 describe('tauSkillsExtension', () => {
-  it('appends a missing-tool hint while keeping the failed codemode content', async () => {
-    const fake = fakeExtensionApi();
-
-    tauSkillsExtension(fake.pi, skillsDirectory, { 'code-review': ['code_review'] });
-
-    const content = [
-      { type: 'image', data: 'aW1hZ2U=', mimeType: 'image/png' },
-      { type: 'text', text: 'TypeError: tools.code_review does not exist. Available: read' },
-    ];
-
-    const structuredContent = { error: 'missing tool' };
-
-    const result = await fake.handler('tool_result')(
-      {
-        toolName: 'codemode',
-        isError: true,
-        content,
-        structuredContent,
-      },
-      {} as never,
-    );
-
-    const hint: unknown = expect.stringContaining('code_review');
-
-    expect(result).toEqual({
-      content: [...content, { type: 'text', text: hint }],
-      structuredContent,
-    });
-
-    expect(JSON.stringify(result)).toContain('--tools');
-    expect(content).toHaveLength(2);
-  });
-
-  it.each([
-    { toolName: 'codemode', isError: false, text: 'tools.code_review does not exist' },
-    { toolName: 'bash', isError: true, text: 'tools.code_review does not exist' },
-    { toolName: 'codemode', isError: true, text: 'tools.unknown does not exist' },
-    { toolName: 'codemode', isError: true, text: 'tools.code_review failed' },
-  ])('leaves unrelated tool results unchanged %#', async ({ toolName, isError, text }) => {
-    const fake = fakeExtensionApi();
-
-    tauSkillsExtension(fake.pi, skillsDirectory, { 'code-review': ['code_review'] });
-
-    const result = await fake.handler('tool_result')(
-      {
-        toolName,
-        isError,
-        content: [{ type: 'text', text }],
-      },
-      {} as never,
-    );
-
-    expect(result).toBeUndefined();
-  });
-
   it('registers a command for every skill directory', () => {
     const fake = fakeExtensionApi();
 
@@ -124,69 +56,6 @@ describe('tauSkillsExtension', () => {
       ['/skill:bro', { deliverAs: 'followUp', expandPromptTemplates: true }],
       ['/skill:bro', { deliverAs: 'steer', expandPromptTemplates: true }],
     ]);
-  });
-
-  it('turns on the tools tied to a skill when its command runs', async () => {
-    const fake = fakeWithActiveTools(['read']);
-
-    tauSkillsExtension(fake.pi, skillsDirectory, { bro: ['bro_tool'] });
-
-    expect(fake.activeTools()).toEqual(['read']);
-
-    await fake.commands.get('tdd')?.handler('', { isIdle: () => true } as never);
-
-    expect(fake.activeTools()).toEqual(['read']);
-
-    await fake.commands.get('bro')?.handler('', { isIdle: () => true } as never);
-    await fake.commands.get('bro')?.handler('', { isIdle: () => false } as never);
-
-    expect(fake.activeTools()).toEqual(['read', 'bro_tool']);
-  });
-
-  it('turns on the tools tied to a skill when the model reads its SKILL.md', async () => {
-    const fake = fakeWithActiveTools(['read']);
-
-    tauSkillsExtension(fake.pi, skillsDirectory, { bro: ['bro_tool'] });
-
-    const readFile = async (path: string) => {
-      const event = { type: 'tool_call', toolCallId: path, toolName: 'read', input: { path } };
-
-      await fake.handler('tool_call')(event, { cwd: skillsDirectory } as never);
-    };
-
-    await readFile(join(skillsDirectory, 'tdd', 'SKILL.md'));
-    await readFile('bro/README.md');
-
-    expect(fake.activeTools()).toEqual(['read']);
-
-    await readFile('@bro/SKILL.md');
-
-    expect(fake.activeTools()).toEqual(['read', 'bro_tool']);
-  });
-
-  it('turns on no tools for a read of a file URL it cannot parse', async () => {
-    const fake = fakeWithActiveTools(['read']);
-
-    tauSkillsExtension(fake.pi, skillsDirectory, { bro: ['bro_tool'] });
-
-    const path = 'file://host/x';
-    const event = { type: 'tool_call', toolCallId: path, toolName: 'read', input: { path } };
-
-    await fake.handler('tool_call')(event, { cwd: skillsDirectory } as never);
-
-    expect(fake.activeTools()).toEqual(['read']);
-  });
-
-  it('refuses tools tied to an unknown skill and registers nothing', () => {
-    const fake = fakeWithActiveTools(['read']);
-
-    expect(() => {
-      tauSkillsExtension(fake.pi, skillsDirectory, { missing: ['missing_tool'] });
-    }).toThrow('missing');
-
-    expect(fake.commands.size).toBe(0);
-    expect(fake.handlers.size).toBe(0);
-    expect(fake.activeTools()).toEqual(['read']);
   });
 
   it('names only the skills with required-for in the system prompt', () => {
