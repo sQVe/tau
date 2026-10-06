@@ -3,19 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import {
-  InMemoryCredentialStore,
-  InMemoryModelsStore,
-  fauxAssistantMessage,
-  fauxProvider,
-  getCurrentSystemPrompt,
-} from '@earendil-works/pi-ai';
+import { fauxAssistantMessage, fauxProvider, getCurrentSystemPrompt } from '@earendil-works/pi-ai';
 import {
   DefaultResourceLoader,
-  ModelRuntime,
-  SessionManager,
   SettingsManager,
-  createAgentSession,
   parseFrontmatter,
 } from '@earendil-works/pi-coding-agent';
 import type {
@@ -29,6 +20,7 @@ import { commitToolGuidelines } from '../src/extensions/commit/tool.js';
 import { delegationGuidelines } from '../src/extensions/subagents/subagents.js';
 import { readInstructionSet } from '../src/instructionSets.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
+import { createPiSession } from './piSession.js';
 
 it('ships Safety Net as a runtime dependency and explicit extension', () => {
   expect(manifest.dependencies).toHaveProperty('cc-safety-net', '2.4.1');
@@ -55,8 +47,6 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
     vi.stubEnv('HERDR_PANE_ID', 'parent');
     vi.stubEnv('HERDR_SOCKET_PATH', join(workingDirectory, 'herdr.sock'));
 
-    const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
-
     // Pi-claude-bridge keeps this options object at before_agent_start and forwards only its
     // appendSystemPrompt and context files at agent_start, after every handler has run.
     const forwarded: NormalizedBuildSystemPromptOptions[] = [];
@@ -75,21 +65,18 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
       });
     };
 
-    const loader = new DefaultResourceLoader({
+    const scriptedProvider = fauxProvider({ provider: 'tau-package-writing' });
+
+    const { session, extensionsResult } = await createPiSession(onTestFinished, {
       cwd: workingDirectory,
-      agentDir: agentDirectory,
-      settingsManager,
-      additionalExtensionPaths: [packageRoot],
+      agentDirectory,
+      providers: [scriptedProvider],
+      extensionPaths: [packageRoot],
       extensionFactories: [bridge],
-      noExtensions: true,
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
+      tools: ['subagent', 'commit'],
     });
 
-    await loader.reload();
-
-    const { extensions, errors } = loader.getExtensions();
+    const { extensions, errors } = extensionsResult;
 
     expect(errors).toEqual([]);
     expect(extensions).toHaveLength(4);
@@ -115,7 +102,7 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
     ]);
 
     expect(
-      loader
+      session.resourceLoader
         .getSkills()
         .skills.map((skill) => skill.name)
         .toSorted(),
@@ -137,39 +124,13 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
       'worktree',
     ]);
 
-    expect(loader.getSkills().diagnostics).toEqual([]);
+    expect(session.resourceLoader.getSkills().diagnostics).toEqual([]);
 
-    const skillsWithoutCommand = loader
+    const skillsWithoutCommand = session.resourceLoader
       .getSkills()
       .skills.filter((skill) => tauExtension?.commands.has(skill.name) !== true);
 
     expect(skillsWithoutCommand).toEqual([]);
-
-    const scriptedProvider = fauxProvider({ provider: 'tau-package-writing' });
-
-    const modelRuntime = await ModelRuntime.create({
-      credentials: new InMemoryCredentialStore(),
-      modelsStore: new InMemoryModelsStore(),
-      modelsPath: null,
-      refreshOnCreate: false,
-    });
-
-    modelRuntime.registerNativeProvider(scriptedProvider.provider);
-
-    const { session } = await createAgentSession({
-      cwd: workingDirectory,
-      agentDir: agentDirectory,
-      modelRuntime,
-      model: scriptedProvider.getModel(),
-      resourceLoader: loader,
-      sessionManager: SessionManager.inMemory(workingDirectory),
-      settingsManager,
-      tools: ['subagent', 'commit'],
-    });
-
-    onTestFinished(() => {
-      session.dispose();
-    });
 
     await session.bindExtensions({});
 
@@ -265,45 +226,14 @@ it('reports an extension error for a missing bundled web extension', async ({ on
   onTestFinished(() => rm(workingDirectory, { recursive: true, force: true }));
 
   const agentDirectory = join(workingDirectory, 'agent');
-  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
-
-  const loader = new DefaultResourceLoader({
-    cwd: workingDirectory,
-    agentDir: agentDirectory,
-    settingsManager,
-    additionalExtensionPaths: [fileURLToPath(new URL('../src/tau.ts', import.meta.url))],
-    noExtensions: true,
-    noSkills: true,
-    noPromptTemplates: true,
-    noThemes: true,
-  });
-
-  await loader.reload();
-
   const scriptedProvider = fauxProvider({ provider: 'tau-package-missing' });
 
-  const modelRuntime = await ModelRuntime.create({
-    credentials: new InMemoryCredentialStore(),
-    modelsStore: new InMemoryModelsStore(),
-    modelsPath: null,
-    refreshOnCreate: false,
-  });
-
-  modelRuntime.registerNativeProvider(scriptedProvider.provider);
-
-  const { session } = await createAgentSession({
+  const { session } = await createPiSession(onTestFinished, {
     cwd: workingDirectory,
-    agentDir: agentDirectory,
-    modelRuntime,
-    model: scriptedProvider.getModel(),
-    resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(workingDirectory),
-    settingsManager,
+    agentDirectory,
+    providers: [scriptedProvider],
+    extensionPaths: [fileURLToPath(new URL('../src/tau.ts', import.meta.url))],
     tools: [],
-  });
-
-  onTestFinished(() => {
-    session.dispose();
   });
 
   const errors: string[] = [];
