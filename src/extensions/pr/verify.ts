@@ -58,7 +58,8 @@ const runName = (root: string, directory: string) => {
   return located.name;
 };
 
-// A linked directory or body.md could make verify compare a file from outside the checkout.
+// A linked directory or body.md, symbolic or hard, could make verify compare a file from outside
+// the checkout.
 const readBody = async (root: string, directory: string) => {
   const name = runName(root, directory);
 
@@ -73,6 +74,10 @@ const readBody = async (root: string, directory: string) => {
 
   if (entry.isSymbolicLink()) {
     throw new Error(`Refusing to read through a symlink: ${path}`);
+  }
+
+  if (entry.nlink > 1) {
+    throw new Error(`Refusing to read a ${bodyFileName} with another hard link: ${path}`);
   }
 
   return readFile(path, 'utf8');

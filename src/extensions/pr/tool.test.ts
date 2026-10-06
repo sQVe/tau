@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
@@ -553,6 +553,22 @@ it('refuses to verify a body.md that is a symlink', async () => {
 
   await expect(run({ ...approved, directory: String(directory) })).rejects.toThrow(
     'through a symlink',
+  );
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses to verify a body.md with another hard link', async () => {
+  const { fake, run } = await setUp();
+  const { directory } = await run({ action: 'prepare' });
+  const outside = await mkdtemp(join(tmpdir(), 'tau-pr-outside-'));
+
+  onTestFinished(() => rm(outside, { recursive: true, force: true }));
+  await writeFile(join(outside, 'body.md'), 'Adds it.\n');
+  await link(join(outside, 'body.md'), join(String(directory), 'body.md'));
+
+  await expect(run({ ...approved, directory: String(directory) })).rejects.toThrow(
+    'Refusing to read a body.md with another hard link',
   );
 
   expect(fake.calls).toEqual([]);

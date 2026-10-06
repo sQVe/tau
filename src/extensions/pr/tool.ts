@@ -66,7 +66,7 @@ const description = `Prepare a pull request run, resolve its target, check wheth
   - Reads the approved body from directory/body.md, reads local HEAD with git rev-parse HEAD, and runs gh pr view <pr> --repo <repository> --json url,title,body,baseRefName,isDraft,headRefOid.
   - Compares title, body, base, and draft with the pull request, and local HEAD with its headRefOid. Bodies match when they differ only by trailing newlines, which GitHub drops.
   - Returns {url, matches, differences}. matches is true when differences is empty. Each difference is {field, expected, actual}, where field is title, body, base, draft, or head.
-  - Errors: a missing parameter; a repository that is not <host>/<owner>/<name>; a pr that is not an integer, or is below 1; a directory outside .tau/pr, nested below a run directory, not named run-*, or that goes through a symlink; a missing or linked body.md; a failing git rev-parse HEAD; a failing gh pr view; gh output the tool cannot read, named with the command.`;
+  - Errors: a missing parameter; a repository that is not <host>/<owner>/<name>; a pr that is not an integer, or is below 1; a directory outside .tau/pr, nested below a run directory, not named run-*, or that goes through a symlink; a missing body.md, or one that is a symlink or has another hard link; a failing git rev-parse HEAD; a failing gh pr view; gh output the tool cannot read, named with the command.`;
 
 const findRoot = async (cwd: string) => {
   const output = await readGitOutput(cwd, ['rev-parse', '--show-toplevel']);
