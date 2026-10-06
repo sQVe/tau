@@ -31,7 +31,8 @@ export interface WorkerWidgetRow {
   questionId?: string | undefined;
   issue?: string | undefined;
   usage: { available: false; reason: string } | { available: true; label: string };
-  model?: string | undefined;
+  requestedModel?: string | undefined;
+  observedModel?: string | undefined;
   report?: { summary: string; evidence: string[] } | undefined;
 }
 
@@ -226,20 +227,11 @@ export const shortTaskLabel = (row: WorkerWidgetRow): string => {
 
 // Show an observed model as observed, keep a requested-only value labelled, and never invent one.
 export const workerModelLabel = (row: WorkerWidgetRow): string => {
-  if (row.model === undefined) {
-    return '—';
+  if (row.observedModel !== undefined) {
+    return row.observedModel;
   }
 
-  const parts = row.model.split(' · ');
-  const observed = parts.find((part) => part.startsWith('Pi-selected '));
-
-  if (observed != null) {
-    return observed.slice('Pi-selected '.length);
-  }
-
-  const requested = parts.find((part) => part.startsWith('requested '));
-
-  return requested ?? row.model;
+  return row.requestedModel === undefined ? '—' : `requested ${row.requestedModel}`;
 };
 
 const statusText = (row: WorkerWidgetRow, now: number): string => {
@@ -386,39 +378,20 @@ const mutedLine = (content: string, width: number, theme: Theme | undefined): st
   return theme?.fg('muted', fitted) ?? fitted;
 };
 
-const footerRightMinimumWidth = 32;
-
-// eslint-disable-next-line eslint/complexity -- The wide and narrow widget renderings share this border fitting.
-const footerBorder = (
-  left: string,
-  right: string,
-  width: number,
-  theme: Theme | undefined,
-): string => {
+const footerBorder = (left: string, width: number, theme: Theme | undefined): string => {
   if (width < boxFrameWidth) {
     return truncateToWidth('╰─', width);
   }
 
   const inside = width - 2;
   const leftContent = left ? `─ ${left}` : '─';
-  const rightContent = right && width >= footerRightMinimumWidth ? ` ${right} ─` : '';
-
-  if (left && rightContent) {
-    const footer = ` ${left} · ${right} ─`;
-    const fill = Math.max(0, inside - visibleWidth(footer));
-
-    return `${theme?.fg('border', '╰') ?? '╰'}${theme?.fg('border', '─'.repeat(fill)) ?? '─'.repeat(fill)}${theme?.fg('muted', footer) ?? footer}${theme?.fg('border', '╯') ?? '╯'}`;
-  }
-
-  const fittedRight = truncateToWidth(rightContent, inside, '…');
-  const leftWidth = Math.max(0, inside - visibleWidth(fittedRight));
-  const fittedLeft = truncateToWidth(leftContent, leftWidth, '…');
-  const fill = Math.max(0, inside - visibleWidth(fittedLeft) - visibleWidth(fittedRight));
+  const fittedLeft = truncateToWidth(leftContent, inside, '…');
+  const fill = Math.max(0, inside - visibleWidth(fittedLeft));
 
   return [
     `${theme?.fg('border', '╰') ?? '╰'}${theme?.fg('muted', fittedLeft) ?? fittedLeft}`,
     theme?.fg('border', '─'.repeat(fill)) ?? '─'.repeat(fill),
-    `${theme?.fg('muted', fittedRight) ?? fittedRight}${theme?.fg('border', '╯') ?? '╯'}`,
+    theme?.fg('border', '╯') ?? '╯',
   ].join('');
 };
 
@@ -517,7 +490,7 @@ export const renderWorkerWidget = (
 
   const footerLeft = stoppedCount > 0 ? `${stoppedCount} stopped` : '';
 
-  lines.push(footerBorder(footerLeft, '', boxWidth, theme));
+  lines.push(footerBorder(footerLeft, boxWidth, theme));
 
   return lines;
 };

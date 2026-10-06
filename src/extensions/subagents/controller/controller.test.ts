@@ -27,6 +27,8 @@ import * as records from '../records.js';
 import * as terminalModule from '../terminal.js';
 import { taskVersion } from '../types.js';
 import type { Loadout } from '../types.js';
+import { renderWorkerWidget } from '../widget.js';
+import { WorkerHistoryView } from '../widgetOverlay.js';
 import { WorkerCapacityFullError, WorkerController } from './controller.js';
 import { RequestNotSentError, workerArguments } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
@@ -3836,7 +3838,7 @@ it('exposes read-only widget rows without inferring success from worker readines
 
   expect(starting).toMatchObject({
     state: 'starting',
-    model: 'requested faux/test · observed unavailable',
+    requestedModel: 'faux/test',
     usage: { available: false, reason: 'Pi session usage was not recorded' },
   });
 
@@ -3908,6 +3910,53 @@ it('exposes read-only widget rows without inferring success from worker readines
 
   expect(stoppedRow.stoppedAt).toBeGreaterThan(0);
   expect(stoppedRow.detailPath).toBe(join(launched.directory, 'report.json'));
+});
+
+it.each([
+  { observation: 'fresh', age: 0, label: 'other/observed', observed: 'Pi-selected other/observed' },
+  { observation: 'stale', age: 60_001, label: 'requested faux/test', observed: 'unavailable' },
+  { observation: 'missing', age: undefined, label: 'requested faux/test', observed: 'unavailable' },
+])('renders models from a $observation observation', async ({ age, label, observed }) => {
+  const fixture = setup(afterTest);
+  const launched = await fixture.controller.launch(fixture.input);
+  const now = Date.now();
+
+  if (age !== undefined) {
+    writeWorkerActivity(launched.directory, {
+      taskId: launched.taskId,
+      sequence: 1,
+      updatedAt: now - age,
+      phase: 'active',
+      label: 'tool: read',
+      model: 'other/observed',
+    });
+  }
+
+  const rows = fixture.controller.widgetRows(fixture.input.parentSessionId);
+  const widget = renderWorkerWidget(rows, 200, now).join('\n');
+
+  expect(widget).toContain(label);
+
+  if (age !== 0) {
+    // eslint-disable-next-line vitest/no-conditional-expect -- Only stale and missing observations must hide the observed model.
+    expect(widget).not.toContain('other/observed');
+  }
+
+  const view = new WorkerHistoryView(
+    { terminal: { rows: 40 }, requestRender: () => undefined } as never,
+    { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
+    {
+      matches: (data: string, action: string) => data === '\r' && action === 'tui.select.confirm',
+    } as never,
+    rows,
+    () => undefined,
+  );
+
+  view.handleInput('\r');
+  const details = view.render(200).join('\n');
+
+  expect(details).toMatch(/Model\s+requested faux\/test/u);
+  expect(details).toContain(`observed ${observed}`);
 });
 
 it('refreshes worker history after cleanup', async ({ onTestFinished }) => {

@@ -29,6 +29,11 @@ import {
   workerRightTime,
 } from './widget.js';
 
+interface HistoryColumn {
+  name: 'marker' | 'glyph' | 'name' | 'state' | 'label' | 'model' | 'time';
+  width: number;
+}
+
 const rowGroup = (
   row: WorkerWidgetRow,
 ): 'CLEANUP UNCONFIRMED' | 'STATUS UNKNOWN' | 'WAITING FOR REPLY' | 'LIVE' | 'STOPPED' => {
@@ -103,8 +108,6 @@ const sortedHistory = (rows: WorkerWidgetRow[]): WorkerWidgetRow[] =>
 // Columns shrink to these widths before any column goes lower.
 const historyColumnWidths = { time: 6, name: 4, state: 8, label: 4 };
 const maximumTimeWidth = 16;
-// One gap between each of the seven columns; hiding the model removes one.
-const gapsWithModel = 6;
 const minimumDetailLabelWidth = 7;
 const maximumBodyRows = 22;
 // Terminal rows kept outside the overlay body.
@@ -135,128 +138,122 @@ const historyTime = (row: WorkerWidgetRow, now: number): string => {
   return workerRightTime(row, now);
 };
 
-// Keep per-column truncation and alignment together for each history row. The task label sits
-// next to the state, the elapsed column is gone because the right time already answers the same
-// question, and the model is the first column to go when the list is too narrow.
-// eslint-disable-next-line eslint/complexity -- Per-column truncation and alignment stay together for each row.
+const historyColumns = (rows: WorkerWidgetRow[], width: number, now: number): HistoryColumn[] => {
+  const name: HistoryColumn = {
+    name: 'name',
+    width: Math.max(historyColumnWidths.name, ...rows.map((row) => visibleWidth(row.name))),
+  };
+
+  const state: HistoryColumn = {
+    name: 'state',
+    width: Math.max(historyColumnWidths.state, ...rows.map((row) => visibleWidth(rowState(row)))),
+  };
+
+  const label: HistoryColumn = {
+    name: 'label',
+    width: Math.max(
+      historyColumnWidths.label,
+      ...rows.map((row) => visibleWidth(shortTaskLabel(row))),
+    ),
+  };
+
+  const model: HistoryColumn = {
+    name: 'model',
+    width: Math.max(1, ...rows.map((row) => visibleWidth(workerModelLabel(row)))),
+  };
+
+  const time: HistoryColumn = {
+    name: 'time',
+    width: Math.min(
+      maximumTimeWidth,
+      Math.max(historyColumnWidths.time, ...rows.map((row) => visibleWidth(historyTime(row, now)))),
+    ),
+  };
+
+  const columns: HistoryColumn[] = [
+    { name: 'marker', width: 1 },
+    { name: 'glyph', width: 1 },
+    name,
+    state,
+    label,
+    model,
+    time,
+  ];
+
+  const used = (): number =>
+    columns.reduce((sum, column) => sum + column.width, 0) + columns.length - 1;
+
+  if (used() > width) {
+    columns.splice(columns.indexOf(model), 1);
+  }
+
+  const shrinkSteps: [HistoryColumn, number][] = [
+    [state, historyColumnWidths.state],
+    [name, historyColumnWidths.name],
+    [label, historyColumnWidths.label],
+    [state, 1],
+    [label, 1],
+    [time, 1],
+  ];
+
+  for (const [column, minimum] of shrinkSteps) {
+    while (used() > width && column.width > minimum) {
+      column.width -= 1;
+    }
+  }
+
+  label.width += Math.max(0, width - used());
+
+  return columns;
+};
+
+const historyCellValue = (
+  row: WorkerWidgetRow,
+  column: HistoryColumn,
+  values: Record<HistoryColumn['name'], string>,
+): string => {
+  if (column.name === 'name') {
+    return truncateName(row, column.width);
+  }
+
+  const value = values[column.name];
+
+  const needsFitting =
+    column.name === 'state' || column.name === 'label' || column.name === 'model';
+
+  return needsFitting ? truncateToWidth(value, column.width, '…') : value;
+};
+
 const renderHistoryRow = (
   row: WorkerWidgetRow,
-  allRows: WorkerWidgetRow[],
-  width: number,
+  columns: HistoryColumn[],
   selected: boolean,
   now: number,
   theme: Theme,
 ): string => {
-  const markerWidth = 1;
-  const glyphWidth = 1;
-
-  const timeWidth = Math.min(
-    maximumTimeWidth,
-    Math.max(
-      historyColumnWidths.time,
-      ...allRows.map((item) => visibleWidth(historyTime(item, now))),
-    ),
-  );
-
-  const nameWidth = Math.max(
-    historyColumnWidths.name,
-    ...allRows.map((item) => visibleWidth(item.name)),
-  );
-
-  const stateWidth = Math.max(
-    historyColumnWidths.state,
-    ...allRows.map((item) => visibleWidth(rowState(item))),
-  );
-
-  const labelWidth = Math.max(
-    historyColumnWidths.label,
-    ...allRows.map((item) => visibleWidth(shortTaskLabel(item))),
-  );
-
-  const modelWidth = Math.max(1, ...allRows.map((item) => visibleWidth(workerModelLabel(item))));
-  const innerWidth = Math.max(0, width - boxFrameWidth);
-  let showModel = true;
-  let shownNameWidth = nameWidth;
-  let shownStateWidth = stateWidth;
-  let shownLabelWidth = labelWidth;
-  let shownTimeWidth = timeWidth;
-  const gaps = (): number => (showModel ? gapsWithModel : gapsWithModel - 1);
-
-  const used = (): number =>
-    markerWidth +
-    glyphWidth +
-    shownNameWidth +
-    shownStateWidth +
-    shownLabelWidth +
-    (showModel ? modelWidth : 0) +
-    shownTimeWidth +
-    gaps();
-
-  if (used() > innerWidth) {
-    showModel = false;
-  }
-
-  while (used() > innerWidth && shownStateWidth > historyColumnWidths.state) {
-    shownStateWidth -= 1;
-  }
-
-  while (used() > innerWidth && shownNameWidth > historyColumnWidths.name) {
-    shownNameWidth -= 1;
-  }
-
-  while (used() > innerWidth && shownLabelWidth > historyColumnWidths.label) {
-    shownLabelWidth -= 1;
-  }
-
-  while (used() > innerWidth && shownStateWidth > 1) {
-    shownStateWidth -= 1;
-  }
-
-  while (used() > innerWidth && shownLabelWidth > 1) {
-    shownLabelWidth -= 1;
-  }
-
-  while (used() > innerWidth && shownTimeWidth > 1) {
-    shownTimeWidth -= 1;
-  }
-
-  const spareWidth = Math.max(0, innerWidth - used());
-
-  shownLabelWidth += spareWidth;
-
   const label = row.state === 'unknown' ? undefined : stateLabel(row.state, row.outcome);
 
-  const fields = [
-    selected ? '▶' : ' ',
-    label?.icon ?? '?',
-    truncateName(row, shownNameWidth),
-    shownStateWidth > 0 ? truncateToWidth(safeText(rowState(row)), shownStateWidth, '…') : '',
-    shownLabelWidth > 0 ? truncateToWidth(shortTaskLabel(row), shownLabelWidth, '…') : '',
-    ...(showModel ? [truncateToWidth(safeText(workerModelLabel(row)), modelWidth, '…')] : []),
-    historyTime(row, now),
-  ];
+  const values: Record<HistoryColumn['name'], string> = {
+    marker: selected ? '▶' : ' ',
+    glyph: label?.icon ?? '?',
+    name: row.name,
+    state: safeText(rowState(row)),
+    label: shortTaskLabel(row),
+    model: safeText(workerModelLabel(row)),
+    time: historyTime(row, now),
+  };
 
-  const widths = [
-    markerWidth,
-    glyphWidth,
-    shownNameWidth,
-    shownStateWidth,
-    shownLabelWidth,
-    ...(showModel ? [modelWidth] : []),
-    shownTimeWidth,
-  ];
-
-  const cells = fields.map((field, index) => {
-    const fieldWidth = widths[index] ?? 0;
-    const fitted = truncateToWidth(field, fieldWidth, '…');
-    const padding = Math.max(0, fieldWidth - visibleWidth(fitted));
+  const cells = columns.map((column) => {
+    const field = historyCellValue(row, column, values);
+    const fitted = truncateToWidth(field, column.width, '…');
+    const padding = Math.max(0, column.width - visibleWidth(fitted));
 
     const text =
-      index === fields.length - 1
+      column.name === 'time'
         ? `${' '.repeat(padding)}${fitted}`
         : `${fitted}${' '.repeat(padding)}`;
 
-    if (index === 1 && label) {
+    if (column.name === 'glyph' && label) {
       return theme.fg(label.color, text);
     }
 
@@ -264,16 +261,14 @@ const renderHistoryRow = (
       return text;
     }
 
-    if (index === 0) {
+    if (column.name === 'marker') {
       return theme.fg('accent', theme.bold(text));
     }
 
-    return index === 2 ? theme.bold(text) : text;
+    return column.name === 'name' ? theme.bold(text) : text;
   });
 
-  const content = cells.join(' ');
-
-  return content;
+  return cells.join(' ');
 };
 
 const wrapDetailValue = (value: string, contentWidth: number): string[] => {
@@ -421,25 +416,17 @@ const reportLines = (row: WorkerWidgetRow, width: number): string[] => {
     fields.push(['Recovery', row.recovery]);
   }
 
-  if (row.model !== undefined) {
-    const modelParts = row.model.split(' · ');
-    const requested = modelParts.find((part) => part.startsWith('requested '));
+  if (row.requestedModel !== undefined) {
+    fields.push(['Model', `requested ${row.requestedModel}`]);
 
-    const observed = modelParts.find(
-      (part) => part.startsWith('observed ') || part.startsWith('Pi-selected '),
-    );
+    const observed =
+      row.observedModel === undefined
+        ? 'observed unavailable'
+        : `observed Pi-selected ${row.observedModel}`;
 
-    if (requested != null && observed != null) {
-      fields.push(['Model', requested]);
-
-      const observedValue = observed.startsWith('Pi-selected ')
-        ? `observed Pi-selected ${observed.slice('Pi-selected '.length)}`
-        : observed;
-
-      fields.push(['', observedValue]);
-    } else {
-      fields.push(['Model', row.model]);
-    }
+    fields.push(['', observed]);
+  } else if (row.observedModel !== undefined) {
+    fields.push(['Model', `Pi-selected ${row.observedModel}`]);
   }
 
   fields.push([
@@ -775,6 +762,7 @@ export class WorkerHistoryView implements Component {
 
     const selectedIndex = selected === undefined ? 0 : Math.max(0, rows.indexOf(selected));
     const now = Date.now();
+    const columns = historyColumns(rows, width, now);
     let start = Math.max(0, selectedIndex - visibleHeight + 1);
     let end = start;
     let rendered: string[] = [];
@@ -798,9 +786,7 @@ export class WorkerHistoryView implements Component {
           addedLines.push(this.theme.fg('muted', group));
         }
 
-        addedLines.push(
-          renderHistoryRow(row, rows, width + boxFrameWidth, row === selected, now, this.theme),
-        );
+        addedLines.push(renderHistoryRow(row, columns, row === selected, now, this.theme));
 
         if (rendered.length + addedLines.length > visibleHeight) {
           break;
