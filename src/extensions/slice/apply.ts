@@ -3,9 +3,9 @@ import { basename, join } from 'node:path';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
+import { confirmWithUser } from '../../confirm.js';
 import { errorMessage } from '../../errors.js';
 import { ensureTauDirectory } from '../../tauDirectory.js';
-import { confirmWithUser } from '../../userConfirmation.js';
 import type { Draft, Plan } from './draft.js';
 import { planFileName, writePlan } from './draft.js';
 import {

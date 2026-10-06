@@ -50,7 +50,24 @@ const setup = (config: unknown = {}) => {
   return { emit, find, getAvailable };
 };
 
+const startSession = (worker: string) => {
+  vi.stubEnv('TAU_WORKER_RECORD', worker);
+  const fake = fakeExtensionApi({ getAllTools: () => [] });
+  webAccessExtension(fake.pi);
+
+  return () => {
+    for (const handler of fake.handlers.get('session_start') ?? []) {
+      handler(undefined as never, {} as ExtensionContext);
+    }
+  };
+};
+
 afterEach(() => vi.unstubAllEnvs());
+
+it('names a missing bundled tool in a parent session but leaves worker tools to the profile', () => {
+  expect(startSession('')).toThrow('"web_search", "fetch_content" are not registered');
+  expect(startSession('/records/task')).not.toThrow();
+});
 
 it('leaves answer fetches without a passed answerModel untouched and trims a passed one', () => {
   const app = setup();

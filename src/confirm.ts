@@ -3,7 +3,16 @@ import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import { Container, matchesKey, Spacer, Text, truncateToWidth } from '@earendil-works/pi-tui';
 import type { Component } from '@earendil-works/pi-tui';
 
+import { confirmationRefusal } from './confirmationEligibility.js';
 import { isBottom, isDown, isTop, isUp } from './keys.js';
+import { isWorkerProcess } from './workerProcess.js';
+
+interface ConfirmRequest {
+  // What needs the confirmation, such as "Writing to Linear".
+  action: string;
+  title: string;
+  message: string;
+}
 
 const overlayMargin = { top: 5, bottom: 1 };
 const viewportChromeRows = 3;
@@ -150,4 +159,20 @@ export const confirm = async (
   );
 
   return answer ?? false;
+};
+
+// A worker pane has UI, but the user does not watch it, so a confirm there could approve a write
+// nobody saw.
+export const confirmWithUser = async (
+  context: ExtensionContext,
+  request: ConfirmRequest,
+): Promise<boolean> => {
+  const facts = { isWorker: isWorkerProcess(), hasUI: context.hasUI };
+  const refusal = confirmationRefusal(facts, request.action);
+
+  if (refusal !== undefined) {
+    throw new Error(refusal);
+  }
+
+  return confirm(context, request.title, request.message);
 };

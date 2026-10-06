@@ -2,9 +2,9 @@ import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
+import { confirmWithUser } from '../../confirm.js';
 import { errorMessage } from '../../errors.js';
 import type { Repository, Runtime } from '../../github.js';
-import { confirmWithUser } from '../../userConfirmation.js';
 import {
   postIssueComment,
   postReply,
