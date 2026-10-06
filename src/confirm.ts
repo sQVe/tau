@@ -57,7 +57,9 @@ export const confirm = async (
       renderOptions(options, selected, theme);
 
       dialog.handleInput = (data) => {
-        if (keybindings.matches(data, 'tui.select.up') || data === 'k') {
+        if (keybindings.matches(data, 'app.tools.expand')) {
+          context.ui.setToolsExpanded(!context.ui.getToolsExpanded());
+        } else if (keybindings.matches(data, 'tui.select.up') || data === 'k') {
           selected = Math.max(0, selected - 1);
         } else if (keybindings.matches(data, 'tui.select.down') || data === 'j') {
           selected = Math.min(1, selected + 1);

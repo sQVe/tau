@@ -46,6 +46,33 @@ it('uses the supplied keybindings', async () => {
   expect(await confirm(context, 'Title', 'Message')).toBe(false);
 });
 
+it('toggles tool output without closing the dialog', async () => {
+  const keybindings = new KeybindingsManager({
+    ...tuiKeybindings,
+    'app.tools.expand': { defaultKeys: 'ctrl+o', description: 'Toggle tool output' },
+  });
+
+  const context = customContext(
+    (component) => {
+      component.handleInput?.('\u000F');
+      component.handleInput?.('\r');
+    },
+    theme,
+    keybindings,
+  );
+
+  let expanded = false;
+
+  context.ui.getToolsExpanded = () => expanded;
+
+  context.ui.setToolsExpanded = (value) => {
+    expanded = value;
+  };
+
+  expect(await confirm(context, 'Title', 'Message')).toBe(true);
+  expect(expanded).toBe(true);
+});
+
 it('renders the title in bold accent and the message in normal text', async () => {
   let rendered = '';
 
