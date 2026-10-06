@@ -36,6 +36,15 @@ interface RemoteUrls {
   pushUrl: string | undefined;
 }
 
+interface RemoteLocation {
+  host: string;
+  path: string;
+  // SSH reads the host as a Host alias from its config.
+  overSsh: boolean;
+}
+
+type ResolveHost = (host: string) => Promise<string>;
+
 interface RemoteUrl extends Remote {
   pushUrl: string;
 }
@@ -103,38 +112,77 @@ const readPushTarget = async (cwd: string, branch: string) => {
 
 const lines = (text: string | undefined) => (text ?? '').split('\n').filter((line) => line !== '');
 
-// Reads https://host/owner/name.git, ssh://git@host/owner/name.git, and git@host:owner/name.git.
-const urlRepositoryPath = (url: string) => {
+// Reads https://host/owner/name.git, ssh://git@host:port/owner/name.git, and
+// git@host:owner/name.git. The port of an ssh:// URL is the SSH port, not part of the web host.
+const parseRemoteUrl = (url: string): RemoteLocation | undefined => {
   const scp = /^(?:[\w.-]+@)?([\w.-]+):(?!\/)(.+)$/u.exec(url);
 
   if (scp !== null) {
-    return `${scp[1]}/${scp[2]}`;
+    return { host: scp[1] ?? '', path: scp[2] ?? '', overSsh: true };
   }
 
   try {
     const parsed = new URL(url);
-    const host = parsed.protocol === 'ssh:' ? parsed.hostname : parsed.host;
+    const overSsh = parsed.protocol === 'ssh:';
+    const host = overSsh ? parsed.hostname : parsed.host;
 
-    return `${host}${parsed.pathname}`;
+    return { host, path: parsed.pathname.slice(1), overSsh };
   } catch {
     return undefined;
   }
 };
 
-const remoteRepository = (url: string): Repository | undefined => {
-  const path = urlRepositoryPath(url)
-    ?.replace(/\/$/u, '')
-    .replace(/\.git$/u, '');
-
-  if (path === undefined) {
-    return undefined;
-  }
+const locatedRepository = (host: string, path: string): Repository | undefined => {
+  const name = path.replace(/\/$/u, '').replace(/\.git$/u, '');
 
   try {
-    return parseRepository(path);
+    return parseRepository(`${host}/${name}`);
   } catch {
     return undefined;
   }
+};
+
+const remoteRepository = async (url: string, resolveHost: ResolveHost) => {
+  const location = parseRemoteUrl(url);
+
+  if (location === undefined) {
+    return undefined;
+  }
+
+  const host = location.overSsh ? await resolveHost(location.host) : location.host;
+
+  return locatedRepository(host, location.path);
+};
+
+const sshHostname = (output: string) =>
+  lines(output)
+    .find((line) => line.startsWith('hostname '))
+    ?.slice('hostname '.length)
+    .trim();
+
+// Resolves an SSH Host alias, such as github-work, to the hostname SSH connects to. Keeps the host
+// when ssh fails or prints no hostname.
+const sshHostResolver = (runtime: Runtime): ResolveHost => {
+  const resolved = new Map<string, Promise<string>>();
+
+  const resolve = async (host: string) => {
+    const result = await runtime.exec('ssh', ['-G', host], {
+      cwd: runtime.cwd,
+      ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
+    });
+
+    const hostname = result.code === 0 && !result.killed ? sshHostname(result.stdout) : undefined;
+
+    return hostname === undefined || hostname === '' ? host : hostname;
+  };
+
+  return (host) => {
+    const known = resolved.get(host) ?? resolve(host);
+
+    resolved.set(host, known);
+
+    return known;
+  };
 };
 
 const remoteUrlKey = /^remote\.(.+)\.(url|pushurl)$/u;
@@ -170,20 +218,30 @@ const readRemoteUrls = async (cwd: string) => {
 
 // Git applies insteadOf and pushInsteadOf rewrites to the URLs it uses. A rewrite to a URL that
 // names no GitHub repository, such as a local mirror path, keeps the configured URL.
-const effectiveRepository = async (cwd: string, commandArguments: string[], configured: string) => {
+const effectiveRepository = async (
+  cwd: string,
+  resolveHost: ResolveHost,
+  commandArguments: string[],
+  configured: string,
+) => {
   const expanded = await readOptionalGit(cwd, ['remote', 'get-url', ...commandArguments]);
   const url = expanded ?? configured;
-  const repository = remoteRepository(url);
+  const repository = await remoteRepository(url, resolveHost);
 
   return repository === undefined
-    ? { url: configured, repository: remoteRepository(configured) }
+    ? { url: configured, repository: await remoteRepository(configured, resolveHost) }
     : { url, repository };
 };
 
-const readRemote = async (cwd: string, name: string, urls: RemoteUrls): Promise<RemoteUrl> => {
+const readRemote = async (
+  cwd: string,
+  resolveHost: ResolveHost,
+  name: string,
+  urls: RemoteUrls,
+): Promise<RemoteUrl> => {
   const { url = '', pushUrl = url } = urls;
-  const fetched = await effectiveRepository(cwd, [name], url);
-  const pushed = await effectiveRepository(cwd, ['--push', name], pushUrl);
+  const fetched = await effectiveRepository(cwd, resolveHost, [name], url);
+  const pushed = await effectiveRepository(cwd, resolveHost, ['--push', name], pushUrl);
 
   return {
     name,
@@ -193,10 +251,13 @@ const readRemote = async (cwd: string, name: string, urls: RemoteUrls): Promise<
   };
 };
 
-const readRemotes = async (cwd: string): Promise<RemoteUrl[]> => {
-  const urls = await readRemoteUrls(cwd);
+const readRemotes = async (runtime: Runtime): Promise<RemoteUrl[]> => {
+  const urls = await readRemoteUrls(runtime.cwd);
+  const resolveHost = sshHostResolver(runtime);
 
-  return Promise.all([...urls].map(([name, remoteUrls]) => readRemote(cwd, name, remoteUrls)));
+  return Promise.all(
+    [...urls].map(([name, remoteUrls]) => readRemote(runtime.cwd, resolveHost, name, remoteUrls)),
+  );
 };
 
 const readBranch = async (cwd: string) => {
@@ -263,9 +324,10 @@ const readPullRequestList = async (runtime: Runtime, repository: Repository, bra
   return listed;
 };
 
-const resolveHead = async (cwd: string, request: TargetRequest) => {
+const resolveHead = async (runtime: Runtime, request: TargetRequest) => {
+  const { cwd } = runtime;
   const branch = await readBranch(cwd);
-  const remotes = await readRemotes(cwd);
+  const remotes = await readRemotes(runtime);
   const pushTarget = await readPushTarget(cwd, branch);
 
   const head = pickHead({
@@ -322,7 +384,7 @@ const pinMergeBase = async (cwd: string, remote: string, branch: string) => {
 
 export const readTarget = async (runtime: Runtime, request: TargetRequest): Promise<Target> => {
   const { cwd } = runtime;
-  const head = await resolveHead(cwd, request);
+  const head = await resolveHead(runtime, request);
   const { host } = head.repository;
 
   await run(runtime, ['auth', 'status', '--active', '--hostname', host]);

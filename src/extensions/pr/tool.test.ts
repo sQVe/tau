@@ -313,6 +313,42 @@ it('refuses a branch whose configured remote does not exist', async () => {
   expect(fake.calls).toEqual([]);
 });
 
+// Points origin at an SSH URL that Git still rewrites to the local bare repository.
+const aliasOrigin = async (root: string, url: string) => {
+  const bare = await git(root, 'remote', 'get-url', 'origin');
+
+  await git(root, 'config', '--add', `url.${bare}.insteadOf`, url);
+  await git(root, 'remote', 'set-url', 'origin', url);
+};
+
+it.each([
+  { url: 'git@github-work:sQVe/tau.git', alias: 'github-work' },
+  { url: 'ssh://git@github-alt:2222/sQVe/tau.git', alias: 'github-alt' },
+])('resolves the SSH host alias in $url', async ({ url, alias }) => {
+  const { root, fake, run } = await setUp();
+
+  await aliasOrigin(root, url);
+  await pushFeature(root);
+  fake.sshHostnames[alias] = 'github.com';
+
+  const details = await run({ action: 'target' });
+
+  expect(details).toMatchObject({
+    host: 'github.com',
+    repository: 'github.com/sQVe/tau',
+    head: { remote: 'origin', repository: 'github.com/sQVe/tau' },
+    base: { remote: 'origin', branch: 'main' },
+  });
+
+  expect(fake.calls[0]?.commandArguments).toEqual([
+    'auth',
+    'status',
+    '--active',
+    '--hostname',
+    'github.com',
+  ]);
+});
+
 it('stops before other gh calls when gh auth status fails', async () => {
   const { root, fake, run } = await setUp();
 
