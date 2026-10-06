@@ -117,10 +117,12 @@ const refspecSource = (refspec: string, ref: string): string | undefined => {
     return destination === ref ? source : undefined;
   }
 
+  // Git lets the wildcard match nothing, so only an overlapping prefix and suffix rule a ref out.
+  const fits = ref.length >= prefix.length + suffix.length;
   const matches = ref.startsWith(prefix) && ref.endsWith(suffix);
   const captured = ref.slice(prefix.length, ref.length - suffix.length);
 
-  return matches && captured !== '' ? source.replace('*', captured) : undefined;
+  return fits && matches ? source.replace('*', captured) : undefined;
 };
 
 // Git maps the server branch forward through the fetch refspecs to name the tracking ref, so the
