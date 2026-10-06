@@ -103,6 +103,24 @@ const remoteNames = (remotes: readonly Remote[]) => remotes.map((remote) => remo
 
 const branchPrefix = 'refs/heads/';
 
+// Maps a ref back through a pattern refspec, split at its wildcards. Git refuses a pattern refspec
+// without exactly one wildcard on each side.
+const patternSource = (sourceParts: string[], destinationParts: string[], ref: string) => {
+  if (sourceParts.length !== 2 || destinationParts.length !== 2) {
+    return undefined;
+  }
+
+  const [sourcePrefix = '', sourceSuffix = ''] = sourceParts;
+  const [prefix = '', suffix = ''] = destinationParts;
+
+  // Git lets the wildcard match nothing, so only an overlapping prefix and suffix rule a ref out.
+  const fits = ref.length >= prefix.length + suffix.length;
+  const matches = ref.startsWith(prefix) && ref.endsWith(suffix);
+  const captured = ref.slice(prefix.length, ref.length - suffix.length);
+
+  return fits && matches ? `${sourcePrefix}${captured}${sourceSuffix}` : undefined;
+};
+
 // Maps a ref back through one fetch refspec: the source ref whose fetch writes ref, if any.
 const refspecSource = (refspec: string, ref: string): string | undefined => {
   const [source = '', destination] = refspec.replace(/^\+/u, '').split(':', 2);
@@ -111,18 +129,13 @@ const refspecSource = (refspec: string, ref: string): string | undefined => {
     return undefined;
   }
 
-  const [prefix = '', suffix] = destination.split('*', 2);
+  const destinationParts = destination.split('*');
 
-  if (suffix === undefined) {
+  if (destinationParts.length === 1) {
     return destination === ref ? source : undefined;
   }
 
-  // Git lets the wildcard match nothing, so only an overlapping prefix and suffix rule a ref out.
-  const fits = ref.length >= prefix.length + suffix.length;
-  const matches = ref.startsWith(prefix) && ref.endsWith(suffix);
-  const captured = ref.slice(prefix.length, ref.length - suffix.length);
-
-  return fits && matches ? source.replace('*', captured) : undefined;
+  return patternSource(source.split('*'), destinationParts, ref);
 };
 
 // Git maps the server branch forward through the fetch refspecs to name the tracking ref, so the
