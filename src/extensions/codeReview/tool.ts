@@ -1,12 +1,11 @@
-import { appendFile, lstat, readFile } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { appendFile, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
-import { isMissingFile } from '../../errors.js';
 import { readGitOutput } from '../../gitOutput.js';
 import { readReviewEvidence } from '../../reviewCapture/evidence.js';
 import {
@@ -24,7 +23,13 @@ import {
   reviewTargetSchema,
 } from '../../reviewCapture/reviewCapture.js';
 import type { Gap, PinnedTarget, ReviewTarget } from '../../reviewCapture/reviewCapture.js';
-import { checkTauDirectory, createFreshTauDirectory } from '../../tauDirectory.js';
+import {
+  checkReviewDirectory,
+  existingEntry,
+  reviewPrefix,
+  workersPath,
+} from '../../reviewCapture/reviewDirectory.js';
+import { createFreshTauDirectory } from '../../tauDirectory.js';
 
 export const codeReviewToolParameters = Type.Object({
   action: Type.Union([
@@ -43,8 +48,6 @@ export const codeReviewToolParameters = Type.Object({
 
 export type CodeReviewInput = Static<typeof codeReviewToolParameters>;
 
-const workersPath = 'workers';
-const reviewPrefix = 'review-';
 const captureHeading = '## Capture';
 
 const description = `Capture a code review target, check that it is still fresh, and read its review evidence. Call it as the code-review skill directs.
@@ -63,68 +66,6 @@ const findRoot = async (cwd: string) => {
   }
 
   return root;
-};
-
-const existingEntry = (path: string) =>
-  lstat(path).catch((error: unknown) => {
-    if (isMissingFile(error)) {
-      return undefined;
-    }
-
-    throw error;
-  });
-
-// A linked file could send the tool's writes, or the reviewer's reads, outside the repository.
-const rejectLinkedFile = async (path: string) => {
-  const entry = await existingEntry(path);
-
-  if (entry?.isSymbolicLink() === true) {
-    throw new Error(`Refusing to write through a symlink: ${path}`);
-  }
-
-  if (entry !== undefined && entry.nlink > 1) {
-    throw new Error(`Refusing a review file with another hard link: ${path}`);
-  }
-};
-
-const reviewName = (root: string, directory: string | undefined) => {
-  if (directory === undefined) {
-    throw new Error('capture, freshness, and evidence need the directory that prepare returned.');
-  }
-
-  const fromWorkers = relative(join(root, '.tau', workersPath), resolve(root, directory));
-  const outside = fromWorkers.startsWith('..') || isAbsolute(fromWorkers);
-  const nested = fromWorkers.includes('/') || fromWorkers.includes('\\');
-  const named = fromWorkers.startsWith(reviewPrefix) && fromWorkers.length > reviewPrefix.length;
-
-  if (outside || nested || !named) {
-    throw new Error(
-      `The review directory must be .tau/workers/review-* from prepare, not ${directory}.`,
-    );
-  }
-
-  return fromWorkers;
-};
-
-// Refuses a review directory that a link could send outside the checkout, and changes nothing.
-const checkReviewDirectory = async (root: string, directory: string | undefined) => {
-  const name = reviewName(root, directory);
-  const path = join(root, '.tau', workersPath, name);
-
-  await checkTauDirectory(root, `${workersPath}/${name}`);
-
-  const entry = await existingEntry(path);
-
-  if (entry?.isDirectory() !== true) {
-    throw new Error(`The review directory ${path} does not exist. Run prepare first.`);
-  }
-
-  for (const file of [inputFileName, recordFileName, recheckFileName]) {
-    // oxlint-disable-next-line no-await-in-loop -- three lstat calls; order keeps the first error stable.
-    await rejectLinkedFile(join(path, file));
-  }
-
-  return path;
 };
 
 const lastHeading = (text: string) =>
@@ -247,6 +188,10 @@ const runAction = async (cwd: string, parameters: CodeReviewInput): Promise<obje
 
   if (parameters.action === 'prepare') {
     return { directory: await createFreshTauDirectory(root, workersPath, reviewPrefix) };
+  }
+
+  if (parameters.directory === undefined) {
+    throw new Error('capture, freshness, and evidence need the directory that prepare returned.');
   }
 
   const directory = await checkReviewDirectory(root, parameters.directory);
