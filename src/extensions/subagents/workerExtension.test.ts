@@ -691,6 +691,7 @@ const reportIncomplete = (
   worker: Awaited<ReturnType<typeof waitingWorker>>,
   blocker?: string,
   blockerKind: string | null = 'dependency',
+  onlyParentCanClear?: boolean,
 ) => {
   const report = worker.tools.get('subagent_report');
 
@@ -706,6 +707,7 @@ const reportIncomplete = (
       evidence: [],
       ...(blocker === undefined ? {} : { blocker }),
       ...(blockerKind === null ? {} : { blockerKind }),
+      ...(onlyParentCanClear === undefined ? {} : { onlyParentCanClear }),
     },
     undefined,
     undefined,
@@ -740,6 +742,29 @@ it('refuses the first incomplete report while meaningful time remains', async ()
   expect(readReport(worker.directory, 'task')?.summary).toContain(
     'The parent must choose the storage format.',
   );
+});
+
+it('accepts the first early incomplete report when only the parent can clear the blocker', async () => {
+  const worker = await waitingWorker('editing', hour);
+
+  await reportIncomplete(
+    worker,
+    'The dev server stopped and I may not start it.',
+    'dependency',
+    true,
+  );
+
+  expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
+});
+
+it('refuses the first early incomplete report when the worker can clear the blocker', async () => {
+  const worker = await waitingWorker('editing', hour);
+
+  expect(() => reportIncomplete(worker, 'Tests remain.', 'dependency', false)).toThrow(
+    'minutes remain',
+  );
+
+  expect(readReport(worker.directory, 'task')).toBeUndefined();
 });
 
 it('refuses the first incomplete report just above the time bar', async () => {
