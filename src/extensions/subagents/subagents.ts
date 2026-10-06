@@ -44,6 +44,10 @@ import { openWorkerHistory } from './widgetOverlay.js';
 import type { WorkerHistoryView } from './widgetOverlay.js';
 import { workerModelLine } from './workerModels.js';
 
+interface CapacityRefusal {
+  refuse: () => void;
+}
+
 interface SubagentRuntime {
   pi: ExtensionAPI;
   getController: () => WorkerController;
@@ -731,7 +735,36 @@ const totalSleepSeconds = (command: string): number => {
   return total;
 };
 
-export default function subagentsExtension(pi: ExtensionAPI): void {
+export const registerCapacityRefusal = (pi: ExtensionAPI): CapacityRefusal => {
+  if (isWorkerProcess()) {
+    return { refuse: () => undefined };
+  }
+
+  let capacityRefused = false;
+
+  pi.on('session_start', () => {
+    capacityRefused = false;
+  });
+
+  pi.on('message_start', (event) => {
+    if (clearsCapacityRefusal(event.message)) {
+      capacityRefused = false;
+    }
+  });
+
+  pi.on('tool_call', () => capacityRefusalBlock(capacityRefused));
+
+  return {
+    refuse: () => {
+      capacityRefused = true;
+    },
+  };
+};
+
+export default function subagentsExtension(
+  pi: ExtensionAPI,
+  capacityRefusal: CapacityRefusal,
+): void {
   if (isWorkerProcess()) {
     return;
   }
@@ -743,7 +776,6 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   let historyView: WorkerHistoryView | undefined;
   let historyOpen = false;
   let shuttingDown = false;
-  let capacityRefused = false;
 
   const runtime: SubagentRuntime = {
     pi,
@@ -753,9 +785,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       return controller;
     },
     peekController: () => controller,
-    refuseCapacity: () => {
-      capacityRefused = true;
-    },
+    refuseCapacity: capacityRefusal.refuse,
   };
 
   registerSubagentTools(runtime);
@@ -842,7 +872,6 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
 
   pi.on('session_start', async (_event, context) => {
     shuttingDown = false;
-    capacityRefused = false;
     sessionContext = context;
 
     // Project profiles and scoped models load only once the session's cwd and trust are known.
@@ -891,19 +920,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     refreshWidget(context);
   });
 
-  pi.on('message_start', (event) => {
-    if (clearsCapacityRefusal(event.message)) {
-      capacityRefused = false;
-    }
-  });
-
   pi.on('tool_call', (event, context) => {
-    const capacityBlock = capacityRefusalBlock(capacityRefused);
-
-    if (capacityBlock) {
-      return capacityBlock;
-    }
-
     if (isNestedControlCall(event)) {
       return { block: true, reason: nestedControlCallReason };
     }

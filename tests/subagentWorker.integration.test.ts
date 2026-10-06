@@ -37,7 +37,9 @@ import {
   readReport,
   validateTask,
 } from '../src/extensions/subagents/records.js';
-import subagentsExtension from '../src/extensions/subagents/subagents.js';
+import subagentsExtension, {
+  registerCapacityRefusal,
+} from '../src/extensions/subagents/subagents.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { readInstructionSet } from '../src/instructionSets.js';
 
@@ -257,7 +259,11 @@ it.each(['editing', 'investigation'] as const)(
       noPromptTemplates: true,
       noThemes: true,
       additionalExtensionPaths: extensionPaths,
-      extensionFactories: [subagentsExtension],
+      extensionFactories: [
+        (pi) => {
+          subagentsExtension(pi, registerCapacityRefusal(pi));
+        },
+      ],
     });
 
     await loader.reload();
