@@ -42,42 +42,25 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 - After a partial failure, stop and report what completed. Read the remote branch and PR before
   retrying.
 - Do not watch CI, wait for reviews, request human reviewers, or merge.
-- Before saving any file, run this from the repository root. Stop unless it prints `prdir=`. Use
-  that path as `$prdir` for every saved file, and repeat it in each command; shell variables do not
-  survive between commands. Never use `/tmp` or another shared path: other sessions run at the same
-  time.
-
-  ```sh
-  ! [ -L .tau ] && ! [ -L .tau/pr ] && ! [ -L .tau/.gitignore ] &&
-    mkdir -p .tau/pr &&
-    { grep -qsx '\*' .tau/.gitignore || printf '\n*\n' >> .tau/.gitignore; } &&
-    prdir=$(mktemp -d .tau/pr/run-XXXXXX) &&
-    git check-ignore -q "$prdir/body.md" && echo "prdir=$prdir"
-  ```
+- Before saving any file, call the `pr` tool's `prepare` action. Stop if it fails. Use the returned
+  directory as `$prdir` for every saved file. Never use `/tmp` or another shared path: other
+  sessions run at the same time.
 
 ## Procedure
 
-1. Resolve the target. Ask when unclear.
-   - Determine the GitHub host from the repository URL or Git remote. Before other `gh` calls, run
-     `gh auth status --active --hostname <host>`. On failure, tell the user and stop.
-   - Stop on a detached HEAD or the default branch.
-   - Head: the push target from `git rev-parse --abbrev-ref @{push}`, the user-named remote, or the
-     sole remote with the local branch name. Base repository: a fork's upstream, otherwise the push
-     remote's repository. Use `<host>/<owner>/<name>` and pass `--repo <repo>` to repository-scoped
-     `gh` commands.
-   - Find the PR with
-     `gh pr list --repo <repo> --head <branch> --state all --json number,url,state,title,body,baseRefName,isDraft,headRefOid,headRepositoryOwner`.
-     Keep only the head owner's PRs. Stop on error. Use the open PR; ask if only merged or closed
-     PRs match.
-   - Base: the open PR's base, the user-named base, the parent found by the
-     [stack skill](../stack/SKILL.md), or the default branch. Fetch it and pin the merge base with
-     `git merge-base <remote>/<base> HEAD`.
+1. Resolve the target with the `pr` tool's `target` action. Pass the user-named remote as `remote`.
+   Pass the user-named base, or the parent found by the [stack skill](../stack/SKILL.md), as `base`.
+   - If it finds no head remote or several, ask which remote to use and call it again. On any other
+     error, tell the user and stop.
+   - Use the returned `repository` as `--repo <repo>` for repository-scoped `gh` commands, `head`
+     for the push remote and branch, and `mergeBase` as the merge base.
+   - Use the open PR in `pr`. If `pr` is null and `closedPrs` lists merged or closed PRs, ask.
    - Outside a stack, when the branch conflicts with the base or needs a base change for its checks,
      rebase it locally with the update-branch skill and tell the user. Do not ask to approve the
      rebase, even when the branch was already pushed. The update-branch question about a dirty
      working tree still applies. Note the remote tip before the rebase as `<old-tip>`; step 8
      previews the force-push it needs. Stop the rebase and ask when a conflict needs a product
-     decision. Pin the merge base again after the rebase.
+     decision. Call `target` again after the rebase to pin the new merge base.
    - Read issues linked by the user, branch name, commits, and existing body with their service's
      CLI. Use returned issue IDs, not branch aliases. Note unreadable issues.
 
@@ -96,12 +79,8 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    - The session or saved `.tau/workers/review-*/` files show every worker reported (`reviewer.md`,
      or `finder.md` and `checker.md`), freshness passed, and no gaps remain besides areas a worker
      read shallowly. Unstated status is unknown; do not reuse it.
-   - Its base is the pinned merge base, and it covered the whole branch.
-   - Its saved `recheck.diff` has the recorded capture hash from `git hash-object`. Split it and
-     `git diff --no-ext-diff --no-color <merge base> HEAD` at each `diff --git` line. Each path's
-     section must be byte-identical, including mode, deletion, rename, and binary lines. Neither
-     side may have extra paths. Ignore path order: committed untracked files or new commits with
-     unchanged content can still match.
+   - It covered the whole branch, not only some of its commits.
+   - The `pr` tool's `reuse` action, given the review directory and the merge base, returns `match`.
    - Callers and rules outside the capture have no relevant changes.
 
    Otherwise run the [code-review skill](../code-review/SKILL.md) in fast mode on the range. If the
@@ -185,16 +164,9 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    - Read the remote stack again using the new PR's number. Check the passed numbers and their
      order. `gh stack view --json` reads only the local stack and cannot confirm linking.
 
-10. Check the published PR. Compare
-    `gh pr view <number> --repo <repo> --json url,title,body,baseRefName,isDraft,headRefOid` with
-    the preview and local HEAD. GitHub drops trailing body newlines, so compare the body with:
-
-    ```sh
-    diff <(printf '%s\n' "$(gh pr view <number> --repo <repo> --json body -q .body)") \
-      <(printf '%s\n' "$(cat <prdir>/body.md)")
-    ```
-
-    Report differences and the PR URL. Stop if the check fails or shows a difference.
+10. Check the published PR with the `pr` tool's `verify` action. Pass `$prdir` and the approved
+    repository, PR number, title, base, and draft status. Report each difference and the PR URL.
+    Stop if the call fails or shows a difference.
 
 11. Request a Codex review without asking. If this run created the PR, run
     `gh pr comment <number> --repo <repo> --body '@codex review'`. When a retry follows a partial

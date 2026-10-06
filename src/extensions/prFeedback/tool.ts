@@ -6,11 +6,11 @@ import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
 import type { Exec } from '../../exec.js';
-import { readGitOutput } from '../../gitOutput.js';
+import { parseRepository } from '../../github.js';
+import type { Runtime } from '../../github.js';
+import { findCheckoutRoot } from '../../gitOutput.js';
 import { checkTauDirectory, createFreshTauDirectory } from '../../tauDirectory.js';
 import { readChecks } from './checks.js';
-import { parseRepository } from './github.js';
-import type { Runtime } from './github.js';
 import { postReplies } from './post.js';
 import { readFeedback } from './read.js';
 import { writePullRequestRecord } from './replies.js';
@@ -55,17 +55,6 @@ const description = `Read a pull request's review feedback and checks on GitHub 
   comment may be null. Leave the other files in the directory alone. Reads the feedback again, then posts in file order: per thread the reply, then the resolve, and the PR comment last. A write goes to a person when its thread has fromPerson, or, for the PR comment, when it answers a review or comment from a person or answers nothing. When any write goes to a person, asks the user to confirm once; writes to bots only post without asking. Records each write in <directory>/posted.json as it succeeds, and a retry with the same directory skips recorded writes. When gh fails during a write, GitHub may still have it, so posted.json records it as uncertain. A retry reads GitHub first: an uncertain reply or PR comment counts as posted when you have a comment with the same text in that thread or on the pull request that was not there before the write; posted.json saves the IDs of the comments that were there as earlierCommentIds, and an uncertain resolve counts as posted when the thread is resolved. Any other uncertain write posts again. Returns {status: posted|declined|unchanged, posted, skipped}, each write with kind, thread, url, text, state, commentId, and earlierCommentIds. unchanged means every write was already posted.
   - Errors: a directory read did not return; a missing, malformed, or newer replies.json; a thread that is unknown, resolved, or listed twice; an entry with no reply and no resolve; a reply where viewerCanReply is false or a resolve where viewerCanResolve is false; an answers ID that is no review or comment; a stateToken that no longer matches, because a person added, edited, or deleted a comment (read again); planned writes that changed while the user answered the confirm, including writes another session posted (read again); a head that differs from the pull request head; or a write to a person with no UI. Nothing is posted in those cases. A failed write throws with posted, uncertain, and notPosted. When the error says the outcome is uncertain, retry with the same directory to reconcile it. When posted.json cannot record a posted write, the error names that write; add it to posted.json before a retry. A write where gh succeeded but printed output the tool cannot read counts as posted, with commentId null.`;
 
-const findRoot = async (cwd: string) => {
-  const output = await readGitOutput(cwd, ['rev-parse', '--show-toplevel']);
-  const root = output?.trim();
-
-  if (root === undefined || root === '') {
-    throw new Error(`The pr_feedback tool needs a Git checkout, and ${cwd} is not in one.`);
-  }
-
-  return root;
-};
-
 const parsePullRequestNumber = (action: string, pr: number | undefined) => {
   if (pr === undefined) {
     throw new Error(`${action} needs pr.`);
@@ -99,7 +88,7 @@ const feedbackDirectory = async (root: string, directory: string | undefined) =>
 };
 
 const post = async (runtime: Runtime, context: ExtensionContext, parameters: PrFeedbackInput) => {
-  const root = await findRoot(runtime.cwd);
+  const root = await findCheckoutRoot(runtime.cwd, 'pr_feedback');
   const directory = await feedbackDirectory(root, parameters.directory);
 
   if (parameters.stateToken === undefined) {
@@ -123,7 +112,7 @@ const read = async (runtime: Runtime, parameters: PrFeedbackInput) => {
 
   const repository = parseRepository(parameters.repository);
   const pr = parsePullRequestNumber('read', parameters.pr);
-  const root = await findRoot(runtime.cwd);
+  const root = await findCheckoutRoot(runtime.cwd, 'pr_feedback');
   const feedback = await readFeedback(runtime, repository, pr);
   const directory = await createFreshTauDirectory(root, feedbackPath, `${pr}-`);
 

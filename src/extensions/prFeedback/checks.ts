@@ -1,6 +1,8 @@
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { describeProblem } from '../../github.js';
+import type { Repository, Runtime } from '../../github.js';
 import {
   checkListEvidence,
   failedLogEvidence,
@@ -16,8 +18,7 @@ import type {
   CommandResult,
   LogExcerpt,
 } from './checkEvidence.js';
-import { describeProblem, readPullRequest } from './github.js';
-import type { Repository, Runtime } from './github.js';
+import { readPullRequest } from './github.js';
 
 type Check = CheckItem & { log?: LogExcerpt; gap?: CheckGap };
 

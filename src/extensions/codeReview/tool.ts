@@ -1,13 +1,12 @@
-import { appendFile, lstat, readFile } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { appendFile, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
-import { isMissingFile } from '../../errors.js';
-import { readGitOutput } from '../../gitOutput.js';
+import { findCheckoutRoot } from '../../gitOutput.js';
 import { readReviewEvidence } from '../../reviewCapture/evidence.js';
 import {
   inputFileName,
@@ -24,7 +23,13 @@ import {
   reviewTargetSchema,
 } from '../../reviewCapture/reviewCapture.js';
 import type { Gap, PinnedTarget, ReviewTarget } from '../../reviewCapture/reviewCapture.js';
-import { checkTauDirectory, createFreshTauDirectory } from '../../tauDirectory.js';
+import {
+  checkReviewDirectory,
+  existingEntry,
+  reviewPrefix,
+  workersPath,
+} from '../../reviewCapture/reviewDirectory.js';
+import { createFreshTauDirectory } from '../../tauDirectory.js';
 
 export const codeReviewToolParameters = Type.Object({
   action: Type.Union([
@@ -43,8 +48,6 @@ export const codeReviewToolParameters = Type.Object({
 
 export type CodeReviewInput = Static<typeof codeReviewToolParameters>;
 
-const workersPath = 'workers';
-const reviewPrefix = 'review-';
 const captureHeading = '## Capture';
 
 const description = `Capture a code review target, check that it is still fresh, and read its review evidence. Call it as the code-review skill directs.
@@ -53,79 +56,6 @@ const description = `Capture a code review target, check that it is still fresh,
 - freshness {directory}: captures the saved target again into directory/recheck.diff and compares its hash and HEAD with capture.json. Returns {status, reasons}: fresh when both match, stale when either differs, unknown when the recapture fails. reasons says what changed or failed. A failed recapture leaves no recheck.diff.
 - evidence {directory}: runs freshness, then reads the review evidence for the saved capture. It writes nothing else. Returns {target, base, head, hash, freshness, paths, tests, callers, rules, checks, gaps}. target, base, head, and hash come from capture.json, and freshness is the freshness result. paths lists the files the saved target captures now. A range reads source at to, a rootCommit at commit, and workingTree and files read the working tree. tests lists {path, lines: [{line, text}]} for each changed test file and the sibling *.test file of each changed source file that exists in the source; a deleted or renamed test path is no gap, since the capture shows it. callers lists {module, path, line, text} for each line outside test files and outside the module that imports a changed source module by a relative path through an import or export-from that starts its statement, a "} from" that starts its line, import(), or require(), outside a trailing comment that starts with // after whitespace. rules and checks list {path, status} for each code span or link path in the "## Rules" and "## Checks" sections of input.md, with status readable, missing, or unreadable. A range or rootCommit checks rule paths inside the repository at its pinned commit; check paths and paths outside the repository are checked on the filesystem. gaps lists every capture gap, plus {kind: "freshness", status, reasons} for a stale or unknown capture, {kind: "incompleteCapture", reasons}, {kind: "evidenceMismatch", recordedHash, evidenceHash} when the capture the evidence was read from does not match capture.json, even after a fresh result, {kind: "truncatedList", list, path?, kept, total}, {kind: "truncatedBody", path, limit, kept, total} for a body cut at its line or character limit, with kept and total in lines, {kind: "truncatedLine", path, line, kept, total} for a caller line text cut at its character limit, with kept and total in characters, {kind: "missing", path, section}, {kind: "unreadable", path}, also for a working tree test path that is a symlink, is not a regular file, or sits in a directory that resolves outside the repository, which is never read, {kind: "binary", path}, and {kind: "unsearched", path, reason} for each module of a failed caller search or malformed git grep output, and for a module whose name holds a newline, and {kind: "incompleteSearch", path, reason} for a caller search that skipped paths; its callers are kept. The result holds evidence only, never a verdict.
 Errors: a directory that is not .tau/workers/review-* or goes through a symlink, a revision that starts with - or that Git cannot resolve, a rootCommit with a parent, an input.md that does not end with "## Capture", a directory that already holds capture.json, any Git error during capture, and a missing, malformed, or newer capture.json for freshness and evidence, including a saved target revision that is not a full object name, named by its field. Nothing is written in those cases. The capture never changes staged contents, .git/index, or Git objects.`;
-
-const findRoot = async (cwd: string) => {
-  const output = await readGitOutput(cwd, ['rev-parse', '--show-toplevel']);
-  const root = output?.trim();
-
-  if (root === undefined || root === '') {
-    throw new Error(`The code_review tool needs a Git checkout, and ${cwd} is not in one.`);
-  }
-
-  return root;
-};
-
-const existingEntry = (path: string) =>
-  lstat(path).catch((error: unknown) => {
-    if (isMissingFile(error)) {
-      return undefined;
-    }
-
-    throw error;
-  });
-
-// A linked file could send the tool's writes, or the reviewer's reads, outside the repository.
-const rejectLinkedFile = async (path: string) => {
-  const entry = await existingEntry(path);
-
-  if (entry?.isSymbolicLink() === true) {
-    throw new Error(`Refusing to write through a symlink: ${path}`);
-  }
-
-  if (entry !== undefined && entry.nlink > 1) {
-    throw new Error(`Refusing a review file with another hard link: ${path}`);
-  }
-};
-
-const reviewName = (root: string, directory: string | undefined) => {
-  if (directory === undefined) {
-    throw new Error('capture, freshness, and evidence need the directory that prepare returned.');
-  }
-
-  const fromWorkers = relative(join(root, '.tau', workersPath), resolve(root, directory));
-  const outside = fromWorkers.startsWith('..') || isAbsolute(fromWorkers);
-  const nested = fromWorkers.includes('/') || fromWorkers.includes('\\');
-  const named = fromWorkers.startsWith(reviewPrefix) && fromWorkers.length > reviewPrefix.length;
-
-  if (outside || nested || !named) {
-    throw new Error(
-      `The review directory must be .tau/workers/review-* from prepare, not ${directory}.`,
-    );
-  }
-
-  return fromWorkers;
-};
-
-// Refuses a review directory that a link could send outside the checkout, and changes nothing.
-const checkReviewDirectory = async (root: string, directory: string | undefined) => {
-  const name = reviewName(root, directory);
-  const path = join(root, '.tau', workersPath, name);
-
-  await checkTauDirectory(root, `${workersPath}/${name}`);
-
-  const entry = await existingEntry(path);
-
-  if (entry?.isDirectory() !== true) {
-    throw new Error(`The review directory ${path} does not exist. Run prepare first.`);
-  }
-
-  for (const file of [inputFileName, recordFileName, recheckFileName]) {
-    // oxlint-disable-next-line no-await-in-loop -- three lstat calls; order keeps the first error stable.
-    await rejectLinkedFile(join(path, file));
-  }
-
-  return path;
-};
 
 const lastHeading = (text: string) =>
   text
@@ -243,10 +173,14 @@ const freshness = async (root: string, directory: string) => {
 };
 
 const runAction = async (cwd: string, parameters: CodeReviewInput): Promise<object> => {
-  const root = await findRoot(cwd);
+  const root = await findCheckoutRoot(cwd, 'code_review');
 
   if (parameters.action === 'prepare') {
     return { directory: await createFreshTauDirectory(root, workersPath, reviewPrefix) };
+  }
+
+  if (parameters.directory === undefined) {
+    throw new Error('capture, freshness, and evidence need the directory that prepare returned.');
   }
 
   const directory = await checkReviewDirectory(root, parameters.directory);

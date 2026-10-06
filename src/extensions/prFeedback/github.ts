@@ -1,29 +1,10 @@
 import { Type } from 'typebox';
-import type { Static, TSchema } from 'typebox';
-import { Value } from 'typebox/value';
+import type { Static } from 'typebox';
 
 import { errorMessage } from '../../errors.js';
-import type { Exec } from '../../exec.js';
+import { checkOutput, label, parseJson, readJson, run } from '../../github.js';
+import type { CheckOutput, Repository, Runtime } from '../../github.js';
 import type { IssueCommentItem, ReviewItem, ThreadNode } from './threads.js';
-
-export interface Repository {
-  host: string;
-  owner: string;
-  name: string;
-}
-
-export interface Runtime {
-  exec: Exec;
-  cwd: string;
-  signal: AbortSignal | undefined;
-}
-
-// TypeScript accepts an assertion arrow function only through a declared type.
-type CheckOutput = <Schema extends TSchema>(
-  commandArguments: readonly string[],
-  schema: Schema,
-  value: unknown,
-) => asserts value is Static<Schema>;
 
 const threadsQuery = `query ($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
@@ -57,8 +38,6 @@ const threadsQuery = `query ($owner: String!, $name: String!, $number: Int!, $en
 
 const resolveMutation =
   'mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }';
-
-const outputPreviewLength = 200;
 
 const graphqlAuthorSchema = Type.Union([
   Type.Object({ login: Type.String(), typename: Type.String() }),
@@ -166,74 +145,6 @@ export class UnreadWriteOutputError extends Error {
     this.name = 'UnreadWriteOutputError';
   }
 }
-
-const repositoryPart = /^[\w.-]+$/u;
-const hostPattern = /^[\w.-]+(?::\d+)?$/u;
-
-export const parseRepository = (repository: string): Repository => {
-  const [host = '', owner = '', name = '', ...rest] = repository.split('/');
-  const namesValid = repositoryPart.test(owner) && repositoryPart.test(name);
-
-  if (rest.length > 0 || !hostPattern.test(host) || !namesValid) {
-    throw new Error(
-      `repository must be <host>/<owner>/<name>, such as github.com/sQVe/tau, not ${repository}.`,
-    );
-  }
-
-  return { host, owner, name };
-};
-
-const isLongValue = (argument: string) =>
-  argument.startsWith('query=') || argument.startsWith('body=');
-
-const label = (commandArguments: readonly string[]) =>
-  ['gh', ...commandArguments.filter((argument) => !isLongValue(argument))].join(' ');
-
-const preview = (stdout: string) => stdout.slice(0, outputPreviewLength);
-
-const run = async (runtime: Runtime, commandArguments: string[]) => {
-  const result = await runtime.exec('gh', commandArguments, {
-    cwd: runtime.cwd,
-    ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
-  });
-
-  if (result.code !== 0 || result.killed) {
-    const output = (result.stderr || result.stdout).trim();
-
-    throw new Error(`${label(commandArguments)} failed: ${output}`);
-  }
-
-  return result.stdout;
-};
-
-export const describeProblem = (schema: TSchema, value: unknown): string => {
-  const [error] = Value.Errors(schema, value);
-
-  return error === undefined ? 'unknown problem' : `${error.instancePath || '/'} ${error.message}`;
-};
-
-const parseJson = (commandArguments: readonly string[], stdout: string): unknown => {
-  try {
-    return JSON.parse(stdout);
-  } catch (error) {
-    throw new Error(
-      `${label(commandArguments)} printed output that is not JSON: ${preview(stdout)}`,
-      { cause: error },
-    );
-  }
-};
-
-const readJson = async (runtime: Runtime, commandArguments: string[]): Promise<unknown> =>
-  parseJson(commandArguments, await run(runtime, commandArguments));
-
-// Names the command and the first field that does not match.
-const checkOutput: CheckOutput = (commandArguments, schema, value) => {
-  if (!Value.Check(schema, value)) {
-    throw new Error(
-      `${label(commandArguments)} printed unexpected output: ${describeProblem(schema, value)}`,
-    );
-  }
-};
 
 export const readViewer = async (runtime: Runtime, repository: Repository): Promise<string> => {
   const commandArguments = ['api', 'user', '--hostname', repository.host];

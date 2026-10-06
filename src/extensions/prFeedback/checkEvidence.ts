@@ -1,4 +1,4 @@
-import type { Repository } from './github.js';
+import type { Repository } from '../../github.js';
 
 export interface CheckItem {
   name: string;

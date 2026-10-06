@@ -17,7 +17,12 @@ import { promisify } from 'node:util';
 import { expect, it } from 'vitest';
 
 import { createTemporaryRepository } from '../tests/gitRepository.js';
-import { checkTauDirectory, createFreshTauDirectory, ensureTauDirectory } from './tauDirectory.js';
+import {
+  checkTauDirectory,
+  createFreshTauDirectory,
+  ensureTauDirectory,
+  locateTauChild,
+} from './tauDirectory.js';
 
 const isIgnored = async (repository: string, path: string) => {
   try {
@@ -277,3 +282,17 @@ it.for(['..', '.', ''])(
     expect(await readdir(root)).toEqual([]);
   },
 );
+
+it.each([
+  { directory: '.tau/pr/run-x', prefix: 'run-', place: { kind: 'child', name: 'run-x' } },
+  { directory: '.tau/pr/..run-x', prefix: '..run-', place: { kind: 'child', name: '..run-x' } },
+  { directory: '.tau/pr/..run-x', prefix: 'run-', place: { kind: 'unnamed' } },
+  { directory: '.tau/pr/run-', prefix: 'run-', place: { kind: 'unnamed' } },
+  { directory: '.tau/pr/run-x/body', prefix: 'run-', place: { kind: 'nested' } },
+  { directory: '.tau/pr/..', prefix: 'run-', place: { kind: 'outside' } },
+  { directory: '.tau/pr/../x', prefix: 'run-', place: { kind: 'outside' } },
+  { directory: String.raw`.tau/pr/..\x`, prefix: 'run-', place: { kind: 'outside' } },
+  { directory: '/elsewhere/run-x', prefix: 'run-', place: { kind: 'outside' } },
+])('places $directory with prefix $prefix as $place.kind', ({ directory, prefix, place }) => {
+  expect(locateTauChild('/repository', 'pr', prefix, directory)).toEqual(place);
+});

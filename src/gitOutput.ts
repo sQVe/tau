@@ -44,6 +44,19 @@ export const readGitOutput = async (
   }
 };
 
+// Resolves the top directory of the Git checkout that holds cwd. toolName names the caller in the
+// error.
+export const findCheckoutRoot = async (cwd: string, toolName: string): Promise<string> => {
+  const output = await readGitOutput(cwd, ['rev-parse', '--show-toplevel']);
+  const root = output?.trim();
+
+  if (root === undefined || root === '') {
+    throw new Error(`The ${toolName} tool needs a Git checkout, and ${cwd} is not in one.`);
+  }
+
+  return root;
+};
+
 // 1 GiB.
 const maxOutputBytes = 1_073_741_824;
 

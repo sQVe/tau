@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { expect, it } from 'vitest';
 
 import codeReviewExtension from '../src/extensions/codeReview/codeReview.js';
+import prExtension from '../src/extensions/pr/pr.js';
 import prFeedbackExtension from '../src/extensions/prFeedback/prFeedback.js';
 import sliceExtension from '../src/extensions/slice/slice.js';
 import tauSkillsExtension from '../src/extensions/tauSkills/tauSkills.js';
@@ -14,6 +15,7 @@ const skillsDirectory = resolve(import.meta.dirname, '../src/skills');
 
 it.each([
   { skill: 'slice', tool: 'slice' },
+  { skill: 'pr', tool: 'pr' },
   { skill: 'pr-feedback', tool: 'pr_feedback' },
   { skill: 'code-review', tool: 'code_review' },
   { skill: 'tracker', tool: 'tracker_evidence' },
@@ -29,6 +31,7 @@ it.each([
 
   tauSkillsExtension(fake.pi, skillsDirectory, skillTools);
   sliceExtension(fake.pi);
+  prExtension(fake.pi);
   prFeedbackExtension(fake.pi);
   codeReviewExtension(fake.pi);
   trackerExtension(fake.pi);

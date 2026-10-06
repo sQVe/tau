@@ -229,11 +229,15 @@ const pathspec = (target: ReviewTarget, skipped: string[] = []) => {
   return spec.length === 0 ? [] : ['--', ...spec];
 };
 
+// Settings such as diff.mnemonicPrefix and diff.noprefix change the header paths, so a saved
+// capture could not match a later diff of the same content.
+export const fixedPrefixes = ['--src-prefix=a/', '--dst-prefix=b/'];
+
 // The diff command for the target. `extra` adds options such as --numstat after the subcommand.
 // diff.autoRefreshIndex=false stops git diff from rewriting cached file metadata in .git/index,
 // and --no-textconv stops a cachetextconv driver from writing objects and notes refs.
 const diffArguments = (target: PinnedTarget, extra: string[], skipped: string[] = []) => {
-  const options = ['--no-ext-diff', '--no-textconv', '--no-color', ...extra];
+  const options = ['--no-ext-diff', '--no-textconv', '--no-color', ...fixedPrefixes, ...extra];
   const spec = pathspec(target, skipped);
 
   if (target.kind === 'range') {
@@ -443,7 +447,7 @@ const captureWholeFile = async (
   path: string,
   deleted: ReadonlySet<string>,
 ): Promise<Part> => {
-  const options = ['--no-ext-diff', '--no-textconv', '--no-color', '--no-index'];
+  const options = ['--no-ext-diff', '--no-textconv', '--no-color', ...fixedPrefixes, '--no-index'];
   const command = ['diff', ...options, '--', '/dev/null', path];
 
   try {
