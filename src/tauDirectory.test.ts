@@ -16,7 +16,7 @@ import { promisify } from 'node:util';
 
 import { expect, it } from 'vitest';
 
-import { createTemporaryRepository } from '../tests/gitRepository.js';
+import { createTemporaryBareRoot, createTemporaryRepository } from '../tests/gitRepository.js';
 import {
   checkTauDirectory,
   createFreshTauDirectory,
@@ -102,6 +102,50 @@ it('check refuses a hard-linked .tau/.gitignore', async ({ onTestFinished }) => 
 
   await expect(checkTauDirectory(root, 'slices')).rejects.toThrow('hard link');
 });
+
+it('prepares handovers in a bare repository root', async ({ onTestFinished }) => {
+  const root = await createTemporaryBareRoot(onTestFinished);
+
+  const directory = await ensureTauDirectory(root, 'handovers');
+
+  expect(directory).toBe(join(root, '.tau', 'handovers'));
+  expect((await lstat(directory)).isDirectory()).toBe(true);
+  expect(await readFile(join(root, '.tau', '.gitignore'), 'utf8')).toMatch(/\*\n$/);
+
+  const before = await listTree(root);
+  const ignoreBefore = await readFile(join(root, '.tau', '.gitignore'), 'utf8');
+
+  await expect(checkTauDirectory(root, 'handovers')).resolves.toBeUndefined();
+
+  expect(await listTree(root)).toEqual(before);
+  expect(await readFile(join(root, '.tau', '.gitignore'), 'utf8')).toBe(ignoreBefore);
+});
+
+it.for([
+  { content: undefined, error: /final \* rule/ },
+  { content: '*\n!handovers/message.md\n', error: /exception follows/ },
+])(
+  'checks a bare root with ignore content $content without writes',
+  async ({ content, error }, { onTestFinished }) => {
+    const root = await createTemporaryBareRoot(onTestFinished);
+    const ignoreFile = join(root, '.tau', '.gitignore');
+
+    await mkdir(join(root, '.tau'));
+
+    if (content !== undefined) {
+      await writeFile(ignoreFile, content);
+    }
+
+    const before = await listTree(root);
+
+    await expect(checkTauDirectory(root, 'handovers')).rejects.toThrow(error);
+
+    const ignoreAfter = await readFile(ignoreFile, 'utf8').catch(() => undefined);
+
+    expect(await listTree(root)).toEqual(before);
+    expect(ignoreAfter).toBe(content);
+  },
+);
 
 it('creates the directory and makes Git ignore everything in .tau', async ({ onTestFinished }) => {
   const repository = await createTemporaryRepository(onTestFinished);

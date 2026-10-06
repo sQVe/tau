@@ -41,17 +41,10 @@ Workers then carry out the agent tickets.
 - Never change a merged slice.
 - If a step fails partway, stop and report what completed. Read the draft and the slice's children
   before you retry anything.
-- Before you save the first file, create the draft directory inside an ignored `.tau/` from the
-  repository root. Use the slice's identifier in lower case as `<id>`, such as `eng-123`. Stop
-  unless the command prints `slicedir=`. Use the printed path as `$slicedir` for every file you
-  save. Never write scratch files to `/tmp` or another shared path.
-
-  ```sh
-  ! [ -L .tau ] && ! [ -L .tau/slices ] && ! [ -L .tau/slices/<id> ] && ! [ -L .tau/.gitignore ] &&
-    mkdir -p .tau/slices/<id> &&
-    { grep -qsx '\*' .tau/.gitignore || printf '\n*\n' >> .tau/.gitignore; } &&
-    git check-ignore -q .tau/slices/<id>/start.md && echo "slicedir=.tau/slices/<id>"
-  ```
+- Before you save the first file, call the `slice` tool's `prepare` action with the slice's
+  identifier in lower case, such as `me-537`. Use the returned `directory` as `$slicedir` for every
+  file you save. Save no file until the tool has prepared the directory. Never write scratch files
+  to `/tmp` or another shared path.
 
 ## Procedure
 

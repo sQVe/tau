@@ -48,12 +48,10 @@ commit another worktree from your session, even over bash.
      clearly shows a shell prompt, run `herdr agent start <worktree-name> --kind pi --pane <pane>`
      and use the `pane_id` it returns.
    - With several panes in the first tab, or without a clear shell prompt, ask the user.
-2. Write the message with the file tool to
-   `<session-directory>/.tau/handovers/<your-pane>-<timestamp>.md`.
-   - The session directory is your worktree or the bare repository root. Take your pane from
-     `HERDR_PANE_ID`.
-   - First make sure `.tau/.gitignore` has a `*` line, adding it if needed, so `.tau/` stays out of
-     Git.
+2. Call the `handover` tool's `prepare` action in your worktree or the bare repository root. Write
+   the message with the file tool to `<directory>/<your-pane>-<timestamp>.md`, using the returned
+   `directory`. Save no file until the tool has prepared the directory.
+   - Take your pane from `HERDR_PANE_ID`.
    - Make the message self-contained: what to do, the state the receiver needs, and what it must not
      touch.
    - For implementation, give the plan status "agreed, nothing open" with the agreed scope.
