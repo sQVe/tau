@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it, onTestFinished } from 'vitest';
@@ -96,6 +96,8 @@ describe('read', () => {
 
     expect(result).toEqual({
       directory: result.directory,
+      feedback: join(result.directory, 'feedback.json'),
+      gaps: [],
       viewer: 'sqve',
       pr: {
         number: 7,
@@ -170,6 +172,51 @@ describe('read', () => {
     expect(result.stateToken).toMatch(/^[0-9a-f]{64}$/u);
 
     expect(await feedbackDirectories(root)).toHaveLength(1);
+  });
+
+  it('saves full feedback and returns bounded bodies and lists with gaps', async () => {
+    const { fake, read } = await setUp();
+    const body = 'a'.repeat(12_000);
+
+    fake.threads = [thread({ id: 'thread-long', comments: [{ id: 101, author: person, body }] })];
+    fake.reviews = [{ id: 201, author: person, state: 'COMMENTED', body }];
+
+    fake.comments = Array.from({ length: 30 }, (_, index) => ({
+      id: 301 + index,
+      author: person,
+      body,
+    }));
+
+    const result = await read();
+
+    const saved = JSON.parse(await readFile(String(result.feedback), 'utf8')) as {
+      stateToken: string;
+      comments: { body: string }[];
+      threads: { comments: { body: string }[] }[];
+      reviews: { body: string }[];
+    };
+
+    expect(result.feedback).toBe(join(result.directory, 'feedback.json'));
+    expect(JSON.stringify(result, null, 2).length).toBeLessThanOrEqual(40_000);
+    expect(saved.stateToken).toBe(result.stateToken);
+    expect(saved.comments).toHaveLength(30);
+    expect(saved.comments[29]?.body).toBe(body);
+    expect(saved.threads[0]?.comments[0]?.body).toBe(body);
+    expect(saved.reviews[0]?.body).toBe(body);
+
+    expect(result.gaps).toEqual(
+      expect.arrayContaining([
+        { kind: 'truncatedBody', list: 'threads', id: 101, kept: 4000, total: 12_000 },
+        { kind: 'truncatedBody', list: 'reviews', id: 201, kept: 4000, total: 12_000 },
+        expect.objectContaining({ kind: 'truncatedList', list: 'comments', total: 30 }),
+      ]),
+    );
+
+    fake.comments[29] = { id: 330, author: person, body: `${body}changed outside the excerpt` };
+
+    const next = await read();
+
+    expect(next.stateToken).not.toBe(result.stateToken);
   });
 
   it('returns a new stateToken only after a person comments', async () => {

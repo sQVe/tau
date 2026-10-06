@@ -1,7 +1,20 @@
 import { expect, it } from 'vitest';
 
-import { checkListEvidence, failedLogEvidence, isFailing, jobOf } from './checkEvidence.js';
-import type { CheckItem, CheckListValidation, CommandResult } from './checkEvidence.js';
+import {
+  boundChecks,
+  checkListEvidence,
+  failedLogEvidence,
+  isFailing,
+  jobOf,
+} from './checkEvidence.js';
+import type {
+  Check,
+  CheckGap,
+  CheckItem,
+  CheckListValidation,
+  CommandResult,
+  PullRequestChecks,
+} from './checkEvidence.js';
 
 const repository = { host: 'github.com', owner: 'sQVe', name: 'tau' };
 
@@ -33,6 +46,106 @@ const validCheckList: CheckListValidation = (value) =>
     : { problem: 'printed unexpected output' };
 
 const listOutput = JSON.stringify([failingCheck]);
+
+const fullChecks = (checks: Check[]): PullRequestChecks => ({
+  pr: 7,
+  checks,
+  gaps: checks.flatMap((check) => (check.gap === undefined ? [] : [check.gap])),
+});
+
+const failureGap: CheckGap = {
+  check: failingCheck.name,
+  command: logCommand,
+  code: 1,
+  stderr: 'failed',
+  reason: 'The log could not be read.',
+};
+
+const largeGap = { ...failureGap, stderr: 'x'.repeat(15_000) };
+const boundaryCheck = { ...failingCheck, log: { excerpt: '', omittedLines: 0 } };
+const boundaryOverhead = JSON.stringify(fullChecks([boundaryCheck]), null, 2).length;
+
+const boundaryResult = fullChecks([
+  { ...boundaryCheck, log: { excerpt: 'x'.repeat(40_000 - boundaryOverhead), omittedLines: 0 } },
+]);
+
+it.each([
+  { name: 'a short result', full: fullChecks([{ ...failingCheck, gap: failureGap }]) },
+  { name: 'the exact serialized limit', full: boundaryResult },
+  {
+    name: 'a failed check-list command',
+    full: { pr: 7, checks: [], gaps: [{ ...failureGap, check: null }] },
+  },
+])('keeps $name intact', ({ full }) => {
+  expect(boundChecks(full, listCommand)).toEqual(full);
+});
+
+it.each([
+  {
+    name: 'escaped log text',
+    full: fullChecks([
+      { ...failingCheck, log: { excerpt: '\u0000'.repeat(20_000), omittedLines: 0 } },
+      failingCheck,
+    ]),
+    kept: 0,
+    total: 2,
+    list: 'checks',
+  },
+  {
+    name: 'oversized check metadata',
+    full: fullChecks([{ ...failingCheck, workflow: 'x'.repeat(40_000) }, failingCheck]),
+    kept: 0,
+    total: 2,
+    list: 'checks',
+  },
+  {
+    name: 'duplicated error gaps',
+    full: fullChecks([
+      { ...failingCheck, gap: largeGap },
+      { ...failingCheck, name: 'second', gap: largeGap },
+    ]),
+    kept: 1,
+    total: 2,
+    list: 'checks',
+  },
+  {
+    name: 'an oversized check-list gap',
+    full: { pr: 7, checks: [], gaps: [{ ...failureGap, check: null, reason: 'x'.repeat(40_000) }] },
+    kept: 0,
+    total: 1,
+    list: 'gaps',
+  },
+])('bounds $name including its recovery gap', ({ full, kept, total, list }) => {
+  const original = structuredClone(full);
+  const bounded = boundChecks(full, listCommand);
+
+  expect(JSON.stringify(bounded, null, 2).length).toBeLessThanOrEqual(40_000);
+  expect(bounded.checks).toEqual(full.checks.slice(0, kept));
+
+  expect(bounded.gaps).toContainEqual(
+    expect.objectContaining({
+      kind: 'truncatedList',
+      list,
+      kept,
+      total,
+      command: listCommand,
+    }),
+  );
+
+  expect(bounded.gaps.slice(1)).toEqual(
+    full.checks.slice(0, kept).flatMap((check) => (check.gap === undefined ? [] : [check.gap])),
+  );
+
+  expect(full).toEqual(original);
+});
+
+it('refuses an oversized recovery command without changing the evidence', () => {
+  const full = fullChecks([{ ...failingCheck, workflow: 'x'.repeat(40_000) }]);
+  const original = structuredClone(full);
+
+  expect(() => boundChecks(full, 'x'.repeat(40_000))).toThrow('recovery command');
+  expect(full).toEqual(original);
+});
 
 it.each([
   { bucket: 'pass', failing: false },
@@ -189,9 +302,36 @@ it.each([
     excerpt: { excerpt: longLastLine.slice(-20_000), omittedLines: 1 },
   },
 ])('keeps a bounded excerpt of $name', ({ log, excerpt }) => {
-  expect(failedLogEvidence(failingCheck, result(logCommand, { stdout: log }))).toEqual({
+  expect(failedLogEvidence(failingCheck, result(logCommand, { stdout: log }), 30_000)).toEqual({
     log: excerpt,
   });
+});
+
+it.each([
+  { name: 'no remaining budget', remaining: 0, excerpt: '', omittedLines: 3, limited: true },
+  { name: 'a partial last line', remaining: 2, excerpt: 'rd', omittedLines: 2, limited: true },
+  { name: 'one full line', remaining: 5, excerpt: 'third', omittedLines: 2, limited: true },
+  {
+    name: 'the full log',
+    remaining: 18,
+    excerpt: 'first\nsecond\nthird',
+    omittedLines: 0,
+    limited: false,
+  },
+])('keeps the log tail with $name', ({ remaining, excerpt, omittedLines, limited }) => {
+  const evidence = failedLogEvidence(
+    failingCheck,
+    result(logCommand, { stdout: 'first\nsecond\nthird\n' }),
+    remaining,
+  );
+
+  const expected = {
+    excerpt,
+    omittedLines,
+    ...(limited ? { budgetLimited: true, command: logCommand } : {}),
+  };
+
+  expect(evidence).toEqual({ log: expected });
 });
 
 it.each([
@@ -215,7 +355,7 @@ it.each([
     },
   },
 ])('returns a gap, not a log, for $name', ({ command, gap }) => {
-  expect(failedLogEvidence(failingCheck, command)).toEqual({
+  expect(failedLogEvidence(failingCheck, command, 30_000)).toEqual({
     gap: { check: 'test', command: logCommand, ...gap },
   });
 });
