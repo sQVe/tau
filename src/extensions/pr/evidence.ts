@@ -90,11 +90,33 @@ const hashOutput = async (root: string, commandArguments: string[]) => {
   return createHash('sha256').update(bytes).digest('hex');
 };
 
-const readCheckIdentity = async (root: string, target: Target): Promise<CheckIdentity> => ({
+const readCheckIdentity = async (root: string, mergeBase: string): Promise<CheckIdentity> => ({
   head: await readGit(root, ['rev-parse', 'HEAD']),
   status: await hashOutput(root, ['status', '--porcelain']),
-  diff: await hashOutput(root, ['diff', target.mergeBase, 'HEAD']),
+  diff: await hashOutput(root, ['diff', mergeBase, 'HEAD']),
 });
+
+export const readCheckHeader = async (
+  root: string,
+  mergeBase: string | undefined,
+): Promise<{ lines: string[] }> => {
+  if (mergeBase === undefined) {
+    throw new Error('checkHeader needs mergeBase.');
+  }
+
+  const commit = await readGit(root, [
+    'rev-parse',
+    '--verify',
+    '--end-of-options',
+    `${mergeBase}^{commit}`,
+  ]);
+
+  const identity = await readCheckIdentity(root, commit);
+
+  return {
+    lines: [`HEAD: ${identity.head}`, `Status: ${identity.status}`, `Diff: ${identity.diff}`],
+  };
+};
 
 const readDirectory = async (path: string) => {
   try {
@@ -155,7 +177,7 @@ const readChecks = async (root: string, evidence: PublicationEvidence) => {
 
   if (evidence.target !== null) {
     try {
-      current = await readCheckIdentity(root, evidence.target);
+      current = await readCheckIdentity(root, evidence.target.mergeBase);
     } catch (error) {
       evidence.gaps.push(readFailure('checks', error));
     }

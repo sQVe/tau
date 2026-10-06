@@ -116,24 +116,9 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      branch above changed by restacking, because step 9 pushes them all. After later commits,
      restack and rerun affected checks before previewing.
    - Save real output, never a summary, as `$prdir/checks/<name>.log`. Create `checks` under the
-     prepared directory. Before the run, record the first three lines in this order: `HEAD: <sha>`,
-     `Status: <sha256>`, `Diff: <sha256>`. Use these commands for their values, substituting the
-     pinned merge base for `<mergeBase>`:
-
-     ```sh
-     git rev-parse HEAD
-     ```
-
-     ```sh
-     node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:child_process").execFileSync("git", ["status", "--porcelain"])).digest("hex") + "\n")'
-     ```
-
-     ```sh
-     node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:child_process").execFileSync("git", ["diff", process.argv[1], "HEAD"])).digest("hex") + "\n")' '<mergeBase>'
-     ```
-
-     Hash the exact output bytes, including trailing newlines; do not hash trimmed shell output.
-     Stop if a header command fails. Append the check's output and exit status after the headers.
+     prepared directory. Before the run, call the `pr` tool's `checkHeader` action with the pinned
+     merge base as `mergeBase`. Write its returned lines at the top of the log, then append the
+     check's output and exit status. Stop if the action fails.
 
    - Rerun the evidence script before reusing saved checks. A match only binds the recorded inputs;
      it does not prove success or detect every edit to an already dirty file. Rerun affected checks

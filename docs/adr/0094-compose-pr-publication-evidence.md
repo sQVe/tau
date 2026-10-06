@@ -26,9 +26,11 @@ freshness recapture. It writes no other worktree files.
 
 Check logs carry three initial header lines: `HEAD: <sha>`, `Status: <hash>`, and `Diff: <hash>`.
 Status and diff hashes use SHA-256 over the exact output bytes of `git status --porcelain` and
-`git diff <mergeBase> HEAD`, including trailing newlines. A caller records them before its check.
-Explicit byte hashing avoids shell whitespace changes and works independently of Git's object
-format. A missing or malformed header cannot establish a match.
+`git diff <mergeBase> HEAD`, including trailing newlines. A caller asks the `pr` tool's read-only
+`checkHeader` action for the lines and records them before its check. Header production and evidence
+matching share one identity reader, so byte handling and Git output limits cannot drift. Explicit
+byte hashing avoids shell whitespace changes and works independently of Git's object format. A
+missing or malformed header cannot establish a match.
 
 A matching identity means the log belongs to those inputs, not that its check passed. The action
 returns bounded tails from matching logs and reports any cut. The skill keeps the publication
@@ -60,6 +62,11 @@ to repeat the same mechanics and failure handling.
 
 Use one publication-specific Git and review reader. Rejected because separate implementations can
 assign different meanings to the same saved review.
+
+### Compute headers in the skill
+
+Give the skill scripts that hash Git output. Rejected because they duplicate the reader's mechanics
+and can use different output limits, failing on diffs the evidence reader can handle.
 
 ### Match logs by head or timestamp only
 

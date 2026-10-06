@@ -7,7 +7,7 @@ import type { Exec } from '../../exec.js';
 import type { Runtime } from '../../github.js';
 import { findCheckoutRoot } from '../../gitOutput.js';
 import { createFreshTauDirectory } from '../../tauDirectory.js';
-import { readPublicationEvidence } from './evidence.js';
+import { readCheckHeader, readPublicationEvidence } from './evidence.js';
 import { readReuse } from './reuse.js';
 import { readTarget } from './target.js';
 import { readVerify, runPath, runPrefix } from './verify.js';
@@ -17,6 +17,7 @@ export const prToolParameters = Type.Object({
     Type.Literal('prepare'),
     Type.Literal('target'),
     Type.Literal('evidence'),
+    Type.Literal('checkHeader'),
     Type.Literal('reuse'),
     Type.Literal('verify'),
   ]),
@@ -41,7 +42,9 @@ export const prToolParameters = Type.Object({
     }),
   ),
   mergeBase: Type.Optional(
-    Type.String({ description: 'reuse: the merge base of the branch, such as target returns.' }),
+    Type.String({
+      description: 'reuse, checkHeader: the merge base of the branch, such as target returns.',
+    }),
   ),
   repository: Type.Optional(
     Type.String({ description: 'verify: the base repository as <host>/<owner>/<name>.' }),
@@ -68,6 +71,9 @@ const description = `Prepare a pull request run, resolve its target, check wheth
   - Returns {target, branch, subjects, reuse, review, checks, gaps}. target is the unchanged target result, including pr and closedPrs. branch is the local branch name; subjects lists commit subjects in <mergeBase>..HEAD. reuse is the unchanged reuse result. review is the unchanged ReviewEvidence result, including freshness and its gaps. Unavailable objects are null.
   - Reads .tau/pr/run-*/checks/*.log in this worktree. The first three lines must be HEAD: <sha>, Status: <hash>, and Diff: <hash>. Status and Diff are SHA-256 of the exact output bytes of git status --porcelain and git diff <mergeBase> HEAD, including trailing newlines. HEAD is git rev-parse HEAD. Each check returns {path, matches, reasons, excerpt, truncated}. Only all three equal values give matches: true; that does not imply the check passed. Matching excerpts keep the last 20 lines, capped at 4000 characters. Nonmatching excerpts are null.
   - Gaps include noReview, noChecks, failed reads with their errors, reuseMismatch, wrapped reviewEvidence gaps, check header or identity mismatches, and checkExcerpt cuts. A target error becomes a gap; reads that need its merge base are skipped. Each review read can fail without hiding the other. Linked directories and nonregular log files are not read. Errors before collection, such as no Git checkout, throw.
+- action checkHeader {mergeBase}: reads the current check identity using the same reader as evidence. It writes nothing, does not fetch, and makes no GitHub calls. Call before a check and save its lines before the check's output.
+  - Resolves mergeBase to a commit. Returns {lines}, the three header lines in order: HEAD: <sha>, Status: <sha256>, Diff: <sha256>. Each line has no trailing newline. Join them with newlines and add a final newline before appending check output. Uses the exact-byte hashes described by evidence and accepts up to 1 GiB of output per Git command.
+  - Errors: missing mergeBase, a mergeBase that cannot resolve to a commit, no Git checkout, or any failed Git read. No partial header is returned.
 - action reuse {directory, mergeBase}: checks whether the saved code review in directory covers git diff <mergeBase> HEAD. It writes nothing.
   - Reads directory/capture.json and directory/recheck.diff, which code_review freshness writes.
   - Splits recheck.diff and git diff --no-ext-diff --no-textconv --no-color <mergeBase> HEAD at each "diff --git" line. Each path's section must be byte-identical, including mode, deletion, rename, and binary lines, and neither side may have an extra path. Path order does not matter.
@@ -120,6 +126,12 @@ const runAction = async (
 
   if (parameters.action === 'verify') {
     return verify(runtime, parameters);
+  }
+
+  if (parameters.action === 'checkHeader') {
+    const root = await findCheckoutRoot(cwd, 'pr');
+
+    return readCheckHeader(root, parameters.mergeBase);
   }
 
   if (parameters.action === 'evidence') {

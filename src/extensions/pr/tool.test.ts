@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { link, mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
@@ -10,6 +10,7 @@ import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { createGhFake } from './fixtures/ghFake.js';
 import type { FakePullRequest, GhFake } from './fixtures/ghFake.js';
+import { readGitBytes } from './git.js';
 import { createPrTool } from './tool.js';
 import type { PrInput } from './tool.js';
 
@@ -129,6 +130,78 @@ it('returns publication evidence through the tool', async () => {
     gaps: [{ kind: 'noReview' }, { kind: 'noChecks' }],
   });
 });
+
+it('makes a check log match evidence for a committed diff over 1 MiB', async () => {
+  const { root, forkPoint, fake, run } = await setUp();
+  const content = 'a line of committed content\n'.repeat(80_000);
+
+  await writeFile(join(root, 'large.txt'), content);
+  await git(root, 'add', 'large.txt');
+  await git(root, 'commit', '--quiet', '-m', 'large change');
+  await pushFeature(root);
+
+  const diff = await readGitBytes(root, ['diff', forkPoint, 'HEAD']);
+
+  expect(diff.length).toBeGreaterThan(1_048_576);
+
+  const { directory } = await run({ action: 'prepare' });
+  const checks = join(String(directory), 'checks');
+
+  await mkdir(checks);
+  await writeFile(join(root, 'large.txt'), `${content}dirty\n`);
+
+  const files = await readdir(root, { recursive: true });
+  const status = await git(root, 'status', '--porcelain');
+  const head = await git(root, 'rev-parse', 'HEAD');
+  const header = await run({ action: 'checkHeader', mergeBase: forkPoint });
+
+  expect(header['lines']).toHaveLength(3);
+  expect(await readdir(root, { recursive: true })).toEqual(files);
+  expect(await git(root, 'status', '--porcelain')).toBe(status);
+  expect(await git(root, 'rev-parse', 'HEAD')).toBe(head);
+  expect(fake.calls).toEqual([]);
+
+  const path = join(checks, 'test.log');
+  const lines = header['lines'] as string[];
+
+  await writeFile(path, `${lines.join('\n')}\ntests passed\n`);
+
+  const evidence = await run({ action: 'evidence' });
+
+  expect(evidence['checks']).toEqual([
+    { path, matches: true, reasons: [], excerpt: 'tests passed', truncated: false },
+  ]);
+});
+
+it.each([
+  { name: 'a missing mergeBase', mergeBase: undefined, error: 'checkHeader needs mergeBase.' },
+  { name: 'an unknown revision', mergeBase: 'missing-commit', error: /^git rev-parse .* failed:/u },
+  {
+    name: 'a tree instead of a commit',
+    mergeBase: 'HEAD^{tree}',
+    error: /^git rev-parse .* failed:/u,
+  },
+])(
+  'refuses check headers for $name without changing the checkout',
+  async ({ mergeBase, error }) => {
+    const { root, fake, run } = await setUp();
+    const files = await readdir(root, { recursive: true });
+    const head = await git(root, 'rev-parse', 'HEAD');
+    const status = await git(root, 'status', '--porcelain');
+
+    const input: PrInput = {
+      action: 'checkHeader',
+      ...(mergeBase === undefined ? {} : { mergeBase }),
+    };
+
+    await expect(run(input)).rejects.toThrow(error);
+
+    expect(await readdir(root, { recursive: true })).toEqual(files);
+    expect(await git(root, 'rev-parse', 'HEAD')).toBe(head);
+    expect(await git(root, 'status', '--porcelain')).toBe(status);
+    expect(fake.calls).toEqual([]);
+  },
+);
 
 it('bases a branch with no pull request on the default branch', async () => {
   const { root, forkPoint, run } = await setUp();
