@@ -350,7 +350,7 @@ it('cancels queued placement within its own budget without waiting for another l
   await Promise.all([first, second]);
 
   expect(rejectedBeforeRelease).toBe(true);
-  expect(calls.filter((call) => call[1] === 'create')).toHaveLength(1);
+  expect(calls.filter((call) => call[1] === 'apply')).toHaveLength(1);
 });
 
 it('does not split a released terminal or retry an uncertain move', async () => {

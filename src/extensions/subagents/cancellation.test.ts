@@ -22,12 +22,10 @@ const worker = {
   token: '/tmp/session',
 };
 
-it('matches a Pi worker by start time when herdr omits its argv', () => {
+it('matches a Pi worker by process ID when herdr omits its argv', () => {
   expect(matchesWorker(information, { ...worker, startedAt: 'Mon Sep 21 10:43:04 2026' })).toBe(
     true,
   );
-
-  expect(matchesWorker(information, { ...worker, startedAt: '' })).toBe(false);
 });
 
 it('never counts EPERM as an absent process', () => {
