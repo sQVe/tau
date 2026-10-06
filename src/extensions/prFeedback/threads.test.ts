@@ -1,13 +1,8 @@
 import { expect, it } from 'vitest';
 
+import type { GraphqlAuthor, RestUser, ThreadCommentNode, ThreadNode } from './github.js';
 import { stateEntries, stateText } from './threads.js';
-import type {
-  Feedback,
-  GraphqlAuthor,
-  RestUser,
-  ThreadCommentNode,
-  ThreadNode,
-} from './threads.js';
+import type { Feedback } from './threads.js';
 
 const viewer = 'sqve';
 

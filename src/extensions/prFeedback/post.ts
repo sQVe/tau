@@ -17,7 +17,7 @@ import type { PullRequestFeedback } from './read.js';
 import { readPosted, readPullRequestRecord, readReplies, writePosted } from './replies.js';
 import type { PostedWrite, Replies } from './replies.js';
 import type { Thread } from './threads.js';
-import { personWrites, planWrites, settleWrites, targetCommentIds } from './writes.js';
+import { planWrites, settleWrites, targetCommentIds } from './writes.js';
 import type { PlannedWrite } from './writes.js';
 
 export interface PostInput {
@@ -442,7 +442,7 @@ export const postReplies = async (
     return { status: 'unchanged', posted: [], skipped };
   }
 
-  const toPeople = personWrites(writes);
+  const toPeople = writes.filter((write) => write.toPerson);
 
   if (toPeople.length > 0) {
     const confirmed = await confirmWithUser(context, {

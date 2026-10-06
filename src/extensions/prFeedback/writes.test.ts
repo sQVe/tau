@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import type { PostedWrite } from './replies.js';
 import type { Comment, Review, Thread } from './threads.js';
-import { personWrites, planWrites, settleWrites } from './writes.js';
-import type { RecordedWrite, SettleFacts, WriteFacts } from './writes.js';
+import { planWrites, settleWrites } from './writes.js';
+import type { SettleFacts, WriteFacts } from './writes.js';
 
 const thread = (id: string, change: Partial<Thread> = {}): Thread => ({
   id,
@@ -211,23 +212,6 @@ describe('planWrites', () => {
   });
 });
 
-describe('personWrites', () => {
-  it('keeps only the writes that go to a person', () => {
-    const writes = planWrites(
-      facts({
-        entries: [
-          { id: 'bot', reply: 'Done.', resolve: true },
-          { id: 'person', reply: null, resolve: true },
-        ],
-      }),
-    );
-
-    expect(personWrites(writes)).toEqual([
-      { kind: 'resolve', thread: 'person', url: url('person'), text: null, toPerson: true },
-    ]);
-  });
-});
-
 const viewerComment = (id: number, body: string, author = 'sqve') => ({
   id,
   author,
@@ -239,9 +223,9 @@ const viewerComment = (id: number, body: string, author = 'sqve') => ({
 });
 
 const recordedWrite = (
-  kind: RecordedWrite['kind'],
-  change: Partial<RecordedWrite> = {},
-): RecordedWrite => ({
+  kind: PostedWrite['kind'],
+  change: Partial<PostedWrite> = {},
+): PostedWrite => ({
   kind,
   thread: kind === 'comment' ? null : 'person',
   url: kind === 'comment' ? prUrl : url('person'),

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type { Repository, Runtime } from '../../github.js';
+import { repositoryName } from './checkEvidence.js';
 import {
   readIssueComments,
   readPullRequest,
@@ -48,8 +49,8 @@ export const readFeedback = async (
 
   const feedback = { viewer, threads: threadNodes, reviews: reviewItems, comments: commentItems };
 
-  const { host, owner, name } = repository;
-  const text = stateText(`${host}/${owner}/${name}#${pr}`, feedback);
+  const name = repositoryName(repository);
+  const text = stateText(`${name}#${pr}`, feedback);
   const token = createHash('sha256').update(text).digest('hex');
 
   return {

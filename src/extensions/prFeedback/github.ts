@@ -4,7 +4,7 @@ import type { Static } from 'typebox';
 import { errorMessage } from '../../errors.js';
 import { checkOutput, label, parseJson, readJson, run } from '../../github.js';
 import type { CheckOutput, Repository, Runtime } from '../../github.js';
-import type { IssueCommentItem, ReviewItem, ThreadNode } from './threads.js';
+import { repositoryName } from './checkEvidence.js';
 
 const threadsQuery = `query ($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
@@ -39,6 +39,7 @@ const threadsQuery = `query ($owner: String!, $name: String!, $number: Int!, $en
 const resolveMutation =
   'mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }';
 
+// The query reads `__typename` under the alias `typename`.
 const graphqlAuthorSchema = Type.Union([
   Type.Object({ login: Type.String(), typename: Type.String() }),
   Type.Null(),
@@ -59,6 +60,15 @@ const pullRequestSchema = Type.Object({
   headRefOid: Type.String(),
 });
 
+const threadCommentSchema = Type.Object({
+  databaseId: Type.Integer(),
+  author: graphqlAuthorSchema,
+  body: Type.String(),
+  url: Type.String(),
+  createdAt: Type.String(),
+  updatedAt: Type.String(),
+});
+
 const threadSchema = Type.Object({
   id: Type.String(),
   isResolved: Type.Boolean(),
@@ -69,17 +79,7 @@ const threadSchema = Type.Object({
   viewerCanResolve: Type.Boolean(),
   comments: Type.Object({
     pageInfo: Type.Object({ hasNextPage: Type.Boolean() }),
-    nodes: Type.Array(
-      Type.Object({
-        databaseId: Type.Integer(),
-        author: graphqlAuthorSchema,
-        body: Type.String(),
-        url: Type.String(),
-        createdAt: Type.String(),
-        updatedAt: Type.String(),
-      }),
-      { minItems: 1 },
-    ),
+    nodes: Type.Array(threadCommentSchema, { minItems: 1 }),
   }),
 });
 
@@ -95,28 +95,24 @@ const threadPagesSchema = Type.Array(
   }),
 );
 
-const reviewPagesSchema = Type.Array(
-  Type.Array(
-    Type.Object({
-      id: Type.Integer(),
-      user: restUserSchema,
-      state: Type.String(),
-      body: Type.String(),
-      html_url: Type.String(),
-    }),
-  ),
-);
+const reviewSchema = Type.Object({
+  id: Type.Integer(),
+  user: restUserSchema,
+  state: Type.String(),
+  body: Type.String(),
+  html_url: Type.String(),
+});
 
-const commentPagesSchema = Type.Array(
-  Type.Array(
-    Type.Object({
-      id: Type.Integer(),
-      user: restUserSchema,
-      body: Type.String(),
-      html_url: Type.String(),
-    }),
-  ),
-);
+const reviewPagesSchema = Type.Array(Type.Array(reviewSchema));
+
+const issueCommentSchema = Type.Object({
+  id: Type.Integer(),
+  user: restUserSchema,
+  body: Type.String(),
+  html_url: Type.String(),
+});
+
+const commentPagesSchema = Type.Array(Type.Array(issueCommentSchema));
 
 const createdCommentSchema = Type.Object({ id: Type.Integer() });
 
@@ -129,6 +125,12 @@ const resolvedThreadSchema = Type.Object({
 });
 
 export type PullRequest = Static<typeof pullRequestSchema>;
+export type GraphqlAuthor = Static<typeof graphqlAuthorSchema>;
+export type RestUser = Static<typeof restUserSchema>;
+export type ThreadCommentNode = Static<typeof threadCommentSchema>;
+export type ThreadNode = Static<typeof threadSchema>;
+export type ReviewItem = Static<typeof reviewSchema>;
+export type IssueCommentItem = Static<typeof issueCommentSchema>;
 
 // gh failed or was killed during a write, so GitHub may or may not have made it.
 export class UncertainWriteError extends Error {
@@ -165,7 +167,7 @@ export const readPullRequest = async (
     'view',
     String(pr),
     '--repo',
-    `${repository.host}/${repository.owner}/${repository.name}`,
+    repositoryName(repository),
     '--json',
     'number,url,state,author,headRefOid',
   ];

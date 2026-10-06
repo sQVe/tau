@@ -145,13 +145,7 @@ export const boundFeedback = (
   }
 
   for (const gap of gaps) {
-    if (gap.list === 'threads') {
-      appendList(result, gap, full.threads, result.threads);
-    } else if (gap.list === 'reviews') {
-      appendList(result, gap, full.reviews, result.reviews);
-    } else {
-      appendList(result, gap, full.comments, result.comments);
-    }
+    appendList<Thread | Review | Comment>(result, gap, full[gap.list], result[gap.list]);
   }
 
   return result;
