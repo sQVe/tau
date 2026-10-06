@@ -210,6 +210,10 @@ export const createFreshTauDirectory = async (
   return mkdtemp(join(parent, prefix));
 };
 
+// A relative path leaves its base only through a `..` segment. A name such as `..run-x` stays in.
+const climbsOut = (name: string) =>
+  name === '..' || name.startsWith('../') || name.startsWith('..\\');
+
 // Places directory against `<root>/.tau/<parentPath>`: a child is one segment directly in it that
 // starts with prefix and has more after it.
 export const locateTauChild = (
@@ -220,7 +224,7 @@ export const locateTauChild = (
 ): TauChild => {
   const name = relative(join(root, '.tau', parentPath), resolve(root, directory));
 
-  if (name.startsWith('..') || isAbsolute(name)) {
+  if (climbsOut(name) || isAbsolute(name)) {
     return { kind: 'outside' };
   }
 
