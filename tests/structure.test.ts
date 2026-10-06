@@ -46,6 +46,7 @@ const pureModules = [
   'src/extensions/tdd/configLayers.ts',
   'src/extensions/tracker/candidateFit.ts',
   'src/extensions/subagents/bashOutputCap.ts',
+  'src/extensions/subagents/capacityRefusal.ts',
   'src/extensions/subagents/compactionWorkers.ts',
   'src/extensions/subagents/incompleteReport.ts',
   'src/extensions/subagents/noticeDelivery.ts',

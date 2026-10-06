@@ -27,7 +27,7 @@ import * as records from '../records.js';
 import * as terminalModule from '../terminal.js';
 import { taskVersion } from '../types.js';
 import type { Loadout } from '../types.js';
-import { WorkerController } from './controller.js';
+import { WorkerCapacityFullError, WorkerController } from './controller.js';
 import { RequestNotSentError, workerArguments } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
 import type { WorkerPackageManager } from './packageInstall.js';
@@ -294,7 +294,7 @@ it('reserves capacity while a saved worker inspection is pending', async ({ onTe
   release.resolve(undefined);
   await resuming;
 
-  expect(launched).toBeInstanceOf(Error);
+  expect(launched).toBeInstanceOf(WorkerCapacityFullError);
   expect(String(launched)).toContain('capacity full');
   expect(readdirSync(fixture.directory)).toEqual(recordsBefore);
   expect(fixture.calls.filter((call) => call[0] === 'layout')).toHaveLength(startsBefore);

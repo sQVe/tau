@@ -13,8 +13,9 @@ import { appendSystemPrompt, appendToolGuidelines } from '../../systemPrompt.js'
 import type { ConfigLocation } from '../../tauConfig.js';
 import { isWorkerProcess } from '../../workerProcess.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
+import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.js';
 import { activeStates, compactionWorkerList } from './compactionWorkers.js';
-import { WorkerController } from './controller/controller.js';
+import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { historyPage, searchHistory } from './history.js';
 import { launchModels, resolveLoadout } from './loadout.js';
@@ -47,6 +48,7 @@ interface SubagentRuntime {
   pi: ExtensionAPI;
   getController: () => WorkerController;
   peekController: () => WorkerController | undefined;
+  refuseCapacity: () => void;
 }
 
 type NoticeDelivery = (
@@ -274,6 +276,21 @@ const evidenceResult = (error: unknown) => {
   };
 };
 
+const launchErrorResult = (runtime: SubagentRuntime, error: unknown) => {
+  if (error instanceof WorkerCapacityFullError) {
+    runtime.refuseCapacity();
+
+    return {
+      content: [{ type: 'text' as const, text: error.message }],
+      details: undefined,
+      isError: true,
+      terminate: true,
+    };
+  }
+
+  return evidenceResult(error);
+};
+
 const launchWorker = async (
   runtime: SubagentRuntime,
   parameters: LaunchParameters,
@@ -317,7 +334,7 @@ const launchWorker = async (
       signal,
     );
   } catch (error) {
-    return evidenceResult(error);
+    return launchErrorResult(runtime, error);
   }
 
   return {
@@ -357,7 +374,7 @@ const followUpWorker = async (
       signal,
     );
   } catch (error) {
-    return evidenceResult(error);
+    return launchErrorResult(runtime, error);
   }
 
   return {
@@ -726,6 +743,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
   let historyView: WorkerHistoryView | undefined;
   let historyOpen = false;
   let shuttingDown = false;
+  let capacityRefused = false;
 
   const runtime: SubagentRuntime = {
     pi,
@@ -735,6 +753,9 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
       return controller;
     },
     peekController: () => controller,
+    refuseCapacity: () => {
+      capacityRefused = true;
+    },
   };
 
   registerSubagentTools(runtime);
@@ -821,6 +842,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
 
   pi.on('session_start', async (_event, context) => {
     shuttingDown = false;
+    capacityRefused = false;
     sessionContext = context;
 
     // Project profiles and scoped models load only once the session's cwd and trust are known.
@@ -869,7 +891,19 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
     refreshWidget(context);
   });
 
+  pi.on('message_start', (event) => {
+    if (clearsCapacityRefusal(event.message)) {
+      capacityRefused = false;
+    }
+  });
+
   pi.on('tool_call', (event, context) => {
+    const capacityBlock = capacityRefusalBlock(capacityRefused);
+
+    if (capacityBlock) {
+      return capacityBlock;
+    }
+
     if (isNestedControlCall(event)) {
       return { block: true, reason: nestedControlCallReason };
     }

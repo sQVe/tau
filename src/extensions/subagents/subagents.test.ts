@@ -17,7 +17,7 @@ import { expect, it, vi, onTestFinished as finishTest } from 'vitest';
 
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository, initializeRepository } from '../../../tests/gitRepository.js';
-import { WorkerController } from './controller/controller.js';
+import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { fixtureModel } from './fixtures/controlledProvider.js';
 import type { WorkerNotice } from './presentation.js';
@@ -993,7 +993,9 @@ it('launches a Pi worker through the tool and refuses a launch outside herdr', a
   expect(Value.Check(reply.parameters, answer)).toBe(false);
   expect(Value.Check(reply.parameters, { ...answer, questionId: 'question' })).toBe(true);
 
-  await tool.execute('pi-call', input, undefined, undefined, context);
+  const result = await tool.execute('pi-call', input, undefined, undefined, context);
+
+  expect(result).not.toHaveProperty('terminate');
 
   expect(launch.mock.calls[0]?.[0].loadout).toMatchObject({
     harness: 'pi',
@@ -1380,6 +1382,87 @@ it('returns the unreadable-evidence object when status records fail', async ({
       nativeSessionFile: '/abs/records/task-1/session.jsonl',
     },
   });
+});
+
+it.each([
+  { name: 'subagent', method: 'launch' },
+  { name: 'subagent_follow_up', method: 'followUp' },
+] as const)('ends the turn when $name refuses a full worker cap', async ({ name, method }) => {
+  const { cwd } = emptyConfigContext();
+
+  finishTest(() => {
+    vi.restoreAllMocks();
+  });
+
+  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('HERDR_ENV', '1');
+  vi.stubEnv('HERDR_PANE_ID', 'parent');
+  vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
+
+  const refusal = new WorkerCapacityFullError('Worker capacity full');
+  const launch = vi.spyOn(WorkerController.prototype, method).mockRejectedValue(refusal);
+  const fake = fakeExtensionApi();
+
+  subagentsExtension(fake.pi);
+
+  const tool = fake.tools.get(name);
+
+  if (!tool) {
+    throw new Error('Missing worker tool.');
+  }
+
+  const input = {
+    profile: 'worker',
+    model: fixtureModelReference,
+    sourceTaskId: 'source',
+    task: 'Inspect fixture.',
+    timeoutSeconds: 10,
+  };
+
+  const context = launchContext(cwd);
+
+  const toolCall = (toolName: string) =>
+    fake.handler('tool_call')({ toolName, input: { command: 'pwd' } }, context);
+
+  expect(toolCall('bash')).toBeUndefined();
+
+  const result = await tool.execute('call', input, undefined, undefined, context);
+
+  expect(result).toMatchObject({
+    content: [{ type: 'text', text: refusal.message }],
+    isError: true,
+    terminate: true,
+  });
+
+  for (const toolName of ['bash', 'read', 'subagent', 'subagent_follow_up']) {
+    expect(toolCall(toolName)).toMatchObject({ block: true, terminate: true });
+  }
+
+  for (const message of [
+    { role: 'assistant' },
+    { role: 'toolResult' },
+    { role: 'custom', customType: 'unrelated' },
+  ]) {
+    await emitEvent(fake.handlers, 'message_start', { message }, context);
+    expect(toolCall('bash')).toMatchObject({ block: true, terminate: true });
+  }
+
+  for (const message of [{ role: 'custom', customType: 'tau-worker' }, { role: 'user' }]) {
+    await emitEvent(fake.handlers, 'message_start', { message }, context);
+    expect(toolCall('bash')).toBeUndefined();
+
+    await tool.execute('call', input, undefined, undefined, context);
+    expect(toolCall('bash')).toMatchObject({ block: true, terminate: true });
+  }
+
+  await emitEvent(fake.handlers, 'message_start', { message: { role: 'user' } }, context);
+
+  const otherError = new Error('Another launch failure');
+
+  launch.mockRejectedValue(otherError);
+
+  await expect(tool.execute('call', input, undefined, undefined, context)).rejects.toBe(otherError);
+  expect(toolCall('bash')).toBeUndefined();
 });
 
 const evidenceError = (taskId: string) =>
