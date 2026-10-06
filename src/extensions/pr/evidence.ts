@@ -1,14 +1,19 @@
 import { createHash } from 'node:crypto';
 import { constants, lstat, readFile, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
 import type { Runtime } from '../../github.js';
 import { readReviewEvidence } from '../../reviewCapture/evidence.js';
 import type { ReviewEvidence } from '../../reviewCapture/evidence.js';
 import { checkReviewDirectory } from '../../reviewCapture/reviewDirectory.js';
-import { checkLogGaps, matchCheckLog } from './evidenceDecisions.js';
-import type { CheckIdentity, CheckLog, PublicationGap } from './evidenceDecisions.js';
+import { checkLogGaps, matchCheckLog, selectLatestChecks } from './evidenceDecisions.js';
+import type {
+  CheckIdentity,
+  CheckLog,
+  ModifiedCheckLog,
+  PublicationGap,
+} from './evidenceDecisions.js';
 import { readGit, readGitBytes } from './git.js';
 import { readReuse } from './reuse.js';
 import type { ReuseResult } from './reuse.js';
@@ -136,9 +141,17 @@ const readDirectory = async (path: string) => {
   }
 };
 
-const readCheckLog = async (path: string, current: CheckIdentity | null): Promise<CheckLog> => {
+const readCheckLog = async (
+  path: string,
+  current: CheckIdentity | null,
+): Promise<ModifiedCheckLog> => {
+  let modifiedAt: number | null = null;
+  let check: CheckLog;
+
   try {
     const entry = await lstat(path);
+
+    modifiedAt = entry.mtimeMs;
 
     if (!entry.isFile()) {
       throw new Error(`Not a regular check log: ${path}`);
@@ -149,9 +162,9 @@ const readCheckLog = async (path: string, current: CheckIdentity | null): Promis
       flag: constants.O_RDONLY | constants.O_NOFOLLOW,
     });
 
-    return matchCheckLog(path, text, current);
+    check = matchCheckLog(path, text, current);
   } catch (error) {
-    return {
+    check = {
       path,
       matches: false,
       reasons: [{ field: 'read', reason: errorMessage(error) }],
@@ -159,6 +172,8 @@ const readCheckLog = async (path: string, current: CheckIdentity | null): Promis
       truncated: false,
     };
   }
+
+  return { name: basename(path), modifiedAt, check };
 };
 
 const readRunChecks = async (directory: string, current: CheckIdentity | null) => {
@@ -174,6 +189,7 @@ const readRunChecks = async (directory: string, current: CheckIdentity | null) =
 
 const readChecks = async (root: string, evidence: PublicationEvidence) => {
   let current: CheckIdentity | null = null;
+  const logs: ModifiedCheckLog[] = [];
 
   if (evidence.target !== null) {
     try {
@@ -201,7 +217,7 @@ const readChecks = async (root: string, evidence: PublicationEvidence) => {
         await readDirectory(runDirectory);
 
         // oxlint-disable-next-line no-await-in-loop -- read one run at a time and retain failures from each.
-        evidence.checks.push(...(await readRunChecks(join(runDirectory, 'checks'), current)));
+        logs.push(...(await readRunChecks(join(runDirectory, 'checks'), current)));
       } catch (error) {
         evidence.gaps.push(readFailure('checks', error));
       }
@@ -210,6 +226,7 @@ const readChecks = async (root: string, evidence: PublicationEvidence) => {
     evidence.gaps.push(readFailure('checks', error));
   }
 
+  evidence.checks = selectLatestChecks(logs);
   evidence.gaps.push(...checkLogGaps(evidence.checks));
 };
 

@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
-import { checkLogGaps, matchCheckLog } from './evidenceDecisions.js';
-import type { CheckIdentity } from './evidenceDecisions.js';
+import { checkLogGaps, matchCheckLog, selectLatestChecks } from './evidenceDecisions.js';
+import type { CheckIdentity, CheckLog, ModifiedCheckLog } from './evidenceDecisions.js';
 
 const current: CheckIdentity = {
   head: 'a'.repeat(40),
@@ -97,15 +97,102 @@ it.each([
   );
 });
 
-it('reports every nonmatching log and the absence of logs', () => {
-  const checks = [
-    matchCheckLog('old.log', log({ ...current, head: 'd'.repeat(40) }), current),
-    matchCheckLog('missing-header.log', 'passed', current),
-  ];
+it.each([
+  {
+    name: 'changed head',
+    check: matchCheckLog('check.log', log({ ...current, head: 'd'.repeat(40) }), current),
+    gap: false,
+  },
+  {
+    name: 'changed status',
+    check: matchCheckLog('check.log', log({ ...current, status: 'd'.repeat(64) }), current),
+    gap: false,
+  },
+  {
+    name: 'changed diff',
+    check: matchCheckLog('check.log', log({ ...current, diff: 'd'.repeat(64) }), current),
+    gap: false,
+  },
+  { name: 'missing header', check: matchCheckLog('check.log', 'passed', current), gap: true },
+  {
+    name: 'malformed header',
+    check: matchCheckLog('check.log', log({ ...current, head: 'broken' }), current),
+    gap: true,
+  },
+  { name: 'unavailable identity', check: matchCheckLog('check.log', log(), null), gap: true },
+])('reports a gap only for incomplete evidence: $name', ({ check, gap }) => {
+  const expected = gap ? [{ kind: 'check', path: check.path, reasons: check.reasons }] : [];
 
-  expect(checkLogGaps(checks)).toEqual(
-    checks.map((check) => ({ kind: 'check', path: check.path, reasons: check.reasons })),
-  );
+  expect(checkLogGaps([check])).toEqual(expected);
+});
 
+it('reports unreadable logs as gaps', () => {
+  const check: CheckLog = {
+    path: 'check.log',
+    matches: false,
+    reasons: [{ field: 'read', reason: 'access denied' }],
+    excerpt: null,
+    truncated: false,
+  };
+
+  expect(checkLogGaps([check])).toEqual([
+    { kind: 'check', path: check.path, reasons: check.reasons },
+  ]);
+});
+
+it('reports the absence of logs', () => {
   expect(checkLogGaps([])).toEqual([{ kind: 'noChecks' }]);
+});
+
+const savedLog = (run: string, modifiedAt: number | null, text = log()): ModifiedCheckLog => ({
+  name: 'test.log',
+  modifiedAt,
+  check: matchCheckLog(`${run}/test.log`, text, current),
+});
+
+const olderLog = savedLog('run-z', 100, log({ ...current, head: 'd'.repeat(40) }));
+const newerLog = savedLog('run-a', 200);
+const malformedLog = savedLog('run-b', 300, 'missing header');
+const unknownTimeLog = savedLog('run-unknown', null, 'unreadable');
+
+const otherCheck: ModifiedCheckLog = {
+  name: 'lint.log',
+  modifiedAt: 50,
+  check: matchCheckLog('run-other/lint.log', log(), current),
+};
+
+it.each([
+  { name: 'no logs', logs: [], selected: [] },
+  { name: 'one log', logs: [olderLog], selected: [olderLog.check] },
+  { name: 'newer matching log', logs: [olderLog, newerLog], selected: [newerLog.check] },
+  { name: 'reverse read order', logs: [newerLog, olderLog], selected: [newerLog.check] },
+  {
+    name: 'different check names',
+    logs: [olderLog, otherCheck, newerLog],
+    selected: [newerLog.check, otherCheck.check],
+  },
+  { name: 'newer malformed log', logs: [newerLog, malformedLog], selected: [malformedLog.check] },
+  {
+    name: 'newer mismatching log',
+    logs: [newerLog, { ...olderLog, modifiedAt: 300 }],
+    selected: [olderLog.check],
+  },
+  { name: 'unknown timestamp', logs: [unknownTimeLog, newerLog], selected: [unknownTimeLog.check] },
+  {
+    name: 'unknown timestamp read last',
+    logs: [newerLog, unknownTimeLog],
+    selected: [unknownTimeLog.check],
+  },
+  {
+    name: 'equal timestamps',
+    logs: [savedLog('run-a', 100), olderLog],
+    selected: [olderLog.check],
+  },
+  {
+    name: 'equal timestamps in reverse order',
+    logs: [olderLog, savedLog('run-a', 100)],
+    selected: [olderLog.check],
+  },
+])('selects the latest evidence per check name: $name', ({ logs, selected }) => {
+  expect(selectLatestChecks(logs)).toEqual(selected);
 });

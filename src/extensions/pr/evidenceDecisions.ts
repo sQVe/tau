@@ -19,6 +19,12 @@ export interface CheckLog {
   truncated: boolean;
 }
 
+export interface ModifiedCheckLog {
+  name: string;
+  modifiedAt: number | null;
+  check: CheckLog;
+}
+
 export type PublicationGap =
   | { kind: 'noReview' | 'noChecks' }
   | { kind: 'target' | 'branch' | 'subjects' | 'reuse' | 'review' | 'checks'; reason: string }
@@ -106,13 +112,51 @@ export const matchCheckLog = (
   return { path, matches: true, reasons: [], excerpt, truncated };
 };
 
+const isNewerLog = (candidate: ModifiedCheckLog, previous: ModifiedCheckLog) => {
+  if (candidate.modifiedAt === previous.modifiedAt) {
+    return candidate.check.path > previous.check.path;
+  }
+
+  // An unreadable timestamp cannot establish that this evidence was superseded.
+  if (candidate.modifiedAt === null) {
+    return true;
+  }
+
+  if (previous.modifiedAt === null) {
+    return false;
+  }
+
+  return candidate.modifiedAt > previous.modifiedAt;
+};
+
+export const selectLatestChecks = (logs: readonly ModifiedCheckLog[]): CheckLog[] => {
+  const latest = new Map<string, ModifiedCheckLog>();
+
+  for (const candidate of logs) {
+    const previous = latest.get(candidate.name);
+
+    if (previous === undefined || isNewerLog(candidate, previous)) {
+      latest.set(candidate.name, candidate);
+    }
+  }
+
+  return [...latest.values()]
+    .map((log) => log.check)
+    .toSorted((left, right) => left.path.localeCompare(right.path));
+};
+
+const hasEvidenceFailure = (check: CheckLog) =>
+  check.reasons.some(
+    (reason) => reason.field === 'header' || reason.field === 'read' || reason.field === 'current',
+  );
+
 export const checkLogGaps = (checks: readonly CheckLog[]): PublicationGap[] => {
   if (checks.length === 0) {
     return [{ kind: 'noChecks' }];
   }
 
   return checks.flatMap((check): PublicationGap[] => {
-    if (!check.matches) {
+    if (hasEvidenceFailure(check)) {
       return [{ kind: 'check', path: check.path, reasons: check.reasons }];
     }
 

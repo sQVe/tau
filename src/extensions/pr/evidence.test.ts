@@ -1,6 +1,15 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
@@ -260,12 +269,32 @@ it.each([
     },
   ]);
 
-  expect(evidence.gaps).toContainEqual({
-    kind: 'check',
-    path,
-    reasons: evidence.checks[0]?.reasons,
-  });
+  expect(evidence.gaps).toEqual([]);
 
+  expect(await readSavedFiles(root)).toEqual(before);
+});
+
+it('returns only the newest log for a check without gaps from superseded runs', async () => {
+  const { root, mergeBase, run } = await setUp();
+  const older = await saveCheck(root, mergeBase);
+  const currentLog = await readFile(older, 'utf8');
+  const newerDirectory = join(root, '.tau', 'pr', 'run-another', 'checks');
+  const newer = join(newerDirectory, 'test.log');
+
+  await writeFile(older, currentLog.replace(/^HEAD: .*$/mu, `HEAD: ${'0'.repeat(40)}`));
+  await mkdir(newerDirectory, { recursive: true });
+  await writeFile(newer, currentLog);
+  await utimes(older, 100, 100);
+  await utimes(newer, 200, 200);
+
+  const before = await readSavedFiles(root);
+  const evidence = await run();
+
+  expect(evidence.checks).toEqual([
+    { path: newer, matches: true, reasons: [], excerpt: 'tests passed', truncated: false },
+  ]);
+
+  expect(evidence.gaps).toEqual([]);
   expect(await readSavedFiles(root)).toEqual(before);
 });
 
@@ -317,6 +346,12 @@ it('rejects a check log without a header', async () => {
   expect(evidence.checks).toMatchObject([
     { path, matches: false, reasons: [{ field: 'header' }], excerpt: null },
   ]);
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'check',
+    path,
+    reasons: evidence.checks[0]?.reasons,
+  });
 });
 
 it('reports noChecks without creating a checks directory', async () => {
@@ -349,6 +384,13 @@ it('reports a failed target read and skips comparisons that need the merge base'
   ]);
 
   expect(evidence.gaps).toContainEqual({ kind: 'target', reason: expect.any(String) as unknown });
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'check',
+    path,
+    reasons: evidence.checks[0]?.reasons,
+  });
+
   expect(fake.calls).toHaveLength(1);
   expect(await readSavedFiles(root)).toEqual(before);
 });
@@ -402,4 +444,10 @@ it('does not follow linked check logs', async () => {
     { path: linked, matches: false, reasons: [{ field: 'read' }], excerpt: null },
     { path, matches: true },
   ]);
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'check',
+    path: linked,
+    reasons: evidence.checks[0]?.reasons,
+  });
 });

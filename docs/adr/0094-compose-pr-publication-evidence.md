@@ -32,6 +32,12 @@ matching share one identity reader, so byte handling and Git output limits canno
 byte hashing avoids shell whitespace changes and works independently of Git's object format. A
 missing or malformed header cannot establish a match.
 
+Only the newest log for each check file name counts, selected by the file's modification time. Older
+runs are history, not missing publication evidence. A changed identity prevents reuse but is not a
+gap. Unreadable logs, missing or malformed headers, and an unavailable current identity remain gaps.
+Modification times select which log to consider; content identities still decide whether that log
+can be reused.
+
 A matching identity means the log belongs to those inputs, not that its check passed. The action
 returns bounded tails from matching logs and reports any cut. The skill keeps the publication
 judgment.
