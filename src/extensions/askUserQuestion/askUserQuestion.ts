@@ -28,7 +28,7 @@ const optionSchema = Type.Object({
   preview: Type.Optional(
     Type.String({
       description:
-        'Optional preformatted example of what this option produces, shown when the option is focused. If one option of a question has a preview, every option needs one. See the tool description.',
+        'Optional preformatted example of what this option produces, shown when the option is focused. Options without one show no preview. See the tool description.',
     }),
   ),
 });
@@ -89,7 +89,7 @@ Usage notes:
 - If you recommend an option, put it first and set \`recommended: true\` on it. At most one option per question may be recommended. The answer returns the plain label.
 
 Preview feature:
-Add a \`preview\` to every option when the options change something you can show: a layout, a config file, a command, a code shape, output, or a draft. If one option has a preview, all options of that question need one; show the unchanged state for an option such as "Keep as is". Use the same example scenario in every preview and keep each one short, about 10 lines. Skip previews for plain preferences where the labels and descriptions suffice.
+Add a \`preview\` to an option when it changes something you can show: a layout, a config file, a command, a code shape, output, or a draft. Show the unchanged state for an option such as "Keep as is" when a comparison helps. An option with nothing to show, such as "Cancel", needs no preview. Use the same example scenario in every preview and keep each one short, about 10 lines. Skip previews for plain preferences where the labels and descriptions suffice.
 
 Preview content renders as preformatted text below the option list while its option is focused. The user can press Ctrl+O to see a long preview in full.
 
