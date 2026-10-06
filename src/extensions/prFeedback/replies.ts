@@ -7,8 +7,8 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
-import { parseRepository } from './github.js';
-import type { Repository } from './github.js';
+import { parseRepository } from '../../github.js';
+import type { Repository } from '../../github.js';
 
 export interface PullRequestRecord {
   repository: Repository;

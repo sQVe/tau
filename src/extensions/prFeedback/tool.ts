@@ -6,11 +6,11 @@ import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
 import type { Exec } from '../../exec.js';
+import { parseRepository } from '../../github.js';
+import type { Runtime } from '../../github.js';
 import { readGitOutput } from '../../gitOutput.js';
 import { checkTauDirectory, createFreshTauDirectory } from '../../tauDirectory.js';
 import { readChecks } from './checks.js';
-import { parseRepository } from './github.js';
-import type { Runtime } from './github.js';
 import { postReplies } from './post.js';
 import { readFeedback } from './read.js';
 import { writePullRequestRecord } from './replies.js';

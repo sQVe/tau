@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../errors.js';
+import type { Repository, Runtime } from '../../github.js';
 import {
   postIssueComment,
   postReply,
@@ -10,7 +11,6 @@ import {
   UncertainWriteError,
   UnreadWriteOutputError,
 } from './github.js';
-import type { Repository, Runtime } from './github.js';
 import { readFeedback } from './read.js';
 import type { PullRequestFeedback } from './read.js';
 import { readPosted, readPullRequestRecord, readReplies, writePosted } from './replies.js';

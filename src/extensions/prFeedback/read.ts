@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import type { Repository, Runtime } from '../../github.js';
 import {
   readIssueComments,
   readPullRequest,
@@ -7,7 +8,6 @@ import {
   readThreads,
   readViewer,
 } from './github.js';
-import type { Repository, Runtime } from './github.js';
 import {
   conversationComments,
   rejectLongThreads,
