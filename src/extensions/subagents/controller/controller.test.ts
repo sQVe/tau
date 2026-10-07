@@ -1185,6 +1185,36 @@ it('refuses follow-up without writes when a current task that looks retired name
   expect(fixture.calls).toEqual([['agent', 'list']]);
 });
 
+it.each([3, 4, 5, 6, 7])(
+  'refuses follow-up without writes when a malformed version %i task names the same predecessor',
+  async (version) => {
+    const fixture = await completed();
+    const directory = join(fixture.directory, 'malformed');
+    mkdirSync(directory);
+    const { monotonicDeadline: _monotonicDeadline, ...source } = fixture.source;
+
+    writeFileSync(
+      join(directory, 'task.json'),
+      JSON.stringify({
+        ...source,
+        taskId: 'malformed',
+        predecessorTaskId: fixture.source.taskId,
+        version,
+      }),
+    );
+
+    const saved = savedFiles(fixture.directory);
+    fixture.calls.length = 0;
+
+    await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
+      'Cannot verify saved follow-up attempts',
+    );
+
+    expect(savedFiles(fixture.directory)).toEqual(saved);
+    expect(fixture.calls).toEqual([['agent', 'list']]);
+  },
+);
+
 const saveNonPiTask = (root: string): void => {
   const directory = join(root, 'previous-generic');
   mkdirSync(directory);
