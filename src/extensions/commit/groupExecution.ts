@@ -6,6 +6,7 @@ import type { ExecResult, ExtensionAPI, ExtensionContext } from '@earendil-works
 import { errorMessage, isMissingFile } from '../../errors.js';
 import {
   currentHead,
+  isCommitAncestor,
   listCommitPaths,
   readIndex,
   readIndexEntries,
@@ -41,6 +42,7 @@ interface StagedBefore {
 interface GroupExecution {
   parameters: CommitInput['groups'][number];
   subject: string;
+  targetHash: string | undefined;
   temporaryDirectory: string;
   pi: Pick<ExtensionAPI, 'exec'>;
   context: ExtensionContext;
@@ -218,6 +220,15 @@ const snapshotStagedTree = async (run: GroupRun): Promise<boolean> => {
 
   if (run.signal?.aborted === true) {
     return false;
+  }
+
+  if (run.targetHash !== undefined) {
+    const targetInHistory =
+      head !== null && (await isCommitAncestor(run.pi, run.context.cwd, run.targetHash, head));
+
+    if (!targetInHistory) {
+      throw new Error('Fixup target is no longer an ancestor of the snapshot HEAD.');
+    }
   }
 
   await writeFile(run.messagePath, buildCommitMessage(run.subject, run.body), { mode: 0o600 });

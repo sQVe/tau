@@ -15,7 +15,7 @@ import {
   listStagedPaths,
   readIndexEntries,
   repositoryPathPrefix,
-  resolveFixupTargetSubject,
+  resolveFixupTarget,
   validateFileRequests,
 } from './gitCommands.js';
 import { executeGroup } from './groupExecution.js';
@@ -35,6 +35,11 @@ interface CommitToolRuntime {
   context: ExtensionContext;
   signal: AbortSignal | undefined;
 }
+
+type ResolvedGroup = CommitInput['groups'][number] & {
+  subject: string;
+  targetHash: string | undefined;
+};
 
 interface CommitToolResult {
   content: CommitSuccess['content'];
@@ -104,24 +109,25 @@ const validateGroupFileRequests = async (
 const resolveGroup = async (
   runtime: CommitToolRuntime,
   group: CommitInput['groups'][number],
-): Promise<CommitInput['groups'][number] & { subject: string }> => {
+): Promise<ResolvedGroup> => {
   if (group.subject !== undefined) {
-    return { ...group, subject: group.subject };
+    return { ...group, subject: group.subject, targetHash: undefined };
   }
 
   if (group.fixup === undefined) {
     throw new Error('A subject or fixup is required.');
   }
 
-  const targetSubject = await resolveFixupTargetSubject(
+  const target = await resolveFixupTarget(
     runtime.pi,
     runtime.context.cwd,
     group.fixup.target,
+    runtime.signal,
   );
 
-  const subject = buildFixupSubject(group.fixup.kind, targetSubject);
+  const subject = buildFixupSubject(group.fixup.kind, target.reference);
 
-  return { ...group, subject };
+  return { ...group, subject, targetHash: target.commitHash };
 };
 
 const prefixGroupContent = (
@@ -136,7 +142,7 @@ const prefixGroupContent = (
 
 const runGroup = async (
   runtime: CommitToolRuntime,
-  group: CommitInput['groups'][number] & { subject: string },
+  group: ResolvedGroup,
   committedGroups: CommitSuccess['details'][],
   groupCount: number,
 ): Promise<CommitSuccess> => {
@@ -147,6 +153,7 @@ const runGroup = async (
     outcome = await executeGroup({
       parameters: group,
       subject: group.subject,
+      targetHash: group.targetHash,
       temporaryDirectory,
       pi: runtime.pi,
       context: runtime.context,
