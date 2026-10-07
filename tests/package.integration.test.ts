@@ -17,7 +17,7 @@ import { expect, it, vi } from 'vitest';
 
 import manifest from '../package.json' with { type: 'json' };
 import { commitToolGuidelines } from '../src/extensions/commit/tool.js';
-import { delegationGuidelines } from '../src/extensions/subagents/subagents.js';
+import { delegationGuidelines } from '../src/extensions/subagents/managerPrompt.js';
 import { readInstructionSet } from '../src/instructionSets.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createPiSession } from './piSession.js';

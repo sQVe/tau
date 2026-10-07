@@ -32,8 +32,7 @@ export type PiWorkerScenario =
   | 'early exit'
   | 'question completion'
   | 'question restart'
-  | 'question cancellation'
-  | 'question timeout';
+  | 'question cancellation';
 
 export const canRunPiWorker = toolAvailable('herdr') && toolAvailable('pi');
 
@@ -407,7 +406,6 @@ export default function (pi) {
         'question completion': 'success',
         'question restart': 'success',
         'question cancellation': 'cancelled',
-        'question timeout': 'timeout',
       }[scenario],
       state: 'stopped',
     },
@@ -487,7 +485,6 @@ export default function (pi) {
     const history = await searchHistory(join(root, 'records'), {
       file: savedTask.parentSession,
       id: 'parent',
-      sessionDirectory: root,
     });
 
     followUpObservations.push(

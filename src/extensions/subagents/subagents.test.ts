@@ -21,12 +21,9 @@ import { createTemporaryRepository, initializeRepository } from '../../../tests/
 import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { fixtureModel } from './fixtures/controlledProvider.js';
+import { delegationGuidelines } from './managerPrompt.js';
 import type { WorkerNotice } from './presentation.js';
-import subagentsExtension, {
-  createNoticeDelivery,
-  delegationGuidelines,
-  registerCapacityRefusal,
-} from './subagents.js';
+import subagentsExtension, { createNoticeDelivery, registerCapacityRefusal } from './subagents.js';
 import type { WorkerWidgetRow } from './widget.js';
 
 const emitEvent = async (

@@ -9,16 +9,17 @@ import type { Static } from 'typebox';
 import { isNestedControlCall, nestedControlCallReason } from '../../controlTools.js';
 import { errorMessage } from '../../errors.js';
 import { readGitOutput } from '../../gitOutput.js';
-import { appendSystemPrompt, appendToolGuidelines } from '../../systemPrompt.js';
+import { appendSystemPrompt } from '../../systemPrompt.js';
 import type { ConfigLocation } from '../../tauConfig.js';
 import { isWorkerProcess } from '../../workerProcess.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
 import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.js';
-import { activeStates, compactionWorkerList } from './compactionWorkers.js';
+import { hasParentTrackedWorkers, compactionWorkerList } from './compactionWorkers.js';
 import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { historyPage, searchHistory } from './history.js';
 import { launchModels, resolveLoadout } from './loadout.js';
+import { delegationGuidelines } from './managerPrompt.js';
 import { decideNoticeDelivery } from './noticeDelivery.js';
 import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
 import type { WorkerNotice } from './presentation.js';
@@ -115,11 +116,14 @@ const followUpParameters = Type.Object(
   { additionalProperties: false },
 );
 
-const historyParameters = Type.Object({
-  query: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })),
-  offset: Type.Optional(Type.Integer({ minimum: 0 })),
-  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
-});
+const historyParameters = Type.Object(
+  {
+    query: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })),
+    offset: Type.Optional(Type.Integer({ minimum: 0 })),
+    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
+  },
+  { additionalProperties: false },
+);
 
 const statusParameters = Type.Object(
   { taskId: Type.String(), questionId: Type.Optional(Type.String()) },
@@ -185,8 +189,8 @@ export const createNoticeDelivery = (pi: ExtensionAPI): NoticeDelivery => {
 
     pi.sendMessage(message, { deliverAs: 'nextTurn' });
 
-    // An idle triggerTurn skips before_agent_start and Tau's prompt additions with it, which
-    // pi-claude-bridge rejects. A user message starts the turn through that hook.
+    // An idle triggerTurn skips the prompt hook and Tau's additions, which pi-claude-bridge
+    // rejects. A user message starts the turn through that hook.
     if (step === 'wake' && !turnStarting) {
       turnStarting = true;
       pi.sendUserMessage('A worker notice arrived.', { deliverAs: 'steer' });
@@ -207,37 +211,6 @@ const hasHerdrEnvironment = (): boolean =>
 
 const hasHerdrParentPane = (): boolean =>
   hasHerdrEnvironment() && Boolean(process.env.HERDR_PANE_ID);
-
-const leadingDelegationGuidelines = [
-  'You are the manager. You own the plan, the user conversation, acceptance criteria, integration, and commits.',
-  'Do small work yourself: quick questions, small local edits, obvious rebase conflicts, worker coordination, and back-and-forth with the user. Your own small edits need checks, not a reviewer. When a task mixes a small fix with larger work, make the fix yourself and delegate the rest.',
-  'Without waiting to be asked, send larger implementation or work that needs new tests to a `worker`, and open questions that need wide reading or running commands to a `scout`. Send a finished worker change to a `reviewer` before you accept or commit it. Follow any explicit user instruction about delegation.',
-  "Pass a reviewer the worker's check log path and a diff hash, such as `git hash-object` of the diff, so it reuses the checks. Use one reviewer; a large or risky change gets at most two, split by area. For a refactor whose tests do not change, the reviewer confirms behavior is unchanged.",
-  'Use the profile default unless the user asks for another model or a multi-model discussion.',
-  'Pass a brief that several workers share as a file path. Give workers on cheap models a shorter `timeoutSeconds`. Run a multi-model discussion as one round with two models, and add a round only for a disagreement that changes the decision.',
-  'Send a finished change with user-visible behavior to `qa`. It expects the user to run the app from the worktree under test. Tell it where the app runs, pass its questions to the user, and give it only test-account credentials, because worker records keep them.',
-];
-
-const trailingDelegationGuidelines = [
-  'While subagent workers run, do not edit their worktree or redo their work.',
-  'Treat a worker report as a claim. Check its evidence before you tell the user the work is done.',
-  "When a reviewer reports findings on a worker change you delegated, send the in-scope fixes back to that worker without waiting for the user. Ask the user first when the change is not the user's own, when the user asked for a read-only review or no changes, or when an applicable rule or skill requires approval for that fix, such as a compatibility choice.",
-  'After any worker report, start the next step you own. Ask only when that step needs a decision you cannot make, and report and stop when the work is done.',
-];
-
-const browserLoginStep = (loginCommand: string | undefined): string =>
-  loginCommand === undefined
-    ? 'ask the user to sign in once in the Chrome profile that the browser package config uses and close the window'
-    : `ask the user to run \`${loginCommand}\`, sign in, and close the window`;
-
-const browserGuideline = (loginCommand: string | undefined): string =>
-  `Send other browser work, such as lookups, forms, page checks, and screenshots, to \`browser\`. When a \`browser\` or \`qa\` worker needs a login, ${browserLoginStep(loginCommand)}, then cancel the waiting worker and start a new one, because each new worker copies the configured Chrome profile when it starts.`;
-
-export const delegationGuidelines = (loginCommand: string | undefined): string[] => [
-  ...leadingDelegationGuidelines,
-  browserGuideline(loginCommand),
-  ...trailingDelegationGuidelines,
-];
 
 // Pi streams call arguments, so a renderer can run before the model finishes any field.
 const callDetail = (parts: (string | undefined)[]): string | undefined => {
@@ -392,7 +365,6 @@ const searchWorkerHistory = async (
     {
       file,
       id: context.sessionManager.getSessionId(),
-      sessionDirectory: context.sessionManager.getSessionDir(),
     },
     parameters.query,
     (taskId) => controller?.owns(taskId) ?? false,
@@ -778,16 +750,17 @@ export default function subagentsExtension(
   registerSubagentTools(runtime);
   // Launch needs herdr and a parent pane, so a manager outside herdr must not be told to delegate.
   const delegating = hasHerdrParentPane();
-  // Session start replaces the contents once the user config can be read.
-  const guidelines = delegating ? delegationGuidelines(undefined) : [];
-
-  appendToolGuidelines(pi, 'subagent', guidelines);
+  let guidelines = delegationGuidelines(undefined);
 
   // Any Linear write follows the tracker skill, with or without delegation, so every manager
   // session gets the tracker lines.
-  const tracker: string[] = [];
+  let tracker: string[] = [];
 
   pi.on('before_agent_start', (event) => {
+    if (delegating && event.systemPromptOptions.selectedTools.includes('subagent')) {
+      appendSystemPrompt(event, guidelines.map((guideline) => `- ${guideline}`).join('\n'));
+    }
+
     if (tracker.length > 0) {
       appendSystemPrompt(event, tracker.map((line) => `- ${line}`).join('\n'));
     }
@@ -819,8 +792,7 @@ export default function subagentsExtension(
       );
     }
 
-    const hasActiveWorkers = rows.some((row) => activeStates.has(row.state));
-    const refreshIsNeeded = hasActiveWorkers || historyOpen;
+    const refreshIsNeeded = hasParentTrackedWorkers(rows) || historyOpen;
 
     if (refreshIsNeeded) {
       widgetTimer ??= setInterval(() => {
@@ -868,11 +840,7 @@ export default function subagentsExtension(
     registerLaunchTool(runtime, profiles, launchModelLine(context, profiles));
 
     if (delegating) {
-      guidelines.splice(
-        0,
-        guidelines.length,
-        ...delegationGuidelines(browserLoginCommand(context)),
-      );
+      guidelines = delegationGuidelines(browserLoginCommand(context));
     }
 
     if (widgetTimer) {
@@ -898,9 +866,7 @@ export default function subagentsExtension(
       projectTrusted: context.isProjectTrusted(),
     };
 
-    const facts = await trackerGuidelines(location);
-
-    tracker.splice(0, tracker.length, ...facts);
+    tracker = await trackerGuidelines(location);
   });
 
   pi.on('tool_result', (_event, context) => {
@@ -920,7 +886,7 @@ export default function subagentsExtension(
 
     const rows = controller?.widgetRows(context.sessionManager.getSessionId()) ?? [];
 
-    if (!rows.some((row) => activeStates.has(row.state))) {
+    if (!hasParentTrackedWorkers(rows)) {
       return undefined;
     }
 

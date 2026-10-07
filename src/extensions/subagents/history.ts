@@ -14,19 +14,15 @@ import { deriveWorkerState } from './workerState.js';
 
 interface Candidate {
   sourceFile: string;
-  taskId?: string;
+  taskId: string;
   predecessorTaskId?: string;
   successorTaskId?: string;
   name?: string;
-  label?: string;
-  profile?: string;
-  createdAt?: number;
   description: string;
   nativeSessionId?: string;
   nativeSessionFile?: string;
   nativeEvidence: 'available' | 'missing' | 'invalid';
   state?: WorkerState;
-  pendingQuestionId?: string;
   report?: Report;
 }
 
@@ -118,7 +114,7 @@ const candidateState = (
   task: Task,
   ownership: Ownership,
   diagnostics: string[],
-): Pick<Candidate, 'state' | 'pendingQuestionId'> => {
+): Pick<Candidate, 'state'> => {
   const facts = readOrDiagnose(
     () => readWorkerFacts(directory, task.taskId),
     `Task ${task.taskId} state`,
@@ -130,19 +126,17 @@ const candidateState = (
   }
 
   const state = deriveWorkerState(facts, ownership(task.taskId));
-  const questionId = facts.pendingQuestion?.questionId;
 
-  return questionId === undefined ? { state } : { state, pendingQuestionId: questionId };
+  return { state };
 };
 
 const readNativeEvidence = (
   task: Task,
-  nativeSessionFile: string,
   origin: Task,
   diagnostics: string[],
 ): Candidate['nativeEvidence'] => {
   try {
-    const header = nativeHeader(canonical(nativeSessionFile));
+    const header = nativeHeader(canonical(task.nativeSessionFile));
 
     if (header.id !== origin.nativeSessionId || header.cwd !== origin.loadout.cwd) {
       throw new Error('Saved native session identity does not match its task.');
@@ -193,7 +187,7 @@ const taskCandidate = (
     return undefined;
   }
 
-  const nativeEvidence = readNativeEvidence(task, task.nativeSessionFile, origin, diagnostics);
+  const nativeEvidence = readNativeEvidence(task, origin, diagnostics);
 
   const report = readOrDiagnose(
     () => readReport(directory, task.taskId),
@@ -208,9 +202,6 @@ const taskCandidate = (
     taskId: task.taskId,
     ...(task.predecessorTaskId != null ? { predecessorTaskId: task.predecessorTaskId } : {}),
     ...(task.name != null ? { name: task.name } : {}),
-    ...(task.label != null ? { label: task.label } : {}),
-    profile: task.loadout.profile,
-    createdAt: task.createdAt,
     description: task.task,
     nativeSessionId: task.nativeSessionId,
     nativeSessionFile: task.nativeSessionFile,
@@ -291,18 +282,15 @@ const candidateMatches = (candidate: Candidate, needle: string): boolean => {
   );
 };
 
-const candidateSortKey = (candidate: Candidate): string =>
-  candidate.taskId ?? candidate.nativeSessionId ?? '';
-
 const matchCandidates = (candidates: Candidate[], needle: string): Candidate[] =>
   candidates
     .filter((candidate) => candidateMatches(candidate, needle))
-    .toSorted((left, right) => candidateSortKey(left).localeCompare(candidateSortKey(right)));
+    .toSorted((left, right) => left.taskId.localeCompare(right.taskId));
 
 /* oxlint-disable typescript/require-await -- Keep the asynchronous history API for callers. */
 export const searchHistory = async (
   root: string,
-  current: { file: string; id: string; sessionDirectory: string },
+  current: { file: string; id: string },
   query = '',
   ownership: Ownership = () => false,
 ): Promise<HistorySearch> => {
@@ -379,7 +367,7 @@ const candidatePreview = (candidate: Candidate) => {
   }
 
   const reportTruncated = truncatedFields.length > 0;
-  const nativeOnly = candidate.taskId === undefined || candidate.nativeEvidence !== 'available';
+  const nativeOnly = candidate.nativeEvidence !== 'available';
 
   const result = {
     ...previewOptionalText(candidate.taskId, 'taskId', truncatedFields),

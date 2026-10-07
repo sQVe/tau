@@ -819,7 +819,6 @@ it('skips unpublished preparation debris while published attempts remain exclusi
   const current = {
     file: fixture.input.parentSession,
     id: fixture.input.parentSessionId,
-    sessionDirectory: fixture.directory,
   };
 
   const history = await searchHistory(fixture.directory, current);
@@ -1085,7 +1084,6 @@ it('lists a newer Tau record as unreadable and still follows up an unrelated tas
   const history = await searchHistory(fixture.directory, {
     file: fixture.input.parentSession,
     id: fixture.input.parentSessionId,
-    sessionDirectory: fixture.directory,
   });
 
   expect(history.diagnostics).toContain(
@@ -1194,7 +1192,6 @@ it('refuses a saved non-Pi task by name and still serves Pi tasks', async () => 
   const history = await searchHistory(fixture.directory, {
     file: fixture.input.parentSession,
     id: fixture.input.parentSessionId,
-    sessionDirectory: fixture.directory,
   });
 
   expect(history.diagnostics).toContain(
@@ -1359,7 +1356,6 @@ it('follows up a completed native task with new identity and unchanged saved evi
   const history = await searchHistory(fixture.directory, {
     file: fixture.input.parentSession,
     id: fixture.input.parentSessionId,
-    sessionDirectory: fixture.directory,
   });
 
   expect(
@@ -1521,7 +1517,7 @@ it('allows only one competing follow-up and preserves lineage across parents and
 
   const history = await searchHistory(
     fixture.directory,
-    { file: sibling, id: 'sibling', sessionDirectory: fixture.directory },
+    { file: sibling, id: 'sibling' },
     fixture.source.nativeSessionId,
   );
 
@@ -2851,7 +2847,7 @@ it('reads status, history, and widget rows without writing records or stopping w
 
   await searchHistory(
     directory,
-    { file: join(directory, 'parent.jsonl'), id: 'parent-id', sessionDirectory: directory },
+    { file: join(directory, 'parent.jsonl'), id: 'parent-id' },
     '',
     (taskId) => controller.owns(taskId),
   );

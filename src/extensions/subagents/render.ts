@@ -4,6 +4,7 @@ import { sep } from 'node:path';
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { Text } from '@earendil-works/pi-tui';
 
+import { parentTrackedStates } from './compactionWorkers.js';
 import { handoverSections, stateLabel, stateLabels } from './presentation.js';
 import type { StateLabel } from './presentation.js';
 import type { WorkerState } from './types.js';
@@ -319,15 +320,7 @@ const optionalRow = (label: string, value: string | undefined, theme: Theme): st
 
 const joinParts = (parts: string[]): string => parts.join(' · ');
 
-const liveStates = new Set<WorkerState>([
-  'starting',
-  'running',
-  'awaitingReply',
-  'reported',
-  'stopping',
-]);
-
-const enforcedByThisSession = (state: WorkerState): boolean => liveStates.has(state);
+const enforcedByThisSession = (state: WorkerState): boolean => parentTrackedStates.has(state);
 
 const basePart = (details: StatusView): string => {
   const label = stateLabel(details.state, details.outcome).text;
