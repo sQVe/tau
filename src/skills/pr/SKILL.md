@@ -49,16 +49,19 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 ## Procedure
 
 1. Run the stack check of the [stack skill](../stack/SKILL.md) on the branch. Stop as it says for an
-   untracked or unknown result. For a tracked branch, note its parent.
+   untracked or unknown result. For a tracked branch, note its parent. When the user names a base
+   that differs from that parent, stop and ask: changing the base of a stacked PR changes the stack,
+   which the stack skill must do first.
 
    Then gather publication evidence with one read-only `codemode` script for both creates and
    updates. Start it with `// @options: {"max_output_tokens": 4000}`. Filter before printing, print
    strings as plain lines rather than result objects, and keep the output within that limit.
    - Call the `pr` tool's `evidence` action. Pass the user-named remote as `remote`, when given.
-     Pass the user-named base, or the stack parent, as `base`. It wins over an open PR's base, so
-     the target and merge base follow the stack. Pass the newest `.tau/workers/review-*` directory
-     saved for this branch as `review`, when one exists. Use saved review input or session evidence
-     to check its branch; report unclear ownership as a gap rather than guessing.
+     Pass the stack parent for a tracked branch, otherwise the user-named base, as `base`. It wins
+     over an open PR's base, so the target and merge base follow the stack. Pass the newest
+     `.tau/workers/review-*` directory saved for this branch as `review`, when one exists. Use saved
+     review input or session evidence to check its branch; report unclear ownership as a gap rather
+     than guessing.
    - The result has `target`, `branch`, `subjects`, `reuse`, `review`, `checks`, and `gaps`.
      Unavailable objects are null. In the same script, find ticket IDs in the user's links,
      `branch`, commit `subjects`, and `target.pr.body`. Read each distinct ticket with its service's
