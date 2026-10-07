@@ -49,22 +49,6 @@ interface PostFailure {
   uncertain?: PostedWrite[];
 }
 
-// Carries the writes a failed post made, may have made, and did not make, so the caller can report
-// each.
-class PostError extends Error {
-  readonly posted: PostedWrite[];
-  readonly notPosted: WriteSummary[];
-  readonly uncertain: PostedWrite[];
-
-  constructor(message: string, failure: PostFailure, options: ErrorOptions) {
-    super(message, options);
-    this.name = 'PostError';
-    this.posted = failure.posted;
-    this.notPosted = failure.notPosted;
-    this.uncertain = failure.uncertain ?? [];
-  }
-}
-
 const summarize = ({ kind, thread, url, text }: PlannedWrite): WriteSummary => ({
   kind,
   thread,
@@ -164,16 +148,14 @@ const postWrite = async (
 };
 
 const failedPost = (directory: string, failure: PostFailure, error: unknown) =>
-  new PostError(
+  new Error(
     `A pr_feedback write failed: ${errorMessage(error)}\nPosted:\n${bulletList(failure.posted)}\nNot posted:\n${bulletList(failure.notPosted)}\n${directory}/posted.json records the posted writes, and a retry skips them.`,
-    failure,
     { cause: error },
   );
 
 const uncertainPost = (directory: string, failure: PostFailure, error: unknown) =>
-  new PostError(
+  new Error(
     `A pr_feedback write failed, and its outcome is uncertain: GitHub may have it. ${errorMessage(error)}\nUncertain:\n${bulletList(failure.uncertain ?? [])}\nPosted:\n${bulletList(failure.posted)}\nNot posted:\n${bulletList(failure.notPosted)}\n${directory}/posted.json records the uncertain write. A retry checks GitHub for it and posts it only if GitHub does not have it.`,
-    failure,
     { cause: error },
   );
 
@@ -183,9 +165,8 @@ const unsavedUncertainPost = (
   unsaved: PostedWrite,
   error: unknown,
 ) =>
-  new PostError(
+  new Error(
     `A pr_feedback write failed, and its outcome is uncertain: GitHub may have it. Saving ${directory}/posted.json then failed: ${errorMessage(error)}\n${describeWrite(unsaved)}\nCheck the pull request for it before a retry, or the retry may post it again.\nPosted:\n${bulletList(failure.posted)}\nNot posted:\n${bulletList(failure.notPosted)}\nposted.json records the posted writes, and a retry skips them.`,
-    failure,
     { cause: error },
   );
 
@@ -195,9 +176,8 @@ const unsavedPost = (
   unsaved: PostedWrite,
   error: unknown,
 ) =>
-  new PostError(
+  new Error(
     `GitHub has this write, but saving ${directory}/posted.json failed: ${errorMessage(error)}\n${describeWrite(unsaved)}\nAdd it to posted.json before a retry, or the retry posts it again.\nPosted:\n${bulletList(failure.posted)}\nNot posted:\n${bulletList(failure.notPosted)}\nposted.json records the other posted writes, and a retry skips them.`,
-    failure,
     { cause: error },
   );
 

@@ -170,8 +170,7 @@ const recordedWrite = (
 const postFailure = (promise: Promise<unknown>) =>
   promise.then(
     () => undefined,
-    (error: unknown) =>
-      error as { message: string; posted: unknown[]; notPosted: unknown[]; uncertain: unknown[] },
+    (error: unknown) => error as Error,
   );
 
 describe('post refusals', () => {
@@ -674,18 +673,13 @@ describe('post', () => {
 
     fake.failWrite(2);
 
-    const failure = await post(details, recordingConfirm(root, true).context).then(
-      () => undefined,
-      (error: unknown) => error as { message: string; posted: unknown[]; notPosted: unknown[] },
-    );
+    const failure = await postFailure(post(details, recordingConfirm(root, true).context));
 
     expect(failure?.message).toContain('HTTP 502');
-    expect(failure?.posted).toMatchObject([{ kind: 'reply', thread: 'thread-person' }]);
 
-    expect(failure?.notPosted).toMatchObject([
-      { kind: 'resolve', thread: 'thread-bot' },
-      { kind: 'comment', thread: null, text: 'Thanks.' },
-    ]);
+    expect(failure?.message).toContain(
+      `\nPosted:\n- Reply to https://github.com/sQVe/tau/pull/7#discussion_r101:\nRenamed.\nNot posted:\n- Resolve https://github.com/sQVe/tau/pull/7#discussion_r201\n- Comment on https://github.com/sQVe/tau/pull/7:\nThanks.\n${details.directory}/posted.json`,
+    );
 
     expect(await readPosted(details.directory)).toMatchObject({
       writes: [
@@ -740,10 +734,7 @@ describe('post save failure', () => {
       onTestFinished(() => chmod(details.directory, 0o700));
     });
 
-    const failure = await post(details, context).then(
-      () => undefined,
-      (error: unknown) => error as { message: string; posted: unknown[]; notPosted: unknown[] },
-    );
+    const failure = await postFailure(post(details, context));
 
     expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 101, body: 'Renamed.' }]);
 
@@ -752,8 +743,10 @@ describe('post save failure', () => {
     );
 
     expect(failure?.message).not.toContain('posted.json records the posted writes');
-    expect(failure?.posted).toMatchObject([{ kind: 'reply', thread: 'thread-person' }]);
-    expect(failure?.notPosted).toMatchObject([{ kind: 'resolve', thread: 'thread-person' }]);
+
+    expect(failure?.message).toContain(
+      '\nPosted:\n- Reply to https://github.com/sQVe/tau/pull/7#discussion_r101:\nRenamed.\nNot posted:\n- Resolve https://github.com/sQVe/tau/pull/7#discussion_r101\nposted.json',
+    );
   });
 });
 
@@ -778,17 +771,18 @@ describe('post uncertain save failure', () => {
       onTestFinished(() => chmod(details.directory, 0o700));
     });
 
-    const failure = await post(details, context).then(
-      () => undefined,
-      (error: unknown) => error as { message: string; uncertain: unknown[]; notPosted: unknown[] },
-    );
+    const failure = await postFailure(post(details, context));
 
     expect(failure?.message).toContain(
       'Reply to https://github.com/sQVe/tau/pull/7#discussion_r101:\nRenamed.\nCheck the pull request for it before a retry',
     );
 
-    expect(failure?.uncertain).toMatchObject([{ kind: 'reply', thread: 'thread-person' }]);
-    expect(failure?.notPosted).toMatchObject([{ kind: 'resolve', thread: 'thread-person' }]);
+    expect(failure?.message).toContain('its outcome is uncertain');
+
+    expect(failure?.message).toContain(
+      '\nPosted:\n- none\nNot posted:\n- Resolve https://github.com/sQVe/tau/pull/7#discussion_r101\nposted.json',
+    );
+
     expect(await readPosted(details.directory)).toBeUndefined();
   });
 });
@@ -819,6 +813,12 @@ describe('post write output', () => {
 
   const writeKinds = ['reply', 'resolve', 'comment'];
 
+  const writeDescriptions = [
+    '- Reply to https://github.com/sQVe/tau/pull/7#discussion_r201:\nAdded.',
+    '- Resolve https://github.com/sQVe/tau/pull/7#discussion_r201',
+    '- Comment on https://github.com/sQVe/tau/pull/7:\nDone.',
+  ];
+
   it.each(
     kinds.flatMap((kind) => [
       { ...kind, output: 'Bad credentials', problem: 'printed output that is not JSON' },
@@ -832,21 +832,24 @@ describe('post write output', () => {
 
       fake.overrideOutput(key, output);
 
-      const failure = await post(details).then(
-        () => undefined,
-        (error: unknown) => error as { message: string; posted: unknown[]; notPosted: unknown[] },
-      );
+      const failure = await postFailure(post(details));
+      const saved = (await readPosted(details.directory)) as { version: number; writes: unknown[] };
+      const posted = writeDescriptions.slice(0, index + 1).join('\n');
+      const notPosted = writeDescriptions.slice(index + 1).join('\n') || '- none';
 
       expect(failure?.message).toContain(problem);
-      expect(failure?.posted).toHaveLength(index + 1);
-      expect(failure?.posted.at(-1)).toMatchObject({ kind: writeKinds[index], commentId: null });
-      expect(failure?.notPosted).toHaveLength(2 - index);
+      expect(saved.writes).toHaveLength(index + 1);
+      expect(saved.writes.at(-1)).toMatchObject({ kind: writeKinds[index], commentId: null });
+
+      expect(failure?.message).toContain(
+        `\nNot posted:\n${notPosted}\n${details.directory}/posted.json`,
+      );
+
       expect(fake.writes).toHaveLength(index + 1);
 
-      expect(await readPosted(details.directory)).toEqual({
-        version: 2,
-        writes: failure?.posted,
-      });
+      expect(saved.version).toBe(2);
+
+      expect(failure?.message).toContain(`\nPosted:\n${posted}\nNot posted:`);
     },
   );
 
@@ -855,16 +858,16 @@ describe('post write output', () => {
 
     fake.failCommand(key);
 
-    const failure = await post(details).then(
-      () => undefined,
-      (error: unknown) =>
-        error as { message: string; posted: unknown[]; notPosted: unknown[]; uncertain: unknown[] },
-    );
+    const failure = await postFailure(post(details));
 
     expect(failure?.message).toContain('HTTP 502');
-    expect(failure?.posted).toHaveLength(index);
-    expect(failure?.uncertain).toMatchObject([{ kind: writeKinds[index] }]);
-    expect(failure?.notPosted).toHaveLength(2 - index);
+    const posted = writeDescriptions.slice(0, index).join('\n') || '- none';
+    const notPosted = writeDescriptions.slice(index + 1).join('\n') || '- none';
+
+    expect(failure?.message).toContain(
+      `\nUncertain:\n${writeDescriptions[index]}\nPosted:\n${posted}\nNot posted:\n${notPosted}\n${details.directory}/posted.json`,
+    );
+
     expect(fake.writes).toHaveLength(index);
   });
 });
@@ -902,14 +905,24 @@ describe('post uncertain writes', () => {
       const failure = await postFailure(post(details));
 
       expect(failure?.message).toMatch(/outcome is uncertain.*A retry checks GitHub/su);
-      expect(failure?.uncertain).toMatchObject([{ kind }]);
-      expect(failure?.posted).toHaveLength(attempt - 1);
-      expect(failure?.notPosted).toHaveLength(2 - attempt);
+      const saved = (await readPosted(details.directory)) as { writes: { state: string }[] };
+      const posted = saved.writes.filter((write) => write.state === 'posted');
+      const reply = '- Reply to https://github.com/sQVe/tau/pull/7#discussion_r201:\nAdded.';
+      const comment = '- Comment on https://github.com/sQVe/tau/pull/7:\nDone.';
+      const uncertain = kind === 'reply' ? reply : comment;
+      const postedList = kind === 'reply' ? '- none' : reply;
+      const notPosted = kind === 'reply' ? comment : '- none';
+
+      expect(posted).toHaveLength(attempt - 1);
+
+      expect(failure?.message).toContain(
+        `\nUncertain:\n${uncertain}\nPosted:\n${postedList}\nNot posted:\n${notPosted}\n${details.directory}/posted.json`,
+      );
 
       expect(await readPosted(details.directory)).toMatchObject({
         version: 2,
         writes: [
-          ...failure!.posted,
+          ...posted,
           {
             kind,
             text: kind === 'reply' ? 'Added.' : 'Done.',

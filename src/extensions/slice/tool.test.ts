@@ -240,18 +240,9 @@ describe('slice tool apply', () => {
 
     const moved = join(directory, '..', 'me-1');
 
-    await expect(apply()).rejects.toMatchObject({
-      directory: moved,
-      applied: [
-        { kind: 'createContainer' },
-        { kind: 'moveDraft' },
-        { kind: 'createSlice', number: 1 },
-      ],
-      notApplied: [
-        { kind: 'createSlice', number: 2 },
-        { kind: 'addBlockedBy', number: 2, blocker: 1 },
-      ],
-    });
+    await expect(apply()).rejects.toThrow(
+      `\nApplied:\n- Create container "Add PR-sized planning" in team ME and project Tau\n- Move the draft to its container identifier\n- Create slice 1 "Record the lifecycle" under the container\nNot applied:\n- Create slice 2 "Add the slice skill" under the container\n- Mark slice 2 blocked by slice 1\nThe draft is in ${moved}.`,
+    );
 
     await apply(undefined, moved);
 
@@ -294,7 +285,7 @@ describe('slice tool apply', () => {
         undefined,
         context,
       ),
-    ).rejects.toMatchObject({ applied: [] });
+    ).rejects.toThrow('\nApplied:\n- none\nNot applied:\n');
 
     await expect(apply(undefined, directory)).rejects.toThrow(/no container identifier, but ME-1/);
     expect([...fake.issues.keys()]).toEqual(['ME-1']);
@@ -349,15 +340,9 @@ describe('slice tool apply', () => {
         undefined,
         context,
       ),
-    ).rejects.toMatchObject({
-      applied: [{ kind: 'createContainer' }],
-      notApplied: [
-        { kind: 'moveDraft' },
-        { kind: 'createSlice', number: 1 },
-        { kind: 'createSlice', number: 2 },
-        { kind: 'addBlockedBy', number: 2, blocker: 1 },
-      ],
-    });
+    ).rejects.toThrow(
+      '\nApplied:\n- Create container "Add PR-sized planning" in team ME and project Tau\nNot applied:\n- Move the draft to its container identifier\n- Create slice 1 "Record the lifecycle" under the container\n- Create slice 2 "Add the slice skill" under the container\n- Mark slice 2 blocked by slice 1\nThe draft is in ',
+    );
 
     expect([...fake.issues.keys()]).toEqual(['ME-1']);
     expect(await savedPlan(directory)).toMatchObject({ container: { identifier: 'ME-1' } });
@@ -494,10 +479,9 @@ describe('slice tool apply', () => {
     fake.issues.get('ME-4')!.sortOrder = 0;
     fake.failWrite(fake.writes().length + 2);
 
-    await expect(apply(undefined, moved)).rejects.toMatchObject({
-      applied: [{ kind: 'moveSlice', identifier: 'ME-3' }],
-      notApplied: [{ kind: 'moveSlice', identifier: 'ME-4' }],
-    });
+    await expect(apply(undefined, moved)).rejects.toThrow(
+      '\nApplied:\n- Move ME-3 into plan order\nNot applied:\n- Move ME-4 into plan order\nThe draft is in ',
+    );
   });
 
   it('stops the order moves when the call is aborted after a move', async () => {
@@ -540,10 +524,9 @@ describe('slice tool apply', () => {
         undefined,
         context,
       ),
-    ).rejects.toMatchObject({
-      applied: [{ kind: 'moveSlice', identifier: 'ME-3' }],
-      notApplied: [{ kind: 'moveSlice', identifier: 'ME-4' }],
-    });
+    ).rejects.toThrow(
+      '\nApplied:\n- Move ME-3 into plan order\nNot applied:\n- Move ME-4 into plan order\nThe draft is in ',
+    );
 
     expect(fake.writes()).toHaveLength(writesBefore + 1);
   });
@@ -576,10 +559,9 @@ describe('slice tool apply', () => {
       context,
     );
 
-    await expect(failure).rejects.toMatchObject({
-      applied: [{ kind: 'moveSlice', identifier: 'ME-3' }],
-      notApplied: [],
-    });
+    await expect(failure).rejects.toThrow(
+      '\nApplied:\n- Move ME-3 into plan order\nNot applied:\n- none\nThe draft is in ',
+    );
   });
 
   it('refuses when the draft changes during the confirm', async () => {
@@ -718,16 +700,9 @@ describe('slice tool apply', () => {
     await mkdir(target);
     await writeFile(join(target, 'blocker.txt'), 'in the way\n');
 
-    await expect(apply()).rejects.toMatchObject({
-      directory,
-      applied: [{ kind: 'createContainer' }],
-      notApplied: [
-        { kind: 'moveDraft' },
-        { kind: 'createSlice', number: 1 },
-        expect.anything(),
-        expect.anything(),
-      ],
-    });
+    await expect(apply()).rejects.toThrow(
+      `\nApplied:\n- Create container "Add PR-sized planning" in team ME and project Tau\nNot applied:\n- Move the draft to its container identifier\n- Create slice 1 "Record the lifecycle" under the container\n- Create slice 2 "Add the slice skill" under the container\n- Mark slice 2 blocked by slice 1\nThe draft is in ${directory}.`,
+    );
 
     await rm(target, { recursive: true });
     const result = await apply(undefined, directory);
@@ -762,21 +737,15 @@ describe('slice tool apply', () => {
       context,
     );
 
-    const failureDetails = (await failure.catch((error: unknown) => error)) as {
-      created: unknown;
-      applied: unknown[];
-      notApplied: unknown[];
-    };
+    const failureDetails = (await failure.catch((error: unknown) => error)) as Error;
 
-    expect(failureDetails).toMatchObject({
-      created: { identifier: 'ME-1', url: 'https://linear.app/me/issue/ME-1' },
-      applied: [{ kind: 'createContainer', identifier: 'ME-1' }],
-    });
+    expect(failureDetails.message).toContain(
+      'Linear created ME-1, but saving its identifier failed.',
+    );
 
-    expect(failureDetails.notApplied.slice(0, 2)).toMatchObject([
-      { kind: 'saveIdentifier', identifier: 'ME-1' },
-      { kind: 'moveDraft' },
-    ]);
+    expect(failureDetails.message).toContain(
+      '\nApplied:\n- Create container "Add PR-sized planning" in team ME and project Tau\nNot applied:\n- Record ME-1 (https://linear.app/me/issue/ME-1) in the draft\n- Move the draft to its container identifier\n',
+    );
 
     expect([...fake.issues.keys()]).toEqual(['ME-1']);
   });
