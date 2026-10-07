@@ -18,7 +18,6 @@ const tauAllowlists: SkillAllowlists = {
   },
   multiCommandShellBlocks: {
     handover: ['1927769d42b4'],
-    'start-slice': ['16e2bc9782a1'],
   },
 };
 

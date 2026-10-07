@@ -109,6 +109,7 @@ line that links to the replacement.
 - [0083: Turn on skill tools when the skill runs, and confirm outside writes](./0083-turn-on-skill-tools-when-the-skill-runs-and-confirm-outside-writes.md)
 - [0084: Keep the diagram skill out of worker profiles](./0084-keep-the-diagram-skill-out-of-worker-profiles.md)
 - [0085: Group per-repository settings in the user config](./0085-group-per-repository-settings-in-the-user-config.md)
+  (Superseded by 0087 and 0095)
 - [0086: Post to GitHub bots without a confirm](./0086-post-to-github-bots-without-a-confirm.md)
 - [0087: Gather evidence with codemode](./0087-gather-evidence-with-codemode.md)
 - [0088: Grow skills into tools and templates](./0088-grow-skills-into-tools-and-templates.md)
@@ -118,3 +119,4 @@ line that links to the replacement.
 - [0092: Use codemode only to batch or filter evidence](./0092-use-codemode-only-to-batch-or-filter-evidence.md)
 - [0093: Enable skill tools from session start](./0093-enable-skill-tools-from-session-start.md)
 - [0094: Compose PR publication evidence](./0094-compose-pr-publication-evidence.md)
+- [0095: Keep repository routing in tracker config](./0095-keep-repository-routing-in-tracker-config.md)

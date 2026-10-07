@@ -36,9 +36,9 @@ see for themselves.
   - Reviewer mode: every other PR. Never commit, rebase, or push. Report failing checks and
     conflicts without fixing them. Resolve only threads the viewer started.
 - A request to draft only, investigate only, or approve first limits this skill. Follow it.
-- Show drafts to the user before you post to a person, and ask with `ask_user_question`. Post to a
-  bot directly. The `pr_feedback` tool decides who is a bot and which writes go to a person. In
-  author mode on a PR the viewer did not write, show every draft.
+- Leave approval of writes to people to the `pr_feedback` tool's `post` confirmation. The tool
+  decides who is a bot and which writes go to a person. Only in author mode on a PR the viewer did
+  not write, also show every draft, including bot drafts, and ask with `ask_user_question`.
 - Commit with the [commit skill](../commit/SKILL.md). Rebase and force-push only as steps 2 and 7
   say. Run every stack command through the [stack skill](../stack/SKILL.md).
 - Never rerun a check, or add retries, skips, or longer timeouts, to make a failure pass.
@@ -152,11 +152,13 @@ see for themselves.
    - If the push or the lease is rejected, stop and report.
 
 8. Draft the replies with the rules in Replies below. In author mode, answer findings from review
-   summaries and conversation comments in one PR comment that links each source comment. Show all
-   drafts for people, or every draft in author mode on a PR the viewer did not write, in one
-   `ask_user_question` question, with options to post all or skip all. The user types which drafts
-   to edit or skip. A skipped thread stays open. Write the approved drafts and the resolves from
-   step 9 to `replies.json` in the `directory` that the script returned.
+   summaries and conversation comments in one PR comment that links each source comment.
+   - Only in author mode on a PR the viewer did not write, show every draft, including bot drafts,
+     in one `ask_user_question` question. Offer post all or skip all; the user can type which drafts
+     to edit or skip.
+   - Apply any requested edits or skips before the post call. A skipped thread stays open. Write the
+     remaining drafts and the resolves from step 9 to `replies.json` in the `directory` that the
+     script returned. The tool previews writes to people and asks for confirmation.
 
 9. Post and resolve with the `pr_feedback` tool's `post`. Pass the PR's head after step 7's push as
    `head`, or the script's `headRefOid` when the round did not push.
@@ -167,8 +169,8 @@ see for themselves.
    - When a person changed a comment since step 1, run step 1's evidence script again, redo steps 3,
      4, and 8 for what changed, and post with the new result. When the head moved other than by your
      push, stop and report.
-   - When the user declines, post nothing and report the drafts. If a post fails, stop and report
-     which replies were posted.
+   - When the user declines the tool's confirmation, it posts nothing. Report the drafts and redraft
+     on request. If a post fails, stop and report which replies were posted.
 
 10. Report.
     - Author mode: use the headings Fixed, Not worth changing, Incorrect, and Blocked from the

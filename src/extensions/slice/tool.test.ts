@@ -2,6 +2,7 @@ import {
   chmod,
   cp,
   copyFile,
+  link,
   mkdir,
   mkdtemp,
   readFile,
@@ -942,6 +943,45 @@ describe('slice tool read', () => {
 });
 
 describe('slice tool prepare', () => {
+  it('refuses a hard-linked ignore file without changing outside bytes', async () => {
+    const root = await temporaryRepository();
+    const outside = join(await outsideDirectory(), 'ignore');
+    const fake = createLinearFake();
+
+    await writeFile(outside, 'outside bytes\n');
+    await mkdir(join(root, '.tau'));
+    await link(outside, join(root, '.tau', '.gitignore'));
+
+    await expect(run(fake, noUiContext(root), { action: 'prepare', id: 'me-537' })).rejects.toThrow(
+      /hard link/,
+    );
+
+    expect(await readFile(outside, 'utf8')).toBe('outside bytes\n');
+    expect(await readdir(join(root, '.tau'))).toEqual(['.gitignore']);
+    expect(fake.writes()).toEqual([]);
+  });
+
+  it('prepares and reuses a start-slice draft without a plan', async () => {
+    const root = await temporaryRepository();
+    const fake = createLinearFake();
+    const context = noUiContext(root);
+
+    const { directory } = await run(fake, context, { action: 'prepare', id: 'me-537' });
+
+    expect(directory).toBe(join(root, '.tau', 'slices', 'me-537'));
+    expect(await readdir(directory)).toEqual([]);
+    expect(await run(fake, context, { action: 'prepare', id: 'me-537' })).toEqual({ directory });
+
+    await writeFile(join(directory, 'start.md'), 'Start the slice.\n');
+    await writeFile(join(directory, 'agent-1.md'), 'First task.\n');
+    await writeFile(join(directory, 'agent-2.md'), 'Second task.\n');
+    const before = await snapshotDraft(directory);
+
+    expect(await run(fake, context, { action: 'prepare', id: 'me-537' })).toEqual({ directory });
+    expect(await snapshotDraft(directory)).toEqual(before);
+    expect(fake.writes()).toEqual([]);
+  });
+
   it('reuses the draft that records the container', async () => {
     const { root, fake, context, directory } = await appliedPlan();
 

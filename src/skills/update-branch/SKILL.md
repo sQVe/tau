@@ -19,6 +19,10 @@ the [handover skill](../handover/SKILL.md).
 
 - Do not stash, discard, or commit unrelated changes. Before you start a rebase, stop and ask if the
   working tree is dirty. During a rebase, change only the files its conflicts need.
+- Before starting or continuing a standalone rebase, require every one of your workers in this
+  worktree to be `stopped`. Follow the [stack skill's worker check](../stack/SKILL.md#hard-rules),
+  under "Switch, restack, or sync only". Any other state, or a state you cannot read, blocks the
+  rebase: wait for the worker, or ask the user before cancelling it.
 - Do not abort the rebase without the user's permission.
 - Ask when two changes need a product decision to fit together.
 - Push only when the user asks to push, or to fix or update the remote PR. Otherwise leave the
@@ -29,7 +33,8 @@ the [handover skill](../handover/SKILL.md).
 1. Check the branch, `git status`, and whether a rebase or merge is in progress.
    - When `$(git rev-parse --git-dir)/gh-stack-rebase-state` exists, a stack rebase is paused.
      Continue it with the [stack skill](../stack/SKILL.md), never with `git rebase --continue`.
-   - When a rebase is in progress, first note the tip it started from. Read `orig-head` in
+   - When a standalone rebase is in progress, run the worker check in Hard rules before continuing.
+     Then note the tip it started from. Read `orig-head` in
      `$(git rev-parse --git-path rebase-merge)` or, for the apply backend,
      `$(git rev-parse --git-path rebase-apply)`, whichever exists. Stop if neither holds it. Ask if
      the rebase's target is unclear. Then run step 2 with the noted tip in place of `HEAD`, and go
@@ -43,8 +48,9 @@ the [handover skill](../handover/SKILL.md).
 2. Fetch the base's remote and, if different, the remote the branch pushes to. If the branch has a
    remote tip, note its SHA as `<old-tip>`: `git rev-parse <remote>/<branch>`. Stop if a fetch or
    the SHA lookup fails, or if `git log --oneline HEAD..<old-tip>` lists commits missing locally.
-3. Rebase onto the base's fetched remote-tracking branch, such as `git rebase origin/main`. When the
-   stack skill finds the branch in a stack, restack with it instead.
+3. When the stack skill finds the branch in a stack, restack with it. Otherwise run the worker check
+   in Hard rules before starting the standalone rebase. Rebase onto the base's fetched
+   remote-tracking branch, such as `git rebase origin/main`.
 4. For each conflict, read both changes and enough surrounding code to understand their intent. Read
    linked PRs or issues only when the intent stays unclear. Keep both intents where they fit. Stage
    resolved files by name, then run `GIT_EDITOR=true git rebase --continue`. Skip a commit only

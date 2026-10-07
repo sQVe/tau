@@ -1,8 +1,8 @@
 # ADR 0061: Layer Tau config from user and repository files
 
 **Date**: 2026-09-28\
-**Status**: Accepted; unknown top-level keys amended by
-[ADR 0085 (Group per-repository settings in the user config)](./0085-group-per-repository-settings-in-the-user-config.md)\
+**Status**: Accepted; unknown top-level key handling reaffirmed by
+[ADR 0095 (Keep repository routing in tracker config)](./0095-keep-repository-routing-in-tracker-config.md)\
 **Related**:
 [ADR 0023 (Use advisory TDD observations instead of edit permissions)](./0023-advisory-tdd-observations.md),
 [ADR 0027 (Share one delegate model across bounded tool tasks)](./0027-share-one-delegate-model.md),

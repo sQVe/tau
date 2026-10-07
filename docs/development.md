@@ -117,23 +117,14 @@ user file may set `profiles`, and profile files may not set `model:`. Worker lau
 that is unavailable or outside `allowedModels`; it never falls back to another model. See the
 [worker model decision](adr/0071-set-worker-models-in-the-user-config.md).
 
-A launch without `timeoutSeconds` gets 30 minutes for investigation profiles and 60 minutes for
-editing profiles.
-
-A profile's `tools:` setting lists the tools its worker gets, separated by commas. Without it,
-investigation profiles get `read` and `bash`, and editing profiles add `edit` and `write`. Workers
-always get `subagent_progress`, `subagent_report`, and `subagent_question`. A worker refuses to
-start when a listed tool is not registered. Workers load no skills unless the profile's `skills:`
-setting names them, for example `skills: tdd`. See the
+A profile's `tools:` setting lists registered tool names, separated by commas, for example
+`tools: read, bash`. Its `skills:` setting lists skill names, separated by commas, for example
+`skills: tdd`. See the
 [tool and skill decision](adr/0067-give-workers-only-their-profile-tools-and-skills.md).
 
 A profile's `packages:` setting lists Pi packages its worker loads, separated by commas. Each entry
 is a source that `pi -e` accepts, such as `npm:name`, `npm:name@1.2.3`, `git:host/path`, a URL, or a
-local path. Before it opens the worker's pane, the parent installs each package into Pi's temporary
-`-e` cache, and the worker loads it with `-e`. The parent session does not load it. A package that
-the user or project settings already load is not loaded a second time. A launch stops with the
-package name when an install fails. An unpinned npm package stays at the version that was first
-cached, so pin a version to update it. See the
+local path. For example, set `packages: npm:pi-agent-browser-native@0.9.3`. See the
 [package decision](adr/0069-load-each-pi-package-where-its-tools-are-used.md).
 
 The bundled `browser` and `qa` profiles set `packages: npm:pi-agent-browser-native@0.9.3` for their
@@ -153,16 +144,13 @@ Only the user file may set `browser`. An empty or non-string command leaves the 
 manager's guidelines and shows an error when the session starts.
 
 A profile's `instruction-sets:` setting lists the Tau instruction sets its worker loads, from
-`writing`, `coding`, `workflow`, and `browser`. Without it, a worker loads `writing`, `coding`, and
-`workflow`. The bundled `scout` profile sets `instruction-sets: writing, workflow`, and the bundled
-`browser` and `qa` profiles add `browser`. See the
+`writing`, `coding`, `workflow`, and `browser`, separated by commas. For example, set
+`instruction-sets: writing, workflow`. See the
 [instruction set decision](adr/0068-load-only-the-instruction-sets-each-worker-profile-needs.md) and
 the [browser decision](adr/0076-give-browser-workers-one-shared-set-of-browser-rules.md).
 
 Set `TAU_SUBAGENT_CAP` to limit how many live workers each parent controller runs at once. It takes
-an integer from 1 to 256 and defaults to 4. Each controller reads the cap once when it starts. A
-launch at the cap refuses and lists the live workers with their deadlines; retry after a stop
-notice. Workers cannot launch workers; they ask their parent instead.
+an integer from 1 to 256, for example `TAU_SUBAGENT_CAP=8`.
 
 ### Web provider
 

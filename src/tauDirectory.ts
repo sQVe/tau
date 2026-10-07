@@ -151,6 +151,12 @@ const rejectUnignored = async (root: string, relativeDirectory: string) => {
   await rejectTracked(root, relativeDirectory);
 };
 
+const isBareRoot = async (root: string) => {
+  const output = await readGitOutput(root, ['rev-parse', '--is-bare-repository']);
+
+  return output?.trim() === 'true';
+};
+
 // Refuses `<root>/.tau/<path>` when a path a write would go through is a symlink, or
 // `.tau/.gitignore` has another hard link, since either could send writes outside the repository,
 // or when Git would not ignore files in it. Changes nothing, so a read can run it.
@@ -160,6 +166,17 @@ export const checkTauDirectory = async (root: string, path: string): Promise<voi
   await rejectSymlinks(root, writtenPaths(segments));
   await rejectHardLinkedIgnoreFile(root);
   await rejectLaterExceptions(root);
+
+  if (await isBareRoot(root)) {
+    const content = await readIgnoreFile(join(root, '.tau/.gitignore'));
+
+    if (!endsWithIgnoreEverything(content)) {
+      throw new Error('The bare repository needs a final * rule in .tau/.gitignore');
+    }
+
+    return;
+  }
+
   await rejectUnignored(root, ['.tau', ...segments].join('/'));
 };
 
@@ -173,8 +190,13 @@ export const ensureTauDirectory = async (root: string, path: string): Promise<st
 
   await rejectSymlinks(root, writtenPaths(segments));
   await rejectHardLinkedIgnoreFile(root);
-  await rejectTracked(root, '.tau/.gitignore');
-  await rejectTracked(root, ['.tau', ...segments].join('/'));
+
+  if (await isBareRoot(root)) {
+    await rejectLaterExceptions(root);
+  } else {
+    await rejectTracked(root, '.tau/.gitignore');
+    await rejectTracked(root, ['.tau', ...segments].join('/'));
+  }
 
   await mkdir(join(root, '.tau'), { recursive: true });
   await ignoreTauDirectory(root);

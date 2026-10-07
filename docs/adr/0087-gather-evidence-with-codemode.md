@@ -15,8 +15,8 @@ the `bulk_read` section in
 **Related**:
 [ADR 0067 (Give workers only their profile's tools and skills)](./0067-give-workers-only-their-profile-tools-and-skills.md)
 for profile tool allowlists,
-[ADR 0085 (Group per-repository settings in the user config)](./0085-group-per-repository-settings-in-the-user-config.md)
-for key placement and removed keys
+[ADR 0095 (Keep repository routing in tracker config)](./0095-keep-repository-routing-in-tracker-config.md)
+for config placement and validation
 
 ## Context
 
