@@ -865,6 +865,42 @@ describe('slice tool read', () => {
     expect(outcome.error).toMatch(/unexpected output/);
   });
 
+  it.each([
+    {
+      problem: 'command failure',
+      output: undefined,
+      diagnostic: 'failed: network error',
+    },
+    {
+      problem: 'invalid JSON',
+      output: 'x'.repeat(250),
+      diagnostic: `printed output that is not JSON: ${'x'.repeat(200)}`,
+    },
+    {
+      problem: 'invalid state type',
+      output: '{"state": 1}',
+      diagnostic: 'printed unexpected output: /state must be string',
+    },
+  ])(
+    'reports the GitHub diagnostic for $problem without changing the draft',
+    async ({ output, diagnostic }) => {
+      const { fake, directory, read } = await appliedPlan();
+      const url = 'https://github.com/sQVe/tau/pull/1';
+
+      fake.issues.get('ME-2')!.pullRequests = [url];
+
+      if (output === undefined) {
+        fake.failCall('pr view', 'network error');
+      } else {
+        fake.overrideOutput('pr view', output);
+      }
+
+      const outcome = await expectReadOnly(fake, directory, read);
+
+      expect(outcome.error).toBe(`gh pr view ${url} --json state ${diagnostic}`);
+    },
+  );
+
   it('names malformed gh output', async () => {
     const { fake, directory, read } = await appliedPlan();
 

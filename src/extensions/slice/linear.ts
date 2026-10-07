@@ -3,6 +3,8 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { Exec } from '../../exec.js';
+import { checkOutput, readJson } from '../../github.js';
+import type { Runtime } from '../../github.js';
 import { api, openStateTypes, run, unexpectedOutput } from '../../linear.js';
 import type { LinearChild, LinearContainer } from './writes.js';
 
@@ -104,20 +106,11 @@ const pullRequestUrl = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/u;
 type ChildNode = Static<typeof childSchema>;
 
 const readPullRequestState = async (exec: Exec, cwd: string, url: string) => {
-  const stdout = await run(exec, cwd, 'gh', ['pr', 'view', url, '--json', 'state']);
-  let value: unknown;
+  const runtime: Runtime = { exec, cwd, signal: undefined };
+  const commandArguments = ['pr', 'view', url, '--json', 'state'];
+  const value = await readJson(runtime, commandArguments);
 
-  try {
-    value = JSON.parse(stdout);
-  } catch (error) {
-    throw new Error(`gh pr view ${url} printed output that is not JSON: ${stdout}`, {
-      cause: error,
-    });
-  }
-
-  if (!Value.Check(pullRequestSchema, value)) {
-    throw new Error(`gh pr view ${url} printed unexpected output: ${stdout}`);
-  }
+  checkOutput(commandArguments, pullRequestSchema, value);
 
   return value.state;
 };
@@ -327,7 +320,7 @@ export const changeBlockedBy = async (
   cwd: string,
   change: { action: 'add' | 'delete'; identifier: string; blocker: string },
 ): Promise<void> => {
-  await run(exec, cwd, 'linear', [
+  await run(exec, cwd, [
     'issue',
     'relation',
     change.action,
