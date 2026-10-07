@@ -249,8 +249,14 @@ it('refuses several open pull requests for one branch', () => {
 
 const openPr = { ...listed(1, 'OPEN'), baseRefName: 'release' };
 
+it('bases an open pull request on the requested base instead of its current base', () => {
+  expect(pickBaseBranch({ pr: openPr, requestedBase: 'develop', defaultBranch: 'main' })).toBe(
+    'develop',
+  );
+});
+
 it.each([
-  { pr: openPr, requestedBase: 'develop', branch: 'release' },
+  { pr: openPr, requestedBase: undefined, branch: 'release' },
   { pr: null, requestedBase: 'develop', branch: 'develop' },
   { pr: null, requestedBase: undefined, branch: 'main' },
 ])('bases the branch on $branch', ({ pr, requestedBase, branch }) => {

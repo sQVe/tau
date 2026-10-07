@@ -342,5 +342,7 @@ export const pickPullRequests = (
   return { pr: open[0] ?? null, closedPrs };
 };
 
+// A requested base wins over an open pull request's base, so a caller can move the pull request
+// onto a new parent, such as its parent in a stack.
 export const pickBaseBranch = (facts: BaseBranchFacts): string =>
-  facts.pr?.baseRefName ?? facts.requestedBase ?? facts.defaultBranch;
+  facts.requestedBase ?? facts.pr?.baseRefName ?? facts.defaultBranch;
