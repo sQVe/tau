@@ -9,6 +9,7 @@ import { Value } from 'typebox/value';
 import { errorMessage, isMissingFile } from '../../errors.js';
 import { parseRepository } from '../../github.js';
 import type { Repository } from '../../github.js';
+import { describeSchemaProblem } from '../../schemaProblem.js';
 import { repositoryName } from './checkEvidence.js';
 
 export interface PullRequestRecord {
@@ -109,12 +110,6 @@ const isNewerVersion = (value: unknown, current: number) => {
   return typeof version === 'number' && version > current;
 };
 
-const schemaProblem = (schema: TSchema, value: unknown) => {
-  const [error] = Value.Errors(schema, value);
-
-  return error === undefined ? 'unknown problem' : `${error.instancePath || '/'} ${error.message}`;
-};
-
 const parseRecordJson = (path: string, text: string, current = currentVersion): unknown => {
   let value: unknown;
 
@@ -135,7 +130,7 @@ const parseRecordJson = (path: string, text: string, current = currentVersion): 
 
 const checkRecord: CheckRecord = (path, schema, value) => {
   if (!Value.Check(schema, value)) {
-    throw new Error(`Malformed ${path}: ${schemaProblem(schema, value)}.`);
+    throw new Error(`Malformed ${path}: ${describeSchemaProblem(schema, value)}.`);
   }
 };
 

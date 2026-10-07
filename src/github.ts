@@ -2,6 +2,7 @@ import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { Exec } from './exec.js';
+import { describeSchemaProblem } from './schemaProblem.js';
 
 export interface Repository {
   host: string;
@@ -63,12 +64,6 @@ export const run = async (runtime: Runtime, commandArguments: string[]): Promise
   return result.stdout;
 };
 
-export const describeProblem = (schema: TSchema, value: unknown): string => {
-  const [error] = Value.Errors(schema, value);
-
-  return error === undefined ? 'unknown problem' : `${error.instancePath || '/'} ${error.message}`;
-};
-
 export const parseJson = (commandArguments: readonly string[], stdout: string): unknown => {
   try {
     return JSON.parse(stdout);
@@ -87,7 +82,7 @@ export const readJson = async (runtime: Runtime, commandArguments: string[]): Pr
 export const checkOutput: CheckOutput = (commandArguments, schema, value) => {
   if (!Value.Check(schema, value)) {
     throw new Error(
-      `${label(commandArguments)} printed unexpected output: ${describeProblem(schema, value)}`,
+      `${label(commandArguments)} printed unexpected output: ${describeSchemaProblem(schema, value)}`,
     );
   }
 };

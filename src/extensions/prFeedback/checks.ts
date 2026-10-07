@@ -1,8 +1,8 @@
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { describeProblem } from '../../github.js';
 import type { Repository, Runtime } from '../../github.js';
+import { describeSchemaProblem } from '../../schemaProblem.js';
 import {
   boundChecks,
   checkListEvidence,
@@ -43,7 +43,7 @@ const checkListSchema = Type.Array(
 const validateCheckList: CheckListValidation = (value) =>
   Value.Check(checkListSchema, value)
     ? { checks: value }
-    : { problem: `printed unexpected output: ${describeProblem(checkListSchema, value)}` };
+    : { problem: `printed unexpected output: ${describeSchemaProblem(checkListSchema, value)}` };
 
 const runGh = async (runtime: Runtime, commandArguments: string[]): Promise<CommandResult> => {
   const result = await runtime.exec('gh', commandArguments, {
