@@ -34,6 +34,47 @@ export const runGit = async (
   return result.stdout;
 };
 
+export const resolveFixupTargetSubject = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+  target: string,
+): Promise<string> => {
+  const resolved = await pi.exec(
+    'git',
+    ['rev-parse', '--verify', '--quiet', '--end-of-options', `${target}^{commit}`],
+    { cwd: workingDirectory, timeout: defaultTimeoutMilliseconds },
+  );
+
+  if (resolved.code !== 0 || resolved.killed) {
+    throw new Error(`Fixup target does not resolve to a commit: ${target}`);
+  }
+
+  const commitHash = resolved.stdout.trim();
+
+  const ancestor = await pi.exec('git', ['merge-base', '--is-ancestor', commitHash, 'HEAD'], {
+    cwd: workingDirectory,
+    timeout: defaultTimeoutMilliseconds,
+  });
+
+  if (ancestor.killed || ancestor.code > 1) {
+    throw new Error(`Could not check fixup target ancestry: ${ancestor.stderr || ancestor.stdout}`);
+  }
+
+  if (ancestor.code !== 0) {
+    throw new Error(`Fixup target is not an ancestor of HEAD: ${target}`);
+  }
+
+  const parents = await runGit(pi, workingDirectory, ['log', '-1', '--format=%P', commitHash]);
+
+  if (parents.trim().split(' ').length > 1) {
+    throw new Error(`Fixup target is a merge commit: ${target}`);
+  }
+
+  const subject = await runGit(pi, workingDirectory, ['log', '-1', '--format=%s', commitHash]);
+
+  return subject.replace(/\n$/, '');
+};
+
 export const readIndex = (
   pi: Pick<ExtensionAPI, 'exec'>,
   workingDirectory: string,

@@ -40,6 +40,7 @@ interface StagedBefore {
 
 interface GroupExecution {
   parameters: CommitInput['groups'][number];
+  subject: string;
   temporaryDirectory: string;
   pi: Pick<ExtensionAPI, 'exec'>;
   context: ExtensionContext;
@@ -49,7 +50,6 @@ interface GroupExecution {
 
 interface GroupRun extends GroupExecution {
   messagePath: string;
-  subject: string;
   body: string | null;
   requestedFiles: Set<string>;
   prefix: string;
@@ -436,7 +436,7 @@ const reportCommit = async (run: GroupRun, commitResult: ExecResult): Promise<Co
 };
 
 export const executeGroup = async (execution: GroupExecution): Promise<GroupOutcome> => {
-  const subject = execution.parameters.subject;
+  const subject = execution.subject;
   const body = normalizeBody(execution.parameters.body ?? null);
   const messagePath = join(execution.temporaryDirectory, 'message');
 

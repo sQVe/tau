@@ -45,10 +45,17 @@ tool runs without a prompt.
      hunks.
    - Give each group an exact `files` list. Use the optional `body` to explain why the change was
      made.
+   - To fix an older commit, use the `fixup` field instead of `subject`. Choose `fixup` to keep its
+     message, `squash` to add message text, or `amend` to replace its message. For `amend`, supply
+     the replacement subject and optional body in `body`. Choose the parent of the oldest target as
+     `<base>`.
 
 3. Call `commit` with the ordered `groups` array.
    - The tool runs groups in order and stops on failure. Earlier successful commits remain.
    - Report created commits, actual committed paths, hook rewrites, and any errors.
+   - After creating the fixes for older commits, run
+     `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`. For `squash`, Git
+     keeps the combined message. Stop and report conflicts or other rebase failures.
 
 4. On failure, read the tool's error before deciding what to retry.
    - If the user cancelled, stop without retrying, even when the tool reports an error.
