@@ -75,6 +75,10 @@ Use this skill when a branch belongs to a stack, or when another skill sends you
    GitHub reads on the parent first. Stop when an open PR other than the new branch's is based on
    the parent: `gh stack add` adds only to the top of a stack, so a stack cannot fork. The calling
    skill decides what happens next.
+   - When `git rev-parse --verify --quiet refs/heads/<branch>` finds the branch, an earlier run may
+     have created it. Run `gh stack checkout <branch>`. When it exits 0 and `gh stack view --json`
+     lists the parent directly below the branch, the branch is in place. Skip to the last check of
+     this step.
    - Run `gh stack checkout <parent>`. Exit code 0 means the parent is in a stack, now tracked in
      this worktree and checked out. It imports a stack from GitHub as step 3 describes.
    - Exit code 2 means no local or GitHub stack holds the parent. Run `git fetch <remote> <parent>`.
@@ -123,8 +127,8 @@ Use this skill when a branch belongs to a stack, or when another skill sends you
        `git cherry <branch> <remote>/<branch> <remote>/<new parent>` and
        `git cherry <remote>/<branch> <branch> <old parent>` print only lines that start with `-`.
        `<new parent>` is the first unmerged branch below, or the trunk. `<old parent>` is the local
-       branch of the merged PR directly below. Go on: the restack drops the merged commits and the
-       push replaces the rewritten tip with the same changes.
+       branch directly below, merged or not, as it was before the restack. Go on: the restack drops
+       the merged commits and the push replaces the rewritten tip with the same changes.
      - Stop and report each other branch it lists commits for. The rebase skips a branch that has
        diverged from its remote, and the push would then overwrite those remote commits.
    - From the branch you changed, run `gh stack rebase --upstack --remote <remote>`. It rebases that

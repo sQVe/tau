@@ -184,17 +184,21 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      `--draft` for approved draft status and `--head <owner>:<branch>` for a fork. Update with
      `gh pr edit`, adding `--base <base>` when the base changes. Change existing draft status with
      `gh pr ready`, adding `--undo` for draft.
-   - After creating a stacked PR, or updating one that no GitHub stack holds, link with
-     `gh stack link --remote <remote> --base <trunk> <PR numbers, bottom to top>`. Keep `--base`;
-     omitting it sets the bottom PR's base to the default branch. Never use `gh stack submit`, which
-     publishes generated titles instead of approved ones.
-   - `link` only appends to the top of a GitHub stack; it never removes PRs. Read the stack holding
-     the PR below with
-     `gh api --hostname <host> "repos/<owner>/<name>/stacks?pull_request=<number>" --jq '(.[0].pull_requests // []) | map(.number)'`.
-     Pass its numbers, including merged PRs, then this PR. If it prints `[]`, pass open PRs from
-     `gh stack view --json`. One open PR needs no link. If this PR is not the local stack's top, do
-     not link; report GitHub's top-only limit.
-   - Read the remote stack again using this PR's number. Check the passed numbers and their order.
+   - After creating a stacked PR, or updating one that no GitHub stack holds, link it into a GitHub
+     stack. Never use `gh stack submit`, which publishes generated titles instead of approved ones.
+     If this PR is not the local stack's top, do not link; report GitHub's top-only limit.
+   - Read the GitHub stack holding the PR below with
+     `gh api --hostname <host> "repos/<owner>/<name>/stacks?pull_request=<number>" --jq '.[0] // {} | {number, pullRequests: ((.pull_requests // []) | map(.number))}'`.
+   - When `number` is set, append with `gh stack link --remote <remote> <stack number> <this PR>`.
+     It skips PRs already in the stack and bases this PR on the branch of the stack's top PR. Stop
+     and report when that top PR is not the PR below.
+   - When `number` is null, link with
+     `gh stack link --remote <remote> --base <trunk> <open PR numbers, bottom to top>`, taken from
+     `gh stack view --json`. Keep `--base`; omitting it sets the bottom PR's base to the default
+     branch. Pass only open PRs: link moves each PR onto the branch of the PR before it, so a merged
+     PR would pull the PR above it back onto the merged branch. One open PR needs no link.
+   - Read the remote stack again using this PR's number. Check that it lists this PR at the top and
+     that each open PR's base is the branch of the open PR below it, or the trunk.
      `gh stack view --json` reads only the local stack and cannot confirm linking.
 
 10. Check the published PR with the `pr` tool's `verify` action. Pass `$prdir` and the approved
