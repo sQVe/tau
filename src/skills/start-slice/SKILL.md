@@ -114,9 +114,10 @@ Workers then carry out the agent tickets.
    `git ls-remote --symref origin HEAD`.
    - Without a parent, the base is the default branch's remote-tracking branch, such as
      `origin/<default branch>`.
-   - With a parent from step 2, the slice starts stacked. Its base is `origin/<parent>`. Its trunk
-     is the base of the bottom PR in the parent's GitHub stack, or the default branch when no stack
-     holds the parent.
+   - With a parent from step 2, the slice starts stacked. Fetch the parent with
+     `git fetch origin refs/heads/<parent>:refs/remotes/origin/<parent>`. Its base is
+     `origin/<parent>`. Its trunk is the base of the bottom PR in the parent's GitHub stack, or the
+     default branch when no stack holds the parent.
 
 5. Read the code the slice touches in the tree the workers will use: the branch when
    `git rev-parse --verify --quiet refs/heads/<branchName>` finds it, otherwise the base. The

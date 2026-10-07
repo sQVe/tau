@@ -84,13 +84,14 @@ Use this skill when a branch belongs to a stack, or when another skill sends you
      this step.
    - Run `gh stack checkout <parent>`. Exit code 0 means the parent is in a stack, now tracked in
      this worktree and checked out. It imports a stack from GitHub as step 3 describes.
-   - Exit code 2 means no local or GitHub stack holds the parent. Run `git fetch <remote> <parent>`.
-     Switch to it with `git switch <parent>`, or
+   - Exit code 2 means no local or GitHub stack holds the parent. Run
+     `git fetch <remote> refs/heads/<parent>:refs/remotes/<remote>/<parent>`. The explicit
+     destination creates `<remote>/<parent>` even when the remote's fetch refspec leaves the branch
+     out. Switch to it with `git switch <parent>`, or
      `git switch --no-track -c <parent> <remote>/<parent>` when it has no local branch.
      `gh stack init` would otherwise create the parent from the local trunk.
-   - Run `git fetch <remote> <parent>` if you have not yet. When
-     `git log --oneline <parent>..<remote>/<parent>` lists commits, fast-forward with
-     `git merge --ff-only <remote>/<parent>`. Stop if that fails or if
+   - Run that fetch if you have not yet. When `git log --oneline <parent>..<remote>/<parent>` lists
+     commits, fast-forward with `git merge --ff-only <remote>/<parent>`. Stop if that fails or if
      `git log --oneline <remote>/<parent>..<parent>` lists commits.
    - For a parent in a stack, check that `gh stack view --json` lists it as the top branch. Stop if
      a branch sits above it. Then run `gh stack add <branch>`.
