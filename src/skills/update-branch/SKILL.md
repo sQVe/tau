@@ -21,8 +21,8 @@ the [handover skill](../handover/SKILL.md).
   working tree is dirty. During a rebase, change only the files its conflicts need.
 - Before starting or continuing a standalone rebase, require every one of your workers in this
   worktree to be `stopped`. Follow the [stack skill's worker check](../stack/SKILL.md#hard-rules),
-  under "Switch, restack, or sync only". Any other state, or a state you cannot read, blocks the
-  rebase: wait for the worker, or ask the user before cancelling it.
+  under "Switch, create, restack, or sync only". Any other state, or a state you cannot read, blocks
+  the rebase: wait for the worker, or ask the user before cancelling it.
 - Do not abort the rebase without the user's permission.
 - Ask when two changes need a product decision to fit together.
 - Never run a plain `git rebase` on a branch in a stack. Restack it with the
@@ -59,7 +59,8 @@ the [handover skill](../handover/SKILL.md).
      missing locally.
 3. Run the worker check in Hard rules, then rebase onto the base's fetched remote-tracking branch
    with `git rebase <remote>/<base>`. The base is the branch the user names, else the PR's
-   `baseRefName`, else the default branch from `git symbolic-ref --short refs/remotes/<remote>/HEAD`.
+   `baseRefName`, else the default branch. `git symbolic-ref --short refs/remotes/<remote>/HEAD`
+   prints it with the remote prefix, such as `origin/main`, so rebase onto that output as it is.
 4. For each conflict, read both changes and enough surrounding code to understand their intent. Read
    linked PRs or issues only when the intent stays unclear. Keep both intents where they fit. Stage
    resolved files by name, then run `GIT_EDITOR=true git rebase --continue`. Skip a commit only

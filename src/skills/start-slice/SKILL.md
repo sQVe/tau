@@ -109,9 +109,10 @@ Workers then carry out the agent tickets.
    stop. When its body file is missing or differs, save its description as the body file, so the
    worker gets the same task as the ticket.
 
-4. Choose the base. Run `git fetch origin`, then find the remote's default branch from
-   `git symbolic-ref --short refs/remotes/origin/HEAD`. If that ref is missing, read it from
-   `git ls-remote --symref origin HEAD`.
+4. Choose the base. Run `git fetch origin`, then find the remote's default branch.
+   `git symbolic-ref --short refs/remotes/origin/HEAD` prints it with the remote prefix, such as
+   `origin/main`; the default branch is the part after `origin/`. If that ref is missing, read it
+   from `git ls-remote --symref origin HEAD`.
    - Without a parent, the base is the default branch's remote-tracking branch, such as
      `origin/<default branch>`.
    - With a parent from step 2, the slice starts stacked. Fetch the parent with
