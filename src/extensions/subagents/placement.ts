@@ -23,7 +23,7 @@ interface PlacementInput {
   cwd: string;
   environment: Record<string, string>;
   // Runs as the pane's own process instead of the user's shell.
-  command?: string[];
+  command: string[];
   // Receives the pane ID as soon as herdr starts the command, before its terminal is known.
   onLaunched?: (paneId: string) => void;
   onCreated?: (location: TerminalLocation) => void;
@@ -376,40 +376,6 @@ export class WorkerPlacement {
       );
     }
 
-    const location = input.command
-      ? await this.applyCommandTab(parent, { ...input, command: input.command }, call)
-      : terminalLocation(
-          result(
-            await call([
-              'tab',
-              'create',
-              '--workspace',
-              parent.workspaceId,
-              '--label',
-              input.name,
-              '--cwd',
-              input.cwd,
-              '--no-focus',
-              ...Object.entries(input.environment).flatMap(([key, value]) => [
-                '--env',
-                `${key}=${value}`,
-              ]),
-            ]),
-          ).root_pane,
-        );
-
-    this.owned.set(location.terminalId, { tabId: location.tabId, visibility: 'background' });
-    this.labelled.set(location.terminalId, { tabId: location.tabId, name: input.name });
-    input.onCreated?.(location);
-
-    return location;
-  }
-
-  private async applyCommandTab(
-    parent: TerminalLocation,
-    input: PlacementInput & { command: string[] },
-    call: TerminalCall,
-  ): Promise<TerminalLocation> {
     // Never pass tab_id: herdr would replace that tab.
     const applied = await call([
       'layout',
@@ -426,7 +392,13 @@ export class WorkerPlacement {
 
     input.onLaunched?.(paneId);
 
-    return terminalLocation(result(await call(['pane', 'get', paneId])).pane);
+    const location = terminalLocation(result(await call(['pane', 'get', paneId])).pane);
+
+    this.owned.set(location.terminalId, { tabId: location.tabId, visibility: 'background' });
+    this.labelled.set(location.terminalId, { tabId: location.tabId, name: input.name });
+    input.onCreated?.(location);
+
+    return location;
   }
 
   private async create(input: PlacementInput, call: TerminalCall): Promise<Placement> {

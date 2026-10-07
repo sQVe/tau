@@ -14,6 +14,7 @@ interface FixtureInput {
   visibility: Visibility;
   cwd: string;
   environment: { TASK: string };
+  command: string[];
 }
 
 export interface PlacementFixture {
@@ -129,7 +130,7 @@ export const placementFixture = (width: number, height: number): PlacementFixtur
       return JSON.stringify({ result: { move_result: { pane } } });
     }
 
-    if (operation !== 'create' && operation !== 'apply') {
+    if (operation !== 'apply') {
       throw new Error(`Unexpected operation: ${argumentsList.join(' ')}`);
     }
 
@@ -145,19 +146,9 @@ export const placementFixture = (width: number, height: number): PlacementFixtur
     dimensions.set(pane.pane_id, { width, height });
     panes.push(pane);
 
-    labels.set(
-      pane.tab_id,
-      operation === 'apply'
-        ? String(requireObject(JSON.parse(argumentsList[2]!)).tab_label)
-        : value('--label')!,
-    );
+    labels.set(pane.tab_id, String(requireObject(JSON.parse(argumentsList[2]!)).tab_label));
 
-    return JSON.stringify({
-      result:
-        operation === 'apply'
-          ? { layout: { root: { pane_id: pane.pane_id } } }
-          : { root_pane: pane },
-    });
+    return JSON.stringify({ result: { layout: { root: { pane_id: pane.pane_id } } } });
   };
 
   return {
@@ -168,6 +159,7 @@ export const placementFixture = (width: number, height: number): PlacementFixtur
       visibility,
       cwd: '/work',
       environment: { TASK: 'fixture' },
+      command: ['pi'],
     }),
     calls,
     panes,

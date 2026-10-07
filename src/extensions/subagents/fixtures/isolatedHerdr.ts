@@ -26,11 +26,7 @@ interface IsolatedHerdr {
   client: (argumentsList: string[], budget?: number, signal?: AbortSignal) => Promise<string>;
 }
 
-export const isolatedHerdr = async (
-  configuration = '',
-  // Panes inherit this server's environment, so harness fixtures must be bound here.
-  extraEnvironment: Record<string, string> = {},
-): Promise<IsolatedHerdr> => {
+export const isolatedHerdr = async (configuration = ''): Promise<IsolatedHerdr> => {
   const root = mkdtempSync(join(tmpdir(), 'tau-herdr-worker-'));
 
   // Never inherit the active socket, caller IDs, or user configuration.
@@ -42,7 +38,6 @@ export const isolatedHerdr = async (
     PI_CODING_AGENT_DIR: join(root, 'agent'),
     SHELL: '/bin/sh',
     TERM: 'xterm-256color',
-    ...extraEnvironment,
   };
 
   mkdirSync(environment.PI_CODING_AGENT_DIR);

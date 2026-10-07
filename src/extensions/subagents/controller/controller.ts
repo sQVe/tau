@@ -68,10 +68,6 @@ interface StatusFailureRequest {
 interface LaunchTaskPlan {
   taskId: string;
   directory: string;
-  createdAt: number;
-  deadline: number;
-  cancellationBudget: number;
-  monotonicDeadline: number;
   source?: FollowUpPreparation;
 }
 
@@ -539,15 +535,11 @@ export class WorkerController {
     const directory = join(this.root, taskId);
     const timing = launchTiming(input.timeout, input.startedAt);
 
-    const task = this.buildTask(input, {
-      taskId,
-      directory,
-      createdAt: timing.createdAt,
-      deadline: timing.deadline,
-      cancellationBudget: timing.cancellationBudget,
-      monotonicDeadline: timing.monotonicDeadline,
-      ...(source ? { source } : {}),
-    });
+    const task = this.buildTask(
+      input,
+      { taskId, directory, ...(source ? { source } : {}) },
+      timing,
+    );
 
     const listing = await this.readAgentListing(launchSignal, timing);
 
@@ -557,7 +549,9 @@ export class WorkerController {
 
     // A follow-up's native session can gain a live writer during the install.
     const installed = source !== undefined && extensionPackages.length > 0;
-    const agents = installed ? await this.readAgents(launchSignal, timing) : listing.agents;
+    const currentListing = installed ? await this.readAgentListing(launchSignal, timing) : listing;
+
+    const { agents } = currentListing;
 
     // Other launches can start during the install. Admit again so admission, allocation, and
     // publication below run in one synchronous step.
@@ -588,7 +582,7 @@ export class WorkerController {
     this.workers.set(taskId, worker);
     worker.arm(launchSignal);
 
-    return { taskId, worker, name };
+    return { taskId, worker };
   }
 
   // Every refusal that needs no task directory, checked before any download or write.
@@ -630,12 +624,6 @@ export class WorkerController {
     return installWorkerPackages(loadout, this.packageManager, this.installs, signal);
   }
 
-  private async readAgents(launchSignal: AbortSignal, timing: ReturnType<typeof launchTiming>) {
-    const listing = await this.readAgentListing(launchSignal, timing);
-
-    return listing.agents;
-  }
-
   private async readAgentListing(
     launchSignal: AbortSignal,
     timing: ReturnType<typeof launchTiming>,
@@ -661,7 +649,13 @@ export class WorkerController {
     return listing;
   }
 
-  private buildTask(input: LaunchInput, plan: LaunchTaskPlan): Task {
+  private buildTask(
+    input: LaunchInput,
+    plan: LaunchTaskPlan,
+    timing: ReturnType<typeof launchTiming>,
+  ): Task {
+    const { expires: _expires, ...savedTiming } = timing;
+
     return validateTask({
       version: taskVersion,
       name: `${namePrefix(input.loadout)}-00`,
@@ -671,10 +665,7 @@ export class WorkerController {
       parentSession: input.parentSession,
       parentSessionId: input.parentSessionId,
       ...nativeReference(plan.directory, plan.source),
-      createdAt: plan.createdAt,
-      deadline: plan.deadline,
-      cancellationBudget: plan.cancellationBudget,
-      monotonicDeadline: plan.monotonicDeadline,
+      ...savedTiming,
       loadout: input.loadout,
     });
   }

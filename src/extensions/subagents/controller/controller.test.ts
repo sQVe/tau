@@ -172,14 +172,6 @@ it('reattaches accepted work and cancels it without replacing saved records', as
   vi.useFakeTimers();
   const fixture = setup(onTestFinished);
 
-  vi.spyOn(process, 'kill').mockImplementation(() => {
-    if (fixture.fake.state.stopped) {
-      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
-    }
-
-    return true;
-  });
-
   const launched = await fixture.controller.launch(fixture.input);
   recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
 
@@ -307,14 +299,6 @@ it('stops a saved worker while its resume inspection is pending', async ({ onTes
   vi.useFakeTimers();
   const fixture = setup(onTestFinished);
 
-  vi.spyOn(process, 'kill').mockImplementation(() => {
-    if (fixture.fake.state.stopped) {
-      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
-    }
-
-    return true;
-  });
-
   const saved = await fixture.controller.launch(fixture.input);
   fixture.controller.close();
   const entered = Promise.withResolvers<undefined>();
@@ -357,14 +341,6 @@ it('keeps a saved worker owned while cancel stops it during resume inspection', 
 }) => {
   vi.useFakeTimers();
   const fixture = setup(onTestFinished);
-
-  vi.spyOn(process, 'kill').mockImplementation(() => {
-    if (fixture.fake.state.stopped) {
-      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
-    }
-
-    return true;
-  });
 
   const saved = await fixture.controller.launch(fixture.input);
   fixture.controller.close();
@@ -441,14 +417,6 @@ it.each(['stopping', 'cancelled', 'timeout'])(
   async (kind) => {
     vi.useFakeTimers();
     const fixture = setup(afterTest);
-
-    vi.spyOn(process, 'kill').mockImplementation(() => {
-      if (fixture.fake.state.stopped) {
-        throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
-      }
-
-      return true;
-    });
 
     const launched = await fixture.controller.launch(fixture.input);
     recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
@@ -583,14 +551,6 @@ it.each(['before resume', 'during inspection'])(
 
     const fixture = setup(afterTest);
 
-    vi.spyOn(process, 'kill').mockImplementation(() => {
-      if (fixture.fake.state.stopped) {
-        throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
-      }
-
-      return true;
-    });
-
     const launched = await fixture.controller.launch(fixture.input);
     fixture.controller.close();
     const elapsed = expiry === 'before resume' ? 20_000 : 7000;
@@ -653,14 +613,6 @@ it.each(['before resume', 'during inspection'])(
 it('resumes polling with the remaining wall-clock deadline', async ({ onTestFinished }) => {
   vi.useFakeTimers();
   const fixture = setup(onTestFinished);
-
-  vi.spyOn(process, 'kill').mockImplementation(() => {
-    if (fixture.fake.state.stopped) {
-      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
-    }
-
-    return true;
-  });
 
   const launched = await fixture.controller.launch(fixture.input);
   recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
@@ -3247,14 +3199,6 @@ it('caps live workers per controller and admits again after confirmed cleanup', 
   const fixture = setup(onTestFinished);
   vi.stubEnv('TAU_SUBAGENT_CAP', '2');
 
-  vi.spyOn(process, 'kill').mockImplementation(() => {
-    if (fixture.fake.state.stopped) {
-      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
-    }
-
-    return true;
-  });
-
   const launched = await fixture.controller.launch(fixture.input);
   const recordsBefore = readdirSync(fixture.directory);
   const panesBefore = structuredClone(fixture.fake.layout.panes);
@@ -3314,14 +3258,6 @@ it('admits another worker after cleanup fails its terminal identity check', asyn
 
 it('stops running workers and frees their slots on reload', async ({ onTestFinished }) => {
   const fixture = setup(onTestFinished);
-
-  vi.spyOn(process, 'kill').mockImplementation(() => {
-    if (fixture.fake.state.stopped) {
-      throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
-    }
-
-    return true;
-  });
 
   const launched = await fixture.controller.launch(fixture.input);
 

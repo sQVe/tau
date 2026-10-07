@@ -343,23 +343,20 @@ export const inspectWorker = async (
 export const waitForPiIdentity = async (
   handle: Handle,
   call: (argumentsList: string[]) => Promise<string>,
-  cleanup?: InspectionBudget,
 ): Promise<OwnedWorker> => {
   for (;;) {
     try {
       // oxlint-disable-next-line eslint/no-await-in-loop -- Only a missing Pi integration session is transient here.
-      return await inspectWorker(handle, call, cleanup);
+      return await inspectWorker(handle, call);
     } catch (error) {
       if (!(error instanceof PendingPiSessionError)) {
         throw error;
       }
 
       try {
-        const remaining = cleanup ? cleanup.remainingBudget() : workBudget(handle);
-
-        // oxlint-disable-next-line eslint/no-await-in-loop -- Session discovery uses the existing work or cleanup deadline.
-        await delay(Math.min(pollInterval, remaining), undefined, {
-          signal: cleanup?.signal ?? handle.abort.signal,
+        // oxlint-disable-next-line eslint/no-await-in-loop -- Session discovery uses the existing work deadline.
+        await delay(Math.min(pollInterval, workBudget(handle)), undefined, {
+          signal: handle.abort.signal,
         });
       } catch {
         throw error;

@@ -239,21 +239,6 @@ export const delegationGuidelines = (loginCommand: string | undefined): string[]
   ...trailingDelegationGuidelines,
 ];
 
-const requireHerdrParent = (
-  parentPane: string | undefined,
-  parentSession: string | undefined,
-  message: string,
-): string => {
-  const paneMissing = parentPane == null || parentPane === '';
-  const sessionMissing = parentSession == null || parentSession === '';
-
-  if (!hasHerdrEnvironment() || paneMissing || sessionMissing) {
-    throw new Error(message);
-  }
-
-  return parentSession;
-};
-
 // Pi streams call arguments, so a renderer can run before the model finishes any field.
 const callDetail = (parts: (string | undefined)[]): string | undefined => {
   const joined = parts.filter((part): part is string => Boolean(part)).join(' · ');
@@ -304,14 +289,15 @@ const launchWorker = async (
   signal?.throwIfAborted();
   const startedAt = { wall: Date.now(), monotonic: performance.now() };
 
-  const parentPane = process.env.HERDR_PANE_ID;
-  const session = context.sessionManager.getSessionFile();
+  const parentSession = context.sessionManager.getSessionFile();
 
-  const parentSession = requireHerdrParent(
-    parentPane,
-    session,
-    'Worker launch requires a saved parent Pi session inside local herdr.',
-  );
+  if (!hasHerdrParentPane()) {
+    throw new Error('Worker launch requires a saved parent Pi session inside local herdr.');
+  }
+
+  if (parentSession == null || parentSession === '') {
+    throw new Error('Worker launch requires a saved parent Pi session inside local herdr.');
+  }
 
   const controller = runtime.getController();
   const loadout = resolveLoadout(parameters, context, signal, runtime.pi.getCommands());
@@ -353,14 +339,15 @@ const followUpWorker = async (
   signal: AbortSignal | undefined,
   context: ExtensionContext,
 ) => {
-  const parentPane = process.env.HERDR_PANE_ID;
-  const session = context.sessionManager.getSessionFile();
+  const parentSession = context.sessionManager.getSessionFile();
 
-  const parentSession = requireHerdrParent(
-    parentPane,
-    session,
-    'Follow-up requires a saved parent session inside local herdr.',
-  );
+  if (!hasHerdrParentPane()) {
+    throw new Error('Follow-up requires a saved parent session inside local herdr.');
+  }
+
+  if (parentSession == null || parentSession === '') {
+    throw new Error('Follow-up requires a saved parent session inside local herdr.');
+  }
 
   const controller = runtime.getController();
 

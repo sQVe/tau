@@ -44,6 +44,7 @@ it.runIf(hasHerdr).each([
             visibility: 'foreground',
             cwd: root,
             environment: {},
+            command: ['/bin/sh', '-c', 'while [ ! -e "$EXIT_SIGNAL" ]; do sleep 0.05; done'],
           },
           client,
         ),
@@ -151,6 +152,7 @@ it.runIf(hasHerdr)(
       visibility: 'foreground' as const,
       cwd: root,
       environment: {},
+      command: ['/bin/sh', '-c', 'while [ ! -e "$EXIT_SIGNAL" ]; do sleep 0.05; done'],
     };
 
     const visible = await placement.place(input, client);
@@ -216,6 +218,7 @@ it.runIf(hasHerdr)(
       visibility: 'foreground' as const,
       cwd: root,
       environment: {},
+      command: ['/bin/sh', '-c', 'while [ ! -e "$EXIT_SIGNAL" ]; do sleep 0.05; done'],
     };
 
     const worker = await placement.place(input, client);
@@ -323,6 +326,7 @@ it.runIf(hasHerdr)(
             visibility: 'background',
             cwd: root,
             environment: {},
+            command: ['/bin/sh', '-c', 'while [ ! -e "$EXIT_SIGNAL" ]; do sleep 0.05; done'],
           },
           client,
         ),

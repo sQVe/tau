@@ -102,17 +102,10 @@ const sameWorkerOwner = (info: Record<string, unknown>, owned: OwnedWorker): boo
   info.shell_pid === owned.shellPid &&
   info.foreground_process_group_id === owned.processId;
 
-const argvHasLaunchToken = (process: Record<string, unknown>, owned: OwnedWorker): boolean =>
-  Array.isArray(process.argv) && process.argv.includes(owned.token);
-
-// herdr can omit or rewrite a Pi title's argv; the saved start time then identifies the process.
-const processIdentityMatches = (process: Record<string, unknown>, owned: OwnedWorker): boolean =>
-  argvHasLaunchToken(process, owned) || Boolean(owned.startedAt);
-
 const foregroundProcessMatches = (value: unknown, owned: OwnedWorker): boolean => {
   const process = objectOrEmpty(value);
 
-  return process.pid === owned.processId && processIdentityMatches(process, owned);
+  return process.pid === owned.processId;
 };
 
 export const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker): boolean =>
