@@ -25,7 +25,10 @@ import { expect, it, vi, onTestFinished } from 'vitest';
 
 import askUserQuestionExtension from '../src/extensions/askUserQuestion/askUserQuestion.js';
 import { workerArguments } from '../src/extensions/subagents/controller/inspect.js';
-import { nativeIdentity, seedSession } from '../src/extensions/subagents/profiles.js';
+import {
+  nativeIdentity,
+  seedSession,
+} from '../src/extensions/subagents/controller/nativeSession.js';
 import {
   acceptReply,
   readAcknowledgement,

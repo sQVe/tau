@@ -423,7 +423,6 @@ const refuseEarlyIncomplete = (
   }: Pick<ReportInput, 'blocker' | 'blockerKind' | 'onlyParentCanClear'>,
 ) => {
   if (blocker === undefined || blocker.trim() === '' || blockerKind === undefined) {
-    state.remindAfterRefusal = true;
     throw new Error(
       'An incomplete report needs a blocker and blockerKind: the external dependency, exhausted limit, or parent decision that stops you. Without one, finish the work or report failure.',
     );
@@ -444,27 +443,24 @@ const refuseEarlyIncomplete = (
   }
 
   if (step === 'refuseTime') {
-    state.remindAfterRefusal = true;
     throw new Error(
       `Report refused: ${Math.floor(remaining / millisecondsPerSecond)} seconds remain. Continue the remaining assigned work now. Do not sleep, poll, or retry the report only to wait out the time. Report incomplete only when a concrete blocker stops you.`,
     );
   }
 
   state.incompleteRefused = true;
-  state.remindAfterRefusal = true;
   throw new Error(
     `Report refused: ${Math.floor(remaining / millisecondsPerMinute)} minutes remain. Finish the remaining assigned work. Report incomplete only when a concrete blocker stops you. Set onlyParentCanClear when only the parent or user can clear it.`,
   );
 };
 
-const refuseMissingSections = (state: WorkerExtensionState, summary: string) => {
+const refuseMissingSections = (summary: string) => {
   const missing = handoverSections({ summary })?.missing ?? [];
 
   if (missing.length === 0) {
     return;
   }
 
-  state.remindAfterRefusal = true;
   throw new Error(
     `Report refused: summary is missing the ${missing.join(', ')} section headings. Resend a compact summary with all four sections, writing None under any that is empty.`,
   );
@@ -504,10 +500,15 @@ const reportToParent = (
     handover.outcome === 'incomplete' ? blocker : undefined,
   );
 
-  refuseMissingSections(state, summary);
+  try {
+    refuseMissingSections(summary);
 
-  if (handover.outcome === 'incomplete') {
-    refuseEarlyIncomplete(state, task, parameters);
+    if (handover.outcome === 'incomplete') {
+      refuseEarlyIncomplete(state, task, parameters);
+    }
+  } catch (error) {
+    state.remindAfterRefusal = true;
+    throw error;
   }
 
   const report = acceptReport(state.directory, task.taskId, {
@@ -597,10 +598,7 @@ const startWorker = (
     state.phaseDescription = undefined;
     recordWorkerActivity(state, context, 'starting', 'Pi worker starting');
 
-    if (
-      context.sessionManager.getSessionId() !== task.nativeSessionId ||
-      context.sessionManager.getSessionFile() !== task.nativeSessionFile
-    ) {
+    if (!matchesNativeSession(task, context)) {
       throw new Error('Worker native session does not match its task.');
     }
 

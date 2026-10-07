@@ -530,7 +530,7 @@ it('saves the profile tools, or the role defaults, and the paths of its skills',
   ] as SlashCommandInfo[];
 
   const resolve = (name: string) =>
-    resolveLoadout({ ...request, profile: name }, context, undefined, commands);
+    resolveLoadout({ ...request, profile: name }, context, commands);
 
   expect(resolve('narrow')).toMatchObject({
     tools: ['read', 'web_search'],

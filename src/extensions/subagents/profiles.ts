@@ -1,6 +1,5 @@
 // Adapted from pi-interactive-subagents c3e8b53c0754ae5ccc19fdab5a7481ec039bc2f7, index.ts and session.ts.
-import { randomUUID } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,11 +11,6 @@ import { assignmentContractFor, handoverContract } from './handover.js';
 import { thinkingSchema, toolNamePattern } from './types.js';
 import type { Loadout, Profile, Task } from './types.js';
 import { defaultProfileName } from './workerModels.js';
-
-export interface NativeIdentity {
-  nativeSessionId: string;
-  nativeSessionFile: string;
-}
 
 export interface ProfileSummary {
   name: string;
@@ -59,12 +53,7 @@ const parseFields = (frontmatter: string, source: string) => {
       throw new Error(`Malformed profile setting: ${line}`);
     }
 
-    const key = match[1];
-    const value = match[2];
-
-    if (key == null || value == null) {
-      throw new Error(`Unsupported or duplicate profile setting: ${line}`);
-    }
+    const [, key = '', value = ''] = match;
 
     if (key === 'model') {
       throw new Error(
@@ -269,28 +258,6 @@ export const listProfiles = (
   return [...winners].map(([name, description]) =>
     description === undefined ? { name } : { name, description },
   );
-};
-
-export const seedSession = (task: Task): void => {
-  const header = {
-    type: 'session',
-    version: 3,
-    id: task.nativeSessionId,
-    timestamp: new Date(task.createdAt).toISOString(),
-    cwd: task.loadout.cwd,
-    parentSession: task.parentSession,
-  };
-
-  writeFileSync(task.nativeSessionFile, `${JSON.stringify(header)}\n`, {
-    flag: 'wx',
-    mode: 0o600,
-  });
-};
-
-export const nativeIdentity = (directory: string): NativeIdentity => {
-  const nativeSessionId = randomUUID();
-
-  return { nativeSessionId, nativeSessionFile: join(directory, `${nativeSessionId}.jsonl`) };
 };
 
 // The system prompt holds the standing instructions, so follow-ups and compaction keep them.
