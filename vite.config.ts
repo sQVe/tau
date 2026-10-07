@@ -1,6 +1,9 @@
 import { format, lint, vitest } from '@sqve/seam';
 import { defineConfig } from 'vite-plus';
 
+// oxlint-disable-next-line node/no-process-env -- Remove the shell capacity before test workers inherit it.
+delete process.env.TAU_SUBAGENT_CAP;
+
 const testHelperImports = {
   group: ['**/tests/**'],
   message: 'Production code must not import test helpers.',

@@ -7,6 +7,7 @@ import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
 import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
+import tauExtension from '../src/tau.js';
 import { createBoundSession } from './piSession.js';
 
 // Real Pi sessions need extra time on slow CI.
@@ -32,7 +33,7 @@ const createSession = async (registerCleanup: TestContext['onTestFinished']) => 
     agentDirectory,
     providers: [faux],
     tools: ['read'],
-    extensionPaths: [join(packageRoot, 'src/tau.ts')],
+    extensionFactories: [tauExtension],
     skillPaths: [skillsDirectory],
   });
 

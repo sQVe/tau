@@ -13,6 +13,7 @@ import type { TestContext } from 'vitest';
 import { expect } from 'vitest';
 
 import type { ObservationResult } from '../src/extensions/tdd/types.js';
+import tauExtension from '../src/tau.js';
 import { initializeRepository } from './gitRepository.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
@@ -74,11 +75,8 @@ export const createHarness = async (
     agentDirectory,
     providers: [faux],
     tools: ['read', 'bash', 'edit', 'write', 'run_tests', 'commit'],
-    extensionPaths: [
-      resolve(import.meta.dirname, '../src/tau.ts'),
-      resolve(import.meta.dirname, '../node_modules/pi-web-access/dist/index.js'),
-    ],
-    extensionFactories,
+    extensionPaths: [resolve(import.meta.dirname, '../node_modules/pi-web-access/dist/index.js')],
+    extensionFactories: [tauExtension, ...extensionFactories],
   });
 
   const events: AgentSessionEvent[] = [];
