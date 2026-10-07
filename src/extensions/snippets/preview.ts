@@ -1,6 +1,6 @@
 import type { AutocompleteItem, EditorComponent } from '@earendil-works/pi-tui';
 
-import { isRecord } from '../../tauConfig.js';
+import { isRecord } from '../../isRecord.js';
 
 interface SelectedItemSource {
   getSelectedItem: () => AutocompleteItem | null;

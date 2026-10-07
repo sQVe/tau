@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { CONFIG_DIR_NAME } from '@earendil-works/pi-coding-agent';
 
 import { isMissingFile } from './errors.js';
+import { isRecord } from './isRecord.js';
 
 export interface ConfigLocation {
   cwd: string;
@@ -64,9 +65,6 @@ export const readTauConfig = ({
 
   return { files: [user, project].filter((file) => file !== undefined), ignored };
 };
-
-export const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const setsKey = ({ value }: ConfigFile, key: string): boolean =>
   isRecord(value) && Object.hasOwn(value, key);

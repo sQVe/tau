@@ -1,4 +1,5 @@
-import { isRecord, readUserOnlyKey } from '../../tauConfig.js';
+import { isRecord } from '../../isRecord.js';
+import { readUserOnlyKey } from '../../tauConfig.js';
 import type { ConfigLocation } from '../../tauConfig.js';
 
 // The manager asks the user to run this command, so only the user file may set it.

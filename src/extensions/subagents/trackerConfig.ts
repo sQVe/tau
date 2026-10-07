@@ -1,5 +1,6 @@
 import { errorMessage } from '../../errors.js';
-import { isRecord, readTauConfig, readUserOnlyKey } from '../../tauConfig.js';
+import { isRecord } from '../../isRecord.js';
+import { readTauConfig, readUserOnlyKey } from '../../tauConfig.js';
 import type { ConfigLocation } from '../../tauConfig.js';
 
 export interface TrackerRepository {

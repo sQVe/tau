@@ -26,6 +26,7 @@ const pureModules = [
   'scripts/tokenUsageReport.ts',
   'src/confirmationEligibility.ts',
   'src/controlTools.ts',
+  'src/isRecord.ts',
   'src/models/allowedModels.ts',
   'src/reviewCapture/evidenceDecisions.ts',
   'src/reviewCapture/freshness.ts',
