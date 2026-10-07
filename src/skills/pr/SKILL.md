@@ -160,8 +160,7 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      names, and local paths in the session report.
 
 8. Preview and ask for approval. Show title, full body, base repository and branch, head, draft
-   status, commits to push, and push command. For a new PR, show the `@codex review` comment that
-   step 11 posts.
+   status, commits to push, and push command.
    - After a rebase in step 1 of a branch with a remote tip, say that the push is a force-push and
      show it with `--force-with-lease=refs/heads/<branch>:<old-tip>`.
    - In a stack, list each branch to push with its local SHA and explain that each is force-pushed
@@ -193,11 +192,5 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      order. `gh stack view --json` reads only the local stack and cannot confirm linking.
 
 10. Check the published PR with the `pr` tool's `verify` action. Pass `$prdir` and the approved
-    repository, PR number, title, base, and draft status. Report each difference and the PR URL.
-    Stop if the call fails or shows a difference.
-
-11. Request a Codex review without asking. If this run created the PR, run
-    `gh pr comment <number> --repo <repo> --body '@codex review'`. When a retry follows a partial
-    failure, count a PR the earlier attempt created as created by this run. Post only if the PR has
-    no `@codex review` comment yet. On an update to an existing PR, post nothing. Report the
-    request, then stop. Posting a request does not prove a review started.
+    repository, PR number, title, base, and draft status. Stop if the call fails or shows a
+    difference, and report each difference. Otherwise report the PR URL, then stop.
