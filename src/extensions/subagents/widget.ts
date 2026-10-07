@@ -399,7 +399,7 @@ export const renderWorkerWidget = (
   rows: WorkerWidgetRow[],
   width: number,
   now: number,
-  theme?: Theme,
+  theme: Theme,
 ): string[] => {
   if (width <= 0 || rows.length === 0) {
     return [];

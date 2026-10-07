@@ -3933,7 +3933,8 @@ it.each([
   }
 
   const rows = fixture.controller.widgetRows(fixture.input.parentSessionId);
-  const widget = renderWorkerWidget(rows, 200, now).join('\n');
+  const plainTheme = { fg: (_color: string, text: string) => text } as never;
+  const widget = renderWorkerWidget(rows, 200, now, plainTheme).join('\n');
 
   expect(widget).toContain(label);
 

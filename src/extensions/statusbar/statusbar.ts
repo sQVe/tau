@@ -5,8 +5,7 @@ import { promisify } from 'node:util';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { gitEnvironment } from '../../gitOutput.js';
-import { footerTheme } from './colors.js';
-import { renderFooterLine } from './render.js';
+import { footerTheme, renderFooterLine } from './render.js';
 
 type FooterFactory = NonNullable<Parameters<ExtensionContext['ui']['setFooter']>[0]>;
 

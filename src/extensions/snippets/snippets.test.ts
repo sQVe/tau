@@ -10,8 +10,8 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { editorParts } from './fixtures/editorParts.js';
 import { loadSnippets } from './snippet.js';
+import type { Snippet } from './snippet.js';
 import snippetsExtension from './snippets.js';
-import type { Snippet } from './types.js';
 
 type EditorFactory = NonNullable<ReturnType<ExtensionUIContext['getEditorComponent']>>;
 type WidgetContent = Parameters<ExtensionUIContext['setWidget']>[1];

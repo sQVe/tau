@@ -16,7 +16,7 @@ import { snippetAutocomplete, snippetForItem } from './autocomplete.js';
 import { refillsHistory, sentPromptTexts } from './history.js';
 import { watchSelectedItem } from './preview.js';
 import { loadSnippets } from './snippet.js';
-import type { Snippet } from './types.js';
+import type { Snippet } from './snippet.js';
 
 const snippetsDirectory = fileURLToPath(new URL('./snippets/', import.meta.url));
 const widgetKey = 'snippet-preview';
